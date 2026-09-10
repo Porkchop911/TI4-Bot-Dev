@@ -1,0 +1,10 @@
+{
+  "log": [
+    "polling every 2s",
+    "result 1 ok: ping",
+    "result 3 refused: 19 is not adjacent to 18",
+    "result 4 error: attempt to index a nil value: field 'units'",
+    "bridge is back"
+  ],
+  "turn": "Blue"
+}

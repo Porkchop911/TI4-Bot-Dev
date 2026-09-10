@@ -1,0 +1,6 @@
+{
+  "ok": true,
+  "uploads": 41,
+  "pending": 2,
+  "features": ["latest", "log", "poll", "command_ids", "turn_signal"]
+}

@@ -1,0 +1,349 @@
+{
+  "crc": 2065604336,
+  "hexSummary": "1-3-1Py2c3f5i;Ps,6-2+4Ycd3f5i;Yps,10-1-5Bcdfy3i;Bs;,12+1+5Rdf2ci;Rs2p;,14+2-4Wf2r;Wipso;Wio,16+3+1G2cfi;Gis;;Gi,19-3+1;,21+2+0;,26-1-3;;,36+2+2;;,37+0+4;;,39-2+2*e;,40+0+6*e;,42-2+0*e,43+1-5*e,46+3-1*e,47+0-4*e,60-2-4;,64+1-3;;,69+2-2GtWc2f1t;Wio;Wio,82+6-2;;,97-1+1;,98+0+2;,99-1-1;,100+1-1;,101+3-3;,102+3+3;;,103+0-6;,104+1+3;,106-1+3;;,108-3+3;;,110-2-2;;;,112+0+0;,113-3-3*e;,114+2+4*e,115+1+1;,116+0-2;,117-1+5*e;,901-2+6;,902+2+6;,903+1+7,904-1+7,905+0+8;,906-3+5;,907+3+5;;",
+  "isFranken": false,
+  "isPoK": true,
+  "laws": [],
+  "mapString": "",
+  "objectives": {
+    "Legendary Abilities": [
+      "A Song Like Marrow"
+    ],
+    "Public Objectives I": [
+      "Expand Borders",
+      "Make History"
+    ],
+    "Secret Objectives": [
+      "Forge an Alliance",
+      "Fight with Precision \u03a9",
+      "Mechanize the Military",
+      "Brave the Void",
+      "Spark a Rebellion"
+    ],
+    "offBoardPublicObjectives": []
+  },
+  "players": [
+    {
+      "active": true,
+      "alliances": [],
+      "color": "White",
+      "commandTokens": {
+        "fleet": 3,
+        "strategy": 2,
+        "tactics": 2
+      },
+      "commodities": 1,
+      "custodiansPoints": 0,
+      "factionName": "Xxcha Kingdom",
+      "factionShort": "Xxcha",
+      "handSummary": {
+        "Actions": 2,
+        "Secret Objectives": 1
+      },
+      "laws": [],
+      "leaders": {
+        "commander": "locked",
+        "hero": "locked"
+      },
+      "planetTotals": {
+        "influence": {
+          "avail": 4,
+          "total": 10
+        },
+        "legendary": 0,
+        "resources": {
+          "avail": 3,
+          "total": 7
+        },
+        "techs": {
+          "blue": 0,
+          "green": 0,
+          "red": 0,
+          "yellow": 0
+        },
+        "traits": {
+          "cultural": 0,
+          "hazardous": 0,
+          "industrial": 2
+        }
+      },
+      "score": 0,
+      "strategyCards": [
+        "Leadership"
+      ],
+      "strategyCardsFaceDown": [],
+      "technologies": [
+        "Graviton Laser System"
+      ],
+      "tradeGoods": 0
+    },
+    {
+      "active": true,
+      "alliances": [],
+      "color": "Blue",
+      "commandTokens": {
+        "fleet": 3,
+        "strategy": 2,
+        "tactics": 3
+      },
+      "commodities": 0,
+      "custodiansPoints": 0,
+      "factionName": "Barony of Letnev",
+      "factionShort": "Letnev",
+      "handSummary": [],
+      "laws": [],
+      "leaders": {
+        "commander": "locked",
+        "hero": "locked"
+      },
+      "planetTotals": {
+        "influence": {
+          "avail": 1,
+          "total": 1
+        },
+        "legendary": 0,
+        "resources": {
+          "avail": 6,
+          "total": 6
+        },
+        "techs": {
+          "blue": 0,
+          "green": 0,
+          "red": 0,
+          "yellow": 0
+        },
+        "traits": {
+          "cultural": 0,
+          "hazardous": 0,
+          "industrial": 0
+        }
+      },
+      "score": 0,
+      "strategyCards": [
+        "Technology"
+      ],
+      "strategyCardsFaceDown": [],
+      "technologies": [
+        "Antimass Deflectors",
+        "Plasma Scoring"
+      ],
+      "tradeGoods": 0
+    },
+    {
+      "active": true,
+      "alliances": [],
+      "color": "Purple",
+      "commandTokens": {
+        "fleet": 3,
+        "strategy": 2,
+        "tactics": 3
+      },
+      "commodities": 0,
+      "custodiansPoints": 0,
+      "factionName": "Federation of Sol",
+      "factionShort": "Sol",
+      "handSummary": [],
+      "laws": [],
+      "leaders": {
+        "commander": "locked",
+        "hero": "locked"
+      },
+      "planetTotals": {
+        "influence": {
+          "avail": 2,
+          "total": 2
+        },
+        "legendary": 0,
+        "resources": {
+          "avail": 4,
+          "total": 4
+        },
+        "techs": {
+          "blue": 0,
+          "green": 0,
+          "red": 0,
+          "yellow": 0
+        },
+        "traits": {
+          "cultural": 0,
+          "hazardous": 0,
+          "industrial": 0
+        }
+      },
+      "score": 0,
+      "strategyCards": [
+        "Warfare"
+      ],
+      "strategyCardsFaceDown": [],
+      "technologies": [
+        "Antimass Deflectors",
+        "Neural Motivator"
+      ],
+      "tradeGoods": 0
+    },
+    {
+      "active": true,
+      "alliances": [],
+      "color": "Yellow",
+      "commandTokens": {
+        "fleet": 3,
+        "strategy": 2,
+        "tactics": 3
+      },
+      "commodities": 0,
+      "custodiansPoints": 0,
+      "factionName": "L1Z1X Mindnet",
+      "factionShort": "L1Z1X",
+      "handSummary": [],
+      "laws": [],
+      "leaders": {
+        "commander": "locked",
+        "hero": "locked"
+      },
+      "planetTotals": {
+        "influence": {
+          "avail": 0,
+          "total": 0
+        },
+        "legendary": 0,
+        "resources": {
+          "avail": 5,
+          "total": 5
+        },
+        "techs": {
+          "blue": 0,
+          "green": 0,
+          "red": 0,
+          "yellow": 0
+        },
+        "traits": {
+          "cultural": 0,
+          "hazardous": 0,
+          "industrial": 0
+        }
+      },
+      "score": 0,
+      "strategyCards": [
+        "Construction"
+      ],
+      "strategyCardsFaceDown": [],
+      "technologies": [
+        "Neural Motivator",
+        "Plasma Scoring"
+      ],
+      "tradeGoods": 0
+    },
+    {
+      "active": true,
+      "alliances": [],
+      "color": "Red",
+      "commandTokens": {
+        "fleet": 3,
+        "strategy": 2,
+        "tactics": 3
+      },
+      "commodities": 0,
+      "custodiansPoints": 0,
+      "factionName": "Universities of Jol-Nar",
+      "factionShort": "Jol-Nar",
+      "handSummary": [],
+      "laws": [],
+      "leaders": {
+        "commander": "locked",
+        "hero": "locked"
+      },
+      "planetTotals": {
+        "influence": {
+          "avail": 5,
+          "total": 5
+        },
+        "legendary": 0,
+        "resources": {
+          "avail": 3,
+          "total": 3
+        },
+        "techs": {
+          "blue": 0,
+          "green": 0,
+          "red": 0,
+          "yellow": 0
+        },
+        "traits": {
+          "cultural": 0,
+          "hazardous": 0,
+          "industrial": 0
+        }
+      },
+      "score": 0,
+      "strategyCards": [
+        "Politics"
+      ],
+      "strategyCardsFaceDown": [],
+      "technologies": [
+        "Antimass Deflectors",
+        "Neural Motivator",
+        "Sarween Tools",
+        "Plasma Scoring"
+      ],
+      "tradeGoods": 0
+    },
+    {
+      "active": true,
+      "alliances": [],
+      "color": "Green",
+      "commandTokens": {
+        "fleet": 3,
+        "strategy": 2,
+        "tactics": 2
+      },
+      "commodities": 0,
+      "custodiansPoints": 0,
+      "factionName": "Emirates of Hacan",
+      "factionShort": "Hacan",
+      "handSummary": [],
+      "laws": [],
+      "leaders": {
+        "commander": "locked",
+        "hero": "locked"
+      },
+      "planetTotals": {
+        "influence": {
+          "avail": 2,
+          "total": 2
+        },
+        "legendary": 0,
+        "resources": {
+          "avail": 3,
+          "total": 3
+        },
+        "techs": {
+          "blue": 0,
+          "green": 0,
+          "red": 0,
+          "yellow": 0
+        },
+        "traits": {
+          "cultural": 0,
+          "hazardous": 0,
+          "industrial": 0
+        }
+      },
+      "score": 0,
+      "strategyCards": [
+        "Diplomacy"
+      ],
+      "strategyCardsFaceDown": [],
+      "technologies": [
+        "Antimass Deflectors",
+        "Sarween Tools"
+      ],
+      "tradeGoods": 0
+    }
+  ],
+  "round": 1,
+  "scoreboard": 10,
+  "setupTimestamp": 1785136306.386,
+  "speaker": "White",
+  "timestamp": 1785138573,
+  "turn": "White"
+}

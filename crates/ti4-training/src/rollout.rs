@@ -960,6 +960,17 @@ fn finish_game(
                 .and_then(|handles| handles.get(player))
                 .map(|handle| handle.borrow().clone())
                 .unwrap_or_default();
+            // Strategy cards this seat played, by corpus card id. The draft names its options by
+            // bare card id under the `strategy` head; the only other choices that carry a bare
+            // card id are this same faction's own re-picks (Public Disgrace, Arbiter give), which
+            // count as its play too. Holder-qualified ids (`take {holder}|{card}`) name another
+            // seat's hand and are not counted.
+            let mut strategy_card_plays = std::collections::BTreeMap::new();
+            for step in &trajectory {
+                if step.head == "strategy" && !step.chosen.contains('|') {
+                    *strategy_card_plays.entry(step.chosen.clone()).or_insert(0) += 1;
+                }
+            }
             let opening = openings.get(player);
             let steps: Vec<Progress> = trajectory.iter().map(|step| step.progress).collect();
             SeatRollout {
@@ -974,6 +985,7 @@ fn finish_game(
                     cleared: opening.is_some_and(ti4_engine::opening::Opening::cleared),
                     shortfall: opening.map_or(0.0, |opening| opening.weighted_shortfall(1.0, 1.0)),
                     traded_goods: 0.0,
+                    strategy_card_plays,
                 },
                 trajectory,
             }
@@ -2044,6 +2056,7 @@ fn play_assigned_on_map_authored(
                     cleared: opening.is_some_and(ti4_engine::opening::Opening::cleared),
                     shortfall: opening.map_or(0.0, |opening| opening.weighted_shortfall(1.0, 1.0)),
                     traded_goods: 0.0,
+                    strategy_card_plays: std::collections::BTreeMap::new(),
                 },
             }
         })

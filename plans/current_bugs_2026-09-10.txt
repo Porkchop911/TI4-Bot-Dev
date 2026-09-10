@@ -1,0 +1,15 @@
+engine bugs:
+- xxcha can peace accords a space station, should not work like that
+- stellar convertor can purge mecatol rex which it explicitly shouldn't be able to. also mecatol rex is legendary in thunders edge
+- i dont think legendary planet abilities are implemented.
+- do frontier token and dark energy tap work? 
+- thunders edge should come under the control of the player that places the infantery 
+- reenable thunders edge expeditions for factions hat already have their breakthrough
+- fracture tilles are not offered for activation even though they would be reachable
+- wormhole nexus is missing 
+- 
+
+Setup bug
+- some agendas (crown of emphidia specifically) have been officially removed from the agenda deck in the expansions. please make sure the used decks are accrurate for playing with pok and thunder's edge
+
+- 

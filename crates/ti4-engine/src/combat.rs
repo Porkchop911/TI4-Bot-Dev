@@ -1692,6 +1692,7 @@ fn announce_ship_destroyed(
     payload.insert("system".to_owned(), system.to_string().into());
     payload.insert("player".to_owned(), owner.to_string().into());
     payload.insert("unit".to_owned(), destroyed.type_id.to_string().into());
+    payload.insert("damaged".to_owned(), destroyed.sustained_damage.into());
     payload.insert("last".to_owned(), (remaining == 0).into());
     let _ = ctx.emit(state, "SHIP_DESTROYED", payload);
 }

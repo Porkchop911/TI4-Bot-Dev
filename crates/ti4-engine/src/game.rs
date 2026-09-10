@@ -3802,6 +3802,16 @@ mod tests {
         // Only the one-time round-1 strategy phase announcement reached the log; the
         // cancelled draft choice produced nothing.
         assert_eq!(game.events, vec!["STRATEGY_PHASE_BEGAN"]);
+        assert_eq!(game.timing.applied_events().len(), 2);
+        assert_eq!(
+            game.timing.applied_events()[0].event_type,
+            "STRATEGY_PHASE_BEGAN"
+        );
+        assert_eq!(
+            game.timing.applied_events()[1].event_type,
+            "STRATEGY_CARD_CHOSEN"
+        );
+        assert!(game.timing.applied_events()[1].cancelled);
     }
 
     #[test]

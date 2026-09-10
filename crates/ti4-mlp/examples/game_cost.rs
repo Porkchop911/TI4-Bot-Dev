@@ -8,9 +8,21 @@
 //!
 //! Seven of run 3's twenty checkpoints could not be evaluated inside four minutes each, where the
 //! stage-1 champion plays 144 games in three seconds. Lowering the step cap did not help and no
-//! game reported a step-limit truncation, so the cost is not the NUMBER of decisions. This splits
-//! wall time into time spent inside the decider (the network) and time spent in the engine between
-//! decisions, which separates "the policy is slow to ask" from "the position is slow to resolve".
+//! game reported a step-limit truncation, so the cost is not the NUMBER of decisions. This times
+//! the **candidate seat's** decider and reports the rest of the game's wall clock beside it.
+//!
+//! # The residual is not "the engine" — do not read it as one
+//!
+//! Only `index == candidate_seat` gets the shared counters; the other five seats are wrapped with
+//! fresh counters that are dropped. So `in_decider` is **one seat of six**, and the residual
+//! printed next to it contains the other five seats' inference as well as the rules work, setup and
+//! this example's own diagnostics.
+//!
+//! With six seats sharing one network that residual is dominated by policy, not by rules. Read as a
+//! decider/engine split it said the engine was 86% of a rollout when an all-seat measurement puts
+//! policy at ~82% and the engine at ~17%; a plan to optimise the engine was written on the strength
+//! of it. Use `engine_cost` for attribution — it wraps all six seats and times `Game::step` by
+//! phase. This example answers "is the candidate slow to ask", which is what it was built for.
 //!
 //! # Points
 //!
@@ -73,8 +85,11 @@ struct Timing {
     /// decision answered before it.
     trace: bool,
     who: String,
-    /// Time inside the wrapped decider, summed. Everything else in the wall time is the engine
-    /// advancing between decisions.
+    /// Time inside the wrapped decider, summed.
+    ///
+    /// Shared only by the candidate seat; the other five are given throwaway counters. The rest of
+    /// the wall clock is therefore *not* the engine — it is five more seats' inference plus the
+    /// rules, setup and diagnostics. See this file's header.
     spent: Rc<RefCell<Duration>>,
     calls: Rc<RefCell<usize>>,
     /// Per head, so a slow policy can be told apart from one slow kind of decision.
@@ -492,7 +507,7 @@ fn main() {
     }
 
     println!("=== cost per game, slowest first ===");
-    println!("  seed/rot/seat       wall   in decider   in engine   decisions   units on board");
+    println!("  seed/rot/seat       wall  cand.decider    residual   decisions   units on board");
     let mut order: Vec<&Played> = played.iter().collect();
     order.sort_by(|a, b| b.wall.cmp(&a.wall));
     for game in order.iter().take(12) {
@@ -515,7 +530,7 @@ fn main() {
     let decisions: usize = played.iter().map(|g| g.decisions).sum();
     println!();
     println!(
-        "  {} games in {:.1?}: {:.1?} inside the decider, {:.1?} in the engine, {decisions} decisions",
+        "  {} games in {:.1?}: {:.1?} in the CANDIDATE seat's decider, {:.1?} everything else \n     (five more seats' inference, the rules, setup, diagnostics), {decisions} decisions",
         played.len(),
         total,
         decider,

@@ -1,0 +1,32 @@
+{
+  "commands": [
+    { "id": 1, "action": "ping", "message": "bridge up" },
+    { "id": 2, "action": "activate", "color": "Blue", "tile": "18" },
+    {
+      "id": 3,
+      "action": "move",
+      "color": "Blue",
+      "from": "1",
+      "to": "18",
+      "units": [
+        { "type": "Carrier", "count": 1 },
+        { "type": "Fighter", "count": 2 }
+      ]
+    },
+    {
+      "id": 4,
+      "action": "land",
+      "color": "Blue",
+      "tile": "18",
+      "planet": "Mecatol Rex",
+      "units": [{ "type": "Infantry", "count": 1 }]
+    },
+    { "id": 5, "action": "claim", "color": "Blue", "tile": "18", "planet": "Mecatol Rex" },
+    { "id": 6, "action": "control", "color": "Blue", "tile": "18", "planet": "Mecatol Rex" },
+    { "id": 7, "action": "card", "color": "Blue", "name": "Sabotage", "to": "discard" },
+    { "id": 8, "action": "token", "color": "Blue", "kind": "command", "count": -1 },
+    { "id": 9, "action": "score", "color": "Blue", "objective": "Corner the Market", "points": 1 },
+    { "id": 10, "action": "end_turn", "color": "Blue" },
+    { "action": "ping", "message": "queued by hand, nobody is listening" }
+  ]
+}

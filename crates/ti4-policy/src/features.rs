@@ -2349,6 +2349,21 @@ fn add_system_features(
         return;
     }
     let system = seen.system(&SystemId::new(system_id));
+    let implicated = seen.objectives_implicating_system(player, &SystemId::new(system_id));
+    if !implicated.is_empty() {
+        add_named(
+            features,
+            format_args!("{prefix}:revealed-objective-implicated"),
+            count_value(implicated.len()),
+        );
+        for objective in implicated {
+            add_named(
+                features,
+                format_args!("{prefix}:implicated-by-objective:{objective}"),
+                1.0,
+            );
+        }
+    }
     // The system record already lists its planets, so this reads them directly instead of
     // scanning the whole planet corpus for a matching `tileId` -- a call measured at 2,327 ns,
     // made one to three times for every option of every decision. The two agree across all 231
@@ -5296,6 +5311,36 @@ mod tests {
             "an uncontrolled planet that counts towards a revealed objective must show a gain: \
              {:?}",
             names_of(&features)
+        );
+    }
+
+    #[test]
+    fn revealed_map_objectives_mark_each_implicated_candidate_system() {
+        let content = ti4_content::ContentStore::embedded();
+        let hub = ti4_engine::fixtures::hub_with_centre(ti4_engine::seating::MECATOL);
+        let player = PlayerId::new("a");
+        let mut state = ti4_engine::fixtures::game(&["a", "b"]);
+        for id in std::iter::once(&hub.centre).chain(hub.outer.iter()) {
+            state
+                .board
+                .entry(ti4_model::id::SystemId::new(id))
+                .or_default();
+        }
+        state.revealed_objectives = vec![ti4_model::id::ObjectiveId::new("intimidate")];
+        let target = hub.outer[0].clone();
+        let option = ChoiceOption::labelled(&target, "activate", format!("activate {target}"));
+        let choice = Choice::new(player.clone(), "activate a system", vec![option.clone()]);
+        let seen = Observed::new(&state, content, POK, Some(&hub.galaxy));
+
+        let features = explicit_option_features(&seen, &choice, &option, &player, &[]);
+
+        assert_eq!(
+            value_of(&features, "target:revealed-objective-implicated"),
+            Some(1.0)
+        );
+        assert_eq!(
+            value_of(&features, "target:implicated-by-objective:intimidate"),
+            Some(1.0)
         );
     }
 

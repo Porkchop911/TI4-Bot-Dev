@@ -196,6 +196,9 @@ fn actor_inventory_facts(seen: &Observed<'_>, player: &PlayerId) -> Vec<(String,
             seat.exploration_cards.len() as f64,
         );
     }
+    for card in seat.exploration_cards {
+        push(format!("exploration:{card}"), 1.0);
+    }
     let fragments: i32 = seat.relic_fragments.values().sum();
     if fragments != 0 {
         push("relic_fragments_held".to_owned(), f64::from(fragments));
@@ -740,6 +743,7 @@ mod tests {
             ];
             seat.exhausted_relics
                 .insert(ti4_model::id::RelicId::new("dominusorb"));
+            seat.exploration_cards = vec!["ed1".to_owned(), "ed2".to_owned()];
             seat.breakthrough = Some(ti4_model::id::BreakthroughId::new("letnevbt"));
             seat.leaders.insert(
                 ti4_model::id::LeaderId::new("hero1"),
@@ -769,6 +773,9 @@ mod tests {
             "critic-state:relic:codex:ready",
             "critic-state:relic:dominusorb:exhausted",
             "critic-state:relics_exhausted",
+            "critic-state:exploration_cards_held",
+            "critic-state:exploration:ed1",
+            "critic-state:exploration:ed2",
             "critic-state:breakthrough_held",
             "critic-state:breakthrough:letnevbt",
             "critic-state:leaders_unlocked",

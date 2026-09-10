@@ -73,7 +73,11 @@ The current summary pairs unit departures and arrivals by owner and unit class. 
 - [x] Give neutral units a dedicated neutral color and legend; never route an unknown owner through seat 0's color.
 - [x] Represent space stations distinctly from ordinary planets.
 - [x] Show coexistence markers separately from the planet controller.
-- [x] Draw frontier, Creuss wormhole, ion-storm face, ingress, breach, Thunder's Edge, and command tokens.
+- [x] Draw frontier, printed and placed wormholes, ion-storm face, ingress/egress portals, breach, Thunder's Edge, and command tokens. Distinguish placed wormholes and show suppression from Enforced Travel Ban and Nexus Sovereignty.
+- [x] Render asteroid fields, nebulae, supernovas, gravity rifts, and scars with distinct tile treatments and readable badges.
+- [x] Render the Fracture as its fixed seven-system chain outside the galaxy only while it is in play; preserve its actual units, planets, control, and tokens.
+- [x] Render the Wormhole Nexus as a detached special area when its system exists in engine state, retaining the supplied 82a/82b face and printed wormholes.
+- [ ] Add the complete absent → locked (82a) → open (82b) Wormhole Nexus lifecycle to engine state/setup; the reviewer deliberately does not infer or invent a face.
 - [x] Mark planet attachments and retain printed planet metadata.
 - [ ] Decide whether displayed resource/influence values are printed values, current effective values, or both; label them unambiguously.
 - [x] Preserve system-space control as the thick outer edge and planet control as the planet background.

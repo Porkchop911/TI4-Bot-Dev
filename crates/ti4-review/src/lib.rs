@@ -178,6 +178,18 @@ pub struct BoardTile {
     pub q: i32,
     pub r: i32,
     pub hyperlane: bool,
+    /// `fracture` or `nexus` for systems drawn outside the ordinary galaxy geometry.
+    #[serde(default)]
+    pub special_area: Option<String>,
+    /// Printed anomaly kinds retained from the content corpus for renderer-independent display.
+    #[serde(default)]
+    pub anomalies: Vec<String>,
+    /// Printed wormholes. Dynamic token wormholes remain in `GameState`.
+    #[serde(default)]
+    pub wormholes: Vec<String>,
+    /// Whether this Fracture system carries one of the two printed egresses.
+    #[serde(default)]
+    pub egress: bool,
     pub planets: Vec<PlanetMeta>,
 }
 
@@ -1609,38 +1621,88 @@ fn board_metadata(content: &ContentStore, galaxy: &ti4_content::galaxy::Galaxy) 
         .into_iter()
         .filter_map(|id| {
             let coord = galaxy.coord_of(id)?;
-            let system = ti4_content::galaxy::system(content, id, FULL)?;
-            let planets = system
-                .planets()
-                .into_iter()
-                .filter_map(|planet_id| ti4_content::galaxy::planet(content, planet_id, FULL))
-                .map(|planet| PlanetMeta {
-                    id: planet.id().to_owned(),
-                    label: planet.name().unwrap_or(planet.id()).to_owned(),
-                    resources: planet.resources(),
-                    influence: planet.influence(),
-                    traits: planet.traits().into_iter().map(str::to_owned).collect(),
-                    tech_specialties: planet
-                        .tech_specialties()
-                        .into_iter()
-                        .map(str::to_owned)
-                        .collect(),
-                    legendary: planet.is_legendary(),
-                    space_station: planet.is_space_station(),
-                })
-                .collect();
-            Some(BoardTile {
-                system: id.to_owned(),
-                label: system.name().unwrap_or(id).to_owned(),
-                q: coord.q,
-                r: coord.r,
-                hyperlane: system.is_hyperlane(),
-                planets,
-            })
+            let special_area = matches!(id, "82a" | "82b").then_some("nexus");
+            system_metadata(content, id, coord.q, coord.r, special_area)
         })
         .collect();
-    board.sort_by_key(|tile| (tile.q, tile.r));
+    board.sort_by_key(|tile| (tile.special_area.is_some(), tile.q, tile.r));
+    for id in ["82a", "82b"] {
+        if !board.iter().any(|tile| tile.system == id)
+            && let Some(tile) = system_metadata(content, id, 0, 0, Some("nexus"))
+        {
+            board.push(tile);
+        }
+    }
+    board.extend(
+        ti4_engine::fracture::systems(content, FULL)
+            .into_iter()
+            .enumerate()
+            .filter_map(|(index, id)| {
+                system_metadata(
+                    content,
+                    id.as_str(),
+                    i32::try_from(index).ok()?,
+                    0,
+                    Some("fracture"),
+                )
+            }),
+    );
     board
+}
+
+fn system_metadata(
+    content: &ContentStore,
+    id: &str,
+    q: i32,
+    r: i32,
+    special_area: Option<&str>,
+) -> Option<BoardTile> {
+    let system = ti4_content::galaxy::system(content, id, FULL)?;
+    let planets = system
+        .planets()
+        .into_iter()
+        .filter_map(|planet_id| ti4_content::galaxy::planet(content, planet_id, FULL))
+        .map(|planet| PlanetMeta {
+            id: planet.id().to_owned(),
+            label: planet.name().unwrap_or(planet.id()).to_owned(),
+            resources: planet.resources(),
+            influence: planet.influence(),
+            traits: planet.traits().into_iter().map(str::to_owned).collect(),
+            tech_specialties: planet
+                .tech_specialties()
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
+            legendary: planet.is_legendary(),
+            space_station: planet.is_space_station(),
+        })
+        .collect();
+    let anomalies = [
+        (system.is_nebula(), "nebula"),
+        (system.is_supernova(), "supernova"),
+        (system.is_asteroid_field(), "asteroid field"),
+        (system.is_gravity_rift(), "gravity rift"),
+        (system.is_scar(), "entropic scar"),
+    ]
+    .into_iter()
+    .filter(|(present, _)| *present)
+    .map(|(_, kind)| kind.to_owned())
+    .collect();
+    Some(BoardTile {
+        system: id.to_owned(),
+        label: system.name().unwrap_or(id).to_owned(),
+        q,
+        r,
+        hyperlane: system.is_hyperlane(),
+        special_area: special_area.map(str::to_owned),
+        anomalies,
+        wormholes: system.wormholes().into_iter().map(str::to_owned).collect(),
+        egress: special_area == Some("fracture")
+            && system
+                .name()
+                .is_some_and(|name| name.to_ascii_lowercase().contains("egress")),
+        planets,
+    })
 }
 
 fn planet_catalog(content: &ContentStore) -> Vec<PlanetMeta> {
@@ -1915,7 +1977,7 @@ main{display:grid;grid-template-columns:2fr 1fr;gap:12px;padding:12px}section{ba
 button,input{background:#1c304a;color:#fff;border:1px solid #5b7da1;border-radius:5px;padding:6px}pre{white-space:pre-wrap;word-break:break-word;max-height:500px;overflow:auto}
 .player{border-left:7px solid var(--pc);background:#0b1625;padding:8px;margin:8px 0;border-radius:6px}.player h4{margin:0 0 6px}.stats{display:flex;flex-wrap:wrap;gap:5px}.stat,.chip{background:#1a2b42;border-radius:5px;padding:3px 6px}.sheet{margin-top:6px}.sheet b{color:var(--pc)}.chips{display:flex;flex-wrap:wrap;gap:4px;margin:3px 0 7px}.chip{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--pc) 55%,transparent)}.objective,.action{background:#0b1625;border:1px solid #29415f;border-radius:6px;padding:7px;margin:5px 0}.objective small,.action small{color:#afbdd0}
 </style></head><body><header><button onclick="move(-1)">Previous</button> <input id="frame" type="range" min="0" max="0" value="0" oninput="show(+this.value)"> <button onclick="move(1)">Next</button> <b id="where"></b></header>
-<main><section><div class="legend">Thick outer edge = exclusive space control. Thin inner edge = planet control and is split when ownership is mixed. Planet fill = planet owner. Planet labels: resources/influence · C/H/I trait · B/G/R/Y specialty · ★ legendary · S station · × destroyed. Gray units are neutral; red slash = damaged; yellow ring = galvanized.</div><svg id="board" viewBox="-600 -500 1200 1000"></svg></section><section><h3>Current policy profiles</h3><div id="policy"></div><h3>Open objectives</h3><div id="objectives"></div><h3>Latest completed action</h3><div id="action"></div><h3>Table state</h3><div id="table-state"></div><h3>Player sheets</h3><div id="players"></div><h3>Decision</h3><div id="decision"></div><h3>Events</h3><pre id="events"></pre></section></main>
+<main><section><div class="legend">Thick outer edge = exclusive space control. Thin inner edge = planet control and is split when ownership is mixed. Planet fill = planet owner. Wormholes use lettered rings; a white outer rim marks a placed token and a red slash marks a suppressed wormhole. IN/OUT portals connect the galaxy and Fracture. Planet labels: resources/influence · C/H/I trait · B/G/R/Y specialty · ★ legendary · S station · × destroyed. Gray units are neutral; red slash = damaged; yellow ring = galvanized.</div><svg id="board" viewBox="-600 -500 1200 1000"></svg></section><section><h3>Current policy profiles</h3><div id="policy"></div><h3>Open objectives</h3><div id="objectives"></div><h3>Latest completed action</h3><div id="action"></div><h3>Table state</h3><div id="table-state"></div><h3>Player sheets</h3><div id="players"></div><h3>Decision</h3><div id="decision"></div><h3>Events</h3><pre id="events"></pre></section></main>
 <script>const session=__SESSION_DATA__,objectiveMeta=__OBJECTIVE_META__,contentMeta=__CONTENT_META__;const slider=document.querySelector('#frame');slider.max=session.frames.length-1;let at=0;
 const colors=['#e04242','#428eeb','#f2c638','#36b874','#ad67e0','#ee7e31'];
 const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
@@ -1936,18 +1998,25 @@ function decisionCards(f){if(!f.decisions.length)return 'No policy decision on t
 function move(n){show(Math.max(0,Math.min(session.frames.length-1,at+n)))}
 function show(i){at=i;slider.value=i;const f=session.frames[i];document.querySelector('#where').textContent=` frame ${i} · step ${f.engine_step} · round ${f.round} · ${f.phase}`;drawDynamic(f);document.querySelector('#policy').innerHTML=policySummary();document.querySelector('#objectives').innerHTML=objectives(f);document.querySelector('#action').innerHTML=actionSummary(i);document.querySelector('#table-state').innerHTML=tableState(f);document.querySelector('#players').innerHTML=f.state.players.map(p=>playerCard(p,f)).join('');document.querySelector('#decision').innerHTML=decisionCards(f);document.querySelector('#events').textContent=f.new_events.join('\n')||'—'}
 const ns='http://www.w3.org/2000/svg';function el(tag,attrs={},text=''){const n=document.createElementNS(ns,tag);for(const[k,v]of Object.entries(attrs))n.setAttribute(k,v);if(text)n.textContent=text;return n}
-function kind(id){id=String(id).toLowerCase();for(const k of ['war_sun','space_dock','dreadnought','destroyer','flagship','carrier','cruiser','fighter','infantry','mech','pds'])if(id.includes(k))return k;return id}
-function unit(svg,x,y,u,count){const c=colorOf(u.owner),k=kind(u.type_id),s=7;let n;if(k==='fighter')n=el('polygon',{points:`${x},${y-s} ${x-s},${y+s} ${x+s},${y+s}`,fill:c});else if(k==='destroyer')n=el('polygon',{points:`${x},${y-s} ${x+s},${y} ${x},${y+s} ${x-s},${y}`,fill:c});else if(k==='carrier'||k==='space_dock')n=el('rect',{x:x-s*1.4,y:y-s*.65,width:s*2.8,height:s*1.3,rx:2,fill:c});else if(k==='cruiser'||k==='pds')n=el('rect',{x:x-s,y:y-s,width:s*2,height:s*2,fill:c});else if(k==='dreadnought'||k==='mech')n=el('polygon',{points:Array.from({length:k==='mech'?5:6},(_,i)=>{const a=Math.PI*2*i/(k==='mech'?5:6)-Math.PI/2;return `${x+s*Math.cos(a)},${y+s*Math.sin(a)}`}).join(' '),fill:c});else n=el('circle',{cx:x,cy:y,r:k==='war_sun'?s*1.4:s,fill:c});n.setAttribute('stroke','#07101a');n.setAttribute('stroke-width','2');svg.appendChild(n);if(u.galvanized)svg.appendChild(el('circle',{cx:x,cy:y,r:s*1.7,fill:'none',stroke:'#ffd84d','stroke-width':2}));if(u.sustained_damage)svg.appendChild(el('line',{x1:x-s,y1:y+s,x2:x+s,y2:y-s,stroke:'#ff3030','stroke-width':3}));svg.appendChild(el('text',{x,y:y+17,'font-size':8},`${k.slice(0,2)}×${count}`))}
-function draw(f){const svg=document.querySelector('#board');svg.innerHTML='';for(const t of session.board){const x=150*(t.q+t.r/2),y=130*t.r,pts=[];for(let k=0;k<6;k++){const a=Math.PI/6+Math.PI/3*k;pts.push(`${x+72*Math.cos(a)},${y+72*Math.sin(a)}`)}const state=f.state.board[t.system]||{units:[],planet_control:{},planet_units:{},command_tokens:[]};const groundKinds=['infantry','mech','pds','space_dock'];const owners=[...new Set(state.units.filter(u=>!groundKinds.includes(kind(u.type_id))).map(u=>u.owner))];const tile=el('polygon',{points:pts.join(' '),class:t.hyperlane?'tile hyper':'tile'});if(owners.length===1){tile.setAttribute('stroke',colorOf(owners[0]));tile.setAttribute('stroke-width','8')}svg.appendChild(tile);svg.appendChild(el('text',{x,y:y-53},t.label));const groups=new Map;for(const u of state.units){const key=[u.owner,kind(u.type_id),u.sustained_damage,u.galvanized].join('|');if(!groups.has(key))groups.set(key,{u,count:0});groups.get(key).count++}let gi=0;for(const {u,count} of groups.values()){unit(svg,x+(gi%5-2)*24,y-28+Math.floor(gi/5)*25,u,count);gi++}const pc=t.planets.length;for(let pi=0;pi<pc;pi++){const p=t.planets[pi],px=x+(pc===1?0:(pi-(pc-1)/2)*45),py=y+34,owner=state.planet_control?.[p.id],c=owner?colorOf(owner):'#5b6069';svg.appendChild(el('circle',{cx:px,cy:py,r:20,fill:c,stroke:owner?c:'#89919e','stroke-width':3}));svg.appendChild(el('text',{x:px,y:py-3,'font-size':9},`${p.resources}/${p.influence}`));const traits=(p.traits||[]).map(v=>v[0]).join(''),tech=(p.tech_specialties||[]).map(v=>({propulsion:'B',biotic:'G',warfare:'R',cybernetic:'Y'}[v.toLowerCase()]||'T')).join('');svg.appendChild(el('text',{x:px,y:py+9,'font-size':8},`${traits}${traits&&tech?'·':''}${tech}`));svg.appendChild(el('text',{x:px,y:py+31,'font-size':8},`${p.legendary?'★':''}${p.label}`));const ground=state.planet_units?.[p.id]||[];const gg=new Map;for(const u of ground){const key=[u.owner,kind(u.type_id),u.sustained_damage,u.galvanized].join('|');if(!gg.has(key))gg.set(key,{u,count:0});gg.get(key).count++}let ui=0;for(const {u,count} of gg.values()){unit(svg,px-10+ui*20,py-17,u,count);ui++}}for(let ci=0;ci<(state.command_tokens||[]).length;ci++)svg.appendChild(el('circle',{cx:x-52+ci*13,cy:y+55,r:5,fill:colorOf(state.command_tokens[ci]),stroke:'#fff'}))}}
+function kind(id){id=String(id).toLowerCase();if(id==='nowarsun')return id;for(const k of ['warsun','spacedock','dreadnought','destroyer','flagship','carrier','cruiser','fighter','infantry','mech','pds'])if(id.includes(k))return k;return id}
+function unit(svg,x,y,u,count){const c=colorOf(u.owner),k=kind(u.type_id),s=7;let n;if(k==='fighter')n=el('polygon',{points:`${x},${y-s} ${x-s},${y+s} ${x+s},${y+s}`,fill:c});else if(k==='destroyer')n=el('polygon',{points:`${x},${y-s} ${x+s},${y} ${x},${y+s} ${x-s},${y}`,fill:c});else if(k==='carrier'||k==='spacedock')n=el('rect',{x:x-s*1.4,y:y-s*.65,width:s*2.8,height:s*1.3,rx:2,fill:c});else if(k==='cruiser'||k==='pds')n=el('rect',{x:x-s,y:y-s,width:s*2,height:s*2,fill:c});else if(k==='dreadnought'||k==='mech')n=el('polygon',{points:Array.from({length:k==='mech'?5:6},(_,i)=>{const a=Math.PI*2*i/(k==='mech'?5:6)-Math.PI/2;return `${x+s*Math.cos(a)},${y+s*Math.sin(a)}`}).join(' '),fill:c});else n=el('circle',{cx:x,cy:y,r:k==='warsun'?s*1.4:s,fill:c});n.setAttribute('stroke','#07101a');n.setAttribute('stroke-width','2');svg.appendChild(n);if(u.galvanized)svg.appendChild(el('circle',{cx:x,cy:y,r:s*1.7,fill:'none',stroke:'#ffd84d','stroke-width':2}));if(u.sustained_damage)svg.appendChild(el('line',{x1:x-s,y1:y+s,x2:x+s,y2:y-s,stroke:'#ff3030','stroke-width':3}));svg.appendChild(el('text',{x,y:y+17,'font-size':8},`${k.slice(0,2)}×${count}`))}
+function draw(f){const svg=document.querySelector('#board');svg.innerHTML='';for(const t of session.board){const x=150*(t.q+t.r/2),y=130*t.r,pts=[];for(let k=0;k<6;k++){const a=Math.PI/6+Math.PI/3*k;pts.push(`${x+72*Math.cos(a)},${y+72*Math.sin(a)}`)}const state=f.state.board[t.system]||{units:[],planet_control:{},planet_units:{},command_tokens:[]};const groundKinds=['infantry','mech','pds','spacedock'];const owners=[...new Set(state.units.filter(u=>!groundKinds.includes(kind(u.type_id))).map(u=>u.owner))];const tile=el('polygon',{points:pts.join(' '),class:t.hyperlane?'tile hyper':'tile'});if(owners.length===1){tile.setAttribute('stroke',colorOf(owners[0]));tile.setAttribute('stroke-width','8')}svg.appendChild(tile);svg.appendChild(el('text',{x,y:y-53},t.label));const groups=new Map;for(const u of state.units){const key=[u.owner,kind(u.type_id),u.sustained_damage,u.galvanized].join('|');if(!groups.has(key))groups.set(key,{u,count:0});groups.get(key).count++}let gi=0;for(const {u,count} of groups.values()){unit(svg,x+(gi%5-2)*24,y-28+Math.floor(gi/5)*25,u,count);gi++}const pc=t.planets.length;for(let pi=0;pi<pc;pi++){const p=t.planets[pi],px=x+(pc===1?0:(pi-(pc-1)/2)*45),py=y+34,owner=state.planet_control?.[p.id],c=owner?colorOf(owner):'#5b6069';svg.appendChild(el('circle',{cx:px,cy:py,r:20,fill:c,stroke:owner?c:'#89919e','stroke-width':3}));svg.appendChild(el('text',{x:px,y:py-3,'font-size':9},`${p.resources}/${p.influence}`));const traits=(p.traits||[]).map(v=>v[0]).join(''),tech=(p.tech_specialties||[]).map(v=>({propulsion:'B',biotic:'G',warfare:'R',cybernetic:'Y'}[v.toLowerCase()]||'T')).join('');svg.appendChild(el('text',{x:px,y:py+9,'font-size':8},`${traits}${traits&&tech?'·':''}${tech}`));svg.appendChild(el('text',{x:px,y:py+31,'font-size':8},`${p.legendary?'★':''}${p.label}`));const ground=state.planet_units?.[p.id]||[];const gg=new Map;for(const u of ground){const key=[u.owner,kind(u.type_id),u.sustained_damage,u.galvanized].join('|');if(!gg.has(key))gg.set(key,{u,count:0});gg.get(key).count++}let ui=0;for(const {u,count} of gg.values()){unit(svg,px-10+ui*20,py-17,u,count);ui++}}for(let ci=0;ci<(state.command_tokens||[]).length;ci++)svg.appendChild(el('circle',{cx:x-52+ci*13,cy:y+55,r:5,fill:colorOf(state.command_tokens[ci]),stroke:'#fff'}))}}
+function anomalyStyle(kinds){const values=list(kinds);if(values.includes('entropic scar'))return['#4a2025','SCAR'];if(values.includes('supernova'))return['#6b271a','SUPERNOVA'];if(values.includes('gravity rift'))return['#38235f','GRAVITY RIFT'];if(values.includes('nebula'))return['#173f57','NEBULA'];if(values.includes('asteroid field'))return['#3f3b35','ASTEROIDS'];return null}
+function wormholeStyle(kind){switch(String(kind).toLowerCase()){case'alpha':return['#2da8ff','α'];case'beta':return['#ff7bc8','β'];case'gamma':return['#7fe35b','γ'];case'delta':return['#ffb24a','δ'];default:return['#aeb8c7',String(kind).slice(0,1).toUpperCase()]}}
+function wormholeBadge(svg,x,y,kind,token=false,suppressed=false){const[color,symbol]=wormholeStyle(kind);if(token)svg.appendChild(el('circle',{cx:x,cy:y,r:10,fill:'none',stroke:'#f5f7fb','stroke-width':3}));svg.appendChild(el('circle',{cx:x,cy:y,r:8,fill:'#08111d',stroke:color,'stroke-width':3}));svg.appendChild(el('text',{x,y:y+4,'font-size':11,fill:color},symbol));if(suppressed)svg.appendChild(el('line',{x1:x-9,y1:y+9,x2:x+9,y2:y-9,stroke:'#ff3f4a','stroke-width':3}))}
+function fracturePortal(svg,x,y,ingress){const color=ingress?'#43d8e8':'#ba73ee',label=ingress?'IN':'OUT',g=el('g',{class:`portal ${ingress?'ingress':'egress'}`});g.appendChild(el('circle',{cx:x,cy:y,r:13,fill:'#08111d',stroke:color,'stroke-width':4}));g.appendChild(el('circle',{cx:x,cy:y,r:8,fill:'none',stroke:color,'stroke-width':1.5}));g.appendChild(el('text',{x,y:y+3,'font-size':7,fill:color},label));svg.appendChild(g)}
 function drawDynamic(f){
- const svg=document.querySelector('#board');svg.innerHTML='';
+ const svg=document.querySelector('#board');svg.innerHTML='';const fractureVisible=!!f.state.fracture_in_play,mainYOffset=fractureVisible?-85:0;
+ if(fractureVisible)svg.appendChild(el('text',{x:0,y:330,'font-size':13,fill:'#43d8e8'},'THE FRACTURE · SPECIAL AREA'));
  for(const t of session.board){
-  const x=150*(t.q+t.r/2),y=130*t.r,pts=[];for(let k=0;k<6;k++){const a=Math.PI/6+Math.PI/3*k;pts.push(`${x+72*Math.cos(a)},${y+72*Math.sin(a)}`)}
-  const state=f.state.board[t.system]||{units:[],planet_control:{},planet_units:{},command_tokens:[],purged_planets:[],coexisting:{}},purgedSystem=list(f.state.purged_systems).includes(t.system),planets=planetsIn(t,f);
-  const groundKinds=['infantry','mech','pds','space_dock'],owners=[...new Set(state.units.filter(u=>!groundKinds.includes(kind(u.type_id))).map(u=>u.owner))];
-  const tile=el('polygon',{points:pts.join(' '),class:t.hyperlane?'tile hyper':'tile'});if(purgedSystem)tile.setAttribute('fill','#18181c');if(owners.length===1){tile.setAttribute('stroke',colorOf(owners[0]));tile.setAttribute('stroke-width','8')}svg.appendChild(tile);const planetOwners=[...new Set(planets.filter(p=>!list(state.purged_planets).includes(p.id)).map(p=>state.planet_control?.[p.id]).filter(Boolean))];const inner=pts.map(point=>{const[a,b]=point.split(',').map(Number);return `${x+(a-x)*.92},${y+(b-y)*.92}`});if(planetOwners.length===1)svg.appendChild(el('polygon',{points:inner.join(' '),fill:'none',stroke:colorOf(planetOwners[0]),'stroke-width':3}));else if(planetOwners.length>1)for(let edge=0;edge<inner.length;edge++){const[a,b]=inner[edge].split(','),[c,d]=inner[(edge+1)%inner.length].split(',');svg.appendChild(el('line',{x1:a,y1:b,x2:c,y2:d,stroke:colorOf(planetOwners[edge%planetOwners.length]),'stroke-width':4}))}svg.appendChild(el('text',{x,y:y-53},`${t.label}${purgedSystem?' · PURGED':''}`));
+  if(t.special_area==='fracture'&&!fractureVisible)continue;if(t.special_area==='nexus'&&!f.state.board[t.system])continue;
+  let x,y;if(t.special_area==='fracture'){x=(t.q-3)*125;y=420}else if(t.special_area==='nexus'){x=-500;y=420}else{x=150*(t.q+t.r/2);y=130*t.r+mainYOffset}const pts=[];for(let k=0;k<6;k++){const a=Math.PI/6+Math.PI/3*k;pts.push(`${x+72*Math.cos(a)},${y+72*Math.sin(a)}`)}
+  const state=f.state.board[t.system]||{units:[],planet_control:{},planet_units:{},command_tokens:[],purged_planets:[],coexisting:{}},purgedSystem=list(f.state.purged_systems).includes(t.system),planets=planetsIn(t,f),anomaly=anomalyStyle(t.anomalies);
+  const groundKinds=['infantry','mech','pds','spacedock'],owners=[...new Set(state.units.filter(u=>!groundKinds.includes(kind(u.type_id))).map(u=>u.owner))];
+  const tile=el('polygon',{points:pts.join(' '),class:t.hyperlane?'tile hyper':'tile'});if(purgedSystem)tile.setAttribute('fill','#18181c');else if(t.special_area==='fracture')tile.setAttribute('fill','#112f39');else if(t.special_area==='nexus')tile.setAttribute('fill','#29304d');else if(anomaly)tile.setAttribute('fill',anomaly[0]);if(owners.length===1){tile.setAttribute('stroke',colorOf(owners[0]));tile.setAttribute('stroke-width','8')}svg.appendChild(tile);const planetOwners=[...new Set(planets.filter(p=>!list(state.purged_planets).includes(p.id)).map(p=>state.planet_control?.[p.id]).filter(Boolean))];const inner=pts.map(point=>{const[a,b]=point.split(',').map(Number);return `${x+(a-x)*.92},${y+(b-y)*.92}`});if(planetOwners.length===1)svg.appendChild(el('polygon',{points:inner.join(' '),fill:'none',stroke:colorOf(planetOwners[0]),'stroke-width':3}));else if(planetOwners.length>1)for(let edge=0;edge<inner.length;edge++){const[a,b]=inner[edge].split(','),[c,d]=inner[(edge+1)%inner.length].split(',');svg.appendChild(el('line',{x1:a,y1:b,x2:c,y2:d,stroke:colorOf(planetOwners[edge%planetOwners.length]),'stroke-width':4}))}svg.appendChild(el('text',{x,y:y-53},`${t.label}${purgedSystem?' · PURGED':''}`));if(anomaly)svg.appendChild(el('text',{x,y:y-39,'font-size':8,fill:'#ffd9a0'},anomaly[1]));
   const groups=new Map;for(const u of state.units){const key=[u.owner,kind(u.type_id),u.sustained_damage,u.galvanized].join('|');if(!groups.has(key))groups.set(key,{u,count:0});groups.get(key).count++}let gi=0;for(const {u,count} of groups.values()){unit(svg,x+(gi%5-2)*24,y-28+Math.floor(gi/5)*25,u,count);gi++}
-  const tokens=[];if(list(f.state.frontier_tokens).includes(t.system))tokens.push('Frontier');for(const[k,s]of Object.entries(f.state.wormhole_tokens||{}))if(s===t.system)tokens.push(`${k} WH`);if(f.state.ion_storm?.[0]===t.system)tokens.push(`Ion ${f.state.ion_storm[1]}`);if(list(f.state.ingress_tokens).includes(t.system))tokens.push('Ingress');if(list(f.state.breach_tokens).includes(t.system))tokens.push('Breach');if(f.state.thunders_edge_system===t.system)tokens.push("Thunder's Edge");if(tokens.length)svg.appendChild(el('text',{x,y:y+59,'font-size':8,fill:'#81dded'},tokens.join(' · ')));
+  const travelBan=Object.prototype.hasOwnProperty.call(f.state.laws||{},'travel_ban'),nexusBan=t.special_area==='nexus'&&String(f.state.laws?.nexus||'').toLowerCase()==='for';let wi=0;for(const wh of list(t.wormholes)){wormholeBadge(svg,x-43+wi*20,y-18,wh,false,(travelBan||nexusBan)&&['alpha','beta'].includes(String(wh).toLowerCase()));wi++}for(const[k,s]of Object.entries(f.state.wormhole_tokens||{}))if(s===t.system){wormholeBadge(svg,x-43+wi*20,y-18,k,true,travelBan&&['alpha','beta'].includes(String(k).toLowerCase()));wi++}if(f.state.ion_storm?.[0]===t.system)wormholeBadge(svg,x-43+wi*20,y-18,f.state.ion_storm[1],true,travelBan&&['alpha','beta'].includes(String(f.state.ion_storm[1]).toLowerCase()));if(list(f.state.ingress_tokens).includes(t.system))fracturePortal(svg,x+46,y+41,true);if(t.egress)fracturePortal(svg,x+46,y+41,false);
+  const tokens=[];if(list(f.state.frontier_tokens).includes(t.system))tokens.push('Frontier');if(list(f.state.breach_tokens).includes(t.system))tokens.push('Breach');if(f.state.thunders_edge_system===t.system)tokens.push("Thunder's Edge");if(tokens.length)svg.appendChild(el('text',{x,y:y+59,'font-size':8,fill:'#81dded'},tokens.join(' · ')));
   const pc=planets.length;for(let pi=0;pi<pc;pi++){const p=planets[pi],px=x+(pc===1?0:(pi-(pc-1)/2)*45),py=y+34,owner=state.planet_control?.[p.id],purged=list(state.purged_planets).includes(p.id),c=purged?'#26262a':owner?colorOf(owner):'#5b6069';svg.appendChild(el('circle',{cx:px,cy:py,r:20,fill:c,stroke:owner&&!purged?c:'#89919e','stroke-width':3}));svg.appendChild(el('text',{x:px,y:py-3,'font-size':9},`${p.resources}/${p.influence}`));const traits=(p.traits||[]).map(v=>v[0]).join(''),tech=(p.tech_specialties||[]).map(v=>({propulsion:'B',biotic:'G',warfare:'R',cybernetic:'Y'}[v.toLowerCase()]||'T')).join('');svg.appendChild(el('text',{x:px,y:py+9,'font-size':8},`${traits}${traits&&tech?'·':''}${tech}`));const prefix=purged?'× ':p.space_station?'S ':p.legendary?'★':'';svg.appendChild(el('text',{x:px,y:py+31,'font-size':8},`${prefix}${p.label}`));const attachments=list(f.state.planet_attachments?.[p.id]);if(attachments.length)svg.appendChild(el('text',{x:px+18,y:py-17,'font-size':8,fill:'#ffd84d'},`+${attachments.length}`));const coexist=list(state.coexisting?.[p.id]);for(let ci=0;ci<coexist.length;ci++){const a=Math.PI*2*ci/coexist.length;svg.appendChild(el('circle',{cx:px+25*Math.cos(a),cy:py+25*Math.sin(a),r:4,fill:colorOf(coexist[ci]),stroke:'#fff'}))}const ground=state.planet_units?.[p.id]||[];const gg=new Map;for(const u of ground){const key=[u.owner,kind(u.type_id),u.sustained_damage,u.galvanized].join('|');if(!gg.has(key))gg.set(key,{u,count:0});gg.get(key).count++}let ui=0;for(const {u,count} of gg.values()){unit(svg,px-10+ui*20,py-17,u,count);ui++}}
   for(let ci=0;ci<(state.command_tokens||[]).length;ci++)svg.appendChild(el('circle',{cx:x-52+ci*13,cy:y+55,r:5,fill:colorOf(state.command_tokens[ci]),stroke:'#fff'}));
  }
@@ -2364,6 +2433,10 @@ mod tests {
         assert!(html.contains("Thick outer edge = exclusive space control"));
         assert!(html.contains("function playerCard"));
         assert!(html.contains("function drawDynamic"));
+        assert!(html.contains("function anomalyStyle"));
+        assert!(html.contains("function wormholeBadge"));
+        assert!(html.contains("function fracturePortal"));
+        assert!(html.contains("THE FRACTURE · SPECIAL AREA"));
         assert!(html.contains("function tableState"));
         assert!(html.contains("function policySummary"));
         assert!(html.contains("Current policy profiles"));
@@ -2392,5 +2465,61 @@ mod tests {
         assert!(planet.tech_specialties.is_empty());
         assert!(!planet.legendary);
         assert!(!planet.space_station);
+    }
+
+    #[test]
+    fn old_board_metadata_defaults_special_system_visual_fields() {
+        let tile: BoardTile = serde_json::from_value(serde_json::json!({
+            "system": "42",
+            "label": "Nebula",
+            "q": 0,
+            "r": 0,
+            "hyperlane": false,
+            "planets": []
+        }))
+        .unwrap();
+        assert_eq!(tile.special_area, None);
+        assert!(tile.anomalies.is_empty());
+        assert!(tile.wormholes.is_empty());
+        assert!(!tile.egress);
+    }
+
+    #[test]
+    fn current_system_metadata_preserves_anomalies_wormholes_and_special_areas() {
+        let content = ContentStore::embedded();
+        let nebula = system_metadata(content, "42", 0, 0, None).unwrap();
+        assert_eq!(nebula.anomalies, ["nebula"]);
+
+        let alpha = system_metadata(content, "39", 0, 0, None).unwrap();
+        assert_eq!(alpha.wormholes, ["ALPHA"]);
+
+        let egress = system_metadata(content, "fracture2", 0, 0, Some("fracture")).unwrap();
+        assert_eq!(egress.special_area.as_deref(), Some("fracture"));
+        assert!(egress.egress);
+
+        let nexus = system_metadata(content, "82b", 0, 0, Some("nexus")).unwrap();
+        assert_eq!(nexus.special_area.as_deref(), Some("nexus"));
+        assert_eq!(nexus.wormholes, ["ALPHA", "BETA", "GAMMA"]);
+    }
+
+    #[test]
+    fn replay_metadata_carries_detached_special_areas_before_they_enter_play() {
+        let content = ContentStore::embedded();
+        let galaxy = ti4_content::galaxy::Galaxy::placed(
+            content,
+            &[("18", ti4_model::hex::Hex::ORIGIN)],
+            FULL,
+        )
+        .unwrap();
+        let board = board_metadata(content, &galaxy);
+        assert!(board.iter().any(|tile| tile.system == "82a"));
+        assert!(board.iter().any(|tile| tile.system == "82b"));
+        assert_eq!(
+            board
+                .iter()
+                .filter(|tile| tile.special_area.as_deref() == Some("fracture"))
+                .count(),
+            7
+        );
     }
 }

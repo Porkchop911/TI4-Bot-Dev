@@ -19,6 +19,19 @@ use crate::{
 };
 
 const STEPS_PER_UI_FRAME: usize = 128;
+
+/// The floor and ceiling on the adaptive autosave interval, in engine steps.
+///
+/// The floor keeps a short review saving often enough to be worth having. The ceiling stops a very
+/// expensive save from pushing the next one so far out that a crash loses the run.
+const AUTOSAVE_MIN_STEPS: usize = 1024;
+const AUTOSAVE_MAX_STEPS: usize = 65_536;
+
+/// The share of running time autosaving is allowed to take.
+///
+/// Ten means a save that took one second buys ten seconds of play before the next, so the cost
+/// stays proportional to the run rather than to the run squared.
+const AUTOSAVE_DUTY: u32 = 10;
 const SETTINGS_PATH: &str = "out/reviews/reviewer-settings.json";
 const MAX_SETTINGS_BYTES: u64 = 64 * 1024;
 
@@ -157,6 +170,90 @@ fn polygon(center: Pos2, radius: f32, sides: usize, offset: f32) -> Vec<Pos2> {
             center + Vec2::angled(angle) * radius
         })
         .collect()
+}
+
+fn anomaly_style(kinds: &[String]) -> Option<(Color32, &'static str)> {
+    if kinds.iter().any(|kind| kind == "entropic scar") {
+        Some((Color32::from_rgb(48, 24, 64), "╳ SCAR"))
+    } else if kinds.iter().any(|kind| kind == "supernova") {
+        Some((Color32::from_rgb(105, 38, 20), "✹ NOVA"))
+    } else if kinds.iter().any(|kind| kind == "gravity rift") {
+        Some((Color32::from_rgb(50, 28, 82), "◉ RIFT"))
+    } else if kinds.iter().any(|kind| kind == "nebula") {
+        Some((Color32::from_rgb(55, 45, 91), "☁ NEBULA"))
+    } else if kinds.iter().any(|kind| kind == "asteroid field") {
+        Some((Color32::from_rgb(67, 61, 52), "✦ ASTEROIDS"))
+    } else {
+        None
+    }
+}
+
+fn wormhole_style(kind: &str) -> (Color32, &str) {
+    match kind.to_ascii_uppercase().as_str() {
+        "ALPHA" => (Color32::from_rgb(225, 82, 82), "α"),
+        "BETA" => (Color32::from_rgb(72, 190, 111), "β"),
+        "GAMMA" => (Color32::from_rgb(230, 184, 68), "γ"),
+        "DELTA" => (Color32::from_rgb(100, 154, 238), "δ"),
+        _ => (Color32::LIGHT_GRAY, "?"),
+    }
+}
+
+fn draw_wormhole(
+    painter: &egui::Painter,
+    center: Pos2,
+    kind: &str,
+    token: bool,
+    suppressed: bool,
+    scale: f32,
+) {
+    let (mut color, symbol) = wormhole_style(kind);
+    if suppressed {
+        color = color.gamma_multiply(0.35);
+    }
+    let radius = 7.2 * scale.max(0.75);
+    if token {
+        painter.circle_filled(center, radius + 2.2 * scale, Color32::from_rgb(13, 20, 30));
+        painter.circle_stroke(
+            center,
+            radius + 2.2 * scale,
+            Stroke::new(1.3 * scale, Color32::WHITE),
+        );
+    }
+    painter.circle_stroke(center, radius, Stroke::new(2.1 * scale, color));
+    painter.text(
+        center,
+        Align2::CENTER_CENTER,
+        symbol,
+        FontId::proportional(10.0 * scale.max(0.8)),
+        color,
+    );
+    if suppressed {
+        painter.line_segment(
+            [
+                center + Vec2::new(-radius, radius),
+                center + Vec2::new(radius, -radius),
+            ],
+            Stroke::new(1.8 * scale, Color32::LIGHT_RED),
+        );
+    }
+}
+
+fn draw_fracture_portal(painter: &egui::Painter, center: Pos2, ingress: bool, scale: f32) {
+    let color = if ingress {
+        Color32::from_rgb(71, 220, 225)
+    } else {
+        Color32::from_rgb(190, 105, 235)
+    };
+    let radius = 8.5 * scale.max(0.75);
+    painter.circle_stroke(center, radius, Stroke::new(2.4 * scale, color));
+    painter.circle_stroke(center, radius * 0.55, Stroke::new(1.3 * scale, color));
+    painter.text(
+        center,
+        Align2::CENTER_CENTER,
+        if ingress { "IN" } else { "OUT" },
+        FontId::monospace(5.2 * scale.max(0.9)),
+        Color32::WHITE,
+    );
 }
 
 fn draw_unit_symbol(
@@ -374,6 +471,21 @@ struct ReviewApp {
     run_target: Option<RunTarget>,
     command_steps: usize,
     autosave: Option<PathBuf>,
+    /// The step count at which the running command may autosave again.
+    ///
+    /// A fixed interval is what made a long review crawl and then appear to hang. `save_session`
+    /// validates every frame, serialises every frame's whole `GameState` into one buffer and writes
+    /// the lot, so one autosave costs O(frames); firing that on a fixed step interval makes a run
+    /// O(frames^2). By two thousand frames the session is hundreds of megabytes and a single
+    /// autosave blocks the UI thread for seconds -- low CPU the whole time, because it is
+    /// serialisation and disk, which is exactly how it was reported.
+    ///
+    /// So the interval is set from what the last autosave actually cost: see
+    /// [`ReviewApp::autosave_now`]. Autosaving stays a bounded share of the run however long it gets,
+    /// and the file format is unchanged.
+    next_autosave_step: usize,
+    /// When the running command started, for the rate the budget above is spent against.
+    command_started: Option<std::time::Instant>,
     last_review: Option<PathBuf>,
     status: String,
     selected_tile: Option<String>,
@@ -400,6 +512,8 @@ impl ReviewApp {
             viewed: 0,
             run_target: None,
             command_steps: 0,
+            next_autosave_step: AUTOSAVE_MIN_STEPS,
+            command_started: None,
             autosave: None,
             last_review: settings.last_review.map(PathBuf::from),
             status: settings_error.map_or_else(
@@ -415,6 +529,45 @@ impl ReviewApp {
             .as_ref()
             .map(|live| &live.session)
             .or(self.replay.as_ref())
+    }
+
+    /// Lend the session to a `&mut self` method without copying it.
+    ///
+    /// The panels need `&mut self` for their own UI state while reading the session, which the
+    /// borrow checker will not allow directly. Cloning it to get around that is what `ui` used to
+    /// do, and it is ruinous here: a clone is a deep copy of every frame's whole `GameState`, so a
+    /// 1,800-frame review copied hundreds of megabytes *per repaint* -- which is why the window got
+    /// slower the longer a run went and why scrolling crawled.
+    ///
+    /// Moving it out and back costs two pointer writes. The session is restored on every path,
+    /// including when `act` panics, because it is put back by the guard's `Drop`.
+    fn with_session<R>(&mut self, act: impl FnOnce(&mut Self, &ReviewSession) -> R) -> Option<R> {
+        /// Whichever field the session was taken from, so it goes back to the same one.
+        enum Held {
+            Live(Box<LiveReview>),
+            Replay(Box<ReviewSession>),
+        }
+
+        // `LiveReview` moves whole rather than by its `session` field: `ReviewSession` is not
+        // `Default`, so there is nothing to leave behind in its place. Once it is out, it is an
+        // ordinary local -- borrowing it shared while `self` is borrowed mutably is disjoint, which
+        // is what makes this safe as well as cheap.
+        let held = match self.live.take() {
+            Some(live) => Held::Live(Box::new(live)),
+            None => Held::Replay(Box::new(self.replay.take()?)),
+        };
+        let result = {
+            let session = match &held {
+                Held::Live(live) => &live.session,
+                Held::Replay(session) => session,
+            };
+            act(self, session)
+        };
+        match held {
+            Held::Live(live) => self.live = Some(*live),
+            Held::Replay(session) => self.replay = Some(*session),
+        }
+        Some(result)
     }
 
     fn latest_index(&self) -> usize {
@@ -541,6 +694,15 @@ impl ReviewApp {
         }
     }
 
+    /// Start a running command's autosave budget over.
+    ///
+    /// Each command is timed on its own. Carrying the previous one's rate across would let a run
+    /// that was interrupted early set the interval for one that is not.
+    fn begin_autosave_budget(&mut self) {
+        self.command_started = Some(std::time::Instant::now());
+        self.next_autosave_step = AUTOSAVE_MIN_STEPS;
+    }
+
     fn autosave_now(&mut self) {
         let Some(path) = self.autosave.clone() else {
             return;
@@ -548,9 +710,37 @@ impl ReviewApp {
         let Some(session) = self.session() else {
             return;
         };
+        let started = std::time::Instant::now();
         if let Err(error) = save_session(&path, session) {
             self.status = format!("Autosave failed: {error}");
         }
+        let cost = started.elapsed();
+
+        // Buy back what the save cost, in steps, from the rate the run is actually managing. A
+        // cheap save on a short session keeps the floor interval; an expensive one on a long
+        // session earns a proportionally longer wait, which is what stops the quadratic blow-up.
+        let elapsed = self
+            .command_started
+            .map_or(cost, |at| at.elapsed())
+            .max(cost);
+        let steps_per_second = if elapsed.as_secs_f64() > 0.0 {
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "step counts are far below f64's exact-integer range"
+            )]
+            let steps = self.command_steps as f64;
+            steps / elapsed.as_secs_f64()
+        } else {
+            0.0
+        };
+        let budget = cost.as_secs_f64() * f64::from(AUTOSAVE_DUTY) * steps_per_second;
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "clamped into usize range on the next line"
+        )]
+        let interval = (budget as usize).clamp(AUTOSAVE_MIN_STEPS, AUTOSAVE_MAX_STEPS);
+        self.next_autosave_step = self.command_steps.saturating_add(interval);
     }
 
     fn save_as(&mut self) {
@@ -621,6 +811,7 @@ impl ReviewApp {
             remaining: count,
         });
         self.command_steps = 0;
+        self.begin_autosave_budget();
         self.status = format!("Running {count} {unit:?}(s)…");
     }
 
@@ -693,7 +884,7 @@ impl ReviewApp {
             }
         }
         if self.run_target.is_some() {
-            if self.command_steps % 1024 < STEPS_PER_UI_FRAME {
+            if self.command_steps >= self.next_autosave_step {
                 self.autosave_now();
             }
             context.request_repaint();
@@ -854,6 +1045,7 @@ impl ReviewApp {
                 {
                     self.run_target = Some(RunTarget::Round(round));
                     self.command_steps = 0;
+        self.begin_autosave_budget();
                     self.status = format!("Running to round {round}…");
                 }
                 if ui
@@ -862,6 +1054,7 @@ impl ReviewApp {
                 {
                     self.run_target = Some(RunTarget::End);
                     self.command_steps = 0;
+        self.begin_autosave_budget();
                     "Running to natural completion…".clone_into(&mut self.status);
                 }
                 if ui
@@ -1498,6 +1691,8 @@ impl ReviewApp {
                     ui.colored_label(Color32::LIGHT_RED, error);
                 }
                 egui::ScrollArea::vertical().show(ui, |ui| {
+                    // Walks back only as far as the last completed action, which is a handful of
+                    // frames in a running game, so this stays cheap however long the review is.
                     let action_summary = session.frames[..=frame.index]
                         .iter()
                         .rev()
@@ -1675,20 +1870,59 @@ impl ReviewApp {
                 }
             });
             ui.small(
-                "Thick outer edge = space control; thin inner edge = planet control (split when mixed). Planet: resources/influence · C/H/I trait · B/G/R/Y specialty · ★ legendary · S station · × destroyed. Gray units are neutral; red slash = damaged; yellow ring = galvanized.",
+                "Thick outer edge = space control; thin inner edge = planet control (split when mixed). Wormholes: lettered rings; white outer rim = placed token; red slash = suppressed. IN/OUT portals connect the galaxy to the Fracture. Planet: resources/influence · C/H/I trait · B/G/R/Y specialty · ★ legendary · S station · × destroyed. Gray units are neutral; red slash = damaged; yellow ring = galvanized.",
             );
             let available = ui.available_size();
             let (response, painter) = ui.allocate_painter(available, Sense::click());
-            let center = response.rect.center();
             let scale = (available.x / 1150.0)
                 .min(available.y / 900.0)
                 .clamp(0.45, 1.2);
+            let fracture_visible = frame.state.fracture_in_play;
+            let center = response.rect.center()
+                - Vec2::new(0.0, if fracture_visible { 72.0 * scale } else { 0.0 });
             let radius = 58.0 * scale;
+            if fracture_visible {
+                painter.text(
+                    Pos2::new(response.rect.center().x, response.rect.bottom() - 124.0 * scale),
+                    Align2::CENTER_CENTER,
+                    "THE FRACTURE · SPECIAL AREA",
+                    FontId::proportional(10.0 * scale.max(0.85)),
+                    Color32::from_rgb(205, 151, 239),
+                );
+            }
+            let selected_is_ingress = self.selected_tile.as_ref().is_some_and(|selected| {
+                frame.state.ingress_tokens.contains(&SystemId::new(selected))
+            });
+            let selected_is_egress = self.selected_tile.as_ref().is_some_and(|selected| {
+                session
+                    .board
+                    .iter()
+                    .any(|tile| tile.system == *selected && tile.egress)
+            });
             for tile in &session.board {
+                if tile.special_area.as_deref() == Some("fracture") && !fracture_visible {
+                    continue;
+                }
+                if tile.special_area.as_deref() == Some("nexus")
+                    && !frame.state.board.contains_key(&SystemId::new(&tile.system))
+                {
+                    continue;
+                }
                 let tile_planets = planets_for_tile(session, frame, tile);
-                let x = center.x + 126.0 * scale * (tile.q as f32 + tile.r as f32 / 2.0);
-                let y = center.y + 108.0 * scale * tile.r as f32;
-                let point = Pos2::new(x, y);
+                let point = match tile.special_area.as_deref() {
+                    Some("fracture") => Pos2::new(
+                        response.rect.center().x + (tile.q as f32 - 3.0) * 100.0 * scale,
+                        response.rect.bottom() - 61.0 * scale,
+                    ),
+                    Some("nexus") => Pos2::new(
+                        response.rect.left() + 72.0 * scale,
+                        response.rect.bottom() - 61.0 * scale,
+                    ),
+                    _ => Pos2::new(
+                        center.x + 126.0 * scale * (tile.q as f32 + tile.r as f32 / 2.0),
+                        center.y + 108.0 * scale * tile.r as f32,
+                    ),
+                };
                 let points: Vec<Pos2> = (0..6)
                     .map(|corner| {
                         let angle = std::f32::consts::FRAC_PI_6
@@ -1701,8 +1935,14 @@ impl ReviewApp {
                 let system_purged = frame.state.purged_systems.contains(&system_id);
                 let fill = if system_purged {
                     Color32::from_rgb(24, 24, 28)
+                } else if tile.special_area.as_deref() == Some("fracture") {
+                    Color32::from_rgb(39, 25, 57)
+                } else if tile.special_area.as_deref() == Some("nexus") {
+                    Color32::from_rgb(25, 48, 61)
                 } else if tile.hyperlane {
                     Color32::from_rgb(55, 39, 91)
+                } else if let Some((color, _)) = anomaly_style(&tile.anomalies) {
+                    color
                 } else if selected {
                     Color32::from_rgb(48, 91, 116)
                 } else {
@@ -1713,6 +1953,15 @@ impl ReviewApp {
                     fill,
                     Stroke::new(1.4, Color32::from_rgb(112, 152, 189)),
                 ));
+                if let Some((_, label)) = anomaly_style(&tile.anomalies) {
+                    painter.text(
+                        point + Vec2::new(0.0, -32.0 * scale),
+                        Align2::CENTER_CENTER,
+                        label,
+                        FontId::monospace(6.2 * scale.max(0.9)),
+                        Color32::from_rgb(239, 214, 178),
+                    );
+                }
                 let system_state = frame.state.board.get(&SystemId::new(&tile.system));
                 let mut space_owners: Vec<&PlayerId> = system_state
                     .into_iter()
@@ -1767,7 +2016,9 @@ impl ReviewApp {
                         );
                     }
                 }
-                if selected {
+                let portal_linked = (selected_is_ingress && tile.egress)
+                    || (selected_is_egress && frame.state.ingress_tokens.contains(&system_id));
+                if selected || portal_linked {
                     let inner: Vec<Pos2> = points
                         .iter()
                         .map(|corner| point + (*corner - point) * 0.91)
@@ -1785,6 +2036,70 @@ impl ReviewApp {
                     FontId::proportional(9.5 * scale.max(0.85)),
                     Color32::WHITE,
                 );
+
+                let alpha_beta_suppressed = ti4_engine::laws::wormholes_suppressed(&frame.state);
+                let nexus_suppressed = tile.special_area.as_deref() == Some("nexus")
+                    && ti4_engine::laws::nexus_wormholes_suppressed(&frame.state);
+                let mut wormhole_index = 0_usize;
+                for kind in &tile.wormholes {
+                    let suppressed = matches!(kind.as_str(), "ALPHA" | "BETA")
+                        && (alpha_beta_suppressed || nexus_suppressed);
+                    draw_wormhole(
+                        &painter,
+                        point + Vec2::new((-42.0 + wormhole_index as f32 * 18.0) * scale, -18.0 * scale),
+                        kind,
+                        false,
+                        suppressed,
+                        scale,
+                    );
+                    wormhole_index += 1;
+                }
+                for (kind, system) in &frame.state.wormhole_tokens {
+                    if system != &system_id {
+                        continue;
+                    }
+                    let suppressed = matches!(kind.as_str(), "ALPHA" | "BETA")
+                        && alpha_beta_suppressed;
+                    draw_wormhole(
+                        &painter,
+                        point + Vec2::new((-42.0 + wormhole_index as f32 * 18.0) * scale, -18.0 * scale),
+                        kind,
+                        true,
+                        suppressed,
+                        scale,
+                    );
+                    wormhole_index += 1;
+                }
+                if let Some((system, face)) = &frame.state.ion_storm
+                    && system == &system_id
+                {
+                    let suppressed = matches!(face.as_str(), "ALPHA" | "BETA")
+                        && alpha_beta_suppressed;
+                    draw_wormhole(
+                        &painter,
+                        point + Vec2::new((-42.0 + wormhole_index as f32 * 18.0) * scale, -18.0 * scale),
+                        face,
+                        true,
+                        suppressed,
+                        scale,
+                    );
+                }
+                if frame.state.ingress_tokens.contains(&system_id) {
+                    draw_fracture_portal(
+                        &painter,
+                        point + Vec2::new(43.0 * scale, 31.0 * scale),
+                        true,
+                        scale,
+                    );
+                }
+                if tile.egress {
+                    draw_fracture_portal(
+                        &painter,
+                        point + Vec2::new(43.0 * scale, 31.0 * scale),
+                        false,
+                        scale,
+                    );
+                }
 
                 if let Some(state) = system_state {
                     let mut groups: BTreeMap<(PlayerId, String, bool, bool), usize> =
@@ -1837,19 +2152,6 @@ impl ReviewApp {
                 let mut token_labels = Vec::new();
                 if frame.state.frontier_tokens.contains(&system_id) {
                     token_labels.push("Frontier".to_owned());
-                }
-                for (kind, system) in &frame.state.wormhole_tokens {
-                    if system == &system_id {
-                        token_labels.push(format!("{kind} WH"));
-                    }
-                }
-                if let Some((system, face)) = &frame.state.ion_storm
-                    && system == &system_id
-                {
-                    token_labels.push(format!("Ion {face}"));
-                }
-                if frame.state.ingress_tokens.contains(&system_id) {
-                    token_labels.push("Ingress".to_owned());
                 }
                 if frame.state.breach_tokens.contains(&system_id) {
                     token_labels.push("Breach".to_owned());
@@ -2046,19 +2348,23 @@ impl eframe::App for ReviewApp {
     fn ui(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.top_bar(root);
         self.controls(root);
-        let Some(session) = self.session().cloned() else {
+        if self.session().is_none() {
             egui::CentralPanel::default().show(root, |ui| {
                 ui.centered_and_justified(|ui| {
                     ui.heading("Load a real learned-policy starting table to begin.");
                 });
             });
             return;
-        };
-        self.viewed = self.viewed.min(session.frames.len().saturating_sub(1));
-        let frame = session.frames[self.viewed].clone();
-        Self::player_panel(root, &session, &frame);
-        self.decision_panel(root, &session, &frame);
-        self.board(root, &session, &frame);
+        }
+        // Borrowed, not cloned -- see `with_session`. The viewed frame is borrowed too: it carries
+        // a whole `GameState`, so copying it once per repaint was the second-largest cost here.
+        self.with_session(|app, session| {
+            app.viewed = app.viewed.min(session.frames.len().saturating_sub(1));
+            let frame = &session.frames[app.viewed];
+            Self::player_panel(root, session, frame);
+            app.decision_panel(root, session, frame);
+            app.board(root, session, frame);
+        });
         if self.run_target.is_some() {
             root.ctx().request_repaint();
         }

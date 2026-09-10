@@ -1,0 +1,10 @@
+{
+  "path": "/data",
+  "args": { "key": "table-one" },
+  "payload": {
+    "hexSummary": "18:1;19:2",
+    "round": 3,
+    "scores": { "Blue": 2, "Red": 1 }
+  },
+  "received_at": 1757400000.5
+}

@@ -2,9 +2,9 @@
 //!
 //! Ported from the oracle's `learned_policy.opening_progress` and `horizon_progress`.
 //!
-//! This is what the two training stages climb. Stage 1 reads the first three fields, which are
-//! dense, available after one round, and almost noise-free. Stage 2 reads the rest, where victory
-//! points are the objective and the scoreable counts only shape the path to them.
+//! This is what the two training stages climb. Stage 1 reads the opening fields, which are dense,
+//! available after one round, and almost noise-free. Stage 2 reads the rest, where victory points
+//! are the objective and the scoreable counts only shape the path to them.
 //!
 //! Every field is a fact the rules can check. `scoreable_public` and `scoreable_secret` come from
 //! the engine's own predicates — the objectives this seat could score at this instant — and are
@@ -31,6 +31,12 @@ pub struct Progress {
     pub systems: i64,
     /// Units gained since setup, in space and on planets alike.
     pub units_gained: i64,
+    /// Ships with positive capacity, counted exactly as the opening gate counts them.
+    #[serde(default)]
+    pub capacity_ships: i64,
+    /// Ground forces held anywhere, counted exactly as the opening gate counts them.
+    #[serde(default)]
+    pub infantry: i64,
     /// Points scored.
     pub victory_points: i64,
     /// Revealed public objectives this seat could score right now.
@@ -39,6 +45,16 @@ pub struct Progress {
     pub scoreable_secret: i64,
     /// Which round this snapshot was taken in.
     pub round_number: u32,
+    /// The value of this seat's fleet, in per-mille resource units (LRR 67 prices):
+    /// fighters count as 0.75 resources each (750), other ships at their printed cost times
+    /// 1000, and an upgraded ship at 1300 times its base unit's cost (dreadnought 4 ->
+    /// dreadnought II 5.2 = 5200). Ground forces are not fleet.
+    #[serde(default)]
+    pub fleet_value_permille: i64,
+    /// Technologies owned beyond the setup baseline, so a seat is paid for researching rather
+    /// than for what it was dealt.
+    #[serde(default)]
+    pub technologies_gained: i64,
 }
 
 /// What a seat held at setup, so the gains above can be deltas.
@@ -52,6 +68,9 @@ pub struct Baseline {
     pub planets: usize,
     /// Units owned at setup.
     pub units: usize,
+    /// Technologies owned at setup.
+    #[serde(default)]
+    pub technologies: usize,
 }
 
 impl Baseline {
@@ -61,6 +80,7 @@ impl Baseline {
         Self {
             planets: seen.controlled_planets(player).len(),
             units: seen.units_held(player),
+            technologies: seen.seat(player).map_or(0, |seat| seat.technologies.len()),
         }
     }
 }
@@ -72,6 +92,7 @@ pub fn measure(seen: &Observed<'_>, player: &PlayerId, baseline: Baseline) -> Pr
     let systems: BTreeSet<&ti4_model::id::SystemId> =
         controlled.iter().map(|(system, _)| *system).collect();
     let units = seen.units_held(player);
+    let (capacity_ships, infantry) = seen.opening_fleet(player);
 
     let count = |value: usize| i64::try_from(value).unwrap_or(i64::MAX);
     Progress {
@@ -80,12 +101,19 @@ pub fn measure(seen: &Observed<'_>, player: &PlayerId, baseline: Baseline) -> Pr
         planets_gained: count(controlled.len().saturating_sub(baseline.planets)),
         systems: count(systems.len()),
         units_gained: count(units.saturating_sub(baseline.units)),
+        capacity_ships: count(capacity_ships),
+        infantry: count(infantry),
         victory_points: seen
             .seat(player)
             .map_or(0, |seat| i64::from(seat.victory_points)),
         scoreable_public: count(seen.scoreable_public(player)),
         scoreable_secret: count(seen.scoreable_secret(player)),
         round_number: seen.round(),
+        fleet_value_permille: seen.fleet_value_permille(player),
+        technologies_gained: {
+            let held = seen.seat(player).map_or(0, |seat| seat.technologies.len());
+            count(held.saturating_sub(baseline.technologies))
+        },
     }
 }
 
@@ -159,6 +187,20 @@ mod tests {
     }
 
     #[test]
+    fn opening_composition_uses_the_authoritative_capacity_and_ground_force_counts() {
+        let mut state = ti4_engine::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        let (system, planet) = ti4_engine::fixtures::a_placed_planet();
+        ti4_engine::fixtures::put(&mut state, &system, "carrier", &player, 2);
+        ti4_engine::fixtures::put_on_planet(&mut state, &system, &planet, "infantry", &player, 3);
+        ti4_engine::fixtures::put_on_planet(&mut state, &system, &planet, "pds", &player, 1);
+
+        let progress = measure(&watching(&state), &player, Baseline::default());
+        assert_eq!(progress.capacity_ships, 2);
+        assert_eq!(progress.infantry, 3, "a structure is not a ground force");
+    }
+
+    #[test]
     fn losing_ground_reads_as_no_gain_rather_than_an_enormous_one() {
         // Unsigned arithmetic: without saturation this underflows and every bar clears at once.
         let state = ti4_engine::fixtures::game(&["a"]);
@@ -166,6 +208,7 @@ mod tests {
         let rich = Baseline {
             planets: 9,
             units: 20,
+            technologies: 3,
         };
         let after = measure(&watching(&state), &player, rich);
         assert_eq!(after.planets_gained, 0);
@@ -193,6 +236,54 @@ mod tests {
         let progress = measure(&watching(&state), &player, Baseline::default());
         assert_eq!(progress.round_number, 4);
         assert_eq!(progress.victory_points, 3);
+    }
+
+    #[test]
+    fn the_fleet_value_prices_fighters_and_upgrades_as_the_reward_specifies() {
+        // Fighters count as 0.75 resources each, a dreadnought at its printed four, and an
+        // upgraded ship at 1.3x its base unit's cost (dreadnought II = 5.2), whatever the corpus
+        // prints for the upgrade itself.
+        let mut state = ti4_engine::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        let (system, _) = ti4_engine::fixtures::a_placed_planet();
+        ti4_engine::fixtures::put(&mut state, &system, "fighter", &player, 2);
+        ti4_engine::fixtures::put(&mut state, &system, "dreadnought", &player, 1);
+        ti4_engine::fixtures::put(&mut state, &system, "dreadnought2", &player, 1);
+
+        let progress = measure(&watching(&state), &player, Baseline::default());
+        assert_eq!(
+            progress.fleet_value_permille,
+            750 + 750 + 4000 + 5200,
+            "two fighters (1500) + dreadnought (4000) + dreadnought II (5200)"
+        );
+    }
+
+    #[test]
+    fn technologies_gained_are_measured_against_the_setup_baseline() {
+        let mut state = ti4_engine::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        state
+            .player_mut(&player)
+            .unwrap()
+            .technologies
+            .insert(ti4_model::id::TechnologyId::new("advanced_combat_1"));
+
+        let at_setup = Baseline::taken(&watching(&state), &player);
+        assert_eq!(at_setup.technologies, 1);
+        assert_eq!(
+            measure(&watching(&state), &player, at_setup).technologies_gained,
+            0
+        );
+
+        state
+            .player_mut(&player)
+            .unwrap()
+            .technologies
+            .insert(ti4_model::id::TechnologyId::new("advanced_combat_2"));
+        assert_eq!(
+            measure(&watching(&state), &player, at_setup).technologies_gained,
+            1
+        );
     }
 
     #[test]

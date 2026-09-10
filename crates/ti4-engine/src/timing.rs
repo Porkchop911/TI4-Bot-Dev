@@ -268,6 +268,7 @@ pub struct Resolver {
     phase: Phase,
     table: Table,
     log: Vec<String>,
+    applied_events: Vec<Event>,
     relation_being_resolved: Option<Relation>,
     emission_stack: Vec<(String, u64)>,
     maximum_depth: usize,
@@ -293,6 +294,7 @@ impl Resolver {
             phase: Phase::Action,
             table,
             log: Vec::new(),
+            applied_events: Vec::new(),
             relation_being_resolved: None,
             emission_stack: Vec::new(),
             maximum_depth: Self::DEFAULT_MAXIMUM_DEPTH,
@@ -383,6 +385,12 @@ impl Resolver {
         &self.log
     }
 
+    /// Payload-bearing events after WHEN effects, cancellation, resolution, and AFTER effects.
+    #[must_use]
+    pub fn applied_events(&self) -> &[Event] {
+        &self.applied_events
+    }
+
     /// Default maximum count of simultaneously resolving events.
     pub const DEFAULT_MAXIMUM_DEPTH: usize = 100;
 
@@ -415,6 +423,11 @@ impl Resolver {
         }
         self.emission_stack
             .push((event.event_type.clone(), event.id));
+        // Reserve the event's position before opening windows. Nested emissions must follow their
+        // parent in the journal even though they finish first. This matters to effect consumers:
+        // Direct Hit, for example, emits SHIP_DESTROYED inside SUSTAIN_DAMAGE_USED's AFTER window.
+        let journal_index = self.applied_events.len();
+        self.applied_events.push(event.clone());
         self.log
             .push(format!("emit {}#{}", event.event_type, event.id));
         let result = (|| {
@@ -442,6 +455,11 @@ impl Resolver {
             Ok(event)
         })();
         self.emission_stack.pop();
+        if let Ok(event) = &result {
+            self.applied_events[journal_index] = event.clone();
+        } else {
+            self.applied_events.remove(journal_index);
+        }
         result
     }
 
@@ -469,6 +487,10 @@ impl Resolver {
         }
         self.emission_stack
             .push((event.event_type.clone(), event.id));
+        // See `emit`: reserve first so the journal is emission-ordered rather than completion-
+        // ordered when a timing window emits another event.
+        let journal_index = self.applied_events.len();
+        self.applied_events.push(event.clone());
         self.log
             .push(format!("emit {}#{}", event.event_type, event.id));
         let result = (|| {
@@ -496,6 +518,11 @@ impl Resolver {
             Ok(event)
         })();
         self.emission_stack.pop();
+        if let Ok(event) = &result {
+            self.applied_events[journal_index] = event.clone();
+        } else {
+            self.applied_events.remove(journal_index);
+        }
         result
     }
 
@@ -1244,6 +1271,15 @@ mod tests {
                 "  resolve INNER#2",
                 "  resolve OUTER#1",
             ]
+        );
+        assert_eq!(
+            timing
+                .applied_events()
+                .iter()
+                .map(|event| (event.id, event.event_type.as_str()))
+                .collect::<Vec<_>>(),
+            [(1, "OUTER"), (2, "INNER")],
+            "the journal follows emission order even though the inner event completes first"
         );
     }
 

@@ -660,6 +660,10 @@ pub fn announce(
         payload.insert("system".to_owned(), system.to_string().into());
         payload.insert("player".to_owned(), owner.to_string().into());
         payload.insert("unit".to_owned(), unit_type.to_string().into());
+        // Pending destructions here are staged by Direct Hit, whose victim is the ship that just
+        // sustained. Keeping this fact on the event lets the physical bridge remove the damaged
+        // copy when a fresh copy of the same hull shares the system.
+        payload.insert("damaged".to_owned(), true.into());
         payload.insert("last".to_owned(), (remaining == 0).into());
         let destroyed = context.event_sequence.next("SHIP_DESTROYED", payload)?;
         resolver.emit_with_context(context, destroyed, |_, _| {})?;

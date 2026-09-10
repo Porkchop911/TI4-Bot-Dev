@@ -132,6 +132,9 @@ pub struct MovementRules<'a> {
     /// that reaches past it — so it is a parameter rather than something the galaxy is asked to
     /// pretend about.
     pub also_adjacent: BTreeSet<String>,
+    /// Non-map edges that apply throughout a route. The Fracture's seven-system chain and every
+    /// ingress-to-egress connection live here because either may be an intermediate step.
+    extra_adjacency: BTreeMap<String, BTreeSet<String>>,
     /// Dynamic Creuss tokens create an extra wormhole edge.
     pub token_wormhole_systems: BTreeSet<String>,
     /// Aerie Hololattice systems may be entered but not moved through by opponents.
@@ -168,7 +171,7 @@ impl<'a> MovementRules<'a> {
         board: Board,
         state: Option<&GameState>,
     ) -> Self {
-        Self {
+        let mut rules = Self {
             galaxy,
             systems: all_systems(content, sources),
             active_system: active_system.to_owned(),
@@ -182,11 +185,42 @@ impl<'a> MovementRules<'a> {
             ignore_enemy_ships_from: None,
             ignore_enemy_ships: false,
             also_adjacent: BTreeSet::new(),
+            extra_adjacency: BTreeMap::new(),
             token_wormhole_systems: BTreeSet::new(),
             barred_transit: BTreeSet::new(),
             gravity_rift_systems: BTreeSet::new(),
             rifts_ignored: false,
+        };
+        if let Some(state) = state
+            && state.fracture_in_play
+        {
+            let fracture = crate::fracture::systems(content, sources);
+            for pair in fracture.windows(2) {
+                let left = pair[0].to_string();
+                let right = pair[1].to_string();
+                rules
+                    .extra_adjacency
+                    .entry(left.clone())
+                    .or_default()
+                    .insert(right.clone());
+                rules.extra_adjacency.entry(right).or_default().insert(left);
+            }
+            for ingress in &state.ingress_tokens {
+                for egress in crate::fracture::egress_systems(content, sources) {
+                    rules
+                        .extra_adjacency
+                        .entry(ingress.to_string())
+                        .or_default()
+                        .insert(egress.to_string());
+                    rules
+                        .extra_adjacency
+                        .entry(egress.to_string())
+                        .or_default()
+                        .insert(ingress.to_string());
+                }
+            }
         }
+        rules
     }
 
     fn system(&self, system_id: &str) -> Option<&System<'a>> {
@@ -323,6 +357,9 @@ impl<'a> MovementRules<'a> {
                         .cloned(),
                 );
             }
+            if let Some(extra) = self.extra_adjacency.get(&current) {
+                neighbours.extend(extra.iter().cloned());
+            }
             // The conduit joins the active system to the listed ones in both directions: a
             // route out of one of them is what the card buys.
             if self.also_adjacent.contains(&current) {
@@ -376,7 +413,8 @@ impl<'a> MovementRules<'a> {
 #[cfg(test)]
 mod tests {
     use ti4_content::galaxy::Galaxy;
-    use ti4_model::content_types::POK;
+    use ti4_model::content_types::{FULL, POK};
+    use ti4_model::id::SystemId;
 
     use super::*;
 
@@ -500,6 +538,72 @@ mod tests {
 
         assert!(rules.can_reach(&near_a, 2), "two systems entered");
         assert!(!rules.can_reach(&near_a, 1), "one is not enough");
+    }
+
+    #[test]
+    fn an_ingress_and_each_fracture_egress_are_adjacent_for_movement() {
+        let hub = plain_hub();
+        let ingress = SystemId::new(&hub.centre);
+        let egress = crate::fracture::egress_systems(ContentStore::embedded(), FULL)
+            .into_iter()
+            .next()
+            .expect("the Fracture has printed egresses");
+        let mut state = crate::fixtures::game(&["a"]);
+        state.fracture_in_play = true;
+        state.ingress_tokens.insert(ingress.clone());
+
+        let into_fracture = MovementRules::with_laws(
+            &hub.galaxy,
+            ContentStore::embedded(),
+            FULL,
+            egress.as_str(),
+            Board::default(),
+            Some(&state),
+        );
+        assert_eq!(
+            into_fracture.path_from(ingress.as_str(), 1),
+            Some(vec![ingress.to_string(), egress.to_string()])
+        );
+
+        let out_of_fracture = MovementRules::with_laws(
+            &hub.galaxy,
+            ContentStore::embedded(),
+            FULL,
+            ingress.as_str(),
+            Board::default(),
+            Some(&state),
+        );
+        assert_eq!(
+            out_of_fracture.path_from(egress.as_str(), 1),
+            Some(vec![egress.to_string(), ingress.to_string()])
+        );
+    }
+
+    #[test]
+    fn a_route_can_cross_the_fracture_interior_from_an_ingress() {
+        let hub = plain_hub();
+        let ingress = SystemId::new(&hub.centre);
+        let mut state = crate::fixtures::game(&["a"]);
+        state.fracture_in_play = true;
+        state.ingress_tokens.insert(ingress.clone());
+
+        let rules = MovementRules::with_laws(
+            &hub.galaxy,
+            ContentStore::embedded(),
+            FULL,
+            "fracture4",
+            Board::default(),
+            Some(&state),
+        );
+        assert_eq!(
+            rules.path_from(ingress.as_str(), 3),
+            Some(vec![
+                ingress.to_string(),
+                "fracture2".to_owned(),
+                "fracture3".to_owned(),
+                "fracture4".to_owned(),
+            ])
+        );
     }
 
     #[test]
