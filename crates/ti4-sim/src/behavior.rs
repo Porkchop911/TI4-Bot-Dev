@@ -930,46 +930,66 @@ pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
     // Derived with `cargo run --release -p ti4-sim --example rebaseline_behavior` in a clean
     // worktree at 6b90110, the tree these bounds ship with; the bootstrap seed and draw count are
     // unchanged.
+    // v36 — 2026-09-11. One change reached the authored bot after v35: cb7c559 corrected which
+    // planets the Fracture's ingress placement may choose. `specialty_candidates` enumerated
+    // `state.board` alone, and an empty map system need not have a board entry, so technology-
+    // specialty planets in empty systems were never offered; candidates now come from the galaxy
+    // plus any board additions. Ingress can land in systems it could not before, which changes the
+    // Fracture's movement edges and so where the bot moves and fights.
+    //
+    // Attributed by reading the diffs, not by bisection. The only other engine change since v35,
+    // 780a3d8, adds a journal of applied events to the timing resolver; only the reviewer reads it,
+    // and it touches no state, option or dice.
+    //
+    // No metric leaves v35. `faction_differentiation` moves most (point 0.555667 -> 0.573300),
+    // `score_spread` 2.267745 -> 2.240909, `vp_pace` 0.404938 -> 0.408025; every share moves by
+    // less than its own interval width. Only the exact-recomputation integrity check failed. All
+    // thirty games still finish cleanly. The complete old/new table is in
+    // plans/evidence/M08-021.md.
+    //
+    // Derived with `cargo run --release -p ti4-sim --example rebaseline_behavior` in the clean main
+    // checkout at cb7c559, the engine these bounds ship with; the bootstrap seed and draw count
+    // are unchanged.
     let mut bounds = BTreeMap::new();
     bounds.insert(
         "vp_pace".to_owned(),
-        (0.375_308_641_975_308_55, 0.435_802_469_135_802_56),
+        (0.377_160_493_827_160_5, 0.439_506_172_839_506_16),
     );
     // Degenerate on purpose: all games in every recorded baseline ended cleanly, so the bound
     // is the strict invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
         "score_spread".to_owned(),
-        (2.004_250_222_497_032, 2.535_783_758_297_528_2),
+        (1.980_730_673_496_749_8, 2.508_947_084_012_518_8),
     );
     // V3: the spec's across-faction quantity — re-deriven with the same baseline run.
     bounds.insert(
         "faction_differentiation".to_owned(),
-        (0.421_637_021_355_783_9, 0.975_897_813_917_971_8),
+        (0.430_331_482_911_935_2, 0.990_588_427_198_079_7),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.018_565_278_097_001_31, 0.020_087_019_241_028_417),
+        (0.018_530_768_546_429_252, 0.020_081_778_749_527_743),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.034_874_305_875_793_26, 0.035_966_861_628_863_94),
+        (0.034_789_243_539_827_805, 0.035_923_880_585_150_385),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.046_035_598_770_259, 0.050_339_456_989_615_16),
+        (0.046_170_360_054_135_08, 0.050_472_310_171_918_23),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.004_244_789_359_310_167, 0.005_047_743_060_648_873_4),
+        (0.004_358_228_143_416_484, 0.005_173_193_663_088_941),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.068_915_447_609_636_22, 0.071_153_428_388_409_2),
+        (0.068_739_780_534_929_06, 0.071_050_770_087_856_37),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.034_029_145_648_798_11, 0.035_171_908_460_882_66),
+        (0.033_938_662_670_114_33, 0.035_137_086_465_038_86),
     );
     bounds
 }
