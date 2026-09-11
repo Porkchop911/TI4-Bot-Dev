@@ -671,7 +671,7 @@ impl ReviewApp {
             Ok(live) => {
                 let lineup = live.session.manifest.factions.join(" → ");
                 self.autosave = Some(PathBuf::from("out/reviews").join(format!(
-                    "autosave-{seed}-rotation{}-{}.ti4review.json",
+                    "autosave-{seed}-rotation{}-{}.ti4review.json.zst",
                     self.rotation,
                     match self.table {
                         ProfileTable::Learner => "learner",
@@ -749,8 +749,9 @@ impl ReviewApp {
             return;
         };
         let Some(path) = rfd::FileDialog::new()
-            .add_filter("TI4 review", &["json"])
-            .set_file_name("game.ti4review.json")
+            .add_filter("Compressed TI4 review", &["zst"])
+            .add_filter("Uncompressed TI4 review", &["json"])
+            .set_file_name("game.ti4review.json.zst")
             .save_file()
         else {
             return;
@@ -767,7 +768,7 @@ impl ReviewApp {
 
     fn open_review(&mut self) {
         let Some(path) = rfd::FileDialog::new()
-            .add_filter("TI4 review", &["json"])
+            .add_filter("TI4 review", &["zst", "json"])
             .pick_file()
         else {
             return;
@@ -1687,22 +1688,68 @@ impl ReviewApp {
                     frame.phase,
                     frame.active.as_deref().unwrap_or("—")
                 ));
+                ui.horizontal_wrapped(|ui| {
+                    stat_badge(
+                        ui,
+                        "⬡",
+                        "Active system",
+                        frame
+                            .state
+                            .active_system
+                            .as_ref()
+                            .map_or("—", ti4_model::id::SystemId::as_str),
+                    );
+                    stat_badge(
+                        ui,
+                        "⌛",
+                        "Pending",
+                        frame.state.pending.as_deref().unwrap_or("—"),
+                    );
+                    stat_badge(ui, "⚔", "Combat round", frame.state.combat_round_seq);
+                });
+                if !frame.state.reroll_staging.is_empty()
+                    || !frame.state.agenda_votes.is_empty()
+                    || !frame.state.agenda_predictions.is_empty()
+                {
+                    ui.collapsing("Current timing / agenda state", |ui| {
+                        if !frame.state.reroll_staging.is_empty() {
+                            ui.label(format!(
+                                "Reroll staging: {} player(s)",
+                                frame.state.reroll_staging.len()
+                            ));
+                        }
+                        for (player, vote) in &frame.state.agenda_votes {
+                            ui.label(format!("Vote: {player} → {vote}"));
+                        }
+                        for (player, prediction) in &frame.state.agenda_predictions {
+                            ui.label(format!("Prediction: {player} → {prediction}"));
+                        }
+                    });
+                }
                 if let Some(error) = &frame.error {
                     ui.colored_label(Color32::LIGHT_RED, error);
                 }
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     // Walks back only as far as the last completed action, which is a handful of
                     // frames in a running game, so this stays cheap however long the review is.
-                    let action_summary = session.frames[..=frame.index]
-                        .iter()
-                        .rev()
-                        .find_map(|candidate| candidate.action_summary.as_ref());
-                    ui.heading("Latest completed action");
+                    let action_summary = frame.action_in_progress.as_ref().or_else(|| {
+                        session.frames[..=frame.index]
+                            .iter()
+                            .rev()
+                            .find_map(|candidate| candidate.action_summary.as_ref())
+                    });
+                    ui.heading(if frame.action_in_progress.is_some() {
+                        "Action in progress"
+                    } else {
+                        "Latest completed action"
+                    });
                     if let Some(summary) = action_summary {
                         ui.strong(&summary.headline);
                         ui.small(format!(
-                            "frames {}–{} · active-player period",
-                            summary.start_frame, summary.end_frame
+                            "frames {}–{} · active-player period{}",
+                            summary.start_frame,
+                            summary.end_frame,
+                            if summary.in_progress { " · IN PROGRESS" } else { "" }
                         ));
                         for detail in &summary.details {
                             ui.label(format!("• {detail}"));
@@ -1836,11 +1883,28 @@ impl ReviewApp {
                     }
                     ui.separator();
                     ui.strong("New engine events");
-                    if frame.new_events.is_empty() {
+                    if frame.new_events.is_empty() && frame.structured_events.is_empty() {
                         ui.label("—");
                     } else {
-                        for event in &frame.new_events {
-                            ui.monospace(event);
+                        for event in &frame.structured_events {
+                            let status = if event.cancelled { " · CANCELLED" } else { "" };
+                            egui::CollapsingHeader::new(format!(
+                                "#{} {}{}",
+                                event.id, event.event_type, status
+                            ))
+                            .show(ui, |ui| {
+                                ui.monospace(
+                                    serde_json::to_string_pretty(&event.payload)
+                                        .unwrap_or_else(|error| error.to_string()),
+                                );
+                            });
+                        }
+                        if !frame.new_events.is_empty() {
+                            ui.collapsing("Legacy event-name trace", |ui| {
+                                for event in &frame.new_events {
+                                    ui.monospace(event);
+                                }
+                            });
                         }
                     }
                     if let Some(tile) = &self.selected_tile {
@@ -2374,7 +2438,9 @@ impl eframe::App for ReviewApp {
 fn is_review(path: &Path) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())
-        .is_some_and(|name| name.ends_with(".ti4review.json"))
+        .is_some_and(|name| {
+            name.ends_with(".ti4review.json") || name.ends_with(".ti4review.json.zst")
+        })
 }
 
 #[cfg(test)]
@@ -2402,6 +2468,7 @@ mod tests {
     #[test]
     fn previous_game_discovery_accepts_only_review_sessions() {
         assert!(is_review(Path::new("game.ti4review.json")));
+        assert!(is_review(Path::new("game.ti4review.json.zst")));
         assert!(!is_review(Path::new("reviewer-settings.json")));
         assert!(!is_review(Path::new("game.html")));
     }

@@ -31,12 +31,12 @@ or mock/example game. A headless CLI remains available for automated verificatio
 
 ### Inputs and setup
 
-- Native file-picker buttons select either a schema-6 MLP checkpoint bundle's `manifest.json` or
+- Native file-picker buttons select either a schema-7 MLP checkpoint bundle's `manifest.json` or
   `slots.json`, or a legacy JSON checkpoint/profile table, plus the JSON/JSON.GZ map pool. Selecting
   `slots.json` resolves and verifies the complete sibling bundle; it is never treated as weights.
-- Schema-6 MLP inference accepts the exact frozen vocabulary v3 and v4 layouts. V3 retains every
-  original column address; facts from v4's additional `action-plan` family route to global OOV.
-  Training/current vocabulary construction remains strict v4, and v1/v2/unknown layouts fail.
+- MLP inference follows the bundle reader's current strict schema-7/projection-ABI-2 contract and
+  frozen OOV registry v10. Retired schema-6 bundles and unknown vocabulary layouts fail before game
+  construction rather than being interpreted under current feature semantics.
 - The seed is an unsigned 64-bit integer. Rotation is one of the six standard cyclic seat rotations.
 - For legacy linear checkpoints, a selector chooses current `learner_profiles`/`profiles` or
   `accepted` champion profiles. Schema-6 MLP bundles have one immutable actor and ignore that
@@ -133,7 +133,7 @@ Permission class: P2 (P1 source/plan work plus crates.io dependency resolution a
 artifacts).
 
 - Writable: `Cargo.toml`, `Cargo.lock`, `crates/ti4-review/**`, the minimal additive setup boundary
-  and tests in `crates/ti4-training/src/rollout.rs`, the additive read-only v3 inference loader in
+  and tests in `crates/ti4-training/src/rollout.rs`, the strict current inference loaders in
   `crates/ti4-policy/src/vocabulary.rs` and `crates/ti4-mlp/src/bundle.rs`,
   `plans/R01_REVIEW_VIEWER.md`, `plans/EXECUTION_STATE.md`, and
   `plans/evidence/R01-IMPLEMENTATION.md`.
@@ -156,15 +156,16 @@ artifacts).
 - A session holds at most 1,000,001 frames and refuses serialization above 1,024 MiB. HTML export
   refuses output above 1,024 MiB. Bounds are reported, never silently truncated as success.
 - Every frame records its exact engine-step index, round, phase, active seat, choice-resolution flag,
-  action boundary, completion flag, error, state snapshot, map placement, new events, and optional
-  decision detail.
+  action boundary, completion flag, error, state snapshot, map placement, legacy event-name trace,
+  finalized payload-bearing events (including event id and cancellation), and optional decision
+  detail. An unfinished active-player period carries a visibly in-progress summary.
 - Same checkpoint bytes, map bytes, seed, rotation, table selection, and command sequence must
   produce identical semantic session content (excluding the save path).
 
 ## Acceptance
 
 1. Launch with no arguments opens the native app and exposes both input-picker buttons.
-2. A real schema-6 MLP bundle (selected through either `manifest.json` or `slots.json`) and map pool
+2. A real schema-7 MLP bundle (selected through either `manifest.json` or `slots.json`) and map pool
    create the six-player starting table without executing the first choice; a legacy profile
    checkpoint remains supported.
 3. Step, next-decision, next-action, Run N for all three units, end-round, end-game, and Stop obey
@@ -177,6 +178,8 @@ artifacts).
    player-sheet groups remain consistent in the native view and HTML export.
 6. Engine failure, command bound, and unfinished/user-stopped sessions remain visibly incomplete.
 7. Save/reopen preserves every recorded frame and decision; reopened history is view-only.
+   New saves default to deterministic zstd-compressed `.ti4review.json.zst`; v2 uncompressed reviews
+   remain readable and migrate in memory to the v3 structured-event representation.
 8. HTML export is self-contained, replay-only, and includes board, players, timeline, and decision
    diagnostics without external requests.
 9. Malformed/missing checkpoint tables, missing factions, invalid profiles, bad pools, bad saved

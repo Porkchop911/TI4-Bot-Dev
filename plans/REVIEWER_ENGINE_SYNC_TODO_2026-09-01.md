@@ -10,9 +10,11 @@
 
 **2026-09-08 current-bundle pass:** validated `out/checkpoints/stage2-mlp-shaped/checkpoint-372212` (bundle schema 7, projection ABI 2, OOV registry 10, shared critic, trained temperature 1.0) with `out/pools/full_np8_12_train.json`. The reviewer now records typed decision context, structured option payloads and consequence previews; records initial speaker, exact selected map arrangement, engine/content identity and source scope; exposes current initiative order and speaker changes; resolves the main player-sheet and table ids to names; and presents the same diagnostics in native and self-contained HTML views. The smoke artifact is `out/reviews/reviewer-current-validation.ti4review.json` with its adjacent HTML export.
 
+**2026-09-11 structured-event pass:** rebased the audit on clean commit `37b236b`. Review-session v3 now records finalized payload-bearing timing events and cancellation state while loading v2 sessions through an explicit in-memory migration. Native and HTML views show current active-system/pending/agenda state and unfinished action summaries. New GUI saves/autosaves default to zstd-compressed review files; a current schema-7/OOV-v10 one-action smoke shrank from 1,123,917 bytes to 21,228 bytes without dropping frames. TTS and bridge behavior are explicitly outside this pass.
+
 ## Current result
 
-`cargo test -p ti4-review` passes all 11 tests at the inspected tree. This proves that the reviewer still compiles and its existing session tests pass. It does **not** prove that new engine state, timing paths, or card effects are represented correctly.
+`cargo test -p ti4-review` passes all 28 tests at the 2026-09-11 synchronization tree. This proves that the reviewer compiles, v2/v3 sessions migrate, compressed sessions round-trip, and the focused renderer/session regressions pass. It does **not** prove that every engine timing path or card effect has a complete typed-event explanation.
 
 The most important current mismatches are:
 
@@ -36,7 +38,7 @@ The most important current mismatches are:
 
 - [x] Load real pre-sync review files in addition to synthetic compatibility fixtures.
 - [ ] Confirm every new serialized `Player`, `SystemState`, and `GameState` field has a safe old-file default. In particular cover purged planets, exhausted relics, exploration cards, discarded action cards, ion-storm and placed-planet state, agenda state, transaction history, and reroll staging.
-- [ ] Decide whether the richer board/event representation requires review-session schema v3. If it does, provide a v2-to-v3 loader instead of simply rejecting all existing reviews.
+- [x] Introduce review-session schema v3 for structured events and provide a v2-to-v3 in-memory loader instead of rejecting existing reviews.
 - [x] Record engine/content version or a content digest in the manifest so a replay cannot silently render against different card or planet data.
 - [x] Keep the sampling temperature, profile-table selection, checkpoint digest, map-pool digest, seed, rotation, and faction seating reproducible.
 - [ ] Test loading the previously reported real autosaves and checkpoint bundles, including selection of a bundle directory, `manifest.json`, and `slots.json` beside its manifest.
@@ -59,7 +61,7 @@ An action in the reviewer is the complete active-player period: it begins when a
 The current summary pairs unit departures and arrivals by owner and unit class. A destroyed carrier plus a newly produced carrier can therefore be reported as a move. New action cards can remove, replace, return, produce, or relocate units inside reaction windows, making this worse.
 
 - [ ] Inventory which engine events carry only a name and which expose enough context to explain what happened.
-- [ ] Prefer a structured review event record with actor, target, system, planet, card/effect id, units, amount, and outcome. If this requires an engine hook, specify that dependency explicitly before changing reviewer heuristics.
+- [x] Preserve the engine's finalized event id, type, payload, and cancellation bit in a reviewer-owned structured event record. Continue to retain legacy event names for gaps in the typed journal.
 - [x] Evaluate state changes frame-by-frame instead of only comparing the start and end of the full action.
 - [ ] Distinguish movement, transport, commitment, production, destruction, removal, replacement, retreat, and return-to-space.
 - [x] Preserve the raw engine event stream alongside the human summary for diagnosis.
@@ -106,7 +108,7 @@ The current summary pairs unit departures and arrivals by owner and unit class. 
 - [ ] Distinguish `ACTION_CARD_PLAYED`, `ACTION_CARD_DISCARDED`, `ACTION_CARD_UNRESOLVED`, cancelled timing windows, and resolved effects.
 - [ ] Add non-action-phase summaries for strategy-card selection, status scoring/readiness, agenda reveal/vote/outcome, and round transitions.
 - [x] Ensure a cancelled strategic action is never summarized merely as “took a strategic action.”
-- [ ] Ensure summaries remain useful when the user stops in the middle of an action: show “in progress” facts without pretending the action completed.
+- [x] Ensure summaries remain useful when the user stops in the middle of an action: show “in progress” facts without pretending the action completed.
 
 ## P1 — decision inspection and policy diagnostics
 
@@ -132,6 +134,7 @@ The current summary pairs unit departures and arrivals by owner and unit class. 
 - [ ] Measure frames per round, serialized bytes per frame, autosave latency, GUI history latency, and final file size on a complete current game.
 - [ ] Pay special attention to repeated full-state snapshots containing decks, discard piles, agenda state, reroll staging, and other new fields.
 - [ ] Realistic games have reached 524,063,643 bytes. The temporary artifact limit is now 1,024 MiB; design periodic full checkpoints plus deterministic deltas rather than relying on the raised limit.
+- [x] Default new saves and autosaves to deterministic zstd compression while retaining ordinary JSON reads/writes. This addresses disk and write volume without pretending it solves in-memory full-state duplication.
 - [ ] Keep autosaves recoverable and atomic while long `Run N` or `Run to end` commands are active.
 - [ ] Verify that stopping and autosaving during a large combat/reroll window does not corrupt replay reconstruction.
 
@@ -149,7 +152,7 @@ The current summary pairs unit departures and arrivals by owner and unit class. 
 - [ ] Action-boundary fixtures for Fleet Logistics, Master Plan, Puppets, skipped turn, forced end, pass, and game end.
 - [ ] GUI visual inspection at normal and constrained window sizes.
 - [ ] Interactive HTML visual inspection in a browser. The real schema-7 smoke export rendered successfully and its embedded JavaScript passed a syntax parse.
-- [x] `cargo test -p ti4-review` (21 passing tests).
+- [x] `cargo test -p ti4-review` (28 passing tests after the structured-event/compression pass).
 - [x] Reviewer-only clippy with warnings denied (`--no-deps`; the concurrently modified training crate has unrelated lint failures under a full dependency lint).
 
 ## Completion definition

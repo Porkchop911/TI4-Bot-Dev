@@ -24,6 +24,18 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   at `0d945e3` for the owner's three playtest bug reports; the unrelated untracked review samples
   and scripts remain untouched)
 
+### R01 reviewer synchronization — structured events v3 (2026-09-11)
+
+- Audit baseline: clean `37b236b`; operator directed this pass to ignore all TTS work.
+- `ti4-review` now records finalized payload-bearing timing events and cancellation state in
+  review-session v3, migrates v2 reviews in memory, and shows unfinished active-player periods.
+- New saves/autosaves default to `.ti4review.json.zst`; plain JSON remains supported. A current
+  schema-7/OOV-v10 one-action smoke stored 1,123,917 bytes plain versus 21,228 bytes compressed.
+- Focused gate: `cargo test -p ti4-review` 28 passed / 0 failed. Evidence:
+  `plans/evidence/R01-STRUCTURED-EVENTS-V3.md`.
+- Remaining reviewer work: complete typed-event coverage inventory, action-boundary scenario matrix,
+  and periodic-checkpoint/delta storage if live-memory or serialization measurements still justify it.
+
 ### OBS-012 — decision completeness qualification (2026-09-05)
 
 - Branch: `wp/tier-c-review-remediation-obs008c2b-003e1`, continuing after OBS-011 (`4b0bbaf`).
