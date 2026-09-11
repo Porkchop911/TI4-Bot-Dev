@@ -17,4 +17,13 @@ Verification:
 - `cargo clippy --release -p ti4-review --all-targets --no-deps -- -D warnings`: passed.
 - Focused reviewer and timing formatting checks: passed. The workspace-wide engine formatting check
   still reports pre-existing differences in unrelated current-engine files; they were not rewritten.
-- Rebuilt `target-merge/release/ti4-review.exe`.
+- Rebuilt the canonical `target/release/ti4-review.exe`.
+
+## Empty-system follow-up
+
+The native reviewer formerly gated selected-system information on a dynamic `state.board` entry.
+Empty printed systems therefore showed no metadata. The same assumption excluded technology
+specialties in empty map systems from Fracture ingress placement. The reviewer now always shows
+the selected tile's static metadata, and ingress candidates enumerate the actual galaxy plus
+dynamic board additions. A focused regression removes a specialty system from `state.board` and
+proves that its planet remains eligible.

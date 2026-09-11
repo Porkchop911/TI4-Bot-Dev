@@ -1909,12 +1909,70 @@ impl ReviewApp {
                     }
                     if let Some(tile) = &self.selected_tile {
                         ui.separator();
-                        ui.strong(format!("Selected system {tile}"));
+                        if let Some(metadata) = session
+                            .board
+                            .iter()
+                            .find(|candidate| candidate.system == *tile)
+                        {
+                            ui.strong(format!(
+                                "Selected system {} [{}]",
+                                metadata.label, metadata.system
+                            ));
+                            ui.label(format!("Map coordinate: {}, {}", metadata.q, metadata.r));
+                            if let Some(area) = &metadata.special_area {
+                                ui.label(format!("Special area: {area}"));
+                            }
+                            if metadata.hyperlane {
+                                ui.label("Hyperlane system");
+                            }
+                            if !metadata.anomalies.is_empty() {
+                                ui.label(format!("Anomalies: {}", metadata.anomalies.join(", ")));
+                            }
+                            if !metadata.wormholes.is_empty() {
+                                ui.label(format!("Wormholes: {}", metadata.wormholes.join(", ")));
+                            }
+                            if metadata.egress {
+                                ui.label("Fracture egress");
+                            }
+                            let planets = planets_for_tile(session, frame, metadata);
+                            if planets.is_empty() {
+                                ui.label("Planets: none");
+                            } else {
+                                ui.strong("Planets");
+                                for planet in planets {
+                                    let traits = if planet.traits.is_empty() {
+                                        "—".to_owned()
+                                    } else {
+                                        planet.traits.join(", ")
+                                    };
+                                    let specialties = if planet.tech_specialties.is_empty() {
+                                        "—".to_owned()
+                                    } else {
+                                        planet.tech_specialties.join(", ")
+                                    };
+                                    ui.label(format!(
+                                        "• {} [{}] · {}/{} · trait {traits} · specialty {specialties}{}{}",
+                                        planet.label,
+                                        planet.id,
+                                        planet.resources,
+                                        planet.influence,
+                                        if planet.legendary { " · legendary" } else { "" },
+                                        if planet.space_station { " · space station" } else { "" },
+                                    ));
+                                }
+                            }
+                        } else {
+                            ui.strong(format!("Selected system {tile}"));
+                            ui.label("Map metadata unavailable in this legacy review.");
+                        }
                         if let Some(state) = frame.state.board.get(&SystemId::new(tile)) {
+                            ui.strong("Dynamic board state");
                             ui.monospace(
                                 serde_json::to_string_pretty(state)
                                     .unwrap_or_else(|error| error.to_string()),
                             );
+                        } else {
+                            ui.label("Dynamic board state: empty");
                         }
                     }
                 });

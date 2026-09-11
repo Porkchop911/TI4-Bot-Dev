@@ -159,14 +159,19 @@ fn specialty_candidates(
     state: &GameState,
     content: &ContentStore,
     sources: SourceSet,
+    galaxy: Option<&Galaxy>,
     colour: &str,
     already_chosen: &std::collections::BTreeSet<SystemId>,
 ) -> Vec<(SystemId, PlanetId)> {
     let planets = ti4_content::galaxy::all_planets(content, sources);
-    state
-        .board
-        .keys()
-        .filter(|system| !already_chosen.contains(*system))
+    let mut seen = std::collections::BTreeSet::new();
+    galaxy
+        .into_iter()
+        .flat_map(Galaxy::system_ids)
+        .map(SystemId::new)
+        .chain(state.board.keys().cloned())
+        .filter(|system| seen.insert(system.clone()))
+        .filter(|system| !already_chosen.contains(system))
         .filter(|system| !is_fracture_system(content, sources, system))
         .filter_map(|system| {
             let tile = ti4_content::galaxy::system(content, system.as_str(), sources)?;
@@ -178,7 +183,7 @@ fn specialty_candidates(
                         .any(|specialty| specialty.eq_ignore_ascii_case(colour))
                 })
             })?;
-            Some((system.clone(), PlanetId::new(planet)))
+            Some((system, PlanetId::new(planet)))
         })
         .collect()
 }
@@ -232,7 +237,7 @@ pub fn after_breakthrough_gained(
     let mut chosen = std::collections::BTreeSet::new();
     for (colour, maximum) in quotas {
         for _ in 0..maximum {
-            let candidates = specialty_candidates(state, content, sources, colour, &chosen);
+            let candidates = specialty_candidates(state, content, sources, galaxy, colour, &chosen);
             if candidates.is_empty() {
                 break;
             }
@@ -606,6 +611,41 @@ mod tests {
             offered.contains(&inside),
             "a Fracture system in play must be activatable: {inside:?} not among {} offered",
             offered.len()
+        );
+    }
+
+    #[test]
+    fn ingress_candidates_include_specialty_planets_in_empty_map_systems() {
+        // Empty printed systems need not have a dynamic `state.board` entry. The map remains the
+        // authority for which systems are in play, just as it is for tactical activation.
+        let planets = ti4_content::galaxy::all_planets(content(), ALL_SOURCES);
+        let (system, planet, colour) = ti4_content::galaxy::all_systems(content(), ALL_SOURCES)
+            .keys()
+            .find_map(|system| {
+                let tile = ti4_content::galaxy::system(content(), system, ALL_SOURCES)?;
+                tile.planets().into_iter().find_map(|planet| {
+                    let colour = planets.get(planet)?.tech_specialties().first()?.to_owned();
+                    Some((SystemId::new(*system), PlanetId::new(planet), colour))
+                })
+            })
+            .expect("the corpus contains a technology-specialty planet");
+        let galaxy = Galaxy::build(content(), &[system.as_str()], ALL_SOURCES, 0)
+            .expect("one real system forms a map");
+        let mut state = crate::fixtures::game(&["a"]);
+        state.board.remove(&system);
+
+        let candidates = specialty_candidates(
+            &state,
+            content(),
+            ALL_SOURCES,
+            Some(&galaxy),
+            colour,
+            &std::collections::BTreeSet::new(),
+        );
+
+        assert!(
+            candidates.contains(&(system.clone(), planet.clone())),
+            "empty map system {system} with specialty planet {planet} was omitted: {candidates:?}"
         );
     }
 

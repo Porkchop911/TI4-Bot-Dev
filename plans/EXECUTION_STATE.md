@@ -22,6 +22,8 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 - Ported the session-v3 reviewer UI onto integration commit `e1ee387`, which contains the current
   Fracture activation, Thunder's Edge, anomaly, wormhole, and Wormhole Nexus mechanics.
 - Restored the resolver's read-only finalized-event journal required by reviewer structured events.
+- Corrected the shared empty-system assumption: reviewer selection always exposes static map
+  metadata, and Fracture ingress placement retains specialty planets from empty map systems.
 - No TTS or bridge file was inspected or changed. Verification is recorded in
   `plans/evidence/R01-CURRENT-ENGINE-INTEGRATION.md`.
 
