@@ -172,6 +172,90 @@ fn polygon(center: Pos2, radius: f32, sides: usize, offset: f32) -> Vec<Pos2> {
         .collect()
 }
 
+fn anomaly_style(kinds: &[String]) -> Option<(Color32, &'static str)> {
+    if kinds.iter().any(|kind| kind == "entropic scar") {
+        Some((Color32::from_rgb(48, 24, 64), "╳ SCAR"))
+    } else if kinds.iter().any(|kind| kind == "supernova") {
+        Some((Color32::from_rgb(105, 38, 20), "✹ NOVA"))
+    } else if kinds.iter().any(|kind| kind == "gravity rift") {
+        Some((Color32::from_rgb(50, 28, 82), "◉ RIFT"))
+    } else if kinds.iter().any(|kind| kind == "nebula") {
+        Some((Color32::from_rgb(55, 45, 91), "☁ NEBULA"))
+    } else if kinds.iter().any(|kind| kind == "asteroid field") {
+        Some((Color32::from_rgb(67, 61, 52), "✦ ASTEROIDS"))
+    } else {
+        None
+    }
+}
+
+fn wormhole_style(kind: &str) -> (Color32, &str) {
+    match kind.to_ascii_uppercase().as_str() {
+        "ALPHA" => (Color32::from_rgb(225, 82, 82), "α"),
+        "BETA" => (Color32::from_rgb(72, 190, 111), "β"),
+        "GAMMA" => (Color32::from_rgb(230, 184, 68), "γ"),
+        "DELTA" => (Color32::from_rgb(100, 154, 238), "δ"),
+        _ => (Color32::LIGHT_GRAY, "?"),
+    }
+}
+
+fn draw_wormhole(
+    painter: &egui::Painter,
+    center: Pos2,
+    kind: &str,
+    token: bool,
+    suppressed: bool,
+    scale: f32,
+) {
+    let (mut color, symbol) = wormhole_style(kind);
+    if suppressed {
+        color = color.gamma_multiply(0.35);
+    }
+    let radius = 7.2 * scale.max(0.75);
+    if token {
+        painter.circle_filled(center, radius + 2.2 * scale, Color32::from_rgb(13, 20, 30));
+        painter.circle_stroke(
+            center,
+            radius + 2.2 * scale,
+            Stroke::new(1.3 * scale, Color32::WHITE),
+        );
+    }
+    painter.circle_stroke(center, radius, Stroke::new(2.1 * scale, color));
+    painter.text(
+        center,
+        Align2::CENTER_CENTER,
+        symbol,
+        FontId::proportional(10.0 * scale.max(0.8)),
+        color,
+    );
+    if suppressed {
+        painter.line_segment(
+            [
+                center + Vec2::new(-radius, radius),
+                center + Vec2::new(radius, -radius),
+            ],
+            Stroke::new(1.8 * scale, Color32::LIGHT_RED),
+        );
+    }
+}
+
+fn draw_fracture_portal(painter: &egui::Painter, center: Pos2, ingress: bool, scale: f32) {
+    let color = if ingress {
+        Color32::from_rgb(71, 220, 225)
+    } else {
+        Color32::from_rgb(190, 105, 235)
+    };
+    let radius = 8.5 * scale.max(0.75);
+    painter.circle_stroke(center, radius, Stroke::new(2.4 * scale, color));
+    painter.circle_stroke(center, radius * 0.55, Stroke::new(1.3 * scale, color));
+    painter.text(
+        center,
+        Align2::CENTER_CENTER,
+        if ingress { "IN" } else { "OUT" },
+        FontId::monospace(5.2 * scale.max(0.9)),
+        Color32::WHITE,
+    );
+}
+
 fn draw_unit_symbol(
     painter: &egui::Painter,
     center: Pos2,
@@ -587,7 +671,7 @@ impl ReviewApp {
             Ok(live) => {
                 let lineup = live.session.manifest.factions.join(" → ");
                 self.autosave = Some(PathBuf::from("out/reviews").join(format!(
-                    "autosave-{seed}-rotation{}-{}.ti4review.json",
+                    "autosave-{seed}-rotation{}-{}.ti4review.json.zst",
                     self.rotation,
                     match self.table {
                         ProfileTable::Learner => "learner",
@@ -665,8 +749,9 @@ impl ReviewApp {
             return;
         };
         let Some(path) = rfd::FileDialog::new()
-            .add_filter("TI4 review", &["json"])
-            .set_file_name("game.ti4review.json")
+            .add_filter("Compressed TI4 review", &["zst"])
+            .add_filter("Uncompressed TI4 review", &["json"])
+            .set_file_name("game.ti4review.json.zst")
             .save_file()
         else {
             return;
@@ -683,7 +768,7 @@ impl ReviewApp {
 
     fn open_review(&mut self) {
         let Some(path) = rfd::FileDialog::new()
-            .add_filter("TI4 review", &["json"])
+            .add_filter("TI4 review", &["zst", "json"])
             .pick_file()
         else {
             return;
@@ -1603,22 +1688,68 @@ impl ReviewApp {
                     frame.phase,
                     frame.active.as_deref().unwrap_or("—")
                 ));
+                ui.horizontal_wrapped(|ui| {
+                    stat_badge(
+                        ui,
+                        "⬡",
+                        "Active system",
+                        frame
+                            .state
+                            .active_system
+                            .as_ref()
+                            .map_or("—", ti4_model::id::SystemId::as_str),
+                    );
+                    stat_badge(
+                        ui,
+                        "⌛",
+                        "Pending",
+                        frame.state.pending.as_deref().unwrap_or("—"),
+                    );
+                    stat_badge(ui, "⚔", "Combat round", frame.state.combat_round_seq);
+                });
+                if !frame.state.reroll_staging.is_empty()
+                    || !frame.state.agenda_votes.is_empty()
+                    || !frame.state.agenda_predictions.is_empty()
+                {
+                    ui.collapsing("Current timing / agenda state", |ui| {
+                        if !frame.state.reroll_staging.is_empty() {
+                            ui.label(format!(
+                                "Reroll staging: {} player(s)",
+                                frame.state.reroll_staging.len()
+                            ));
+                        }
+                        for (player, vote) in &frame.state.agenda_votes {
+                            ui.label(format!("Vote: {player} → {vote}"));
+                        }
+                        for (player, prediction) in &frame.state.agenda_predictions {
+                            ui.label(format!("Prediction: {player} → {prediction}"));
+                        }
+                    });
+                }
                 if let Some(error) = &frame.error {
                     ui.colored_label(Color32::LIGHT_RED, error);
                 }
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     // Walks back only as far as the last completed action, which is a handful of
                     // frames in a running game, so this stays cheap however long the review is.
-                    let action_summary = session.frames[..=frame.index]
-                        .iter()
-                        .rev()
-                        .find_map(|candidate| candidate.action_summary.as_ref());
-                    ui.heading("Latest completed action");
+                    let action_summary = frame.action_in_progress.as_ref().or_else(|| {
+                        session.frames[..=frame.index]
+                            .iter()
+                            .rev()
+                            .find_map(|candidate| candidate.action_summary.as_ref())
+                    });
+                    ui.heading(if frame.action_in_progress.is_some() {
+                        "Action in progress"
+                    } else {
+                        "Latest completed action"
+                    });
                     if let Some(summary) = action_summary {
                         ui.strong(&summary.headline);
                         ui.small(format!(
-                            "frames {}–{} · active-player period",
-                            summary.start_frame, summary.end_frame
+                            "frames {}–{} · active-player period{}",
+                            summary.start_frame,
+                            summary.end_frame,
+                            if summary.in_progress { " · IN PROGRESS" } else { "" }
                         ));
                         for detail in &summary.details {
                             ui.label(format!("• {detail}"));
@@ -1752,11 +1883,28 @@ impl ReviewApp {
                     }
                     ui.separator();
                     ui.strong("New engine events");
-                    if frame.new_events.is_empty() {
+                    if frame.new_events.is_empty() && frame.structured_events.is_empty() {
                         ui.label("—");
                     } else {
-                        for event in &frame.new_events {
-                            ui.monospace(event);
+                        for event in &frame.structured_events {
+                            let status = if event.cancelled { " · CANCELLED" } else { "" };
+                            egui::CollapsingHeader::new(format!(
+                                "#{} {}{}",
+                                event.id, event.event_type, status
+                            ))
+                            .show(ui, |ui| {
+                                ui.monospace(
+                                    serde_json::to_string_pretty(&event.payload)
+                                        .unwrap_or_else(|error| error.to_string()),
+                                );
+                            });
+                        }
+                        if !frame.new_events.is_empty() {
+                            ui.collapsing("Legacy event-name trace", |ui| {
+                                for event in &frame.new_events {
+                                    ui.monospace(event);
+                                }
+                            });
                         }
                     }
                     if let Some(tile) = &self.selected_tile {
@@ -1786,20 +1934,59 @@ impl ReviewApp {
                 }
             });
             ui.small(
-                "Thick outer edge = space control; thin inner edge = planet control (split when mixed). Planet: resources/influence · C/H/I trait · B/G/R/Y specialty · ★ legendary · S station · × destroyed. Gray units are neutral; red slash = damaged; yellow ring = galvanized.",
+                "Thick outer edge = space control; thin inner edge = planet control (split when mixed). Wormholes: lettered rings; white outer rim = placed token; red slash = suppressed. IN/OUT portals connect the galaxy to the Fracture. Planet: resources/influence · C/H/I trait · B/G/R/Y specialty · ★ legendary · S station · × destroyed. Gray units are neutral; red slash = damaged; yellow ring = galvanized.",
             );
             let available = ui.available_size();
             let (response, painter) = ui.allocate_painter(available, Sense::click());
-            let center = response.rect.center();
             let scale = (available.x / 1150.0)
                 .min(available.y / 900.0)
                 .clamp(0.45, 1.2);
+            let fracture_visible = frame.state.fracture_in_play;
+            let center = response.rect.center()
+                - Vec2::new(0.0, if fracture_visible { 72.0 * scale } else { 0.0 });
             let radius = 58.0 * scale;
+            if fracture_visible {
+                painter.text(
+                    Pos2::new(response.rect.center().x, response.rect.bottom() - 124.0 * scale),
+                    Align2::CENTER_CENTER,
+                    "THE FRACTURE · SPECIAL AREA",
+                    FontId::proportional(10.0 * scale.max(0.85)),
+                    Color32::from_rgb(205, 151, 239),
+                );
+            }
+            let selected_is_ingress = self.selected_tile.as_ref().is_some_and(|selected| {
+                frame.state.ingress_tokens.contains(&SystemId::new(selected))
+            });
+            let selected_is_egress = self.selected_tile.as_ref().is_some_and(|selected| {
+                session
+                    .board
+                    .iter()
+                    .any(|tile| tile.system == *selected && tile.egress)
+            });
             for tile in &session.board {
+                if tile.special_area.as_deref() == Some("fracture") && !fracture_visible {
+                    continue;
+                }
+                if tile.special_area.as_deref() == Some("nexus")
+                    && !frame.state.board.contains_key(&SystemId::new(&tile.system))
+                {
+                    continue;
+                }
                 let tile_planets = planets_for_tile(session, frame, tile);
-                let x = center.x + 126.0 * scale * (tile.q as f32 + tile.r as f32 / 2.0);
-                let y = center.y + 108.0 * scale * tile.r as f32;
-                let point = Pos2::new(x, y);
+                let point = match tile.special_area.as_deref() {
+                    Some("fracture") => Pos2::new(
+                        response.rect.center().x + (tile.q as f32 - 3.0) * 100.0 * scale,
+                        response.rect.bottom() - 61.0 * scale,
+                    ),
+                    Some("nexus") => Pos2::new(
+                        response.rect.left() + 72.0 * scale,
+                        response.rect.bottom() - 61.0 * scale,
+                    ),
+                    _ => Pos2::new(
+                        center.x + 126.0 * scale * (tile.q as f32 + tile.r as f32 / 2.0),
+                        center.y + 108.0 * scale * tile.r as f32,
+                    ),
+                };
                 let points: Vec<Pos2> = (0..6)
                     .map(|corner| {
                         let angle = std::f32::consts::FRAC_PI_6
@@ -1812,8 +1999,14 @@ impl ReviewApp {
                 let system_purged = frame.state.purged_systems.contains(&system_id);
                 let fill = if system_purged {
                     Color32::from_rgb(24, 24, 28)
+                } else if tile.special_area.as_deref() == Some("fracture") {
+                    Color32::from_rgb(39, 25, 57)
+                } else if tile.special_area.as_deref() == Some("nexus") {
+                    Color32::from_rgb(25, 48, 61)
                 } else if tile.hyperlane {
                     Color32::from_rgb(55, 39, 91)
+                } else if let Some((color, _)) = anomaly_style(&tile.anomalies) {
+                    color
                 } else if selected {
                     Color32::from_rgb(48, 91, 116)
                 } else {
@@ -1824,6 +2017,15 @@ impl ReviewApp {
                     fill,
                     Stroke::new(1.4, Color32::from_rgb(112, 152, 189)),
                 ));
+                if let Some((_, label)) = anomaly_style(&tile.anomalies) {
+                    painter.text(
+                        point + Vec2::new(0.0, -32.0 * scale),
+                        Align2::CENTER_CENTER,
+                        label,
+                        FontId::monospace(6.2 * scale.max(0.9)),
+                        Color32::from_rgb(239, 214, 178),
+                    );
+                }
                 let system_state = frame.state.board.get(&SystemId::new(&tile.system));
                 let mut space_owners: Vec<&PlayerId> = system_state
                     .into_iter()
@@ -1878,7 +2080,9 @@ impl ReviewApp {
                         );
                     }
                 }
-                if selected {
+                let portal_linked = (selected_is_ingress && tile.egress)
+                    || (selected_is_egress && frame.state.ingress_tokens.contains(&system_id));
+                if selected || portal_linked {
                     let inner: Vec<Pos2> = points
                         .iter()
                         .map(|corner| point + (*corner - point) * 0.91)
@@ -1896,6 +2100,70 @@ impl ReviewApp {
                     FontId::proportional(9.5 * scale.max(0.85)),
                     Color32::WHITE,
                 );
+
+                let alpha_beta_suppressed = ti4_engine::laws::wormholes_suppressed(&frame.state);
+                let nexus_suppressed = tile.special_area.as_deref() == Some("nexus")
+                    && ti4_engine::laws::nexus_wormholes_suppressed(&frame.state);
+                let mut wormhole_index = 0_usize;
+                for kind in &tile.wormholes {
+                    let suppressed = matches!(kind.as_str(), "ALPHA" | "BETA")
+                        && (alpha_beta_suppressed || nexus_suppressed);
+                    draw_wormhole(
+                        &painter,
+                        point + Vec2::new((-42.0 + wormhole_index as f32 * 18.0) * scale, -18.0 * scale),
+                        kind,
+                        false,
+                        suppressed,
+                        scale,
+                    );
+                    wormhole_index += 1;
+                }
+                for (kind, system) in &frame.state.wormhole_tokens {
+                    if system != &system_id {
+                        continue;
+                    }
+                    let suppressed = matches!(kind.as_str(), "ALPHA" | "BETA")
+                        && alpha_beta_suppressed;
+                    draw_wormhole(
+                        &painter,
+                        point + Vec2::new((-42.0 + wormhole_index as f32 * 18.0) * scale, -18.0 * scale),
+                        kind,
+                        true,
+                        suppressed,
+                        scale,
+                    );
+                    wormhole_index += 1;
+                }
+                if let Some((system, face)) = &frame.state.ion_storm
+                    && system == &system_id
+                {
+                    let suppressed = matches!(face.as_str(), "ALPHA" | "BETA")
+                        && alpha_beta_suppressed;
+                    draw_wormhole(
+                        &painter,
+                        point + Vec2::new((-42.0 + wormhole_index as f32 * 18.0) * scale, -18.0 * scale),
+                        face,
+                        true,
+                        suppressed,
+                        scale,
+                    );
+                }
+                if frame.state.ingress_tokens.contains(&system_id) {
+                    draw_fracture_portal(
+                        &painter,
+                        point + Vec2::new(43.0 * scale, 31.0 * scale),
+                        true,
+                        scale,
+                    );
+                }
+                if tile.egress {
+                    draw_fracture_portal(
+                        &painter,
+                        point + Vec2::new(43.0 * scale, 31.0 * scale),
+                        false,
+                        scale,
+                    );
+                }
 
                 if let Some(state) = system_state {
                     let mut groups: BTreeMap<(PlayerId, String, bool, bool), usize> =
@@ -1948,19 +2216,6 @@ impl ReviewApp {
                 let mut token_labels = Vec::new();
                 if frame.state.frontier_tokens.contains(&system_id) {
                     token_labels.push("Frontier".to_owned());
-                }
-                for (kind, system) in &frame.state.wormhole_tokens {
-                    if system == &system_id {
-                        token_labels.push(format!("{kind} WH"));
-                    }
-                }
-                if let Some((system, face)) = &frame.state.ion_storm
-                    && system == &system_id
-                {
-                    token_labels.push(format!("Ion {face}"));
-                }
-                if frame.state.ingress_tokens.contains(&system_id) {
-                    token_labels.push("Ingress".to_owned());
                 }
                 if frame.state.breach_tokens.contains(&system_id) {
                     token_labels.push("Breach".to_owned());
@@ -2183,7 +2438,9 @@ impl eframe::App for ReviewApp {
 fn is_review(path: &Path) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())
-        .is_some_and(|name| name.ends_with(".ti4review.json"))
+        .is_some_and(|name| {
+            name.ends_with(".ti4review.json") || name.ends_with(".ti4review.json.zst")
+        })
 }
 
 #[cfg(test)]
@@ -2211,6 +2468,7 @@ mod tests {
     #[test]
     fn previous_game_discovery_accepts_only_review_sessions() {
         assert!(is_review(Path::new("game.ti4review.json")));
+        assert!(is_review(Path::new("game.ti4review.json.zst")));
         assert!(!is_review(Path::new("reviewer-settings.json")));
         assert!(!is_review(Path::new("game.html")));
     }

@@ -268,6 +268,7 @@ pub struct Resolver {
     phase: Phase,
     table: Table,
     log: Vec<String>,
+    applied_events: Vec<Event>,
     relation_being_resolved: Option<Relation>,
     emission_stack: Vec<(String, u64)>,
     maximum_depth: usize,
@@ -293,6 +294,7 @@ impl Resolver {
             phase: Phase::Action,
             table,
             log: Vec::new(),
+            applied_events: Vec::new(),
             relation_being_resolved: None,
             emission_stack: Vec::new(),
             maximum_depth: Self::DEFAULT_MAXIMUM_DEPTH,
@@ -383,6 +385,12 @@ impl Resolver {
         &self.log
     }
 
+    /// Payload-bearing events after WHEN effects, cancellation, resolution, and AFTER effects.
+    #[must_use]
+    pub fn applied_events(&self) -> &[Event] {
+        &self.applied_events
+    }
+
     /// Default maximum count of simultaneously resolving events.
     pub const DEFAULT_MAXIMUM_DEPTH: usize = 100;
 
@@ -415,6 +423,10 @@ impl Resolver {
         }
         self.emission_stack
             .push((event.event_type.clone(), event.id));
+        // Reserve the event's position before opening windows so nested emissions follow their
+        // parent in emission order even though the nested event completes first.
+        let journal_index = self.applied_events.len();
+        self.applied_events.push(event.clone());
         self.log
             .push(format!("emit {}#{}", event.event_type, event.id));
         let result = (|| {
@@ -442,6 +454,11 @@ impl Resolver {
             Ok(event)
         })();
         self.emission_stack.pop();
+        if let Ok(event) = &result {
+            self.applied_events[journal_index] = event.clone();
+        } else {
+            self.applied_events.remove(journal_index);
+        }
         result
     }
 
@@ -469,6 +486,8 @@ impl Resolver {
         }
         self.emission_stack
             .push((event.event_type.clone(), event.id));
+        let journal_index = self.applied_events.len();
+        self.applied_events.push(event.clone());
         self.log
             .push(format!("emit {}#{}", event.event_type, event.id));
         let result = (|| {
@@ -496,6 +515,11 @@ impl Resolver {
             Ok(event)
         })();
         self.emission_stack.pop();
+        if let Ok(event) = &result {
+            self.applied_events[journal_index] = event.clone();
+        } else {
+            self.applied_events.remove(journal_index);
+        }
         result
     }
 

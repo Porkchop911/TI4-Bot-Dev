@@ -134,5 +134,5 @@ where
 }
 
 fn usage() -> String {
-    "usage:\n  ti4-review\n  ti4-review validate <game.ti4review.json>\n  ti4-review render <game.ti4review.json> <game.html>\n  ti4-review simulate --checkpoint <checkpoint.json> --map-pool <pool.json.gz> --out <game.ti4review.json> [--seed 42] [--rotation 0] [--table learner|accepted] [--temperature 1.0] [--unit step|decision|action] [--count N | --until round|end]".to_owned()
+    "usage:\n  ti4-review\n  ti4-review validate <game.ti4review.json[.zst]>\n  ti4-review render <game.ti4review.json[.zst]> <game.html>\n  ti4-review simulate --checkpoint <checkpoint.json> --map-pool <pool.json.gz> --out <game.ti4review.json[.zst]> [--seed 42] [--rotation 0] [--table learner|accepted] [--temperature 1.0] [--unit step|decision|action] [--count N | --until round|end]".to_owned()
 }

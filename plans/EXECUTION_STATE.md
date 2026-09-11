@@ -17,6 +17,14 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 
 ## Current position
 
+### Reviewer/current-engine integration (2026-09-11)
+
+- Ported the session-v3 reviewer UI onto integration commit `e1ee387`, which contains the current
+  Fracture activation, Thunder's Edge, anomaly, wormhole, and Wormhole Nexus mechanics.
+- Restored the resolver's read-only finalized-event journal required by reviewer structured events.
+- No TTS or bridge file was inspected or changed. Verification is recorded in
+  `plans/evidence/R01-CURRENT-ENGINE-INTEGRATION.md`.
+
 - Historical Python repository: `D:\Projects\ti4-engine` (read-only; not behavioral acceptance)
 - Historical branch: `codex/fully-learned-policy`
 - Historical pinned commit: `37061c511a4780d4c0719e0342533a498cd4b457`
