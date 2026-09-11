@@ -55,6 +55,15 @@ pub struct Progress {
     /// than for what it was dealt.
     #[serde(default)]
     pub technologies_gained: i64,
+    /// Command tokens in this seat's fleet pool (its fleet supply).
+    #[serde(default)]
+    pub fleet_tokens: i64,
+    /// Trade goods this seat holds.
+    #[serde(default)]
+    pub trade_goods: i64,
+    /// Whether this seat controls Styx, the Fracture's legendary planet.
+    #[serde(default)]
+    pub holds_styx: bool,
 }
 
 /// What a seat held at setup, so the gains above can be deltas.
@@ -114,6 +123,15 @@ pub fn measure(seen: &Observed<'_>, player: &PlayerId, baseline: Baseline) -> Pr
             let held = seen.seat(player).map_or(0, |seat| seat.technologies.len());
             count(held.saturating_sub(baseline.technologies))
         },
+        fleet_tokens: seen
+            .seat(player)
+            .map_or(0, |seat| i64::from(seat.fleet_tokens)),
+        trade_goods: seen
+            .seat(player)
+            .map_or(0, |seat| i64::from(seat.trade_goods)),
+        holds_styx: controlled
+            .iter()
+            .any(|(_, planet)| planet.as_str() == "styx"),
     }
 }
 
@@ -300,5 +318,23 @@ mod tests {
             measure(&seen, &theirs, Baseline::default()).planets_gained,
             2
         );
+    }
+
+    #[test]
+    fn the_fleet_pool_trade_goods_and_styx_come_through() {
+        let mut state = ti4_engine::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        let before = measure(&watching(&state), &player, Baseline::default());
+        assert!(!before.holds_styx);
+
+        let seat = state.player_mut(&player).unwrap();
+        seat.fleet_tokens = 5;
+        seat.trade_goods = 9;
+        hold(&mut state, &player, "fracture4", "styx");
+
+        let after = measure(&watching(&state), &player, Baseline::default());
+        assert_eq!(after.fleet_tokens, 5);
+        assert_eq!(after.trade_goods, 9);
+        assert!(after.holds_styx);
     }
 }

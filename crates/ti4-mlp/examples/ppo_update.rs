@@ -1113,9 +1113,25 @@ fn main() {
         "--strategy-diversity-weight",
         reward.strategy_diversity_weight,
     );
+    // Command tokens, trade goods and Styx. Off by default like every term above: a run that
+    // prices them says so on its command line.
+    reward.fleet_hoard_penalty = weight("--fleet-hoard-penalty", reward.fleet_hoard_penalty);
+    reward.zero_fleet_penalty = weight("--zero-fleet-penalty", reward.zero_fleet_penalty);
+    reward.trade_goods_hoard_weight = weight(
+        "--trade-goods-hoard-weight",
+        reward.trade_goods_hoard_weight,
+    );
+    reward.styx_bonus = weight("--styx-bonus", reward.styx_bonus);
     // `returns` gates both terminal bonuses on `> 0.0`, so a negative value here would be read as
     // "off" and the run would silently not be the experiment its command line describes.
     for (name, value) in [
+        ("--fleet-hoard-penalty", reward.fleet_hoard_penalty),
+        ("--zero-fleet-penalty", reward.zero_fleet_penalty),
+        (
+            "--trade-goods-hoard-weight",
+            reward.trade_goods_hoard_weight,
+        ),
+        ("--styx-bonus", reward.styx_bonus),
         ("--clearance-weight", reward.clearance_weight),
         ("--high-vp-bonus", reward.high_vp_bonus),
         // `returns` gates the monoculture penalty on `> 0.0` as well, so the same trap applies:
@@ -1160,6 +1176,15 @@ fn main() {
         println!(
             "  shaping     fleet {} | tech {} | strategy diversity {}",
             reward.fleet_weight, reward.tech_weight, reward.strategy_diversity_weight
+        );
+        println!(
+            "  holdings    fleet pool >= {} at end {} | empty fleet pool {} | trade goods > {} {} per excess good per round | Styx at end {}",
+            ti4_training::reward::FLEET_HOARD_AT,
+            reward.fleet_hoard_penalty,
+            reward.zero_fleet_penalty,
+            ti4_training::reward::TRADE_GOODS_FREE,
+            reward.trade_goods_hoard_weight,
+            reward.styx_bonus
         );
     }
     println!(
