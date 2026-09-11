@@ -13,8 +13,12 @@
 //! The block weights are random rather than zero, so no kernel can shortcut them; timing is all
 //! this measures. Arms alternate pass by pass so drift lands on both; the median pass is reported.
 //!
-//! usage: trunk_depth_cost --bundle <dir> --samples <json> [--blocks 2] [--passes 5]
-//!        [--minibatch 4096] [--steps 20]
+//! Usage: `trunk_depth_cost --bundle <dir> --samples <json> [--blocks 2] [--passes 5]
+//! [--minibatch 4096] [--steps 20]`
+#![expect(
+    clippy::cast_precision_loss,
+    reason = "timing arithmetic over counts far below f64's exact-integer range"
+)]
 use std::collections::BTreeMap;
 use std::time::Instant;
 
@@ -32,11 +36,16 @@ type Block = (Tensor, Tensor, Tensor, Tensor);
 
 fn argument(name: &str) -> Option<String> {
     let arguments: Vec<String> = std::env::args().collect();
-    arguments.iter().position(|a| a == name).and_then(|i| arguments.get(i + 1).cloned())
+    arguments
+        .iter()
+        .position(|a| a == name)
+        .and_then(|i| arguments.get(i + 1).cloned())
 }
 
 fn number<T: std::str::FromStr>(name: &str, default: T) -> T {
-    argument(name).map_or(default, |v| v.parse().unwrap_or_else(|_| panic!("invalid {name}")))
+    argument(name).map_or(default, |v| {
+        v.parse().unwrap_or_else(|_| panic!("invalid {name}"))
+    })
 }
 
 fn read_samples(path: &str, bundle: &str) -> Vec<Sample> {
@@ -103,11 +112,19 @@ fn apply(z: Tensor, blocks: &[Block]) -> Tensor {
 fn decide(actor: &Actor, sample: &Sample, blocks: &[Block]) -> f64 {
     let f = i64::try_from(sample.row.index()).expect("row fits");
     let h = sample.head;
-    let z = apply(actor.trunk(&sample.options, sample.row).expect("trunk"), blocks);
+    let z = apply(
+        actor.trunk(&sample.options, sample.row).expect("trunk"),
+        blocks,
+    );
     let w = actor.shared_readout().get(h) + actor.delta().get(f).get(h);
     let b = actor.b_shared().get(h) + actor.b_delta().get(f).get(h);
     let logits = z.mv(&w) + b;
-    let c = apply(actor.trunk(&sample.options[..1], sample.row).expect("critic trunk"), blocks);
+    let c = apply(
+        actor
+            .trunk(&sample.options[..1], sample.row)
+            .expect("critic trunk"),
+        blocks,
+    );
     let v = c.mv(actor.value_readout()) + actor.b_value();
     logits.sum(Kind::Float).double_value(&[]) + v.sum(Kind::Float).double_value(&[])
 }
@@ -204,7 +221,10 @@ fn step(net: &Trainable, samples: &[&Sample], extra: &[Block]) -> f64 {
             rows.push(f);
             head_of.push(s.head);
         }
-        critic.push((s.options[0].columns.as_slice(), s.options[0].values.as_slice()));
+        critic.push((
+            s.options[0].columns.as_slice(),
+            s.options[0].values.as_slice(),
+        ));
         critic_rows.push(f);
     }
     let rows = Tensor::from_slice(&rows).to_device(device);
@@ -215,8 +235,8 @@ fn step(net: &Trainable, samples: &[&Sample], extra: &[Block]) -> f64 {
     let pair = &rows * heads + &head_index;
     let w = net.w_shared.index_select(0, &head_index)
         + net.delta.view([-1, width]).index_select(0, &pair);
-    let b = net.b_shared.index_select(0, &head_index)
-        + net.b_delta.view([-1]).index_select(0, &pair);
+    let b =
+        net.b_shared.index_select(0, &head_index) + net.b_delta.view([-1]).index_select(0, &pair);
     let logits = (z * w).sum_dim_intlist([1i64].as_slice(), false, Kind::Float) + b;
     let c = net.trunk(&critic, &critic_rows, extra);
     let values = c.mv(&net.value) + &net.b_value;
@@ -227,13 +247,24 @@ fn step(net: &Trainable, samples: &[&Sample], extra: &[Block]) -> f64 {
     start.elapsed().as_secs_f64() * 1e3
 }
 
-fn cuda(actor: &Actor, samples: &[Sample], count: usize, minibatch: usize, steps: usize, passes: usize) -> (f64, f64, f64) {
+fn cuda(
+    actor: &Actor,
+    samples: &[Sample],
+    count: usize,
+    minibatch: usize,
+    steps: usize,
+    passes: usize,
+) -> (f64, f64, f64) {
     let device = Device::Cuda(0);
     let net = Trainable::of(actor, device);
     let extra = blocks(count, actor.width(), device, true);
     let arms: [&[Block]; 2] = [&[], &extra];
     let batches: Vec<Vec<&Sample>> = (0..steps)
-        .map(|i| (0..minibatch).map(|j| &samples[(i * minibatch + j) % samples.len()]).collect())
+        .map(|i| {
+            (0..minibatch)
+                .map(|j| &samples[(i * minibatch + j) % samples.len()])
+                .collect()
+        })
         .collect();
     let rows_per_batch = batches[0].iter().map(|s| s.options.len()).sum::<usize>() as f64;
     for batch in batches.iter().take(3) {
@@ -244,7 +275,10 @@ fn cuda(actor: &Actor, samples: &[Sample], count: usize, minibatch: usize, steps
     for pass in 0..passes {
         for k in 0..2 {
             let arm = (pass + k) % 2;
-            let total: f64 = batches.iter().map(|batch| step(&net, batch, arms[arm])).sum();
+            let total: f64 = batches
+                .iter()
+                .map(|batch| step(&net, batch, arms[arm]))
+                .sum();
             times[arm].push(total / steps as f64);
         }
     }
@@ -261,7 +295,9 @@ fn main() {
     let minibatch: usize = number("--minibatch", 4096);
     let steps: usize = number("--steps", 20);
 
-    let actor = ti4_mlp::bundle::read(std::path::Path::new(&bundle)).expect("bundle").actor;
+    let actor = ti4_mlp::bundle::read(std::path::Path::new(&bundle))
+        .expect("bundle")
+        .actor;
     let samples = read_samples(&path, &bundle);
     let options: usize = samples.iter().map(|s| s.options.len()).sum();
     println!(
@@ -270,7 +306,10 @@ fn main() {
         options as f64 / samples.len() as f64,
         actor.width()
     );
-    println!("actor tensors require grad: {}", actor.hidden().requires_grad());
+    println!(
+        "actor tensors require grad: {}",
+        actor.hidden().requires_grad()
+    );
 
     let extra = blocks(count, actor.width(), Device::Cpu, false);
     let (base, deeper) = cpu(&actor, &samples, &extra, passes);

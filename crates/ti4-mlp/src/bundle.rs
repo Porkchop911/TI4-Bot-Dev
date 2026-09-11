@@ -49,6 +49,14 @@ use crate::{Actor, EMBED_DIM, FACTION_ROSTER, SeparateCritic, Width, heads};
 /// fails loudly rather than misreading a field it recognises.
 pub const SCHEMA: u32 = 7;
 
+/// Schema 7 plus residual blocks after the trunk. A bundle without blocks is still written as
+/// schema 7, byte for byte what it always was; one with blocks is schema 8, so a reader that
+/// predates them refuses it rather than silently dropping part of the model.
+pub const RESIDUAL_SCHEMA: u32 = 8;
+
+/// The most residual blocks a bundle may declare: a load bound, like every other §4.4 check.
+const MAX_RESIDUAL_BLOCKS: u64 = 8;
+
 /// The feature-extraction contract that gives each input slot its meaning.
 ///
 /// Schema 7 removes prompt and display-label text from MLP inputs. A slot digest protects names,
@@ -209,17 +217,19 @@ pub fn write(
 
     let mut digests: BTreeMap<String, String> = BTreeMap::new();
 
-    write_tensors(
-        &staging,
-        "trunk.safetensors",
-        &[
-            ("W1", actor.input()),
-            ("b1", actor.b1()),
-            ("W2", actor.hidden()),
-            ("b2", actor.b2()),
-        ],
-        &mut digests,
-    )?;
+    let residual = actor.residual_tensors();
+    let mut trunk: Vec<(&str, &Tensor)> = vec![
+        ("W1", actor.input()),
+        ("b1", actor.b1()),
+        ("W2", actor.hidden()),
+        ("b2", actor.b2()),
+    ];
+    trunk.extend(
+        residual
+            .iter()
+            .map(|(name, tensor)| (name.as_str(), *tensor)),
+    );
+    write_tensors(&staging, "trunk.safetensors", &trunk, &mut digests)?;
     write_tensors(
         &staging,
         "readout.safetensors",
@@ -358,11 +368,30 @@ fn manifest_document(
 ) -> Result<String, BundleError> {
     let backend = ti4_tensor::backend();
     validate_provenance(provenance)?;
+    // Blocks decide the schema, and only a schema-8 trunk names them, so a block-free bundle is
+    // exactly the schema-7 document it always was.
+    let blocks = actor.residual_blocks();
+    let (schema, trunk) = if blocks == 0 {
+        (
+            SCHEMA,
+            serde_json::json!({ "width": actor.width(), "depth": 2, "activation": "relu" }),
+        )
+    } else {
+        (
+            RESIDUAL_SCHEMA,
+            serde_json::json!({
+                "width": actor.width(),
+                "depth": 2,
+                "activation": "relu",
+                "residual_blocks": blocks,
+            }),
+        )
+    };
     let document = serde_json::json!({
-        "schema": SCHEMA,
+        "schema": schema,
         "projection_abi": PROJECTION_ABI_VERSION,
         "dtype": "f32",
-        "trunk": { "width": actor.width(), "depth": 2, "activation": "relu" },
+        "trunk": trunk,
         "embed_dim": EMBED_DIM,
         "factions": FACTION_ROSTER.as_slice(),
         "heads": heads(),
@@ -444,11 +473,7 @@ pub fn read(directory: &Path) -> Result<Loaded, BundleError> {
         .get("schema")
         .and_then(serde_json::Value::as_u64)
         .ok_or_else(|| BundleError::Invalid("manifest has no schema".to_owned()))?;
-    if schema != u64::from(SCHEMA) {
-        return Err(BundleError::Invalid(format!(
-            "schema {schema} is not {SCHEMA}"
-        )));
-    }
+    let residual_blocks = residual_blocks_of(&manifest, schema)?;
     let projection_abi = u64_field(&manifest, "projection_abi")?;
     if projection_abi != u64::from(PROJECTION_ABI_VERSION) {
         return Err(BundleError::Invalid(format!(
@@ -460,7 +485,7 @@ pub fn read(directory: &Path) -> Result<Loaded, BundleError> {
         return Err(BundleError::Invalid(format!("dtype {dtype} is not f32")));
     }
     let critic_mode = CriticMode::parse(&string_field(&manifest, "critic_mode")?)?;
-    validate_fixed_manifest_fields(&manifest)?;
+    validate_fixed_manifest_fields(&manifest, residual_blocks)?;
 
     inspect_directory(directory, critic_mode)?;
 
@@ -523,11 +548,11 @@ pub fn read(directory: &Path) -> Result<Loaded, BundleError> {
 
     let named = load_tensors(directory, critic_mode, checksums)?;
 
-    check_shapes(&named, width, capacity, critic_mode)?;
+    check_shapes(&named, width, capacity, critic_mode, residual_blocks)?;
 
     // Only now does a live model exist.
     let mut actor = Actor::zeros(width, capacity);
-    install(&mut actor, &named, critic_mode);
+    install(&mut actor, &named, critic_mode, residual_blocks);
 
     Ok(Loaded {
         actor,
@@ -535,6 +560,35 @@ pub fn read(directory: &Path) -> Result<Loaded, BundleError> {
         critic_mode,
         update: u64_field(&manifest, "update")?,
     })
+}
+
+/// How many residual blocks the schema admits: none for schema 7, `trunk.residual_blocks` (at least
+/// one, at most [`MAX_RESIDUAL_BLOCKS`]) for schema 8, and any other schema is refused.
+fn residual_blocks_of(manifest: &serde_json::Value, schema: u64) -> Result<usize, BundleError> {
+    if schema == u64::from(SCHEMA) {
+        return Ok(0);
+    }
+    if schema != u64::from(RESIDUAL_SCHEMA) {
+        return Err(BundleError::Invalid(format!(
+            "schema {schema} is not {SCHEMA} or {RESIDUAL_SCHEMA}"
+        )));
+    }
+    let declared = manifest
+        .get("trunk")
+        .and_then(|trunk| trunk.get("residual_blocks"))
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| {
+            BundleError::Invalid(format!(
+                "schema {RESIDUAL_SCHEMA} has no trunk.residual_blocks"
+            ))
+        })?;
+    if declared == 0 || declared > MAX_RESIDUAL_BLOCKS {
+        return Err(BundleError::Invalid(format!(
+            "trunk.residual_blocks {declared} is outside 1..={MAX_RESIDUAL_BLOCKS}"
+        )));
+    }
+    usize::try_from(declared)
+        .map_err(|_| BundleError::Invalid("trunk.residual_blocks does not fit".to_owned()))
 }
 
 fn validate_manifest_keys(manifest: &serde_json::Value) -> Result<(), BundleError> {
@@ -572,12 +626,18 @@ fn validate_manifest_keys(manifest: &serde_json::Value) -> Result<(), BundleErro
     Ok(())
 }
 
-fn validate_fixed_manifest_fields(manifest: &serde_json::Value) -> Result<(), BundleError> {
+fn validate_fixed_manifest_fields(
+    manifest: &serde_json::Value,
+    residual_blocks: usize,
+) -> Result<(), BundleError> {
     let trunk = manifest
         .get("trunk")
         .and_then(serde_json::Value::as_object)
         .ok_or_else(|| BundleError::Invalid("manifest has no trunk object".to_owned()))?;
-    if trunk.len() != 3
+    // Schema 8 adds exactly one key, `residual_blocks`, which the caller has already read and
+    // bounded; a schema-7 trunk that names one is refused here.
+    let keys = if residual_blocks == 0 { 3 } else { 4 };
+    if trunk.len() != keys
         || trunk.get("depth").and_then(serde_json::Value::as_u64) != Some(2)
         || trunk.get("activation").and_then(serde_json::Value::as_str) != Some("relu")
     {
@@ -704,11 +764,12 @@ fn check_shapes(
     width: Width,
     capacity: i64,
     critic_mode: CriticMode,
+    residual_blocks: usize,
 ) -> Result<(), BundleError> {
     let heads_count = i64::try_from(heads().len()).unwrap_or(0);
     let factions = i64::try_from(FACTION_ROSTER.len()).unwrap_or(0);
     let w = width.units();
-    let expected: Vec<(&str, Vec<i64>)> = {
+    let expected: Vec<(String, Vec<i64>)> = {
         let mut expected = vec![
             ("W1", vec![capacity, w]),
             ("b1", vec![w]),
@@ -735,10 +796,25 @@ fn check_shapes(
             }
             CriticMode::BatchMean => {}
         }
+        let mut expected: Vec<(String, Vec<i64>)> = expected
+            .into_iter()
+            .map(|(name, shape)| (name.to_owned(), shape))
+            .collect();
+        // Each residual block: two [width, width] weights and two [width] biases.
+        for index in 0..residual_blocks {
+            for part in crate::Residual::NAMES {
+                let shape = if part.starts_with('W') {
+                    vec![w, w]
+                } else {
+                    vec![w]
+                };
+                expected.push((format!("R{index}_{part}"), shape));
+            }
+        }
         expected
     };
     for (name, shape) in &expected {
-        let tensor = named.get(*name).ok_or_else(|| {
+        let tensor = named.get(name).ok_or_else(|| {
             BundleError::Invalid(format!("the bundle has no tensor named {name}"))
         })?;
         if tensor.size() != *shape {
@@ -765,7 +841,20 @@ fn check_shapes(
 }
 
 /// Move the verified tensors into a fresh actor.
-fn install(actor: &mut Actor, named: &BTreeMap<String, Tensor>, critic_mode: CriticMode) {
+fn install(
+    actor: &mut Actor,
+    named: &BTreeMap<String, Tensor>,
+    critic_mode: CriticMode,
+    residual_blocks: usize,
+) {
+    actor.set_residual_blocks(
+        (0..residual_blocks)
+            .map(|index| {
+                crate::Residual::NAMES
+                    .map(|part| named[&format!("R{index}_{part}")].shallow_clone())
+            })
+            .collect(),
+    );
     *actor.input_mut() = named["W1"].shallow_clone();
     *actor.b1_mut() = named["b1"].shallow_clone();
     *actor.hidden_mut() = named["W2"].shallow_clone();
@@ -1085,6 +1174,43 @@ mod tests {
             "the fixture is all zeros, so the comparison proves nothing"
         );
         let _ = text;
+    }
+
+    #[test]
+    fn residual_blocks_round_trip_as_schema_eight_and_plain_bundles_stay_schema_seven() {
+        let scratch = Scratch::new("residual");
+        let (plain, text) = write_bundle(&scratch, CriticMode::Shared);
+        assert_eq!(manifest(&plain)["schema"], SCHEMA);
+        assert!(manifest(&plain)["trunk"].get("residual_blocks").is_none());
+
+        let mut deeper = actor(read(&plain).expect("loads").actor.capacity());
+        deeper.add_residual_blocks(2, 11);
+        let destination = scratch.0.join("checkpoint-deeper");
+        write(
+            &destination,
+            &deeper,
+            &text,
+            CriticMode::Shared,
+            &provenance(),
+        )
+        .expect("writes");
+        let written = manifest(&destination);
+        assert_eq!(written["schema"], RESIDUAL_SCHEMA);
+        assert_eq!(written["trunk"]["residual_blocks"], 2);
+
+        let loaded = read(&destination).expect("loads");
+        assert_eq!(loaded.actor.residual_blocks(), 2);
+        let original = deeper.residual_tensors();
+        let round_tripped = loaded.actor.residual_tensors();
+        assert_eq!(original.len(), 8);
+        for ((name, a), (other, b)) in original.iter().zip(&round_tripped) {
+            assert_eq!(name, other);
+            assert_eq!(
+                ti4_tensor::to_vec(a).expect("vec"),
+                ti4_tensor::to_vec(b).expect("vec"),
+                "{name} did not survive the round trip"
+            );
+        }
     }
 
     #[test]

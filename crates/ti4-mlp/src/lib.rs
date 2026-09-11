@@ -415,6 +415,55 @@ impl SeparateCritic {
     }
 }
 
+/// One residual block after the two-layer trunk: `z + W_out · relu(W_in · z + b_in) + b_out`.
+///
+/// `W_out` and `b_out` start at zero, so a block adds nothing until training moves it and an actor
+/// that gains one computes exactly what it computed before. `W_in` starts random: were it zero as
+/// well, neither weight would ever receive a gradient.
+#[derive(Debug)]
+struct Residual {
+    /// `[width, width]`.
+    w_in: Tensor,
+    /// `[width]`.
+    b_in: Tensor,
+    /// `[width, width]`, zero at creation.
+    w_out: Tensor,
+    /// `[width]`, zero at creation.
+    b_out: Tensor,
+}
+
+impl Residual {
+    /// The four tensors, in the order the bundle names them.
+    const NAMES: [&'static str; 4] = ["W_in", "b_in", "W_out", "b_out"];
+
+    const fn tensors(&self) -> [&Tensor; 4] {
+        [&self.w_in, &self.b_in, &self.w_out, &self.b_out]
+    }
+
+    const fn tensors_mut(&mut self) -> [&mut Tensor; 4] {
+        [
+            &mut self.w_in,
+            &mut self.b_in,
+            &mut self.w_out,
+            &mut self.b_out,
+        ]
+    }
+
+    fn copied(&self) -> Self {
+        Self {
+            w_in: self.w_in.detach().copy(),
+            b_in: self.b_in.detach().copy(),
+            w_out: self.w_out.detach().copy(),
+            b_out: self.b_out.detach().copy(),
+        }
+    }
+
+    fn apply(&self, z: &Tensor) -> Tensor {
+        let inner = (z.matmul(&self.w_in.tr()) + &self.b_in).relu();
+        z + inner.matmul(&self.w_out.tr()) + &self.b_out
+    }
+}
+
 /// The actor: one shared trunk, one shared readout, and a thin per-faction residual.
 #[derive(Debug)]
 pub struct Actor {
@@ -426,6 +475,9 @@ pub struct Actor {
     /// `W2`, the hidden layer. `[width, width]`.
     hidden: Tensor,
     b2: Tensor,
+    /// Residual blocks after the two-layer trunk, applied in order. Empty unless a bundle or
+    /// [`Actor::add_residual_blocks`] put them there.
+    blocks: Vec<Residual>,
     /// `[heads, width]`.
     w_shared: Tensor,
     /// `[heads]`.
@@ -458,6 +510,7 @@ impl Actor {
             b1: self.b1.detach().copy(),
             hidden: self.hidden.detach().copy(),
             b2: self.b2.detach().copy(),
+            blocks: self.blocks.iter().map(Residual::copied).collect(),
             w_shared: self.w_shared.detach().copy(),
             b_shared: self.b_shared.detach().copy(),
             delta: self.delta.detach().copy(),
@@ -500,6 +553,11 @@ impl Actor {
         open!(delta);
         open!(b_delta);
         open!(embedding);
+        for block in &mut self.blocks {
+            for tensor in block.tensors_mut() {
+                *tensor = tensor.detach().copy().set_requires_grad(true);
+            }
+        }
         if include_value {
             open!(w_value);
             open!(b_value);
@@ -543,6 +601,9 @@ impl Actor {
             self.b_delta.shallow_clone(),
             self.embedding.shallow_clone(),
         ];
+        for block in &self.blocks {
+            parameters.extend(block.tensors().map(Tensor::shallow_clone));
+        }
         if include_value {
             parameters.push(self.w_value.shallow_clone());
             parameters.push(self.b_value.shallow_clone());
@@ -578,6 +639,7 @@ impl Actor {
             b1: Tensor::zeros([w], opts),
             hidden: Tensor::zeros([w, w], opts),
             b2: Tensor::zeros([w], opts),
+            blocks: Vec::new(),
             w_shared: Tensor::zeros([heads, w], opts),
             b_shared: Tensor::zeros([heads], opts),
             delta: Tensor::zeros([factions_dim, heads, w], opts),
@@ -593,6 +655,77 @@ impl Actor {
     #[must_use]
     pub const fn width(&self) -> i64 {
         self.width
+    }
+
+    /// How many residual blocks follow the two-layer trunk.
+    #[must_use]
+    pub fn residual_blocks(&self) -> usize {
+        self.blocks.len()
+    }
+
+    /// Append `count` residual blocks after the trunk, each `z + W_out·relu(W_in·z + b_in) + b_out`.
+    ///
+    /// `W_in` is drawn He-uniform from `seed` with this crate's own generator, never libtorch's
+    /// process-global one; `b_in`, `W_out` and `b_out` start at zero. The actor therefore computes
+    /// exactly what it computed before, and training decides what the blocks become.
+    pub fn add_residual_blocks(&mut self, count: usize, seed: u64) {
+        use rand::{Rng as _, SeedableRng as _};
+        let w = self.width;
+        let units = usize::try_from(w).unwrap_or(0);
+        let bound = (6.0f64 / f64::from(u32::try_from(w).unwrap_or(1))).sqrt();
+        let device = self.device();
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+        for _ in 0..count {
+            let w_in: Vec<f32> = (0..units * units)
+                .map(|_| {
+                    #[expect(
+                        clippy::cast_possible_truncation,
+                        reason = "weights are f32 by manifest"
+                    )]
+                    let value = rng.random_range(-bound..bound) as f32;
+                    value
+                })
+                .collect();
+            let zeros = |shape: &[i64]| Tensor::zeros(shape, (Kind::Float, device));
+            self.blocks.push(Residual {
+                w_in: Tensor::from_slice(&w_in).view([w, w]).to_device(device),
+                b_in: zeros(&[w]),
+                w_out: zeros(&[w, w]),
+                b_out: zeros(&[w]),
+            });
+        }
+    }
+
+    /// Every residual tensor, under the name a bundle stores it by: `R{block}_{part}`.
+    #[must_use]
+    pub fn residual_tensors(&self) -> Vec<(String, &Tensor)> {
+        self.blocks
+            .iter()
+            .enumerate()
+            .flat_map(|(index, block)| {
+                Residual::NAMES
+                    .iter()
+                    .zip(block.tensors())
+                    .map(move |(part, tensor)| (format!("R{index}_{part}"), tensor))
+            })
+            .collect()
+    }
+
+    /// Replace the residual blocks with loaded tensors, `[W_in, b_in, W_out, b_out]` per block.
+    pub(crate) fn set_residual_blocks(&mut self, blocks: Vec<[Tensor; 4]>) {
+        self.blocks = blocks
+            .into_iter()
+            .map(|[w_in, b_in, w_out, b_out]| Residual {
+                w_in,
+                b_in,
+                w_out,
+                b_out,
+            })
+            .collect();
+    }
+
+    fn through_blocks(&self, z: Tensor) -> Tensor {
+        self.blocks.iter().fold(z, |z, block| block.apply(&z))
     }
 
     /// Faction rows allocated. Always [`FACTION_ROSTER`]'s length.
@@ -640,6 +773,11 @@ impl Actor {
             &mut self.b_value,
         ] {
             *tensor = tensor.to_device(device);
+        }
+        for block in &mut self.blocks {
+            for tensor in block.tensors_mut() {
+                *tensor = tensor.to_device(device);
+            }
         }
         if let Some(critic) = &mut self.separate_critic {
             critic.move_to(device);
@@ -840,7 +978,7 @@ impl Actor {
         // preactivation, before `b1` and the ReLU.
         let first = (x + self.identity_row(row) + &self.b1).relu();
         let second = (first.matmul(&self.hidden.tr()) + &self.b2).relu();
-        Ok(second)
+        Ok(self.through_blocks(second))
     }
 
     /// Logits for one decision: `[n]`, one per option.
@@ -985,7 +1123,7 @@ impl Actor {
             identity
         };
         let first = (x + identity + &self.b1).relu();
-        Ok((first.matmul(&self.hidden.tr()) + &self.b2).relu())
+        Ok(self.through_blocks((first.matmul(&self.hidden.tr()) + &self.b2).relu()))
     }
 
     /// `V(s)` for a batch of positions, each with its own faction row: `[n]`.
@@ -1398,6 +1536,49 @@ mod tests {
             columns: columns.to_vec(),
             values: values.to_vec(),
         }
+    }
+
+    #[test]
+    fn residual_blocks_start_as_the_identity_and_still_receive_a_gradient() {
+        let plain = actor(Width::W128);
+        let mut deeper = actor(Width::W128);
+        deeper.add_residual_blocks(2, 7);
+        assert_eq!(deeper.residual_blocks(), 2);
+        assert_eq!(deeper.inference_copy().residual_blocks(), 2);
+        assert_eq!(
+            deeper.main_parameters(true).len(),
+            plain.main_parameters(true).len() + 8
+        );
+
+        // Zero output weights: exactly the logits the plain actor produces.
+        let options = [option(&[5, 9], &[1.0, 1.0]), option(&[3], &[0.5])];
+        let logits = |actor: &Actor| {
+            ti4_tensor::to_vec(
+                &actor
+                    .logits(&options, "movement", row("sol"))
+                    .expect("logits"),
+            )
+            .expect("vec")
+        };
+        assert_eq!(logits(&plain), logits(&deeper));
+
+        // And the zero output weights still receive a gradient, so training can move them.
+        deeper.open_main_for_training(true);
+        deeper
+            .logits(&options, "movement", row("sol"))
+            .expect("logits")
+            .sum(Kind::Float)
+            .backward();
+        let gradient = deeper.blocks[1]
+            .w_out
+            .grad()
+            .abs()
+            .sum(Kind::Float)
+            .double_value(&[]);
+        assert!(
+            gradient > 0.0,
+            "the last block's W_out received no gradient"
+        );
     }
 
     #[test]

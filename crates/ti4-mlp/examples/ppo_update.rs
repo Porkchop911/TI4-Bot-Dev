@@ -1155,6 +1155,11 @@ fn main() {
     println!("  bundle      {bundle_path}");
     println!("  seeds       {seed_base}.. ({SEEDS_PER_UPDATE} per update)");
     println!("  critic mode {critic_mode:?}");
+    println!(
+        "  trunk       width {} | residual blocks {}",
+        actor.width(),
+        actor.residual_blocks()
+    );
     if matches!(stage, ti4_training::reward::Stage::One) {
         println!(
             "  potential   planets+systems {} | capacity+infantry {} | conjunctive {} | clear bonus {}",

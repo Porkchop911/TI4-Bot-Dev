@@ -436,49 +436,7 @@ pub fn returns(episode: &Episode, reward: &Reward) -> Vec<f64> {
                     }
                 }
             }
-            // Command tokens parked in the fleet pool at the horizon, and Styx held there: both
-            // credited at the final slot, so every decision's return carries them.
-            if reward.fleet_hoard_penalty > 0.0
-                && episode.final_progress.fleet_tokens >= FLEET_HOARD_AT
-                && let Some(last) = rewards.last_mut()
-            {
-                *last -= reward.fleet_hoard_penalty;
-            }
-            if reward.styx_bonus > 0.0
-                && episode.final_progress.holds_styx
-                && let Some(last) = rewards.last_mut()
-            {
-                *last += reward.styx_bonus;
-            }
-            // An empty fleet pool, charged once, on the transition into the first snapshot that
-            // shows it: the decisions up to the one that emptied it carry it, none after do.
-            if reward.zero_fleet_penalty > 0.0
-                && let Some(first) = snapshots
-                    .iter()
-                    .position(|progress| progress.fleet_tokens == 0)
-            {
-                rewards[first.saturating_sub(1)] -= reward.zero_fleet_penalty;
-            }
-            // Trade goods beyond the free allowance, charged per round on the holding the round
-            // ends with, at the transition into that round's last snapshot.
-            if reward.trade_goods_hoard_weight > 0.0 {
-                let mut start = 0;
-                while start < snapshots.len() {
-                    let round = snapshots[start].round_number;
-                    let mut last = start;
-                    while snapshots
-                        .get(last + 1)
-                        .is_some_and(|next| next.round_number == round)
-                    {
-                        last += 1;
-                    }
-                    let excess = (snapshots[last].trade_goods - TRADE_GOODS_FREE).max(0);
-                    #[expect(clippy::cast_precision_loss, reason = "goods counts are small")]
-                    let charge = reward.trade_goods_hoard_weight * excess as f64;
-                    rewards[last.saturating_sub(1)] -= charge;
-                    start = last + 1;
-                }
-            }
+            charge_holdings(&snapshots, reward, &mut rewards);
         }
     }
 
@@ -492,6 +450,52 @@ pub fn returns(episode: &Episode, reward: &Reward) -> Vec<f64> {
         result[index] = future;
     }
     result
+}
+
+/// The holding terms, credited into `rewards` -- one shorter than `snapshots`, whose last entry is
+/// the final progress: the fleet pool and Styx at the horizon, the first empty fleet pool, and the
+/// trade goods each round ends with.
+fn charge_holdings(snapshots: &[Progress], reward: &Reward, rewards: &mut [f64]) {
+    let (Some(horizon), Some(last)) = (snapshots.last(), rewards.last_mut()) else {
+        return;
+    };
+    // Command tokens parked in the fleet pool at the horizon, and Styx held there: both credited at
+    // the final slot, so every decision's return carries them.
+    if reward.fleet_hoard_penalty > 0.0 && horizon.fleet_tokens >= FLEET_HOARD_AT {
+        *last -= reward.fleet_hoard_penalty;
+    }
+    if reward.styx_bonus > 0.0 && horizon.holds_styx {
+        *last += reward.styx_bonus;
+    }
+    // An empty fleet pool, charged once, on the transition into the first snapshot that shows it:
+    // the decisions up to the one that emptied it carry it, none after do.
+    if reward.zero_fleet_penalty > 0.0
+        && let Some(first) = snapshots
+            .iter()
+            .position(|progress| progress.fleet_tokens == 0)
+    {
+        rewards[first.saturating_sub(1)] -= reward.zero_fleet_penalty;
+    }
+    // Trade goods beyond the free allowance, charged per round on the holding the round ends with,
+    // at the transition into that round's last snapshot.
+    if reward.trade_goods_hoard_weight > 0.0 {
+        let mut start = 0;
+        while start < snapshots.len() {
+            let round = snapshots[start].round_number;
+            let mut end = start;
+            while snapshots
+                .get(end + 1)
+                .is_some_and(|next| next.round_number == round)
+            {
+                end += 1;
+            }
+            let excess = (snapshots[end].trade_goods - TRADE_GOODS_FREE).max(0);
+            #[expect(clippy::cast_precision_loss, reason = "goods counts are small")]
+            let charge = reward.trade_goods_hoard_weight * excess as f64;
+            rewards[end.saturating_sub(1)] -= charge;
+            start = end + 1;
+        }
+    }
 }
 
 #[cfg(test)]

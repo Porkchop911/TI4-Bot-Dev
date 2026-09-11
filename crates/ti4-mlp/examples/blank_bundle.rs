@@ -129,8 +129,29 @@ fn main() {
     println!("  width       {declared} | capacity {capacity}");
     println!("  critic mode {critic_mode:?}");
 
+    // Residual blocks after the trunk: taken from `--like` unless given, none by default.
+    let residual_blocks: usize = argument("--residual-blocks").map_or_else(
+        || {
+            reference
+                .as_ref()
+                .map_or(0, |bundle| bundle.actor.residual_blocks())
+        },
+        |value| {
+            value
+                .parse()
+                .unwrap_or_else(|_| refuse("--residual-blocks expects a count"))
+        },
+    );
+    println!("  residual    {residual_blocks} block(s)");
+
     let every_row: Vec<i64> = (0..capacity).collect();
-    let actor = ti4_mlp::distill::initialize(width, capacity, &every_row);
+    let mut actor = ti4_mlp::distill::initialize(width, capacity, &every_row);
+    // The blocks draw from their own seed, derived from the initialisation's, so adding them leaves
+    // every other initial weight exactly where a block-free blank bundle puts it.
+    actor.add_residual_blocks(
+        residual_blocks,
+        ti4_mlp::distill::INIT_SEED ^ 0x5245_5349_4455_414C,
+    );
 
     // Non-vacuity: an initialisation that produced a constant model would make every downstream
     // comparison against it meaningless, and would look exactly like a working one from outside.
@@ -154,7 +175,7 @@ fn main() {
         critic_mode,
         &Provenance {
             source: format!(
-                "untrained §6.1 initialisation, width {declared}, capacity {capacity}, slots {}",
+                "untrained §6.1 initialisation, width {declared}, capacity {capacity}, residual blocks {residual_blocks}, slots {}",
                 slots_path.display()
             ),
             git_commit: std::env::var("GIT_COMMIT").unwrap_or_else(|_| "unrecorded".to_owned()),
