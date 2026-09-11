@@ -671,6 +671,91 @@ where
     )
 }
 
+/// What a game's final state and event log hash to, so two plays of one game can be compared
+/// exactly. Diagnostics only (`plans/TRAINING_PERFORMANCE_HANDOFF_2026-09-11.md`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GameDigest {
+    /// SHA-256 of the final `GameState`, serialised as JSON.
+    pub state_sha256: String,
+    /// SHA-256 of the resolver's ordered emission log, one entry per line.
+    pub log_sha256: String,
+    /// Entries in that log.
+    pub events: usize,
+}
+
+impl GameDigest {
+    fn of(state: &ti4_model::state::GameState, log: &[String]) -> Self {
+        use sha2::Digest as _;
+        let state_bytes = serde_json::to_vec(state).unwrap_or_default();
+        let mut log_hasher = sha2::Sha256::new();
+        for line in log {
+            log_hasher.update(line.as_bytes());
+            log_hasher.update(b"\n");
+        }
+        Self {
+            state_sha256: format!("{:x}", sha2::Sha256::digest(&state_bytes)),
+            log_sha256: format!("{:x}", log_hasher.finalize()),
+            events: log.len(),
+        }
+    }
+}
+
+/// [`play_with_decider_factory`], also returning the game's [`GameDigest`] when `digest` is set.
+///
+/// With `digest` off this is the same game through the same code as
+/// [`play_with_decider_factory`]; the digest serialises the whole final state, which training has
+/// no use for, so only a diagnostic run turns it on.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "play_with_decider_factory's inputs plus the digest switch"
+)]
+pub fn play_with_decider_factory_digest<F>(
+    content: &ContentStore,
+    players: &[PlayerId],
+    factions: &BTreeMap<PlayerId, FactionId>,
+    sources: SourceSet,
+    seed: u64,
+    horizon: Horizon,
+    requirement: Requirement,
+    map: &OpeningMap,
+    digest: bool,
+    factory: F,
+) -> (Rollout, Option<GameDigest>)
+where
+    F: FnOnce(
+        &BTreeMap<PlayerId, Baseline>,
+    ) -> Result<BTreeMap<PlayerId, Box<dyn Decider>>, String>,
+{
+    let (state, galaxy, factions) = match seated(content, players, factions, sources, seed, map) {
+        Ok(seated) => seated,
+        Err(error) => return (failed(seed, error), None),
+    };
+    let baselines = opening_baselines(&state, content, sources, Some(&galaxy), players);
+    let deciders = match factory(&baselines) {
+        Ok(deciders) => deciders,
+        Err(error) => {
+            return (
+                failed(seed, format!("constructing deciders: {error}")),
+                None,
+            );
+        }
+    };
+    finish_game_with(
+        content,
+        state,
+        galaxy,
+        &factions,
+        players,
+        sources,
+        seed,
+        horizon,
+        requirement,
+        deciders,
+        None,
+        digest,
+    )
+}
+
 /// Play one game recording both the trajectory and the option-free critic vector per decision.
 ///
 /// M10-031's capture path. Separate from [`play_assigned_on_map_shared`] rather than another
@@ -878,16 +963,57 @@ fn finish_game(
     seed: u64,
     horizon: Horizon,
     requirement: Requirement,
-    mut deciders: BTreeMap<PlayerId, Box<dyn Decider>>,
+    deciders: BTreeMap<PlayerId, Box<dyn Decider>>,
     handles: Option<&BTreeMap<PlayerId, std::rc::Rc<std::cell::RefCell<Vec<TrajectoryStep>>>>>,
 ) -> Rollout {
+    finish_game_with(
+        content,
+        state,
+        galaxy,
+        factions,
+        players,
+        sources,
+        seed,
+        horizon,
+        requirement,
+        deciders,
+        handles,
+        false,
+    )
+    .0
+}
+
+/// [`finish_game`], also digesting the final state and the ordered event log when `digest` is set.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "finish_game's inputs plus the digest switch"
+)]
+fn finish_game_with(
+    content: &ContentStore,
+    state: ti4_model::state::GameState,
+    galaxy: ti4_content::galaxy::Galaxy,
+    factions: &BTreeMap<PlayerId, FactionId>,
+    players: &[PlayerId],
+    sources: SourceSet,
+    seed: u64,
+    horizon: Horizon,
+    requirement: Requirement,
+    mut deciders: BTreeMap<PlayerId, Box<dyn Decider>>,
+    handles: Option<&BTreeMap<PlayerId, std::rc::Rc<std::cell::RefCell<Vec<TrajectoryStep>>>>>,
+    digest: bool,
+) -> (Rollout, Option<GameDigest>) {
     let baselines = opening_baselines(&state, content, sources, Some(&galaxy), players);
 
     let mut table = Table::with_default(Box::new(SeededRandom::new(seed)));
     for player in players {
         match deciders.remove(player) {
             Some(decider) => table.seat(player.clone(), decider),
-            None => return failed(seed, format!("no decider seated for {player}")),
+            None => {
+                return (
+                    failed(seed, format!("no decider seated for {player}")),
+                    None,
+                );
+            }
         }
     }
 
@@ -992,7 +1118,8 @@ fn finish_game(
         })
         .collect();
 
-    Rollout { seed, seats, error }
+    let digest = digest.then(|| GameDigest::of(&game.state, game.timing.log()));
+    (Rollout { seed, seats, error }, digest)
 }
 
 /// Play one game and keep what a mechanics audit needs: the events emitted and the final state.

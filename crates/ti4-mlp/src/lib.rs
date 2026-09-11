@@ -40,6 +40,7 @@ pub mod bot;
 pub mod bundle;
 pub mod critic_warmup;
 pub mod distill;
+pub mod perf;
 pub mod positive_corpus;
 pub mod ppo;
 pub mod repair;
@@ -1085,21 +1086,62 @@ impl Actor {
         let head_index = Tensor::from_slice(heads).to_device(device);
         let row_index = Tensor::from_slice(rows).to_device(device);
         let z = self.trunk_mixed(batch, &row_index)?;
+        Ok(self.readout_mixed(&z, &head_index, &row_index))
+    }
 
+    /// [`Self::logits_mixed_parts`] over already flattened sparse inputs: `flat` columns, `offsets`
+    /// where each option's entries start and `weights` per entry, exactly the arrays the gather
+    /// builds. A frozen PPO batch is validated and canonical, so its minibatches hand these over
+    /// directly instead of paying for the flattening and the checks four times per update.
+    ///
+    /// # Errors
+    /// [`ActorError::EmptyLegalSet`] for an empty batch, [`ActorError::NotUsable`] for a length
+    /// disagreement, plus anything the reduction raises.
+    pub(crate) fn logits_mixed_flat(
+        &self,
+        flat: &[i64],
+        offsets: &[i64],
+        weights: &[f32],
+        heads: &[i64],
+        rows: &[i64],
+    ) -> Result<Tensor, ActorError> {
+        if offsets.is_empty() {
+            return Err(ActorError::EmptyLegalSet);
+        }
+        if heads.len() != offsets.len() || rows.len() != offsets.len() {
+            return Err(ActorError::NotUsable {
+                what: "per-option head/row indices",
+                detail: format!(
+                    "{} options, {} heads, {} rows",
+                    offsets.len(),
+                    heads.len(),
+                    rows.len()
+                ),
+            });
+        }
+        let device = self.input.device();
+        let head_index = Tensor::from_slice(heads).to_device(device);
+        let row_index = Tensor::from_slice(rows).to_device(device);
+        let x = ti4_tensor::embedding_bag_flat(&self.input, flat, offsets, weights)?;
+        let z = self.trunk_from(x, &row_index);
+        Ok(self.readout_mixed(&z, &head_index, &row_index))
+    }
+
+    /// Each option's logit from its trunk row, through its own head and faction's readout.
+    fn readout_mixed(&self, z: &Tensor, head_index: &Tensor, row_index: &Tensor) -> Tensor {
         // w_effective[option] = w_shared[head] + delta[faction, head], gathered rather than looped.
         // `delta` is [factions, heads, width]; flattening to [factions*heads, width] turns the pair
         // into one index.
         let heads_count = i64::try_from(crate::heads().len()).unwrap_or(0);
-        let pair_index = &row_index * heads_count + &head_index;
+        let pair_index = row_index * heads_count + head_index;
         let delta_flat = self.delta.view([-1, self.width]);
-        let w =
-            self.w_shared.index_select(0, &head_index) + delta_flat.index_select(0, &pair_index);
-        let b = self.b_shared.index_select(0, &head_index)
+        let w = self.w_shared.index_select(0, head_index) + delta_flat.index_select(0, &pair_index);
+        let b = self.b_shared.index_select(0, head_index)
             + self.b_delta.view([-1]).index_select(0, &pair_index);
 
         // A row-wise dot product, which is what `z.matmul(w)` degenerates to when every row has its
         // own weight vector.
-        Ok((z * w).sum_dim_intlist([1i64].as_slice(), false, Kind::Float) + b)
+        (z * w).sum_dim_intlist([1i64].as_slice(), false, Kind::Float) + b
     }
 
     /// The two-layer trunk over a batch whose rows may each belong to a different faction.
@@ -1112,8 +1154,15 @@ impl Actor {
         batch: &[(&[i64], &[f32])],
         row_index: &Tensor,
     ) -> Result<Tensor, ActorError> {
-        let device = self.input.device();
         let x = ti4_tensor::gather_reduce_batch(&self.input, batch)?;
+        Ok(self.trunk_from(x, row_index))
+    }
+
+    /// The trunk after its sparse gather: identity embedding, first layer, hidden layer and the
+    /// residual blocks. Shared by the gathering and the prepared paths, so both run the same
+    /// operations in the same order.
+    fn trunk_from(&self, x: Tensor, row_index: &Tensor) -> Tensor {
+        let device = self.input.device();
         let identity = self.embedding.index_select(0, row_index);
         let padding = self.width - EMBED_DIM;
         let identity = if padding > 0 {
@@ -1123,7 +1172,7 @@ impl Actor {
             identity
         };
         let first = (x + identity + &self.b1).relu();
-        Ok(self.through_blocks((first.matmul(&self.hidden.tr()) + &self.b2).relu()))
+        self.through_blocks((first.matmul(&self.hidden.tr()) + &self.b2).relu())
     }
 
     /// `V(s)` for a batch of positions, each with its own faction row: `[n]`.
@@ -1163,6 +1212,112 @@ impl Actor {
         }
         let row_index = Tensor::from_slice(rows).to_device(self.input.device());
         let z = self.trunk_mixed(&batch, &row_index)?;
+        Ok(z.matmul(&self.w_value) + &self.b_value)
+    }
+
+    /// [`Self::value_batch`] over already flattened critic inputs, the arrays its gather would build.
+    ///
+    /// The shared critic only: a separate critic has its own trunk and is scored by `value_batch`.
+    ///
+    /// # Errors
+    /// [`ActorError::EmptyLegalSet`] for an empty batch, [`ActorError::NotUsable`] for a length
+    /// disagreement or a separate critic, plus anything the reduction raises.
+    pub(crate) fn value_batch_flat(
+        &self,
+        flat: &[i64],
+        offsets: &[i64],
+        weights: &[f32],
+        rows: &[i64],
+    ) -> Result<Tensor, ActorError> {
+        if offsets.is_empty() {
+            return Err(ActorError::EmptyLegalSet);
+        }
+        if rows.len() != offsets.len() {
+            return Err(ActorError::NotUsable {
+                what: "per-position faction rows",
+                detail: format!("{} positions, {} rows", offsets.len(), rows.len()),
+            });
+        }
+        if self.separate_critic.is_some() {
+            return Err(ActorError::NotUsable {
+                what: "a flattened critic batch",
+                detail: "the separate critic is scored through value_batch".to_owned(),
+            });
+        }
+        let row_index = Tensor::from_slice(rows).to_device(self.input.device());
+        let x = ti4_tensor::embedding_bag_flat(&self.input, flat, offsets, weights)?;
+        let z = self.trunk_from(x, &row_index);
+        Ok(z.matmul(&self.w_value) + &self.b_value)
+    }
+
+    /// [`Self::logits_mixed_flat`] over index, offset and weight tensors already on the actor's
+    /// device. A PPO batch kept on the device assembles each minibatch's arrays there, identical to
+    /// the ones the flat path uploads.
+    ///
+    /// # Errors
+    /// [`ActorError::EmptyLegalSet`] for an empty batch, [`ActorError::NotUsable`] for a length
+    /// disagreement.
+    pub(crate) fn logits_mixed_device(
+        &self,
+        indices: &Tensor,
+        offsets: &Tensor,
+        weights: &Tensor,
+        heads: &[i64],
+        rows: &[i64],
+    ) -> Result<Tensor, ActorError> {
+        let options = usize::try_from(offsets.size()[0]).unwrap_or(0);
+        if options == 0 {
+            return Err(ActorError::EmptyLegalSet);
+        }
+        if heads.len() != options || rows.len() != options {
+            return Err(ActorError::NotUsable {
+                what: "per-option head/row indices",
+                detail: format!(
+                    "{options} options, {} heads, {} rows",
+                    heads.len(),
+                    rows.len()
+                ),
+            });
+        }
+        let device = self.input.device();
+        let head_index = Tensor::from_slice(heads).to_device(device);
+        let row_index = Tensor::from_slice(rows).to_device(device);
+        let x = ti4_tensor::embedding_bag_tensors(&self.input, indices, offsets, weights);
+        let z = self.trunk_from(x, &row_index);
+        Ok(self.readout_mixed(&z, &head_index, &row_index))
+    }
+
+    /// [`Self::value_batch_flat`] over tensors already on the actor's device. Shared critic only.
+    ///
+    /// # Errors
+    /// [`ActorError::EmptyLegalSet`] for an empty batch, [`ActorError::NotUsable`] for a length
+    /// disagreement or a separate critic.
+    pub(crate) fn value_batch_device(
+        &self,
+        indices: &Tensor,
+        offsets: &Tensor,
+        weights: &Tensor,
+        rows: &[i64],
+    ) -> Result<Tensor, ActorError> {
+        let positions = usize::try_from(offsets.size()[0]).unwrap_or(0);
+        if positions == 0 {
+            return Err(ActorError::EmptyLegalSet);
+        }
+        if rows.len() != positions {
+            return Err(ActorError::NotUsable {
+                what: "per-position faction rows",
+                detail: format!("{positions} positions, {} rows", rows.len()),
+            });
+        }
+        if self.separate_critic.is_some() {
+            return Err(ActorError::NotUsable {
+                what: "a device critic batch",
+                detail: "the separate critic is scored through value_batch".to_owned(),
+            });
+        }
+        let row_index = Tensor::from_slice(rows).to_device(self.input.device());
+        let x = ti4_tensor::embedding_bag_tensors(&self.input, indices, offsets, weights);
+        let z = self.trunk_from(x, &row_index);
         Ok(z.matmul(&self.w_value) + &self.b_value)
     }
 

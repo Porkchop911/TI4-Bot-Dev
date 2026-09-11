@@ -576,12 +576,14 @@ fn score_minibatch(
     minibatch: &[usize],
     critic_mode: CriticMode,
     settings: Settings,
+    scratch: &mut Scratch,
 ) -> Result<ScoredMinibatch, String> {
     let count = minibatch.len();
     if count == 0 {
         return Err("a PPO minibatch is empty".to_owned());
     }
 
+    let pack = crate::perf::pack_start();
     // ---- flatten every decision's options into one gather ----
     // Sized exactly before filling: these are the largest host allocations in the loop, and their
     // final length is known from the frozen batch's per-decision option counts.
@@ -589,30 +591,36 @@ fn score_minibatch(
         .iter()
         .map(|index| batch.constants.options[*index])
         .sum();
-    let mut parts: Vec<(&[i64], &[f32])> = Vec::with_capacity(expansion);
-    let mut heads: Vec<i64> = Vec::with_capacity(expansion);
-    let mut rows: Vec<i64> = Vec::with_capacity(expansion);
-    let mut widest = 0usize;
-    for index in minibatch {
-        let step = &batch.steps[*index];
-        let head = batch.constants.heads[*index];
-        let row = batch.constants.rows[*index];
-        if step.chosen >= step.options.len() {
-            return Err("chosen option is outside the legal set".to_owned());
+    let device_actor = match &scratch.device {
+        Some(device) => {
+            Some(device.actor_inputs(batch, minibatch, &mut scratch.heads, &mut scratch.rows)?)
         }
-        widest = widest.max(step.options.len());
-        for option in &step.options {
-            parts.push((option.columns.as_slice(), option.values.as_slice()));
-            heads.push(head);
-            rows.push(row);
-        }
-    }
+        None => None,
+    };
+    let (widest, device_actor) = match device_actor {
+        Some((widest, inputs)) => (widest, Some(inputs)),
+        None => (fill_actor_inputs(batch, minibatch, scratch)?, None),
+    };
+    crate::perf::pack_since(pack);
+    crate::perf::padding(count, expansion, widest);
     let widest = i64::try_from(widest).map_err(|_| "option count does not fit i64")?;
     let rectangle = i64::try_from(count).map_err(|_| "minibatch size does not fit i64")?;
 
-    let flat = actor
-        .logits_mixed_parts(&parts, &heads, &rows)
-        .map_err(|error| format!("policy scoring failed: {error}"))?;
+    let actor_clock = crate::perf::pack_start();
+    let flat = match &device_actor {
+        Some((indices, offsets, weights)) => {
+            actor.logits_mixed_device(indices, offsets, weights, &scratch.heads, &scratch.rows)
+        }
+        None => actor.logits_mixed_flat(
+            &scratch.flat,
+            &scratch.offsets,
+            &scratch.weights,
+            &scratch.heads,
+            &scratch.rows,
+        ),
+    }
+    .map_err(|error| format!("policy scoring failed: {error}"))?;
+    crate::perf::charge_since(crate::perf::Phase::Actor, actor_clock);
 
     // ---- scatter the ragged logits into a padded rectangle ----
     //
@@ -627,6 +635,7 @@ fn score_minibatch(
     // malformed distribution into a silently zeroed entropy term. Deriving it from the layout keeps
     // "this cell is padding" and "this cell is bad" distinguishable, so the non-finite refusals
     // downstream still fire.
+    let pack = crate::perf::pack_start();
     let mut slots: Vec<i64> = Vec::with_capacity(expansion);
     let mut chosen: Vec<i64> = Vec::with_capacity(count);
     let mut temperatures: Vec<f64> = Vec::with_capacity(count);
@@ -649,6 +658,7 @@ fn score_minibatch(
         "the slot walk and the gather disagree about how many options there are"
     );
 
+    crate::perf::pack_since(pack);
     let device = flat.device();
     let cells = rectangle * widest;
     let slot_index = Tensor::from_slice(&slots).to_device(device);
@@ -718,20 +728,40 @@ fn score_minibatch(
     let critic_term = if matches!(critic_mode, CriticMode::BatchMean) {
         None
     } else {
-        let mut critics: Vec<&crate::CriticInput> = Vec::with_capacity(count);
-        let mut critic_rows: Vec<i64> = Vec::with_capacity(count);
-        for index in minibatch {
-            let step = &batch.steps[*index];
-            critics.push(
-                step.critic
-                    .as_ref()
-                    .ok_or_else(|| "critic mode has no critic input".to_owned())?,
-            );
-            critic_rows.push(batch.constants.rows[*index]);
+        let critic_clock = crate::perf::pack_start();
+        let value = if actor.separate_critic().is_some() {
+            // A separate critic has its own trunk; it keeps the gathering path.
+            let mut critics: Vec<&crate::CriticInput> = Vec::with_capacity(count);
+            let mut critic_rows: Vec<i64> = Vec::with_capacity(count);
+            for index in minibatch {
+                let step = &batch.steps[*index];
+                critics.push(
+                    step.critic
+                        .as_ref()
+                        .ok_or_else(|| "critic mode has no critic input".to_owned())?,
+                );
+                critic_rows.push(batch.constants.rows[*index]);
+            }
+            actor.value_batch(&critics, &critic_rows)
+        } else if let Some(device) = scratch
+            .device
+            .as_ref()
+            .filter(|device| device.critic.is_some())
+        {
+            let (indices, offsets, weights) =
+                device.critic_inputs(batch, minibatch, &mut scratch.critic_rows)?;
+            actor.value_batch_device(&indices, &offsets, &weights, &scratch.critic_rows)
+        } else {
+            fill_critic_inputs(batch, minibatch, scratch)?;
+            actor.value_batch_flat(
+                &scratch.critic_flat,
+                &scratch.critic_offsets,
+                &scratch.critic_weights,
+                &scratch.critic_rows,
+            )
         }
-        let value = actor
-            .value_batch(&critics, &critic_rows)
-            .map_err(|error| format!("critic scoring failed: {error}"))?;
+        .map_err(|error| format!("critic scoring failed: {error}"))?;
+        crate::perf::charge_since(crate::perf::Phase::Critic, critic_clock);
         let returns: Vec<f32> = minibatch
             .iter()
             .map(|index| batch.constants.returns[*index])
@@ -761,6 +791,301 @@ fn score_minibatch(
         policy_loss,
         readings,
     })
+}
+
+/// Host buffers one update reuses across its minibatches.
+///
+/// Each minibatch used to allocate its flat gather arrays afresh -- about 55 MB for 4,096 decisions --
+/// and have the gather re-validate every entry. The batch is frozen, validated and canonical, so the
+/// arrays can be written straight into memory the previous minibatch already touched, in exactly
+/// the layout the gather would have produced.
+#[derive(Debug, Default)]
+struct Scratch {
+    flat: Vec<i64>,
+    weights: Vec<f32>,
+    offsets: Vec<i64>,
+    heads: Vec<i64>,
+    rows: Vec<i64>,
+    critic_flat: Vec<i64>,
+    critic_weights: Vec<f32>,
+    critic_offsets: Vec<i64>,
+    critic_rows: Vec<i64>,
+    /// The whole update's sparse inputs on the actor's device (handoff A4), when they fit the bound.
+    device: Option<DeviceBatch>,
+}
+
+/// The most bytes of sparse inputs one update may keep on the device. A larger batch falls back to
+/// assembling each minibatch on the host.
+const DEVICE_BATCH_LIMIT_BYTES: usize = 6 << 30;
+
+/// One update's sparse inputs, uploaded to the actor's device once and assembled into minibatches
+/// there (handoff A4).
+///
+/// Every option's entries and every critic vector are stored in decision order, exactly as frozen.
+/// A minibatch then needs only its segments' starts and lengths from the host -- a few tens of
+/// thousands of integers -- and the device copies the entries out with `index_select`. That produces
+/// the same index, offset and weight arrays the host path builds and uploads: integer arithmetic and
+/// copies only, so the arrays are identical and so is everything computed from them.
+#[derive(Debug)]
+struct DeviceBatch {
+    columns: Tensor,
+    values: Tensor,
+    /// Per option: where its entries start in `columns`, and how many there are.
+    option_start: Vec<i64>,
+    option_len: Vec<i64>,
+    /// Per decision: the index of its first option.
+    first_option: Vec<usize>,
+    critic: Option<DeviceCritic>,
+}
+
+/// The shared critic's vectors on the device, one segment per decision.
+#[derive(Debug)]
+struct DeviceCritic {
+    columns: Tensor,
+    values: Tensor,
+    start: Vec<i64>,
+    len: Vec<i64>,
+}
+
+/// One `embedding_bag`'s inputs on the device: indices, offsets, weights.
+type DeviceInputs = (Tensor, Tensor, Tensor);
+
+impl DeviceBatch {
+    /// Upload `batch`'s sparse inputs to `device`, or `None` when they exceed the bound. With
+    /// `with_critic` false (a separate critic) only the actor's inputs are kept.
+    fn build(batch: &Batch, device: ti4_tensor::Device, with_critic: bool) -> Option<Self> {
+        let entries: usize = batch
+            .steps
+            .iter()
+            .flat_map(|step| &step.options)
+            .map(|option| option.columns.len())
+            .sum();
+        let critic_entries: usize = if with_critic {
+            batch
+                .steps
+                .iter()
+                .map(|step| {
+                    step.critic
+                        .as_ref()
+                        .map_or(0, |critic| critic.sparse().columns.len())
+                })
+                .sum()
+        } else {
+            0
+        };
+        if entries.saturating_add(critic_entries).saturating_mul(12) > DEVICE_BATCH_LIMIT_BYTES {
+            return None;
+        }
+        let mut columns: Vec<i64> = Vec::with_capacity(entries);
+        let mut values: Vec<f32> = Vec::with_capacity(entries);
+        let mut option_start = Vec::new();
+        let mut option_len = Vec::new();
+        let mut first_option = Vec::with_capacity(batch.steps.len());
+        for step in &batch.steps {
+            first_option.push(option_start.len());
+            for option in &step.options {
+                option_start.push(i64::try_from(columns.len()).ok()?);
+                option_len.push(i64::try_from(option.columns.len()).ok()?);
+                columns.extend_from_slice(&option.columns);
+                values.extend_from_slice(&option.values);
+            }
+        }
+        let critic = if with_critic {
+            let mut critic_columns: Vec<i64> = Vec::with_capacity(critic_entries);
+            let mut critic_values: Vec<f32> = Vec::with_capacity(critic_entries);
+            let mut start = Vec::with_capacity(batch.steps.len());
+            let mut len = Vec::with_capacity(batch.steps.len());
+            for step in &batch.steps {
+                let sparse = step.critic.as_ref()?.sparse();
+                start.push(i64::try_from(critic_columns.len()).ok()?);
+                len.push(i64::try_from(sparse.columns.len()).ok()?);
+                critic_columns.extend_from_slice(&sparse.columns);
+                critic_values.extend_from_slice(&sparse.values);
+            }
+            Some(DeviceCritic {
+                columns: Tensor::from_slice(&critic_columns).to_device(device),
+                values: Tensor::from_slice(&critic_values).to_device(device),
+                start,
+                len,
+            })
+        } else {
+            None
+        };
+        Some(Self {
+            columns: Tensor::from_slice(&columns).to_device(device),
+            values: Tensor::from_slice(&values).to_device(device),
+            option_start,
+            option_len,
+            first_option,
+            critic,
+        })
+    }
+
+    /// One minibatch's actor inputs, assembled on the device. Also writes each option's head and
+    /// faction row on the host and returns the widest decision.
+    fn actor_inputs(
+        &self,
+        batch: &Batch,
+        minibatch: &[usize],
+        heads: &mut Vec<i64>,
+        rows: &mut Vec<i64>,
+    ) -> Result<(usize, DeviceInputs), String> {
+        heads.clear();
+        rows.clear();
+        let mut starts = Vec::with_capacity(heads.capacity());
+        let mut lens = Vec::with_capacity(heads.capacity());
+        let mut widest = 0usize;
+        for index in minibatch {
+            let step = &batch.steps[*index];
+            if step.chosen >= step.options.len() {
+                return Err("chosen option is outside the legal set".to_owned());
+            }
+            widest = widest.max(step.options.len());
+            let head = batch.constants.heads[*index];
+            let row = batch.constants.rows[*index];
+            let first = self.first_option[*index];
+            for option in first..first + step.options.len() {
+                starts.push(self.option_start[option]);
+                lens.push(self.option_len[option]);
+                heads.push(head);
+                rows.push(row);
+            }
+        }
+        Ok((
+            widest,
+            assemble(&self.columns, &self.values, &starts, &lens)?,
+        ))
+    }
+
+    /// One minibatch's shared-critic inputs, assembled on the device; writes each decision's faction
+    /// row on the host.
+    fn critic_inputs(
+        &self,
+        batch: &Batch,
+        minibatch: &[usize],
+        rows: &mut Vec<i64>,
+    ) -> Result<DeviceInputs, String> {
+        let critic = self
+            .critic
+            .as_ref()
+            .ok_or_else(|| "the device batch holds no critic inputs".to_owned())?;
+        rows.clear();
+        let mut starts = Vec::with_capacity(minibatch.len());
+        let mut lens = Vec::with_capacity(minibatch.len());
+        for index in minibatch {
+            starts.push(critic.start[*index]);
+            lens.push(critic.len[*index]);
+            rows.push(batch.constants.rows[*index]);
+        }
+        assemble(&critic.columns, &critic.values, &starts, &lens)
+    }
+}
+
+/// Copy segments `[start, start + len)` of `columns` and `values`, in order, on their device, with
+/// the offsets an `embedding_bag` needs.
+///
+/// The offsets are running entry counts, computed exactly on the host and uploaded. Each entry's
+/// position is its index in the output minus its segment's offset plus its segment's start; the
+/// output size is passed in, so nothing waits on the device to learn it.
+fn assemble(
+    columns: &Tensor,
+    values: &Tensor,
+    starts: &[i64],
+    lens: &[i64],
+) -> Result<DeviceInputs, String> {
+    let device = columns.device();
+    let mut offsets = Vec::with_capacity(lens.len());
+    let mut total = 0i64;
+    for len in lens {
+        offsets.push(total);
+        total += len;
+    }
+    if total == 0 {
+        return Err("a minibatch has no sparse entries".to_owned());
+    }
+    let offsets = Tensor::from_slice(&offsets).to_device(device);
+    let base = (Tensor::from_slice(starts).to_device(device) - &offsets)
+        .repeat_interleave_self_tensor(&Tensor::from_slice(lens).to_device(device), 0, total);
+    let positions = Tensor::arange(total, (ti4_tensor::Kind::Int64, device)) + base;
+    Ok((
+        columns.index_select(0, &positions),
+        offsets,
+        values.index_select(0, &positions),
+    ))
+}
+
+/// Write one minibatch's actor inputs into `scratch`, every option of every decision in minibatch
+/// order, and return the widest decision.
+///
+/// This is the gather's own layout for canonical options: an option's offset is the entry count
+/// before it, and its columns and values are appended as they stand, which is exactly what
+/// `gather_reduce_batch` does for strictly increasing columns. `Batch::freeze` made every option
+/// strictly increasing and checked every value finite and every column non-negative, and
+/// `update_inner` checked every column against the actor's capacity before the first minibatch.
+fn fill_actor_inputs(
+    batch: &Batch,
+    minibatch: &[usize],
+    scratch: &mut Scratch,
+) -> Result<usize, String> {
+    scratch.flat.clear();
+    scratch.weights.clear();
+    scratch.offsets.clear();
+    scratch.heads.clear();
+    scratch.rows.clear();
+    let mut widest = 0usize;
+    for index in minibatch {
+        let step = &batch.steps[*index];
+        let head = batch.constants.heads[*index];
+        let row = batch.constants.rows[*index];
+        if step.chosen >= step.options.len() {
+            return Err("chosen option is outside the legal set".to_owned());
+        }
+        widest = widest.max(step.options.len());
+        for option in &step.options {
+            debug_assert!(
+                option.columns.windows(2).all(|pair| pair[0] < pair[1]),
+                "a frozen option is not canonical"
+            );
+            scratch
+                .offsets
+                .push(i64::try_from(scratch.flat.len()).map_err(|_| "entry count overflow")?);
+            scratch.flat.extend_from_slice(&option.columns);
+            scratch.weights.extend_from_slice(&option.values);
+            scratch.heads.push(head);
+            scratch.rows.push(row);
+        }
+    }
+    Ok(widest)
+}
+
+/// The same for the shared critic: one canonical critic vector per decision, in minibatch order.
+fn fill_critic_inputs(
+    batch: &Batch,
+    minibatch: &[usize],
+    scratch: &mut Scratch,
+) -> Result<(), String> {
+    scratch.critic_flat.clear();
+    scratch.critic_weights.clear();
+    scratch.critic_offsets.clear();
+    scratch.critic_rows.clear();
+    for index in minibatch {
+        let sparse = batch.steps[*index]
+            .critic
+            .as_ref()
+            .ok_or_else(|| "critic mode has no critic input".to_owned())?
+            .sparse();
+        debug_assert!(
+            sparse.columns.windows(2).all(|pair| pair[0] < pair[1]),
+            "a frozen critic vector is not canonical"
+        );
+        scratch
+            .critic_offsets
+            .push(i64::try_from(scratch.critic_flat.len()).map_err(|_| "entry count overflow")?);
+        scratch.critic_flat.extend_from_slice(&sparse.columns);
+        scratch.critic_weights.extend_from_slice(&sparse.values);
+        scratch.critic_rows.push(batch.constants.rows[*index]);
+    }
+    Ok(())
 }
 
 /// The schema head a step belongs to, defaulting the way the per-decision loop did.
@@ -1114,6 +1439,12 @@ fn update_inner(
         return Err("a PPO feature column is outside the actor capacity".to_owned());
     }
     let mut out = Vec::with_capacity(settings.epochs);
+    let mut scratch = Scratch::default();
+    // Handoff A4: the batch's sparse inputs go to the device once for the whole update, when they
+    // fit the bound, and every minibatch is assembled there instead of on the host.
+    let cache_clock = crate::perf::pack_start();
+    scratch.device = DeviceBatch::build(batch, actor.device(), actor.separate_critic().is_none());
+    crate::perf::charge_since(crate::perf::Phase::Cache, cache_clock);
 
     for epoch in 0..settings.epochs {
         // A domain-separated deterministic shuffle per epoch, per §6.3. Record order changes; the
@@ -1135,8 +1466,12 @@ fn update_inner(
         // per-decision version of this loop read five scalars per decision out of the graph; each
         // one drains the CUDA pipeline, and 4,096 decisions x 5 reads is what left the GPU at 40%.
         let mut readings: Vec<Tensor> = Vec::new();
+        let device = actor.device();
         for (minibatch_index, minibatch) in order.chunks(settings.minibatch).enumerate() {
-            let scored = score_minibatch(actor, batch, minibatch, critic_mode, settings)?;
+            let mut clock = crate::perf::PhaseClock::start();
+            let scored =
+                score_minibatch(actor, batch, minibatch, critic_mode, settings, &mut scratch)?;
+            clock.mark(crate::perf::Phase::Score, device);
             if let Some((callback, max_fraction)) = auxiliary.as_mut() {
                 // Measure PPO and auxiliary gradients independently.  We must clear between the
                 // two measurements: gradient accumulation would make the second norm a norm of
@@ -1150,7 +1485,14 @@ fn update_inner(
                 let Some(auxiliary_loss) = auxiliary_loss else {
                     // There is no valid replayed demonstration for this minibatch.  Preserve the
                     // ordinary PPO step exactly rather than manufacturing a zero-gradient loss.
-                    let scored = score_minibatch(actor, batch, minibatch, critic_mode, settings)?;
+                    let scored = score_minibatch(
+                        actor,
+                        batch,
+                        minibatch,
+                        critic_mode,
+                        settings,
+                        &mut scratch,
+                    )?;
                     scored.loss.backward();
                     optimizer.step(actor)?;
                     readings.push(scored.readings);
@@ -1175,7 +1517,8 @@ fn update_inner(
                 // would retain the whole PPO minibatch graph through an Adam step; recomputing is
                 // modestly dearer but keeps memory bounded and the objective exact.
                 optimizer.zero_grad(actor)?;
-                let combined = score_minibatch(actor, batch, minibatch, critic_mode, settings)?;
+                let combined =
+                    score_minibatch(actor, batch, minibatch, critic_mode, settings, &mut scratch)?;
                 let auxiliary_loss = callback(actor, epoch, minibatch_index)?;
                 if let Some(auxiliary_loss) = auxiliary_loss {
                     (&combined.loss + auxiliary_loss * scale).backward();
@@ -1187,13 +1530,17 @@ fn update_inner(
                 optimizer.step(actor)?;
             } else {
                 scored.loss.backward();
+                clock.mark(crate::perf::Phase::Backward, device);
                 optimizer.step(actor)?;
+                clock.mark(crate::perf::Phase::Step, device);
             }
             readings.push(scored.readings);
             seen += minibatch.len();
         }
 
+        let mut clock = crate::perf::PhaseClock::start();
         let telemetry = drain_epoch(&readings, &order, batch, settings)?;
+        clock.mark(crate::perf::Phase::Drain, device);
         stats.actor_loss += telemetry.actor_loss;
         stats.critic_loss += telemetry.critic_loss;
         stats.kl += telemetry.kl;
@@ -2232,5 +2579,287 @@ mod tests {
             before,
             "shared PPO did not update the value head"
         );
+    }
+}
+
+#[cfg(test)]
+mod prepared_tests {
+    use super::*;
+    use crate::Width;
+
+    fn step(row: usize, head: usize, options: Vec<(Vec<i64>, Vec<f32>)>, critic: Vec<i64>) -> Step {
+        let options: Vec<SparseOption> = options
+            .into_iter()
+            .map(|(columns, values)| SparseOption { columns, values })
+            .collect();
+        let values = (0..critic.len())
+            .map(|index| 0.5 + 0.25 * f32::from(u8::try_from(index).unwrap_or(u8::MAX)))
+            .collect();
+        Step {
+            row: FactionRow(row),
+            head,
+            chosen: options.len() - 1,
+            options,
+            behaviour_log_prob: -0.75,
+            temperature: 2.5,
+            behaviour_value: Some(0.25),
+            return_to_go: 1.5,
+            critic: Some(CriticInput::from_sparse(SparseOption {
+                columns: critic,
+                values,
+            })),
+        }
+    }
+
+    #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one table of hand-built steps and three minibatches, read top to bottom"
+    )]
+    fn prepared_minibatches_score_exactly_as_the_gathering_path() {
+        // Freeze canonicalises: unsorted columns and duplicates below must be folded exactly as the
+        // gather would have folded them, before either path sees them.
+        let steps = vec![
+            step(
+                0,
+                0,
+                vec![(vec![5, 3, 3], vec![1.0, 0.5, 0.25]), (vec![9], vec![2.0])],
+                vec![40, 12],
+            ),
+            step(
+                7,
+                4,
+                vec![
+                    (vec![1, 2, 3], vec![0.1, 0.2, 0.3]),
+                    (vec![300], vec![1.0]),
+                    (vec![2, 1], vec![1.0, 1.0]),
+                ],
+                vec![5],
+            ),
+            step(
+                32,
+                13,
+                vec![
+                    (vec![100, 50], vec![-1.0, 3.0]),
+                    (vec![7, 7, 7], vec![1.0, 1.0, 1.0]),
+                ],
+                vec![3, 2, 1],
+            ),
+            step(
+                15,
+                6,
+                vec![
+                    (vec![11], vec![0.5]),
+                    (vec![12], vec![0.5]),
+                    (vec![13], vec![0.5]),
+                    (vec![14], vec![0.5]),
+                ],
+                vec![8, 9],
+            ),
+        ];
+        let batch = Batch::freeze(steps, CriticMode::Shared).expect("freezes");
+        let rows: Vec<i64> = (0..512).collect();
+        let mut actor = crate::distill::initialize(Width::W128, 512, &rows);
+        actor.add_residual_blocks(1, 11);
+
+        let bits = |tensor: &Tensor| -> Vec<u32> {
+            ti4_tensor::to_vec(tensor)
+                .expect("reads")
+                .iter()
+                .map(|value| value.to_bits())
+                .collect()
+        };
+        let mut scratch = Scratch::default();
+        for minibatch in [vec![0, 1, 2, 3], vec![3, 1], vec![2]] {
+            let mut parts: Vec<(&[i64], &[f32])> = Vec::new();
+            let mut heads = Vec::new();
+            let mut option_rows = Vec::new();
+            let mut critics = Vec::new();
+            let mut critic_rows = Vec::new();
+            for index in &minibatch {
+                let step = &batch.steps()[*index];
+                for option in &step.options {
+                    parts.push((option.columns.as_slice(), option.values.as_slice()));
+                    heads.push(batch.constants.heads[*index]);
+                    option_rows.push(batch.constants.rows[*index]);
+                }
+                critics.push(step.critic.as_ref().expect("critic"));
+                critic_rows.push(batch.constants.rows[*index]);
+            }
+            let gathered = actor
+                .logits_mixed_parts(&parts, &heads, &option_rows)
+                .expect("gathers");
+            let gathered_value = actor.value_batch(&critics, &critic_rows).expect("values");
+
+            fill_actor_inputs(&batch, &minibatch, &mut scratch).expect("fills");
+            fill_critic_inputs(&batch, &minibatch, &mut scratch).expect("fills");
+            assert_eq!(scratch.heads, heads);
+            assert_eq!(scratch.rows, option_rows);
+            let prepared = actor
+                .logits_mixed_flat(
+                    &scratch.flat,
+                    &scratch.offsets,
+                    &scratch.weights,
+                    &scratch.heads,
+                    &scratch.rows,
+                )
+                .expect("scores");
+            let prepared_value = actor
+                .value_batch_flat(
+                    &scratch.critic_flat,
+                    &scratch.critic_offsets,
+                    &scratch.critic_weights,
+                    &scratch.critic_rows,
+                )
+                .expect("values");
+
+            assert_eq!(
+                bits(&gathered),
+                bits(&prepared),
+                "logits differ for {minibatch:?}"
+            );
+            assert_eq!(
+                bits(&gathered_value),
+                bits(&prepared_value),
+                "values differ for {minibatch:?}"
+            );
+            assert!(
+                bits(&gathered).iter().any(|value| *value != 0),
+                "all-zero logits prove nothing"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod device_tests {
+    use super::*;
+    use crate::Width;
+
+    fn step(row: usize, head: usize, options: Vec<Vec<i64>>, critic: Vec<i64>) -> Step {
+        let options: Vec<SparseOption> = options
+            .into_iter()
+            .map(|columns| {
+                let values = (0..columns.len())
+                    .map(|index| 0.25 + 0.5 * f32::from(u8::try_from(index).unwrap_or(u8::MAX)))
+                    .collect();
+                SparseOption { columns, values }
+            })
+            .collect();
+        let values = (0..critic.len()).map(|_| 0.75).collect();
+        Step {
+            row: FactionRow(row),
+            head,
+            chosen: 0,
+            options,
+            behaviour_log_prob: -0.5,
+            temperature: 1.0,
+            behaviour_value: Some(0.5),
+            return_to_go: 1.0,
+            critic: Some(CriticInput::from_sparse(SparseOption {
+                columns: critic,
+                values,
+            })),
+        }
+    }
+
+    #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "one frozen batch, then every array and output compared for three minibatches"
+    )]
+    fn a_device_resident_batch_assembles_exactly_the_host_arrays() {
+        let steps = vec![
+            step(2, 1, vec![vec![9, 4, 4], vec![1], vec![300, 2]], vec![7, 3]),
+            step(30, 12, vec![vec![5, 6, 7], vec![8]], vec![1]),
+            step(
+                11,
+                5,
+                vec![vec![100], vec![200], vec![150, 150], vec![1, 2, 3]],
+                vec![60, 61, 62],
+            ),
+        ];
+        let batch = Batch::freeze(steps, CriticMode::Shared).expect("freezes");
+        let device = DeviceBatch::build(&batch, ti4_tensor::Device::Cpu, true).expect("fits");
+        let rows: Vec<i64> = (0..512).collect();
+        let mut actor = crate::distill::initialize(Width::W128, 512, &rows);
+        actor.add_residual_blocks(1, 13);
+        let floats = |tensor: &Tensor| -> Vec<u32> {
+            Vec::<f32>::try_from(tensor)
+                .expect("reads")
+                .iter()
+                .map(|value| value.to_bits())
+                .collect()
+        };
+        let bits =
+            |values: &[f32]| -> Vec<u32> { values.iter().map(|value| value.to_bits()).collect() };
+
+        let mut scratch = Scratch::default();
+        for minibatch in [vec![0, 1, 2], vec![2, 0], vec![1]] {
+            let widest = fill_actor_inputs(&batch, &minibatch, &mut scratch).expect("fills");
+            let mut heads = Vec::new();
+            let mut option_rows = Vec::new();
+            let (device_widest, (indices, offsets, weights)) = device
+                .actor_inputs(&batch, &minibatch, &mut heads, &mut option_rows)
+                .expect("assembles");
+            assert_eq!(device_widest, widest);
+            assert_eq!(Vec::<i64>::try_from(&indices).expect("reads"), scratch.flat);
+            assert_eq!(
+                Vec::<i64>::try_from(&offsets).expect("reads"),
+                scratch.offsets
+            );
+            assert_eq!(floats(&weights), bits(&scratch.weights));
+            assert_eq!(heads, scratch.heads);
+            assert_eq!(option_rows, scratch.rows);
+            let host = actor
+                .logits_mixed_flat(
+                    &scratch.flat,
+                    &scratch.offsets,
+                    &scratch.weights,
+                    &scratch.heads,
+                    &scratch.rows,
+                )
+                .expect("scores");
+            let resident = actor
+                .logits_mixed_device(&indices, &offsets, &weights, &heads, &option_rows)
+                .expect("scores");
+            assert_eq!(
+                floats(&host),
+                floats(&resident),
+                "logits differ for {minibatch:?}"
+            );
+
+            fill_critic_inputs(&batch, &minibatch, &mut scratch).expect("fills");
+            let mut critic_rows = Vec::new();
+            let (indices, offsets, weights) = device
+                .critic_inputs(&batch, &minibatch, &mut critic_rows)
+                .expect("assembles");
+            assert_eq!(
+                Vec::<i64>::try_from(&indices).expect("reads"),
+                scratch.critic_flat
+            );
+            assert_eq!(
+                Vec::<i64>::try_from(&offsets).expect("reads"),
+                scratch.critic_offsets
+            );
+            assert_eq!(floats(&weights), bits(&scratch.critic_weights));
+            assert_eq!(critic_rows, scratch.critic_rows);
+            let host = actor
+                .value_batch_flat(
+                    &scratch.critic_flat,
+                    &scratch.critic_offsets,
+                    &scratch.critic_weights,
+                    &scratch.critic_rows,
+                )
+                .expect("values");
+            let resident = actor
+                .value_batch_device(&indices, &offsets, &weights, &critic_rows)
+                .expect("values");
+            assert_eq!(
+                floats(&host),
+                floats(&resident),
+                "values differ for {minibatch:?}"
+            );
+        }
     }
 }

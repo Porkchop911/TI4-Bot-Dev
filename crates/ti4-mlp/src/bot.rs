@@ -340,6 +340,7 @@ impl MlpBot {
         options: Vec<SparseOption>,
         head_index: usize,
         chosen: usize,
+        lap: &mut crate::perf::Lap,
     ) -> Result<(), IllegalChoice> {
         // The behaviour quantities, taken here because here is the only place they exist. The
         // critic vector comes from the same bound capability the policy used, so a PPO batch
@@ -350,6 +351,7 @@ impl MlpBot {
             let vector =
                 ti4_policy::critic::critic_vector(seen, ti4_policy::critic::CriticFeatures::full());
             let critic = crate::CriticInput::new(&vector, &self.vocabulary);
+            lap.mark(crate::perf::Stage::CriticFeatures);
             let value = self
                 .actor
                 .value(&critic, self.row)
@@ -357,6 +359,7 @@ impl MlpBot {
             if !value.is_finite() {
                 return Err(self.refuse(choice, "critic returned a non-finite value".to_owned()));
             }
+            lap.mark(crate::perf::Stage::CriticForward);
             (Some(critic), Some(value))
         };
         let probability = probabilities.get(chosen).copied().ok_or_else(|| {
@@ -385,6 +388,7 @@ impl MlpBot {
                 critic,
             },
         });
+        lap.mark(crate::perf::Stage::Record);
 
         Ok(())
     }
@@ -400,6 +404,7 @@ impl MlpBot {
                 prompt: choice.prompt.clone(),
             });
         }
+        let mut lap = crate::perf::Lap::start();
         let held = seen.held_secret_progress();
         // The seat's own setup baseline goes in with the features: the opening-progress facts are
         // deltas against it, and a bot that passed a default would report absolute holdings as
@@ -411,11 +416,13 @@ impl MlpBot {
             &held,
             self.baseline,
         );
+        lap.mark(crate::perf::Stage::Features);
         let options: Vec<SparseOption> = vectors
             .iter()
             .map(|vector| self.sparse_from(vector))
             .collect::<Result<_, _>>()
             .map_err(|reason| self.refuse(choice, reason))?;
+        lap.mark(crate::perf::Stage::Vocabulary);
         if options.len() != choice.options.len() {
             return Err(self.refuse(
                 choice,
@@ -458,6 +465,7 @@ impl MlpBot {
                     });
                 }
             };
+        lap.mark(crate::perf::Stage::Forward);
         if probabilities.len() != choice.options.len()
             || probabilities
                 .iter()
@@ -483,6 +491,8 @@ impl MlpBot {
             }
         }
 
+        lap.mark(crate::perf::Stage::Sampling);
+
         // Forced decisions are not recorded. With one legal option the policy's probability is
         // 1.0 whatever it believes, so the ratio is identically 1 and the surrogate's gradient is
         // identically zero — it would contribute nothing but weight to the per-batch means. The
@@ -498,6 +508,7 @@ impl MlpBot {
                 options,
                 head_index,
                 chosen,
+                &mut lap,
             )?;
         }
 

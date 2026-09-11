@@ -32,6 +32,7 @@ use rayon::prelude::*;
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::io::Write as _;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
@@ -89,6 +90,68 @@ fn argument(name: &str) -> Option<String> {
 fn refuse(reason: &str) -> ! {
     eprintln!("\nREFUSED: {reason}");
     std::process::exit(2);
+}
+
+/// Every flag that takes a value, so a mistyped one is refused rather than silently ignored.
+const VALUE_FLAGS: &[&str] = &[
+    "--bundle",
+    "--clear-bonus",
+    "--clearance-weight",
+    "--conjunctive-weight",
+    "--curriculum-seeds",
+    "--demo-corpus",
+    "--demo-per-update",
+    "--device",
+    "--entropy-final",
+    "--expansion-weight",
+    "--fleet-hoard-penalty",
+    "--fleet-weight",
+    "--high-vp-bonus",
+    "--learning-rate",
+    "--map-pool",
+    "--movement-entropy",
+    "--objective-weight",
+    "--out",
+    "--r1-bonus",
+    "--r1-shaping",
+    "--report-every",
+    "--rounds",
+    "--secret-weight",
+    "--seed-base",
+    "--stage",
+    "--strategy-diversity-weight",
+    "--styx-bonus",
+    "--tech-weight",
+    "--temperature",
+    "--trade-goods-hoard-weight",
+    "--unit-weight",
+    "--updates",
+    "--vp-weight",
+    "--waste-penalties",
+    "--waste-penalty",
+    "--zero-fleet-penalty",
+    "--diag",
+    "--capture-batch",
+];
+/// Every flag that stands alone.
+const BOOLEAN_FLAGS: &[&str] = &["--no-checkpoint", "--diag-sync", "--hash-games"];
+
+fn check_flags() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut index = 0;
+    while index < args.len() {
+        let arg = args[index].as_str();
+        if BOOLEAN_FLAGS.contains(&arg) {
+            index += 1;
+        } else if VALUE_FLAGS.contains(&arg) {
+            if index + 1 >= args.len() {
+                refuse(&format!("{arg} expects a value"));
+            }
+            index += 2;
+        } else {
+            refuse(&format!("unknown argument {arg:?}"));
+        }
+    }
 }
 
 /// Force a stored successful line while allowing the MLP recorder to rebuild its features.
@@ -337,10 +400,25 @@ fn reference_drift(
 struct Watching {
     inner: Box<dyn Decider>,
     log: std::rc::Rc<std::cell::RefCell<Vec<ti4_mlp::positive_corpus::Note>>>,
+    /// With `--hash-games`, a running hash of every choice this seat made.
+    all: Option<Rc<RefCell<sha2::Sha256>>>,
 }
 
 impl Watching {
     fn record(&self, choice: &Choice, chosen: &ti4_engine::choice::ChoiceOption) {
+        // Every choice, forced ones included, in order: who chose, from what, and which.
+        if let Some(all) = &self.all {
+            use sha2::Digest as _;
+            let mut hasher = all.borrow_mut();
+            hasher.update(choice.player.as_str().as_bytes());
+            hasher.update([0x1d]);
+            for option in &choice.options {
+                hasher.update(option.id.as_bytes());
+                hasher.update([0x1f]);
+            }
+            hasher.update(chosen.id.as_bytes());
+            hasher.update([0x1e]);
+        }
         // Forced decisions are absent from `MlpBot::record` too, so the indices of this log and the
         // recorded PPO steps line up. Counting them here and not there would shift every charge
         // after the first forced decision onto the wrong decision.
@@ -396,6 +474,7 @@ fn play_one(
     rotation: usize,
     temperature: f64,
     waste_penalties: &[f64],
+    hash: bool,
 ) -> Result<Played, String> {
     let seated: BTreeMap<PlayerId, FactionId> = players
         .iter()
@@ -416,11 +495,12 @@ fn play_one(
     // The handles are `Rc`, which is exactly why they are created, filled and drained inside this
     // function: nothing thread-local ever crosses back to the caller.
     let mut handles: BTreeMap<PlayerId, _> = BTreeMap::new();
+    let mut choice_hashers: BTreeMap<PlayerId, Rc<RefCell<sha2::Sha256>>> = BTreeMap::new();
     let mut watched: BTreeMap<
         PlayerId,
         std::rc::Rc<std::cell::RefCell<Vec<ti4_mlp::positive_corpus::Note>>>,
     > = BTreeMap::new();
-    let rollout = ti4_training::rollout::play_with_decider_factory(
+    let (rollout, game_digest) = ti4_training::rollout::play_with_decider_factory_digest(
         content,
         players,
         &seated,
@@ -435,6 +515,7 @@ fn play_one(
             pool: Arc::clone(pool),
             tile_seed_offset: TILE_SEED_OFFSET,
         },
+        hash,
         |baselines| {
             let mut deciders: BTreeMap<PlayerId, Box<dyn Decider>> = BTreeMap::new();
             for (index, player) in players.iter().enumerate() {
@@ -461,12 +542,18 @@ fn play_one(
                 }
                 let (decider, _status) = bot.seat();
                 let log = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+                let all = hash.then(|| {
+                    let hasher = Rc::new(RefCell::new(<sha2::Sha256 as sha2::Digest>::new()));
+                    choice_hashers.insert(player.clone(), Rc::clone(&hasher));
+                    hasher
+                });
                 watched.insert(player.clone(), std::rc::Rc::clone(&log));
                 deciders.insert(
                     player.clone(),
                     Box::new(Watching {
                         inner: decider,
                         log,
+                        all,
                     }),
                 );
             }
@@ -619,11 +706,50 @@ fn play_one(
         }
         steps.extend(recorded.drain(..).map(|record| record.step));
     }
-    Ok((steps, outcomes, wasted, tactical))
+    // With --hash-games: what this game did, in forms two runs can be compared by exactly.
+    let record = if hash {
+        let choices: BTreeMap<String, String> = choice_hashers
+            .iter()
+            .map(|(player, hasher)| {
+                (
+                    player.as_str().to_owned(),
+                    format!(
+                        "{:x}",
+                        <sha2::Sha256 as sha2::Digest>::finalize(hasher.borrow().clone())
+                    ),
+                )
+            })
+            .collect();
+        let digest = game_digest.as_ref();
+        Some(serde_json::json!({
+            "kind": "game",
+            "seed": seed,
+            "rotation": rotation,
+            "state_sha256": digest.map(|d| d.state_sha256.clone()),
+            "log_sha256": digest.map(|d| d.log_sha256.clone()),
+            "events": digest.map(|d| d.events),
+            "choices_sha256": choices,
+            "steps_sha256": ti4_mlp::perf::steps_digest(&steps).map_err(|error| error.to_string())?,
+            "steps": steps.len(),
+            "outcomes": outcomes
+                .iter()
+                .map(|o| serde_json::json!([o.faction, o.cleared, o.victory_points]))
+                .collect::<Vec<_>>(),
+        }))
+    } else {
+        None
+    };
+    Ok((steps, outcomes, wasted, tactical, record))
 }
 
 /// One played game: the decisions it contributed and what each seat ended with.
-type Played = (Vec<Step>, Vec<SeatOutcome>, usize, usize);
+type Played = (
+    Vec<Step>,
+    Vec<SeatOutcome>,
+    usize,
+    usize,
+    Option<serde_json::Value>,
+);
 
 /// What one seat's game produced, beyond the decisions it contributed to the batch.
 ///
@@ -865,6 +991,26 @@ mod cadence_tests {
 }
 
 fn main() {
+    check_flags();
+    // Diagnostics (plans/TRAINING_PERFORMANCE_HANDOFF_2026-09-11.md), all off by default: with none
+    // of these flags the run is exactly the run it always was.
+    let diag_path = argument("--diag");
+    let capture_path = argument("--capture-batch");
+    let no_checkpoint = std::env::args().any(|a| a == "--no-checkpoint");
+    let hash_games = std::env::args().any(|a| a == "--hash-games");
+    let diag_sync = std::env::args().any(|a| a == "--diag-sync");
+    if diag_path.is_some() {
+        ti4_mlp::perf::enable(diag_sync);
+    } else if hash_games || diag_sync {
+        refuse("--hash-games and --diag-sync need --diag <file>");
+    }
+    let mut diag = diag_path.as_ref().map(|path| {
+        std::fs::File::options()
+            .create(true)
+            .append(true)
+            .open(path)
+            .unwrap_or_else(|error| refuse(&format!("opening {path}: {error}")))
+    });
     let updates: usize = argument("--updates")
         .and_then(|value| value.parse().ok())
         .unwrap_or(1);
@@ -1283,7 +1429,9 @@ fn main() {
         // on CUDA it is fatal, which is how it was found.
         //
         // One transfer per update, not one per seat: the per-seat copies are made from this.
+        let update_started = Instant::now();
         let inference = actor.inference_copy().to_device(ti4_tensor::Device::Cpu);
+        let inference_copy_time = update_started.elapsed();
         let rolled = Instant::now();
         let mut steps: Vec<Step> = Vec::new();
         let mut seated_decisions = 0usize;
@@ -1311,25 +1459,41 @@ fn main() {
             .into_iter()
             .flat_map(|seed| (0..FACTIONS.len()).map(move |rotation| (seed, rotation)))
             .collect();
-        let workers = rayon::current_num_threads().max(1);
-        let per_worker = jobs.len().div_ceil(workers);
-        let chunks: Vec<(ti4_mlp::Actor, Vec<(u64, usize)>)> = jobs
-            .chunks(per_worker)
-            .map(|chunk| (inference.inference_copy(), chunk.to_vec()))
-            .collect();
+        let workers = rayon::current_num_threads().max(1).min(jobs.len());
+        let locals: Vec<ti4_mlp::Actor> =
+            (0..workers).map(|_| inference.inference_copy()).collect();
+        let chunk_copy_time = rolled.elapsed();
+        let harvest_started = Instant::now();
 
-        // Collected in chunk order and flattened in job order, so the batch a given update sees does
-        // not depend on which worker finished first. Determinism here is not decoration: §6.3's
-        // shuffle is seeded, and a batch assembled in scheduling order would make every downstream
-        // fingerprint irreproducible.
-        let harvest: Vec<Result<Vec<Played>, String>> = chunks
+        // Games are claimed one at a time from a shared cursor, so a worker that drew short games
+        // takes more of them instead of idling while the slowest fixed share finishes. With fixed
+        // shares of three the slowest of 32 workers measured 1.21x the mean, about 2.3 s of every
+        // update spent waiting (plans/TRAINING_PERFORMANCE_HANDOFF_2026-09-11.md, A1).
+        //
+        // Each result keeps its job index and the batch is reassembled in job order below, so the
+        // batch a given update sees still does not depend on which worker finished first.
+        // Determinism here is not decoration: §6.3's shuffle is seeded, and a batch assembled in
+        // scheduling order would make every downstream fingerprint irreproducible.
+        let cursor = std::sync::atomic::AtomicUsize::new(0);
+        let harvest: Vec<(
+            Vec<(usize, Result<Played, String>)>,
+            ti4_mlp::perf::StageTotals,
+            f64,
+        )> = locals
             .into_par_iter()
-            .map(|(local, chunk)| {
+            .map(|local| {
+                let worker_started = Instant::now();
+                let _ = ti4_mlp::perf::take_stages();
                 // One handle per worker, shared by every game it plays and every seat in them.
                 let local = std::rc::Rc::new(local);
-                chunk
-                    .iter()
-                    .map(|(seed, rotation)| {
+                let mut played = Vec::new();
+                loop {
+                    let job = cursor.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let Some((seed, rotation)) = jobs.get(job) else {
+                        break;
+                    };
+                    played.push((
+                        job,
                         play_one(
                             &local,
                             content,
@@ -1343,29 +1507,66 @@ fn main() {
                             *rotation,
                             temperature,
                             &waste_penalties,
-                        )
-                    })
-                    .collect()
+                            hash_games,
+                        ),
+                    ));
+                }
+                (
+                    played,
+                    ti4_mlp::perf::take_stages(),
+                    worker_started.elapsed().as_secs_f64(),
+                )
             })
             .collect();
 
         let mut wasted_activations = 0usize;
         let mut tactical_actions = 0usize;
-        for chunk in harvest {
-            for (game, outcomes, wasted, tactical) in chunk.unwrap_or_else(|error| refuse(&error)) {
-                games += 1;
-                wasted_activations += wasted;
-                tactical_actions += tactical;
-                seated_decisions += game.len();
-                steps.extend(game);
-                for outcome in &outcomes {
-                    window
-                        .entry(outcome.faction.clone())
-                        .or_default()
-                        .add(outcome);
-                }
+        let merge_started = Instant::now();
+        let harvest_time = merge_started.duration_since(harvest_started);
+        let mut workers_json = Vec::new();
+        let mut game_lines = Vec::new();
+        let mut by_job: Vec<Option<Result<Played, String>>> =
+            (0..jobs.len()).map(|_| None).collect();
+        for (played, stages, worker_wall) in harvest {
+            if diag.is_some() {
+                let stage_s: serde_json::Map<String, serde_json::Value> = ti4_mlp::perf::STAGES
+                    .iter()
+                    .zip(stages.nanos)
+                    .map(|(name, nanos)| {
+                        ((*name).to_owned(), serde_json::json!(nanos as f64 / 1e9))
+                    })
+                    .collect();
+                workers_json.push(serde_json::json!({
+                    "wall_s": worker_wall,
+                    "decisions": stages.decisions,
+                    "stage_s": stage_s,
+                }));
+            }
+            for (job, result) in played {
+                by_job[job] = Some(result);
             }
         }
+        // Job order, whatever order the games finished in.
+        for result in by_job {
+            let (game, outcomes, wasted, tactical, record) = result
+                .unwrap_or_else(|| refuse("a rollout job was never played"))
+                .unwrap_or_else(|error| refuse(&error));
+            if let Some(record) = record {
+                game_lines.push(record);
+            }
+            games += 1;
+            wasted_activations += wasted;
+            tactical_actions += tactical;
+            seated_decisions += game.len();
+            steps.extend(game);
+            for outcome in &outcomes {
+                window
+                    .entry(outcome.faction.clone())
+                    .or_default()
+                    .add(outcome);
+            }
+        }
+        let merge_time = merge_started.elapsed();
         let rollout_time = rolled.elapsed();
         if steps.is_empty() {
             refuse("self-play recorded no decisions");
@@ -1448,8 +1649,23 @@ fn main() {
                 refuse("the requested clean demonstration slice replayed empty");
             }
         }
+        let freeze_started = Instant::now();
         let batch = Batch::freeze(steps, critic_mode)
             .unwrap_or_else(|error| refuse(&format!("freezing: {error}")));
+        let freeze_time = freeze_started.elapsed();
+        // With --hash-games: the whole frozen batch, content and order, as one digest -- the same
+        // encoding `ppo_replay` reports for a captured batch, so the two compare directly.
+        let batch_digest = hash_games.then(|| {
+            ti4_mlp::perf::steps_digest(batch.steps())
+                .unwrap_or_else(|error| refuse(&format!("digesting the batch: {error}")))
+        });
+        if update == 0
+            && let Some(path) = &capture_path
+        {
+            ti4_mlp::perf::write_capture(batch.steps(), std::path::Path::new(path))
+                .unwrap_or_else(|error| refuse(&format!("capturing the batch to {path}: {error}")));
+            println!("  captured    {} decisions to {path}", batch.len());
+        }
         if batch.steps().len() != seated_decisions {
             refuse(&format!(
                 "freezing changed the decision count from {seated_decisions} to {}",
@@ -1508,6 +1724,7 @@ fn main() {
         }
         .unwrap_or_else(|error| refuse(&format!("update: {error}")));
         let optimise_time = optimised.elapsed();
+        let phases = ti4_mlp::perf::take_phases();
 
         let last = stats.last().unwrap_or_else(|| refuse("no epoch ran"));
         println!(
@@ -1552,6 +1769,7 @@ fn main() {
             refuse("batch_mean mode reported a critic loss");
         }
 
+        let report_started = Instant::now();
         // ---- the periodic report ----
         let done = update + 1;
         if cadence.due(done) || done == updates {
@@ -1571,20 +1789,58 @@ fn main() {
             reported_at = done;
             let fingerprint = ti4_mlp::ppo::parameter_fingerprint(&actor, critic_mode)
                 .unwrap_or_else(|error| refuse(&format!("fingerprinting parameters: {error}")));
-            publish(
-                &actor,
-                &std::path::Path::new(&out).join(format!("checkpoint-{}", optimizer.steps())),
-                &slots_text,
-                critic_mode,
-                &ti4_mlp::bundle::Provenance {
-                    source: format!("M10-034 PPO, {done} update(s) from {bundle_path}"),
-                    git_commit: std::env::var("GIT_COMMIT")
-                        .unwrap_or_else(|_| "unrecorded".to_owned()),
-                    update: u64::try_from(optimizer.steps()).unwrap_or(0),
-                },
-                &fingerprint,
-            );
+            if !no_checkpoint {
+                publish(
+                    &actor,
+                    &std::path::Path::new(&out).join(format!("checkpoint-{}", optimizer.steps())),
+                    &slots_text,
+                    critic_mode,
+                    &ti4_mlp::bundle::Provenance {
+                        source: format!("M10-034 PPO, {done} update(s) from {bundle_path}"),
+                        git_commit: std::env::var("GIT_COMMIT")
+                            .unwrap_or_else(|_| "unrecorded".to_owned()),
+                        update: u64::try_from(optimizer.steps()).unwrap_or(0),
+                    },
+                    &fingerprint,
+                );
+            }
             previous = Some(std::mem::take(&mut window));
+        }
+        if let Some(file) = diag.as_mut() {
+            let report_time = report_started.elapsed();
+            let phase_s: serde_json::Map<String, serde_json::Value> = ti4_mlp::perf::PHASES
+                .iter()
+                .zip(phases.nanos)
+                .map(|(name, nanos)| ((*name).to_owned(), serde_json::json!(nanos as f64 / 1e9)))
+                .collect();
+            let line = serde_json::json!({
+                "kind": "update",
+                "update": update,
+                "games": games,
+                "decisions": batch.len(),
+                "batch_steps_sha256": batch_digest,
+                "wall_s": update_started.elapsed().as_secs_f64(),
+                "inference_copy_s": inference_copy_time.as_secs_f64(),
+                "chunk_copy_s": chunk_copy_time.as_secs_f64(),
+                "harvest_s": harvest_time.as_secs_f64(),
+                "merge_s": merge_time.as_secs_f64(),
+                "rollout_s": rollout_time.as_secs_f64(),
+                "freeze_s": freeze_time.as_secs_f64(),
+                "optimise_s": optimise_time.as_secs_f64(),
+                "report_s": report_time.as_secs_f64(),
+                "ppo_phase_s": phase_s,
+                "ppo_minibatches": phases.minibatches,
+                "ppo_options": phases.options,
+                "ppo_cells": phases.cells,
+                "ppo_widest_max": phases.widest_max,
+                "workers": workers_json,
+            });
+            writeln!(file, "{line}")
+                .unwrap_or_else(|error| refuse(&format!("writing --diag: {error}")));
+            for game in &game_lines {
+                writeln!(file, "{game}")
+                    .unwrap_or_else(|error| refuse(&format!("writing --diag: {error}")));
+            }
         }
     }
 
