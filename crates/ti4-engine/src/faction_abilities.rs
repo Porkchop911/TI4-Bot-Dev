@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 
 use ti4_content::ContentStore;
 use ti4_model::content_types::{ContentType, SourceSet};
-use ti4_model::id::PlayerId;
+use ti4_model::id::{PlayerId, TechnologyId};
 use ti4_model::state::GameState;
 
 use crate::decision_context::{DecisionContext, DecisionSource};
@@ -167,16 +167,13 @@ pub fn waived_prerequisites(
     player: &PlayerId,
     technology: &str,
 ) -> usize {
-    let is_upgrade = content
-        .get(ContentType::Technologies, technology)
-        // The corpus names it `baseUpgrade`: the unit whose card this replaces. A guess at
-        // `unitUpgrade` matched nothing, which made the ability waive for upgrades too and the
-        // test that was meant to catch it vacuous.
-        .is_some_and(|record| {
-            record
-                .text("baseUpgrade")
-                .is_some_and(|base| !base.is_empty())
-        });
+    let is_upgrade = crate::technology::is_unit_upgrade(content, &TechnologyId::new(technology));
+    // The class is "a unit upgrade technology", and the canonical test for it is the
+    // UNITUPGRADE type. Deriving it from `baseUpgrade` instead missed every generic upgrade
+    // (Carrier II, War Sun, ...): they carry that type and no `baseUpgrade`, so the waiver
+    // opened for them and a Jol-Nar researched Carrier II on one blue. A prior guess at a
+    // `unitUpgrade` key matched nothing, which made the ability waive for upgrades too and the
+    // test that was meant to catch it vacuous.
     of_player(state, content, player)
         .iter()
         .map(|ability| match ability.as_str() {
@@ -842,8 +839,8 @@ pub fn unimplemented(content: &ContentStore, sources: SourceSet) -> Vec<String> 
 mod tests {
     use super::*;
     use crate::fixtures::game;
-    use ti4_model::content_types::POK;
-    use ti4_model::id::FactionId;
+    use ti4_model::content_types::{FULL, POK};
+    use ti4_model::id::{FactionId, PlayerId, TechnologyId};
 
     fn seated(faction: &str) -> (GameState, PlayerId) {
         let player = PlayerId::new("a");
@@ -1024,16 +1021,17 @@ mod tests {
         let upgrade = content
             .from_sources(ContentType::Technologies, POK)
             .find(|record| {
-                record
-                    .text("baseUpgrade")
-                    .is_some_and(|base| !base.is_empty())
+                record.text("alias").is_some_and(|alias| {
+                    crate::technology::is_unit_upgrade(content, &TechnologyId::new(alias))
+                })
             })
             .and_then(|record| record.text("alias").map(ToOwned::to_owned));
         let ordinary = content
             .from_sources(ContentType::Technologies, POK)
             .find(|record| {
-                record.text("baseUpgrade").is_none_or(str::is_empty)
-                    && record.text("faction").is_none()
+                !record.text("alias").is_some_and(|alias| {
+                    crate::technology::is_unit_upgrade(content, &TechnologyId::new(alias))
+                }) && record.text("faction").is_none()
             })
             .and_then(|record| record.text("alias").map(ToOwned::to_owned));
         let (Some(upgrade), Some(ordinary)) = (upgrade, ordinary) else {
@@ -1049,6 +1047,82 @@ mod tests {
             waived_prerequisites(&state, content, POK, &player, &upgrade),
             0,
             "a unit upgrade does not"
+        );
+    }
+
+    #[test]
+    fn analytical_waives_nothing_for_any_unit_upgrade_in_the_corpus() {
+        // The ability's window says "not a unit upgrade technology", and the corpus has two
+        // shapes of one: faction-specific upgrades that name their subject in `baseUpgrade`, and
+        // generic ones (Carrier II, War Sun, ...) that carry the UNITUPGRADE type and nothing
+        // else. Deriving the class from `baseUpgrade` waived for all ten of the generic ones,
+        // so a Jol-Nar researched Carrier II on a single blue.
+        let Some(jolnar) = faction_with("analytical") else {
+            return;
+        };
+        let (state, player) = seated(&jolnar);
+        let content = ContentStore::embedded();
+
+        let mut upgrades = 0;
+        let mut generics = 0;
+        for record in content.from_sources(ContentType::Technologies, FULL) {
+            let Some(alias) = record.text("alias") else {
+                continue;
+            };
+            if !crate::technology::is_unit_upgrade(content, &TechnologyId::new(alias)) {
+                continue;
+            }
+            upgrades += 1;
+            if record.text("baseUpgrade").is_none_or(str::is_empty) {
+                generics += 1;
+            }
+            assert_eq!(
+                waived_prerequisites(&state, content, FULL, &player, alias),
+                0,
+                "{alias} is a unit upgrade, so Analytical does not open for it"
+            );
+        }
+        assert!(
+            upgrades >= 20 && generics >= 5,
+            "the corpus has both shapes of upgrade: {upgrades} total, {generics} generic"
+        );
+
+        // And the waiver still opens for what it names: an ordinary technology.
+        assert_eq!(
+            waived_prerequisites(&state, content, FULL, &player, "gd"),
+            1,
+            "Gravity Drive is not a unit upgrade, so the waiver applies"
+        );
+    }
+
+    #[test]
+    fn a_jolnar_with_one_blue_cannot_research_carrier_ii() {
+        // End to end: the waiver must not reach the research gate. Carrier II needs two blues;
+        // one blue plus an (incorrect) waiver made it legal and put it in the policy's offered
+        // set, which is how the defect reached play.
+        let Some(jolnar) = faction_with("analytical") else {
+            return;
+        };
+        let (mut state, player) = seated(&jolnar);
+        let content = ContentStore::embedded();
+        let cv2 = TechnologyId::new("cv2");
+        assert!(
+            crate::technology::is_unit_upgrade(content, &cv2),
+            "Carrier II is a unit upgrade in this corpus"
+        );
+        state
+            .player_mut(&player)
+            .unwrap()
+            .technologies
+            .insert(TechnologyId::new("gd"));
+
+        assert!(
+            !crate::technology::can_research(&state, content, FULL, &player, &cv2),
+            "one blue does not satisfy Carrier II's two, and Analytical does not open for it"
+        );
+        assert!(
+            !crate::technology::researchable(&state, content, FULL, &player).contains(&cv2),
+            "nor may it be offered to the policy"
         );
     }
 

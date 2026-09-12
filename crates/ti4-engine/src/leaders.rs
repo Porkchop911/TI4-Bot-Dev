@@ -707,13 +707,17 @@ pub fn use_leader(
                 .unwrap_or_default();
             let mut swapped = false;
             for alias in held {
-                let record = context
+                let is_upgrade = crate::technology::is_unit_upgrade(context.content, &alias);
+                // "For each non-unit upgrade technology you own" (90.7b): an upgrade has no
+                // colour, so there is nothing to replace it with in its own colour. The class
+                // is the UNITUPGRADE type, not `baseUpgrade` — the generic upgrades (Carrier
+                // II, War Sun, ...) carry that key not at all, so they were treated as
+                // ordinary technologies and their phantom colour "UNITUPGRADE" matched the
+                // other generic upgrades, swapping one upgrade for another.
+                let colour = context
                     .content
-                    .get(ContentType::Technologies, alias.as_str());
-                let is_upgrade = record
-                    .as_ref()
-                    .is_some_and(|r| r.text("baseUpgrade").is_some_and(|b| !b.is_empty()));
-                let colour = record.and_then(|r| r.strings("types").first().map(ToOwned::to_owned));
+                    .get(ContentType::Technologies, alias.as_str())
+                    .and_then(|r| r.strings("types").first().map(ToOwned::to_owned));
                 let (false, Some(colour)) = (is_upgrade, colour) else {
                     continue;
                 };
@@ -725,7 +729,9 @@ pub fn use_leader(
                             .first()
                             .is_some_and(|kind| *kind == colour)
                     })
-                    .filter(|r| r.text("baseUpgrade").is_none_or(str::is_empty))
+                    // The same UNITUPGRADE class test as above, at record level: an upgrade
+                    // is never a valid replacement, whatever its `baseUpgrade` says.
+                    .filter(|r| !r.strings("types").contains(&"UNITUPGRADE"))
                     .filter_map(|r| r.text("alias").map(ti4_model::id::TechnologyId::new))
                     .find(|candidate| {
                         context
@@ -884,8 +890,12 @@ mod tests {
         let ordinary = content
             .from_sources(ContentType::Technologies, POK)
             .find(|r| {
-                r.text("baseUpgrade").is_none_or(str::is_empty)
-                    && r.text("faction").is_none()
+                !r.text("alias").is_some_and(|alias| {
+                    crate::technology::is_unit_upgrade(
+                        content,
+                        &ti4_model::id::TechnologyId::new(alias),
+                    )
+                }) && r.text("faction").is_none()
                     && !r.strings("types").is_empty()
             })
             .and_then(|r| r.text("alias").map(ti4_model::id::TechnologyId::new))
@@ -904,6 +914,43 @@ mod tests {
         assert!(
             !after.technologies.contains(&ordinary),
             "the old one went back to the deck"
+        );
+    }
+
+    #[test]
+    fn rin_leaves_held_unit_upgrades_untouched() {
+        // "For each non-unit upgrade technology you own" — the generic upgrades (Carrier II,
+        // War Sun, ...) have no `baseUpgrade` to name them, and their only type is the
+        // colourless UNITUPGRADE, which is not a colour. Treating them as swappable let Rin
+        // trade one generic upgrade for another; the ability must ignore the whole class.
+        let content = ContentStore::embedded();
+        let mut state = game(&["a"]);
+        let hero = holding(&mut state, "jolnarhero", LeaderStatus::Unlocked);
+        let cv2 = ti4_model::id::TechnologyId::new("cv2");
+        assert!(
+            crate::technology::is_unit_upgrade(content, &cv2),
+            "Carrier II is a unit upgrade in this corpus"
+        );
+        state
+            .player_mut(&player())
+            .unwrap()
+            .technologies
+            .insert(cv2.clone());
+
+        assert!(
+            !use_it(&mut state, &hero),
+            "nothing is swappable, so the hero is not spent"
+        );
+
+        let after = state.player(&player()).unwrap();
+        assert!(
+            after.technologies.contains(&cv2),
+            "a held unit upgrade is not a swappable technology"
+        );
+        assert_eq!(
+            after.leaders.get(&hero),
+            Some(&LeaderStatus::Unlocked),
+            "an unused hero is not purged"
         );
     }
 

@@ -17,6 +17,38 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 
 ## Current position
 
+### BUG-001 — Analytical and Rin exclude every unit upgrade, generic included (2026-09-12)
+
+- Operator-requested bug fix, outside the M00–M13 table. Branch:
+  `wp/bug-001-analytical-rin-upgrade-exclusion` from `main` @ `22266e1e`. The unrelated dirty
+  PPO/speedup files present in the working tree were preserved untouched and are not committed
+  by this package.
+- Defect: Jol-Nar's **Analytical** (`waived_prerequisites`, `faction_abilities.rs`) and Rin, the
+  Master's Legacy (`jolnarhero`, `leaders.rs`) derived "is a unit upgrade" from the `baseUpgrade`
+  content key. The corpus has 25 UNITUPGRADE technologies; the 10 **generic** ones (`ws, sd2,
+  cr2, dn2, dd2, pds2, cv2, ff2, inf2, m2`) carry no `baseUpgrade`, so Analytical waived one
+  prerequisite for them (e.g. a Jol-Nar with one blue researched Carrier II, needs `BB`), and
+  Rin swapped a held generic upgrade for another via the phantom `"UNITUPGRADE"` colour.
+  Generated-legal, not late-rejected: `can_research`/`research` re-validate through the same
+  broken gate.
+- Fix: both sites now use the canonical `technology::is_unit_upgrade` (types ∋ `UNITUPGRADE`)
+  already used by the AI Development Algorithm and war-sun gating; Rin's replacement pool also
+  carries an explicit record-level UNITUPGRADE guard. The two pre-existing regression tests
+  shared the broken `baseUpgrade` fixture selector (vacuous for the generic shape) and were
+  strengthened to the canonical check; three new tests added (corpus-wide waiver census, end-to-
+  end `can_research(cv2)` with one blue, Rin holds a generic upgrade untouched / hero not spent).
+- Checks (post-fix, post-fmt): engine 1,276 lib + 1 + 4 + 5 integration, 0 failed; policy 244,
+  0 failed; clippy: no new warnings from this package (one pre-existing `ti4-model` bool-struct
+  warning remains); `rustfmt --edition 2024 --check` clean on the two changed files.
+- Compatibility: the offered research set for Jol-Nar shrinks (spurious generic-upgrade options
+  are no longer generated). Policies trained on pre-fix checkpoints (incl. checkpoint-132144
+  reviewed 2026-09-12) carry learned priors over option ids that are no longer offered; no
+  schema, choice-ID, or feature-vector change, no replay migration.
+- Evidence: `plans/evidence/BUG-001_ANALYTICAL_RIN_UPGRADE_EXCLUSION.md`. Spec:
+  `plans/BUG-001_ANALYTICAL_RIN_UPGRADE_EXCLUSION.md`. Historical Python reference not inspected.
+- Independent (frontier-tier, legality) review: **OUTSTANDING** — no review peer available this
+  session; not merge-complete until it lands.
+
 ### Reviewer/current-engine integration (2026-09-11)
 
 - Ported the session-v3 reviewer UI onto integration commit `e1ee387`, which contains the current
