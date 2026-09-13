@@ -96,6 +96,31 @@ A/B.
   added by codex in the working tree specifically to build these offline-corpus examples; without
   them the committed example does not compile on a clean checkout.
 
+## Phase breakdown (follow-up: three wall-clock phase timers added to the example)
+
+The example now prints three wall-clock phases (`setup` = backend + assets + plans + actor
+copies; `games` = the parallel play; `assembly and validation` = frame concatenation + the
+loss-alignment read-back). Measured on the same machine (release, default pool):
+
+| run | setup | games | assembly+validation | total |
+|---|---|---|---|---|
+| 1 game, 1 worker | 0.2 s | 3.6 s | 0.2 s | ~4 s |
+| 12 games, 32 workers | 0.3 s | 7.3 s | 3.2 s | ~11 s |
+| 64 games, 32 workers | 0.5 s | 17.5 s | 13.3 s | ~31 s |
+| 64 games, 16 workers (`--workers 16`) | 0.3 s | **25.6 s** | 13.6 s | ~39 s |
+| 240 games, 32 workers | 0.4 s | 59.4 s | 49.7 s | ~110 s |
+
+Readings: (a) one game takes ~3.1–3.6 s single-threaded; (b) the parallel *game phase* scales to
+~12×, not 32× — 32 logical threads are 16 physical cores (SMT helps: 32 beats 16, so the default
+stays at all logical processors), memory-bandwidth/cache contention slows each concurrent game to
+~40% of isolated speed, and games vary ~2.2× in length so the slowest chunk sets the phase; with
+fewer games than workers (12 < 32) most threads sit idle for the whole run, which is why small
+batches show only ~5× end-to-end even though the mechanism scales; (c) the serial loss-alignment
+read-back (`validate_decisions`, one thread, O(decisions): ~0.13 ms/decision) is 46% of a 240-game
+run and caps the end-to-end speedup at ~8–9× as N grows — parallelising that gate (per-line checks
+are independent) would push a 240-game block to ~75 s (~11×). Sequential reference for the 240-game
+block: ≈ 240 × 3.1 s + ~50 s validation ≈ 800 s.
+
 ## Known differences / caveats
 
 - The existing `E:/ti4-corpus/pilot-v1` corpus was generated with an earlier engine state: the

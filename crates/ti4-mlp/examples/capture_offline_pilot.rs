@@ -1119,6 +1119,10 @@ fn run() -> Result<(), String> {
     });
     let evolutionary = argument("--evolutionary")
         .unwrap_or_else(|| "fixtures/mlp-baselines/final10000.zst".to_owned());
+    // Phase timing: setup (backend, assets, plans, actor copies) / games (the parallel part) /
+    // finish (frame assembly + validation read-back). Wall-clock diagnostics only; nothing here
+    // feeds a decision or a shard byte.
+    let setup_started = std::time::Instant::now();
     let tensor_seed = i64::try_from(seed_base)
         .map_err(|_| "--seed-base must fit a signed 64-bit tensor seed".to_owned())?;
     ti4_tensor::configure_deterministic(tensor_seed)
@@ -1245,6 +1249,13 @@ fn run() -> Result<(), String> {
         rounds,
         total_games: games,
     };
+    println!(
+        "  setup in {:.1}s ({} worker chunk(s), {} deep actor copies)",
+        setup_started.elapsed().as_secs_f64(),
+        jobs.len(),
+        jobs.len() * 2
+    );
+    let play_started = std::time::Instant::now();
     let execute = || {
         jobs.into_par_iter()
             .map(|(actors, chunk)| {
@@ -1291,6 +1302,8 @@ fn run() -> Result<(), String> {
             ));
         }
     }
+    println!("  games in {:.1}s", play_started.elapsed().as_secs_f64());
+    let finish_started = std::time::Instant::now();
 
     let mut policy_families = BTreeSet::new();
     for outcome in &outcomes {
@@ -1310,6 +1323,10 @@ fn run() -> Result<(), String> {
     let decision_count: usize = outcomes.iter().map(|outcome| outcome.decision_count).sum();
     let game_count = games;
     validate_decisions(&staging.join(DECISIONS_FILE), decision_count)?;
+    println!(
+        "  assembly and validation in {:.1}s",
+        finish_started.elapsed().as_secs_f64()
+    );
     let shards = BTreeMap::from([
         (
             DECISIONS_FILE.to_owned(),
