@@ -8,6 +8,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rand::{Rng, SeedableRng};
 use rayon::prelude::*;
@@ -413,6 +414,242 @@ fn compile_batch(
         .collect()
 }
 
+fn frame_ranges(bytes: &[u8], expected: usize) -> Result<Vec<std::ops::Range<usize>>, String> {
+    const ZSTD_MAGIC: [u8; 4] = [0x28, 0xb5, 0x2f, 0xfd];
+    let mut starts: Vec<usize> = (0..bytes.len().saturating_sub(3))
+        .into_par_iter()
+        .filter(|&index| bytes[index..index + 4] == ZSTD_MAGIC)
+        .collect();
+    starts.sort_unstable();
+    if starts.first().copied() != Some(0) || starts.len() != expected {
+        return Err(format!(
+            "expected {expected} independent zstd frames, found {}",
+            starts.len()
+        ));
+    }
+    Ok(starts
+        .iter()
+        .enumerate()
+        .map(|(index, &start)| start..starts.get(index + 1).copied().unwrap_or(bytes.len()))
+        .collect())
+}
+
+fn decode_frames<T: for<'a> Deserialize<'a> + Send>(
+    path: &Path,
+    expected: usize,
+) -> Result<Vec<T>, String> {
+    let bytes =
+        std::fs::read(path).map_err(|error| format!("reading {}: {error}", path.display()))?;
+    let ranges = frame_ranges(&bytes, expected)?;
+    let decoded: Result<Vec<Vec<T>>, String> = ranges
+        .par_iter()
+        .map(|range| {
+            let plain = zstd::decode_all(std::io::Cursor::new(&bytes[range.clone()]))
+                .map_err(|error| format!("decoding {} frame: {error}", path.display()))?;
+            String::from_utf8(plain)
+                .map_err(|error| format!("{} frame is not UTF-8: {error}", path.display()))?
+                .lines()
+                .filter(|line| !line.trim().is_empty())
+                .map(|line| {
+                    serde_json::from_str(line)
+                        .map_err(|error| format!("parsing {} frame: {error}", path.display()))
+                })
+                .collect()
+        })
+        .collect();
+    Ok(decoded?.into_iter().flatten().collect())
+}
+
+fn classify_games(
+    games: Vec<Game>,
+    strong: i64,
+    weak: i64,
+) -> Result<HashMap<(String, String), Outcome>, String> {
+    let mut outcomes = HashMap::new();
+    for game in games {
+        if !game.completed || game.error.is_some() {
+            continue;
+        }
+        if game.seats.len() != 6 {
+            return Err(format!("{} is not six-player", game.game_id));
+        }
+        let total: i64 = game
+            .seats
+            .iter()
+            .map(|seat| seat.final_progress.victory_points)
+            .sum();
+        let mut ranked: Vec<usize> = (0..6).collect();
+        ranked.sort_by_key(|&index| {
+            let p = game.seats[index].final_progress;
+            std::cmp::Reverse((
+                p.victory_points,
+                p.scoreable_public + p.scoreable_secret,
+                p.planets_gained + p.systems,
+                p.units_gained,
+            ))
+        });
+        for (index, seat) in game.seats.into_iter().enumerate() {
+            if !FACTIONS.contains(&seat.faction.as_str()) {
+                return Err(format!("out-of-scope faction {}", seat.faction));
+            }
+            let bucket = if seat.final_progress.victory_points >= 6 {
+                Bucket::Standout
+            } else if total >= strong && ranked[..3].contains(&index) {
+                Bucket::Strong
+            } else if total <= weak {
+                Bucket::Weak
+            } else {
+                Bucket::Control
+            };
+            outcomes.insert(
+                (game.game_id.clone(), seat.seat),
+                Outcome {
+                    faction: seat.faction,
+                    policy: seat.policy.policy_id,
+                    bucket,
+                },
+            );
+        }
+    }
+    Ok(outcomes)
+}
+
+fn to_sample(packed: Packed) -> Sample {
+    let mut teacher = vec![0.0; packed.options.len()];
+    teacher[packed.chosen] = 1.0;
+    Sample {
+        row: packed.row,
+        head: packed.head,
+        options: packed.options,
+        teacher,
+    }
+}
+
+fn train_raw_parallel() -> Result<(), String> {
+    let corpus = PathBuf::from(need("--corpus"));
+    let checkpoint = PathBuf::from(need("--checkpoint"));
+    let output = PathBuf::from(need("--out"));
+    if output.exists() {
+        return Err("output exists".into());
+    }
+    let expected = num("--expected-frames", 5_374_usize);
+    let strong = num("--strong-table-min-vp", 24_i64);
+    let weak = num("--weak-table-max-vp", 9_i64);
+    let control_per_million = num("--control-per-million", 30_220_u64);
+    let slots = std::fs::read_to_string(checkpoint.join("slots.json"))
+        .map_err(|error| error.to_string())?;
+    let loaded = read(&checkpoint).map_err(|error| error.to_string())?;
+    println!("parallel-loading {expected} game frames");
+    let games: Vec<Game> = decode_frames(&corpus.join("games.jsonl.zst"), expected)?;
+    let outcomes = classify_games(games, strong, weak)?;
+    let bytes =
+        std::fs::read(corpus.join("decisions.jsonl.zst")).map_err(|error| error.to_string())?;
+    let ranges = frame_ranges(&bytes, expected)?;
+    let finished = AtomicUsize::new(0);
+    println!("parallel-decoding {} decision frames", ranges.len());
+    let parts: Result<Vec<(Vec<Packed>, Vec<Packed>)>, String> = ranges
+        .par_iter()
+        .map(|range| {
+            let plain = zstd::decode_all(std::io::Cursor::new(&bytes[range.clone()]))
+                .map_err(|error| error.to_string())?;
+            let text = String::from_utf8(plain).map_err(|error| error.to_string())?;
+            let mut train = Vec::new();
+            let mut validation = Vec::new();
+            for line in text.lines().filter(|line| !line.trim().is_empty()) {
+                let decision: Decision =
+                    serde_json::from_str(line).map_err(|error| error.to_string())?;
+                let Some(packed) =
+                    compile_decision(decision, &outcomes, &loaded.vocabulary)?.map(|pair| pair.0)
+                else {
+                    continue;
+                };
+                let useful = matches!(packed.bucket, Bucket::Standout | Bucket::Strong)
+                    || (packed.bucket == Bucket::Control
+                        && packed.key % 1_000_000 < control_per_million);
+                if !useful {
+                    continue;
+                }
+                if packed.game % 100 < 10 {
+                    validation.push(packed);
+                } else {
+                    train.push(packed);
+                }
+            }
+            let done = finished.fetch_add(1, Ordering::Relaxed) + 1;
+            if done % 256 == 0 {
+                println!("decoded {done}/{expected} frames");
+                let _ = std::io::stdout().flush();
+            }
+            Ok((train, validation))
+        })
+        .collect();
+    drop(bytes);
+    let mut train_samples = Vec::new();
+    let mut validation_samples = Vec::new();
+    for (train, validation) in parts? {
+        train_samples.extend(train.into_iter().map(to_sample));
+        validation_samples.extend(validation.into_iter().map(to_sample));
+    }
+    println!(
+        "curated {} train and {} validation decisions",
+        train_samples.len(),
+        validation_samples.len()
+    );
+    let device = ti4_tensor::OptimizerDevice::Cuda
+        .resolve()
+        .map_err(|error| format!("CUDA required: {error}"))?;
+    let critic_mode = loaded.critic_mode;
+    let mut actor = loaded.actor.to_device(device);
+    let settings = Settings {
+        learning_rate: num("--learning-rate", 3e-5),
+        batch: num("--batch", 4_096),
+        micro_batch: num("--micro-batch", 512),
+        max_epochs: num("--epochs", 5),
+        preserve_untrained_rows: true,
+        ..Settings::default()
+    };
+    let result = fit(
+        &mut actor,
+        &train_samples,
+        &validation_samples,
+        settings,
+        |epoch| {
+            println!(
+                "epoch {} train NLL {:.5} validation NLL {:.5} steps {}",
+                epoch.number, epoch.train_kl, epoch.validation_kl, epoch.steps
+            );
+            let _ = std::io::stdout().flush();
+        },
+    )?;
+    if result.parameter_movement <= 0.0 {
+        return Err("parameters did not move".into());
+    }
+    let steps = result
+        .epochs
+        .iter()
+        .find(|epoch| epoch.number == result.selected)
+        .map_or(0, |epoch| epoch.steps);
+    let actor = actor.to_device(ti4_tensor::Device::Cpu);
+    let saved = write(
+        &output,
+        &actor,
+        &slots,
+        critic_mode,
+        &Provenance {
+            source: format!("parallel raw offline BC {}", corpus.display()),
+            git_commit: need("--git-commit"),
+            update: steps as u64,
+        },
+    )
+    .map_err(|error| error.to_string())?;
+    println!(
+        "selected epoch {}; wrote {}",
+        result.selected,
+        saved.directory.display()
+    );
+    Ok(())
+}
+
 fn pack() -> Result<(), String> {
     let source = PathBuf::from(need("--corpus"));
     let output = PathBuf::from(need("--out"));
@@ -737,6 +974,7 @@ fn main() {
     let result = match mode.as_str() {
         "pack" => pack(),
         "train" => train(),
+        "train-raw-parallel" => train_raw_parallel(),
         _ => Err(format!("unknown mode {mode}")),
     };
     if let Err(e) = result {
