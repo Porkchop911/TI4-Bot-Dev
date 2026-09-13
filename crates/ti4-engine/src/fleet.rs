@@ -23,6 +23,15 @@ pub fn counts_against_supply(kind: &UnitType<'_>) -> bool {
     kind.is_ship() && !kind.is_fighter() && !kind.consumes_capacity()
 }
 
+/// Darktalon Treilla: during the game round her hero was used, fleet supply is limited by
+/// neither laws nor the pool. Capacity still applies — only the fleet-supply limit lifts.
+#[must_use]
+pub fn is_unlimited(state: &GameState, player: &PlayerId) -> bool {
+    state
+        .player(player)
+        .is_some_and(|seat| seat.fleet_supply_unlimited_until == Some(state.round))
+}
+
 /// How many non-fighter ships this player may keep in one system.
 ///
 /// The fleet pool is the command tokens in it, capped by any law that caps it — Fleet
@@ -132,11 +141,17 @@ pub(crate) fn standing_using(
     system: &SystemId,
     arriving: Option<Arrival<'_>>,
 ) -> Standing {
+    let fleet_limit = if is_unlimited(state, player) {
+        // No law and no pool bound the ships this round; nothing can be excess.
+        i64::MAX
+    } else {
+        i64::from(limit(state, content, player)).max(0)
+    };
     standing_with(
         types,
         state.board.get(system),
         player,
-        i64::from(limit(state, content, player)).max(0),
+        fleet_limit,
         arriving,
     )
 }

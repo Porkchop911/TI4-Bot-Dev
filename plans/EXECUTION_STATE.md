@@ -17,6 +17,31 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 
 ## Current position
 
+### LEADER-FIX-001 — deployment, unlock, and component actions (2026-09-13)
+
+- Plan: `plans/LEADER-FIX-2026-09-13.md` package 1. Branch `codex/fix-six-faction-leaders` from
+  `d38c592`. Implemented in this session on top of codex's red-first tests (uncommitted at start:
+  his three tests + plan file).
+- Delivered: Xxcha hero replacement resolved (`for_faction` excludes `homebrewReplacesID`; FULL
+  deploys only `xxchahero-te`, PoK only `xxchahero`); commanders out of the generic offer;
+  `component_actions` offers 7 implemented action leaders (xxchaagent, hacanagent, solhero,
+  letnevhero, jolnarhero, l1z1xhero, **xxchahero-te** — added this session because without it the
+  replacement fix would leave FULL-scope Xxcha with an inert hero and no production modifier);
+  `use_leader` rewritten (was dead code) with per-arm player selections; `end_of_round` hook in
+  `phase.rs::begin_next_round`; `fleet::is_unlimited` choke point for Letnev's round-limited supply;
+  commander unlock refresh at decision boundaries (`game.rs::refresh_commander_unlocks`).
+- Tests: **44/44 leader tests** (incl. codex's 3 red-first + 9 new), full engine suite
+  **1288 passed / 0 failed**, `decision_delivery_inventory` registry updated to 7 choice sites in
+  `leaders.rs::use_leader` and passing, clippy clean for ti4-engine.
+- Behavioral re-baseline **v37** (versioned process): only `share_SHIP_MOVED` left its v36 interval
+  ([0.046170, 0.050472] → [0.044424, 0.047795], point 0.046010) — dilution from new component
+  actions + Xxcha's changed hero; all other points inside v36 intervals, completion still 1.0.
+  Old/new table in `plans/evidence/M08-021.md`; **review approval requested at package exit**.
+- Workspace: 2184 passed / 21 failed — all 21 pre-existing ti4-bridge golden suites (missing
+  fixtures), identical failure set before this package.
+- Evidence: `plans/evidence/LEADER_FIX_001.md`. **Independent review pending** (required; includes
+  v37 sign-off). Next safe action: independent review, then focused commit on the branch.
+
 ### OFFLINE-BC-PLAIN-JSONL-INPUT — plain JSONL corpora into the CUDA pipeline (2026-09-13)
 
 - Operator-requested change, outside the M00–M13 table. Branch: `wp/offline-pilot-streaming-retention`
@@ -8438,3 +8463,35 @@ source edited, no staging/commit/branch change. Supply patch independent review 
 Next safe action: owner reconciles the delivery registry; rerun full suite and independently
 review the small supply change before integration. This investigation does not advance any
 migration milestone or approve a policy/observation-surface change.
+
+## Offline BC v2 corpus, training, and evaluation (2026-09-13)
+
+- **Corpus published**: `E:/ti4-corpus/pilot-retained-32k-20260913-v2` (bucketed zstd:
+  `good/ bad/ random/`, canonical inclusive ≥6 retention, seed base `1_026_091_500`). No
+  `failed/` folder = zero engine failures. The requested **200k run was stopped by the operator
+  prematurely at ~game 948**; partial staging remains on E: (`pilot-retained-200k-20260913.staging-*`)
+  and is not resumable (capture refuses an existing staging dir) — a clean restart would need it
+  deleted. Restart pending operator intent.
+- **Model**: `out/offline-bc-v2-20260913-from-318956` trained by codex from the v2 `good + random`
+  buckets via `train-raw-parallel` (update 3380, created 22:37).
+- **Evaluation** (`crossplay_eval`, vs frozen checkpoint-318956, holdout pool, 60 seeds × 6
+  rotations × 6 candidate seats = 2,160 games/direction, log `out/eval-bcv2-vs-ckpt318956.log`):
+
+| faction | games | VP    | margin   | win     | cleared | waste   | offers |
+|---------|-------|-------|----------|---------|---------|---------|--------|
+| hacan   | 360   | 3.369 | −1.517   | 13.9%   | 85.83%  | 13.89%  | 3.39   |
+| jolnar  | 360   | 3.500 | −1.425   | 12.8%   | 48.33%  | 18.89%  | 2.97   |
+| l1z1x   | 360   | 3.239 | −1.808   | 8.9%    | 93.06%  | 15.00%  | 2.88   |
+| letnev  | 360   | 3.061 | −1.942   | 6.9%    | 81.39%  | 12.50%  | 2.65   |
+| sol     | 360   | 3.481 | −1.394   | 11.9%   | 93.33%  | 14.72%  | 2.86   |
+| xxcha   | 360   | 2.928 | −2.075   | 6.4%    | 88.89%  | 19.44%  | 2.93   |
+| ALL     | 2160  | 3.263 | **−1.694** | **10.1%** | 81.81%  | 15.74%  | 2.95   |
+
+- Reading: the null for this horizon (candidate == benchmark, i.e. checkpoint vs itself) is
+  margin ≈ −1.585 / win ≈ 11.4%. BC-v2 at −1.694 / 10.1% sits ~0.1 VP-margin below the teacher's
+  self-play null — distillation reproduces roughly teacher-level play, does not exceed it (expected
+  for pure behavior cloning). The earlier run-#1 model (`offline-bc-32k-20260913-from-318956`,
+  strict >6 corpus) measured −1.587 / 10.8%, essentially at the null; BC-v2 is slightly worse,
+  within plausible run-to-run variance but worth a repeat before drawing conclusions. Per-faction:
+  xxcha weakest (win 6.4%), jolnar's cleared rate (48.3%) is an outlier vs ~81–93% elsewhere —
+  more horizon cutoffs when the candidate plays Jol-Nar.

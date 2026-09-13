@@ -142,6 +142,9 @@ pub fn advance_turn(state: &mut GameState) -> Option<PlayerId> {
 /// The caller supplies the strategy card ids, since choosing them needs the content store.
 pub fn begin_next_round(state: &mut GameState, strategy_cards: Vec<ti4_model::id::StrategyCardId>) {
     state.phase = Phase::Strategy;
+    // "At the end of that game round" — before the counter moves on, so the round number still
+    // names the round whose effects expire here (Darktalon Treilla's hero and her flag).
+    crate::leaders::end_of_round(state);
     state.round += 1;
     state.active = None;
     state.unclaimed_strategy_cards = strategy_cards;

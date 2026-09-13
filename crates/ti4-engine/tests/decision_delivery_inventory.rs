@@ -500,6 +500,15 @@ const PRODUCERS: &[Producer] = &[
         delivery: Delivery::ObservedHere,
     },
     Producer {
+        // LEADER-FIX-001: the action-phase leaders ask their targets here — which planet to
+        // ready, whether to remove the infantry, gain-or-replenish, which system to gather in,
+        // and per-technology swap or keep.
+        module: "leaders.rs",
+        function: "use_leader",
+        count: 7,
+        delivery: Delivery::ObservedHere,
+    },
+    Producer {
         module: "legendary.rs",
         function: "end_turn",
         count: 1,
@@ -880,6 +889,7 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("invasion.rs", "apply_bombard_plan", 1),
     ("invasion.rs", "dunlain_reaper", 1),
     ("laws.rs", "offer_discard", 1),
+    ("leaders.rs", "use_leader", 7),
     ("legendary.rs", "end_turn", 1),
     ("legendary.rs", "pass", 1),
     ("legendary.rs", "place_on_own_planet", 1),

@@ -866,6 +866,22 @@ impl<'a> Game<'a> {
         }
     }
 
+    /// 51.7 at a decision boundary: commanders unlock on conditions that change during play —
+    /// resources, trade goods, ships in one system — so the seat about to decide is re-checked
+    /// before its options are generated (LEADER-FIX-001). The status phase checks everyone again
+    /// with the map.
+    fn refresh_commander_unlocks(&mut self, active: &PlayerId) {
+        for leader in crate::leaders::check_unlocks(
+            &mut self.state,
+            self.content,
+            self.sources,
+            self.galaxy.as_ref(),
+            active,
+        ) {
+            self.events.push(format!("LEADER_UNLOCKED:{leader}"));
+        }
+    }
+
     /// Resolve one generated decision, or one choice-free phase/window transition.
     #[must_use]
     pub fn step(&mut self) -> StepResult {
@@ -937,6 +953,7 @@ impl<'a> Game<'a> {
             ) {
                 return self.result(false, Some(error.into()));
             }
+            self.refresh_commander_unlocks(&active);
             self.prepared_turn_seq = Some(self.state.turn_seq);
             // "At the start of another player's turn" — this is that moment, typed so a
             // window can hang off it: the payload names the seat whose turn is beginning,
@@ -1098,6 +1115,13 @@ impl<'a> Game<'a> {
                 self.content,
                 active,
             ));
+        // Leaders whose printed window is the action phase: readied agents and unlocked heroes,
+        // offered only when they can resolve (LEADER-FIX-001).
+        choice.options.extend(crate::leaders::component_actions(
+            &self.state,
+            self.content,
+            active,
+        ));
         // 22.1: cards whose printed window is "Action" are played on your turn. Without this
         // every such card is drawn, held, discarded to the hand limit, and never played.
         choice
@@ -1200,6 +1224,22 @@ impl<'a> Game<'a> {
                     let done = self.play_faction_action(&active, &answer);
                     // Extreme Duress bites once the action is taken: the played card is
                     // already out of the hand, so only what is left gets discarded.
+                    self.settle_extreme_duress(&active, false)?;
+                    self.emit(if done {
+                        "COMPONENT_ACTION_RESOLVED"
+                    } else {
+                        "COMPONENT_ACTION_FAILED"
+                    });
+                    if !done {
+                        self.failed_component_actions.insert(answer.id.clone());
+                        return Ok(());
+                    }
+                    self.finish_action()?;
+                    return Ok(());
+                }
+                if let Some(leader) = answer.id.strip_prefix("component|leader|") {
+                    let leader = ti4_model::id::LeaderId::new(leader.to_owned());
+                    let done = self.perform_leader_action(&active, &leader);
                     self.settle_extreme_duress(&active, false)?;
                     self.emit(if done {
                         "COMPONENT_ACTION_RESOLVED"
@@ -1700,6 +1740,32 @@ impl<'a> Game<'a> {
     }
 
     /// Perform a faction component action through the game's own timing context.
+    /// Resolve a leader offered as an action-phase component (LEADER-FIX-001).
+    fn perform_leader_action(
+        &mut self,
+        player: &PlayerId,
+        leader: &ti4_model::id::LeaderId,
+    ) -> bool {
+        let (content, sources) = (self.content, self.sources);
+        let galaxy = self.galaxy.clone();
+        let logged = self.timing.log().len();
+        let done = {
+            let mut context = crate::timing::TimingContext {
+                state: &mut self.state,
+                content,
+                sources,
+                table: &mut self.table,
+                dice: &mut self.dice,
+                rng: &mut self.rng,
+                event_sequence: &mut self.event_sequence,
+                galaxy: galaxy.as_ref(),
+            };
+            crate::leaders::use_leader(&mut context, player, leader)
+        };
+        self.mirror_timing_log(logged);
+        done
+    }
+
     fn play_faction_action(&mut self, player: &PlayerId, answer: &ChoiceOption) -> bool {
         let (content, sources) = (self.content, self.sources);
         let galaxy = self.galaxy.clone();

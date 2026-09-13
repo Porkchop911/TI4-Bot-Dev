@@ -381,6 +381,23 @@ pub const BOOTSTRAP_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 /// the top of this module.
 #[must_use]
 pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
+    // v37 — 2026-09-13. LEADER-FIX-001: action-phase leaders became deliverable as component
+    // actions, and the Xxcha hero replacement was resolved. All six seated factions (sol, hacan,
+    // letnev, xxcha, jolnar, l1z1x) now have their printed action leaders offered in the action
+    // phase — Jace X's command-token return, Carth's gain-or-replenish, Darktalon Treilla's
+    // round-limited fleet supply, Rin's technology swap, The Helmsman's ship gathering, and the
+    // Thunder's Edge hero's PDS/mech placement. FULL-scope Xxcha deploys `xxchahero-te` instead
+    // of `xxchahero`, so it loses the combined-planet-values production modifier from turn one;
+    // commander unlocks also refresh at decision boundaries rather than only in the status phase.
+    //
+    // One metric leaves v36: `share_SHIP_MOVED` falls [0.046170, 0.050472] ->
+    // [0.044424, 0.047795]. The new component actions lengthen every event stream (each use is a
+    // COMPONENT_ACTION_RESOLVED), which dilutes the shares; Xxcha's changed hero changes its own
+    // movement and production choices as well. Every other current value sits inside its v36
+    // interval, all thirty games still end cleanly, and `vp_pace` [0.377160, 0.439506] ->
+    // [0.364043, 0.418673] drifts with the stream rather than signalling a play change. The
+    // complete old/new table is recorded in plans/evidence/M08-021.md.
+    //
     // v33 — 2026-09-03. Starting fleets now resolve every generic fleet code through the
     // faction sheet, rather than only mechs and flagships. L1Z1X therefore starts with its
     // capacity-2 Super Dreadnought, and faction carriers, infantry, fighters and production
@@ -953,43 +970,43 @@ pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
     let mut bounds = BTreeMap::new();
     bounds.insert(
         "vp_pace".to_owned(),
-        (0.377_160_493_827_160_5, 0.439_506_172_839_506_16),
+        (0.364_043_209_876_543_2, 0.418_672_839_506_172_8),
     );
     // Degenerate on purpose: all games in every recorded baseline ended cleanly, so the bound
     // is the strict invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
         "score_spread".to_owned(),
-        (1.980_730_673_496_749_8, 2.508_947_084_012_518_8),
+        (1.785_592_561_887_737_3, 2.340_940_194_502_928),
     );
     // V3: the spec's across-faction quantity — re-deriven with the same baseline run.
     bounds.insert(
         "faction_differentiation".to_owned(),
-        (0.430_331_482_911_935_2, 0.990_588_427_198_079_7),
+        (0.489_015_135_214_786_23, 1.075_039_476_737_115),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.018_530_768_546_429_252, 0.020_081_778_749_527_743),
+        (0.018_731_922_717_266_408, 0.019_892_408_391_028_644),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.034_789_243_539_827_805, 0.035_923_880_585_150_385),
+        (0.034_493_399_195_733_72, 0.035_909_955_874_829_88),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.046_170_360_054_135_08, 0.050_472_310_171_918_23),
+        (0.044_424_198_593_040_94, 0.047_795_472_874_693_23),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.004_358_228_143_416_484, 0.005_173_193_663_088_941),
+        (0.004_287_762_437_316_931_4, 0.004_912_210_462_506_266),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.068_739_780_534_929_06, 0.071_050_770_087_856_37),
+        (0.068_170_799_847_773_69, 0.070_970_058_754_063_9),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.033_938_662_670_114_33, 0.035_137_086_465_038_86),
+        (0.033_661_872_519_159_39, 0.035_086_177_358_045_24),
     );
     bounds
 }
