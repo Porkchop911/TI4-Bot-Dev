@@ -17,6 +17,34 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 
 ## Current position
 
+### OFFLINE-PILOT-PARALLEL-CAPTURE — parallel offline pilot capture (2026-09-13)
+
+- Operator-requested change, outside the M00–M13 table. Branch:
+  `wp/offline-pilot-parallel-capture` from `4d7f08c`. Codex's in-flight dirty files (choice.rs,
+  progress.rs, reward.rs, review gui/lib, vp_sources.rs) were preserved untouched and are not
+  committed by this package; the only non-example files committed are the offline-corpus examples'
+  dev-dependencies (`serde`/`zstd`/`chrono` in `ti4-mlp/Cargo.toml` + lock), which the committed
+  example needs to build.
+- Change: `crates/ti4-mlp/examples/capture_offline_pilot.rs` now plays games on rayon's global
+  pool (one thread per logical processor — 32 here; `--workers N` pins a dedicated pool of exactly
+  N). Game plans are precomputed on the main thread so faction/policy assignment is identical to
+  the old sequential loop; each worker chunk owns deep inference copies of both actors (`tch`
+  tensors cross threads by value only, per the `build_positive_corpus` pattern); workers write
+  per-game zstd frames that the main thread concatenates in game order (bounded memory at any
+  corpus size). Manifest gains an additive `workers` field.
+- Determinism proof: identical seeds with `--workers 1`, `--workers 8` and default (32) produce
+  **byte-identical shards** (decisions sha256 `bace70e3…c3bcce9`, games `13ac4150…f1c24246ab`,
+  12 games / 18520 decisions); a 64-game run's first 12 games are byte-identical to the dedicated
+  12-game runs. Speed: 12 games 39.7 s (1 worker) → 9.3 s (32 workers); 64 games in 29.6 s on 32
+  workers (~7× wall-clock including startup).
+- Checks: build/fmt clean; clippy no new warnings (5 pre-existing in the file, all on unchanged
+  code); `cargo test -p ti4-mlp` all pass (lib 99 + integration); `validate_offline_corpus.rs`
+  passes on a multi-frame shard (256 decisions, finite NLL); `tools/filter_offline_corpus.py`
+  consumes the new format.
+- Evidence: `plans/evidence/OFFLINE_PILOT_PARALLEL_CAPTURE.md`. Historical Python reference not
+  inspected. Review tier: routine implementation change with self-contained determinism proof;
+  no legality/hidden-information/schema-migration surface touched (additive manifest field only).
+
 ### BUG-001 — Analytical and Rin exclude every unit upgrade, generic included (2026-09-12)
 
 - Operator-requested bug fix, outside the M00–M13 table. Branch:
