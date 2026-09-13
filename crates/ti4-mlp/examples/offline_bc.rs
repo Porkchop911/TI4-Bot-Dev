@@ -24,6 +24,8 @@ const MAGIC: &[u8; 8] = b"TI4BC001";
 /// zstd frames (older corpora); both must stay readable.
 const ZSTD_MAGIC: [u8; 4] = [0x28, 0xb5, 0x2f, 0xfd];
 const SCHEMA: &str = "ti4-offline-bc-v1";
+const CAPTURE_SCHEMA: &str = "ti4-offline-selfplay-v1";
+const OBSERVATION_SCHEMA: &str = "seat-authorized-canonical-mlp-v1";
 const FACTIONS: [&str; 6] = ["jolnar", "letnev", "sol", "xxcha", "hacan", "l1z1x"];
 
 #[derive(Deserialize)]
@@ -134,6 +136,27 @@ struct Manifest {
     validation: FileInfo,
 }
 
+#[derive(Deserialize)]
+struct CaptureManifest {
+    schema: String,
+    observation_schema: String,
+    games: usize,
+    vocabulary_slots_sha256: String,
+    records: BTreeMap<String, usize>,
+    shards: BTreeMap<String, String>,
+}
+
+struct RawCorpus {
+    root: PathBuf,
+    games: PathBuf,
+    decisions: PathBuf,
+    frames: usize,
+    games_sha256: String,
+    decisions_sha256: String,
+}
+
+type CuratedSplit = (Vec<Packed>, Vec<Packed>);
+
 fn fail(message: &str) -> ! {
     eprintln!("offline_bc: {message}");
     std::process::exit(2)
@@ -146,6 +169,18 @@ fn arg(name: &str) -> Option<String> {
         }
     }
     None
+}
+fn args(name: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut values = std::env::args();
+    while let Some(value) = values.next() {
+        if value == name
+            && let Some(value) = values.next()
+        {
+            found.push(value);
+        }
+    }
+    found
 }
 fn need(name: &str) -> String {
     arg(name).unwrap_or_else(|| fail(&format!("missing {name}")))
@@ -178,6 +213,97 @@ fn digest(path: &Path) -> Result<String, String> {
         h.update(&b[..n]);
     }
     Ok(format!("{:x}", h.finalize()))
+}
+
+fn bytes_digest(bytes: &[u8]) -> String {
+    format!("{:x}", sha2::Sha256::digest(bytes))
+}
+
+fn read_checked(path: &Path, expected_sha256: &str) -> Result<Vec<u8>, String> {
+    let bytes =
+        std::fs::read(path).map_err(|error| format!("reading {}: {error}", path.display()))?;
+    let actual = bytes_digest(&bytes);
+    if actual != expected_sha256 {
+        return Err(format!(
+            "checksum mismatch for {}: manifest {expected_sha256}, actual {actual}",
+            path.display()
+        ));
+    }
+    Ok(bytes)
+}
+
+fn validate_capture_manifest(
+    manifest: &CaptureManifest,
+    slots_sha256: &str,
+    root: &Path,
+) -> Result<(), String> {
+    if manifest.schema != CAPTURE_SCHEMA {
+        return Err(format!(
+            "{} has capture schema {}, expected {CAPTURE_SCHEMA}",
+            root.display(),
+            manifest.schema
+        ));
+    }
+    if manifest.observation_schema != OBSERVATION_SCHEMA {
+        return Err(format!(
+            "{} has observation schema {}, expected {OBSERVATION_SCHEMA}",
+            root.display(),
+            manifest.observation_schema
+        ));
+    }
+    if manifest.vocabulary_slots_sha256 != slots_sha256 {
+        return Err(format!(
+            "{} vocabulary digest does not match the starting checkpoint",
+            root.display()
+        ));
+    }
+    if manifest.records.get("games") != Some(&manifest.games) {
+        return Err(format!(
+            "{} manifest games/records.games disagree",
+            root.display()
+        ));
+    }
+    Ok(())
+}
+
+fn manifest_hash(manifest: &CaptureManifest, path: &Path) -> Result<String, String> {
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| format!("invalid shard name {}", path.display()))?;
+    manifest
+        .shards
+        .get(name)
+        .cloned()
+        .ok_or_else(|| format!("manifest does not authenticate shard {name}"))
+}
+
+fn raw_corpus(root: PathBuf, slots_sha256: &str) -> Result<RawCorpus, String> {
+    let manifest_path = root.join("manifest.json");
+    if !manifest_path.is_file() {
+        return Err(format!(
+            "{} has no manifest.json; refusing an active/incomplete corpus",
+            root.display()
+        ));
+    }
+    let manifest: CaptureManifest = serde_json::from_slice(
+        &std::fs::read(&manifest_path)
+            .map_err(|error| format!("reading {}: {error}", manifest_path.display()))?,
+    )
+    .map_err(|error| format!("parsing {}: {error}", manifest_path.display()))?;
+    validate_capture_manifest(&manifest, slots_sha256, &root)?;
+    let games = shard(&root, "games")?;
+    let decisions = shard(&root, "decisions")?;
+    let games_sha256 = manifest_hash(&manifest, &games)?;
+    let decisions_sha256 = manifest_hash(&manifest, &decisions)?;
+    Ok(RawCorpus {
+        root,
+        games,
+        decisions,
+        frames: manifest.games,
+        games_sha256,
+        decisions_sha256,
+    })
 }
 /// Capture writes `.jsonl` (current) or `.jsonl.zst` (older corpora). Both suffixes are exact
 /// strings this pipeline produces, so the case-sensitive comparison is intentional.
@@ -548,24 +674,23 @@ fn frame_ranges(bytes: &[u8], expected: usize) -> Result<Vec<std::ops::Range<usi
 }
 
 fn decode_frames<T: for<'a> Deserialize<'a> + Send>(
-    path: &Path,
+    bytes: &[u8],
+    label: &Path,
     expected: usize,
 ) -> Result<Vec<T>, String> {
-    let bytes =
-        std::fs::read(path).map_err(|error| format!("reading {}: {error}", path.display()))?;
-    let ranges = frame_ranges(&bytes, expected)?;
+    let ranges = frame_ranges(bytes, expected)?;
     let decoded: Result<Vec<Vec<T>>, String> = ranges
         .par_iter()
         .map(|range| {
             let plain = zstd::decode_all(std::io::Cursor::new(&bytes[range.clone()]))
-                .map_err(|error| format!("decoding {} frame: {error}", path.display()))?;
+                .map_err(|error| format!("decoding {} frame: {error}", label.display()))?;
             String::from_utf8(plain)
-                .map_err(|error| format!("{} frame is not UTF-8: {error}", path.display()))?
+                .map_err(|error| format!("{} frame is not UTF-8: {error}", label.display()))?
                 .lines()
                 .filter(|line| !line.trim().is_empty())
                 .map(|line| {
                     serde_json::from_str(line)
-                        .map_err(|error| format!("parsing {} frame: {error}", path.display()))
+                        .map_err(|error| format!("parsing {} frame: {error}", label.display()))
                 })
                 .collect()
         })
@@ -614,14 +739,20 @@ fn classify_games(
             } else {
                 Bucket::Control
             };
-            outcomes.insert(
-                (game.game_id.clone(), seat.seat),
-                Outcome {
-                    faction: seat.faction,
-                    policy: seat.policy.policy_id,
-                    bucket,
-                },
-            );
+            let key = (game.game_id.clone(), seat.seat);
+            if outcomes
+                .insert(
+                    key,
+                    Outcome {
+                        faction: seat.faction,
+                        policy: seat.policy.policy_id,
+                        bucket,
+                    },
+                )
+                .is_some()
+            {
+                return Err(format!("duplicate game/seat outcome in {}", game.game_id));
+            }
         }
     }
     Ok(outcomes)
@@ -638,97 +769,195 @@ fn to_sample(packed: Packed) -> Sample {
     }
 }
 
-fn train_raw_parallel() -> Result<(), String> {
-    let corpus = PathBuf::from(need("--corpus"));
-    let checkpoint = PathBuf::from(need("--checkpoint"));
-    let output = PathBuf::from(need("--out"));
-    if output.exists() {
-        return Err("output exists".into());
+fn plain_games(bytes: &[u8], path: &Path, expected: usize) -> Result<Vec<Game>, String> {
+    let text = std::str::from_utf8(bytes)
+        .map_err(|error| format!("{} is not UTF-8: {error}", path.display()))?;
+    let games: Result<Vec<Game>, _> = text
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(serde_json::from_str)
+        .collect();
+    let games = games.map_err(|error| format!("parsing {}: {error}", path.display()))?;
+    if games.len() != expected {
+        return Err(format!(
+            "expected {expected} game records in {}, found {}",
+            path.display(),
+            games.len()
+        ));
     }
-    let expected = num("--expected-frames", 5_374_usize);
-    let strong = num("--strong-table-min-vp", 24_i64);
-    let weak = num("--weak-table-max-vp", 9_i64);
-    let control_per_million = num("--control-per-million", 30_220_u64);
-    let slots = std::fs::read_to_string(checkpoint.join("slots.json"))
-        .map_err(|error| error.to_string())?;
-    let loaded = read(&checkpoint).map_err(|error| error.to_string())?;
-    let games_path = shard(&corpus, "games")?;
-    println!("parallel-loading {expected} game frames");
-    let games: Vec<Game> = if is_zstd(&games_path)? {
-        decode_frames(&games_path, expected)?
-    } else {
-        let text = std::fs::read_to_string(&games_path).map_err(|error| error.to_string())?;
-        let parsed: Result<Vec<Game>, _> = text
-            .lines()
-            .filter(|line| !line.trim().is_empty())
-            .map(serde_json::from_str)
-            .collect();
-        let games = parsed.map_err(|error| format!("parsing {}: {error}", games_path.display()))?;
-        if games.len() != expected {
-            return Err(format!(
-                "expected {} game records in {}, found {}",
-                expected,
-                games_path.display(),
-                games.len()
-            ));
-        }
-        games
-    };
-    let outcomes = classify_games(games, strong, weak)?;
+    Ok(games)
+}
 
-    let decisions_path = shard(&corpus, "decisions")?;
+fn print_composition(label: &str, packed: &[Packed]) {
+    let mut buckets = BTreeMap::new();
+    let mut factions = BTreeMap::new();
+    let mut heads = BTreeMap::new();
+    let mut policies = BTreeMap::new();
+    for item in packed {
+        *buckets.entry(item.bucket.name()).or_insert(0_usize) += 1;
+        *factions
+            .entry(ti4_mlp::FACTION_ROSTER[item.row.index()])
+            .or_insert(0_usize) += 1;
+        *heads.entry(ti4_mlp::heads()[item.head]).or_insert(0_usize) += 1;
+        *policies
+            .entry(format!("{:016x}", item.policy))
+            .or_insert(0_usize) += 1;
+    }
+    println!(
+        "curation {label} buckets {}",
+        serde_json::to_string(&buckets).expect("composition serializes")
+    );
+    println!(
+        "curation {label} factions {}",
+        serde_json::to_string(&factions).expect("composition serializes")
+    );
+    println!(
+        "curation {label} heads {}",
+        serde_json::to_string(&heads).expect("composition serializes")
+    );
+    println!(
+        "curation {label} policy_hashes {}",
+        serde_json::to_string(&policies).expect("composition serializes")
+    );
+}
+
+fn load_games(corpus: &RawCorpus) -> Result<Vec<Game>, String> {
+    println!("loading and authenticating {}", corpus.games.display());
+    let bytes = read_checked(&corpus.games, &corpus.games_sha256)?;
+    if bytes.starts_with(&ZSTD_MAGIC) {
+        decode_frames(&bytes, &corpus.games, corpus.frames)
+    } else {
+        plain_games(&bytes, &corpus.games, corpus.frames)
+    }
+}
+
+fn compile_corpus(
+    corpus: &RawCorpus,
+    outcomes: &HashMap<(String, String), Outcome>,
+    vocabulary: &ti4_policy::vocabulary::Vocabulary,
+    control_per_million: u64,
+) -> Result<CuratedSplit, String> {
+    println!("loading and authenticating {}", corpus.decisions.display());
+    let bytes = read_checked(&corpus.decisions, &corpus.decisions_sha256)?;
     let finished = AtomicUsize::new(0);
-    let parts: Result<Vec<(Vec<Packed>, Vec<Packed>)>, String> = if is_zstd(&decisions_path)? {
-        let bytes = std::fs::read(&decisions_path).map_err(|error| error.to_string())?;
-        let ranges = frame_ranges(&bytes, expected)?;
-        println!("parallel-decoding {} decision frames", ranges.len());
+    let parts: Result<Vec<CuratedSplit>, String> = if bytes.starts_with(&ZSTD_MAGIC) {
+        let ranges = frame_ranges(&bytes, corpus.frames)?;
+        println!(
+            "parallel-decoding {} decision frames from {}",
+            ranges.len(),
+            corpus.root.display()
+        );
         ranges
             .par_iter()
             .map(|range| {
                 let plain = zstd::decode_all(std::io::Cursor::new(&bytes[range.clone()]))
                     .map_err(|error| error.to_string())?;
                 let text = String::from_utf8(plain).map_err(|error| error.to_string())?;
-                let part =
-                    compile_chunk(&text, &outcomes, &loaded.vocabulary, control_per_million)?;
+                let part = compile_chunk(&text, outcomes, vocabulary, control_per_million)?;
                 let done = finished.fetch_add(1, Ordering::Relaxed) + 1;
-                if done.is_multiple_of(256) {
-                    println!("decoded {done}/{expected} frames");
+                if done.is_multiple_of(256) || done == corpus.frames {
+                    println!("decoded {done}/{} frames", corpus.frames);
                     let _ = std::io::stdout().flush();
                 }
                 Ok(part)
             })
             .collect()
     } else {
-        let bytes = std::fs::read(&decisions_path).map_err(|error| error.to_string())?;
         let chunks = line_chunks(&bytes, rayon::current_num_threads());
-        println!("parallel-parsing {} decision chunks", chunks.len());
+        println!(
+            "parallel-parsing {} decision chunks from {}",
+            chunks.len(),
+            corpus.root.display()
+        );
         chunks
             .par_iter()
             .map(|range| {
                 let text = std::str::from_utf8(&bytes[range.clone()]).map_err(|error| {
-                    format!("{} is not UTF-8: {error}", decisions_path.display())
+                    format!("{} is not UTF-8: {error}", corpus.decisions.display())
                 })?;
-                let part = compile_chunk(text, &outcomes, &loaded.vocabulary, control_per_million)?;
-                let done = finished.fetch_add(1, Ordering::Relaxed) + 1;
-                if done.is_multiple_of(256) {
-                    println!("parsed {done}/{expected} chunks");
-                    let _ = std::io::stdout().flush();
-                }
-                Ok(part)
+                compile_chunk(text, outcomes, vocabulary, control_per_million)
             })
             .collect()
     };
+    let mut train = Vec::new();
+    let mut validation = Vec::new();
+    for (part_train, part_validation) in parts? {
+        train.extend(part_train);
+        validation.extend(part_validation);
+    }
+    println!("finished {}", corpus.root.display());
+    Ok((train, validation))
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "one orchestration path keeps manifest validation, curation, CUDA handoff and atomic save in execution order"
+)]
+fn train_raw_parallel() -> Result<(), String> {
+    let corpus_roots: Vec<PathBuf> = args("--corpus").into_iter().map(PathBuf::from).collect();
+    if corpus_roots.is_empty() {
+        return Err("missing --corpus (may be repeated)".into());
+    }
+    let checkpoint = PathBuf::from(need("--checkpoint"));
+    let output = PathBuf::from(need("--out"));
+    if output.exists() {
+        return Err("output exists".into());
+    }
+    let strong = num("--strong-table-min-vp", 24_i64);
+    let weak = num("--weak-table-max-vp", 9_i64);
+    let control_per_million = num("--control-per-million", 30_220_u64);
+    let slots = std::fs::read_to_string(checkpoint.join("slots.json"))
+        .map_err(|error| error.to_string())?;
+    let slots_sha256 = bytes_digest(slots.as_bytes());
+    let corpora: Result<Vec<RawCorpus>, String> = corpus_roots
+        .into_iter()
+        .map(|root| raw_corpus(root, &slots_sha256))
+        .collect();
+    let corpora = corpora?;
+    let total_frames: usize = corpora.iter().map(|corpus| corpus.frames).sum();
+    if total_frames == 0 {
+        return Err("input corpora contain no games".into());
+    }
+    println!(
+        "validated {} corpus manifests / {total_frames} game frames",
+        corpora.len()
+    );
+    for corpus in &corpora {
+        println!("  {}: {} frames", corpus.root.display(), corpus.frames);
+    }
+    let loaded = read(&checkpoint).map_err(|error| error.to_string())?;
+    let mut games = Vec::with_capacity(total_frames);
+    for corpus in &corpora {
+        if corpus.frames == 0 {
+            continue;
+        }
+        games.extend(load_games(corpus)?);
+    }
+    let outcomes = classify_games(games, strong, weak)?;
+
     let mut train_samples = Vec::new();
     let mut validation_samples = Vec::new();
-    for (train, validation) in parts? {
-        train_samples.extend(train.into_iter().map(to_sample));
-        validation_samples.extend(validation.into_iter().map(to_sample));
+    for corpus in &corpora {
+        if corpus.frames == 0 {
+            continue;
+        }
+        let (train, validation) =
+            compile_corpus(corpus, &outcomes, &loaded.vocabulary, control_per_million)?;
+        train_samples.extend(train);
+        validation_samples.extend(validation);
     }
     println!(
         "curated {} train and {} validation decisions",
         train_samples.len(),
         validation_samples.len()
     );
+    if train_samples.is_empty() || validation_samples.is_empty() {
+        return Err("curation produced an empty train or validation split".into());
+    }
+    print_composition("train", &train_samples);
+    print_composition("validation", &validation_samples);
+    let train_samples: Vec<Sample> = train_samples.into_iter().map(to_sample).collect();
+    let validation_samples: Vec<Sample> = validation_samples.into_iter().map(to_sample).collect();
     let device = ti4_tensor::OptimizerDevice::Cuda
         .resolve()
         .map_err(|error| format!("CUDA required: {error}"))?;
@@ -770,7 +999,14 @@ fn train_raw_parallel() -> Result<(), String> {
         &slots,
         critic_mode,
         &Provenance {
-            source: format!("parallel raw offline BC {}", corpus.display()),
+            source: format!(
+                "parallel raw offline BC {}",
+                corpora
+                    .iter()
+                    .map(|corpus| corpus.root.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(" + ")
+            ),
             git_commit: need("--git-commit"),
             update: steps as u64,
         },
@@ -1119,5 +1355,84 @@ fn main() {
     };
     if let Err(e) = result {
         fail(&e);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn capture_manifest() -> CaptureManifest {
+        CaptureManifest {
+            schema: CAPTURE_SCHEMA.to_owned(),
+            observation_schema: OBSERVATION_SCHEMA.to_owned(),
+            games: 2,
+            vocabulary_slots_sha256: "slots".to_owned(),
+            records: BTreeMap::from([("games".to_owned(), 2)]),
+            shards: BTreeMap::from([
+                ("games.jsonl.zst".to_owned(), "games-sha".to_owned()),
+                ("decisions.jsonl.zst".to_owned(), "decisions-sha".to_owned()),
+            ]),
+        }
+    }
+
+    #[test]
+    fn capture_manifest_accepts_matching_training_contract() {
+        assert!(
+            validate_capture_manifest(&capture_manifest(), "slots", Path::new("corpus")).is_ok()
+        );
+    }
+
+    #[test]
+    fn capture_manifest_rejects_schema_drift() {
+        let mut manifest = capture_manifest();
+        manifest.schema = "future-capture".to_owned();
+        assert!(
+            validate_capture_manifest(&manifest, "slots", Path::new("corpus"))
+                .unwrap_err()
+                .contains("capture schema")
+        );
+    }
+
+    #[test]
+    fn capture_manifest_rejects_observation_or_vocabulary_drift() {
+        let mut manifest = capture_manifest();
+        manifest.observation_schema = "different-observations".to_owned();
+        assert!(
+            validate_capture_manifest(&manifest, "slots", Path::new("corpus"))
+                .unwrap_err()
+                .contains("observation schema")
+        );
+        let manifest = capture_manifest();
+        assert!(
+            validate_capture_manifest(&manifest, "different-slots", Path::new("corpus"))
+                .unwrap_err()
+                .contains("vocabulary digest")
+        );
+    }
+
+    #[test]
+    fn capture_manifest_rejects_game_count_disagreement() {
+        let mut manifest = capture_manifest();
+        manifest.records.insert("games".to_owned(), 1);
+        assert!(
+            validate_capture_manifest(&manifest, "slots", Path::new("corpus"))
+                .unwrap_err()
+                .contains("games/records.games disagree")
+        );
+    }
+
+    #[test]
+    fn manifest_only_authenticates_declared_shards() {
+        let manifest = capture_manifest();
+        assert_eq!(
+            manifest_hash(&manifest, Path::new("games.jsonl.zst")).unwrap(),
+            "games-sha"
+        );
+        assert!(
+            manifest_hash(&manifest, Path::new("undeclared.jsonl.zst"))
+                .unwrap_err()
+                .contains("does not authenticate")
+        );
     }
 }
