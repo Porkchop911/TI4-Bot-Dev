@@ -12,13 +12,16 @@
 //! (rayon's global pool; `--workers N` pins a dedicated pool of exactly N instead). Each worker
 //! chunk owns deep inference copies of both actors — `tch::Tensor` is `Send` but not `Sync`, so no
 //! actor crosses a thread boundary, and inference never mutates the weights — and writes its own
-//! per-game plain JSONL parts to staging. At game end — while the records are still in memory — each
+//! per-game zstd frames to staging. At game end — while the records are still in memory — each
 //! game is checked against the retention rule (`RETENTION_RULE`): retained games pass a
-//! loss-alignment gate and then write their parts; discarded games write nothing at all. The main
-//! thread concatenates the retained parts in game order and proves the published shard is
-//! byte-identical to those validated parts via a running sha256. The shards are
-//! therefore byte-identical for a given seed base at any worker count, which the package evidence
-//! proves by diffing `--workers 1` against the default.
+//! loss-alignment gate and then write their parts into the folder of their reason bucket (see
+//! `bucket_for`: high-VP games go to `good/`, low-VP slogs to `bad/`, the seeded 5% control to
+//! `random/`, engine failures to `failed/`); discarded games write nothing at all. The main thread
+//! concatenates each bucket's retained frames in game order and proves every published shard is
+//! byte-identical to those validated frames via a running sha256. Each training bucket folder is a
+//! self-contained corpus (its own shards plus a scoped manifest), so downstream tooling can consume
+//! any quality class directly. The shards are therefore byte-identical for a given seed base at any
+//! worker count, which the package evidence proves by diffing `--workers 1` against the default.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -41,8 +44,14 @@ use ti4_policy::vocabulary::Vocabulary;
 
 const SCHEMA: &str = "ti4-offline-selfplay-v1";
 const OBSERVATION_SCHEMA: &str = "seat-authorized-canonical-mlp-v1";
-const DECISIONS_FILE: &str = "decisions.jsonl";
-const GAMES_FILE: &str = "games.jsonl";
+const DECISIONS_FILE: &str = "decisions.jsonl.zst";
+const GAMES_FILE: &str = "games.jsonl.zst";
+/// Published bucket folders, one per retention-reason class (see `bucket_for`). The three training
+/// buckets always exist; `failed` appears only when a game actually fails.
+const BUCKET_GOOD: &str = "good";
+const BUCKET_BAD: &str = "bad";
+const BUCKET_RANDOM: &str = "random";
+const BUCKET_FAILED: &str = "failed";
 const MANIFEST_FILE: &str = "manifest.json";
 const DEFAULT_GAMES: usize = 12;
 const DEFAULT_ROUNDS: u32 = 4;
@@ -231,7 +240,10 @@ struct Manifest {
     storage_encoding: String,
     checkpoint_manifests: BTreeMap<String, String>,
     records: BTreeMap<String, usize>,
+    /// Shard sha256 keyed by path relative to the corpus root (e.g. `good/decisions.jsonl.zst`).
     shards: BTreeMap<String, String>,
+    /// Per-bucket game and decision counts for every published folder.
+    buckets: BTreeMap<String, BucketStats>,
 }
 
 struct RecordingDecider {
@@ -832,35 +844,39 @@ fn policy(
     }
 }
 
-struct JsonlWriter {
-    writer: BufWriter<std::fs::File>,
+struct JsonlZstdWriter {
+    encoder: zstd::stream::write::Encoder<'static, BufWriter<std::fs::File>>,
     count: usize,
 }
 
-impl JsonlWriter {
+impl JsonlZstdWriter {
     fn create(path: &Path) -> Result<Self, String> {
         let file = std::fs::File::create(path)
             .map_err(|error| format!("creating {}: {error}", path.display()))?;
+        let encoder = zstd::stream::write::Encoder::new(BufWriter::new(file), 9)
+            .map_err(|error| format!("opening zstd stream: {error}"))?;
         Ok(Self {
-            writer: BufWriter::new(file),
+            encoder,
             count: 0,
         })
     }
 
     fn write<T: Serialize>(&mut self, value: &T) -> Result<(), String> {
-        serde_json::to_writer(&mut self.writer, value)
+        serde_json::to_writer(&mut self.encoder, value)
             .map_err(|error| format!("serializing record: {error}"))?;
-        self.writer
+        self.encoder
             .write_all(b"\n")
             .map_err(|error| format!("writing record: {error}"))?;
         self.count += 1;
         Ok(())
     }
 
-    fn finish(mut self) -> Result<usize, String> {
-        self.writer
+    fn finish(self) -> Result<usize, String> {
+        self.encoder
+            .finish()
+            .map_err(|error| format!("finishing zstd stream: {error}"))?
             .flush()
-            .map_err(|error| format!("flushing JSONL stream: {error}"))?;
+            .map_err(|error| format!("flushing zstd stream: {error}"))?;
         Ok(self.count)
     }
 }
@@ -916,6 +932,18 @@ impl RetentionReason {
             RetentionReason::RandomControl => "random_control",
             RetentionReason::FailedGame => "failed_game",
         }
+    }
+}
+
+/// The published folder for one retention reason: high-VP games are `good`, low-VP slogs are
+/// `bad`, the seeded 5% control is `random`, and engine failures stay visible in `failed` without
+/// contaminating any training bucket.
+fn bucket_for(reason: RetentionReason) -> &'static str {
+    match reason {
+        RetentionReason::Standout | RetentionReason::StrongTable => BUCKET_GOOD,
+        RetentionReason::WeakTable => BUCKET_BAD,
+        RetentionReason::RandomControl => BUCKET_RANDOM,
+        RetentionReason::FailedGame => BUCKET_FAILED,
     }
 }
 
@@ -983,6 +1011,14 @@ struct RetentionRecord {
     reason: Option<String>,
 }
 
+/// Per-bucket counts published in the manifests: how many games and decisions each reason folder
+/// holds.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct BucketStats {
+    games: usize,
+    decisions: usize,
+}
+
 /// Read-only context shared by every worker thread. `ContentStore`, the map pool and the opening
 /// map are already shared across rollout workers in production, so this adds no new aliasing.
 struct PlayContext<'a> {
@@ -995,31 +1031,43 @@ struct PlayContext<'a> {
 }
 
 fn decisions_part(game_index: usize) -> String {
-    format!("decisions-{game_index:06}.jsonl")
+    format!("decisions-{game_index:06}.jsonl.zst")
 }
 
 fn games_part(game_index: usize) -> String {
-    format!("games-{game_index:06}.jsonl")
+    format!("games-{game_index:06}.jsonl.zst")
 }
 
-/// Join the per-game plain JSONL parts into one shard, in game order. Keeping each worker's output
-/// on disk means no record crosses a thread boundary or accumulates in one heap. Returns the
-/// sha256 of the exact bytes written, so the caller can prove the published shard is byte-identical
-/// to the validated parts.
+/// Join the per-game zstd frames into one shard, in game order. A zstd stream may legally contain
+/// several concatenated frames (each part is exactly one), so plain concatenation stays a valid
+/// stream that any decoder walks transparently; keeping each worker's output on disk means no record
+/// crosses a thread boundary or accumulates in one heap. An empty bucket still gets a valid
+/// zero-record zstd frame, so every published folder has the same shape and decodes cleanly.
+/// Returns the sha256 of the exact bytes written, so the caller can prove the published shard is
+/// byte-identical to the validated frames.
 fn concatenate_parts(parts: &[PathBuf], final_path: &Path) -> Result<String, String> {
     let file = std::fs::File::create(final_path)
         .map_err(|error| format!("creating {}: {error}", final_path.display()))?;
     let mut writer = BufWriter::new(file);
     let mut hasher = sha2::Sha256::new();
-    for part in parts {
-        let frame =
-            std::fs::read(part).map_err(|error| format!("reading {}: {error}", part.display()))?;
+    if parts.is_empty() {
+        let frame = zstd::stream::encode_all(&b""[..], 9)
+            .map_err(|error| format!("encoding empty shard: {error}"))?;
         hasher.update(&frame);
         writer
             .write_all(&frame)
             .map_err(|error| format!("writing {}: {error}", final_path.display()))?;
-        std::fs::remove_file(part)
-            .map_err(|error| format!("removing {}: {error}", part.display()))?;
+    } else {
+        for part in parts {
+            let frame = std::fs::read(part)
+                .map_err(|error| format!("reading {}: {error}", part.display()))?;
+            hasher.update(&frame);
+            writer
+                .write_all(&frame)
+                .map_err(|error| format!("writing {}: {error}", final_path.display()))?;
+            std::fs::remove_file(part)
+                .map_err(|error| format!("removing {}: {error}", part.display()))?;
+        }
     }
     writer
         .flush()
@@ -1202,8 +1250,15 @@ fn play_game(
         }
     }
 
-    let mut decisions_writer =
-        JsonlWriter::create(&ctx.staging.join(decisions_part(plan.game_index)))?;
+    // Retained games land in their reason's bucket folder (see `bucket_for`). The three training
+    // buckets exist since staging setup; a failure creates its own lazily.
+    let bucket_dir = ctx.staging.join(bucket_for(reason));
+    std::fs::create_dir_all(&bucket_dir)
+        .map_err(|error| format!("creating {}: {error}", bucket_dir.display()))?;
+
+    let mut decisions_writer = JsonlZstdWriter::create(
+        &bucket_dir.join(decisions_part(plan.game_index)),
+    )?;
     for player in ctx.players {
         for decision in handles.borrow()[player].borrow().iter() {
             decisions_writer.write(decision)?;
@@ -1211,7 +1266,7 @@ fn play_game(
     }
     let decision_count = decisions_writer.finish()?;
 
-    let mut games_writer = JsonlWriter::create(&ctx.staging.join(games_part(plan.game_index)))?;
+    let mut games_writer = JsonlZstdWriter::create(&bucket_dir.join(games_part(plan.game_index)))?;
     games_writer.write(&GameMetadata {
         game_id: plan.game_id.clone(),
         game_index: plan.game_index,
@@ -1317,6 +1372,12 @@ fn run() -> Result<(), String> {
     }
     std::fs::create_dir_all(&staging)
         .map_err(|error| format!("creating {}: {error}", staging.display()))?;
+    // The three training bucket folders always exist so every published corpus has the same shape;
+    // `failed` is created lazily by a worker only when a game actually fails.
+    for bucket in [BUCKET_GOOD, BUCKET_BAD, BUCKET_RANDOM] {
+        std::fs::create_dir_all(staging.join(bucket))
+            .map_err(|error| format!("creating {}: {error}", staging.join(bucket).display()))?;
+    }
 
     let content = ContentStore::embedded();
     let players: Vec<PlayerId> = (0..6)
@@ -1492,38 +1553,69 @@ fn run() -> Result<(), String> {
         }
     }
 
-    // ---- assemble the shards in game order ------------------------------------------------------
+    // ---- assemble the per-bucket shards in game order -------------------------------------------
     // Only retained games have frames; outcomes are already in game order, so filtering keeps it.
-    let decision_parts: Vec<PathBuf> = outcomes
-        .iter()
-        .filter(|outcome| outcome.retained)
-        .map(|outcome| staging.join(decisions_part(outcome.game_index)))
-        .collect();
-    let expected_decisions_sha = concatenate_parts(&decision_parts, &staging.join(DECISIONS_FILE))?;
-    let game_parts: Vec<PathBuf> = outcomes
-        .iter()
-        .filter(|outcome| outcome.retained)
-        .map(|outcome| staging.join(games_part(outcome.game_index)))
-        .collect();
-    let expected_games_sha = concatenate_parts(&game_parts, &staging.join(GAMES_FILE))?;
-
     let decision_count: usize = outcomes.iter().map(|outcome| outcome.decision_count).sum();
     let games_retained = outcomes.iter().filter(|outcome| outcome.retained).count();
-    let shards = BTreeMap::from([
-        (
-            DECISIONS_FILE.to_owned(),
-            file_sha(&staging.join(DECISIONS_FILE))?,
-        ),
-        (GAMES_FILE.to_owned(), file_sha(&staging.join(GAMES_FILE))?),
-    ]);
-    // Byte-exactness: the published shards must hold exactly the frames whose records passed the
-    // loss-alignment gate before writing. A mismatch means corruption between write and publish,
-    // which refuses the run instead of publishing a corpus nobody can trust.
-    if shards[DECISIONS_FILE] != expected_decisions_sha {
-        return Err("published decisions shard does not match its validated frames".to_owned());
-    }
-    if shards[GAMES_FILE] != expected_games_sha {
-        return Err("published games shard does not match its validated frames".to_owned());
+
+    // The three training buckets always exist; `failed` only when a game actually failed.
+    let published_buckets: &[&str] = if staging.join(BUCKET_FAILED).exists() {
+        &[BUCKET_GOOD, BUCKET_BAD, BUCKET_RANDOM, BUCKET_FAILED]
+    } else {
+        &[BUCKET_GOOD, BUCKET_BAD, BUCKET_RANDOM]
+    };
+    let mut shards: BTreeMap<String, String> = BTreeMap::new();
+    let mut bucket_stats: BTreeMap<String, BucketStats> = BTreeMap::new();
+    for bucket in published_buckets.iter().copied() {
+        let in_bucket = |outcome: &GameOutcome| {
+            outcome.retained
+                && outcome
+                    .retention_reason
+                    .is_some_and(|reason| bucket_for(reason) == bucket)
+        };
+        let decision_parts: Vec<PathBuf> = outcomes
+            .iter()
+            .filter(|outcome| in_bucket(outcome))
+            .map(|outcome| staging.join(bucket).join(decisions_part(outcome.game_index)))
+            .collect();
+        let game_parts: Vec<PathBuf> = outcomes
+            .iter()
+            .filter(|outcome| in_bucket(outcome))
+            .map(|outcome| staging.join(bucket).join(games_part(outcome.game_index)))
+            .collect();
+
+        let decisions_path = staging.join(bucket).join(DECISIONS_FILE);
+        let games_path = staging.join(bucket).join(GAMES_FILE);
+        let expected_decisions_sha = concatenate_parts(&decision_parts, &decisions_path)?;
+        let expected_games_sha = concatenate_parts(&game_parts, &games_path)?;
+
+        // Byte-exactness: each published shard must hold exactly the frames whose records passed
+        // the loss-alignment gate before writing. A mismatch means corruption between write and
+        // publish, which refuses the run instead of publishing a corpus nobody can trust.
+        let decisions_sha = file_sha(&decisions_path)?;
+        if decisions_sha != expected_decisions_sha {
+            return Err(format!(
+                "{bucket}/{DECISIONS_FILE} does not match its validated frames"
+            ));
+        }
+        let games_sha = file_sha(&games_path)?;
+        if games_sha != expected_games_sha {
+            return Err(format!("{bucket}/{GAMES_FILE} does not match its validated frames"));
+        }
+
+        shards.insert(format!("{bucket}/{DECISIONS_FILE}"), decisions_sha);
+        shards.insert(format!("{bucket}/{GAMES_FILE}"), games_sha);
+        bucket_stats.insert(
+            bucket.to_owned(),
+            BucketStats {
+                games: outcomes.iter().filter(|outcome| in_bucket(outcome)).count(),
+                decisions: outcomes
+                    .iter()
+                    .filter(|outcome| in_bucket(outcome))
+                    .map(|outcome| outcome.decision_count)
+                    .sum(),
+            },
+        );
     }
 
     // Retention sidecar: one line per played game (retained or not) — provenance for the corpus
@@ -1597,18 +1689,70 @@ fn run() -> Result<(), String> {
         vocabulary_slots_sha256: slots_sha,
         behavior_probabilities_recorded: false,
         forced_decisions_retained: true,
-        storage_encoding: "plain-jsonl".to_owned(),
+        storage_encoding: "zstd".to_owned(),
         checkpoint_manifests,
         records: BTreeMap::from([
             ("games".to_owned(), games_retained),
             ("decisions".to_owned(), decision_count),
         ]),
         shards,
+        buckets: bucket_stats.clone(),
     };
     let manifest_bytes = serde_json::to_vec_pretty(&manifest)
         .map_err(|error| format!("serializing manifest: {error}"))?;
     std::fs::write(staging.join(MANIFEST_FILE), manifest_bytes)
         .map_err(|error| format!("writing manifest: {error}"))?;
+
+    // Each training bucket folder is a self-contained corpus: its own shards plus this scoped
+    // manifest, so downstream tooling can consume any quality class directly. `failed` stays a
+    // visibility artifact without a manifest — its partial decisions are never training data.
+    for (bucket, stats) in &bucket_stats {
+        if *bucket == BUCKET_FAILED {
+            continue;
+        }
+        let scoped = Manifest {
+            games: stats.games,
+            games_retained: stats.games,
+            retention_breakdown: outcomes.iter().fold(BTreeMap::new(), |mut map, outcome| {
+                if let Some(reason) = outcome.retention_reason && bucket_for(reason) == *bucket {
+                    *map.entry(reason.as_str().to_owned()).or_insert(0) += 1;
+                }
+                map
+            }),
+            policy_families: outcomes
+                .iter()
+                .filter(|outcome| {
+                    outcome.retained
+                        && outcome
+                            .retention_reason
+                            .is_some_and(|reason| bucket_for(reason) == *bucket)
+                })
+                .flat_map(|outcome| outcome.policy_families.iter().cloned())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect(),
+            records: BTreeMap::from([
+                ("games".to_owned(), stats.games),
+                ("decisions".to_owned(), stats.decisions),
+            ]),
+            shards: BTreeMap::from([
+                (
+                    DECISIONS_FILE.to_owned(),
+                    manifest.shards[&format!("{bucket}/{DECISIONS_FILE}")].clone(),
+                ),
+                (
+                    GAMES_FILE.to_owned(),
+                    manifest.shards[&format!("{bucket}/{GAMES_FILE}")].clone(),
+                ),
+            ]),
+            ..manifest.clone()
+        };
+        let scoped_bytes = serde_json::to_vec_pretty(&scoped)
+            .map_err(|error| format!("serializing {bucket} manifest: {error}"))?;
+        std::fs::write(staging.join(bucket).join(MANIFEST_FILE), scoped_bytes)
+            .map_err(|error| format!("writing {bucket} manifest: {error}"))?;
+    }
+
     std::fs::rename(&staging, &output)
         .map_err(|error| format!("publishing {}: {error}", output.display()))?;
     println!(
@@ -1693,6 +1837,15 @@ mod tests {
             decide_retention(10, 5, 42),
             Some(RetentionReason::WeakTable)
         );
+    }
+
+    #[test]
+    fn buckets_map_reasons_to_folders() {
+        assert_eq!(bucket_for(RetentionReason::Standout), BUCKET_GOOD);
+        assert_eq!(bucket_for(RetentionReason::StrongTable), BUCKET_GOOD);
+        assert_eq!(bucket_for(RetentionReason::WeakTable), BUCKET_BAD);
+        assert_eq!(bucket_for(RetentionReason::RandomControl), BUCKET_RANDOM);
+        assert_eq!(bucket_for(RetentionReason::FailedGame), BUCKET_FAILED);
     }
 
     #[test]

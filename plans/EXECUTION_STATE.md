@@ -43,8 +43,34 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   teacher at this horizon. Log: `out/eval-bc32k-vs-ckpt318956.log`.
 - Evidence: `plans/evidence/OFFLINE_BC_PLAIN_JSONL_INPUT.md`. Historical Python reference not
   inspected.
-- Next: future corpora can now be generated as plain JSONL straight into the CUDA pipeline (pack →
-  train); GPU training needs a CUDA-enabled libtorch link on whatever host runs it.
+- Next: superseded by OFFLINE-PILOT-BUCKETED-ZSTD below (operator chose zstd + bucket folders).
+
+### OFFLINE-PILOT-BUCKETED-ZSTD — per-reason bucket folders, zstd output (2026-09-13)
+
+- Operator decision after measuring the plain-JSONL 32k run: E: is a mechanical HDD and each
+  retained game dumps ~140 MB of uncompressed records (~95 KB/decision; this data compresses ~150×
+  under zstd level 9), so generation went disk-write-bound (CPU at ~3.5/32 cores, ~1.5 games/s vs
+  ~5/s). Operator chose: **zstd output + files in folders by retention reason** (`good` = standout|
+  strong_table, `bad` = weak_table, `random` = random_control; `failed/` only when a game fails —
+  recorded deviation) and additionally requested a **200k-game corpus**.
+- Single-file change to `capture_offline_pilot.rs`: restored `JsonlZstdWriter`; parts/final shards
+  per bucket folder; running-sha256 byte-exactness gate now per shard; empty buckets publish a valid
+  deterministic zero-record zstd frame; manifest gains additive `buckets` stats, `shards` keyed by
+  relative path, `storage_encoding = "zstd"`; each training bucket gets a scoped `manifest.json` so
+  `offline_bc pack --corpus <root>/<bucket>` works directly (pack refuses corpora without one).
+- Verified: build clean; **13/13 unit tests** (new `buckets_map_reasons_to_folders`); clippy at
+  baseline; two 12-game runs (`--workers 32` vs `--workers 1`, seed base 9000001) → every data shard
+  byte-identical across worker counts, manifests identical except legitimate `workers`/`created_utc`
+  (good: decisions sha256 `5dc04ca6…3e`; bad `37243bce…dd3c`; empty random frame `6fb85438…cbd`);
+  `offline_bc pack` on the `good/` bucket published successfully.
+- Evidence: `plans/evidence/OFFLINE_PILOT_BUCKETED_ZSTD.md`. Historical Python reference not
+  inspected.
+- **Runs launched (supervisor script, sequential, full 32 workers each)**:
+  - `E:/ti4-corpus/pilot-retained-32k-20260913-v2` — seed base `1_026_091_500` (reused from the
+    killed plain-JSONL attempt; never published), ETA ~1.7 h.
+  - `E:/ti4-corpus/pilot-retained-200k-20260913` — seed base `1_026_091_600` (fresh), ETA ~10 h;
+    starts only after the 32k run exits 0. Logs: `out/run-bucketed-32k.log`,
+    `out/run-bucketed-200k.log`; supervisor log `out/launch-bucketed-runs.log`.
 
 ### OFFLINE-PILOT-STREAMING-RETENTION — write-or-discard at game end (2026-09-13)
 
