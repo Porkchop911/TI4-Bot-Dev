@@ -12,14 +12,18 @@
 //! (rayon's global pool; `--workers N` pins a dedicated pool of exactly N instead). Each worker
 //! chunk owns deep inference copies of both actors — `tch::Tensor` is `Send` but not `Sync`, so no
 //! actor crosses a thread boundary, and inference never mutates the weights — and writes its own
-//! per-game zstd frames to staging. The main thread concatenates those frames in game order; a
-//! zstd stream may legally hold several frames and every reader this pipeline uses walks them
-//! transparently. The decoded shards are therefore byte-identical for a given seed base at any
-//! worker count, which the package evidence proves by diffing `--workers 1` against the default.
+//! per-game zstd frames to staging. At game end — while the records are still in memory — each
+//! game is checked against the retention rule (`RETENTION_RULE`): retained games pass a
+//! loss-alignment gate and then write their frames; discarded games write nothing at all. The main
+//! thread concatenates the retained frames in game order (a zstd stream may legally hold several
+//! frames and every reader this pipeline uses walks them transparently) and proves the published
+//! shard is byte-identical to those validated frames via a running sha256. The decoded shards are
+//! therefore byte-identical for a given seed base at any worker count, which the package evidence
+//! proves by diffing `--workers 1` against the default.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::io::{BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -46,6 +50,20 @@ const DEFAULT_ROUNDS: u32 = 4;
 const DEFAULT_SEED_BASE: u64 = 1_026_091_300;
 const TILE_SEED_OFFSET: u64 = 0;
 const IN_SCOPE_FACTIONS: [&str; 6] = ["jolnar", "letnev", "sol", "xxcha", "hacan", "l1z1x"];
+
+/// Streaming retention rule (agreed with codex, 2026-09-13): a game is written to disk iff any
+/// faction finishes above `STANDOUT_VP`, or the table total reaches `STRONG_TABLE_VP`, or it falls
+/// below `WEAK_TABLE_VP`; games in between are kept with probability 5% as a random control. Every
+/// condition is decidable at game end while the records are still in memory, so discarded games
+/// never touch disk. The coin is seeded from the game seed — a pure function of the game index —
+/// so retention is reproducible at any worker count.
+const RETENTION_RULE: &str = "vp-threshold-v1";
+const STANDOUT_VP: i32 = 6; // strictly above
+const STRONG_TABLE_VP: i32 = 24; // table total, inclusive
+const WEAK_TABLE_VP: i32 = 10; // table total, exclusive
+const RANDOM_CONTROL_NUMERATOR: u32 = 5;
+const RANDOM_CONTROL_DENOMINATOR: u32 = 100;
+const RETENTION_COIN_SALT: u64 = 0x5EED_5A17;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct SparseFeature {
@@ -195,9 +213,14 @@ struct Manifest {
     created_utc: String,
     engine_git_commit: String,
     engine_worktree_dirty: bool,
+    /// Games present in the shards (retained ones); `games_played` is everything that was played.
     games: usize,
     rounds: u32,
     workers: usize,
+    retention_rule: String,
+    games_played: usize,
+    games_retained: usize,
+    retention_breakdown: BTreeMap<String, usize>,
     seed_base: u64,
     factions: Vec<String>,
     policy_families: Vec<String>,
@@ -594,10 +617,23 @@ fn sha256(bytes: &[u8]) -> String {
     format!("{:x}", sha2::Sha256::digest(bytes))
 }
 
+/// Streaming sha256: a published shard can be tens of gigabytes, so the file is hashed in 1 MiB
+/// chunks rather than read whole into memory.
 fn file_sha(path: &Path) -> Result<String, String> {
-    std::fs::read(path)
-        .map(|bytes| sha256(&bytes))
-        .map_err(|error| format!("reading {}: {error}", path.display()))
+    let mut file = std::fs::File::open(path)
+        .map_err(|error| format!("opening {}: {error}", path.display()))?;
+    let mut hasher = sha2::Sha256::new();
+    let mut buffer = vec![0u8; 1 << 20];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|error| format!("reading {}: {error}", path.display()))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 fn git(command: &str) -> String {
@@ -830,35 +866,75 @@ impl JsonlZstdWriter {
     }
 }
 
-fn validate_decisions(path: &Path, expected: usize) -> Result<(), String> {
-    let file = std::fs::File::open(path)
-        .map_err(|error| format!("opening {}: {error}", path.display()))?;
-    let decoder = zstd::stream::read::Decoder::new(BufReader::new(file))
-        .map_err(|error| format!("opening decision decoder: {error}"))?;
-    let mut count = 0usize;
-    for line in BufReader::new(decoder).lines() {
-        let decision: CapturedDecision =
-            serde_json::from_str(&line.map_err(|error| format!("reading decision line: {error}"))?)
-                .map_err(|error| format!("parsing decision {count}: {error}"))?;
-        if decision.legal_actions.is_empty()
-            || decision.chosen_action_index >= decision.legal_actions.len()
-            || decision.legal_actions[decision.chosen_action_index].id != decision.chosen_action_id
-            || decision
-                .legal_actions
-                .iter()
-                .enumerate()
-                .any(|(index, option)| option.index != index)
-        {
-            return Err(format!("decision {count} is not loss-aligned"));
+/// The loss-alignment predicate for one captured decision: the chosen index must be in range,
+/// match the chosen action's id, and the legal actions must be numbered from zero — otherwise a
+/// training loss computed on this record would silently train on the wrong move.
+fn is_loss_aligned(
+    legal_actions: &[LegalAction],
+    chosen_action_index: usize,
+    chosen_action_id: &str,
+) -> bool {
+    !legal_actions.is_empty()
+        && chosen_action_index < legal_actions.len()
+        && legal_actions[chosen_action_index].id == chosen_action_id
+        && legal_actions
+            .iter()
+            .enumerate()
+            .all(|(index, option)| option.index == index)
+}
+
+/// Gate applied to every record of a retained game *before* anything is written: the predicate is
+/// a property of the data, not of serialization, so checking it in memory catches exactly what the
+/// old end-of-run shard re-parse caught — and an unaligned record can never reach disk.
+fn validate_decision(decision: &CapturedDecision) -> Result<(), String> {
+    if is_loss_aligned(
+        &decision.legal_actions,
+        decision.chosen_action_index,
+        &decision.chosen_action_id,
+    ) {
+        Ok(())
+    } else {
+        Err("not loss-aligned".to_owned())
+    }
+}
+
+/// Why a game was written to disk (or that it failed and was retained for visibility).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RetentionReason {
+    Standout,
+    StrongTable,
+    WeakTable,
+    RandomControl,
+    FailedGame,
+}
+
+impl RetentionReason {
+    fn as_str(self) -> &'static str {
+        match self {
+            RetentionReason::Standout => "standout",
+            RetentionReason::StrongTable => "strong_table",
+            RetentionReason::WeakTable => "weak_table",
+            RetentionReason::RandomControl => "random_control",
+            RetentionReason::FailedGame => "failed_game",
         }
-        count += 1;
     }
-    if count != expected {
-        return Err(format!(
-            "decision shard has {count} records, expected {expected}"
-        ));
+}
+
+/// The retention decision for one finished game (see `RETENTION_RULE`). Pure function of the end
+/// state and the game seed, so it is identical at any worker count.
+fn decide_retention(table_vp: i32, max_faction_vp: i32, game_seed: u64) -> Option<RetentionReason> {
+    if max_faction_vp > STANDOUT_VP {
+        return Some(RetentionReason::Standout);
     }
-    Ok(())
+    if table_vp >= STRONG_TABLE_VP {
+        return Some(RetentionReason::StrongTable);
+    }
+    if table_vp < WEAK_TABLE_VP {
+        return Some(RetentionReason::WeakTable);
+    }
+    let mut coin = ChaCha8Rng::seed_from_u64(game_seed ^ RETENTION_COIN_SALT);
+    (coin.random_range(0..RANDOM_CONTROL_DENOMINATOR) < RANDOM_CONTROL_NUMERATOR)
+        .then_some(RetentionReason::RandomControl)
 }
 
 /// Everything that determines one game before it is played. Precomputed on the main thread so the
@@ -877,10 +953,35 @@ struct GamePlan {
 /// boundary: each worker writes its own per-game zstd frames and the main thread concatenates them
 /// in game order.
 /// Per-game completion status lives in the games shard; only manifest-level aggregates come back.
+/// What one finished (or failed) game reports back. The records themselves never cross the thread
+/// boundary: each worker writes its own per-game zstd frames and the main thread concatenates them
+/// in game order. Discarded games report zero written decisions but keep their recorded count for
+/// the retention sidecar log.
 struct GameOutcome {
     game_index: usize,
+    game_seed: u64,
+    /// Decisions written to the shard (0 for discarded games).
     decision_count: usize,
+    /// Decisions this game actually produced, retained or not — provenance only.
+    recorded_decisions: usize,
     policy_families: BTreeSet<String>,
+    retained: bool,
+    retention_reason: Option<RetentionReason>,
+    table_vp: i32,
+    max_faction_vp: i32,
+}
+
+/// One line of the published `retention.jsonl` sidecar: provenance for every played game, whether
+/// it made it into the shards or not.
+#[derive(Serialize)]
+struct RetentionRecord {
+    game_index: usize,
+    game_seed: u64,
+    table_vp: i32,
+    max_faction_vp: i32,
+    recorded_decisions: usize,
+    retained: bool,
+    reason: Option<String>,
 }
 
 /// Read-only context shared by every worker thread. `ContentStore`, the map pool and the opening
@@ -905,14 +1006,18 @@ fn games_part(game_index: usize) -> String {
 /// Join the per-game zstd frames into one shard, in game order. A zstd stream may legally contain
 /// several frames and every reader this pipeline uses (the crate decoder, Python's `zstandard`,
 /// the `zstd` CLI) walks them transparently; keeping each worker's output on disk means no
-/// uncompressed record ever crosses a thread boundary or accumulates in one heap.
-fn concatenate_frames(parts: &[PathBuf], final_path: &Path) -> Result<(), String> {
+/// uncompressed record ever crosses a thread boundary or accumulates in one heap. Returns the
+/// sha256 of the exact bytes written, so the caller can prove the published shard is byte-identical
+/// to the validated frames.
+fn concatenate_frames(parts: &[PathBuf], final_path: &Path) -> Result<String, String> {
     let file = std::fs::File::create(final_path)
         .map_err(|error| format!("creating {}: {error}", final_path.display()))?;
     let mut writer = BufWriter::new(file);
+    let mut hasher = sha2::Sha256::new();
     for part in parts {
         let frame =
             std::fs::read(part).map_err(|error| format!("reading {}: {error}", part.display()))?;
+        hasher.update(&frame);
         writer
             .write_all(&frame)
             .map_err(|error| format!("writing {}: {error}", final_path.display()))?;
@@ -922,7 +1027,7 @@ fn concatenate_frames(parts: &[PathBuf], final_path: &Path) -> Result<(), String
     writer
         .flush()
         .map_err(|error| format!("flushing {}: {error}", final_path.display()))?;
-    Ok(())
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 /// Play one planned game on this thread and write its two per-game frames. The body is the former
@@ -1043,6 +1148,63 @@ fn play_game(
         });
     }
 
+    // ---- end-state retention, decided while the records are still in memory -------------------
+    let mut table_vp = 0i32;
+    let mut max_faction_vp = 0i32;
+    for player in ctx.players {
+        if let Some(seat) = game.state.player(player) {
+            table_vp += seat.victory_points;
+            max_faction_vp = max_faction_vp.max(seat.victory_points);
+        }
+    }
+    let recorded_decisions: usize = handles
+        .borrow()
+        .values()
+        .map(|records| records.borrow().len())
+        .sum();
+
+    // Failed games are always retained so engine failures stay visible in the corpus; finished
+    // games go through the retention rule (see `RETENTION_RULE`). A discarded game writes no
+    // frames at all: its records die here, on this thread.
+    let retention_reason = if completed {
+        decide_retention(table_vp, max_faction_vp, plan.game_seed)
+    } else {
+        Some(RetentionReason::FailedGame)
+    };
+    let Some(reason) = retention_reason else {
+        println!(
+            "  game {}/{total} {game_id}: {recorded_decisions} decisions (discarded: table {table_vp}, max faction {max_faction_vp})",
+            plan.game_index + 1,
+            total = ctx.total_games,
+            game_id = plan.game_id,
+        );
+        return Ok(GameOutcome {
+            game_index: plan.game_index,
+            game_seed: plan.game_seed,
+            decision_count: 0,
+            recorded_decisions,
+            policy_families,
+            retained: false,
+            retention_reason: None,
+            table_vp,
+            max_faction_vp,
+        });
+    };
+
+    // Loss-alignment gate on every record that is about to be written (see `validate_decision`).
+    let mut line = 0usize;
+    for player in ctx.players {
+        for decision in handles.borrow()[player].borrow().iter() {
+            validate_decision(decision).map_err(|_| {
+                format!(
+                    "game {} decision {}: not loss-aligned",
+                    plan.game_index, line
+                )
+            })?;
+            line += 1;
+        }
+    }
+
     let mut decisions_writer =
         JsonlZstdWriter::create(&ctx.staging.join(decisions_part(plan.game_index)))?;
     for player in ctx.players {
@@ -1068,15 +1230,22 @@ fn play_game(
     games_writer.finish()?;
 
     println!(
-        "  game {}/{total} {game_id}: {decision_count} decisions",
+        "  game {}/{total} {game_id}: {decision_count} decisions (retained: {reason})",
         plan.game_index + 1,
         total = ctx.total_games,
         game_id = plan.game_id,
+        reason = reason.as_str(),
     );
     Ok(GameOutcome {
         game_index: plan.game_index,
+        game_seed: plan.game_seed,
         decision_count,
+        recorded_decisions,
         policy_families,
+        retained: true,
+        retention_reason: Some(reason),
+        table_vp,
+        max_faction_vp,
     })
 }
 
@@ -1256,6 +1425,8 @@ fn run() -> Result<(), String> {
         jobs.len() * 2
     );
     let play_started = std::time::Instant::now();
+    // Worker errors carry the failing game's index so the run reports one deterministic failure
+    // (the smallest index) whatever order the chunks finished in.
     let execute = || {
         jobs.into_par_iter()
             .map(|(actors, chunk)| {
@@ -1267,16 +1438,19 @@ fn run() -> Result<(), String> {
                 };
                 let mut outcomes = Vec::with_capacity(chunk.len());
                 for plan in &chunk {
-                    outcomes.push(play_game(plan, &local, &master.shared, &ctx)?);
+                    match play_game(plan, &local, &master.shared, &ctx) {
+                        Ok(outcome) => outcomes.push(outcome),
+                        Err(message) => return Err((plan.game_index, message)),
+                    }
                 }
                 Ok(outcomes)
             })
-            .collect::<Result<Vec<_>, String>>()
+            .collect::<Vec<Result<Vec<_>, (usize, String)>>>()
     };
 
-    // Any game that fails to set up refuses the whole run, exactly as the sequential pilot did:
-    // a corpus with a silently missing game would be worse than no corpus.
-    let harvest: Result<Vec<Vec<GameOutcome>>, String> = if workers_requested.is_none() {
+    // Any game that fails refuses the whole run, exactly as the sequential pilot did: a corpus
+    // with a silently missing game would be worse than no corpus.
+    let harvest: Vec<Result<Vec<GameOutcome>, (usize, String)>> = if workers_requested.is_none() {
         // No flag: rayon's global pool already runs one thread per logical processor, which is the
         // fastest this machine can schedule. A dedicated pool would only duplicate it.
         execute()
@@ -1288,9 +1462,17 @@ fn run() -> Result<(), String> {
             .install(execute)
     };
 
+    if let Some((failed_game, message)) = harvest
+        .iter()
+        .filter_map(|chunk| chunk.as_ref().err().cloned())
+        .min_by_key(|(game_index, _)| *game_index)
+    {
+        return Err(format!("game {failed_game}: {message}"));
+    }
+
     let mut outcomes: Vec<GameOutcome> = Vec::with_capacity(games);
-    for chunk in harvest? {
-        outcomes.extend(chunk);
+    for chunk in harvest {
+        outcomes.extend(chunk.expect("failure checked above"));
     }
     // Chunks partition the plans contiguously and each worker keeps game order inside its chunk, so
     // flattening must land in game order. Verify rather than assume.
@@ -1305,28 +1487,32 @@ fn run() -> Result<(), String> {
     println!("  games in {:.1}s", play_started.elapsed().as_secs_f64());
     let finish_started = std::time::Instant::now();
 
+    // The manifest describes the corpus, so policy families come from retained games only.
     let mut policy_families = BTreeSet::new();
     for outcome in &outcomes {
-        policy_families.extend(outcome.policy_families.iter().cloned());
+        if outcome.retained {
+            policy_families.extend(outcome.policy_families.iter().cloned());
+        }
     }
 
     // ---- assemble the shards in game order ------------------------------------------------------
-    let decision_parts: Vec<PathBuf> = (0..games)
-        .map(|index| staging.join(decisions_part(index)))
+    // Only retained games have frames; outcomes are already in game order, so filtering keeps it.
+    let decision_parts: Vec<PathBuf> = outcomes
+        .iter()
+        .filter(|outcome| outcome.retained)
+        .map(|outcome| staging.join(decisions_part(outcome.game_index)))
         .collect();
-    concatenate_frames(&decision_parts, &staging.join(DECISIONS_FILE))?;
-    let game_parts: Vec<PathBuf> = (0..games)
-        .map(|index| staging.join(games_part(index)))
+    let expected_decisions_sha =
+        concatenate_frames(&decision_parts, &staging.join(DECISIONS_FILE))?;
+    let game_parts: Vec<PathBuf> = outcomes
+        .iter()
+        .filter(|outcome| outcome.retained)
+        .map(|outcome| staging.join(games_part(outcome.game_index)))
         .collect();
-    concatenate_frames(&game_parts, &staging.join(GAMES_FILE))?;
+    let expected_games_sha = concatenate_frames(&game_parts, &staging.join(GAMES_FILE))?;
 
     let decision_count: usize = outcomes.iter().map(|outcome| outcome.decision_count).sum();
-    let game_count = games;
-    validate_decisions(&staging.join(DECISIONS_FILE), decision_count)?;
-    println!(
-        "  assembly and validation in {:.1}s",
-        finish_started.elapsed().as_secs_f64()
-    );
+    let games_retained = outcomes.iter().filter(|outcome| outcome.retained).count();
     let shards = BTreeMap::from([
         (
             DECISIONS_FILE.to_owned(),
@@ -1334,6 +1520,44 @@ fn run() -> Result<(), String> {
         ),
         (GAMES_FILE.to_owned(), file_sha(&staging.join(GAMES_FILE))?),
     ]);
+    // Byte-exactness: the published shards must hold exactly the frames whose records passed the
+    // loss-alignment gate before writing. A mismatch means corruption between write and publish,
+    // which refuses the run instead of publishing a corpus nobody can trust.
+    if shards[DECISIONS_FILE] != expected_decisions_sha {
+        return Err("published decisions shard does not match its validated frames".to_owned());
+    }
+    if shards[GAMES_FILE] != expected_games_sha {
+        return Err("published games shard does not match its validated frames".to_owned());
+    }
+
+    // Retention sidecar: one line per played game (retained or not) — provenance for the corpus
+    // and calibration data for future threshold tuning. Written in game order, so deterministic.
+    let retention_lines: Vec<String> = outcomes
+        .iter()
+        .map(|outcome| {
+            serde_json::to_string(&RetentionRecord {
+                game_index: outcome.game_index,
+                game_seed: outcome.game_seed,
+                table_vp: outcome.table_vp,
+                max_faction_vp: outcome.max_faction_vp,
+                recorded_decisions: outcome.recorded_decisions,
+                retained: outcome.retained,
+                reason: outcome
+                    .retention_reason
+                    .map(|reason| reason.as_str().to_owned()),
+            })
+            .expect("retention record serializes")
+        })
+        .collect();
+    let mut retention_log = retention_lines.join("\n");
+    retention_log.push('\n');
+    std::fs::write(staging.join("retention.jsonl"), retention_log)
+        .map_err(|error| format!("writing retention log: {error}"))?;
+
+    println!(
+        "  assembly and integrity check in {:.1}s",
+        finish_started.elapsed().as_secs_f64()
+    );
     let checkpoint_manifests = BTreeMap::from([
         (
             master.shared.current_path.clone(),
@@ -1354,9 +1578,18 @@ fn run() -> Result<(), String> {
         created_utc: chrono::Utc::now().to_rfc3339(),
         engine_git_commit: git("rev-parse HEAD"),
         engine_worktree_dirty: !git("status --porcelain").is_empty(),
-        games: game_count,
+        games: games_retained,
         rounds,
         workers,
+        retention_rule: RETENTION_RULE.to_owned(),
+        games_played: games,
+        games_retained,
+        retention_breakdown: outcomes.iter().fold(BTreeMap::new(), |mut map, outcome| {
+            if let Some(reason) = outcome.retention_reason {
+                *map.entry(reason.as_str().to_owned()).or_insert(0) += 1;
+            }
+            map
+        }),
         seed_base,
         factions: IN_SCOPE_FACTIONS
             .iter()
@@ -1370,7 +1603,7 @@ fn run() -> Result<(), String> {
         forced_decisions_retained: true,
         checkpoint_manifests,
         records: BTreeMap::from([
-            ("games".to_owned(), game_count),
+            ("games".to_owned(), games_retained),
             ("decisions".to_owned(), decision_count),
         ]),
         shards,
@@ -1382,8 +1615,103 @@ fn run() -> Result<(), String> {
     std::fs::rename(&staging, &output)
         .map_err(|error| format!("publishing {}: {error}", output.display()))?;
     println!(
-        "published {} games / {decision_count} decisions",
-        game_count
+        "published {games_retained}/{games} games (retention {rule}) / {decision_count} decisions -> {path}",
+        rule = RETENTION_RULE,
+        path = output.display(),
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn legal(ids: &[&str]) -> Vec<LegalAction> {
+        ids.iter()
+            .enumerate()
+            .map(|(index, id)| LegalAction {
+                index,
+                id: (*id).to_owned(),
+                kind: "test".to_owned(),
+                label: (*id).to_owned(),
+                payload: BTreeMap::new(),
+                actor_features: Vec::new(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn aligned_decision_passes() {
+        assert!(is_loss_aligned(&legal(&["a", "b", "c"]), 1, "b"));
+    }
+
+    #[test]
+    fn out_of_range_index_fails() {
+        assert!(!is_loss_aligned(&legal(&["a", "b"]), 2, "b"));
+    }
+
+    #[test]
+    fn chosen_id_mismatch_fails() {
+        assert!(!is_loss_aligned(&legal(&["a", "b"]), 0, "b"));
+    }
+
+    #[test]
+    fn unnumbered_legal_actions_fail() {
+        let mut options = legal(&["a", "b"]);
+        options[1].index = 7;
+        assert!(!is_loss_aligned(&options, 0, "a"));
+    }
+
+    #[test]
+    fn empty_legal_actions_fail() {
+        assert!(!is_loss_aligned(&[], 0, "a"));
+    }
+
+    #[test]
+    fn standout_faction_is_retained() {
+        assert_eq!(decide_retention(12, 7, 42), Some(RetentionReason::Standout));
+    }
+
+    #[test]
+    fn exactly_six_vp_is_not_a_standout() {
+        // Table in the middle band: whatever comes back must not be a standout.
+        assert_ne!(decide_retention(15, 6, 42), Some(RetentionReason::Standout));
+    }
+
+    #[test]
+    fn strong_table_is_retained() {
+        assert_eq!(
+            decide_retention(24, 5, 42),
+            Some(RetentionReason::StrongTable)
+        );
+    }
+
+    #[test]
+    fn weak_table_is_retained() {
+        assert_eq!(decide_retention(9, 3, 42), Some(RetentionReason::WeakTable));
+    }
+
+    #[test]
+    fn table_vp_of_ten_is_not_weak() {
+        assert_ne!(
+            decide_retention(10, 5, 42),
+            Some(RetentionReason::WeakTable)
+        );
+    }
+
+    #[test]
+    fn random_control_coin_is_deterministic_per_seed() {
+        for seed in [0u64, 1, 7, 999_999, u64::MAX] {
+            assert_eq!(decide_retention(15, 5, seed), decide_retention(15, 5, seed));
+        }
+    }
+
+    #[test]
+    fn random_control_keeps_about_five_percent() {
+        let kept = (0..20_000u64)
+            .filter(|seed| decide_retention(15, 5, *seed) == Some(RetentionReason::RandomControl))
+            .count();
+        let rate = kept as f64 / 20_000.0;
+        assert!((0.03..=0.07).contains(&rate), "random control rate {rate}");
+    }
 }

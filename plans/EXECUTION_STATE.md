@@ -17,6 +17,33 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 
 ## Current position
 
+### OFFLINE-PILOT-STREAMING-RETENTION — write-or-discard at game end (2026-09-13)
+
+- Operator-requested change, outside the M00–M13 table. Branch:
+  `wp/offline-pilot-streaming-retention` from `488c0bc`. Codex's in-flight dirty files remain
+  untouched and uncommitted.
+- Change: `capture_offline_pilot.rs` now decides retention **at game end while records are still in
+  memory** (rule `vp-threshold-v1`, agreed with codex): any faction > 6 VP, or table ≥ 24 VP, or
+  table < 10 VP → write frames; else seeded 5% coin (pure function of the game seed) → keep or
+  discard. Discarded games write nothing to disk. Failed games are always retained for visibility.
+- Also in this package: loss-alignment gate moved from a serial end-of-run shard re-parse (~0.13 ms
+  per decision, ~1.8 h at 32k scale) to an in-memory pre-write check (same predicate); assembly now
+  proves the published shards are byte-identical to the validated frames via running sha256;
+  `file_sha` streams in 1 MiB chunks (the old whole-file read would OOM on large corpora);
+  deterministic smallest-index failure reporting; `retention.jsonl` sidecar + additive manifest
+  fields (`retention_rule`, `games_played`, `games_retained`, `retention_breakdown`; `games` now =
+  retained count).
+- Checks: 12 new unit tests pass (rule boundaries, coin determinism, ~5% rate); full `-p ti4-mlp`
+  suite green; clippy no new warnings; rustfmt clean. Determinism proof: 12 games with `--workers
+  32` vs `--workers 1` → byte-identical shards (decisions sha256 `038610fb…d2168377a`, games
+  `d8a65c34…f4ad78479af197`) with retention active; codex's `validate_offline_corpus` passes on a
+  retained corpus (finite NLL).
+- Expected scale: ~13% retention from the existing 240-game block → ~4,300 retained games; current
+  engine records are ~0.9 MB/game compressed (222 MB for the 240-game block), so expect a ~4–5 GB
+  corpus (vs ~35 GB unfiltered). Evidence:
+  `plans/evidence/OFFLINE_PILOT_STREAMING_RETENTION.md`. Historical Python reference not inspected.
+- Next: launch the 32,768-game generation on this branch (detached, log to file).
+
 ### OFFLINE-PILOT-PARALLEL-CAPTURE — parallel offline pilot capture (2026-09-13)
 
 - Operator-requested change, outside the M00–M13 table. Branch:
