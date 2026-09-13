@@ -1500,13 +1500,12 @@ mod tests {
         let alias = SecretObjectiveId::new("faa"); // "control 4 cultural planets"
 
         // Four cultural planets the seat does not hold, named from the corpus.
-        let cultural: Vec<ti4_model::id::PlanetId> =
-            ti4_content::galaxy::all_planets(content, sources)
-                .iter()
-                .filter(|(_, planet)| planet.has_trait("cultural"))
-                .map(|(id, _)| ti4_model::id::PlanetId::new(*id))
-                .take(4)
-                .collect();
+        let cultural: Vec<ti4_model::id::PlanetId> = ti4_content::galaxy::all_planets(content, sources)
+            .iter()
+            .filter(|(_, planet)| planet.has_trait("cultural"))
+            .map(|(id, _)| ti4_model::id::PlanetId::new(*id))
+            .take(4)
+            .collect();
         assert_eq!(cultural.len(), 4, "the corpus has four cultural planets");
 
         let real = Position {
@@ -1553,11 +1552,10 @@ mod tests {
         let player = player();
         let alias = SecretObjectiveId::new("eap"); // "have 4 PDS on the board"
 
-        let every: Vec<ti4_model::id::PlanetId> =
-            ti4_content::galaxy::all_planets(content, sources)
-                .keys()
-                .map(|id| ti4_model::id::PlanetId::new(*id))
-                .collect();
+        let every: Vec<ti4_model::id::PlanetId> = ti4_content::galaxy::all_planets(content, sources)
+            .keys()
+            .map(|id| ti4_model::id::PlanetId::new(*id))
+            .collect();
         let imagined = crate::objectives::Imagined {
             planets: &every,
             ..crate::objectives::Imagined::NONE

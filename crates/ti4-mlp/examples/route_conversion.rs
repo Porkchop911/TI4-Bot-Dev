@@ -177,89 +177,86 @@ fn main() {
             let mut vp_values: Vec<f64> = Vec::new();
             let mut per_objective: BTreeMap<String, (u64, u64)> = BTreeMap::new();
             for (seed, candidate_seat) in chunk {
-                let candidate_player = PlayerId::new(format!("seat{candidate_seat}"));
-                let outcome = ti4_training::rollout::audit_game_with_deciders(
-                    content,
-                    &factions,
-                    DEFAULT,
-                    seed,
-                    candidate_seat,
-                    Horizon {
-                        rounds,
-                        steps: 200_000,
-                    },
-                    &OpeningMap::PythonPool {
-                        pool: Arc::clone(&pool),
-                        tile_seed_offset: TILE_SEED_OFFSET,
-                    },
-                    |assignments, baselines| {
-                        let mut deciders: BTreeMap<PlayerId, Box<dyn Decider>> = BTreeMap::new();
-                        for index in 0..FACTIONS.len() {
-                            let player = PlayerId::new(format!("seat{index}"));
-                            let faction = assignments
-                                .get(&player)
-                                .ok_or_else(|| format!("{player} has no faction"))?;
-                            let is_candidate = player == candidate_player;
-                            let row = ti4_mlp::FactionRow::of(faction.as_str())
-                                .map_err(|error| format!("{player}: {error}"))?;
-                            let stream = seed
-                                .wrapping_mul(1_000_003)
-                                .wrapping_add(u64::try_from(index).unwrap_or(0));
-                            let baseline = baselines
-                                .get(&player)
-                                .copied()
-                                .ok_or_else(|| format!("{player} has no setup baseline"))?;
-                            let (actor, vocab) = if is_candidate {
-                                (&candidate_actor, &candidate_vocab)
-                            } else {
-                                (&opponent_actor, &opponent_vocab)
-                            };
-                            let (decider, _status) =
-                                ti4_mlp::bot::MlpBot::sharing(actor, vocab.clone(), row, stream)
-                                    .from_setup(baseline)
-                                    .at_temperature(temperature)
-                                    .seat();
-                            deciders.insert(player, decider);
-                        }
-                        Ok(deciders)
-                    },
-                );
-                let (_events, _picks, _assignments, _openings, final_state) = match outcome {
-                    Ok(audited) => audited,
-                    Err(error) => {
-                        errors += 1;
-                        eprintln!("seed {seed} rotation {candidate_seat}: {error}");
-                        continue;
+            let candidate_player = PlayerId::new(format!("seat{candidate_seat}"));
+            let outcome = ti4_training::rollout::audit_game_with_deciders(
+                content,
+                &factions,
+                DEFAULT,
+                seed,
+                candidate_seat,
+                Horizon {
+                    rounds,
+                    steps: 200_000,
+                },
+                &OpeningMap::PythonPool {
+                    pool: Arc::clone(&pool),
+                    tile_seed_offset: TILE_SEED_OFFSET,
+                },
+                |assignments, baselines| {
+                    let mut deciders: BTreeMap<PlayerId, Box<dyn Decider>> = BTreeMap::new();
+                    for index in 0..FACTIONS.len() {
+                        let player = PlayerId::new(format!("seat{index}"));
+                        let faction = assignments
+                            .get(&player)
+                            .ok_or_else(|| format!("{player} has no faction"))?;
+                        let is_candidate = player == candidate_player;
+                        let row = ti4_mlp::FactionRow::of(faction.as_str())
+                            .map_err(|error| format!("{player}: {error}"))?;
+                        let stream = seed
+                            .wrapping_mul(1_000_003)
+                            .wrapping_add(u64::try_from(index).unwrap_or(0));
+                        let baseline = baselines
+                            .get(&player)
+                            .copied()
+                            .ok_or_else(|| format!("{player} has no setup baseline"))?;
+                        let (actor, vocab) = if is_candidate {
+                            (&candidate_actor, &candidate_vocab)
+                        } else {
+                            (&opponent_actor, &opponent_vocab)
+                        };
+                        let (decider, _status) =
+                            ti4_mlp::bot::MlpBot::sharing(actor, vocab.clone(), row, stream)
+                                .from_setup(baseline)
+                                .at_temperature(temperature)
+                                .seat();
+                        deciders.insert(player, decider);
                     }
-                };
-                total_games += 1;
-                let was_revealed = final_state.revealed_objectives.contains(&target_id);
-                if was_revealed {
-                    revealed_games += 1;
-                    if final_state
-                        .scored_by(&candidate_player)
-                        .contains(&target_id)
-                    {
-                        scored_games += 1;
-                    }
+                    Ok(deciders)
+                },
+            );
+            let (_events, _picks, _assignments, _openings, final_state) = match outcome {
+                Ok(audited) => audited,
+                Err(error) => {
+                    errors += 1;
+                    eprintln!("seed {seed} rotation {candidate_seat}: {error}");
+                    continue;
                 }
-                // Every revealed objective, not just the named target: the non-economy curriculum is
-                // meant to lift several routes at once, and its main risk is giving up economy
-                // conversion to do it. One target cannot show either.
-                let scored_here = final_state.scored_by(&candidate_player);
-                for id in &final_state.revealed_objectives {
-                    let entry = per_objective
-                        .entry(id.as_str().to_owned())
-                        .or_insert((0u64, 0u64));
-                    entry.0 += 1;
-                    if scored_here.contains(id) {
-                        entry.1 += 1;
-                    }
+            };
+            total_games += 1;
+            let was_revealed = final_state.revealed_objectives.contains(&target_id);
+            if was_revealed {
+                revealed_games += 1;
+                if final_state.scored_by(&candidate_player).contains(&target_id) {
+                    scored_games += 1;
                 }
-                let vp = final_state
-                    .player(&candidate_player)
-                    .map_or(0, |seat| seat.victory_points);
-                vp_values.push(f64::from(vp));
+            }
+            // Every revealed objective, not just the named target: the non-economy curriculum is
+            // meant to lift several routes at once, and its main risk is giving up economy
+            // conversion to do it. One target cannot show either.
+            let scored_here = final_state.scored_by(&candidate_player);
+            for id in &final_state.revealed_objectives {
+                let entry = per_objective
+                    .entry(id.as_str().to_owned())
+                    .or_insert((0u64, 0u64));
+                entry.0 += 1;
+                if scored_here.contains(id) {
+                    entry.1 += 1;
+                }
+            }
+            let vp = final_state
+                .player(&candidate_player)
+                .map_or(0, |seat| seat.victory_points);
+            vp_values.push(f64::from(vp));
             }
             (
                 total_games,
@@ -297,7 +294,10 @@ fn main() {
     // Standard error over candidate-games. Rotations of one seed share a map and deck, so the
     // independent unit is the seed, not the game: this is optimistic by roughly sqrt(rotations)
     // and is reported as a floor, not a confidence claim.
-    let variance = vp_values.iter().map(|v| (v - mean_vp).powi(2)).sum::<f64>()
+    let variance = vp_values
+        .iter()
+        .map(|v| (v - mean_vp).powi(2))
+        .sum::<f64>()
         / (vp_values.len().max(2) - 1) as f64;
     let se_games = (variance / vp_values.len().max(1) as f64).sqrt();
     let se_clustered = se_games * (FACTIONS.len() as f64).sqrt();

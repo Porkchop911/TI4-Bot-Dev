@@ -922,7 +922,10 @@ mod tests {
         );
 
         // The ship leaves; the tile stays face up, because the latch is the caller's.
-        state.system_mut(&SystemId::new(LOCKED_NEXUS)).units.clear();
+        state
+            .system_mut(&SystemId::new(LOCKED_NEXUS))
+            .units
+            .clear();
         crate::laws::apply_to_galaxy(&state, &mut galaxy);
         assert!(
             galaxy.wormhole_kinds(LOCKED_NEXUS).contains("ALPHA"),

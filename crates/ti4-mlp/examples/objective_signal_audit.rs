@@ -120,9 +120,10 @@ fn main() {
                 &borrowed,
             )
             .unwrap_or_else(|e| refuse(&format!("galaxy: {e}")));
-        let mut table = ti4_engine::choice::Table::with_default(Box::new(
-            ti4_engine::choice::SeededRandom::new(seed),
-        ));
+        let mut table =
+            ti4_engine::choice::Table::with_default(Box::new(ti4_engine::choice::SeededRandom::new(
+                seed,
+            )));
         for player in &players {
             table.seat(
                 player.clone(),
@@ -140,7 +141,10 @@ fn main() {
             }
             steps += 1;
         }
-        eprintln!("  advanced to round {} in {steps} steps", game.state.round);
+        eprintln!(
+            "  advanced to round {} in {steps} steps",
+            game.state.round
+        );
         state = game.state.clone();
     }
 
@@ -285,18 +289,9 @@ fn main() {
 
     println!("\n=== summary ===");
     println!("linked (an option can carry a gain): {:>3}", linked.len());
-    println!(
-        "INVISIBLE to every option:           {:>3}",
-        invisible.len()
-    );
-    println!(
-        "already at the bar (no headroom):    {:>3}",
-        saturated_rows.len()
-    );
-    println!(
-        "no progress record at all:           {:>3}",
-        unrepresented.len()
-    );
+    println!("INVISIBLE to every option:           {:>3}", invisible.len());
+    println!("already at the bar (no headroom):    {:>3}", saturated_rows.len());
+    println!("no progress record at all:           {:>3}", unrepresented.len());
 
     if !invisible.is_empty() {
         println!("\nINVISIBLE -- requirement is known, but no option is ever linked to it:");

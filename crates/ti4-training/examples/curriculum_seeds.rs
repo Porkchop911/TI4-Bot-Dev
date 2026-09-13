@@ -44,11 +44,12 @@ fn main() {
         .unwrap_or_else(|| refuse("--updates is required"))
         .parse()
         .unwrap_or_else(|_| refuse("--updates expects an unsigned integer"));
-    let seeds_per_update: usize = argument("--seeds-per-update").map_or(16, |value| {
-        value
-            .parse()
-            .unwrap_or_else(|_| refuse("--seeds-per-update expects an unsigned integer"))
-    });
+    let seeds_per_update: usize = argument("--seeds-per-update")
+        .map_or(16, |value| {
+            value
+                .parse()
+                .unwrap_or_else(|_| refuse("--seeds-per-update expects an unsigned integer"))
+        });
     let target_fraction: f64 = argument("--target-fraction").map_or(0.25, |value| {
         value
             .parse()

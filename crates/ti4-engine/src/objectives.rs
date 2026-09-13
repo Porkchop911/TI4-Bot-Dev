@@ -416,7 +416,11 @@ impl<'a> Position<'a> {
             .collect();
         self.controlled()
             .iter()
-            .filter(|planet| planet.name().is_some_and(|name| !real.contains(name)))
+            .filter(|planet| {
+                planet
+                    .name()
+                    .is_some_and(|name| !real.contains(name))
+            })
             .map(|planet| match kind {
                 crate::production::Spend::Resources => planet.resources(),
                 crate::production::Spend::Influence => planet.influence(),
@@ -439,11 +443,8 @@ impl<'a> Position<'a> {
                 .get(ContentType::Technologies, alias)
                 .is_some_and(|record| record.strings("types").contains(&wanted))
         };
-        let held: std::collections::BTreeSet<&str> = seat
-            .technologies
-            .iter()
-            .map(ti4_model::id::TechnologyId::as_str)
-            .collect();
+        let held: std::collections::BTreeSet<&str> =
+            seat.technologies.iter().map(ti4_model::id::TechnologyId::as_str).collect();
         seat.technologies
             .iter()
             .filter(|alias| matches(alias.as_str()))
