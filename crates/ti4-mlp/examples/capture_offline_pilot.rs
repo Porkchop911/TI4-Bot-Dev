@@ -12,12 +12,11 @@
 //! (rayon's global pool; `--workers N` pins a dedicated pool of exactly N instead). Each worker
 //! chunk owns deep inference copies of both actors — `tch::Tensor` is `Send` but not `Sync`, so no
 //! actor crosses a thread boundary, and inference never mutates the weights — and writes its own
-//! per-game zstd frames to staging. At game end — while the records are still in memory — each
+//! per-game plain JSONL parts to staging. At game end — while the records are still in memory — each
 //! game is checked against the retention rule (`RETENTION_RULE`): retained games pass a
-//! loss-alignment gate and then write their frames; discarded games write nothing at all. The main
-//! thread concatenates the retained frames in game order (a zstd stream may legally hold several
-//! frames and every reader this pipeline uses walks them transparently) and proves the published
-//! shard is byte-identical to those validated frames via a running sha256. The decoded shards are
+//! loss-alignment gate and then write their parts; discarded games write nothing at all. The main
+//! thread concatenates the retained parts in game order and proves the published shard is
+//! byte-identical to those validated parts via a running sha256. The shards are
 //! therefore byte-identical for a given seed base at any worker count, which the package evidence
 //! proves by diffing `--workers 1` against the default.
 
@@ -42,8 +41,8 @@ use ti4_policy::vocabulary::Vocabulary;
 
 const SCHEMA: &str = "ti4-offline-selfplay-v1";
 const OBSERVATION_SCHEMA: &str = "seat-authorized-canonical-mlp-v1";
-const DECISIONS_FILE: &str = "decisions.jsonl.zst";
-const GAMES_FILE: &str = "games.jsonl.zst";
+const DECISIONS_FILE: &str = "decisions.jsonl";
+const GAMES_FILE: &str = "games.jsonl";
 const MANIFEST_FILE: &str = "manifest.json";
 const DEFAULT_GAMES: usize = 12;
 const DEFAULT_ROUNDS: u32 = 4;
@@ -229,6 +228,7 @@ struct Manifest {
     vocabulary_slots_sha256: String,
     behavior_probabilities_recorded: bool,
     forced_decisions_retained: bool,
+    storage_encoding: String,
     checkpoint_manifests: BTreeMap<String, String>,
     records: BTreeMap<String, usize>,
     shards: BTreeMap<String, String>,
@@ -832,36 +832,35 @@ fn policy(
     }
 }
 
-struct JsonlZstdWriter {
-    encoder: zstd::stream::write::Encoder<'static, BufWriter<std::fs::File>>,
+struct JsonlWriter {
+    writer: BufWriter<std::fs::File>,
     count: usize,
 }
 
-impl JsonlZstdWriter {
+impl JsonlWriter {
     fn create(path: &Path) -> Result<Self, String> {
         let file = std::fs::File::create(path)
             .map_err(|error| format!("creating {}: {error}", path.display()))?;
-        let encoder = zstd::stream::write::Encoder::new(BufWriter::new(file), 9)
-            .map_err(|error| format!("opening zstd stream: {error}"))?;
-        Ok(Self { encoder, count: 0 })
+        Ok(Self {
+            writer: BufWriter::new(file),
+            count: 0,
+        })
     }
 
     fn write<T: Serialize>(&mut self, value: &T) -> Result<(), String> {
-        serde_json::to_writer(&mut self.encoder, value)
+        serde_json::to_writer(&mut self.writer, value)
             .map_err(|error| format!("serializing record: {error}"))?;
-        self.encoder
+        self.writer
             .write_all(b"\n")
             .map_err(|error| format!("writing record: {error}"))?;
         self.count += 1;
         Ok(())
     }
 
-    fn finish(self) -> Result<usize, String> {
-        self.encoder
-            .finish()
-            .map_err(|error| format!("finishing zstd stream: {error}"))?
+    fn finish(mut self) -> Result<usize, String> {
+        self.writer
             .flush()
-            .map_err(|error| format!("flushing zstd stream: {error}"))?;
+            .map_err(|error| format!("flushing JSONL stream: {error}"))?;
         Ok(self.count)
     }
 }
@@ -996,20 +995,18 @@ struct PlayContext<'a> {
 }
 
 fn decisions_part(game_index: usize) -> String {
-    format!("decisions-{game_index:06}.jsonl.zst")
+    format!("decisions-{game_index:06}.jsonl")
 }
 
 fn games_part(game_index: usize) -> String {
-    format!("games-{game_index:06}.jsonl.zst")
+    format!("games-{game_index:06}.jsonl")
 }
 
-/// Join the per-game zstd frames into one shard, in game order. A zstd stream may legally contain
-/// several frames and every reader this pipeline uses (the crate decoder, Python's `zstandard`,
-/// the `zstd` CLI) walks them transparently; keeping each worker's output on disk means no
-/// uncompressed record ever crosses a thread boundary or accumulates in one heap. Returns the
+/// Join the per-game plain JSONL parts into one shard, in game order. Keeping each worker's output
+/// on disk means no record crosses a thread boundary or accumulates in one heap. Returns the
 /// sha256 of the exact bytes written, so the caller can prove the published shard is byte-identical
-/// to the validated frames.
-fn concatenate_frames(parts: &[PathBuf], final_path: &Path) -> Result<String, String> {
+/// to the validated parts.
+fn concatenate_parts(parts: &[PathBuf], final_path: &Path) -> Result<String, String> {
     let file = std::fs::File::create(final_path)
         .map_err(|error| format!("creating {}: {error}", final_path.display()))?;
     let mut writer = BufWriter::new(file);
@@ -1206,7 +1203,7 @@ fn play_game(
     }
 
     let mut decisions_writer =
-        JsonlZstdWriter::create(&ctx.staging.join(decisions_part(plan.game_index)))?;
+        JsonlWriter::create(&ctx.staging.join(decisions_part(plan.game_index)))?;
     for player in ctx.players {
         for decision in handles.borrow()[player].borrow().iter() {
             decisions_writer.write(decision)?;
@@ -1214,7 +1211,7 @@ fn play_game(
     }
     let decision_count = decisions_writer.finish()?;
 
-    let mut games_writer = JsonlZstdWriter::create(&ctx.staging.join(games_part(plan.game_index)))?;
+    let mut games_writer = JsonlWriter::create(&ctx.staging.join(games_part(plan.game_index)))?;
     games_writer.write(&GameMetadata {
         game_id: plan.game_id.clone(),
         game_index: plan.game_index,
@@ -1502,14 +1499,13 @@ fn run() -> Result<(), String> {
         .filter(|outcome| outcome.retained)
         .map(|outcome| staging.join(decisions_part(outcome.game_index)))
         .collect();
-    let expected_decisions_sha =
-        concatenate_frames(&decision_parts, &staging.join(DECISIONS_FILE))?;
+    let expected_decisions_sha = concatenate_parts(&decision_parts, &staging.join(DECISIONS_FILE))?;
     let game_parts: Vec<PathBuf> = outcomes
         .iter()
         .filter(|outcome| outcome.retained)
         .map(|outcome| staging.join(games_part(outcome.game_index)))
         .collect();
-    let expected_games_sha = concatenate_frames(&game_parts, &staging.join(GAMES_FILE))?;
+    let expected_games_sha = concatenate_parts(&game_parts, &staging.join(GAMES_FILE))?;
 
     let decision_count: usize = outcomes.iter().map(|outcome| outcome.decision_count).sum();
     let games_retained = outcomes.iter().filter(|outcome| outcome.retained).count();
@@ -1601,6 +1597,7 @@ fn run() -> Result<(), String> {
         vocabulary_slots_sha256: slots_sha,
         behavior_probabilities_recorded: false,
         forced_decisions_retained: true,
+        storage_encoding: "plain-jsonl".to_owned(),
         checkpoint_manifests,
         records: BTreeMap::from([
             ("games".to_owned(), games_retained),
