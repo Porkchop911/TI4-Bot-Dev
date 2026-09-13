@@ -33,17 +33,18 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   pack works on both encodings (zstd regression green); `train-raw-parallel` on a plain corpus logs
   "parallel-parsing 32 decision chunks" and stops only at CUDA device resolution (this libtorch
   build is CPU-only). Clippy: zero new warnings (9 vs baseline 10).
-- **Open operator decision**: codex's snapshot `1820db0` changed the standout retention condition
-  from strictly-above (`> 6`, as stated by the operator and used for the completed 32k corpus —
-  verified via its retention.jsonl: 4,738 games at max VP == 6, none retained as standout) to
-  inclusive (`>= 6`). Which semantics is canonical for future corpora? Current HEAD = `>= 6`.
+- **Retention semantics resolved (operator, 2026-09-13)**: "6 or more is correct" — the inclusive
+  `>= 6` that codex's snapshot `1820db0` introduced in current HEAD is canonical. The completed
+  32k corpus and its BC model were generated under the earlier strictly-above reading (verified via
+  retention.jsonl: 4,738 games at max VP == 6, none retained as standout); future corpora retain a
+  strictly larger set.
 - Evaluation (operator-requested): BC-32k vs checkpoint-318956 head-to-head — indistinguishable
   (VP 3.299/−1.587 vs 3.362/−1.585 over 2,160 games each direction); the BC student reproduces its
   teacher at this horizon. Log: `out/eval-bc32k-vs-ckpt318956.log`.
 - Evidence: `plans/evidence/OFFLINE_BC_PLAIN_JSONL_INPUT.md`. Historical Python reference not
   inspected.
-- Next: operator's call on the >6 vs >=6 retention semantics; then future corpora can be generated
-  with plain JSONL straight into the CUDA pipeline.
+- Next: future corpora can now be generated as plain JSONL straight into the CUDA pipeline (pack →
+  train); GPU training needs a CUDA-enabled libtorch link on whatever host runs it.
 
 ### OFFLINE-PILOT-STREAMING-RETENTION — write-or-discard at game end (2026-09-13)
 

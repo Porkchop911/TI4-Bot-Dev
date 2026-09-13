@@ -57,18 +57,20 @@ Functional matrix:
 | Pack on zstd corpus (regression) | same against `out/tmp-t12` and `out/tmp-ret-a` | published; validation shard byte-identical across both input encodings for the same games (`d6951502…df29`) |
 | train-raw-parallel on plain corpus | `--corpus out/tmp-plain-a --expected-frames 3` | "parallel-loading 3 game frames", "**parallel-parsing 32 decision chunks**" (one per logical processor), "curated 1410 train and 0 validation decisions"; stops only at CUDA device resolution because this libtorch build links CPU-only torch — the training stage consumes in-memory samples identically for both formats |
 
-## Retention-rule semantic change by codex (recorded, not made by this package)
+## Retention-rule semantics (resolved)
 
-Codex's snapshot `1820db0` changed the standout condition from strictly-above to inclusive:
-`max_faction_vp > 6` → `>= 6`, renaming the boundary test (`exactly_six_vp_is_not_a_standout` →
-`exactly_six_vp_is_a_standout`). The operator's stated rule was "more than 6 VP" (strictly above),
-which is what commit `77e30cc` implemented and what **the completed 32,768-game corpus used**: its
-`retention.jsonl` contains 4,738 games with `max_faction_vp == 6`, none retained as standout. The BC
-model `out/offline-bc-32k-20260913-from-318956` was trained from that corpus. Current HEAD therefore
-retains a strictly larger set than the published corpora; the rule string `vp-threshold-v1` does not
-distinguish the two, but any corpus's `retention.jsonl` reconstructs which semantics it used (games
-with max VP == 6 labelled `standout` ⇒ inclusive). **Awaiting operator decision on which semantics is
-canonical for future corpora.**
+The standout condition was initially worded "more than 6 VP" and commit `77e30cc` implemented it
+strictly-above (`> 6`). Codex's snapshot `1820db0` changed it to inclusive (`>= 6`, renaming the
+boundary test), and the operator confirmed on 2026-09-13 that **"6 or more is correct"** — so
+current HEAD carries the canonical rule. Consequences, recorded for provenance:
+
+- The completed 32,768-game corpus (`E:/ti4-corpus/pilot-retained-32k-20260913`) and the BC model
+  `out/offline-bc-32k-20260913-from-318956` were generated under the strictly-above reading: its
+  `retention.jsonl` contains 4,738 games with `max_faction_vp == 6`, none retained as standout.
+- Future corpora retain a strictly larger set (every max-faction-VP == 6 game becomes a standout).
+- The rule string `vp-threshold-v1` does not distinguish the two readings; any corpus's
+  `retention.jsonl` reconstructs which one it used (games with max VP == 6 labelled `standout`
+  ⇒ inclusive).
 
 ## Head-to-head evaluation requested by operator (2026-09-13)
 
