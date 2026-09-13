@@ -9,7 +9,9 @@ game's frames to disk or abandon it — instead of writing every game and filter
 - Retention rule agreed by operator with codex (2026-09-13), stated as per-game conditions:
   any faction finishes **above 6 VP** → keep; table total **≥ 24 VP** → keep; table total
   **< 10 VP** → keep; otherwise **5% chance** to keep, else discard. Implemented verbatim as rule
-  `vp-threshold-v1` (constants `STANDOUT_VP = 6` strictly-above, `STRONG_TABLE_VP = 24`
+  `vp-threshold-v1` (constants `STANDOUT_VP = 6` strictly-above as implemented here and used by the
+  completed 32,768-game corpus; codex's later snapshot `1820db0` changed it to inclusive `>= 6` —
+  see `OFFLINE_BC_PLAIN_JSONL_INPUT.md`, "Retention-rule semantic change"), `STRONG_TABLE_VP = 24`
   inclusive, `WEAK_TABLE_VP = 10` exclusive, coin 5/100).
 - `AGENTS.md` accuracy rules: determinism must not depend on thread scheduling; failed runs must
   not become apparent successes.

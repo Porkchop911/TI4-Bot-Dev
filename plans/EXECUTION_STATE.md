@@ -17,6 +17,34 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 
 ## Current position
 
+### OFFLINE-BC-PLAIN-JSONL-INPUT — plain JSONL corpora into the CUDA pipeline (2026-09-13)
+
+- Operator-requested change, outside the M00–M13 table. Branch: `wp/offline-pilot-streaming-retention`
+  (codex committed directly on top of this branch; tree was clean at start — his earlier in-flight
+  files are all committed now).
+- Context: codex already did half of it — `412f706` makes capture write plain `.jsonl` (no zstd),
+  `fce1a54`/`40a67b7` parallelize packing/loading with a pool defaulting to
+  `available_parallelism()` (32 ≥ one per physical core). This package completed the chain:
+  `offline_bc.rs` still hard-coded `.jsonl.zst`, so future corpora would have been unreadable by the
+  CUDA pipeline. Now: dual-format input (magic sniff) in `pack` and `train-raw-parallel`; plain
+  decisions files are split into line-aligned chunks parsed/compiled on all 32 workers; packed
+  `.ti4bc.zst` output contract unchanged.
+- Verified: plain capture is byte-deterministic across worker counts (sha256 match, 12 games);
+  pack works on both encodings (zstd regression green); `train-raw-parallel` on a plain corpus logs
+  "parallel-parsing 32 decision chunks" and stops only at CUDA device resolution (this libtorch
+  build is CPU-only). Clippy: zero new warnings (9 vs baseline 10).
+- **Open operator decision**: codex's snapshot `1820db0` changed the standout retention condition
+  from strictly-above (`> 6`, as stated by the operator and used for the completed 32k corpus —
+  verified via its retention.jsonl: 4,738 games at max VP == 6, none retained as standout) to
+  inclusive (`>= 6`). Which semantics is canonical for future corpora? Current HEAD = `>= 6`.
+- Evaluation (operator-requested): BC-32k vs checkpoint-318956 head-to-head — indistinguishable
+  (VP 3.299/−1.587 vs 3.362/−1.585 over 2,160 games each direction); the BC student reproduces its
+  teacher at this horizon. Log: `out/eval-bc32k-vs-ckpt318956.log`.
+- Evidence: `plans/evidence/OFFLINE_BC_PLAIN_JSONL_INPUT.md`. Historical Python reference not
+  inspected.
+- Next: operator's call on the >6 vs >=6 retention semantics; then future corpora can be generated
+  with plain JSONL straight into the CUDA pipeline.
+
 ### OFFLINE-PILOT-STREAMING-RETENTION — write-or-discard at game end (2026-09-13)
 
 - Operator-requested change, outside the M00–M13 table. Branch:
@@ -42,7 +70,11 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
   engine records are ~0.9 MB/game compressed (222 MB for the 240-game block), so expect a ~4–5 GB
   corpus (vs ~35 GB unfiltered). Evidence:
   `plans/evidence/OFFLINE_PILOT_STREAMING_RETENTION.md`. Historical Python reference not inspected.
-- Next: launch the 32,768-game generation on this branch (detached, log to file).
+- Completed: the 32,768-game run finished (`E:/ti4-corpus/pilot-retained-32k-20260913`, seed base
+  `1026091400`): games phase 5,806 s + assembly/integrity 28 s; **published 5,374/32,768 games
+  (16.4% retention) / 8,177,628 decisions** — above the ~13% estimate from the old-engine block.
+  Codex then packed it (`E:/ti4-corpus/pilot-retained-32k-20260913-bc-v1`) and trained
+  `out/offline-bc-32k-20260913-from-318956` from checkpoint-318956.
 
 ### OFFLINE-PILOT-PARALLEL-CAPTURE — parallel offline pilot capture (2026-09-13)
 

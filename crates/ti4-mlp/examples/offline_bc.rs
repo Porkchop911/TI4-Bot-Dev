@@ -20,6 +20,9 @@ use ti4_mlp::{FactionRow, SparseOption};
 use ti4_policy::progress::Progress;
 
 const MAGIC: &[u8; 8] = b"TI4BC001";
+/// The zstd magic number. Capture corpora are either plain JSONL (current capture) or a stream of
+/// zstd frames (older corpora); both must stay readable.
+const ZSTD_MAGIC: [u8; 4] = [0x28, 0xb5, 0x2f, 0xfd];
 const SCHEMA: &str = "ti4-offline-bc-v1";
 const FACTIONS: [&str; 6] = ["jolnar", "letnev", "sol", "xxcha", "hacan", "l1z1x"];
 
@@ -176,6 +179,14 @@ fn digest(path: &Path) -> Result<String, String> {
     }
     Ok(format!("{:x}", h.finalize()))
 }
+/// Capture writes `.jsonl` (current) or `.jsonl.zst` (older corpora). Both suffixes are exact
+/// strings this pipeline produces, so the case-sensitive comparison is intentional.
+#[allow(clippy::case_sensitive_file_extension_comparisons)]
+fn jsonl_shard_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower.ends_with(".jsonl") || lower.ends_with(".jsonl.zst")
+}
+
 fn files(root: &Path, prefix: &str) -> Result<Vec<PathBuf>, String> {
     let mut out = Vec::new();
     for entry in std::fs::read_dir(root).map_err(|e| format!("read {}: {e}", root.display()))? {
@@ -183,26 +194,92 @@ fn files(root: &Path, prefix: &str) -> Result<Vec<PathBuf>, String> {
         if path
             .file_name()
             .and_then(|x| x.to_str())
-            .is_some_and(|n| n.starts_with(prefix) && n.ends_with(".jsonl.zst"))
+            .is_some_and(|n| n.starts_with(prefix) && jsonl_shard_name(n))
         {
             out.push(path);
         }
     }
     out.sort();
     if out.is_empty() {
-        Err(format!("no {prefix}*.jsonl.zst in {}", root.display()))
+        Err(format!("no {prefix}*.jsonl[.zst] in {}", root.display()))
     } else {
         Ok(out)
     }
 }
+fn is_zstd(path: &Path) -> Result<bool, String> {
+    let mut f = std::fs::File::open(path).map_err(|e| format!("open {}: {e}", path.display()))?;
+    let mut head = [0u8; 4];
+    f.read_exact(&mut head)
+        .map_err(|e| format!("reading {} header: {e}", path.display()))?;
+    Ok(head == ZSTD_MAGIC)
+}
+
+/// A published corpus stores each shard as plain JSONL (current capture) or a zstd frame stream
+/// (older corpora); resolve whichever exists.
+fn shard(corpus: &Path, name: &str) -> Result<PathBuf, String> {
+    let zst = corpus.join(format!("{name}.jsonl.zst"));
+    if zst.is_file() {
+        return Ok(zst);
+    }
+    let plain = corpus.join(format!("{name}.jsonl"));
+    if plain.is_file() {
+        return Ok(plain);
+    }
+    Err(format!(
+        "no {name}.jsonl or {name}.jsonl.zst in {}",
+        corpus.display()
+    ))
+}
+
+/// Split a JSONL byte buffer into at most `workers` chunks that never cut through a line, so the
+/// parse/compile step keeps one worker per logical processor on plain corpora too. Newline bytes
+/// cannot occur inside a multi-byte UTF-8 sequence, so chunk boundaries stay valid UTF-8.
+fn line_chunks(bytes: &[u8], workers: usize) -> Vec<std::ops::Range<usize>> {
+    if bytes.is_empty() {
+        return Vec::new();
+    }
+    let target = bytes.len().div_ceil(workers.max(1)).max(1);
+    let mut starts = vec![0usize];
+    let mut next = 0usize;
+    while next < bytes.len() {
+        let from = (next + target).min(bytes.len());
+        if from >= bytes.len() {
+            break;
+        }
+        match bytes[from..].iter().position(|&b| b == b'\n') {
+            Some(offset) => {
+                next = from + offset + 1;
+                if next < bytes.len() {
+                    starts.push(next);
+                }
+            }
+            None => break,
+        }
+    }
+    let mut ranges = Vec::with_capacity(starts.len());
+    for (index, start) in starts.iter().enumerate() {
+        let end = starts.get(index + 1).copied().unwrap_or(bytes.len());
+        if end > *start {
+            ranges.push(*start..end);
+        }
+    }
+    ranges
+}
+
 fn lines<T: for<'a> Deserialize<'a>>(
     path: &Path,
     mut use_value: impl FnMut(T) -> Result<(), String>,
 ) -> Result<(), String> {
     let f = std::fs::File::open(path).map_err(|e| format!("open {}: {e}", path.display()))?;
-    let z = zstd::Decoder::new(BufReader::new(f))
-        .map_err(|e| format!("decode {}: {e}", path.display()))?;
-    for (i, line) in BufReader::new(z).lines().enumerate() {
+    // Plain JSONL and zstd-compressed JSONL are both valid capture output; sniff the magic.
+    let reader: Box<dyn BufRead> = if is_zstd(path)? {
+        let z = zstd::Decoder::new(BufReader::new(f))
+            .map_err(|e| format!("decode {}: {e}", path.display()))?;
+        Box::new(BufReader::new(z))
+    } else {
+        Box::new(BufReader::new(f))
+    };
+    for (i, line) in reader.lines().enumerate() {
         let line = line.map_err(|e| format!("{}:{}: {e}", path.display(), i + 1))?;
         if !line.trim().is_empty() {
             use_value(
@@ -414,8 +491,38 @@ fn compile_batch(
         .collect()
 }
 
+/// Parse and compile one chunk of decision lines with the same curation as the zstd path: keep
+/// standout/strong decisions, subsample control by `control_per_million` per million, and split
+/// train/validation by game id.
+fn compile_chunk(
+    text: &str,
+    outcomes: &HashMap<(String, String), Outcome>,
+    vocabulary: &ti4_policy::vocabulary::Vocabulary,
+    control_per_million: u64,
+) -> Result<(Vec<Packed>, Vec<Packed>), String> {
+    let mut train = Vec::new();
+    let mut validation = Vec::new();
+    for line in text.lines().filter(|line| !line.trim().is_empty()) {
+        let decision: Decision = serde_json::from_str(line).map_err(|error| error.to_string())?;
+        let Some(packed) = compile_decision(decision, outcomes, vocabulary)?.map(|pair| pair.0)
+        else {
+            continue;
+        };
+        let useful = matches!(packed.bucket, Bucket::Standout | Bucket::Strong)
+            || (packed.bucket == Bucket::Control && packed.key % 1_000_000 < control_per_million);
+        if !useful {
+            continue;
+        }
+        if packed.game % 100 < 10 {
+            validation.push(packed);
+        } else {
+            train.push(packed);
+        }
+    }
+    Ok((train, validation))
+}
+
 fn frame_ranges(bytes: &[u8], expected: usize) -> Result<Vec<std::ops::Range<usize>>, String> {
-    const ZSTD_MAGIC: [u8; 4] = [0x28, 0xb5, 0x2f, 0xfd];
     let mut starts: Vec<usize> = (0..bytes.len().saturating_sub(3))
         .into_par_iter()
         .filter(|&index| bytes[index..index + 4] == ZSTD_MAGIC)
@@ -545,51 +652,72 @@ fn train_raw_parallel() -> Result<(), String> {
     let slots = std::fs::read_to_string(checkpoint.join("slots.json"))
         .map_err(|error| error.to_string())?;
     let loaded = read(&checkpoint).map_err(|error| error.to_string())?;
+    let games_path = shard(&corpus, "games")?;
     println!("parallel-loading {expected} game frames");
-    let games: Vec<Game> = decode_frames(&corpus.join("games.jsonl.zst"), expected)?;
+    let games: Vec<Game> = if is_zstd(&games_path)? {
+        decode_frames(&games_path, expected)?
+    } else {
+        let text = std::fs::read_to_string(&games_path).map_err(|error| error.to_string())?;
+        let parsed: Result<Vec<Game>, _> = text
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(serde_json::from_str)
+            .collect();
+        let games = parsed.map_err(|error| format!("parsing {}: {error}", games_path.display()))?;
+        if games.len() != expected {
+            return Err(format!(
+                "expected {} game records in {}, found {}",
+                expected,
+                games_path.display(),
+                games.len()
+            ));
+        }
+        games
+    };
     let outcomes = classify_games(games, strong, weak)?;
-    let bytes =
-        std::fs::read(corpus.join("decisions.jsonl.zst")).map_err(|error| error.to_string())?;
-    let ranges = frame_ranges(&bytes, expected)?;
+
+    let decisions_path = shard(&corpus, "decisions")?;
     let finished = AtomicUsize::new(0);
-    println!("parallel-decoding {} decision frames", ranges.len());
-    let parts: Result<Vec<(Vec<Packed>, Vec<Packed>)>, String> = ranges
-        .par_iter()
-        .map(|range| {
-            let plain = zstd::decode_all(std::io::Cursor::new(&bytes[range.clone()]))
-                .map_err(|error| error.to_string())?;
-            let text = String::from_utf8(plain).map_err(|error| error.to_string())?;
-            let mut train = Vec::new();
-            let mut validation = Vec::new();
-            for line in text.lines().filter(|line| !line.trim().is_empty()) {
-                let decision: Decision =
-                    serde_json::from_str(line).map_err(|error| error.to_string())?;
-                let Some(packed) =
-                    compile_decision(decision, &outcomes, &loaded.vocabulary)?.map(|pair| pair.0)
-                else {
-                    continue;
-                };
-                let useful = matches!(packed.bucket, Bucket::Standout | Bucket::Strong)
-                    || (packed.bucket == Bucket::Control
-                        && packed.key % 1_000_000 < control_per_million);
-                if !useful {
-                    continue;
+    let parts: Result<Vec<(Vec<Packed>, Vec<Packed>)>, String> = if is_zstd(&decisions_path)? {
+        let bytes = std::fs::read(&decisions_path).map_err(|error| error.to_string())?;
+        let ranges = frame_ranges(&bytes, expected)?;
+        println!("parallel-decoding {} decision frames", ranges.len());
+        ranges
+            .par_iter()
+            .map(|range| {
+                let plain = zstd::decode_all(std::io::Cursor::new(&bytes[range.clone()]))
+                    .map_err(|error| error.to_string())?;
+                let text = String::from_utf8(plain).map_err(|error| error.to_string())?;
+                let part =
+                    compile_chunk(&text, &outcomes, &loaded.vocabulary, control_per_million)?;
+                let done = finished.fetch_add(1, Ordering::Relaxed) + 1;
+                if done.is_multiple_of(256) {
+                    println!("decoded {done}/{expected} frames");
+                    let _ = std::io::stdout().flush();
                 }
-                if packed.game % 100 < 10 {
-                    validation.push(packed);
-                } else {
-                    train.push(packed);
+                Ok(part)
+            })
+            .collect()
+    } else {
+        let bytes = std::fs::read(&decisions_path).map_err(|error| error.to_string())?;
+        let chunks = line_chunks(&bytes, rayon::current_num_threads());
+        println!("parallel-parsing {} decision chunks", chunks.len());
+        chunks
+            .par_iter()
+            .map(|range| {
+                let text = std::str::from_utf8(&bytes[range.clone()]).map_err(|error| {
+                    format!("{} is not UTF-8: {error}", decisions_path.display())
+                })?;
+                let part = compile_chunk(text, &outcomes, &loaded.vocabulary, control_per_million)?;
+                let done = finished.fetch_add(1, Ordering::Relaxed) + 1;
+                if done.is_multiple_of(256) {
+                    println!("parsed {done}/{expected} chunks");
+                    let _ = std::io::stdout().flush();
                 }
-            }
-            let done = finished.fetch_add(1, Ordering::Relaxed) + 1;
-            if done % 256 == 0 {
-                println!("decoded {done}/{expected} frames");
-                let _ = std::io::stdout().flush();
-            }
-            Ok((train, validation))
-        })
-        .collect();
-    drop(bytes);
+                Ok(part)
+            })
+            .collect()
+    };
     let mut train_samples = Vec::new();
     let mut validation_samples = Vec::new();
     for (train, validation) in parts? {
@@ -745,11 +873,17 @@ fn pack() -> Result<(), String> {
     let batch_size = num("--parse-batch", 4_096_usize);
     for path in files(&source, "decisions")? {
         let file = std::fs::File::open(&path).map_err(|error| error.to_string())?;
-        let decoder =
-            zstd::Decoder::new(BufReader::new(file)).map_err(|error| error.to_string())?;
+        // Plain JSONL (current capture) and zstd frame streams (older corpora) are both valid.
+        let reader: Box<dyn BufRead> = if is_zstd(&path)? {
+            let decoder =
+                zstd::Decoder::new(BufReader::new(file)).map_err(|error| error.to_string())?;
+            Box::new(BufReader::new(decoder))
+        } else {
+            Box::new(BufReader::new(file))
+        };
         let mut batch = Vec::with_capacity(batch_size);
         let mut parsed = 0_u64;
-        for line in BufReader::new(decoder).lines() {
+        for line in reader.lines() {
             batch.push(line.map_err(|error| error.to_string())?);
             if batch.len() < batch_size {
                 continue;
