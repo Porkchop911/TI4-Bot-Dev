@@ -665,6 +665,8 @@ fn train() -> Result<(), String> {
 }
 
 fn main() {
+    ti4_tensor::configure_deterministic(1_026_091_300)
+        .unwrap_or_else(|error| fail(&format!("configuring tensor backend: {error}")));
     let mode = std::env::args()
         .nth(1)
         .unwrap_or_else(|| fail("usage: offline_bc <pack|train>"));
