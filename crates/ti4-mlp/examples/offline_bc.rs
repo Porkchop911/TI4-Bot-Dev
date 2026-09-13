@@ -10,6 +10,7 @@ use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 
 use rand::{Rng, SeedableRng};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use ti4_mlp::bundle::{Provenance, read, write};
@@ -340,6 +341,78 @@ fn finish_file(
     })
 }
 
+fn compile_decision(
+    d: Decision,
+    outcomes: &HashMap<(String, String), Outcome>,
+    vocabulary: &ti4_policy::vocabulary::Vocabulary,
+) -> Result<Option<(Packed, String)>, String> {
+    if d.legal_actions.len() <= 1 {
+        return Ok(None);
+    }
+    let o = outcomes
+        .get(&(d.game_id.clone(), d.seat.clone()))
+        .ok_or_else(|| format!("missing outcome for {}/{}", d.game_id, d.seat))?;
+    if o.faction != d.faction
+        || o.policy != d.policy_id
+        || d.chosen_action_index >= d.legal_actions.len()
+    {
+        return Err(format!("metadata/choice mismatch in {}", d.game_id));
+    }
+    let row = FactionRow::of(&d.faction).map_err(|e| e.to_string())?;
+    let head = ti4_mlp::heads()
+        .iter()
+        .position(|x| *x == d.head)
+        .ok_or_else(|| format!("unknown head {}", d.head))?;
+    let mut options = Vec::with_capacity(d.legal_actions.len());
+    for action in d.legal_actions {
+        let mut sparse = SparseOption::default();
+        for f in action.actor_features {
+            let expected = vocabulary.column_of(&f.name);
+            if expected != f.column || !f.value.is_finite() {
+                return Err(format!("invalid feature {} column/value", f.name));
+            }
+            sparse.columns.push(f.column as i64);
+            sparse.values.push(f.value as f32);
+        }
+        options.push(sparse);
+    }
+    let policy = hash(&[d.policy_id.as_bytes()]);
+    let game = hash(&[d.game_id.as_bytes()]);
+    let key = hash(&[
+        d.game_id.as_bytes(),
+        d.seat.as_bytes(),
+        &d.seat_decision_index.to_le_bytes(),
+    ]);
+    Ok(Some((
+        Packed {
+            bucket: o.bucket,
+            row,
+            head,
+            policy,
+            game,
+            key,
+            chosen: d.chosen_action_index,
+            options,
+        },
+        d.policy_id,
+    )))
+}
+
+fn compile_batch(
+    lines: Vec<String>,
+    outcomes: &HashMap<(String, String), Outcome>,
+    vocabulary: &ti4_policy::vocabulary::Vocabulary,
+) -> Result<Vec<Option<(Packed, String)>>, String> {
+    lines
+        .into_par_iter()
+        .map(|line| {
+            let decision: Decision = serde_json::from_str(&line)
+                .map_err(|error| format!("parsing decision JSON: {error}"))?;
+            compile_decision(decision, outcomes, vocabulary)
+        })
+        .collect()
+}
+
 fn pack() -> Result<(), String> {
     let source = PathBuf::from(need("--corpus"));
     let output = PathBuf::from(need("--out"));
@@ -426,72 +499,55 @@ fn pack() -> Result<(), String> {
     let mut counts = [0_u64; 2];
     let mut buckets = BTreeMap::new();
     let mut policies = BTreeMap::new();
+    let batch_size = num("--parse-batch", 4_096_usize);
     for path in files(&source, "decisions")? {
-        lines::<Decision>(&path, |d| {
-            if d.legal_actions.len() <= 1 {
-                return Ok(());
+        let file = std::fs::File::open(&path).map_err(|error| error.to_string())?;
+        let decoder =
+            zstd::Decoder::new(BufReader::new(file)).map_err(|error| error.to_string())?;
+        let mut batch = Vec::with_capacity(batch_size);
+        let mut parsed = 0_u64;
+        for line in BufReader::new(decoder).lines() {
+            batch.push(line.map_err(|error| error.to_string())?);
+            if batch.len() < batch_size {
+                continue;
             }
-            let o = outcomes
-                .get(&(d.game_id.clone(), d.seat.clone()))
-                .ok_or_else(|| format!("missing outcome for {}/{}", d.game_id, d.seat))?;
-            if o.faction != d.faction
-                || o.policy != d.policy_id
-                || d.chosen_action_index >= d.legal_actions.len()
-            {
-                return Err(format!("metadata/choice mismatch in {}", d.game_id));
-            }
-            let row = FactionRow::of(&d.faction).map_err(|e| e.to_string())?;
-            let head = ti4_mlp::heads()
-                .iter()
-                .position(|x| *x == d.head)
-                .ok_or_else(|| format!("unknown head {}", d.head))?;
-            let mut options = Vec::new();
-            for action in d.legal_actions {
-                let mut sparse = SparseOption::default();
-                for f in action.actor_features {
-                    let expected = vocabulary.column_of(&f.name);
-                    if expected != f.column || !f.value.is_finite() {
-                        return Err(format!("invalid feature {} column/value", f.name));
-                    }
-                    sparse.columns.push(f.column as i64);
-                    sparse.values.push(f.value as f32);
+            for item in compile_batch(std::mem::take(&mut batch), &outcomes, &vocabulary)? {
+                let Some((p, policy_id)) = item else { continue };
+                let policy_key = format!("{:016x}", p.policy);
+                if policies
+                    .insert(policy_key, policy_id.clone())
+                    .is_some_and(|old| old != policy_id)
+                {
+                    return Err("policy hash collision".into());
                 }
-                options.push(sparse);
+                *buckets.entry(p.bucket.name().to_owned()).or_insert(0) += 1;
+                let split = usize::from(p.game % 100 < u64::from(validation_percent));
+                if split == 0 {
+                    write_record(&mut train, &p)?;
+                } else {
+                    write_record(&mut valid, &p)?;
+                }
+                counts[split] += 1;
             }
-            let policy = hash(&[d.policy_id.as_bytes()]);
-            let policy_key = format!("{policy:016x}");
-            if policies
-                .insert(policy_key, d.policy_id.clone())
-                .is_some_and(|old| old != d.policy_id)
-            {
-                return Err("policy hash collision".into());
+            batch = Vec::with_capacity(batch_size);
+            parsed += batch_size as u64;
+            if parsed % 262_144 == 0 {
+                println!("packed {parsed} decisions");
+                let _ = std::io::stdout().flush();
             }
-            let game = hash(&[d.game_id.as_bytes()]);
-            let key = hash(&[
-                d.game_id.as_bytes(),
-                d.seat.as_bytes(),
-                &d.seat_decision_index.to_le_bytes(),
-            ]);
-            let p = Packed {
-                bucket: o.bucket,
-                row,
-                head,
-                policy,
-                game,
-                key,
-                chosen: d.chosen_action_index,
-                options,
-            };
-            *buckets.entry(o.bucket.name().to_owned()).or_insert(0) += 1;
-            let split = usize::from(game % 100 < u64::from(validation_percent));
+        }
+        for item in compile_batch(batch, &outcomes, &vocabulary)? {
+            let Some((p, policy_id)) = item else { continue };
+            policies.insert(format!("{:016x}", p.policy), policy_id);
+            *buckets.entry(p.bucket.name().to_owned()).or_insert(0) += 1;
+            let split = usize::from(p.game % 100 < u64::from(validation_percent));
             if split == 0 {
                 write_record(&mut train, &p)?;
             } else {
                 write_record(&mut valid, &p)?;
             }
             counts[split] += 1;
-            Ok(())
-        })?;
+        }
     }
     let train = finish_file(train, &train_path, counts[0])?;
     let validation = finish_file(valid, &valid_path, counts[1])?;
@@ -667,6 +723,14 @@ fn train() -> Result<(), String> {
 fn main() {
     ti4_tensor::configure_deterministic(1_026_091_300)
         .unwrap_or_else(|error| fail(&format!("configuring tensor backend: {error}")));
+    let workers = num(
+        "--workers",
+        std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get),
+    );
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(workers)
+        .build_global()
+        .unwrap_or_else(|error| fail(&format!("configuring {workers} parse workers: {error}")));
     let mode = std::env::args()
         .nth(1)
         .unwrap_or_else(|| fail("usage: offline_bc <pack|train>"));
