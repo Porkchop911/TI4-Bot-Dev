@@ -421,17 +421,23 @@ fn frame_ranges(bytes: &[u8], expected: usize) -> Result<Vec<std::ops::Range<usi
         .filter(|&index| bytes[index..index + 4] == ZSTD_MAGIC)
         .collect();
     starts.sort_unstable();
-    if starts.first().copied() != Some(0) || starts.len() != expected {
+    let mut ranges: Vec<std::ops::Range<usize>> = starts
+        .par_iter()
+        .filter_map(|&start| {
+            let size = zstd::zstd_safe::find_frame_compressed_size(&bytes[start..]).ok()?;
+            let end = start.checked_add(size)?;
+            (end == bytes.len() || starts.binary_search(&end).is_ok()).then_some(start..end)
+        })
+        .collect();
+    ranges.sort_by_key(|range| range.start);
+    if ranges.first().map(|range| range.start) != Some(0) || ranges.len() != expected {
         return Err(format!(
-            "expected {expected} independent zstd frames, found {}",
+            "expected {expected} valid independent zstd frames, found {} from {} magic candidates",
+            ranges.len(),
             starts.len()
         ));
     }
-    Ok(starts
-        .iter()
-        .enumerate()
-        .map(|(index, &start)| start..starts.get(index + 1).copied().unwrap_or(bytes.len()))
-        .collect())
+    Ok(ranges)
 }
 
 fn decode_frames<T: for<'a> Deserialize<'a> + Send>(
