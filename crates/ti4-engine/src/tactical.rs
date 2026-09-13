@@ -301,7 +301,9 @@ pub fn movable_into(
                     .find(|(gd, ion)| {
                         rules.can_reach(
                             origin.as_str(),
-                            effective_move_value_with_boosts(state, kind, player, origin, *gd, *ion),
+                            effective_move_value_with_boosts(
+                                state, kind, player, origin, *gd, *ion,
+                            ),
                         )
                     })
             };

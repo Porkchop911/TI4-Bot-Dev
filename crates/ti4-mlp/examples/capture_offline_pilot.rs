@@ -52,13 +52,13 @@ const TILE_SEED_OFFSET: u64 = 0;
 const IN_SCOPE_FACTIONS: [&str; 6] = ["jolnar", "letnev", "sol", "xxcha", "hacan", "l1z1x"];
 
 /// Streaming retention rule (agreed with codex, 2026-09-13): a game is written to disk iff any
-/// faction finishes above `STANDOUT_VP`, or the table total reaches `STRONG_TABLE_VP`, or it falls
+/// faction reaches `STANDOUT_VP`, or the table total reaches `STRONG_TABLE_VP`, or it falls
 /// below `WEAK_TABLE_VP`; games in between are kept with probability 5% as a random control. Every
 /// condition is decidable at game end while the records are still in memory, so discarded games
 /// never touch disk. The coin is seeded from the game seed — a pure function of the game index —
 /// so retention is reproducible at any worker count.
 const RETENTION_RULE: &str = "vp-threshold-v1";
-const STANDOUT_VP: i32 = 6; // strictly above
+const STANDOUT_VP: i32 = 6; // inclusive
 const STRONG_TABLE_VP: i32 = 24; // table total, inclusive
 const WEAK_TABLE_VP: i32 = 10; // table total, exclusive
 const RANDOM_CONTROL_NUMERATOR: u32 = 5;
@@ -923,7 +923,7 @@ impl RetentionReason {
 /// The retention decision for one finished game (see `RETENTION_RULE`). Pure function of the end
 /// state and the game seed, so it is identical at any worker count.
 fn decide_retention(table_vp: i32, max_faction_vp: i32, game_seed: u64) -> Option<RetentionReason> {
-    if max_faction_vp > STANDOUT_VP {
+    if max_faction_vp >= STANDOUT_VP {
         return Some(RetentionReason::Standout);
     }
     if table_vp >= STRONG_TABLE_VP {
@@ -1673,9 +1673,8 @@ mod tests {
     }
 
     #[test]
-    fn exactly_six_vp_is_not_a_standout() {
-        // Table in the middle band: whatever comes back must not be a standout.
-        assert_ne!(decide_retention(15, 6, 42), Some(RetentionReason::Standout));
+    fn exactly_six_vp_is_a_standout() {
+        assert_eq!(decide_retention(15, 6, 42), Some(RetentionReason::Standout));
     }
 
     #[test]

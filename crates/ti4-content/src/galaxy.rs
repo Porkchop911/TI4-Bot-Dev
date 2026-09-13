@@ -577,15 +577,15 @@ impl Galaxy {
         // than on it -- so it has no hex neighbours but keeps its wormholes. Returning early on a
         // missing coord made that one-directional: an on-map tile listed the Nexus as a
         // wormhole partner while the Nexus listed nothing, so ships could move in and not out.
-        let mut neighbours: BTreeSet<&str> = self.coords.get(system_id).map_or_else(
-            BTreeSet::new,
-            |here| {
-                here.neighbours()
-                    .into_iter()
-                    .filter_map(|n| self.system_at(n))
-                    .collect()
-            },
-        );
+        let mut neighbours: BTreeSet<&str> =
+            self.coords
+                .get(system_id)
+                .map_or_else(BTreeSet::new, |here| {
+                    here.neighbours()
+                        .into_iter()
+                        .filter_map(|n| self.system_at(n))
+                        .collect()
+                });
         if !self.wormholes_off {
             neighbours.extend(self.wormhole_partners(system_id));
         }

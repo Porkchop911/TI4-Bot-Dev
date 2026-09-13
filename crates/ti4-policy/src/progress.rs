@@ -48,7 +48,7 @@ pub struct Progress {
     /// The value of this seat's fleet, in per-mille resource units (LRR 67 prices):
     /// fighters count as 0.75 resources each (750), other ships at their printed cost times
     /// 1000, and an upgraded ship at 1300 times its base unit's cost (dreadnought 4 ->
-    /// dreadnought II 5.2 = 5200). Ground forces are not fleet.
+    /// dreadnought II 5.2 = 5200). Infantry and mechs, in space or on planets, use normal cost.
     #[serde(default)]
     pub fleet_value_permille: i64,
     /// Technologies owned beyond the setup baseline, so a seat is paid for researching rather
@@ -64,6 +64,9 @@ pub struct Progress {
     /// Whether this seat controls Styx, the Fracture's legendary planet.
     #[serde(default)]
     pub holds_styx: bool,
+    /// A ship, infantry or mech currently present in the Fracture; reward bookkeeping only.
+    #[serde(default)]
+    pub in_fracture: bool,
 }
 
 /// What a seat held at setup, so the gains above can be deltas.
@@ -129,6 +132,7 @@ pub fn measure(seen: &Observed<'_>, player: &PlayerId, baseline: Baseline) -> Pr
         trade_goods: seen
             .seat(player)
             .map_or(0, |seat| i64::from(seat.trade_goods)),
+        in_fracture: seen.has_units_in_fracture(player),
         holds_styx: controlled
             .iter()
             .any(|(_, planet)| planet.as_str() == "styx"),
@@ -273,6 +277,102 @@ mod tests {
             progress.fleet_value_permille,
             750 + 750 + 4000 + 5200,
             "two fighters (1500) + dreadnought (4000) + dreadnought II (5200)"
+        );
+    }
+
+    #[test]
+    fn fleet_value_includes_ground_forces_at_normal_cost_in_space_and_on_planets() {
+        let mut state = ti4_engine::fixtures::game(&["a", "b"]);
+        let player = PlayerId::new("a");
+        let other = PlayerId::new("b");
+        let (system, planet) = ti4_engine::fixtures::a_placed_planet();
+        for kind in [
+            "infantry",
+            "infantry2",
+            "sol_infantry2",
+            "mech",
+            "letnev_mech",
+        ] {
+            ti4_engine::fixtures::put(&mut state, &system, kind, &player, 1);
+            ti4_engine::fixtures::put_on_planet(&mut state, &system, &planet, kind, &player, 1);
+            ti4_engine::fixtures::put_on_planet(&mut state, &system, &planet, kind, &other, 1);
+        }
+        for kind in ["pds", "titans_pds2", "spacedock"] {
+            ti4_engine::fixtures::put(&mut state, &system, kind, &player, 1);
+            ti4_engine::fixtures::put_on_planet(&mut state, &system, &planet, kind, &player, 1);
+        }
+        let progress = measure(&watching(&state), &player, Baseline::default());
+        assert_eq!(
+            progress.fleet_value_permille, 11_000,
+            "six infantry at 0.5 and four mechs at 2; no upgrade premium, rival units or structures"
+        );
+    }
+
+    #[test]
+    fn landing_ground_forces_preserves_fleet_value_and_losses_reduce_it() {
+        let mut state = ti4_engine::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        let (system, planet) = ti4_engine::fixtures::a_placed_planet();
+        ti4_engine::fixtures::put(&mut state, &system, "infantry", &player, 1);
+        ti4_engine::fixtures::put(&mut state, &system, "mech", &player, 1);
+        let before = measure(&watching(&state), &player, Baseline::default());
+        assert_eq!(before.fleet_value_permille, 2500);
+        let cargo = state.system_mut(&system).units.clone();
+        state.system_mut(&system).land(&planet, &cargo);
+        let landed = measure(&watching(&state), &player, Baseline::default());
+        assert_eq!(landed.fleet_value_permille, before.fleet_value_permille);
+        state
+            .system_mut(&system)
+            .remove_from_planet(&planet, &cargo);
+        assert_eq!(
+            measure(&watching(&state), &player, Baseline::default()).fleet_value_permille,
+            0
+        );
+    }
+
+    #[test]
+    fn fracture_presence_requires_own_units_in_a_live_fracture_system() {
+        let mut state = ti4_engine::fixtures::game(&["a", "b"]);
+        let player = PlayerId::new("a");
+        let rival = PlayerId::new("b");
+        let system = SystemId::new("fracture4");
+        let planet = PlanetId::new("styx");
+        let present = |state: &GameState| {
+            measure(
+                &Observed::new(
+                    state,
+                    ContentStore::embedded(),
+                    ti4_model::content_types::DEFAULT,
+                    None,
+                ),
+                &player,
+                Baseline::default(),
+            )
+            .in_fracture
+        };
+        ti4_engine::fixtures::put(&mut state, &system, "carrier", &rival, 1);
+        state.fracture_in_play = true;
+        assert!(!present(&state), "rival units do not count");
+        ti4_engine::fixtures::put_on_planet(&mut state, &system, &planet, "pds", &player, 1);
+        assert!(
+            !present(&state),
+            "a structure alone does not count as entry"
+        );
+        ti4_engine::fixtures::put_on_planet(&mut state, &system, &planet, "mech", &player, 1);
+        assert!(
+            present(&state),
+            "own ground forces count on a Fracture planet"
+        );
+        state.fracture_in_play = false;
+        assert!(!present(&state), "the Fracture must actually be in play");
+        let mut ordinary = ti4_engine::fixtures::game(&["a"]);
+        ordinary.fracture_in_play = true;
+        ti4_engine::fixtures::put(&mut ordinary, &SystemId::new("26"), "carrier", &player, 1);
+        assert!(!present(&ordinary), "units on the regular map do not count");
+        ti4_engine::fixtures::put(&mut ordinary, &system, "carrier", &player, 1);
+        assert!(
+            present(&ordinary),
+            "own ships count in a Fracture space area"
         );
     }
 

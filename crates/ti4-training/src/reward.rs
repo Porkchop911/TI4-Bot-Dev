@@ -129,7 +129,7 @@ pub struct Reward {
     pub clearance_weight: f64,
     /// Moderate reward for fleet strength, as a potential difference over the seat's fleet value
     /// in resources ([`Progress::fleet_value_permille`]: fighters 0.75 each, upgraded ships 1.3x
-    /// their base unit's cost). Paid when the fleet grows and taken back when it is lost, like
+    /// their base unit's cost; infantry and mechs at normal resource cost). Paid when the fleet grows and taken back when it is lost, like
     /// every other term here. Off by default; keep it well below `clearance_weight`, so a whole
     /// game of fleet-building never pays more than an uncleared opening costs.
     pub fleet_weight: f64,
@@ -164,6 +164,11 @@ pub struct Reward {
     /// Marrow already attaches to it. Credited at the final slot. Off by default.
     #[serde(default)]
     pub styx_bonus: f64,
+    /// One small Stage-2 bonus on the first observed entry into the Fracture. Paid once per
+    /// seat-game, before discounting, and never again for leaving and re-entering. Off by default;
+    /// an experiment must select its value explicitly.
+    #[serde(default)]
+    pub fracture_entry_bonus: f64,
     /// How much a decision is credited for what happens later (gamma).
     ///
     /// One (the default) is the undiscounted suffix sum this trainer has always used: every
@@ -220,6 +225,7 @@ impl Default for Reward {
             zero_fleet_penalty: 0.0,
             trade_goods_hoard_weight: 0.0,
             styx_bonus: 0.0,
+            fracture_entry_bonus: 0.0,
         }
     }
 }
@@ -466,6 +472,15 @@ fn charge_holdings(snapshots: &[Progress], reward: &Reward, rewards: &mut [f64])
     }
     if reward.styx_bonus > 0.0 && horizon.holds_styx {
         *last += reward.styx_bonus;
+    }
+    // Credit the transition into the first observed presence. Starting in the Fracture is not
+    // entry, and leaving/re-entering cannot farm the bonus. Snapshots are per decision, including
+    // the final progress; no public game-state or policy-feature field is added.
+    if reward.fracture_entry_bonus > 0.0
+        && let Some(first) = snapshots.iter().position(|progress| progress.in_fracture)
+        && first > 0
+    {
+        rewards[first - 1] += reward.fracture_entry_bonus;
     }
     // An empty fleet pool, charged once, on the transition into the first snapshot that shows it:
     // the decisions up to the one that emptied it carry it, none after do.
@@ -742,6 +757,7 @@ mod tests {
         let reference = Reward::for_stage(Stage::Two);
         assert!(reference.fleet_weight.abs() < f64::EPSILON);
         assert!(reference.tech_weight.abs() < f64::EPSILON);
+        assert!(reference.fracture_entry_bonus.abs() < f64::EPSILON);
     }
 
     fn episode_with_plays(plays: &[(&str, i64)]) -> Episode {
@@ -1184,6 +1200,47 @@ mod tests {
             holding(3, 3, 10),
         );
         assert_shift(&shift(&episode, &reward), &[-0.4, -0.3, -0.3, -0.3, -0.3]);
+    }
+
+    #[test]
+    fn fracture_entry_pays_once_only_to_decisions_before_first_entry() {
+        let progress = |inside| Progress {
+            in_fracture: inside,
+            ..holding(2, 3, 0)
+        };
+        let mut reward = Reward::for_stage(Stage::Two);
+        reward.fracture_entry_bonus = 0.1;
+        let mut off = reward.clone();
+        off.fracture_entry_bonus = 0.0;
+        for (presence, expected) in [
+            (
+                vec![false, false, true, false, true],
+                vec![0.1, 0.1, 0.0, 0.0],
+            ),
+            (vec![false, false, true], vec![0.1, 0.1]),
+            (vec![false, false, false], vec![0.0, 0.0]),
+            (vec![true, false, true], vec![0.0, 0.0]),
+        ] {
+            let snapshots: Vec<_> = presence.into_iter().map(progress).collect();
+            let episode = holdings_episode(
+                snapshots[..snapshots.len() - 1].to_vec(),
+                *snapshots.last().unwrap(),
+            );
+            let delta: Vec<_> = returns(&episode, &reward)
+                .iter()
+                .zip(returns(&episode, &off))
+                .map(|(on, off)| on - off)
+                .collect();
+            assert_shift(&delta, &expected);
+            let mut stage_one = reward.clone();
+            stage_one.stage = Stage::One;
+            let mut stage_one_off = stage_one.clone();
+            stage_one_off.fracture_entry_bonus = 0.0;
+            assert_eq!(
+                returns(&episode, &stage_one),
+                returns(&episode, &stage_one_off)
+            );
+        }
     }
 
     #[test]

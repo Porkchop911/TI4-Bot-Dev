@@ -65,7 +65,15 @@ const ENGINE_VOCABULARY: [&str; 17] = [
 /// `record.text("alias")` asks for the field called `alias`; the corpus is not expected to carry
 /// a record *named* "alias". Without this the check drowns in field names.
 const FIELD_ACCESSORS: [&str; 9] = [
-    "text(", "strings(", "int(", "float(", "flag(", "raw(", "number(", "with(", "payload_string(",
+    "text(",
+    "strings(",
+    "int(",
+    "float(",
+    "flag(",
+    "raw(",
+    "number(",
+    "with(",
+    "payload_string(",
 ];
 
 fn used_as_field_name(line: &str, literal: &str) -> bool {

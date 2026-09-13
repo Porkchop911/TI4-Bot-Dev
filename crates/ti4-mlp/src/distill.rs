@@ -63,6 +63,9 @@ pub struct Settings {
     pub patience: usize,
     /// Improvements smaller than this do not count, and ties choose the earlier epoch.
     pub tie: f64,
+    /// Keep pretrained input rows that are absent from this corpus. Distillation from a zero
+    /// initialisation leaves this false; fine-tuning an existing checkpoint sets it true.
+    pub preserve_untrained_rows: bool,
 }
 
 impl Default for Settings {
@@ -79,6 +82,7 @@ impl Default for Settings {
             max_epochs: 20,
             patience: 3,
             tie: 1e-5,
+            preserve_untrained_rows: false,
         }
     }
 }
@@ -873,7 +877,9 @@ pub fn train(
             if adam.steps() != before_steps + 1 {
                 return Err("Adam did not apply the completed batch gradient".to_owned());
             }
-            hold_untrained_rows_at_zero(actor, &trainable);
+            if !settings.preserve_untrained_rows {
+                hold_untrained_rows_at_zero(actor, &trainable);
+            }
         }
 
         let per_faction = evaluate(actor, validation_samples)?;
@@ -922,7 +928,9 @@ pub fn train(
     let (selected, _, state) =
         best.ok_or_else(|| "distillation completed without a selectable epoch".to_owned())?;
     restore(actor, &state);
-    hold_untrained_rows_at_zero(actor, &trainable);
+    if !settings.preserve_untrained_rows {
+        hold_untrained_rows_at_zero(actor, &trainable);
+    }
     let parameter_movement = distance(&start, &snapshot(actor));
     Ok(Distillation {
         epochs,

@@ -136,8 +136,8 @@ fn main() {
         .unwrap_or_else(|error| refuse(&format!("reading {bundle_path}: {error}")));
     let vocabulary = loaded.vocabulary;
 
-    let pool_path = argument("--map-pool")
-        .unwrap_or_else(|| "out/pools/full_np8_12_holdout.json".to_owned());
+    let pool_path =
+        argument("--map-pool").unwrap_or_else(|| "out/pools/full_np8_12_holdout.json".to_owned());
     let pool_bytes = ti4_sim::artifacts::read_and_verify_pool_role(
         std::path::Path::new(&pool_path),
         &[ti4_sim::artifacts::ArtifactRole::Validation],
@@ -151,7 +151,9 @@ fn main() {
     let factions: Vec<FactionId> = FACTIONS.iter().map(|name| FactionId::new(*name)).collect();
 
     println!("fracture census for {bundle_path}");
-    println!("  temperature {temperature}, {rounds} round(s), seeds {seed_base}..+{seeds} x 6 rotations");
+    println!(
+        "  temperature {temperature}, {rounds} round(s), seeds {seed_base}..+{seeds} x 6 rotations"
+    );
 
     // One owned actor per worker: `tch::Tensor` is `Send` but not `Sync`.
     let jobs: Vec<(u64, usize)> = (seed_base..seed_base + seeds)
@@ -262,22 +264,40 @@ fn main() {
     let with_slice = stats.iter().filter(|s| s.slices_claimed > 0).count();
     let with_breakthrough = stats.iter().filter(|s| s.breakthroughs > 0).count();
     let in_play: Vec<&GameStat> = stats.iter().filter(|s| s.fracture_in_play).collect();
-    let sum = |set: &[&GameStat], f: fn(&Counts) -> usize| set.iter().map(|s| f(&s.counts)).sum::<usize>();
+    let sum = |set: &[&GameStat], f: fn(&Counts) -> usize| {
+        set.iter().map(|s| f(&s.counts)).sum::<usize>()
+    };
     let all: Vec<&GameStat> = stats.iter().collect();
 
     println!();
     println!("  games                                   {games}");
-    println!("  an expedition slice was claimed         {with_slice:6}  {}", pct(with_slice, games));
-    println!("  a seat holds a breakthrough             {with_breakthrough:6}  {}", pct(with_breakthrough, games));
-    println!("  the Fracture was in play at the end     {:6}  {}", in_play.len(), pct(in_play.len(), games));
+    println!(
+        "  an expedition slice was claimed         {with_slice:6}  {}",
+        pct(with_slice, games)
+    );
+    println!(
+        "  a seat holds a breakthrough             {with_breakthrough:6}  {}",
+        pct(with_breakthrough, games)
+    );
+    println!(
+        "  the Fracture was in play at the end     {:6}  {}",
+        in_play.len(),
+        pct(in_play.len(), games)
+    );
     println!();
     println!("  in games where the Fracture was in play:");
     let choices = sum(&in_play, |c| c.activation_choices);
     let offered = sum(&in_play, |c| c.offered);
     let chosen = sum(&in_play, |c| c.chosen);
     println!("    activation choices                    {choices}");
-    println!("    ...listing a Fracture system          {offered:6}  {}", pct(offered, choices));
-    println!("    ...where a Fracture system was chosen {chosen:6}  {}", pct(chosen, offered));
+    println!(
+        "    ...listing a Fracture system          {offered:6}  {}",
+        pct(offered, choices)
+    );
+    println!(
+        "    ...where a Fracture system was chosen {chosen:6}  {}",
+        pct(chosen, offered)
+    );
     println!();
     println!(
         "  across all games: {} activation choices, {} listed a Fracture system, {} chose one",

@@ -475,8 +475,8 @@ pub fn prompt_free_option_features<'s>(
 /// `imagining` is optional so the many callers that have no secrets to offer -- analysis tools,
 /// most tests -- keep passing a slice and get the previous behaviour exactly.
 /// What an option's counterfactual does to the seat's held secrets.
-pub type SecretCounterfactual<'s> = dyn Fn(&ti4_engine::objectives::Imagined<'_>) -> Vec<ti4_engine::objectives::CardProgress>
-    + 's;
+pub type SecretCounterfactual<'s> =
+    dyn Fn(&ti4_engine::objectives::Imagined<'_>) -> Vec<ti4_engine::objectives::CardProgress> + 's;
 
 #[derive(Clone, Copy)]
 pub struct Secrets<'s> {

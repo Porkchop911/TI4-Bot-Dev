@@ -916,7 +916,8 @@ impl<'a> Observed<'a> {
 
     /// The value of this player's fleet in per-mille resource units.
     ///
-    /// Ships only -- ground forces are not fleet. Fighters count as 0.75 resources each (750),
+    /// Ships, infantry and mechs, including ground forces on planets. Infantry and mechs use
+    /// their normal printed resource cost, with no upgrade premium. Fighters count as 0.75 resources each (750),
     /// other ships at their printed cost times 1000, and an upgraded ship at 1300 times its base
     /// unit's cost: the upgrade's own printed price is deliberately ignored, so a dreadnought II
     /// counts as 5.2 (5200) against the dreadnought's four rather than whatever the corpus prints
@@ -928,24 +929,33 @@ impl<'a> Observed<'a> {
         self.state
             .board
             .values()
-            .flat_map(|system| system.units_of(player))
+            .flat_map(|system| {
+                system
+                    .units
+                    .iter()
+                    .chain(system.planet_units.values().flatten())
+            })
+            .filter(|unit| &unit.owner == player)
             .filter_map(|unit| types.get(unit.type_id.as_str()))
-            .map(|stats| Self::ship_value_permille(*stats, &types))
+            .map(|stats| Self::unit_value_permille(*stats, &types))
             .sum()
     }
 
-    /// One ship's share of [`Self::fleet_value_permille`].
-    fn ship_value_permille(
+    /// One ship or ground force's share of [`Self::fleet_value_permille`].
+    fn unit_value_permille(
         stats: ti4_content::units::UnitType<'_>,
         types: &BTreeMap<&str, ti4_content::units::UnitType<'_>>,
     ) -> i64 {
-        if !stats.is_ship() {
+        let ground_force = matches!(stats.base_type(), "infantry" | "mech");
+        if !stats.is_ship() && !ground_force {
             return 0;
         }
         // Fighters are valued at a flat 0.75 resources each; an upgraded ship counts as 1.3x its
         // base unit's cost, ignoring the upgrade's own printed price (dreadnought II = 5.2);
         // everything else pays its printed cost, whole resources for every non-fighter ship.
-        let resources = if stats.is_fighter() {
+        let resources = if ground_force {
+            stats.cost()
+        } else if stats.is_fighter() {
             0.75
         } else if let Some(base_id) = stats.upgrades_from()
             && let Some(base) = types.get(base_id)
@@ -961,6 +971,33 @@ impl<'a> Observed<'a> {
         )]
         let permille = (resources * 1000.0).round() as i64;
         permille
+    }
+
+    /// Whether this seat currently has a ship, infantry or mech in a Fracture system.
+    /// Used only by training progress; it does not add a policy observation feature.
+    #[must_use]
+    pub fn has_units_in_fracture(&self, player: &PlayerId) -> bool {
+        if !self.state.fracture_in_play {
+            return false;
+        }
+        self.state.board.iter().any(|(id, system)| {
+            crate::fracture::is_fracture_system(self.content, self.sources, id)
+                && system
+                    .units
+                    .iter()
+                    .chain(system.planet_units.values().flatten())
+                    .any(|unit| {
+                        &unit.owner == player
+                            && ti4_content::units::unit_type(
+                                self.content,
+                                unit.type_id.as_str(),
+                                self.sources,
+                            )
+                            .is_some_and(|stats| {
+                                stats.is_ship() || matches!(stats.base_type(), "infantry" | "mech")
+                            })
+                    })
+        })
     }
 
     /// How many revealed public objectives this seat could score right now.

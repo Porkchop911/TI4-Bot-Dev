@@ -1342,8 +1342,7 @@ mod tests {
         // A bombarding ship next door is the whole of the relic's range requirement.
         crate::fixtures::put(&mut state, &centre, "dreadnought", &attacker, 1);
 
-        let targets =
-            stellar_converter_targets(&state, content, sources, &hub.galaxy, &attacker);
+        let targets = stellar_converter_targets(&state, content, sources, &hub.galaxy, &attacker);
         // Prove the tile really was in range, or excluding it would prove nothing.
         assert!(
             hub.galaxy.are_adjacent(&hub.centre, mecatol.as_str()),
