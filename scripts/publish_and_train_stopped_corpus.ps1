@@ -29,6 +29,12 @@ if (-not (Test-Path -LiteralPath $Staging -PathType Container)) {
 
 Push-Location $repo
 try {
+    # The publisher does not perform tensor work in recovery mode, but the Rust example is linked
+    # against libtorch and Windows must resolve those DLLs before `main` can select the mode.
+    $env:LIBTORCH = $cudaRoot
+    $env:LIBTORCH_BYPASS_VERSION_CHECK = '1'
+    $env:PATH = "$cudaRoot\lib;$env:PATH"
+
     cargo build --release -p ti4-mlp --example capture_offline_pilot
     if ($LASTEXITCODE -ne 0) { throw "Capture publisher build failed: $LASTEXITCODE" }
 
@@ -48,9 +54,6 @@ try {
         2>&1 | Tee-Object -LiteralPath $publishLog
     if ($LASTEXITCODE -ne 0) { throw "Partial publication failed: $LASTEXITCODE" }
 
-    $env:LIBTORCH = $cudaRoot
-    $env:LIBTORCH_BYPASS_VERSION_CHECK = '1'
-    $env:PATH = "$cudaRoot\lib;$env:PATH"
     cargo build --release --target-dir target-cuda -p ti4-mlp --example offline_bc
     if ($LASTEXITCODE -ne 0) { throw "CUDA trainer build failed: $LASTEXITCODE" }
 

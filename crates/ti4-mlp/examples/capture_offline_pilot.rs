@@ -2100,6 +2100,7 @@ fn part_index(name: &str) -> Option<usize> {
 }
 
 /// True for per-game part names (the only files a publish may delete from bucket folders).
+#[cfg(test)]
 fn is_part_name(name: &str) -> bool {
     part_index(name).is_some()
 }
