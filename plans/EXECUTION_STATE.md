@@ -17,6 +17,13 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 
 ## Current position
 
+### Repository-wide seeded seating (2026-09-15)
+
+- Seeded faction permutation plus rotation is now the sole game-seating contract across reviewer,
+  simulation, training, evaluation, corpus capture, and diagnostics.
+- The legacy scramble toggle cannot disable the contract. Evidence:
+  `plans/evidence/SEEDED-SEATING-CONTRACT-2026-09-15.md`.
+
 ### OFFLINE-PILOT-SINGLE-CHECKPOINT — single-checkpoint multi-temperature capture (2026-09-14)
 
 - Operator request: a generation run using **only**

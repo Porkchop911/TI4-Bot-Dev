@@ -179,11 +179,7 @@ where
         .iter()
         .enumerate()
         .map(|(i, p)| {
-            let faction = if ti4_training::rollout::seat_scramble() {
-                ti4_training::rollout::scrambled_seated_faction(factions, seed, rotation, i)
-            } else {
-                factions[(i + rotation) % factions.len()].clone()
-            };
+            let faction = ti4_training::rollout::seated_faction(factions, seed, rotation, i);
             (p.clone(), faction)
         })
         .collect();

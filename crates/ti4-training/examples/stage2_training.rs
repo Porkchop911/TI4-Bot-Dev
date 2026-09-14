@@ -905,9 +905,7 @@ fn main() -> Result<(), String> {
     // PPO: take this many clipped-surrogate steps from each retained batch instead of one
     // REINFORCE step. One (the default) leaves the update as REINFORCE and retains nothing, so
     // the reference path is untouched unless the flag is given with a value above one.
-    // Draw each seed's cyclic seating order at random rather than always rotating the same one.
-    // The fixed rotation leaves draft precedence between any two factions at 16.7%-83.3% and never
-    // changes which factions border each other; see `rollout::set_seat_scramble`.
+    // Every game uses the repository-wide seeded faction permutation, then its requested rotation.
     // Stage-1 clearance reward, inside a Stage-2 run. Two distinct knobs, and neither is the
     // `--clearance-weight` penalty that measured -1.045 table VP: that one lands in the final slot
     // so every decision of the game carries the same constant, which separates games and never
@@ -920,7 +918,7 @@ fn main() -> Result<(), String> {
     //                 the opening potential would swamp victory points.
     let r1_bonus = decimal("--r1-bonus", 3.0);
     let r1_shaping = decimal("--r1-shaping", 0.1);
-    let scramble_seats = flag("--scramble-seats");
+    let scramble_seats = true;
     ti4_training::rollout::set_seat_scramble(scramble_seats);
     let ppo_epochs = optional_number("--ppo-epochs").unwrap_or(1);
     let ppo_clip = decimal("--ppo-clip", 0.2);

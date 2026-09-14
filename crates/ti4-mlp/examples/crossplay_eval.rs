@@ -210,7 +210,7 @@ fn play(
         .map(|(index, player)| {
             (
                 player.clone(),
-                FactionId::new(FACTIONS[(index + rotation) % FACTIONS.len()]),
+                ti4_training::rollout::seated_faction(factions, seed, rotation, index),
             )
         })
         .collect();

@@ -34,7 +34,7 @@ use ti4_policy::learned::{Profile, decision_head};
 use ti4_policy::progress::Baseline;
 use ti4_policy::vocabulary::Vocabulary;
 use ti4_sim::MapPool;
-use ti4_training::rollout::{OpeningMap, setup_game_with_decider_factory};
+use ti4_training::rollout::{OpeningMap, seated_faction, setup_game_with_decider_factory};
 
 pub mod gui;
 
@@ -701,13 +701,14 @@ impl LiveReview {
         let players: Vec<PlayerId> = (0..FACTIONS.len())
             .map(|index| PlayerId::new(format!("seat{index}")))
             .collect();
+        let faction_roster = FACTIONS.map(FactionId::new);
         let factions: BTreeMap<PlayerId, FactionId> = players
             .iter()
             .enumerate()
             .map(|(index, player)| {
                 (
                     player.clone(),
-                    FactionId::new(FACTIONS[(index + config.rotation) % FACTIONS.len()]),
+                    seated_faction(&faction_roster, config.seed, config.rotation, index),
                 )
             })
             .collect();
@@ -2432,19 +2433,18 @@ mod tests {
     }
 
     #[test]
-    fn faction_rotation_matches_the_clearance_evaluator_contract() {
-        let seating = |rotation: usize| {
+    fn faction_order_is_seeded_reproducible_and_rotated() {
+        let factions = FACTIONS.map(FactionId::new);
+        let seating = |seed, rotation| {
             (0..FACTIONS.len())
-                .map(|seat| FACTIONS[(seat + rotation) % FACTIONS.len()].to_owned())
+                .map(|seat| seated_faction(&factions, seed, rotation, seat).to_string())
                 .collect::<Vec<_>>()
         };
-        let first = seating(0);
-        assert_eq!(first, FACTIONS.map(str::to_owned));
-        assert_eq!(seating(1)[0], first[1]);
-        assert_eq!(
-            seating(5),
-            ["l1z1x", "sol", "letnev", "xxcha", "hacan", "jolnar"]
-        );
+        let first = seating(42, 0);
+        assert_eq!(first, seating(42, 0));
+        assert_ne!(first, seating(43, 0));
+        assert_ne!(first, FACTIONS.map(str::to_owned));
+        assert_eq!(seating(42, 1)[0], first[1]);
 
         let mut found = first;
         found.sort_unstable();

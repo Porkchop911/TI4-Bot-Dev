@@ -230,7 +230,9 @@ fn main() {
             for (index, player) in players.iter().enumerate() {
                 factions.insert(
                     player.clone(),
-                    FactionId::new(FACTIONS[(index + rotation) % FACTIONS.len()]),
+                    ti4_training::rollout::seated_faction(
+                        &FACTIONS.map(FactionId::new), seed, rotation, index,
+                    ),
                 );
             }
             let sol = players

@@ -232,7 +232,7 @@ fn main() {
     }
 
     // Seat order follows the oracle's rotated_six_player_seats: position i holds faction
-    // (i + rotation) % 6 of the canonical list.
+    // The shared seed permutation, cyclically shifted by rotation.
     let players: Vec<PlayerId> = (0..FACTIONS.len())
         .map(|index| PlayerId::new(format!("seat{index}")))
         .collect();
@@ -240,7 +240,9 @@ fn main() {
     for (index, player) in players.iter().enumerate() {
         factions.insert(
             player.clone(),
-            FactionId::new(FACTIONS[(index + rotation % FACTIONS.len()) % FACTIONS.len()]),
+            ti4_training::rollout::seated_faction(
+                &FACTIONS.map(FactionId::new), seed, rotation, index,
+            ),
         );
     }
 

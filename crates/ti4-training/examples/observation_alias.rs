@@ -212,7 +212,14 @@ fn main() {
         let seated: BTreeMap<PlayerId, FactionId> = players
             .iter()
             .enumerate()
-            .map(|(index, player)| (player.clone(), FactionId::new(FACTIONS[index])))
+            .map(|(index, player)| {
+                (
+                    player.clone(),
+                    ti4_training::rollout::seated_faction(
+                        &FACTIONS.map(FactionId::new), seed, 0, index,
+                    ),
+                )
+            })
             .collect();
         let deciders: BTreeMap<PlayerId, Box<dyn Decider>> = players
             .iter()

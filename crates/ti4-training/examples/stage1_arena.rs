@@ -126,7 +126,7 @@ fn main() -> Result<(), String> {
     let round_baseline = flag("--round-baseline");
     // Draw each seed's cyclic seating order at random rather than always rotating the same one.
     // Off by default so existing checkpoints and parity fixtures reproduce exactly.
-    let scramble_seats = flag("--scramble-seats");
+    let scramble_seats = true;
     let ppo_epochs = number("--ppo-epochs", 1);
     let ppo_clip = decimal("--ppo-clip", 0.2);
     let draft_entropy = decimal("--draft-entropy", 0.0);

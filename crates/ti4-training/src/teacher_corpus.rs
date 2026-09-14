@@ -428,6 +428,7 @@ pub fn capture(
     // from a different reward and quietly disagree.
     let reward = Reward::for_stage(Stage::Two);
 
+    let faction_ids: Vec<FactionId> = factions.iter().map(|faction| FactionId::new(*faction)).collect();
     for &seed in &seeds {
         let cluster = Cluster::of(seed)
             .ok_or_else(|| CorpusError::Invalid(format!("seed {seed} belongs to no cluster")))?;
@@ -438,7 +439,7 @@ pub fn capture(
                 .map(|(index, player)| {
                     (
                         player.clone(),
-                        FactionId::new(factions[(index + rotation) % factions.len()]),
+                        crate::rollout::seated_faction(&faction_ids, seed, rotation, index),
                     )
                 })
                 .collect();

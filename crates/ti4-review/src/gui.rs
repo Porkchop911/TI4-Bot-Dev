@@ -935,7 +935,7 @@ impl ReviewApp {
                     })
                     .response
                     .on_hover_text(
-                        "Matches clearance_eval: rotation cyclically shifts the fixed faction order across physical seats; the seed does not change faction order.",
+                        "The seed deterministically permutes faction order; rotation then cyclically shifts that same permutation across physical seats.",
                     );
                 let profile_response = egui::ComboBox::from_id_salt("profile_table")
                     .selected_text(self.table.label())

@@ -25,10 +25,8 @@ fn main() {
         ))
         .expect("pool"),
     );
-    // Seating must match the run being analysed: card preference IS a function of draft order, so
-    // reading a scrambled run through rotated seating would report a preference that never existed.
-    let scramble = std::env::args().any(|a| a == "--scramble");
-    ti4_training::rollout::set_seat_scramble(scramble);
+    // Seating uses the repository-wide seeded permutation contract. Card preference is a function
+    // of draft order, so this must use the same seeds as the run being analysed.
     let paths: Vec<String> = std::env::args()
         .skip(1)
         .filter(|a| a.ends_with(".json"))
@@ -125,14 +123,7 @@ fn main() {
         })
         .collect();
     println!("checkpoints: {}", paths.join(", "));
-    println!(
-        "seating: {}",
-        if scramble {
-            "scrambled"
-        } else {
-            "fixed rotation"
-        }
-    );
+    println!("seating: seeded permutation plus rotations");
     println!(
         "{} games, strategy-phase picks on held-out boards\n",
         games.len()

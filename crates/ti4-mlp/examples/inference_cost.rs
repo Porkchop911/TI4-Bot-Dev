@@ -165,7 +165,14 @@ fn play(
     let assignments: BTreeMap<_, _> = players
         .iter()
         .enumerate()
-        .map(|(i, p)| (p.clone(), FactionId::new(FACTIONS[(i + rotation) % 6])))
+        .map(|(i, p)| {
+            (
+                p.clone(),
+                ti4_training::rollout::seated_faction(
+                    &FACTIONS.map(FactionId::new), seed, rotation, i,
+                ),
+            )
+        })
         .collect();
     let boundary = Rc::new(RefCell::new(Boundary::default()));
     let profile = Rc::new(RefCell::new(Profile {

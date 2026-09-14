@@ -143,9 +143,18 @@ fn main() {
     let mut seats_total = 0usize;
     for seed in 98_000_000..98_000_000 + seeds {
         for rotation in 0..FACTIONS.len() {
-            // Pre-rotated slice: audit_game seats with rotation zero, so the rotation lives here.
+            // Pre-seated slice: audit_game receives rotation zero, so the seeded permutation and
+            // requested rotation are both applied here using the shared contract.
+            let faction_ids = FACTIONS.map(FactionId::new);
             let rotated: Vec<FactionId> = (0..FACTIONS.len())
-                .map(|index| FactionId::new(FACTIONS[(index + rotation) % FACTIONS.len()]))
+                .map(|index| {
+                    ti4_training::rollout::seated_faction(
+                        &faction_ids,
+                        seed,
+                        rotation,
+                        index,
+                    )
+                })
                 .collect();
             let (_events, state) = audit_game(
                 content,

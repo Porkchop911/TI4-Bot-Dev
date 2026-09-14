@@ -17,7 +17,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -176,12 +175,7 @@ where
     ReducedBatch { errors, statistics }
 }
 
-/// Whether the faction-to-seat assignment scrambles its cyclic order per seed.
-///
-/// Off by default, which reproduces every checkpoint and parity fixture in the repository.
-static SCRAMBLE_SEATS: AtomicBool = AtomicBool::new(false);
-
-/// Draw each seed's cyclic seating order at random instead of always using the caller's order.
+/// Legacy compatibility setter. Seeded seating is mandatory, so the argument is ignored.
 ///
 /// **What was wrong with the default.** The assignment `factions[(seat + rotation) % n]` is a
 /// cyclic rotation, so the offset between any two factions never changes and only the cut moves.
@@ -202,25 +196,22 @@ static SCRAMBLE_SEATS: AtomicBool = AtomicBool::new(false);
 /// per seed, which is the design's variance reduction and is worth preserving. Only the order
 /// being rotated becomes a function of the seed, so across a training stream every cyclic order
 /// appears, precedence averages to even, and neighbours vary.
-pub fn set_seat_scramble(enabled: bool) {
-    SCRAMBLE_SEATS.store(enabled, Ordering::Relaxed);
-}
+pub const fn set_seat_scramble(_enabled: bool) {}
 
-/// Whether seat scrambling is on. Reported by trainers so a run's log states which it used.
+/// Whether seat scrambling is on. Seeded permutation is now the sole seating contract.
 #[must_use]
-pub fn seat_scramble() -> bool {
-    SCRAMBLE_SEATS.load(Ordering::Relaxed)
+pub const fn seat_scramble() -> bool {
+    true
 }
 
 /// The faction seated at `seat` for this `seed` and `rotation`.
-fn seated_faction(factions: &[FactionId], seed: u64, rotation: usize, seat: usize) -> FactionId {
-    let count = factions.len();
-    if count == 0 {
-        return FactionId::new("");
-    }
-    if !seat_scramble() {
-        return factions[(seat + rotation) % count].clone();
-    }
+#[must_use]
+pub fn seated_faction(
+    factions: &[FactionId],
+    seed: u64,
+    rotation: usize,
+    seat: usize,
+) -> FactionId {
     scrambled_seated_faction(factions, seed, rotation, seat)
 }
 
@@ -2630,6 +2621,26 @@ mod tests {
         let mut expected = factions;
         expected.sort();
         assert_eq!(found, expected);
+    }
+
+    #[test]
+    fn the_shared_seating_contract_cannot_fall_back_to_fixed_rotation() {
+        let factions: Vec<FactionId> = ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"]
+            .into_iter()
+            .map(FactionId::new)
+            .collect();
+        set_seat_scramble(false);
+        assert!(seat_scramble());
+        for seed in [42, 501, 98_000_000] {
+            for rotation in 0..factions.len() {
+                for seat in 0..factions.len() {
+                    assert_eq!(
+                        seated_faction(&factions, seed, rotation, seat),
+                        scrambled_seated_faction(&factions, seed, rotation, seat),
+                    );
+                }
+            }
+        }
     }
 
     #[test]

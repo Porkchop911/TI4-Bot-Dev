@@ -68,7 +68,14 @@ fn main() {
     let assignments: BTreeMap<PlayerId, FactionId> = players
         .iter()
         .enumerate()
-        .map(|(i, p)| (p.clone(), FactionId::new(FACTIONS[i])))
+        .map(|(i, p)| {
+            (
+                p.clone(),
+                ti4_training::rollout::seated_faction(
+                    &FACTIONS.map(FactionId::new), seed, 0, i,
+                ),
+            )
+        })
         .collect();
 
     let mut state = ti4_engine::setup::start_game_seeded(content, &players, DEFAULT, None, seed)

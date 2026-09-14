@@ -39,7 +39,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use rand::{Rng, SeedableRng, seq::SliceRandom};
+use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -1601,32 +1601,23 @@ fn run() -> Result<(), String> {
     };
 
     // ---- plan every game before any of them is played ------------------------------------------
-    // The faction deck and policy offset are a sequential state machine over the game index. Running
-    // it here on the main thread guarantees each worker receives exactly the inputs the original
-    // sequential loop would have given that game, whatever order the workers finish in.
+    // Plan on the main thread so every worker receives deterministic inputs independent of finish
+    // order. Faction seating uses the same game seed and shared permutation contract as training.
     let mut plans: Vec<GamePlan> = Vec::with_capacity(games);
-    let mut faction_deck: Vec<String> = Vec::new();
-    let mut faction_cycle = 0u64;
     let mut policy_offset = 0usize;
+    let faction_roster = IN_SCOPE_FACTIONS.map(FactionId::new);
     for game_index in 0..games {
-        while faction_deck.len() < players.len() {
-            let mut cycle: Vec<String> = IN_SCOPE_FACTIONS
-                .iter()
-                .map(|faction| (*faction).to_owned())
-                .collect();
-            cycle.shuffle(&mut ChaCha8Rng::seed_from_u64(
-                seed_base ^ 0xFAC7_10A0 ^ faction_cycle,
-            ));
-            faction_deck.extend(cycle);
-            faction_cycle += 1;
-        }
-        let selected: Vec<String> = faction_deck.drain(..players.len()).collect();
+        let game_seed = seed_base.wrapping_add(u64::try_from(game_index).unwrap_or(0));
         let seated: BTreeMap<PlayerId, FactionId> = players
             .iter()
-            .zip(&selected)
-            .map(|(player, faction)| (player.clone(), FactionId::new(faction)))
+            .enumerate()
+            .map(|(seat, player)| {
+                (
+                    player.clone(),
+                    ti4_training::rollout::seated_faction(&faction_roster, game_seed, 0, seat),
+                )
+            })
             .collect();
-        let game_seed = seed_base.wrapping_add(u64::try_from(game_index).unwrap_or(0));
         plans.push(GamePlan {
             game_index,
             game_seed,
