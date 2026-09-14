@@ -149,6 +149,44 @@ suite exists to catch, so it was re-baselined through the versioned process:
 Note: the inline comment history in `baseline_bounds` stopped at v33 while its values were already
 at v36 when this branch started — a pre-existing documentation gap on main, left untouched here.
 
+## Reviewer-app fix follow-up (2026-09-14)
+
+The operator's game-inspection app (`ti4-review`) panicked at startup after this package:
+`features.rs:2838 "TI4 printed integer values fit in i32"`. Root cause: `fleet::standing_using`
+reported the unlimited seat (Letnev's hero active for the round) with `fleet_limit = i64::MAX`,
+and that value reaches two observation-surface paths — the `FleetSupply` outstanding constraint
+(`production.rs::placement_context`) and the `FleetSupplyHeadroom` preview deltas (`before/after`
+= `standing.fleet_headroom()`) — both of which `ti4-policy::features` encodes through
+`small_integer_value`, an `i32`-bounded encoder. Any production decision while the flag is active
+panicked the policy features.
+
+Fix (single choke point): `fleet.rs` now reports a bounded sentinel
+`UNLIMITED_FLEET_BILL = 10_000` for unlimited seats instead of `i64::MAX`. It is far above any
+reachable fleet, so headroom/excess arithmetic is unchanged in play (`excess = charged - limit`
+still never fires), while every derived observation value stays within the printed-integer range.
+The engine's internal legality path keeps using the same bounded value; no policy-side change was
+needed. Regression test `the_unlimited_fleet_bill_stays_within_printed_integers` (leaders.rs)
+asserts both `fleet_limit` and `fleet_headroom` fit in `i32` while the flag is active.
+
+Verification through the actual app (`ti4-review simulate --until end`, checkpoint-318956,
+holdout pool):
+
+| seed | outcome | Letnev hero used (flag values seen) |
+|---|---|---|
+| 101 | Completed, 5092 steps | yes — round 7 |
+| 103 | Completed, 3928 steps | yes — round 5 |
+| 104 | Completed, 4026 steps | yes — round 7 |
+| 105 | Completed, 2386 steps | yes — round 5 |
+
+Four full games with the unlimited flag active for multiple rounds ran every production decision
+through the previously-panicking encoder without error. (Seed 42 completed but never unlocked the
+hero; seed 102 is a legitimately long game whose session exceeds ti4-review's pre-existing
+1 GiB save limit — round structure and unit counts are normal, the game terminates; recorded as an
+app limitation, not an engine defect.)
+
+Updated results after the fix: `cargo test -p ti4-engine` → **1289 passed, 0 failed** (45 leader
+tests); `cargo test -p ti4-policy --lib` → 244 passed; clippy clean for ti4-engine.
+
 ## Known limitations (recorded, not silently resolved)
 
 - 28 ACTION-window leaders outside the delivered set are still inert (packages 002/003 cover the

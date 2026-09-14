@@ -2121,6 +2121,28 @@ mod tests {
     }
 
     #[test]
+    fn the_unlimited_fleet_bill_stays_within_printed_integers() {
+        // The observation surface (decision-context constraints and preview headroom) encodes
+        // these values as printed-scale integers; an unbounded sentinel would panic the policy
+        // features that read them.
+        let mut state = game(&["a"]);
+        let hero = holding(&mut state, "letnevhero", LeaderStatus::Unlocked);
+        assert!(use_it(&mut state, &hero));
+
+        let system = ti4_model::id::SystemId::new(crate::fixtures::plain_systems(1)[0].as_str());
+        let standing = crate::fleet::standing(
+            &state,
+            ContentStore::embedded(),
+            ti4_model::content_types::POK,
+            &player(),
+            &system,
+            None,
+        );
+        assert!(i32::try_from(standing.fleet_limit).is_ok());
+        assert!(i32::try_from(standing.fleet_headroom()).is_ok());
+    }
+
+    #[test]
     fn action_leaders_are_not_offered_when_they_cannot_resolve() {
         let mut state = game(&["a"]);
         holding(&mut state, "xxchaagent", LeaderStatus::Readied);

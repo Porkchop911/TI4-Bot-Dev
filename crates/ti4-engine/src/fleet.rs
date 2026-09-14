@@ -133,6 +133,11 @@ pub fn standing(
 /// A producer asking what each of its options would leave asks this once per option, and
 /// `catalogue` allocates a fresh map every call. Building one map per production choice rather than
 /// two per offered unit is the difference between a preview that is free and one that is not.
+/// The fleet bill an unlimited seat (Letnev's hero for the round) reports on the observation
+/// surface. Bounded so derived headroom stays within the printed-integer range the policy
+/// features encode (`i32`), and far above any reachable fleet, so it never binds in play.
+pub(crate) const UNLIMITED_FLEET_BILL: i64 = 10_000;
+
 pub(crate) fn standing_using(
     types: &BTreeMap<&str, UnitType<'_>>,
     state: &GameState,
@@ -143,7 +148,7 @@ pub(crate) fn standing_using(
 ) -> Standing {
     let fleet_limit = if is_unlimited(state, player) {
         // No law and no pool bound the ships this round; nothing can be excess.
-        i64::MAX
+        UNLIMITED_FLEET_BILL
     } else {
         i64::from(limit(state, content, player)).max(0)
     };

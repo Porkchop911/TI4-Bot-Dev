@@ -40,7 +40,19 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 - Workspace: 2184 passed / 21 failed — all 21 pre-existing ti4-bridge golden suites (missing
   fixtures), identical failure set before this package.
 - Evidence: `plans/evidence/LEADER_FIX_001.md`. **Independent review pending** (required; includes
-  v37 sign-off). Next safe action: independent review, then focused commit on the branch.
+  v37 sign-off).
+- **Reviewer-app fix follow-up (2026-09-14)**: `ti4-review` panicked at startup — the unlimited
+  fleet sentinel (`i64::MAX`) leaked into two observation-surface paths (FleetSupply constraint,
+  FleetSupplyHeadroom preview deltas) that `ti4-policy::features` encodes through an i32-bounded
+  encoder. Fixed at the single choke point: `fleet.rs::UNLIMITED_FLEET_BILL = 10_000` for
+  unlimited seats (far above any reachable fleet; headroom/excess arithmetic unchanged in play).
+  Regression test added (`the_unlimited_fleet_bill_stays_within_printed_integers`). Verified
+  through the actual app: four full `ti4-review simulate --until end` games with Letnev's hero
+  active for multiple rounds (seeds 101/103/104/105) completed without error. Engine suite now
+  **1289 passed / 0 failed**; ti4-policy lib 244 passed; behavior suite 5/5 within v37 bounds.
+  Side observation: seed 102 is a long-but-finite game whose session exceeds ti4-review's
+  pre-existing 1 GiB save limit (app limitation, not an engine defect).
+- Next safe action: independent review of the package including this follow-up.
 
 ### OFFLINE-BC-PLAIN-JSONL-INPUT — plain JSONL corpora into the CUDA pipeline (2026-09-13)
 
@@ -8495,3 +8507,14 @@ migration milestone or approve a policy/observation-surface change.
   within plausible run-to-run variance but worth a repeat before drawing conclusions. Per-faction:
   xxcha weakest (win 6.4%), jolnar's cleared rate (48.3%) is an outlier vs ~81–93% elsewhere —
   more horizon cutoffs when the candidate plays Jol-Nar.
+
+## Reviewer app (ti4-review) unblocked by LEADER-FIX-001 follow-up (2026-09-14)
+
+The operator's game-inspection app panicked after the leader fix (`features.rs:2838`, i32
+overflow). Root cause and fix as recorded in `plans/evidence/LEADER_FIX_001.md` under
+"Reviewer-app fix follow-up": bounded sentinel `UNLIMITED_FLEET_BILL = 10_000` replaces the
+unbounded `i64::MAX` fleet bill for Letnev's unlimited round, at the single choke point in
+`fleet.rs`. Verified end-to-end through `ti4-review simulate --until end` on four seeds where
+the hero is actually used (flag active rounds 5–7); all completed. The app is usable again;
+its pre-existing 1 GiB session save limit can still reject very long games (observed on seed
+102, which terminates normally).
