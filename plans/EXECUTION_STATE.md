@@ -8566,3 +8566,11 @@ and newline-count validation on real shards passed. Evidence:
 Working-tree note: four unrelated example files (`fracture_census.rs`,
 `objective_signal_audit.rs`, `rng_probe.rs`, `route_conversion.rs`) carry pre-existing
 formatting-only drift from an earlier whole-crate fmt; left uncommitted, out of scope.
+
+**Run status (2026-09-14):** the operator killed the 332k single-checkpoint capture with a
+BREAK event (`forrtl: error (200)` in `out/run-single-ckpt.log`). At kill time **158,755 /
+332,768 games had completed** (~48%). Staging is intact at
+`E:\ti4-corpus\vponly-single-236464-20260914.staging-59548`. Next action: run
+`out/train_single_ckpt.ps1` (rebuilds release capture, publishes staging to
+`...-partial`, rebuilds CUDA offline_bc, trains good+random). Part counts/sizes not yet
+tallied; a few parts may be truncated by the kill and will be excluded with a report.
