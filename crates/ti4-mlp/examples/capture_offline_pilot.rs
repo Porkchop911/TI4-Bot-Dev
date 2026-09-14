@@ -2431,14 +2431,13 @@ fn publish_staging_run(
     if staged.is_empty() {
         return Err(format!("no complete games found in {}", staging.display()));
     }
-    let max_game_index = staged
-        .iter()
-        .map(|game| game.outcome.game_index)
-        .max()
-        .expect("staged is non-empty");
-    if max_game_index >= games_played {
+    // Parallel workers complete non-contiguous index ranges, so a killed run may legitimately
+    // retain a high game index even though fewer total games completed. Only the cardinality is
+    // bounded by the actual completed count.
+    if staged.len() > games_played {
         return Err(format!(
-            "recovered game index {max_game_index} is outside --games-played {games_played}"
+            "recovered {} retained games, more than --games-played {games_played}",
+            staged.len()
         ));
     }
 
