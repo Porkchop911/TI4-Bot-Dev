@@ -10,6 +10,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $capture = Join-Path $repo 'target\release\examples\capture_offline_pilot.exe'
+$trainer = Join-Path $repo 'target-cuda\release\examples\offline_bc.exe'
 $pool = Join-Path $repo 'out\pools\full_np8_12_train.json'
 $cudaRoot = Join-Path $repo 'out\libtorch-2.9.1-cu128'
 $publishLog = "$CorpusOutput.publish.log"
@@ -26,6 +27,12 @@ if (Test-Path -LiteralPath $TrainingOutput) {
 if (-not (Test-Path -LiteralPath $Staging -PathType Container)) {
     throw "Stopped staging directory is missing: $Staging"
 }
+if (-not (Test-Path -LiteralPath $capture -PathType Leaf)) {
+    throw "Verified publisher executable is missing: $capture"
+}
+if (-not (Test-Path -LiteralPath $trainer -PathType Leaf)) {
+    throw "Verified CUDA trainer executable is missing: $trainer"
+}
 
 Push-Location $repo
 try {
@@ -34,9 +41,6 @@ try {
     $env:LIBTORCH = $cudaRoot
     $env:LIBTORCH_BYPASS_VERSION_CHECK = '1'
     $env:PATH = "$cudaRoot\lib;$env:PATH"
-
-    cargo build --release -p ti4-mlp --example capture_offline_pilot
-    if ($LASTEXITCODE -ne 0) { throw "Capture publisher build failed: $LASTEXITCODE" }
 
     & $capture `
         --publish-staging $Staging `
@@ -53,9 +57,6 @@ try {
         --generator-sha256 'be6895cc64c77e38a23dc9b3a941bcfe191db669453348e4df2201961ce16b70' `
         2>&1 | Tee-Object -LiteralPath $publishLog
     if ($LASTEXITCODE -ne 0) { throw "Partial publication failed: $LASTEXITCODE" }
-
-    cargo build --release --target-dir target-cuda -p ti4-mlp --example offline_bc
-    if ($LASTEXITCODE -ne 0) { throw "CUDA trainer build failed: $LASTEXITCODE" }
 
     & (Join-Path $PSScriptRoot 'train_offline_corpus.ps1') `
         -Corpus @((Join-Path $CorpusOutput 'good'), (Join-Path $CorpusOutput 'random')) `
