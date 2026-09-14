@@ -51,8 +51,9 @@ evaluated before promotion.
 
 ## Committed launcher
 
-`scripts/publish_and_train_stopped_corpus.ps1` verifies the already-built publisher and CUDA
-trainer exist, supplies the pinned libtorch runtime before process load, publishes with 32
+`scripts/publish_and_train_stopped_corpus.ps1` verifies the publisher from its isolated
+`target-publisher` tree and the CUDA trainer exist, supplies the pinned libtorch runtime before
+process load, publishes with 32
 validation workers and pinned provenance, then calls the authenticated
 `scripts/train_offline_corpus.ps1` boundary. Training consumes `good + random` (not `bad`) and
 continues from `D:\Projects\ti4-engine-rs\out\offline-bc-v2-20260913-from-318956` for five full

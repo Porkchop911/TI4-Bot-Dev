@@ -9,9 +9,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
-$capture = Join-Path $repo 'target\release\examples\capture_offline_pilot.exe'
+$capture = Join-Path $repo 'target-publisher\release\examples\capture_offline_pilot.exe'
 $trainer = Join-Path $repo 'target-cuda\release\examples\offline_bc.exe'
 $pool = Join-Path $repo 'out\pools\full_np8_12_train.json'
+$cpuRoot = Join-Path $repo 'out\libtorch-2.9.1-cpu'
 $cudaRoot = Join-Path $repo 'out\libtorch-2.9.1-cu128'
 $publishLog = "$CorpusOutput.publish.log"
 
@@ -38,9 +39,9 @@ Push-Location $repo
 try {
     # The publisher does not perform tensor work in recovery mode, but the Rust example is linked
     # against libtorch and Windows must resolve those DLLs before `main` can select the mode.
-    $env:LIBTORCH = $cudaRoot
+    $env:LIBTORCH = $cpuRoot
     $env:LIBTORCH_BYPASS_VERSION_CHECK = '1'
-    $env:PATH = "$cudaRoot\lib;$env:PATH"
+    $env:PATH = "$cpuRoot\lib;$env:PATH"
 
     & $capture `
         --publish-staging $Staging `
@@ -58,6 +59,8 @@ try {
         2>&1 | Tee-Object -LiteralPath $publishLog
     if ($LASTEXITCODE -ne 0) { throw "Partial publication failed: $LASTEXITCODE" }
 
+    $env:LIBTORCH = $cudaRoot
+    $env:PATH = "$cudaRoot\lib;$env:PATH"
     & (Join-Path $PSScriptRoot 'train_offline_corpus.ps1') `
         -Corpus @((Join-Path $CorpusOutput 'good'), (Join-Path $CorpusOutput 'random')) `
         -Checkpoint $Checkpoint `
