@@ -1,79 +1,60 @@
-# Offline pilot: partial publish of a killed capture run
+# Offline pilot: safe partial publication and BC continuation
 
-Date: 2026-09-14. Branch `codex/fix-six-faction-leaders`, base commit `09571a1`.
+Date: 2026-09-14. Branch `codex/fix-six-faction-leaders`.
 
-## Motivation
+## Production input
 
-The operator will kill the running 332,768-game single-checkpoint capture
-(`vponly-single-236464-20260914`) before it finishes and wants to train a BC student from
-whatever corpus data exists at that point. A killed run leaves per-game zstd parts under
-`<out>.staging-<pid>/` but no published corpus, so `offline_bc train-raw-parallel` (which
-requires a valid `manifest.json`) cannot consume it directly.
+- stopped staging: `E:\ti4-corpus\vponly-single-236464-20260914.staging-59548`
+- requested games: 332,768; actually completed before the stop: 158,755
+- complete retained pairs observed before publication: 100,492 (`good` 97,387, `bad` 21,
+  `random` 3,084); incomplete final parts are excluded by the validator
+- generation base commit: `6938019d690bf728f381bab4e203331982ebbf4d`, dirty worktree (the
+  single-checkpoint changes were committed six minutes after the executable build)
+- generation executable SHA-256:
+  `be6895cc64c77e38a23dc9b3a941bcfe191db669453348e4df2201961ce16b70`
+- generation map-pool SHA-256:
+  `106153d4384435b19bd27d7210140b4b46da84c72d7e5ce704ffc52083f2c6df`
 
-## Design
+## Correctness changes
 
-New mode in `crates/ti4-mlp/examples/capture_offline_pilot.rs`:
+`capture_offline_pilot --publish-staging` now requires actual/planned counts, explicit policy
+mode, and generation commit/binary provenance. It verifies an optional generation-time map-pool
+digest rather than silently attributing publication-time state to generation.
 
-```text
-capture_offline_pilot --publish-staging <staging-dir> [--out <corpus-dir>] \
-    --checkpoint <ckpt-dir> --games N [--workers N] [--map-pool path]
-```
+Every complete part pair is decoded on the requested Rayon worker pool. Every decision is
+deserialized as `CapturedDecision`, loss-alignment checked, matched to its game/seat/faction/policy
+metadata, and checked for contiguous per-seat decision indices. Duplicate game indices across
+buckets, conflicting checkpoint digests, seed/round disagreement, impossible counts, bucket/reason
+mismatch, and falsely labelled failed games refuse publication. Truncated kill artifacts are
+reported and excluded.
 
-- **Scan**: every `good|bad|random|failed` part pair (`decisions-<idx>.jsonl.zst` +
-  `games-<idx>.jsonl.zst`) is fully decoded and validated. A truncated or corrupt part
-  (kill mid-write) is *excluded with a report*, never silently dropped; a decodable but
-  inconsistent part (record count mismatch, bucket/reason disagreement, seed-base mismatch)
-  **refuses the publish** — inconsistency means the run's invariants broke, not that one game
-  was unlucky.
-- **Reconstruct**: `GameOutcome` is rebuilt from decoded metadata: VPs from
-  `SeatMetadata.final_progress.victory_points`, retention reason by re-running the pure
-  `decide_retention(table_vp, max_faction_vp, game_seed)` and checking it agrees with the
-  part's bucket folder, seed base as `game_seed - game_index`, rounds/checkpoint manifests/
-  policy mode from seat metadata.
-- **Assemble**: shared `assemble_and_publish` (also used by the normal path) concatenates
-  parts in game order per bucket, runs the byte-exactness sha256 gates, writes
-  `retention.jsonl`, root + scoped bucket manifests, then renames staging to the corpus dir.
-  For partial publish, parts are kept until all gates pass (`keep_parts: true`) so a failed
-  publish is retryable; they are deleted only after success.
-- **Manifest honesty**: `games` = complete games found (not planned), `games_played` =
-  planned total from `--games`, `workers` = `Option<usize>` (new) — the killed run's worker
-  count is recorded when given, `null` otherwise; `policy_mode` and checkpoint manifests are
-  derived from seat metadata so vocabulary provenance matches the training checkpoint.
+Recovery builds shards in a new sibling `*.publishing-<pid>` directory, verifies exact SHA-256s,
+writes root and scoped manifests, then atomically renames that directory. The original stopped
+staging is never modified, so failure remains retryable. `games_played` is the actual completed
+count and `games_planned` records the original request.
 
-Supporting changes: `Manifest.workers: Option<usize>`, `GameOutcome: Debug + Clone`,
-`concatenate_parts(…, keep_parts)`. Normal-run behavior is unchanged (it passes
-`keep_parts = false`; all three training buckets already exist in staging).
+Future single-checkpoint capture advances the temperature offset by one game. With six seats and
+three temperatures, every seat now sees every temperature instead of the former `+6 mod 3 = 0`
+pinning. The stopped corpus necessarily retains that historical seat/temperature confound and the
+pre-leader-fix behavior; its continuation checkpoint is therefore experimental and must be
+evaluated before promotion.
 
-## Verification so far
+## Verification
 
-- **Unit tests 18/18** (`cargo test -p ti4-mlp --example capture_offline_pilot`), including:
-  partial scan/reconstruction from synthetic parts; truncated-part exclusion with report;
-  inconsistent-part refusal (record-count mismatch); full partial publish producing a corpus
-  whose manifests, shard hashes, and retention sidecar all validate.
-- **Clippy**: clean for the new code (one pre-existing `unused self` warning at line ~286).
-- **Normal-path regression with real data**: rebuilt debug binary ran 20 single-checkpoint
-  games end-to-end → `published 13/20 games / 22883 decisions`, assembly + integrity check
-  passed, manifest complete (smoke corpus under gitignored `out/tmp-partial-smoke`).
-- **Newline-counting assumption on real records**: decoded the smoke corpus shards and
-  compared newline counts to summed metadata `decision_count` — exact match in every bucket
-  (`good`: 21031 = 21031, `random`: 1852 = 1852, `bad`: empty). Holds by construction anyway:
-  each record is one compact `serde_json` line (control chars escaped) + `\n`.
+- `cargo test -p ti4-mlp --example capture_offline_pilot -- --test-threads=4`: 20 passed.
+- Tests use structurally valid `CapturedDecision` records and cover loss alignment, full partial
+  scan/reconstruction, truncation exclusion, corrupt-record refusal, cross-bucket duplicate
+  refusal, atomic publication with preserved source parts, exact shard hashes, honest manifest
+  counts/provenance, and complete seat/temperature coverage.
+- Workspace-wide `cargo clippy ... -D warnings` remains blocked by pre-existing warnings in
+  `ti4-mlp/src/bot.rs`, `ti4-mlp/src/ppo.rs`, and `ti4-mlp/src/lib.rs`; none is in this package.
 
-## Not yet done (recorded honestly)
+## Committed launcher
 
-- **Real killed-run e2e smoke**: the debug smoke run finished before it could be killed;
-  truncation mechanics are covered synthetically by unit tests, and the operator's actual
-  kill of the 332k run is the production case. If a publish ever reports exclusions or
-  refuses, inspect its per-part report lines first.
-- **Release rebuild** of `capture_offline_pilot.exe` is blocked while the running capture
-  holds the exe lock (Windows); the launcher script performs it after the kill.
-
-## Launcher
-
-`out/train_single_ckpt.ps1` (gitignored): verifies the capture process is dead, globs
-`E:\ti4-corpus\vponly-single-236464-20260914.staging-*`, rebuilds the release capture binary,
-publishes to `E:\ti4-corpus\vponly-single-236464-20260914-partial` (checkpoint 236464,
-planned games 332768), rebuilds `offline_bc` in `target-cuda` against cu128 libtorch, then
-trains from the published `good + random` buckets with v2's recipe (`--workers 32`,
-`--micro-batch 2048`, defaults epochs 5 / lr 3e-5 / batch 4096) into
-`out/offline-bc-single-<date>-from-236464`. Logs to `out/train-single-ckpt.log`.
+`scripts/publish_and_train_stopped_corpus.ps1` rebuilds the publisher, publishes with 32 validation
+workers and pinned provenance, rebuilds the CUDA trainer, then calls the authenticated
+`scripts/train_offline_corpus.ps1` boundary. Training consumes `good + random` (not `bad`) and
+continues from `D:\Projects\ti4-engine-rs\out\offline-bc-v2-20260913-from-318956` for five full
+epochs at batch 4096, micro-batch 2048, learning rate 3e-5, with 32 parallel parser workers.
+Run-plan JSON, logs, executable hash, checkpoint hash, corpus-manifest hashes, and output checkpoint
+are preserved beside `out\offline-bc-v3-20260914-from-bcv2`.

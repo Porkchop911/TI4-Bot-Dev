@@ -34,7 +34,7 @@
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::{BufWriter, Read, Write};
+use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -230,6 +230,10 @@ struct Manifest {
     created_utc: String,
     engine_git_commit: String,
     engine_worktree_dirty: bool,
+    /// Commit and binary that actually generated the per-game parts. For a normal completed run
+    /// these equal the publishing process; recovery supplies the captured generation provenance.
+    generation_executable_sha256: Option<String>,
+    publisher_git_commit: String,
     /// Games present in the shards (retained ones); `games_played` is everything that was played.
     games: usize,
     rounds: u32,
@@ -238,6 +242,8 @@ struct Manifest {
     workers: Option<usize>,
     retention_rule: String,
     games_played: usize,
+    /// Original requested count when a killed run published fewer games than were planned.
+    games_planned: Option<usize>,
     games_retained: usize,
     retention_breakdown: BTreeMap<String, usize>,
     seed_base: u64,
@@ -655,6 +661,11 @@ fn parse_temperatures(raw: &str) -> Result<Vec<f64>, String> {
         return Err("--temperatures must name at least one temperature".to_owned());
     }
     Ok(out)
+}
+
+fn next_policy_offset(offset: usize, seats: usize, cycle_len: usize, single_mode: bool) -> usize {
+    let stride = if single_mode { 1 } else { seats };
+    (offset + stride) % cycle_len
 }
 
 fn refuse(reason: impl std::fmt::Display) -> ! {
@@ -1432,14 +1443,38 @@ fn run() -> Result<(), String> {
         let Some(checkpoint) = argument("--checkpoint") else {
             return Err("--publish-staging requires --checkpoint".to_owned());
         };
-        let Some(games_arg) = argument("--games") else {
-            return Err("--publish-staging requires --games".to_owned());
+        let Some(games_arg) = argument("--games-played") else {
+            return Err("--publish-staging requires --games-played".to_owned());
         };
-        let games_planned = games_arg
+        let games_played = games_arg
             .parse::<usize>()
-            .map_err(|_| "--games must be a positive integer".to_owned())?;
-        if games_planned == 0 {
-            return Err("--games must be non-zero".to_owned());
+            .map_err(|_| "--games-played must be a positive integer".to_owned())?;
+        if games_played == 0 {
+            return Err("--games-played must be non-zero".to_owned());
+        }
+        let games_planned = argument("--games-planned")
+            .map(|value| value.parse::<usize>())
+            .transpose()
+            .map_err(|_| "--games-planned must be a positive integer".to_owned())?;
+        if games_planned == Some(0) || games_planned.is_some_and(|planned| planned < games_played) {
+            return Err("--games-planned must be non-zero and at least --games-played".to_owned());
+        }
+        let generation_commit = argument("--generation-git-commit")
+            .ok_or_else(|| "--publish-staging requires --generation-git-commit".to_owned())?;
+        let generator_sha = argument("--generator-sha256")
+            .ok_or_else(|| "--publish-staging requires --generator-sha256".to_owned())?;
+        if generator_sha.len() != 64 || !generator_sha.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err("--generator-sha256 must be a 64-digit SHA-256".to_owned());
+        }
+        let generation_dirty = argument("--generation-worktree-dirty")
+            .unwrap_or_else(|| "false".to_owned())
+            .parse::<bool>()
+            .map_err(|_| "--generation-worktree-dirty must be true or false".to_owned())?;
+        let policy_mode = argument("--policy-mode").ok_or_else(|| {
+            "--publish-staging requires --policy-mode (single or mixed)".to_owned()
+        })?;
+        if policy_mode != "single" && policy_mode != "mixed" {
+            return Err("--policy-mode must be single or mixed".to_owned());
         }
         let workers = match argument("--workers") {
             None => None,
@@ -1454,13 +1489,20 @@ fn run() -> Result<(), String> {
         }
         let map_pool =
             argument("--map-pool").unwrap_or_else(|| "out/pools/full_np8_12_train.json".to_owned());
+        let map_pool_sha = argument("--map-pool-sha256");
         return publish_staging_run(
             &staging,
             argument("--out").as_deref(),
             &checkpoint,
+            games_played,
             games_planned,
             workers,
             map_pool,
+            map_pool_sha,
+            &policy_mode,
+            generation_commit,
+            generation_dirty,
+            generator_sha.to_ascii_lowercase(),
         );
     }
 
@@ -1598,7 +1640,15 @@ fn run() -> Result<(), String> {
             .single_temps
             .as_ref()
             .map_or(POLICY_CYCLE.len(), Vec::len);
-        policy_offset = (policy_offset + players.len()) % cycle_len;
+        // Advancing six seats through three temperatures by six never moves at all. Rotate single
+        // mode by one game so every seat sees every temperature; retain the coprime 6/11 stride
+        // used by the heterogeneous policy cycle.
+        policy_offset = next_policy_offset(
+            policy_offset,
+            players.len(),
+            cycle_len,
+            master.shared.single_temps.is_some(),
+        );
     }
 
     // ---- workers -------------------------------------------------------------------------------
@@ -1737,6 +1787,7 @@ fn run() -> Result<(), String> {
     }
     let params = PublishParams {
         games_played: games,
+        games_planned: None,
         seed_base,
         rounds,
         workers: Some(workers),
@@ -1749,9 +1800,13 @@ fn run() -> Result<(), String> {
         } else {
             "mixed"
         },
-        keep_parts: false,
+        engine_git_commit: git("rev-parse HEAD"),
+        engine_worktree_dirty: !git("status --porcelain").is_empty(),
+        generation_executable_sha256: std::env::current_exe()
+            .ok()
+            .and_then(|path| file_sha(&path).ok()),
     };
-    assemble_and_publish(&outcomes, &staging, &output, &params)?;
+    assemble_and_publish(&outcomes, &staging, &staging, &output, &params)?;
     Ok(())
 }
 
@@ -1759,8 +1814,9 @@ fn run() -> Result<(), String> {
 /// completed run fills these from its in-memory state; publishing a killed run's staging derives
 /// or takes them as arguments (`publish_staging_run`).
 struct PublishParams {
-    /// Games the run was asked to play; only retained ones land in the shards.
+    /// Games that actually completed, including games discarded by the retention filter.
     games_played: usize,
+    games_planned: Option<usize>,
     seed_base: u64,
     rounds: u32,
     /// Unknown for a killed run's staging unless passed explicitly.
@@ -1770,10 +1826,9 @@ struct PublishParams {
     slots_sha: String,
     checkpoint_manifests: BTreeMap<String, String>,
     policy_mode: &'static str,
-    /// Keep per-game part files until every shard passes its byte-exactness gate. A killed run's
-    /// staging is the only copy of those games, so a failed publish must stay retryable; a normal
-    /// run discards its staging on failure anyway and deletes parts as it goes.
-    keep_parts: bool,
+    engine_git_commit: String,
+    engine_worktree_dirty: bool,
+    generation_executable_sha256: Option<String>,
 }
 
 /// Assemble per-bucket shards from staged per-game frames, gate them byte-exactly, write the
@@ -1785,11 +1840,13 @@ struct PublishParams {
 )]
 fn assemble_and_publish(
     outcomes: &[GameOutcome],
-    staging: &Path,
+    parts_root: &Path,
+    publish_staging: &Path,
     output: &Path,
     params: &PublishParams,
 ) -> Result<(), String> {
     let finish_started = std::time::Instant::now();
+    let preserve_source_parts = parts_root != publish_staging;
 
     // The manifest describes the corpus, so policy families come from retained games only.
     let mut policy_families = BTreeSet::new();
@@ -1805,7 +1862,7 @@ fn assemble_and_publish(
     let games_retained = outcomes.iter().filter(|outcome| outcome.retained).count();
 
     // The three training buckets always exist; `failed` only when a game actually failed.
-    let published_buckets: &[&str] = if staging.join(BUCKET_FAILED).exists() {
+    let published_buckets: &[&str] = if parts_root.join(BUCKET_FAILED).exists() {
         &[BUCKET_GOOD, BUCKET_BAD, BUCKET_RANDOM, BUCKET_FAILED]
     } else {
         &[BUCKET_GOOD, BUCKET_BAD, BUCKET_RANDOM]
@@ -1815,8 +1872,12 @@ fn assemble_and_publish(
     for bucket in published_buckets.iter().copied() {
         // A normal run creates the training buckets at staging setup; a killed run's staging has
         // them too, but create_dir_all keeps this total over any directory shape.
-        std::fs::create_dir_all(staging.join(bucket))
-            .map_err(|error| format!("creating {}: {error}", staging.join(bucket).display()))?;
+        std::fs::create_dir_all(publish_staging.join(bucket)).map_err(|error| {
+            format!(
+                "creating {}: {error}",
+                publish_staging.join(bucket).display()
+            )
+        })?;
         let in_bucket = |outcome: &GameOutcome| {
             outcome.retained
                 && outcome
@@ -1827,7 +1888,7 @@ fn assemble_and_publish(
             .iter()
             .filter(|outcome| in_bucket(outcome))
             .map(|outcome| {
-                staging
+                parts_root
                     .join(bucket)
                     .join(decisions_part(outcome.game_index))
             })
@@ -1835,14 +1896,15 @@ fn assemble_and_publish(
         let game_parts: Vec<PathBuf> = outcomes
             .iter()
             .filter(|outcome| in_bucket(outcome))
-            .map(|outcome| staging.join(bucket).join(games_part(outcome.game_index)))
+            .map(|outcome| parts_root.join(bucket).join(games_part(outcome.game_index)))
             .collect();
 
-        let decisions_path = staging.join(bucket).join(DECISIONS_FILE);
-        let games_path = staging.join(bucket).join(GAMES_FILE);
+        let decisions_path = publish_staging.join(bucket).join(DECISIONS_FILE);
+        let games_path = publish_staging.join(bucket).join(GAMES_FILE);
         let expected_decisions_sha =
-            concatenate_parts(&decision_parts, &decisions_path, params.keep_parts)?;
-        let expected_games_sha = concatenate_parts(&game_parts, &games_path, params.keep_parts)?;
+            concatenate_parts(&decision_parts, &decisions_path, preserve_source_parts)?;
+        let expected_games_sha =
+            concatenate_parts(&game_parts, &games_path, preserve_source_parts)?;
 
         // Byte-exactness: each published shard must hold exactly the frames whose records passed
         // the loss-alignment gate before writing. A mismatch means corruption between write and
@@ -1875,26 +1937,6 @@ fn assemble_and_publish(
         );
     }
 
-    // A killed run's parts are its only copy: delete them only after every shard passed.
-    if params.keep_parts {
-        for bucket in published_buckets.iter().copied() {
-            let dir = staging.join(bucket);
-            for entry in std::fs::read_dir(&dir)
-                .map_err(|error| format!("reading {}: {error}", dir.display()))?
-            {
-                let path = entry.map_err(|e| e.to_string())?.path();
-                if is_part_name(
-                    path.file_name()
-                        .and_then(|name| name.to_str())
-                        .unwrap_or_default(),
-                ) {
-                    std::fs::remove_file(&path)
-                        .map_err(|error| format!("removing {}: {error}", path.display()))?;
-                }
-            }
-        }
-    }
-
     // Retention sidecar: one line per known outcome (a completed run knows every played game, a
     // killed run's staging holds retained games only) and calibration data for future threshold
     // tuning. Written in game order, so deterministic.
@@ -1917,7 +1959,7 @@ fn assemble_and_publish(
         .collect();
     let mut retention_log = retention_lines.join("\n");
     retention_log.push('\n');
-    std::fs::write(staging.join("retention.jsonl"), retention_log)
+    std::fs::write(publish_staging.join("retention.jsonl"), retention_log)
         .map_err(|error| format!("writing retention log: {error}"))?;
 
     println!(
@@ -1928,13 +1970,16 @@ fn assemble_and_publish(
         schema: SCHEMA.to_owned(),
         observation_schema: OBSERVATION_SCHEMA.to_owned(),
         created_utc: chrono::Utc::now().to_rfc3339(),
-        engine_git_commit: git("rev-parse HEAD"),
-        engine_worktree_dirty: !git("status --porcelain").is_empty(),
+        engine_git_commit: params.engine_git_commit.clone(),
+        engine_worktree_dirty: params.engine_worktree_dirty,
+        generation_executable_sha256: params.generation_executable_sha256.clone(),
+        publisher_git_commit: git("rev-parse HEAD"),
         games: games_retained,
         rounds: params.rounds,
         workers: params.workers,
         retention_rule: RETENTION_RULE.to_owned(),
         games_played: params.games_played,
+        games_planned: params.games_planned,
         games_retained,
         retention_breakdown: outcomes.iter().fold(BTreeMap::new(), |mut map, outcome| {
             if let Some(reason) = outcome.retention_reason {
@@ -1965,7 +2010,7 @@ fn assemble_and_publish(
     };
     let manifest_bytes = serde_json::to_vec_pretty(&manifest)
         .map_err(|error| format!("serializing manifest: {error}"))?;
-    std::fs::write(staging.join(MANIFEST_FILE), manifest_bytes)
+    std::fs::write(publish_staging.join(MANIFEST_FILE), manifest_bytes)
         .map_err(|error| format!("writing manifest: {error}"))?;
 
     // Each training bucket folder is a self-contained corpus: its own shards plus this scoped
@@ -2016,12 +2061,15 @@ fn assemble_and_publish(
         };
         let scoped_bytes = serde_json::to_vec_pretty(&scoped)
             .map_err(|error| format!("serializing {bucket} manifest: {error}"))?;
-        std::fs::write(staging.join(bucket).join(MANIFEST_FILE), scoped_bytes)
-            .map_err(|error| format!("writing {bucket} manifest: {error}"))?;
+        std::fs::write(
+            publish_staging.join(bucket).join(MANIFEST_FILE),
+            scoped_bytes,
+        )
+        .map_err(|error| format!("writing {bucket} manifest: {error}"))?;
     }
 
-    std::fs::rename(staging, output)
-        .map_err(|error| format!("publishing {}: {error}", staging.display()))?;
+    std::fs::rename(publish_staging, output)
+        .map_err(|error| format!("publishing {}: {error}", publish_staging.display()))?;
     println!(
         "published {games_retained}/{} games (retention {rule}) / {decision_count} decisions -> {path}",
         params.games_played,
@@ -2104,18 +2152,65 @@ fn validate_part_pair(
         )));
     }
     let decisions_bytes = decode_part(decisions_path).map_err(PartProblem::Incomplete)?;
-    // Records are single-line JSON, so newlines count records exactly.
-    #[allow(
-        clippy::naive_bytecount,
-        reason = "no bytecount dependency; one pass over ~1 MB per part"
-    )]
-    let decision_lines = decisions_bytes
+    let seats: BTreeMap<&str, &SeatMetadata> = metadata
+        .seats
         .iter()
-        .filter(|byte| **byte == b'\n')
-        .count();
-    if decision_lines != metadata.decision_count {
+        .map(|seat| (seat.seat.as_str(), seat))
+        .collect();
+    if seats.len() != metadata.seats.len() {
+        return Err(PartProblem::Corrupt(
+            "game metadata contains duplicate seat ids".to_owned(),
+        ));
+    }
+    let mut next_index: BTreeMap<String, usize> = BTreeMap::new();
+    let mut decision_count = 0usize;
+    for (line_index, line) in BufReader::new(decisions_bytes.as_slice())
+        .lines()
+        .enumerate()
+    {
+        let line = line.map_err(|error| {
+            PartProblem::Corrupt(format!("reading decision record {line_index}: {error}"))
+        })?;
+        let decision: CapturedDecision = serde_json::from_str(&line).map_err(|error| {
+            PartProblem::Corrupt(format!("parsing decision record {line_index}: {error}"))
+        })?;
+        validate_decision(&decision).map_err(|error| {
+            PartProblem::Corrupt(format!("decision record {line_index}: {error}"))
+        })?;
+        if decision.game_id != metadata.game_id {
+            return Err(PartProblem::Corrupt(format!(
+                "decision record {line_index} claims game {} instead of {}",
+                decision.game_id, metadata.game_id
+            )));
+        }
+        let seat = seats.get(decision.seat.as_str()).ok_or_else(|| {
+            PartProblem::Corrupt(format!(
+                "decision record {line_index} names unknown seat {}",
+                decision.seat
+            ))
+        })?;
+        if decision.faction != seat.faction
+            || decision.policy_id != seat.policy.policy_id
+            || decision.policy_rng_seed != seat.policy.rng_seed
+        {
+            return Err(PartProblem::Corrupt(format!(
+                "decision record {line_index} disagrees with metadata for seat {}",
+                decision.seat
+            )));
+        }
+        let expected = next_index.entry(decision.seat.clone()).or_default();
+        if decision.seat_decision_index != *expected {
+            return Err(PartProblem::Corrupt(format!(
+                "decision record {line_index} has seat index {}, expected {}",
+                decision.seat_decision_index, *expected
+            )));
+        }
+        *expected += 1;
+        decision_count += 1;
+    }
+    if decision_count != metadata.decision_count {
         return Err(PartProblem::Corrupt(format!(
-            "decisions part holds {decision_lines} records, metadata claims {}",
+            "decisions part holds {decision_count} records, metadata claims {}",
             metadata.decision_count
         )));
     }
@@ -2141,10 +2236,18 @@ fn reconstruct(index: usize, bucket: &str, metadata: GameMetadata) -> Result<Sta
         i32::try_from(table_vp).map_err(|_| format!("game {index}: table VP out of range"))?;
     let max_faction_vp = i32::try_from(max_faction_vp)
         .map_err(|_| format!("game {index}: faction VP out of range"))?;
-    let reason =
+    let reason = if bucket == BUCKET_FAILED {
+        if metadata.completed || metadata.error.is_none() {
+            return Err(format!(
+                "game {index}: failed bucket metadata does not describe a failed game"
+            ));
+        }
+        RetentionReason::FailedGame
+    } else {
         decide_retention(table_vp, max_faction_vp, metadata.game_seed).ok_or_else(|| {
             format!("game {index}: VPs no longer satisfy retention (inconsistent staging)")
-        })?;
+        })?
+    };
     if bucket_for(reason) != bucket {
         return Err(format!(
             "game {index} sits in {} but its VPs select {}",
@@ -2179,6 +2282,7 @@ fn reconstruct(index: usize, bucket: &str, metadata: GameMetadata) -> Result<Sta
 fn scan_staging(staging: &Path) -> Result<Vec<StagedGame>, String> {
     const BUCKETS: [&str; 4] = [BUCKET_GOOD, BUCKET_BAD, BUCKET_RANDOM, BUCKET_FAILED];
     let mut pairs: Vec<(usize, usize, PathBuf, PathBuf)> = Vec::new();
+    let mut seen_indexes: BTreeMap<usize, &'static str> = BTreeMap::new();
     for (ord, bucket) in BUCKETS.into_iter().enumerate() {
         let dir = staging.join(bucket);
         if !dir.is_dir() {
@@ -2203,6 +2307,11 @@ fn scan_staging(staging: &Path) -> Result<Vec<StagedGame>, String> {
             }
         }
         for (index, (decisions, games)) in by_index {
+            if let Some(previous) = seen_indexes.insert(index, bucket) {
+                return Err(format!(
+                    "game {index} appears in both {previous} and {bucket}"
+                ));
+            }
             match (decisions, games) {
                 (Some(decisions), Some(games)) => pairs.push((ord, index, decisions, games)),
                 _ => println!("  excluding game {index} from {bucket}: incomplete part pair"),
@@ -2250,9 +2359,15 @@ fn publish_staging_run(
     staging_arg: &str,
     out_arg: Option<&str>,
     checkpoint_arg: &str,
-    games_planned: usize,
+    games_played: usize,
+    games_planned: Option<usize>,
     workers: Option<usize>,
     map_pool: String,
+    expected_pool_sha: Option<String>,
+    policy_mode: &str,
+    generation_commit: String,
+    generation_dirty: bool,
+    generator_sha: String,
 ) -> Result<(), String> {
     let staging = PathBuf::from(staging_arg);
     if !staging.is_dir() {
@@ -2289,15 +2404,41 @@ fn publish_staging_run(
     )
     .map_err(|error| format!("map pool {map_pool}: {error}"))?;
     let pool_sha = sha256(&pool_bytes);
+    if let Some(expected) = expected_pool_sha
+        && !pool_sha.eq_ignore_ascii_case(&expected)
+    {
+        return Err(format!(
+            "map pool digest {pool_sha} does not match generation digest {expected}"
+        ));
+    }
 
     println!(
         "publishing killed staging {} -> {}",
         staging.display(),
         output.display()
     );
-    let staged = scan_staging(&staging)?;
+    let staged = if let Some(worker_count) = workers {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(worker_count)
+            .thread_name(|index| format!("partial-publish-{index}"))
+            .build()
+            .map_err(|error| format!("building {worker_count}-worker publish pool: {error}"))?
+            .install(|| scan_staging(&staging))?
+    } else {
+        scan_staging(&staging)?
+    };
     if staged.is_empty() {
         return Err(format!("no complete games found in {}", staging.display()));
+    }
+    let max_game_index = staged
+        .iter()
+        .map(|game| game.outcome.game_index)
+        .max()
+        .expect("staged is non-empty");
+    if max_game_index >= games_played {
+        return Err(format!(
+            "recovered game index {max_game_index} is outside --games-played {games_played}"
+        ));
     }
 
     // Every game's seed minus its index is the run's seed base; all must agree.
@@ -2334,8 +2475,8 @@ fn publish_staging_run(
     }
     let rounds = rounds.expect("staged is non-empty");
 
-    // Checkpoint provenance straight from the seats' metadata: one distinct checkpoint means a
-    // single-checkpoint run, several mean the mixed cycle.
+    // Checkpoint provenance straight from the seats' metadata. A path may never silently acquire
+    // two digests across games.
     let mut checkpoint_manifests: BTreeMap<String, String> = BTreeMap::new();
     for game in &staged {
         for seat in &game.metadata.seats {
@@ -2343,18 +2484,53 @@ fn publish_staging_run(
                 &seat.policy.checkpoint,
                 &seat.policy.checkpoint_manifest_sha256,
             ) {
-                checkpoint_manifests.insert(path.clone(), sha.clone());
+                if let Some(previous) = checkpoint_manifests.insert(path.clone(), sha.clone())
+                    && previous != *sha
+                {
+                    return Err(format!(
+                        "checkpoint {path} has conflicting manifest digests"
+                    ));
+                }
             }
         }
     }
-    let policy_mode: &'static str = if checkpoint_manifests.len() <= 1 {
-        "single"
-    } else {
-        "mixed"
+    let policy_mode: &'static str = match policy_mode {
+        "single" => {
+            if checkpoint_manifests.len() != 1
+                || staged
+                    .iter()
+                    .flat_map(|game| &game.metadata.seats)
+                    .any(|seat| {
+                        seat.policy.family != "mlp"
+                            || !seat.policy.policy_id.starts_with("single_mlp_t")
+                    })
+            {
+                return Err("staged policy metadata does not match --policy-mode single".to_owned());
+            }
+            "single"
+        }
+        "mixed" => "mixed",
+        _ => unreachable!("validated by caller"),
     };
 
+    let publish_name = output
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| format!("{} has no usable final component", output.display()))?;
+    let publish_staging =
+        output.with_file_name(format!("{publish_name}.publishing-{}", std::process::id()));
+    if publish_staging.exists() {
+        return Err(format!(
+            "{} already exists from an earlier attempt; preserve or remove it before retrying",
+            publish_staging.display()
+        ));
+    }
+    std::fs::create_dir(&publish_staging)
+        .map_err(|error| format!("creating {}: {error}", publish_staging.display()))?;
+
     let params = PublishParams {
-        games_played: games_planned,
+        games_played,
+        games_planned,
         seed_base,
         rounds,
         workers,
@@ -2363,10 +2539,12 @@ fn publish_staging_run(
         slots_sha,
         checkpoint_manifests,
         policy_mode,
-        keep_parts: true,
+        engine_git_commit: generation_commit,
+        engine_worktree_dirty: generation_dirty,
+        generation_executable_sha256: Some(generator_sha),
     };
     let outcomes: Vec<GameOutcome> = staged.iter().map(|game| game.outcome.clone()).collect();
-    assemble_and_publish(&outcomes, &staging, &output, &params)
+    assemble_and_publish(&outcomes, &staging, &publish_staging, &output, &params)
 }
 
 #[cfg(test)]
@@ -2409,6 +2587,19 @@ mod tests {
         assert!(parse_temperatures("nan").is_err());
         assert!(parse_temperatures("inf").is_err());
         assert!(parse_temperatures("x").is_err());
+    }
+
+    #[test]
+    fn single_mode_rotates_every_seat_across_every_temperature() {
+        let mut offset = 0;
+        let mut seen = vec![BTreeSet::new(); 6];
+        for _ in 0..3 {
+            for (seat, temperatures) in seen.iter_mut().enumerate() {
+                temperatures.insert((offset + seat) % 3);
+            }
+            offset = next_policy_offset(offset, 6, 3, true);
+        }
+        assert!(seen.iter().all(|temperatures| temperatures.len() == 3));
     }
 
     #[test]
@@ -2536,9 +2727,43 @@ mod tests {
         std::fs::create_dir_all(&dir).expect("bucket dir");
         let mut decisions_writer =
             JsonlZstdWriter::create(&dir.join(decisions_part(index))).expect("decisions part");
-        for _ in 0..decisions {
+        for decision_index in 0..decisions {
             decisions_writer
-                .write(&serde_json::json!({"synthetic": true}))
+                .write(&CapturedDecision {
+                    game_id: format!("game-{index}"),
+                    seat: "seat0".to_owned(),
+                    faction: "sol".to_owned(),
+                    policy_id: "single_mlp_t100".to_owned(),
+                    policy_rng_seed: 7,
+                    seat_decision_index: decision_index,
+                    head: "test".to_owned(),
+                    prompt: "test".to_owned(),
+                    context: None,
+                    observation: SeatAuthorizedObservation {
+                        round: 1,
+                        phase: "action".to_owned(),
+                        active_player: Some("seat0".to_owned()),
+                        active_system: None,
+                        pending_step: None,
+                        speaker: "seat0".to_owned(),
+                        initiative_order: vec!["seat0".to_owned()],
+                        revealed_public_objectives: Vec::new(),
+                        revealed_public_objective_progress: Vec::new(),
+                        public_seats: Vec::new(),
+                        public_board: serde_json::Value::Null,
+                        laws: BTreeMap::new(),
+                        faceup_promissory_notes: BTreeMap::new(),
+                        held_action_cards: Vec::new(),
+                        held_secret_objectives: Vec::new(),
+                        held_secret_progress: Vec::new(),
+                        held_promissory_notes: Vec::new(),
+                    },
+                    progress: Progress::default(),
+                    critic_features: Vec::new(),
+                    legal_actions: legal(&["pass"]),
+                    chosen_action_index: 0,
+                    chosen_action_id: "pass".to_owned(),
+                })
                 .expect("decision record");
         }
         decisions_writer.finish().expect("decisions finish");
@@ -2569,6 +2794,7 @@ mod tests {
     fn partial_params() -> PublishParams {
         PublishParams {
             games_played: 4,
+            games_planned: Some(10),
             seed_base: 1_000,
             rounds: 4,
             workers: Some(2),
@@ -2577,7 +2803,9 @@ mod tests {
             slots_sha: "slotsha".to_owned(),
             checkpoint_manifests: BTreeMap::from([("ckpt-a".to_owned(), "ab".repeat(32))]),
             policy_mode: "single",
-            keep_parts: true,
+            engine_git_commit: "generation-commit".to_owned(),
+            engine_worktree_dirty: true,
+            generation_executable_sha256: Some("cd".repeat(32)),
         }
     }
 
@@ -2642,17 +2870,36 @@ mod tests {
     }
 
     #[test]
+    fn the_partial_scan_refuses_duplicate_game_indexes_across_buckets() {
+        let staging = temp_dir("duplicate-index");
+        write_synthetic_game(&staging, BUCKET_GOOD, 0, 1_000, &[7, 3, 2, 1, 1, 0], 2);
+        write_synthetic_game(&staging, BUCKET_BAD, 0, 1_000, &[3, 2, 2, 1, 1, 0], 2);
+        let error = scan_staging(&staging).err().expect("duplicate must fail");
+        assert!(error.contains("appears in both"), "{error}");
+        let _ = std::fs::remove_dir_all(&staging);
+    }
+
+    #[test]
     fn the_partial_publish_writes_a_trainable_corpus() {
         let staging = temp_dir("publish");
         real_staging_shape(&staging);
         write_synthetic_game(&staging, BUCKET_GOOD, 0, 1_000, &[7, 3, 2, 1, 1, 0], 4);
         write_synthetic_game(&staging, BUCKET_BAD, 1, 1_000, &[3, 2, 2, 1, 1, 0], 3);
         let output = staging.with_file_name("published-corpus");
+        let publish_staging = staging.with_file_name("published-corpus.building");
+        std::fs::create_dir(&publish_staging).expect("publication staging");
         let staged = scan_staging(&staging).expect("scan");
         let outcomes: Vec<GameOutcome> = staged.iter().map(|game| game.outcome.clone()).collect();
-        assemble_and_publish(&outcomes, &staging, &output, &partial_params()).expect("publish");
+        assemble_and_publish(
+            &outcomes,
+            &staging,
+            &publish_staging,
+            &output,
+            &partial_params(),
+        )
+        .expect("publish");
 
-        assert!(!staging.exists(), "staging renamed to output");
+        assert!(staging.exists(), "source staging remains retryable");
         let manifest: Manifest =
             serde_json::from_slice(&std::fs::read(output.join(MANIFEST_FILE)).expect("manifest"))
                 .expect("parse");
@@ -2660,6 +2907,10 @@ mod tests {
         assert_eq!(manifest.records["games"], 2);
         assert_eq!(manifest.records["decisions"], 7);
         assert_eq!(manifest.workers, Some(2));
+        assert_eq!(manifest.games_played, 4);
+        assert_eq!(manifest.games_planned, Some(10));
+        assert_eq!(manifest.engine_git_commit, "generation-commit");
+        assert_eq!(manifest.publisher_git_commit, git("rev-parse HEAD"));
         assert_eq!(manifest.policy_mode, "single");
         // Three buckets x two shards; the empty random bucket still publishes a valid frame.
         assert_eq!(manifest.shards.len(), 6);
@@ -2680,7 +2931,7 @@ mod tests {
         assert!(output.join(BUCKET_GOOD).join(MANIFEST_FILE).exists());
         assert!(output.join(BUCKET_BAD).join(MANIFEST_FILE).exists());
         assert!(output.join(BUCKET_RANDOM).join(MANIFEST_FILE).exists());
-        // Parts are gone after the gates passed.
+        // Published output has no parts; the killed run's source frames remain untouched.
         for bucket in [BUCKET_GOOD, BUCKET_BAD] {
             let leftovers: Vec<String> = std::fs::read_dir(output.join(bucket))
                 .expect("bucket")
@@ -2697,6 +2948,8 @@ mod tests {
                 "{leftovers:?}"
             );
         }
+        assert!(staging.join(BUCKET_GOOD).join(decisions_part(0)).exists());
+        let _ = std::fs::remove_dir_all(&staging);
         let _ = std::fs::remove_dir_all(&output);
     }
 }

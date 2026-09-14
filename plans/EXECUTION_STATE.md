@@ -8574,3 +8574,21 @@ BREAK event (`forrtl: error (200)` in `out/run-single-ckpt.log`). At kill time *
 `out/train_single_ckpt.ps1` (rebuilds release capture, publishes staging to
 `...-partial`, rebuilds CUDA offline_bc, trains good+random). Part counts/sizes not yet
 tallied; a few parts may be truncated by the kill and will be excluded with a report.
+
+### Recovery review correction and authorized continuation
+
+The earlier partial-publish description above is superseded by the hardened recovery boundary in
+the next commit. It fully deserializes every decision, checks game/seat/faction/policy identity and
+loss alignment, rejects duplicate indices and checkpoint-digest conflicts, validates the pinned
+map-pool digest, and records actual (`158,755`) and planned (`332,768`) game counts separately.
+Generation commit/dirty state/binary SHA are distinct from the publisher commit. Recovery uses the
+requested 32-thread Rayon pool and builds in a sibling directory before atomic rename; the original
+staging remains untouched and retryable. Future single-checkpoint runs rotate temperatures across
+seats. Focused verification is 20/20 tests; strict Clippy is blocked only by existing unrelated
+library warnings listed in `plans/evidence/OFFLINE_PILOT_PARTIAL_PUBLISH.md`.
+
+The authoritative committed launcher is now `scripts/publish_and_train_stopped_corpus.ps1`. After
+publication it trains the `good + random` buckets for five epochs on CUDA with 32 parser workers,
+initialized from `out/offline-bc-v2-20260913-from-318956`. The output is experimental because this
+corpus predates the leader fix and retains the historical seat/temperature confound; it requires
+evaluation before promotion.
