@@ -1,6 +1,6 @@
 # Handover: stopped-corpus publication and offline BC-v3
 
-Updated: 2026-09-14 14:14 Europe/Vienna.
+Updated: 2026-09-14 14:50 Europe/Vienna.
 
 ## Live state
 
@@ -10,12 +10,13 @@ The committed launcher is running:
 scripts/publish_and_train_stopped_corpus.ps1
 publisher PID: 70548
 publisher executable: target-publisher/release/examples/capture_offline_pilot.exe
-phase: 32-worker full structural validation of retained per-game parts
-latest snapshot: 96.15 / 98.92 GiB compressed bytes read, 80,270 CPU-seconds, 33 threads
+phase: validation completed cleanly; single-threaded compressed-shard assembly in progress
+publication staging: E:\ti4-corpus\vponly-single-236464-20260914-partial.publishing-70548
+latest snapshot: 99.55 GiB process reads after the 98.92 GiB source scan; 1 assembly thread
 ```
 
 The final corpus and training output do not exist yet. This is correct: publication is atomic and
-the final corpus name appears only after validation, assembly, hash gates, and manifest writing.
+the final corpus name appears only after assembly, hash gates, and manifest writing.
 The parent launcher will then start CUDA training automatically.
 
 Monitor without interrupting:
@@ -87,7 +88,7 @@ prefix.
 
 ## Required follow-through
 
-1. Let PID 70548 finish. Do not restart while it or its parent launcher is alive.
+1. Let PID 70548 finish shard assembly. Do not restart while it or its parent launcher is alive.
 2. Confirm the final corpus root and `good/manifest.json`, `random/manifest.json` exist. Check root
    manifest values: `games_played=158755`, `games_planned=332768`, `policy_mode=single`, generator
    SHA and generation commit above, and shard hashes present.
