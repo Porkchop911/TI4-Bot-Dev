@@ -17,6 +17,25 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 
 ## Current position
 
+### OFFLINE-PILOT-SINGLE-CHECKPOINT — single-checkpoint multi-temperature capture (2026-09-14)
+
+- Operator request: a generation run using **only**
+  `out/vponly-main-20260911/checkpoints/checkpoint-236464` at various temperatures.
+- Implemented in `crates/ti4-mlp/examples/capture_offline_pilot.rs`: `--single <dir>` +
+  `--temperatures t1,t2,...` (default `0.25,1.0,2.5`, matching the existing greedy/standard/hot
+  trio). The checkpoint loads into the current slot; unused older/evolutionary slots get inert
+  deep copies so worker machinery stays uniform. Seat assignment cycles over temperatures with
+  the same offset arithmetic as the mixed mode. Manifest gains additive `policy_mode` field;
+  single-mode `checkpoint_manifests` has exactly one entry.
+- Verified: **14/14 example tests**; determinism proven (12 games, seed base 9500001,
+  workers 32 vs 1 → every data shard byte-identical); per-seat audit of 60 seats shows only
+  `single_mlp_t025/t100/t250` at the requested checkpoint; clippy clean for the example.
+- Evidence: `plans/evidence/OFFLINE_PILOT_SINGLE_CHECKPOINT.md`. Launch script ready:
+  `out/launch_single_ckpt_run.ps1` (game count + fresh seed base marked at top).
+- **Awaiting operator**: game count and go/no-go for the actual run on E:. Note the killed
+  200k staging dirs (`pilot-retained-200k-20260913.staging-*`) are still on E: — unrelated to
+  this run (different output path) but worth deleting at some point.
+
 ### LEADER-FIX-001 — deployment, unlock, and component actions (2026-09-13)
 
 - Plan: `plans/LEADER-FIX-2026-09-13.md` package 1. Branch `codex/fix-six-faction-leaders` from
@@ -8507,6 +8526,16 @@ migration milestone or approve a policy/observation-surface change.
   within plausible run-to-run variance but worth a repeat before drawing conclusions. Per-faction:
   xxcha weakest (win 6.4%), jolnar's cleared rate (48.3%) is an outlier vs ~81–93% elsewhere —
   more horizon cutoffs when the candidate plays Jol-Nar.
+
+## Single-checkpoint capture mode added (2026-09-14)
+
+`capture_offline_pilot` gained `--single <checkpoint-dir>` + `--temperatures t1,t2,...`
+(default 0.25,1.0,2.5) so a run can use one checkpoint at several temperatures for every seat
+instead of the mixed 11-kind cycle. Requested target:
+`out/vponly-main-20260911/checkpoints/checkpoint-236464`. Determinism verified byte-identical
+across worker counts; per-seat audit confirms only the requested checkpoint is used.
+Evidence: `plans/evidence/OFFLINE_PILOT_SINGLE_CHECKPOINT.md`; launch script
+`out/launch_single_ckpt_run.ps1` ready, run pending operator's game count / go-ahead.
 
 ## Reviewer app (ti4-review) unblocked by LEADER-FIX-001 follow-up (2026-09-14)
 

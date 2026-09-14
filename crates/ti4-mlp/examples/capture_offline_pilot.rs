@@ -238,6 +238,8 @@ struct Manifest {
     behavior_probabilities_recorded: bool,
     forced_decisions_retained: bool,
     storage_encoding: String,
+    /// "mixed" (default 11-kind cycle) or "single" (`--single` checkpoint at its temperatures).
+    policy_mode: String,
     checkpoint_manifests: BTreeMap<String, String>,
     records: BTreeMap<String, usize>,
     /// Shard sha256 keyed by path relative to the corpus root (e.g. `good/decisions.jsonl.zst`).
@@ -575,6 +577,9 @@ struct SharedAssets {
     older_manifest_sha: String,
     evolutionary_path: String,
     evolutionary_sha: String,
+    /// Single-checkpoint mode (`--single`): every seat uses the current checkpoint at one of
+    /// these temperatures instead of the mixed 11-kind cycle. `None` in default mixed mode.
+    single_temps: Option<Vec<f64>>,
 }
 
 /// What one worker chunk owns: deep copies of both actors (made on the main thread and moved in)
@@ -618,6 +623,27 @@ fn argument(name: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// Parse the comma-separated temperature list for `--single`. Every value must be finite and > 0:
+/// the MLP decider refuses anything else, and an empty list would make seat assignment divide by
+/// zero.
+fn parse_temperatures(raw: &str) -> Result<Vec<f64>, String> {
+    let mut out = Vec::new();
+    for part in raw.split(',') {
+        let value: f64 = part
+            .trim()
+            .parse()
+            .map_err(|_| format!("bad temperature {part:?}"))?;
+        if !value.is_finite() || value <= 0.0 {
+            return Err(format!("temperatures must be finite and > 0, got {value}"));
+        }
+        out.push(value);
+    }
+    if out.is_empty() {
+        return Err("--temperatures must name at least one temperature".to_owned());
+    }
+    Ok(out)
 }
 
 fn refuse(reason: impl std::fmt::Display) -> ! {
@@ -705,8 +731,68 @@ fn load_assets(
             older_manifest_sha,
             evolutionary_path: evolutionary,
             evolutionary_sha,
+            single_temps: None,
         },
     })
+}
+
+/// Single-checkpoint loading for `--single`: one bundle, no cross-vocabulary check (there is
+/// nothing to compare against). The checkpoint lands in the "current" slot; the unused older and
+/// evolutionary slots are filled with inert copies so the per-chunk deep-copy machinery stays
+/// uniform between modes.
+fn load_single(path: &str, temps: Vec<f64>) -> Result<MasterAssets, String> {
+    let manifest_sha = file_sha(&Path::new(path).join("manifest.json"))?;
+    let loaded = ti4_mlp::bundle::read(Path::new(path))
+        .map_err(|error| format!("reading single bundle: {error}"))?;
+    // The copy is made before the move below: `inference_copy` borrows, and the master actor
+    // itself becomes the current slot.
+    let older = loaded.actor.inference_copy();
+    Ok(MasterAssets {
+        current_actor: loaded.actor,
+        current_vocabulary: loaded.vocabulary.clone(),
+        older_actor: older,
+        older_vocabulary: loaded.vocabulary,
+        shared: SharedAssets {
+            evolutionary: BTreeMap::new(),
+            current_path: path.to_owned(),
+            current_manifest_sha: manifest_sha,
+            older_path: String::new(),
+            older_manifest_sha: String::new(),
+            evolutionary_path: String::new(),
+            evolutionary_sha: String::new(),
+            single_temps: Some(temps),
+        },
+    })
+}
+
+/// One seat in single-checkpoint mode: the `--single` checkpoint at one of its temperatures.
+fn policy_single(
+    local: &LocalAssets,
+    shared: &SharedAssets,
+    faction: &str,
+    baseline: Baseline,
+    seed: u64,
+    temperature: f64,
+) -> Result<(Box<dyn Decider>, PolicyMetadata), String> {
+    let row = ti4_mlp::FactionRow::of(faction).map_err(|error| error.to_string())?;
+    let (decider, _status) =
+        ti4_mlp::bot::MlpBot::sharing(&local.current_actor, local.current_vocabulary.clone(), row, seed)
+            .at_temperature(temperature)
+            .from_setup(baseline)
+            .seat();
+    Ok((
+        decider,
+        PolicyMetadata {
+            policy_id: format!("single_mlp_t{:03}", (temperature * 100.0).round() as u32),
+            family: "mlp".to_owned(),
+            checkpoint: Some(shared.current_path.clone()),
+            checkpoint_manifest_sha256: Some(shared.current_manifest_sha.clone()),
+            temperature: Some(temperature),
+            bias: None,
+            source_profile: None,
+            rng_seed: seed,
+        },
+    ))
 }
 
 fn policy(
@@ -1109,8 +1195,6 @@ fn play_game(
             let mut deciders = BTreeMap::new();
             for (seat_index, player) in ctx.players.iter().enumerate() {
                 let faction = plan.seated[player].as_str();
-                let policy_kind =
-                    POLICY_CYCLE[(plan.policy_offset + seat_index) % POLICY_CYCLE.len()];
                 let policy_seed = plan
                     .game_seed
                     .wrapping_mul(1_000_003)
@@ -1120,15 +1204,24 @@ fn play_game(
                     .copied()
                     .ok_or_else(|| format!("missing baseline for {player}"))?;
                 baselines_in.borrow_mut().insert(player.clone(), baseline);
-                let (inner, metadata) = policy(
-                    policy_kind,
-                    local,
-                    shared,
-                    faction,
-                    baseline,
-                    policy_seed,
-                    plan.game_index + seat_index,
-                )?;
+                let (inner, metadata) = if let Some(temps) = &shared.single_temps {
+                    // Single-checkpoint mode: the temperature cycle replaces the 11-kind policy
+                    // cycle; the offset arithmetic is otherwise identical to mixed mode.
+                    let index = (plan.policy_offset + seat_index) % temps.len();
+                    policy_single(local, shared, faction, baseline, policy_seed, temps[index])?
+                } else {
+                    let policy_kind =
+                        POLICY_CYCLE[(plan.policy_offset + seat_index) % POLICY_CYCLE.len()];
+                    policy(
+                        policy_kind,
+                        local,
+                        shared,
+                        faction,
+                        baseline,
+                        policy_seed,
+                        plan.game_index + seat_index,
+                    )?
+                };
                 let records = Rc::new(RefCell::new(Vec::new()));
                 handles_in
                     .borrow_mut()
@@ -1332,6 +1425,16 @@ fn run() -> Result<(), String> {
             output.display()
         ));
     }
+    let single = argument("--single");
+    if single.is_some()
+        && (argument("--current").is_some()
+            || argument("--older").is_some()
+            || argument("--evolutionary").is_some())
+    {
+        return Err(
+            "--single cannot be combined with --current/--older/--evolutionary".to_owned(),
+        );
+    }
     let current = argument("--current").unwrap_or_else(|| {
         "out/blank-shaped-4layers/shaped-r1bonus3-20260912/checkpoint-318956".to_owned()
     });
@@ -1348,7 +1451,17 @@ fn run() -> Result<(), String> {
         .map_err(|_| "--seed-base must fit a signed 64-bit tensor seed".to_owned())?;
     ti4_tensor::configure_deterministic(tensor_seed)
         .map_err(|error| format!("configuring tensor backend: {error}"))?;
-    let master = load_assets(current, older, evolutionary)?;
+    let master = match &single {
+        Some(path) => {
+            let temps = parse_temperatures(
+                argument("--temperatures")
+                    .as_deref()
+                    .unwrap_or("0.25,1.0,2.5"),
+            )?;
+            load_single(path, temps)?
+        }
+        None => load_assets(current, older, evolutionary)?,
+    };
 
     let pool_path =
         argument("--map-pool").unwrap_or_else(|| "out/pools/full_np8_12_train.json".to_owned());
@@ -1422,7 +1535,13 @@ fn run() -> Result<(), String> {
             seated,
             policy_offset,
         });
-        policy_offset = (policy_offset + players.len()) % POLICY_CYCLE.len();
+        // Single-checkpoint mode cycles over its temperature list instead of the 11 kinds.
+        let cycle_len = master
+            .shared
+            .single_temps
+            .as_ref()
+            .map_or(POLICY_CYCLE.len(), Vec::len);
+        policy_offset = (policy_offset + players.len()) % cycle_len;
     }
 
     // ---- workers -------------------------------------------------------------------------------
@@ -1646,20 +1765,24 @@ fn run() -> Result<(), String> {
         "  assembly and integrity check in {:.1}s",
         finish_started.elapsed().as_secs_f64()
     );
-    let checkpoint_manifests = BTreeMap::from([
+    let mut checkpoint_manifests = BTreeMap::from([
         (
             master.shared.current_path.clone(),
             master.shared.current_manifest_sha.clone(),
         ),
-        (
+    ]);
+    // Single-checkpoint mode has no older or evolutionary assets; the empty paths would be
+    // misleading entries.
+    if master.shared.single_temps.is_none() {
+        checkpoint_manifests.insert(
             master.shared.older_path.clone(),
             master.shared.older_manifest_sha.clone(),
-        ),
-        (
+        );
+        checkpoint_manifests.insert(
             master.shared.evolutionary_path.clone(),
             master.shared.evolutionary_sha.clone(),
-        ),
-    ]);
+        );
+    }
     let manifest = Manifest {
         schema: SCHEMA.to_owned(),
         observation_schema: OBSERVATION_SCHEMA.to_owned(),
@@ -1690,6 +1813,11 @@ fn run() -> Result<(), String> {
         behavior_probabilities_recorded: false,
         forced_decisions_retained: true,
         storage_encoding: "zstd".to_owned(),
+        policy_mode: if master.shared.single_temps.is_some() {
+            "single".to_owned()
+        } else {
+            "mixed".to_owned()
+        },
         checkpoint_manifests,
         records: BTreeMap::from([
             ("games".to_owned(), games_retained),
@@ -1789,6 +1917,20 @@ mod tests {
     #[test]
     fn out_of_range_index_fails() {
         assert!(!is_loss_aligned(&legal(&["a", "b"]), 2, "b"));
+    }
+
+    #[test]
+    fn single_mode_temperatures_parse_and_refuse_bad_values() {
+        let ok = parse_temperatures("0.25,1.0,2.5").expect("the default trio parses");
+        assert_eq!(ok, vec![0.25, 1.0, 2.5]);
+        assert_eq!(parse_temperatures("7").unwrap(), vec![7.0]);
+        assert!(parse_temperatures("").is_err());
+        assert!(parse_temperatures(",").is_err());
+        assert!(parse_temperatures("0").is_err());
+        assert!(parse_temperatures("-1").is_err());
+        assert!(parse_temperatures("nan").is_err());
+        assert!(parse_temperatures("inf").is_err());
+        assert!(parse_temperatures("x").is_err());
     }
 
     #[test]
