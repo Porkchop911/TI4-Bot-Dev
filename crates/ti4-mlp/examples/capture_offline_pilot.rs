@@ -22,6 +22,15 @@
 //! self-contained corpus (its own shards plus a scoped manifest), so downstream tooling can consume
 //! any quality class directly. The shards are therefore byte-identical for a given seed base at any
 //! worker count, which the package evidence proves by diffing `--workers 1` against the default.
+//!
+//! # Publishing killed runs
+//!
+//! `--publish-staging <dir>` publishes whatever complete games a killed run left in its staging
+//! directory: every part pair is fully decoded and validated, truncated kill artifacts are
+//! excluded with a report while decodable-but-inconsistent parts refuse the publish, and the
+//! manifest's provenance (seed base, rounds, checkpoint manifests) is derived from the staged
+//! metadata itself. The same assembly path as a completed run builds the shards, gates them
+//! byte-exactly, and renames staging to the corpus directory.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -224,7 +233,9 @@ struct Manifest {
     /// Games present in the shards (retained ones); `games_played` is everything that was played.
     games: usize,
     rounds: u32,
-    workers: usize,
+    /// The worker count of the run that produced this corpus; null when publishing a killed
+    /// run's staging where it is no longer known.
+    workers: Option<usize>,
     retention_rule: String,
     games_played: usize,
     games_retained: usize,
@@ -775,11 +786,15 @@ fn policy_single(
     temperature: f64,
 ) -> Result<(Box<dyn Decider>, PolicyMetadata), String> {
     let row = ti4_mlp::FactionRow::of(faction).map_err(|error| error.to_string())?;
-    let (decider, _status) =
-        ti4_mlp::bot::MlpBot::sharing(&local.current_actor, local.current_vocabulary.clone(), row, seed)
-            .at_temperature(temperature)
-            .from_setup(baseline)
-            .seat();
+    let (decider, _status) = ti4_mlp::bot::MlpBot::sharing(
+        &local.current_actor,
+        local.current_vocabulary.clone(),
+        row,
+        seed,
+    )
+    .at_temperature(temperature)
+    .from_setup(baseline)
+    .seat();
     Ok((
         decider,
         PolicyMetadata {
@@ -941,10 +956,7 @@ impl JsonlZstdWriter {
             .map_err(|error| format!("creating {}: {error}", path.display()))?;
         let encoder = zstd::stream::write::Encoder::new(BufWriter::new(file), 9)
             .map_err(|error| format!("opening zstd stream: {error}"))?;
-        Ok(Self {
-            encoder,
-            count: 0,
-        })
+        Ok(Self { encoder, count: 0 })
     }
 
     fn write<T: Serialize>(&mut self, value: &T) -> Result<(), String> {
@@ -1070,6 +1082,7 @@ struct GamePlan {
 /// boundary: each worker writes its own per-game zstd frames and the main thread concatenates them
 /// in game order. Discarded games report zero written decisions but keep their recorded count for
 /// the retention sidecar log.
+#[derive(Debug, Clone)]
 struct GameOutcome {
     game_index: usize,
     game_seed: u64,
@@ -1131,7 +1144,14 @@ fn games_part(game_index: usize) -> String {
 /// zero-record zstd frame, so every published folder has the same shape and decodes cleanly.
 /// Returns the sha256 of the exact bytes written, so the caller can prove the published shard is
 /// byte-identical to the validated frames.
-fn concatenate_parts(parts: &[PathBuf], final_path: &Path) -> Result<String, String> {
+/// `keep_parts` leaves the per-game frames in place for a caller that must stay retryable (a
+/// killed run's staging is the only copy of those games); otherwise each part is removed as it is
+/// consumed.
+fn concatenate_parts(
+    parts: &[PathBuf],
+    final_path: &Path,
+    keep_parts: bool,
+) -> Result<String, String> {
     let file = std::fs::File::create(final_path)
         .map_err(|error| format!("creating {}: {error}", final_path.display()))?;
     let mut writer = BufWriter::new(file);
@@ -1151,8 +1171,10 @@ fn concatenate_parts(parts: &[PathBuf], final_path: &Path) -> Result<String, Str
             writer
                 .write_all(&frame)
                 .map_err(|error| format!("writing {}: {error}", final_path.display()))?;
-            std::fs::remove_file(part)
-                .map_err(|error| format!("removing {}: {error}", part.display()))?;
+            if !keep_parts {
+                std::fs::remove_file(part)
+                    .map_err(|error| format!("removing {}: {error}", part.display()))?;
+            }
         }
     }
     writer
@@ -1349,9 +1371,8 @@ fn play_game(
     std::fs::create_dir_all(&bucket_dir)
         .map_err(|error| format!("creating {}: {error}", bucket_dir.display()))?;
 
-    let mut decisions_writer = JsonlZstdWriter::create(
-        &bucket_dir.join(decisions_part(plan.game_index)),
-    )?;
+    let mut decisions_writer =
+        JsonlZstdWriter::create(&bucket_dir.join(decisions_part(plan.game_index)))?;
     for player in ctx.players {
         for decision in handles.borrow()[player].borrow().iter() {
             decisions_writer.write(decision)?;
@@ -1405,6 +1426,44 @@ fn main() {
     reason = "the pilot's bounded orchestration is linear"
 )]
 fn run() -> Result<(), String> {
+    // `--publish-staging` publishes a killed run's staging directory instead of playing games. It
+    // needs no tensor backend, map pool parsing or policy loading: everything comes from disk.
+    if let Some(staging) = argument("--publish-staging") {
+        let Some(checkpoint) = argument("--checkpoint") else {
+            return Err("--publish-staging requires --checkpoint".to_owned());
+        };
+        let Some(games_arg) = argument("--games") else {
+            return Err("--publish-staging requires --games".to_owned());
+        };
+        let games_planned = games_arg
+            .parse::<usize>()
+            .map_err(|_| "--games must be a positive integer".to_owned())?;
+        if games_planned == 0 {
+            return Err("--games must be non-zero".to_owned());
+        }
+        let workers = match argument("--workers") {
+            None => None,
+            Some(value) => Some(
+                value
+                    .parse::<usize>()
+                    .map_err(|_| "--workers must be a positive integer".to_owned())?,
+            ),
+        };
+        if workers == Some(0) {
+            return Err("--workers must be non-zero".to_owned());
+        }
+        let map_pool =
+            argument("--map-pool").unwrap_or_else(|| "out/pools/full_np8_12_train.json".to_owned());
+        return publish_staging_run(
+            &staging,
+            argument("--out").as_deref(),
+            &checkpoint,
+            games_planned,
+            workers,
+            map_pool,
+        );
+    }
+
     let output =
         PathBuf::from(argument("--out").unwrap_or_else(|| "E:/ti4-corpus/pilot-v1".to_owned()));
     let games = argument("--games")
@@ -1431,9 +1490,7 @@ fn run() -> Result<(), String> {
             || argument("--older").is_some()
             || argument("--evolutionary").is_some())
     {
-        return Err(
-            "--single cannot be combined with --current/--older/--evolutionary".to_owned(),
-        );
+        return Err("--single cannot be combined with --current/--older/--evolutionary".to_owned());
     }
     let current = argument("--current").unwrap_or_else(|| {
         "out/blank-shaped-4layers/shaped-r1bonus3-20260912/checkpoint-318956".to_owned()
@@ -1662,11 +1719,81 @@ fn run() -> Result<(), String> {
         }
     }
     println!("  games in {:.1}s", play_started.elapsed().as_secs_f64());
+    // Single-checkpoint mode has no older or evolutionary assets; the empty paths would be
+    // misleading entries.
+    let mut checkpoint_manifests = BTreeMap::from([(
+        master.shared.current_path.clone(),
+        master.shared.current_manifest_sha.clone(),
+    )]);
+    if master.shared.single_temps.is_none() {
+        checkpoint_manifests.insert(
+            master.shared.older_path.clone(),
+            master.shared.older_manifest_sha.clone(),
+        );
+        checkpoint_manifests.insert(
+            master.shared.evolutionary_path.clone(),
+            master.shared.evolutionary_sha.clone(),
+        );
+    }
+    let params = PublishParams {
+        games_played: games,
+        seed_base,
+        rounds,
+        workers: Some(workers),
+        map_pool: pool_path,
+        pool_sha,
+        slots_sha,
+        checkpoint_manifests,
+        policy_mode: if master.shared.single_temps.is_some() {
+            "single"
+        } else {
+            "mixed"
+        },
+        keep_parts: false,
+    };
+    assemble_and_publish(&outcomes, &staging, &output, &params)?;
+    Ok(())
+}
+
+/// Everything the assembly step needs that is not on disk: run parameters and provenance. A
+/// completed run fills these from its in-memory state; publishing a killed run's staging derives
+/// or takes them as arguments (`publish_staging_run`).
+struct PublishParams {
+    /// Games the run was asked to play; only retained ones land in the shards.
+    games_played: usize,
+    seed_base: u64,
+    rounds: u32,
+    /// Unknown for a killed run's staging unless passed explicitly.
+    workers: Option<usize>,
+    map_pool: String,
+    pool_sha: String,
+    slots_sha: String,
+    checkpoint_manifests: BTreeMap<String, String>,
+    policy_mode: &'static str,
+    /// Keep per-game part files until every shard passes its byte-exactness gate. A killed run's
+    /// staging is the only copy of those games, so a failed publish must stay retryable; a normal
+    /// run discards its staging on failure anyway and deletes parts as it goes.
+    keep_parts: bool,
+}
+
+/// Assemble per-bucket shards from staged per-game frames, gate them byte-exactly, write the
+/// retention sidecar and manifests, and rename staging to the corpus directory. Shared by a
+/// completed run and `--publish-staging` for a killed one; outcomes must be in game order.
+#[expect(
+    clippy::too_many_lines,
+    reason = "the publish step is one linear pass: shards, gates, sidecars, manifests"
+)]
+fn assemble_and_publish(
+    outcomes: &[GameOutcome],
+    staging: &Path,
+    output: &Path,
+    params: &PublishParams,
+) -> Result<(), String> {
     let finish_started = std::time::Instant::now();
 
     // The manifest describes the corpus, so policy families come from retained games only.
     let mut policy_families = BTreeSet::new();
-    for outcome in &outcomes {
+    for outcome in outcomes {
         if outcome.retained {
             policy_families.extend(outcome.policy_families.iter().cloned());
         }
@@ -1686,6 +1813,10 @@ fn run() -> Result<(), String> {
     let mut shards: BTreeMap<String, String> = BTreeMap::new();
     let mut bucket_stats: BTreeMap<String, BucketStats> = BTreeMap::new();
     for bucket in published_buckets.iter().copied() {
+        // A normal run creates the training buckets at staging setup; a killed run's staging has
+        // them too, but create_dir_all keeps this total over any directory shape.
+        std::fs::create_dir_all(staging.join(bucket))
+            .map_err(|error| format!("creating {}: {error}", staging.join(bucket).display()))?;
         let in_bucket = |outcome: &GameOutcome| {
             outcome.retained
                 && outcome
@@ -1695,7 +1826,11 @@ fn run() -> Result<(), String> {
         let decision_parts: Vec<PathBuf> = outcomes
             .iter()
             .filter(|outcome| in_bucket(outcome))
-            .map(|outcome| staging.join(bucket).join(decisions_part(outcome.game_index)))
+            .map(|outcome| {
+                staging
+                    .join(bucket)
+                    .join(decisions_part(outcome.game_index))
+            })
             .collect();
         let game_parts: Vec<PathBuf> = outcomes
             .iter()
@@ -1705,8 +1840,9 @@ fn run() -> Result<(), String> {
 
         let decisions_path = staging.join(bucket).join(DECISIONS_FILE);
         let games_path = staging.join(bucket).join(GAMES_FILE);
-        let expected_decisions_sha = concatenate_parts(&decision_parts, &decisions_path)?;
-        let expected_games_sha = concatenate_parts(&game_parts, &games_path)?;
+        let expected_decisions_sha =
+            concatenate_parts(&decision_parts, &decisions_path, params.keep_parts)?;
+        let expected_games_sha = concatenate_parts(&game_parts, &games_path, params.keep_parts)?;
 
         // Byte-exactness: each published shard must hold exactly the frames whose records passed
         // the loss-alignment gate before writing. A mismatch means corruption between write and
@@ -1719,7 +1855,9 @@ fn run() -> Result<(), String> {
         }
         let games_sha = file_sha(&games_path)?;
         if games_sha != expected_games_sha {
-            return Err(format!("{bucket}/{GAMES_FILE} does not match its validated frames"));
+            return Err(format!(
+                "{bucket}/{GAMES_FILE} does not match its validated frames"
+            ));
         }
 
         shards.insert(format!("{bucket}/{DECISIONS_FILE}"), decisions_sha);
@@ -1737,8 +1875,29 @@ fn run() -> Result<(), String> {
         );
     }
 
-    // Retention sidecar: one line per played game (retained or not) — provenance for the corpus
-    // and calibration data for future threshold tuning. Written in game order, so deterministic.
+    // A killed run's parts are its only copy: delete them only after every shard passed.
+    if params.keep_parts {
+        for bucket in published_buckets.iter().copied() {
+            let dir = staging.join(bucket);
+            for entry in std::fs::read_dir(&dir)
+                .map_err(|error| format!("reading {}: {error}", dir.display()))?
+            {
+                let path = entry.map_err(|e| e.to_string())?.path();
+                if is_part_name(
+                    path.file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or_default(),
+                ) {
+                    std::fs::remove_file(&path)
+                        .map_err(|error| format!("removing {}: {error}", path.display()))?;
+                }
+            }
+        }
+    }
+
+    // Retention sidecar: one line per known outcome (a completed run knows every played game, a
+    // killed run's staging holds retained games only) and calibration data for future threshold
+    // tuning. Written in game order, so deterministic.
     let retention_lines: Vec<String> = outcomes
         .iter()
         .map(|outcome| {
@@ -1765,24 +1924,6 @@ fn run() -> Result<(), String> {
         "  assembly and integrity check in {:.1}s",
         finish_started.elapsed().as_secs_f64()
     );
-    let mut checkpoint_manifests = BTreeMap::from([
-        (
-            master.shared.current_path.clone(),
-            master.shared.current_manifest_sha.clone(),
-        ),
-    ]);
-    // Single-checkpoint mode has no older or evolutionary assets; the empty paths would be
-    // misleading entries.
-    if master.shared.single_temps.is_none() {
-        checkpoint_manifests.insert(
-            master.shared.older_path.clone(),
-            master.shared.older_manifest_sha.clone(),
-        );
-        checkpoint_manifests.insert(
-            master.shared.evolutionary_path.clone(),
-            master.shared.evolutionary_sha.clone(),
-        );
-    }
     let manifest = Manifest {
         schema: SCHEMA.to_owned(),
         observation_schema: OBSERVATION_SCHEMA.to_owned(),
@@ -1790,10 +1931,10 @@ fn run() -> Result<(), String> {
         engine_git_commit: git("rev-parse HEAD"),
         engine_worktree_dirty: !git("status --porcelain").is_empty(),
         games: games_retained,
-        rounds,
-        workers,
+        rounds: params.rounds,
+        workers: params.workers,
         retention_rule: RETENTION_RULE.to_owned(),
-        games_played: games,
+        games_played: params.games_played,
         games_retained,
         retention_breakdown: outcomes.iter().fold(BTreeMap::new(), |mut map, outcome| {
             if let Some(reason) = outcome.retention_reason {
@@ -1801,24 +1942,20 @@ fn run() -> Result<(), String> {
             }
             map
         }),
-        seed_base,
+        seed_base: params.seed_base,
         factions: IN_SCOPE_FACTIONS
             .iter()
             .map(|value| (*value).to_owned())
             .collect(),
         policy_families: policy_families.into_iter().collect(),
-        map_pool: pool_path,
-        map_pool_sha256: pool_sha,
-        vocabulary_slots_sha256: slots_sha,
+        map_pool: params.map_pool.clone(),
+        map_pool_sha256: params.pool_sha.clone(),
+        vocabulary_slots_sha256: params.slots_sha.clone(),
         behavior_probabilities_recorded: false,
         forced_decisions_retained: true,
         storage_encoding: "zstd".to_owned(),
-        policy_mode: if master.shared.single_temps.is_some() {
-            "single".to_owned()
-        } else {
-            "mixed".to_owned()
-        },
-        checkpoint_manifests,
+        policy_mode: params.policy_mode.to_owned(),
+        checkpoint_manifests: params.checkpoint_manifests.clone(),
         records: BTreeMap::from([
             ("games".to_owned(), games_retained),
             ("decisions".to_owned(), decision_count),
@@ -1842,7 +1979,9 @@ fn run() -> Result<(), String> {
             games: stats.games,
             games_retained: stats.games,
             retention_breakdown: outcomes.iter().fold(BTreeMap::new(), |mut map, outcome| {
-                if let Some(reason) = outcome.retention_reason && bucket_for(reason) == *bucket {
+                if let Some(reason) = outcome.retention_reason
+                    && bucket_for(reason) == *bucket
+                {
                     *map.entry(reason.as_str().to_owned()).or_insert(0) += 1;
                 }
                 map
@@ -1881,14 +2020,353 @@ fn run() -> Result<(), String> {
             .map_err(|error| format!("writing {bucket} manifest: {error}"))?;
     }
 
-    std::fs::rename(&staging, &output)
-        .map_err(|error| format!("publishing {}: {error}", output.display()))?;
+    std::fs::rename(staging, output)
+        .map_err(|error| format!("publishing {}: {error}", staging.display()))?;
     println!(
-        "published {games_retained}/{games} games (retention {rule}) / {decision_count} decisions -> {path}",
+        "published {games_retained}/{} games (retention {rule}) / {decision_count} decisions -> {path}",
+        params.games_played,
         rule = RETENTION_RULE,
         path = output.display(),
     );
     Ok(())
+}
+
+/// One complete game recovered from a killed run's staging: its outcome plus the metadata needed
+/// to derive run-level provenance (rounds, checkpoint manifests).
+struct StagedGame {
+    outcome: GameOutcome,
+    metadata: GameMetadata,
+}
+
+/// `decisions-123.jsonl.zst` / `games-123.jsonl.zst` -> 123; anything else -> None.
+fn part_index(name: &str) -> Option<usize> {
+    let stem = name.strip_suffix(".jsonl.zst")?;
+    let (prefix, digits) = stem.split_once('-')?;
+    if prefix != "decisions" && prefix != "games" {
+        return None;
+    }
+    if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    digits.parse::<usize>().ok()
+}
+
+/// True for per-game part names (the only files a publish may delete from bucket folders).
+fn is_part_name(name: &str) -> bool {
+    part_index(name).is_some()
+}
+
+/// Fully decode one zstd part. A truncated frame — the kill artifact of a game that was mid-write
+/// when the run died — surfaces as an error the caller maps to "incomplete".
+fn decode_part(path: &Path) -> Result<Vec<u8>, String> {
+    let file = std::fs::File::open(path)
+        .map_err(|error| format!("opening {}: {error}", path.display()))?;
+    let mut decoder = zstd::stream::read::Decoder::new(std::io::BufReader::new(file))
+        .map_err(|error| format!("decoding {}: {error}", path.display()))?;
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(&mut decoder, &mut bytes)
+        .map_err(|error| format!("decoding {}: {error}", path.display()))?;
+    Ok(bytes)
+}
+
+/// Why a staged part pair cannot be trusted. Incomplete parts are the expected kill artifact and
+/// exclude their game with a report; corrupt parts are not an explainable kill artifact and refuse
+/// the publish rather than risk a corpus nobody can trust.
+enum PartProblem {
+    Incomplete(String),
+    Corrupt(String),
+}
+
+fn validate_part_pair(
+    index: usize,
+    decisions_path: &Path,
+    games_path: &Path,
+) -> Result<GameMetadata, PartProblem> {
+    let games_bytes = decode_part(games_path).map_err(PartProblem::Incomplete)?;
+    let text = String::from_utf8(games_bytes)
+        .map_err(|_| PartProblem::Corrupt("games part is not UTF-8".to_owned()))?;
+    // Exactly one line: the game's metadata record.
+    let mut lines = text.lines();
+    let first = lines
+        .next()
+        .ok_or_else(|| PartProblem::Incomplete("empty games part".to_owned()))?;
+    if lines.next().is_some() {
+        return Err(PartProblem::Corrupt(
+            "games part holds more than one record".to_owned(),
+        ));
+    }
+    let metadata: GameMetadata = serde_json::from_str(first)
+        .map_err(|error| PartProblem::Corrupt(format!("parsing games part: {error}")))?;
+    if metadata.game_index != index {
+        return Err(PartProblem::Corrupt(format!(
+            "games part for game {index} claims game {}",
+            metadata.game_index
+        )));
+    }
+    let decisions_bytes = decode_part(decisions_path).map_err(PartProblem::Incomplete)?;
+    // Records are single-line JSON, so newlines count records exactly.
+    #[allow(
+        clippy::naive_bytecount,
+        reason = "no bytecount dependency; one pass over ~1 MB per part"
+    )]
+    let decision_lines = decisions_bytes
+        .iter()
+        .filter(|byte| **byte == b'\n')
+        .count();
+    if decision_lines != metadata.decision_count {
+        return Err(PartProblem::Corrupt(format!(
+            "decisions part holds {decision_lines} records, metadata claims {}",
+            metadata.decision_count
+        )));
+    }
+    Ok(metadata)
+}
+
+/// Rebuild one game's outcome from its staged parts. The retention rule is a pure function of the
+/// VPs and the seed, so re-deriving it must land in exactly the bucket the parts sit in — any
+/// other result means inconsistent staging data.
+fn reconstruct(index: usize, bucket: &str, metadata: GameMetadata) -> Result<StagedGame, String> {
+    let table_vp = metadata
+        .seats
+        .iter()
+        .map(|seat| seat.final_progress.victory_points)
+        .sum::<i64>();
+    let max_faction_vp = metadata
+        .seats
+        .iter()
+        .map(|seat| seat.final_progress.victory_points)
+        .max()
+        .unwrap_or(0);
+    let table_vp =
+        i32::try_from(table_vp).map_err(|_| format!("game {index}: table VP out of range"))?;
+    let max_faction_vp = i32::try_from(max_faction_vp)
+        .map_err(|_| format!("game {index}: faction VP out of range"))?;
+    let reason =
+        decide_retention(table_vp, max_faction_vp, metadata.game_seed).ok_or_else(|| {
+            format!("game {index}: VPs no longer satisfy retention (inconsistent staging)")
+        })?;
+    if bucket_for(reason) != bucket {
+        return Err(format!(
+            "game {index} sits in {} but its VPs select {}",
+            bucket,
+            reason.as_str()
+        ));
+    }
+    let policy_families: BTreeSet<String> = metadata
+        .seats
+        .iter()
+        .map(|seat| seat.policy.family.clone())
+        .collect();
+    Ok(StagedGame {
+        outcome: GameOutcome {
+            game_index: index,
+            game_seed: metadata.game_seed,
+            decision_count: metadata.decision_count,
+            recorded_decisions: metadata.decision_count,
+            policy_families,
+            retained: true,
+            retention_reason: Some(reason),
+            table_vp,
+            max_faction_vp,
+        },
+        metadata,
+    })
+}
+
+/// Scan a killed run's staging directory for complete per-game part pairs. Truncated parts (the
+/// kill artifact) exclude their game with a report; decodable-but-inconsistent parts refuse the
+/// publish. Results are keyed by (bucket, index), so worker completion order cannot affect them.
+fn scan_staging(staging: &Path) -> Result<Vec<StagedGame>, String> {
+    const BUCKETS: [&str; 4] = [BUCKET_GOOD, BUCKET_BAD, BUCKET_RANDOM, BUCKET_FAILED];
+    let mut pairs: Vec<(usize, usize, PathBuf, PathBuf)> = Vec::new();
+    for (ord, bucket) in BUCKETS.into_iter().enumerate() {
+        let dir = staging.join(bucket);
+        if !dir.is_dir() {
+            continue;
+        }
+        let mut by_index: BTreeMap<usize, (Option<PathBuf>, Option<PathBuf>)> = BTreeMap::new();
+        for entry in std::fs::read_dir(&dir)
+            .map_err(|error| format!("reading {}: {error}", dir.display()))?
+        {
+            let path = entry.map_err(|e| e.to_string())?.path();
+            let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            let Some(index) = part_index(name) else {
+                continue;
+            };
+            let slot = by_index.entry(index).or_default();
+            if name.starts_with("decisions-") {
+                slot.0 = Some(path);
+            } else {
+                slot.1 = Some(path);
+            }
+        }
+        for (index, (decisions, games)) in by_index {
+            match (decisions, games) {
+                (Some(decisions), Some(games)) => pairs.push((ord, index, decisions, games)),
+                _ => println!("  excluding game {index} from {bucket}: incomplete part pair"),
+            }
+        }
+    }
+
+    // Validate in parallel: parts are independent.
+    let checked = pairs
+        .par_iter()
+        .map(|(ord, index, decisions_path, games_path)| {
+            match validate_part_pair(*index, decisions_path, games_path) {
+                Ok(metadata) => Ok((*ord, *index, metadata)),
+                Err(problem) => Err((*ord, *index, problem)),
+            }
+        })
+        .collect::<Vec<Result<(usize, usize, GameMetadata), (usize, usize, PartProblem)>>>();
+
+    let mut staged: Vec<StagedGame> = Vec::new();
+    for result in checked {
+        match result {
+            Ok((ord, index, metadata)) => staged.push(reconstruct(index, BUCKETS[ord], metadata)?),
+            Err((ord, index, problem)) => match problem {
+                PartProblem::Incomplete(message) => {
+                    println!("  excluding game {index} from {}: {message}", BUCKETS[ord]);
+                }
+                PartProblem::Corrupt(message) => {
+                    return Err(format!("game {index} in {}: {message}", BUCKETS[ord]));
+                }
+            },
+        }
+    }
+    staged.sort_by_key(|game| game.outcome.game_index);
+    Ok(staged)
+}
+
+/// Publish a killed run's staging directory into a valid corpus from whatever complete games it
+/// holds. The manifest is derived from what is on disk; only the planned game count, the training
+/// checkpoint (vocabulary provenance), and optionally the worker count come from arguments.
+#[expect(
+    clippy::too_many_lines,
+    reason = "publishing a killed run is one linear pass: args, scan, derive, assemble"
+)]
+fn publish_staging_run(
+    staging_arg: &str,
+    out_arg: Option<&str>,
+    checkpoint_arg: &str,
+    games_planned: usize,
+    workers: Option<usize>,
+    map_pool: String,
+) -> Result<(), String> {
+    let staging = PathBuf::from(staging_arg);
+    if !staging.is_dir() {
+        return Err(format!("{} is not a directory", staging.display()));
+    }
+    let output = if let Some(path) = out_arg {
+        PathBuf::from(path)
+    } else {
+        // `corpus.staging-12345` -> `corpus`: the name the run itself would have published.
+        let name = staging
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default();
+        let Some(stripped) = name.split_once(".staging-").map(|(head, _)| head) else {
+            return Err(format!(
+                "{} has no .staging- suffix; pass --out explicitly",
+                staging.display()
+            ));
+        };
+        staging.with_file_name(stripped)
+    };
+    if output.exists() {
+        return Err(format!(
+            "{} already exists; corpora are immutable",
+            output.display()
+        ));
+    }
+    let checkpoint = PathBuf::from(checkpoint_arg);
+    let slots_sha = file_sha(&checkpoint.join("slots.json"))?;
+
+    let pool_bytes = ti4_sim::artifacts::read_and_verify_pool_role(
+        Path::new(&map_pool),
+        &[ti4_sim::artifacts::ArtifactRole::Train],
+    )
+    .map_err(|error| format!("map pool {map_pool}: {error}"))?;
+    let pool_sha = sha256(&pool_bytes);
+
+    println!(
+        "publishing killed staging {} -> {}",
+        staging.display(),
+        output.display()
+    );
+    let staged = scan_staging(&staging)?;
+    if staged.is_empty() {
+        return Err(format!("no complete games found in {}", staging.display()));
+    }
+
+    // Every game's seed minus its index is the run's seed base; all must agree.
+    let mut seed_base: Option<u64> = None;
+    for game in &staged {
+        let derived = game
+            .metadata
+            .game_seed
+            .wrapping_sub(game.outcome.game_index as u64);
+        match seed_base {
+            Some(base) if base != derived => {
+                return Err(format!(
+                    "game {}: seed {} does not fit the run's seed base",
+                    game.outcome.game_index, game.metadata.game_seed
+                ));
+            }
+            _ => seed_base = Some(derived),
+        }
+    }
+    let seed_base = seed_base.expect("staged is non-empty");
+
+    // All games of one run request the same rounds.
+    let mut rounds: Option<u32> = None;
+    for game in &staged {
+        match rounds {
+            Some(value) if value != game.metadata.rounds_requested => {
+                return Err(format!(
+                    "game {}: rounds {} disagree with {}",
+                    game.outcome.game_index, game.metadata.rounds_requested, value
+                ));
+            }
+            _ => rounds = Some(game.metadata.rounds_requested),
+        }
+    }
+    let rounds = rounds.expect("staged is non-empty");
+
+    // Checkpoint provenance straight from the seats' metadata: one distinct checkpoint means a
+    // single-checkpoint run, several mean the mixed cycle.
+    let mut checkpoint_manifests: BTreeMap<String, String> = BTreeMap::new();
+    for game in &staged {
+        for seat in &game.metadata.seats {
+            if let (Some(path), Some(sha)) = (
+                &seat.policy.checkpoint,
+                &seat.policy.checkpoint_manifest_sha256,
+            ) {
+                checkpoint_manifests.insert(path.clone(), sha.clone());
+            }
+        }
+    }
+    let policy_mode: &'static str = if checkpoint_manifests.len() <= 1 {
+        "single"
+    } else {
+        "mixed"
+    };
+
+    let params = PublishParams {
+        games_played: games_planned,
+        seed_base,
+        rounds,
+        workers,
+        map_pool,
+        pool_sha,
+        slots_sha,
+        checkpoint_manifests,
+        policy_mode,
+        keep_parts: true,
+    };
+    let outcomes: Vec<GameOutcome> = staged.iter().map(|game| game.outcome.clone()).collect();
+    assemble_and_publish(&outcomes, &staging, &output, &params)
 }
 
 #[cfg(test)]
@@ -2004,5 +2482,221 @@ mod tests {
             .count();
         let rate = kept as f64 / 20_000.0;
         assert!((0.03..=0.07).contains(&rate), "random control rate {rate}");
+    }
+
+    // ---- partial publish (killed staging) -------------------------------------------------------
+
+    fn temp_dir(tag: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("ti4-capture-partial-{}-{tag}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        dir
+    }
+
+    fn synthetic_seat(name: &str, checkpoint: Option<&str>, vp: i64) -> SeatMetadata {
+        SeatMetadata {
+            seat: name.to_owned(),
+            faction: "sol".to_owned(),
+            policy: PolicyMetadata {
+                policy_id: "single_mlp_t100".to_owned(),
+                family: "mlp".to_owned(),
+                checkpoint: checkpoint.map(str::to_owned),
+                checkpoint_manifest_sha256: checkpoint.map(|_| "ab".repeat(32)),
+                temperature: Some(1.0),
+                bias: None,
+                source_profile: None,
+                rng_seed: 7,
+            },
+            final_progress: Progress {
+                victory_points: vp,
+                ..Default::default()
+            },
+        }
+    }
+
+    /// Real staging setup creates the three training buckets up front; synthetic staging must
+    /// match that shape.
+    fn real_staging_shape(staging: &Path) {
+        for bucket in [BUCKET_GOOD, BUCKET_BAD, BUCKET_RANDOM] {
+            std::fs::create_dir_all(staging.join(bucket)).expect("bucket dir");
+        }
+    }
+
+    fn write_synthetic_game(
+        staging: &Path,
+        bucket: &str,
+        index: usize,
+        seed_base: u64,
+        vps: &[i64],
+        decisions: usize,
+    ) {
+        let game_seed = seed_base.wrapping_add(index as u64);
+        let dir = staging.join(bucket);
+        std::fs::create_dir_all(&dir).expect("bucket dir");
+        let mut decisions_writer =
+            JsonlZstdWriter::create(&dir.join(decisions_part(index))).expect("decisions part");
+        for _ in 0..decisions {
+            decisions_writer
+                .write(&serde_json::json!({"synthetic": true}))
+                .expect("decision record");
+        }
+        decisions_writer.finish().expect("decisions finish");
+        let seats = vps
+            .iter()
+            .enumerate()
+            .map(|(i, vp)| synthetic_seat(&format!("seat{i}"), Some("ckpt-a"), *vp))
+            .collect::<Vec<_>>();
+        let mut games_writer =
+            JsonlZstdWriter::create(&dir.join(games_part(index))).expect("games part");
+        games_writer
+            .write(&GameMetadata {
+                game_id: format!("game-{index}"),
+                game_index: index,
+                game_seed,
+                tile_seed_offset: TILE_SEED_OFFSET,
+                rounds_requested: 4,
+                completed: true,
+                error: None,
+                map_placements: Vec::new(),
+                seats,
+                decision_count: decisions,
+            })
+            .expect("games record");
+        games_writer.finish().expect("games finish");
+    }
+
+    fn partial_params() -> PublishParams {
+        PublishParams {
+            games_played: 4,
+            seed_base: 1_000,
+            rounds: 4,
+            workers: Some(2),
+            map_pool: "out/pools/full_np8_12_train.json".to_owned(),
+            pool_sha: "poolsha".to_owned(),
+            slots_sha: "slotsha".to_owned(),
+            checkpoint_manifests: BTreeMap::from([("ckpt-a".to_owned(), "ab".repeat(32))]),
+            policy_mode: "single",
+            keep_parts: true,
+        }
+    }
+
+    #[test]
+    fn the_partial_scan_reconstructs_outcomes_from_staging_parts() {
+        let staging = temp_dir("scan");
+        // max 7 >= 6 -> standout; table 27 >= 24 with max < 6 -> strong_table; table 9 < 10 -> weak.
+        write_synthetic_game(&staging, BUCKET_GOOD, 0, 1_000, &[7, 3, 2, 1, 1, 0], 4);
+        write_synthetic_game(&staging, BUCKET_GOOD, 1, 1_000, &[5, 5, 5, 5, 4, 3], 6);
+        write_synthetic_game(&staging, BUCKET_BAD, 2, 1_000, &[3, 2, 2, 1, 1, 0], 3);
+        let staged = scan_staging(&staging).expect("scan");
+        assert_eq!(staged.len(), 3);
+        assert_eq!(
+            staged[0].outcome.retention_reason,
+            Some(RetentionReason::Standout)
+        );
+        assert_eq!(
+            staged[1].outcome.retention_reason,
+            Some(RetentionReason::StrongTable)
+        );
+        assert_eq!(
+            staged[2].outcome.retention_reason,
+            Some(RetentionReason::WeakTable)
+        );
+        assert_eq!(staged[0].outcome.table_vp, 14);
+        assert_eq!(staged[1].outcome.max_faction_vp, 5);
+        assert_eq!(staged[2].outcome.decision_count, 3);
+        let _ = std::fs::remove_dir_all(&staging);
+    }
+
+    #[test]
+    fn the_partial_scan_excludes_truncated_parts() {
+        let staging = temp_dir("trunc");
+        write_synthetic_game(&staging, BUCKET_GOOD, 0, 1_000, &[7, 3, 2, 1, 1, 0], 4);
+        write_synthetic_game(&staging, BUCKET_BAD, 1, 1_000, &[3, 2, 2, 1, 1, 0], 3);
+        // Simulate a kill mid-write: chop the second game's decisions frame.
+        let part = staging.join(BUCKET_BAD).join(decisions_part(1));
+        let bytes = std::fs::read(&part).expect("read");
+        std::fs::write(&part, &bytes[..bytes.len() - 8]).expect("truncate");
+        let staged = scan_staging(&staging).expect("scan");
+        assert_eq!(staged.len(), 1);
+        assert_eq!(staged[0].outcome.game_index, 0);
+        let _ = std::fs::remove_dir_all(&staging);
+    }
+
+    #[test]
+    fn the_partial_scan_refuses_inconsistent_parts() {
+        let staging = temp_dir("corrupt");
+        // Metadata claims six decisions but only three were written.
+        write_synthetic_game(&staging, BUCKET_GOOD, 0, 1_000, &[7, 3, 2, 1, 1, 0], 6);
+        let part = staging.join(BUCKET_GOOD).join(decisions_part(0));
+        std::fs::remove_file(&part).expect("remove");
+        let mut writer = JsonlZstdWriter::create(&part).expect("rewrite");
+        for _ in 0..3 {
+            writer
+                .write(&serde_json::json!({"synthetic": true}))
+                .unwrap();
+        }
+        writer.finish().unwrap();
+        assert!(scan_staging(&staging).is_err());
+        let _ = std::fs::remove_dir_all(&staging);
+    }
+
+    #[test]
+    fn the_partial_publish_writes_a_trainable_corpus() {
+        let staging = temp_dir("publish");
+        real_staging_shape(&staging);
+        write_synthetic_game(&staging, BUCKET_GOOD, 0, 1_000, &[7, 3, 2, 1, 1, 0], 4);
+        write_synthetic_game(&staging, BUCKET_BAD, 1, 1_000, &[3, 2, 2, 1, 1, 0], 3);
+        let output = staging.with_file_name("published-corpus");
+        let staged = scan_staging(&staging).expect("scan");
+        let outcomes: Vec<GameOutcome> = staged.iter().map(|game| game.outcome.clone()).collect();
+        assemble_and_publish(&outcomes, &staging, &output, &partial_params()).expect("publish");
+
+        assert!(!staging.exists(), "staging renamed to output");
+        let manifest: Manifest =
+            serde_json::from_slice(&std::fs::read(output.join(MANIFEST_FILE)).expect("manifest"))
+                .expect("parse");
+        assert_eq!(manifest.games, 2);
+        assert_eq!(manifest.records["games"], 2);
+        assert_eq!(manifest.records["decisions"], 7);
+        assert_eq!(manifest.workers, Some(2));
+        assert_eq!(manifest.policy_mode, "single");
+        // Three buckets x two shards; the empty random bucket still publishes a valid frame.
+        assert_eq!(manifest.shards.len(), 6);
+        for (name, sha) in &manifest.shards {
+            let actual = file_sha(&output.join(name)).expect("shard hash");
+            assert_eq!(&actual, sha, "{name}");
+        }
+        // Retention sidecar: one line per recovered game, in game order.
+        let lines: Vec<serde_json::Value> = std::fs::read_to_string(output.join("retention.jsonl"))
+            .expect("retention")
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("record"))
+            .collect();
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0]["reason"], "standout");
+        assert_eq!(lines[1]["reason"], "weak_table");
+        // Scoped manifests for the training buckets only.
+        assert!(output.join(BUCKET_GOOD).join(MANIFEST_FILE).exists());
+        assert!(output.join(BUCKET_BAD).join(MANIFEST_FILE).exists());
+        assert!(output.join(BUCKET_RANDOM).join(MANIFEST_FILE).exists());
+        // Parts are gone after the gates passed.
+        for bucket in [BUCKET_GOOD, BUCKET_BAD] {
+            let leftovers: Vec<String> = std::fs::read_dir(output.join(bucket))
+                .expect("bucket")
+                .map(|entry| {
+                    entry
+                        .expect("entry")
+                        .file_name()
+                        .to_string_lossy()
+                        .into_owned()
+                })
+                .collect();
+            assert!(
+                leftovers.iter().all(|name| !is_part_name(name)),
+                "{leftovers:?}"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&output);
     }
 }

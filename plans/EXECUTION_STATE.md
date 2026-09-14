@@ -8547,3 +8547,22 @@ unbounded `i64::MAX` fleet bill for Letnev's unlimited round, at the single chok
 the hero is actually used (flag active rounds 5–7); all completed. The app is usable again;
 its pre-existing 1 GiB session save limit can still reject very long games (observed on seed
 102, which terminates normally).
+
+## Partial publish of killed capture runs + single-ckpt training launcher (2026-09-14)
+
+`capture_offline_pilot` gained `--publish-staging <dir> [--out] --checkpoint --games N
+[--workers N]`: it decodes/validates every staged per-game part, excludes truncated kill
+artifacts with a report (refusing on decodable-but-inconsistent data), reconstructs outcomes,
+and assembles a fully valid corpus (root + scoped manifests, retention sidecar, byte-exactness
+gates) from whatever complete games exist. `Manifest.workers` became `Option<usize>`; normal
+run path unchanged (`keep_parts = false`). 18/18 example tests incl. truncation/corruption/
+publish cases; clippy clean for new code; real-data regression (20 games → published 13/20)
+and newline-count validation on real shards passed. Evidence:
+`plans/evidence/OFFLINE_PILOT_PARTIAL_PUBLISH.md`. Launcher `out/train_single_ckpt.ps1`
+(gitignored): kill capture → rebuild release binary → publish staging to
+`E:\ti4-corpus\vponly-single-236464-20260914-partial` → rebuild CUDA `offline_bc` →
+`train-raw-parallel` on good+random (v2 recipe) into `out/offline-bc-single-<date>-from-236464`.
+
+Working-tree note: four unrelated example files (`fracture_census.rs`,
+`objective_signal_audit.rs`, `rng_probe.rs`, `route_conversion.rs`) carry pre-existing
+formatting-only drift from an earlier whole-crate fmt; left uncommitted, out of scope.
