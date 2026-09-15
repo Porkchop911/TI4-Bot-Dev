@@ -381,6 +381,22 @@ pub const BOOTSTRAP_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 /// the top of this module.
 #[must_use]
 pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
+    // v38 — 2026-09-15. Rules fixes in 896fb28 (neutral combat, promissory note windows, Support
+    // for the Throne, Hacan hero, Rin) change what the authored bot is asked and what it meets.
+    // Bisected by disabling fix groups on 896fb28: disabling four together restores v37 exactly --
+    // the Hacan hero offer at production, Rin's faction-technology filter, Pirate Fleet / Pirate
+    // Contract / Mercenary Contract placing neutral reference-card units, and Support for the
+    // Throne returning on the Overrule path. The first three each move the recomputation alone;
+    // the Overrule return only in combination. Fighter value, the map filler's Fracture filter,
+    // neutral space combat, the other note windows, Warfare's Support return, Fighter
+    // Conscription and the note comparison by faction leave it unchanged in this batch.
+    //
+    // No metric leaves v37: every current value sits inside its v37 interval and all thirty games
+    // still end cleanly; the intervals themselves moved (for example `faction_differentiation`
+    // [0.489015, 1.075039] -> [0.489425, 1.181127]). Structured diplomacy is off in this batch
+    // and does not reach these values. The complete old/new table is recorded in
+    // plans/evidence/M08-021.md.
+    //
     // v37 — 2026-09-13. LEADER-FIX-001: action-phase leaders became deliverable as component
     // actions, and the Xxcha hero replacement was resolved. All six seated factions (sol, hacan,
     // letnev, xxcha, jolnar, l1z1x) now have their printed action leaders offered in the action
@@ -970,43 +986,43 @@ pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
     let mut bounds = BTreeMap::new();
     bounds.insert(
         "vp_pace".to_owned(),
-        (0.364_043_209_876_543_2, 0.418_672_839_506_172_8),
+        (0.375_925_925_925_925_94, 0.433_719_135_802_469),
     );
     // Degenerate on purpose: all games in every recorded baseline ended cleanly, so the bound
     // is the strict invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
         "score_spread".to_owned(),
-        (1.785_592_561_887_737_3, 2.340_940_194_502_928),
+        (1.876_663_368_317_121_2, 2.286_324_089_027_918_4),
     );
     // V3: the spec's across-faction quantity — re-deriven with the same baseline run.
     bounds.insert(
         "faction_differentiation".to_owned(),
-        (0.489_015_135_214_786_23, 1.075_039_476_737_115),
+        (0.489_425_210_871_933_9, 1.181_127_312_526_072_2),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.018_731_922_717_266_408, 0.019_892_408_391_028_644),
+        (0.019_118_457_967_941_507, 0.019_960_626_753_671_85),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.034_493_399_195_733_72, 0.035_909_955_874_829_88),
+        (0.034_709_325_271_385_386, 0.036_161_421_919_716_62),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.044_424_198_593_040_94, 0.047_795_472_874_693_23),
+        (0.044_914_122_589_631_42, 0.047_930_015_502_530_794),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.004_287_762_437_316_931_4, 0.004_912_210_462_506_266),
+        (0.004_211_539_397_139_597_5, 0.004_882_193_769_525_456),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.068_170_799_847_773_69, 0.070_970_058_754_063_9),
+        (0.068_666_711_969_616_09, 0.071_557_052_866_415_55),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.033_661_872_519_159_39, 0.035_086_177_358_045_24),
+        (0.033_945_233_269_215_58, 0.035_404_498_579_574_645),
     );
     bounds
 }
