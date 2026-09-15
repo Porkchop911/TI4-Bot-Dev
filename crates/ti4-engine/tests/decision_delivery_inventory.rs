@@ -381,6 +381,13 @@ const PRODUCERS: &[Producer] = &[
         delivery: Delivery::ObservedHere,
     },
     Producer {
+        // War Funding: offered to the holder after both sides have rolled a combat round.
+        module: "combat.rs",
+        function: "roll_round",
+        count: 1,
+        delivery: Delivery::ObservedHere,
+    },
+    Producer {
         module: "combat.rs",
         function: "pending_choice",
         count: 4,
@@ -446,6 +453,13 @@ const PRODUCERS: &[Producer] = &[
         function: "action_options",
         count: 1,
         delivery: Delivery::ObservedVia("game.rs::step"),
+    },
+    Producer {
+        // Political Favor and Political Secret: whether the holder uses the note at its window.
+        module: "game.rs",
+        function: "ask_to_use_note",
+        count: 1,
+        delivery: Delivery::ObservedHere,
     },
     Producer {
         module: "game.rs",
@@ -514,6 +528,13 @@ const PRODUCERS: &[Producer] = &[
         module: "leaders.rs",
         function: "use_leader",
         count: 7,
+        delivery: Delivery::ObservedHere,
+    },
+    Producer {
+        // Harrugh Gefhara, the Hacan hero: offered when a production is about to be paid for.
+        module: "leaders.rs",
+        function: "offer_production_hero",
+        count: 1,
         delivery: Delivery::ObservedHere,
     },
     Producer {
@@ -866,6 +887,7 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("combat.rs", "choose_reroll_dice", 1),
     ("combat.rs", "heart_ixth", 1),
     ("combat.rs", "offer_sustain", 1),
+    ("combat.rs", "roll_round", 1),
     ("exploration.rs", "ask", 1),
     ("faction_abilities.rs", "perform_component", 2),
     ("faction_abilities.rs", "space_combat_round_started", 1),
@@ -881,6 +903,7 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("game.rs", "step_trade", 1),
     ("game.rs", "step_diplomacy", 1),
     ("game.rs", "step_vote", 1),
+    ("game.rs", "ask_to_use_note", 1),
     ("game.rs", "committee_formation", 1),
     ("game.rs", "imperial_arbiter", 2),
     ("game.rs", "minister_of_war", 1),
@@ -905,6 +928,7 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("invasion.rs", "dunlain_reaper", 1),
     ("laws.rs", "offer_discard", 1),
     ("leaders.rs", "use_leader", 7),
+    ("leaders.rs", "offer_production_hero", 1),
     ("legendary.rs", "end_turn", 1),
     ("legendary.rs", "pass", 1),
     ("legendary.rs", "place_on_own_planet", 1),

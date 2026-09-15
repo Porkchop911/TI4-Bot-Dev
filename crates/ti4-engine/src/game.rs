@@ -1580,6 +1580,16 @@ impl<'a> Game<'a> {
                         ) {
                             self.emit(&format!("SUPPORT_FOR_THE_THRONE_RETURNED:{owner}"));
                         }
+                        // The same activation judges structured promises, as the ordinary tactical
+                        // path does: a promise not to activate this system breaks here too.
+                        crate::diplomacy::evaluate_event(
+                            &mut self.state,
+                            &crate::diplomacy::DiplomacyEventContext::SystemActivated {
+                                player: active.clone(),
+                                system: system.clone(),
+                            },
+                        )
+                        .expect("validated diplomacy predicates settle deterministically");
                         self.state.active_system = Some(system);
                         self.state.pending = Some("move".to_owned());
                         self.state.activation_seq = self.state.activation_seq.saturating_add(1);
@@ -4896,6 +4906,63 @@ mod tests {
         assert!(
             game.events
                 .contains(&format!("SUPPORT_FOR_THE_THRONE_RETURNED:{owner}"))
+        );
+    }
+
+    #[test]
+    fn a_warfare_free_tactical_breaks_a_promise_not_to_activate_that_system() {
+        // Warfare's free tactical action is an activation, so a structured promise not to
+        // activate the system is judged there exactly as on the ordinary tactical path.
+        let (mut state, galaxy, ids) = tactical_fixture();
+        let promiser = PlayerId::new("a");
+        let beneficiary = PlayerId::new("b");
+        state.player_mut(&promiser).unwrap().strategy_cards =
+            vec![ti4_model::id::StrategyCardId::new("te6warfare")];
+        state.diplomacy = ti4_model::DiplomacyState::for_players(&state.seating_order, true);
+        let revision = ti4_model::DealRevision::new(
+            0,
+            promiser.clone(),
+            vec![ti4_model::DealTerm::DoNotActivate {
+                system: ids[0].clone(),
+                deadline_round: state.round,
+            }],
+            vec![],
+            state.round,
+        )
+        .unwrap();
+        let round = state.round;
+        let deal = state
+            .diplomacy
+            .create_deal(promiser.clone(), beneficiary.clone(), round, revision)
+            .unwrap();
+        state.diplomacy.active_deals.get_mut(&deal).unwrap().status = ti4_model::DealStatus::Active;
+
+        let table = Table::with_default(Box::new(Scripted::new([
+            "strategic".to_owned(),
+            ids[0].to_string(),
+        ])));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+        let mut guard = 0;
+        while !game.events.iter().any(|e| e == "FREE_TACTICAL_ACTION") && guard < 20 {
+            assert_eq!(game.step().error, None, "log {:?}", game.events);
+            guard += 1;
+        }
+
+        assert!(
+            game.events.iter().any(|e| e == "FREE_TACTICAL_ACTION"),
+            "Warfare's free activation ran; log {:?}",
+            game.events
+        );
+        assert_eq!(
+            game.state.diplomacy.history[0].status,
+            ti4_model::DealStatus::Broken
+        );
+        assert!(
+            game.state
+                .diplomacy
+                .relationship(&beneficiary, &promiser)
+                .trust
+                < 0
         );
     }
 
