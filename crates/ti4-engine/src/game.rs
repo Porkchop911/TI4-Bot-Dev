@@ -303,6 +303,19 @@ impl AftermathWindow {
             return Ok(window);
         }
         state.production_seq = state.production_seq.saturating_add(1);
+        // Harrugh Gefhara (Hacan hero): "When 1 or more of your units use PRODUCTION". This is that
+        // moment; the hero was only reachable as a component action, which its window is not, so
+        // it could never be used. Offered after the sequence number moves, because the free
+        // marker it sets names this production and no later one.
+        let hero_galaxy = ctx.timing.as_ref().and_then(|handle| handle.galaxy);
+        crate::leaders::offer_production_hero(
+            state,
+            ctx.content,
+            ctx.sources,
+            hero_galaxy,
+            ctx.table,
+            &self.player,
+        )?;
         // Sarween Tools and AI Development Algorithm ask "when 1 or more of your units use
         // PRODUCTION", the same moment War Machine reacts to below. Resolved first so a discount
         // an "AFTER" reaction to the emitted event might itself use (none does today) would see
@@ -966,6 +979,13 @@ impl<'a> Game<'a> {
                 return self.result(false, Some(error.into()));
             }
             self.refresh_commander_unlocks(&active);
+            // Military Support (Sol): "At the start of the Sol player's turn: ... you may place 2
+            // infantry ... Then, return this card to the Sol player." The effect existed but
+            // nothing called it, so a held Military Support never did anything.
+            if crate::promissory::turn_started(&mut self.state, self.content, self.sources, &active)
+            {
+                self.emit("MILITARY_SUPPORT_USED");
+            }
             self.prepared_turn_seq = Some(self.state.turn_seq);
             // "At the start of another player's turn" — this is that moment, typed so a
             // window can hang off it: the payload names the seat whose turn is beginning,
@@ -1548,6 +1568,18 @@ impl<'a> Game<'a> {
                     crate::strategy_cards::Ability::FreeTactical(system) => {
                         // TE Warfare explicitly waives the token and permits an already-tokened
                         // system, but the rest is the ordinary movement/aftermath pipeline.
+                        //
+                        // It is still an activation, so Support for the Throne's "when you
+                        // activate a system that contains 1 or more of the <color> player's
+                        // units" applies exactly as on the ordinary tactical path. Only that path
+                        // used to check, so a holder activating through Warfare kept the note.
+                        for owner in crate::promissory::spend_support_on_activation(
+                            &mut self.state,
+                            &active,
+                            &system,
+                        ) {
+                            self.emit(&format!("SUPPORT_FOR_THE_THRONE_RETURNED:{owner}"));
+                        }
                         self.state.active_system = Some(system);
                         self.state.pending = Some("move".to_owned());
                         self.state.activation_seq = self.state.activation_seq.saturating_add(1);
@@ -2890,10 +2922,12 @@ impl<'a> Game<'a> {
                     report.revealed_objective = Some(replacement);
                 }
                 self.emit("STATUS_BOOKKEEPING_RESOLVED");
-                self.tokens = Some((
-                    TokenGain::for_status(&self.state, self.content, &report.initiative_order),
-                    Box::new(report),
-                ));
+                let gain =
+                    TokenGain::for_status(&self.state, self.content, &report.initiative_order);
+                // Cybernetic Enhancements: its extra token is already counted into `gain`
+                // (`faction_abilities::status_tokens`); the notes that paid for it go home now.
+                crate::promissory::return_all_foreign(&mut self.state, "ce");
+                self.tokens = Some((gain, Box::new(report)));
                 self.result(false, None)
             }
             Err(error) => self.result(false, Some(error.into())),
@@ -3085,15 +3119,139 @@ impl<'a> Game<'a> {
                 serde_json::Value::String(alias.clone()),
             );
             self.emit_typed("AGENDA_REVEALED", payload)?;
+            // Political Favor replaces the agenda the same way Veto does, so it is offered only
+            // when nothing has replaced it already.
+            if self.state.agenda_veto_replacement.is_none() && self.offer_political_favor()? {
+                self.emit("POLITICAL_FAVOR_USED");
+            }
 
             // Veto, played into the window, discards this agenda and reveals the one it drew
             // from the top of the deck: continue the chain from the replacement.
             let Some(replacement) = self.state.agenda_veto_replacement.take() else {
+                // This is the agenda players will vote on: Political Secret bars its owner here.
+                self.offer_political_secrets()?;
                 return Ok(Some((alias, choices)));
             };
             self.emit(&format!("AGENDA_DISCARDED:{alias}"));
             alias = replacement;
         }
+    }
+
+    /// Notes of `alias` held by someone other than their owner: `(note, holder, owner)`.
+    fn lent_notes(&self, alias: &str) -> Vec<(String, PlayerId, PlayerId)> {
+        self.state
+            .promissory_notes
+            .iter()
+            .filter(|(note, _)| crate::promissory::alias_of(note) == alias)
+            .filter_map(|(note, holder)| {
+                let name = crate::promissory::owner_of(note)?;
+                // By faction, as in `promissory::holder_of`: seats sharing a faction share the
+                // note id, and a seat comparison would read a player's own card as lent out.
+                if crate::promissory::faction_name(&self.state, holder) == name {
+                    return None;
+                }
+                let owner = crate::promissory::seat_of(&self.state, &name)?;
+                Some((note.clone(), holder.clone(), owner))
+            })
+            .collect()
+    }
+
+    /// Ask a note's holder whether to use it now.
+    fn ask_to_use_note(
+        &mut self,
+        holder: &PlayerId,
+        alias: &str,
+        prompt: String,
+    ) -> Result<bool, GameError> {
+        let choice = crate::choice::Choice::new(
+            holder.clone(),
+            prompt,
+            vec![
+                crate::choice::ChoiceOption::labelled(
+                    "use",
+                    "promissory_note",
+                    format!("use {alias}"),
+                ),
+                crate::choice::ChoiceOption::decline(),
+            ],
+        )
+        .contextualized(crate::decision_context::DecisionContext::new(
+            holder.clone(),
+            crate::decision_context::DecisionSource::Content(alias.to_owned()),
+            alias,
+            self.state.phase,
+            self.state.round,
+        ));
+        let answer = self
+            .table
+            .ask_seeing(
+                &choice,
+                &crate::choice::Observed::new(
+                    &self.state,
+                    self.content,
+                    self.sources,
+                    self.galaxy.as_ref(),
+                ),
+            )
+            .map_err(GameError::IllegalChoice)?;
+        Ok(!answer.is_decline())
+    }
+
+    /// Political Favor (Xxcha): "When an agenda is revealed: Remove 1 token from the Xxcha player's
+    /// strategy pool and return it to their reinforcements. Then, discard the revealed agenda and
+    /// reveal 1 agenda from the top of the deck. Players vote on this agenda instead. Then, return
+    /// this card to the Xxcha player."
+    ///
+    /// Offered to each holder in turn until one uses it. The replacement is handed over exactly as
+    /// Veto hands its own, so the reveal loop discards this agenda and continues. Priced for
+    /// trading since the port, the card was never offered and could not be used.
+    fn offer_political_favor(&mut self) -> Result<bool, GameError> {
+        for (note, holder, owner) in self.lent_notes("favor") {
+            let payable = self
+                .state
+                .player(&owner)
+                .is_some_and(|seat| seat.tokens(ti4_model::state::TokenPool::Strategic) > 0);
+            if !payable || self.state.agenda_deck.is_empty() {
+                continue;
+            }
+            let prompt = "Political Favor: discard this agenda and reveal the next".to_owned();
+            if !self.ask_to_use_note(&holder, "favor", prompt)? {
+                continue;
+            }
+            if let Some(seat) = self.state.player_mut(&owner) {
+                seat.gain_token_uncapped(ti4_model::state::TokenPool::Strategic, -1);
+            }
+            let replacement = self.state.agenda_deck.remove(0);
+            self.state.agenda_veto_replacement = Some(replacement);
+            crate::promissory::give_back(&mut self.state, &note);
+            return Ok(true);
+        }
+        Ok(false)
+    }
+
+    /// Political Secret: "When an agenda is revealed: The <color> player cannot vote, play action
+    /// cards, or use faction abilities until after that agenda has been resolved. Then, return this
+    /// card to the <color> player."
+    ///
+    /// Offered for the agenda players will vote on. The vote bar is the marker Assassinate
+    /// Representative sets; barring action cards and faction abilities is not modelled. Priced for
+    /// trading since the port, the card was never offered and could not be used.
+    fn offer_political_secrets(&mut self) -> Result<(), GameError> {
+        for (note, holder, owner) in self.lent_notes("ps") {
+            if self.state.agenda_predictions.contains_key(&owner) {
+                continue; // already cannot vote on this agenda
+            }
+            let prompt = format!("Political Secret: {owner} cannot vote on this agenda");
+            if !self.ask_to_use_note(&holder, "ps", prompt)? {
+                continue;
+            }
+            self.state
+                .agenda_predictions
+                .insert(owner.clone(), "none|political_secret".to_owned());
+            crate::promissory::give_back(&mut self.state, &note);
+            self.emit(&format!("POLITICAL_SECRET_USED:{owner}"));
+        }
+        Ok(())
     }
 
     /// Resolve one vote decision, applying the outcome when the vote closes.
@@ -4618,6 +4776,118 @@ mod tests {
         assert_eq!(game.step().error, None, "the tactical action opens");
         assert_eq!(game.step().error, None, "the system activates");
 
+        assert!(!game.state.support_holders.contains_key(&owner));
+        assert_eq!(
+            game.state.player(&holder).unwrap().victory_points,
+            points_with_support - 1
+        );
+        assert!(
+            game.events
+                .contains(&format!("SUPPORT_FOR_THE_THRONE_RETURNED:{owner}"))
+        );
+    }
+
+    #[test]
+    fn political_secret_bars_its_owner_from_voting_and_goes_home() {
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.player_mut(&a).unwrap().faction = ti4_model::id::FactionId::new("hacan");
+        state.player_mut(&b).unwrap().faction = ti4_model::id::FactionId::new("jolnar");
+        let note = crate::promissory::note_id("ps", "jolnar");
+        state.promissory_notes.insert(note.clone(), a.clone());
+        let table = Table::with_default(Box::new(Scripted::new(["use".to_owned()])));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table);
+
+        game.offer_political_secrets()
+            .expect("offered and answered");
+
+        assert!(
+            game.state.agenda_predictions.contains_key(&b),
+            "the owner cannot vote on this agenda"
+        );
+        assert_eq!(
+            game.state.promissory_notes.get(&note),
+            Some(&b),
+            "the card went home"
+        );
+    }
+
+    #[test]
+    fn political_favor_replaces_the_agenda_and_costs_xxcha_a_strategy_token() {
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.player_mut(&a).unwrap().faction = ti4_model::id::FactionId::new("hacan");
+        state.player_mut(&b).unwrap().faction = ti4_model::id::FactionId::new("xxcha");
+        state
+            .player_mut(&b)
+            .unwrap()
+            .gain_token_uncapped(ti4_model::state::TokenPool::Strategic, 1);
+        let tokens = state
+            .player(&b)
+            .unwrap()
+            .tokens(ti4_model::state::TokenPool::Strategic);
+        let note = crate::promissory::note_id("favor", "xxcha");
+        state.promissory_notes.insert(note.clone(), a.clone());
+        state.agenda_deck = vec!["first".to_owned(), "second".to_owned()];
+        let table = Table::with_default(Box::new(Scripted::new(["use".to_owned()])));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table);
+
+        assert!(game.offer_political_favor().expect("offered and answered"));
+
+        assert_eq!(game.state.agenda_veto_replacement.as_deref(), Some("first"));
+        assert_eq!(game.state.agenda_deck, vec!["second".to_owned()]);
+        assert_eq!(
+            game.state
+                .player(&b)
+                .unwrap()
+                .tokens(ti4_model::state::TokenPool::Strategic),
+            tokens - 1
+        );
+        assert_eq!(
+            game.state.promissory_notes.get(&note),
+            Some(&b),
+            "the card went home"
+        );
+    }
+
+    #[test]
+    fn a_warfare_free_tactical_into_the_owners_system_returns_support() {
+        // Thunder's Edge Warfare's free tactical action is an activation like any other, so the
+        // Support trigger applies to it. Before the fix only the ordinary tactical path checked.
+        let (mut state, galaxy, ids) = tactical_fixture();
+        let holder = PlayerId::new("a");
+        let owner = PlayerId::new("b");
+        state.player_mut(&holder).unwrap().faction = ti4_model::id::FactionId::new("jolnar");
+        state.player_mut(&owner).unwrap().faction = ti4_model::id::FactionId::new("hacan");
+        state.player_mut(&holder).unwrap().strategy_cards =
+            vec![ti4_model::id::StrategyCardId::new("te6warfare")];
+        assert!(crate::promissory::receive(
+            &mut state,
+            &holder,
+            &crate::promissory::support("hacan")
+        ));
+        crate::fixtures::put(&mut state, &ids[0], "cruiser", &owner, 1);
+        let points_with_support = state.player(&holder).unwrap().victory_points;
+
+        let table = Table::with_default(Box::new(Scripted::new([
+            "strategic".to_owned(),
+            ids[0].to_string(),
+        ])));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+        let mut guard = 0;
+        while !game.events.iter().any(|e| e == "FREE_TACTICAL_ACTION") && guard < 20 {
+            assert_eq!(game.step().error, None, "log {:?}", game.events);
+            guard += 1;
+        }
+
+        assert!(
+            game.events.iter().any(|e| e == "FREE_TACTICAL_ACTION"),
+            "Warfare's free activation ran; log {:?}",
+            game.events
+        );
+        assert_eq!(game.state.active_system, Some(ids[0].clone()));
         assert!(!game.state.support_holders.contains_key(&owner));
         assert_eq!(
             game.state.player(&holder).unwrap().victory_points,

@@ -106,6 +106,8 @@ const VALUE_FLAGS: &[&str] = &[
     "--expansion-weight",
     "--fleet-hoard-penalty",
     "--fleet-weight",
+    "--fracture-entry-bonus",
+    "--fracture-planet-bonus",
     "--high-vp-bonus",
     "--learning-rate",
     "--map-pool",
@@ -1274,9 +1276,18 @@ fn main() {
         reward.trade_goods_hoard_weight,
     );
     reward.styx_bonus = weight("--styx-bonus", reward.styx_bonus);
+    // The first entry into the Fracture. `Reward` now defaults it to zero and says an experiment
+    // must select it explicitly, but no flag existed, so the term could not be selected at all:
+    // runs built before that change had it silently on at 0.1, and runs built after it silently
+    // off.
+    reward.fracture_entry_bonus = weight("--fracture-entry-bonus", reward.fracture_entry_bonus);
+    // Each Fracture planet held at the end of the horizon; Styx also earns `--styx-bonus`.
+    reward.fracture_planet_bonus = weight("--fracture-planet-bonus", reward.fracture_planet_bonus);
     // `returns` gates both terminal bonuses on `> 0.0`, so a negative value here would be read as
     // "off" and the run would silently not be the experiment its command line describes.
     for (name, value) in [
+        ("--fracture-entry-bonus", reward.fracture_entry_bonus),
+        ("--fracture-planet-bonus", reward.fracture_planet_bonus),
         ("--fleet-hoard-penalty", reward.fleet_hoard_penalty),
         ("--zero-fleet-penalty", reward.zero_fleet_penalty),
         (
@@ -1335,13 +1346,15 @@ fn main() {
             reward.fleet_weight, reward.tech_weight, reward.strategy_diversity_weight
         );
         println!(
-            "  holdings    fleet pool >= {} at end {} | empty fleet pool {} | trade goods > {} {} per excess good per round | Styx at end {}",
+            "  holdings    fleet pool >= {} at end {} | empty fleet pool {} | trade goods > {} {} per excess good per round | Styx at end {} | first Fracture entry {} | per Fracture planet at end {}",
             ti4_training::reward::FLEET_HOARD_AT,
             reward.fleet_hoard_penalty,
             reward.zero_fleet_penalty,
             ti4_training::reward::TRADE_GOODS_FREE,
             reward.trade_goods_hoard_weight,
-            reward.styx_bonus
+            reward.styx_bonus,
+            reward.fracture_entry_bonus,
+            reward.fracture_planet_bonus
         );
     }
     println!(

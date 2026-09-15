@@ -527,6 +527,64 @@ pub fn component_actions(
         .collect()
 }
 
+/// Offer Harrugh Gefhara at the start of a use of PRODUCTION, and resolve it if taken.
+///
+/// "When 1 or more of your units use PRODUCTION: You may reduce the cost of each of your units to 0
+/// during this use of PRODUCTION. If you do, purge this card." Call after the production's sequence
+/// number has advanced: the free marker names that number, which is how the production window knows
+/// this use, and no later one, is free.
+///
+/// # Errors
+/// [`crate::choice::IllegalChoice`] if the decider answers with something not offered.
+pub fn offer_production_hero(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
+    table: &mut crate::choice::Table,
+    player: &PlayerId,
+) -> Result<bool, crate::choice::IllegalChoice> {
+    let hero = LeaderId::new("hacanhero");
+    let unlocked = state
+        .player(player)
+        .is_some_and(|seat| seat.leaders.get(&hero) == Some(&LeaderStatus::Unlocked));
+    if !unlocked {
+        return Ok(false);
+    }
+    let choice = crate::choice::Choice::new(
+        player.clone(),
+        "Harrugh Gefhara: make this use of PRODUCTION free",
+        vec![
+            crate::choice::ChoiceOption::labelled(
+                "use",
+                "leader_hacanhero_free_production",
+                "purge Harrugh Gefhara: every unit costs 0",
+            ),
+            crate::choice::ChoiceOption::decline(),
+        ],
+    )
+    .contextualized(crate::decision_context::DecisionContext::new(
+        player.clone(),
+        crate::decision_context::DecisionSource::FactionAbility("hacanhero".to_owned()),
+        "leader_hacanhero_free_production",
+        state.phase,
+        state.round,
+    ));
+    let answer = table.ask_seeing(
+        &choice,
+        &crate::choice::Observed::new(state, content, sources, galaxy),
+    )?;
+    if answer.is_decline() {
+        return Ok(false);
+    }
+    let seq = state.production_seq;
+    if let Some(seat) = state.player_mut(player) {
+        seat.free_production_use = Some(seq);
+        seat.leaders.insert(hero, LeaderStatus::Purged);
+    }
+    Ok(true)
+}
+
 /// End-of-round leader bookkeeping, run before the round counter advances.
 ///
 /// Darktalon Treilla's effect lasts exactly the game round it was used in: "at the end of that
@@ -1132,6 +1190,8 @@ pub fn use_leader(
                         if let Some(seat) = context.state.player_mut(&target) {
                             seat.commodities = limit;
                         }
+                        // Trade Agreement: "When the <color> player replenishes commodities".
+                        crate::promissory::trade_agreement_on_replenish(context.state, &target);
                     }
                     None => return false,
                 }
@@ -1352,6 +1412,20 @@ pub fn use_leader(
                     // never a valid replacement, whatever its `baseUpgrade` says.
                     .filter(|r| !r.strings("types").contains(&"UNITUPGRADE"))
                     .filter_map(|r| r.text("alias").map(ti4_model::id::TechnologyId::new))
+                    // 90.11: a faction technology belongs to its faction alone. "From the deck" is
+                    // the player's own technology deck -- the generic technologies and their own
+                    // faction's -- so another faction's technology is never a replacement. The
+                    // list used to filter only by colour and offered every faction's.
+                    .filter(|candidate| {
+                        crate::technology::faction_of(context.content, candidate).is_none_or(
+                            |owner| {
+                                context
+                                    .state
+                                    .player(player)
+                                    .is_some_and(|seat| seat.faction.as_str() == owner)
+                            },
+                        )
+                    })
                     .filter(|candidate| {
                         context
                             .state
@@ -1593,6 +1667,145 @@ mod tests {
             !after.technologies.contains(&ordinary),
             "the old one went back to the deck"
         );
+    }
+
+    #[test]
+    fn rin_never_offers_another_factions_technology() {
+        // 90.11: a faction technology belongs to its faction alone, and Rin replaces "from the
+        // deck" -- the player's own deck of generic technologies plus their own faction's. The
+        // replacement list filtered only by colour, so every faction's technology was offered.
+        let content = ContentStore::embedded();
+        let mut state = game(&["a"]);
+        state.player_mut(&player()).unwrap().faction = ti4_model::id::FactionId::new("jolnar");
+        let hero = holding(&mut state, "jolnarhero", LeaderStatus::Unlocked);
+        let (colour, foreign) = content
+            .from_sources(ContentType::Technologies, POK)
+            .find_map(|r| {
+                let alias = r.text("alias")?;
+                let owner = crate::technology::faction_of(
+                    content,
+                    &ti4_model::id::TechnologyId::new(alias),
+                )?;
+                if owner == "jolnar" || r.strings("types").contains(&"UNITUPGRADE") {
+                    return None;
+                }
+                Some((
+                    r.strings("types").first().copied()?.to_owned(),
+                    alias.to_owned(),
+                ))
+            })
+            .expect("another faction's technology with a colour");
+        let ordinary = content
+            .from_sources(ContentType::Technologies, POK)
+            .find(|r| {
+                r.strings("types")
+                    .first()
+                    .is_some_and(|kind| *kind == colour)
+                    && r.text("faction").is_none()
+                    && !r.strings("types").contains(&"UNITUPGRADE")
+            })
+            .and_then(|r| r.text("alias").map(ti4_model::id::TechnologyId::new))
+            .expect("an ordinary technology of that colour");
+        state
+            .player_mut(&player())
+            .unwrap()
+            .technologies
+            .insert(ordinary.clone());
+
+        let (decider, seen) = crate::choice::Capturing::new(Box::new(
+            crate::choice::Scripted::new([format!("keep|{ordinary}")]),
+        ));
+        let mut table = crate::choice::Table::with_default(Box::new(decider));
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(0);
+        let mut sequence = crate::event::EventSequence::new();
+        {
+            let mut context = crate::timing::TimingContext {
+                state: &mut state,
+                content,
+                sources: POK,
+                table: &mut table,
+                dice: &mut dice,
+                rng: &mut rng,
+                event_sequence: &mut sequence,
+                galaxy: None,
+            };
+            use_leader(&mut context, &player(), &hero);
+        }
+
+        let offered: Vec<String> = seen
+            .borrow()
+            .iter()
+            .filter(|choice| choice.prompt == "Leader: replace which technology with what")
+            .flat_map(|choice| {
+                choice
+                    .ids()
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        assert!(
+            offered.len() > 1,
+            "Rin offered at least one replacement to check: {offered:?}"
+        );
+        assert!(
+            !offered.contains(&foreign),
+            "{foreign} belongs to another faction and was offered"
+        );
+        for id in &offered {
+            if let Some(owner) =
+                crate::technology::faction_of(content, &ti4_model::id::TechnologyId::new(id))
+            {
+                assert_eq!(owner, "jolnar", "{id} is {owner}'s faction technology");
+            }
+        }
+    }
+
+    #[test]
+    fn harrugh_gefhara_is_offered_at_production_and_makes_that_use_free() {
+        // Its window is "when 1 or more of your units use PRODUCTION", not an ACTION, so the
+        // component-action offer rightly never lists it -- and nothing else offered it either.
+        let mut state = game(&["a"]);
+        let hero = holding(&mut state, "hacanhero", LeaderStatus::Unlocked);
+        state.production_seq = 7;
+        let mut table =
+            crate::choice::Table::with_default(Box::new(crate::choice::Scripted::new([
+                "use".to_owned()
+            ])));
+        let used = offer_production_hero(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            None,
+            &mut table,
+            &player(),
+        )
+        .expect("the offer is answered");
+        assert!(used);
+        let seat = state.player(&player()).unwrap();
+        assert_eq!(seat.free_production_use, Some(7), "this production is free");
+        assert_eq!(seat.leaders.get(&hero), Some(&LeaderStatus::Purged));
+
+        let mut state = game(&["a"]);
+        let hero = holding(&mut state, "hacanhero", LeaderStatus::Unlocked);
+        let mut table =
+            crate::choice::Table::with_default(Box::new(crate::choice::Scripted::new([
+                crate::choice::DECLINE_ID.to_owned(),
+            ])));
+        let used = offer_production_hero(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            None,
+            &mut table,
+            &player(),
+        )
+        .expect("the offer is answered");
+        assert!(!used, "declining keeps the hero");
+        let seat = state.player(&player()).unwrap();
+        assert_eq!(seat.free_production_use, None);
+        assert_eq!(seat.leaders.get(&hero), Some(&LeaderStatus::Unlocked));
     }
 
     #[test]

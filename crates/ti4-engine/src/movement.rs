@@ -621,6 +621,41 @@ mod tests {
     }
 
     #[test]
+    fn neutral_ships_on_the_board_block_passage_but_not_arrival() {
+        // Neutral rule 9: they are "another player's ships" for every game effect, so 58.4b bars
+        // moving through them exactly as it bars moving through a seated opponent. Built from a
+        // real state through `Board::for_player`, not from a hand-written board.
+        let hub = plain_hub();
+        let (near_a, near_b) = (hub.outer[0].clone(), hub.across(&hub.outer[0]));
+        let mover = ti4_model::id::PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a"]);
+        crate::fixtures::put(
+            &mut state,
+            &SystemId::new(&hub.centre),
+            "neutral_cruiser",
+            &crate::neutral_units::owner(),
+            1,
+        );
+        let content = ContentStore::embedded();
+
+        let board = Board::for_player(&state, content, FULL, &mover);
+        assert!(
+            board.has_enemy_ships(&hub.centre),
+            "a neutral cruiser is another player's ship"
+        );
+        let through = MovementRules::new(&hub.galaxy, content, FULL, &near_b, board.clone());
+        assert!(
+            !through.can_reach(&near_a, 2),
+            "the neutral cruiser in the centre blocks the straight route"
+        );
+        let into = MovementRules::new(&hub.galaxy, content, FULL, &hub.centre, board);
+        assert!(
+            into.can_reach(&near_a, 1),
+            "moving into the neutral garrison is the tactical action"
+        );
+    }
+
+    #[test]
     fn enemy_ships_block_passage_but_not_arrival() {
         // 58.4b bars moving *through* an occupied system; the active system is where the
         // movement ends, so occupancy there is the whole point of going.

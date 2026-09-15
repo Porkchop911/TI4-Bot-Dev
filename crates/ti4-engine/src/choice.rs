@@ -969,7 +969,7 @@ impl<'a> Observed<'a> {
     /// The value of this player's fleet in per-mille resource units.
     ///
     /// Ships, infantry and mechs, including ground forces on planets. Infantry and mechs use
-    /// their normal printed resource cost, with no upgrade premium. Fighters count as 0.75 resources each (750),
+    /// their normal printed resource cost, with no upgrade premium. Fighters count as 1.0 resource each (1000),
     /// other ships at their printed cost times 1000, and an upgraded ship at 1300 times its base
     /// unit's cost: the upgrade's own printed price is deliberately ignored, so a dreadnought II
     /// counts as 5.2 (5200) against the dreadnought's four rather than whatever the corpus prints
@@ -1002,13 +1002,14 @@ impl<'a> Observed<'a> {
         if !stats.is_ship() && !ground_force {
             return 0;
         }
-        // Fighters are valued at a flat 0.75 resources each; an upgraded ship counts as 1.3x its
-        // base unit's cost, ignoring the upgrade's own printed price (dreadnought II = 5.2);
-        // everything else pays its printed cost, whole resources for every non-fighter ship.
+        // Fighters are valued at a flat 1.0 resource each (0.75 until 2026-09-15, raised at the
+        // user's direction); an upgraded ship counts as 1.3x its base unit's cost, ignoring the
+        // upgrade's own printed price (dreadnought II = 5.2); everything else pays its printed
+        // cost, whole resources for every non-fighter ship.
         let resources = if ground_force {
             stats.cost()
         } else if stats.is_fighter() {
-            0.75
+            1.0
         } else if let Some(base_id) = stats.upgrades_from()
             && let Some(base) = types.get(base_id)
         {
@@ -1023,6 +1024,14 @@ impl<'a> Observed<'a> {
         )]
         let permille = (resources * 1000.0).round() as i64;
         permille
+    }
+
+    /// Whether `system` is a Fracture system of a Fracture that is in play.
+    /// Used only by training progress; it does not add a policy observation feature.
+    #[must_use]
+    pub fn is_fracture_system(&self, system: &SystemId) -> bool {
+        self.state.fracture_in_play
+            && crate::fracture::is_fracture_system(self.content, self.sources, system)
     }
 
     /// Whether this seat currently has a ship, infantry or mech in a Fracture system.
