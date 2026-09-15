@@ -288,3 +288,50 @@ example, and the table above omits those "off" counts.
   least one surviving bundle, or cap contacts per turn. That changes the user's per-target rule and needs the user.
 - **Persisting a migrated checkpoint** needs a user-chosen output folder.
 - Unchanged: committing, merging onto the D: fixes, and running or re-baselining ti4-sim need approval.
+
+## Addendum, 2026-09-15 night: commits, merge, migrated checkpoint, ti4-sim v38
+
+The user approved committing both branches, the merge and the ti4-sim run, and chose bisect-then-re-baseline.
+
+### Commits
+
+**On `codex/fix-six-faction-leaders`, in the shared D: checkout:**
+
+- `896fb28` holds Claude's session engine and training fixes only.
+- The other session's uncommitted example and script edits, and `target-cuda-repack/`, were left untouched.
+
+**On `codex/diplomacy-v1`, in this worktree:**
+
+| Commit | What it is |
+|---|---|
+| `71c398c` | Structured diplomacy |
+| `4817d71` | Merge of `896fb28`; no textual conflicts |
+| `62c733d` | Warfare's free tactical action now judges `DoNotActivate` promises (it activated without the diplomacy hook), plus the decision-delivery inventory registrations for `combat.rs::roll_round` (War Funding), `game.rs::ask_to_use_note` and `leaders.rs::offer_production_hero` |
+| `fa72051` | `examples/migrate_bundle_to_diplomacy.rs` |
+| `b15df02` | ti4-sim behaviour bounds v38, with the bisection and old/new table in `plans/evidence/M08-021.md` |
+
+### Migrated checkpoint
+
+- `out/blank-shaped-4layers/fracture-1x-styx16-20260915/checkpoint-19280-diplomacy-v11`.
+- Schema 10, OOV v11, 15 heads, update 19280; it reads back through `bundle::read`.
+- Diplomacy-off play identity for the in-memory migration: see the earlier addendum.
+
+### Test results after the merge
+
+- **Unit tests:** engine 1320, decision-delivery inventory 4, model 81, bridge 62, MLP 88 (`--skip bundle::`), training lib 144.
+- **Policy:** the diplomacy and vocabulary tests pass.
+- **Soak:** passes.
+- **Support for the Throne audit:** 1000 games × 8 rounds, PASS.
+- **ti4-sim:** 51 of 52 pass with v38.
+  - `profile::tests::fixture_capture_is_deterministic` fails at every commit, including the base, because this worktree has no `out/pools`.
+
+### Contacts
+
+- The user reviewed the contact behaviour and keeps it as it is: contacts go to anyone, once per pair per turn.
+- The journal also stays unbounded for now.
+
+### Still open
+
+- The D: branch `codex/fix-six-faction-leaders` (`896fb28`) lacks the inventory registrations and the v38 re-baseline. They exist only on `codex/diplomacy-v1`.
+- No paired greedy evaluation of the migrated checkpoint has been run yet.
+- No diplomacy training has been run.
