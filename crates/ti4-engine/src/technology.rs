@@ -1066,6 +1066,21 @@ pub fn research(
     // destroy 1 of their non-fighter ships." Here rather than at the strategy card, because
     // researching happens by several routes and the law says "researches", not "uses Technology".
     crate::laws::revolution_tax(state, content, sources, player);
+    // Research Agreement (Jol-Nar): "After the Jol-Nar player researches a technology that is not
+    // a faction technology: Gain that technology. Then, return this card to the Jol-Nar player."
+    // The holder gains it rather than researching it, so nothing that fires on research fires for
+    // them. A holder who already owns the technology has nothing to gain and keeps the card.
+    if faction_of(content, alias).is_none()
+        && let Some(holder) = crate::promissory::holder_of(state, "ra", player)
+        && state
+            .player(&holder)
+            .is_some_and(|seat| !seat.technologies.contains(alias))
+    {
+        grant(state, &holder, alias);
+        apply_unit_upgrades(state, content, sources, &holder);
+        let name = crate::promissory::faction_name(state, player);
+        crate::promissory::give_back(state, &crate::promissory::note_id("ra", &name));
+    }
     true
 }
 
@@ -1749,6 +1764,44 @@ mod tests {
         assert_eq!(
             name(ContentStore::embedded(), &TechnologyId::new("sr")),
             "Sling Relay"
+        );
+    }
+
+    #[test]
+    fn a_research_agreement_hands_the_holder_the_same_technology_and_goes_home() {
+        // "After the Jol-Nar player researches a technology that is not a faction technology: Gain
+        // that technology. Then, return this card to the Jol-Nar player." Priced for trading, it
+        // never did anything.
+        let content = ContentStore::embedded();
+        let jolnar = PlayerId::new("a");
+        let holder = PlayerId::new("b");
+        let mut state = game(&["a", "b"]);
+        state.player_mut(&jolnar).unwrap().faction = ti4_model::id::FactionId::new("jolnar");
+        state.player_mut(&holder).unwrap().faction = ti4_model::id::FactionId::new("hacan");
+        let note = crate::promissory::note_id("ra", "jolnar");
+        state.promissory_notes.insert(note.clone(), holder.clone());
+        let technology = researchable(&state, content, POK, &jolnar)
+            .into_iter()
+            .find(|alias| {
+                faction_of(content, alias).is_none()
+                    && !state.player(&holder).unwrap().technologies.contains(alias)
+            })
+            .expect("a generic technology Jol-Nar can research now");
+
+        assert!(research(&mut state, content, POK, &jolnar, &technology));
+
+        assert!(
+            state
+                .player(&holder)
+                .unwrap()
+                .technologies
+                .contains(&technology),
+            "the holder gained the same technology"
+        );
+        assert_eq!(
+            state.promissory_notes.get(&note),
+            Some(&jolnar),
+            "the card went home"
         );
     }
 

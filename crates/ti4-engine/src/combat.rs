@@ -72,6 +72,19 @@ pub fn combatants(
             found.push(player.clone());
         }
     }
+    // Thunder's Edge neutral units, rule 2: "If a player has ships in a space area that contains
+    // neutral units, they will resolve a space combat against those units." The neutral owner is
+    // never seated (rule 6), so the loop above cannot find it, and every combat against the
+    // Fracture's garrison used to end before it began with the player declared the winner.
+    let neutral = crate::neutral_units::owner();
+    if state.system_state(system).units.iter().any(|unit| {
+        unit.owner == neutral
+            && types
+                .get(unit.type_id.as_str())
+                .is_some_and(UnitType::is_ship)
+    }) {
+        found.push(neutral);
+    }
     found
 }
 
@@ -838,6 +851,19 @@ pub fn roll_fleet_and_open(
     player: &PlayerId,
     system: &SystemId,
 ) -> usize {
+    roll_fleet_and_open_staged(state, ctx, player, system).0
+}
+
+/// [`roll_fleet_and_open`], also handing back the staged dice the hits were read from.
+///
+/// War Funding acts after *both* sides have rolled, so the dice have to outlive the staging this
+/// function clears.
+pub fn roll_fleet_and_open_staged(
+    state: &mut GameState,
+    ctx: &mut Resolving<'_>,
+    player: &PlayerId,
+    system: &SystemId,
+) -> (usize, Option<RerollSet>) {
     let (content, sources) = (ctx.content, ctx.sources);
     let mut set = RerollSet {
         kind: "fleet".into(),
@@ -871,10 +897,25 @@ pub fn roll_fleet_and_open(
         state.last_reroll_player = Some(player.clone());
     }
     open_fleet_reroll_windows(state, ctx, player);
-    let hits = state.reroll_staging.get(player).map_or(hits, staged_hits);
-    state.reroll_staging.remove(player);
+    let staged = state.reroll_staging.remove(player);
+    let hits = staged.as_ref().map_or(hits, staged_hits);
     state.last_reroll_player = None;
-    hits
+    (hits, staged)
+}
+
+/// The War Funding note this combatant holds from another player, if any.
+fn war_funding_note(state: &GameState, holder: &PlayerId) -> Option<String> {
+    state
+        .promissory_notes
+        .iter()
+        .find(|(note, held_by)| {
+            *held_by == holder
+                && crate::promissory::alias_of(note) == "war_funding"
+                // By faction, as in `promissory::holder_of`: seats sharing a faction share the id.
+                && crate::promissory::owner_of(note)
+                    .is_some_and(|name| name != crate::promissory::faction_name(state, holder))
+        })
+        .map(|(note, _)| note.clone())
 }
 
 /// 78.3: anti-fighter barrage — simultaneous, first round only, and hits fall only on fighters.
@@ -1550,9 +1591,22 @@ fn offer_sustain(
                 )
                 .about(DecisionTarget::System(system.clone())),
             );
-        let answer = ctx
-            .table
-            .ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
+        // Neutral units rule 5: they use every ability they can, so they always sustain and are
+        // never asked.
+        let answer = if crate::neutral_units::is_neutral(player) {
+            match choice
+                .options
+                .iter()
+                .find(|option| !option.is_decline())
+                .cloned()
+            {
+                Some(option) => option,
+                None => return Ok(hits),
+            }
+        } else {
+            ctx.table
+                .ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?
+        };
         if answer.is_decline() {
             return Ok(hits);
         }
@@ -1803,6 +1857,16 @@ pub(crate) fn choose_casualty(
 ) -> Result<Unit, CombatError> {
     if let [only] = units {
         return Ok(only.clone());
+    }
+    // Neutral units rule 7: nobody chooses; the hit goes to the unit lowest on the reference card.
+    if crate::neutral_units::is_neutral(player)
+        && let Some(unit) = crate::neutral_units::next_casualty(
+            &crate::neutral_units::roster(content, sources),
+            units,
+            |_| true,
+        )
+    {
+        return Ok(unit.clone());
     }
     // One option per distinguishable loss. Five fighters are one decision, not five, and
     // offering it five times mattered: a sampling decider draws per option, so with five
@@ -2155,6 +2219,10 @@ impl CombatWindow {
         sources: SourceSet,
         player: &PlayerId,
     ) -> Vec<SystemId> {
+        // Neutral units rule 6: they cannot retreat, so they are never asked to announce one.
+        if crate::neutral_units::is_neutral(player) && !crate::neutral_units::may_retreat() {
+            return Vec::new();
+        }
         // Intercept: "your opponent cannot retreat during this round of space combat." A seat with
         // nowhere to go is not asked (78.4c), so barring is expressed as having nowhere to go.
         if retreat_barred(state, player) {
@@ -2266,6 +2334,52 @@ impl CombatWindow {
             .collect()
     }
 
+    /// The answer the neutral-unit rules give at a pending sustain or casualty decision.
+    ///
+    /// Nobody decides for neutral units. Rule 5: they use every ability they can, so a sustain is
+    /// always taken. Rule 7: a hit is assigned to the unit lowest on the neutral reference card.
+    /// Answering through [`Window::resolve`] keeps every effect of the ordinary path (events,
+    /// hit counting) rather than re-implementing it for one owner.
+    fn neutral_answer(
+        &self,
+        state: &GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+    ) -> Option<ChoiceOption> {
+        let choice = self.pending_choice(state, content, sources)?;
+        match &self.stage {
+            Stage::Sustaining { .. } => choice
+                .options
+                .iter()
+                .find(|option| !option.is_decline())
+                .cloned(),
+            Stage::Assigning { queue, .. } => {
+                let front = queue.first()?;
+                let units = ships_of(state, content, sources, &front.player, &self.system);
+                let order = crate::neutral_units::roster(content, sources);
+                let doomed = crate::neutral_units::next_casualty(&order, &units, |_| true)
+                    .or_else(|| units.first())?;
+                choice
+                    .options
+                    .iter()
+                    .find(|option| {
+                        option
+                            .id
+                            .strip_prefix("destroy|")
+                            .and_then(|rest| rest.parse::<usize>().ok())
+                            .and_then(|index| units.get(index))
+                            .is_some_and(|unit| {
+                                unit.type_id == doomed.type_id
+                                    && unit.sustained_damage == doomed.sustained_damage
+                            })
+                    })
+                    .or_else(|| choice.options.first())
+                    .cloned()
+            }
+            _ => None,
+        }
+    }
+
     /// Roll a round and queue both sides' hits, or finish.
     #[allow(
         clippy::too_many_lines,
@@ -2367,15 +2481,110 @@ impl CombatWindow {
         // before either is absorbed. Each side's window opens before the next side's dice
         // are drawn, like the barrage's, so a reroll can empty a fleet mid-roll and end
         // the fight where it stands.
-        let attacker_hits = roll_fleet_and_open(state, ctx, &self.attacker, &self.system);
+        let (mut attacker_hits, attacker_dice) =
+            roll_fleet_and_open_staged(state, ctx, &self.attacker, &self.system);
         if self.over(state, content, sources) {
             self.stage = self.conclude(state, content, sources, round);
             return Ok(());
         }
-        let defender_hits = roll_fleet_and_open(state, ctx, &self.defender, &self.system);
+        let (mut defender_hits, defender_dice) =
+            roll_fleet_and_open_staged(state, ctx, &self.defender, &self.system);
         if self.over(state, content, sources) {
             self.stage = self.conclude(state, content, sources, round);
             return Ok(());
+        }
+
+        // War Funding (Letnev): "After you and your opponent roll dice during space combat: You may
+        // reroll all of your opponent's dice. You may reroll any number of your dice. Then, return
+        // this card to the Letnev player." Both sides' dice are in hand here and no hit has landed.
+        // The holder rerolls every opposing die and their own misses -- rerolling a hit can only
+        // lose it. Priced for trading since the port, the card was never offered.
+        let mut sets = [attacker_dice, defender_dice];
+        let sides = [self.attacker.clone(), self.defender.clone()];
+        for (holder_index, opponent_index) in [(0usize, 1usize), (1, 0)] {
+            let holder = sides[holder_index].clone();
+            let Some(note) = war_funding_note(state, &holder) else {
+                continue;
+            };
+            let opponent_dice: Vec<(usize, usize)> = sets[opponent_index]
+                .as_ref()
+                .map(|set| {
+                    set.rolls
+                        .iter()
+                        .enumerate()
+                        .flat_map(|(unit, entry)| {
+                            (0..entry.faces.len()).map(move |die| (unit, die))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let own_misses: Vec<(usize, usize)> = sets[holder_index]
+                .as_ref()
+                .map(|set| {
+                    set.rolls
+                        .iter()
+                        .enumerate()
+                        .flat_map(|(unit, entry)| {
+                            entry
+                                .faces
+                                .iter()
+                                .enumerate()
+                                .filter(|&(die, face)| {
+                                    let adjusted = i64::from(*face)
+                                        + entry
+                                            .deltas
+                                            .get(&die)
+                                            .map_or(0, |offset| i64::from(*offset));
+                                    entry.hits_on.is_some_and(|on| adjusted < i64::from(on))
+                                })
+                                .map(move |(die, _)| (unit, die))
+                                .collect::<Vec<_>>()
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let opponent_hits = sets[opponent_index].as_ref().map_or(0, staged_hits);
+            if opponent_hits == 0 && own_misses.is_empty() {
+                continue; // nothing to gain from it this round
+            }
+            let choice = Choice::new(
+                holder.clone(),
+                "War Funding: reroll all of your opponent's dice and your misses",
+                vec![
+                    ChoiceOption::labelled("use", "promissory_note", "use War Funding"),
+                    ChoiceOption::decline(),
+                ],
+            )
+            .contextualized(
+                DecisionContext::new(
+                    holder.clone(),
+                    DecisionSource::Content("war_funding".to_owned()),
+                    "war_funding",
+                    state.phase,
+                    state.round,
+                )
+                .about(DecisionTarget::System(self.system.clone())),
+            );
+            let answer = ctx.table.ask_seeing(
+                &choice,
+                &Observed::new(state, content, sources, self.galaxy.as_ref()),
+            )?;
+            if answer.is_decline() {
+                continue;
+            }
+            if let Some(set) = sets[opponent_index].as_mut() {
+                apply_reroll_dice(ctx.dice, ctx.rng, set, &opponent_dice, "war_funding");
+            }
+            if let Some(set) = sets[holder_index].as_mut() {
+                apply_reroll_dice(ctx.dice, ctx.rng, set, &own_misses, "war_funding");
+            }
+            crate::promissory::give_back(state, &note);
+        }
+        if let Some(set) = &sets[0] {
+            attacker_hits = staged_hits(set);
+        }
+        if let Some(set) = &sets[1] {
+            defender_hits = staged_hits(set);
         }
 
         let queue: Vec<Pending> = [
@@ -2509,6 +2718,13 @@ impl CombatWindow {
                         rest[0].hits -= 1;
                         self.stage = Stage::Sustaining { queue: rest, round };
                         continue;
+                    }
+                    // A decision is pending. Neutral units never wait on a decider (rules 5, 7):
+                    // answer for them and let `resolve` carry the combat on from there.
+                    if crate::neutral_units::is_neutral(&front.player)
+                        && let Some(answer) = self.neutral_answer(state, content, sources)
+                    {
+                        return self.resolve(state, ctx, answer).map_err(CombatError::from);
                     }
                     return Ok(());
                 }
@@ -5649,6 +5865,142 @@ mod tests {
         assert_eq!(
             notes.get(&b),
             Some(&std::collections::BTreeSet::from([a.clone()]))
+        );
+    }
+
+    #[test]
+    fn war_funding_is_offered_after_both_sides_roll_and_goes_home_when_used() {
+        // Priced for trading, the card was never offered in a combat.
+        struct UsesWarFunding;
+        impl crate::choice::Decider for UsesWarFunding {
+            fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+                if choice.prompt.starts_with("War Funding") {
+                    return Ok(choice
+                        .options
+                        .iter()
+                        .find(|option| option.id == "use")
+                        .cloned()
+                        .expect("use is offered"));
+                }
+                choice
+                    .options
+                    .first()
+                    .cloned()
+                    .ok_or_else(|| IllegalChoice::NoOptions {
+                        player: choice.player.clone(),
+                        prompt: choice.prompt.clone(),
+                    })
+            }
+        }
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.player_mut(&a).unwrap().faction = ti4_model::id::FactionId::new("hacan");
+        state.player_mut(&b).unwrap().faction = ti4_model::id::FactionId::new("letnev");
+        state.active = Some(a.clone());
+        let note = crate::promissory::note_id("war_funding", "letnev");
+        state.promissory_notes.insert(note.clone(), a.clone());
+        let system = SystemId::new(&crate::fixtures::plain_systems(1)[0]);
+        crate::fixtures::put(&mut state, &system, "dreadnought", &a, 2);
+        crate::fixtures::put(&mut state, &system, "dreadnought", &b, 2);
+        let mut table = Table::with_default(Box::new(UsesWarFunding));
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(11);
+
+        resolve(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut table,
+            &mut dice,
+            &mut rng,
+            &system,
+        )
+        .expect("the combat resolves");
+
+        assert_eq!(
+            state.promissory_notes.get(&note),
+            Some(&b),
+            "War Funding was used and went home to Letnev"
+        );
+    }
+
+    #[test]
+    fn neutral_ships_are_a_side_in_space_combat() {
+        // Thunder's Edge neutral rule 2. The neutral owner is never seated, so a combatant list
+        // built only from the seating order left a player alone against the Fracture's garrison.
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        let system = SystemId::new("fracture1");
+        let a = PlayerId::new("a");
+        let neutral = crate::neutral_units::owner();
+        crate::fixtures::put(&mut state, &system, "cruiser", &a, 1);
+        crate::fixtures::put(&mut state, &system, "neutral_cruiser", &neutral, 2);
+
+        let sides = combatants(
+            &state,
+            ContentStore::embedded(),
+            ti4_model::content_types::FULL,
+            &system,
+        );
+
+        assert_eq!(sides, vec![a, neutral]);
+    }
+
+    #[test]
+    fn a_space_combat_against_neutral_units_is_fought_without_asking_the_neutral_side() {
+        // Rules 2, 5, 6, 7 together: the combat happens, and nobody is ever asked to decide for
+        // the neutral side -- not whether to retreat, not whether to sustain, not which unit dies.
+        // The default decider refuses every question, so any neutral ask fails the combat.
+        struct NeverAsked;
+        impl crate::choice::Decider for NeverAsked {
+            fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+                Err(IllegalChoice::DeciderFailed {
+                    player: choice.player.clone(),
+                    prompt: choice.prompt.clone(),
+                    reason: "the neutral side must never be asked".to_owned(),
+                })
+            }
+        }
+        let a = PlayerId::new("a");
+        let neutral = crate::neutral_units::owner();
+        let system = SystemId::new("fracture4");
+        let mut state = crate::fixtures::game(&["a"]);
+        state.active = Some(a.clone());
+        crate::fixtures::put(&mut state, &system, "dreadnought", &a, 3);
+        crate::fixtures::put(&mut state, &system, "neutral_destroyer", &neutral, 1);
+        crate::fixtures::put(&mut state, &system, "neutral_dreadnought", &neutral, 2);
+        let mut table = Table::with_default(Box::new(NeverAsked));
+        table.seat(a.clone(), Box::new(crate::choice::FirstOption));
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(7);
+
+        let outcome = resolve(
+            &mut state,
+            ContentStore::embedded(),
+            ti4_model::content_types::FULL,
+            &mut table,
+            &mut dice,
+            &mut rng,
+            &system,
+        )
+        .expect("the combat resolves without ever asking the neutral side");
+
+        assert!(outcome.rounds >= 1, "a combat was actually fought");
+        let content = ContentStore::embedded();
+        let mine = ships_of(&state, content, ti4_model::content_types::FULL, &a, &system);
+        let theirs = ships_of(
+            &state,
+            content,
+            ti4_model::content_types::FULL,
+            &neutral,
+            &system,
+        );
+        assert!(
+            mine.is_empty() || theirs.is_empty() || outcome.rounds >= MAX_ROUNDS,
+            "the combat ran until one side was gone: {} vs {} left after {} rounds",
+            mine.len(),
+            theirs.len(),
+            outcome.rounds
         );
     }
 

@@ -128,7 +128,7 @@ pub struct Reward {
     /// Zero keeps the reference reward exactly (Stage-2 gate experiments).
     pub clearance_weight: f64,
     /// Moderate reward for fleet strength, as a potential difference over the seat's fleet value
-    /// in resources ([`Progress::fleet_value_permille`]: fighters 0.75 each, upgraded ships 1.3x
+    /// in resources ([`Progress::fleet_value_permille`]: fighters 1.0 each, upgraded ships 1.3x
     /// their base unit's cost; infantry and mechs at normal resource cost). Paid when the fleet grows and taken back when it is lost, like
     /// every other term here. Off by default; keep it well below `clearance_weight`, so a whole
     /// game of fleet-building never pays more than an uncleared opening costs.
@@ -169,6 +169,10 @@ pub struct Reward {
     /// an experiment must select its value explicitly.
     #[serde(default)]
     pub fracture_entry_bonus: f64,
+    /// Terminal bonus per planet in the Fracture this seat controls at the horizon, Styx included
+    /// (so Styx also earns `styx_bonus` on top). Credited at the final slot. Off by default.
+    #[serde(default)]
+    pub fracture_planet_bonus: f64,
     /// How much a decision is credited for what happens later (gamma).
     ///
     /// One (the default) is the undiscounted suffix sum this trainer has always used: every
@@ -226,6 +230,7 @@ impl Default for Reward {
             trade_goods_hoard_weight: 0.0,
             styx_bonus: 0.0,
             fracture_entry_bonus: 0.0,
+            fracture_planet_bonus: 0.0,
         }
     }
 }
@@ -472,6 +477,15 @@ fn charge_holdings(snapshots: &[Progress], reward: &Reward, rewards: &mut [f64])
     }
     if reward.styx_bonus > 0.0 && horizon.holds_styx {
         *last += reward.styx_bonus;
+    }
+    // Every Fracture planet held at the horizon, at the same final slot.
+    if reward.fracture_planet_bonus > 0.0 && horizon.fracture_planets > 0 {
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "a handful of planets is exact in f64"
+        )]
+        let held = horizon.fracture_planets as f64;
+        *last += reward.fracture_planet_bonus * held;
     }
     // Credit the transition into the first observed presence. Starting in the Fracture is not
     // entry, and leaving/re-entering cannot farm the bonus. Snapshots are per decision, including
@@ -1152,6 +1166,39 @@ mod tests {
         assert!(reference.zero_fleet_penalty.abs() < f64::EPSILON);
         assert!(reference.trade_goods_hoard_weight.abs() < f64::EPSILON);
         assert!(reference.styx_bonus.abs() < f64::EPSILON);
+        assert!(reference.fracture_planet_bonus.abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn each_fracture_planet_held_at_the_horizon_pays_every_return() {
+        let mut reward = Reward::for_stage(Stage::Two);
+        reward.fracture_planet_bonus = 8.0;
+        let planets = |count: i64, progress: Progress| Progress {
+            fracture_planets: count,
+            ..progress
+        };
+        // Two planets at the end: 8 each, on every return.
+        let held = holdings_episode(
+            vec![holding(1, 3, 0), planets(1, holding(2, 3, 0))],
+            planets(2, holding(4, 3, 0)),
+        );
+        assert_shift(&shift(&held, &reward), &[16.0, 16.0]);
+        // Held along the way and lost by the end pays nothing.
+        let lost = holdings_episode(
+            vec![planets(3, holding(2, 3, 0)), holding(3, 3, 0)],
+            holding(4, 3, 0),
+        );
+        assert_shift(&shift(&lost, &reward), &[0.0, 0.0]);
+        // Styx is a Fracture planet and also takes its own bonus: 8 + 8 for Styx alone.
+        reward.styx_bonus = 8.0;
+        let styx = holdings_episode(
+            vec![holding(1, 3, 0)],
+            Progress {
+                holds_styx: true,
+                ..planets(1, holding(4, 3, 0))
+            },
+        );
+        assert_shift(&shift(&styx, &reward), &[16.0]);
     }
 
     #[test]

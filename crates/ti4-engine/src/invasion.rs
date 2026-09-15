@@ -974,7 +974,21 @@ fn absorb_ground(
         if present.is_empty() {
             return Ok(()); // 15.2a
         }
-        let doomed = if let [only] = present.as_slice() {
+        // Neutral units rule 7: nobody chooses; the hit goes to the unit lowest on the reference
+        // card.
+        let neutral_pick = if crate::neutral_units::is_neutral(player) {
+            crate::neutral_units::next_casualty(
+                &crate::neutral_units::roster(content, sources),
+                &present,
+                |_| true,
+            )
+            .cloned()
+        } else {
+            None
+        };
+        let doomed = if let Some(unit) = neutral_pick {
+            unit
+        } else if let [only] = present.as_slice() {
             only.clone()
         } else {
             let mut seen = std::collections::BTreeSet::new();

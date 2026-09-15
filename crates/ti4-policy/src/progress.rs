@@ -67,6 +67,9 @@ pub struct Progress {
     /// A ship, infantry or mech currently present in the Fracture; reward bookkeeping only.
     #[serde(default)]
     pub in_fracture: bool,
+    /// Planets in Fracture systems this seat controls, Styx included; reward bookkeeping only.
+    #[serde(default)]
+    pub fracture_planets: i64,
 }
 
 /// What a seat held at setup, so the gains above can be deltas.
@@ -133,6 +136,12 @@ pub fn measure(seen: &Observed<'_>, player: &PlayerId, baseline: Baseline) -> Pr
             .seat(player)
             .map_or(0, |seat| i64::from(seat.trade_goods)),
         in_fracture: seen.has_units_in_fracture(player),
+        fracture_planets: count(
+            controlled
+                .iter()
+                .filter(|(system, _)| seen.is_fracture_system(system))
+                .count(),
+        ),
         holds_styx: controlled
             .iter()
             .any(|(_, planet)| planet.as_str() == "styx"),
@@ -262,7 +271,7 @@ mod tests {
 
     #[test]
     fn the_fleet_value_prices_fighters_and_upgrades_as_the_reward_specifies() {
-        // Fighters count as 0.75 resources each, a dreadnought at its printed four, and an
+        // Fighters count as 1.0 resource each, a dreadnought at its printed four, and an
         // upgraded ship at 1.3x its base unit's cost (dreadnought II = 5.2), whatever the corpus
         // prints for the upgrade itself.
         let mut state = ti4_engine::fixtures::game(&["a"]);
@@ -275,8 +284,8 @@ mod tests {
         let progress = measure(&watching(&state), &player, Baseline::default());
         assert_eq!(
             progress.fleet_value_permille,
-            750 + 750 + 4000 + 5200,
-            "two fighters (1500) + dreadnought (4000) + dreadnought II (5200)"
+            1000 + 1000 + 4000 + 5200,
+            "two fighters (2000) + dreadnought (4000) + dreadnought II (5200)"
         );
     }
 

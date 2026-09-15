@@ -140,13 +140,17 @@ pub fn status_tokens(
     player: &PlayerId,
     base: i32,
 ) -> i32 {
-    of_player(state, content, player)
+    let count = of_player(state, content, player)
         .iter()
         .fold(base, |count, ability| match ability.as_str() {
             // Sol's Versatile: one more token every status phase.
             "versatile" => count + 1,
             _ => count,
-        })
+        });
+    // Cybernetic Enhancements (L1Z1X): "When you gain command tokens during the status phase: Gain
+    // 1 additional command token. Then, return this card to the L1Z1X player." Counted here; the
+    // status phase returns the notes once the gain is dealt (`promissory::return_all_foreign`).
+    count + i32::try_from(crate::promissory::held_foreign(state, player, "ce")).unwrap_or(0)
 }
 
 /// Prerequisites this player may skip when researching `technology`.
@@ -891,6 +895,25 @@ mod tests {
             4,
             "and nobody else gets it"
         );
+    }
+
+    #[test]
+    fn a_held_cybernetic_enhancements_adds_one_status_token() {
+        // "When you gain command tokens during the status phase: Gain 1 additional command token."
+        let content = ti4_content::ContentStore::embedded();
+        let holder = ti4_model::id::PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.player_mut(&holder).unwrap().faction = ti4_model::id::FactionId::new("hacan");
+        state
+            .player_mut(&ti4_model::id::PlayerId::new("b"))
+            .unwrap()
+            .faction = ti4_model::id::FactionId::new("l1z1x");
+        let without = status_tokens(&state, content, &holder, 2);
+        state
+            .promissory_notes
+            .insert(crate::promissory::note_id("ce", "l1z1x"), holder.clone());
+
+        assert_eq!(status_tokens(&state, content, &holder, 2), without + 1);
     }
 
     #[test]

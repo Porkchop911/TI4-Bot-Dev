@@ -2220,6 +2220,20 @@ pub fn resolve(
     system: &SystemId,
 ) -> Result<ProductionReport, IllegalChoice> {
     let mut window = ProductionWindow::new(state, content, sources, player, system);
+    // Harrugh Gefhara (Hacan hero): "When 1 or more of your units use PRODUCTION" -- every use, not
+    // only the tactical action's. Warfare's secondary and Construction produce through here, where
+    // the hero was never offered. Gated on the hero being ready so a production nobody can make
+    // free keeps its sequence untouched.
+    let hero_ready = state.player(player).is_some_and(|seat| {
+        seat.leaders.get(&ti4_model::id::LeaderId::new("hacanhero"))
+            == Some(&ti4_model::state::LeaderStatus::Unlocked)
+    });
+    if hero_ready && capacity(state, content, sources, player, system) > 0 {
+        state.production_seq = state.production_seq.saturating_add(1);
+        if crate::leaders::offer_production_hero(state, content, sources, galaxy, table, player)? {
+            window.refresh(state, content, sources);
+        }
+    }
     // Production rolls nothing, so these are never drawn from. Kept explicit rather than
     // hidden behind an Option: if a future rule does roll here, it must be handed the game's
     // generator instead of finding a convenient throwaway already in scope.

@@ -3000,6 +3000,8 @@ fn harness_energy(context: &mut crate::timing::TimingContext<'_>, player: &Playe
     if let Some(seat) = context.state.player_mut(player) {
         seat.commodities = limit;
     }
+    // Trade Agreement: "When the <color> player replenishes commodities".
+    crate::promissory::trade_agreement_on_replenish(context.state, player);
 }
 
 /// Economic Initiative: "Ready each cultural planet you control."
@@ -3054,16 +3056,11 @@ fn industrial_initiative(context: &mut crate::timing::TimingContext<'_>, player:
 ///
 /// "Units that have capacity" are the cargo rules as printed: any of the player's space units
 /// whose type carries cargo space. A space dock is a structure, so it is looked for on the
-/// planet's unit list. The card forbids other *players'* ships; neutral units are not players',
-/// so they do not block the placement.
+/// planet's unit list. The card forbids other players' ships, and neutral units count: Thunder's
+/// Edge neutral rule 9 makes them "another player's ships for abilities and other game effects".
+/// Reading them as no one's placed fighters beside neutral garrisons with no combat ever to follow.
 fn fighter_conscription(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
     let types = ti4_content::units::catalogue(context.content, context.sources);
-    let seated: std::collections::BTreeSet<String> = context
-        .state
-        .players
-        .iter()
-        .map(|seat| seat.id.to_string())
-        .collect();
     let fighter = ti4_model::id::UnitTypeId::new("fighter");
     let mut eligible: Vec<ti4_model::id::SystemId> = Vec::new();
     for (system, board) in &context.state.board {
@@ -3084,12 +3081,13 @@ fn fighter_conscription(context: &mut crate::timing::TimingContext<'_>, player: 
         if !docked && !has_capacity {
             continue;
         }
-        if board
-            .units
-            .iter()
-            .any(|unit| &unit.owner != player && seated.contains(&unit.owner.to_string()))
-        {
-            continue; // someone else's ship is in the system
+        if board.units.iter().any(|unit| {
+            &unit.owner != player
+                && types
+                    .get(unit.type_id.as_str())
+                    .is_some_and(|kind| kind.is_ship())
+        }) {
+            continue; // another player's ship is in the system, neutral ships included
         }
         eligible.push(system.clone());
     }
@@ -3973,7 +3971,9 @@ fn mercenary_contract(context: &mut crate::timing::TimingContext<'_>, player: &P
         ti4_model::id::SystemId::new(&system_part),
         ti4_model::id::PlanetId::new(&planet_part),
     );
-    let infantry = ti4_model::id::UnitTypeId::new("infantry");
+    // The neutral reference card's infantry, not the generic one: neutral units fight with the
+    // card's values and are ordered by it for hits (neutral rules 1, 7).
+    let infantry = ti4_model::id::UnitTypeId::new("neutral_infantry");
     let neutral = ti4_model::id::PlayerId::new(crate::neutral_units::NEUTRAL);
     let units = context
         .state
@@ -4027,7 +4027,14 @@ fn pirate_fleet(context: &mut crate::timing::TimingContext<'_>, player: &PlayerI
         return;
     };
     let neutral = ti4_model::id::PlayerId::new(crate::neutral_units::NEUTRAL);
-    let fleet = ["carrier", "cruiser", "destroyer", "fighter", "fighter"];
+    // Neutral reference-card units, not the generic ones (neutral rules 1, 7).
+    let fleet = [
+        "neutral_carrier",
+        "neutral_cruiser",
+        "neutral_destroyer",
+        "neutral_fighter",
+        "neutral_fighter",
+    ];
     let system = ti4_model::id::SystemId::new(&system);
     let board = context.state.system_mut(&system);
     for kind in fleet {
@@ -4064,7 +4071,8 @@ fn pirate_contract(context: &mut crate::timing::TimingContext<'_>, player: &Play
         .system_mut(&ti4_model::id::SystemId::new(&system))
         .units
         .push(ti4_model::units::Unit::new(
-            ti4_model::id::UnitTypeId::new("destroyer"),
+            // The neutral reference card's destroyer (neutral rules 1, 7).
+            ti4_model::id::UnitTypeId::new("neutral_destroyer"),
             neutral,
         ));
 }
@@ -4206,6 +4214,11 @@ fn perform_strategy_card(
             // state but not its turn machinery, so the activation is recorded — the player is
             // the active one, the system is the active system — while the move itself and the
             // windows around it belong to the driver.
+            //
+            // Recording the activation includes its Support for the Throne trigger: a holder
+            // who activates the owner's system this way returns the note exactly as on the
+            // ordinary tactical path.
+            crate::promissory::spend_support_on_activation(context.state, player, &system);
             context.state.active = Some(player.clone());
             context.state.active_system = Some(system);
         }
@@ -9395,7 +9408,7 @@ mod tests {
             units
                 .iter()
                 .filter(|unit| {
-                    unit.type_id.as_str() == "infantry" && unit.owner.as_str() == neutral
+                    unit.type_id.as_str() == "neutral_infantry" && unit.owner.as_str() == neutral
                 })
                 .count(),
             2,
@@ -9434,10 +9447,11 @@ mod tests {
                 .filter(|unit| unit.type_id.as_str() == kind && unit.owner.as_str() == neutral)
                 .count()
         };
-        assert_eq!(count("carrier"), 1);
-        assert_eq!(count("cruiser"), 1);
-        assert_eq!(count("destroyer"), 1);
-        assert_eq!(count("fighter"), 2);
+        // The neutral reference card's units, not the generic ones (neutral rules 1, 7).
+        assert_eq!(count("neutral_carrier"), 1);
+        assert_eq!(count("neutral_cruiser"), 1);
+        assert_eq!(count("neutral_destroyer"), 1);
+        assert_eq!(count("neutral_fighter"), 2);
     }
 
     #[test]
@@ -9466,7 +9480,7 @@ mod tests {
                 .units
                 .iter()
                 .filter(|unit| {
-                    unit.type_id.as_str() == "destroyer"
+                    unit.type_id.as_str() == "neutral_destroyer"
                         && unit.owner.as_str() == crate::neutral_units::NEUTRAL
                 })
                 .count(),
@@ -9508,6 +9522,67 @@ mod tests {
     }
 
     #[test]
+    fn fighter_conscription_does_not_place_beside_neutral_ships() {
+        // Neutral rule 9: neutral units are "another player's ships" for game effects, so a
+        // system holding one is closed to the card like any other occupied system.
+        let me = PlayerId::new("a");
+        let system = ti4_model::id::SystemId::new(&crate::fixtures::plain_systems(1)[0]);
+        let run = |state: &mut GameState| {
+            let effect =
+                effect_for(&ActionCardId::new("f_conscription")).expect("a registered effect");
+            let mut table = crate::choice::Table::new();
+            let mut dice = crate::dice::Dice::new();
+            let mut rng = crate::rng::GameRng::new(0);
+            let mut sequence = crate::event::EventSequence::new();
+            let mut context = crate::timing::TimingContext {
+                state,
+                content: ContentStore::embedded(),
+                sources: ti4_model::content_types::FULL,
+                table: &mut table,
+                dice: &mut dice,
+                rng: &mut rng,
+                event_sequence: &mut sequence,
+                galaxy: None,
+            };
+            effect(&mut context, &me);
+        };
+        let fighters = |state: &GameState| {
+            state
+                .system_state(&system)
+                .units
+                .iter()
+                .filter(|unit| unit.owner == me && unit.type_id.as_str() == "fighter")
+                .count()
+        };
+
+        // The control: a carrier alone calls for a fighter.
+        let mut open = crate::fixtures::game(&["a"]);
+        crate::fixtures::put(&mut open, &system, "carrier", &me, 1);
+        run(&mut open);
+        assert_eq!(
+            fighters(&open),
+            1,
+            "a system with capacity and no other ships gets one"
+        );
+
+        let mut guarded = crate::fixtures::game(&["a"]);
+        crate::fixtures::put(&mut guarded, &system, "carrier", &me, 1);
+        crate::fixtures::put(
+            &mut guarded,
+            &system,
+            "neutral_destroyer",
+            &crate::neutral_units::owner(),
+            1,
+        );
+        run(&mut guarded);
+        assert_eq!(
+            fighters(&guarded),
+            0,
+            "a neutral destroyer blocks the placement"
+        );
+    }
+
+    #[test]
     fn overrule_performs_the_chosen_cards_primary_ability() {
         let me = PlayerId::new("a");
         let other = PlayerId::new("b");
@@ -9533,6 +9608,64 @@ mod tests {
                 .strategy_cards
                 .contains(&ti4_model::StrategyCardId::new("pok5trade")),
             "the card stays in its owner's hand"
+        );
+    }
+
+    #[test]
+    fn overruling_into_warfare_returns_support_when_it_activates_the_owners_system() {
+        let me = PlayerId::new("a");
+        let owner = PlayerId::new("b");
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.phase = ti4_model::state::Phase::Action;
+        state.player_mut(&me).unwrap().faction = ti4_model::id::FactionId::new("jolnar");
+        state.player_mut(&owner).unwrap().faction = ti4_model::id::FactionId::new("hacan");
+        state
+            .player_mut(&owner)
+            .unwrap()
+            .strategy_cards
+            .push(ti4_model::StrategyCardId::new("te6warfare"));
+        let hub = crate::fixtures::plain_hub();
+        let system = ti4_model::id::SystemId::new(&hub.centre);
+        assert!(crate::promissory::receive(
+            &mut state,
+            &me,
+            &crate::promissory::support("hacan")
+        ));
+        crate::fixtures::put(&mut state, &system, "cruiser", &owner, 1);
+        let points_with_support = state.player(&me).unwrap().victory_points;
+
+        {
+            let effect = effect_for(&ActionCardId::new("overrule")).expect("a registered effect");
+            let mut table =
+                crate::choice::Table::with_default(Box::new(crate::choice::Scripted::new([
+                    "te6warfare".to_owned(),
+                    hub.centre.clone(),
+                ])));
+            let mut dice = crate::dice::Dice::new();
+            let mut rng = crate::rng::GameRng::new(0);
+            let mut sequence = crate::event::EventSequence::new();
+            let mut context = crate::timing::TimingContext {
+                state: &mut state,
+                content: ContentStore::embedded(),
+                sources: ti4_model::content_types::POK,
+                table: &mut table,
+                dice: &mut dice,
+                rng: &mut rng,
+                event_sequence: &mut sequence,
+                galaxy: Some(&hub.galaxy),
+            };
+            effect(&mut context, &me);
+        }
+
+        assert_eq!(
+            state.active_system,
+            Some(system),
+            "Overrule performed Warfare's free activation"
+        );
+        assert!(!state.support_holders.contains_key(&owner));
+        assert_eq!(
+            state.player(&me).unwrap().victory_points,
+            points_with_support - 1
         );
     }
 

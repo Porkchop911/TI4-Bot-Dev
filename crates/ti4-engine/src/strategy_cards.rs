@@ -1052,6 +1052,8 @@ fn replenish(state: &mut GameState, content: &ContentStore, player: &PlayerId) {
     if let Some(seat) = state.player_mut(player) {
         seat.commodities = limit;
     }
+    // Trade Agreement: "When the <color> player replenishes commodities".
+    crate::promissory::trade_agreement_on_replenish(state, player);
 }
 
 fn trade_primary(
