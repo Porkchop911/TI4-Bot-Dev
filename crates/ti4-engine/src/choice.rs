@@ -487,6 +487,58 @@ impl<'a> Observed<'a> {
         self.galaxy
     }
 
+    /// Public directional relationship from `observer` toward `subject`.
+    #[must_use]
+    pub fn diplomacy_relationship(
+        &self,
+        observer: &PlayerId,
+        subject: &PlayerId,
+    ) -> ti4_model::Relationship {
+        self.state.diplomacy.relationship(observer, subject)
+    }
+
+    /// Active public structured deals involving a seat.
+    #[must_use]
+    pub fn active_diplomacy_deals(&self, player: &PlayerId) -> Vec<&'a ti4_model::Deal> {
+        self.state
+            .diplomacy
+            .active_deals
+            .values()
+            .filter(|deal| &deal.proposer == player || &deal.recipient == player)
+            .collect()
+    }
+
+    /// Every active structured deal. Deals are public in diplomacy v1.
+    pub fn public_diplomacy_deals(&self) -> impl Iterator<Item = &'a ti4_model::Deal> + '_ {
+        self.state.diplomacy.active_deals.values()
+    }
+
+    /// Unexpired public signals involving a seat.
+    #[must_use]
+    pub fn recent_diplomacy_signals(&self, player: &PlayerId) -> Vec<&'a ti4_model::Signal> {
+        self.state
+            .diplomacy
+            .recent_signals
+            .iter()
+            .filter(|signal| &signal.speaker == player || &signal.target == player)
+            .collect()
+    }
+
+    /// Every unexpired signal. Signals are public in diplomacy v1.
+    pub fn public_diplomacy_signals(&self) -> impl Iterator<Item = &'a ti4_model::Signal> + '_ {
+        self.state.diplomacy.recent_signals.iter()
+    }
+
+    #[must_use]
+    pub fn recent_diplomacy_attack(&self, observer: &PlayerId, subject: &PlayerId) -> bool {
+        crate::diplomacy::recent_attack(self.state, observer, subject)
+    }
+
+    #[must_use]
+    pub fn recent_diplomacy_breach(&self, observer: &PlayerId, subject: &PlayerId) -> bool {
+        crate::diplomacy::recent_breach(self.state, observer, subject)
+    }
+
     /// Revealed public objectives whose fixed map-shaped requirement includes `system`.
     ///
     /// This is derived by the objective engine from the same map geometry used for scoring, so a

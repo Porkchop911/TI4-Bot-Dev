@@ -680,6 +680,8 @@ pub struct Game<'a> {
     aftermath: Option<AftermathWindow>,
     /// The open transaction. Free (94.1a), so closing it does not end the turn.
     trade: Option<crate::transactions::TradeWindow>,
+    /// The open structured diplomatic contact. Free, like a normal transaction.
+    diplomacy: Option<Box<crate::diplomacy::window::DiplomacyWindow>>,
     /// The pinned source of gravity-rift rolls.
     rng: GameRng,
     dice: Dice,
@@ -766,6 +768,7 @@ impl<'a> Game<'a> {
             tactical: None,
             aftermath: None,
             trade: None,
+            diplomacy: None,
             rng: GameRng::new(seed),
             dice: Dice::new(),
             status_resolved: false,
@@ -856,6 +859,9 @@ impl<'a> Game<'a> {
         if let Some(window) = &self.aftermath {
             return window.pending_choice(&self.state, self.content, self.sources);
         }
+        if let Some(window) = &self.diplomacy {
+            return window.pending_choice(&self.state, self.content, self.sources);
+        }
         if let Some(window) = &self.tactical {
             return self.tactical_choice(window);
         }
@@ -909,6 +915,9 @@ impl<'a> Game<'a> {
         }
 
         if self.state.finished {
+            if let Err(error) = crate::diplomacy::settle_game_end(&mut self.state) {
+                return self.result(false, Some(GameError::UnsupportedAction(error.to_string())));
+            }
             return self.result(false, None);
         }
         if let Some(error) = self.blocked.clone() {
@@ -932,6 +941,9 @@ impl<'a> Game<'a> {
         }
         if self.aftermath.is_some() {
             return self.step_aftermath();
+        }
+        if self.diplomacy.is_some() {
+            return self.step_diplomacy();
         }
         if self.trade.is_some() {
             return self.step_trade();
@@ -1074,6 +1086,20 @@ impl<'a> Game<'a> {
             choice
                 .options
                 .extend(crate::transactions::available_actions(
+                    &self.state,
+                    self.content,
+                    galaxy,
+                    active,
+                ));
+            choice
+                .options
+                .extend(crate::diplomacy::candidates::available_contacts(
+                    &self.state,
+                    active,
+                ));
+            choice
+                .options
+                .extend(crate::diplomacy::candidates::payment_actions(
                     &self.state,
                     self.content,
                     galaxy,
@@ -1414,6 +1440,48 @@ impl<'a> Game<'a> {
                         serde_json::Value::String(partner.to_string()),
                     );
                     self.emit_typed("TRANSACTION_OPENED", payload)?;
+                    return Ok(());
+                }
+                if let Some(partner) =
+                    crate::diplomacy::candidates::contact_target(&self.state, &answer)
+                {
+                    let Some(galaxy) = self.galaxy.as_ref() else {
+                        return Err(GameError::UnsupportedAction(answer.id));
+                    };
+                    let candidates = crate::diplomacy::candidates::generate_initial_candidates(
+                        &crate::diplomacy::candidates::CandidateContext {
+                            state: &self.state,
+                            content: self.content,
+                            galaxy,
+                            proposer: &active,
+                            recipient: &partner,
+                        },
+                    );
+                    self.diplomacy =
+                        Some(Box::new(crate::diplomacy::window::DiplomacyWindow::open(
+                            &mut self.state,
+                            active,
+                            partner,
+                            candidates,
+                        )?));
+                    return Ok(());
+                }
+                if let Some((deal_id, term_index)) =
+                    crate::diplomacy::candidates::payment_action(&answer)
+                {
+                    let Some(galaxy) = self.galaxy.as_ref() else {
+                        return Err(GameError::UnsupportedAction(answer.id));
+                    };
+                    crate::diplomacy::fulfill_payment(
+                        &mut self.state,
+                        self.content,
+                        galaxy,
+                        deal_id,
+                        &active,
+                        term_index,
+                    )
+                    .map_err(|error| GameError::UnsupportedAction(error.to_string()))?;
+                    self.emit("DIPLOMACY_PAYMENT_FULFILLED");
                     return Ok(());
                 }
                 if answer.kind != ACTION_KIND {
@@ -1875,6 +1943,14 @@ impl<'a> Game<'a> {
                     serde_json::Value::String(system.to_string()),
                 );
                 self.emit_typed("SYSTEM_ACTIVATED", payload)?;
+                crate::diplomacy::evaluate_event(
+                    &mut self.state,
+                    &crate::diplomacy::DiplomacyEventContext::SystemActivated {
+                        player: window.player.clone(),
+                        system: system.clone(),
+                    },
+                )
+                .expect("validated diplomacy predicates settle deterministically");
                 // "Before you move units during a tactical action, you may purge this card." The
                 // activation has happened and the move has not, which is the window the card names.
                 // Minister of Peace: "After a player activates a system that contains 1 or more of
@@ -2398,6 +2474,67 @@ impl<'a> Game<'a> {
             return self.result(false, Some(error));
         }
         self.result(false, None)
+    }
+
+    /// Resolve one decision of an open structured diplomatic contact.
+    fn step_diplomacy(&mut self) -> StepResult {
+        let choice = self
+            .diplomacy
+            .as_ref()
+            .and_then(|window| window.pending_choice(&self.state, self.content, self.sources));
+        let Some(choice) = choice else {
+            self.diplomacy = None;
+            return self.result(false, None);
+        };
+        let answer = match self.table.ask_seeing(
+            &choice,
+            &crate::choice::Observed::new(
+                &self.state,
+                self.content,
+                self.sources,
+                self.galaxy.as_ref(),
+            ),
+        ) {
+            Ok(answer) => answer,
+            Err(error) => return self.result(false, Some(error.into())),
+        };
+        let mut window = self.diplomacy.take().expect("checked diplomacy window");
+        let galaxy = self.galaxy.clone();
+        let logged = self.timing.log().len();
+        let result = {
+            let (state, table, timing, dice, rng, sequence) = (
+                &mut self.state,
+                &mut self.table,
+                &mut self.timing,
+                &mut self.dice,
+                &mut self.rng,
+                &mut self.event_sequence,
+            );
+            let mut resolving = Resolving {
+                content: self.content,
+                sources: self.sources,
+                dice,
+                rng,
+                table,
+                timing: Some(crate::choice::TimingHandle {
+                    resolver: timing,
+                    sequence,
+                    galaxy: galaxy.as_ref(),
+                }),
+            };
+            window.resolve(state, &mut resolving, answer)
+        };
+        self.mirror_timing_log(logged);
+        if window
+            .pending_choice(&self.state, self.content, self.sources)
+            .is_some()
+        {
+            self.diplomacy = Some(window);
+        }
+        match result {
+            Ok(()) => self.result(true, None),
+            Err(error) => self.result(false, Some(error.into())),
+        }
     }
 
     /// Resolve one decision of an open transaction.
@@ -3409,6 +3546,13 @@ impl<'a> Game<'a> {
             // ballot itself lives in the vote window this function holds, and a guard can
             // only read the game state.
             self.state.agenda_votes = window.ballot().votes.clone();
+            crate::diplomacy::evaluate_event(
+                &mut self.state,
+                &crate::diplomacy::DiplomacyEventContext::VotesRecorded {
+                    agenda: alias.clone(),
+                },
+            )
+            .expect("validated vote promises settle deterministically");
             if let Err(error) = self.emit_typed("AGENDA_RESOLVED", payload) {
                 return self.result(false, Some(error));
             }

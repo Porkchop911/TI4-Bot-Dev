@@ -27,6 +27,7 @@ pub mod combat;
 pub mod decision_context;
 pub mod deck;
 pub mod dice;
+pub mod diplomacy;
 pub mod draft;
 pub mod entropic_scars;
 pub mod event;

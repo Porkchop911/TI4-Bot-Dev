@@ -2444,6 +2444,17 @@ impl Window for InvasionWindow {
                         payload.insert("player".to_owned(), self.invader.to_string().into());
                         if let Some(holder) = controller {
                             payload.insert("controller".to_owned(), holder.to_string().into());
+                            if holder != self.invader {
+                                crate::diplomacy::evaluate_event(
+                                    state,
+                                    &crate::diplomacy::DiplomacyEventContext::HostileEngagement {
+                                        attacker: self.invader.clone(),
+                                        victim: holder,
+                                        activation_seq: state.activation_seq,
+                                    },
+                                )
+                                .expect("validated attack promises settle deterministically");
+                            }
                         }
                         let _ = ctx.emit(state, "UNITS_COMMITTED", payload);
 

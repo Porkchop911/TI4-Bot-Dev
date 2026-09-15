@@ -51,10 +51,11 @@ use ti4_model::id::{FactionId, PlayerId};
 use ti4_policy::progress::{Baseline, Progress};
 use ti4_policy::vocabulary::Vocabulary;
 
-const SCHEMA: &str = "ti4-offline-selfplay-v1";
-const OBSERVATION_SCHEMA: &str = "seat-authorized-canonical-mlp-v1";
+const SCHEMA: &str = "ti4-offline-selfplay-v2";
+const OBSERVATION_SCHEMA: &str = "seat-authorized-canonical-mlp-v2";
 const DECISIONS_FILE: &str = "decisions.jsonl.zst";
 const GAMES_FILE: &str = "games.jsonl.zst";
+const DIPLOMACY_FILE: &str = "diplomacy.jsonl.zst";
 /// Published bucket folders, one per retention-reason class (see `bucket_for`). The three training
 /// buckets always exist; `failed` appears only when a game actually fails.
 const BUCKET_GOOD: &str = "good";
@@ -161,6 +162,21 @@ struct SeatAuthorizedObservation {
     held_secret_objectives: Vec<String>,
     held_secret_progress: Vec<ObjectiveProgress>,
     held_promissory_notes: Vec<String>,
+    #[serde(default)]
+    diplomacy_relationships: Vec<DiplomacyRelationshipObservation>,
+    #[serde(default)]
+    active_diplomacy_deals: Vec<ti4_model::Deal>,
+    #[serde(default)]
+    recent_diplomacy_signals: Vec<ti4_model::Signal>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct DiplomacyRelationshipObservation {
+    observer: String,
+    subject: String,
+    relationship: ti4_model::Relationship,
+    recent_attack: bool,
+    recent_breach: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -221,12 +237,101 @@ struct GameMetadata {
     map_placements: Vec<MapPlacement>,
     seats: Vec<SeatMetadata>,
     decision_count: usize,
+    #[serde(default)]
+    diplomacy_enabled: bool,
+    #[serde(default)]
+    diplomacy_deal_count: usize,
+    #[serde(default)]
+    diplomacy_signal_count: usize,
+    #[serde(default)]
+    diplomacy_telemetry: DiplomacyTelemetry,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct DiplomacyTelemetry {
+    opportunities: usize,
+    offers: usize,
+    signals: usize,
+    accepts: usize,
+    declines: usize,
+    counters: usize,
+    fulfilled: usize,
+    broken: usize,
+    expired: usize,
+    diplomacy_decisions: usize,
+    legal_options: usize,
+    max_initial_candidates: usize,
+    max_counter_candidates: usize,
+    active_deal_high_water: usize,
+    final_relationships: Vec<ti4_model::Relationship>,
+}
+
+fn diplomacy_telemetry<'a>(
+    state: &ti4_model::state::GameState,
+    decisions: impl Iterator<Item = &'a CapturedDecision>,
+) -> DiplomacyTelemetry {
+    let mut telemetry = DiplomacyTelemetry::default();
+    for decision in decisions.filter(|decision| decision.head == "diplomacy") {
+        telemetry.opportunities += 1;
+        telemetry.diplomacy_decisions += 1;
+        telemetry.legal_options += decision.legal_actions.len();
+        let initial = decision
+            .legal_actions
+            .iter()
+            .filter(|option| option.kind == "diplomacy_offer")
+            .count();
+        let counters = decision
+            .legal_actions
+            .iter()
+            .filter(|option| option.kind == "diplomacy_counter")
+            .count();
+        telemetry.max_initial_candidates = telemetry.max_initial_candidates.max(initial);
+        telemetry.max_counter_candidates = telemetry.max_counter_candidates.max(counters);
+    }
+    let mut active = BTreeSet::new();
+    for entry in &state.diplomacy.journal {
+        match &entry.event {
+            ti4_model::DiplomacyEvent::Offered { deal_id, .. } => {
+                telemetry.offers += 1;
+                active.insert(*deal_id);
+                telemetry.active_deal_high_water =
+                    telemetry.active_deal_high_water.max(active.len());
+            }
+            ti4_model::DiplomacyEvent::Countered { .. } => telemetry.counters += 1,
+            ti4_model::DiplomacyEvent::Accepted { .. } => telemetry.accepts += 1,
+            ti4_model::DiplomacyEvent::Declined { deal_id, .. } => {
+                telemetry.declines += 1;
+                active.remove(deal_id);
+            }
+            ti4_model::DiplomacyEvent::DealSettled { deal_id, status } => {
+                active.remove(deal_id);
+                match status {
+                    ti4_model::DealStatus::Fulfilled => telemetry.fulfilled += 1,
+                    ti4_model::DealStatus::Broken => telemetry.broken += 1,
+                    ti4_model::DealStatus::Expired => telemetry.expired += 1,
+                    _ => {}
+                }
+            }
+            ti4_model::DiplomacyEvent::SignalEmitted { .. } => telemetry.signals += 1,
+            ti4_model::DiplomacyEvent::ImmediateApplied { .. }
+            | ti4_model::DiplomacyEvent::PromiseSettled { .. } => {}
+        }
+    }
+    telemetry.final_relationships = state
+        .diplomacy
+        .relationships
+        .values()
+        .flat_map(|row| row.values().copied())
+        .collect();
+    telemetry
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Manifest {
     schema: String,
     observation_schema: String,
+    #[serde(default)]
+    diplomacy_enabled: bool,
     created_utc: String,
     engine_git_commit: String,
     engine_worktree_dirty: bool,
@@ -374,8 +479,51 @@ impl RecordingDecider {
                 .map(Into::into)
                 .collect(),
             held_promissory_notes: seen.held_promissory_notes(),
+            diplomacy_relationships: diplomacy_relationships(seen),
+            active_diplomacy_deals: public_diplomacy_deals(seen),
+            recent_diplomacy_signals: public_diplomacy_signals(seen),
         }
     }
+}
+
+fn diplomacy_relationships(seen: &SeatObservation<'_>) -> Vec<DiplomacyRelationshipObservation> {
+    let players = seen.players();
+    let mut out = Vec::new();
+    for observer in &players {
+        for subject in &players {
+            if observer == subject {
+                continue;
+            }
+            out.push(DiplomacyRelationshipObservation {
+                observer: observer.to_string(),
+                subject: subject.to_string(),
+                relationship: seen.diplomacy_relationship(observer, subject),
+                recent_attack: seen.recent_diplomacy_attack(observer, subject),
+                recent_breach: seen.recent_diplomacy_breach(observer, subject),
+            });
+        }
+    }
+    out
+}
+
+fn public_diplomacy_deals(seen: &SeatObservation<'_>) -> Vec<ti4_model::Deal> {
+    let mut deals = BTreeMap::new();
+    for player in seen.players() {
+        for deal in seen.active_diplomacy_deals(player) {
+            deals.entry(deal.id).or_insert_with(|| deal.clone());
+        }
+    }
+    deals.into_values().collect()
+}
+
+fn public_diplomacy_signals(seen: &SeatObservation<'_>) -> Vec<ti4_model::Signal> {
+    let mut signals = BTreeMap::new();
+    for player in seen.players() {
+        for signal in seen.recent_diplomacy_signals(player) {
+            signals.entry(signal.id).or_insert_with(|| signal.clone());
+        }
+    }
+    signals.into_values().collect()
 }
 
 impl Decider for RecordingDecider {
@@ -433,8 +581,7 @@ impl Decider for RecordingDecider {
             policy_id: self.policy_id.clone(),
             policy_rng_seed: self.policy_rng_seed,
             seat_decision_index,
-            head: ti4_mlp::Actor::resolve_head(ti4_policy::learned::decision_head(choice))
-                .to_owned(),
+            head: ti4_mlp::capture_head(ti4_policy::learned::decision_head(choice)).to_owned(),
             prompt: choice.prompt.clone(),
             context: choice.context.clone(),
             observation,
@@ -1106,6 +1253,7 @@ struct GameOutcome {
     retention_reason: Option<RetentionReason>,
     table_vp: i32,
     max_faction_vp: i32,
+    diplomacy_deal_count: usize,
 }
 
 /// One line of the published `retention.jsonl` sidecar: provenance for every played game, whether
@@ -1127,6 +1275,8 @@ struct RetentionRecord {
 struct BucketStats {
     games: usize,
     decisions: usize,
+    #[serde(default)]
+    diplomacy_deals: usize,
 }
 
 /// Read-only context shared by every worker thread. `ContentStore`, the map pool and the opening
@@ -1138,6 +1288,7 @@ struct PlayContext<'a> {
     staging: &'a Path,
     rounds: u32,
     total_games: usize,
+    diplomacy_enabled: bool,
 }
 
 fn decisions_part(game_index: usize) -> String {
@@ -1146,6 +1297,10 @@ fn decisions_part(game_index: usize) -> String {
 
 fn games_part(game_index: usize) -> String {
     format!("games-{game_index:06}.jsonl.zst")
+}
+
+fn diplomacy_part(game_index: usize) -> String {
+    format!("diplomacy-{game_index:06}.jsonl.zst")
 }
 
 /// Join the per-game zstd frames into one shard, in game order. A zstd stream may legally contain
@@ -1217,13 +1372,16 @@ fn play_game(
     let policies_in = Rc::clone(&policies);
     let baselines_in = Rc::clone(&baselines);
 
-    let mut game = ti4_training::rollout::setup_game_with_decider_factory(
+    let mut game = ti4_training::rollout::setup_game_with_capabilities_and_decider_factory(
         ctx.content,
         ctx.players,
         &plan.seated,
         DEFAULT,
         plan.game_seed,
         ctx.map,
+        ti4_training::rollout::SimulationCapabilities {
+            diplomacy: ctx.diplomacy_enabled,
+        },
         |baselines| {
             let mut deciders = BTreeMap::new();
             for (seat_index, player) in ctx.players.iter().enumerate() {
@@ -1280,12 +1438,20 @@ fn play_game(
             Ok(deciders)
         },
     )?;
-
     let run_error = game
         .run(ctx.rounds, 125_000usize.saturating_mul(ctx.rounds as usize))
         .err();
     let completed = run_error.is_none();
     let error = run_error.map(|value| value.to_string());
+    let diplomacy_records = ti4_engine::diplomacy::export_log_records(&game.state, &plan.game_id)
+        .map_err(|error| format!("exporting diplomacy log: {error}"))?;
+    let diplomacy_signal_count = game
+        .state
+        .diplomacy
+        .journal
+        .iter()
+        .filter(|entry| matches!(entry.event, ti4_model::DiplomacyEvent::SignalEmitted { .. }))
+        .count();
     let map_placements = game
         .galaxy()
         .map(|galaxy| {
@@ -1333,6 +1499,19 @@ fn play_game(
         .values()
         .map(|records| records.borrow().len())
         .sum();
+    let mut telemetry_decisions = Vec::with_capacity(recorded_decisions);
+    for records in handles.borrow().values() {
+        telemetry_decisions.extend(records.borrow().iter().cloned());
+    }
+    let diplomacy_telemetry = diplomacy_telemetry(&game.state, telemetry_decisions.iter());
+    if diplomacy_telemetry.max_initial_candidates > 24
+        || diplomacy_telemetry.max_counter_candidates > 8
+    {
+        return Err(format!(
+            "diplomacy candidate cap exceeded: initial {}, counter {}",
+            diplomacy_telemetry.max_initial_candidates, diplomacy_telemetry.max_counter_candidates
+        ));
+    }
 
     // Failed games are always retained so engine failures stay visible in the corpus; finished
     // games go through the retention rule (see `RETENTION_RULE`). A discarded game writes no
@@ -1359,6 +1538,7 @@ fn play_game(
             retention_reason: None,
             table_vp,
             max_faction_vp,
+            diplomacy_deal_count: 0,
         });
     };
 
@@ -1391,6 +1571,13 @@ fn play_game(
     }
     let decision_count = decisions_writer.finish()?;
 
+    let mut diplomacy_writer =
+        JsonlZstdWriter::create(&bucket_dir.join(diplomacy_part(plan.game_index)))?;
+    for record in &diplomacy_records {
+        diplomacy_writer.write(record)?;
+    }
+    let diplomacy_deal_count = diplomacy_writer.finish()?;
+
     let mut games_writer = JsonlZstdWriter::create(&bucket_dir.join(games_part(plan.game_index)))?;
     games_writer.write(&GameMetadata {
         game_id: plan.game_id.clone(),
@@ -1403,6 +1590,10 @@ fn play_game(
         map_placements,
         seats: seat_metadata,
         decision_count,
+        diplomacy_enabled: ctx.diplomacy_enabled,
+        diplomacy_deal_count,
+        diplomacy_signal_count,
+        diplomacy_telemetry,
     })?;
     games_writer.finish()?;
 
@@ -1423,6 +1614,7 @@ fn play_game(
         retention_reason: Some(reason),
         table_vp,
         max_faction_vp,
+        diplomacy_deal_count,
     })
 }
 
@@ -1514,6 +1706,9 @@ fn run() -> Result<(), String> {
     let rounds = argument("--rounds")
         .map_or(Ok(DEFAULT_ROUNDS), |value| value.parse::<u32>())
         .map_err(|_| "--rounds must be a positive integer".to_owned())?;
+    let diplomacy_enabled = argument("--diplomacy")
+        .map_or(Ok(false), |value| value.parse::<bool>())
+        .map_err(|_| "--diplomacy must be true or false".to_owned())?;
     let seed_base = argument("--seed-base")
         .map_or(Ok(DEFAULT_SEED_BASE), |value| value.parse::<u64>())
         .map_err(|_| "--seed-base must be an integer".to_owned())?;
@@ -1561,6 +1756,15 @@ fn run() -> Result<(), String> {
         }
         None => load_assets(current, older, evolutionary)?,
     };
+    if diplomacy_enabled
+        && (master.current_actor.head_layout() != ti4_mlp::HeadLayout::Diplomacy
+            || master.older_actor.head_layout() != ti4_mlp::HeadLayout::Diplomacy)
+    {
+        return Err(
+            "--diplomacy=true requires schema-9/10 MLP checkpoints with the diplomacy head"
+                .to_owned(),
+        );
+    }
 
     let pool_path =
         argument("--map-pool").unwrap_or_else(|| "out/pools/full_np8_12_train.json".to_owned());
@@ -1692,6 +1896,7 @@ fn run() -> Result<(), String> {
         staging: &staging,
         rounds,
         total_games: games,
+        diplomacy_enabled,
     };
     println!(
         "  setup in {:.1}s ({} worker chunk(s), {} deep actor copies)",
@@ -1793,6 +1998,7 @@ fn run() -> Result<(), String> {
         },
         engine_git_commit: git("rev-parse HEAD"),
         engine_worktree_dirty: !git("status --porcelain").is_empty(),
+        diplomacy_enabled,
         generation_executable_sha256: std::env::current_exe()
             .ok()
             .and_then(|path| file_sha(&path).ok()),
@@ -1819,6 +2025,7 @@ struct PublishParams {
     policy_mode: &'static str,
     engine_git_commit: String,
     engine_worktree_dirty: bool,
+    diplomacy_enabled: bool,
     generation_executable_sha256: Option<String>,
 }
 
@@ -1850,6 +2057,10 @@ fn assemble_and_publish(
     // ---- assemble the per-bucket shards in game order -------------------------------------------
     // Only retained games have frames; outcomes are already in game order, so filtering keeps it.
     let decision_count: usize = outcomes.iter().map(|outcome| outcome.decision_count).sum();
+    let diplomacy_count: usize = outcomes
+        .iter()
+        .map(|outcome| outcome.diplomacy_deal_count)
+        .sum();
     let games_retained = outcomes.iter().filter(|outcome| outcome.retained).count();
 
     // The three training buckets always exist; `failed` only when a game actually failed.
@@ -1889,13 +2100,25 @@ fn assemble_and_publish(
             .filter(|outcome| in_bucket(outcome))
             .map(|outcome| parts_root.join(bucket).join(games_part(outcome.game_index)))
             .collect();
+        let diplomacy_parts: Vec<PathBuf> = outcomes
+            .iter()
+            .filter(|outcome| in_bucket(outcome))
+            .map(|outcome| {
+                parts_root
+                    .join(bucket)
+                    .join(diplomacy_part(outcome.game_index))
+            })
+            .collect();
 
         let decisions_path = publish_staging.join(bucket).join(DECISIONS_FILE);
         let games_path = publish_staging.join(bucket).join(GAMES_FILE);
+        let diplomacy_path = publish_staging.join(bucket).join(DIPLOMACY_FILE);
         let expected_decisions_sha =
             concatenate_parts(&decision_parts, &decisions_path, preserve_source_parts)?;
         let expected_games_sha =
             concatenate_parts(&game_parts, &games_path, preserve_source_parts)?;
+        let expected_diplomacy_sha =
+            concatenate_parts(&diplomacy_parts, &diplomacy_path, preserve_source_parts)?;
 
         // Byte-exactness: each published shard must hold exactly the frames whose records passed
         // the loss-alignment gate before writing. A mismatch means corruption between write and
@@ -1912,9 +2135,16 @@ fn assemble_and_publish(
                 "{bucket}/{GAMES_FILE} does not match its validated frames"
             ));
         }
+        let diplomacy_sha = file_sha(&diplomacy_path)?;
+        if diplomacy_sha != expected_diplomacy_sha {
+            return Err(format!(
+                "{bucket}/{DIPLOMACY_FILE} does not match its validated frames"
+            ));
+        }
 
         shards.insert(format!("{bucket}/{DECISIONS_FILE}"), decisions_sha);
         shards.insert(format!("{bucket}/{GAMES_FILE}"), games_sha);
+        shards.insert(format!("{bucket}/{DIPLOMACY_FILE}"), diplomacy_sha);
         bucket_stats.insert(
             bucket.to_owned(),
             BucketStats {
@@ -1923,6 +2153,11 @@ fn assemble_and_publish(
                     .iter()
                     .filter(|outcome| in_bucket(outcome))
                     .map(|outcome| outcome.decision_count)
+                    .sum(),
+                diplomacy_deals: outcomes
+                    .iter()
+                    .filter(|outcome| in_bucket(outcome))
+                    .map(|outcome| outcome.diplomacy_deal_count)
                     .sum(),
             },
         );
@@ -1960,6 +2195,7 @@ fn assemble_and_publish(
     let manifest = Manifest {
         schema: SCHEMA.to_owned(),
         observation_schema: OBSERVATION_SCHEMA.to_owned(),
+        diplomacy_enabled: params.diplomacy_enabled,
         created_utc: chrono::Utc::now().to_rfc3339(),
         engine_git_commit: params.engine_git_commit.clone(),
         engine_worktree_dirty: params.engine_worktree_dirty,
@@ -1995,6 +2231,7 @@ fn assemble_and_publish(
         records: BTreeMap::from([
             ("games".to_owned(), games_retained),
             ("decisions".to_owned(), decision_count),
+            ("diplomacy_deals".to_owned(), diplomacy_count),
         ]),
         shards,
         buckets: bucket_stats.clone(),
@@ -2037,6 +2274,7 @@ fn assemble_and_publish(
             records: BTreeMap::from([
                 ("games".to_owned(), stats.games),
                 ("decisions".to_owned(), stats.decisions),
+                ("diplomacy_deals".to_owned(), stats.diplomacy_deals),
             ]),
             shards: BTreeMap::from([
                 (
@@ -2046,6 +2284,10 @@ fn assemble_and_publish(
                 (
                     GAMES_FILE.to_owned(),
                     manifest.shards[&format!("{bucket}/{GAMES_FILE}")].clone(),
+                ),
+                (
+                    DIPLOMACY_FILE.to_owned(),
+                    manifest.shards[&format!("{bucket}/{DIPLOMACY_FILE}")].clone(),
                 ),
             ]),
             ..manifest.clone()
@@ -2077,11 +2319,11 @@ struct StagedGame {
     metadata: GameMetadata,
 }
 
-/// `decisions-123.jsonl.zst` / `games-123.jsonl.zst` -> 123; anything else -> None.
+/// A per-game decision, game, or diplomacy part name -> its numeric game index.
 fn part_index(name: &str) -> Option<usize> {
     let stem = name.strip_suffix(".jsonl.zst")?;
     let (prefix, digits) = stem.split_once('-')?;
-    if prefix != "decisions" && prefix != "games" {
+    if prefix != "decisions" && prefix != "games" && prefix != "diplomacy" {
         return None;
     }
     if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_digit()) {
@@ -2121,6 +2363,7 @@ fn validate_part_pair(
     index: usize,
     decisions_path: &Path,
     games_path: &Path,
+    diplomacy_path: &Path,
 ) -> Result<GameMetadata, PartProblem> {
     let games_bytes = decode_part(games_path).map_err(PartProblem::Incomplete)?;
     let text = String::from_utf8(games_bytes)
@@ -2206,6 +2449,36 @@ fn validate_part_pair(
             metadata.decision_count
         )));
     }
+    let diplomacy_bytes = decode_part(diplomacy_path).map_err(PartProblem::Incomplete)?;
+    let mut deal_ids = BTreeSet::new();
+    let mut diplomacy_count = 0usize;
+    for (line_index, line) in BufReader::new(diplomacy_bytes.as_slice())
+        .lines()
+        .enumerate()
+    {
+        let line = line.map_err(|error| {
+            PartProblem::Corrupt(format!("reading diplomacy record {line_index}: {error}"))
+        })?;
+        let record: ti4_model::DiplomacyLogRecord =
+            serde_json::from_str(&line).map_err(|error| {
+                PartProblem::Corrupt(format!("parsing diplomacy record {line_index}: {error}"))
+            })?;
+        if record.schema != ti4_engine::diplomacy::log::DIPLOMACY_LOG_SCHEMA_V1
+            || record.game_id != metadata.game_id
+            || !deal_ids.insert(record.deal_id)
+        {
+            return Err(PartProblem::Corrupt(format!(
+                "diplomacy record {line_index} has a bad schema, game id, or duplicate deal id"
+            )));
+        }
+        diplomacy_count += 1;
+    }
+    if diplomacy_count != metadata.diplomacy_deal_count {
+        return Err(PartProblem::Corrupt(format!(
+            "diplomacy part holds {diplomacy_count} records, metadata claims {}",
+            metadata.diplomacy_deal_count
+        )));
+    }
     Ok(metadata)
 }
 
@@ -2263,6 +2536,7 @@ fn reconstruct(index: usize, bucket: &str, metadata: GameMetadata) -> Result<Sta
             retention_reason: Some(reason),
             table_vp,
             max_faction_vp,
+            diplomacy_deal_count: metadata.diplomacy_deal_count,
         },
         metadata,
     })
@@ -2273,14 +2547,15 @@ fn reconstruct(index: usize, bucket: &str, metadata: GameMetadata) -> Result<Sta
 /// publish. Results are keyed by (bucket, index), so worker completion order cannot affect them.
 fn scan_staging(staging: &Path) -> Result<Vec<StagedGame>, String> {
     const BUCKETS: [&str; 4] = [BUCKET_GOOD, BUCKET_BAD, BUCKET_RANDOM, BUCKET_FAILED];
-    let mut pairs: Vec<(usize, usize, PathBuf, PathBuf)> = Vec::new();
+    let mut pairs: Vec<(usize, usize, PathBuf, PathBuf, PathBuf)> = Vec::new();
     let mut seen_indexes: BTreeMap<usize, &'static str> = BTreeMap::new();
     for (ord, bucket) in BUCKETS.into_iter().enumerate() {
         let dir = staging.join(bucket);
         if !dir.is_dir() {
             continue;
         }
-        let mut by_index: BTreeMap<usize, (Option<PathBuf>, Option<PathBuf>)> = BTreeMap::new();
+        let mut by_index: BTreeMap<usize, (Option<PathBuf>, Option<PathBuf>, Option<PathBuf>)> =
+            BTreeMap::new();
         for entry in std::fs::read_dir(&dir)
             .map_err(|error| format!("reading {}: {error}", dir.display()))?
         {
@@ -2294,18 +2569,22 @@ fn scan_staging(staging: &Path) -> Result<Vec<StagedGame>, String> {
             let slot = by_index.entry(index).or_default();
             if name.starts_with("decisions-") {
                 slot.0 = Some(path);
-            } else {
+            } else if name.starts_with("games-") {
                 slot.1 = Some(path);
+            } else {
+                slot.2 = Some(path);
             }
         }
-        for (index, (decisions, games)) in by_index {
+        for (index, (decisions, games, diplomacy)) in by_index {
             if let Some(previous) = seen_indexes.insert(index, bucket) {
                 return Err(format!(
                     "game {index} appears in both {previous} and {bucket}"
                 ));
             }
-            match (decisions, games) {
-                (Some(decisions), Some(games)) => pairs.push((ord, index, decisions, games)),
+            match (decisions, games, diplomacy) {
+                (Some(decisions), Some(games), Some(diplomacy)) => {
+                    pairs.push((ord, index, decisions, games, diplomacy));
+                }
                 _ => println!("  excluding game {index} from {bucket}: incomplete part pair"),
             }
         }
@@ -2314,8 +2593,8 @@ fn scan_staging(staging: &Path) -> Result<Vec<StagedGame>, String> {
     // Validate in parallel: parts are independent.
     let checked = pairs
         .par_iter()
-        .map(|(ord, index, decisions_path, games_path)| {
-            match validate_part_pair(*index, decisions_path, games_path) {
+        .map(|(ord, index, decisions_path, games_path, diplomacy_path)| {
+            match validate_part_pair(*index, decisions_path, games_path, diplomacy_path) {
                 Ok(metadata) => Ok((*ord, *index, metadata)),
                 Err(problem) => Err((*ord, *index, problem)),
             }
@@ -2532,6 +2811,9 @@ fn publish_staging_run(
         policy_mode,
         engine_git_commit: generation_commit,
         engine_worktree_dirty: generation_dirty,
+        diplomacy_enabled: staged
+            .first()
+            .is_some_and(|game| game.metadata.diplomacy_enabled),
         generation_executable_sha256: Some(generator_sha),
     };
     let outcomes: Vec<GameOutcome> = staged.iter().map(|game| game.outcome.clone()).collect();
@@ -2748,6 +3030,9 @@ mod tests {
                         held_secret_objectives: Vec::new(),
                         held_secret_progress: Vec::new(),
                         held_promissory_notes: Vec::new(),
+                        diplomacy_relationships: Vec::new(),
+                        active_diplomacy_deals: Vec::new(),
+                        recent_diplomacy_signals: Vec::new(),
                     },
                     progress: Progress::default(),
                     critic_features: Vec::new(),
@@ -2758,6 +3043,10 @@ mod tests {
                 .expect("decision record");
         }
         decisions_writer.finish().expect("decisions finish");
+        JsonlZstdWriter::create(&dir.join(diplomacy_part(index)))
+            .expect("diplomacy part")
+            .finish()
+            .expect("diplomacy finish");
         let seats = vps
             .iter()
             .enumerate()
@@ -2777,6 +3066,10 @@ mod tests {
                 map_placements: Vec::new(),
                 seats,
                 decision_count: decisions,
+                diplomacy_enabled: false,
+                diplomacy_deal_count: 0,
+                diplomacy_signal_count: 0,
+                diplomacy_telemetry: DiplomacyTelemetry::default(),
             })
             .expect("games record");
         games_writer.finish().expect("games finish");
@@ -2796,6 +3089,7 @@ mod tests {
             policy_mode: "single",
             engine_git_commit: "generation-commit".to_owned(),
             engine_worktree_dirty: true,
+            diplomacy_enabled: false,
             generation_executable_sha256: Some("cd".repeat(32)),
         }
     }
@@ -2903,8 +3197,8 @@ mod tests {
         assert_eq!(manifest.engine_git_commit, "generation-commit");
         assert_eq!(manifest.publisher_git_commit, git("rev-parse HEAD"));
         assert_eq!(manifest.policy_mode, "single");
-        // Three buckets x two shards; the empty random bucket still publishes a valid frame.
-        assert_eq!(manifest.shards.len(), 6);
+        // Three buckets x three shards; the empty random bucket still publishes valid frames.
+        assert_eq!(manifest.shards.len(), 9);
         for (name, sha) in &manifest.shards {
             let actual = file_sha(&output.join(name)).expect("shard hash");
             assert_eq!(&actual, sha, "{name}");

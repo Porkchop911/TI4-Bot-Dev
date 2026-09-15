@@ -588,7 +588,52 @@ where
         &BTreeMap<PlayerId, Baseline>,
     ) -> Result<BTreeMap<PlayerId, Box<dyn Decider>>, String>,
 {
-    let (state, galaxy, _) = seated(content, players, factions, sources, seed, map)?;
+    setup_game_with_capabilities_and_decider_factory(
+        content,
+        players,
+        factions,
+        sources,
+        seed,
+        map,
+        SimulationCapabilities::default(),
+        factory,
+    )
+}
+
+/// Match-scoped optional engine capabilities used by simulation and capture profiles.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SimulationCapabilities {
+    pub diplomacy: bool,
+}
+
+/// Capability-aware form of [`setup_game_with_decider_factory`].
+///
+/// # Errors
+/// Returns the same setup failures as [`setup_game_with_decider_factory`]. Capabilities are
+/// applied only after seating and deployment have succeeded.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the capability switch supplements the complete deterministic setup input"
+)]
+pub fn setup_game_with_capabilities_and_decider_factory<'a, F>(
+    content: &'a ContentStore,
+    players: &[PlayerId],
+    factions: &BTreeMap<PlayerId, FactionId>,
+    sources: SourceSet,
+    seed: u64,
+    map: &OpeningMap,
+    capabilities: SimulationCapabilities,
+    factory: F,
+) -> Result<Game<'a>, String>
+where
+    F: FnOnce(
+        &BTreeMap<PlayerId, Baseline>,
+    ) -> Result<BTreeMap<PlayerId, Box<dyn Decider>>, String>,
+{
+    let (mut state, galaxy, _) = seated(content, players, factions, sources, seed, map)?;
+    if capabilities.diplomacy {
+        state.diplomacy = ti4_model::DiplomacyState::for_players(&state.seating_order, true);
+    }
     let baselines = opening_baselines(&state, content, sources, Some(&galaxy), players);
     let deciders = factory(&baselines)?;
     let mut table = Table::with_default(Box::new(SeededRandom::new(seed)));

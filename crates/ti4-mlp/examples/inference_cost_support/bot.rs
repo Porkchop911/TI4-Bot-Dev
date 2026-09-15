@@ -464,11 +464,13 @@ impl MlpBot {
             ));
         }
 
-        let head = Actor::resolve_head(ti4_policy::learned::decision_head(choice));
+        let head = self
+            .actor
+            .resolve_layout_head(ti4_policy::learned::decision_head(choice));
         // `head_index` is fallible and returns `Result`; the schema is fixed, so a miss here is a
         // build inconsistency rather than a runtime condition — but it refuses rather than
         // defaulting to head 0, which would train the wrong readout (F-M10-034-D2).
-        let head_index = Actor::head_index(head).map_err(|error| {
+        let head_index = self.actor.layout_head_index(head).map_err(|error| {
             self.refuse(
                 choice,
                 format!("resolved MLP head {head} is not in the schema: {error}"),

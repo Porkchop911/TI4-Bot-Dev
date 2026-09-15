@@ -47,7 +47,7 @@ fn timed_forward(actor: &Actor, samples: &[Sample], batch_size: usize, repeats: 
                     let n = s.options.len();
                     options.extend(s.options.iter().cloned());
                     heads.extend(std::iter::repeat_n(
-                        Actor::head_index(&s.head).unwrap() as i64,
+                        actor.layout_head_index(&s.head).unwrap() as i64,
                         n,
                     ));
                     rows.extend(std::iter::repeat_n(s.row.index() as i64, n));
@@ -146,7 +146,7 @@ pub fn run(actor: &Actor, path: &str) {
                     let n = s.options.len();
                     options.extend(s.options.iter().cloned());
                     heads.extend(std::iter::repeat_n(
-                        Actor::head_index(&s.head).unwrap() as i64,
+                        actor.layout_head_index(&s.head).unwrap() as i64,
                         n,
                     ));
                     rows.extend(std::iter::repeat_n(s.row.index() as i64, n));

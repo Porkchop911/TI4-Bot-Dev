@@ -48,7 +48,7 @@ fn number<T: std::str::FromStr>(name: &str, default: T) -> T {
     })
 }
 
-fn read_samples(path: &str, bundle: &str) -> Vec<Sample> {
+fn read_samples(path: &str, bundle: &str, actor: &Actor) -> Vec<Sample> {
     // Faction rows by index, from the bundle's own roster.
     let manifest: serde_json::Value = serde_json::from_slice(
         &std::fs::read(std::path::Path::new(bundle).join("manifest.json")).expect("manifest"),
@@ -67,7 +67,9 @@ fn read_samples(path: &str, bundle: &str) -> Vec<Sample> {
         .expect("sample array")
         .iter()
         .map(|s| {
-            let head = Actor::head_index(Actor::resolve_head(s["head"].as_str().expect("head")))
+            let requested = s["head"].as_str().expect("head");
+            let head = actor
+                .layout_head_index(actor.resolve_layout_head(requested))
                 .expect("known head");
             Sample {
                 row: rows[&usize::try_from(s["row"].as_u64().expect("row")).expect("row fits")],
@@ -298,7 +300,7 @@ fn main() {
     let actor = ti4_mlp::bundle::read(std::path::Path::new(&bundle))
         .expect("bundle")
         .actor;
-    let samples = read_samples(&path, &bundle);
+    let samples = read_samples(&path, &bundle, &actor);
     let options: usize = samples.iter().map(|s| s.options.len()).sum();
     println!(
         "bundle {bundle}\nsamples {} decisions, {:.2} options/decision, width {}, extra blocks {count}",

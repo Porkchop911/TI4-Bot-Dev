@@ -182,7 +182,7 @@ pub fn initialize(width: Width, capacity: i64, active_rows: &[i64]) -> Actor {
         .collect();
     *actor.hidden_mut() = Tensor::from_slice(&hidden).view([w, w]);
 
-    let heads = i64::try_from(crate::heads().len()).unwrap_or(0);
+    let heads = i64::try_from(actor.head_names().len()).unwrap_or(0);
     let readout_bound = 1.0 / f64::from(u32::try_from(w).unwrap_or(1)).sqrt();
     let readout: Vec<f32> = (0..heads * w)
         .map(|_| uniform(&mut rng, readout_bound))
@@ -390,7 +390,7 @@ fn batch_cross_entropy(actor: &Actor, samples: &[&Sample]) -> Result<Tensor, Str
     let mut padded = vec![1u8; decisions * widest];
 
     for (index, sample) in samples.iter().enumerate() {
-        if crate::heads().get(sample.head).is_none() {
+        if crate::all_heads().get(sample.head).is_none() {
             return Err(format!("head index {} is out of range", sample.head));
         }
         if sample.teacher.len() != sample.options.len() {
@@ -480,7 +480,7 @@ pub fn validation_metrics(actor: &Actor, samples: &[Sample]) -> Result<Validatio
                     .or_insert((0.0, 0));
                 entry.0 += kl;
                 entry.1 += 1;
-                let head = crate::heads()
+                let head = crate::all_heads()
                     .get(sample.head)
                     .ok_or_else(|| format!("head index {} is out of range", sample.head))?;
                 let head_entry = head_sums.entry((*head).to_owned()).or_insert((0.0, 0));

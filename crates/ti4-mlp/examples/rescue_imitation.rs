@@ -319,7 +319,7 @@ fn main() {
     println!("  discarded   {no_divergence} rescues that never chose differently");
     println!("  by head");
     for (head, count) in &by_head {
-        let name = ti4_mlp::heads().get(*head).copied().unwrap_or("?");
+        let name = trained.head_names().get(*head).copied().unwrap_or("?");
         println!("    {name:<12} {count}");
     }
     println!("  collected   in {:.1}s", started.elapsed().as_secs_f64());

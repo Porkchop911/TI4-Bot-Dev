@@ -365,7 +365,8 @@ fn reference_drift(
     let mut flips = 0usize;
     tch::no_grad(|| -> Result<(), String> {
         for item in demos {
-            let head = ti4_mlp::heads()
+            let head = reference
+                .head_names()
                 .get(item.demo.head)
                 .copied()
                 .ok_or_else(|| format!("demo head {} is out of range", item.demo.head))?;
@@ -425,7 +426,7 @@ impl Watching {
         if choice.options.len() < 2 {
             return;
         }
-        let head = ti4_mlp::Actor::resolve_head(ti4_policy::learned::decision_head(choice));
+        let head = ti4_mlp::capture_head(ti4_policy::learned::decision_head(choice));
         self.log.borrow_mut().push(ti4_mlp::positive_corpus::Note {
             head: head.to_owned(),
             chosen: chosen.id.clone(),
@@ -483,7 +484,10 @@ fn play_one(
             (
                 player.clone(),
                 ti4_training::rollout::seated_faction(
-                    &FACTIONS.map(FactionId::new), seed, rotation, index,
+                    &FACTIONS.map(FactionId::new),
+                    seed,
+                    rotation,
+                    index,
                 ),
             )
         })

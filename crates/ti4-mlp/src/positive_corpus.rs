@@ -505,7 +505,7 @@ pub fn clone_loss(
         if !demo.weight.is_finite() || demo.weight < 0.0 {
             return Err(format!("a demonstration carries weight {}", demo.weight));
         }
-        let head = crate::heads()
+        let head = crate::all_heads()
             .get(demo.head)
             .ok_or_else(|| format!("head index {} is out of range", demo.head))?;
         let logits = actor

@@ -643,9 +643,14 @@ pub fn available_actions(
     player: &PlayerId,
 ) -> Vec<crate::choice::ChoiceOption> {
     let already = state.transacted_with(player);
+    let diplomacy_used = state.diplomacy.initiations_this_turn.get(player);
     partners(state, content, galaxy, player)
         .into_iter()
-        .filter(|other| !already.contains(other))
+        .filter(|other| {
+            !already.contains(other)
+                && (!state.diplomacy.enabled
+                    || diplomacy_used.is_none_or(|used| !used.contains(other)))
+        })
         .map(|other| {
             let name = faction_name(state, &other);
             crate::choice::ChoiceOption::labelled(
@@ -1097,6 +1102,9 @@ impl TradeWindow {
     #[must_use]
     pub fn open(state: &mut GameState, proposer: &PlayerId, partner: &PlayerId) -> Self {
         state.record_transaction(proposer, partner);
+        if state.diplomacy.enabled {
+            let _ = state.diplomacy.consume_initiation(proposer, partner);
+        }
         Self {
             proposer: proposer.clone(),
             partner: partner.clone(),
@@ -1218,8 +1226,24 @@ impl TradeWindow {
                     return Traded::Refused;
                 }
                 if answer.id == "accept" {
+                    let fair = (offer.given.worth_to_receiver(state, content)
+                        - offer.received.worth_to_receiver(state, content))
+                    .abs()
+                        <= 0.5;
                     return match resolve(state, content, galaxy, &offer) {
-                        Ok(()) => Traded::Resolved,
+                        Ok(()) => {
+                            if fair {
+                                crate::diplomacy::apply_relationship_event(
+                                    state,
+                                    &crate::diplomacy::RelationshipEvent::FairTransaction {
+                                        a: offer.proposer.clone(),
+                                        b: offer.partner.clone(),
+                                    },
+                                )
+                                .expect("transaction participants are distinct");
+                            }
+                            Traded::Resolved
+                        }
                         Err(reason) => Traded::Rejected(reason),
                     };
                 }

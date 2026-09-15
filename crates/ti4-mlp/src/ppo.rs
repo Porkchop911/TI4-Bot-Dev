@@ -285,7 +285,7 @@ impl Batch {
             return Err("a PPO batch is empty".to_owned());
         }
         for (index, step) in steps.iter().enumerate() {
-            if step.head >= crate::heads().len()
+            if step.head >= crate::all_heads().len()
                 || step.options.len() < 2
                 || step.chosen >= step.options.len()
                 || !step.behaviour_log_prob.is_finite()
@@ -456,7 +456,7 @@ struct Scored {
 /// The softmax is over exactly this decision's options — the segment — so no padding can enter it.
 #[cfg(test)]
 fn score(actor: &Actor, step: &Step) -> Result<Scored, String> {
-    let head = crate::heads()
+    let head = crate::all_heads()
         .get(step.head)
         .ok_or_else(|| format!("head index {} is out of range", step.head))?;
     let logits = actor
@@ -1090,7 +1090,7 @@ fn fill_critic_inputs(
 
 /// The schema head a step belongs to, defaulting the way the per-decision loop did.
 fn head_of(batch: &Batch, index: usize) -> &'static str {
-    crate::heads()
+    crate::all_heads()
         .get(batch.steps[index].head)
         .copied()
         .unwrap_or("other")
@@ -1395,6 +1395,16 @@ fn update_inner(
     }
     if optimizer.mode != critic_mode {
         return Err("PPO optimizer critic mode does not match the update".to_owned());
+    }
+    // Head indices are stored against `crate::all_heads`, which only appends. A step on a row this
+    // actor's layout lacks -- a diplomacy decision handed to a schema-7/8 actor -- is refused here,
+    // before any mutation, rather than reaching a readout gather it would index past.
+    let rows = actor.head_names().len();
+    if let Some(step) = batch.steps.iter().find(|step| step.head >= rows) {
+        return Err(format!(
+            "PPO step head {} is not in this actor's {rows}-head layout",
+            step.head
+        ));
     }
     // Only the settings the optimizer is *made of*. Entropy coefficients are loss terms: they
     // change the gradient's value, never Adam's moments, its step cursor or its clip. Comparing

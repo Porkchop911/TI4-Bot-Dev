@@ -106,6 +106,7 @@ pub fn begin_action_turn(state: &mut GameState, player: &PlayerId) {
 /// the two actions are explicitly the same turn.
 pub fn advance_turn(state: &mut GameState) -> Option<PlayerId> {
     state.clear_transactions();
+    state.diplomacy.clear_turn_initiations();
     if state.all_passed() {
         state.active = None;
         return None;
@@ -140,11 +141,17 @@ pub fn advance_turn(state: &mut GameState) -> Option<PlayerId> {
 /// Begin the next game round: back to the strategy phase with a fresh deck.
 ///
 /// The caller supplies the strategy card ids, since choosing them needs the content store.
+///
+/// # Panics
+/// Panics only if an internally-invalid diplomacy state cannot settle its due promises.
 pub fn begin_next_round(state: &mut GameState, strategy_cards: Vec<ti4_model::id::StrategyCardId>) {
     state.phase = Phase::Strategy;
     // "At the end of that game round" — before the counter moves on, so the round number still
     // names the round whose effects expire here (Darktalon Treilla's hero and her flag).
     crate::leaders::end_of_round(state);
+    crate::diplomacy::settle_deadlines(state, state.round)
+        .expect("validated diplomacy state settles deterministically");
+    crate::diplomacy::decay_relationships(state);
     state.round += 1;
     state.active = None;
     state.unclaimed_strategy_cards = strategy_cards;

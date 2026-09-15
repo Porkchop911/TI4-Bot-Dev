@@ -172,6 +172,46 @@ pub fn heads() -> &'static [&'static str] {
     &ti4_policy::learned::STAGE1_DECISION_HEADS
 }
 
+/// Every head any supported bundle layout names, in tensor-row order.
+///
+/// Layouts only ever append, so index `i` names the same head in every layout that has a row `i`.
+/// A stored head index resolves through this list; the actor it is then scored against refuses a
+/// head its own layout lacks, so a legacy actor handed a diplomacy decision fails loudly.
+#[must_use]
+pub fn all_heads() -> &'static [&'static str] {
+    HeadLayout::Diplomacy.heads()
+}
+
+/// Resolve a recorded decision to the newest supported layout without requiring a live actor.
+/// Legacy-only families still fold to `other`; diplomacy retains its dedicated appended row.
+#[must_use]
+pub fn capture_head(requested: &str) -> &str {
+    if all_heads().contains(&requested) {
+        requested
+    } else {
+        "other"
+    }
+}
+
+/// Positional readout layout carried by an actor bundle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HeadLayout {
+    /// Frozen schemas 7/8: the original fourteen rows.
+    Legacy,
+    /// Schemas 9/10: the same rows plus `diplomacy` at the end.
+    Diplomacy,
+}
+
+impl HeadLayout {
+    #[must_use]
+    pub const fn heads(self) -> &'static [&'static str] {
+        match self {
+            Self::Legacy => &ti4_policy::learned::STAGE1_DECISION_HEADS,
+            Self::Diplomacy => &ti4_policy::learned::DIPLOMACY_DECISION_HEADS,
+        }
+    }
+}
+
 /// Anything that stopped a forward pass.
 #[derive(Debug, Error)]
 pub enum ActorError {
@@ -416,6 +456,59 @@ impl SeparateCritic {
     }
 }
 
+fn migrated_input_table(
+    table: &Tensor,
+    migration: ti4_policy::vocabulary::V10ToV11Migration,
+) -> Result<Tensor, ActorError> {
+    let old_capacity =
+        usize::try_from(table.size().first().copied().unwrap_or(-1)).map_err(|_| {
+            ActorError::NotUsable {
+                what: "vocabulary migration",
+                detail: "input table has no valid row dimension".to_owned(),
+            }
+        })?;
+    if old_capacity != migration.old_capacity
+        || migration.inserted_column > migration.old_slot_count
+        || migration.old_slot_count > migration.old_capacity
+        || migration.old_slot_count.saturating_add(1) > migration.new_capacity
+    {
+        return Err(ActorError::NotUsable {
+            what: "vocabulary migration",
+            detail: format!(
+                "table has {old_capacity} rows, migration expects {} rows and {} assigned slots",
+                migration.old_capacity, migration.old_slot_count
+            ),
+        });
+    }
+    let width = table
+        .size()
+        .get(1)
+        .copied()
+        .ok_or_else(|| ActorError::NotUsable {
+            what: "vocabulary migration",
+            detail: "input table is not rank two".to_owned(),
+        })?;
+    let migrated = Tensor::zeros(
+        [i64::try_from(migration.new_capacity).unwrap_or(0), width],
+        (table.kind(), table.device()),
+    );
+    let inserted = i64::try_from(migration.inserted_column).unwrap_or(0);
+    let suffix = i64::try_from(migration.old_slot_count - migration.inserted_column).unwrap_or(0);
+    tch::no_grad(|| {
+        if inserted > 0 {
+            migrated
+                .narrow(0, 0, inserted)
+                .copy_(&table.narrow(0, 0, inserted));
+        }
+        if suffix > 0 {
+            migrated
+                .narrow(0, inserted + 1, suffix)
+                .copy_(&table.narrow(0, inserted, suffix));
+        }
+    });
+    Ok(migrated.set_requires_grad(table.requires_grad()))
+}
+
 /// One residual block after the two-layer trunk: `z + W_out · relu(W_in · z + b_in) + b_out`.
 ///
 /// `W_out` and `b_out` start at zero, so a block adds nothing until training moves it and an actor
@@ -470,6 +563,7 @@ impl Residual {
 pub struct Actor {
     width: i64,
     capacity: i64,
+    head_layout: HeadLayout,
     /// `W1`, the sparse input table. `[capacity, width]`.
     input: Tensor,
     b1: Tensor,
@@ -507,6 +601,7 @@ impl Actor {
         Self {
             width: self.width,
             capacity: self.capacity,
+            head_layout: self.head_layout,
             input: self.input.detach().copy(),
             b1: self.b1.detach().copy(),
             hidden: self.hidden.detach().copy(),
@@ -629,13 +724,24 @@ impl Actor {
     /// (F-M09-026-7). It is always `FACTION_ROSTER.len()`.
     #[must_use]
     pub fn zeros(width: Width, capacity: i64) -> Self {
+        Self::zeros_with_layout(width, capacity, HeadLayout::Legacy)
+    }
+
+    /// A zero-initialised schema-9/10 actor with a dedicated diplomacy readout.
+    #[must_use]
+    pub fn zeros_diplomacy(width: Width, capacity: i64) -> Self {
+        Self::zeros_with_layout(width, capacity, HeadLayout::Diplomacy)
+    }
+
+    fn zeros_with_layout(width: Width, capacity: i64, head_layout: HeadLayout) -> Self {
         let w = width.dim();
-        let heads = i64::try_from(heads().len()).expect("fourteen heads");
+        let heads = i64::try_from(head_layout.heads().len()).expect("bounded heads");
         let factions_dim = i64::try_from(FACTION_ROSTER.len()).expect("thirty-three seats");
         let opts = (Kind::Float, Device::Cpu);
         Self {
             width: w,
             capacity,
+            head_layout,
             input: Tensor::zeros([capacity, w], opts),
             b1: Tensor::zeros([w], opts),
             hidden: Tensor::zeros([w, w], opts),
@@ -650,6 +756,75 @@ impl Actor {
             b_value: Tensor::zeros([1], opts),
             separate_critic: None,
         }
+    }
+
+    /// The positional head layout this actor's tensors use.
+    #[must_use]
+    pub const fn head_layout(&self) -> HeadLayout {
+        self.head_layout
+    }
+
+    /// Head names in tensor-row order.
+    #[must_use]
+    pub const fn head_names(&self) -> &'static [&'static str] {
+        self.head_layout.heads()
+    }
+
+    /// The explicit schema 7→9 (and residual 8→10) migration: the same weights with a
+    /// `diplomacy` readout row appended from the existing trade head.
+    ///
+    /// Rows only append, so every legacy head keeps its index and scores exactly as before, and the
+    /// new head starts as the documented trade-head warm start. An actor that already carries the
+    /// diplomacy layout is returned unchanged. Whether each readout required a
+    /// gradient is preserved, but the rows are fresh tensors: migrate before opening an optimiser.
+    ///
+    /// # Panics
+    /// Never for an actor built by this crate: the readout axes are the constants 0 and 1.
+    #[must_use]
+    pub fn with_diplomacy_head(mut self) -> Self {
+        if self.head_layout == HeadLayout::Diplomacy {
+            return self;
+        }
+        let trade = i64::try_from(Self::head_index("trade").expect("legacy trade head"))
+            .expect("head fits");
+        let append = |tensor: &Tensor, dim: i64| {
+            let row = tensor.select(dim, trade).unsqueeze(dim);
+            Tensor::cat(&[tensor.detach(), row], dim).set_requires_grad(tensor.requires_grad())
+        };
+        tch::no_grad(|| {
+            self.w_shared = append(&self.w_shared, 0);
+            self.b_shared = append(&self.b_shared, 0);
+            self.delta = append(&self.delta, 1);
+            self.b_delta = append(&self.b_delta, 1);
+        });
+        self.head_layout = HeadLayout::Diplomacy;
+        self
+    }
+
+    /// Apply the row movement paired with a v10→v11 vocabulary migration.
+    ///
+    /// This updates both policy and separate-critic input tables atomically in memory. Callers
+    /// write the returned actor and migrated vocabulary as one immutable bundle.
+    pub fn migrate_v10_to_v11_inputs(
+        &mut self,
+        migration: ti4_policy::vocabulary::V10ToV11Migration,
+    ) -> Result<(), ActorError> {
+        let input = migrated_input_table(&self.input, migration)?;
+        let critic_input = if let Some(critic) = &self.separate_critic {
+            Some(migrated_input_table(&critic.input, migration)?)
+        } else {
+            None
+        };
+        self.input = input;
+        self.capacity =
+            i64::try_from(migration.new_capacity).map_err(|_| ActorError::NotUsable {
+                what: "vocabulary migration",
+                detail: "new capacity does not fit i64".to_owned(),
+            })?;
+        if let (Some(critic), Some(input)) = (&mut self.separate_critic, critic_input) {
+            critic.input = input;
+        }
+        Ok(())
     }
 
     /// The trunk width.
@@ -955,6 +1130,24 @@ impl Actor {
             .ok_or_else(|| ActorError::UnknownHead(name.to_owned()))
     }
 
+    /// Resolve a policy head against this actor's versioned layout.
+    #[must_use]
+    pub fn resolve_layout_head<'a>(&self, requested: &'a str) -> &'a str {
+        if self.head_names().contains(&requested) {
+            requested
+        } else {
+            "other"
+        }
+    }
+
+    /// Locate a head in this actor's versioned layout.
+    pub fn layout_head_index(&self, name: &str) -> Result<usize, ActorError> {
+        self.head_names()
+            .iter()
+            .position(|head| *head == name)
+            .ok_or_else(|| ActorError::UnknownHead(name.to_owned()))
+    }
+
     /// Every option of one decision through the trunk, in one pass.
     ///
     /// Returns `[n, width]`. The gather is per option because the input is sparse; the two dense
@@ -995,7 +1188,7 @@ impl Actor {
         head: &str,
         row: FactionRow,
     ) -> Result<Tensor, ActorError> {
-        let head_index = Self::head_index(head)?;
+        let head_index = self.layout_head_index(head)?;
         let z = self.trunk(options, row)?;
         let seat_i = i64::try_from(row.index()).expect("roster fits");
         let head_i = i64::try_from(head_index).expect("head fits");
@@ -1132,7 +1325,7 @@ impl Actor {
         // w_effective[option] = w_shared[head] + delta[faction, head], gathered rather than looped.
         // `delta` is [factions, heads, width]; flattening to [factions*heads, width] turns the pair
         // into one index.
-        let heads_count = i64::try_from(crate::heads().len()).unwrap_or(0);
+        let heads_count = i64::try_from(self.head_names().len()).unwrap_or(0);
         let pair_index = row_index * heads_count + head_index;
         let delta_flat = self.delta.view([-1, self.width]);
         let w = self.w_shared.index_select(0, head_index) + delta_flat.index_select(0, &pair_index);
@@ -1754,6 +1947,71 @@ mod tests {
         // Schema 5 heads fold to `other` rather than failing at a call site.
         assert_eq!(Actor::resolve_head("scoring"), "other");
         assert_eq!(Actor::resolve_head("movement"), "movement");
+    }
+
+    #[test]
+    fn migrating_to_the_diplomacy_layout_keeps_every_legacy_head_and_warm_starts_from_trade() {
+        assert_eq!(&all_heads()[..heads().len()], heads());
+        assert_eq!(all_heads().last().copied(), Some("diplomacy"));
+
+        let mut actor = Actor::zeros(Width::W128, 16);
+        *actor.input_mut() = actor.input().f_add_scalar(0.25).expect("add");
+        *actor.hidden_mut() = actor.hidden().f_add_scalar(0.01).expect("add");
+        *actor.shared_readout_mut() = actor.shared_readout().f_add_scalar(0.5).expect("add");
+        let row = FactionRow::of("sol").expect("roster");
+        let options = vec![option(&[1, 2], &[1.0, 0.5]), option(&[3], &[1.0])];
+        let scores = |actor: &Actor, head: &str| {
+            ti4_tensor::to_vec(&actor.logits(&options, head, row).expect("logits")).expect("vec")
+        };
+        let before: Vec<Vec<f32>> = heads().iter().map(|head| scores(&actor, head)).collect();
+        assert!(matches!(
+            actor.logits(&options, "diplomacy", row),
+            Err(ActorError::UnknownHead(_))
+        ));
+
+        let migrated = actor.with_diplomacy_head();
+
+        assert_eq!(migrated.head_layout(), HeadLayout::Diplomacy);
+        for (head, expected) in heads().iter().zip(&before) {
+            assert_eq!(&scores(&migrated, head), expected, "{head} moved");
+        }
+        assert_eq!(
+            scores(&migrated, "diplomacy"),
+            scores(&migrated, "trade"),
+            "the new head is not the documented trade warm start"
+        );
+    }
+
+    #[test]
+    fn vocabulary_row_migration_preserves_named_feature_logits() {
+        let mut actor = actor(Width::W128);
+        let row = row("sol");
+        let before_option = option(&[3, 48, 79], &[0.25, 1.0, -0.5]);
+        let before = ti4_tensor::to_vec(
+            &actor
+                .logits(&[before_option], "trade", row)
+                .expect("legacy logits"),
+        )
+        .expect("vec");
+        let movement = ti4_policy::vocabulary::V10ToV11Migration {
+            inserted_column: 48,
+            old_slot_count: 100,
+            old_capacity: usize::try_from(CAPACITY).unwrap(),
+            new_capacity: usize::try_from(CAPACITY).unwrap(),
+        };
+        actor
+            .migrate_v10_to_v11_inputs(movement)
+            .expect("input rows migrate");
+        let after_option = option(&[3, 49, 80], &[0.25, 1.0, -0.5]);
+        let after = ti4_tensor::to_vec(
+            &actor
+                .logits(&[after_option], "trade", row)
+                .expect("migrated logits"),
+        )
+        .expect("vec");
+        assert_eq!(before, after);
+        let inserted: Vec<f32> = ti4_tensor::to_vec(&actor.input().get(48)).expect("row");
+        assert!(inserted.iter().all(|value| *value == 0.0));
     }
 
     #[test]

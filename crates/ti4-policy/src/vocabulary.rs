@@ -42,7 +42,7 @@ use crate::intern::FeatureKey;
 ///
 /// Recorded in the manifest. Bumping it moves OOV column indices, which invalidates every weight
 /// in a trained model — so it is a migration, never an edit.
-pub const OOV_REGISTRY_VERSION: u32 = 10;
+pub const OOV_REGISTRY_VERSION: u32 = 11;
 
 /// Physical capacity is rounded up to a multiple of this.
 const CAPACITY_GRANULARITY: usize = 4_096;
@@ -308,6 +308,18 @@ const OOV_FAMILIES_V10: [&str; 47] = {
     families
 };
 
+/// Version 11 appends the bounded public diplomacy feature family.
+const OOV_FAMILIES_V11: [&str; 48] = {
+    let mut families = [""; 48];
+    let mut index = 0;
+    while index < OOV_FAMILIES_V10.len() {
+        families[index] = OOV_FAMILIES_V10[index];
+        index += 1;
+    }
+    families[47] = "diplomacy";
+    families
+};
+
 /// The pinned fingerprint of the ordered version-1 registry.
 ///
 /// **Independent of how the list is built.** Pinning v2 against v1 alone proved nothing: v2 is
@@ -352,6 +364,8 @@ pub const OOV_FAMILIES_V9_FINGERPRINT: &str =
 /// The pinned fingerprint of the ordered version-10 registry.
 pub const OOV_FAMILIES_V10_FINGERPRINT: &str =
     "9ab64bd1953cb9ac46ef9da9ec34a94ca25ee1082a41971d1687488a17e3c831";
+pub const OOV_FAMILIES_V11_FINGERPRINT: &str =
+    "61e1cbfe2b2ec0db46e3734097e7ff2ad7a97f0d922cb0dc47e397ce1ebc31b6";
 
 /// The frozen v1 list, for migration checks. Nothing routes by it.
 #[must_use]
@@ -365,7 +379,7 @@ pub const fn oov_families_v1() -> &'static [&'static str] {
 /// grammars — see [`OOV_FAMILIES_V1`] for why that was wrong.
 #[must_use]
 pub fn oov_families() -> &'static [&'static str] {
-    &OOV_FAMILIES_V10
+    &OOV_FAMILIES_V11
 }
 
 /// Families whose reserved rows exist only to hold v1's indices in place.
@@ -471,6 +485,9 @@ pub enum VocabularyError {
         "slots.json declares OOV registry version {found}, but this build supports {supported}"
     )]
     UnsupportedRegistry { found: u32, supported: u32 },
+    /// A version-specific migration was asked to consume another layout.
+    #[error("vocabulary migration expects registry version {expected}, found {found}")]
+    MigrationSource { expected: u32, found: u32 },
     /// A reserved column is not the one the registry says belongs at that index.
     #[error("reserved column {column}: expected {expected:?}, found {found:?}")]
     ReservedLayout {
@@ -554,6 +571,15 @@ pub struct Vocabulary {
     /// Column index by key, for lookup. Rebuilt on load rather than stored.
     #[serde(skip)]
     index: BTreeMap<FeatureKey, usize>,
+}
+
+/// Exact row movement required when v10's reserved prefix gains v11's diplomacy row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct V10ToV11Migration {
+    pub inserted_column: usize,
+    pub old_slot_count: usize,
+    pub old_capacity: usize,
+    pub new_capacity: usize,
 }
 
 impl Vocabulary {
@@ -884,6 +910,66 @@ impl Vocabulary {
         Ok(vocabulary)
     }
 
+    /// Insert v11's diplomacy OOV column and shift every ordinary v10 slot by one.
+    ///
+    /// The returned descriptor must be applied to every input-addressed tensor before the
+    /// migrated vocabulary and model are written together. No name is re-keyed or reordered
+    /// within the ordinary suffix.
+    ///
+    /// # Errors
+    /// Returns [`VocabularyError`] unless the source is a valid v10 vocabulary and the migrated
+    /// layout fits the configured capacity limit.
+    pub fn migrate_v10_to_v11(mut self) -> Result<(Self, V10ToV11Migration), VocabularyError> {
+        if self.oov_registry_version != 10 {
+            return Err(VocabularyError::MigrationSource {
+                expected: 10,
+                found: self.oov_registry_version,
+            });
+        }
+        self.validate_versioned(true)?;
+        let inserted_column = self.oov_count;
+        let old_slot_count = self.slots.len();
+        let old_capacity = self.capacity;
+        let name = oov_name(OOV_FAMILIES_V11[OOV_FAMILIES_V10.len()]);
+        let key = FeatureKey::of(&name);
+        if self.slots.iter().any(|slot| slot.key == key.bits()) {
+            return Err(VocabularyError::Collision {
+                key: key.bits(),
+                first: name.clone(),
+                second: name,
+            });
+        }
+        self.slots.insert(
+            inserted_column,
+            Slot {
+                name,
+                key: key.bits(),
+            },
+        );
+        self.oov_registry_version = OOV_REGISTRY_VERSION;
+        self.oov_count += 1;
+        self.allocated_for =
+            self.allocated_for
+                .checked_add(1)
+                .ok_or(VocabularyError::OverCapacity {
+                    needed: usize::MAX,
+                    slots: self.slots.len(),
+                })?;
+        self.capacity = capacity_for(self.allocated_for)?;
+        self.reindex();
+        self.validate()?;
+        let new_capacity = self.capacity;
+        Ok((
+            self,
+            V10ToV11Migration {
+                inserted_column,
+                old_slot_count,
+                old_capacity,
+                new_capacity,
+            },
+        ))
+    }
+
     /// Check the invariants a `slots.json` must satisfy before anything trusts its columns.
     ///
     /// A vocabulary this module built satisfies these by construction. A vocabulary read off disk
@@ -911,7 +997,8 @@ impl Vocabulary {
         // 1. Fail closed on a layout this build does not know. An unrecognised version means the
         //    reserved columns below are somebody else's, and nothing here can tell which.
         let families: &[&str] = match self.oov_registry_version {
-            OOV_REGISTRY_VERSION => &OOV_FAMILIES_V10,
+            OOV_REGISTRY_VERSION => &OOV_FAMILIES_V11,
+            10 if allow_prior_version_inference => &OOV_FAMILIES_V10,
             9 if allow_prior_version_inference => &OOV_FAMILIES_V9,
             _ => {
                 return Err(VocabularyError::UnsupportedRegistry {
@@ -1469,6 +1556,11 @@ mod tests {
             OOV_FAMILIES_V10_FINGERPRINT,
             "the ordered v10 registry changed"
         );
+        assert_eq!(
+            registry_fingerprint(&OOV_FAMILIES_V11),
+            OOV_FAMILIES_V11_FINGERPRINT,
+            "the ordered v11 registry changed"
+        );
         // The ten digests must differ, or pinning them separately proves nothing.
         assert_ne!(OOV_FAMILIES_V1_FINGERPRINT, OOV_FAMILIES_V2_FINGERPRINT);
         assert_ne!(OOV_FAMILIES_V2_FINGERPRINT, OOV_FAMILIES_V3_FINGERPRINT);
@@ -1479,6 +1571,7 @@ mod tests {
         assert_ne!(OOV_FAMILIES_V7_FINGERPRINT, OOV_FAMILIES_V8_FINGERPRINT);
         assert_ne!(OOV_FAMILIES_V8_FINGERPRINT, OOV_FAMILIES_V9_FINGERPRINT);
         assert_ne!(OOV_FAMILIES_V9_FINGERPRINT, OOV_FAMILIES_V10_FINGERPRINT);
+        assert_ne!(OOV_FAMILIES_V10_FINGERPRINT, OOV_FAMILIES_V11_FINGERPRINT);
 
         assert_eq!(OOV_FAMILIES_V2.len(), OOV_FAMILIES_V1.len() + 1);
         for (index, family) in OOV_FAMILIES_V1.iter().enumerate() {
@@ -1597,10 +1690,19 @@ mod tests {
             "the appended family is not the content decision-surface namespace"
         );
 
+        assert_eq!(OOV_FAMILIES_V11.len(), OOV_FAMILIES_V10.len() + 1);
+        for (index, family) in OOV_FAMILIES_V10.iter().enumerate() {
+            assert_eq!(
+                OOV_FAMILIES_V11[index], *family,
+                "v11 moved the v10 reserved column at index {index}"
+            );
+        }
+        assert_eq!(OOV_FAMILIES_V11[OOV_FAMILIES_V10.len()], "diplomacy");
+
         // And the same property on the built vocabulary: reserved column i+1 is families[i].
         let vocabulary = Vocabulary::build(Vec::<String>::new()).expect("builds");
         assert_eq!(vocabulary.slots[0].name, GLOBAL_OOV);
-        for (index, family) in OOV_FAMILIES_V10.iter().enumerate() {
+        for (index, family) in OOV_FAMILIES_V11.iter().enumerate() {
             assert_eq!(vocabulary.slots[index + 1].name, oov_name(family));
         }
     }
@@ -1655,9 +1757,14 @@ mod tests {
         let appended_column = 1 + OOV_FAMILIES_V9.len();
         assert_eq!(vocabulary.slots[appended_column].name, oov_name("content"));
         vocabulary.slots.remove(appended_column);
+        assert_eq!(
+            vocabulary.slots[appended_column].name,
+            oov_name("diplomacy")
+        );
+        vocabulary.slots.remove(appended_column);
         vocabulary.oov_registry_version = 9;
-        vocabulary.oov_count -= 1;
-        vocabulary.allocated_for -= 1;
+        vocabulary.oov_count -= 2;
+        vocabulary.allocated_for -= 2;
         vocabulary.reindex();
         let assigned_name = vocabulary.slots[vocabulary.oov_count].name.clone();
         let assigned_column = vocabulary.column_of(&assigned_name);
@@ -1675,6 +1782,49 @@ mod tests {
             GLOBAL_OOV_COLUMN,
             "the v10-only family must not alias an old trained row"
         );
+    }
+
+    #[test]
+    fn version_ten_migrates_by_inserting_one_reserved_column() {
+        let mut vocabulary = Vocabulary::build(sample()).expect("builds");
+        let inserted = 1 + OOV_FAMILIES_V10.len();
+        assert_eq!(vocabulary.slots[inserted].name, oov_name("diplomacy"));
+        vocabulary.slots.remove(inserted);
+        vocabulary.oov_registry_version = 10;
+        vocabulary.oov_count -= 1;
+        vocabulary.allocated_for -= 1;
+        vocabulary.capacity = capacity_for(vocabulary.allocated_for).expect("fits");
+        vocabulary.reindex();
+        vocabulary.validate_versioned(true).expect("valid v10");
+        let old_names: Vec<_> = vocabulary
+            .slots
+            .iter()
+            .skip(inserted)
+            .map(|slot| slot.name.clone())
+            .collect();
+
+        let old_slot_count = vocabulary.slot_count();
+        let old_capacity = vocabulary.capacity();
+        let (migrated, movement) = vocabulary.migrate_v10_to_v11().expect("migrates");
+        assert_eq!(movement.inserted_column, inserted);
+        assert_eq!(movement.old_slot_count, old_slot_count);
+        assert_eq!(movement.old_capacity, old_capacity);
+        assert_eq!(migrated.oov_registry_version(), 11);
+        assert_eq!(migrated.slots[inserted].name, oov_name("diplomacy"));
+        assert_eq!(
+            migrated
+                .slots
+                .iter()
+                .skip(inserted + 1)
+                .map(|slot| slot.name.clone())
+                .collect::<Vec<_>>(),
+            old_names
+        );
+        assert_eq!(
+            migrated.column_of("diplomacy:unseen"),
+            movement.inserted_column
+        );
+        migrated.validate().expect("valid current vocabulary");
     }
 
     #[test]

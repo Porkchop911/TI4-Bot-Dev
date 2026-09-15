@@ -23,9 +23,12 @@ const MAGIC: &[u8; 8] = b"TI4BC001";
 /// The zstd magic number. Capture corpora are either plain JSONL (current capture) or a stream of
 /// zstd frames (older corpora); both must stay readable.
 const ZSTD_MAGIC: [u8; 4] = [0x28, 0xb5, 0x2f, 0xfd];
-const SCHEMA: &str = "ti4-offline-bc-v1";
-const CAPTURE_SCHEMA: &str = "ti4-offline-selfplay-v1";
-const OBSERVATION_SCHEMA: &str = "seat-authorized-canonical-mlp-v1";
+const PACKED_SCHEMA_V1: &str = "ti4-offline-bc-v1";
+const PACKED_SCHEMA_V2: &str = "ti4-offline-bc-v2";
+const CAPTURE_SCHEMA_V1: &str = "ti4-offline-selfplay-v1";
+const CAPTURE_SCHEMA_V2: &str = "ti4-offline-selfplay-v2";
+const OBSERVATION_SCHEMA_V1: &str = "seat-authorized-canonical-mlp-v1";
+const OBSERVATION_SCHEMA_V2: &str = "seat-authorized-canonical-mlp-v2";
 const FACTIONS: [&str; 6] = ["jolnar", "letnev", "sol", "xxcha", "hacan", "l1z1x"];
 
 #[derive(Deserialize)]
@@ -134,6 +137,8 @@ struct Manifest {
     buckets: BTreeMap<String, u64>,
     train: FileInfo,
     validation: FileInfo,
+    #[serde(default)]
+    diplomacy: bool,
 }
 
 #[derive(Deserialize)]
@@ -144,6 +149,8 @@ struct CaptureManifest {
     vocabulary_slots_sha256: String,
     records: BTreeMap<String, usize>,
     shards: BTreeMap<String, String>,
+    #[serde(default)]
+    diplomacy_enabled: bool,
 }
 
 struct RawCorpus {
@@ -153,6 +160,7 @@ struct RawCorpus {
     frames: usize,
     games_sha256: String,
     decisions_sha256: String,
+    diplomacy: bool,
 }
 
 type CuratedSplit = (Vec<Packed>, Vec<Packed>);
@@ -236,21 +244,29 @@ fn validate_capture_manifest(
     manifest: &CaptureManifest,
     slots_sha256: &str,
     root: &Path,
-) -> Result<(), String> {
-    if manifest.schema != CAPTURE_SCHEMA {
-        return Err(format!(
-            "{} has capture schema {}, expected {CAPTURE_SCHEMA}",
-            root.display(),
-            manifest.schema
-        ));
-    }
-    if manifest.observation_schema != OBSERVATION_SCHEMA {
-        return Err(format!(
-            "{} has observation schema {}, expected {OBSERVATION_SCHEMA}",
-            root.display(),
-            manifest.observation_schema
-        ));
-    }
+) -> Result<bool, String> {
+    let diplomacy = match (
+        manifest.schema.as_str(),
+        manifest.observation_schema.as_str(),
+    ) {
+        (CAPTURE_SCHEMA_V1, OBSERVATION_SCHEMA_V1) => false,
+        (CAPTURE_SCHEMA_V2, OBSERVATION_SCHEMA_V2) => manifest.diplomacy_enabled,
+        (CAPTURE_SCHEMA_V1 | CAPTURE_SCHEMA_V2, _) => {
+            return Err(format!(
+                "{} has incompatible capture/observation schemas {}/{}",
+                root.display(),
+                manifest.schema,
+                manifest.observation_schema
+            ));
+        }
+        _ => {
+            return Err(format!(
+                "{} has unsupported capture schema {}",
+                root.display(),
+                manifest.schema
+            ));
+        }
+    };
     if manifest.vocabulary_slots_sha256 != slots_sha256 {
         return Err(format!(
             "{} vocabulary digest does not match the starting checkpoint",
@@ -263,7 +279,16 @@ fn validate_capture_manifest(
             root.display()
         ));
     }
-    Ok(())
+    if diplomacy
+        && (!manifest.shards.contains_key("diplomacy.jsonl.zst")
+            || !manifest.records.contains_key("diplomacy_deals"))
+    {
+        return Err(format!(
+            "{} diplomacy-enabled manifest does not authenticate its diplomacy shard",
+            root.display()
+        ));
+    }
+    Ok(diplomacy)
 }
 
 fn manifest_hash(manifest: &CaptureManifest, path: &Path) -> Result<String, String> {
@@ -291,7 +316,7 @@ fn raw_corpus(root: PathBuf, slots_sha256: &str) -> Result<RawCorpus, String> {
             .map_err(|error| format!("reading {}: {error}", manifest_path.display()))?,
     )
     .map_err(|error| format!("parsing {}: {error}", manifest_path.display()))?;
-    validate_capture_manifest(&manifest, slots_sha256, &root)?;
+    let diplomacy = validate_capture_manifest(&manifest, slots_sha256, &root)?;
     let games = shard(&root, "games")?;
     let decisions = shard(&root, "decisions")?;
     let games_sha256 = manifest_hash(&manifest, &games)?;
@@ -303,6 +328,7 @@ fn raw_corpus(root: PathBuf, slots_sha256: &str) -> Result<RawCorpus, String> {
         frames: manifest.games,
         games_sha256,
         decisions_sha256,
+        diplomacy,
     })
 }
 /// Capture writes `.jsonl` (current) or `.jsonl.zst` (older corpora). Both suffixes are exact
@@ -549,6 +575,7 @@ fn compile_decision(
     d: Decision,
     outcomes: &HashMap<(String, String), Outcome>,
     vocabulary: &ti4_policy::vocabulary::Vocabulary,
+    diplomacy: bool,
 ) -> Result<Option<(Packed, String)>, String> {
     if d.legal_actions.len() <= 1 {
         return Ok(None);
@@ -563,7 +590,13 @@ fn compile_decision(
         return Err(format!("metadata/choice mismatch in {}", d.game_id));
     }
     let row = FactionRow::of(&d.faction).map_err(|e| e.to_string())?;
-    let head = ti4_mlp::heads()
+    if d.head == "diplomacy" && !diplomacy {
+        return Err(format!(
+            "legacy corpus contains diplomacy supervision in {}",
+            d.game_id
+        ));
+    }
+    let head = ti4_mlp::all_heads()
         .iter()
         .position(|x| *x == d.head)
         .ok_or_else(|| format!("unknown head {}", d.head))?;
@@ -606,13 +639,14 @@ fn compile_batch(
     lines: Vec<String>,
     outcomes: &HashMap<(String, String), Outcome>,
     vocabulary: &ti4_policy::vocabulary::Vocabulary,
+    diplomacy: bool,
 ) -> Result<Vec<Option<(Packed, String)>>, String> {
     lines
         .into_par_iter()
         .map(|line| {
             let decision: Decision = serde_json::from_str(&line)
                 .map_err(|error| format!("parsing decision JSON: {error}"))?;
-            compile_decision(decision, outcomes, vocabulary)
+            compile_decision(decision, outcomes, vocabulary, diplomacy)
         })
         .collect()
 }
@@ -625,12 +659,14 @@ fn compile_chunk(
     outcomes: &HashMap<(String, String), Outcome>,
     vocabulary: &ti4_policy::vocabulary::Vocabulary,
     control_per_million: u64,
+    diplomacy: bool,
 ) -> Result<(Vec<Packed>, Vec<Packed>), String> {
     let mut train = Vec::new();
     let mut validation = Vec::new();
     for line in text.lines().filter(|line| !line.trim().is_empty()) {
         let decision: Decision = serde_json::from_str(line).map_err(|error| error.to_string())?;
-        let Some(packed) = compile_decision(decision, outcomes, vocabulary)?.map(|pair| pair.0)
+        let Some(packed) =
+            compile_decision(decision, outcomes, vocabulary, diplomacy)?.map(|pair| pair.0)
         else {
             continue;
         };
@@ -798,7 +834,9 @@ fn print_composition(label: &str, packed: &[Packed]) {
         *factions
             .entry(ti4_mlp::FACTION_ROSTER[item.row.index()])
             .or_insert(0_usize) += 1;
-        *heads.entry(ti4_mlp::heads()[item.head]).or_insert(0_usize) += 1;
+        *heads
+            .entry(ti4_mlp::all_heads()[item.head])
+            .or_insert(0_usize) += 1;
         *policies
             .entry(format!("{:016x}", item.policy))
             .or_insert(0_usize) += 1;
@@ -853,7 +891,13 @@ fn compile_corpus(
                 let plain = zstd::decode_all(std::io::Cursor::new(&bytes[range.clone()]))
                     .map_err(|error| error.to_string())?;
                 let text = String::from_utf8(plain).map_err(|error| error.to_string())?;
-                let part = compile_chunk(&text, outcomes, vocabulary, control_per_million)?;
+                let part = compile_chunk(
+                    &text,
+                    outcomes,
+                    vocabulary,
+                    control_per_million,
+                    corpus.diplomacy,
+                )?;
                 let done = finished.fetch_add(1, Ordering::Relaxed) + 1;
                 if done.is_multiple_of(256) || done == corpus.frames {
                     println!("decoded {done}/{} frames", corpus.frames);
@@ -875,7 +919,13 @@ fn compile_corpus(
                 let text = std::str::from_utf8(&bytes[range.clone()]).map_err(|error| {
                     format!("{} is not UTF-8: {error}", corpus.decisions.display())
                 })?;
-                compile_chunk(text, outcomes, vocabulary, control_per_million)
+                compile_chunk(
+                    text,
+                    outcomes,
+                    vocabulary,
+                    control_per_million,
+                    corpus.diplomacy,
+                )
             })
             .collect()
     };
@@ -926,6 +976,11 @@ fn train_raw_parallel() -> Result<(), String> {
         println!("  {}: {} frames", corpus.root.display(), corpus.frames);
     }
     let loaded = read(&checkpoint).map_err(|error| error.to_string())?;
+    if corpora.iter().any(|corpus| corpus.diplomacy)
+        && loaded.actor.head_layout() != ti4_mlp::HeadLayout::Diplomacy
+    {
+        return Err("diplomacy-enabled corpus requires a schema-9/10 diplomacy checkpoint".into());
+    }
     let mut games = Vec::with_capacity(total_frames);
     for corpus in &corpora {
         if corpus.frames == 0 {
@@ -953,6 +1008,18 @@ fn train_raw_parallel() -> Result<(), String> {
     );
     if train_samples.is_empty() || validation_samples.is_empty() {
         return Err("curation produced an empty train or validation split".into());
+    }
+    let diplomacy_head = ti4_mlp::all_heads()
+        .iter()
+        .position(|head| *head == "diplomacy")
+        .expect("diplomacy layout appends its named head");
+    if corpora.iter().any(|corpus| corpus.diplomacy)
+        && !train_samples
+            .iter()
+            .chain(&validation_samples)
+            .any(|sample| sample.head == diplomacy_head)
+    {
+        return Err("diplomacy-enabled corpora contain no usable diplomacy decisions".into());
     }
     print_composition("train", &train_samples);
     print_composition("validation", &validation_samples);
@@ -1037,7 +1104,16 @@ fn pack() -> Result<(), String> {
     let slots =
         std::fs::read_to_string(checkpoint.join("slots.json")).map_err(|e| e.to_string())?;
     let slots_sha256 = format!("{:x}", sha2::Sha256::digest(slots.as_bytes()));
-    let vocabulary = read(&checkpoint).map_err(|e| e.to_string())?.vocabulary;
+    let capture_manifest: CaptureManifest = serde_json::from_slice(
+        &std::fs::read(&source_manifest).map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| format!("parsing {}: {error}", source_manifest.display()))?;
+    let diplomacy = validate_capture_manifest(&capture_manifest, &slots_sha256, &source)?;
+    let loaded = read(&checkpoint).map_err(|error| error.to_string())?;
+    if diplomacy && loaded.actor.head_layout() != ti4_mlp::HeadLayout::Diplomacy {
+        return Err("diplomacy-enabled corpus requires a schema-9/10 diplomacy checkpoint".into());
+    }
+    let vocabulary = loaded.vocabulary;
     let mut outcomes = HashMap::new();
     for path in files(&source, "games")? {
         lines::<Game>(&path, |game| {
@@ -1124,7 +1200,12 @@ fn pack() -> Result<(), String> {
             if batch.len() < batch_size {
                 continue;
             }
-            for item in compile_batch(std::mem::take(&mut batch), &outcomes, &vocabulary)? {
+            for item in compile_batch(
+                std::mem::take(&mut batch),
+                &outcomes,
+                &vocabulary,
+                diplomacy,
+            )? {
                 let Some((p, policy_id)) = item else { continue };
                 let policy_key = format!("{:016x}", p.policy);
                 if policies
@@ -1149,7 +1230,7 @@ fn pack() -> Result<(), String> {
                 let _ = std::io::stdout().flush();
             }
         }
-        for item in compile_batch(batch, &outcomes, &vocabulary)? {
+        for item in compile_batch(batch, &outcomes, &vocabulary, diplomacy)? {
             let Some((p, policy_id)) = item else { continue };
             policies.insert(format!("{:016x}", p.policy), policy_id);
             *buckets.entry(p.bucket.name().to_owned()).or_insert(0) += 1;
@@ -1165,7 +1246,12 @@ fn pack() -> Result<(), String> {
     let train = finish_file(train, &train_path, counts[0])?;
     let validation = finish_file(valid, &valid_path, counts[1])?;
     let manifest = Manifest {
-        schema: SCHEMA.into(),
+        schema: if diplomacy {
+            PACKED_SCHEMA_V2
+        } else {
+            PACKED_SCHEMA_V1
+        }
+        .into(),
         source: source.display().to_string(),
         source_manifest_sha256: digest(&source_manifest)?,
         slots_sha256,
@@ -1176,6 +1262,7 @@ fn pack() -> Result<(), String> {
         buckets,
         train,
         validation,
+        diplomacy,
     };
     std::fs::write(
         staging.join("manifest.json"),
@@ -1269,7 +1356,11 @@ fn train() -> Result<(), String> {
         &std::fs::read(corpus.join("manifest.json")).map_err(|e| e.to_string())?,
     )
     .map_err(|e| e.to_string())?;
-    if manifest.schema != SCHEMA {
+    if !matches!(
+        manifest.schema.as_str(),
+        PACKED_SCHEMA_V1 | PACKED_SCHEMA_V2
+    ) || (manifest.schema == PACKED_SCHEMA_V1 && manifest.diplomacy)
+    {
         return Err("unsupported packed schema".into());
     }
     let slots =
@@ -1278,6 +1369,9 @@ fn train() -> Result<(), String> {
         return Err("vocabulary digest mismatch".into());
     }
     let loaded = read(&checkpoint).map_err(|e| e.to_string())?;
+    if manifest.diplomacy && loaded.actor.head_layout() != ti4_mlp::HeadLayout::Diplomacy {
+        return Err("diplomacy BC data requires a schema-9/10 diplomacy checkpoint".into());
+    }
     let critic_mode = loaded.critic_mode;
     let train_samples = load_samples(&corpus, &manifest.train, num("--max-train", 100_000))?;
     let validation = load_samples(
@@ -1285,6 +1379,17 @@ fn train() -> Result<(), String> {
         &manifest.validation,
         num("--max-validation", 20_000),
     )?;
+    let diplomacy_head = ti4_mlp::all_heads()
+        .iter()
+        .position(|head| *head == "diplomacy")
+        .expect("diplomacy layout appends its named head");
+    let has_diplomacy = train_samples
+        .iter()
+        .chain(&validation)
+        .any(|sample| sample.head == diplomacy_head);
+    if has_diplomacy != manifest.diplomacy {
+        return Err("packed manifest and diplomacy-head samples disagree".into());
+    }
     let device = ti4_tensor::OptimizerDevice::Cuda
         .resolve()
         .map_err(|e| format!("CUDA required: {e}"))?;
@@ -1364,8 +1469,8 @@ mod tests {
 
     fn capture_manifest() -> CaptureManifest {
         CaptureManifest {
-            schema: CAPTURE_SCHEMA.to_owned(),
-            observation_schema: OBSERVATION_SCHEMA.to_owned(),
+            schema: CAPTURE_SCHEMA_V1.to_owned(),
+            observation_schema: OBSERVATION_SCHEMA_V1.to_owned(),
             games: 2,
             vocabulary_slots_sha256: "slots".to_owned(),
             records: BTreeMap::from([("games".to_owned(), 2)]),
@@ -1373,6 +1478,7 @@ mod tests {
                 ("games.jsonl.zst".to_owned(), "games-sha".to_owned()),
                 ("decisions.jsonl.zst".to_owned(), "decisions-sha".to_owned()),
             ]),
+            diplomacy_enabled: false,
         }
     }
 
@@ -1401,13 +1507,34 @@ mod tests {
         assert!(
             validate_capture_manifest(&manifest, "slots", Path::new("corpus"))
                 .unwrap_err()
-                .contains("observation schema")
+                .contains("capture/observation schemas")
         );
         let manifest = capture_manifest();
         assert!(
             validate_capture_manifest(&manifest, "different-slots", Path::new("corpus"))
                 .unwrap_err()
                 .contains("vocabulary digest")
+        );
+    }
+
+    #[test]
+    fn diplomacy_capture_requires_v2_pair_and_authenticated_log() {
+        let mut manifest = capture_manifest();
+        manifest.schema = CAPTURE_SCHEMA_V2.to_owned();
+        manifest.observation_schema = OBSERVATION_SCHEMA_V2.to_owned();
+        manifest.diplomacy_enabled = true;
+        assert!(
+            validate_capture_manifest(&manifest, "slots", Path::new("corpus"))
+                .unwrap_err()
+                .contains("diplomacy shard")
+        );
+        manifest.records.insert("diplomacy_deals".to_owned(), 1);
+        manifest
+            .shards
+            .insert("diplomacy.jsonl.zst".to_owned(), "diplomacy-sha".to_owned());
+        assert_eq!(
+            validate_capture_manifest(&manifest, "slots", Path::new("corpus")).unwrap(),
+            true
         );
     }
 

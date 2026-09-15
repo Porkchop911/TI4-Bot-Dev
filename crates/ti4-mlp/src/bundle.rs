@@ -43,7 +43,7 @@ use std::path::{Path, PathBuf};
 use sha2::Digest;
 use ti4_tensor::Tensor;
 
-use crate::{Actor, EMBED_DIM, FACTION_ROSTER, SeparateCritic, Width, heads};
+use crate::{Actor, EMBED_DIM, FACTION_ROSTER, HeadLayout, SeparateCritic, Width};
 
 /// The schema this module reads and writes. Distinct from the linear schemas 2–5 so a wrong loader
 /// fails loudly rather than misreading a field it recognises.
@@ -54,6 +54,12 @@ pub const SCHEMA: u32 = 7;
 /// predates them refuses it rather than silently dropping part of the model.
 pub const RESIDUAL_SCHEMA: u32 = 8;
 
+/// Two-layer actor with the append-only 15-head diplomacy layout.
+pub const DIPLOMACY_SCHEMA: u32 = 9;
+
+/// Residual actor with the same 15-head diplomacy layout.
+pub const DIPLOMACY_RESIDUAL_SCHEMA: u32 = 10;
+
 /// The most residual blocks a bundle may declare: a load bound, like every other §4.4 check.
 const MAX_RESIDUAL_BLOCKS: u64 = 8;
 
@@ -63,6 +69,9 @@ const MAX_RESIDUAL_BLOCKS: u64 = 8;
 /// but cannot prove that the producer still emits the same names, so this ABI is explicit and the
 /// loader rejects a bundle made for a different projection.
 pub const PROJECTION_ABI_VERSION: u32 = 2;
+
+/// Projection ABI required by diplomacy-capable schemas 9/10.
+pub const DIPLOMACY_PROJECTION_ABI_VERSION: u32 = 3;
 
 /// §4.4's total size bound for a bundle directory.
 const MAX_TOTAL_BYTES: u64 = 256 * 1024 * 1024;
@@ -371,30 +380,34 @@ fn manifest_document(
     // Blocks decide the schema, and only a schema-8 trunk names them, so a block-free bundle is
     // exactly the schema-7 document it always was.
     let blocks = actor.residual_blocks();
-    let (schema, trunk) = if blocks == 0 {
-        (
-            SCHEMA,
-            serde_json::json!({ "width": actor.width(), "depth": 2, "activation": "relu" }),
-        )
+    let schema = match (actor.head_layout(), blocks == 0) {
+        (HeadLayout::Legacy, true) => SCHEMA,
+        (HeadLayout::Legacy, false) => RESIDUAL_SCHEMA,
+        (HeadLayout::Diplomacy, true) => DIPLOMACY_SCHEMA,
+        (HeadLayout::Diplomacy, false) => DIPLOMACY_RESIDUAL_SCHEMA,
+    };
+    let projection_abi = match actor.head_layout() {
+        HeadLayout::Legacy => PROJECTION_ABI_VERSION,
+        HeadLayout::Diplomacy => DIPLOMACY_PROJECTION_ABI_VERSION,
+    };
+    let trunk = if blocks == 0 {
+        serde_json::json!({ "width": actor.width(), "depth": 2, "activation": "relu" })
     } else {
-        (
-            RESIDUAL_SCHEMA,
-            serde_json::json!({
-                "width": actor.width(),
-                "depth": 2,
-                "activation": "relu",
-                "residual_blocks": blocks,
-            }),
-        )
+        serde_json::json!({
+            "width": actor.width(),
+            "depth": 2,
+            "activation": "relu",
+            "residual_blocks": blocks,
+        })
     };
     let document = serde_json::json!({
         "schema": schema,
-        "projection_abi": PROJECTION_ABI_VERSION,
+        "projection_abi": projection_abi,
         "dtype": "f32",
         "trunk": trunk,
         "embed_dim": EMBED_DIM,
         "factions": FACTION_ROSTER.as_slice(),
-        "heads": heads(),
+        "heads": actor.head_names(),
         "slot_count": slot_count,
         "slot_capacity": actor.capacity(),
         "slots_sha256": sha256(slots_text.as_bytes()),
@@ -445,6 +458,24 @@ pub struct Loaded {
     pub update: u64,
 }
 
+/// Upgrade a loaded v10 vocabulary and every tensor row it addresses to v11.
+///
+/// This is an in-memory half of the explicit checkpoint migration. Persist it with [`write`],
+/// optionally after [`Actor::with_diplomacy_head`], so the new immutable manifest and checksums
+/// cover the vocabulary and tensors together.
+pub fn migrate_v10_to_v11(mut loaded: Loaded) -> Result<Loaded, BundleError> {
+    let (vocabulary, movement) = loaded
+        .vocabulary
+        .migrate_v10_to_v11()
+        .map_err(|error| BundleError::Invalid(format!("vocabulary migration failed: {error}")))?;
+    loaded
+        .actor
+        .migrate_v10_to_v11_inputs(movement)
+        .map_err(|error| BundleError::Invalid(format!("input migration failed: {error}")))?;
+    loaded.vocabulary = vocabulary;
+    Ok(loaded)
+}
+
 /// Read and fully validate one bundle.
 ///
 /// Every §4.4 bound is checked before a live model exists: the directory holds only recognised
@@ -473,11 +504,16 @@ pub fn read(directory: &Path) -> Result<Loaded, BundleError> {
         .get("schema")
         .and_then(serde_json::Value::as_u64)
         .ok_or_else(|| BundleError::Invalid("manifest has no schema".to_owned()))?;
+    let head_layout = head_layout_of(schema)?;
     let residual_blocks = residual_blocks_of(&manifest, schema)?;
     let projection_abi = u64_field(&manifest, "projection_abi")?;
-    if projection_abi != u64::from(PROJECTION_ABI_VERSION) {
+    let expected_abi = match head_layout {
+        HeadLayout::Legacy => PROJECTION_ABI_VERSION,
+        HeadLayout::Diplomacy => DIPLOMACY_PROJECTION_ABI_VERSION,
+    };
+    if projection_abi != u64::from(expected_abi) {
         return Err(BundleError::Invalid(format!(
-            "projection ABI {projection_abi} is not {PROJECTION_ABI_VERSION}"
+            "projection ABI {projection_abi} is not {expected_abi} for schema {schema}"
         )));
     }
     let dtype = string_field(&manifest, "dtype")?;
@@ -491,7 +527,7 @@ pub fn read(directory: &Path) -> Result<Loaded, BundleError> {
 
     // Heads and factions are positional: a reordered roster silently mislabels every faction, and
     // no checksum would notice, because the tensors are unchanged.
-    expect_list(&manifest, "heads", heads())?;
+    expect_list(&manifest, "heads", head_layout.heads())?;
     expect_list(&manifest, "factions", &FACTION_ROSTER)?;
 
     let checksums = manifest
@@ -548,10 +584,20 @@ pub fn read(directory: &Path) -> Result<Loaded, BundleError> {
 
     let named = load_tensors(directory, critic_mode, checksums)?;
 
-    check_shapes(&named, width, capacity, critic_mode, residual_blocks)?;
+    check_shapes(
+        &named,
+        width,
+        capacity,
+        critic_mode,
+        residual_blocks,
+        head_layout,
+    )?;
 
     // Only now does a live model exist.
-    let mut actor = Actor::zeros(width, capacity);
+    let mut actor = match head_layout {
+        HeadLayout::Legacy => Actor::zeros(width, capacity),
+        HeadLayout::Diplomacy => Actor::zeros_diplomacy(width, capacity),
+    };
     install(&mut actor, &named, critic_mode, residual_blocks);
 
     Ok(Loaded {
@@ -565,12 +611,12 @@ pub fn read(directory: &Path) -> Result<Loaded, BundleError> {
 /// How many residual blocks the schema admits: none for schema 7, `trunk.residual_blocks` (at least
 /// one, at most [`MAX_RESIDUAL_BLOCKS`]) for schema 8, and any other schema is refused.
 fn residual_blocks_of(manifest: &serde_json::Value, schema: u64) -> Result<usize, BundleError> {
-    if schema == u64::from(SCHEMA) {
+    if schema == u64::from(SCHEMA) || schema == u64::from(DIPLOMACY_SCHEMA) {
         return Ok(0);
     }
-    if schema != u64::from(RESIDUAL_SCHEMA) {
+    if schema != u64::from(RESIDUAL_SCHEMA) && schema != u64::from(DIPLOMACY_RESIDUAL_SCHEMA) {
         return Err(BundleError::Invalid(format!(
-            "schema {schema} is not {SCHEMA} or {RESIDUAL_SCHEMA}"
+            "schema {schema} is not one of {SCHEMA}, {RESIDUAL_SCHEMA}, {DIPLOMACY_SCHEMA}, or {DIPLOMACY_RESIDUAL_SCHEMA}"
         )));
     }
     let declared = manifest
@@ -579,7 +625,7 @@ fn residual_blocks_of(manifest: &serde_json::Value, schema: u64) -> Result<usize
         .and_then(serde_json::Value::as_u64)
         .ok_or_else(|| {
             BundleError::Invalid(format!(
-                "schema {RESIDUAL_SCHEMA} has no trunk.residual_blocks"
+                "residual schema {schema} has no trunk.residual_blocks"
             ))
         })?;
     if declared == 0 || declared > MAX_RESIDUAL_BLOCKS {
@@ -589,6 +635,20 @@ fn residual_blocks_of(manifest: &serde_json::Value, schema: u64) -> Result<usize
     }
     usize::try_from(declared)
         .map_err(|_| BundleError::Invalid("trunk.residual_blocks does not fit".to_owned()))
+}
+
+fn head_layout_of(schema: u64) -> Result<HeadLayout, BundleError> {
+    if schema == u64::from(SCHEMA) || schema == u64::from(RESIDUAL_SCHEMA) {
+        Ok(HeadLayout::Legacy)
+    } else if schema == u64::from(DIPLOMACY_SCHEMA)
+        || schema == u64::from(DIPLOMACY_RESIDUAL_SCHEMA)
+    {
+        Ok(HeadLayout::Diplomacy)
+    } else {
+        Err(BundleError::Invalid(format!(
+            "unsupported MLP bundle schema {schema}"
+        )))
+    }
 }
 
 fn validate_manifest_keys(manifest: &serde_json::Value) -> Result<(), BundleError> {
@@ -765,8 +825,9 @@ fn check_shapes(
     capacity: i64,
     critic_mode: CriticMode,
     residual_blocks: usize,
+    head_layout: HeadLayout,
 ) -> Result<(), BundleError> {
-    let heads_count = i64::try_from(heads().len()).unwrap_or(0);
+    let heads_count = i64::try_from(head_layout.heads().len()).unwrap_or(0);
     let factions = i64::try_from(FACTION_ROSTER.len()).unwrap_or(0);
     let w = width.units();
     let expected: Vec<(String, Vec<i64>)> = {
@@ -1305,7 +1366,12 @@ mod tests {
         replace_manifest(&directory, &old);
 
         let error = read(&directory).expect_err("schema 6 uses the retired prompt-bearing ABI");
-        assert!(error.to_string().contains("schema 6 is not 7"), "{error}");
+        assert!(
+            error
+                .to_string()
+                .contains("unsupported MLP bundle schema 6"),
+            "{error}"
+        );
     }
 
     #[test]

@@ -2289,6 +2289,15 @@ impl CombatWindow {
             payload.insert("system".to_owned(), self.system.to_string().into());
             payload.insert("round".to_owned(), i64::from(round).into());
             if round == 1 {
+                crate::diplomacy::evaluate_event(
+                    state,
+                    &crate::diplomacy::DiplomacyEventContext::HostileEngagement {
+                        attacker: self.attacker.clone(),
+                        victim: self.defender.clone(),
+                        activation_seq: state.activation_seq,
+                    },
+                )
+                .expect("validated attack promises settle deterministically");
                 let mut opening = payload.clone();
                 opening.insert("player".to_owned(), self.attacker.to_string().into());
                 let _ = ctx.emit(state, "SPACE_COMBAT_STARTED", opening);

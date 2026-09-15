@@ -144,13 +144,21 @@ fn tokens(source: &str) -> Vec<String> {
 
 fn source_files() -> Vec<PathBuf> {
     let source_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    let mut files: Vec<PathBuf> = fs::read_dir(source_dir)
-        .expect("read engine source directory")
-        .map(|entry| entry.expect("source entry").path())
-        .filter(|path| path.extension().and_then(|extension| extension.to_str()) == Some("rs"))
-        .collect();
+    let mut files = Vec::new();
+    collect_rust_files(&source_dir, &mut files);
     files.sort();
     files
+}
+
+fn collect_rust_files(directory: &Path, files: &mut Vec<PathBuf>) {
+    for entry in fs::read_dir(directory).expect("read engine source directory") {
+        let path = entry.expect("source entry").path();
+        if path.is_dir() {
+            collect_rust_files(&path, files);
+        } else if path.extension().and_then(|extension| extension.to_str()) == Some("rs") {
+            files.push(path);
+        }
+    }
 }
 
 fn scan() -> BTreeMap<Site, usize> {
@@ -817,6 +825,12 @@ const PRODUCERS: &[Producer] = &[
         delivery: Delivery::ObservedVia("game.rs::step_trade"),
     },
     Producer {
+        module: "window.rs",
+        function: "pending_choice",
+        count: 2,
+        delivery: Delivery::ObservedVia("game.rs::step_diplomacy"),
+    },
+    Producer {
         module: "transit.rs",
         function: "pending_choice",
         count: 1,
@@ -865,6 +879,7 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("game.rs", "step_tactical", 1),
     ("game.rs", "step_token_gain", 1),
     ("game.rs", "step_trade", 1),
+    ("game.rs", "step_diplomacy", 1),
     ("game.rs", "step_vote", 1),
     ("game.rs", "committee_formation", 1),
     ("game.rs", "imperial_arbiter", 2),
