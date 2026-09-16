@@ -281,7 +281,11 @@ fn main() {
     let clean: Vec<&GameStat> = stats.iter().filter(|s| s.completed).collect();
     let with_slice = clean.iter().filter(|s| s.slices_claimed > 0).count();
     let with_breakthrough = clean.iter().filter(|s| s.breakthroughs > 0).count();
-    let in_play: Vec<&GameStat> = clean.iter().filter(|s| s.fracture_in_play).copied().collect();
+    let in_play: Vec<&GameStat> = clean
+        .iter()
+        .filter(|s| s.fracture_in_play)
+        .copied()
+        .collect();
     let sum = |set: &[&GameStat], f: fn(&Counts) -> usize| {
         set.iter().map(|s| f(&s.counts)).sum::<usize>()
     };
@@ -299,7 +303,10 @@ fn main() {
         rounds_reached.sort_unstable();
         println!("     they stopped in rounds {rounds_reached:?}; excluded from everything below");
     }
-    println!("  games counted below                     {:6}", clean.len());
+    println!(
+        "  games counted below                     {:6}",
+        clean.len()
+    );
     println!("  NOTE: this census runs with diplomacy OFF, unlike training.");
     println!(
         "  an expedition slice was claimed         {with_slice:6}  {}",

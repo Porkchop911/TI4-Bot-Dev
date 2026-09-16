@@ -357,9 +357,11 @@ fn block_summary(rows: &[Seated]) {
         .collect();
     let count = per_block.len();
     if count < 2 {
-        println!("
+        println!(
+            "
   only {count} seed block: no interval can be formed.
-");
+"
+        );
         return;
     }
     #[expect(clippy::cast_precision_loss, reason = "counts are small")]
@@ -551,8 +553,12 @@ fn main() {
     block_summary(&rows);
     println!("  measured in {:.1?}", started.elapsed());
     println!();
-    println!("  lead is STRICT victory-point leadership at the horizon: the candidate alone on the");
-    println!("  top score. A tie is not a lead, and is reported in its own column. Games cut short");
+    println!(
+        "  lead is STRICT victory-point leadership at the horizon: the candidate alone on the"
+    );
+    println!(
+        "  top score. A tie is not a lead, and is reported in its own column. Games cut short"
+    );
     println!("  by the step bound are included in every column above.");
     println!();
     println!("  margin is VP minus the best opponent's. Its null value is NEGATIVE, not zero: the");

@@ -296,10 +296,14 @@ fn main() {
                             let stream = seed
                                 .wrapping_mul(1_000_003)
                                 .wrapping_add(u64::try_from(index).unwrap_or(0));
-                            let bot =
-                                ti4_mlp::bot::MlpBot::sharing(&actor, vocabulary.clone(), row, stream)
-                                    .at_temperature(temperature)
-                                    .from_setup(baseline);
+                            let bot = ti4_mlp::bot::MlpBot::sharing(
+                                &actor,
+                                vocabulary.clone(),
+                                row,
+                                stream,
+                            )
+                            .at_temperature(temperature)
+                            .from_setup(baseline);
                             let (decider, _status) = bot.seat();
                             deciders.insert(
                                 player.clone(),
@@ -333,7 +337,10 @@ fn main() {
 
     println!("  games {games}, errors {errors}, truncated {truncated}");
     println!("  measured in {:.1}s\n", started.elapsed().as_secs_f64());
-    println!("  contact options offered in action decisions   {}", totals.contact_options_offered);
+    println!(
+        "  contact options offered in action decisions   {}",
+        totals.contact_options_offered
+    );
     println!(
         "  action decisions listing a contact            {}",
         totals.action_decisions_offering_contacts
@@ -374,8 +381,10 @@ fn main() {
         percent(totals.declined_nonempty_menu, opened)
     );
     println!();
-    println!("  responses {}  accepted {}  countered {}  refused {}",
-        totals.responses, totals.accepted, totals.countered, totals.refused);
+    println!(
+        "  responses {}  accepted {}  countered {}  refused {}",
+        totals.responses, totals.accepted, totals.countered, totals.refused
+    );
     println!(
         "  menu sizes: {:.1} bundles and {:.1} signals per opened contact, largest menu {}",
         totals.bundles_seen as f64 / opened.max(1) as f64,
