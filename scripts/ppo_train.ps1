@@ -51,7 +51,8 @@ $allowed = @(
     'high-vp-bonus', 'learning-rate', 'movement-entropy', 'objective-weight', 'r1-bonus',
     'r1-shaping', 'report-every', 'rounds', 'secret-weight', 'seed-base', 'stage',
     'strategy-diversity-weight', 'styx-bonus', 'tech-weight', 'temperature',
-    'trade-goods-hoard-weight', 'unit-weight', 'updates', 'vp-weight', 'waste-penalties',
+    'opponent', 'trade-goods-hoard-weight', 'unit-weight', 'updates', 'vp-weight',
+    'waste-penalties',
     'waste-penalty', 'zero-fleet-penalty', 'diag', 'capture-batch'
 )
 
