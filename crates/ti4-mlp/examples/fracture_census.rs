@@ -106,6 +106,15 @@ impl Decider for Watching {
 
 /// One game's outcome.
 struct GameStat {
+    /// Whether the game actually played the horizon out.
+    ///
+    /// `audit_game_with_deciders` breaks its loop on an engine error and on its step bound, then
+    /// returns `Ok` with the partial state. A game that stopped in round one is indistinguishable
+    /// from one that played four rounds and saw no Fracture, so a census that mixes them reports
+    /// "the Fracture never came into play" for games that never had the chance. Astra's review,
+    /// 2026-09-16.
+    completed: bool,
+    stopped_at_round: u32,
     fracture_in_play: bool,
     slices_claimed: usize,
     breakthroughs: usize,
@@ -122,6 +131,8 @@ fn main() {
         })
     };
     let seeds = parse("--seeds", 100);
+    // Games begin in round 1, so a completed horizon means reaching round 1 + rounds (or finishing).
+    let start_round: u32 = 1;
     let seed_base = parse("--seed-base", 910_001_000);
     let rounds = u32::try_from(parse("--rounds", 4)).unwrap_or(4);
     let temperature: f64 = argument("--temperature").map_or(0.01, |value| {
@@ -136,8 +147,8 @@ fn main() {
         .unwrap_or_else(|error| refuse(&format!("reading {bundle_path}: {error}")));
     let vocabulary = loaded.vocabulary;
 
-    let pool_path = argument("--map-pool")
-        .unwrap_or_else(|| "out/pools/full_np8_12_holdout.json".to_owned());
+    let pool_path =
+        argument("--map-pool").unwrap_or_else(|| "out/pools/full_np8_12_holdout.json".to_owned());
     let pool_bytes = ti4_sim::artifacts::read_and_verify_pool_role(
         std::path::Path::new(&pool_path),
         &[ti4_sim::artifacts::ArtifactRole::Validation],
@@ -151,7 +162,9 @@ fn main() {
     let factions: Vec<FactionId> = FACTIONS.iter().map(|name| FactionId::new(*name)).collect();
 
     println!("fracture census for {bundle_path}");
-    println!("  temperature {temperature}, {rounds} round(s), seeds {seed_base}..+{seeds} x 6 rotations");
+    println!(
+        "  temperature {temperature}, {rounds} round(s), seeds {seed_base}..+{seeds} x 6 rotations"
+    );
 
     // One owned actor per worker: `tch::Tensor` is `Send` but not `Sync`.
     let jobs: Vec<(u64, usize)> = (seed_base..seed_base + seeds)
@@ -232,6 +245,9 @@ fn main() {
                         .unwrap_or_else(|error| refuse(&error));
                     let counts = *counts.borrow();
                     GameStat {
+                        completed: final_state.finished
+                            || final_state.round >= start_round.saturating_add(rounds),
+                        stopped_at_round: final_state.round,
                         fracture_in_play: final_state.fracture_in_play,
                         slices_claimed: final_state.expedition_slices.len(),
                         breakthroughs: final_state
@@ -259,25 +275,59 @@ fn main() {
             format!("{share:5.1}%")
         }
     };
-    let with_slice = stats.iter().filter(|s| s.slices_claimed > 0).count();
-    let with_breakthrough = stats.iter().filter(|s| s.breakthroughs > 0).count();
-    let in_play: Vec<&GameStat> = stats.iter().filter(|s| s.fracture_in_play).collect();
-    let sum = |set: &[&GameStat], f: fn(&Counts) -> usize| set.iter().map(|s| f(&s.counts)).sum::<usize>();
-    let all: Vec<&GameStat> = stats.iter().collect();
+    // Contaminated games are reported, never mixed in: a game cut short had no chance to show a
+    // Fracture, so counting it as "the Fracture never appeared" manufactures evidence.
+    let short: Vec<&GameStat> = stats.iter().filter(|s| !s.completed).collect();
+    let clean: Vec<&GameStat> = stats.iter().filter(|s| s.completed).collect();
+    let with_slice = clean.iter().filter(|s| s.slices_claimed > 0).count();
+    let with_breakthrough = clean.iter().filter(|s| s.breakthroughs > 0).count();
+    let in_play: Vec<&GameStat> = clean.iter().filter(|s| s.fracture_in_play).copied().collect();
+    let sum = |set: &[&GameStat], f: fn(&Counts) -> usize| {
+        set.iter().map(|s| f(&s.counts)).sum::<usize>()
+    };
+    let all: Vec<&GameStat> = clean.iter().copied().collect();
 
     println!();
-    println!("  games                                   {games}");
-    println!("  an expedition slice was claimed         {with_slice:6}  {}", pct(with_slice, games));
-    println!("  a seat holds a breakthrough             {with_breakthrough:6}  {}", pct(with_breakthrough, games));
-    println!("  the Fracture was in play at the end     {:6}  {}", in_play.len(), pct(in_play.len(), games));
+    println!("  games played                            {games}");
+    println!(
+        "  ...cut short by an error or the step cap {:5}  {}",
+        short.len(),
+        pct(short.len(), games)
+    );
+    if !short.is_empty() {
+        let mut rounds_reached: Vec<u32> = short.iter().map(|s| s.stopped_at_round).collect();
+        rounds_reached.sort_unstable();
+        println!("     they stopped in rounds {rounds_reached:?}; excluded from everything below");
+    }
+    println!("  games counted below                     {:6}", clean.len());
+    println!("  NOTE: this census runs with diplomacy OFF, unlike training.");
+    println!(
+        "  an expedition slice was claimed         {with_slice:6}  {}",
+        pct(with_slice, clean.len())
+    );
+    println!(
+        "  a seat holds a breakthrough             {with_breakthrough:6}  {}",
+        pct(with_breakthrough, clean.len())
+    );
+    println!(
+        "  the Fracture was in play at the end     {:6}  {}",
+        in_play.len(),
+        pct(in_play.len(), clean.len())
+    );
     println!();
     println!("  in games where the Fracture was in play:");
     let choices = sum(&in_play, |c| c.activation_choices);
     let offered = sum(&in_play, |c| c.offered);
     let chosen = sum(&in_play, |c| c.chosen);
     println!("    activation choices                    {choices}");
-    println!("    ...listing a Fracture system          {offered:6}  {}", pct(offered, choices));
-    println!("    ...where a Fracture system was chosen {chosen:6}  {}", pct(chosen, offered));
+    println!(
+        "    ...listing a Fracture system          {offered:6}  {}",
+        pct(offered, choices)
+    );
+    println!(
+        "    ...where a Fracture system was chosen {chosen:6}  {}",
+        pct(chosen, offered)
+    );
     println!();
     println!(
         "  across all games: {} activation choices, {} listed a Fracture system, {} chose one",

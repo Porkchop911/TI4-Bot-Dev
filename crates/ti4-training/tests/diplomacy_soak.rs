@@ -10,9 +10,10 @@ use std::time::Instant;
 
 use ti4_content::ContentStore;
 use ti4_engine::choice::{Decider, Scripted, SeededRandom};
-use ti4_model::DiplomacyEvent;
+use ti4_engine::diplomacy::candidates::{MAX_INITIAL_CANDIDATES, MAX_SIGNAL_CANDIDATES};
 use ti4_model::content_types::DEFAULT;
 use ti4_model::id::{FactionId, PlayerId};
+use ti4_model::{DealTerm, DiplomacyEvent};
 use ti4_training::rollout::{
     OpeningMap, SimulationCapabilities, seated_faction,
     setup_game_with_capabilities_and_decider_factory,
@@ -88,28 +89,53 @@ fn seeded_random_tables_negotiate_through_three_rounds_without_a_refused_step() 
             .unwrap_or_else(|error| panic!("seed {seed}: diplomacy state invalid: {error}"));
         for entry in &game.state.diplomacy.journal {
             let name = match entry.event {
-                DiplomacyEvent::Offered { .. } => "offered",
+                DiplomacyEvent::Offered { ref revision, .. } => {
+                    for term in revision
+                        .proposer_terms
+                        .iter()
+                        .chain(&revision.recipient_terms)
+                    {
+                        let favour = match term {
+                            DealTerm::UseLeaderFor { .. } => "agent_favours",
+                            _ => continue,
+                        };
+                        *counts.entry(favour).or_default() += 1;
+                        *counts.entry("favours").or_default() += 1;
+                    }
+                    "offered"
+                }
                 DiplomacyEvent::Countered { .. } => "countered",
                 DiplomacyEvent::Accepted { .. } => "accepted",
                 DiplomacyEvent::Declined { .. } => "declined",
                 DiplomacyEvent::DealSettled { .. } => "settled",
                 DiplomacyEvent::SignalEmitted { .. } => "signals",
+                DiplomacyEvent::SignalJudged { .. } => "signal_outcomes",
                 DiplomacyEvent::ImmediateApplied { .. } | DiplomacyEvent::PromiseSettled { .. } => {
                     continue;
                 }
             };
             *counts.entry(name).or_default() += 1;
         }
+        // Trading happens inside contacts now; it must still resolve as a transaction.
+        *counts.entry("transactions").or_default() += game
+            .events
+            .iter()
+            .filter(|event| event.as_str() == "TRANSACTION")
+            .count();
     }
 
     eprintln!("diplomacy soak: {seeds} seeds x {rounds} rounds: {counts:?}");
+    // Signals and favours are counted but not asserted. Only one statement survives -- a warning
+    // about a system both seats can reach -- and it needs a contested system plus a random decider
+    // picking it out of a full candidate set, so a short soak can legitimately see none. The
+    // assertions below cover what every run must produce.
     for name in [
         "offered",
         "countered",
         "accepted",
         "declined",
         "settled",
-        "signals",
+        "transactions",
     ] {
         assert!(
             counts.get(name).copied().unwrap_or(0) > 0,
@@ -209,6 +235,10 @@ struct CostProbe {
     state_bytes: usize,
     journal_events: usize,
     journal_bytes: usize,
+    /// The decision log as the corpus would carry it, and how much of that is option payloads.
+    log_bytes: usize,
+    payload_bytes: usize,
+    options_offered: usize,
 }
 
 fn cost_probe(diplomacy: bool) -> CostProbe {
@@ -245,7 +275,21 @@ fn cost_probe(diplomacy: bool) -> CostProbe {
     let target_round = game.state.round + 2;
     let started = Instant::now();
     let mut steps = 0;
+    // Option payloads never reach the decision log, which keeps ids only, so they are sampled from
+    // the live choice: this is what every decider and feature extractor is handed per decision.
+    let mut payload_bytes = 0_usize;
     while game.state.round < target_round && !game.state.finished {
+        if let Some(choice) = game.legal_options() {
+            payload_bytes += choice
+                .options
+                .iter()
+                .map(|option| {
+                    serde_json::to_vec(&option.payload)
+                        .expect("an option payload serializes")
+                        .len()
+                })
+                .sum::<usize>();
+        }
         let result = game.step();
         assert!(result.error.is_none(), "probe refused: {:?}", result.error);
         steps += 1;
@@ -276,6 +320,17 @@ fn cost_probe(diplomacy: bool) -> CostProbe {
         journal_bytes: serde_json::to_vec(&game.state.diplomacy.journal)
             .expect("journal serializes")
             .len(),
+        log_bytes: serde_json::to_vec(&game.table.log)
+            .expect("the decision log serializes")
+            .len(),
+        payload_bytes,
+        options_offered: game
+            .table
+            .log
+            .records
+            .iter()
+            .map(|record| record.offered.len())
+            .sum(),
     }
 }
 
@@ -288,7 +343,7 @@ fn diplomacy_cost_probe() {
     let enabled = cost_probe(true);
     for probe in [&disabled, &enabled] {
         eprintln!(
-            "diplomacy={} decisions={} steps={} max_options={} seconds={:.3} state_bytes={} journal_events={} journal_bytes={}",
+            "diplomacy={} decisions={} steps={} max_options={} seconds={:.3} state_bytes={} journal_events={} journal_bytes={} log_bytes={} payload_bytes={} options_offered={}",
             probe.diplomacy,
             probe.decisions,
             probe.steps,
@@ -297,13 +352,17 @@ fn diplomacy_cost_probe() {
             probe.state_bytes,
             probe.journal_events,
             probe.journal_bytes,
+            probe.log_bytes,
+            probe.payload_bytes,
+            probe.options_offered,
         );
     }
     assert!(!disabled.diplomacy && enabled.diplomacy);
     assert_eq!(disabled.journal_events, 0);
     assert_eq!(disabled.journal_bytes, 2);
+    let contact_option_bound = MAX_INITIAL_CANDIDATES + MAX_SIGNAL_CANDIDATES + 1;
     assert!(
-        enabled.max_options <= 29,
-        "24 candidates plus four signals and no-op"
+        enabled.max_options <= contact_option_bound,
+        "{MAX_INITIAL_CANDIDATES} candidates plus {MAX_SIGNAL_CANDIDATES} signals and no-op"
     );
 }

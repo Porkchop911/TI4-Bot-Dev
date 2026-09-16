@@ -118,7 +118,11 @@ impl Decider for Watching {
 }
 
 /// One candidate seat-game.
+#[derive(Clone)]
 struct Seated {
+    /// The seed block this row came from. Rotations and candidate seats within one block share a
+    /// map and an opening, so they are not independent observations and must be resampled together.
+    seed: u64,
     faction: String,
     vp: i64,
     /// The best any opponent managed.
@@ -142,6 +146,7 @@ struct Tally {
     vp: i64,
     margin: i64,
     wins: usize,
+    tied: usize,
     cleared: usize,
     wasteful: usize,
     scoring_offered: usize,
@@ -157,11 +162,12 @@ impl Tally {
         }
         let n = self.games as f64;
         println!(
-            "  {name:<10} {:>6}   {:>6.3}   {:>+7.3}   {:>6.1}%   {:>6.2}%   {:>6.2}%   {:>6.2}   {:>7}",
+            "  {name:<10} {:>6}   {:>6.3}   {:>+7.3}   {:>6.1}%   {:>5.1}%   {:>6.2}%   {:>6.2}%   {:>6.2}   {:>7}",
             self.games,
             self.vp as f64 / n,
             self.margin as f64 / n,
             self.wins as f64 / n * 100.0,
+            self.tied as f64 / n * 100.0,
             self.cleared as f64 / n * 100.0,
             self.wasteful as f64 / n * 100.0,
             self.scoring_offered as f64 / n,
@@ -309,6 +315,7 @@ fn play(
         .count();
 
     Ok(Seated {
+        seed,
         faction,
         vp,
         best_opponent,
@@ -318,6 +325,80 @@ fn play(
         scoring_declined,
         truncated,
     })
+}
+
+/// Mean VP and margin per seed block, with a bootstrap interval over blocks.
+///
+/// Rotations and candidate seats inside one seed block share a map and an opening, so they are
+/// correlated observations: resampling individual rows would understate the spread. Blocks are
+/// resampled whole, which is the unit that is actually independent here.
+fn block_summary(rows: &[Seated]) {
+    if rows.is_empty() {
+        return;
+    }
+    let mut blocks: BTreeMap<u64, (f64, f64, usize)> = BTreeMap::new();
+    for row in rows {
+        let entry = blocks.entry(row.seed).or_insert((0.0, 0.0, 0));
+        #[expect(clippy::cast_precision_loss, reason = "victory points are small")]
+        {
+            entry.0 += row.vp as f64;
+            entry.1 += (row.vp - row.best_opponent) as f64;
+        }
+        entry.2 += 1;
+    }
+    let per_block: Vec<(f64, f64)> = blocks
+        .values()
+        .filter(|(_, _, games)| *games > 0)
+        .map(|(vp, margin, games)| {
+            #[expect(clippy::cast_precision_loss, reason = "counts are small")]
+            let n = *games as f64;
+            (vp / n, margin / n)
+        })
+        .collect();
+    let count = per_block.len();
+    if count < 2 {
+        println!("
+  only {count} seed block: no interval can be formed.
+");
+        return;
+    }
+    #[expect(clippy::cast_precision_loss, reason = "counts are small")]
+    let blocks_f = count as f64;
+    let mean = |pick: fn(&(f64, f64)) -> f64| per_block.iter().map(pick).sum::<f64>() / blocks_f;
+    // A deterministic bootstrap: the seed is fixed so a rerun of the same games reports the same
+    // interval. 2000 resamples of whole blocks, percentile interval.
+    let interval = |pick: fn(&(f64, f64)) -> f64| {
+        let mut rng: u64 = 0x5eed_1234_9abc_def0;
+        let mut draws: Vec<f64> = Vec::with_capacity(2000);
+        for _ in 0..2000 {
+            let mut total = 0.0;
+            for _ in 0..count {
+                rng ^= rng << 13;
+                rng ^= rng >> 7;
+                rng ^= rng << 17;
+                let at = (rng % count as u64) as usize;
+                total += pick(&per_block[at]);
+            }
+            draws.push(total / blocks_f);
+        }
+        draws.sort_by(|a, b| a.partial_cmp(b).expect("finite means"));
+        (draws[50], draws[1949])
+    };
+    let (vp_low, vp_high) = interval(|block| block.0);
+    let (margin_low, margin_high) = interval(|block| block.1);
+    println!();
+    println!(
+        "  across {count} seed blocks: VP {:.3} (95% {:.3} to {:.3}), margin {:+.3} (95% {:+.3} to {:+.3})",
+        mean(|block| block.0),
+        vp_low,
+        vp_high,
+        mean(|block| block.1),
+        margin_low,
+        margin_high
+    );
+    println!("  Blocks are the resampling unit; rotations and seats within a block are not");
+    println!("  independent. Compare two policies on the SAME blocks, never against zero.");
+    println!();
 }
 
 fn main() {
@@ -423,14 +504,17 @@ fn main() {
 
     let mut by_faction: BTreeMap<String, Tally> = BTreeMap::new();
     let mut all = Tally::default();
+    let mut rows: Vec<Seated> = Vec::new();
     for chunk in harvest {
         for row in chunk.unwrap_or_else(|error| refuse(&error)) {
+            rows.push(row.clone());
             let margin = row.vp - row.best_opponent;
             for tally in [by_faction.entry(row.faction.clone()).or_default(), &mut all] {
                 tally.games += 1;
                 tally.vp += row.vp;
                 tally.margin += margin;
                 tally.wins += usize::from(margin > 0);
+                tally.tied += usize::from(margin == 0);
                 tally.cleared += usize::from(row.cleared);
                 tally.wasteful += usize::from(row.wasteful);
                 tally.scoring_offered += row.scoring_offered;
@@ -441,7 +525,7 @@ fn main() {
     }
 
     println!(
-        "  faction     games       VP    margin      win   cleared    waste   offers   declined"
+        "  faction     games       VP    margin     lead    tie   cleared    waste   offers   declined"
     );
     for (faction, tally) in &by_faction {
         tally.report(faction);
@@ -464,7 +548,12 @@ fn main() {
         println!("  prompt each stuck game kept repeating.");
         println!();
     }
+    block_summary(&rows);
     println!("  measured in {:.1?}", started.elapsed());
+    println!();
+    println!("  lead is STRICT victory-point leadership at the horizon: the candidate alone on the");
+    println!("  top score. A tie is not a lead, and is reported in its own column. Games cut short");
+    println!("  by the step bound are included in every column above.");
     println!();
     println!("  margin is VP minus the best opponent's. Its null value is NEGATIVE, not zero: the");
     println!(
