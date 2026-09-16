@@ -35,7 +35,7 @@ use std::collections::BTreeMap;
 use std::io::Write as _;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use ti4_content::ContentStore;
 use ti4_engine::Choice;
@@ -53,6 +53,21 @@ const CORPUS_TILE_SEED_OFFSET: u64 = 0;
 const DEMO_TEMPERATURES_MILLI: [u64; 4] = [1, 250, 500, 750];
 /// §6.3: "Each update is 16 game seeds × six rotations."
 const SEEDS_PER_UPDATE: u64 = 16;
+
+enum WorkerInference {
+    Cpu(ti4_mlp::Actor),
+    Gpu(ti4_mlp::gpu_batch::GpuInferenceClient),
+}
+
+enum WorkerScopedInference {
+    Cpu(Rc<ti4_mlp::Actor>),
+    Gpu(ti4_mlp::gpu_batch::GpuInferenceClient),
+}
+
+enum RolloutBackend {
+    Cpu,
+    GpuBatched { batch_size: usize, flush: Duration },
+}
 
 /// Recorded decisions one seat may contribute from one game before the game is refused.
 ///
@@ -134,9 +149,17 @@ const VALUE_FLAGS: &[&str] = &[
     "--zero-fleet-penalty",
     "--diag",
     "--capture-batch",
+    "--rollout-backend",
+    "--gpu-batch",
+    "--gpu-flush-ms",
 ];
 /// Every flag that stands alone.
-const BOOLEAN_FLAGS: &[&str] = &["--no-checkpoint", "--diag-sync", "--hash-games"];
+const BOOLEAN_FLAGS: &[&str] = &[
+    "--no-checkpoint",
+    "--diag-sync",
+    "--hash-games",
+    "--diplomacy",
+];
 
 fn check_flags() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -465,7 +488,7 @@ impl Decider for Watching {
     reason = "a game's inputs; bundling them into a struct would move the list, not shorten it"
 )]
 fn play_one(
-    actor: &std::rc::Rc<ti4_mlp::Actor>,
+    inference: &WorkerScopedInference,
     content: &ContentStore,
     players: &[PlayerId],
     vocabulary: &ti4_policy::vocabulary::Vocabulary,
@@ -477,6 +500,7 @@ fn play_one(
     rotation: usize,
     temperature: f64,
     waste_penalties: &[f64],
+    diplomacy: bool,
     hash: bool,
 ) -> Result<Played, String> {
     let seated: BTreeMap<PlayerId, FactionId> = players
@@ -503,73 +527,89 @@ fn play_one(
     // The handles are `Rc`, which is exactly why they are created, filled and drained inside this
     // function: nothing thread-local ever crosses back to the caller.
     let mut handles: BTreeMap<PlayerId, _> = BTreeMap::new();
+    let mut statuses = Vec::new();
     let mut choice_hashers: BTreeMap<PlayerId, Rc<RefCell<sha2::Sha256>>> = BTreeMap::new();
     let mut watched: BTreeMap<
         PlayerId,
         std::rc::Rc<std::cell::RefCell<Vec<ti4_mlp::positive_corpus::Note>>>,
     > = BTreeMap::new();
-    let (rollout, game_digest) = ti4_training::rollout::play_with_decider_factory_digest(
-        content,
-        players,
-        &seated,
-        DEFAULT,
-        seed,
-        ti4_training::rollout::Horizon {
-            rounds,
-            steps: 10_000,
-        },
-        ti4_engine::opening::DEFAULT_REQUIREMENT,
-        &ti4_training::rollout::OpeningMap::PythonPool {
-            pool: Arc::clone(pool),
-            tile_seed_offset: TILE_SEED_OFFSET,
-        },
-        hash,
-        |baselines| {
-            let mut deciders: BTreeMap<PlayerId, Box<dyn Decider>> = BTreeMap::new();
-            for (index, player) in players.iter().enumerate() {
-                let row = ti4_mlp::FactionRow::of(seated[player].as_str())
-                    .map_err(|error| format!("{player}: {error}"))?;
-                let baseline = baselines
-                    .get(player)
-                    .copied()
-                    .ok_or_else(|| format!("{player} has no setup baseline"))?;
-                let stream = seed
-                    .wrapping_mul(1_000_003)
-                    .wrapping_add(u64::try_from(index).unwrap_or(0));
-                // The seats share this worker's one actor. Inference never mutates it, and a
-                // per-seat `inference_copy` meant 96 games x 6 seats of deep tensor copies per
-                // update — gigabytes of allocation to produce identical read-only weights.
-                // Reading the *bundle* here, which the first version did, was worse still: an
-                // SHA-256 over ~17 MB and a reparse of 1.1 MB of slots.json per seat per game.
-                let bot = ti4_mlp::bot::MlpBot::sharing(actor, vocabulary.clone(), row, stream)
+    let (rollout, game_digest) =
+        ti4_training::rollout::play_with_capabilities_and_decider_factory_digest(
+            content,
+            players,
+            &seated,
+            DEFAULT,
+            seed,
+            ti4_training::rollout::Horizon {
+                rounds,
+                steps: 10_000,
+            },
+            ti4_engine::opening::DEFAULT_REQUIREMENT,
+            &ti4_training::rollout::OpeningMap::PythonPool {
+                pool: Arc::clone(pool),
+                tile_seed_offset: TILE_SEED_OFFSET,
+            },
+            ti4_training::rollout::SimulationCapabilities { diplomacy },
+            hash,
+            |baselines| {
+                let mut deciders: BTreeMap<PlayerId, Box<dyn Decider>> = BTreeMap::new();
+                for (index, player) in players.iter().enumerate() {
+                    let row = ti4_mlp::FactionRow::of(seated[player].as_str())
+                        .map_err(|error| format!("{player}: {error}"))?;
+                    let baseline = baselines
+                        .get(player)
+                        .copied()
+                        .ok_or_else(|| format!("{player} has no setup baseline"))?;
+                    let stream = seed
+                        .wrapping_mul(1_000_003)
+                        .wrapping_add(u64::try_from(index).unwrap_or(0));
+                    // CPU workers share one local read-only actor. The experimental GPU path keeps
+                    // the per-seat state here but routes immutable sparse inputs to one owner.
+                    let bot = match inference {
+                        WorkerScopedInference::Cpu(actor) => {
+                            ti4_mlp::bot::MlpBot::sharing(actor, vocabulary.clone(), row, stream)
+                        }
+                        WorkerScopedInference::Gpu(client) => ti4_mlp::bot::MlpBot::batched(
+                            client.clone(),
+                            vocabulary.clone(),
+                            row,
+                            stream,
+                        ),
+                    }
                     .at_temperature(temperature)
                     .recording_ppo(critic_mode)
                     .from_setup(baseline);
-                if handles.insert(player.clone(), bot.ppo_records()).is_some() {
-                    return Err(format!("{player} was seated twice"));
+                    if handles.insert(player.clone(), bot.ppo_records()).is_some() {
+                        return Err(format!("{player} was seated twice"));
+                    }
+                    let (decider, status) = bot.seat();
+                    statuses.push(status);
+                    let log = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+                    let all = hash.then(|| {
+                        let hasher = Rc::new(RefCell::new(<sha2::Sha256 as sha2::Digest>::new()));
+                        choice_hashers.insert(player.clone(), Rc::clone(&hasher));
+                        hasher
+                    });
+                    watched.insert(player.clone(), std::rc::Rc::clone(&log));
+                    deciders.insert(
+                        player.clone(),
+                        Box::new(Watching {
+                            inner: decider,
+                            log,
+                            all,
+                        }),
+                    );
                 }
-                let (decider, _status) = bot.seat();
-                let log = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
-                let all = hash.then(|| {
-                    let hasher = Rc::new(RefCell::new(<sha2::Sha256 as sha2::Digest>::new()));
-                    choice_hashers.insert(player.clone(), Rc::clone(&hasher));
-                    hasher
-                });
-                watched.insert(player.clone(), std::rc::Rc::clone(&log));
-                deciders.insert(
-                    player.clone(),
-                    Box::new(Watching {
-                        inner: decider,
-                        log,
-                        all,
-                    }),
-                );
-            }
-            Ok(deciders)
-        },
-    );
+                Ok(deciders)
+            },
+        );
     if let Some(error) = &rollout.error {
         return Err(format!("self-play game {seed}/{rotation} failed: {error}"));
+    }
+    for status in statuses {
+        status
+            .into_result()
+            .map_err(|error| format!("self-play game {seed}/{rotation}: {error}"))?;
     }
 
     // The returns, matched to the seat that earned them. A missing handle is refused rather than
@@ -999,6 +1039,7 @@ mod cadence_tests {
 }
 
 fn main() {
+    let process_started = Instant::now();
     check_flags();
     // Diagnostics (plans/TRAINING_PERFORMANCE_HANDOFF_2026-09-11.md), all off by default: with none
     // of these flags the run is exactly the run it always was.
@@ -1007,6 +1048,7 @@ fn main() {
     let no_checkpoint = std::env::args().any(|a| a == "--no-checkpoint");
     let hash_games = std::env::args().any(|a| a == "--hash-games");
     let diag_sync = std::env::args().any(|a| a == "--diag-sync");
+    let diplomacy = std::env::args().any(|a| a == "--diplomacy");
     if diag_path.is_some() {
         ti4_mlp::perf::enable(diag_sync);
     } else if hash_games || diag_sync {
@@ -1030,6 +1072,32 @@ fn main() {
     let device = optimizer_device
         .resolve()
         .unwrap_or_else(|error| refuse(&format!("--device cuda: {error}")));
+    let rollout_backend = match argument("--rollout-backend").as_deref().unwrap_or("cpu") {
+        "cpu" => RolloutBackend::Cpu,
+        "gpu-batched" => {
+            if !matches!(device, ti4_tensor::Device::Cuda(_)) {
+                refuse("--rollout-backend gpu-batched requires --device cuda");
+            }
+            let batch_size = argument("--gpu-batch")
+                .map_or(Ok(32usize), |value| value.parse::<usize>())
+                .unwrap_or_else(|_| refuse("--gpu-batch expects an unsigned integer"));
+            let flush_ms = argument("--gpu-flush-ms")
+                .map_or(Ok(2u64), |value| value.parse::<u64>())
+                .unwrap_or_else(|_| refuse("--gpu-flush-ms expects an unsigned integer"));
+            RolloutBackend::GpuBatched {
+                batch_size,
+                flush: Duration::from_millis(flush_ms),
+            }
+        }
+        other => refuse(&format!(
+            "--rollout-backend {other}: expected cpu or gpu-batched"
+        )),
+    };
+    if matches!(rollout_backend, RolloutBackend::Cpu)
+        && (argument("--gpu-batch").is_some() || argument("--gpu-flush-ms").is_some())
+    {
+        refuse("--gpu-batch and --gpu-flush-ms require --rollout-backend gpu-batched");
+    }
 
     ti4_tensor::configure_deterministic(20_260_826)
         .unwrap_or_else(|error| refuse(&format!("configuring the backend: {error}")));
@@ -1047,6 +1115,9 @@ fn main() {
         .unwrap_or_else(|error| refuse(&format!("reading {bundle_path}: {error}")));
     let vocabulary = loaded.vocabulary;
     let mut actor = loaded.actor;
+    if diplomacy && !actor.head_names().contains(&"diplomacy") {
+        refuse("--diplomacy requires a schema-9/10 bundle with the diplomacy head");
+    }
     let critic_mode = loaded.critic_mode;
     let replay_actor = Rc::new(actor.inference_copy());
     let demo_per_update: usize = argument("--demo-per-update").map_or(0, |value| {
@@ -1364,7 +1435,14 @@ fn main() {
             ti4_training::reward::Stage::Two => "victory points",
         }
     );
-    println!("  optimiser   {device:?}   (rollouts always CPU, §7.1)");
+    println!("  optimiser   {device:?}");
+    match &rollout_backend {
+        RolloutBackend::Cpu => println!("  rollout     CPU inference on Rayon workers"),
+        RolloutBackend::GpuBatched { batch_size, flush } => println!(
+            "  rollout     experimental CUDA service, batch {batch_size}, partial flush {:.1} ms",
+            flush.as_secs_f64() * 1_000.0
+        ),
+    }
     println!(
         "  ppo         clip {} | {} epochs | minibatch {} | value {} | entropy {}/{} (movement {}), x{entropy_final} by the end",
         settings.clip_epsilon,
@@ -1384,6 +1462,10 @@ fn main() {
     // whole difference between that run and the one before it. A log that cannot say what it was
     // run at cannot be compared against another.
     println!("  sampling    temperature {temperature} (acting and recorded behaviour)");
+    println!(
+        "  diplomacy   {}",
+        if diplomacy { "enabled" } else { "disabled" }
+    );
     println!("  adam        learning rate {}", settings.learning_rate);
     println!(
         "  waste       penalty per faction {}",
@@ -1438,18 +1520,32 @@ fn main() {
     let mut reported_at = 0usize;
 
     for update in 0..updates {
-        // ---- rollout, on CPU ----
+        // ---- rollout ----
         //
-        // §7.1 pins inference to the CPU, so self-play needs CPU weights. It takes a *copy* rather
-        // than moving the training actor: `Adam::new` established the parameters as leaf tensors,
-        // and `to_device` on a tensor that requires a gradient returns a non-leaf view of the move.
-        // Backward then populates `.grad` on the leaves that were left behind, Adam sees none, and
-        // the update silently applies nothing. On CPU the move is a no-op so the bug is invisible;
-        // on CUDA it is fatal, which is how it was found.
-        //
-        // One transfer per update, not one per seat: the per-seat copies are made from this.
+        // The optimiser's leaves never act. Every backend takes a frozen inference copy before
+        // workers start, then the service is stopped before Adam can mutate the training actor.
         let update_started = Instant::now();
-        let inference = actor.inference_copy().to_device(ti4_tensor::Device::Cpu);
+        let (cpu_inference, mut gpu_service) = match &rollout_backend {
+            RolloutBackend::Cpu => (
+                Some(actor.inference_copy().to_device(ti4_tensor::Device::Cpu)),
+                None,
+            ),
+            RolloutBackend::GpuBatched { batch_size, flush } => (
+                None,
+                Some(
+                    ti4_mlp::gpu_batch::GpuInferenceService::spawn(
+                        actor
+                            .inference_copy()
+                            .to_device(ti4_tensor::Device::Cuda(0)),
+                        *batch_size,
+                        *flush,
+                    )
+                    .unwrap_or_else(|error| {
+                        refuse(&format!("starting GPU inference service: {error}"))
+                    }),
+                ),
+            ),
+        };
         let inference_copy_time = update_started.elapsed();
         let rolled = Instant::now();
         let mut steps: Vec<Step> = Vec::new();
@@ -1479,8 +1575,25 @@ fn main() {
             .flat_map(|seed| (0..FACTIONS.len()).map(move |rotation| (seed, rotation)))
             .collect();
         let workers = rayon::current_num_threads().max(1).min(jobs.len());
-        let locals: Vec<ti4_mlp::Actor> =
-            (0..workers).map(|_| inference.inference_copy()).collect();
+        let locals: Vec<WorkerInference> = match &rollout_backend {
+            RolloutBackend::Cpu => {
+                let inference = cpu_inference
+                    .as_ref()
+                    .unwrap_or_else(|| refuse("CPU rollout has no inference snapshot"));
+                (0..workers)
+                    .map(|_| WorkerInference::Cpu(inference.inference_copy()))
+                    .collect()
+            }
+            RolloutBackend::GpuBatched { .. } => {
+                let client = gpu_service
+                    .as_ref()
+                    .map(ti4_mlp::gpu_batch::GpuInferenceService::client)
+                    .unwrap_or_else(|| refuse("GPU rollout has no inference service"));
+                (0..workers)
+                    .map(|_| WorkerInference::Gpu(client.clone()))
+                    .collect()
+            }
+        };
         let chunk_copy_time = rolled.elapsed();
         let harvest_started = Instant::now();
 
@@ -1503,8 +1616,11 @@ fn main() {
             .map(|local| {
                 let worker_started = Instant::now();
                 let _ = ti4_mlp::perf::take_stages();
-                // One handle per worker, shared by every game it plays and every seat in them.
-                let local = std::rc::Rc::new(local);
+                // One CPU actor or one GPU-service client per worker, shared by every game it plays.
+                let local = match local {
+                    WorkerInference::Cpu(actor) => WorkerScopedInference::Cpu(Rc::new(actor)),
+                    WorkerInference::Gpu(client) => WorkerScopedInference::Gpu(client),
+                };
                 let mut played = Vec::new();
                 loop {
                     let job = cursor.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -1526,6 +1642,7 @@ fn main() {
                             *rotation,
                             temperature,
                             &waste_penalties,
+                            diplomacy,
                             hash_games,
                         ),
                     ));
@@ -1537,6 +1654,14 @@ fn main() {
                 )
             })
             .collect();
+
+        let service_shutdown_started = Instant::now();
+        let gpu_stats = gpu_service.take().map(|service| {
+            service
+                .shutdown()
+                .unwrap_or_else(|error| refuse(&format!("stopping GPU inference service: {error}")))
+        });
+        let service_shutdown_time = service_shutdown_started.elapsed();
 
         let mut wasted_activations = 0usize;
         let mut tactical_actions = 0usize;
@@ -1678,6 +1803,15 @@ fn main() {
             ti4_mlp::perf::steps_digest(batch.steps())
                 .unwrap_or_else(|error| refuse(&format!("digesting the batch: {error}")))
         });
+        let raw_options: usize = batch.steps().iter().map(|step| step.options.len()).sum();
+        let mut head_counts: BTreeMap<String, usize> = BTreeMap::new();
+        for step in batch.steps() {
+            let name = ti4_mlp::all_heads()
+                .get(step.head)
+                .copied()
+                .unwrap_or("unknown");
+            *head_counts.entry(name.to_owned()).or_default() += 1;
+        }
         if update == 0
             && let Some(path) = &capture_path
         {
@@ -1832,13 +1966,32 @@ fn main() {
                 .zip(phases.nanos)
                 .map(|(name, nanos)| ((*name).to_owned(), serde_json::json!(nanos as f64 / 1e9)))
                 .collect();
+            let gpu_service = gpu_stats.map(|stats| {
+                serde_json::json!({
+                    "requests": stats.requests,
+                    "batches": stats.batches,
+                    "options": stats.options,
+                    "critics": stats.critics,
+                    "max_batch": stats.max_batch,
+                    "mean_batch": if stats.batches == 0 { 0.0 } else { stats.requests as f64 / stats.batches as f64 },
+                    "mean_queue_ms": if stats.requests == 0 { 0.0 } else { stats.queue_nanos as f64 / stats.requests as f64 / 1e6 },
+                    "max_queue_ms": stats.max_queue_nanos as f64 / 1e6,
+                    "pack_s": stats.pack_nanos as f64 / 1e9,
+                    "score_s": stats.score_nanos as f64 / 1e9,
+                    "shutdown_s": service_shutdown_time.as_secs_f64(),
+                })
+            });
             let line = serde_json::json!({
                 "kind": "update",
                 "update": update,
+                "rollout_backend": match &rollout_backend { RolloutBackend::Cpu => "cpu", RolloutBackend::GpuBatched { .. } => "gpu-batched" },
                 "games": games,
                 "decisions": batch.len(),
+                "raw_options": raw_options,
+                "head_counts": head_counts,
                 "batch_steps_sha256": batch_digest,
                 "wall_s": update_started.elapsed().as_secs_f64(),
+                "driver_process_s": process_started.elapsed().as_secs_f64(),
                 "inference_copy_s": inference_copy_time.as_secs_f64(),
                 "chunk_copy_s": chunk_copy_time.as_secs_f64(),
                 "harvest_s": harvest_time.as_secs_f64(),
@@ -1853,6 +2006,7 @@ fn main() {
                 "ppo_cells": phases.cells,
                 "ppo_widest_max": phases.widest_max,
                 "workers": workers_json,
+                "gpu_service": gpu_service,
             });
             writeln!(file, "{line}")
                 .unwrap_or_else(|error| refuse(&format!("writing --diag: {error}")));

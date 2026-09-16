@@ -15,9 +15,12 @@ use ti4_mlp::{FactionRow, SparseOption};
 
 const CAPTURE_SCHEMA_V1: &str = "ti4-offline-selfplay-v1";
 const CAPTURE_SCHEMA_V2: &str = "ti4-offline-selfplay-v2";
+const CAPTURE_SCHEMA_V3: &str = "ti4-offline-selfplay-v3";
 const OBSERVATION_SCHEMA_V1: &str = "seat-authorized-canonical-mlp-v1";
 const OBSERVATION_SCHEMA_V2: &str = "seat-authorized-canonical-mlp-v2";
-const DIPLOMACY_SCHEMA: &str = "ti4-diplomacy-log-v1";
+const OBSERVATION_SCHEMA_V3: &str = "seat-authorized-canonical-mlp-v3";
+const DIPLOMACY_SCHEMA_V1: &str = "ti4-diplomacy-log-v1";
+const DIPLOMACY_SCHEMA_V2: &str = "ti4-diplomacy-log-v2";
 
 #[derive(Deserialize)]
 struct Manifest {
@@ -155,7 +158,7 @@ fn run() -> Result<(), String> {
                 return Err("v1 corpus cannot enable diplomacy".to_owned());
             }
         }
-        (CAPTURE_SCHEMA_V2, OBSERVATION_SCHEMA_V2) => {
+        (CAPTURE_SCHEMA_V2, OBSERVATION_SCHEMA_V2) | (CAPTURE_SCHEMA_V3, OBSERVATION_SCHEMA_V3) => {
             if manifest.diplomacy_enabled
                 && loaded.actor.head_layout() != ti4_mlp::HeadLayout::Diplomacy
             {
@@ -181,14 +184,22 @@ fn run() -> Result<(), String> {
         return Err("games shard count does not match manifest".to_owned());
     }
 
-    if manifest.schema == CAPTURE_SCHEMA_V2 {
+    if matches!(
+        manifest.schema.as_str(),
+        CAPTURE_SCHEMA_V2 | CAPTURE_SCHEMA_V3
+    ) {
+        let diplomacy_schema = if manifest.schema == CAPTURE_SCHEMA_V3 {
+            DIPLOMACY_SCHEMA_V2
+        } else {
+            DIPLOMACY_SCHEMA_V1
+        };
         let diplomacy_shard = checked_shard(&corpus, &manifest, "diplomacy.jsonl.zst")?;
         let mut deal_ids = BTreeSet::new();
         let mut diplomacy_records = 0_usize;
         for line in zstd_lines(&diplomacy_shard)? {
             let record: ti4_model::DiplomacyLogRecord = serde_json::from_str(&line?)
                 .map_err(|error| format!("parsing diplomacy record: {error}"))?;
-            if record.schema != DIPLOMACY_SCHEMA {
+            if record.schema != diplomacy_schema {
                 return Err(format!("unsupported diplomacy schema {}", record.schema));
             }
             if !game_ids.contains(&record.game_id) {

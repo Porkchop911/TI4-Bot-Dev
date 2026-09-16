@@ -762,10 +762,52 @@ where
         &BTreeMap<PlayerId, Baseline>,
     ) -> Result<BTreeMap<PlayerId, Box<dyn Decider>>, String>,
 {
-    let (state, galaxy, factions) = match seated(content, players, factions, sources, seed, map) {
+    play_with_capabilities_and_decider_factory_digest(
+        content,
+        players,
+        factions,
+        sources,
+        seed,
+        horizon,
+        requirement,
+        map,
+        SimulationCapabilities::default(),
+        digest,
+        factory,
+    )
+}
+
+/// Capability-aware form of [`play_with_decider_factory_digest`].
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the capability switch supplements the complete deterministic rollout input"
+)]
+pub fn play_with_capabilities_and_decider_factory_digest<F>(
+    content: &ContentStore,
+    players: &[PlayerId],
+    factions: &BTreeMap<PlayerId, FactionId>,
+    sources: SourceSet,
+    seed: u64,
+    horizon: Horizon,
+    requirement: Requirement,
+    map: &OpeningMap,
+    capabilities: SimulationCapabilities,
+    digest: bool,
+    factory: F,
+) -> (Rollout, Option<GameDigest>)
+where
+    F: FnOnce(
+        &BTreeMap<PlayerId, Baseline>,
+    ) -> Result<BTreeMap<PlayerId, Box<dyn Decider>>, String>,
+{
+    let (mut state, galaxy, factions) = match seated(content, players, factions, sources, seed, map)
+    {
         Ok(seated) => seated,
         Err(error) => return (failed(seed, error), None),
     };
+    if capabilities.diplomacy {
+        state.diplomacy = ti4_model::DiplomacyState::for_players(&state.seating_order, true);
+    }
     let baselines = opening_baselines(&state, content, sources, Some(&galaxy), players);
     let deciders = match factory(&baselines) {
         Ok(deciders) => deciders,

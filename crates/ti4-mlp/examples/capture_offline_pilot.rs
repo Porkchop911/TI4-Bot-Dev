@@ -51,8 +51,8 @@ use ti4_model::id::{FactionId, PlayerId};
 use ti4_policy::progress::{Baseline, Progress};
 use ti4_policy::vocabulary::Vocabulary;
 
-const SCHEMA: &str = "ti4-offline-selfplay-v2";
-const OBSERVATION_SCHEMA: &str = "seat-authorized-canonical-mlp-v2";
+const SCHEMA: &str = "ti4-offline-selfplay-v3";
+const OBSERVATION_SCHEMA: &str = "seat-authorized-canonical-mlp-v3";
 const DECISIONS_FILE: &str = "decisions.jsonl.zst";
 const GAMES_FILE: &str = "games.jsonl.zst";
 const DIPLOMACY_FILE: &str = "diplomacy.jsonl.zst";
@@ -314,7 +314,8 @@ fn diplomacy_telemetry<'a>(
             }
             ti4_model::DiplomacyEvent::SignalEmitted { .. } => telemetry.signals += 1,
             ti4_model::DiplomacyEvent::ImmediateApplied { .. }
-            | ti4_model::DiplomacyEvent::PromiseSettled { .. } => {}
+            | ti4_model::DiplomacyEvent::PromiseSettled { .. }
+            | ti4_model::DiplomacyEvent::SignalJudged { .. } => {}
         }
     }
     telemetry.final_relationships = state
@@ -2463,7 +2464,7 @@ fn validate_part_pair(
             serde_json::from_str(&line).map_err(|error| {
                 PartProblem::Corrupt(format!("parsing diplomacy record {line_index}: {error}"))
             })?;
-        if record.schema != ti4_engine::diplomacy::log::DIPLOMACY_LOG_SCHEMA_V1
+        if record.schema != ti4_engine::diplomacy::log::DIPLOMACY_LOG_SCHEMA_V2
             || record.game_id != metadata.game_id
             || !deal_ids.insert(record.deal_id)
         {

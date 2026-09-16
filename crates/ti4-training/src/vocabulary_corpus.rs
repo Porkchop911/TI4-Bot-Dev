@@ -307,7 +307,10 @@ pub fn replay_names(
     let players: Vec<PlayerId> = (0..factions.len())
         .map(|index| PlayerId::new(format!("seat{index}")))
         .collect();
-    let faction_ids: Vec<FactionId> = factions.iter().map(|faction| FactionId::new(*faction)).collect();
+    let faction_ids: Vec<FactionId> = factions
+        .iter()
+        .map(|faction| FactionId::new(*faction))
+        .collect();
     let expected = usize::try_from(seeds.end - seeds.start).unwrap_or(0) * factions.len();
 
     for seed in seeds {
