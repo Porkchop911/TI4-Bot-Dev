@@ -85,9 +85,13 @@ fn short_specialty(value: &str) -> &'static str {
     }
 }
 
+/// Text on the light player panel. Colour marks a seat only as a swatch, never as the text itself.
+const PANEL_TEXT: Color32 = Color32::BLACK;
+const PANEL_FILL: Color32 = Color32::from_rgb(246, 247, 250);
+
 fn item_section(ui: &mut egui::Ui, icon: &str, title: &str, items: Vec<String>, color: Color32) {
     ui.horizontal(|ui| {
-        ui.colored_label(color, icon);
+        ui.label(icon);
         ui.strong(format!("{title} · {}", items.len()));
     });
     if items.is_empty() {
@@ -97,12 +101,120 @@ fn item_section(ui: &mut egui::Ui, icon: &str, title: &str, items: Vec<String>, 
             for item in items {
                 ui.label(
                     egui::RichText::new(item)
-                        .background_color(color.gamma_multiply(0.28))
-                        .color(Color32::WHITE),
+                        .background_color(color.gamma_multiply(0.35))
+                        .color(PANEL_TEXT),
                 );
             }
         });
     }
+}
+
+/// A seat name in black, preceded by its colour swatch.
+fn seat_label(ui: &mut egui::Ui, player: &PlayerId, text: impl Into<String>) {
+    ui.horizontal(|ui| {
+        ui.colored_label(player_color(player), "●");
+        ui.label(egui::RichText::new(text.into()).color(PANEL_TEXT));
+    });
+}
+
+/// Relationships, deals, signals and finished deals for a game played with structured diplomacy.
+fn diplomacy_panel(ui: &mut egui::Ui, frame: &ReviewFrame) {
+    let state = &frame.state;
+    let diplomacy = &state.diplomacy;
+    if !diplomacy.enabled {
+        ui.weak("Structured diplomacy is off for this game.");
+        return;
+    }
+    ui.label("How each row seat regards each column seat.");
+    ui.small(crate::diplomacy::RELATIONSHIP_LEGEND);
+    egui::Grid::new(format!("diplomacy-relationships-{}", frame.index))
+        .striped(true)
+        .show(ui, |ui| {
+            ui.strong("regards →");
+            for subject in &state.seating_order {
+                seat_label(ui, subject, subject.to_string());
+            }
+            ui.end_row();
+            for observer in &state.seating_order {
+                seat_label(ui, observer, observer.to_string());
+                for subject in &state.seating_order {
+                    if observer == subject {
+                        ui.weak("—");
+                        continue;
+                    }
+                    let relationship = diplomacy.relationship(observer, subject);
+                    let mut text = format!(
+                        "{} · {}",
+                        crate::diplomacy::stance(relationship),
+                        crate::diplomacy::relationship_cell(relationship)
+                    );
+                    if ti4_engine::diplomacy::recent_attack(state, observer, subject) {
+                        text.push_str(" ⚔");
+                    }
+                    if ti4_engine::diplomacy::recent_breach(state, observer, subject) {
+                        text.push_str(" ✗");
+                    }
+                    ui.label(text);
+                }
+                ui.end_row();
+            }
+        });
+
+    ui.strong(format!("Active deals · {}", diplomacy.active_deals.len()));
+    if diplomacy.active_deals.is_empty() {
+        ui.weak("None");
+    }
+    for deal in diplomacy.active_deals.values() {
+        ui.group(|ui| {
+            for (index, line) in crate::diplomacy::deal_lines(state, deal)
+                .into_iter()
+                .enumerate()
+            {
+                if index == 0 {
+                    ui.strong(line);
+                } else {
+                    ui.label(line);
+                }
+            }
+        });
+    }
+
+    ui.strong(format!(
+        "Recent signals · {}",
+        diplomacy.recent_signals.len()
+    ));
+    if diplomacy.recent_signals.is_empty() {
+        ui.weak("None");
+    }
+    for signal in &diplomacy.recent_signals {
+        ui.label(crate::diplomacy::signal_text(state, signal));
+    }
+
+    egui::CollapsingHeader::new(format!("Finished deals · {}", diplomacy.history.len()))
+        .id_salt(format!("diplomacy-history-{}", frame.index))
+        .show(ui, |ui| {
+            if diplomacy.history.is_empty() {
+                ui.weak("None yet");
+            }
+            for summary in diplomacy.history.iter().rev() {
+                ui.group(|ui| {
+                    for (index, line) in crate::diplomacy::summary_lines(state, summary)
+                        .into_iter()
+                        .enumerate()
+                    {
+                        if index == 0 {
+                            ui.strong(line);
+                        } else {
+                            ui.label(line);
+                        }
+                    }
+                });
+            }
+        });
+    ui.small(format!(
+        "Journal events so far: {}",
+        diplomacy.journal.len()
+    ));
 }
 
 fn stat_badge(ui: &mut egui::Ui, icon: &str, label: &str, value: impl std::fmt::Display) {
@@ -411,6 +523,7 @@ struct ReviewerSettings {
     profile_table: ProfileTable,
     temperature: f64,
     last_review: Option<String>,
+    diplomacy: bool,
 }
 
 impl Default for ReviewerSettings {
@@ -421,6 +534,7 @@ impl Default for ReviewerSettings {
             profile_table: ProfileTable::default(),
             temperature: default_sampling_temperature(),
             last_review: None,
+            diplomacy: false,
         }
     }
 }
@@ -463,6 +577,7 @@ struct ReviewApp {
     rotation: usize,
     table: ProfileTable,
     temperature: f64,
+    diplomacy: bool,
     run_count: String,
     run_unit: AdvanceUnit,
     live: Option<LiveReview>,
@@ -505,6 +620,7 @@ impl ReviewApp {
             rotation: 0,
             table: settings.profile_table,
             temperature: settings.temperature,
+            diplomacy: settings.diplomacy,
             run_count: "10".to_owned(),
             run_unit: AdvanceUnit::Step,
             live: None,
@@ -585,6 +701,7 @@ impl ReviewApp {
                 .last_review
                 .as_ref()
                 .map(|path| path.display().to_string()),
+            diplomacy: self.diplomacy,
         }
     }
 
@@ -666,17 +783,19 @@ impl ReviewApp {
             rotation: self.rotation,
             table: self.table,
             temperature: self.temperature,
+            diplomacy: self.diplomacy,
         };
         match LiveReview::start(&config) {
             Ok(live) => {
                 let lineup = live.session.manifest.factions.join(" → ");
                 self.autosave = Some(PathBuf::from("out/reviews").join(format!(
-                    "autosave-{seed}-rotation{}-{}.ti4review.json.zst",
+                    "autosave-{seed}-rotation{}-{}{}.ti4review.json.zst",
                     self.rotation,
                     match self.table {
                         ProfileTable::Learner => "learner",
                         ProfileTable::Accepted => "accepted",
-                    }
+                    },
+                    if self.diplomacy { "-diplomacy" } else { "" }
                 )));
                 self.live = Some(live);
                 self.replay = None;
@@ -964,6 +1083,14 @@ impl ReviewApp {
                 if temperature_response.changed() {
                     self.persist_settings();
                 }
+                let diplomacy_response = ui
+                    .checkbox(&mut self.diplomacy, "Structured diplomacy")
+                    .on_hover_text(
+                        "Seats may open contacts, offer and counter deals, send signals and keep or break promises; relationships between seats are tracked. Applies when a new starting table is loaded.",
+                    );
+                if diplomacy_response.changed() {
+                    self.persist_settings();
+                }
                 if ui.button("Load starting table").clicked() {
                     self.load_start();
                 }
@@ -1097,7 +1224,16 @@ impl ReviewApp {
         egui::Panel::left("players")
             .resizable(true)
             .default_size(340.0)
+            .frame(
+                egui::Frame::new()
+                    .fill(PANEL_FILL)
+                    .inner_margin(egui::Margin::same(8)),
+            )
             .show(root, |ui| {
+                // A light sheet with black text: the dark theme stays on the board and the
+                // decision panel, where colour carries the map.
+                *ui.visuals_mut() = egui::Visuals::light();
+                ui.visuals_mut().override_text_color = Some(PANEL_TEXT);
                 ui.heading("Omniscient players");
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let content = ContentStore::embedded();
@@ -1320,19 +1456,16 @@ impl ReviewApp {
                     if frame.index > 0 {
                         let previous = &session.frames[frame.index - 1];
                         if previous.state.speaker != frame.state.speaker {
-                            ui.colored_label(
-                                Color32::LIGHT_YELLOW,
-                                format!(
-                                    "Speaker changed: {} → {} · events: {}",
-                                    previous.state.speaker,
-                                    frame.state.speaker,
-                                    if frame.new_events.is_empty() {
-                                        "unrecorded cause".to_owned()
-                                    } else {
-                                        frame.new_events.join(", ")
-                                    }
-                                ),
-                            );
+                            ui.strong(format!(
+                                "Speaker changed: {} → {} · events: {}",
+                                previous.state.speaker,
+                                frame.state.speaker,
+                                if frame.new_events.is_empty() {
+                                    "unrecorded cause".to_owned()
+                                } else {
+                                    frame.new_events.join(", ")
+                                }
+                            ));
                         }
                     }
                     item_section(
@@ -1392,6 +1525,9 @@ impl ReviewApp {
                         Color32::LIGHT_BLUE,
                     );
                     ui.separator();
+                    ui.heading("Diplomacy");
+                    diplomacy_panel(ui, frame);
+                    ui.separator();
                     ui.heading("Player sheets");
                     for player in &frame.state.players {
                         let color = player_color(&player.id);
@@ -1401,8 +1537,9 @@ impl ReviewApp {
                         ))
                         .default_open(true)
                         .show(ui, |ui| {
-                            ui.colored_label(
-                                color,
+                            seat_label(
+                                ui,
+                                &player.id,
                                 format!(
                                     "{} · {}",
                                     player.faction,
@@ -1834,6 +1971,11 @@ impl ReviewApp {
                                 .default_open(selected)
                                 .show(ui, |ui| {
                                     ui.label(format!("id={} kind={}", option.id, option.kind));
+                                    for line in
+                                        crate::diplomacy::option_lines(&frame.state, option)
+                                    {
+                                        ui.strong(line);
+                                    }
                                     if !option.payload.is_empty() {
                                         ui.collapsing("Structured payload", |ui| {
                                             ui.monospace(
@@ -2513,6 +2655,7 @@ mod tests {
             profile_table: ProfileTable::Accepted,
             temperature: 0.25,
             last_review: Some("out/reviews/autosave.ti4review.json".to_owned()),
+            diplomacy: true,
         };
         let bytes = serde_json::to_vec(&settings).unwrap();
         let restored: ReviewerSettings = serde_json::from_slice(&bytes).unwrap();

@@ -74,6 +74,7 @@ fn simulate(args: &[String]) -> Result<(), String> {
         }
     };
     let count = parse_flag::<usize>(args, "--count")?.unwrap_or(1);
+    let diplomacy = args.iter().any(|argument| argument == "--diplomacy");
     let config = SimulationConfig {
         checkpoint: PathBuf::from(checkpoint),
         map_pool: PathBuf::from(map_pool),
@@ -81,6 +82,7 @@ fn simulate(args: &[String]) -> Result<(), String> {
         rotation,
         table,
         temperature,
+        diplomacy,
     };
     let mut review = LiveReview::start(&config).map_err(|error| error.to_string())?;
     let report = match flag(args, "--until").as_deref() {
@@ -134,5 +136,5 @@ where
 }
 
 fn usage() -> String {
-    "usage:\n  ti4-review\n  ti4-review validate <game.ti4review.json[.zst]>\n  ti4-review render <game.ti4review.json[.zst]> <game.html>\n  ti4-review simulate --checkpoint <checkpoint.json> --map-pool <pool.json.gz> --out <game.ti4review.json[.zst]> [--seed 42] [--rotation 0] [--table learner|accepted] [--temperature 1.0] [--unit step|decision|action] [--count N | --until round|end]".to_owned()
+    "usage:\n  ti4-review\n  ti4-review validate <game.ti4review.json[.zst]>\n  ti4-review render <game.ti4review.json[.zst]> <game.html>\n  ti4-review simulate --checkpoint <checkpoint.json> --map-pool <pool.json.gz> --out <game.ti4review.json[.zst]> [--seed 42] [--rotation 0] [--table learner|accepted] [--temperature 1.0] [--diplomacy] [--unit step|decision|action] [--count N | --until round|end]".to_owned()
 }

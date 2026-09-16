@@ -34,8 +34,12 @@ use ti4_policy::learned::{Profile, decision_head};
 use ti4_policy::progress::Baseline;
 use ti4_policy::vocabulary::Vocabulary;
 use ti4_sim::MapPool;
-use ti4_training::rollout::{OpeningMap, seated_faction, setup_game_with_decider_factory};
+use ti4_training::rollout::{
+    OpeningMap, SimulationCapabilities, seated_faction,
+    setup_game_with_capabilities_and_decider_factory,
+};
 
+pub mod diplomacy;
 pub mod gui;
 
 pub const SESSION_SCHEMA: &str = "ti4-review-session";
@@ -103,6 +107,8 @@ pub struct SimulationConfig {
     pub rotation: usize,
     pub table: ProfileTable,
     pub temperature: f64,
+    /// Play with structured diplomacy (deals, promises, signals, relationships) switched on.
+    pub diplomacy: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -134,6 +140,10 @@ pub struct SessionManifest {
     pub content_sha256: Option<String>,
     #[serde(default)]
     pub source_scope: Option<String>,
+    /// Whether the game was played with structured diplomacy. Sessions written before the option
+    /// existed were not.
+    #[serde(default)]
+    pub diplomacy: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -723,13 +733,16 @@ impl LiveReview {
             pool: Arc::new(pool),
             tile_seed_offset: TILE_SEED_OFFSET,
         };
-        let game = setup_game_with_decider_factory(
+        let game = setup_game_with_capabilities_and_decider_factory(
             content,
             &players,
             &factions,
             FULL,
             config.seed,
             &map,
+            SimulationCapabilities {
+                diplomacy: config.diplomacy,
+            },
             move |baselines| {
                 let mut table: BTreeMap<PlayerId, Box<dyn Decider>> = BTreeMap::new();
                 for (index, player) in decider_players.iter().enumerate() {
@@ -811,6 +824,7 @@ impl LiveReview {
             engine_dirty: env!("TI4_REVIEW_ENGINE_DIRTY") == "true",
             content_sha256: Some(content_sha256),
             source_scope: Some("FULL (base + PoK + codices + Thunder's Edge)".to_owned()),
+            diplomacy: config.diplomacy,
         };
         let initial = ReviewFrame {
             index: 0,
@@ -1074,7 +1088,13 @@ fn summarize_action(
         .iter()
         .filter(|decision| decision.requested_head == "turn")
         .filter_map(selected_option)
-        .filter(|option| option.kind != ti4_engine::transactions::OPEN_KIND)
+        // Opening a transaction or a diplomatic contact, or paying a promised sum, does not end the
+        // turn; the diplomacy lines below describe them rather than the headline.
+        .filter(|option| {
+            option.kind != ti4_engine::transactions::OPEN_KIND
+                && option.kind != ti4_engine::diplomacy::candidates::OPEN_KIND
+                && option.kind != ti4_engine::diplomacy::candidates::PAYMENT_KIND
+        })
         .map(|option| option.label.clone())
         .collect();
     let system_names: Vec<String> = action
@@ -1206,6 +1226,7 @@ fn summarize_action(
         }
     }
     append_transactions(&mut details, &action.decisions, &action.events);
+    diplomacy::append_action_lines(&mut details, &action.start_state, end, &action.decisions);
     append_notable_decisions(&mut details, &action.decisions);
     append_structured_event_details(&mut details, &action.structured_events, board);
     append_event_outcomes(&mut details, &action.events);
@@ -2215,8 +2236,9 @@ main{display:grid;grid-template-columns:2fr 1fr;gap:12px;padding:12px}section{ba
 #board{width:100%;height:720px}.tile{fill:#162b43;stroke:#7098bd;stroke-width:2}.hyper{fill:#342555}svg text{fill:#fff;text-anchor:middle;font-size:11px}.legend{font-size:12px;color:#afbdd0;margin:6px}
 button,input{background:#1c304a;color:#fff;border:1px solid #5b7da1;border-radius:5px;padding:6px}pre{white-space:pre-wrap;word-break:break-word;max-height:500px;overflow:auto}
 .player{border-left:7px solid var(--pc);background:#0b1625;padding:8px;margin:8px 0;border-radius:6px}.player h4{margin:0 0 6px}.stats{display:flex;flex-wrap:wrap;gap:5px}.stat,.chip{background:#1a2b42;border-radius:5px;padding:3px 6px}.sheet{margin-top:6px}.sheet b{color:var(--pc)}.chips{display:flex;flex-wrap:wrap;gap:4px;margin:3px 0 7px}.chip{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--pc) 55%,transparent)}.objective,.action{background:#0b1625;border:1px solid #29415f;border-radius:6px;padding:7px;margin:5px 0}.objective small,.action small{color:#afbdd0}
+.rel{border-collapse:collapse;font-size:12px;margin:6px 0}.rel td,.rel th{border:1px solid #29415f;padding:3px 6px;white-space:nowrap}
 </style></head><body><header><button onclick="move(-1)">Previous</button> <input id="frame" type="range" min="0" max="0" value="0" oninput="show(+this.value)"> <button onclick="move(1)">Next</button> <b id="where"></b></header>
-<main><section><div class="legend">Thick outer edge = exclusive space control. Thin inner edge = planet control and is split when ownership is mixed. Planet fill = planet owner. Wormholes use lettered rings; a white outer rim marks a placed token and a red slash marks a suppressed wormhole. IN/OUT portals connect the galaxy and Fracture. Planet labels: resources/influence · C/H/I trait · B/G/R/Y specialty · ★ legendary · S station · × destroyed. Gray units are neutral; red slash = damaged; yellow ring = galvanized.</div><svg id="board" viewBox="-600 -500 1200 1000"></svg></section><section><h3>Current policy profiles</h3><div id="policy"></div><h3>Open objectives</h3><div id="objectives"></div><h3>Current/latest action</h3><div id="action"></div><h3>Table state</h3><div id="table-state"></div><h3>Player sheets</h3><div id="players"></div><h3>Decision</h3><div id="decision"></div><h3>Events</h3><pre id="events"></pre></section></main>
+<main><section><div class="legend">Thick outer edge = exclusive space control. Thin inner edge = planet control and is split when ownership is mixed. Planet fill = planet owner. Wormholes use lettered rings; a white outer rim marks a placed token and a red slash marks a suppressed wormhole. IN/OUT portals connect the galaxy and Fracture. Planet labels: resources/influence · C/H/I trait · B/G/R/Y specialty · ★ legendary · S station · × destroyed. Gray units are neutral; red slash = damaged; yellow ring = galvanized.</div><svg id="board" viewBox="-600 -500 1200 1000"></svg></section><section><h3>Current policy profiles</h3><div id="policy"></div><h3>Open objectives</h3><div id="objectives"></div><h3>Current/latest action</h3><div id="action"></div><h3>Table state</h3><div id="table-state"></div><h3>Diplomacy</h3><div id="diplomacy"></div><h3>Player sheets</h3><div id="players"></div><h3>Decision</h3><div id="decision"></div><h3>Events</h3><pre id="events"></pre></section></main>
 <script>const session=__SESSION_DATA__,objectiveMeta=__OBJECTIVE_META__,contentMeta=__CONTENT_META__;const slider=document.querySelector('#frame');slider.max=session.frames.length-1;let at=0;
 const colors=['#e04242','#428eeb','#f2c638','#36b874','#ad67e0','#ee7e31'];
 const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
@@ -2230,12 +2252,21 @@ function notesOf(f,p){const notes=Object.entries(f.state.promissory_notes||{}).f
 function playerCard(p,f){const c=colorOf(p.id);const scored=list(f.state.scored_objectives?.[p.id]).map(x=>named('public',x));const strategy=list(p.strategy_cards).map(x=>p.exhausted_strategy_cards.includes(x)?`${named('strategy',x)} · used`:named('strategy',x));const tech=list(p.technologies).map(x=>p.exhausted_technologies.includes(x)?`${named('technology',x)} · exhausted`:named('technology',x));const relics=list(p.relics).map(x=>list(p.exhausted_relics).includes(x)?`${named('relic',x)} · exhausted`:named('relic',x));return `<article class="player" style="--pc:${c}"><h4>● ${esc(p.id)} · ${esc(p.faction)} · ${p.victory_points} VP</h4><div class="stats"><span class="stat">◆ TG ${p.trade_goods}</span><span class="stat">◇ Com ${p.commodities}</span><span class="stat">▲ T ${p.tactic_tokens}</span><span class="stat">⬟ F ${p.fleet_tokens}</span><span class="stat">● S ${p.strategic_tokens}</span><span class="stat">${p.passed?'PASSED':'ACTIVE'}</span></div>${chips('◆','Strategy cards',strategy)}${chips('●','Planets',controlledPlanets(f,p))}${chips('⚙','Technologies',tech)}${chips('✓','Scored objectives',scored)}${chips('?','Secret objectives',list(p.secret_objectives).map(x=>named('secret',x)))}${chips('▣','Action cards',list(p.action_cards).map(x=>named('action',x)))}${chips('✦','Relics / fragments',[...relics,...objList(p.relic_fragments)])}${chips('◈','Exploration cards in play',list(p.exploration_cards).map(x=>named('explore',x)))}${chips('✉','Promissory notes',notesOf(f,p))}${chips('♟','Leaders',Object.entries(p.leaders||{}).map(([k,v])=>`${named('leader',k)} · ${v}`))}${chips('⌁','Plots',p.plots)}${p.breakthrough?chips('⚡','Breakthrough',[named('breakthrough',p.breakthrough)]):''}</article>`}
 function initiativeOrder(f){const seat=new Map(list(f.state.seating_order).map((id,index)=>[id,index]));return [...f.state.players].sort((a,b)=>{const ai=Math.min(...list(a.strategy_cards).map(c=>f.state.card_initiative?.[c]??99),99),bi=Math.min(...list(b.strategy_cards).map(c=>f.state.card_initiative?.[c]??99),99);return (ai-bi)||((seat.get(a.id)??999)-(seat.get(b.id)??999))}).map(p=>`${p.id} ${p.faction}${list(p.strategy_cards).length?' · '+list(p.strategy_cards).map(c=>`${named('strategy',c)} (${f.state.card_initiative?.[c]??99})`).join(', '):''}`)}
 function tableState(f){const unclaimed=list(f.state.unclaimed_strategy_cards).map(card=>{const goods=f.state.strategy_card_goods?.[card]||0;return goods?`${named('strategy',card)} · ${goods} TG`:named('strategy',card)}),previous=at>0?session.frames[at-1]:null,speakerChange=previous&&previous.state.speaker!==f.state.speaker?`<div class="action">Speaker changed: ${esc(previous.state.speaker)} → ${esc(f.state.speaker)} · ${esc(list(f.new_events).join(', ')||'unrecorded cause')}</div>`:'';return `<div class="stats"><span class="stat">♛ Speaker ${esc(f.state.speaker)}</span><span class="stat">◎ Custodians ${f.state.custodians_removed?'removed':'present'}</span><span class="stat">⬡ Active system ${esc(f.state.active_system||'—')}</span><span class="stat">⌛ Pending ${esc(f.state.pending||'—')}</span><span class="stat">▣ Action discard ${list(f.state.discarded_action_cards).length}</span></div>${speakerChange}${chips('➜','Initiative turn order',initiativeOrder(f))}${chips('◆','Unclaimed strategy cards',unclaimed)}${chips('⚖','Laws in play',Object.entries(f.state.laws||{}).map(([law,outcome])=>`${named('agenda',law)} · ${outcome}`))}${chips('☷','Agenda votes',Object.entries(f.state.agenda_votes||{}).map(([player,vote])=>`${player} → ${vote}`))}${chips('⌁','Agenda predictions',Object.entries(f.state.agenda_predictions||{}).map(([player,prediction])=>`${player} → ${prediction}`))}${chips('↯','Discarded action cards',list(f.state.discarded_action_cards).map(x=>named('action',x)))}`}
+function seatLabel(f,id){const p=(f.state.players||[]).find(x=>x.id===id);return p&&p.faction?`${id} (${p.faction})`:String(id)}
+function assetText(a){const[k,v]=Object.entries(a||{})[0]||['?',''];const n={trade_goods:'trade good(s)',commodities:'commodity/commodities',cultural_fragments:'cultural fragment(s)',hazardous_fragments:'hazardous fragment(s)',industrial_fragments:'industrial fragment(s)',unknown_fragments:'unknown fragment(s)',promissory_note:'promissory note',action_card:'action card',secret_objective:'secret objective'}[k]||k;return typeof v==='number'?`${v} ${n}`:`${n} ${v}`}
+function termText(f,who,t){const[k,v]=Object.entries(t||{})[0]||['?',{}];const w=(third,base)=>who?`${who} ${third}`:base;switch(k){case'immediate_transfer':return `${w('gives','give')} ${assetText(v)} now`;case'future_payment':return `${w('pays','pay')} ${assetText(v.asset)} by the end of round ${v.deadline_round}`;case'do_not_activate':return `${w('does not activate','do not activate')} system ${v.system} through round ${v.deadline_round}`;case'do_not_attack':return `${w('does not attack','do not attack')} ${seatLabel(f,v.player)} through round ${v.deadline_round}`;case'vote':return `${w('votes','vote')} ${v.outcome} on ${v.agenda} by round ${v.deadline_round}`;case'attack':return `${w('attacks','attack')} ${seatLabel(f,v.player)} by the end of round ${v.deadline_round}`;case'replenish_for':return `${w('replenishes','replenish')} ${seatLabel(f,v.beneficiary)} with the Trade primary by the end of round ${v.deadline_round}`;case'use_leader_for':return `${w('uses','use')} agent ${v.leader} for ${seatLabel(f,v.beneficiary)} by the end of round ${v.deadline_round}`;default:return JSON.stringify(t)}}
+const promiseMark=s=>({pending:'…',fulfilled:'✓',broken:'✗',expired:'⌛'}[s]||'·');
+function revisionLines(f,proposer,recipient,r){if(!r)return[];const side=(terms,statuses,who)=>(terms||[]).map((t,i)=>`${promiseMark((statuses||[])[i])} ${termText(f,seatLabel(f,who),t)}`);return[...side(r.proposer_terms,r.proposer_statuses,proposer),...side(r.recipient_terms,r.recipient_statuses,recipient)]}
+function signalText(f,s){const[k,v]=typeof s.statement==='string'?[s.statement,{}]:(Object.entries(s.statement||{})[0]||['?',{}]),until=s.expires_round;const sentence=k==='will_not_attack'?`Assurance: I will not attack you through round ${until}`:k==='stay_out_of'?`Request: stay out of system ${v.system} through round ${until}`:k==='do_not_attack_me'?`Request: do not attack me through round ${until}`:k==='retaliate_if_attacked'?`Threat: if you attack me before round ${until} ends, I will attack you back`:k==='attack_if_you_activate'?`Warning: if you activate system ${v.system} before round ${until} ends, I will attack you`:JSON.stringify(s.statement);const status={open:'open',honoured:'honoured (the assurance was kept)',broken:'broken (the speaker attacked anyway)',heeded:'heeded',ignored:'ignored',triggered:'triggered: waiting to see whether the speaker acts',carried_out:'carried out',bluffed:'a bluff (never acted on)'}[s.status]||s.status||'open';return `${seatLabel(f,s.speaker)} → ${seatLabel(f,s.target)}: ${sentence} · ${status}`}
+function bundleText(f,o){const b=o.payload.bundle,mine=o.payload.actor_is_proposer!==false,r=b.revision||{},you=mine?r.proposer_terms:r.recipient_terms,they=mine?r.recipient_terms:r.proposer_terms,part=ts=>(ts||[]).map(t=>termText(f,null,t)).join('; ')||'nothing';return `Deal: ${String(b.template).replaceAll('_',' ')}${r.number?` · counter ${r.number}`:''} · you commit to: ${part(you)} · they commit to: ${part(they)}`}
+function stanceOf(r){return r.hostility>=40||r.trust<=-40?'hostile':r.hostility>=20||r.trust<=-20||r.threat>=30?'wary':r.trust>=20?'friendly':'neutral'}
+function diplomacyPanel(f){const d=f.state.diplomacy;if(!d||!d.enabled)return '<small>Structured diplomacy is off for this game.</small>';const seats=list(f.state.seating_order),sign=v=>v>0?`+${v}`:`${v}`,recent=(m,o,s)=>{const r=m?.[o]?.[s];return r!=null&&f.state.round<=r+1};const head=`<tr><th>regards →</th>${seats.map(s=>`<th style="color:${colorOf(s)}">${esc(s)}</th>`).join('')}</tr>`;const rows=seats.map(o=>`<tr><th style="color:${colorOf(o)}">${esc(o)}</th>${seats.map(s=>{if(o===s)return '<td>—</td>';const r=d.relationships?.[o]?.[s]||{trust:0,cooperation:0,threat:0,hostility:0};return `<td>${stanceOf(r)} · T${sign(r.trust)} C${sign(r.cooperation)} Th${r.threat} H${r.hostility}${recent(d.last_attacks,o,s)?' ⚔':''}${recent(d.last_breaches,o,s)?' ✗':''}</td>`}).join('')}</tr>`).join('');const deals=Object.values(d.active_deals||{}).map(deal=>{const r=deal.revisions[deal.revisions.length-1];return `<div class="action"><b>Deal #${deal.id}: ${esc(seatLabel(f,deal.proposer))} ↔ ${esc(seatLabel(f,deal.recipient))} · ${esc(deal.status)}</b><br><small>offered in round ${deal.created_round}${deal.revisions.length>1?` · countered ${deal.revisions.length-1}×, latest by ${esc(seatLabel(f,r.author))}`:''}</small>${revisionLines(f,deal.proposer,deal.recipient,r).map(l=>`<div>${esc(l)}</div>`).join('')}</div>`}).join('')||'<small>No active deals.</small>';const signals=(d.recent_signals||[]).map(s=>`<div>${esc(signalText(f,s))}</div>`).join('')||'<small>No recent signals.</small>';const history=(d.history||[]).slice().reverse().map(h=>`<div class="action"><b>Deal #${h.id}: ${esc(seatLabel(f,h.proposer))} ↔ ${esc(seatLabel(f,h.recipient))} · ${esc(h.status)}</b><br><small>rounds ${h.created_round}–${h.terminal_round}</small>${h.legacy_promise?`<div>legacy promise “${esc(h.legacy_promise)}”</div>`:''}${revisionLines(f,h.proposer,h.recipient,h.latest_revision).map(l=>`<div>${esc(l)}</div>`).join('')}</div>`).join('')||'<small>None yet.</small>';return `<div>How each row seat regards each column seat.</div><small>T trust and C cooperation run from -100 to 100; Th threat and H hostility from 0 to 100. Stance: hostile = hostility 40+ or trust -40 or lower; wary = hostility 20+, trust -20 or lower, or threat 30+; friendly = trust 20+ with hostility under 20; neutral otherwise. ⚔ attacked recently, ✗ broke a promise recently.</small><div style="overflow-x:auto"><table class="rel">${head}${rows}</table></div><h4>Active deals</h4>${deals}<h4>Recent signals</h4>${signals}<details><summary>Finished deals · ${(d.history||[]).length}</summary>${history}</details><small>Journal events so far: ${(d.journal||[]).length}</small>`}
 function policySummary(){const p=session.manifest.policy||{},m=session.manifest,format=p.format||'Legacy review · profile details unavailable',schema=p.schema==null?'':` · schema ${p.schema}`,source=p.source?`<div>Source: ${esc(p.source)}</div>`:'',commit=p.git_commit?`<small>Training commit: ${esc(p.git_commit)}</small><br>`:'',update=p.update==null?'':`<small>Training update: ${p.update}</small><br>`,dimensions=p.dimensions?`<small>${esc(p.dimensions)}</small><br>`:'',mode=p.format==='MLP inference bundle'?'shared actor with faction rows':m.profile_table,seats=list(m.factions).map((faction,index)=>`seat${index}: ${faction}`).join(' · '),runtime=[p.projection_abi==null?'':`projection ABI ${p.projection_abi}`,p.oov_registry_version==null?'':`OOV registry v${p.oov_registry_version}`,p.critic_mode?`critic ${p.critic_mode}`:'',p.trained_temperature==null?'':`trained temperature ${p.trained_temperature}`].filter(Boolean).join(' · '),engine=m.engine_commit?`${m.engine_commit}${m.engine_dirty?' (dirty build)':''}`:'legacy/unrecorded';return `<div class="action"><b>${esc(format)}${schema}</b><br><small>${esc(m.checkpoint_path)} · ${esc(mode)} · temperature ${m.temperature}</small><br><small>${esc(seats)}</small>${source}${commit}${update}${dimensions}<small>${esc(runtime)}</small><hr><small>Initial speaker: ${esc(m.initial_speaker||'legacy/unrecorded')} · map arrangement: ${m.map_arrangement_index??'legacy/unrecorded'}<br>Review engine: ${esc(engine)}<br>Content: ${esc(m.content_sha256||'legacy/unrecorded')}<br>Scope: ${esc(m.source_scope||'legacy/unrecorded')}</small>${chips('◫','Decision heads',p.heads)}${chips('♙','Available faction rows',p.factions)}${chips('ƒ','Loaded profiles',p.profiles)}</div>`}
 function objectives(f){return list(f.state.revealed_objectives).map(id=>{const m=objectiveMeta[id]||{name:id,text:'',points:0},scored=Object.entries(f.state.scored_objectives||{}).filter(([,v])=>list(v).includes(id)).map(([p])=>p);return `<div class="objective"><b>${esc(m.name)} · ${m.points} VP</b><br><small>${esc(id)} · scored by ${esc(scored.join(', ')||'nobody')}</small><div>${esc(m.text)}</div></div>`}).join('')||'None revealed yet.'}
 function actionSummary(i){const progress=session.frames[i].action_in_progress;if(progress)return `<div class="action"><b>${esc(progress.headline)}</b><br><small>frames ${progress.start_frame}–${progress.end_frame} · active-player period · IN PROGRESS</small>${list(progress.details).map(d=>`<div>• ${esc(d)}</div>`).join('')}</div>`;for(let n=i;n>=0;n--){const a=session.frames[n].action_summary;if(a)return `<div class="action"><b>${esc(a.headline)}</b><br><small>frames ${a.start_frame}–${a.end_frame} · active-player period</small>${list(a.details).map(d=>`<div>• ${esc(d)}</div>`).join('')}</div>`}return 'No action-phase turn has started yet.'}
-function decisionCards(f){if(!f.decisions.length)return 'No policy decision on this engine step.';return f.decisions.map(d=>{const chosen=d.options.find(o=>o.id===d.chosen),context=d.context?`<details><summary>Decision context</summary><pre>${esc(JSON.stringify(d.context,null,2))}</pre></details>`:'<small>Legacy review: decision context unavailable.</small>',options=d.options.map(o=>`<div class="chip">${o.id===d.chosen?'✓ ':''}${esc(o.label)}${o.score==null?'':` · score ${Number(o.score).toFixed(5)}`}${o.probability==null?'':` · p ${Number(o.probability).toFixed(5)}`}${Object.keys(o.payload||{}).length?`<pre>${esc(JSON.stringify(o.payload,null,2))}</pre>`:''}${o.preview?`<details><summary>Consequence preview</summary><pre>${esc(JSON.stringify(o.preview,null,2))}</pre></details>`:''}</div>`).join('');return `<div class="action"><b>${esc(d.player)} (${esc(d.faction)}) · ${esc(d.prompt)}</b><div>Path: ${esc(d.path)} · head ${esc(d.requested_head)} → ${esc(d.resolved_head)}${d.temperature==null?'':` · temperature ${d.temperature}`}</div><div>Chosen: ${esc(chosen?.label||d.chosen||'illegal/no choice')}</div>${context}<details><summary>${d.options.length} options</summary>${options}</details></div>`}).join('')}
+function decisionCards(f){if(!f.decisions.length)return 'No policy decision on this engine step.';return f.decisions.map(d=>{const chosen=d.options.find(o=>o.id===d.chosen),context=d.context?`<details><summary>Decision context</summary><pre>${esc(JSON.stringify(d.context,null,2))}</pre></details>`:'<small>Legacy review: decision context unavailable.</small>',options=d.options.map(o=>`<div class="chip">${o.id===d.chosen?'✓ ':''}${esc(o.label)}${o.score==null?'':` · score ${Number(o.score).toFixed(5)}`}${o.probability==null?'':` · p ${Number(o.probability).toFixed(5)}`}${o.payload?.bundle?`<div><b>${esc(bundleText(f,o))}</b></div>`:''}${Object.keys(o.payload||{}).length?`<pre>${esc(JSON.stringify(o.payload,null,2))}</pre>`:''}${o.preview?`<details><summary>Consequence preview</summary><pre>${esc(JSON.stringify(o.preview,null,2))}</pre></details>`:''}</div>`).join('');return `<div class="action"><b>${esc(d.player)} (${esc(d.faction)}) · ${esc(d.prompt)}</b><div>Path: ${esc(d.path)} · head ${esc(d.requested_head)} → ${esc(d.resolved_head)}${d.temperature==null?'':` · temperature ${d.temperature}`}</div><div>Chosen: ${esc(chosen?.label||d.chosen||'illegal/no choice')}</div>${context}<details><summary>${d.options.length} options</summary>${options}</details></div>`}).join('')}
 function move(n){show(Math.max(0,Math.min(session.frames.length-1,at+n)))}
-function show(i){at=i;slider.value=i;const f=session.frames[i];document.querySelector('#where').textContent=` frame ${i} · step ${f.engine_step} · round ${f.round} · ${f.phase}`;drawDynamic(f);document.querySelector('#policy').innerHTML=policySummary();document.querySelector('#objectives').innerHTML=objectives(f);document.querySelector('#action').innerHTML=actionSummary(i);document.querySelector('#table-state').innerHTML=tableState(f);document.querySelector('#players').innerHTML=f.state.players.map(p=>playerCard(p,f)).join('');document.querySelector('#decision').innerHTML=decisionCards(f);const typed=Array.from(f.structured_events||[]).map(e=>`#${e.id} ${e.event_type}${e.cancelled?' · CANCELLED':''}\n${JSON.stringify(e.payload,null,2)}`),legacy=list(f.new_events).map(e=>`legacy · ${e}`);document.querySelector('#events').textContent=[...typed,...legacy].join('\n')||'—'}
+function show(i){at=i;slider.value=i;const f=session.frames[i];document.querySelector('#where').textContent=` frame ${i} · step ${f.engine_step} · round ${f.round} · ${f.phase}`;drawDynamic(f);document.querySelector('#policy').innerHTML=policySummary();document.querySelector('#objectives').innerHTML=objectives(f);document.querySelector('#action').innerHTML=actionSummary(i);document.querySelector('#table-state').innerHTML=tableState(f);document.querySelector('#diplomacy').innerHTML=diplomacyPanel(f);document.querySelector('#players').innerHTML=f.state.players.map(p=>playerCard(p,f)).join('');document.querySelector('#decision').innerHTML=decisionCards(f);const typed=Array.from(f.structured_events||[]).map(e=>`#${e.id} ${e.event_type}${e.cancelled?' · CANCELLED':''}\n${JSON.stringify(e.payload,null,2)}`),legacy=list(f.new_events).map(e=>`legacy · ${e}`);document.querySelector('#events').textContent=[...typed,...legacy].join('\n')||'—'}
 const ns='http://www.w3.org/2000/svg';function el(tag,attrs={},text=''){const n=document.createElementNS(ns,tag);for(const[k,v]of Object.entries(attrs))n.setAttribute(k,v);if(text)n.textContent=text;return n}
 function kind(id){id=String(id).toLowerCase();if(id==='nowarsun')return id;for(const k of ['warsun','spacedock','dreadnought','destroyer','flagship','carrier','cruiser','fighter','infantry','mech','pds'])if(id.includes(k))return k;return id}
 function unit(svg,x,y,u,count){const c=colorOf(u.owner),k=kind(u.type_id),s=7;let n;if(k==='fighter')n=el('polygon',{points:`${x},${y-s} ${x-s},${y+s} ${x+s},${y+s}`,fill:c});else if(k==='destroyer')n=el('polygon',{points:`${x},${y-s} ${x+s},${y} ${x},${y+s} ${x-s},${y}`,fill:c});else if(k==='carrier'||k==='spacedock')n=el('rect',{x:x-s*1.4,y:y-s*.65,width:s*2.8,height:s*1.3,rx:2,fill:c});else if(k==='cruiser'||k==='pds')n=el('rect',{x:x-s,y:y-s,width:s*2,height:s*2,fill:c});else if(k==='dreadnought'||k==='mech')n=el('polygon',{points:Array.from({length:k==='mech'?5:6},(_,i)=>{const a=Math.PI*2*i/(k==='mech'?5:6)-Math.PI/2;return `${x+s*Math.cos(a)},${y+s*Math.sin(a)}`}).join(' '),fill:c});else n=el('circle',{cx:x,cy:y,r:k==='warsun'?s*1.4:s,fill:c});n.setAttribute('stroke','#07101a');n.setAttribute('stroke-width','2');svg.appendChild(n);if(u.galvanized)svg.appendChild(el('circle',{cx:x,cy:y,r:s*1.7,fill:'none',stroke:'#ffd84d','stroke-width':2}));if(u.sustained_damage)svg.appendChild(el('line',{x1:x-s,y1:y+s,x2:x+s,y2:y-s,stroke:'#ff3030','stroke-width':3}));svg.appendChild(el('text',{x,y:y+17,'font-size':8},`${k.slice(0,2)}×${count}`))}
@@ -2333,12 +2364,29 @@ mod tests {
                 engine_dirty: false,
                 content_sha256: None,
                 source_scope: None,
+                diplomacy: false,
             },
             board: vec![],
             planet_catalog: vec![],
             frames: vec![frame],
             outcome: SessionOutcome::InProgress,
         }
+    }
+
+    #[test]
+    fn old_sessions_have_diplomacy_off_and_html_carries_the_diplomacy_panel() {
+        let mut value = serde_json::to_value(fixture_session()).unwrap();
+        value["manifest"]
+            .as_object_mut()
+            .unwrap()
+            .remove("diplomacy");
+        let restored: ReviewSession = serde_json::from_value(value).unwrap();
+        assert!(!restored.manifest.diplomacy);
+
+        let html = render_html(&restored).unwrap();
+        assert!(html.contains("<div id=\"diplomacy\">"));
+        assert!(html.contains("function diplomacyPanel"));
+        assert!(html.contains("function bundleText"));
     }
 
     #[test]
@@ -2532,6 +2580,7 @@ mod tests {
             rotation: 0,
             table: ProfileTable::Learner,
             temperature: 0.0,
+            diplomacy: false,
         };
 
         let error = match LiveReview::start(&config) {
