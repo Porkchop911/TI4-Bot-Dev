@@ -196,8 +196,7 @@ pub fn settle_control_points(state: &mut GameState) {
     if let Some(gained) = holder.clone()
         && let Some(seat) = state.player_mut(&gained)
     {
-        seat.victory_points =
-            (seat.victory_points + 1).min(crate::objectives::VICTORY_TARGET);
+        seat.victory_points = (seat.victory_points + 1).min(crate::objectives::VICTORY_TARGET);
     }
     state.styx_holder = holder;
 }
@@ -264,18 +263,14 @@ pub fn end_turn(
             })
             .collect();
         options.push(ChoiceOption::decline());
-        let choice = Choice::new(
-            player.clone(),
-            "use a legendary planet ability",
-            options,
-        )
-        .contextualized(DecisionContext::new(
-            player.clone(),
-            DecisionSource::Content("legendary".to_owned()),
-            "legendary_end_of_turn",
-            state.phase,
-            state.round,
-        ));
+        let choice = Choice::new(player.clone(), "use a legendary planet ability", options)
+            .contextualized(DecisionContext::new(
+                player.clone(),
+                DecisionSource::Content("legendary".to_owned()),
+                "legendary_end_of_turn",
+                state.phase,
+                state.round,
+            ));
         let answer = table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
         if answer.is_decline() {
             return Ok(());
@@ -287,7 +282,6 @@ pub fn end_turn(
         resolve(state, content, sources, galaxy, table, player, &planet)?;
     }
 }
-
 
 /// Planets whose ability is used when the holder passes, with the label to offer.
 ///
@@ -370,7 +364,10 @@ fn maxis_candidates(
     let mut found = Vec::new();
     for (system, board) in &state.board {
         let Some(record) = content
-            .get(ti4_model::content_types::ContentType::Systems, system.as_str())
+            .get(
+                ti4_model::content_types::ContentType::Systems,
+                system.as_str(),
+            )
             .filter(|record| record.in_sources(sources))
         else {
             continue;
@@ -482,7 +479,8 @@ fn resolve_pass(
             );
             // No `control_gained` here: Maxis Central Control excludes legendary planets, so
             // Thunder's Edge can never arrive through this path.
-            if let Some(deck) = crate::exploration::trait_of(context.content, context.sources, &target)
+            if let Some(deck) =
+                crate::exploration::trait_of(context.content, context.sources, &target)
             {
                 let mut resolving = crate::choice::Resolving {
                     content: context.content,
@@ -650,12 +648,14 @@ fn resolve_pass(
                 return;
             };
             let system = ti4_model::id::SystemId::new(system);
-            context.state.system_mut(&system).units.push(
-                ti4_model::units::Unit::new(
+            context
+                .state
+                .system_mut(&system)
+                .units
+                .push(ti4_model::units::Unit::new(
                     ti4_model::id::UnitTypeId::new(ship),
                     player.clone(),
-                ),
-            );
+                ));
         }
         _ => {}
     }
@@ -775,7 +775,11 @@ fn readyable(state: &GameState, player: &PlayerId, excluding: &PlanetId) -> Vec<
             format!("ready {relic}"),
         ));
     }
-    for card in seat.exhausted_legendary.iter().filter(|id| *id != excluding) {
+    for card in seat
+        .exhausted_legendary
+        .iter()
+        .filter(|id| *id != excluding)
+    {
         options.push(ChoiceOption::labelled(
             format!("legendary|{card}"),
             "legendary",
@@ -1060,7 +1064,6 @@ mod tests {
         (state, player, planet)
     }
 
-
     /// A seat holding `planet`, with a board entry for `system`.
     fn holding(planet: &str, system: &str) -> (GameState, PlayerId) {
         let player = PlayerId::new("a");
@@ -1074,11 +1077,7 @@ mod tests {
     }
 
     /// Run the pass window with a real timing context.
-    fn passing(
-        state: &mut GameState,
-        table: &mut Table,
-        player: &PlayerId,
-    ) {
+    fn passing(state: &mut GameState, table: &mut Table, player: &PlayerId) {
         let mut dice = crate::dice::Dice::new();
         let mut rng = crate::rng::GameRng::new(0);
         let mut sequence = crate::event::EventSequence::new();
@@ -1214,10 +1213,13 @@ mod tests {
         let (mut state, player) = holding("industrex", "97");
         let here = ti4_model::id::SystemId::new("45");
         state.board.entry(here.clone()).or_default();
-        state.system_mut(&here).units.push(ti4_model::units::Unit::new(
-            ti4_model::id::UnitTypeId::new("carrier"),
-            player.clone(),
-        ));
+        state
+            .system_mut(&here)
+            .units
+            .push(ti4_model::units::Unit::new(
+                ti4_model::id::UnitTypeId::new("carrier"),
+                player.clone(),
+            ));
         if let Some(seat) = state.player_mut(&player) {
             seat.technologies
                 .insert(ti4_model::id::TechnologyId::new("cv2"));
@@ -1232,7 +1234,9 @@ mod tests {
 
         let placed = state.system_state(&here).units.clone();
         assert!(
-            placed.iter().any(|unit| unit.type_id.as_str() == "carrier2"),
+            placed
+                .iter()
+                .any(|unit| unit.type_id.as_str() == "carrier2"),
             "the Carrier II the upgrade unlocks, not a base carrier: {placed:?}"
         );
     }
@@ -1481,9 +1485,8 @@ mod tests {
         let (mut state, player, _planet) = holding_mallice(3);
         let system = ti4_model::id::SystemId::new("82b");
         state.system_mut(&system).planet_control.clear();
-        let mut table = Table::with_default(Box::new(crate::choice::Scripted::new(
-            Vec::<String>::new(),
-        )));
+        let mut table =
+            Table::with_default(Box::new(crate::choice::Scripted::new(Vec::<String>::new())));
         end_turn(&mut state, content(), POK, None, &mut table, &player).unwrap();
         assert_eq!(
             state.player(&player).unwrap().trade_goods,

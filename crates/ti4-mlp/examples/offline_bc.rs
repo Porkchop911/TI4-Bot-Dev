@@ -27,8 +27,10 @@ const PACKED_SCHEMA_V1: &str = "ti4-offline-bc-v1";
 const PACKED_SCHEMA_V2: &str = "ti4-offline-bc-v2";
 const CAPTURE_SCHEMA_V1: &str = "ti4-offline-selfplay-v1";
 const CAPTURE_SCHEMA_V2: &str = "ti4-offline-selfplay-v2";
+const CAPTURE_SCHEMA_V3: &str = "ti4-offline-selfplay-v3";
 const OBSERVATION_SCHEMA_V1: &str = "seat-authorized-canonical-mlp-v1";
 const OBSERVATION_SCHEMA_V2: &str = "seat-authorized-canonical-mlp-v2";
+const OBSERVATION_SCHEMA_V3: &str = "seat-authorized-canonical-mlp-v3";
 const FACTIONS: [&str; 6] = ["jolnar", "letnev", "sol", "xxcha", "hacan", "l1z1x"];
 
 #[derive(Deserialize)]
@@ -251,7 +253,8 @@ fn validate_capture_manifest(
     ) {
         (CAPTURE_SCHEMA_V1, OBSERVATION_SCHEMA_V1) => false,
         (CAPTURE_SCHEMA_V2, OBSERVATION_SCHEMA_V2) => manifest.diplomacy_enabled,
-        (CAPTURE_SCHEMA_V1 | CAPTURE_SCHEMA_V2, _) => {
+        (CAPTURE_SCHEMA_V3, OBSERVATION_SCHEMA_V3) => manifest.diplomacy_enabled,
+        (CAPTURE_SCHEMA_V1 | CAPTURE_SCHEMA_V2 | CAPTURE_SCHEMA_V3, _) => {
             return Err(format!(
                 "{} has incompatible capture/observation schemas {}/{}",
                 root.display(),
@@ -1518,24 +1521,26 @@ mod tests {
     }
 
     #[test]
-    fn diplomacy_capture_requires_v2_pair_and_authenticated_log() {
-        let mut manifest = capture_manifest();
-        manifest.schema = CAPTURE_SCHEMA_V2.to_owned();
-        manifest.observation_schema = OBSERVATION_SCHEMA_V2.to_owned();
-        manifest.diplomacy_enabled = true;
-        assert!(
-            validate_capture_manifest(&manifest, "slots", Path::new("corpus"))
-                .unwrap_err()
-                .contains("diplomacy shard")
-        );
-        manifest.records.insert("diplomacy_deals".to_owned(), 1);
-        manifest
-            .shards
-            .insert("diplomacy.jsonl.zst".to_owned(), "diplomacy-sha".to_owned());
-        assert_eq!(
-            validate_capture_manifest(&manifest, "slots", Path::new("corpus")).unwrap(),
-            true
-        );
+    fn diplomacy_capture_requires_a_matching_version_pair_and_authenticated_log() {
+        for (capture_schema, observation_schema) in [
+            (CAPTURE_SCHEMA_V2, OBSERVATION_SCHEMA_V2),
+            (CAPTURE_SCHEMA_V3, OBSERVATION_SCHEMA_V3),
+        ] {
+            let mut manifest = capture_manifest();
+            manifest.schema = capture_schema.to_owned();
+            manifest.observation_schema = observation_schema.to_owned();
+            manifest.diplomacy_enabled = true;
+            assert!(
+                validate_capture_manifest(&manifest, "slots", Path::new("corpus"))
+                    .unwrap_err()
+                    .contains("diplomacy shard")
+            );
+            manifest.records.insert("diplomacy_deals".to_owned(), 1);
+            manifest
+                .shards
+                .insert("diplomacy.jsonl.zst".to_owned(), "diplomacy-sha".to_owned());
+            assert!(validate_capture_manifest(&manifest, "slots", Path::new("corpus")).unwrap());
+        }
     }
 
     #[test]

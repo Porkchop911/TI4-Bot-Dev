@@ -5244,17 +5244,13 @@ fn rescue(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
     // Gated here rather than in `is_playable`, which handles component actions and models only
     // Signal Jamming's eligibility -- the rest are the F13 backlog. That means Rescue can still
     // be *offered* in a window it does not belong to; it can no longer do anything there.
-    let mine_in_destination = context
-        .state
-        .board
-        .get(&destination)
-        .is_some_and(|board| {
-            board.units_of(player).into_iter().any(|unit| {
-                types
-                    .get(unit.type_id.as_str())
-                    .is_some_and(ti4_content::units::UnitType::is_ship)
-            })
-        });
+    let mine_in_destination = context.state.board.get(&destination).is_some_and(|board| {
+        board.units_of(player).into_iter().any(|unit| {
+            types
+                .get(unit.type_id.as_str())
+                .is_some_and(ti4_content::units::UnitType::is_ship)
+        })
+    });
     if !mine_in_destination {
         return;
     }

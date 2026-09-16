@@ -216,7 +216,10 @@ fn main() {
                 (
                     player.clone(),
                     ti4_training::rollout::seated_faction(
-                        &FACTIONS.map(FactionId::new), seed, 0, index,
+                        &FACTIONS.map(FactionId::new),
+                        seed,
+                        0,
+                        index,
                     ),
                 )
             })

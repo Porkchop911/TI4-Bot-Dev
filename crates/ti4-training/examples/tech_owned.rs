@@ -110,7 +110,10 @@ fn main() {
                 factions.insert(
                     player.clone(),
                     ti4_training::rollout::seated_faction(
-                        &FACTIONS.map(FactionId::new), seed, rotation, index,
+                        &FACTIONS.map(FactionId::new),
+                        seed,
+                        rotation,
+                        index,
                     ),
                 );
             }

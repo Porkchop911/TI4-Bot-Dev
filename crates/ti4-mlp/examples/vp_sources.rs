@@ -75,7 +75,10 @@ fn play(
             (
                 p.clone(),
                 ti4_training::rollout::seated_faction(
-                    &FACTIONS.map(FactionId::new), seed, rotation, i,
+                    &FACTIONS.map(FactionId::new),
+                    seed,
+                    rotation,
+                    i,
                 ),
             )
         })

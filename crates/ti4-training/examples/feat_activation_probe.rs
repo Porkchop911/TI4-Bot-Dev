@@ -148,12 +148,7 @@ fn main() {
             let faction_ids = FACTIONS.map(FactionId::new);
             let rotated: Vec<FactionId> = (0..FACTIONS.len())
                 .map(|index| {
-                    ti4_training::rollout::seated_faction(
-                        &faction_ids,
-                        seed,
-                        rotation,
-                        index,
-                    )
+                    ti4_training::rollout::seated_faction(&faction_ids, seed, rotation, index)
                 })
                 .collect();
             let (_events, state) = audit_game(
