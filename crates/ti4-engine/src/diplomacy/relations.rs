@@ -1,6 +1,6 @@
 //! The single relationship-delta table for diplomacy rules v1.
 
-use ti4_model::{DiplomacyError, GameState, PlayerId};
+use ti4_model::{DiplomacyError, GameState, PlayerId, SignalKind};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RelationshipEvent {
@@ -25,11 +25,40 @@ pub enum RelationshipEvent {
         victim: PlayerId,
         activation_seq: u32,
     },
-    PublicThreat {
+    /// A signal was made. Threats and warnings put the target on guard; an assurance earns a little
+    /// trust up front; a request changes nothing until it is heeded or ignored.
+    SignalMade {
+        speaker: PlayerId,
+        target: PlayerId,
+        kind: SignalKind,
+    },
+    /// The speaker kept an assurance until it expired.
+    AssuranceKept {
         speaker: PlayerId,
         target: PlayerId,
     },
-    PublicWarning {
+    /// The speaker attacked the seat it had assured.
+    AssuranceBroken {
+        speaker: PlayerId,
+        target: PlayerId,
+    },
+    /// The target respected the speaker's request.
+    RequestHeeded {
+        speaker: PlayerId,
+        target: PlayerId,
+    },
+    /// The target did what the speaker asked it not to.
+    RequestIgnored {
+        speaker: PlayerId,
+        target: PlayerId,
+    },
+    /// The speaker acted on a triggered threat or warning.
+    ThreatCarriedOut {
+        speaker: PlayerId,
+        target: PlayerId,
+    },
+    /// The speaker never acted on a triggered threat or warning.
+    ThreatBluffed {
         speaker: PlayerId,
         target: PlayerId,
     },
@@ -98,11 +127,40 @@ pub fn apply_relationship_event(
                 .insert(attacker.clone(), state.round);
             Ok(())
         }
-        RelationshipEvent::PublicThreat { speaker, target } => {
-            adjust(state, target, speaker, 0, 10, 0, 5)
+        RelationshipEvent::SignalMade {
+            speaker,
+            target,
+            kind,
+        } => match kind {
+            SignalKind::Threat => adjust(state, target, speaker, 0, 10, 0, 5),
+            SignalKind::Warning => adjust(state, target, speaker, 0, 4, 0, 2),
+            SignalKind::Assurance => adjust(state, target, speaker, 2, 0, 0, 0),
+            SignalKind::Request => Ok(()),
+        },
+        RelationshipEvent::AssuranceKept { speaker, target } => {
+            adjust(state, target, speaker, 8, 0, 4, 0)
         }
-        RelationshipEvent::PublicWarning { speaker, target } => {
-            adjust(state, target, speaker, 0, 4, 0, 2)
+        RelationshipEvent::AssuranceBroken { speaker, target } => {
+            adjust(state, target, speaker, -25, 10, 0, 10)?;
+            state
+                .diplomacy
+                .last_breaches
+                .entry(target.clone())
+                .or_default()
+                .insert(speaker.clone(), state.round);
+            Ok(())
+        }
+        RelationshipEvent::RequestHeeded { speaker, target } => {
+            adjust(state, speaker, target, 4, 0, 2, 0)
+        }
+        RelationshipEvent::RequestIgnored { speaker, target } => {
+            adjust(state, speaker, target, -5, 0, 0, 5)
+        }
+        RelationshipEvent::ThreatCarriedOut { speaker, target } => {
+            adjust(state, target, speaker, 0, 10, 0, 0)
+        }
+        RelationshipEvent::ThreatBluffed { speaker, target } => {
+            adjust(state, target, speaker, 0, -10, 0, 0)
         }
         RelationshipEvent::AntiThirdPartyDeal {
             payer,
@@ -136,8 +194,15 @@ fn participants_seated(state: &GameState, event: &RelationshipEvent) -> bool {
         RelationshipEvent::DirectAttack {
             attacker, victim, ..
         } => vec![attacker, victim],
-        RelationshipEvent::PublicThreat { speaker, target }
-        | RelationshipEvent::PublicWarning { speaker, target } => vec![speaker, target],
+        RelationshipEvent::SignalMade {
+            speaker, target, ..
+        }
+        | RelationshipEvent::AssuranceKept { speaker, target }
+        | RelationshipEvent::AssuranceBroken { speaker, target }
+        | RelationshipEvent::RequestHeeded { speaker, target }
+        | RelationshipEvent::RequestIgnored { speaker, target }
+        | RelationshipEvent::ThreatCarriedOut { speaker, target }
+        | RelationshipEvent::ThreatBluffed { speaker, target } => vec![speaker, target],
         RelationshipEvent::AntiThirdPartyDeal {
             payer,
             attacker,

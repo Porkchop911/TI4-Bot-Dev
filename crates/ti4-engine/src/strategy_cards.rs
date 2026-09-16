@@ -1137,6 +1137,16 @@ fn trade_primary(
                 chosen,
             })?;
         replenish(state, content, &other);
+        // A promise to spend the Trade primary on somebody else is kept here, and nowhere else:
+        // the self-replenish above and the secondary are not favours to anyone.
+        crate::diplomacy::evaluate_event(
+            state,
+            &crate::diplomacy::DiplomacyEventContext::CommoditiesReplenished {
+                by: player.clone(),
+                beneficiary: other.clone(),
+            },
+        )
+        .expect("validated diplomacy promises settle deterministically");
         remaining.retain(|candidate| candidate != &other);
     }
     Ok(())

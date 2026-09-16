@@ -640,6 +640,18 @@ enum TacticalStage {
     },
 }
 
+/// Negotiation held before an agenda goes to a vote, when structured diplomacy is on.
+///
+/// Each voter, in voting order, may open diplomatic contacts or end their talks; the vote opens
+/// once no seat is still negotiating.
+#[derive(Debug, Clone)]
+struct AgendaTalks {
+    alias: String,
+    choices: Vec<String>,
+    queue: Vec<String>,
+    seats: Vec<PlayerId>,
+}
+
 #[derive(Debug, Clone)]
 struct TacticalWindow {
     player: PlayerId,
@@ -695,6 +707,8 @@ pub struct Game<'a> {
     trade: Option<crate::transactions::TradeWindow>,
     /// The open structured diplomatic contact. Free, like a normal transaction.
     diplomacy: Option<Box<crate::diplomacy::window::DiplomacyWindow>>,
+    /// The talks before the next agenda vote, with structured diplomacy on.
+    agenda_talks: Option<AgendaTalks>,
     /// The pinned source of gravity-rift rolls.
     rng: GameRng,
     dice: Dice,
@@ -782,6 +796,7 @@ impl<'a> Game<'a> {
             aftermath: None,
             trade: None,
             diplomacy: None,
+            agenda_talks: None,
             rng: GameRng::new(seed),
             dice: Dice::new(),
             status_resolved: false,
@@ -875,6 +890,9 @@ impl<'a> Game<'a> {
         if let Some(window) = &self.diplomacy {
             return window.pending_choice(&self.state, self.content, self.sources);
         }
+        if self.agenda_talks.is_some() {
+            return self.agenda_talks_choice();
+        }
         if let Some(window) = &self.tactical {
             return self.tactical_choice(window);
         }
@@ -903,6 +921,10 @@ impl<'a> Game<'a> {
 
     /// Resolve one generated decision, or one choice-free phase/window transition.
     #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the driver keeps the ordered window/phase precedence visible in one place"
+    )]
     pub fn step(&mut self) -> StepResult {
         // Space station control is a function of occupancy, not an event (rules 2, 2a, 2b), so it
         // is recomputed once per step rather than at each of the dozen places a unit can move or
@@ -957,6 +979,9 @@ impl<'a> Game<'a> {
         }
         if self.diplomacy.is_some() {
             return self.step_diplomacy();
+        }
+        if self.agenda_talks.is_some() {
+            return self.step_agenda_talks();
         }
         if self.trade.is_some() {
             return self.step_trade();
@@ -1465,26 +1490,7 @@ impl<'a> Game<'a> {
                 if let Some(partner) =
                     crate::diplomacy::candidates::contact_target(&self.state, &answer)
                 {
-                    let Some(galaxy) = self.galaxy.as_ref() else {
-                        return Err(GameError::UnsupportedAction(answer.id));
-                    };
-                    let candidates = crate::diplomacy::candidates::generate_initial_candidates(
-                        &crate::diplomacy::candidates::CandidateContext {
-                            state: &self.state,
-                            content: self.content,
-                            galaxy,
-                            proposer: &active,
-                            recipient: &partner,
-                        },
-                    );
-                    self.diplomacy =
-                        Some(Box::new(crate::diplomacy::window::DiplomacyWindow::open(
-                            &mut self.state,
-                            active,
-                            partner,
-                            candidates,
-                        )?));
-                    return Ok(());
+                    return self.open_contact(&active, partner);
                 }
                 if let Some((deal_id, term_index)) =
                     crate::diplomacy::candidates::payment_action(&answer)
@@ -2518,6 +2524,65 @@ impl<'a> Game<'a> {
         self.result(false, None)
     }
 
+    /// Open a structured diplomatic contact from `actor` to `partner`.
+    ///
+    /// A contact with a transaction partner is that turn's transaction as well (94): it settles
+    /// Extreme Duress and opens "when you are negotiating a transaction" exactly as the legacy
+    /// window does, before any offer is built, so a Black Market play can still widen what the
+    /// contact offers. During the agenda phase every other seat is a partner, and a contact held
+    /// before a vote can buy votes on that agenda.
+    fn open_contact(&mut self, actor: &PlayerId, partner: PlayerId) -> Result<(), GameError> {
+        let Some(galaxy) = self.galaxy.clone() else {
+            return Err(GameError::UnsupportedAction(format!(
+                "diplomatic contact with {partner} needs a map"
+            )));
+        };
+        let agenda_phase = self.state.phase == Phase::Agenda;
+        let trading = (agenda_phase
+            || crate::transactions::partners(&self.state, self.content, &galaxy, actor)
+                .contains(&partner))
+            && !self.state.transacted_with(actor).contains(&partner);
+        if trading {
+            // Extreme Duress binds a player's next action; the agenda phase has none.
+            if !agenda_phase {
+                self.settle_extreme_duress(actor, false)?;
+            }
+            self.sync_timing_context();
+            let mut payload = BTreeMap::new();
+            payload.insert(
+                "player".to_owned(),
+                serde_json::Value::String(actor.to_string()),
+            );
+            payload.insert(
+                "partner".to_owned(),
+                serde_json::Value::String(partner.to_string()),
+            );
+            self.emit_typed("TRANSACTION_OPENED", payload)?;
+        }
+        let agenda = self.agenda_talks.as_ref().map(|talks| talks.alias.clone());
+        let context = crate::diplomacy::candidates::CandidateContext {
+            state: &self.state,
+            content: self.content,
+            galaxy: &galaxy,
+            proposer: actor,
+            recipient: &partner,
+            agenda: agenda.as_deref(),
+        };
+        let candidates = crate::diplomacy::candidates::generate_initial_candidates(&context);
+        let signals = crate::diplomacy::candidates::generate_signal_statements(&context);
+        if trading {
+            self.state.record_transaction(actor, &partner);
+        }
+        self.diplomacy = Some(Box::new(crate::diplomacy::window::DiplomacyWindow::open(
+            &mut self.state,
+            actor.clone(),
+            partner,
+            candidates,
+            signals,
+        )?));
+        Ok(())
+    }
+
     /// Resolve one decision of an open structured diplomatic contact.
     fn step_diplomacy(&mut self) -> StepResult {
         let choice = self
@@ -2543,6 +2608,7 @@ impl<'a> Game<'a> {
         let mut window = self.diplomacy.take().expect("checked diplomacy window");
         let galaxy = self.galaxy.clone();
         let logged = self.timing.log().len();
+        let journal_before = self.state.diplomacy.journal.len();
         let result = {
             let (state, table, timing, dice, rng, sequence) = (
                 &mut self.state,
@@ -2567,16 +2633,41 @@ impl<'a> Game<'a> {
             window.resolve(state, &mut resolving, answer)
         };
         self.mirror_timing_log(logged);
+        // Accepted immediate transfers are a transaction that happened: Lie in Wait's window and
+        // the legacy log line follow them exactly as they follow the transaction window's.
+        let traded = self
+            .state
+            .diplomacy
+            .journal
+            .iter()
+            .skip(journal_before)
+            .any(|entry| {
+                matches!(
+                    entry.event,
+                    ti4_model::DiplomacyEvent::ImmediateApplied { .. }
+                )
+            });
         if window
             .pending_choice(&self.state, self.content, self.sources)
             .is_some()
         {
             self.diplomacy = Some(window);
+        } else {
+            // The negotiation a Black Market marker was set for is over.
+            self.state
+                .transient_flags
+                .clear(TransientFlags::BLACK_MARKET);
         }
-        match result {
-            Ok(()) => self.result(true, None),
-            Err(error) => self.result(false, Some(error.into())),
+        if let Err(error) = result {
+            return self.result(false, Some(error.into()));
         }
+        if traded {
+            if let Err(error) = self.emit_typed("TRANSACTION_RESOLVED", BTreeMap::new()) {
+                return self.result(false, Some(error));
+            }
+            self.emit("TRANSACTION");
+        }
+        self.result(true, None)
     }
 
     /// Resolve one decision of an open transaction.
@@ -2647,6 +2738,10 @@ impl<'a> Game<'a> {
         self.result(true, None)
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "secondary resolution and its typed diplomacy hook share one atomic boundary"
+    )]
     fn step_secondary(&mut self) -> StepResult {
         let choice = self.secondary.as_mut().expect("checked above").next_choice(
             &mut self.state,
@@ -3078,10 +3173,24 @@ impl<'a> Game<'a> {
                         }
                         continue;
                     }
-                    let mut window = VoteWindow::new(&self.state, &alias, choices);
-                    window.open(&self.state, self.content, self.sources);
-                    self.voting = Some((Box::new(window), queue));
-                    return self.result(false, None);
+                    if self.state.diplomacy.enabled && self.galaxy.is_some() {
+                        // 94: each agenda is a fresh negotiation, open to every pair again.
+                        self.state.clear_transactions();
+                        self.state.diplomacy.clear_turn_initiations();
+                        // Voting order: clockwise from the speaker's left, the speaker last.
+                        let mut seats = self.state.clockwise_from(&self.state.speaker);
+                        if !seats.is_empty() {
+                            seats.rotate_left(1);
+                        }
+                        self.agenda_talks = Some(AgendaTalks {
+                            alias,
+                            choices,
+                            queue,
+                            seats,
+                        });
+                        return self.result(false, None);
+                    }
+                    return self.start_vote(alias, choices, queue);
                 }
                 // This agenda — and every Veto replacement it drew — elected nothing, so the
                 // queue moves on to the next slot.
@@ -3092,6 +3201,89 @@ impl<'a> Game<'a> {
         self.voting = None;
         self.emit("AGENDA_PHASE_RESOLVED");
         self.result(false, None)
+    }
+
+    /// Put a revealed agenda to its vote.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "the accepted wiring guard pins the owned alias passed by reference to VoteWindow"
+    )]
+    fn start_vote(
+        &mut self,
+        alias: String,
+        choices: Vec<String>,
+        queue: Vec<String>,
+    ) -> StepResult {
+        let mut window = VoteWindow::new(&self.state, &alias, choices);
+        window.open(&self.state, self.content, self.sources);
+        self.voting = Some((Box::new(window), queue));
+        self.result(false, None)
+    }
+
+    /// The first seat, in voting order, still negotiating and with a contact left to open.
+    fn agenda_talks_choice(&self) -> Option<Choice> {
+        let talks = self.agenda_talks.as_ref()?;
+        talks.seats.iter().find_map(|seat| {
+            let mut options = crate::diplomacy::candidates::available_contacts(&self.state, seat);
+            if options.is_empty() {
+                return None;
+            }
+            options.push(ChoiceOption::labelled(
+                crate::diplomacy::candidates::END_TALKS_ID,
+                crate::diplomacy::candidates::OPEN_KIND,
+                "end negotiations before the vote",
+            ));
+            Some(
+                Choice::new(
+                    seat.clone(),
+                    format!("negotiate before the vote on {}", talks.alias),
+                    options,
+                )
+                .contextualized(DecisionContext::new(
+                    seat.clone(),
+                    DecisionSource::Agenda(talks.alias.clone()),
+                    "diplomacy_agenda_talks",
+                    self.state.phase,
+                    self.state.round,
+                )),
+            )
+        })
+    }
+
+    /// One seat's move in the talks before a vote: open a contact, or finish negotiating.
+    fn step_agenda_talks(&mut self) -> StepResult {
+        let Some(choice) = self.agenda_talks_choice() else {
+            let talks = self.agenda_talks.take().expect("checked agenda talks");
+            return self.start_vote(talks.alias, talks.choices, talks.queue);
+        };
+        // Field borrows, not `self`: the table answers while the position stays readable.
+        let answer = match self.table.ask_seeing(
+            &choice,
+            &crate::choice::Observed::new(
+                &self.state,
+                self.content,
+                self.sources,
+                self.galaxy.as_ref(),
+            ),
+        ) {
+            Ok(answer) => answer,
+            Err(error) => return self.result(false, Some(error.into())),
+        };
+        let seat = choice.player.clone();
+        let partner = crate::diplomacy::candidates::contact_target(&self.state, &answer);
+        let talks = self.agenda_talks.as_mut().expect("checked agenda talks");
+        // Seats ahead of this one had no contact left to open: their talks are over.
+        let position = talks.seats.iter().position(|s| *s == seat).unwrap_or(0);
+        talks.seats.drain(..position);
+        let Some(partner) = partner else {
+            talks.seats.retain(|s| *s != seat);
+            self.emit(&format!("AGENDA_TALKS_ENDED:{seat}"));
+            return self.result(true, None);
+        };
+        if let Err(error) = self.open_contact(&seat, partner) {
+            return self.result(false, Some(error));
+        }
+        self.result(true, None)
     }
 
     /// Reveal an agenda and follow the Veto replacement chain it triggers. Returns the agenda
@@ -8121,6 +8313,55 @@ mod tests {
             game.state.player(&PlayerId::new("a")).unwrap().trade_goods,
             9,
             "and it actually touched the state"
+        );
+    }
+
+    #[test]
+    fn with_diplomacy_on_voters_negotiate_before_each_agenda_vote() {
+        let players = [PlayerId::new("a"), PlayerId::new("b"), PlayerId::new("c")];
+        let mut state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+        state.phase = Phase::Agenda;
+        state.custodians_removed = true;
+        state.agenda_deck = ContentStore::embedded()
+            .records(ti4_model::content_types::ContentType::Agendas)
+            .iter()
+            .filter_map(|record| record.text("alias"))
+            .take(2)
+            .map(ToOwned::to_owned)
+            .collect();
+        state.diplomacy = ti4_model::DiplomacyState::for_players(&state.seating_order, true);
+        // Contacts name their target by faction, so the seats need distinct ones.
+        for (seat, faction) in state.players.iter_mut().zip(["sol", "hacan", "xxcha"]) {
+            seat.trade_goods = 3;
+            seat.faction = ti4_model::id::FactionId::new(faction);
+        }
+        let galaxy =
+            ti4_content::galaxy::Galaxy::build(ContentStore::embedded(), &["18"], POK, 0).unwrap();
+        let mut game =
+            Game::with_seeded_random(state, ContentStore::embedded(), 11).with_galaxy(galaxy);
+        let mut guard = 0;
+        while game.state.phase == Phase::Agenda && guard < 5_000 {
+            assert_eq!(game.step().error, None, "no agenda step should refuse");
+            guard += 1;
+        }
+
+        assert!(game.state.phase != Phase::Agenda, "the phase completed");
+        let records = &game.table.log.records;
+        assert!(
+            records.iter().any(|record| {
+                record
+                    .context
+                    .as_ref()
+                    .is_some_and(|context| context.subtype == "diplomacy_agenda_talks")
+            }),
+            "voters were asked to negotiate before the vote"
+        );
+        assert!(
+            records
+                .iter()
+                .flat_map(|record| &record.offered)
+                .any(|id| id.starts_with("diplomacy|PayForVote|")),
+            "a contact before a vote can buy votes on it"
         );
     }
 

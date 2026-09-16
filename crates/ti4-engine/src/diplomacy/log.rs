@@ -8,6 +8,8 @@ use ti4_model::{
 };
 
 pub const DIPLOMACY_LOG_SCHEMA_V1: &str = "ti4-diplomacy-log-v1";
+/// Concrete signal statements, favours, agenda talks, and seat-addressed contacts.
+pub const DIPLOMACY_LOG_SCHEMA_V2: &str = "ti4-diplomacy-log-v2";
 
 #[derive(Debug, thiserror::Error)]
 pub enum DiplomacyLogError {
@@ -128,7 +130,7 @@ pub fn export_log_records(
             | DiplomacyEvent::PromiseSettled { deal_id, .. } => {
                 builder(&mut builders, *deal_id)?.events.push(entry.clone());
             }
-            DiplomacyEvent::SignalEmitted { .. } => {}
+            DiplomacyEvent::SignalEmitted { .. } | DiplomacyEvent::SignalJudged { .. } => {}
         }
     }
 
@@ -154,7 +156,7 @@ pub fn export_log_records(
                 })
                 .ok_or(DiplomacyLogError::MissingStatus(deal_id))?;
             Ok(DiplomacyLogRecord {
-                schema: DIPLOMACY_LOG_SCHEMA_V1.to_owned(),
+                schema: DIPLOMACY_LOG_SCHEMA_V2.to_owned(),
                 rules: state.diplomacy.rules_version.clone(),
                 game_id: game_id.to_owned(),
                 deal_id,

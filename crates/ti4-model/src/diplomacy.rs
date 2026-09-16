@@ -3,7 +3,7 @@
 //! This module contains data and structural validation only. Gameplay legality and
 //! valuation belong to `ti4-engine`.
 
-use crate::{ActionCardId, PlanetId, PlayerId, SystemId};
+use crate::{ActionCardId, PlayerId, SystemId};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
@@ -89,6 +89,17 @@ pub enum DealTerm {
         player: PlayerId,
         deadline_round: u32,
     },
+    /// Replenish `beneficiary`'s commodities with the Trade primary before the deadline.
+    ReplenishFor {
+        beneficiary: PlayerId,
+        deadline_round: u32,
+    },
+    /// Use `leader` (an agent) with `beneficiary` as its target before the deadline.
+    UseLeaderFor {
+        leader: String,
+        beneficiary: PlayerId,
+        deadline_round: u32,
+    },
 }
 
 impl DealTerm {
@@ -105,7 +116,9 @@ impl DealTerm {
             | Self::DoNotActivate { deadline_round, .. }
             | Self::DoNotAttack { deadline_round, .. }
             | Self::Vote { deadline_round, .. }
-            | Self::Attack { deadline_round, .. } => Some(*deadline_round),
+            | Self::Attack { deadline_round, .. }
+            | Self::UseLeaderFor { deadline_round, .. }
+            | Self::ReplenishFor { deadline_round, .. } => Some(*deadline_round),
         }
     }
 }
@@ -295,19 +308,63 @@ pub enum SignalKind {
     Warning,
 }
 
+/// What a signal says. Every statement is checkable against what the two seats then do, and its
+/// kind is derived from it -- a signal is never just the word "threat".
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum SignalSubject {
-    Player(PlayerId),
-    System(SystemId),
-    Planet(PlanetId),
-    AgendaOutcome { agenda: String, outcome: String },
-    Predicate(DealTerm),
+pub enum SignalStatement {
+    /// Assurance: the speaker will cast votes for `outcome` on the revealed `agenda`.
+    ///
+    /// Offered only in the talks before that agenda's vote, where the outcomes are known.
+    WillVote { agenda: String, outcome: String },
+    /// Warning: if the target activates `system`, the speaker attacks the target before it expires.
+    ///
+    /// The only statement the engine offers. Bare assurances ("I will not attack you") and requests
+    /// ("do not attack me") were removed: they were sent to every seat every round, said nothing a
+    /// seat could not assume, and Ceasefire and Support for the Throne already carry that meaning
+    /// as real cards.
+    AttackIfYouActivate { system: SystemId },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SignalCondition {
-    pub predicate: DealTerm,
+impl SignalStatement {
+    #[must_use]
+    pub const fn kind(&self) -> SignalKind {
+        match self {
+            Self::WillVote { .. } => SignalKind::Assurance,
+            Self::AttackIfYouActivate { .. } => SignalKind::Warning,
+        }
+    }
+}
+
+/// Where a signal stands, judged by the engine from what the seats actually did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SignalStatus {
+    /// Nothing has decided it yet.
+    #[default]
+    Open,
+    /// An assurance the speaker kept until it expired.
+    Honoured,
+    /// An assurance the speaker broke by attacking the target.
+    Broken,
+    /// A request the target respected, or a threat or warning the target never triggered.
+    Heeded,
+    /// A request the target ignored.
+    Ignored,
+    /// A threat or warning the target triggered; the speaker has until expiry to act on it.
+    Triggered,
+    /// A triggered threat or warning the speaker acted on.
+    CarriedOut,
+    /// A triggered threat or warning the speaker never acted on.
+    Bluffed,
+}
+
+impl SignalStatus {
+    /// Whether nothing further can change this status.
+    #[must_use]
+    pub const fn is_settled(self) -> bool {
+        !matches!(self, Self::Open | Self::Triggered)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -315,9 +372,11 @@ pub struct Signal {
     pub id: SignalId,
     pub speaker: PlayerId,
     pub target: PlayerId,
+    /// Derived from `statement` when the signal is made.
     pub kind: SignalKind,
-    pub subject: SignalSubject,
-    pub condition: Option<SignalCondition>,
+    pub statement: SignalStatement,
+    #[serde(default)]
+    pub status: SignalStatus,
     pub created_round: u32,
     pub expires_round: u32,
 }
@@ -361,6 +420,10 @@ pub enum DiplomacyEvent {
     },
     SignalEmitted {
         signal_id: SignalId,
+    },
+    /// A signal's status changed. Self-describing, because expired signals are pruned from state.
+    SignalJudged {
+        signal: Signal,
     },
 }
 

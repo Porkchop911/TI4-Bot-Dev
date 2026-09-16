@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use ti4_model::{
     DealId, DealStatus, DealTerm, DiplomacyEvent, DiplomacyJournalEntry, GameState, PlayerId,
+    SignalStatement,
 };
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, Resolving, Window};
@@ -35,6 +36,9 @@ pub struct DiplomacyWindow {
     pub recipient: PlayerId,
     pub stage: DiplomacyStage,
     pub candidates: Vec<CandidateBundle>,
+    /// The concrete signals the proposer may send instead of an offer, generated at contact.
+    #[serde(default)]
+    pub signals: Vec<SignalStatement>,
     pub current: Option<CandidateBundle>,
     pub deal_id: Option<DealId>,
     pub responses: u8,
@@ -50,6 +54,7 @@ impl DiplomacyWindow {
         proposer: PlayerId,
         recipient: PlayerId,
         candidates: Vec<CandidateBundle>,
+        signals: Vec<SignalStatement>,
     ) -> Result<Self, IllegalChoice> {
         // No surviving bundle is still a contact: a signal and "make no offer" remain legal, and
         // `available_contacts` cannot see bundle filtering without the map, so refusing here would
@@ -62,6 +67,7 @@ impl DiplomacyWindow {
             recipient,
             stage: DiplomacyStage::Proposing,
             candidates,
+            signals,
             current: None,
             deal_id: None,
             responses: 0,
@@ -134,7 +140,11 @@ impl Window for DiplomacyWindow {
                     .iter()
                     .map(|c| candidate_option(c, OFFER_KIND, true))
                     .collect();
-                options.extend(signal_options());
+                options.extend(
+                    self.signals
+                        .iter()
+                        .map(|statement| signal_option(statement, state.round)),
+                );
                 options.push(ChoiceOption::labelled(
                     DECLINE_ID,
                     RESPONSE_KIND,
@@ -217,16 +227,25 @@ impl Window for DiplomacyWindow {
                     self.stage = DiplomacyStage::Done;
                     return Ok(());
                 }
-                if let Some(kind) = signal_kind(&offered.id) {
+                if let Some(statement) = self
+                    .signals
+                    .iter()
+                    .find(|statement| signal_id(statement) == offered.id)
+                    .cloned()
+                {
+                    // A vote assurance is about this agenda, so it is judged before the round ends.
+                    let expires_round = if matches!(&statement, SignalStatement::WillVote { .. }) {
+                        state.round
+                    } else {
+                        state.round.saturating_add(1)
+                    };
                     emit_signal_in_open_contact(
                         state,
                         SignalDraft {
                             speaker: self.proposer.clone(),
                             target: self.recipient.clone(),
-                            kind,
-                            subject: ti4_model::SignalSubject::Player(self.recipient.clone()),
-                            condition: None,
-                            expires_round: state.round,
+                            statement,
+                            expires_round,
                         },
                     )
                     .map_err(|error| failed(&self.proposer, &error.to_string()))?;
@@ -313,26 +332,42 @@ impl Window for DiplomacyWindow {
     }
 }
 
-fn signal_options() -> Vec<ChoiceOption> {
-    [
-        ("request", ti4_model::SignalKind::Request),
-        ("threat", ti4_model::SignalKind::Threat),
-        ("assurance", ti4_model::SignalKind::Assurance),
-        ("warning", ti4_model::SignalKind::Warning),
-    ]
-    .into_iter()
-    .map(|(id, _)| ChoiceOption::labelled(format!("{SIGNAL_PREFIX}{id}"), SIGNAL_KIND, id))
-    .collect()
+/// The canonical option id of a statement: its template and, where it names one, the system.
+fn signal_id(statement: &SignalStatement) -> String {
+    match statement {
+        SignalStatement::WillVote { agenda, outcome } => {
+            format!("{SIGNAL_PREFIX}will_vote|{agenda}|{outcome}")
+        }
+        SignalStatement::AttackIfYouActivate { system } => {
+            format!("{SIGNAL_PREFIX}attack_if_you_activate|{system}")
+        }
+    }
 }
 
-fn signal_kind(id: &str) -> Option<ti4_model::SignalKind> {
-    match id.strip_prefix(SIGNAL_PREFIX)? {
-        "request" => Some(ti4_model::SignalKind::Request),
-        "threat" => Some(ti4_model::SignalKind::Threat),
-        "assurance" => Some(ti4_model::SignalKind::Assurance),
-        "warning" => Some(ti4_model::SignalKind::Warning),
-        _ => None,
-    }
+/// A signal as the proposer sees it: the full sentence, sent to last through the next round.
+fn signal_option(statement: &SignalStatement, round: u32) -> ChoiceOption {
+    let until = round.saturating_add(1);
+    let label = match statement {
+        SignalStatement::WillVote { agenda, outcome } => {
+            format!("Assurance: I will vote {outcome} on {agenda}")
+        }
+        SignalStatement::AttackIfYouActivate { system } => format!(
+            "Warning: if you activate system {system} before round {until} ends, I will attack you"
+        ),
+    };
+    let kind = match statement.kind() {
+        ti4_model::SignalKind::Request => "request",
+        ti4_model::SignalKind::Threat => "threat",
+        ti4_model::SignalKind::Assurance => "assurance",
+        ti4_model::SignalKind::Warning => "warning",
+    };
+    let statement_kind = match statement {
+        SignalStatement::WillVote { .. } => "will-vote",
+        SignalStatement::AttackIfYouActivate { .. } => "attack-if-activated",
+    };
+    ChoiceOption::labelled(signal_id(statement), SIGNAL_KIND, label)
+        .with("signal_kind", kind)
+        .with("signal_statement", statement_kind)
 }
 
 /// An option carrying a whole bundle.
@@ -390,6 +425,11 @@ fn apply_acceptance(
         .map_err(|reason| failed(&deal.proposer, reason))?;
     let received = super::transfers::immediate_terms(&revision.recipient_terms)
         .map_err(|reason| failed(&deal.recipient, reason))?;
+    // Priced before anything moves, exactly as the legacy transaction window prices a deal.
+    let fair = (given.worth_to_receiver(state, ctx.content)
+        - received.worth_to_receiver(state, ctx.content))
+    .abs()
+        <= 0.5;
     if !given.is_empty() || !received.is_empty() {
         let galaxy = ctx
             .timing
@@ -454,14 +494,25 @@ fn apply_acceptance(
     } else {
         DealStatus::Fulfilled
     };
-    apply_relationship_event(
-        state,
-        &RelationshipEvent::DealAccepted {
+    // Immediate transfers only is a transaction and is judged as one: a fair trade builds trust and
+    // an unfair one builds nothing. A bundle with any promise in it is a deal.
+    let relationship = if future {
+        Some(RelationshipEvent::DealAccepted {
             a: deal.proposer.clone(),
             b: deal.recipient.clone(),
-        },
-    )
-    .map_err(|error| failed(&PlayerId::new(""), &error.to_string()))?;
+        })
+    } else if fair {
+        Some(RelationshipEvent::FairTransaction {
+            a: deal.proposer.clone(),
+            b: deal.recipient.clone(),
+        })
+    } else {
+        None
+    };
+    if let Some(event) = relationship {
+        apply_relationship_event(state, &event)
+            .map_err(|error| failed(&PlayerId::new(""), &error.to_string()))?;
+    }
     for term in &revision.recipient_terms {
         if let DealTerm::Attack { player: target, .. } = term
             && target != &deal.proposer
@@ -549,7 +600,7 @@ mod tests {
             },
         };
         let mut window =
-            DiplomacyWindow::open(&mut state, pid("a"), pid("b"), vec![candidate]).unwrap();
+            DiplomacyWindow::open(&mut state, pid("a"), pid("b"), vec![candidate], vec![]).unwrap();
         let content = ti4_content::ContentStore::embedded();
         let mut dice = crate::Dice::new();
         let mut rng = crate::GameRng::new(1);
@@ -636,8 +687,16 @@ mod tests {
                 military_relevance: 0.0,
             },
         };
-        let mut window =
-            DiplomacyWindow::open(&mut state, pid("a"), pid("b"), vec![candidate]).unwrap();
+        let mut window = DiplomacyWindow::open(
+            &mut state,
+            pid("a"),
+            pid("b"),
+            vec![candidate],
+            vec![SignalStatement::AttackIfYouActivate {
+                system: ti4_model::SystemId::new("18"),
+            }],
+        )
+        .unwrap();
         let content = ti4_content::ContentStore::embedded();
         let mut dice = crate::Dice::new();
         let mut rng = crate::GameRng::new(1);
@@ -650,13 +709,21 @@ mod tests {
             table: &mut table,
             timing: None,
         };
-        window
-            .resolve(
-                &mut state,
-                &mut resolving,
-                ChoiceOption::new("diplomacy|signal|threat", SIGNAL_KIND),
-            )
+        let offered = window
+            .pending_choice(&state, content, ti4_model::POK)
             .unwrap();
+        let threat = offered
+            .options
+            .iter()
+            .find(|option| option.kind == SIGNAL_KIND)
+            .expect("the warning is offered as a full sentence")
+            .clone();
+        assert!(
+            threat
+                .label
+                .starts_with("Warning: if you activate system 18")
+        );
+        window.resolve(&mut state, &mut resolving, threat).unwrap();
         assert!(
             window
                 .pending_choice(&state, content, ti4_model::POK)
@@ -664,5 +731,11 @@ mod tests {
         );
         assert!(state.diplomacy.active_deals.is_empty());
         assert_eq!(state.diplomacy.recent_signals.len(), 1);
+        assert_eq!(
+            state.diplomacy.recent_signals[0].statement,
+            SignalStatement::AttackIfYouActivate {
+                system: ti4_model::SystemId::new("18")
+            }
+        );
     }
 }

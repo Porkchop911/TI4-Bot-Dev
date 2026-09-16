@@ -1527,6 +1527,17 @@ fn diplomacy_decision_features(
     if let Some(counterparty) = diplomacy_counterparty(seen, choice, option, player) {
         relationship_features(seen, player, &counterparty, "counterparty", features);
     }
+    if option.kind == ti4_engine::diplomacy::window::SIGNAL_KIND {
+        for (field, family) in [
+            ("signal_kind", "signal-kind"),
+            ("signal_statement", "signal-statement"),
+        ] {
+            if let Some(value) = option.payload.get(field).and_then(Value::as_str) {
+                add_named(features, format_args!("diplomacy:{family}:{value}"), 1.0);
+            }
+        }
+        return;
+    }
 
     let Some(bundle) = option
         .payload
@@ -1549,10 +1560,14 @@ fn diplomacy_decision_features(
     let template = match bundle.template {
         DealTemplate::FuturePayment => "future_payment",
         DealTemplate::PayForNonAggression => "pay_for_non_aggression",
-        DealTemplate::NonAggressionSwap => "non_aggression_swap",
         DealTemplate::PayForAttack => "pay_for_attack",
         DealTemplate::CommodityExchangePlusFavor => "commodity_exchange_plus_favor",
         DealTemplate::PayForVote => "pay_for_vote",
+        DealTemplate::Trade => "trade",
+        DealTemplate::RefreshForCommodity => "refresh_for_commodity",
+        DealTemplate::PayForAgentFavour => "pay_for_agent_favour",
+        DealTemplate::SellAgentFavour => "sell_agent_favour",
+        DealTemplate::NoteForNonAggression => "note_for_non_aggression",
     };
     add_named(features, format_args!("diplomacy:template:{template}"), 1.0);
     let factual = &bundle.features;
@@ -1599,7 +1614,12 @@ fn diplomacy_decision_features(
         );
     }
 
-    let worth = |asset: &TransferAsset| match asset {
+    // Priced from the deciding seat's side, as the transaction oracle prices it: a commodity is
+    // worth a full trade good to whoever receives it (21.5 turns it into one) and costs its owner
+    // almost nothing, because it replenishes and cannot be spent any other way. Pricing both
+    // directions the same made every commodity gift read as a sacrifice.
+    let worth = |asset: &TransferAsset, giving: bool| match asset {
+        TransferAsset::Commodities(n) if giving => 0.2 * f64::from(*n),
         TransferAsset::TradeGoods(n)
         | TransferAsset::Commodities(n)
         | TransferAsset::CulturalFragments(n)
@@ -1617,13 +1637,14 @@ fn diplomacy_decision_features(
         ("gives", "i-promise", mine),
         ("gets", "they-promise", theirs),
     ] {
+        let giving = side == "gives";
         for term in terms {
             let (name, value) = match term {
                 DealTerm::ImmediateTransfer(asset) => {
-                    *totals.entry(format!("{side}-now")).or_default() += worth(asset);
+                    *totals.entry(format!("{side}-now")).or_default() += worth(asset, giving);
                     continue;
                 }
-                DealTerm::FuturePayment { asset, .. } => ("payment", worth(asset)),
+                DealTerm::FuturePayment { asset, .. } => ("payment", worth(asset, giving)),
                 DealTerm::DoNotActivate { .. } => ("no-activation", 1.0),
                 DealTerm::DoNotAttack { .. } => ("non-aggression", 1.0),
                 DealTerm::Vote { .. } => ("vote", 1.0),
@@ -1631,6 +1652,8 @@ fn diplomacy_decision_features(
                     targets.push(target.clone());
                     ("attack", 1.0)
                 }
+                DealTerm::UseLeaderFor { .. } => ("agent-favour", 1.0),
+                DealTerm::ReplenishFor { .. } => ("refresh", 1.0),
             };
             if name == "payment" {
                 *totals.entry(format!("{side}-later")).or_default() += value;
@@ -1663,16 +1686,10 @@ fn diplomacy_counterparty(
     player: &PlayerId,
 ) -> Option<PlayerId> {
     match option.kind.as_str() {
-        // `component|diplomacy|{faction}`
+        // `component|diplomacy|seat|{seating-order index}`
         "open_diplomacy" => {
-            let faction = option.id.rsplit('|').next()?;
-            seen.players()
-                .into_iter()
-                .find(|seat| {
-                    seen.seat(seat)
-                        .is_some_and(|public| public.faction.as_str() == faction)
-                })
-                .cloned()
+            let index = ti4_engine::diplomacy::candidates::contact_seat_index(&option.id)?;
+            seen.players().get(index).map(|seat| (*seat).clone())
         }
         // `component|diplomacy-payment|{deal}|{term}`
         "diplomacy_fulfill_payment" => {
@@ -4335,6 +4352,46 @@ mod tests {
             Some(0.5)
         );
         assert_eq!(value_of(&declining, "diplomacy:gets-now"), None);
+    }
+
+    #[test]
+    fn diplomacy_signal_options_expose_their_structured_statement() {
+        use ti4_engine::decision_context::{DecisionContext, DecisionSource, DecisionTarget};
+        use ti4_model::state::Phase;
+
+        let content = ti4_content::ContentStore::embedded();
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let mut state = ti4_engine::fixtures::game(&["a", "b"]);
+        state.diplomacy = ti4_model::DiplomacyState::for_players(&state.seating_order, true);
+        let seen = Observed::new(&state, content, POK, None);
+        let option = ChoiceOption::labelled(
+            "diplomacy|signal|will_vote|agenda|for",
+            ti4_engine::diplomacy::window::SIGNAL_KIND,
+            "I will vote for",
+        )
+        .with("signal_kind", "assurance")
+        .with("signal_statement", "will-vote");
+        let choice = Choice::new(a.clone(), "signal", vec![option]).contextualized(
+            DecisionContext::new(
+                a.clone(),
+                DecisionSource::Rule("94".to_owned()),
+                "diplomacy_offer",
+                Phase::Agenda,
+                1,
+            )
+            .about(DecisionTarget::Player(b)),
+        );
+
+        let features = explicit_option_features(&seen, &choice, &choice.options[0], &a, &[]);
+        assert_eq!(
+            value_of(&features, "diplomacy:signal-kind:assurance"),
+            Some(1.0)
+        );
+        assert_eq!(
+            value_of(&features, "diplomacy:signal-statement:will-vote"),
+            Some(1.0)
+        );
     }
 
     /// OBS-008b2: a reroll option's `Chanced` hit-count preview reaches the policy as its exact

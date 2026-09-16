@@ -1,19 +1,22 @@
-//! Bounded one-way structured signals.
+//! Concrete one-way signals: what a seat tells another, and whether it held.
+//!
+//! A signal is a typed statement ("stay out of system 18 through round 3"), never a bare word. It
+//! is public, needs no answer, and is judged from what the two seats then do: at attacks, at system
+//! activations, and when it expires.
 
 use ti4_model::{
-    DiplomacyEvent, DiplomacyJournalEntry, GameState, PlayerId, Signal, SignalCondition, SignalId,
-    SignalKind, SignalSubject,
+    DiplomacyError, DiplomacyEvent, DiplomacyJournalEntry, GameState, PlayerId, Signal, SignalId,
+    SignalKind, SignalStatement, SignalStatus,
 };
 
+use super::promises::DiplomacyEventContext;
 use super::relations::{RelationshipEvent, apply_relationship_event};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SignalDraft {
     pub speaker: PlayerId,
     pub target: PlayerId,
-    pub kind: SignalKind,
-    pub subject: SignalSubject,
-    pub condition: Option<SignalCondition>,
+    pub statement: SignalStatement,
     pub expires_round: u32,
 }
 
@@ -63,36 +66,153 @@ fn emit_signal_inner(
         .next_signal_id
         .checked_add(1)
         .ok_or(SignalError::IdExhausted)?;
-    let signal = Signal {
+    let kind = draft.statement.kind();
+    state.diplomacy.recent_signals.push(Signal {
         id,
         speaker: draft.speaker.clone(),
         target: draft.target.clone(),
-        kind: draft.kind,
-        subject: draft.subject,
-        condition: draft.condition,
+        kind,
+        statement: draft.statement,
+        status: SignalStatus::Open,
         created_round: state.round,
         expires_round: draft.expires_round,
-    };
-    state.diplomacy.recent_signals.push(signal);
+    });
     state.diplomacy.journal.push(DiplomacyJournalEntry {
         round: state.round,
         event: DiplomacyEvent::SignalEmitted { signal_id: id },
     });
-    let relationship = match draft.kind {
-        SignalKind::Threat => Some(RelationshipEvent::PublicThreat {
+    apply_relationship_event(
+        state,
+        &RelationshipEvent::SignalMade {
             speaker: draft.speaker,
             target: draft.target,
-        }),
-        SignalKind::Warning => Some(RelationshipEvent::PublicWarning {
-            speaker: draft.speaker,
-            target: draft.target,
-        }),
-        SignalKind::Request | SignalKind::Assurance => None,
+            kind,
+        },
+    )?;
+    Ok(id)
+}
+
+/// Judge every undecided signal against one gameplay event.
+///
+/// # Errors
+/// Returns [`DiplomacyError`] only if a resulting relationship change cannot be applied.
+pub(crate) fn judge_event(
+    state: &mut GameState,
+    event: &DiplomacyEventContext,
+) -> Result<(), DiplomacyError> {
+    let round = state.round;
+    let mut outcomes = Vec::new();
+    for (index, signal) in state.diplomacy.recent_signals.iter().enumerate() {
+        if round > signal.expires_round {
+            continue;
+        }
+        let (speaker, target) = (&signal.speaker, &signal.target);
+        let next = match (&signal.statement, signal.status, event) {
+            (
+                SignalStatement::WillVote { agenda, outcome },
+                SignalStatus::Open,
+                DiplomacyEventContext::VotesRecorded { agenda: actual },
+            ) if agenda == actual => Some(
+                if state
+                    .agenda_votes
+                    .get(speaker)
+                    .is_some_and(|vote| vote == outcome)
+                {
+                    SignalStatus::Honoured
+                } else {
+                    SignalStatus::Broken
+                },
+            ),
+            (
+                SignalStatement::AttackIfYouActivate { .. },
+                SignalStatus::Triggered,
+                DiplomacyEventContext::HostileEngagement {
+                    attacker, victim, ..
+                },
+            ) if attacker == speaker && victim == target => Some(SignalStatus::CarriedOut),
+            (
+                SignalStatement::AttackIfYouActivate { system },
+                SignalStatus::Open,
+                DiplomacyEventContext::SystemActivated {
+                    player,
+                    system: activated,
+                },
+            ) if player == target && activated == system => Some(SignalStatus::Triggered),
+            _ => None,
+        };
+        if let Some(status) = next {
+            outcomes.push((index, status));
+        }
+    }
+    for (index, status) in outcomes {
+        judge(state, index, status)?;
+    }
+    Ok(())
+}
+
+/// Settle every undecided signal that expires with the completed round.
+///
+/// A warning nobody triggered was heeded; a triggered warning the speaker never acted on was a
+/// bluff; a vote assurance the ballot never bore out was broken.
+///
+/// # Errors
+/// Returns [`DiplomacyError`] only if a resulting relationship change cannot be applied.
+pub(crate) fn settle_deadlines(
+    state: &mut GameState,
+    completed_round: u32,
+) -> Result<(), DiplomacyError> {
+    let due: Vec<(usize, SignalStatus)> = state
+        .diplomacy
+        .recent_signals
+        .iter()
+        .enumerate()
+        .filter(|(_, signal)| {
+            signal.expires_round <= completed_round && !signal.status.is_settled()
+        })
+        .map(|(index, signal)| {
+            let status = match (&signal.statement, signal.status) {
+                // A vote assurance whose ballot never named that outcome was not kept.
+                (SignalStatement::WillVote { .. }, _) => SignalStatus::Broken,
+                (_, SignalStatus::Triggered) => SignalStatus::Bluffed,
+                _ => SignalStatus::Heeded,
+            };
+            (index, status)
+        })
+        .collect();
+    for (index, status) in due {
+        judge(state, index, status)?;
+    }
+    Ok(())
+}
+
+fn judge(state: &mut GameState, index: usize, status: SignalStatus) -> Result<(), DiplomacyError> {
+    let signal = {
+        let signal = &mut state.diplomacy.recent_signals[index];
+        signal.status = status;
+        signal.clone()
+    };
+    state.diplomacy.journal.push(DiplomacyJournalEntry {
+        round: state.round,
+        event: DiplomacyEvent::SignalJudged {
+            signal: signal.clone(),
+        },
+    });
+    let (speaker, target) = (signal.speaker, signal.target);
+    let relationship = match status {
+        SignalStatus::Honoured => Some(RelationshipEvent::AssuranceKept { speaker, target }),
+        SignalStatus::Broken => Some(RelationshipEvent::AssuranceBroken { speaker, target }),
+        SignalStatus::Heeded if signal.kind == SignalKind::Request => {
+            Some(RelationshipEvent::RequestHeeded { speaker, target })
+        }
+        SignalStatus::Ignored => Some(RelationshipEvent::RequestIgnored { speaker, target }),
+        SignalStatus::CarriedOut => Some(RelationshipEvent::ThreatCarriedOut { speaker, target }),
+        SignalStatus::Bluffed => Some(RelationshipEvent::ThreatBluffed { speaker, target }),
+        SignalStatus::Open | SignalStatus::Triggered | SignalStatus::Heeded => None,
     };
     if let Some(event) = relationship {
         apply_relationship_event(state, &event)?;
     }
-    Ok(id)
+    Ok(())
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -117,14 +237,13 @@ pub enum SignalError {
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
-    use ti4_model::{DiplomacyState, StrategyCardId};
+    use ti4_model::{DiplomacyState, StrategyCardId, SystemId};
 
     fn pid(s: &str) -> PlayerId {
         PlayerId::new(s)
     }
 
-    #[test]
-    fn threats_apply_once_and_close_the_pair_allowance() {
+    fn table() -> GameState {
         let mut state = GameState::new(
             &[pid("a"), pid("b")],
             &[] as &[StrategyCardId],
@@ -133,22 +252,56 @@ mod tests {
             0,
         );
         state.diplomacy = DiplomacyState::for_players(&state.seating_order, true);
-        let draft = SignalDraft {
+        state
+    }
+
+    fn draft(statement: SignalStatement) -> SignalDraft {
+        SignalDraft {
             speaker: pid("a"),
             target: pid("b"),
-            kind: SignalKind::Threat,
-            subject: SignalSubject::Player(pid("b")),
-            condition: None,
+            statement,
             expires_round: 1,
-        };
-        assert_eq!(emit_signal(&mut state, draft.clone()).unwrap(), SignalId(1));
-        assert!(matches!(
-            emit_signal(&mut state, draft),
-            Err(SignalError::AlreadyInitiated)
-        ));
+        }
+    }
+
+    #[test]
+    fn a_warning_never_triggered_is_heeded_and_a_triggered_one_left_alone_is_a_bluff() {
+        let mut state = table();
+        let system = SystemId::new("18");
+        emit_signal(
+            &mut state,
+            draft(SignalStatement::AttackIfYouActivate {
+                system: system.clone(),
+            }),
+        )
+        .unwrap();
+        emit_signal_in_open_contact(
+            &mut state,
+            SignalDraft {
+                speaker: pid("b"),
+                target: pid("a"),
+                ..draft(SignalStatement::AttackIfYouActivate {
+                    system: system.clone(),
+                })
+            },
+        )
+        .unwrap();
+        judge_event(
+            &mut state,
+            &DiplomacyEventContext::SystemActivated {
+                player: pid("a"),
+                system,
+            },
+        )
+        .unwrap();
+        settle_deadlines(&mut state, 1).unwrap();
         assert_eq!(
-            state.diplomacy.relationship(&pid("b"), &pid("a")).hostility,
-            5
+            state.diplomacy.recent_signals[0].status,
+            SignalStatus::Heeded
+        );
+        assert_eq!(
+            state.diplomacy.recent_signals[1].status,
+            SignalStatus::Bluffed
         );
     }
 }

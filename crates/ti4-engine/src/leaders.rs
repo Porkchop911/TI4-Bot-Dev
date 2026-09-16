@@ -1192,6 +1192,16 @@ pub fn use_leader(
                         }
                         // Trade Agreement: "When the <color> player replenishes commodities".
                         crate::promissory::trade_agreement_on_replenish(context.state, &target);
+                        // A structured promise to use this agent for that seat is kept here.
+                        crate::diplomacy::evaluate_event(
+                            context.state,
+                            &crate::diplomacy::DiplomacyEventContext::LeaderUsedFor {
+                                user: player.clone(),
+                                leader: "hacanagent".to_owned(),
+                                beneficiary: target,
+                            },
+                        )
+                        .expect("validated diplomacy promises settle deterministically");
                     }
                     None => return false,
                 }
@@ -1357,6 +1367,19 @@ pub fn use_leader(
                     swapped = true;
                     break;
                 }
+            }
+            // Agents are traded favours: a structured promise to use this one for the active
+            // seat is kept when the swap happens.
+            if swapped && &target != player {
+                crate::diplomacy::evaluate_event(
+                    context.state,
+                    &crate::diplomacy::DiplomacyEventContext::LeaderUsedFor {
+                        user: player.clone(),
+                        leader: "l1z1xagent".to_owned(),
+                        beneficiary: target,
+                    },
+                )
+                .expect("validated diplomacy promises settle deterministically");
             }
             swapped
         }

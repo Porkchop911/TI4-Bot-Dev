@@ -327,7 +327,11 @@ pub fn why_illegal(
     if offer.given.is_empty() && offer.received.is_empty() {
         return Some(OfferError::Empty);
     }
-    if !are_neighbours(state, galaxy, &offer.proposer, &offer.partner) {
+    // Neighbours bound transactions during a turn; during the agenda phase any two players may
+    // transact (94), which is when votes are bought.
+    if state.phase != ti4_model::state::Phase::Agenda
+        && !are_neighbours(state, galaxy, &offer.proposer, &offer.partner)
+    {
         return Some(OfferError::NotNeighbours(
             offer.proposer.clone(),
             offer.partner.clone(),
@@ -635,6 +639,9 @@ fn note_cost(state: &GameState, content: &ContentStore, note: &str) -> f64 {
 ///
 /// 94.1 allows one transaction per neighbour per turn, so a partner already dealt with is not
 /// offered again — which is also what stops a free action from being taken forever.
+///
+/// With structured diplomacy on there is no separate transaction window: a diplomatic contact
+/// with a partner carries every trade this window would have offered, so nothing is offered here.
 #[must_use]
 pub fn available_actions(
     state: &GameState,
@@ -642,15 +649,13 @@ pub fn available_actions(
     galaxy: &Galaxy,
     player: &PlayerId,
 ) -> Vec<crate::choice::ChoiceOption> {
+    if state.diplomacy.enabled {
+        return Vec::new();
+    }
     let already = state.transacted_with(player);
-    let diplomacy_used = state.diplomacy.initiations_this_turn.get(player);
     partners(state, content, galaxy, player)
         .into_iter()
-        .filter(|other| {
-            !already.contains(other)
-                && (!state.diplomacy.enabled
-                    || diplomacy_used.is_none_or(|used| !used.contains(other)))
-        })
+        .filter(|other| !already.contains(other))
         .map(|other| {
             let name = faction_name(state, &other);
             crate::choice::ChoiceOption::labelled(

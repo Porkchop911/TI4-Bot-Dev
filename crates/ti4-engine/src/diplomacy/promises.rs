@@ -22,6 +22,17 @@ pub enum DiplomacyEventContext {
     VotesRecorded {
         agenda: String,
     },
+    /// `by` refilled `beneficiary`'s commodities with the Trade primary.
+    CommoditiesReplenished {
+        by: PlayerId,
+        beneficiary: PlayerId,
+    },
+    /// `user` resolved agent `leader` with `beneficiary` as the seat it helped.
+    LeaderUsedFor {
+        user: PlayerId,
+        leader: String,
+        beneficiary: PlayerId,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -194,6 +205,8 @@ pub fn evaluate_event(
         }
         update_deal_terminal(state, id)?;
     }
+    // Signals are judged by the same moments as promises.
+    super::signals::judge_event(state, event)?;
     Ok(())
 }
 
@@ -244,6 +257,27 @@ fn inspect_terms(
                     .get(promiser)
                     .is_some_and(|vote| vote == outcome) =>
             {
+                Some(PromiseStatus::Fulfilled)
+            }
+            (
+                DealTerm::ReplenishFor {
+                    beneficiary: promised,
+                    ..
+                },
+                DiplomacyEventContext::CommoditiesReplenished { by, beneficiary },
+            ) if by == promiser && beneficiary == promised => Some(PromiseStatus::Fulfilled),
+            (
+                DealTerm::UseLeaderFor {
+                    leader,
+                    beneficiary: helped,
+                    ..
+                },
+                DiplomacyEventContext::LeaderUsedFor {
+                    user,
+                    leader: used,
+                    beneficiary: actual,
+                },
+            ) if user == promiser && used == leader && actual == helped => {
                 Some(PromiseStatus::Fulfilled)
             }
             _ => None,
@@ -326,7 +360,11 @@ fn settle_term(
 /// # Errors
 /// Returns [`PromiseError`] if a resulting deal transition is invalid.
 pub fn settle_deadlines(state: &mut GameState, completed_round: u32) -> Result<(), PromiseError> {
-    settle_due(state, Some(completed_round))
+    settle_due(state, Some(completed_round))?;
+    if state.diplomacy.enabled {
+        super::signals::settle_deadlines(state, completed_round)?;
+    }
+    Ok(())
 }
 
 /// Expire pending promises whose deadlines were never reached at game end.
@@ -408,6 +446,7 @@ fn deadline_terms(
         let due = deadline.is_some_and(|round| term.deadline_round().is_some_and(|d| d <= round));
         let result = if due {
             match term {
+                // Restraint promises are kept by the deadline passing.
                 DealTerm::DoNotActivate { .. } | DealTerm::DoNotAttack { .. } => {
                     PromiseStatus::Fulfilled
                 }
@@ -507,6 +546,78 @@ mod tests {
         });
         settle_deadlines(&mut payment, 1).unwrap();
         assert_eq!(payment.diplomacy.history[0].status, DealStatus::Broken);
+    }
+
+    #[test]
+    fn a_refresh_promise_settles_when_the_trade_primary_names_that_seat() {
+        let mut kept = active(DealTerm::ReplenishFor {
+            beneficiary: pid("b"),
+            deadline_round: 1,
+        });
+        evaluate_event(
+            &mut kept,
+            &DiplomacyEventContext::CommoditiesReplenished {
+                by: pid("a"),
+                beneficiary: pid("c"),
+            },
+        )
+        .unwrap();
+        assert!(
+            kept.diplomacy.history.is_empty(),
+            "refreshing somebody else keeps nothing"
+        );
+        evaluate_event(
+            &mut kept,
+            &DiplomacyEventContext::CommoditiesReplenished {
+                by: pid("a"),
+                beneficiary: pid("b"),
+            },
+        )
+        .unwrap();
+        assert_eq!(kept.diplomacy.history[0].status, DealStatus::Fulfilled);
+
+        let mut ignored = active(DealTerm::ReplenishFor {
+            beneficiary: pid("b"),
+            deadline_round: 1,
+        });
+        settle_deadlines(&mut ignored, 1).unwrap();
+        assert_eq!(
+            ignored.diplomacy.history[0].status,
+            DealStatus::Broken,
+            "a refresh never given is a broken promise, not a lapsed one"
+        );
+    }
+
+    #[test]
+    fn an_agent_favour_settles_on_the_use_it_names() {
+        let mut agent = active(DealTerm::UseLeaderFor {
+            leader: "hacanagent".to_owned(),
+            beneficiary: pid("b"),
+            deadline_round: 1,
+        });
+        evaluate_event(
+            &mut agent,
+            &DiplomacyEventContext::LeaderUsedFor {
+                user: pid("a"),
+                leader: "hacanagent".to_owned(),
+                beneficiary: pid("a"),
+            },
+        )
+        .unwrap();
+        assert!(
+            agent.diplomacy.history.is_empty(),
+            "an agent used for someone else keeps nothing"
+        );
+        evaluate_event(
+            &mut agent,
+            &DiplomacyEventContext::LeaderUsedFor {
+                user: pid("a"),
+                leader: "hacanagent".to_owned(),
+                beneficiary: pid("b"),
+            },
+        )
+        .unwrap();
+        assert_eq!(agent.diplomacy.history[0].status, DealStatus::Fulfilled);
     }
 
     #[test]

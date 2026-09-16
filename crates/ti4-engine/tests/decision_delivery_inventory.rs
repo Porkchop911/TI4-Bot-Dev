@@ -455,6 +455,13 @@ const PRODUCERS: &[Producer] = &[
         delivery: Delivery::ObservedVia("game.rs::step"),
     },
     Producer {
+        // Structured diplomacy: each voter, in voting order, may open contacts before the vote.
+        module: "game.rs",
+        function: "agenda_talks_choice",
+        count: 1,
+        delivery: Delivery::ObservedVia("game.rs::step_agenda_talks"),
+    },
+    Producer {
         // Political Favor and Political Secret: whether the holder uses the note at its window.
         module: "game.rs",
         function: "ask_to_use_note",
@@ -902,6 +909,7 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("game.rs", "step_token_gain", 1),
     ("game.rs", "step_trade", 1),
     ("game.rs", "step_diplomacy", 1),
+    ("game.rs", "step_agenda_talks", 1),
     ("game.rs", "step_vote", 1),
     ("game.rs", "ask_to_use_note", 1),
     ("game.rs", "committee_formation", 1),

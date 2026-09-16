@@ -8,10 +8,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use ti4_engine::choice::Choice;
-use ti4_model::{
-    Deal, DealTerm, PlayerId, Relationship, Signal, SignalCondition, SignalKind, SignalSubject,
-    SystemId,
-};
+use ti4_model::{Deal, DealTerm, PlayerId, Relationship, Signal, SignalStatement, SystemId};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DealDraft {
@@ -23,9 +20,8 @@ pub struct DealDraft {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SignalDraft {
     pub target: PlayerId,
-    pub kind: SignalKind,
-    pub subject: SignalSubject,
-    pub condition: Option<SignalCondition>,
+    /// A concrete statement; the engine derives its kind and judges it.
+    pub statement: SignalStatement,
     pub expires_round: u32,
 }
 
