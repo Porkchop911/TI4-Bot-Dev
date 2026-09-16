@@ -252,3 +252,43 @@ Get-ChildItem out\pools\*.json
 
 Ignore any `out\checkpoints\timing-*` directories — those are throwaway benchmark output, not
 trained policies.
+
+---
+
+## Structured diplomacy
+
+Games can be played with structured diplomacy switched on: seats open contacts, offer and counter deals, send
+signals, and keep or break promises, while directional relationships between seats are tracked.
+
+**How to switch it on.** It only affects a newly loaded starting table; a saved review always shows whatever its
+game used.
+
+- **GUI:** tick **Structured diplomacy** in the top bar before **Load starting table**. The choice is remembered
+  in the reviewer settings.
+- **CLI:** add `--diplomacy` to `simulate`.
+
+```powershell
+.\target\release\ti4-review.exe simulate `
+  --checkpoint out\blank-shaped-4layers\fracture-1x-styx16-20260915\checkpoint-19280-diplomacy-v11 `
+  --map-pool out\pools\full_np8_12_holdout.json `
+  --out out\reviews\diplomacy.ti4review.json --seed 42 --temperature 0.5 --diplomacy --until round
+```
+
+Any checkpoint works. A legacy schema-7/8 bundle answers diplomacy decisions with its `other` head. A bundle
+migrated with `migrate_bundle_to_diplomacy` (schema 9/10) has a dedicated `diplomacy` head.
+
+**What the review shows.**
+
+- **Diplomacy** (left panel, below Table state):
+  - a relationship grid where each row is that seat's view of the column seat: T trust, C cooperation, Th
+    threat, H hostility;
+  - each cell starts with a stance word (friendly, neutral, wary, hostile), and the legend under the grid says
+    what the numbers mean;
+  - a sword marks a recent attack, and a cross marks a recently broken promise.
+- **Active deals:** each shows its latest terms, marked ✓ kept or done, ✗ broken, … pending, or ⌛ expired.
+- **Recent signals**, and the collapsible **Finished deals** history.
+- **Decisions:** offer, counter and accept options show the whole deal from the deciding seat's side ("You commit
+  to … / They commit to …") above the raw payload.
+- **Action summaries:** each includes the contacts opened, offers made or not made, counters, acceptances,
+  declines, promises settled, signals sent, and how relationships moved.
+- **Exported HTML:** carries the same Diplomacy section.

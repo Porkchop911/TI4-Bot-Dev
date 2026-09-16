@@ -335,3 +335,215 @@ The user approved committing both branches, the merge and the ti4-sim run, and c
 - The D: branch `codex/fix-six-faction-leaders` (`896fb28`) lacks the inventory registrations and the v38 re-baseline. They exist only on `codex/diplomacy-v1`.
 - No paired greedy evaluation of the migrated checkpoint has been run yet.
 - No diplomacy training has been run.
+
+## Addendum, 2026-09-15 late night: diplomacy v2 (packages R, T, S, L)
+
+After watching games in the reviewer, the user gave feedback on four points and chose a direction for each. The
+feedback, the decisions and the package designs are in `plans/DIPLOMACY_V2_PLAN_2026-09-15.md`; read that first.
+This addendum records the state of the work.
+
+### State
+
+- **Nothing is committed.** All v2 work sits uncommitted on top of `85d0151` in this worktree. Committing needs
+  the user's approval; Claude asked and has no answer yet.
+- `git diff --stat` shows 49 files. About 30 of them hold only rustfmt reflows from `cargo fmt --all`, in code that
+  came in with the merge (examples, `galaxy.rs`, `action_cards.rs`, `deck.rs` and similar). They can go in a
+  separate formatting commit.
+
+### What was built
+
+**R, reviewer readability**
+
+- The left panel is light with black text. Seat colour appears only as a swatch.
+- Relationship cells show a stance word (friendly, neutral, wary, hostile) with a written legend, in both the
+  native window and the HTML export. The thresholds are in `ti4-review/src/diplomacy.rs::stance`.
+- `ti4-review/src/diplomacy.rs` (new) holds all the plain-language text: terms, deals, signals, the journal and
+  relationship changes.
+- Structured diplomacy is switched on with the GUI checkbox or `simulate --diplomacy`. See
+  `plans/REVIEWER_HOWTO.md`.
+
+**T, transactions inside contacts**
+
+- With diplomacy on, `transactions::available_actions` returns nothing.
+- A contact with a transaction partner adds up to 12 `DealTemplate::Trade` bundles. They are built from
+  `offer_options` and `offer_from` through `transfers::assets_of`.
+- `game.rs::open_contact` emits `TRANSACTION_OPENED` and records the transaction.
+- `step_diplomacy` emits `TRANSACTION_RESOLVED` and `TRANSACTION` when immediate transfers apply.
+- An accepted immediate-only bundle gives `FairTransaction` when it is fair.
+
+**S, concrete signals**
+
+- `SignalStatement` replaces the old subject and condition. Its variants are `WillNotAttack`, `StayOutOf{system}`,
+  `DoNotAttackMe`, `RetaliateIfAttacked` and `AttackIfYouActivate{system}`. The kind is derived from the statement.
+- `SignalStatus` values: Open, Honoured, Broken, Heeded, Ignored, Triggered, CarriedOut, Bluffed.
+- `signals::judge_event` runs from `promises::evaluate_event`, and `signals::settle_deadlines` runs from
+  `settle_deadlines`. Each judgement journals `DiplomacyEvent::SignalJudged` and applies one relationship event
+  from the table in `relations.rs`.
+- `candidates::generate_signal_statements` offers at most 6 statements per contact, and names only contested
+  systems.
+
+**L, new tradeables and favours**
+
+- **New terms:** `DealTerm::UseLeaderFor`, `SkipSecondary` and `ReturnNote`. `FollowSecondary` was dropped
+  because following almost never helps the card's holder.
+- **Judging:**
+  - `DiplomacyEventContext::LeaderUsedFor` is raised in `leaders.rs`: by `hacanagent` when it replenishes another
+    seat, and by `l1z1xagent` when it swaps a mech for the active seat.
+  - `SecondaryResolved` is raised in `game.rs::step_secondary`.
+  - At the deadline, `SkipSecondary` counts as kept. `ReturnNote` counts as kept if the note sits with its owner
+    (`promises::note_is_home`).
+- **Templates:** `PayForAgentFavour`, `SellAgentFavour`, `PayToSkipSecondary`, `NoteForNonAggression`,
+  `NoteLoan`, and `PayForVote` (only when `CandidateContext::agenda` is set).
+- **Cap:** `cap_across_templates` takes templates in turns up to 36. Plain truncation of the id-sorted list had
+  been cutting whole templates alphabetically.
+- **Agenda talks** (`game.rs`):
+  - With diplomacy on and a map, `open_next_vote` stores `AgendaTalks` and resets transactions and pair
+    allowances.
+  - `agenda_talks_choice` asks each seat in voting order (speaker last) the `diplomacy_agenda_talks` decision:
+    open contacts, or `candidates::END_TALKS_ID`.
+  - `start_vote` opens the vote once no seat is still negotiating.
+  - The site is registered in `tests/decision_delivery_inventory.rs`.
+- **Rule change:** `transactions::why_illegal` skips the neighbour check in `Phase::Agenda`, because anyone may
+  transact during the agenda phase (94).
+- **Duplicate factions:** `available_contacts` skips a target whose faction another seat shares. Contact ids name
+  the target by faction, so such a contact could resolve to the wrong seat and be refused.
+
+### Contract changes to be aware of
+
+- **Serialized diplomacy data:**
+  - `Signal` now requires `statement`, and `SignalSubject`/`SignalCondition` are gone.
+  - `DealTerm`, `DealTemplate` and `DiplomacyEvent` gained variants.
+  - Diplomacy-on journals, reviews or corpus files written before v2 will not deserialize. Diplomacy-off data is
+    unaffected.
+- **Relationship events:** `RelationshipEvent::PublicThreat` and `PublicWarning` were replaced by `SignalMade`,
+  `AssuranceKept`, `AssuranceBroken`, `RequestHeeded`, `RequestIgnored`, `ThreatCarriedOut` and `ThreatBluffed`.
+- **Bridge:** `ti4-bridge` `SignalDraft` now carries `statement: SignalStatement`.
+- **Policy features:** there are new feature names under `diplomacy:`, for example
+  `diplomacy:template:pay_for_agent_favour` and the term kinds `agent-favour`, `skip-secondary` and
+  `return-note`. They fall into OOV buckets for the migrated checkpoint.
+- **Decision subtype:** `diplomacy_agenda_talks` is new. Its options are `open_diplomacy`, so it routes to the
+  diplomacy head.
+- **`CandidateContext`** has a new field, `agenda: Option<&str>`.
+
+### Evidence (this worktree, final state)
+
+- **Tests:** engine lib 1330, decision-delivery inventory 4, model 81, bridge lib 62, policy `diplomacy` 1, MLP lib
+  88 (`--skip bundle::`), reviewer 33.
+- **Build:** `cargo check --workspace --all-targets` is clean.
+- **New tests:**
+  - `promises::tests::favours_settle_on_the_moment_they_name`
+  - `promises::tests::a_lent_note_is_judged_by_where_it_sits_at_the_deadline`
+  - `candidates::tests::favours_and_votes_are_offered_only_when_their_components_exist`
+  - `candidates::tests::a_contact_is_offered_only_to_a_seat_its_faction_names_unambiguously`
+  - `candidates::tests::signals_are_concrete_and_name_only_contested_systems`
+  - `candidates::tests::with_diplomacy_on_trading_happens_inside_the_contact`
+  - `game::tests::with_diplomacy_on_voters_negotiate_before_each_agenda_vote`
+  - reviewer `favours_read_as_what_the_promiser_will_do`
+  - reviewer `a_signal_reads_as_the_sentence_sent_and_what_came_of_it`
+- **Soak** (release, 6 seeds × 3 rounds): no refused step, and replay is identical.
+
+  | Count | Value |
+  |---|---|
+  | offered | 261 |
+  | countered | 131 |
+  | accepted | 130 |
+  | declined | 131 |
+  | settled | 99 |
+  | signals | 222 |
+  | signal outcomes | 152 |
+  | transactions | 3 |
+  | favours | 2 (1 note loan, 1 skipped secondary, 0 agent favours) |
+
+- **Environmental failure:** `ti4-bridge --test hexsummary_golden` fails because
+  `tests/golden/hexsummary_captures.json` exists neither here nor in D:. It is not caused by this work.
+
+### Open problems and recommendations
+
+1. **Commit (needs approval).** Suggested split:
+   - the formatting-only reflows;
+   - R and T;
+   - S;
+   - L.
+2. **Run ti4-sim before any merge.**
+   - Engine paths changed: the hooks in `leaders.rs` and `step_secondary`, which return early when diplomacy is
+     off; the agenda-phase exemption in `why_illegal`; and the `open_contact` refactor.
+   - Diplomacy-off play should not move from v38. If it does, bisect before re-baselining, and re-baseline only
+     with approval.
+3. **Favours barely occur.** Most favour templates need trade goods, which seats rarely hold early.
+   - Consider goods-free swaps: an agent favour for non-aggression, or a skipped secondary for a skipped
+     secondary.
+   - Run a longer soak that reaches the agenda phase (`DIPLOMACY_SOAK_SEEDS=60 DIPLOMACY_SOAK_ROUNDS=6`). The soak
+     only asserts `favours > 0` in total.
+4. **Cost.**
+   - Agenda talks let every seat contact every other seat once per agenda, on top of the ×1.29 decision increase
+     measured earlier.
+   - The ignored `diplomacy_cost_probe` still asserts `max_options <= 29`, but a contact can now offer 36 bundles,
+     6 signals and a no-op. Update the bound and re-measure.
+5. **Contact ids by seat.** Naming the target by faction forced the duplicate-faction skip. An id that carries the
+   seat would remove it; policy features and the reviewer parse the faction from the id, so update them too.
+6. **Not built from the plan:**
+   - the agenda-phase assurance signal ("I will vote OUTCOME");
+   - `UseLeaderFor` hooks for leaders other than the two agents.
+7. **Not yet checked:**
+   - clippy on the v2 code;
+   - the HTML export rendered in a browser for the S and L text. R was checked in a browser; S and L only in code.
+8. **Unchanged from the previous addendum:**
+   - the D: branch lacks the inventory and v38 commits;
+   - no paired greedy evaluation of the migrated checkpoint has been run;
+   - no diplomacy training has been run.
+
+## Codex continuation addendum — 2026-09-15
+
+Superseded as the immediate operational resume point by
+`plans/CLAUDE_HANDOVER_2026-09-16.md`; retain this file for the fuller implementation history.
+
+The user authorized continuation. This work remains uncommitted pending the required independent Tier-C review.
+Exact evidence is in `plans/evidence/DIPLOMACY_V2_CONTINUATION_2026-09-15.md`.
+
+### Completed after the Claude handover
+
+- Updated the cost probe to derive the 43-option cap from engine constants; the probe passes and observed only
+  8 diplomacy options in its fixed sample.
+- Replaced faction-addressed contact IDs with seating-order indices. Duplicate factions are no longer skipped;
+  engine resolution, policy relationship features, and reviewer naming agree on the target seat.
+- Added the agenda assurance `WillVote { agenda, outcome }`. It is offered only during concrete agenda talks,
+  settles from the typed recorded ballot, renders as a sentence, and carries bounded signal kind/statement
+  policy features.
+- Versioned the breaking v2 output: `ti4-diplomacy-log-v2`, `ti4-offline-selfplay-v3`, and
+  `seat-authorized-canonical-mlp-v3`. Older declared schema pairs remain accepted by readers.
+- Ran the requested 60-seed x 6-round release soak: 6,036 offers, 3,001 accepts, 3,370 counters, 3,834 signals,
+  195 transactions, and 69 favours (14 agent / 43 note loan / 12 skipped secondary), with no refused step.
+- Full affected tests pass: model 81; engine 1,331 plus integration/docs; policy 248; bridge 62; reviewer 33;
+  MLP 88 with bundle tests skipped; capture example 20; offline-BC example 6. Focused strict Clippy passes with
+  only the repository's documented unrelated baseline lints allowed.
+- Diplomacy-off simulation reproduced inside v38. The same single environmental fixture failure remains because
+  this checkout lacks the map pool; no rebaseline was performed.
+
+### Remaining blockers
+
+1. `DiplomacyState::journal` is still unbounded. Do not truncate it: that would break the complete authenticated
+   export. Move lossless journal ownership out of checkpointed game state (or design an equivalent sidecar) in a
+   separately reviewed package.
+2. `UseLeaderFor` still supports only the Hacan and L1Z1X agent hooks.
+3. S/L reviewer HTML still needs a manual browser rendering check.
+4. Paired greedy evaluation, a fresh v3 corpus, BC, and later PPO have not run.
+5. Independent Tier-C review is required before committing/integrating the legality and schema changes.
+
+### Exploratory overnight PPO
+
+- Added an explicit opt-in `--diplomacy` path to the PPO driver and a capability-aware rollout
+  wrapper. Legacy PPO remains diplomacy-disabled by default, and `--diplomacy` refuses bundles
+  without the appended diplomacy head.
+- A one-update CUDA smoke test passed: 96 two-round games, 114,689 decisions, 13.3 seconds total,
+  parameters moved, and Adam advanced.
+- The first run (PID 58692) stopped at its update-25 publish boundary: `GIT_COMMIT` included a
+  descriptive dirty-tree suffix, but bundle provenance admits only 7–64 hexadecimal characters.
+  `checkpoint-5988.tmp` contains staged tensors but no manifest and is not a usable checkpoint.
+- Corrected active run: PID 77484, 1,000 four-round updates, schema-10 migrated checkpoint,
+  learning rate 1e-4, temperature 1.0, movement entropy 0.05, entropy schedule ending at 0.25,
+  and faction waste penalties `15,12,5,5,8,8`. Output and logs:
+  `D:/Projects/ti4-engine-rs/out/ppo-diplomacy-overnight-waste-20260915`. Its update-1
+  `checkpoint-240` was published with a manifest and reloaded identically.
+- First full update passed: 242,532 decisions, 24.1-second rollout, 9.8-second CUDA optimization,
+  33.9 seconds total, 2.25% clipped. Projected duration is about 9.5 hours. This exploratory run
+  does not replace the paired evaluation, fresh-corpus BC, replay, or qualification gates.

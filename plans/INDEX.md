@@ -29,3 +29,4 @@ when their `Depends` entries are satisfied and their edit scopes do not overlap.
 | Plan | Outcome | Relationship to migration milestones |
 |---|---|---|
 | [R01 — Offline game review viewer](R01_REVIEW_VIEWER.md) | Read-only offline game inspection from validated review artifacts | Optional; does not gate or depend on M10 training. |
+| [PPO training operator guide](PPO_TRAINING_HOWTO.md) | Copy-pasteable build, smoke-test, foreground/background launch, monitoring, migration, reward, and flag reference | Operational companion to M10; does not replace checkpoint evaluation or qualification. |

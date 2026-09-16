@@ -17,6 +17,33 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 
 ## Current position
 
+### Structured diplomacy v2 continuation (2026-09-15)
+
+- Claude resume point: `plans/CLAUDE_HANDOVER_2026-09-16.md`.
+
+- Branch `codex/diplomacy-v1`; the legality/schema package remains uncommitted pending independent
+  Tier-C review. Detailed handover: `plans/DIPLOMACY_HANDOVER_2026-09-15.md`; verification:
+  `plans/evidence/DIPLOMACY_V2_CONTINUATION_2026-09-15.md`.
+- Continuation completed seat-addressed contact IDs, typed agenda vote assurances, bounded structured
+  signal features, explicit diplomacy-log-v2 / offline-v3 / observation-v3 schemas, the derived
+  43-option cap, strict scoped Clippy, full affected test gates, and a 60-seed x 6-round release soak.
+- Simulation reproduced inside the existing v38 behavior envelope. Its only failure is the already
+  documented missing map-pool fixture; no behavioral rebaseline was performed.
+- Next correctness package: remove the full append-only diplomacy journal from checkpointed
+  `GameState` without truncating or weakening authenticated export/replay/reviewer evidence.
+- Remaining downstream work: broader `UseLeaderFor` hooks, reviewer browser QA, paired greedy
+  evaluation, fresh v3 corpus capture, BC, then PPO qualification.
+- The first exploratory diplomacy PPO process stopped at its update-25 publish boundary because a
+  descriptive suffix had been appended to `GIT_COMMIT`; bundle provenance requires 7–64 hexadecimal
+  characters. Its `checkpoint-5988.tmp` has tensors but no manifest and is not a bundle.
+- The corrected run is active as PID 77484. It starts from migrated schema-10
+  `checkpoint-19280-diplomacy-v11`, uses the established faction waste penalties
+  `15,12,5,5,8,8`, trains 1,000 four-round updates on CUDA, and writes to
+  `D:/Projects/ti4-engine-rs/out/ppo-diplomacy-overnight-waste-20260915`. Checkpoint 240 was
+  published after update 1 and reloaded identically, including its manifest. This is an experiment,
+  not a qualification run. The PPO driver now has an explicit `--diplomacy` switch; without it the
+  legacy rollout remains unchanged.
+
 ### Repository-wide seeded seating (2026-09-15)
 
 - Seeded faction permutation plus rotation is now the sole game-seating contract across reviewer,
@@ -8599,3 +8626,46 @@ publication it trains the `good + random` buckets for five epochs on CUDA with 3
 initialized from `out/offline-bc-v2-20260913-from-318956`. The output is experimental because this
 corpus predates the leader fix and retains the historical seat/temperature confound; it requires
 evaluation before promotion.
+
+### Astra advisory review — 2026-09-16
+
+- Completed the review requested in `plans/ASTRA_REVIEW_REQUEST_2026-09-16.md`.
+- Response and source evidence: `plans/ASTRA_REVIEW_RESPONSE_2026-09-16.md`.
+- Reviewed branch `codex/diplomacy-v1`, HEAD `85d01517a196315a5062b706199513c7570f15c0`,
+  with existing uncommitted work preserved. Advisory documentation only; no code changes,
+  commits, training runs, benchmarks, or new test results. This does not close the pending
+  full Tier-C legality/schema review.
+- Key corrections: PPO games already execute through Rayon despite the stale sequential footer;
+  no-offer contacts do not prove empty menus; crossplay wins are strict horizon VP leadership;
+  the Fracture census uses an audit helper that can return partial state after errors/step caps.
+- Next recommended work: collect the training-regime contact funnel and existing performance
+  diagnostics, correct census completion reporting, then compare explicitly configured VP-focused
+  pilots and paired round-4 evaluations. Implementation remains proposed, not completed.
+- Operator clarification: do not extend beyond four rounds. Maximizing VP by the end of round 4
+  is the intended playing-to-win objective. The review's earlier longer-horizon recommendation
+  is withdrawn; Fracture opportunities must be assessed by their payoff within four rounds.
+- Verification: `git diff --check` passed; scoped tracked and new-file whitespace checks also
+  passed for the review documentation. Tree remains intentionally dirty.
+
+### GPU inference smoke — 2026-09-16
+
+- User authorized a GPU simulation smoke test. Added only the diagnostic example
+  `crates/ti4-mlp/examples/gpu_inference_smoke.rs`, evidence
+  `plans/evidence/GPU_INFERENCE_SMOKE_2026-09-16.md`, and this state entry. Existing dirty
+  implementation preserved; production PPO remains unchanged, no commits or training runs.
+- Four rounds fixed; one real CPU game and one unbatched CUDA game, plus identical-input
+  actor/critic replay at batch sizes 1/8/32. Checkpoint 212544, held-out pool, diplomacy on,
+  temperature 2.5, seed 1261600101. RTX 3090 and existing CUDA libtorch.
+- Final smoke passed: 2,649 decisions per game; final-state/event hashes match. CPU game 2.62 s,
+  unbatched GPU game 4.47 s. Median batch-32 GPU replay 19,462 decisions/s versus 3,435 for
+  ordinary single-thread CPU scoring and 6,057 for CPU batch 32. These exclude engine/features
+  and do not compare against the parallel CPU worker pool; no training speedup is established.
+- Numerical probability/critic tolerances pass, but 7/512 greedy choices differ in the mixed
+  batch paths. Common-draw sampled choices in the replay did not change. Production integration
+  needs numerical/behavioral qualification; the smoke is not a bitwise-parity gate.
+- Release build, two regression tests, CLI bounds checks, rustfmt and whitespace checks passed.
+  Global strict Clippy hits 17 pre-existing library warnings; scoped Clippy passed with warnings
+  denied inside the new example. All owned test/build processes exited; no background run remains.
+- Next useful experiment: live cross-game batched inference service with bounded queue/flush,
+  compared against existing parallel CPU rollouts at the same four-round workload. Not implemented
+  or promoted by this smoke. Reproduction command and raw-result hashes are in the evidence.
