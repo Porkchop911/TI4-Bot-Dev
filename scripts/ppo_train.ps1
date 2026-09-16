@@ -36,8 +36,9 @@ $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 
 $diplomacy = $settings.ContainsKey('Diplomacy') -and [bool]$settings.Diplomacy
 if ($diplomacy) {
-    if ($manifest.schema -notin @(9, 10)) {
-        throw "Diplomacy requires bundle schema 9 or 10; this bundle is schema $($manifest.schema)."
+    # 11 and 12 are the arena-capable diplomacy layouts (battle predictor attached).
+    if ($manifest.schema -notin @(9, 10, 11, 12)) {
+        throw "Diplomacy requires bundle schema 9, 10, 11 or 12; this bundle is schema $($manifest.schema)."
     }
     if ($manifest.heads -notcontains 'diplomacy') {
         throw 'Diplomacy requires a bundle whose manifest contains the diplomacy head.'
