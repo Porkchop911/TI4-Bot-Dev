@@ -8669,3 +8669,159 @@ evaluation before promotion.
 - Next useful experiment: live cross-game batched inference service with bounded queue/flush,
   compared against existing parallel CPU rollouts at the same four-round workload. Not implemented
   or promoted by this smoke. Reproduction command and raw-result hashes are in the evidence.
+
+### Live GPU rollout disposition and combat-arena assessment — 2026-09-16
+
+- User requested a minimally briefed Terra agent and measured PPO update throughput;
+  later requested evaluating whether continued GPU work was worthwhile, with combat
+  arena learning as an alternative. Four-round limit remains fixed.
+- Two 96-game, 32-worker CPU updates took 36.415/36.272 s; two GPU batch-32 updates
+  took 82.508/83.458 s. GPU averaged 2.283 times the update duration. Stop this tuning
+  branch; retain CPU rollouts and CUDA optimization. No GPU speedup established.
+- CPU repetitions match all 96 state/event/choice digests. GPU runs differ on a few
+  trajectories and from each other. Experimental GPU path is not qualified for
+  deterministic production training. Three service tests passed as reported by
+  Terra; full final qualification and exact command manifest were interrupted by
+  its usage limit. Parent independently verified raw logs and hashes.
+- Evidence and concrete arena feasibility/transfer gates:
+  `plans/evidence/GPU_BATCHED_ROLLOUT_EXPERIMENT_2026-09-16.md`.
+- Other concurrent work committed the experimental code in `ae3980f`; parent found
+  clean branch `codex/diplomacy-v1` at `740dc82` before adding these two documentation
+  changes. This task made no commits and did not alter those subsequent source edits.
+- No owned trainer/build remained at inspection. No additional GPU runs or arena
+  training were started. Next useful step is an engine-backed combat-label pilot,
+  gated by actor-input sufficiency and eventual round-4 VP transfer, not an assumed
+  improvement from battle prediction alone.
+
+### Battle-arena plan and adjacent mechanics — 2026-09-16
+
+- Operator requested a battle-arena plan and other applicable areas of play.
+- Added `plans/BATTLE_ARENA_PLAN_2026-09-16.md`: input/coverage audit, bounded
+  engine-backed labels, held-out outcome prediction, explicit policy integration,
+  then equal-total-time round-4 VP transfer. Separate prediction, combat decisions
+  and strategic attack selection; do not replace the VP critic or PPO reward.
+- Proposed first unit ARENA-001 is audit plus 4,096-fight smoke, with a five-minute
+  runtime cap. Larger label generation, training and integration are gated future
+  work; none were executed in this planning turn.
+- Other candidates prioritized: objective/payment puzzles, movement/cargo, invasion;
+  then production and token planning. Diplomacy/agenda subgames are later because
+  value depends strongly on hidden intent and subsequent opponent behavior.
+- All full-game generation and evaluation stays capped at four game rounds.
+  Existing engine combat-round bounds are separate from that game horizon.
+- This turn changes documentation only; no source edits, training, commits or
+  checkpoint promotion. Existing GPU evidence changes remain preserved.
+
+### Battle-arena integration design — 2026-09-16
+
+- Operator requested starting the design with explicit main-model integration.
+  Added `plans/BATTLE_ARENA_DESIGN_2026-09-16.md` and linked it from the plan.
+- Chosen initial design: frozen small combat predictor packaged with the policy;
+  option-specific factual/predicted battle features enter the existing sparse MLP.
+  PPO learns strategic use from round-4 VP; no battle reward or VP-critic replacement.
+- First live surface is incremental movement including done_moving. Activation is
+  deferred until a legal concrete commitment can be described. Already committed
+  ships, candidate ship/cargo, private-information independence and unsupported
+  mechanics are explicit input/coverage contracts.
+- Design covers typed crate boundaries, engine labels, conditional continuation
+  semantics, materialized PPO inputs, predictor freezing, migration/resume, CPU-local
+  inference and concrete acceptance fixtures. No unconditional combat odds claim.
+- ARENA-001 remains the first implementation: typed contract/input audit and bounded
+  engine generator. No predictor, runtime integration, dataset or training run was
+  implemented in this design turn. Architecture review is pending; no commits made.
+
+### Pitched-battle clarification and agent handoff — 2026-09-16
+
+- User clarified isolated pitched battles with varied compositions, upgrades and
+  factions, optionally random action cards, with only combat decisions remaining.
+- Added `plans/BATTLE_ARENA_AGENT_HANDOFF_2026-09-16.md` as the authoritative entry
+  point for a different agent. Linked supersession notices in both older documents.
+- Earlier ordinary-fleet/20-input scope is only a smoke baseline. Build the arena
+  before downstream movement integration; include tested faction/upgrade coverage
+  and explicit timing support for any later action-card experiments.
+- Handoff supplies the first bounded task, contracts, integration boundary, tests,
+  resource limits and current status. Documentation only; no arena implementation,
+  training or commits performed.
+
+### ARENA-001 probe — 2026-09-16
+
+- First executable unit of `plans/BATTLE_ARENA_AGENT_HANDOFF_2026-09-16.md`. Evidence:
+  `plans/evidence/ARENA_001_PROBE_2026-09-16.md`.
+- New `crates/ti4-training/examples/battle_arena_probe.rs`, **uncommitted**: the handoff requests no
+  commits for this task. No dataset, predictor, PPO, vocabulary or checkpoint change.
+- Drives the real engine through the public `combat::resolve`. `CombatWindow::pending_choice` and
+  `resolve` are private to `ti4-engine`, so the stepped driver is not reachable from `ti4-training`.
+  Limitation recorded: `combat::resolve` consumes the scoring pause internally, so a pause cannot be
+  reported as a failure by this probe.
+- Gates met on one matchup, 32 dice seeds per policy: zero failures, zero contaminated positions
+  (`intruders` 0 throughout, so `start_game` home fleets do not leak in), seed 0 reproducible
+  including survivor counts, ~2,100 fights/second single-threaded.
+- Policy sensitivity demonstrated: changing only the casualty rule moved attacker wins 7 to 9,
+  added 3 mutual destructions, and changed surviving damaged dreadnoughts 1 to 9 against cruisers
+  49 to 36. Labels are outcomes under a named continuation policy, not combat odds.
+- Two corrections to claims made earlier in the session, both the assistant's: the casualty rule
+  moved the win rate modestly rather than sharply, and the flat "mean rounds 3.00" was coincidence
+  (rounds spread 1 to 5 under both policies; `MAX_ROUNDS` 50 was never approached).
+- Next exact step: scenario schema with split families assigned before dice repetitions, then
+  128 scenarios x 32 seeds with a failure ledger and fights/second, including at least one upgrade
+  and one faction-specific combat effect in that first report.
+
+### ARENA-001 scenario generator and first labelled corpus — 2026-09-16
+
+- Second pass over `plans/BATTLE_ARENA_AGENT_HANDOFF_2026-09-16.md`. Evidence:
+  `plans/evidence/ARENA_001_PROBE_2026-09-16.md`, which **replaces** the earlier probe report of the
+  same name (its results table, throughput figure and "not done" list are superseded).
+- `crates/ti4-training/examples/battle_arena_probe.rs` remains **uncommitted**: the handoff requests
+  no commits for this task. No predictor, PPO, vocabulary or checkpoint change.
+- Generator enumerates legal fleets per profile with a profile-dependent capacity check, plays both
+  role assignments, and groups by order-independent `family()` so a matchup and its mirror share a
+  split. Runs across all cores via `par_chunks`, merged in chunk order.
+- Throughput 1,344 -> 9,705 -> 17,740 fights/s (single-threaded; 32 workers; 32 workers with
+  `fixtures::game()` and `plain_systems()` hoisted to one `GameState` per worker, cloned per fight).
+  13.2x overall, ~13x on 32 workers rather than 32x; residual serial cost not isolated.
+- Correctness across both rewrites: cap 3 reproduced 75,325 / 77,172 / 2,071 and cap 2 with four
+  factions reproduced 692,762 / 705,957 / 25,953, identical before and after. Zero contaminated
+  positions and zero failures across ~2.5M fights.
+- Upgrade and faction coverage delivered in the first report via a cap-2 panel over Hacan, Sol,
+  Sardakk and Jol-Nar, each with and without upgrades, as the handoff requires.
+- First labelled corpus emitted behind `--emit` (absent the flag the probe only reports): cap 3,
+  64 seeds, 19,321 rows from 1,236,544 fights in 69.7s. Label is three rates -- attacker, defender,
+  mutual -- summing to 1, verified 0 violations; a single attacker rate could not distinguish a
+  defender win from mutual destruction. Split is deterministic FNV-1a over `family()`, verified
+  **0 families spanning more than one split**. Manifest records the casualty policy, seed panel and
+  caveats.
+- Two corpus properties recorded for any consumer: 34.6% of rows are foregone conclusions (label
+  stdev 0.406, bimodal), so evaluation must be stratified by contestedness or the easy rows dominate
+  the score; and uniform enumeration does not match play frequencies, which matters because the
+  design freezes this predictor into the actor's input layer.
+- Limitation unchanged: `combat::resolve` consumes the scoring pause internally, so a pause cannot be
+  reported as a failure by this probe.
+- Six further corrections to assistant claims recorded in the evidence document: sizing ~3x low; a
+  false mirror diagnosis; the defender "landslide" as an artefact of canonical ordering (58,010 to
+  18,839, versus 75,325 to 77,172 once both orderings are played); "attacker fires first" wrong, fire
+  is simultaneous under LRR 78.6; throughput twice reported from a stale binary after `link.exe` 1104
+  failures, with cap-6 runtime estimated 27 minutes then ~2.0 hours then ~64 minutes; and mutual
+  destruction overstated from one symmetric duel (corpus mean 0.0116).
+- The design document's typed contract (`ArenaScenarioV1`, `ArenaOutcomeV1`, `BattleFeatureEmitter`)
+  does not exist in code; the probe emits JSONL directly. Corpus lives in the session scratchpad; no
+  home chosen inside the repository.
+- Next exact step: decide where a corpus belongs in the repository, then either reweight toward
+  played positions or train a first predictor on the contested stratum, reporting calibration
+  separately for contested and foregone rows.
+
+### ARENA-002 lean simulator, predictor and battle facts — 2026-09-17
+
+- Evidence: `plans/evidence/ARENA_002_PREDICTOR_2026-09-17.md`. User overrode the design's
+  engine-only labelling rule; the design doc carries the note.
+- `ti4-training::battle_arena`: two-fleet simulator (six factions +/- upgrades, war suns,
+  flagships and their Jol-Nar/Letnev/L1Z1X effects, Hacan at 0 trade goods, both sides' space
+  cannon, starting damage, supply limits). Matches the engine with effects off (0.36pp mean gap)
+  and ti4calc with effects on (0.2pp, 0 of 300 beyond |z| 3).
+- `battle_predictor` trains straight from it (no stored corpus): 0.43pp held-out MAE, 1.15pp on
+  contested fights, in ~3.5 minutes. Exported to `ti4_policy::battle::BattlePredictor`.
+- Live play: movement options carry `action-plan:battle-*` facts; bundle schema 11/12 (ABI 4)
+  carries the predictor. `checkpoint-212544-arena-v1` migrated from 212544, identical play,
+  +1.4% wall time.
+- Queued engine fixes (need ti4-sim): attacker space cannon offense; Jol-Nar, Letnev, L1Z1X
+  flagship abilities.
+- Next: `scripts/arena_pilot.psd1`, the VP-only pilot mirrored with the arena learner;
+  `checkpoint-10456` is the no-arena control.

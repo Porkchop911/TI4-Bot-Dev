@@ -590,6 +590,10 @@ pub struct Actor {
     b_value: Tensor,
     /// Present only when the fixed shared-critic fallback selected the separate trunk.
     separate_critic: Option<SeparateCritic>,
+    /// The frozen space-combat predictor an arena-capable bundle carries. It travels with the
+    /// actor so every load, copy and save keeps it, and an arena bundle never silently plays as
+    /// the baseline policy.
+    battle: Option<std::sync::Arc<ti4_policy::battle::BattlePredictor>>,
 }
 
 impl Actor {
@@ -616,7 +620,24 @@ impl Actor {
             w_value: self.w_value.detach().copy(),
             b_value: self.b_value.detach().copy(),
             separate_critic: self.separate_critic.as_ref().map(SeparateCritic::copied),
+            battle: self.battle.clone(),
         }
+    }
+
+    /// Attach or clear the frozen battle predictor.
+    pub fn set_battle_predictor(
+        &mut self,
+        predictor: Option<std::sync::Arc<ti4_policy::battle::BattlePredictor>>,
+    ) {
+        self.battle = predictor;
+    }
+
+    /// The frozen battle predictor, when this actor is arena-capable.
+    #[must_use]
+    pub const fn battle_predictor(
+        &self,
+    ) -> Option<&std::sync::Arc<ti4_policy::battle::BattlePredictor>> {
+        self.battle.as_ref()
     }
 
     /// Install or clear the separately trained fallback critic.
@@ -756,6 +777,7 @@ impl Actor {
             w_value: Tensor::zeros([w], opts),
             b_value: Tensor::zeros([1], opts),
             separate_critic: None,
+            battle: None,
         }
     }
 

@@ -8,6 +8,7 @@
 //! `features`, `inference` (M09-001 to M09-004, M09-006, M09-013). The training loop that fits a
 //! profile lives in `ti4-training`.
 
+pub mod battle;
 pub mod bot;
 pub mod critic;
 pub mod features;

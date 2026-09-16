@@ -514,6 +514,24 @@ impl MlpBot {
             &held,
             self.baseline,
         );
+        // An arena-capable actor adds each movement option's battle facts; any other actor sees
+        // exactly the vectors it always did.
+        let vectors = match self
+            .actor
+            .as_ref()
+            .and_then(|actor| actor.battle_predictor())
+        {
+            Some(predictor) => {
+                let facts = ti4_policy::battle::decision_facts(
+                    seen.observed(),
+                    choice,
+                    &choice.player,
+                    predictor,
+                );
+                ti4_policy::battle::append_facts(vectors, &facts)
+            }
+            None => vectors,
+        };
         lap.mark(crate::perf::Stage::Features);
         let options: Vec<SparseOption> = vectors
             .iter()

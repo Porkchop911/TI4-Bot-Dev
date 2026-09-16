@@ -130,6 +130,11 @@ pub struct GpuInferenceService {
 impl GpuInferenceService {
     /// Start a bounded actor service over a frozen actor already placed on CUDA.
     pub fn spawn(actor: Actor, batch_size: usize, flush: Duration) -> Result<Self, String> {
+        if actor.battle_predictor().is_some() {
+            // Seats on this path never see the actor, so they could not emit battle facts and an
+            // arena bundle would silently play as the baseline.
+            return Err("GPU batched inference does not support arena-capable bundles".to_owned());
+        }
         if !(2..=128).contains(&batch_size) {
             return Err(format!("GPU batch size {batch_size} is outside 2..=128"));
         }

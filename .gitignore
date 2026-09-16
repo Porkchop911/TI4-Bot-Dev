@@ -76,3 +76,6 @@ fixtures/legacy_entropy/*
 # Merge/eval worktree build output.
 /target-merge/
 /target-cuda/
+
+# ti4calc reference clone for arena validation, never committed
+/tools/ti4calc/

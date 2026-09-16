@@ -21,6 +21,7 @@
 static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 pub mod archive;
+pub mod battle_arena;
 pub mod capture;
 pub mod evaluation;
 pub mod gradient;
