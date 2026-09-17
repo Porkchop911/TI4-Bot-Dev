@@ -23,6 +23,13 @@
 //! - **5** — version 4's networks and encoding unchanged; activation options gain what defends
 //!   the destination's planets, ground forces and structures counted apart.
 //!
+//! - **6** — activation options also summarise the candidate fleets that could be sent
+//!   (`tactical_plan`): best space win, the cheapest favoured fleet, the best conditional take, how
+//!   exposed a favoured fleet leaves home, how many candidates there are. Package facts are
+//!   appended too, for version 7.
+//! - **7** — version 6's facts; the bot also samples which candidate fleet to send and the plan
+//!   answers the movement and cargo prompts.
+//!
 //! From version 5 on, a version only adds facts: the encoding stays version 4's, so a predictor
 //! moves up with [`BattlePredictor::relabelled`] and no retraining.
 
@@ -36,7 +43,7 @@ use ti4_model::id::{PlayerId, SystemId};
 pub const FEATURE_VERSION: u32 = 4;
 
 /// Every version this build can feed.
-pub const SUPPORTED_VERSIONS: [u32; 5] = [1, 2, 3, 4, 5];
+pub const SUPPORTED_VERSIONS: [u32; 7] = [1, 2, 3, 4, 5, 6, 7];
 
 /// Units the encoding knows, in slot order. Never reorder; append under a new version.
 pub const UNIT_IDS: [&str; 21] = [
@@ -973,6 +980,52 @@ pub const FACT_NAMES_V5: [&str; 20] = [
     "action-plan:activate-enemy-structures",
 ];
 
+/// Activation summaries added by version 6.
+pub const ACTIVATION_SUMMARY_NAMES: [&str; 6] = [
+    "action-plan:activate-best-space-win",
+    "action-plan:activate-cheapest-favoured-cost",
+    "action-plan:activate-best-take-if-all-land",
+    "action-plan:activate-favoured-exposure",
+    "action-plan:activate-candidates",
+    "action-plan:activate-unpriced-fight",
+];
+
+/// Package facts added by version 6 (read from version 7), in [`package_facts`] order.
+pub const PACKAGE_FACT_NAMES: [&str; 22] = [
+    "action-plan:pkg-fight",
+    "action-plan:pkg-unsupported",
+    "action-plan:pkg-space-win",
+    "action-plan:pkg-space-loss",
+    "action-plan:pkg-own-cost-lost",
+    "action-plan:pkg-enemy-cost-lost",
+    "action-plan:pkg-ground-take-if-all-land",
+    "action-plan:pkg-cargo-at-risk",
+    "action-plan:pkg-strength-ratio",
+    "action-plan:pkg-hulls",
+    "action-plan:pkg-cost",
+    "action-plan:pkg-capacity-used",
+    "action-plan:pkg-ground-carried",
+    "action-plan:pkg-boosts-used",
+    "action-plan:pkg-origin-exposed",
+    "action-plan:pkg-manual",
+    "action-plan:pkg-strategy-hold",
+    "action-plan:pkg-strategy-light",
+    "action-plan:pkg-strategy-efficient",
+    "action-plan:pkg-strategy-strong",
+    "action-plan:pkg-strategy-capture",
+    "action-plan:pkg-strategy-origin-preserving",
+];
+
+/// Every fact of versions 6 and 7.
+pub static FACT_NAMES_V6: std::sync::LazyLock<Vec<&'static str>> = std::sync::LazyLock::new(|| {
+    FACT_NAMES_V5
+        .iter()
+        .chain(ACTIVATION_SUMMARY_NAMES.iter())
+        .chain(PACKAGE_FACT_NAMES.iter())
+        .copied()
+        .collect()
+});
+
 /// The facts a predictor of `version` emits; the arena migrations append exactly these.
 #[must_use]
 pub fn fact_names(version: u32) -> &'static [&'static str] {
@@ -981,8 +1034,102 @@ pub fn fact_names(version: u32) -> &'static [&'static str] {
         2 => &FACT_NAMES_V2,
         3 => &FACT_NAMES_V3,
         4 => &FACT_NAMES_V4,
-        _ => &FACT_NAMES_V5,
+        5 => &FACT_NAMES_V5,
+        _ => FACT_NAMES_V6.as_slice(),
     }
+}
+
+/// Whether a predictor of `version` also has the bot choose which candidate fleet to send.
+#[must_use]
+pub const fn samples_packages(version: u32) -> bool {
+    version >= 7
+}
+
+/// A candidate fleet's facts, in [`PACKAGE_FACT_NAMES`] order; zero facts are left out. `None`
+/// is the manual option: build the fleet step by step.
+#[must_use]
+pub fn package_facts(package: Option<&crate::tactical_plan::Package>) -> Vec<(&'static str, f64)> {
+    let names = &PACKAGE_FACT_NAMES;
+    let Some(package) = package else {
+        return vec![(names[15], 1.0)];
+    };
+    let f = &package.facts;
+    #[expect(clippy::cast_precision_loss, reason = "counts are small")]
+    let count = |n: usize| n as f64;
+    let mut out = Vec::new();
+    let mut push = |name: &'static str, value: f64| {
+        if value != 0.0 {
+            out.push((name, value));
+        }
+    };
+    push(names[0], f64::from(u8::from(f.fight)));
+    push(names[1], f64::from(u8::from(f.unsupported)));
+    push(names[2], f.space_win.unwrap_or(0.0));
+    push(names[3], f.space_loss.unwrap_or(0.0));
+    push(names[4], f.own_cost_lost.unwrap_or(0.0));
+    push(names[5], f.enemy_cost_lost.unwrap_or(0.0));
+    push(names[6], f.ground_take_if_all_land.unwrap_or(0.0));
+    push(names[7], f.cargo_at_risk);
+    push(names[8], f.strength_ratio.clamp(-5.0, 5.0));
+    push(names[9], count(f.hulls));
+    push(names[10], f.cost);
+    push(names[11], count(f.capacity_used));
+    push(names[12], count(f.ground_carried));
+    push(names[13], count(f.boosts_used));
+    push(names[14], f.origin_exposed);
+    let strategy = crate::tactical_plan::Strategy::ALL
+        .iter()
+        .position(|s| *s == package.strategy)
+        .unwrap_or(0);
+    push(names[16 + strategy], 1.0);
+    out
+}
+
+/// Version 6's summary of what could be sent to one destination.
+fn activation_summary(menu: &[crate::tactical_plan::Package]) -> Vec<(&'static str, f64)> {
+    let names = &ACTIVATION_SUMMARY_NAMES;
+    let mut out = Vec::new();
+    let sending: Vec<&crate::tactical_plan::Package> =
+        menu.iter().filter(|p| !p.moves.is_empty()).collect();
+    let fights = sending.iter().any(|p| p.facts.fight);
+    if fights
+        && let Some(best) = sending
+            .iter()
+            .filter_map(|p| p.facts.space_win)
+            .reduce(f64::max)
+    {
+        out.push((names[0], best));
+    }
+    let favoured: Vec<&&crate::tactical_plan::Package> = sending
+        .iter()
+        .filter(|p| !p.facts.fight || p.facts.space_win.is_some_and(|w| w >= 0.5))
+        .collect();
+    if fights && let Some(cost) = favoured.iter().map(|p| p.facts.cost).reduce(f64::min) {
+        out.push((names[1], cost));
+    }
+    if let Some(take) = sending
+        .iter()
+        .filter_map(|p| p.facts.ground_take_if_all_land)
+        .reduce(f64::max)
+    {
+        out.push((names[2], take));
+    }
+    if let Some(exposure) = favoured
+        .iter()
+        .map(|p| p.facts.origin_exposed)
+        .reduce(f64::min)
+        && exposure > 0.0
+    {
+        out.push((names[3], exposure));
+    }
+    if !menu.is_empty() {
+        #[expect(clippy::cast_precision_loss, reason = "menus are small")]
+        out.push((names[4], menu.len() as f64));
+    }
+    if fights && sending.iter().any(|p| p.facts.unsupported) {
+        out.push((names[5], 1.0));
+    }
+    out
 }
 
 /// Activation facts (version 5): other players' ground forces and structures on the destination's
@@ -991,8 +1138,12 @@ fn activation_facts(
     seen: &Observed<'_>,
     choice: &Choice,
     player: &PlayerId,
+    predictor: Option<&BattlePredictor>,
 ) -> Vec<Vec<(&'static str, f64)>> {
     let names = &FACT_NAMES_V5[18..];
+    let summaries = predictor
+        .is_some_and(|p| p.feature_version >= 6)
+        .then(|| crate::tactical_plan::threats(seen, player));
     let (content, sources) = (seen.content(), seen.sources());
     choice
         .options
@@ -1021,6 +1172,16 @@ fn activation_facts(
             }
             if structures > 0 {
                 facts.push((names[1], count(structures)));
+            }
+            if let Some(threat) = &summaries {
+                let menu = crate::tactical_plan::packages_with(
+                    seen,
+                    player,
+                    &SystemId::new(option.id.clone()),
+                    predictor,
+                    threat,
+                );
+                facts.extend(activation_summary(&menu));
             }
             facts
         })
@@ -1534,7 +1695,7 @@ pub fn decision_facts(
             .iter()
             .any(|option| option.kind == ti4_engine::tactical::ACTIVATE_KIND)
     {
-        return activation_facts(seen, choice, player);
+        return activation_facts(seen, choice, player, Some(predictor));
     }
     if predictor.has_ground() && choice.options.iter().any(|option| option.kind == "commit") {
         return ground_facts(seen, choice, player, predictor);
@@ -1874,7 +2035,7 @@ mod tests {
         let activate = ChoiceOption::new(system.as_str(), ti4_engine::tactical::ACTIVATE_KIND);
         let choice = Choice::new(a.clone(), "activate a system", vec![activate]);
 
-        let facts = activation_facts(&seen, &choice, &a);
+        let facts = activation_facts(&seen, &choice, &a, None);
         assert_eq!(
             facts,
             vec![vec![
@@ -2056,8 +2217,8 @@ mod tests {
             vec![0.0; 3],
         )];
         assert!(matches!(
-            BattlePredictor::new(6, "test", layers.clone()),
-            Err(LoadError::Version { found: 6 })
+            BattlePredictor::new(8, "test", layers.clone()),
+            Err(LoadError::Version { found: 8 })
         ));
         // Version 3 is only reachable by adding ground layers, and they must chain.
         assert!(matches!(
