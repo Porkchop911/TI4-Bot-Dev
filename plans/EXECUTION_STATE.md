@@ -8860,3 +8860,12 @@ evaluation before promotion.
 - Predictor v4: fights under way and staying-in facts on retreat announcements;
   `checkpoint-212544-arena-v4`, identical play. Remaining: action cards; the arena PPO pilot
   still awaits evaluation, and nothing has trained with v2-v4 yet.
+
+## 2026-09-17 — arena v1 pilot result; v4 pilot pair launched
+
+- Eval vs champion (20 blocks, 4 rounds, fixed engine): control 10456 VP 3.34 / margin −1.39 /
+  cleared 89.3%; arena v1 pilot 9480 VP 2.98 / margin −1.78 / cleared 76.8%. The v1 pilot lost.
+  Both were trained on the pre-fix engine.
+- Launched `scripts/arena_v4_pilot.psd1` (learner checkpoint-212544-arena-v4), then
+  `scripts/vp_v4_control.psd1` (plain 212544), same seeds, fixed engine, commit 44f130b.
+- Reviewer now scores MLP traces with arena battle facts (they were missing).
