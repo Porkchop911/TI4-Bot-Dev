@@ -705,6 +705,14 @@ impl<'a> Observed<'a> {
         )
     }
 
+    /// Every unit of this player a ship leaving `origin` could carry: fighters and ground forces
+    /// in its space area and on its planets, in the engine's own order. Reads only the seat's own
+    /// units.
+    #[must_use]
+    pub fn loadable(&self, player: &PlayerId, origin: &SystemId) -> Vec<crate::transit::Cargo> {
+        crate::transit::loadable(self.state, self.content, self.sources, player, origin)
+    }
+
     /// `(system, planet)` for every planet a player controls.
     #[must_use]
     pub fn controlled_planets(&self, player: &PlayerId) -> Vec<(&'a SystemId, &'a PlanetId)> {

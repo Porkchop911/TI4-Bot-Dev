@@ -265,6 +265,31 @@ pub fn movement_query(
     let Some(active) = seen.active_system() else {
         return BattleQuery::NotApplicable;
     };
+    let arriving: Vec<(&str, bool)> = moving.into_iter().collect();
+    fleet_query(seen, player, active, &arriving, version)
+}
+
+/// The battle at `system` if `arriving` ships (unit id, damaged) joined the acting seat's ships
+/// already there, from public information only, as `version` sees it.
+///
+/// The acting seat is the attacker. The system need not be active yet, which is what lets an
+/// activation be priced before its command token is spent.
+///
+/// # Panics
+///
+/// Never: an enemy gun is only looked up after one was found.
+#[must_use]
+#[expect(
+    clippy::too_many_lines,
+    reason = "the side builder is shared by both sides and reads best in place"
+)]
+pub fn fleet_query(
+    seen: &Observed<'_>,
+    player: &PlayerId,
+    active: &SystemId,
+    arriving: &[(&str, bool)],
+    version: u32,
+) -> BattleQuery {
     let (content, sources) = (seen.content(), seen.sources());
     let here = seen.system(active);
     let kind = |id: &str| ti4_content::units::unit_type(content, id, sources);
@@ -314,7 +339,7 @@ pub fn movement_query(
     }
 
     let side = |owner: &PlayerId,
-                extra: Option<(&str, bool)>,
+                extra: &[(&str, bool)],
                 gunners: &dyn Fn(&PlayerId) -> bool|
      -> Result<BattleSide, Unsupported> {
         let faction = seen
@@ -341,10 +366,10 @@ pub fn movement_query(
                 *damaged.entry(unit.type_id.to_string()).or_default() += 1;
             }
         }
-        if let Some((id, hurt)) = extra {
-            *units.entry(id.to_owned()).or_default() += 1;
-            if hurt {
-                *damaged.entry(id.to_owned()).or_default() += 1;
+        for (id, hurt) in extra {
+            *units.entry((*id).to_owned()).or_default() += 1;
+            if *hurt {
+                *damaged.entry((*id).to_owned()).or_default() += 1;
             }
         }
         let mut side_guns: BTreeMap<String, usize> = BTreeMap::new();
@@ -361,11 +386,11 @@ pub fn movement_query(
         })
     };
     // Every other player's guns fire at the attacker, so all of them join the defender.
-    let built = side(player, moving, &|gunner| gunner == player).and_then(|attacker| {
+    let built = side(player, arriving, &|gunner| gunner == player).and_then(|attacker| {
         if attacker.units.is_empty() {
             return Err(Unsupported::EmptyFleet);
         }
-        let defender = side(&enemy, None, &|gunner| gunner != player)?;
+        let defender = side(&enemy, &[], &|gunner| gunner != player)?;
         encode(version, &attacker, &defender)?;
         Ok((attacker, defender))
     });
@@ -1313,6 +1338,109 @@ pub fn invasion_query(
         })
     })();
     built.unwrap_or_else(GroundQuery::Unsupported)
+}
+
+/// An invader side and a defender side of one ground combat.
+pub type GroundSides = (GroundBattleSide, GroundBattleSide);
+
+/// The invasion of `planet` in `system` if `landing` (ground force id, count) all landed there,
+/// before any bombardment and with nothing lost in space: a conditional estimate for pricing a
+/// fleet before activation, not a capture probability.
+///
+/// `Ok(None)` when nobody else holds or defends the planet.
+///
+/// # Errors
+///
+/// A defence or faction the predictor does not cover.
+pub fn landing_query(
+    seen: &Observed<'_>,
+    player: &PlayerId,
+    system: &SystemId,
+    planet: &ti4_model::id::PlanetId,
+    landing: &[(String, usize)],
+) -> Result<Option<GroundSides>, Unsupported> {
+    let (content, sources) = (seen.content(), seen.sources());
+    let here = seen.system(system);
+    let kind = |id: &str| ti4_content::units::unit_type(content, id, sources);
+    let standing = here.on_planet(planet);
+    let defenders: BTreeSet<&PlayerId> = standing
+        .iter()
+        .filter(|u| {
+            &u.owner != player && kind(u.type_id.as_str()).is_some_and(|k| k.is_ground_force())
+        })
+        .map(|u| &u.owner)
+        .collect();
+    if defenders.len() > 1 {
+        return Err(Unsupported::Opponents);
+    }
+    let Some(enemy) = defenders.first().map(|e| (*e).clone()).or_else(|| {
+        here.planet_control
+            .get(planet)
+            .filter(|holder| *holder != player)
+            .cloned()
+    }) else {
+        return Ok(None);
+    };
+    if ti4_content::galaxy::all_systems(content, sources)
+        .get(system.as_str())
+        .is_some_and(ti4_content::galaxy::System::is_scar)
+    {
+        return Err(Unsupported::Anomaly);
+    }
+    let shift_of = |owner: &PlayerId| -> Result<i64, Unsupported> {
+        let faction = seen
+            .seat(owner)
+            .map(|seat| seat.faction.as_str().to_owned())
+            .unwrap_or_default();
+        FACTIONS
+            .iter()
+            .find(|(known, _)| *known == faction)
+            .map(|(_, shift)| *shift)
+            .ok_or(Unsupported::Faction(faction))
+    };
+    let mut forces: BTreeMap<String, usize> = BTreeMap::new();
+    let mut damaged: BTreeMap<String, usize> = BTreeMap::new();
+    let mut guns: BTreeMap<String, usize> = BTreeMap::new();
+    for u in standing.iter().filter(|u| u.owner == enemy) {
+        let id = u.type_id.as_str();
+        let Some(k) = kind(id) else { continue };
+        if u.galvanized {
+            return Err(Unsupported::Galvanized);
+        }
+        if k.is_ground_force() {
+            *forces.entry(id.to_owned()).or_default() += 1;
+            if u.sustained_damage {
+                *damaged.entry(id.to_owned()).or_default() += 1;
+            }
+        } else if k.has_space_cannon() {
+            if !DEFENSE_GUN_IDS.contains(&id) {
+                return Err(Unsupported::Guns);
+            }
+            *guns.entry(id.to_owned()).or_default() += 1;
+        }
+    }
+    let attacker = GroundBattleSide {
+        forces: landing.to_vec(),
+        damaged: Vec::new(),
+        guns: Vec::new(),
+        harrow: Vec::new(),
+        modifier: shift_of(player)?,
+    };
+    let defender = GroundBattleSide {
+        forces: forces.into_iter().collect(),
+        damaged: damaged.into_iter().collect(),
+        guns: guns.into_iter().collect(),
+        harrow: Vec::new(),
+        modifier: shift_of(&enemy)?,
+    };
+    encode_ground(&attacker, &defender)?;
+    Ok(Some((attacker, defender)))
+}
+
+/// Expected resource cost a space side loses, in tens of resources (public for fleet pricing).
+#[must_use]
+pub fn space_cost_lost(seen: &Observed<'_>, side: &BattleSide, survival: &[f32]) -> f64 {
+    cost_lost(seen, side, survival)
 }
 
 /// Expected resource cost a ground side loses, in tens of resources.
