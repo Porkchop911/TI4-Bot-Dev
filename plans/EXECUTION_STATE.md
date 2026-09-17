@@ -8869,3 +8869,24 @@ evaluation before promotion.
 - Launched `scripts/arena_v4_pilot.psd1` (learner checkpoint-212544-arena-v4), then
   `scripts/vp_v4_control.psd1` (plain 212544), same seeds, fixed engine, commit 44f130b.
 - Reviewer now scores MLP traces with arena battle facts (they were missing).
+
+## 2026-09-17 — Astra activation-rework advisory review
+
+- Reviewed `plans/ASTRA_ACTIVATION_REWORK_2026-09-17.md` and relevant code at
+  `7b22aff81284d0d2a9abad317f47a665be8d7899`. Opinion and concrete conditions in
+  `plans/ASTRA_ACTIVATION_REWORK_RESPONSE_2026-09-17.md`.
+- Supports preactivation candidate-fleet information and a bounded macro-policy
+  pilot, but not the three fixed templates as the only action space. Recommends
+  diverse candidates/manual branch, joint movement-resource feasibility, explicit
+  plan invalidation and correct package likelihood recording; retain adaptive
+  landings initially and compare against an information-only activation control.
+- Index is a shortlist heuristic; opening-adjusted strength depends on the enemy.
+  Probe favorite accuracy excludes close matches. Require shortlist recall/regret
+  before fitting more weights. Current invasion query is post-bombardment; separate
+  conditional odds from whole-action capture probability.
+- Additional source finding: lean arena's 50-round cap shares `winner: None` with
+  mutual destruction. Require explicit unresolved labels and an incidence count;
+  no claim made about frequency in existing datasets.
+- Review only: no engine/code fixes, replay, calibration rerun, training or commits.
+  Does not qualify the proposed implementation or independently reproduce reported
+  figures. Accepted lean-simulator user override and four-round objective preserved.
