@@ -525,18 +525,37 @@ pub fn fight_outcome(
     seed: u64,
     attacker_cannon: bool,
 ) -> Outcome {
+    fight_core(attacker, defender, seed, attacker_cannon, false)
+}
+
+/// A fight already under way, as it stands when retreats are announced: space cannon and the
+/// round-1 barrage are behind it (LRR 78.3 precedes 78.4), so neither fires again.
+#[must_use]
+pub fn fight_in_progress(attacker: &Side, defender: &Side, seed: u64) -> Outcome {
+    fight_core(attacker, defender, seed, false, true)
+}
+
+fn fight_core(
+    attacker: &Side,
+    defender: &Side,
+    seed: u64,
+    attacker_cannon: bool,
+    in_progress: bool,
+) -> Outcome {
     let mut rng = Rng::new(seed);
     let (mut a, mut d) = (attacker.clone(), defender.clone());
     let defender_had_ships = !d.ships.is_empty();
-    // Space cannon offence: both sides roll, then both absorb.
-    let a_hits = if attacker_cannon {
-        a.cannon(&mut rng)
-    } else {
-        0
-    };
-    let d_hits = d.cannon(&mut rng);
-    d.absorb(a_hits, false);
-    a.absorb(d_hits, false);
+    if !in_progress {
+        // Space cannon offence: both sides roll, then both absorb.
+        let a_hits = if attacker_cannon {
+            a.cannon(&mut rng)
+        } else {
+            0
+        };
+        let d_hits = d.cannon(&mut rng);
+        d.absorb(a_hits, false);
+        a.absorb(d_hits, false);
+    }
     let mut rounds = 0;
     for round in 1..=50 {
         if a.ships.is_empty() || d.ships.is_empty() {
@@ -544,7 +563,7 @@ pub fn fight_outcome(
         }
         a.repair();
         d.repair();
-        if round == 1 {
+        if round == 1 && !in_progress {
             let (ha, hd) = (a.barrage(&mut rng), d.barrage(&mut rng));
             d.lose_fighters(ha);
             a.lose_fighters(hd);

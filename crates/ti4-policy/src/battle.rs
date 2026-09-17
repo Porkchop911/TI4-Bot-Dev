@@ -18,6 +18,8 @@
 //! - **3** — version 2's space network unchanged, plus a ground network for invasion commits:
 //!   ground forces, damage and dice shift per side, the defender's PDS (space cannon defense) and
 //!   the L1Z1X invader's Harrow ships; outcome and survival per ground-force type.
+//! - **4** — the space input gains a flag for a fight already under way (space cannon and the
+//!   round-1 barrage behind it), and retreat announcements carry the odds of staying in.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -26,10 +28,10 @@ use ti4_engine::choice::{Choice, ChoiceOption, Observed};
 use ti4_model::id::{PlayerId, SystemId};
 
 /// The version new predictors are trained on.
-pub const FEATURE_VERSION: u32 = 3;
+pub const FEATURE_VERSION: u32 = 4;
 
 /// Every version this build can feed.
-pub const SUPPORTED_VERSIONS: [u32; 3] = [1, 2, 3];
+pub const SUPPORTED_VERSIONS: [u32; 4] = [1, 2, 3, 4];
 
 /// Units the encoding knows, in slot order. Never reorder; append under a new version.
 pub const UNIT_IDS: [&str; 21] = [
@@ -117,7 +119,8 @@ pub const fn side_width(version: u32) -> usize {
 /// Width of a whole input: attacker block then defender block.
 #[must_use]
 pub const fn input_width(version: u32) -> usize {
-    2 * side_width(version)
+    let flag = if version >= 4 { 1 } else { 0 };
+    2 * side_width(version) + flag
 }
 
 /// Width of a predictor's output: three outcome logits, and from version 2 a survival logit per
@@ -434,13 +437,33 @@ pub fn encode(
     attacker: &BattleSide,
     defender: &BattleSide,
 ) -> Result<Vec<f32>, Unsupported> {
+    encode_at(version, attacker, defender, false)
+}
+
+/// As [`encode`], for a fight already under way when `in_progress` (version 4).
+///
+/// # Errors
+///
+/// As [`encode`]; and a fight under way needs version 4 and defending ships.
+pub fn encode_at(
+    version: u32,
+    attacker: &BattleSide,
+    defender: &BattleSide,
+    in_progress: bool,
+) -> Result<Vec<f32>, Unsupported> {
     if attacker.units.is_empty() || (version < 2 && defender.units.is_empty()) {
         return Err(Unsupported::EmptyFleet);
     }
+    if in_progress && (version < 4 || defender.units.is_empty()) {
+        return Err(Unsupported::EmptyFleet);
+    }
     let width = side_width(version);
-    let mut out = vec![0.0; 2 * width];
+    let mut out = vec![0.0; input_width(version)];
     attacker.encode(version, &mut out[..width])?;
-    defender.encode(version, &mut out[width..])?;
+    defender.encode(version, &mut out[width..2 * width])?;
+    if version >= 4 && in_progress {
+        out[2 * width] = 1.0;
+    }
     Ok(out)
 }
 
@@ -659,6 +682,44 @@ impl BattlePredictor {
         Ok(predictor)
     }
 
+    /// A predictor of any version from its space and (version 3 on) ground layers.
+    ///
+    /// # Errors
+    ///
+    /// An unsupported version, or layers that do not chain for it.
+    pub fn assemble(
+        version: u32,
+        continuation: impl Into<String>,
+        space: Vec<(usize, usize, Vec<f32>, Vec<f32>)>,
+        ground: Vec<(usize, usize, Vec<f32>, Vec<f32>)>,
+    ) -> Result<Self, LoadError> {
+        let predictor = Self {
+            feature_version: version,
+            continuation: continuation.into(),
+            unit_ids: UNIT_IDS.iter().map(|id| (*id).to_owned()).collect(),
+            layers: to_layers(space),
+            ground_layers: to_layers(ground),
+        };
+        predictor.validate()?;
+        Ok(predictor)
+    }
+
+    /// The ground layers as `(inputs, outputs, weight, bias)`, to carry into a later version.
+    #[must_use]
+    pub fn ground_layer_parts(&self) -> Vec<(usize, usize, Vec<f32>, Vec<f32>)> {
+        self.ground_layers
+            .iter()
+            .map(|layer| {
+                (
+                    layer.inputs,
+                    layer.outputs,
+                    layer.weight.clone(),
+                    layer.bias.clone(),
+                )
+            })
+            .collect()
+    }
+
     /// A version-3 predictor: this version-2 space network plus a ground network.
     ///
     /// # Errors
@@ -819,14 +880,158 @@ pub const FACT_NAMES_V3: [&str; 14] = [
     "action-plan:ground-enemy-cost-lost",
 ];
 
+/// Version 4 adds the odds of staying in, on retreat announcements.
+pub const FACT_NAMES_V4: [&str; 18] = [
+    "action-plan:battle-fight",
+    "action-plan:battle-unsupported",
+    "action-plan:battle-win",
+    "action-plan:battle-loss",
+    "action-plan:battle-mutual",
+    "action-plan:battle-win-change",
+    "action-plan:battle-own-cost-lost",
+    "action-plan:battle-enemy-cost-lost",
+    "action-plan:ground-fight",
+    "action-plan:ground-unsupported",
+    "action-plan:ground-take",
+    "action-plan:ground-take-change",
+    "action-plan:ground-own-cost-lost",
+    "action-plan:ground-enemy-cost-lost",
+    "action-plan:battle-stay-win",
+    "action-plan:battle-stay-loss",
+    "action-plan:battle-stay-own-cost-lost",
+    "action-plan:battle-stay-enemy-cost-lost",
+];
+
 /// The facts a predictor of `version` emits; the arena migration appends exactly these.
 #[must_use]
 pub fn fact_names(version: u32) -> &'static [&'static str] {
     match version {
         0 | 1 => &FACT_NAMES_V1,
         2 => &FACT_NAMES_V2,
-        _ => &FACT_NAMES_V3,
+        3 => &FACT_NAMES_V3,
+        _ => &FACT_NAMES_V4,
     }
+}
+
+/// The fight a retreat announcement is about: the ships in the combat system, with the active
+/// player as attacker, as it stands under way. `None` when the choice is not an announcement or
+/// the fight is outside the predictor's cover.
+#[must_use]
+pub fn retreat_query(
+    seen: &Observed<'_>,
+    choice: &Choice,
+    player: &PlayerId,
+) -> Option<(BattleSide, BattleSide, bool)> {
+    let announcing = choice
+        .context
+        .as_ref()
+        .is_some_and(|context| context.subtype == "announce_retreat");
+    if !announcing {
+        return None;
+    }
+    let system = choice.options.iter().find_map(|option| {
+        option
+            .payload
+            .get("system")
+            .and_then(serde_json::Value::as_str)
+    })?;
+    let system = SystemId::new(system);
+    let active = seen.active_player()?.clone();
+    let (content, sources) = (seen.content(), seen.sources());
+    let here = seen.system(&system);
+    let is_ship = |id: &str| {
+        ti4_content::units::unit_type(content, id, sources).is_some_and(|unit| unit.is_ship())
+    };
+    let owners: BTreeSet<&PlayerId> = here
+        .units
+        .iter()
+        .filter(|unit| is_ship(unit.type_id.as_str()))
+        .map(|unit| &unit.owner)
+        .collect();
+    if owners.len() != 2 || !owners.contains(player) || !owners.contains(&active) {
+        return None;
+    }
+    let enemy = owners.iter().find(|owner| **owner != &active)?;
+    if ti4_content::galaxy::all_systems(content, sources)
+        .get(system.as_str())
+        .is_some_and(ti4_content::galaxy::System::is_anomaly)
+    {
+        return None;
+    }
+    let side = |owner: &PlayerId| -> Option<BattleSide> {
+        let faction = seen.seat(owner)?.faction.as_str().to_owned();
+        let modifier = FACTIONS
+            .iter()
+            .find(|(known, _)| *known == faction)
+            .map(|(_, shift)| *shift)?;
+        let mut units: BTreeMap<String, usize> = BTreeMap::new();
+        let mut damaged: BTreeMap<String, usize> = BTreeMap::new();
+        for unit in here
+            .units
+            .iter()
+            .filter(|unit| &unit.owner == owner && is_ship(unit.type_id.as_str()))
+        {
+            if unit.galvanized {
+                return None;
+            }
+            *units.entry(unit.type_id.to_string()).or_default() += 1;
+            if unit.sustained_damage {
+                *damaged.entry(unit.type_id.to_string()).or_default() += 1;
+            }
+        }
+        Some(BattleSide {
+            units: units.into_iter().collect(),
+            damaged: damaged.into_iter().collect(),
+            guns: Vec::new(),
+            modifier,
+        })
+    };
+    let attacker = side(&active)?;
+    let defender = side(enemy)?;
+    Some((attacker, defender, player == &active))
+}
+
+/// Staying-in facts for a retreat announcement, the same on every option.
+fn retreat_facts(
+    seen: &Observed<'_>,
+    choice: &Choice,
+    player: &PlayerId,
+    predictor: &BattlePredictor,
+) -> Vec<Vec<(&'static str, f64)>> {
+    let names = &FACT_NAMES_V4[14..];
+    let facts: Vec<(&'static str, f64)> = retreat_query(seen, choice, player)
+        .and_then(|(attacker, defender, acting_attacks)| {
+            let input = encode_at(predictor.feature_version, &attacker, &defender, true).ok()?;
+            let p = predictor.predict(&input);
+            let (own, enemy, own_survival, enemy_survival) = if acting_attacks {
+                (
+                    &attacker,
+                    &defender,
+                    &p.attacker_survival,
+                    &p.defender_survival,
+                )
+            } else {
+                (
+                    &defender,
+                    &attacker,
+                    &p.defender_survival,
+                    &p.attacker_survival,
+                )
+            };
+            let (win, loss) = if acting_attacks {
+                (p.attacker_wins, p.defender_wins)
+            } else {
+                (p.defender_wins, p.attacker_wins)
+            };
+            Some(vec![
+                (names[0], f64::from(win)),
+                (names[1], f64::from(loss)),
+                (names[2], cost_lost(seen, own, own_survival)),
+                (names[3], cost_lost(seen, enemy, enemy_survival)),
+            ])
+        })
+        .unwrap_or_default();
+    choice.options.iter().map(|_| facts.clone()).collect()
 }
 
 /// Expected resource cost a side loses, in tens of resources.
@@ -1109,6 +1314,14 @@ pub fn decision_facts(
     if predictor.has_ground() && choice.options.iter().any(|option| option.kind == "commit") {
         return ground_facts(seen, choice, player, predictor);
     }
+    if version >= 4
+        && choice
+            .context
+            .as_ref()
+            .is_some_and(|context| context.subtype == "announce_retreat")
+    {
+        return retreat_facts(seen, choice, player, predictor);
+    }
     let names = fact_names(version);
     let queries: Vec<BattleQuery> = choice
         .options
@@ -1230,7 +1443,8 @@ mod tests {
         let mut defender = side(&[("carrier", 1)], &[], 0);
         defender.guns = vec![("pds2".to_owned(), 2)];
         let x = encode(2, &attacker, &defender).expect("supported");
-        assert_eq!(x.len(), INPUT_WIDTH);
+        assert_eq!(x.len(), input_width(2));
+        assert_eq!(input_width(4), input_width(2) + 1, "version 4 adds the under-way flag");
         let (d, f, c) = (
             position(&UNIT_IDS, "dreadnought"),
             position(&UNIT_IDS, "fighter"),
@@ -1302,17 +1516,19 @@ mod tests {
     }
 
     fn tiny(version: u32) -> BattlePredictor {
-        let base = version.min(2);
-        let (input, output) = (input_width(base), output_width(base));
-        let predictor = BattlePredictor::new(
-            base,
-            "test",
+        let space = |v: u32| {
+            let (input, output) = (input_width(v), output_width(v));
             vec![
                 (input, 2, vec![0.1; input * 2], vec![0.0, 0.5]),
                 (2, output, vec![0.2; 2 * output], vec![0.0; output]),
-            ],
-        )
-        .expect("valid");
+            ]
+        };
+        if version >= 4 {
+            return BattlePredictor::assemble(version, "test", space(version), ground_layers())
+                .expect("valid");
+        }
+        let base = version.min(2);
+        let predictor = BattlePredictor::new(base, "test", space(base)).expect("valid");
         upgrade(version, predictor)
     }
 
@@ -1480,6 +1696,25 @@ mod tests {
 
     /// A predictor that scores only the attacker's dreadnought slot, so more dreadnoughts win.
     fn dreadnought_counter(version: u32) -> BattlePredictor {
+        if version >= 4 {
+            let space = dreadnought_counter_space(2);
+            let (input, output) = (input_width(version), output_width(version));
+            let mut first = vec![0.0; input];
+            first[position(&UNIT_IDS, "dreadnought")] = 8.0;
+            let mut second = vec![0.0; output];
+            second[0] = 1.0;
+            let _ = space;
+            return BattlePredictor::assemble(
+                version,
+                "test",
+                vec![
+                    (input, 1, first, vec![0.0]),
+                    (1, output, second, vec![0.0; output]),
+                ],
+                ground_layers(),
+            )
+            .expect("valid");
+        }
         let predictor = dreadnought_counter_space(version.min(2));
         upgrade(version, predictor)
     }
@@ -1550,8 +1785,8 @@ mod tests {
             vec![0.0; 3],
         )];
         assert!(matches!(
-            BattlePredictor::new(4, "test", layers.clone()),
-            Err(LoadError::Version { found: 4 })
+            BattlePredictor::new(5, "test", layers.clone()),
+            Err(LoadError::Version { found: 5 })
         ));
         // Version 3 is only reachable by adding ground layers, and they must chain.
         assert!(matches!(
@@ -1677,5 +1912,63 @@ mod tests {
                 .all(Vec::is_empty)
         );
         let _ = b;
+    }
+
+    #[test]
+    fn a_retreat_announcement_carries_the_odds_of_staying_in() {
+        let content = ti4_content::ContentStore::embedded();
+        let (mut state, system) = board("hacan", "letnev");
+        let (a, b) = (PlayerId::new("a"), PlayerId::new("b"));
+        ti4_engine::fixtures::put(&mut state, &system, "dreadnought", &a, 1);
+        ti4_engine::fixtures::put(&mut state, &system, "cruiser", &b, 2);
+        state.active = Some(a.clone());
+        let seen = Observed::new(&state, content, ti4_model::POK, None);
+        let here = system.to_string();
+        let choice = Choice::new(
+            b.clone(),
+            "announce a retreat",
+            vec![
+                ChoiceOption::labelled("stay", "retreat", "stay and fight")
+                    .with("system", here.clone()),
+                ChoiceOption::labelled("retreat", "retreat", "announce a retreat")
+                    .with("system", here),
+            ],
+        )
+        .contextualized(ti4_engine::decision_context::DecisionContext::new(
+            b.clone(),
+            ti4_engine::decision_context::DecisionSource::Rule("78.9".to_owned()),
+            "announce_retreat",
+            ti4_model::state::Phase::Action,
+            1,
+        ));
+        let (attacker, defender, acting_attacks) =
+            retreat_query(&seen, &choice, &b).expect("a covered fight");
+        assert_eq!(attacker.units, vec![("dreadnought".to_owned(), 1)]);
+        assert_eq!(defender.units, vec![("cruiser".to_owned(), 2)]);
+        assert!(!acting_attacks, "the defender is the one asked");
+        let input = encode_at(4, &attacker, &defender, true).expect("encodes");
+        assert_eq!(input[input.len() - 1], 1.0, "the under-way flag is set");
+
+        let facts = decision_facts(&seen, &choice, &b, &dreadnought_counter(4));
+        assert_eq!(facts.len(), 2);
+        assert_eq!(facts[0], facts[1], "both options carry the same odds");
+        let win = facts[0]
+            .iter()
+            .find(|(name, _)| *name == "action-plan:battle-stay-win")
+            .map(|(_, v)| *v)
+            .expect("stay odds");
+        let loss = facts[0]
+            .iter()
+            .find(|(name, _)| *name == "action-plan:battle-stay-loss")
+            .map(|(_, v)| *v)
+            .expect("stay odds");
+        // The predictor favours the attacker's dreadnought, so the defender's stay-win is low.
+        assert!(win < loss, "seen from the defender: {win} vs {loss}");
+        // Version 3 has no such facts.
+        assert!(
+            decision_facts(&seen, &choice, &b, &tiny(3))
+                .iter()
+                .all(Vec::is_empty)
+        );
     }
 }

@@ -116,6 +116,8 @@ struct Party {
 struct Position {
     attacker: Party,
     defender: Party,
+    /// A fight already under way: no space cannon, no barrage.
+    in_progress: bool,
 }
 
 fn damage(fleet: &Fleet, rng: &mut Rng) -> Vec<(String, usize)> {
@@ -188,8 +190,26 @@ impl Position {
             }
         };
         let attacker = party(rng, false);
-        let defender = party(rng, true);
-        Self { attacker, defender }
+        let mut defender = party(rng, true);
+        // Two in five positions are fights under way, as a retreat announcement sees them. Guns
+        // have already fired by then, and a fight needs defending ships.
+        let in_progress = rng.below(5) < 2;
+        let mut attacker = attacker;
+        if in_progress {
+            attacker.guns.clear();
+            defender.guns.clear();
+            if defender.fleet.is_none() {
+                let index = rng.below(space.fleets.len());
+                defender.faction = space.fleets[index].faction;
+                defender.damage = damage(&space.fleets[index], rng);
+                defender.fleet = Some(index);
+            }
+        }
+        Self {
+            attacker,
+            defender,
+            in_progress,
+        }
     }
 
     fn key(space: &Space, party: &Party) -> String {
@@ -204,8 +224,8 @@ impl Position {
 
     /// Held out one position in ten, keyed without regard to role.
     fn held_out(&self, space: &Space) -> bool {
-        let a = Self::key(space, &self.attacker);
-        let d = Self::key(space, &self.defender);
+        let a = format!("{}@{}", Self::key(space, &self.attacker), self.in_progress);
+        let d = format!("{}@{}", Self::key(space, &self.defender), self.in_progress);
         let pair = if a <= d {
             format!("{a}~{d}")
         } else {
@@ -228,8 +248,9 @@ impl Position {
     fn features(&self, space: &Space, out: &mut Vec<f32>) {
         let attacker = Self::battle_side(space, &self.attacker);
         let defender = Self::battle_side(space, &self.defender);
-        let input = policy_battle::encode(FEATURE_VERSION, &attacker, &defender)
-            .expect("the sampled space is in the encoding");
+        let input =
+            policy_battle::encode_at(FEATURE_VERSION, &attacker, &defender, self.in_progress)
+                .expect("the sampled space is in the encoding");
         out.extend_from_slice(&input);
     }
 
@@ -259,7 +280,11 @@ impl Position {
         let mut a_left = vec![0usize; a_start.len()];
         let mut d_left = vec![0usize; d_start.len()];
         for _ in 0..seeds {
-            let outcome = arena::fight_outcome(&a, &d, rng.next_u64(), true);
+            let outcome = if self.in_progress {
+                arena::fight_in_progress(&a, &d, rng.next_u64())
+            } else {
+                arena::fight_outcome(&a, &d, rng.next_u64(), true)
+            };
             let slot = match outcome.winner {
                 Some("a") => 0,
                 Some("b") => 1,
@@ -430,6 +455,8 @@ fn main() {
     let seed = parse("--seed", 20_260_917u64);
     let out = argument("--out");
     let export = argument("--export");
+    // Version 3 on carries a ground network; the space trainer copies it from this predictor.
+    let ground = argument("--ground");
 
     tch::manual_seed(i64::try_from(seed).unwrap_or(0));
     let device = ti4_tensor::OptimizerDevice::Cuda
@@ -590,16 +617,22 @@ fn main() {
                     .expect("bias reads back");
             (cols, rows, weight, bias)
         };
-        let predictor = BattlePredictor::new(
+        let ground_layers = ground.as_ref().map_or_else(Vec::new, |path| {
+            BattlePredictor::from_json(&std::fs::read_to_string(path).expect("ground predictor"))
+                .expect("ground predictor loads")
+                .ground_layer_parts()
+        });
+        let predictor = BattlePredictor::assemble(
             FEATURE_VERSION,
             format!(
-                "arena-lean-v2 sustain-first cheapest-fresh, both sides space cannon and guns, \
-                 flagship effects; max {max_ships} ships {max_fighters} fighters; seed {seed}, \
-                 {steps} steps"
+                "arena-lean-v4 sustain-first cheapest-fresh, both sides space cannon and guns, \
+                 flagship effects, fights under way; max {max_ships} ships {max_fighters} \
+                 fighters; seed {seed}, {steps} steps"
             ),
             vec![layer("l1"), layer("l2"), layer("l3")],
+            ground_layers,
         )
-        .expect("exported layers chain");
+        .expect("exported layers chain (version 3 on needs --ground)");
         std::fs::write(&path, predictor.to_json().expect("serialises")).expect("export written");
 
         // The plain-Rust forward pass must reproduce the trained network.

@@ -157,3 +157,30 @@ check models it; the ti4calc check does not.
   4 seeds x 4 rounds (v2 1,275, v1 390). v1 and v2 bundles still play identically.
 
 Next by the user's order: retreat. Action cards last.
+
+## Retreat — 2026-09-17
+
+### Engine: barrage before the announcement (`a6524a6`, ti4-sim v41 in `0bc379e`)
+
+LRR 78.3 (anti-fighter barrage) precedes 78.4 (announce retreats), but the engine asked for round
+1's announcement before the round opened. Each round now opens (start-of-round events, round 1's
+barrage), then asks for announcements, then rolls. The ti4-sim invasion share drifted just under
+v40 (only change since v40; with it stashed, v40 holds); re-baselined with approval.
+
+### Version 4
+
+- The space input gains a flag for a fight already under way: space cannon and the barrage are
+  behind it. `battle_arena::fight_in_progress` labels such positions; the trainer makes two in five
+  positions under way (guns cleared, defenders always have ships).
+- `retreat_query` on `announce_retreat` decisions: the ships in the combat system, the active
+  player attacking, encoded under way. Facts on both options (stay and retreat):
+  `battle-stay-win`, `battle-stay-loss`, `battle-stay-own-cost-lost`,
+  `battle-stay-enemy-cost-lost`, from the acting seat's side.
+- Labels still fight to the end: they are exactly the counterfactual of not retreating, which is
+  what the announcement weighs. Nothing predicts the opponent's retreat.
+- Trained 20,000 steps (ground network carried over from v3): KL 0.0005, MAE 0.43pp (contested
+  1.26pp), survival 0.75pp; export matches to 5.1e-7.
+- `checkpoint-212544-arena-v4` (slots 14,878 -> 14,896): identical play; 2,643 battle facts over 4
+  seeds x 4 rounds (v3 2,115).
+
+Remaining in the user's order: action cards.

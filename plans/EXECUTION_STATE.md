@@ -8853,3 +8853,10 @@ evaluation before promotion.
   `checkpoint-212544-arena-v3` migrated, identical play. Evidence in
   `plans/evidence/ARENA_002_PREDICTOR_2026-09-17.md`.
 - Next: retreat; action cards last. The arena PPO pilot (v1) still awaits evaluation.
+
+### ARENA retreat: engine round order and predictor v4 — 2026-09-17
+
+- `a6524a6` announces retreats after the round-1 barrage; ti4-sim v41 `0bc379e`.
+- Predictor v4: fights under way and staying-in facts on retreat announcements;
+  `checkpoint-212544-arena-v4`, identical play. Remaining: action cards; the arena PPO pilot
+  still awaits evaluation, and nothing has trained with v2-v4 yet.
