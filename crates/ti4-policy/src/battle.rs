@@ -20,6 +20,11 @@
 //!   the L1Z1X invader's Harrow ships; outcome and survival per ground-force type.
 //! - **4** — the space input gains a flag for a fight already under way (space cannon and the
 //!   round-1 barrage behind it), and retreat announcements carry the odds of staying in.
+//! - **5** — version 4's networks and encoding unchanged; activation options gain what defends
+//!   the destination's planets, ground forces and structures counted apart.
+//!
+//! From version 5 on, a version only adds facts: the encoding stays version 4's, so a predictor
+//! moves up with [`BattlePredictor::relabelled`] and no retraining.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -31,7 +36,7 @@ use ti4_model::id::{PlayerId, SystemId};
 pub const FEATURE_VERSION: u32 = 4;
 
 /// Every version this build can feed.
-pub const SUPPORTED_VERSIONS: [u32; 4] = [1, 2, 3, 4];
+pub const SUPPORTED_VERSIONS: [u32; 5] = [1, 2, 3, 4, 5];
 
 /// Units the encoding knows, in slot order. Never reorder; append under a new version.
 pub const UNIT_IDS: [&str; 21] = [
@@ -743,6 +748,23 @@ impl BattlePredictor {
         Ok(self)
     }
 
+    /// The same networks under a later fact version (5 on), which feeds them version 4's encoding.
+    ///
+    /// # Errors
+    ///
+    /// This predictor is older than version 4, or `version` is not a later supported version.
+    pub fn relabelled(mut self, version: u32) -> Result<Self, LoadError> {
+        if self.feature_version < 4
+            || version <= self.feature_version
+            || !SUPPORTED_VERSIONS.contains(&version)
+        {
+            return Err(LoadError::Version { found: version });
+        }
+        self.feature_version = version;
+        self.validate()?;
+        Ok(self)
+    }
+
     /// Whether this predictor covers invasions.
     #[must_use]
     pub fn has_ground(&self) -> bool {
@@ -902,15 +924,82 @@ pub const FACT_NAMES_V4: [&str; 18] = [
     "action-plan:battle-stay-enemy-cost-lost",
 ];
 
-/// The facts a predictor of `version` emits; the arena migration appends exactly these.
+/// Version 5 adds what defends an activation's destination planets.
+pub const FACT_NAMES_V5: [&str; 20] = [
+    "action-plan:battle-fight",
+    "action-plan:battle-unsupported",
+    "action-plan:battle-win",
+    "action-plan:battle-loss",
+    "action-plan:battle-mutual",
+    "action-plan:battle-win-change",
+    "action-plan:battle-own-cost-lost",
+    "action-plan:battle-enemy-cost-lost",
+    "action-plan:ground-fight",
+    "action-plan:ground-unsupported",
+    "action-plan:ground-take",
+    "action-plan:ground-take-change",
+    "action-plan:ground-own-cost-lost",
+    "action-plan:ground-enemy-cost-lost",
+    "action-plan:battle-stay-win",
+    "action-plan:battle-stay-loss",
+    "action-plan:battle-stay-own-cost-lost",
+    "action-plan:battle-stay-enemy-cost-lost",
+    "action-plan:activate-enemy-ground-forces",
+    "action-plan:activate-enemy-structures",
+];
+
+/// The facts a predictor of `version` emits; the arena migrations append exactly these.
 #[must_use]
 pub fn fact_names(version: u32) -> &'static [&'static str] {
     match version {
         0 | 1 => &FACT_NAMES_V1,
         2 => &FACT_NAMES_V2,
         3 => &FACT_NAMES_V3,
-        _ => &FACT_NAMES_V4,
+        4 => &FACT_NAMES_V4,
+        _ => &FACT_NAMES_V5,
     }
+}
+
+/// Activation facts (version 5): other players' ground forces and structures on the destination's
+/// planets, counted apart. `activate-enemy-ground` in the projection counts both together.
+fn activation_facts(
+    seen: &Observed<'_>,
+    choice: &Choice,
+    player: &PlayerId,
+) -> Vec<Vec<(&'static str, f64)>> {
+    let names = &FACT_NAMES_V5[18..];
+    let (content, sources) = (seen.content(), seen.sources());
+    choice
+        .options
+        .iter()
+        .map(|option| {
+            if option.kind != ti4_engine::tactical::ACTIVATE_KIND {
+                return Vec::new();
+            }
+            let here = seen.system(&SystemId::new(option.id.clone()));
+            let (mut forces, mut structures) = (0usize, 0usize);
+            for unit in here.planet_units.values().flatten() {
+                if &unit.owner == player {
+                    continue;
+                }
+                match ti4_content::units::unit_type(content, unit.type_id.as_str(), sources) {
+                    Some(kind) if kind.is_structure() => structures += 1,
+                    Some(kind) if kind.is_ground_force() => forces += 1,
+                    _ => {}
+                }
+            }
+            #[expect(clippy::cast_precision_loss, reason = "unit counts are small")]
+            let count = |n: usize| n as f64;
+            let mut facts = Vec::new();
+            if forces > 0 {
+                facts.push((names[0], count(forces)));
+            }
+            if structures > 0 {
+                facts.push((names[1], count(structures)));
+            }
+            facts
+        })
+        .collect()
 }
 
 /// The fight a retreat announcement is about: the ships in the combat system, with the active
@@ -1311,6 +1400,14 @@ pub fn decision_facts(
     predictor: &BattlePredictor,
 ) -> Vec<Vec<(&'static str, f64)>> {
     let version = predictor.feature_version;
+    if version >= 5
+        && choice
+            .options
+            .iter()
+            .any(|option| option.kind == ti4_engine::tactical::ACTIVATE_KIND)
+    {
+        return activation_facts(seen, choice, player);
+    }
     if predictor.has_ground() && choice.options.iter().any(|option| option.kind == "commit") {
         return ground_facts(seen, choice, player, predictor);
     }
@@ -1623,6 +1720,48 @@ mod tests {
     }
 
     #[test]
+    fn version_five_counts_destination_ground_forces_and_structures_apart() {
+        let (mut state, system) = board("letnev", "jolnar");
+        let (a, b) = (PlayerId::new("a"), PlayerId::new("b"));
+        let unit = |id: &str, owner: &PlayerId| {
+            ti4_model::units::Unit::new(ti4_model::id::UnitTypeId::new(id), owner.clone())
+        };
+        state
+            .system_mut(&system)
+            .planet_units
+            .entry(ti4_model::id::PlanetId::new("jeolir"))
+            .or_default()
+            .extend([
+                unit("spacedock", &b),
+                unit("pds", &b),
+                unit("infantry", &b),
+                unit("infantry", &a),
+            ]);
+        let seen = Observed::new(
+            &state,
+            ti4_content::ContentStore::embedded(),
+            ti4_model::POK,
+            None,
+        );
+        let activate = ChoiceOption::new(system.as_str(), ti4_engine::tactical::ACTIVATE_KIND);
+        let choice = Choice::new(a.clone(), "activate a system", vec![activate]);
+
+        let facts = activation_facts(&seen, &choice, &a);
+        assert_eq!(
+            facts,
+            vec![vec![
+                ("action-plan:activate-enemy-ground-forces", 1.0),
+                ("action-plan:activate-enemy-structures", 2.0),
+            ]]
+        );
+        assert_eq!(
+            &fact_names(5)[..18],
+            fact_names(4),
+            "version 5 only appends"
+        );
+    }
+
+    #[test]
     fn planet_guns_join_the_defender_from_version_two() {
         let content = ti4_content::ContentStore::embedded();
         let (mut state, system) = board("sol", "xxcha");
@@ -1789,8 +1928,8 @@ mod tests {
             vec![0.0; 3],
         )];
         assert!(matches!(
-            BattlePredictor::new(5, "test", layers.clone()),
-            Err(LoadError::Version { found: 5 })
+            BattlePredictor::new(6, "test", layers.clone()),
+            Err(LoadError::Version { found: 6 })
         ));
         // Version 3 is only reachable by adding ground layers, and they must chain.
         assert!(matches!(

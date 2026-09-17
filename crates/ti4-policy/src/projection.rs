@@ -513,8 +513,12 @@ fn action_facts_within(
                 (name("activate-reachable-hulls"), count(hulls)),
                 (name("activate-reachable-capacity"), amount(capacity)),
                 (name("activate-reachable-load"), amount(load)),
+                // Some hull can get there, boosts considered one hull at a time; not whether the
+                // hulls can go together. `target:reachable` is a printed-distance heuristic.
                 (name("activate-can-reach"), f64::from(u8::from(hulls > 0))),
                 (name("activate-enemy-ships"), count(enemy_ships)),
+                // Every other player's unit on the planets, structures included; arena bundles
+                // (fact version 5) also see ground forces and structures apart.
                 (name("activate-enemy-ground"), count(enemy_ground)),
                 (name("activate-objective-advances"), count(advances)),
                 (name("activate-objective-completes"), count(completes)),
