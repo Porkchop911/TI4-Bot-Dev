@@ -171,7 +171,8 @@ impl AftermathWindow {
         )
         .map_err(GameError::IllegalChoice)?;
 
-        // Fired by everyone except the active player, before combat.
+        // Fired before combat by every player with guns there; the active player's only at an
+        // opponent's ships.
         let cannon = crate::combat::space_cannon_offense(
             state,
             ctx.content,
@@ -208,7 +209,12 @@ impl AftermathWindow {
         // ships too, and nothing would say which step emptied the system.
         let before_cannon =
             crate::combat::non_fighter_ships_of(state, ctx.content, ctx.sources, player, system);
-        let gunners: Vec<PlayerId> = cannon.iter().map(|(who, _)| who.clone()).collect();
+        // The feat below is about the active player's losses, so only other players earn it.
+        let gunners: Vec<PlayerId> = cannon
+            .iter()
+            .filter(|(who, _)| who != player)
+            .map(|(who, _)| who.clone())
+            .collect();
         // "Before you assign hits produced by another player's SPACE CANNON roll." Emitted
         // per firing player and immediately followed by that player's absorption, so a card
         // played in the window (Maneuvering Jets) cancels a hit of *this* roll rather than
@@ -216,14 +222,23 @@ impl AftermathWindow {
         // and the loss, which space cannon previously resolved straight through.
         let (content, sources, galaxy) = (ctx.content, ctx.sources, galaxy);
         for (gunner, hits) in cannon {
+            // The active player's guns hit the ships of the player it is attacking.
+            let victim = if &gunner == player {
+                match crate::combat::opponent_with_ships(state, content, sources, player, system) {
+                    Some(victim) => victim,
+                    None => continue,
+                }
+            } else {
+                player.clone()
+            };
             let mut payload = std::collections::BTreeMap::new();
             payload.insert("system".to_owned(), system.to_string().into());
-            payload.insert("player".to_owned(), player.to_string().into());
+            payload.insert("player".to_owned(), victim.to_string().into());
             payload.insert("gunner".to_owned(), gunner.to_string().into());
             payload.insert("hits".to_owned(), i64::try_from(hits).unwrap_or(0).into());
             let _ = ctx.emit(state, "SPACE_CANNON_HITS", payload);
             crate::combat::absorb_hits_seeing(
-                state, content, sources, galaxy, ctx, player, system, &gunner, hits,
+                state, content, sources, galaxy, ctx, &victim, system, &gunner, hits,
             )?;
         }
         let mut pending_event_scoring = None;

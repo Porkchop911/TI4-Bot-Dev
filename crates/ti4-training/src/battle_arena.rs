@@ -293,6 +293,16 @@ impl Side {
         }
     }
 
+    /// The same side with its space cannon silenced: what `combat::resolve` fights, since the
+    /// engine fires space cannon in the tactical action rather than in the combat.
+    #[must_use]
+    pub fn without_cannon(mut self) -> Self {
+        for ship in &mut self.ships {
+            ship.cannon_dice = 0;
+        }
+        self
+    }
+
     /// Hits free to land anywhere, and hits that must land on non-fighters.
     fn roll(&self, rng: &mut Rng) -> (usize, usize) {
         let (mut free, mut forced) = (0, 0);

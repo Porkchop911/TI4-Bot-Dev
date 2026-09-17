@@ -784,6 +784,8 @@ fn main() {
 
     if let Some(sample) = argument("--compare").map(|v| v.parse::<usize>().expect("--compare N")) {
         let reps: u64 = argument("--compare-reps").map_or(2000, |v| v.parse().expect("reps"));
+        let compare_effects = std::env::args().any(|arg| arg == "--compare-effects");
+        println!("  flagship effects in lean {compare_effects}");
         let step = (scenarios.len() / sample.max(1)).max(1);
         let picked: Vec<&Scenario> = scenarios.iter().step_by(step).take(sample).collect();
         let started = std::time::Instant::now();
@@ -793,8 +795,10 @@ fn main() {
                 || (Base::new(), policy.clone()),
                 |(base, policy), scenario| {
                     let resolved = Resolved::of(content, scenario);
-                    // Effects off: the engine models none of them, so this isolates the shared rules.
-                    let (a, d) = lean::sides(content, &resolved, false);
+                    // Effects on only with --compare-effects, once the engine implements the flagship
+                    // abilities; space cannon stays off either way, as `resolve` runs none.
+                    let (a, d) = lean::sides(content, &resolved, compare_effects);
+                    let (a, d) = (a.without_cannon(), d.without_cannon());
                     let mut engine = [0f64; 3];
                     let mut quick = [0f64; 3];
                     let slot = |w: Option<&str>| match w {
