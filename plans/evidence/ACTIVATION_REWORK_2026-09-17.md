@@ -46,3 +46,20 @@ rounds, every 2nd tactical-capable turn:
 
 Found and fixed on the way: a fighter moving on its own was also planned as cargo
 (`a_fighter_moving_on_its_own_is_not_also_loaded`).
+
+## Phase 3 — arm A: candidate-fleet summaries on activations (fact version 6)
+
+Activation options of a version-6 bundle carry, from the generator's menu for that destination:
+best space win, cost of the cheapest favoured fleet (win >= 0.5, in tens), best conditional take,
+the least home exposure among favoured fleets, the number of candidates, and a flag when a fight
+cannot be priced. The 22 package facts (read from version 7) are appended to the vocabulary too.
+
+`checkpoint-212544-arena-v6` (from arena-v5, 28 zero rows appended): `arena_migration_check`
+against plain 212544, 3 seeds x 4 rounds: **IDENTICAL**, 8,875 decisions.
+
+Cost: wall time x1.26 at first. Three changes brought it to **x1.12–1.13** (two runs):
+predictions cached per destination; whether a fight follows decided once per destination (with
+next-door guns, which the first version missed); unreachable destinations skipped early; and the
+engine's reachability search memoised on the observation, which the ordinary activation features
+and the generator both ask. Generation alone: 2.7 ms per activation decision. Above the 10%
+engineering budget; left there for the pilot, where inference and the critic take a larger share.

@@ -450,6 +450,10 @@ pub struct Observed<'a> {
     content: &'a ContentStore,
     sources: SourceSet,
     galaxy: Option<&'a Galaxy>,
+    /// [`Self::movable_into`] answers already computed for this position. A decision asks the same
+    /// reachability question from more than one feature family; the position cannot change while
+    /// it is borrowed, so the answer cannot either.
+    movable: std::cell::RefCell<BTreeMap<(PlayerId, SystemId), Vec<crate::tactical::Movable>>>,
 }
 
 impl<'a> Observed<'a> {
@@ -466,6 +470,7 @@ impl<'a> Observed<'a> {
             content,
             sources,
             galaxy,
+            movable: std::cell::RefCell::new(BTreeMap::new()),
         }
     }
 
@@ -695,14 +700,20 @@ impl<'a> Observed<'a> {
         let Some(galaxy) = self.galaxy else {
             return Vec::new();
         };
-        crate::tactical::movable_into(
+        let key = (player.clone(), destination.clone());
+        if let Some(known) = self.movable.borrow().get(&key) {
+            return known.clone();
+        }
+        let found = crate::tactical::movable_into(
             self.state,
             self.content,
             self.sources,
             galaxy,
             player,
             destination,
-        )
+        );
+        self.movable.borrow_mut().insert(key, found.clone());
+        found
     }
 
     /// Every unit of this player a ship leaving `origin` could carry: fighters and ground forces

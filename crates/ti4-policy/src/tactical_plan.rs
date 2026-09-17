@@ -202,6 +202,8 @@ struct Setting<'s, 'a> {
     threat: BTreeMap<SystemId, f64>,
     ships_at: BTreeMap<SystemId, usize>,
     predictor: Option<&'s BattlePredictor>,
+    /// Space predictions already made for this destination, by encoded input.
+    predicted: std::cell::RefCell<std::collections::HashMap<Vec<u32>, battle::BattlePrediction>>,
 }
 
 fn tally(entries: impl IntoIterator<Item = String>) -> Vec<(String, usize)> {
@@ -385,7 +387,9 @@ impl Setting<'_, '_> {
             .collect();
         facts.ground_carried = ground.len();
 
-        if let Some(predictor) = self.predictor {
+        if let Some(predictor) = self.predictor
+            && self.fight
+        {
             let version = predictor.feature_version;
             let refs: Vec<(&str, bool)> = arriving
                 .iter()
@@ -400,7 +404,13 @@ impl Setting<'_, '_> {
                 BattleQuery::Supported { attacker, defender } => {
                     facts.fight = true;
                     if let Ok(input) = battle::encode(version, &attacker, &defender) {
-                        let p = predictor.predict(&input);
+                        let key: Vec<u32> = input.iter().map(|v| v.to_bits()).collect();
+                        let p = self
+                            .predicted
+                            .borrow_mut()
+                            .entry(key)
+                            .or_insert_with(|| predictor.predict(&input))
+                            .clone();
                         facts.space_win = Some(f64::from(p.attacker_wins));
                         facts.space_loss = Some(f64::from(p.defender_wins));
                         facts.own_cost_lost = Some(battle::space_cost_lost(
@@ -418,6 +428,8 @@ impl Setting<'_, '_> {
                     }
                 }
             }
+        }
+        if let Some(predictor) = self.predictor {
             if !ground.is_empty() && predictor.has_ground() {
                 let landing = tally(ground.iter().cloned());
                 let mut hardest: Option<f64> = None;
@@ -549,8 +561,10 @@ pub fn packages_with(
     predictor: Option<&BattlePredictor>,
     threat: &BTreeMap<SystemId, f64>,
 ) -> Vec<Package> {
-    let (setting, can_hold) = setting(seen, player, system, predictor, threat);
-    build(&setting, can_hold)
+    match setting(seen, player, system, predictor, threat) {
+        Some((setting, can_hold)) => build(&setting, can_hold),
+        None => Vec::new(),
+    }
 }
 
 /// Every subset of the movable ships (each with its fighters, no ground forces), priced like the
@@ -565,7 +579,7 @@ pub fn exhaustive(
     threat: &BTreeMap<SystemId, f64>,
     max_hulls: usize,
 ) -> Option<Vec<Package>> {
-    let (setting, _) = setting(seen, player, system, predictor, threat);
+    let (setting, _) = setting(seen, player, system, predictor, threat)?;
     let n = setting.hulls.len();
     if n == 0 || n > max_hulls {
         return None;
@@ -590,6 +604,7 @@ pub fn exhaustive(
 }
 
 /// Gather what every strategy needs for one destination, and whether holding is meaningful.
+/// `None` when nothing can move there and the seat has nothing there to hold.
 #[expect(
     clippy::too_many_lines,
     reason = "gathers the whole setting in one pass; each part is a few lines"
@@ -600,7 +615,7 @@ fn setting<'s, 'a>(
     system: &SystemId,
     predictor: Option<&'s BattlePredictor>,
     threat: &BTreeMap<SystemId, f64>,
-) -> (Setting<'s, 'a>, bool) {
+) -> Option<(Setting<'s, 'a>, bool)> {
     let (content, sources) = (seen.content(), seen.sources());
     let kind = |id: &str| ti4_content::units::unit_type(content, id, sources);
     let faction = seen
@@ -634,6 +649,18 @@ fn setting<'s, 'a>(
             })
         })
         .collect();
+
+    // Most offered systems are out of reach: skip the rest of the setting for them unless the
+    // seat has something there to hold.
+    if hulls.is_empty()
+        && !here.units.iter().any(|u| &u.owner == player)
+        && !seen
+            .controlled_planets(player)
+            .iter()
+            .any(|(at, _)| *at == system)
+    {
+        return None;
+    }
 
     let origins: BTreeSet<SystemId> = hulls.iter().map(|h| h.moving.origin.clone()).collect();
     let mut cargo = BTreeMap::new();
@@ -716,7 +743,16 @@ fn setting<'s, 'a>(
         &[],
     )
     .cannon;
-    let fight = !enemy_ships.is_empty() || !guns.is_empty();
+    // A fight follows if there are other players' ships here, or guns that can fire in -- those
+    // next door included, which only the battle query knows how to find. With no ships of its own
+    // the query reports an empty fleet exactly when there is someone to fight.
+    let fight = match predictor {
+        Some(p) => !matches!(
+            battle::fleet_query(seen, player, system, &[], p.feature_version),
+            BattleQuery::NotApplicable
+        ),
+        None => !enemy_ships.is_empty() || !guns.is_empty(),
+    };
 
     let controlled: BTreeSet<PlanetId> = seen
         .controlled_planets(player)
@@ -771,8 +807,9 @@ fn setting<'s, 'a>(
         threat: threat.clone(),
         ships_at,
         predictor,
+        predicted: std::cell::RefCell::default(),
     };
-    (setting, !own_here.is_empty() || !controlled.is_empty())
+    Some((setting, !own_here.is_empty() || !controlled.is_empty()))
 }
 
 /// The trade the efficient search maximises: predicted win against own losses in tens, or the
