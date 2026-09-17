@@ -8,6 +8,7 @@
 //! sides' space cannon before combat. Checked against ti4calc by `battle_arena_ti4calc`.
 
 use ti4_content::ContentStore;
+use ti4_content::units::UnitType;
 use ti4_model::POK;
 
 /// Ship base types in composition order. Index 0 is always the fighter.
@@ -565,6 +566,266 @@ pub fn fight_outcome(
         // Guns alone cannot be destroyed: an attacker they wipe out simply failed.
         (true, true) if !defender_had_ships => Some("b"),
         _ => None,
+    };
+    Outcome {
+        winner,
+        rounds,
+        attacker_left: a.fielded(),
+        defender_left: d.fielded(),
+    }
+}
+
+/// A ground force in the lean invasion.
+#[derive(Clone, Copy)]
+struct Trooper {
+    name: u16,
+    hits_on: i64,
+    dice: u32,
+    sustain: bool,
+    damaged: bool,
+    cost: f64,
+    infantry: bool,
+    /// The unit's own SPACE CANNON (the Xxcha mech): it fires in space cannon defense only while
+    /// the unit stands.
+    gun: Option<(i64, u32)>,
+}
+
+/// One side of a ground combat on one planet: its ground forces, and what fires for it outside
+/// the combat rounds.
+#[derive(Clone)]
+pub struct GroundSide {
+    troops: Vec<Trooper>,
+    names: Vec<String>,
+    modifier: i64,
+    /// Shield Paling (the Jol-Nar mech) on the planet: infantry ignore Fragile.
+    infantry_ignore_modifier: bool,
+    /// Space cannon defense (defender) as `(hits_on, dice)`.
+    guns: Vec<(i64, u32)>,
+    /// Bombardment dice `(hits_on, dice)` fired before landing, when the planet allows it.
+    bombard: Vec<(i64, u32)>,
+    /// Harrow: the bombardment dice fired again after every round (L1Z1X, unshielded planet).
+    harrow: Vec<(i64, u32)>,
+}
+
+impl GroundSide {
+    /// Ground forces by unit id; `damaged` names mechs that start having sustained.
+    ///
+    /// # Panics
+    ///
+    /// If a unit id is not in the content store.
+    #[must_use]
+    pub fn of(
+        content: &ContentStore,
+        forces: &[(String, usize)],
+        damaged: &[(String, usize)],
+        faction: &str,
+    ) -> Self {
+        let mut names: Vec<String> = Vec::new();
+        let mut troops = Vec::new();
+        for (id, count) in forces {
+            let unit = ti4_content::units::unit_type(content, id, POK).expect("unit exists");
+            let name = names
+                .iter()
+                .position(|known| known == id)
+                .unwrap_or_else(|| {
+                    names.push(id.clone());
+                    names.len() - 1
+                });
+            let hurt = damaged
+                .iter()
+                .find(|(which, _)| which == id)
+                .map_or(0, |(_, n)| *n);
+            for copy in 0..*count {
+                troops.push(Trooper {
+                    name: u16::try_from(name).expect("few unit types"),
+                    hits_on: unit.combat_hits_on().unwrap_or(11),
+                    dice: u32::try_from(unit.combat_dice()).unwrap_or(0),
+                    sustain: unit.sustain_damage(),
+                    damaged: unit.sustain_damage() && copy < hurt,
+                    cost: unit.cost(),
+                    infantry: unit.base_type() == "infantry",
+                    gun: unit
+                        .space_cannon_hits_on()
+                        .map(|on| (on, u32::try_from(unit.space_cannon_dice()).unwrap_or(0))),
+                });
+            }
+        }
+        let jolnar_mech =
+            faction == "jolnar" && forces.iter().any(|(id, n)| *n > 0 && id == "jolnar_mech");
+        let mut side = Self {
+            troops,
+            names,
+            modifier: modifier(faction),
+            infantry_ignore_modifier: jolnar_mech,
+            guns: Vec::new(),
+            bombard: Vec::new(),
+            harrow: Vec::new(),
+        };
+        side.sort();
+        side
+    }
+
+    /// Casualty order, as the engine's ground hit takes them: cheapest first, a damaged unit
+    /// before a fresh one of the same cost, then by unit id.
+    fn sort(&mut self) {
+        let names = self.names.clone();
+        self.troops.sort_by(|a, b| {
+            a.cost
+                .total_cmp(&b.cost)
+                .then(b.damaged.cmp(&a.damaged))
+                .then(names[usize::from(a.name)].cmp(&names[usize::from(b.name)]))
+        });
+    }
+
+    /// Add space cannon defense by structure id (PDS, PDS II). Ground forces with SPACE CANNON
+    /// (the Xxcha mech) already carry theirs and fire only while they stand.
+    #[must_use]
+    pub fn with_defense_guns(mut self, content: &ContentStore, guns: &[(String, usize)]) -> Self {
+        self.guns.extend(dice_of(content, guns, |unit| {
+            unit.space_cannon_hits_on()
+                .map(|on| (on, unit.space_cannon_dice()))
+        }));
+        self
+    }
+
+    /// Add the invading side's bombardment by unit id. `before_landing` fires once before the
+    /// forces land; `harrow` fires again after every round.
+    #[must_use]
+    pub fn with_bombardment(
+        mut self,
+        content: &ContentStore,
+        units: &[(String, usize)],
+        before_landing: bool,
+        harrow: bool,
+    ) -> Self {
+        let dice = dice_of(content, units, |unit| {
+            unit.bombard_hits_on().map(|on| (on, unit.bombard_dice()))
+        });
+        if before_landing {
+            self.bombard.extend(dice.iter().copied());
+        }
+        if harrow {
+            self.harrow.extend(dice);
+        }
+        self
+    }
+
+    /// The unit ids survivor counts refer to.
+    #[must_use]
+    pub fn names(&self) -> &[String] {
+        &self.names
+    }
+
+    /// Ground forces per name.
+    #[must_use]
+    pub fn fielded(&self) -> Vec<usize> {
+        let mut counts = vec![0; self.names.len()];
+        for troop in &self.troops {
+            counts[usize::from(troop.name)] += 1;
+        }
+        counts
+    }
+
+    fn roll(&self, rng: &mut Rng) -> usize {
+        let mut hits = 0;
+        for troop in &self.troops {
+            let shift = if troop.infantry && self.infantry_ignore_modifier && self.modifier < 0 {
+                0
+            } else {
+                self.modifier
+            };
+            for _ in 0..troop.dice {
+                if rng.die() + shift >= troop.hits_on {
+                    hits += 1;
+                }
+            }
+        }
+        hits
+    }
+
+    fn absorb(&mut self, hits: usize) {
+        for _ in 0..hits {
+            if let Some(troop) = self
+                .troops
+                .iter_mut()
+                .find(|troop| troop.sustain && !troop.damaged)
+            {
+                troop.damaged = true;
+                continue;
+            }
+            if self.troops.is_empty() {
+                return;
+            }
+            // Mechs may have taken damage since the last sort: damaged before fresh at equal cost.
+            self.sort();
+            self.troops.remove(0);
+        }
+    }
+}
+
+fn dice_of(
+    content: &ContentStore,
+    units: &[(String, usize)],
+    read: impl Fn(UnitType<'_>) -> Option<(i64, i64)>,
+) -> Vec<(i64, u32)> {
+    let mut out = Vec::new();
+    for (id, count) in units {
+        let unit = ti4_content::units::unit_type(content, id, POK).expect("unit exists");
+        if let Some((on, dice)) = read(unit) {
+            let dice = u32::try_from(dice).unwrap_or(0);
+            out.extend(std::iter::repeat_n((on, dice), *count));
+        }
+    }
+    out
+}
+
+fn volley(dice: &[(i64, u32)], rng: &mut Rng) -> usize {
+    let mut hits = 0;
+    for (on, count) in dice {
+        for _ in 0..*count {
+            if rng.die() >= *on {
+                hits += 1;
+            }
+        }
+    }
+    hits
+}
+
+/// A ground combat on one planet (LRR 49): the invader's bombardment if any, space cannon
+/// defense against the landed forces, then simultaneous rounds with Harrow after each.
+///
+/// The winner is `Some("a")` when the invader takes the planet and `Some("b")` when the defender
+/// holds it, including when both sides are wiped out (49.5d); never `None`.
+#[must_use]
+pub fn ground_fight(attacker: &GroundSide, defender: &GroundSide, seed: u64) -> Outcome {
+    let mut rng = Rng::new(seed);
+    let (mut a, mut d) = (attacker.clone(), defender.clone());
+    let hits = volley(&a.bombard, &mut rng);
+    d.absorb(hits);
+    let standing: Vec<(i64, u32)> = d
+        .guns
+        .iter()
+        .copied()
+        .chain(d.troops.iter().filter_map(|troop| troop.gun))
+        .collect();
+    let hits = volley(&standing, &mut rng);
+    a.absorb(hits);
+    let mut rounds = 0;
+    for round in 1..=50 {
+        if a.troops.is_empty() || d.troops.is_empty() {
+            break;
+        }
+        rounds = round;
+        let (ha, hd) = (a.roll(&mut rng), d.roll(&mut rng));
+        d.absorb(ha);
+        a.absorb(hd);
+        let harrow = volley(&a.harrow, &mut rng);
+        d.absorb(harrow);
+    }
+    let winner = if !a.troops.is_empty() && d.troops.is_empty() {
+        Some("a")
+    } else {
+        Some("b")
     };
     Outcome {
         winner,
