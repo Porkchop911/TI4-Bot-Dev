@@ -587,6 +587,19 @@ impl Decider for MlpTraceBot {
             &seen.held_secret_progress(),
             self.baseline,
         );
+        // The battle facts an arena bundle adds in play, so the trace scores what the model saw.
+        let vectors = match self.actor.battle_predictor() {
+            Some(predictor) => {
+                let facts = ti4_policy::battle::decision_facts(
+                    seen.observed(),
+                    choice,
+                    &choice.player,
+                    predictor,
+                );
+                ti4_policy::battle::append_facts(vectors, &facts)
+            }
+            None => vectors,
+        };
         let sparse: Vec<SparseOption> = vectors
             .iter()
             .map(|vector| SparseOption {
