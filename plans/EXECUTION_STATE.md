@@ -8844,3 +8844,12 @@ evaluation before promotion.
 - Predictor v2: 0.41pp win MAE, 0.74pp survival MAE. `checkpoint-212544-arena-v2` migrated,
   identical play. Version 1 bundles unchanged in behaviour.
 - Next by user order: ground combat, then retreat. Evidence: ARENA_002_PREDICTOR_2026-09-17.md.
+
+### ARENA ground combat and predictor v3 — 2026-09-17
+
+- Engine ground fixes `d573e7a`; ti4-sim v40 `ebb5fbf` (51/52, pool-file env failure only).
+- Lean ground simulator checked against ti4calc (0.19pp) and the fixed engine (0.36pp).
+- Predictor v3 adds a ground network and invasion facts on commit options;
+  `checkpoint-212544-arena-v3` migrated, identical play. Evidence in
+  `plans/evidence/ARENA_002_PREDICTOR_2026-09-17.md`.
+- Next: retreat; action cards last. The arena PPO pilot (v1) still awaits evaluation.

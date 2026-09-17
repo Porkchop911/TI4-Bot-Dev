@@ -114,3 +114,46 @@ MAE 0.74pp. Exported forward pass matches to 5.4e-7.
 
 `checkpoint-212544-arena-v2` (schema 12, slots 14,878 -> 14,886): identical play to 212544 over 4
 seeds x 4 rounds; 1,267 battle facts over 457 movement decisions (v1: 488); wall time x1.002.
+
+## Ground combat — 2026-09-17
+
+### Engine fixes (`d573e7a`, ti4-sim re-baselined to v40 in `ebb5fbf`)
+
+- One ground-hit rule for ground combat, bombardment, Harrow and space cannon defense: an
+  undamaged mech sustains, otherwise the cheapest ground force falls. Bombardment no longer
+  destroys structures; mechs no longer die to their first hit.
+- L1Z1X Harrow fires in the live invasion window (it existed only in the synchronous path).
+- Space cannon defense: the defender's PDS and Xxcha mechs fire at the forces that landed.
+- Arc Secundus strips other players' planetary shields.
+
+### Lean ground simulator — `battle_arena::ground_fight`
+
+Bombardment (when the planet allows it), space cannon defense (an Xxcha mech's gun only while the
+mech stands), simultaneous rounds with Fragile and Shield Paling, Harrow after each round.
+Invader takes the planet only if something of theirs survives and nothing of the defender's does.
+
+| check | result |
+|---|---|
+| vs ti4calc ground mode, 300 invasions (bombardment, shields, PDS, mechs, damage, Harrow) | 0.19pp mean gap, 0 at \|z\| > 3, every group at noise |
+| vs the fixed engine invasion window, 300 invasions x 1,500 | 0.36pp, mean z^2 1.06; the five \|z\| > 3 rows are 0.999-vs-1.000 artefacts |
+
+One reading the engine takes that ti4calc does not: the L1Z1X mech bombards from the space area
+before it lands ("while not participating in ground combat ... as if it were a ship"). The engine
+check models it; the ti4calc check does not.
+
+### Predictor version 3 and live play
+
+- A ground network (52 -> 256 -> 256 -> 23) beside the unchanged v2 space network, in the same
+  predictor file. Ground block per side: 10 ground-force slots, damage, dice shift, the defender's
+  PDS, the L1Z1X invader's Harrow ships (only where a shield does not stop them).
+- `invasion_query` on `commit` options: the forces already committed on that planet plus the
+  landed unit, against the planet's defending forces and PDS. Bombardment has already happened at
+  commit time and is not predicted.
+- Facts: `ground-fight`, `ground-unsupported`, `ground-take`, `ground-take-change` (against the
+  forces committed so far; 0 if none), `ground-own-cost-lost`, `ground-enemy-cost-lost`.
+- `ground_predictor`, 10,000 steps, ~3 minutes, held-out from 4,096 fights: take MAE 0.42pp
+  (contested 1.09pp), survival MAE 0.80pp; export matches to 6.9e-7.
+- `checkpoint-212544-arena-v3` (slots 14,878 -> 14,892): identical play; 2,030 battle facts over
+  4 seeds x 4 rounds (v2 1,275, v1 390). v1 and v2 bundles still play identically.
+
+Next by the user's order: retreat. Action cards last.
