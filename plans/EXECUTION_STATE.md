@@ -8825,3 +8825,14 @@ evaluation before promotion.
   flagship abilities.
 - Next: `scripts/arena_pilot.psd1`, the VP-only pilot mirrored with the arena learner;
   `checkpoint-10456` is the no-arena control.
+
+### Engine: attacker space cannon and three flagships — 2026-09-17
+
+- `b3c5702`: space cannon offense includes the active player's guns (user ruling, as ti4calc);
+  J.N.S. Hylarim, Arc Secundus and 0.0.1 implemented. Engine now matches the arena's lean
+  simulator with flagship effects on (0.37pp mean gap, 400 scenarios x 2000).
+- `e551018`: ti4-sim behaviour bounds re-baselined to v39 with user approval. Only the space
+  cannon rule moves the batch (score_spread, vp_pace); recorded in `plans/evidence/M08-021.md`.
+  ti4-sim 51/52; the remaining failure is the pool file missing from this worktree.
+- The arena pilot running since c02a49f uses the engine from before these fixes, as does its
+  control; later runs get the fixed engine.
