@@ -117,6 +117,24 @@ fn seat_label(ui: &mut egui::Ui, player: &PlayerId, text: impl Into<String>) {
     });
 }
 
+/// A panel section under a heading-sized header the reader can fold away; open by default.
+fn section<R>(ui: &mut egui::Ui, title: &str, add_contents: impl FnOnce(&mut egui::Ui) -> R) {
+    section_with_id(ui, title, title, add_contents);
+}
+
+/// [`section`] whose fold state survives a changing title.
+fn section_with_id<R>(
+    ui: &mut egui::Ui,
+    title: &str,
+    id: &str,
+    add_contents: impl FnOnce(&mut egui::Ui) -> R,
+) {
+    egui::CollapsingHeader::new(egui::RichText::new(title).heading())
+        .id_salt(("panel-section", id))
+        .default_open(true)
+        .show(ui, add_contents);
+}
+
 /// Relationships, deals, signals and finished deals for a game played with structured diplomacy.
 fn diplomacy_panel(ui: &mut egui::Ui, frame: &ReviewFrame) {
     let state = &frame.state;
@@ -599,6 +617,9 @@ struct ReviewApp {
     /// [`ReviewApp::autosave_now`]. Autosaving stays a bounded share of the run however long it gets,
     /// and the file format is unchanged.
     next_autosave_step: usize,
+    /// Whether the players (left) and decision (right) panels are open.
+    show_players: bool,
+    show_decision: bool,
     /// When the running command started, for the rate the budget above is spent against.
     command_started: Option<std::time::Instant>,
     last_review: Option<PathBuf>,
@@ -629,6 +650,8 @@ impl ReviewApp {
             run_target: None,
             command_steps: 0,
             next_autosave_step: AUTOSAVE_MIN_STEPS,
+            show_players: true,
+            show_decision: true,
             command_started: None,
             autosave: None,
             last_review: settings.last_review.map(PathBuf::from),
@@ -1115,6 +1138,9 @@ impl ReviewApp {
     fn controls(&mut self, root: &mut egui::Ui) {
         egui::Panel::bottom("controls").show(root, |ui| {
             ui.horizontal_wrapped(|ui| {
+                ui.toggle_value(&mut self.show_players, "◧ Players");
+                ui.toggle_value(&mut self.show_decision, "◨ Decisions");
+                ui.separator();
                 let can_run = self.live.is_some() && self.run_target.is_none();
                 if ui.add_enabled(can_run, egui::Button::new("Step")).clicked() {
                     self.begin_count(AdvanceUnit::Step, 1);
@@ -1220,7 +1246,12 @@ impl ReviewApp {
         });
     }
 
-    fn player_panel(root: &mut egui::Ui, session: &ReviewSession, frame: &ReviewFrame) {
+    fn player_panel(
+        root: &mut egui::Ui,
+        open: &mut bool,
+        session: &ReviewSession,
+        frame: &ReviewFrame,
+    ) {
         egui::Panel::left("players")
             .resizable(true)
             .default_size(340.0)
@@ -1229,7 +1260,7 @@ impl ReviewApp {
                     .fill(PANEL_FILL)
                     .inner_margin(egui::Margin::same(8)),
             )
-            .show(root, |ui| {
+            .show_collapsible(root, open, |ui| {
                 // A light sheet with black text: the dark theme stays on the board and the
                 // decision panel, where colour carries the map.
                 *ui.visuals_mut() = egui::Visuals::light();
@@ -1237,569 +1268,586 @@ impl ReviewApp {
                 ui.heading("Omniscient players");
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let content = ContentStore::embedded();
-                    ui.heading("Current policy profiles");
-                    let policy = &session.manifest.policy;
-                    ui.group(|ui| {
-                        ui.strong(if policy.format.is_empty() {
-                            "Legacy review · profile details unavailable".to_owned()
-                        } else {
-                            format!(
-                                "{}{}",
-                                policy.format,
-                                policy.schema.map_or_else(String::new, |schema| format!(
-                                    " · schema {schema}"
-                                ))
-                            )
-                        });
-                        ui.small(format!(
-                            "{} · {} · temperature {:.2}",
-                            session.manifest.checkpoint_path,
-                            if policy.format == "MLP inference bundle" {
-                                "shared actor with faction rows"
+                    section(ui, "Current policy profiles", |ui| {
+                        let policy = &session.manifest.policy;
+                        ui.group(|ui| {
+                            ui.strong(if policy.format.is_empty() {
+                                "Legacy review · profile details unavailable".to_owned()
                             } else {
-                                session.manifest.profile_table.label()
-                            },
-                            session.manifest.temperature
-                        ));
-                        ui.small(format!(
-                            "Seats 0–5: {}",
-                            session.manifest.factions.join(" → ")
-                        ));
-                        if let Some(name) = &policy.name {
-                            ui.label(name);
-                        }
-                        if let Some(source) = &policy.source {
-                            ui.label(format!("Source: {source}"));
-                        }
-                        if let Some(commit) = &policy.git_commit {
-                            ui.small(format!("Engine/training commit: {commit}"));
-                        }
-                        if let Some(update) = policy.update {
-                            ui.small(format!("Training update: {update}"));
-                        }
-                        if let Some(dimensions) = &policy.dimensions {
-                            ui.small(dimensions);
-                        }
-                        let mut runtime = Vec::new();
-                        if let Some(abi) = policy.projection_abi {
-                            runtime.push(format!("projection ABI {abi}"));
-                        }
-                        if let Some(version) = policy.oov_registry_version {
-                            runtime.push(format!("OOV registry v{version}"));
-                        }
-                        if let Some(mode) = &policy.critic_mode {
-                            runtime.push(format!("critic {mode}"));
-                        }
-                        if let Some(temperature) = policy.trained_temperature {
-                            runtime.push(format!("trained temperature {temperature:.2}"));
-                        }
-                        if !runtime.is_empty() {
-                            ui.small(runtime.join(" · "));
-                        }
-                        ui.separator();
-                        ui.small(format!(
-                            "Initial speaker: {} · map arrangement: {}",
-                            session
-                                .manifest
-                                .initial_speaker
-                                .as_deref()
-                                .unwrap_or("legacy/unrecorded"),
-                            session.manifest.map_arrangement_index.map_or_else(
-                                || "legacy/unrecorded".to_owned(),
-                                |value| value.to_string()
-                            )
-                        ));
-                        if let Some(commit) = &session.manifest.engine_commit {
+                                format!(
+                                    "{}{}",
+                                    policy.format,
+                                    policy.schema.map_or_else(String::new, |schema| format!(
+                                        " · schema {schema}"
+                                    ))
+                                )
+                            });
                             ui.small(format!(
-                                "Review engine: {commit}{}",
-                                if session.manifest.engine_dirty {
-                                    " (dirty build)"
+                                "{} · {} · temperature {:.2}",
+                                session.manifest.checkpoint_path,
+                                if policy.format == "MLP inference bundle" {
+                                    "shared actor with faction rows"
                                 } else {
-                                    ""
-                                }
+                                    session.manifest.profile_table.label()
+                                },
+                                session.manifest.temperature
                             ));
-                        }
-                        if let Some(digest) = &session.manifest.content_sha256 {
-                            ui.small(format!("Content: {digest}"));
-                        }
-                        if let Some(scope) = &session.manifest.source_scope {
-                            ui.small(format!("Scope: {scope}"));
-                        }
-                    });
-                    item_section(
-                        ui,
-                        "◫",
-                        "Decision heads",
-                        policy.heads.clone(),
-                        Color32::LIGHT_BLUE,
-                    );
-                    item_section(
-                        ui,
-                        "♙",
-                        "Available faction rows",
-                        policy.factions.clone(),
-                        Color32::LIGHT_BLUE,
-                    );
-                    if !policy.profiles.is_empty() {
-                        item_section(
-                            ui,
-                            "ƒ",
-                            "Loaded profiles",
-                            policy.profiles.clone(),
-                            Color32::LIGHT_BLUE,
-                        );
-                    }
-                    ui.separator();
-                    ui.heading("Open public objectives");
-                    if frame.state.revealed_objectives.is_empty() {
-                        ui.label("None revealed yet.");
-                    } else {
-                        for objective in &frame.state.revealed_objectives {
-                            let record =
-                                content.get(ContentType::PublicObjectives, objective.as_str());
-                            let name = record
-                                .as_ref()
-                                .and_then(|record| record.text("name"))
-                                .unwrap_or(objective.as_str());
-                            let points = record
-                                .as_ref()
-                                .and_then(|record| record.int("points"))
-                                .unwrap_or(0);
-                            let scored_by: Vec<String> = frame
-                                .state
-                                .scored_objectives
-                                .iter()
-                                .filter(|(_, scored)| scored.contains(objective))
-                                .map(|(player, _)| player.to_string())
-                                .collect();
-                            ui.group(|ui| {
-                                ui.strong(format!("{name} · {points} VP"));
+                            ui.small(format!(
+                                "Seats 0–5: {}",
+                                session.manifest.factions.join(" → ")
+                            ));
+                            if let Some(name) = &policy.name {
+                                ui.label(name);
+                            }
+                            if let Some(source) = &policy.source {
+                                ui.label(format!("Source: {source}"));
+                            }
+                            if let Some(commit) = &policy.git_commit {
+                                ui.small(format!("Engine/training commit: {commit}"));
+                            }
+                            if let Some(update) = policy.update {
+                                ui.small(format!("Training update: {update}"));
+                            }
+                            if let Some(dimensions) = &policy.dimensions {
+                                ui.small(dimensions);
+                            }
+                            let mut runtime = Vec::new();
+                            if let Some(abi) = policy.projection_abi {
+                                runtime.push(format!("projection ABI {abi}"));
+                            }
+                            if let Some(version) = policy.oov_registry_version {
+                                runtime.push(format!("OOV registry v{version}"));
+                            }
+                            if let Some(mode) = &policy.critic_mode {
+                                runtime.push(format!("critic {mode}"));
+                            }
+                            if let Some(temperature) = policy.trained_temperature {
+                                runtime.push(format!("trained temperature {temperature:.2}"));
+                            }
+                            if !runtime.is_empty() {
+                                ui.small(runtime.join(" · "));
+                            }
+                            ui.separator();
+                            ui.small(format!(
+                                "Initial speaker: {} · map arrangement: {}",
+                                session
+                                    .manifest
+                                    .initial_speaker
+                                    .as_deref()
+                                    .unwrap_or("legacy/unrecorded"),
+                                session.manifest.map_arrangement_index.map_or_else(
+                                    || "legacy/unrecorded".to_owned(),
+                                    |value| value.to_string()
+                                )
+                            ));
+                            if let Some(commit) = &session.manifest.engine_commit {
                                 ui.small(format!(
-                                    "{} · scored by {}",
-                                    objective,
-                                    if scored_by.is_empty() {
-                                        "nobody".to_owned()
+                                    "Review engine: {commit}{}",
+                                    if session.manifest.engine_dirty {
+                                        " (dirty build)"
                                     } else {
-                                        scored_by.join(", ")
+                                        ""
                                     }
                                 ));
-                                if let Some(text) =
-                                    record.as_ref().and_then(|record| record.text("text"))
-                                {
-                                    ui.label(text);
-                                }
-                            });
+                            }
+                            if let Some(digest) = &session.manifest.content_sha256 {
+                                ui.small(format!("Content: {digest}"));
+                            }
+                            if let Some(scope) = &session.manifest.source_scope {
+                                ui.small(format!("Scope: {scope}"));
+                            }
+                        });
+                        item_section(
+                            ui,
+                            "◫",
+                            "Decision heads",
+                            policy.heads.clone(),
+                            Color32::LIGHT_BLUE,
+                        );
+                        item_section(
+                            ui,
+                            "♙",
+                            "Available faction rows",
+                            policy.factions.clone(),
+                            Color32::LIGHT_BLUE,
+                        );
+                        if !policy.profiles.is_empty() {
+                            item_section(
+                                ui,
+                                "ƒ",
+                                "Loaded profiles",
+                                policy.profiles.clone(),
+                                Color32::LIGHT_BLUE,
+                            );
                         }
-                    }
-                    ui.separator();
-                    ui.heading("Table state");
-                    ui.horizontal_wrapped(|ui| {
-                        stat_badge(ui, "♛", "Speaker", &frame.state.speaker);
-                        stat_badge(
-                            ui,
-                            "◎",
-                            "Custodians",
-                            if frame.state.custodians_removed {
-                                "removed"
-                            } else {
-                                "present"
-                            },
-                        );
-                        stat_badge(
-                            ui,
-                            "▣",
-                            "Action discard",
-                            frame.state.discarded_action_cards.len(),
-                        );
                     });
-                    let initiative_order: Vec<String> = frame
-                        .state
-                        .initiative_order()
-                        .into_iter()
-                        .map(|player_id| {
-                            let Some(player) = frame.state.player(&player_id) else {
-                                return player_id.to_string();
-                            };
-                            let cards = player
-                                .strategy_cards
-                                .iter()
-                                .map(|card| {
-                                    let initiative = frame
-                                        .state
-                                        .card_initiative
-                                        .get(card)
-                                        .copied()
-                                        .unwrap_or(99);
-                                    format!("{card} ({initiative})")
-                                })
-                                .collect::<Vec<_>>()
-                                .join(", ");
-                            format!(
-                                "{} {}{}",
-                                player.id,
-                                player.faction,
-                                if cards.is_empty() {
-                                    String::new()
-                                } else {
-                                    format!(" · {cards}")
-                                }
-                            )
-                        })
-                        .collect();
-                    item_section(
-                        ui,
-                        "➜",
-                        "Initiative turn order",
-                        initiative_order,
-                        Color32::LIGHT_BLUE,
-                    );
-                    if frame.index > 0 {
-                        let previous = &session.frames[frame.index - 1];
-                        if previous.state.speaker != frame.state.speaker {
-                            ui.strong(format!(
-                                "Speaker changed: {} → {} · events: {}",
-                                previous.state.speaker,
-                                frame.state.speaker,
-                                if frame.new_events.is_empty() {
-                                    "unrecorded cause".to_owned()
-                                } else {
-                                    frame.new_events.join(", ")
-                                }
-                            ));
-                        }
-                    }
-                    item_section(
-                        ui,
-                        "◆",
-                        "Unclaimed strategy cards",
-                        frame
-                            .state
-                            .unclaimed_strategy_cards
-                            .iter()
-                            .map(|card| {
-                                let goods = frame
-                                    .state
-                                    .strategy_card_goods
-                                    .get(card)
-                                    .copied()
-                                    .unwrap_or_default();
-                                if goods > 0 {
-                                    format!(
-                                        "{} · {goods} TG",
-                                        content_label(content, ContentType::StrategyCards, card)
-                                    )
-                                } else {
-                                    content_label(content, ContentType::StrategyCards, card)
-                                }
-                            })
-                            .collect(),
-                        Color32::LIGHT_BLUE,
-                    );
-                    item_section(
-                        ui,
-                        "⚖",
-                        "Laws in play",
-                        frame
-                            .state
-                            .laws
-                            .iter()
-                            .map(|(law, outcome)| {
-                                format!(
-                                    "{} · {outcome}",
-                                    content_label(content, ContentType::Agendas, law)
-                                )
-                            })
-                            .collect(),
-                        Color32::LIGHT_BLUE,
-                    );
-                    item_section(
-                        ui,
-                        "↯",
-                        "Discarded action cards",
-                        frame
-                            .state
-                            .discarded_action_cards
-                            .iter()
-                            .map(|card| content_label(content, ContentType::ActionCards, card))
-                            .collect(),
-                        Color32::LIGHT_BLUE,
-                    );
-                    ui.separator();
-                    ui.heading("Diplomacy");
-                    diplomacy_panel(ui, frame);
-                    ui.separator();
-                    ui.heading("Player sheets");
-                    for player in &frame.state.players {
-                        let color = player_color(&player.id);
-                        egui::CollapsingHeader::new(format!(
-                            "● {} · {} · {} VP",
-                            player.id, player.faction, player.victory_points
-                        ))
-                        .default_open(true)
-                        .show(ui, |ui| {
-                            seat_label(
-                                ui,
-                                &player.id,
-                                format!(
-                                    "{} · {}",
-                                    player.faction,
-                                    if player.passed { "PASSED" } else { "ACTIVE" }
-                                ),
-                            );
-                            ui.horizontal_wrapped(|ui| {
-                                stat_badge(ui, "★", "VP", player.victory_points);
-                                stat_badge(ui, "◆", "TG", player.trade_goods);
-                                stat_badge(ui, "◇", "Com", player.commodities);
-                            });
-                            ui.horizontal_wrapped(|ui| {
-                                stat_badge(ui, "▲", "Tactic", player.tactic_tokens);
-                                stat_badge(ui, "⬟", "Fleet", player.fleet_tokens);
-                                stat_badge(ui, "●", "Strategy", player.strategic_tokens);
-                            });
-
-                            let strategy = player
-                                .strategy_cards
-                                .iter()
-                                .map(|card| {
-                                    let label =
-                                        content_label(content, ContentType::StrategyCards, card);
-                                    if player.exhausted_strategy_cards.contains(card) {
-                                        format!("{label} · used")
-                                    } else {
-                                        label
-                                    }
-                                })
-                                .collect();
-                            item_section(ui, "◆", "Strategy cards", strategy, color);
-
-                            let mut controlled_planets = Vec::new();
-                            for tile in &session.board {
-                                let state = frame.state.board.get(&SystemId::new(&tile.system));
-                                for planet in planets_for_tile(session, frame, tile) {
-                                    if state.and_then(|state| {
-                                        state.planet_control.get(planet.id.as_str())
-                                    }) != Some(&player.id)
-                                    {
-                                        continue;
-                                    }
-                                    let exhausted =
-                                        frame.state.exhausted_planets.contains(planet.id.as_str());
-                                    let attachments = frame
-                                        .state
-                                        .planet_attachments
-                                        .get(planet.id.as_str())
-                                        .map_or(0, Vec::len);
-                                    controlled_planets.push(format!(
-                                        "{} {}/{}{}{}",
-                                        planet.label,
-                                        planet.resources,
-                                        planet.influence,
-                                        if exhausted { " · exhausted" } else { "" },
-                                        if attachments > 0 {
-                                            format!(" · {attachments} attachment(s)")
-                                        } else {
-                                            String::new()
-                                        }
-                                    ));
-                                }
-                            }
-                            item_section(ui, "●", "Planets", controlled_planets, color);
-
-                            let mut unit_counts: BTreeMap<String, usize> = BTreeMap::new();
-                            for state in frame.state.board.values() {
-                                for unit in state.units.iter().chain(
-                                    state.planet_units.values().flat_map(|units| units.iter()),
-                                ) {
-                                    if unit.owner == player.id {
-                                        *unit_counts
-                                            .entry(unit_base(content, unit))
-                                            .or_default() += 1;
-                                    }
-                                }
-                            }
-                            item_section(
-                                ui,
-                                "⬡",
-                                "Units on board",
-                                unit_counts
-                                    .into_iter()
-                                    .map(|(kind, count)| format!("{kind} ×{count}"))
-                                    .collect(),
-                                color,
-                            );
-
-                            item_section(
-                                ui,
-                                "⚙",
-                                "Technologies",
-                                player
-                                    .technologies
-                                    .iter()
-                                    .map(|technology| {
-                                        let label = content_label(
-                                            content,
-                                            ContentType::Technologies,
-                                            technology,
-                                        );
-                                        if player.exhausted_technologies.contains(technology) {
-                                            format!("{label} · exhausted")
-                                        } else {
-                                            label
-                                        }
-                                    })
-                                    .collect(),
-                                color,
-                            );
-                            item_section(
-                                ui,
-                                "✓",
-                                "Scored objectives",
-                                frame
+                    section(ui, "Open public objectives", |ui| {
+                        if frame.state.revealed_objectives.is_empty() {
+                            ui.label("None revealed yet.");
+                        } else {
+                            for objective in &frame.state.revealed_objectives {
+                                let record =
+                                    content.get(ContentType::PublicObjectives, objective.as_str());
+                                let name = record
+                                    .as_ref()
+                                    .and_then(|record| record.text("name"))
+                                    .unwrap_or(objective.as_str());
+                                let points = record
+                                    .as_ref()
+                                    .and_then(|record| record.int("points"))
+                                    .unwrap_or(0);
+                                let scored_by: Vec<String> = frame
                                     .state
                                     .scored_objectives
-                                    .get(&player.id)
-                                    .into_iter()
-                                    .flatten()
-                                    .map(|objective| {
-                                        content_label(
-                                            content,
-                                            ContentType::PublicObjectives,
-                                            objective,
-                                        )
-                                    })
-                                    .collect(),
-                                color,
-                            );
-                            item_section(
-                                ui,
-                                "?",
-                                "Secret objectives",
-                                player
-                                    .secret_objectives
                                     .iter()
-                                    .map(|objective| {
-                                        content_label(
-                                            content,
-                                            ContentType::SecretObjectives,
-                                            objective,
-                                        )
-                                    })
-                                    .collect(),
-                                color,
+                                    .filter(|(_, scored)| scored.contains(objective))
+                                    .map(|(player, _)| player.to_string())
+                                    .collect();
+                                ui.group(|ui| {
+                                    ui.strong(format!("{name} · {points} VP"));
+                                    ui.small(format!(
+                                        "{} · scored by {}",
+                                        objective,
+                                        if scored_by.is_empty() {
+                                            "nobody".to_owned()
+                                        } else {
+                                            scored_by.join(", ")
+                                        }
+                                    ));
+                                    if let Some(text) =
+                                        record.as_ref().and_then(|record| record.text("text"))
+                                    {
+                                        ui.label(text);
+                                    }
+                                });
+                            }
+                        }
+                    });
+                    section(ui, "Table state", |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            stat_badge(ui, "♛", "Speaker", &frame.state.speaker);
+                            stat_badge(
+                                ui,
+                                "◎",
+                                "Custodians",
+                                if frame.state.custodians_removed {
+                                    "removed"
+                                } else {
+                                    "present"
+                                },
                             );
-                            item_section(
+                            stat_badge(
                                 ui,
                                 "▣",
-                                "Action cards",
-                                player
-                                    .action_cards
+                                "Action discard",
+                                frame.state.discarded_action_cards.len(),
+                            );
+                        });
+                        let initiative_order: Vec<String> = frame
+                            .state
+                            .initiative_order()
+                            .into_iter()
+                            .map(|player_id| {
+                                let Some(player) = frame.state.player(&player_id) else {
+                                    return player_id.to_string();
+                                };
+                                let cards = player
+                                    .strategy_cards
                                     .iter()
                                     .map(|card| {
-                                        content_label(content, ContentType::ActionCards, card)
+                                        let initiative = frame
+                                            .state
+                                            .card_initiative
+                                            .get(card)
+                                            .copied()
+                                            .unwrap_or(99);
+                                        format!("{card} ({initiative})")
                                     })
-                                    .collect(),
-                                color,
-                            );
-                            item_section(
-                                ui,
-                                "✦",
-                                "Relics and fragments",
-                                player
-                                    .relics
+                                    .collect::<Vec<_>>()
+                                    .join(", ");
+                                format!(
+                                    "{} {}{}",
+                                    player.id,
+                                    player.faction,
+                                    if cards.is_empty() {
+                                        String::new()
+                                    } else {
+                                        format!(" · {cards}")
+                                    }
+                                )
+                            })
+                            .collect();
+                        item_section(
+                            ui,
+                            "➜",
+                            "Initiative turn order",
+                            initiative_order,
+                            Color32::LIGHT_BLUE,
+                        );
+                        if frame.index > 0 {
+                            let previous = &session.frames[frame.index - 1];
+                            if previous.state.speaker != frame.state.speaker {
+                                ui.strong(format!(
+                                    "Speaker changed: {} → {} · events: {}",
+                                    previous.state.speaker,
+                                    frame.state.speaker,
+                                    if frame.new_events.is_empty() {
+                                        "unrecorded cause".to_owned()
+                                    } else {
+                                        frame.new_events.join(", ")
+                                    }
+                                ));
+                            }
+                        }
+                        item_section(
+                            ui,
+                            "◆",
+                            "Unclaimed strategy cards",
+                            frame
+                                .state
+                                .unclaimed_strategy_cards
+                                .iter()
+                                .map(|card| {
+                                    let goods = frame
+                                        .state
+                                        .strategy_card_goods
+                                        .get(card)
+                                        .copied()
+                                        .unwrap_or_default();
+                                    if goods > 0 {
+                                        format!(
+                                            "{} · {goods} TG",
+                                            content_label(
+                                                content,
+                                                ContentType::StrategyCards,
+                                                card
+                                            )
+                                        )
+                                    } else {
+                                        content_label(content, ContentType::StrategyCards, card)
+                                    }
+                                })
+                                .collect(),
+                            Color32::LIGHT_BLUE,
+                        );
+                        item_section(
+                            ui,
+                            "⚖",
+                            "Laws in play",
+                            frame
+                                .state
+                                .laws
+                                .iter()
+                                .map(|(law, outcome)| {
+                                    format!(
+                                        "{} · {outcome}",
+                                        content_label(content, ContentType::Agendas, law)
+                                    )
+                                })
+                                .collect(),
+                            Color32::LIGHT_BLUE,
+                        );
+                        item_section(
+                            ui,
+                            "↯",
+                            "Discarded action cards",
+                            frame
+                                .state
+                                .discarded_action_cards
+                                .iter()
+                                .map(|card| content_label(content, ContentType::ActionCards, card))
+                                .collect(),
+                            Color32::LIGHT_BLUE,
+                        );
+                    });
+                    section(ui, "Diplomacy", |ui| diplomacy_panel(ui, frame));
+                    section(ui, "Player sheets", |ui| {
+                        for player in &frame.state.players {
+                            let color = player_color(&player.id);
+                            egui::CollapsingHeader::new(format!(
+                                "● {} · {} · {} VP",
+                                player.id, player.faction, player.victory_points
+                            ))
+                            .default_open(true)
+                            .show(ui, |ui| {
+                                seat_label(
+                                    ui,
+                                    &player.id,
+                                    format!(
+                                        "{} · {}",
+                                        player.faction,
+                                        if player.passed { "PASSED" } else { "ACTIVE" }
+                                    ),
+                                );
+                                ui.horizontal_wrapped(|ui| {
+                                    stat_badge(ui, "★", "VP", player.victory_points);
+                                    stat_badge(ui, "◆", "TG", player.trade_goods);
+                                    stat_badge(ui, "◇", "Com", player.commodities);
+                                });
+                                ui.horizontal_wrapped(|ui| {
+                                    stat_badge(ui, "▲", "Tactic", player.tactic_tokens);
+                                    stat_badge(ui, "⬟", "Fleet", player.fleet_tokens);
+                                    stat_badge(ui, "●", "Strategy", player.strategic_tokens);
+                                });
+
+                                let strategy = player
+                                    .strategy_cards
                                     .iter()
-                                    .map(|relic| {
-                                        let label =
-                                            content_label(content, ContentType::Relics, relic);
-                                        if player.exhausted_relics.contains(relic) {
-                                            format!("{label} · exhausted")
+                                    .map(|card| {
+                                        let label = content_label(
+                                            content,
+                                            ContentType::StrategyCards,
+                                            card,
+                                        );
+                                        if player.exhausted_strategy_cards.contains(card) {
+                                            format!("{label} · used")
                                         } else {
                                             label
                                         }
                                     })
-                                    .chain(player.relic_fragments.iter().map(
-                                        |(trait_name, count)| {
-                                            format!("{trait_name} fragment ×{count}")
-                                        },
-                                    ))
-                                    .collect(),
-                                color,
-                            );
-                            item_section(
-                                ui,
-                                "◈",
-                                "Exploration cards in play",
-                                player
-                                    .exploration_cards
-                                    .iter()
-                                    .map(|card| content_label(content, ContentType::Explores, card))
-                                    .collect(),
-                                color,
-                            );
-                            let mut promissory: Vec<String> = frame
-                                .state
-                                .promissory_notes
-                                .iter()
-                                .filter(|(_, holder)| *holder == &player.id)
-                                .map(|(note, _)| {
-                                    let label =
-                                        content_label(content, ContentType::PromissoryNotes, note);
-                                    if frame.state.promissory_faceup.contains(note) {
-                                        format!("{label} · faceup")
-                                    } else {
-                                        label
+                                    .collect();
+                                item_section(ui, "◆", "Strategy cards", strategy, color);
+
+                                let mut controlled_planets = Vec::new();
+                                for tile in &session.board {
+                                    let state = frame.state.board.get(&SystemId::new(&tile.system));
+                                    for planet in planets_for_tile(session, frame, tile) {
+                                        if state.and_then(|state| {
+                                            state.planet_control.get(planet.id.as_str())
+                                        }) != Some(&player.id)
+                                        {
+                                            continue;
+                                        }
+                                        let exhausted = frame
+                                            .state
+                                            .exhausted_planets
+                                            .contains(planet.id.as_str());
+                                        let attachments = frame
+                                            .state
+                                            .planet_attachments
+                                            .get(planet.id.as_str())
+                                            .map_or(0, Vec::len);
+                                        controlled_planets.push(format!(
+                                            "{} {}/{}{}{}",
+                                            planet.label,
+                                            planet.resources,
+                                            planet.influence,
+                                            if exhausted { " · exhausted" } else { "" },
+                                            if attachments > 0 {
+                                                format!(" · {attachments} attachment(s)")
+                                            } else {
+                                                String::new()
+                                            }
+                                        ));
                                     }
-                                })
-                                .collect();
-                            promissory.extend(
-                                frame
-                                    .state
-                                    .support_holders
-                                    .iter()
-                                    .filter(|(_, holder)| *holder == &player.id)
-                                    .map(|(owner, _)| {
-                                        format!("Support for the Throne:{owner} · faceup")
-                                    }),
-                            );
-                            promissory.sort();
-                            promissory.dedup();
-                            item_section(ui, "✉", "Promissory notes", promissory, color);
-                            item_section(
-                                ui,
-                                "♟",
-                                "Leaders",
-                                player
-                                    .leaders
-                                    .iter()
-                                    .map(|(leader, status)| {
-                                        format!(
-                                            "{} · {status:?}",
-                                            content_label(content, ContentType::Leaders, leader)
-                                        )
-                                    })
-                                    .collect(),
-                                color,
-                            );
-                            item_section(ui, "⌁", "Plots", player.plots.clone(), color);
-                            if let Some(breakthrough) = &player.breakthrough {
+                                }
+                                item_section(ui, "●", "Planets", controlled_planets, color);
+
+                                let mut unit_counts: BTreeMap<String, usize> = BTreeMap::new();
+                                for state in frame.state.board.values() {
+                                    for unit in state.units.iter().chain(
+                                        state.planet_units.values().flat_map(|units| units.iter()),
+                                    ) {
+                                        if unit.owner == player.id {
+                                            *unit_counts
+                                                .entry(unit_base(content, unit))
+                                                .or_default() += 1;
+                                        }
+                                    }
+                                }
                                 item_section(
                                     ui,
-                                    "⚡",
-                                    "Breakthrough",
-                                    vec![content_label(
-                                        content,
-                                        ContentType::Breakthroughs,
-                                        breakthrough,
-                                    )],
+                                    "⬡",
+                                    "Units on board",
+                                    unit_counts
+                                        .into_iter()
+                                        .map(|(kind, count)| format!("{kind} ×{count}"))
+                                        .collect(),
                                     color,
                                 );
-                            }
-                            ui.collapsing("Complete player JSON", |ui| {
-                                let text = serde_json::to_string_pretty(player)
-                                    .unwrap_or_else(|error| error.to_string());
-                                ui.monospace(text);
+
+                                item_section(
+                                    ui,
+                                    "⚙",
+                                    "Technologies",
+                                    player
+                                        .technologies
+                                        .iter()
+                                        .map(|technology| {
+                                            let label = content_label(
+                                                content,
+                                                ContentType::Technologies,
+                                                technology,
+                                            );
+                                            if player.exhausted_technologies.contains(technology) {
+                                                format!("{label} · exhausted")
+                                            } else {
+                                                label
+                                            }
+                                        })
+                                        .collect(),
+                                    color,
+                                );
+                                item_section(
+                                    ui,
+                                    "✓",
+                                    "Scored objectives",
+                                    frame
+                                        .state
+                                        .scored_objectives
+                                        .get(&player.id)
+                                        .into_iter()
+                                        .flatten()
+                                        .map(|objective| {
+                                            content_label(
+                                                content,
+                                                ContentType::PublicObjectives,
+                                                objective,
+                                            )
+                                        })
+                                        .collect(),
+                                    color,
+                                );
+                                item_section(
+                                    ui,
+                                    "?",
+                                    "Secret objectives",
+                                    player
+                                        .secret_objectives
+                                        .iter()
+                                        .map(|objective| {
+                                            content_label(
+                                                content,
+                                                ContentType::SecretObjectives,
+                                                objective,
+                                            )
+                                        })
+                                        .collect(),
+                                    color,
+                                );
+                                item_section(
+                                    ui,
+                                    "▣",
+                                    "Action cards",
+                                    player
+                                        .action_cards
+                                        .iter()
+                                        .map(|card| {
+                                            content_label(content, ContentType::ActionCards, card)
+                                        })
+                                        .collect(),
+                                    color,
+                                );
+                                item_section(
+                                    ui,
+                                    "✦",
+                                    "Relics and fragments",
+                                    player
+                                        .relics
+                                        .iter()
+                                        .map(|relic| {
+                                            let label =
+                                                content_label(content, ContentType::Relics, relic);
+                                            if player.exhausted_relics.contains(relic) {
+                                                format!("{label} · exhausted")
+                                            } else {
+                                                label
+                                            }
+                                        })
+                                        .chain(player.relic_fragments.iter().map(
+                                            |(trait_name, count)| {
+                                                format!("{trait_name} fragment ×{count}")
+                                            },
+                                        ))
+                                        .collect(),
+                                    color,
+                                );
+                                item_section(
+                                    ui,
+                                    "◈",
+                                    "Exploration cards in play",
+                                    player
+                                        .exploration_cards
+                                        .iter()
+                                        .map(|card| {
+                                            content_label(content, ContentType::Explores, card)
+                                        })
+                                        .collect(),
+                                    color,
+                                );
+                                let mut promissory: Vec<String> = frame
+                                    .state
+                                    .promissory_notes
+                                    .iter()
+                                    .filter(|(_, holder)| *holder == &player.id)
+                                    .map(|(note, _)| {
+                                        let label = content_label(
+                                            content,
+                                            ContentType::PromissoryNotes,
+                                            note,
+                                        );
+                                        if frame.state.promissory_faceup.contains(note) {
+                                            format!("{label} · faceup")
+                                        } else {
+                                            label
+                                        }
+                                    })
+                                    .collect();
+                                promissory.extend(
+                                    frame
+                                        .state
+                                        .support_holders
+                                        .iter()
+                                        .filter(|(_, holder)| *holder == &player.id)
+                                        .map(|(owner, _)| {
+                                            format!("Support for the Throne:{owner} · faceup")
+                                        }),
+                                );
+                                promissory.sort();
+                                promissory.dedup();
+                                item_section(ui, "✉", "Promissory notes", promissory, color);
+                                item_section(
+                                    ui,
+                                    "♟",
+                                    "Leaders",
+                                    player
+                                        .leaders
+                                        .iter()
+                                        .map(|(leader, status)| {
+                                            format!(
+                                                "{} · {status:?}",
+                                                content_label(
+                                                    content,
+                                                    ContentType::Leaders,
+                                                    leader
+                                                )
+                                            )
+                                        })
+                                        .collect(),
+                                    color,
+                                );
+                                item_section(ui, "⌁", "Plots", player.plots.clone(), color);
+                                if let Some(breakthrough) = &player.breakthrough {
+                                    item_section(
+                                        ui,
+                                        "⚡",
+                                        "Breakthrough",
+                                        vec![content_label(
+                                            content,
+                                            ContentType::Breakthroughs,
+                                            breakthrough,
+                                        )],
+                                        color,
+                                    );
+                                }
+                                ui.collapsing("Complete player JSON", |ui| {
+                                    let text = serde_json::to_string_pretty(player)
+                                        .unwrap_or_else(|error| error.to_string());
+                                    ui.monospace(text);
+                                });
                             });
-                        });
-                    }
+                        }
+                    });
                 });
             });
     }
@@ -1813,7 +1861,7 @@ impl ReviewApp {
         egui::Panel::right("decision")
             .resizable(true)
             .default_size(410.0)
-            .show(root, |ui| {
+            .show_collapsible(root, &mut self.show_decision, |ui| {
                 ui.heading("Step and policy detail");
                 ui.label(format!(
                     "Step {} · decision {} · action {}",
@@ -1875,11 +1923,12 @@ impl ReviewApp {
                             .rev()
                             .find_map(|candidate| candidate.action_summary.as_ref())
                     });
-                    ui.heading(if frame.action_in_progress.is_some() {
+                    let action_title = if frame.action_in_progress.is_some() {
                         "Action in progress"
                     } else {
                         "Latest completed action"
-                    });
+                    };
+                    section_with_id(ui, action_title, "action-summary", |ui| {
                     if let Some(summary) = action_summary {
                         ui.strong(&summary.headline);
                         ui.small(format!(
@@ -1894,7 +1943,8 @@ impl ReviewApp {
                     } else {
                         ui.label("No action-phase turn has completed yet.");
                     }
-                    ui.separator();
+                    });
+                    section(ui, "Decisions", |ui| {
                     if frame.decisions.is_empty() {
                         ui.label("This engine step resolved no policy choice.");
                     } else {
@@ -2023,8 +2073,8 @@ impl ReviewApp {
                             }
                         }
                     }
-                    ui.separator();
-                    ui.strong("New engine events");
+                    });
+                    section(ui, "New engine events", |ui| {
                     if frame.new_events.is_empty() && frame.structured_events.is_empty() {
                         ui.label("—");
                     } else {
@@ -2049,6 +2099,7 @@ impl ReviewApp {
                             });
                         }
                     }
+                    });
                     if let Some(tile) = &self.selected_tile {
                         ui.separator();
                         if let Some(metadata) = session
@@ -2625,7 +2676,7 @@ impl eframe::App for ReviewApp {
         self.with_session(|app, session| {
             app.viewed = app.viewed.min(session.frames.len().saturating_sub(1));
             let frame = &session.frames[app.viewed];
-            Self::player_panel(root, session, frame);
+            Self::player_panel(root, &mut app.show_players, session, frame);
             app.decision_panel(root, session, frame);
             app.board(root, session, frame);
         });
