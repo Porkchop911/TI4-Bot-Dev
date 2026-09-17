@@ -2219,17 +2219,24 @@ struct Pending {
 /// Where an open space combat has reached.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Stage {
-    /// 78.4: retreats are announced before any dice, and the defender decides first.
+    /// A round opens: its start-of-round events and, in round 1, the anti-fighter barrage
+    /// (78.3, step 1), before anyone announces a retreat.
+    Opening {
+        round: u32,
+    },
+    /// 78.4 (step 2): retreats are announced after the barrage and before any combat dice, and
+    /// the defender decides first.
     Announcing {
         round: u32,
         asking: PlayerId,
         announced: Vec<PlayerId>,
     },
-    /// Start of a round: roll, then queue both sides' hits.
+    /// Retreats announced: roll, then queue both sides' hits.
     Rolling {
         round: u32,
     },
-    /// Anti-fighter barrage scored a secret before ordinary space-combat dice.
+    /// Anti-fighter barrage scored a secret; the round resumes at the announcement once the
+    /// scoring window has closed.
     RollingAfterBarrage {
         round: u32,
     },
@@ -2321,11 +2328,7 @@ impl CombatWindow {
             system: system.clone(),
             attacker: attacker.clone(),
             defender: defender.clone(),
-            stage: Stage::Announcing {
-                round: 1,
-                asking: defender.clone(),
-                announced: Vec::new(),
-            },
+            stage: Stage::Opening { round: 1 },
             galaxy: None,
             pending_retreats: Vec::new(),
             combat_occurrence: None,
@@ -2549,15 +2552,14 @@ impl CombatWindow {
         clippy::too_many_lines,
         reason = "one windowed step per side, read as a table"
     )]
-    fn roll_round(
+    fn open_round(
         &mut self,
         state: &mut GameState,
         ctx: &mut Resolving<'_>,
         round: u32,
-        run_barrage: bool,
     ) -> Result<(), CombatError> {
         let (content, sources) = (ctx.content, ctx.sources);
-        if run_barrage {
+        {
             state.combat_round_seq = state.combat_round_seq.saturating_add(1);
 
             // Announced before anything is rolled, because eight action cards read "at the start of
@@ -2592,7 +2594,7 @@ impl CombatWindow {
             }
         }
 
-        if run_barrage && round == 1 {
+        if round == 1 {
             let occurrence = self.ensure_combat_occurrence(state);
             // Both barrages are rolled before either is applied (78.3), one side at a time:
             // each side's reroll windows (Agnlan Oln, Scramble Frequency) open between its
@@ -2650,7 +2652,26 @@ impl CombatWindow {
                 return Ok(());
             }
         }
+        self.stage = Stage::Announcing {
+            round,
+            asking: self.defender.clone(),
+            announced: Vec::new(),
+        };
+        Ok(())
+    }
 
+    /// Roll a round's combat dice and queue both sides' hits.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one windowed step per side, read as a table"
+    )]
+    fn roll_round(
+        &mut self,
+        state: &mut GameState,
+        ctx: &mut Resolving<'_>,
+        round: u32,
+    ) -> Result<(), CombatError> {
+        let (content, sources) = (ctx.content, ctx.sources);
         // 78.5f: the attacker rolls everything first. 78.6: both sides' hits are computed
         // before either is absorbed. Each side's window opens before the next side's dice
         // are drawn, like the barrage's, so a reroll can empty a fleet mid-roll and end
@@ -2946,11 +2967,7 @@ impl CombatWindow {
                             self.stage = self.conclude(state, content, sources, round);
                             return Ok(());
                         }
-                        self.stage = Stage::Announcing {
-                            round: round + 1,
-                            asking: self.defender.clone(),
-                            announced: Vec::new(),
-                        };
+                        self.stage = Stage::Opening { round: round + 1 };
                         continue;
                     };
                     let destinations = self.retreats(state, content, sources, &player);
@@ -2975,17 +2992,30 @@ impl CombatWindow {
                         _ => return Ok(()),
                     }
                 }
+                Stage::Opening { round } => {
+                    if self.over(state, content, sources) {
+                        self.stage = self.conclude(state, content, sources, round - 1);
+                        return Ok(());
+                    }
+                    self.open_round(state, ctx, round)?;
+                    if matches!(self.stage, Stage::RollingAfterBarrage { .. }) {
+                        return Ok(());
+                    }
+                }
                 Stage::Rolling { round } => {
                     if self.over(state, content, sources) {
                         self.stage = self.conclude(state, content, sources, round - 1);
                         return Ok(());
                     }
-                    self.roll_round(state, ctx, round, true)?;
+                    self.roll_round(state, ctx, round)?;
                     return Ok(());
                 }
                 Stage::RollingAfterBarrage { round } => {
-                    self.roll_round(state, ctx, round, false)?;
-                    return Ok(());
+                    self.stage = Stage::Announcing {
+                        round,
+                        asking: self.defender.clone(),
+                        announced: Vec::new(),
+                    };
                 }
                 Stage::Done(_) => return Ok(()),
             }
@@ -3002,7 +3032,10 @@ impl Window for CombatWindow {
         sources: SourceSet,
     ) -> Option<Choice> {
         match &self.stage {
-            Stage::Done(_) | Stage::Rolling { .. } | Stage::RollingAfterBarrage { .. } => None,
+            Stage::Done(_)
+            | Stage::Opening { .. }
+            | Stage::Rolling { .. }
+            | Stage::RollingAfterBarrage { .. } => None,
             Stage::Announcing { asking, .. } => {
                 if self.retreats(state, content, sources, asking).is_empty() {
                     return None; // 78.4c: nothing to retreat to, so nothing to announce
@@ -3249,7 +3282,10 @@ impl Window for CombatWindow {
         let option = crate::choice::validate(&choice, answer)?;
 
         match self.stage.clone() {
-            Stage::Done(_) | Stage::Rolling { .. } | Stage::RollingAfterBarrage { .. } => {}
+            Stage::Done(_)
+            | Stage::Opening { .. }
+            | Stage::Rolling { .. }
+            | Stage::RollingAfterBarrage { .. } => {}
             Stage::Announcing {
                 round,
                 asking,
@@ -3864,11 +3900,17 @@ mod tests {
         state.board.entry(refuge.clone()).or_default();
         put(&mut state, &refuge, "fighter", &defender(), 1);
 
-        let window = CombatWindow::new(&state, ContentStore::embedded(), POK, &system)
+        let mut window = CombatWindow::new(&state, ContentStore::embedded(), POK, &system)
             .with_galaxy(hub.galaxy);
+        // As it stands once round 1 has opened (no barrage between two fighters).
+        window.stage = Stage::Announcing {
+            round: 1,
+            asking: defender(),
+            announced: Vec::new(),
+        };
         let choice = window
             .pending_choice(&state, ContentStore::embedded(), POK)
-            .expect("a fresh combat opens by asking the defender to announce");
+            .expect("round 1 asks the defender to announce");
         let context = choice.context.as_ref().expect("typed context");
         assert_eq!(context.source, DecisionSource::Rule("78.9".to_owned()));
         assert_eq!(context.subtype, "announce_retreat");
@@ -5578,14 +5620,20 @@ mod tests {
         put(&mut state, &refuge_a, "fighter", &defender(), 1);
         put(&mut state, &refuge_b, "fighter", &defender(), 3);
 
-        let window = CombatWindow::new(&state, ContentStore::embedded(), POK, &system)
+        let mut window = CombatWindow::new(&state, ContentStore::embedded(), POK, &system)
             .with_galaxy(hub.galaxy);
+        // As it stands once round 1 has opened (no barrage between fighters).
+        window.stage = Stage::Announcing {
+            round: 1,
+            asking: defender(),
+            announced: Vec::new(),
+        };
 
         // Announcing: the defender's own two fighters here previews 2 -> 2 for "stay" and
         // 2 -> 0 for "retreat", both carrying `system`.
         let announcing = window
             .pending_choice(&state, ContentStore::embedded(), POK)
-            .expect("a fresh combat opens by asking the defender to announce");
+            .expect("round 1 asks the defender to announce");
         for (id, before, after) in [("stay", 2, 2), ("retreat", 2, 0)] {
             let option = announcing
                 .options

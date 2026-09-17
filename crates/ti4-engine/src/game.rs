@@ -6250,9 +6250,10 @@ mod tests {
                     TACTICAL_ACTION_ID,
                     ids[0].as_str(),
                     "done_moving",
-                    "stay",
+                    // The barrage comes before the retreat announcement (78.3, 78.4).
                     "reaction:generic:ANTI_FIGHTER_BARRAGE_STARTED:when",
                     "destroy|2",
+                    "stay",
                     "destroy|0",
                     "stay",
                     "retreat",
@@ -6393,9 +6394,10 @@ mod tests {
             TACTICAL_ACTION_ID,
             ids[0].as_str(),
             "done_moving",
-            "stay",
+            // The barrage comes before the retreat announcement (78.3, 78.4).
             "reaction:generic:ANTI_FIGHTER_BARRAGE_STARTED:when",
             "destroy|2",
+            "stay",
             "destroy|0",
             "stay",
             "retreat",
@@ -6583,9 +6585,10 @@ mod tests {
         );
         assert_eq!(
             state.player(&b).unwrap().rout_round,
-            Some(0),
+            Some(1),
             "the marker keys to the round counter as it stands when the announcement step
-             opens, which the window compares before that round's dice increment it"
+             opens; the round has already opened (and counted) by then, and the window compares
+             the same counter"
         );
         assert!(
             state.player(&b).unwrap().action_cards.is_empty(),
