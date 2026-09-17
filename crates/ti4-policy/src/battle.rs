@@ -4,20 +4,31 @@
 //! different vector in a game than it was trained on. The predictor itself is a plain-Rust
 //! forward pass: the live policy crate must not depend on the tensor library.
 //!
-//! Scope of `FEATURE_VERSION` 1: the six factions the bots play, with and without upgrades,
-//! space combat only, both sides' space cannon before combat, the declared sustain-first
-//! casualty order. A side containing any other unit is unsupported rather than approximated.
+//! Scope: the six factions the bots play, with and without upgrades, space combat only, both
+//! sides' space cannon before combat, the declared sustain-first casualty order. A side
+//! containing anything else is unsupported rather than approximated.
+//!
+//! Feature versions. A predictor records the version it was trained on and is fed exactly that:
+//!
+//! - **1** — ships, damage and dice shift per side; three outcome probabilities. A destination
+//!   with guns on its planets is unsupported, and one without enemy ships is not a fight.
+//! - **2** — adds guns per side (PDS, PDS II, the Xxcha mech on planets there, and guns next door
+//!   whose cards reach), so a move into a covered system with no enemy ships is a fight too; and
+//!   adds each ship type's expected survival.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use serde::{Deserialize, Serialize};
 use ti4_engine::choice::{Choice, ChoiceOption, Observed};
-use ti4_model::id::PlayerId;
+use ti4_model::id::{PlayerId, SystemId};
 
-/// Bumped whenever the encoding below changes meaning.
-pub const FEATURE_VERSION: u32 = 1;
+/// The version new predictors are trained on.
+pub const FEATURE_VERSION: u32 = 2;
 
-/// Units the version-1 encoding knows, in slot order. Never reorder; append under a new version.
+/// Every version this build can feed.
+pub const SUPPORTED_VERSIONS: [u32; 2] = [1, 2];
+
+/// Units the encoding knows, in slot order. Never reorder; append under a new version.
 pub const UNIT_IDS: [&str; 21] = [
     "carrier",
     "carrier2",
@@ -42,7 +53,13 @@ pub const UNIT_IDS: [&str; 21] = [
     "xxcha_flagship",
 ];
 
-/// Factions version 1 covers, with their shift to every combat roll.
+/// Guns version 2 knows: units that fire space cannon before combat and take no part in it.
+pub const GUN_IDS: [&str; 4] = ["pds", "pds2", "xxcha_mech", "xxcha_flagship"];
+
+/// Guns whose cards let them fire into an adjacent system.
+const REACHING_GUNS: [&str; 3] = ["pds2", "xxcha_mech", "xxcha_flagship"];
+
+/// Factions covered, with their shift to every combat roll.
 pub const FACTIONS: [(&str, i64); 6] = [
     ("sol", 0),
     ("letnev", 0),
@@ -52,25 +69,54 @@ pub const FACTIONS: [(&str, i64); 6] = [
     ("l1z1x", 0),
 ];
 
-/// Width of one side's block: counts, damaged counts, dice shift.
-pub const SIDE_WIDTH: usize = 2 * UNIT_IDS.len() + 1;
+/// Width of one side's block: counts, damaged counts, dice shift, and from version 2 the guns.
+#[must_use]
+pub const fn side_width(version: u32) -> usize {
+    let ships = 2 * UNIT_IDS.len() + 1;
+    if version >= 2 {
+        ships + GUN_IDS.len()
+    } else {
+        ships
+    }
+}
 
 /// Width of a whole input: attacker block then defender block.
-pub const INPUT_WIDTH: usize = 2 * SIDE_WIDTH;
+#[must_use]
+pub const fn input_width(version: u32) -> usize {
+    2 * side_width(version)
+}
 
-/// One side of a space battle: ships by unit id, how many of each start damaged, and the
-/// faction's shift to every combat roll.
+/// Width of a predictor's output: three outcome logits, and from version 2 a survival logit per
+/// ship type per side.
+#[must_use]
+pub const fn output_width(version: u32) -> usize {
+    if version >= 2 {
+        3 + 2 * UNIT_IDS.len()
+    } else {
+        3
+    }
+}
+
+/// Input width of the current version.
+pub const INPUT_WIDTH: usize = input_width(FEATURE_VERSION);
+
+/// Output width of the current version.
+pub const OUTPUT_WIDTH: usize = output_width(FEATURE_VERSION);
+
+/// One side of a space battle: ships by unit id, how many of each start damaged, the guns that
+/// fire for it before combat, and the faction's shift to every combat roll.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct BattleSide {
     pub units: Vec<(String, usize)>,
     pub damaged: Vec<(String, usize)>,
+    pub guns: Vec<(String, usize)>,
     pub modifier: i64,
 }
 
-/// Why a side cannot be encoded.
+/// Why a fight cannot be encoded.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Unsupported {
-    /// A unit outside `UNIT_IDS`.
+    /// A ship outside `UNIT_IDS`.
     Unit(String),
     /// More damaged ships of an id than there are ships of it.
     Damage(String),
@@ -80,7 +126,7 @@ pub enum Unsupported {
     Opponents,
     /// The destination is an anomaly, whose combat effects the predictor never saw.
     Anomaly,
-    /// A unit on a planet there has SPACE CANNON; the predictor models ships only.
+    /// A gun the predictor's version does not cover.
     Guns,
     /// A galvanized ship, whose modifiers the predictor never saw.
     Galvanized,
@@ -91,7 +137,7 @@ pub enum Unsupported {
 /// What a movement option means for the fight at its destination.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BattleQuery {
-    /// Not a movement decision, or no other player's ships at the destination.
+    /// Not a movement decision, or nothing at the destination that fights.
     NotApplicable,
     /// A fight follows, but outside what the predictor covers. The reason is public.
     Unsupported(Unsupported),
@@ -102,7 +148,44 @@ pub enum BattleQuery {
     },
 }
 
-/// The battle a movement option leads to, from public information only.
+/// Space-cannon units by owner: `(owner, unit id)` for each.
+fn guns_in(
+    seen: &Observed<'_>,
+    system: &SystemId,
+    planets_only: bool,
+    reaching_only: bool,
+) -> Vec<(PlayerId, String)> {
+    let (content, sources) = (seen.content(), seen.sources());
+    let board = seen.system(system);
+    let space = board.units.iter().filter(|_| !planets_only);
+    board
+        .planet_units
+        .values()
+        .flatten()
+        .chain(space)
+        .filter(|unit| {
+            ti4_content::units::unit_type(content, unit.type_id.as_str(), sources)
+                .is_some_and(|kind| kind.has_space_cannon())
+        })
+        .filter(|unit| !reaching_only || deep_space_cannon(seen, unit.type_id.as_str()))
+        .map(|unit| (unit.owner.clone(), unit.type_id.to_string()))
+        .collect()
+}
+
+/// Whether a unit's space cannon reaches adjacent systems (PDS II, the Xxcha mech and flagship,
+/// and any unit outside this encoding that carries the same clause).
+fn deep_space_cannon(seen: &Observed<'_>, id: &str) -> bool {
+    REACHING_GUNS.contains(&id)
+        || ti4_content::units::unit_type(seen.content(), id, seen.sources())
+            .and_then(|kind| kind.record().text("ability"))
+            .is_some_and(|ability| {
+                let ability = ability.to_ascii_lowercase();
+                ability.contains("space cannon against ships that are")
+                    && ability.contains("adjacent")
+            })
+}
+
+/// The battle a movement option leads to, from public information only, as `version` sees it.
 ///
 /// The acting seat is the attacker. For a ship move the attacking fleet is the seat's ships
 /// already at the destination plus the moved ship; for "finish movement" it is those ships alone.
@@ -113,6 +196,7 @@ pub fn movement_query(
     choice: &Choice,
     option: &ChoiceOption,
     player: &PlayerId,
+    version: u32,
 ) -> BattleQuery {
     if choice.prompt != "movement" {
         return BattleQuery::NotApplicable;
@@ -150,8 +234,26 @@ pub fn movement_query(
         .filter(|unit| &unit.owner != player && is_ship(unit.type_id.as_str()))
         .map(|unit| &unit.owner)
         .collect();
-    let Some(enemy) = opponents.first().copied() else {
-        return BattleQuery::NotApplicable;
+
+    // Guns: on the planets here, and (from version 2) next door where the card reaches.
+    let mut guns = guns_in(seen, active, true, false);
+    if version >= 2
+        && let Some(galaxy) = seen.galaxy()
+    {
+        for neighbour in galaxy.adjacent(active.as_str()) {
+            guns.extend(guns_in(seen, &SystemId::new(neighbour), false, true));
+        }
+    }
+    let enemy_guns = guns.iter().any(|(owner, _)| owner != player);
+
+    let enemy = match opponents.first() {
+        Some(enemy) => (*enemy).clone(),
+        None if version >= 2 && enemy_guns => guns
+            .iter()
+            .find(|(owner, _)| owner != player)
+            .map(|(owner, _)| owner.clone())
+            .expect("an enemy gun exists"),
+        None => return BattleQuery::NotApplicable,
     };
     if opponents.len() > 1 {
         return BattleQuery::Unsupported(Unsupported::Opponents);
@@ -162,16 +264,17 @@ pub fn movement_query(
     {
         return BattleQuery::Unsupported(Unsupported::Anomaly);
     }
-    if here
-        .planet_units
-        .values()
-        .flatten()
-        .any(|unit| kind(unit.type_id.as_str()).is_some_and(|k| k.has_space_cannon()))
-    {
+    if version < 2 && !guns.is_empty() {
+        return BattleQuery::Unsupported(Unsupported::Guns);
+    }
+    if guns.iter().any(|(_, id)| !GUN_IDS.contains(&id.as_str())) {
         return BattleQuery::Unsupported(Unsupported::Guns);
     }
 
-    let side = |owner: &PlayerId, extra: Option<(&str, bool)>| -> Result<BattleSide, Unsupported> {
+    let side = |owner: &PlayerId,
+                extra: Option<(&str, bool)>,
+                gunners: &dyn Fn(&PlayerId) -> bool|
+     -> Result<BattleSide, Unsupported> {
         let faction = seen
             .seat(owner)
             .map(|seat| seat.faction.as_str().to_owned())
@@ -202,18 +305,26 @@ pub fn movement_query(
                 *damaged.entry(id.to_owned()).or_default() += 1;
             }
         }
+        let mut side_guns: BTreeMap<String, usize> = BTreeMap::new();
+        for (gunner, id) in &guns {
+            if gunners(gunner) {
+                *side_guns.entry(id.clone()).or_default() += 1;
+            }
+        }
         Ok(BattleSide {
             units: units.into_iter().collect(),
             damaged: damaged.into_iter().collect(),
+            guns: side_guns.into_iter().collect(),
             modifier,
         })
     };
-    let built = side(player, moving).and_then(|attacker| {
+    // Every other player's guns fire at the attacker, so all of them join the defender.
+    let built = side(player, moving, &|gunner| gunner == player).and_then(|attacker| {
         if attacker.units.is_empty() {
             return Err(Unsupported::EmptyFleet);
         }
-        let defender = side(enemy, None)?;
-        encode(&attacker, &defender)?;
+        let defender = side(&enemy, None, &|gunner| gunner != player)?;
+        encode(version, &attacker, &defender)?;
         Ok((attacker, defender))
     });
     match built {
@@ -237,7 +348,7 @@ fn scale(id: &str, count: usize) -> f32 {
 }
 
 impl BattleSide {
-    fn encode(&self, out: &mut [f32]) -> Result<(), Unsupported> {
+    fn encode(&self, version: u32, out: &mut [f32]) -> Result<(), Unsupported> {
         for (id, count) in &self.units {
             let at = slot(id).ok_or_else(|| Unsupported::Unit(id.clone()))?;
             out[at] += scale(id, *count);
@@ -258,31 +369,57 @@ impl BattleSide {
         #[expect(clippy::cast_precision_loss, reason = "a dice shift of -1, 0 or 1")]
         let shift = self.modifier as f32;
         out[2 * UNIT_IDS.len()] = shift;
+        if version < 2 {
+            return if self.guns.is_empty() {
+                Ok(())
+            } else {
+                Err(Unsupported::Guns)
+            };
+        }
+        for (id, count) in &self.guns {
+            let at = GUN_IDS
+                .iter()
+                .position(|known| known == id)
+                .ok_or(Unsupported::Guns)?;
+            #[expect(clippy::cast_precision_loss, reason = "counts are small")]
+            let value = *count as f32 / 4.0;
+            out[2 * UNIT_IDS.len() + 1 + at] += value;
+        }
         Ok(())
     }
 }
 
-/// The version-1 input for a fight between `attacker` (the active player) and `defender`.
+/// The input `version` expects for a fight between `attacker` (the active player) and
+/// `defender`. Version 1 has no fight without defending ships.
 ///
 /// # Errors
 ///
-/// A side carries a unit or damage the encoding does not cover.
+/// A side carries a ship, damage or gun the version does not cover.
 pub fn encode(
+    version: u32,
     attacker: &BattleSide,
     defender: &BattleSide,
-) -> Result<[f32; INPUT_WIDTH], Unsupported> {
-    let mut out = [0.0; INPUT_WIDTH];
-    attacker.encode(&mut out[..SIDE_WIDTH])?;
-    defender.encode(&mut out[SIDE_WIDTH..])?;
+) -> Result<Vec<f32>, Unsupported> {
+    if attacker.units.is_empty() || (version < 2 && defender.units.is_empty()) {
+        return Err(Unsupported::EmptyFleet);
+    }
+    let width = side_width(version);
+    let mut out = vec![0.0; 2 * width];
+    attacker.encode(version, &mut out[..width])?;
+    defender.encode(version, &mut out[width..])?;
     Ok(out)
 }
 
-/// Probabilities of the three ways a space battle ends.
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// What a predictor expects of a fight.
+#[derive(Debug, Clone, PartialEq)]
 pub struct BattlePrediction {
     pub attacker_wins: f32,
     pub defender_wins: f32,
     pub mutual_destruction: f32,
+    /// Expected surviving fraction of each `UNIT_IDS` slot, attacker's; empty before version 2.
+    pub attacker_survival: Vec<f32>,
+    /// The same for the defender.
+    pub defender_survival: Vec<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -294,7 +431,8 @@ struct Layer {
     bias: Vec<f32>,
 }
 
-/// A trained predictor: dense layers with ReLU between them, softmax over three outcomes.
+/// A trained predictor: dense layers with ReLU between them; softmax over the three outcomes and,
+/// from version 2, a sigmoid per survival slot.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BattlePredictor {
     pub feature_version: u32,
@@ -309,11 +447,11 @@ pub struct BattlePredictor {
 pub enum LoadError {
     #[error("predictor file: {0}")]
     Json(#[from] serde_json::Error),
-    #[error("predictor built for feature version {found}, this build encodes version {expected}")]
-    Version { found: u32, expected: u32 },
+    #[error("predictor built for feature version {found}; this build feeds {SUPPORTED_VERSIONS:?}")]
+    Version { found: u32 },
     #[error("predictor unit list does not match this build's")]
     Units,
-    #[error("predictor layers do not chain from {INPUT_WIDTH} inputs to 3 outputs")]
+    #[error("predictor layers do not chain from its version's input width to its output width")]
     Shape,
 }
 
@@ -322,14 +460,15 @@ impl BattlePredictor {
     ///
     /// # Errors
     ///
-    /// The layers do not chain from `INPUT_WIDTH` to three outputs, or a buffer has the wrong
-    /// length.
+    /// An unsupported version, layers that do not chain from the version's input width to its
+    /// output width, or a buffer of the wrong length.
     pub fn new(
+        version: u32,
         continuation: impl Into<String>,
         layers: Vec<(usize, usize, Vec<f32>, Vec<f32>)>,
     ) -> Result<Self, LoadError> {
         let predictor = Self {
-            feature_version: FEATURE_VERSION,
+            feature_version: version,
             continuation: continuation.into(),
             unit_ids: UNIT_IDS.iter().map(|id| (*id).to_owned()).collect(),
             layers: layers
@@ -347,16 +486,15 @@ impl BattlePredictor {
     }
 
     fn validate(&self) -> Result<(), LoadError> {
-        if self.feature_version != FEATURE_VERSION {
+        if !SUPPORTED_VERSIONS.contains(&self.feature_version) {
             return Err(LoadError::Version {
                 found: self.feature_version,
-                expected: FEATURE_VERSION,
             });
         }
         if self.unit_ids.iter().map(String::as_str).ne(UNIT_IDS) {
             return Err(LoadError::Units);
         }
-        let mut width = INPUT_WIDTH;
+        let mut width = input_width(self.feature_version);
         for layer in &self.layers {
             if layer.inputs != width
                 || layer.weight.len() != layer.inputs * layer.outputs
@@ -366,7 +504,7 @@ impl BattlePredictor {
             }
             width = layer.outputs;
         }
-        if width != 3 || self.layers.is_empty() {
+        if width != output_width(self.feature_version) || self.layers.is_empty() {
             return Err(LoadError::Shape);
         }
         Ok(())
@@ -374,7 +512,7 @@ impl BattlePredictor {
 
     /// # Errors
     ///
-    /// Malformed JSON, or a predictor for a different encoding.
+    /// Malformed JSON, or a predictor for an encoding this build cannot feed.
     pub fn from_json(text: &str) -> Result<Self, LoadError> {
         let predictor: Self = serde_json::from_str(text)?;
         predictor.validate()?;
@@ -388,9 +526,18 @@ impl BattlePredictor {
         Ok(serde_json::to_string(self)?)
     }
 
-    /// Outcome probabilities for an encoded input.
+    /// The raw outputs for an encoded input of this predictor's version.
+    ///
+    /// # Panics
+    ///
+    /// If the input is not `input_width(self.feature_version)` wide.
     #[must_use]
-    pub fn predict(&self, input: &[f32; INPUT_WIDTH]) -> BattlePrediction {
+    pub fn logits(&self, input: &[f32]) -> Vec<f32> {
+        assert_eq!(
+            input.len(),
+            input_width(self.feature_version),
+            "input width"
+        );
         let mut current: Vec<f32> = input.to_vec();
         for (index, layer) in self.layers.iter().enumerate() {
             let mut next = layer.bias.clone();
@@ -409,20 +556,40 @@ impl BattlePredictor {
             }
             current = next;
         }
-        let top = current.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-        let exp: Vec<f32> = current.iter().map(|v| (v - top).exp()).collect();
+        current
+    }
+
+    /// What this predictor expects of an encoded fight.
+    ///
+    /// # Panics
+    ///
+    /// If the input is not `input_width(self.feature_version)` wide.
+    #[must_use]
+    pub fn predict(&self, input: &[f32]) -> BattlePrediction {
+        let out = self.logits(input);
+        let top = out[..3].iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let exp: Vec<f32> = out[..3].iter().map(|v| (v - top).exp()).collect();
         let total: f32 = exp.iter().sum();
+        let sigmoid = |v: &f32| 1.0 / (1.0 + (-v).exp());
+        let survival: Vec<f32> = out[3..].iter().map(sigmoid).collect();
+        let (attacker_survival, defender_survival) = if survival.is_empty() {
+            (Vec::new(), Vec::new())
+        } else {
+            let (a, d) = survival.split_at(UNIT_IDS.len());
+            (a.to_vec(), d.to_vec())
+        };
         BattlePrediction {
             attacker_wins: exp[0] / total,
             defender_wins: exp[1] / total,
             mutual_destruction: exp[2] / total,
+            attacker_survival,
+            defender_survival,
         }
     }
 }
 
-/// The closed battle facts, under the `action-plan` family: what an option does to the fight
-/// at its destination. Appended into preallocated vocabulary rows by the arena migration.
-pub const FACT_NAMES: [&str; 6] = [
+/// The closed battle facts of version 1, under the `action-plan` family.
+pub const FACT_NAMES_V1: [&str; 6] = [
     "action-plan:battle-fight",
     "action-plan:battle-unsupported",
     "action-plan:battle-win",
@@ -431,13 +598,52 @@ pub const FACT_NAMES: [&str; 6] = [
     "action-plan:battle-win-change",
 ];
 
+/// Version 2 adds the expected resource cost each side loses, in tens of resources.
+pub const FACT_NAMES_V2: [&str; 8] = [
+    "action-plan:battle-fight",
+    "action-plan:battle-unsupported",
+    "action-plan:battle-win",
+    "action-plan:battle-loss",
+    "action-plan:battle-mutual",
+    "action-plan:battle-win-change",
+    "action-plan:battle-own-cost-lost",
+    "action-plan:battle-enemy-cost-lost",
+];
+
+/// The facts a predictor of `version` emits; the arena migration appends exactly these.
+#[must_use]
+pub fn fact_names(version: u32) -> &'static [&'static str] {
+    if version >= 2 {
+        &FACT_NAMES_V2
+    } else {
+        &FACT_NAMES_V1
+    }
+}
+
+/// Expected resource cost a side loses, in tens of resources.
+fn cost_lost(seen: &Observed<'_>, side: &BattleSide, survival: &[f32]) -> f64 {
+    side.units
+        .iter()
+        .filter_map(|(id, count)| {
+            let at = slot(id)?;
+            let cost = ti4_content::units::unit_type(seen.content(), id, seen.sources())
+                .map_or(0.0, |kind| kind.cost());
+            #[expect(clippy::cast_precision_loss, reason = "counts are small")]
+            let count = *count as f64;
+            Some(cost * count * (1.0 - f64::from(survival[at])))
+        })
+        .sum::<f64>()
+        / 10.0
+}
+
 /// Battle facts for every option of a decision, in option order.
 ///
 /// An option that leads to no fight carries nothing: a missing estimate is not zero odds. A fight
 /// outside the predictor's cover carries only the two flags. A covered fight carries the acting
 /// seat's win, loss and mutual-destruction odds, and -- when finishing movement is itself a
-/// covered fight -- how much this option changes the win odds against finishing now. Identical
-/// inputs within the decision are predicted once.
+/// covered fight -- how much this option changes the win odds against finishing now. From
+/// version 2 it also carries the expected cost each side loses. Identical inputs within the
+/// decision are predicted once.
 #[must_use]
 pub fn decision_facts(
     seen: &Observed<'_>,
@@ -445,23 +651,27 @@ pub fn decision_facts(
     player: &PlayerId,
     predictor: &BattlePredictor,
 ) -> Vec<Vec<(&'static str, f64)>> {
+    let version = predictor.feature_version;
+    let names = fact_names(version);
     let queries: Vec<BattleQuery> = choice
         .options
         .iter()
-        .map(|option| movement_query(seen, choice, option, player))
+        .map(|option| movement_query(seen, choice, option, player, version))
         .collect();
-    let mut cache: HashMap<[u32; INPUT_WIDTH], BattlePrediction> = HashMap::new();
+    let mut cache: HashMap<Vec<u32>, BattlePrediction> = HashMap::new();
     let predictions: Vec<Option<BattlePrediction>> = queries
         .iter()
         .map(|query| {
             let BattleQuery::Supported { attacker, defender } = query else {
                 return None;
             };
-            let input = encode(attacker, defender).ok()?;
+            let input = encode(version, attacker, defender).ok()?;
+            let key: Vec<u32> = input.iter().map(|value| value.to_bits()).collect();
             Some(
-                *cache
-                    .entry(input.map(f32::to_bits))
-                    .or_insert_with(|| predictor.predict(&input)),
+                cache
+                    .entry(key)
+                    .or_insert_with(|| predictor.predict(&input))
+                    .clone(),
             )
         })
         .collect();
@@ -469,7 +679,7 @@ pub fn decision_facts(
         .options
         .iter()
         .position(|option| option.id == "done_moving")
-        .and_then(|index| predictions[index]);
+        .and_then(|index| predictions[index].clone());
     queries
         .iter()
         .zip(&predictions)
@@ -478,20 +688,21 @@ pub fn decision_facts(
             match query {
                 BattleQuery::NotApplicable => {}
                 BattleQuery::Unsupported(_) => {
-                    facts.push((FACT_NAMES[0], 1.0));
-                    facts.push((FACT_NAMES[1], 1.0));
+                    facts.push((names[0], 1.0));
+                    facts.push((names[1], 1.0));
                 }
-                BattleQuery::Supported { .. } => {
-                    facts.push((FACT_NAMES[0], 1.0));
+                BattleQuery::Supported { attacker, defender } => {
+                    facts.push((names[0], 1.0));
                     if let Some(p) = prediction {
-                        facts.push((FACT_NAMES[2], f64::from(p.attacker_wins)));
-                        facts.push((FACT_NAMES[3], f64::from(p.defender_wins)));
-                        facts.push((FACT_NAMES[4], f64::from(p.mutual_destruction)));
-                        if let Some(base) = finish {
-                            facts.push((
-                                FACT_NAMES[5],
-                                f64::from(p.attacker_wins - base.attacker_wins),
-                            ));
+                        facts.push((names[2], f64::from(p.attacker_wins)));
+                        facts.push((names[3], f64::from(p.defender_wins)));
+                        facts.push((names[4], f64::from(p.mutual_destruction)));
+                        if let Some(base) = &finish {
+                            facts.push((names[5], f64::from(p.attacker_wins - base.attacker_wins)));
+                        }
+                        if version >= 2 {
+                            facts.push((names[6], cost_lost(seen, attacker, &p.attacker_survival)));
+                            facts.push((names[7], cost_lost(seen, defender, &p.defender_survival)));
                         }
                     }
                 }
@@ -535,42 +746,57 @@ mod tests {
     use super::*;
 
     fn side(units: &[(&str, usize)], damaged: &[(&str, usize)], modifier: i64) -> BattleSide {
-        BattleSide {
-            units: units.iter().map(|(id, n)| ((*id).to_owned(), *n)).collect(),
-            damaged: damaged
-                .iter()
+        let owned = |list: &[(&str, usize)]| {
+            list.iter()
                 .map(|(id, n)| ((*id).to_owned(), *n))
-                .collect(),
+                .collect::<Vec<_>>()
+        };
+        BattleSide {
+            units: owned(units),
+            damaged: owned(damaged),
+            guns: Vec::new(),
             modifier,
         }
     }
 
+    fn position(list: &[&str], id: &str) -> usize {
+        list.iter().position(|known| *known == id).expect("slot")
+    }
+
     #[test]
-    fn encoding_places_counts_damage_and_shift_by_role() {
+    fn encoding_places_counts_damage_shift_and_guns_by_role() {
         let attacker = side(
             &[("dreadnought", 2), ("fighter", 4)],
             &[("dreadnought", 1)],
             -1,
         );
-        let defender = side(&[("carrier", 1)], &[], 0);
-        let x = encode(&attacker, &defender).expect("supported");
-        let d = UNIT_IDS
-            .iter()
-            .position(|id| *id == "dreadnought")
-            .expect("slot");
-        let f = UNIT_IDS
-            .iter()
-            .position(|id| *id == "fighter")
-            .expect("slot");
-        let c = UNIT_IDS
-            .iter()
-            .position(|id| *id == "carrier")
-            .expect("slot");
+        let mut defender = side(&[("carrier", 1)], &[], 0);
+        defender.guns = vec![("pds2".to_owned(), 2)];
+        let x = encode(2, &attacker, &defender).expect("supported");
+        assert_eq!(x.len(), INPUT_WIDTH);
+        let (d, f, c) = (
+            position(&UNIT_IDS, "dreadnought"),
+            position(&UNIT_IDS, "fighter"),
+            position(&UNIT_IDS, "carrier"),
+        );
+        let width = side_width(2);
         assert!((x[d] - 0.25).abs() < 1e-6);
         assert!((x[f] - 0.25).abs() < 1e-6);
         assert!((x[UNIT_IDS.len() + d] - 0.125).abs() < 1e-6);
         assert!((x[2 * UNIT_IDS.len()] + 1.0).abs() < 1e-6);
-        assert!((x[SIDE_WIDTH + c] - 0.125).abs() < 1e-6);
+        assert!((x[width + c] - 0.125).abs() < 1e-6);
+        let gun = width + 2 * UNIT_IDS.len() + 1 + position(&GUN_IDS, "pds2");
+        assert!((x[gun] - 0.5).abs() < 1e-6);
+
+        // Version 1 knows no guns and no fight without defending ships.
+        assert_eq!(encode(1, &attacker, &defender), Err(Unsupported::Guns));
+        let mut guns_only = BattleSide::default();
+        guns_only.guns = vec![("pds".to_owned(), 1)];
+        assert!(encode(2, &attacker, &guns_only).is_ok());
+        assert_eq!(
+            encode(1, &attacker, &BattleSide::default()),
+            Err(Unsupported::EmptyFleet)
+        );
     }
 
     #[test]
@@ -578,38 +804,46 @@ mod tests {
         let plain = side(&[("carrier", 1)], &[], 0);
         let naalu = side(&[("naalu_fighter", 2)], &[], 0);
         assert_eq!(
-            encode(&naalu, &plain),
+            encode(2, &naalu, &plain),
             Err(Unsupported::Unit("naalu_fighter".to_owned()))
         );
         let hurt = side(&[("dreadnought", 1)], &[("dreadnought", 2)], 0);
         assert_eq!(
-            encode(&plain, &hurt),
+            encode(2, &plain, &hurt),
             Err(Unsupported::Damage("dreadnought".to_owned()))
         );
     }
 
-    #[test]
-    fn a_predictor_round_trips_and_its_softmax_sums_to_one() {
-        let layers = vec![
-            (INPUT_WIDTH, 2, vec![0.1; INPUT_WIDTH * 2], vec![0.0, 0.5]),
-            (
-                2,
-                3,
-                vec![1.0, 0.0, 0.0, 1.0, -1.0, -1.0],
-                vec![0.0, 0.0, 0.0],
-            ),
-        ];
-        let predictor = BattlePredictor::new("test", layers).expect("valid");
-        let again = BattlePredictor::from_json(&predictor.to_json().expect("json")).expect("loads");
-        let x = encode(
-            &side(&[("carrier", 1)], &[], 0),
-            &side(&[("cruiser", 1)], &[], 0),
+    fn tiny(version: u32) -> BattlePredictor {
+        let (input, output) = (input_width(version), output_width(version));
+        BattlePredictor::new(
+            version,
+            "test",
+            vec![
+                (input, 2, vec![0.1; input * 2], vec![0.0, 0.5]),
+                (2, output, vec![0.2; 2 * output], vec![0.0; output]),
+            ],
         )
-        .expect("supported");
-        let p = again.predict(&x);
-        let total = p.attacker_wins + p.defender_wins + p.mutual_destruction;
-        assert!((total - 1.0).abs() < 1e-5);
-        assert_eq!(p, predictor.predict(&x));
+        .expect("valid")
+    }
+
+    #[test]
+    fn predictors_of_both_versions_round_trip() {
+        let a = side(&[("carrier", 1)], &[], 0);
+        let d = side(&[("cruiser", 1)], &[], 0);
+        for version in SUPPORTED_VERSIONS {
+            let predictor = tiny(version);
+            let again =
+                BattlePredictor::from_json(&predictor.to_json().expect("json")).expect("loads");
+            let x = encode(version, &a, &d).expect("supported");
+            let p = again.predict(&x);
+            let total = p.attacker_wins + p.defender_wins + p.mutual_destruction;
+            assert!((total - 1.0).abs() < 1e-5);
+            assert_eq!(p, predictor.predict(&x));
+            let expected = if version >= 2 { UNIT_IDS.len() } else { 0 };
+            assert_eq!(p.attacker_survival.len(), expected);
+            assert_eq!(p.defender_survival.len(), expected);
+        }
     }
 
     fn movement(options: Vec<ChoiceOption>) -> Choice {
@@ -650,31 +884,80 @@ mod tests {
         let done = ChoiceOption::new("done_moving", "decline");
         let choice = movement(vec![carrier.clone(), hurt_dread.clone(), done.clone()]);
 
-        let BattleQuery::Supported { attacker, defender } =
-            movement_query(&seen, &choice, &carrier, &a)
-        else {
-            panic!("carrier move is supported");
-        };
-        assert_eq!(
-            attacker.units,
-            vec![("carrier".to_owned(), 1), ("dreadnought".to_owned(), 1)]
-        );
-        assert_eq!(attacker.modifier, -1);
-        assert_eq!(defender.units, vec![("cruiser".to_owned(), 2)]);
+        for version in SUPPORTED_VERSIONS {
+            let BattleQuery::Supported { attacker, defender } =
+                movement_query(&seen, &choice, &carrier, &a, version)
+            else {
+                panic!("carrier move is supported");
+            };
+            assert_eq!(
+                attacker.units,
+                vec![("carrier".to_owned(), 1), ("dreadnought".to_owned(), 1)]
+            );
+            assert_eq!(attacker.modifier, -1);
+            assert_eq!(defender.units, vec![("cruiser".to_owned(), 2)]);
+        }
 
         let BattleQuery::Supported { attacker, .. } =
-            movement_query(&seen, &choice, &hurt_dread, &a)
+            movement_query(&seen, &choice, &hurt_dread, &a, 2)
         else {
             panic!("dreadnought move is supported");
         };
         assert_eq!(attacker.units, vec![("dreadnought".to_owned(), 2)]);
         assert_eq!(attacker.damaged, vec![("dreadnought".to_owned(), 1)]);
 
-        let BattleQuery::Supported { attacker, .. } = movement_query(&seen, &choice, &done, &a)
+        let BattleQuery::Supported { attacker, .. } = movement_query(&seen, &choice, &done, &a, 2)
         else {
             panic!("finishing is supported");
         };
         assert_eq!(attacker.units, vec![("dreadnought".to_owned(), 1)]);
+    }
+
+    #[test]
+    fn planet_guns_join_the_defender_from_version_two() {
+        let content = ti4_content::ContentStore::embedded();
+        let (mut state, system) = board("sol", "xxcha");
+        let (a, b) = (PlayerId::new("a"), PlayerId::new("b"));
+        let planet = ti4_model::id::PlanetId::new("gun-planet");
+        state
+            .system_mut(&system)
+            .planet_units
+            .entry(planet)
+            .or_default()
+            .extend([
+                ti4_model::units::Unit::new(ti4_model::id::UnitTypeId::new("pds"), b.clone()),
+                ti4_model::units::Unit::new(
+                    ti4_model::id::UnitTypeId::new("xxcha_mech"),
+                    b.clone(),
+                ),
+            ]);
+        let seen = Observed::new(&state, content, ti4_model::POK, None);
+        let carrier = ChoiceOption::new("move|18|0", "move").with("unit", "carrier");
+        let choice = movement(vec![carrier.clone()]);
+
+        // No enemy ships: version 1 sees no fight, version 2 sees the guns.
+        assert_eq!(
+            movement_query(&seen, &choice, &carrier, &a, 1),
+            BattleQuery::NotApplicable
+        );
+        let BattleQuery::Supported { defender, .. } =
+            movement_query(&seen, &choice, &carrier, &a, 2)
+        else {
+            panic!("a covered system is a fight in version 2");
+        };
+        assert!(defender.units.is_empty());
+        assert_eq!(
+            defender.guns,
+            vec![("pds".to_owned(), 1), ("xxcha_mech".to_owned(), 1)]
+        );
+
+        // With enemy ships as well, version 1 declines rather than ignore the guns.
+        ti4_engine::fixtures::put(&mut state, &system, "cruiser", &b, 1);
+        let seen = Observed::new(&state, content, ti4_model::POK, None);
+        assert_eq!(
+            movement_query(&seen, &choice, &carrier, &a, 1),
+            BattleQuery::Unsupported(Unsupported::Guns)
+        );
     }
 
     #[test]
@@ -687,7 +970,7 @@ mod tests {
         let (state, _) = board("sol", "hacan");
         let seen = Observed::new(&state, content, ti4_model::POK, None);
         assert_eq!(
-            movement_query(&seen, &choice, &carrier, &a),
+            movement_query(&seen, &choice, &carrier, &a, 2),
             BattleQuery::NotApplicable
         );
 
@@ -695,15 +978,33 @@ mod tests {
         ti4_engine::fixtures::put(&mut state, &system, "cruiser", &PlayerId::new("b"), 1);
         let seen = Observed::new(&state, content, ti4_model::POK, None);
         assert_eq!(
-            movement_query(&seen, &choice, &carrier, &a),
+            movement_query(&seen, &choice, &carrier, &a, 2),
             BattleQuery::Unsupported(Unsupported::Faction("sardakk".to_owned()))
         );
 
         let other = Choice::new(a.clone(), "activation", vec![carrier.clone()]);
         assert_eq!(
-            movement_query(&seen, &other, &carrier, &a),
+            movement_query(&seen, &other, &carrier, &a, 2),
             BattleQuery::NotApplicable
         );
+    }
+
+    /// A predictor that scores only the attacker's dreadnought slot, so more dreadnoughts win.
+    fn dreadnought_counter(version: u32) -> BattlePredictor {
+        let (input, output) = (input_width(version), output_width(version));
+        let mut first = vec![0.0; input];
+        first[position(&UNIT_IDS, "dreadnought")] = 8.0;
+        let mut second = vec![0.0; output];
+        second[0] = 1.0;
+        BattlePredictor::new(
+            version,
+            "test",
+            vec![
+                (input, 1, first, vec![0.0]),
+                (1, output, second, vec![0.0; output]),
+            ],
+        )
+        .expect("valid")
     }
 
     #[test]
@@ -714,44 +1015,49 @@ mod tests {
         ti4_engine::fixtures::put(&mut state, &system, "cruiser", &a, 1);
         ti4_engine::fixtures::put(&mut state, &system, "cruiser", &b, 2);
         let seen = Observed::new(&state, content, ti4_model::POK, None);
-        // A predictor that scores only the attacker's dreadnought slot, so more dreadnoughts win.
-        let dread = UNIT_IDS
-            .iter()
-            .position(|id| *id == "dreadnought")
-            .expect("slot");
-        let mut first = vec![0.0; INPUT_WIDTH];
-        first[dread] = 8.0;
-        let predictor = BattlePredictor::new(
-            "test",
-            vec![
-                (INPUT_WIDTH, 1, first, vec![0.0]),
-                (1, 3, vec![1.0, 0.0, 0.0], vec![0.0, 0.0, 0.0]),
-            ],
-        )
-        .expect("valid");
         let dreadnought = ChoiceOption::new("move|18|0", "move").with("unit", "dreadnought");
         let done = ChoiceOption::new("done_moving", "decline");
         let other = ChoiceOption::new("pass", "decline");
         let choice = movement(vec![dreadnought, done, other]);
-        let facts = decision_facts(&seen, &choice, &a, &predictor);
-        assert_eq!(facts.len(), 3);
         let value =
             |row: &[(&str, f64)], name: &str| row.iter().find(|(n, _)| *n == name).map(|(_, v)| *v);
-        let change = value(&facts[0], "action-plan:battle-win-change").expect("compared");
-        assert!(
-            change > 0.0,
-            "adding a dreadnought raises the win odds: {change}"
-        );
-        assert_eq!(value(&facts[1], "action-plan:battle-win-change"), Some(0.0));
-        assert!(facts[2].is_empty(), "a non-movement option carries nothing");
+        for version in SUPPORTED_VERSIONS {
+            let facts = decision_facts(&seen, &choice, &a, &dreadnought_counter(version));
+            assert_eq!(facts.len(), 3);
+            let change = value(&facts[0], "action-plan:battle-win-change").expect("compared");
+            assert!(
+                change > 0.0,
+                "adding a dreadnought raises the win odds: {change}"
+            );
+            assert_eq!(value(&facts[1], "action-plan:battle-win-change"), Some(0.0));
+            assert!(facts[2].is_empty(), "a non-movement option carries nothing");
+            let names: Vec<&str> = facts[0].iter().map(|(name, _)| *name).collect();
+            assert!(names.iter().all(|name| fact_names(version).contains(name)));
+            // Survival sigmoids sit at 0.5 in this predictor, so half of each fleet is lost.
+            let own = value(&facts[0], "action-plan:battle-own-cost-lost");
+            assert_eq!(own.is_some(), version >= 2);
+            if let Some(own) = own {
+                assert!((own - 0.3).abs() < 1e-6, "(4 + 2) / 2 / 10, got {own}");
+            }
+        }
     }
 
     #[test]
-    fn mismatched_shapes_are_refused() {
+    fn mismatched_shapes_and_unknown_versions_are_refused() {
         let layers = vec![(INPUT_WIDTH, 3, vec![0.0; 3], vec![0.0; 3])];
         assert!(matches!(
-            BattlePredictor::new("test", layers),
+            BattlePredictor::new(2, "test", layers),
             Err(LoadError::Shape)
+        ));
+        let layers = vec![(
+            input_width(3),
+            3,
+            vec![0.0; 3 * input_width(3)],
+            vec![0.0; 3],
+        )];
+        assert!(matches!(
+            BattlePredictor::new(3, "test", layers),
+            Err(LoadError::Version { found: 3 })
         ));
     }
 }

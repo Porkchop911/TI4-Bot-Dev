@@ -41,12 +41,13 @@ fn side_json(
     profile: Profile,
     composition: &arena::Composition,
     rng: &mut Rng,
+    bare: bool,
 ) -> serde_json::Value {
     let mut units = serde_json::Map::new();
     let mut upgrades = serde_json::Map::new();
     let mut damaged = serde_json::Map::new();
     for (index, base) in SHIP_TYPES.iter().enumerate() {
-        let count = composition[index];
+        let count = if bare { 0 } else { composition[index] };
         if count == 0 {
             continue;
         }
@@ -61,6 +62,17 @@ fn side_json(
             if hurt > 0 {
                 damaged.insert((*base).to_owned(), hurt.into());
             }
+        }
+    }
+    // Guns: a third of sides carry PDS (and Xxcha mechs), and some defenders are guns alone.
+    if rng.below(3) == 0 || bare {
+        let pds = 1 + rng.below(3);
+        units.insert("pds".to_owned(), pds.into());
+        if profile.upgraded {
+            upgrades.insert("pds".to_owned(), true.into());
+        }
+        if profile.faction == "xxcha" && rng.below(2) == 0 {
+            units.insert("mech".to_owned(), (1 + rng.below(2)).into());
         }
     }
     serde_json::json!({
@@ -88,14 +100,15 @@ fn write(content: &ContentStore, path: &str) {
     let mut rng = Rng::new(arena::fnv("ti4calc-check"));
     let mut out = Vec::new();
     for _ in 0..count {
-        let pick = |rng: &mut Rng| {
+        let pick = |rng: &mut Rng, bare: bool| {
             let (profile, with, without) = &fleets[rng.below(fleets.len())];
             let pool = if rng.below(2) == 0 { with } else { without };
             let composition = pool[rng.below(pool.len())];
-            side_json(content, *profile, &composition, rng)
+            side_json(content, *profile, &composition, rng, bare)
         };
-        let attacker = pick(&mut rng);
-        let defender = pick(&mut rng);
+        let attacker = pick(&mut rng, false);
+        let bare = rng.below(8) == 0;
+        let defender = pick(&mut rng, bare);
         out.push(serde_json::json!({ "attacker": attacker, "defender": defender }));
     }
     std::fs::write(path, serde_json::to_string(&out).expect("serialises")).expect("written");
@@ -112,11 +125,16 @@ fn side(content: &ContentStore, value: &serde_json::Value) -> (Side, String) {
         })
         .expect("profile");
     let mut fleet = Vec::new();
+    let mut guns = Vec::new();
     let mut hurt = Vec::new();
     let mut flagship = String::new();
     for (base, count) in value["units"].as_object().expect("units") {
         let id = profile.unit_for(content, base);
         let count = usize::try_from(count.as_u64().unwrap_or(0)).unwrap_or(0);
+        if matches!(base.as_str(), "pds" | "mech") {
+            guns.push((id, count));
+            continue;
+        }
         if base == "flagship" {
             flagship = faction.to_owned();
         }
@@ -125,7 +143,10 @@ fn side(content: &ContentStore, value: &serde_json::Value) -> (Side, String) {
         }
         fleet.push((id, count));
     }
-    (Side::of(content, &fleet, &hurt, faction, true), flagship)
+    (
+        Side::of(content, &fleet, &hurt, faction, true).with_guns(content, &guns),
+        flagship,
+    )
 }
 
 fn check(content: &ContentStore, scenarios: &str, results: &str) {
@@ -178,6 +199,22 @@ fn check(content: &ContentStore, scenarios: &str, results: &str) {
         if a_flag.is_empty() && d_flag.is_empty() {
             keys.push("no flagship either side".to_owned());
         }
+        let armed = |side: &serde_json::Value| {
+            side["units"].get("pds").is_some() || side["units"].get("mech").is_some()
+        };
+        keys.push(format!(
+            "guns: attacker {} defender {}{}",
+            armed(&scenario["attacker"]),
+            armed(&scenario["defender"]),
+            if scenario["defender"]["units"]
+                .as_object()
+                .is_some_and(|units| units.keys().all(|k| k == "pds" || k == "mech"))
+            {
+                " (guns only)"
+            } else {
+                ""
+            }
+        ));
         for key in keys {
             let entry = groups.entry(key).or_insert((0.0, 0.0, 0));
             entry.0 += gap;

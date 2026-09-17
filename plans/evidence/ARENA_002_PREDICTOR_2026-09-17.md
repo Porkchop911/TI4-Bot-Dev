@@ -85,3 +85,32 @@ trained network to 2.4e-7.
 Engine fixes (attacker space cannon; Jol-Nar, Letnev, L1Z1X flagship abilities). Ground combat,
 retreat, action cards. Expected-survivor outputs. Fights with several opponents or planet guns.
 The PPO pilot (`scripts/arena_pilot.psd1`) is the next step.
+
+## Version 2: guns and survivors — 2026-09-17
+
+User priority order: guns, survivors, ground combat, retreat; action cards last.
+
+- **Guns.** A side may carry PDS, PDS II, the Xxcha mech on a planet, or a gun next door whose card
+  reaches (PDS II, Xxcha mech and flagship). They fire before combat and are never hit. A defender
+  may be guns alone, so a move into a covered system with no enemy ships is now a fight: the
+  attacker "wins" if anything survives, otherwise the defender holds.
+- **Survivors.** Each fight reports ships left per unit id per side; the predictor adds a survival
+  output per ship type per side, and live play turns it into `battle-own-cost-lost` and
+  `battle-enemy-cost-lost` (expected resources lost, in tens).
+- **Versioning.** Predictors record their feature version. Version 1 bundles are fed exactly the
+  version-1 input and query: `checkpoint-212544-arena-v1` still plays identically to 212544 under
+  the new code.
+
+Checks:
+
+| check | result |
+|---|---|
+| lean vs ti4calc, 300 sampled positions incl. PDS / Xxcha mechs / guns-only defenders | 0.17pp mean gap, 1 at \|z\| > 3; every gun group at noise |
+| lean vs ti4calc, 60 targeted small fleets against guns only | 0.22pp, 0 at \|z\| > 3 (one cruiser vs one PDS 0.50, three PDS 0.125, two PDS II 0.16) |
+
+Predictor v2 (input 94, output 45), 20,000 steps, ~6 minutes, held-out labelled from 8,192 fights:
+KL 0.0005, attacker-win MAE 0.41pp (contested 1.19pp, foregone 0.13pp, guns-only 0.02pp), survival
+MAE 0.74pp. Exported forward pass matches to 5.4e-7.
+
+`checkpoint-212544-arena-v2` (schema 12, slots 14,878 -> 14,886): identical play to 212544 over 4
+seeds x 4 rounds; 1,267 battle facts over 457 movement decisions (v1: 488); wall time x1.002.

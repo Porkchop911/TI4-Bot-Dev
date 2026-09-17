@@ -212,6 +212,8 @@ pub fn modifier(faction: &str) -> i64 {
 
 #[derive(Clone, Copy)]
 struct Ship {
+    /// Index into the side's `names`.
+    name: u16,
     hits_on: i64,
     dice: u32,
     afb_hits_on: i64,
@@ -234,7 +236,15 @@ struct Ship {
 pub struct Side {
     ships: Vec<Ship>,
     modifier: i64,
+    /// Space cannon that fires before combat but takes no part in it: PDS and mechs on planets
+    /// here, and guns next door whose card lets them reach. `(hits_on, dice)`.
+    guns: Vec<(i64, u32)>,
+    /// Unit ids in first-seen order; survivors are counted against these.
+    names: Vec<String>,
 }
+
+/// Units that may join a side as guns: they shoot before combat and are never hit in it.
+pub const GUN_IDS: [&str; 4] = ["pds", "pds2", "xxcha_mech", "xxcha_flagship"];
 
 impl Side {
     /// Build a side from unit ids and counts. `damaged` names how many ships of an id start the
@@ -254,9 +264,18 @@ impl Side {
         let l1z1x_flagship =
             effects && fleet.iter().any(|(id, n)| *n > 0 && id == "l1z1x_flagship");
         let mut keyed: Vec<((usize, String), Ship)> = Vec::new();
+        let mut names: Vec<String> = Vec::new();
         for (id, count) in fleet {
             let unit = ti4_content::units::unit_type(content, id, POK).expect("unit exists");
+            let name = names
+                .iter()
+                .position(|known| known == id)
+                .unwrap_or_else(|| {
+                    names.push(id.clone());
+                    names.len() - 1
+                });
             let ship = Ship {
+                name: u16::try_from(name).expect("few unit types"),
                 hits_on: unit.combat_hits_on().unwrap_or(11),
                 dice: u32::try_from(unit.combat_dice()).unwrap_or(0),
                 afb_hits_on: unit.afb_hits_on().unwrap_or(11),
@@ -289,6 +308,8 @@ impl Side {
         keyed.sort_by(|a, b| a.0.cmp(&b.0));
         Self {
             ships: keyed.into_iter().map(|(_, ship)| ship).collect(),
+            guns: Vec::new(),
+            names,
             modifier: modifier(faction),
         }
     }
@@ -299,6 +320,43 @@ impl Side {
     pub fn without_cannon(mut self) -> Self {
         for ship in &mut self.ships {
             ship.cannon_dice = 0;
+        }
+        self.guns.clear();
+        self
+    }
+
+    /// The unit ids survivor counts refer to.
+    #[must_use]
+    pub fn names(&self) -> &[String] {
+        &self.names
+    }
+
+    /// Ships per name, the counts survivors are measured against.
+    #[must_use]
+    pub fn fielded(&self) -> Vec<usize> {
+        let mut counts = vec![0; self.names.len()];
+        for ship in &self.ships {
+            counts[usize::from(ship.name)] += 1;
+        }
+        counts
+    }
+
+    /// Add guns by unit id and count. Only their SPACE CANNON is read.
+    ///
+    /// # Panics
+    ///
+    /// If a unit id is not in the content store.
+    #[must_use]
+    pub fn with_guns(mut self, content: &ContentStore, guns: &[(String, usize)]) -> Self {
+        for (id, count) in guns {
+            let unit = ti4_content::units::unit_type(content, id, POK).expect("unit exists");
+            let (Some(hits_on), dice) = (unit.space_cannon_hits_on(), unit.space_cannon_dice())
+            else {
+                continue;
+            };
+            let dice = u32::try_from(dice).unwrap_or(0);
+            self.guns
+                .extend(std::iter::repeat_n((hits_on, dice), *count));
         }
         self
     }
@@ -338,9 +396,13 @@ impl Side {
     /// Space cannon is not a combat roll, so Fragile does not apply.
     fn cannon(&self, rng: &mut Rng) -> usize {
         let mut hits = 0;
-        for ship in &self.ships {
-            for _ in 0..ship.cannon_dice {
-                if rng.die() >= ship.cannon_hits_on {
+        let ships = self
+            .ships
+            .iter()
+            .map(|ship| (ship.cannon_hits_on, ship.cannon_dice));
+        for (hits_on, dice) in ships.chain(self.guns.iter().copied()) {
+            for _ in 0..dice {
+                if rng.die() >= hits_on {
                     hits += 1;
                 }
             }
@@ -439,8 +501,32 @@ pub fn fight_with(
     seed: u64,
     attacker_cannon: bool,
 ) -> (Option<&'static str>, u32) {
+    let outcome = fight_outcome(attacker, defender, seed, attacker_cannon);
+    (outcome.winner, outcome.rounds)
+}
+
+/// How a fight ended, and what was left of each side.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Outcome {
+    /// `Some("a")` attacker, `Some("b")` defender, `None` mutual destruction.
+    pub winner: Option<&'static str>,
+    pub rounds: u32,
+    /// Surviving ships per entry of the side's [`Side::names`].
+    pub attacker_left: Vec<usize>,
+    pub defender_left: Vec<usize>,
+}
+
+/// As [`fight_with`], also counting survivors.
+#[must_use]
+pub fn fight_outcome(
+    attacker: &Side,
+    defender: &Side,
+    seed: u64,
+    attacker_cannon: bool,
+) -> Outcome {
     let mut rng = Rng::new(seed);
     let (mut a, mut d) = (attacker.clone(), defender.clone());
+    let defender_had_ships = !d.ships.is_empty();
     // Space cannon offence: both sides roll, then both absorb.
     let a_hits = if attacker_cannon {
         a.cannon(&mut rng)
@@ -476,9 +562,16 @@ pub fn fight_with(
     let winner = match (a.ships.is_empty(), d.ships.is_empty()) {
         (false, true) => Some("a"),
         (true, false) => Some("b"),
+        // Guns alone cannot be destroyed: an attacker they wipe out simply failed.
+        (true, true) if !defender_had_ships => Some("b"),
         _ => None,
     };
-    (winner, rounds)
+    Outcome {
+        winner,
+        rounds,
+        attacker_left: a.fielded(),
+        defender_left: d.fielded(),
+    }
 }
 
 /// FNV-1a, for split keys that must not depend on the platform's hasher.

@@ -66,18 +66,19 @@ fn main() {
         refuse("the source already carries a battle predictor");
     }
 
+    let names = ti4_policy::battle::fact_names(predictor.feature_version);
     let slots_before = vocabulary.slot_count();
     let added = vocabulary
-        .append(ti4_policy::battle::FACT_NAMES)
+        .append(names)
         .unwrap_or_else(|error| refuse(&format!("appending battle facts: {error}")));
-    if added != ti4_policy::battle::FACT_NAMES.len() {
+    if added != names.len() {
         refuse(&format!(
             "{} of the battle facts were already assigned; the source is not a plain diplomacy bundle",
-            ti4_policy::battle::FACT_NAMES.len() - added
+            names.len() - added
         ));
     }
     // The appended rows must be zero, or the migration changes play before any training.
-    for name in ti4_policy::battle::FACT_NAMES {
+    for name in names {
         let column = i64::try_from(vocabulary.column_of(name)).expect("column fits");
         let row_sum = actor
             .input()

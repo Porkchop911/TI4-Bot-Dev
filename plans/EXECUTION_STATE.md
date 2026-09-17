@@ -8836,3 +8836,11 @@ evaluation before promotion.
   ti4-sim 51/52; the remaining failure is the pool file missing from this worktree.
 - The arena pilot running since c02a49f uses the engine from before these fixes, as does its
   control; later runs get the fixed engine.
+
+### ARENA battle features v2: guns and survivors — 2026-09-17
+
+- Guns (PDS, PDS II, Xxcha mech, reaching guns) and guns-only defenders in the lean simulator,
+  encoding and live query; survival outputs and cost-lost facts. Checked against ti4calc.
+- Predictor v2: 0.41pp win MAE, 0.74pp survival MAE. `checkpoint-212544-arena-v2` migrated,
+  identical play. Version 1 bundles unchanged in behaviour.
+- Next by user order: ground combat, then retreat. Evidence: ARENA_002_PREDICTOR_2026-09-17.md.
