@@ -381,6 +381,18 @@ pub const BOOTSTRAP_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 /// the top of this module.
 #[must_use]
 pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
+    // v42 — 2026-09-17. b1330a5: only ships sustain a space hit (a carried mech no longer does),
+    // start-of-combat-round cards go to the two combatants only, and Ceasefire denies movement
+    // for the whole activation. Bisected on b1330a5: the Ceasefire fix alone stays inside v41;
+    // the sustain fix alone moves the recomputation, and with the combat-card guard the point
+    // leaves it.
+    //
+    // One metric leaves v41: `faction_differentiation` 1.006047 (v41 point) -> 0.642334, under
+    // the old low of 0.792947. Carried mechs stop absorbing space hits and bystanders stop
+    // spending combat cards, so the factions finish closer together. Every other point stays
+    // inside its v41 interval and all thirty games still end cleanly. The complete old/new table
+    // is recorded in plans/evidence/M08-021.md.
+    //
     // v41 — 2026-09-17. a6524a6 opens each space combat round (start-of-round events, round 1's
     // anti-fighter barrage) before asking for retreat announcements, as LRR 78.3/78.4 order them;
     // round 1's announcement used to precede the barrage. The only change since v40: on a6524a6
@@ -1021,43 +1033,43 @@ pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
     let mut bounds = BTreeMap::new();
     bounds.insert(
         "vp_pace".to_owned(),
-        (0.382_098_765_432_098_86, 0.440_740_740_740_740_9),
+        (0.378_395_061_728_395_1, 0.437_654_320_987_654_17),
     );
     // Degenerate on purpose: all games in every recorded baseline ended cleanly, so the bound
     // is the strict invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
         "score_spread".to_owned(),
-        (1.732_608_289_075_065_6, 2.095_391_879_306_217),
+        (1.795_363_964_616_141_2, 2.261_770_458_160_200_7),
     );
     // V3: the spec's across-faction quantity — re-deriven with the same baseline run.
     bounds.insert(
         "faction_differentiation".to_owned(),
-        (0.792_947_307_264_969_1, 1.296_493_371_262_805_5),
+        (0.371_516_744_384_455_37, 1.092_807_574_581_055_3),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.018_526_455_885_292_34, 0.019_718_397_516_748_88),
+        (0.019_115_944_910_957_507, 0.020_127_060_909_007_55),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.034_562_557_145_463_996, 0.035_824_061_564_130_79),
+        (0.034_890_831_994_864_584, 0.036_340_109_077_348_26),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.045_455_856_853_414_81, 0.048_089_926_658_027_56),
+        (0.045_206_739_940_504_84, 0.048_183_818_077_498_06),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.004_361_380_643_524_044, 0.005_064_738_901_398_582_6),
+        (0.004_316_600_800_571_206, 0.005_090_458_836_192_481),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.068_426_884_612_037_43, 0.070_861_630_789_963_87),
+        (0.069_110_585_207_633_07, 0.071_842_061_831_318_97),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.033_862_803_224_706_355, 0.035_053_072_348_579_87),
+        (0.034_202_350_692_948_86, 0.035_513_879_381_186_13),
     );
     bounds
 }
