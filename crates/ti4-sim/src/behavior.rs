@@ -381,6 +381,17 @@ pub const BOOTSTRAP_SEED: u64 = 0x9E37_79B9_7F4A_7C15;
 /// the top of this module.
 #[must_use]
 pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
+    // v39 — 2026-09-17. Space cannon offense now includes the active player's guns, at the ships
+    // of the player it attacks (user ruling; ti4calc agrees). Bisected on b3c5702: disabling that
+    // one change restores v38 exactly, and the flagship fixes shipped with it (J.N.S. Hylarim,
+    // Arc Secundus, 0.0.1) leave the recomputation unchanged in this batch.
+    //
+    // Two metrics leave v38: `score_spread` 2.083314 -> 2.332066 and `vp_pace`
+    // 0.404861 -> 0.433796. An authored bot activating a system its own PDS covers now shoots
+    // first, so its attacks succeed more often and the table spreads out faster. Every other
+    // point stays inside its v38 interval and all thirty games still end cleanly. The complete
+    // old/new table is recorded in plans/evidence/M08-021.md.
+    //
     // v38 — 2026-09-15. Rules fixes in 896fb28 (neutral combat, promissory note windows, Support
     // for the Throne, Hacan hero, Rin) change what the authored bot is asked and what it meets.
     // Bisected by disabling fix groups on 896fb28: disabling four together restores v37 exactly --
@@ -986,43 +997,43 @@ pub fn baseline_bounds() -> BTreeMap<String, (f64, f64)> {
     let mut bounds = BTreeMap::new();
     bounds.insert(
         "vp_pace".to_owned(),
-        (0.375_925_925_925_925_94, 0.433_719_135_802_469),
+        (0.404_166_666_666_666_7, 0.464_197_530_864_197_5),
     );
     // Degenerate on purpose: all games in every recorded baseline ended cleanly, so the bound
     // is the strict invariant "every game ends cleanly", not a statistical interval.
     bounds.insert("completion".to_owned(), (1.0, 1.0));
     bounds.insert(
         "score_spread".to_owned(),
-        (1.876_663_368_317_121_2, 2.286_324_089_027_918_4),
+        (2.106_104_857_990_104_5, 2.545_827_161_321_855),
     );
     // V3: the spec's across-faction quantity — re-deriven with the same baseline run.
     bounds.insert(
         "faction_differentiation".to_owned(),
-        (0.489_425_210_871_933_9, 1.181_127_312_526_072_2),
+        (0.654_542_531_792_950_7, 1.342_802_027_087_618_4),
     );
     bounds.insert(
         "share_INVASION_RESOLVED".to_owned(),
-        (0.019_118_457_967_941_507, 0.019_960_626_753_671_85),
+        (0.019_078_722_703_747_296, 0.019_889_320_931_645_91),
     );
     bounds.insert(
         "share_PRODUCTION_RESOLVED".to_owned(),
-        (0.034_709_325_271_385_386, 0.036_161_421_919_716_62),
+        (0.034_720_656_512_286_87, 0.035_838_886_904_445_415),
     );
     bounds.insert(
         "share_SHIP_MOVED".to_owned(),
-        (0.044_914_122_589_631_42, 0.047_930_015_502_530_794),
+        (0.044_951_597_242_731_04, 0.048_251_644_907_745_63),
     );
     bounds.insert(
         "share_SPACE_COMBAT_RESOLVED".to_owned(),
-        (0.004_211_539_397_139_597_5, 0.004_882_193_769_525_456),
+        (0.004_132_927_398_216_053, 0.004_803_089_315_610_42),
     );
     bounds.insert(
         "share_SYSTEM_ACTIVATED".to_owned(),
-        (0.068_666_711_969_616_09, 0.071_557_052_866_415_55),
+        (0.068_644_345_175_402_12, 0.070_899_902_541_122_52),
     );
     bounds.insert(
         "share_TACTICAL_ACTION_BEGAN".to_owned(),
-        (0.033_945_233_269_215_58, 0.035_404_498_579_574_645),
+        (0.033_930_944_218_494_83, 0.035_071_674_091_791_61),
     );
     bounds
 }
