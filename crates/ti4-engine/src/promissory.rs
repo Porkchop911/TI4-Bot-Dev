@@ -377,7 +377,15 @@ pub fn denies_movement_into(
     state
         .promissory_notes
         .get(&note)
-        .is_some_and(|holder| holder != mover && present.contains(holder))
+        .is_some_and(|holder| lent_out(state, holder, mover, &name) && present.contains(holder))
+}
+
+/// Whether `holder` holds `owner_name`'s note as a loan rather than as its own copy.
+///
+/// Seats without distinct factions share a name, so their notes share an id; a holder of that same
+/// faction holds its own copy, which denies nothing.
+fn lent_out(state: &GameState, holder: &PlayerId, mover: &PlayerId, owner_name: &str) -> bool {
+    holder != mover && faction_name(state, holder) != owner_name
 }
 
 /// Spend the Ceasefire that just denied a movement, returning it to its owner.
@@ -390,7 +398,7 @@ pub fn use_ceasefire(state: &mut GameState, mover: &PlayerId) -> bool {
     let held = state
         .promissory_notes
         .get(&note)
-        .is_some_and(|holder| holder != mover);
+        .is_some_and(|holder| lent_out(state, holder, mover, &name));
     if held {
         give_back(state, &note);
     }

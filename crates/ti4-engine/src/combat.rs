@@ -1622,6 +1622,24 @@ fn non_euclidean_shielding(state: &GameState, player: &PlayerId) -> bool {
         .is_some_and(|seat| seat.technologies.iter().any(|held| held.as_str() == "nes"))
 }
 
+/// Whether this unit may use SUSTAIN DAMAGE against a hit in space.
+///
+/// Only ships can be assigned space hits, so a mech carried in the space area never sustains
+/// one, whatever its card says.
+fn sustains_in_space(state: &GameState, player: &PlayerId, unit: &Unit, kind: &UnitType) -> bool {
+    &unit.owner == player
+        && kind.is_ship()
+        && !unit.sustained_damage
+        // Publicize Weapon Schematics: all war suns lose SUSTAIN DAMAGE. Asked of the unit here
+        // rather than removed from the type, so repealing the law gives it back.
+        && !crate::laws::sustain_suppressed(state, kind.base_type())
+        // Metali Void Shielding grants the ability to a non-fighter ship that lacks it. Asked here
+        // rather than of the unit type, so a dreadnought is not given a second sustain it never
+        // had.
+        && (kind.sustain_damage()
+            || (crate::relics::grants_sustain(state, player) && !kind.is_fighter()))
+}
+
 fn offer_sustain(
     state: &mut GameState,
     content: &ContentStore,
@@ -1641,22 +1659,9 @@ fn offer_sustain(
             .iter()
             .enumerate()
             .filter(|(_, unit)| {
-                let Some(kind) = types.get(unit.type_id.as_str()) else {
-                    return false;
-                };
-                &unit.owner == player
-                    && !unit.sustained_damage
-                    // Publicize Weapon Schematics: all war suns lose SUSTAIN DAMAGE. Asked of the
-                    // unit here rather than removed from the type, so repealing the law gives it
-                    // back.
-                    && !crate::laws::sustain_suppressed(state, kind.base_type())
-                    // Metali Void Shielding grants the ability to a non-fighter ship that lacks it.
-                    // Asked here rather than of the unit type, so a dreadnought is not given a
-                    // second sustain it never had.
-                    && (kind.sustain_damage()
-                        || (crate::relics::grants_sustain(state, player)
-                            && kind.is_ship()
-                            && !kind.is_fighter()))
+                types
+                    .get(unit.type_id.as_str())
+                    .is_some_and(|kind| sustains_in_space(state, player, unit, kind))
             })
             .map(|(index, _)| index)
             .collect();
@@ -2456,11 +2461,9 @@ impl CombatWindow {
             .iter()
             .enumerate()
             .filter(|(_, unit)| {
-                &unit.owner == player
-                    && !unit.sustained_damage
-                    && types
-                        .get(unit.type_id.as_str())
-                        .is_some_and(UnitType::sustain_damage)
+                types
+                    .get(unit.type_id.as_str())
+                    .is_some_and(|kind| sustains_in_space(state, player, unit, kind))
             })
             .map(|(index, _)| index)
             .collect()
@@ -2567,6 +2570,10 @@ impl CombatWindow {
             // the round would apply it to the next one.
             let mut payload = std::collections::BTreeMap::new();
             payload.insert("system".to_owned(), self.system.to_string().into());
+            // Who is fighting, so the round's card window can admit only them: every card that
+            // hooks it acts on the player's own units in this combat.
+            payload.insert("attacker".to_owned(), self.attacker.to_string().into());
+            payload.insert("defender".to_owned(), self.defender.to_string().into());
             payload.insert("round".to_owned(), i64::from(round).into());
             if round == 1 {
                 crate::diplomacy::evaluate_event(
@@ -5202,6 +5209,54 @@ mod tests {
         let survivors = ships_of(&state, ContentStore::embedded(), POK, &defender(), &system);
         assert_eq!(survivors.len(), 1, "the ship survived");
         assert!(survivors[0].sustained_damage, "by taking damage");
+    }
+
+    #[test]
+    fn a_carried_mech_cannot_sustain_a_space_hit() {
+        // Only ships are assigned hits in space combat; a mech in the space area is cargo. Before
+        // the fix FirstOption sustained the mech and the carrier lived.
+        let (mut state, system) = arena();
+        put(&mut state, &system, "carrier", &defender(), 1);
+        put(&mut state, &system, "letnev_mech", &defender(), 1);
+        let mut table = Table::with_default(Box::new(FirstOption));
+
+        absorb_hits(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut table,
+            &defender(),
+            &system,
+            &attacker(),
+            1,
+        )
+        .unwrap();
+
+        assert!(
+            ships_of(&state, ContentStore::embedded(), POK, &defender(), &system).is_empty(),
+            "the carrier took the hit"
+        );
+        assert!(
+            state
+                .system_state(&system)
+                .units
+                .iter()
+                .all(|unit| !unit.sustained_damage),
+            "no unit sustained"
+        );
+    }
+
+    #[test]
+    fn a_combat_window_offers_no_sustain_to_a_carried_mech() {
+        let (mut state, system) = arena();
+        put(&mut state, &system, "carrier", &defender(), 1);
+        put(&mut state, &system, "letnev_mech", &defender(), 1);
+        let window = CombatWindow::new(&state, ContentStore::embedded(), POK, &system);
+        assert!(
+            window
+                .sustainers(&state, ContentStore::embedded(), POK, &defender())
+                .is_empty()
+        );
     }
 
     #[test]

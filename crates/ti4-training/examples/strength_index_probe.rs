@@ -108,6 +108,8 @@ struct Pair {
     scaled: f64,
     /// Simulated attacker win rate (mutual destruction counts as not winning).
     win: f64,
+    /// Fights stopped at the round cap with both sides alive.
+    unresolved: usize,
 }
 
 fn ratio(a: f64, b: f64) -> f64 {
@@ -218,12 +220,17 @@ fn main() {
             let fleet_d = pd.resolve(content, &d);
             let side_a = Side::of(content, &fleet_a, &[], pa.faction, true);
             let side_d = Side::of(content, &fleet_d, &[], pd.faction, true);
-            let wins = (0..fights)
-                .filter(|seed| {
-                    battle_arena::fight(&side_a, &side_d, (index as u64) << 20 | *seed as u64).0
-                        == Some("a")
-                })
-                .count();
+            let (mut wins, mut unresolved) = (0usize, 0usize);
+            for seed in 0..fights {
+                let outcome = battle_arena::fight_outcome(
+                    &side_a,
+                    &side_d,
+                    (index as u64) << 20 | seed as u64,
+                    true,
+                );
+                wins += usize::from(outcome.winner == Some("a"));
+                unresolved += usize::from(outcome.unresolved);
+            }
             let (qa, qd) = (parts(content, *pa, &fleet_a), parts(content, *pd, &fleet_d));
             #[expect(clippy::cast_precision_loss, reason = "counts")]
             let win = wins as f64 / fights as f64;
@@ -234,6 +241,7 @@ fn main() {
                 scaled: ratio(square_after_opening(qa, qd), square_after_opening(qd, qa))
                     * qa.durability.min(qd.durability).max(1.0).sqrt(),
                 win,
+                unresolved,
             }
         })
         .collect();
@@ -242,6 +250,11 @@ fn main() {
     println!(
         "strength index probe: {pairs} pairs x {fights} fights in {:.1}s (sampling noise ~{noise:.1}pp at 50%)",
         started.elapsed().as_secs_f64(),
+    );
+    println!(
+        "  fights stopped unresolved at the {}-round cap: {}",
+        battle_arena::ROUND_CAP,
+        samples.iter().map(|pair| pair.unresolved).sum::<usize>()
     );
     let (train, test) = samples.split_at(samples.len() / 2);
     let column = |set: &[Pair], pick: fn(&Pair) -> f64| -> Vec<(f64, f64)> {

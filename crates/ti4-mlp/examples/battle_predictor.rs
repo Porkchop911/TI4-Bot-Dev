@@ -18,7 +18,12 @@
 //! its plain-Rust forward pass agrees with the trained one.
 
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
+
+/// Labelling fights stopped at the arena's round cap with both sides alive. They land in the
+/// mutual-destruction slot, so the count is reported to show how much that matters.
+static UNRESOLVED: AtomicUsize = AtomicUsize::new(0);
 
 use rayon::prelude::*;
 use tch::nn::{self, Module, OptimizerConfig};
@@ -291,6 +296,9 @@ impl Position {
                 _ => 2,
             };
             counts[slot] += 1;
+            if outcome.unresolved {
+                UNRESOLVED.fetch_add(1, Ordering::Relaxed);
+            }
             for (total, left) in a_left.iter_mut().zip(&outcome.attacker_left) {
                 *total += left;
             }
@@ -499,13 +507,14 @@ fn main() {
         })
         .count();
     println!(
-        "  held-out      labelled in {:.1?}; {} contested; {bare} guns-only defenders; label entropy {:.4}",
+        "  held-out      labelled in {:.1?}; {} contested; {bare} guns-only defenders; label entropy {:.4}; {} fights unresolved at the round cap",
         clock.elapsed(),
         held_y
             .iter()
             .filter(|y| (0.1..=0.9).contains(&y[0]))
             .count(),
-        entropy(&held_y)
+        entropy(&held_y),
+        UNRESOLVED.load(Ordering::Relaxed)
     );
     #[expect(clippy::cast_possible_wrap, reason = "sizes are small")]
     let held_tensor = Tensor::from_slice(&held_x)

@@ -2027,6 +2027,17 @@ impl<'a> Game<'a> {
                     self.advance_turn()?;
                     return Ok(self.result(true, None));
                 }
+                // Ceasefire: "After the <color> player activates a system that contains 1 or more
+                // of your units: The <color> player cannot move units to the active system." The
+                // denial covers the whole activation, so movement is skipped outright and the
+                // note goes home.
+                if crate::promissory::denies_movement_into(&self.state, &window.player, &system) {
+                    crate::promissory::use_ceasefire(&mut self.state, &window.player);
+                    self.emit("CEASEFIRE_USED");
+                    window.stage = TacticalStage::Moving;
+                    self.tactical = Some(window);
+                    return Ok(self.finish_tactical());
+                }
                 crate::relics::offer_dominus_orb(
                     &mut self.state,
                     self.content,
@@ -2060,22 +2071,6 @@ impl<'a> Game<'a> {
                 hold.resolve(answer)?;
                 if hold.is_complete() {
                     let cargo = hold.cargo();
-                    // Ceasefire: the holder stops this player moving in, and the note is spent
-                    // doing it. Checked here rather than at activation because this is the
-                    // moment the denial bites.
-                    if let Some(active) = self.state.active_system.clone()
-                        && crate::promissory::denies_movement_into(
-                            &self.state,
-                            &window.player,
-                            &active,
-                        )
-                    {
-                        crate::promissory::use_ceasefire(&mut self.state, &window.player);
-                        self.emit("CEASEFIRE_USED");
-                        window.stage = TacticalStage::Moving;
-                        self.tactical = Some(window);
-                        return Ok(self.result(true, None));
-                    }
                     let outcome = self.sail(&origin, &ship, &path, cargo);
                     // The ion storm flips when ships use it. "Use the wormhole" means the move
                     // crossed it, so the storm's system has to be one end of the hop -- checked
@@ -4903,6 +4898,58 @@ mod tests {
 
         let choice = game.legal_options().unwrap();
         assert!(!choice.ids().contains(&TACTICAL_ACTION_ID));
+    }
+
+    #[test]
+    fn a_ceasefire_denies_movement_for_the_whole_activation() {
+        // Once, the note was spent denying the first ship and the second attempt sailed in.
+        let (mut state, galaxy, ids) = tactical_fixture();
+        let (a, b) = (PlayerId::new("a"), PlayerId::new("b"));
+        // Distinct factions, or both seats' notes would share one id.
+        state.player_mut(&a).unwrap().faction = ti4_model::id::FactionId::new("letnev");
+        state.player_mut(&b).unwrap().faction = ti4_model::id::FactionId::new("hacan");
+        state.system_mut(&ids[1]).units.push(Unit::new(
+            ti4_model::id::UnitTypeId::new("destroyer"),
+            a.clone(),
+        ));
+        state.system_mut(&ids[0]).units.push(Unit::new(
+            ti4_model::id::UnitTypeId::new("destroyer"),
+            b.clone(),
+        ));
+        let note = crate::promissory::note_id("cf", &crate::promissory::faction_name(&state, &a));
+        state.promissory_notes.insert(note.clone(), b.clone());
+
+        let table = Table::with_default(Box::new(Scripted::new([
+            TACTICAL_ACTION_ID.to_owned(),
+            ids[0].to_string(),
+            format!("move|{}|0", ids[1]),
+            "done_moving".to_owned(),
+        ])));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
+        for _ in 0..8 {
+            let result = game.step();
+            assert_eq!(result.error, None);
+            if game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE") {
+                break;
+            }
+        }
+
+        assert!(game.events.iter().any(|e| e == "CEASEFIRE_USED"));
+        assert!(game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE"));
+        assert!(
+            !game.events.iter().any(|e| e == "SHIP_MOVED"),
+            "nothing moved in"
+        );
+        assert_eq!(
+            game.state.system_state(&ids[1]).units.len(),
+            1,
+            "the ship stayed home"
+        );
+        assert_ne!(
+            game.state.promissory_notes.get(&note),
+            Some(&b),
+            "the note went home"
+        );
     }
 
     #[test]

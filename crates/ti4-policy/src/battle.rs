@@ -1444,7 +1444,11 @@ mod tests {
         defender.guns = vec![("pds2".to_owned(), 2)];
         let x = encode(2, &attacker, &defender).expect("supported");
         assert_eq!(x.len(), input_width(2));
-        assert_eq!(input_width(4), input_width(2) + 1, "version 4 adds the under-way flag");
+        assert_eq!(
+            input_width(4),
+            input_width(2) + 1,
+            "version 4 adds the under-way flag"
+        );
         let (d, f, c) = (
             position(&UNIT_IDS, "dreadnought"),
             position(&UNIT_IDS, "fighter"),

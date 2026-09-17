@@ -509,13 +509,21 @@ pub fn fight_with(
 /// How a fight ended, and what was left of each side.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Outcome {
-    /// `Some("a")` attacker, `Some("b")` defender, `None` mutual destruction.
+    /// `Some("a")` attacker, `Some("b")` defender, `None` mutual destruction or, with
+    /// [`Outcome::unresolved`], a space fight stopped at the round cap.
     pub winner: Option<&'static str>,
     pub rounds: u32,
     /// Surviving ships per entry of the side's [`Side::names`].
     pub attacker_left: Vec<usize>,
     pub defender_left: Vec<usize>,
+    /// Both sides still had units when the round cap ([`ROUND_CAP`]) stopped the fight. A space
+    /// fight reports it as `winner: None`, the same as mutual destruction, so this is how the two
+    /// are told apart; a ground fight reports it as a failed invasion.
+    pub unresolved: bool,
 }
+
+/// Rounds after which a fight is stopped unresolved.
+pub const ROUND_CAP: u32 = 50;
 
 /// As [`fight_with`], also counting survivors.
 #[must_use]
@@ -557,7 +565,7 @@ fn fight_core(
         a.absorb(d_hits, false);
     }
     let mut rounds = 0;
-    for round in 1..=50 {
+    for round in 1..=ROUND_CAP {
         if a.ships.is_empty() || d.ships.is_empty() {
             break;
         }
@@ -579,6 +587,7 @@ fn fight_core(
         a.absorb(d_forced, true);
         a.absorb(d_free, false);
     }
+    let unresolved = !a.ships.is_empty() && !d.ships.is_empty();
     let winner = match (a.ships.is_empty(), d.ships.is_empty()) {
         (false, true) => Some("a"),
         (true, false) => Some("b"),
@@ -591,6 +600,7 @@ fn fight_core(
         rounds,
         attacker_left: a.fielded(),
         defender_left: d.fielded(),
+        unresolved,
     }
 }
 
@@ -830,7 +840,7 @@ pub fn ground_fight(attacker: &GroundSide, defender: &GroundSide, seed: u64) -> 
     let hits = volley(&standing, &mut rng);
     a.absorb(hits);
     let mut rounds = 0;
-    for round in 1..=50 {
+    for round in 1..=ROUND_CAP {
         if a.troops.is_empty() || d.troops.is_empty() {
             break;
         }
@@ -841,6 +851,7 @@ pub fn ground_fight(attacker: &GroundSide, defender: &GroundSide, seed: u64) -> 
         let harrow = volley(&a.harrow, &mut rng);
         d.absorb(harrow);
     }
+    let unresolved = !a.troops.is_empty() && !d.troops.is_empty();
     let winner = if !a.troops.is_empty() && d.troops.is_empty() {
         Some("a")
     } else {
@@ -851,6 +862,7 @@ pub fn ground_fight(attacker: &GroundSide, defender: &GroundSide, seed: u64) -> 
         rounds,
         attacker_left: a.fielded(),
         defender_left: d.fielded(),
+        unresolved,
     }
 }
 
@@ -879,6 +891,24 @@ mod tests {
             upgraded: false,
         };
         assert_eq!(compositions(content, hacan, 8, 16).len(), 18_882);
+    }
+
+    #[test]
+    fn a_fight_nobody_can_win_is_unresolved_not_mutual_destruction() {
+        // Space docks roll no combat dice, so neither side can ever score a hit.
+        let content = ContentStore::embedded();
+        let docks = vec![("spacedock".to_owned(), 1)];
+        let a = Side::of(content, &docks, &[], "hacan", true);
+        let d = Side::of(content, &docks, &[], "sol", true);
+        let outcome = fight_outcome(&a, &d, 3, true);
+        assert!(outcome.unresolved);
+        assert_eq!(outcome.winner, None);
+        assert_eq!(outcome.rounds, ROUND_CAP);
+
+        let fleet = vec![("dreadnought".to_owned(), 2)];
+        let strong = Side::of(content, &fleet, &[], "hacan", true);
+        let weak = Side::of(content, &[("fighter".to_owned(), 1)], &[], "sol", true);
+        assert!(!fight_outcome(&strong, &weak, 3, true).unresolved);
     }
 
     #[test]
