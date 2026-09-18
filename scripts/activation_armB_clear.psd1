@@ -7,6 +7,11 @@
     # decision's return carries it), and `r1-bonus` / `r1-shaping` price the path through round one
     # rather than demanding it. Every VP-only arm so far let clearance slide from 94% to ~88%.
     #
+    # The three values are the settled ones, not fresh guesses: `r1-bonus 3` and `r1-shaping 0.1`
+    # are the reward's own defaults (reward.rs refuses shaping above 1.0 -- at 1.0 Stage 2 becomes
+    # Stage 1), and `clearance-weight 0.5` is the reference config's. Earlier stage-2 runs used
+    # 1.0 and 2.0 and relaxed back once clearance stopped gating.
+    #
     # Original header:
     # VP-only pilot against frozen benchmark seats, 2026-09-16.
     #
@@ -49,9 +54,9 @@
         # means launch.json records the control rather than leaving defaults to be inferred later.
         'objective-weight' = 0
         'secret-weight' = 0
-        'r1-bonus' = 1
-        'r1-shaping' = 1
-        'clearance-weight' = 1
+        'r1-bonus' = 3
+        'r1-shaping' = 0.1
+        'clearance-weight' = 0.5
         'fleet-weight' = 0
         'tech-weight' = 0
         'strategy-diversity-weight' = 0
