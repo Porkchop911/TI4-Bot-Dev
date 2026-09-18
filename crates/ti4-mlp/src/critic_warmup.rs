@@ -248,7 +248,7 @@ pub fn logit_fingerprint(actor: &Actor, probes: &[Sample]) -> Result<Vec<u32>, S
     let mut bits = Vec::new();
     tch::no_grad(|| -> Result<(), String> {
         for probe in probes {
-            let head = crate::heads()
+            let head = crate::all_heads()
                 .get(probe.head)
                 .ok_or_else(|| format!("probe head {} is out of range", probe.head))?;
             if probe.options.is_empty() {

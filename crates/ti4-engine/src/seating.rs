@@ -303,6 +303,11 @@ pub fn neutral_systems(content: &ContentStore, count: usize, sources: SourceSet)
                 && !system.is_hyperlane()
                 && system.wormholes().is_empty()
                 && !homes.contains(system.id())
+                // The Fracture's tiles are off the map until a breakthrough brings them into play
+                // (Thunder's Edge Fracture rules). Drawn as filler, a player could fly into one as
+                // an ordinary system, and when the Fracture later entered play its neutral garrison
+                // was placed on top of those ships with no combat.
+                && !crate::fracture::is_fracture_system(content, sources, &SystemId::new(*id))
         })
         .map(|(id, _)| SystemId::new(id))
         .take(count)
@@ -748,6 +753,29 @@ mod tests {
     }
 
     #[test]
+    fn map_filler_never_draws_a_fracture_tile() {
+        // The Fracture is not part of the map: it enters play later, beside it. A Fracture tile
+        // drawn as filler let ships into it early, and the garrison later landed on them.
+        let sources = ti4_model::content_types::FULL;
+        let pool = neutral_systems(content(), usize::MAX, sources);
+        assert!(!pool.is_empty(), "the filler pool is not empty");
+        for system in &pool {
+            assert!(
+                !crate::fracture::is_fracture_system(content(), sources, system),
+                "{system} is a Fracture tile in the filler pool"
+            );
+        }
+        for seed in 0..50 {
+            for system in map_filler(content(), 30, sources, seed) {
+                assert!(
+                    !crate::fracture::is_fracture_system(content(), sources, &system),
+                    "seed {seed} drew the Fracture tile {system}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn a_drawn_map_is_made_of_tiles_that_belong_on_one() {
         // The shuffle must not reach past the filter: a home tile or an anomaly in the filler ring
         // would put two homes in one system or a hazard where expansion is meant to be.
@@ -922,10 +950,7 @@ mod tests {
         );
 
         // The ship leaves; the tile stays face up, because the latch is the caller's.
-        state
-            .system_mut(&SystemId::new(LOCKED_NEXUS))
-            .units
-            .clear();
+        state.system_mut(&SystemId::new(LOCKED_NEXUS)).units.clear();
         crate::laws::apply_to_galaxy(&state, &mut galaxy);
         assert!(
             galaxy.wormhole_kinds(LOCKED_NEXUS).contains("ALPHA"),

@@ -79,7 +79,7 @@ pub enum FamilyRole {
 /// dense input as a side effect of an ordinary edit. Admission is an architecture decision, and
 /// `the_classification_covers_exactly_the_registry` fails when this table and the registry drift
 /// so the decision cannot be skipped.
-const FAMILY_ROLES: [(&str, FamilyRole); 47] = [
+const FAMILY_ROLES: [(&str, FamilyRole); 48] = [
     // M10-035. Transferable: every action-feasibility fact is a bounded count or flag about the
     // option under consideration -- "planets this activation could take" means the same thing in
     // every game, on every map, for every faction.
@@ -106,6 +106,8 @@ const FAMILY_ROLES: [(&str, FamilyRole); 47] = [
     // and `V` is a rank-1 sum (F-M09-027-3).
     ("critic-state", FamilyRole::Transferable),
     ("destination", FamilyRole::Transferable),
+    // Public, actor-relative bounded relationship and obligation facts.
+    ("diplomacy", FamilyRole::Transferable),
     ("faction-commodities", FamilyRole::Transferable),
     ("faction-home", FamilyRole::Transferable),
     ("faction-start-tech", FamilyRole::Transferable),
@@ -511,8 +513,12 @@ fn action_facts_within(
                 (name("activate-reachable-hulls"), count(hulls)),
                 (name("activate-reachable-capacity"), amount(capacity)),
                 (name("activate-reachable-load"), amount(load)),
+                // Some hull can get there, boosts considered one hull at a time; not whether the
+                // hulls can go together. `target:reachable` is a printed-distance heuristic.
                 (name("activate-can-reach"), f64::from(u8::from(hulls > 0))),
                 (name("activate-enemy-ships"), count(enemy_ships)),
+                // Every other player's unit on the planets, structures included; arena bundles
+                // (fact version 5) also see ground forces and structures apart.
                 (name("activate-enemy-ground"), count(enemy_ground)),
                 (name("activate-objective-advances"), count(advances)),
                 (name("activate-objective-completes"), count(completes)),
@@ -596,7 +602,107 @@ pub fn seat_state_facts(
         .map(|(name, value)| (format!("{SEAT_STATE_FAMILY}:{name}"), value))
         .collect();
     facts.extend(public_game_state_facts(seen, player));
+    facts.extend(diplomacy_facts(seen, player));
     facts.extend(opening_facts(seen, player, baseline));
+    facts
+}
+
+fn diplomacy_facts(seen: &Observed<'_>, actor: &PlayerId) -> Vec<(String, f64)> {
+    let mut facts = Vec::new();
+    let opponents = seen.opponent_slots(actor);
+    for (slot, opponent) in opponents.iter().copied().enumerate() {
+        let outward = seen.diplomacy_relationship(actor, opponent);
+        let inward = seen.diplomacy_relationship(opponent, actor);
+        for (direction, relationship) in [("out", outward), ("in", inward)] {
+            for (name, value) in [
+                ("trust", f64::from(relationship.trust) / 100.0),
+                ("cooperation", f64::from(relationship.cooperation) / 100.0),
+                ("threat", f64::from(relationship.threat) / 100.0),
+                ("hostility", f64::from(relationship.hostility) / 100.0),
+            ] {
+                if value != 0.0 {
+                    facts.push((
+                        format!("diplomacy:opponent-{slot}:{direction}:{name}"),
+                        value,
+                    ));
+                }
+            }
+        }
+        if seen.recent_diplomacy_attack(actor, opponent) {
+            facts.push((format!("diplomacy:opponent-{slot}:recent-attack"), 1.0));
+        }
+        if seen.recent_diplomacy_breach(actor, opponent) {
+            facts.push((format!("diplomacy:opponent-{slot}:recent-breach"), 1.0));
+        }
+    }
+    let active = seen.active_diplomacy_deals(actor).len();
+    if active > 0 {
+        #[expect(clippy::cast_precision_loss, reason = "bounded public deal count")]
+        facts.push(("diplomacy:active-obligations".to_owned(), active as f64));
+    }
+    let signal_counts = seen
+        .public_diplomacy_signals()
+        .fold([0_usize; 4], |mut counts, signal| {
+            let index = match signal.kind {
+                ti4_model::SignalKind::Request => 0,
+                ti4_model::SignalKind::Threat => 1,
+                ti4_model::SignalKind::Assurance => 2,
+                ti4_model::SignalKind::Warning => 3,
+            };
+            counts[index] += 1;
+            counts
+        });
+    for (kind, count) in ["request", "threat", "assurance", "warning"]
+        .into_iter()
+        .zip(signal_counts)
+    {
+        if count > 0 {
+            #[expect(clippy::cast_precision_loss, reason = "bounded recent signal count")]
+            facts.push((format!("diplomacy:recent-signals:{kind}"), count as f64));
+        }
+    }
+
+    // The actor-relative slot assignment is reused for every row and column. Slot zero is self;
+    // the remaining labels are the exact opponent slots used by the option feature extractor.
+    let players: Vec<_> = std::iter::once(actor)
+        .chain(opponents.iter().copied())
+        .collect();
+    for (observer_slot, observer) in players.iter().enumerate() {
+        for (subject_slot, subject) in players.iter().enumerate() {
+            if observer_slot == subject_slot {
+                continue;
+            }
+            let slot_name = |slot: usize| {
+                if slot == 0 {
+                    "self".to_owned()
+                } else {
+                    format!("opponent-{}", slot - 1)
+                }
+            };
+            let prefix = format!(
+                "diplomacy:matrix:{}:{}",
+                slot_name(observer_slot),
+                slot_name(subject_slot)
+            );
+            let relationship = seen.diplomacy_relationship(observer, subject);
+            for (name, value) in [
+                ("trust", f64::from(relationship.trust) / 100.0),
+                ("cooperation", f64::from(relationship.cooperation) / 100.0),
+                ("threat", f64::from(relationship.threat) / 100.0),
+                ("hostility", f64::from(relationship.hostility) / 100.0),
+            ] {
+                if value != 0.0 {
+                    facts.push((format!("{prefix}:{name}"), value));
+                }
+            }
+            if seen.recent_diplomacy_attack(observer, subject) {
+                facts.push((format!("{prefix}:recent-attack"), 1.0));
+            }
+            if seen.recent_diplomacy_breach(observer, subject) {
+                facts.push((format!("{prefix}:recent-breach"), 1.0));
+            }
+        }
+    }
     facts
 }
 
@@ -1259,6 +1365,17 @@ mod tests {
         (state, player)
     }
 
+    fn diplomacy_matrix_fixture(ids: [&str; 3]) -> (ti4_model::state::GameState, PlayerId) {
+        let mut state = ti4_engine::fixtures::game(&ids);
+        state.diplomacy = ti4_model::DiplomacyState::for_players(&state.seating_order, true);
+        state
+            .diplomacy
+            .relationship_mut(&PlayerId::new(ids[1]), &PlayerId::new(ids[2]))
+            .expect("distinct seated pair")
+            .trust = 50;
+        (state, PlayerId::new(ids[0]))
+    }
+
     /// A uniform-kind choice whose option ids are fixed-vocabulary, so it crosses `ByOption` —
     /// the branch that carried the seat facts before the projection suppressed `state-option`.
     fn by_option_choice(player: &PlayerId) -> Choice {
@@ -1304,6 +1421,26 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn public_third_party_relationships_use_relabel_invariant_slots() {
+        let content = ti4_content::ContentStore::embedded();
+        let (first, first_actor) = diplomacy_matrix_fixture(["a", "b", "c"]);
+        let (renamed, renamed_actor) = diplomacy_matrix_fixture(["x", "y", "z"]);
+        let facts = |state: &ti4_model::state::GameState, actor: &PlayerId| {
+            let seen = Observed::new(state, content, POK, None);
+            diplomacy_facts(&seen, actor)
+                .into_iter()
+                .filter(|(name, _)| name.starts_with("diplomacy:matrix:"))
+                .collect::<Vec<_>>()
+        };
+        let first = facts(&first, &first_actor);
+        let renamed = facts(&renamed, &renamed_actor);
+        assert_eq!(first, renamed);
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0].1, 0.5);
+        assert_eq!(first[0].0, "diplomacy:matrix:opponent-0:opponent-1:trust");
     }
 
     #[test]
@@ -2156,7 +2293,7 @@ mod tests {
             "a registered family has no MLP role, or a role names a family nobody registers. \
              Admission is an architecture decision: classify it deliberately, do not default it."
         );
-        assert_eq!(FAMILY_ROLES.len(), 47, "one role per registered family");
+        assert_eq!(FAMILY_ROLES.len(), 48, "one role per registered family");
     }
 
     #[test]

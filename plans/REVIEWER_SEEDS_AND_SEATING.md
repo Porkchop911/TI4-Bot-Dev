@@ -81,6 +81,11 @@ Two consequences:
 - **A batch must sweep rotation, not inherit the default.** A batch that leaves rotation at 0 and
   varies only the seed is testing one sixth of the positional space.
 
+As of 2026-09-14 this is the single repository-wide contract. Reviewer, rollout, training,
+evaluation, corpus capture, and diagnostic game producers all call the same `seated_faction`
+helper with the game's existing seed and rotation. The legacy scramble setters remain source-
+compatible no-ops and cannot restore fixed cyclic seating.
+
 ### 5. Speaker
 
 - The **initial** speaker is drawn from the seed, like seating. It must not be hard-wired to seat 0.

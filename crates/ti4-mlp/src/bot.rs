@@ -83,7 +83,9 @@ pub struct InferenceFailed {
 /// property of the API rather than of each caller remembering (F-M09-026-10): reporting a
 /// successful campaign without consuming the status is not something a caller can express.
 pub struct MlpBot {
-    actor: std::rc::Rc<Actor>,
+    actor: Option<std::rc::Rc<Actor>>,
+    /// Experimental bounded cross-game scorer. Absent in the ordinary CPU path.
+    gpu: Option<crate::gpu_batch::GpuInferenceClient>,
     vocabulary: Vocabulary,
     /// Resolved `FeatureKey -> (column, assigned)`, memoised for this bot.
     ///
@@ -168,7 +170,35 @@ impl MlpBot {
     ) -> Self {
         let actor = std::rc::Rc::clone(actor);
         Self {
-            actor,
+            actor: Some(actor),
+            gpu: None,
+            vocabulary,
+            resolved: std::collections::HashMap::new(),
+            row,
+            temperature: 1.0,
+            rng: rand_chacha::ChaCha8Rng::seed_from_u64(stream),
+            counters: Arc::new(Counters::default()),
+            records: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
+            ppo_mode: None,
+            baseline: ti4_policy::progress::Baseline::default(),
+        }
+    }
+
+    /// A bot whose actor and optional critic inference is synchronously batched by one GPU owner.
+    ///
+    /// Feature projection, vocabulary lookup, sampling stream, progress measurement and PPO
+    /// records remain owned by this seat. The client only receives immutable sparse inputs and
+    /// returns the behaviour probabilities and value that this bot records.
+    #[must_use]
+    pub fn batched(
+        gpu: crate::gpu_batch::GpuInferenceClient,
+        vocabulary: Vocabulary,
+        row: FactionRow,
+        stream: u64,
+    ) -> Self {
+        Self {
+            actor: None,
+            gpu: Some(gpu),
             vocabulary,
             resolved: std::collections::HashMap::new(),
             row,
@@ -340,6 +370,7 @@ impl MlpBot {
         options: Vec<SparseOption>,
         head_index: usize,
         chosen: usize,
+        lap: &mut crate::perf::Lap,
     ) -> Result<(), IllegalChoice> {
         // The behaviour quantities, taken here because here is the only place they exist. The
         // critic vector comes from the same bound capability the policy used, so a PPO batch
@@ -350,13 +381,17 @@ impl MlpBot {
             let vector =
                 ti4_policy::critic::critic_vector(seen, ti4_policy::critic::CriticFeatures::full());
             let critic = crate::CriticInput::new(&vector, &self.vocabulary);
+            lap.mark(crate::perf::Stage::CriticFeatures);
             let value = self
                 .actor
+                .as_ref()
+                .ok_or_else(|| self.refuse(choice, "CPU MLP bot has no actor".to_owned()))?
                 .value(&critic, self.row)
                 .map_err(|error| self.refuse(choice, format!("critic inference: {error}")))?;
             if !value.is_finite() {
                 return Err(self.refuse(choice, "critic returned a non-finite value".to_owned()));
             }
+            lap.mark(crate::perf::Stage::CriticForward);
             (Some(critic), Some(value))
         };
         let probability = probabilities.get(chosen).copied().ok_or_else(|| {
@@ -385,7 +420,74 @@ impl MlpBot {
                 critic,
             },
         });
+        lap.mark(crate::perf::Stage::Record);
 
+        Ok(())
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "a GPU response is recorded at the same decision boundary as its complete PPO inputs"
+    )]
+    fn record_gpu(
+        &mut self,
+        choice: &Choice,
+        seen: &SeatObservation<'_>,
+        mode: crate::bundle::CriticMode,
+        probabilities: &[f64],
+        options: Vec<SparseOption>,
+        head_index: usize,
+        chosen: usize,
+        critic: Option<crate::CriticInput>,
+        behaviour_value: Option<f64>,
+        lap: &mut crate::perf::Lap,
+    ) -> Result<(), IllegalChoice> {
+        let probability = probabilities.get(chosen).copied().ok_or_else(|| {
+            self.refuse(
+                choice,
+                "GPU sampled option has no behavior probability".to_owned(),
+            )
+        })?;
+        if !probability.is_finite() || probability <= 0.0 {
+            return Err(self.refuse(
+                choice,
+                format!("GPU sampled option has invalid behavior probability {probability}"),
+            ));
+        }
+        match mode {
+            crate::bundle::CriticMode::BatchMean => {
+                if critic.is_some() || behaviour_value.is_some() {
+                    return Err(self.refuse(
+                        choice,
+                        "batch-mean GPU request returned a critic".to_owned(),
+                    ));
+                }
+            }
+            _ => {
+                if critic.is_none() || !behaviour_value.is_some_and(f64::is_finite) {
+                    return Err(self.refuse(
+                        choice,
+                        "GPU request omitted a finite critic value".to_owned(),
+                    ));
+                }
+            }
+        }
+        self.records.borrow_mut().push(PpoRecord {
+            progress: ti4_policy::progress::measure(seen.observed(), &choice.player, self.baseline),
+            step: crate::ppo::Step {
+                row: self.row,
+                head: head_index,
+                options,
+                chosen,
+                behaviour_log_prob: probability.ln(),
+                temperature: self.temperature,
+                behaviour_value,
+                return_to_go: 0.0,
+                critic,
+            },
+        });
+        lap.mark(crate::perf::Stage::CriticForward);
+        lap.mark(crate::perf::Stage::Record);
         Ok(())
     }
 
@@ -400,6 +502,7 @@ impl MlpBot {
                 prompt: choice.prompt.clone(),
             });
         }
+        let mut lap = crate::perf::Lap::start();
         let held = seen.held_secret_progress();
         // The seat's own setup baseline goes in with the features: the opening-progress facts are
         // deltas against it, and a bot that passed a default would report absolute holdings as
@@ -411,11 +514,31 @@ impl MlpBot {
             &held,
             self.baseline,
         );
+        // An arena-capable actor adds each movement option's battle facts; any other actor sees
+        // exactly the vectors it always did.
+        let vectors = match self
+            .actor
+            .as_ref()
+            .and_then(|actor| actor.battle_predictor())
+        {
+            Some(predictor) => {
+                let facts = ti4_policy::battle::decision_facts(
+                    seen.observed(),
+                    choice,
+                    &choice.player,
+                    predictor,
+                );
+                ti4_policy::battle::append_facts(vectors, &facts)
+            }
+            None => vectors,
+        };
+        lap.mark(crate::perf::Stage::Features);
         let options: Vec<SparseOption> = vectors
             .iter()
             .map(|vector| self.sparse_from(vector))
             .collect::<Result<_, _>>()
             .map_err(|reason| self.refuse(choice, reason))?;
+        lap.mark(crate::perf::Stage::Vocabulary);
         if options.len() != choice.options.len() {
             return Err(self.refuse(
                 choice,
@@ -427,26 +550,50 @@ impl MlpBot {
             ));
         }
 
-        let head = Actor::resolve_head(ti4_policy::learned::decision_head(choice));
+        let requested_head = ti4_policy::learned::decision_head(choice);
         // `head_index` is fallible and returns `Result`; the schema is fixed, so a miss here is a
         // build inconsistency rather than a runtime condition — but it refuses rather than
         // defaulting to head 0, which would train the wrong readout (F-M10-034-D2).
-        let head_index = Actor::head_index(head).map_err(|error| {
-            self.refuse(
-                choice,
-                format!("resolved MLP head {head} is not in the schema: {error}"),
-            )
-        })?;
-        let probabilities =
-            match self
-                .actor
-                .probabilities(&options, head, self.row, self.temperature)
-            {
+        let (head, head_index) = if let Some(actor) = &self.actor {
+            let head = actor.resolve_layout_head(requested_head);
+            let index = actor.layout_head_index(head).map_err(|error| {
+                self.refuse(
+                    choice,
+                    format!("resolved MLP head {head} is not in the schema: {error}"),
+                )
+            })?;
+            (head.to_owned(), index)
+        } else if let Some(gpu) = &self.gpu {
+            let head = gpu.resolve_layout_head(requested_head);
+            let index = gpu.layout_head_index(head).map_err(|error| {
+                self.refuse(
+                    choice,
+                    format!("resolved GPU MLP head {head} is not in the schema: {error}"),
+                )
+            })?;
+            (head.to_owned(), index)
+        } else {
+            return Err(self.refuse(choice, "MLP bot has no inference backend".to_owned()));
+        };
+        // The CPU path intentionally retains its original ordering: it only builds a critic input
+        // after sampling. The GPU service needs actor and critic inputs together to batch both.
+        let gpu_critic = if self.gpu.is_some()
+            && self.ppo_mode.is_some()
+            && choice.options.len() >= 2
+            && !matches!(self.ppo_mode, Some(crate::bundle::CriticMode::BatchMean))
+        {
+            let vector =
+                ti4_policy::critic::critic_vector(seen, ti4_policy::critic::CriticFeatures::full());
+            lap.mark(crate::perf::Stage::CriticFeatures);
+            Some(crate::CriticInput::new(&vector, &self.vocabulary))
+        } else {
+            None
+        };
+        let mut gpu_value = None;
+        let probabilities = if let Some(actor) = &self.actor {
+            match actor.probabilities(&options, &head, self.row, self.temperature) {
                 Ok(probabilities) => probabilities,
                 Err(error) => {
-                    // A model refusal is a failed game step, not a legal-looking move plus a side
-                    // channel a caller may forget to inspect. The counter remains useful evidence, but
-                    // correctness no longer depends on consuming it.
                     self.counters.fallbacks.fetch_add(1, Ordering::Relaxed);
                     eprintln!(
                         "MLP inference failed on head {head} ({error}); refusing the decision"
@@ -457,7 +604,27 @@ impl MlpBot {
                         reason: format!("MLP head {head}: {error}"),
                     });
                 }
-            };
+            }
+        } else if let Some(gpu) = &self.gpu {
+            match gpu.score(
+                options.clone(),
+                head_index,
+                self.row,
+                self.temperature,
+                gpu_critic.clone(),
+            ) {
+                Ok((probabilities, value)) => {
+                    gpu_value = value;
+                    probabilities
+                }
+                Err(error) => {
+                    return Err(self.refuse(choice, format!("GPU MLP head {head}: {error}")));
+                }
+            }
+        } else {
+            return Err(self.refuse(choice, "MLP bot has no inference backend".to_owned()));
+        };
+        lap.mark(crate::perf::Stage::Forward);
         if probabilities.len() != choice.options.len()
             || probabilities
                 .iter()
@@ -483,6 +650,8 @@ impl MlpBot {
             }
         }
 
+        lap.mark(crate::perf::Stage::Sampling);
+
         // Forced decisions are not recorded. With one legal option the policy's probability is
         // 1.0 whatever it believes, so the ratio is identically 1 and the surrogate's gradient is
         // identically zero — it would contribute nothing but weight to the per-batch means. The
@@ -490,15 +659,31 @@ impl MlpBot {
         if let Some(mode) = self.ppo_mode
             && choice.options.len() >= 2
         {
-            self.record(
-                choice,
-                seen,
-                mode,
-                &probabilities,
-                options,
-                head_index,
-                chosen,
-            )?;
+            if self.gpu.is_some() {
+                self.record_gpu(
+                    choice,
+                    seen,
+                    mode,
+                    &probabilities,
+                    options,
+                    head_index,
+                    chosen,
+                    gpu_critic,
+                    gpu_value,
+                    &mut lap,
+                )?;
+            } else {
+                self.record(
+                    choice,
+                    seen,
+                    mode,
+                    &probabilities,
+                    options,
+                    head_index,
+                    chosen,
+                    &mut lap,
+                )?;
+            }
         }
 
         Ok(choice.options[chosen].clone())

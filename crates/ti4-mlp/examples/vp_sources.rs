@@ -63,6 +63,7 @@ fn play(
     seed: u64,
     rotation: usize,
     seat: usize,
+    temperature: f64,
     capture: bool,
 ) -> Result<Value, String> {
     let players: Vec<_> = (0..6).map(|i| PlayerId::new(format!("seat{i}"))).collect();
@@ -70,7 +71,17 @@ fn play(
     let assignments: BTreeMap<_, _> = players
         .iter()
         .enumerate()
-        .map(|(i, p)| (p.clone(), FactionId::new(FACTIONS[(i + rotation) % 6])))
+        .map(|(i, p)| {
+            (
+                p.clone(),
+                ti4_training::rollout::seated_faction(
+                    &FACTIONS.map(FactionId::new),
+                    seed,
+                    rotation,
+                    i,
+                ),
+            )
+        })
         .collect();
     let log = Rc::new(RefCell::new(Log::default()));
     let mut statuses = Vec::new();
@@ -94,7 +105,7 @@ fn play(
                     ti4_mlp::FactionRow::of(assignments[p].as_str()).unwrap(),
                     seed.wrapping_mul(1_000_003).wrapping_add(i as u64),
                 )
-                .at_temperature(0.001)
+                .at_temperature(temperature)
                 .from_setup(baselines[p])
                 .seat();
                 statuses.push(s);
@@ -180,7 +191,7 @@ fn play(
     }
     let l = log.borrow();
     Ok(
-        json!({"seed":seed,"rotation":rotation,"seat":seat,"faction":assignments[me],"initial":initial,"vp":game.state.player(me).unwrap().victory_points,"secret_hand":game.state.player(me).unwrap().secret_objectives,"reveals":reveals,"awards":awards,"ledger":ledger,"choices":l.choices,"hashes":[format!("{:x}",l.hash.clone().finalize()),format!("{:x}",Sha256::digest(serde_json::to_vec(&game.events).unwrap())),format!("{:x}",Sha256::digest(serde_json::to_vec(&game.state).unwrap()))]}),
+        json!({"seed":seed,"rotation":rotation,"seat":seat,"faction":assignments[me],"temperature":temperature,"initial":initial,"vp":game.state.player(me).unwrap().victory_points,"secret_hand":game.state.player(me).unwrap().secret_objectives,"reveals":reveals,"awards":awards,"ledger":ledger,"choices":l.choices,"hashes":[format!("{:x}",l.hash.clone().finalize()),format!("{:x}",Sha256::digest(serde_json::to_vec(&game.events).unwrap())),format!("{:x}",Sha256::digest(serde_json::to_vec(&game.state).unwrap()))]}),
     )
 }
 fn main() {
@@ -206,7 +217,16 @@ fn main() {
         .parse()
         .unwrap();
     let threads: usize = arg("--threads").unwrap_or("24".into()).parse().unwrap();
+    let temperature: f64 = arg("--temperature")
+        .unwrap_or("0.001".into())
+        .parse()
+        .ok()
+        .filter(|value: &f64| value.is_finite() && *value > 0.0)
+        .expect("--temperature must be a finite positive number");
     let verify = std::env::args().any(|a| a == "--verify");
+    eprintln!(
+        "vp_sources candidate={bundle} opponent={opponent} temperature={temperature} seeds={seeds} seed_base={base} threads={threads}"
+    );
     let jobs: Vec<_> = (base..base + seeds)
         .flat_map(|s| (0..6).flat_map(move |r| (0..6).map(move |p| (s, r, p))))
         .collect();
@@ -231,9 +251,11 @@ fn main() {
             let oa = Rc::new(oa);
             j.into_iter()
                 .map(|(s, r, p)| {
-                    let a = play(&ca, &oa, &c.vocabulary, &pool, s, r, p, true).unwrap();
+                    let a =
+                        play(&ca, &oa, &c.vocabulary, &pool, s, r, p, temperature, true).unwrap();
                     if verify {
-                        let b = play(&ca, &oa, &c.vocabulary, &pool, s, r, p, false).unwrap();
+                        let b = play(&ca, &oa, &c.vocabulary, &pool, s, r, p, temperature, false)
+                            .unwrap();
                         assert_eq!(a["hashes"], b["hashes"]);
                     }
                     a

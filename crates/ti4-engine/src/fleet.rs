@@ -23,6 +23,15 @@ pub fn counts_against_supply(kind: &UnitType<'_>) -> bool {
     kind.is_ship() && !kind.is_fighter() && !kind.consumes_capacity()
 }
 
+/// Darktalon Treilla: during the game round her hero was used, fleet supply is limited by
+/// neither laws nor the pool. Capacity still applies — only the fleet-supply limit lifts.
+#[must_use]
+pub fn is_unlimited(state: &GameState, player: &PlayerId) -> bool {
+    state
+        .player(player)
+        .is_some_and(|seat| seat.fleet_supply_unlimited_until == Some(state.round))
+}
+
 /// How many non-fighter ships this player may keep in one system.
 ///
 /// The fleet pool is the command tokens in it, capped by any law that caps it — Fleet
@@ -124,6 +133,11 @@ pub fn standing(
 /// A producer asking what each of its options would leave asks this once per option, and
 /// `catalogue` allocates a fresh map every call. Building one map per production choice rather than
 /// two per offered unit is the difference between a preview that is free and one that is not.
+/// The fleet bill an unlimited seat (Letnev's hero for the round) reports on the observation
+/// surface. Bounded so derived headroom stays within the printed-integer range the policy
+/// features encode (`i32`), and far above any reachable fleet, so it never binds in play.
+pub(crate) const UNLIMITED_FLEET_BILL: i64 = 10_000;
+
 pub(crate) fn standing_using(
     types: &BTreeMap<&str, UnitType<'_>>,
     state: &GameState,
@@ -132,11 +146,17 @@ pub(crate) fn standing_using(
     system: &SystemId,
     arriving: Option<Arrival<'_>>,
 ) -> Standing {
+    let fleet_limit = if is_unlimited(state, player) {
+        // No law and no pool bound the ships this round; nothing can be excess.
+        UNLIMITED_FLEET_BILL
+    } else {
+        i64::from(limit(state, content, player)).max(0)
+    };
     standing_with(
         types,
         state.board.get(system),
         player,
-        i64::from(limit(state, content, player)).max(0),
+        fleet_limit,
         arriving,
     )
 }

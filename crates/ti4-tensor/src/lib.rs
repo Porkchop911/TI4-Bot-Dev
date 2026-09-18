@@ -361,6 +361,36 @@ fn ordered_pairs(
     Ok(pairs)
 }
 
+static GATHER_TIMING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static GATHER_NANOS: [std::sync::atomic::AtomicU64; 3] =
+    [const { std::sync::atomic::AtomicU64::new(0) }; 3];
+
+/// Opt-in timing of [`gather_reduce_batch`]'s host phases, for diagnostics only and off by default:
+/// flattening and validating the sparse entries, the three host-to-device uploads, and queueing the
+/// embedding bag. Off, it costs one relaxed atomic load per gather and reads no clock.
+pub fn gather_timing(enabled: bool) {
+    GATHER_TIMING.store(enabled, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Nanoseconds charged since the last call, `[flatten, upload, bag]`, reset to zero.
+#[must_use]
+pub fn take_gather_nanos() -> [u64; 3] {
+    GATHER_NANOS
+        .each_ref()
+        .map(|nanos| nanos.swap(0, std::sync::atomic::Ordering::Relaxed))
+}
+
+fn gather_charge(slot: usize, since: Option<std::time::Instant>) -> Option<std::time::Instant> {
+    since.map(|start| {
+        let now = std::time::Instant::now();
+        GATHER_NANOS[slot].fetch_add(
+            u64::try_from((now - start).as_nanos()).unwrap_or(u64::MAX),
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        now
+    })
+}
+
 /// Every option of one decision gathered in a single pass: `[options, width]`.
 ///
 /// # Why this exists
@@ -416,6 +446,9 @@ pub fn gather_reduce_batch(
         (size[0], size[1])
     };
     let rows = i64::try_from(options.len()).unwrap_or(0);
+    let clock = GATHER_TIMING
+        .load(std::sync::atomic::Ordering::Relaxed)
+        .then(std::time::Instant::now);
 
     // Straight into the embedding-bag arrays, in the fixed order, with duplicates summed as they
     // are met.
@@ -494,6 +527,55 @@ pub fn gather_reduce_batch(
         return Ok(Tensor::zeros([rows, width], (Kind::Float, table.device())));
     }
 
+    let clock = gather_charge(0, clock);
+    Ok(upload_and_bag(table, &flat, &offsets, &weights, clock))
+}
+
+/// The upload and the fused `embedding_bag` behind [`gather_reduce_batch`], for a caller that already
+/// holds the three flat arrays it builds: `flat` column indices, `offsets` where each bag's entries
+/// start, and one weight per entry.
+///
+/// The caller vouches for what the gather would otherwise check and fold on every call: every column
+/// in `[0, capacity)`, every weight finite, and each bag's columns strictly increasing, so there is
+/// nothing to fold. Given the same arrays this is the same upload and the same kernel call, because
+/// both entry points end in one shared function.
+///
+/// # Errors
+/// [`TensorError::Ragged`] if `flat` and `weights` differ in length.
+pub fn embedding_bag_flat(
+    table: &Tensor,
+    flat: &[i64],
+    offsets: &[i64],
+    weights: &[f32],
+) -> Result<Tensor, TensorError> {
+    if flat.len() != weights.len() {
+        return Err(TensorError::Ragged {
+            indices: flat.len(),
+            values: weights.len(),
+        });
+    }
+    if flat.is_empty() {
+        // Every bag empty: zero rows, the same answer the gather gives.
+        let rows = i64::try_from(offsets.len()).unwrap_or(0);
+        return Ok(Tensor::zeros(
+            [rows, table.size()[1]],
+            (Kind::Float, table.device()),
+        ));
+    }
+    let clock = GATHER_TIMING
+        .load(std::sync::atomic::Ordering::Relaxed)
+        .then(std::time::Instant::now);
+    Ok(upload_and_bag(table, flat, offsets, weights, clock))
+}
+
+/// The one place the gather's arrays are uploaded and reduced, shared by both entry points.
+fn upload_and_bag(
+    table: &Tensor,
+    flat: &[i64],
+    offsets: &[i64],
+    weights: &[f32],
+    clock: Option<std::time::Instant>,
+) -> Tensor {
     // One host-to-device move per gather, not per option: the flat buffers are assembled on the
     // host and transferred once. Per-decision transfers would dominate a GPU run.
     let device = table.device();
@@ -513,20 +595,39 @@ pub fn gather_reduce_batch(
 
     // An empty bag is legal — a decision whose every feature was out of vocabulary — but
     // `embedding_bag` will not accept an empty index list at all, so that case is handled above.
-    let indices = Tensor::from_slice(&flat).to_device(device);
-    let offsets = Tensor::from_slice(&offsets).to_device(device);
-    let per_sample = Tensor::from_slice(&weights).to_device(device);
+    let indices = Tensor::from_slice(flat).to_device(device);
+    let offsets = Tensor::from_slice(offsets).to_device(device);
+    let per_sample = Tensor::from_slice(weights).to_device(device);
+    let clock = gather_charge(1, clock);
+    let out = embedding_bag_tensors(table, &indices, &offsets, &per_sample);
+    let _ = gather_charge(2, clock);
+    out
+}
+
+/// The fused `embedding_bag` itself, over index, offset and weight tensors already on the table's
+/// device.
+///
+/// The one kernel call behind [`gather_reduce_batch`], [`embedding_bag_flat`] and a batch kept on
+/// the device, so all three hand identical arrays to the identical call. `indices` and `offsets` are
+/// `i64`, `weights` is `f32` with one weight per index, and `indices` must not be empty.
+#[must_use]
+pub fn embedding_bag_tensors(
+    table: &Tensor,
+    indices: &Tensor,
+    offsets: &Tensor,
+    weights: &Tensor,
+) -> Tensor {
     let (out, _, _, _) = Tensor::embedding_bag(
         table,
-        &indices,
-        &offsets,
+        indices,
+        offsets,
         false,
         0,
         false,
-        Some(&per_sample),
+        Some(weights),
         false,
     );
-    Ok(out)
+    out
 }
 
 /// A dense `[n, a] × [a, b]` product, for the hidden layer and the readouts.
@@ -1040,5 +1141,53 @@ mod tests {
         let hidden = Tensor::rand([256, 128], (Kind::Float, Device::Cpu));
         let out = matmul(&batch, &hidden);
         assert_eq!(out.size(), vec![5, 128]);
+    }
+}
+
+#[cfg(test)]
+mod flat_tests {
+    use super::*;
+
+    #[test]
+    fn prepared_arrays_reduce_exactly_as_the_gather_does() {
+        // Canonical options, one of them empty in the middle: the prepared path must hand the same
+        // arrays to the same kernel, so the rows agree bit for bit.
+        let table = Tensor::from_slice(
+            &(0..512u16)
+                .map(|index| (f32::from(index) * 0.37).sin())
+                .collect::<Vec<f32>>(),
+        )
+        .view([64, 8]);
+        let options: Vec<(Vec<i64>, Vec<f32>)> = vec![
+            (vec![1, 5, 9], vec![0.5, -1.25, 2.0]),
+            (vec![], vec![]),
+            (vec![0, 63], vec![1.0, 3.5]),
+            (vec![7], vec![f32::MIN_POSITIVE]),
+        ];
+        let parts: Vec<(&[i64], &[f32])> = options
+            .iter()
+            .map(|(columns, values)| (columns.as_slice(), values.as_slice()))
+            .collect();
+        let gathered = gather_reduce_batch(&table, &parts).expect("gathers");
+
+        let mut flat = Vec::new();
+        let mut weights = Vec::new();
+        let mut offsets = Vec::new();
+        for (columns, values) in &options {
+            offsets.push(i64::try_from(flat.len()).expect("fits"));
+            flat.extend_from_slice(columns);
+            weights.extend_from_slice(values);
+        }
+        let prepared = embedding_bag_flat(&table, &flat, &offsets, &weights).expect("reduces");
+
+        let bits = |tensor: &Tensor| -> Vec<u32> {
+            to_vec(tensor)
+                .expect("reads")
+                .iter()
+                .map(|value| value.to_bits())
+                .collect()
+        };
+        assert_eq!(bits(&gathered), bits(&prepared));
+        assert!(embedding_bag_flat(&table, &[1, 2], &[0], &[1.0]).is_err());
     }
 }

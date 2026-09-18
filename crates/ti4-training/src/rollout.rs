@@ -17,7 +17,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -176,12 +175,7 @@ where
     ReducedBatch { errors, statistics }
 }
 
-/// Whether the faction-to-seat assignment scrambles its cyclic order per seed.
-///
-/// Off by default, which reproduces every checkpoint and parity fixture in the repository.
-static SCRAMBLE_SEATS: AtomicBool = AtomicBool::new(false);
-
-/// Draw each seed's cyclic seating order at random instead of always using the caller's order.
+/// Legacy compatibility setter. Seeded seating is mandatory, so the argument is ignored.
 ///
 /// **What was wrong with the default.** The assignment `factions[(seat + rotation) % n]` is a
 /// cyclic rotation, so the offset between any two factions never changes and only the cut moves.
@@ -202,25 +196,22 @@ static SCRAMBLE_SEATS: AtomicBool = AtomicBool::new(false);
 /// per seed, which is the design's variance reduction and is worth preserving. Only the order
 /// being rotated becomes a function of the seed, so across a training stream every cyclic order
 /// appears, precedence averages to even, and neighbours vary.
-pub fn set_seat_scramble(enabled: bool) {
-    SCRAMBLE_SEATS.store(enabled, Ordering::Relaxed);
-}
+pub const fn set_seat_scramble(_enabled: bool) {}
 
-/// Whether seat scrambling is on. Reported by trainers so a run's log states which it used.
+/// Whether seat scrambling is on. Seeded permutation is now the sole seating contract.
 #[must_use]
-pub fn seat_scramble() -> bool {
-    SCRAMBLE_SEATS.load(Ordering::Relaxed)
+pub const fn seat_scramble() -> bool {
+    true
 }
 
 /// The faction seated at `seat` for this `seed` and `rotation`.
-fn seated_faction(factions: &[FactionId], seed: u64, rotation: usize, seat: usize) -> FactionId {
-    let count = factions.len();
-    if count == 0 {
-        return FactionId::new("");
-    }
-    if !seat_scramble() {
-        return factions[(seat + rotation) % count].clone();
-    }
+#[must_use]
+pub fn seated_faction(
+    factions: &[FactionId],
+    seed: u64,
+    rotation: usize,
+    seat: usize,
+) -> FactionId {
     scrambled_seated_faction(factions, seed, rotation, seat)
 }
 
@@ -597,7 +588,52 @@ where
         &BTreeMap<PlayerId, Baseline>,
     ) -> Result<BTreeMap<PlayerId, Box<dyn Decider>>, String>,
 {
-    let (state, galaxy, _) = seated(content, players, factions, sources, seed, map)?;
+    setup_game_with_capabilities_and_decider_factory(
+        content,
+        players,
+        factions,
+        sources,
+        seed,
+        map,
+        SimulationCapabilities::default(),
+        factory,
+    )
+}
+
+/// Match-scoped optional engine capabilities used by simulation and capture profiles.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SimulationCapabilities {
+    pub diplomacy: bool,
+}
+
+/// Capability-aware form of [`setup_game_with_decider_factory`].
+///
+/// # Errors
+/// Returns the same setup failures as [`setup_game_with_decider_factory`]. Capabilities are
+/// applied only after seating and deployment have succeeded.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the capability switch supplements the complete deterministic setup input"
+)]
+pub fn setup_game_with_capabilities_and_decider_factory<'a, F>(
+    content: &'a ContentStore,
+    players: &[PlayerId],
+    factions: &BTreeMap<PlayerId, FactionId>,
+    sources: SourceSet,
+    seed: u64,
+    map: &OpeningMap,
+    capabilities: SimulationCapabilities,
+    factory: F,
+) -> Result<Game<'a>, String>
+where
+    F: FnOnce(
+        &BTreeMap<PlayerId, Baseline>,
+    ) -> Result<BTreeMap<PlayerId, Box<dyn Decider>>, String>,
+{
+    let (mut state, galaxy, _) = seated(content, players, factions, sources, seed, map)?;
+    if capabilities.diplomacy {
+        state.diplomacy = ti4_model::DiplomacyState::for_players(&state.seating_order, true);
+    }
     let baselines = opening_baselines(&state, content, sources, Some(&galaxy), players);
     let deciders = factory(&baselines)?;
     let mut table = Table::with_default(Box::new(SeededRandom::new(seed)));
@@ -668,6 +704,133 @@ where
         requirement,
         deciders,
         None,
+    )
+}
+
+/// What a game's final state and event log hash to, so two plays of one game can be compared
+/// exactly. Diagnostics only (`plans/TRAINING_PERFORMANCE_HANDOFF_2026-09-11.md`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GameDigest {
+    /// SHA-256 of the final `GameState`, serialised as JSON.
+    pub state_sha256: String,
+    /// SHA-256 of the resolver's ordered emission log, one entry per line.
+    pub log_sha256: String,
+    /// Entries in that log.
+    pub events: usize,
+}
+
+impl GameDigest {
+    fn of(state: &ti4_model::state::GameState, log: &[String]) -> Self {
+        use sha2::Digest as _;
+        let state_bytes = serde_json::to_vec(state).unwrap_or_default();
+        let mut log_hasher = sha2::Sha256::new();
+        for line in log {
+            log_hasher.update(line.as_bytes());
+            log_hasher.update(b"\n");
+        }
+        Self {
+            state_sha256: format!("{:x}", sha2::Sha256::digest(&state_bytes)),
+            log_sha256: format!("{:x}", log_hasher.finalize()),
+            events: log.len(),
+        }
+    }
+}
+
+/// [`play_with_decider_factory`], also returning the game's [`GameDigest`] when `digest` is set.
+///
+/// With `digest` off this is the same game through the same code as
+/// [`play_with_decider_factory`]; the digest serialises the whole final state, which training has
+/// no use for, so only a diagnostic run turns it on.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "play_with_decider_factory's inputs plus the digest switch"
+)]
+pub fn play_with_decider_factory_digest<F>(
+    content: &ContentStore,
+    players: &[PlayerId],
+    factions: &BTreeMap<PlayerId, FactionId>,
+    sources: SourceSet,
+    seed: u64,
+    horizon: Horizon,
+    requirement: Requirement,
+    map: &OpeningMap,
+    digest: bool,
+    factory: F,
+) -> (Rollout, Option<GameDigest>)
+where
+    F: FnOnce(
+        &BTreeMap<PlayerId, Baseline>,
+    ) -> Result<BTreeMap<PlayerId, Box<dyn Decider>>, String>,
+{
+    play_with_capabilities_and_decider_factory_digest(
+        content,
+        players,
+        factions,
+        sources,
+        seed,
+        horizon,
+        requirement,
+        map,
+        SimulationCapabilities::default(),
+        digest,
+        factory,
+    )
+}
+
+/// Capability-aware form of [`play_with_decider_factory_digest`].
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the capability switch supplements the complete deterministic rollout input"
+)]
+pub fn play_with_capabilities_and_decider_factory_digest<F>(
+    content: &ContentStore,
+    players: &[PlayerId],
+    factions: &BTreeMap<PlayerId, FactionId>,
+    sources: SourceSet,
+    seed: u64,
+    horizon: Horizon,
+    requirement: Requirement,
+    map: &OpeningMap,
+    capabilities: SimulationCapabilities,
+    digest: bool,
+    factory: F,
+) -> (Rollout, Option<GameDigest>)
+where
+    F: FnOnce(
+        &BTreeMap<PlayerId, Baseline>,
+    ) -> Result<BTreeMap<PlayerId, Box<dyn Decider>>, String>,
+{
+    let (mut state, galaxy, factions) = match seated(content, players, factions, sources, seed, map)
+    {
+        Ok(seated) => seated,
+        Err(error) => return (failed(seed, error), None),
+    };
+    if capabilities.diplomacy {
+        state.diplomacy = ti4_model::DiplomacyState::for_players(&state.seating_order, true);
+    }
+    let baselines = opening_baselines(&state, content, sources, Some(&galaxy), players);
+    let deciders = match factory(&baselines) {
+        Ok(deciders) => deciders,
+        Err(error) => {
+            return (
+                failed(seed, format!("constructing deciders: {error}")),
+                None,
+            );
+        }
+    };
+    finish_game_with(
+        content,
+        state,
+        galaxy,
+        &factions,
+        players,
+        sources,
+        seed,
+        horizon,
+        requirement,
+        deciders,
+        None,
+        digest,
     )
 }
 
@@ -878,16 +1041,57 @@ fn finish_game(
     seed: u64,
     horizon: Horizon,
     requirement: Requirement,
-    mut deciders: BTreeMap<PlayerId, Box<dyn Decider>>,
+    deciders: BTreeMap<PlayerId, Box<dyn Decider>>,
     handles: Option<&BTreeMap<PlayerId, std::rc::Rc<std::cell::RefCell<Vec<TrajectoryStep>>>>>,
 ) -> Rollout {
+    finish_game_with(
+        content,
+        state,
+        galaxy,
+        factions,
+        players,
+        sources,
+        seed,
+        horizon,
+        requirement,
+        deciders,
+        handles,
+        false,
+    )
+    .0
+}
+
+/// [`finish_game`], also digesting the final state and the ordered event log when `digest` is set.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "finish_game's inputs plus the digest switch"
+)]
+fn finish_game_with(
+    content: &ContentStore,
+    state: ti4_model::state::GameState,
+    galaxy: ti4_content::galaxy::Galaxy,
+    factions: &BTreeMap<PlayerId, FactionId>,
+    players: &[PlayerId],
+    sources: SourceSet,
+    seed: u64,
+    horizon: Horizon,
+    requirement: Requirement,
+    mut deciders: BTreeMap<PlayerId, Box<dyn Decider>>,
+    handles: Option<&BTreeMap<PlayerId, std::rc::Rc<std::cell::RefCell<Vec<TrajectoryStep>>>>>,
+    digest: bool,
+) -> (Rollout, Option<GameDigest>) {
     let baselines = opening_baselines(&state, content, sources, Some(&galaxy), players);
 
     let mut table = Table::with_default(Box::new(SeededRandom::new(seed)));
     for player in players {
         match deciders.remove(player) {
             Some(decider) => table.seat(player.clone(), decider),
-            None => return failed(seed, format!("no decider seated for {player}")),
+            None => {
+                return (
+                    failed(seed, format!("no decider seated for {player}")),
+                    None,
+                );
+            }
         }
     }
 
@@ -992,7 +1196,8 @@ fn finish_game(
         })
         .collect();
 
-    Rollout { seed, seats, error }
+    let digest = digest.then(|| GameDigest::of(&game.state, game.timing.log()));
+    (Rollout { seed, seats, error }, digest)
 }
 
 /// Play one game and keep what a mechanics audit needs: the events emitted and the final state.
@@ -2503,6 +2708,26 @@ mod tests {
         let mut expected = factions;
         expected.sort();
         assert_eq!(found, expected);
+    }
+
+    #[test]
+    fn the_shared_seating_contract_cannot_fall_back_to_fixed_rotation() {
+        let factions: Vec<FactionId> = ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"]
+            .into_iter()
+            .map(FactionId::new)
+            .collect();
+        set_seat_scramble(false);
+        assert!(seat_scramble());
+        for seed in [42, 501, 98_000_000] {
+            for rotation in 0..factions.len() {
+                for seat in 0..factions.len() {
+                    assert_eq!(
+                        seated_faction(&factions, seed, rotation, seat),
+                        scrambled_seated_faction(&factions, seed, rotation, seat),
+                    );
+                }
+            }
+        }
     }
 
     #[test]

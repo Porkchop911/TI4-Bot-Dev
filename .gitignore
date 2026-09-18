@@ -25,6 +25,7 @@ __pycache__/
 # A second target directory for the CUDA-linked build, so the CPU gate keeps working while
 # M10-037 iterates. Same reason /target/ is ignored: it is build output, not source.
 /target-cuda/
+/target-publisher/
 *.log
 /.tmp-m00-*/
 /.tmp-m00-011/
@@ -75,3 +76,6 @@ fixtures/legacy_entropy/*
 # Merge/eval worktree build output.
 /target-merge/
 /target-cuda/
+
+# ti4calc reference clone for arena validation, never committed
+/tools/ti4calc/

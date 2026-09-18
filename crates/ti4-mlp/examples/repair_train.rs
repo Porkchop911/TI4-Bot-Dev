@@ -548,7 +548,8 @@ fn main() {
                         let (_cleared, line) =
                             record_line(&table, &local, seed, rotation, faction)?;
                         for step in line {
-                            let head = ti4_mlp::heads()
+                            let head = local
+                                .head_names()
                                 .get(step.head)
                                 .ok_or_else(|| format!("head {} is out of range", step.head))?;
                             // Temperature 1.0: the anchor is about the shape of the distribution,

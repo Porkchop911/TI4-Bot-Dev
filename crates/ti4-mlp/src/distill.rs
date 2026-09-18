@@ -63,6 +63,9 @@ pub struct Settings {
     pub patience: usize,
     /// Improvements smaller than this do not count, and ties choose the earlier epoch.
     pub tie: f64,
+    /// Keep pretrained input rows that are absent from this corpus. Distillation from a zero
+    /// initialisation leaves this false; fine-tuning an existing checkpoint sets it true.
+    pub preserve_untrained_rows: bool,
 }
 
 impl Default for Settings {
@@ -79,6 +82,7 @@ impl Default for Settings {
             max_epochs: 20,
             patience: 3,
             tie: 1e-5,
+            preserve_untrained_rows: false,
         }
     }
 }
@@ -178,7 +182,7 @@ pub fn initialize(width: Width, capacity: i64, active_rows: &[i64]) -> Actor {
         .collect();
     *actor.hidden_mut() = Tensor::from_slice(&hidden).view([w, w]);
 
-    let heads = i64::try_from(crate::heads().len()).unwrap_or(0);
+    let heads = i64::try_from(actor.head_names().len()).unwrap_or(0);
     let readout_bound = 1.0 / f64::from(u32::try_from(w).unwrap_or(1)).sqrt();
     let readout: Vec<f32> = (0..heads * w)
         .map(|_| uniform(&mut rng, readout_bound))
@@ -386,7 +390,7 @@ fn batch_cross_entropy(actor: &Actor, samples: &[&Sample]) -> Result<Tensor, Str
     let mut padded = vec![1u8; decisions * widest];
 
     for (index, sample) in samples.iter().enumerate() {
-        if crate::heads().get(sample.head).is_none() {
+        if crate::all_heads().get(sample.head).is_none() {
             return Err(format!("head index {} is out of range", sample.head));
         }
         if sample.teacher.len() != sample.options.len() {
@@ -476,7 +480,7 @@ pub fn validation_metrics(actor: &Actor, samples: &[Sample]) -> Result<Validatio
                     .or_insert((0.0, 0));
                 entry.0 += kl;
                 entry.1 += 1;
-                let head = crate::heads()
+                let head = crate::all_heads()
                     .get(sample.head)
                     .ok_or_else(|| format!("head index {} is out of range", sample.head))?;
                 let head_entry = head_sums.entry((*head).to_owned()).or_insert((0.0, 0));
@@ -639,74 +643,37 @@ fn hold_untrained_rows_at_zero(actor: &mut Actor, trainable: &[i64]) {
 }
 
 /// A copy of every tensor that distillation moves, for retaining the best epoch.
+///
+/// Residual blocks included. An earlier list named the nine base tensors by hand, so a deeper
+/// student was optimised, snapshotted and restored without its blocks: they stayed at whatever the
+/// checkpoint held while every loss number still moved.
 fn snapshot(actor: &Actor) -> Vec<Tensor> {
     tch::no_grad(|| {
-        [
-            actor.input(),
-            actor.b1(),
-            actor.hidden(),
-            actor.b2(),
-            actor.shared_readout(),
-            actor.b_shared(),
-            actor.delta(),
-            actor.b_delta(),
-            actor.embedding(),
-        ]
-        .iter()
-        .map(|tensor| tensor.detach().copy())
-        .collect()
+        parameters(actor)
+            .iter()
+            .map(|tensor| tensor.detach().copy())
+            .collect()
     })
 }
 
+/// Write a snapshot back into the live leaves, in [`parameters`] order.
 fn restore(actor: &mut Actor, state: &[Tensor]) {
     tch::no_grad(|| {
-        *actor.input_mut() = state[0].detach().copy().set_requires_grad(true);
-        *actor.b1_mut() = state[1].detach().copy().set_requires_grad(true);
-        *actor.hidden_mut() = state[2].detach().copy().set_requires_grad(true);
-        *actor.b2_mut() = state[3].detach().copy().set_requires_grad(true);
-        *actor.shared_readout_mut() = state[4].detach().copy().set_requires_grad(true);
-        *actor.b_shared_mut() = state[5].detach().copy().set_requires_grad(true);
-        *actor.delta_mut() = state[6].detach().copy().set_requires_grad(true);
-        *actor.b_delta_mut() = state[7].detach().copy().set_requires_grad(true);
-        *actor.embedding_mut() = state[8].detach().copy().set_requires_grad(true);
+        for (live, saved) in parameters(actor).iter_mut().zip(state) {
+            let _ = live.copy_(saved);
+        }
     });
 }
 
-/// Make every distilled parameter require a gradient.
+/// Make every distilled parameter, residual blocks included, require a gradient.
 fn open_for_training(actor: &mut Actor) {
-    // One at a time: an array of `&mut` borrows of the same actor is two mutable borrows at once.
-    macro_rules! open {
-        ($accessor:ident) => {{
-            let opened = actor.$accessor().detach().copy().set_requires_grad(true);
-            *actor.$accessor() = opened;
-        }};
-    }
-    open!(input_mut);
-    open!(b1_mut);
-    open!(hidden_mut);
-    open!(b2_mut);
-    open!(shared_readout_mut);
-    open!(b_shared_mut);
-    open!(delta_mut);
-    open!(b_delta_mut);
-    open!(embedding_mut);
+    actor.open_main_for_training(false);
 }
 
+/// Every tensor distillation trains: the trunk, its residual blocks, the readouts and the identity
+/// embedding. The value head is not a policy parameter and is left alone.
 fn parameters(actor: &Actor) -> Vec<Tensor> {
-    [
-        actor.input(),
-        actor.b1(),
-        actor.hidden(),
-        actor.b2(),
-        actor.shared_readout(),
-        actor.b_shared(),
-        actor.delta(),
-        actor.b_delta(),
-        actor.embedding(),
-    ]
-    .iter()
-    .map(|tensor| (*tensor).shallow_clone())
-    .collect()
+    actor.main_parameters(false)
 }
 
 /// What a completed distillation produced.
@@ -873,7 +840,9 @@ pub fn train(
             if adam.steps() != before_steps + 1 {
                 return Err("Adam did not apply the completed batch gradient".to_owned());
             }
-            hold_untrained_rows_at_zero(actor, &trainable);
+            if !settings.preserve_untrained_rows {
+                hold_untrained_rows_at_zero(actor, &trainable);
+            }
         }
 
         let per_faction = evaluate(actor, validation_samples)?;
@@ -922,7 +891,9 @@ pub fn train(
     let (selected, _, state) =
         best.ok_or_else(|| "distillation completed without a selectable epoch".to_owned())?;
     restore(actor, &state);
-    hold_untrained_rows_at_zero(actor, &trainable);
+    if !settings.preserve_untrained_rows {
+        hold_untrained_rows_at_zero(actor, &trainable);
+    }
     let parameter_movement = distance(&start, &snapshot(actor));
     Ok(Distillation {
         epochs,
@@ -1026,6 +997,37 @@ mod tests {
             .into_iter()
             .collect();
         assert!((mean_of_means(&lopsided) - 2.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn residual_blocks_are_trained_with_the_rest_of_the_student() {
+        // A deeper student must learn in its blocks too. `W_out` starts at exactly zero, so any
+        // non-zero value after training can only have come from an optimiser step on it.
+        let vocabulary = vocabulary();
+        let capacity = i64::try_from(vocabulary.capacity()).expect("fits");
+        let active: Vec<i64> = (0..capacity).collect();
+        let mut actor = initialize(Width::W128, capacity, &active);
+        actor.add_residual_blocks(1, 3);
+        let samples = vec![sample("sol", vec![0.9, 0.1])];
+        let settings = Settings {
+            learning_rate: 1e-2,
+            batch: 1,
+            micro_batch: 1,
+            max_epochs: 3,
+            ..Settings::default()
+        };
+        let result = train(&mut actor, &samples, &samples, settings, |_| {}).expect("trains");
+        assert!(result.parameter_movement > 0.0);
+        let w_out = actor
+            .residual_tensors()
+            .into_iter()
+            .find(|(name, _)| name == "R0_W_out")
+            .map(|(_, tensor)| ti4_tensor::to_vec(tensor).expect("vec"))
+            .expect("the block exists");
+        assert!(
+            w_out.iter().any(|value| *value != 0.0),
+            "the residual block's output weight never moved from zero"
+        );
     }
 
     #[test]

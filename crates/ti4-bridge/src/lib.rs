@@ -12,6 +12,7 @@
 pub mod audit;
 pub mod client;
 pub mod commands;
+pub mod diplomacy;
 pub mod hexsummary;
 pub mod http;
 pub mod import;
@@ -22,6 +23,7 @@ pub mod wire;
 
 pub use audit::*;
 pub use client::{BridgeClient, ClientError, DEFAULT_ADDRESS};
+pub use diplomacy::*;
 pub use http::*;
 pub use import::*;
 pub use reconcile::*;

@@ -1052,6 +1052,8 @@ fn replenish(state: &mut GameState, content: &ContentStore, player: &PlayerId) {
     if let Some(seat) = state.player_mut(player) {
         seat.commodities = limit;
     }
+    // Trade Agreement: "When the <color> player replenishes commodities".
+    crate::promissory::trade_agreement_on_replenish(state, player);
 }
 
 fn trade_primary(
@@ -1135,6 +1137,16 @@ fn trade_primary(
                 chosen,
             })?;
         replenish(state, content, &other);
+        // A promise to spend the Trade primary on somebody else is kept here, and nowhere else:
+        // the self-replenish above and the secondary are not favours to anyone.
+        crate::diplomacy::evaluate_event(
+            state,
+            &crate::diplomacy::DiplomacyEventContext::CommoditiesReplenished {
+                by: player.clone(),
+                beneficiary: other.clone(),
+            },
+        )
+        .expect("validated diplomacy promises settle deterministically");
         remaining.retain(|candidate| candidate != &other);
     }
     Ok(())

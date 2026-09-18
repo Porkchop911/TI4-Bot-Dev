@@ -135,7 +135,7 @@ impl Intervene {
                     .iter()
                     .position(|option| *option == chosen)
                     .unwrap_or(0);
-                let head = ti4_mlp::Actor::resolve_head(ti4_policy::learned::decision_head(choice));
+                let head = ti4_mlp::capture_head(ti4_policy::learned::decision_head(choice));
                 log.borrow_mut().push(Recorded {
                     head: head.to_owned(),
                     options: choice.options.len(),

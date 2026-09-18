@@ -86,7 +86,7 @@ impl Watching {
         if choice.options.len() < 2 {
             return;
         }
-        let head = ti4_mlp::Actor::resolve_head(ti4_policy::learned::decision_head(choice));
+        let head = ti4_mlp::capture_head(ti4_policy::learned::decision_head(choice));
         self.log.borrow_mut().push(Note {
             head: head.to_owned(),
             chosen: chosen.id.clone(),

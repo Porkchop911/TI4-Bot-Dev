@@ -1,16 +1,11 @@
 //! Does the rotation balance who drafts first, or only who sits where?
 //!
-//! Seats are assigned `players[seat] -> factions[(seat + rotation) % n]`, which is a **cyclic
-//! rotation**, not a scramble. That balances two things and silently fails to balance a third:
+//! Seats use one deterministic permutation per seed, then cyclic rotations of that permutation.
+//! This balances all three relevant dimensions:
 //!
 //! * each faction occupies each seat exactly once  -- balanced
 //! * each faction is speaker exactly once          -- balanced
-//! * each faction drafts before each other faction -- NOT balanced
-//!
-//! Under a cyclic rotation the offset between any two factions is fixed, so their relative draft
-//! order is decided entirely by where the cut falls. For factions at cyclic distance d, the first
-//! drafts before the second in (n-d)/n of rotations -- 83% at d=1, 50% only at d=3, 17% at d=5.
-//! A true scramble would give 50% for every pair.
+//! * each faction drafts before each other faction -- balanced across seeds
 //!
 //! This matters wherever two factions want the same strategy card, because the loser takes a
 //! fallback and the fallback may be worthless.
@@ -38,19 +33,9 @@ fn main() {
         .iter()
         .map(|f| (f.clone(), blank_explicit_profile(f.as_str())))
         .collect();
-    let scramble = std::env::args().any(|a| a == "scramble");
-    ti4_training::rollout::set_seat_scramble(scramble);
-    println!(
-        "seating mode: {}
-",
-        if scramble {
-            "SCRAMBLED per seed"
-        } else {
-            "fixed cyclic rotation"
-        }
-    );
-    // More seeds under scrambling: the balance is across seeds, not within one.
-    let span = if scramble { 600 } else { 30 };
+    println!("seating mode: seeded permutation plus rotations");
+    // The pairwise balance is across seeds, not within one seed's rotations.
+    let span = 600;
     let seeds: Vec<u64> = (98_000_000..98_000_000 + span).collect();
     let games = play_rotated_save54_pool_batch(
         store,
@@ -90,7 +75,7 @@ fn main() {
         "{} games. Row drafts BEFORE column, as a percentage.",
         games.len()
     );
-    println!("A scramble would put every off-diagonal cell at 50.0%.\n");
+    println!("Seeded permutations should put every off-diagonal cell near 50.0%.\n");
     print!("{:<9}", "");
     for b in names {
         print!("{b:>9}");

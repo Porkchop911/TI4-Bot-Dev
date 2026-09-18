@@ -188,7 +188,9 @@ impl Decider for Paired {
                 Ok(SparseOption { columns, values })
             })
             .collect::<Result<Vec<_>, IllegalChoice>>()?;
-        let head = Actor::resolve_head(ti4_policy::learned::decision_head(choice));
+        let head = self
+            .actor
+            .resolve_layout_head(ti4_policy::learned::decision_head(choice));
         let probabilities = self
             .actor
             .probabilities(&options, head, self.row, 1.0)
@@ -266,7 +268,12 @@ fn run_probe_batch(
                 .map(|(index, player)| {
                     (
                         player.clone(),
-                        FactionId::new(FACTIONS[(index + rotation) % FACTIONS.len()]),
+                        ti4_training::rollout::seated_faction(
+                            &FACTIONS.map(FactionId::new),
+                            seed,
+                            rotation,
+                            index,
+                        ),
                     )
                 })
                 .collect();
@@ -340,7 +347,12 @@ fn run_linear_batch(
                 .map(|(index, player)| {
                     (
                         player.clone(),
-                        FactionId::new(FACTIONS[(index + rotation) % FACTIONS.len()]),
+                        ti4_training::rollout::seated_faction(
+                            &FACTIONS.map(FactionId::new),
+                            seed,
+                            rotation,
+                            index,
+                        ),
                     )
                 })
                 .collect();

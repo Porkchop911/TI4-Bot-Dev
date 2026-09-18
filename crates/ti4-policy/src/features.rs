@@ -475,8 +475,8 @@ pub fn prompt_free_option_features<'s>(
 /// `imagining` is optional so the many callers that have no secrets to offer -- analysis tools,
 /// most tests -- keep passing a slice and get the previous behaviour exactly.
 /// What an option's counterfactual does to the seat's held secrets.
-pub type SecretCounterfactual<'s> = dyn Fn(&ti4_engine::objectives::Imagined<'_>) -> Vec<ti4_engine::objectives::CardProgress>
-    + 's;
+pub type SecretCounterfactual<'s> =
+    dyn Fn(&ti4_engine::objectives::Imagined<'_>) -> Vec<ti4_engine::objectives::CardProgress> + 's;
 
 #[derive(Clone, Copy)]
 pub struct Secrets<'s> {
@@ -1185,6 +1185,11 @@ fn explicit_option_features_with(
         // fact this schema lets reach the policy as a literal token. It is represented as an
         // OBS-005 opponent slot instead, by `opponent_identity_features`.
         tokens(&option.id).into_iter().collect()
+    } else if matches!(kind, "diplomacy_offer" | "diplomacy_counter") {
+        // A bundle id is `diplomacy|{template}|{hash}`. The template is vocabulary; the hash only
+        // names this one bundle and would reach the policy as a meaningless one-off token. What
+        // the bundle asks is represented by `diplomacy_decision_features` instead.
+        tokens(&option.id).into_iter().skip(2).collect()
     } else {
         option
             .id
@@ -1439,6 +1444,7 @@ fn explicit_option_features_with(
     opponent_identity_features(seen, choice, option, player, &mut features);
     strategy_decision_features(choice, option, &mut features);
     content_decision_features(choice, option, &mut features);
+    diplomacy_decision_features(seen, choice, option, player, &mut features);
     structured_features(seen, option, player, context, &mut features);
     option_tokens.clear();
     features.finish();
@@ -1493,6 +1499,267 @@ fn add_named(features: &mut FeatureVector, name: std::fmt::Arguments<'_>, value:
         );
         features.push(register(&scratch), value);
     });
+}
+
+/// Structured-diplomacy facts for contact, offer, response, counter, signal and payment options.
+///
+/// Everything is read from the deciding seat's side: "gives" is what that seat hands over whichever
+/// side of the original offer it sits on, which the engine marks with `actor_is_proposer`. No seat,
+/// system or agenda identity is emitted -- the counterparty and any attack target appear only as
+/// their public relationship values and OBS-005 opponent slot.
+#[expect(
+    clippy::too_many_lines,
+    reason = "the bounded whole-bundle diplomacy feature contract is audited in one place"
+)]
+fn diplomacy_decision_features(
+    seen: &Observed<'_>,
+    choice: &Choice,
+    option: &ChoiceOption,
+    player: &PlayerId,
+    features: &mut FeatureVector,
+) {
+    use ti4_engine::diplomacy::candidates::{CandidateBundle, DealTemplate};
+    use ti4_model::{DealTerm, TransferAsset};
+
+    if !option.kind.starts_with("diplomacy_") && option.kind != "open_diplomacy" {
+        return;
+    }
+    if let Some(counterparty) = diplomacy_counterparty(seen, choice, option, player) {
+        relationship_features(seen, player, &counterparty, "counterparty", features);
+    }
+    if option.kind == ti4_engine::diplomacy::window::SIGNAL_KIND {
+        for (field, family) in [
+            ("signal_kind", "signal-kind"),
+            ("signal_statement", "signal-statement"),
+        ] {
+            if let Some(value) = option.payload.get(field).and_then(Value::as_str) {
+                add_named(features, format_args!("diplomacy:{family}:{value}"), 1.0);
+            }
+        }
+        return;
+    }
+
+    let Some(bundle) = option
+        .payload
+        .get("bundle")
+        .and_then(|value| CandidateBundle::deserialize(value).ok())
+    else {
+        return;
+    };
+    let actor_is_proposer = option
+        .payload
+        .get("actor_is_proposer")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let revision = &bundle.revision;
+    let (mine, theirs) = if actor_is_proposer {
+        (&revision.proposer_terms, &revision.recipient_terms)
+    } else {
+        (&revision.recipient_terms, &revision.proposer_terms)
+    };
+    let template = match bundle.template {
+        DealTemplate::FuturePayment => "future_payment",
+        DealTemplate::PayForNonAggression => "pay_for_non_aggression",
+        DealTemplate::PayForAttack => "pay_for_attack",
+        DealTemplate::CommodityExchangePlusFavor => "commodity_exchange_plus_favor",
+        DealTemplate::PayForVote => "pay_for_vote",
+        DealTemplate::Trade => "trade",
+        DealTemplate::RefreshForCommodity => "refresh_for_commodity",
+        DealTemplate::PayForAgentFavour => "pay_for_agent_favour",
+        DealTemplate::SellAgentFavour => "sell_agent_favour",
+        DealTemplate::NoteForNonAggression => "note_for_non_aggression",
+    };
+    add_named(features, format_args!("diplomacy:template:{template}"), 1.0);
+    let factual = &bundle.features;
+    let (immediate_self, immediate_other, future_self, future_other) = if actor_is_proposer {
+        (
+            factual.immediate_value_self,
+            factual.immediate_value_other,
+            factual.future_value_self,
+            factual.future_value_other,
+        )
+    } else {
+        (
+            factual.immediate_value_other,
+            factual.immediate_value_self,
+            factual.future_value_other,
+            factual.future_value_self,
+        )
+    };
+    for (name, value) in [
+        ("immediate-self", immediate_self / 10.0),
+        ("immediate-other", immediate_other / 10.0),
+        ("future-self", future_self / 10.0),
+        ("future-other", future_other / 10.0),
+        (
+            "target-relationship-effect",
+            factual.target_relationship_effect,
+        ),
+        ("objective-relevance", factual.objective_relevance),
+        ("military-relevance", factual.military_relevance),
+    ] {
+        if value != 0.0 {
+            add_named(
+                features,
+                format_args!("diplomacy:bundle:{name}"),
+                f64::from(value),
+            );
+        }
+    }
+    if revision.number > 0 {
+        add_named(
+            features,
+            format_args!("diplomacy:revision"),
+            f64::from(revision.number),
+        );
+    }
+
+    // Priced from the deciding seat's side, as the transaction oracle prices it: a commodity is
+    // worth a full trade good to whoever receives it (21.5 turns it into one) and costs its owner
+    // almost nothing, because it replenishes and cannot be spent any other way. Pricing both
+    // directions the same made every commodity gift read as a sacrifice.
+    let worth = |asset: &TransferAsset, giving: bool| match asset {
+        TransferAsset::Commodities(n) if giving => 0.2 * f64::from(*n),
+        TransferAsset::TradeGoods(n)
+        | TransferAsset::Commodities(n)
+        | TransferAsset::CulturalFragments(n)
+        | TransferAsset::HazardousFragments(n)
+        | TransferAsset::IndustrialFragments(n)
+        | TransferAsset::UnknownFragments(n) => f64::from(*n),
+        TransferAsset::PromissoryNote(_)
+        | TransferAsset::ActionCard(_)
+        | TransferAsset::SecretObjective(_) => 1.0,
+    };
+    let round = choice.context.as_ref().map(|context| context.round);
+    let mut totals: BTreeMap<String, f64> = BTreeMap::new();
+    let mut targets = Vec::new();
+    for (side, promises, terms) in [
+        ("gives", "i-promise", mine),
+        ("gets", "they-promise", theirs),
+    ] {
+        let giving = side == "gives";
+        for term in terms {
+            let (name, value) = match term {
+                DealTerm::ImmediateTransfer(asset) => {
+                    *totals.entry(format!("{side}-now")).or_default() += worth(asset, giving);
+                    continue;
+                }
+                DealTerm::FuturePayment { asset, .. } => ("payment", worth(asset, giving)),
+                DealTerm::DoNotActivate { .. } => ("no-activation", 1.0),
+                DealTerm::DoNotAttack { .. } => ("non-aggression", 1.0),
+                DealTerm::Vote { .. } => ("vote", 1.0),
+                DealTerm::Attack { player: target, .. } => {
+                    targets.push(target.clone());
+                    ("attack", 1.0)
+                }
+                DealTerm::UseLeaderFor { .. } => ("agent-favour", 1.0),
+                DealTerm::ReplenishFor { .. } => ("refresh", 1.0),
+            };
+            if name == "payment" {
+                *totals.entry(format!("{side}-later")).or_default() += value;
+            }
+            *totals.entry(format!("{promises}:{name}")).or_default() += 1.0;
+            if round.is_some() && term.deadline_round() == round {
+                *totals
+                    .entry(format!("{promises}:due-this-round"))
+                    .or_default() += 1.0;
+            }
+        }
+    }
+    for (name, value) in totals {
+        add_named(features, format_args!("diplomacy:{name}"), value);
+    }
+    for target in targets {
+        if &target == player {
+            add_named(features, format_args!("diplomacy:attack-target:is-me"), 1.0);
+        } else {
+            relationship_features(seen, player, &target, "attack-target", features);
+        }
+    }
+}
+
+/// The seat on the other side of a diplomacy option, when there is one.
+fn diplomacy_counterparty(
+    seen: &Observed<'_>,
+    choice: &Choice,
+    option: &ChoiceOption,
+    player: &PlayerId,
+) -> Option<PlayerId> {
+    match option.kind.as_str() {
+        // `component|diplomacy|seat|{seating-order index}`
+        "open_diplomacy" => {
+            let index = ti4_engine::diplomacy::candidates::contact_seat_index(&option.id)?;
+            seen.players().get(index).map(|seat| (*seat).clone())
+        }
+        // `component|diplomacy-payment|{deal}|{term}`
+        "diplomacy_fulfill_payment" => {
+            let deal: u64 = option.id.split('|').nth(2)?.parse().ok()?;
+            seen.active_diplomacy_deals(player)
+                .into_iter()
+                .find(|active| active.id.0 == deal)
+                .map(|active| {
+                    if &active.proposer == player {
+                        active.recipient.clone()
+                    } else {
+                        active.proposer.clone()
+                    }
+                })
+        }
+        _ => match choice.context.as_ref()?.target.as_ref()? {
+            ti4_engine::decision_context::DecisionTarget::Player(other) => Some(other.clone()),
+            _ => None,
+        },
+    }
+}
+
+/// `player`'s public relationship with `other`, both directions, under `role`.
+fn relationship_features(
+    seen: &Observed<'_>,
+    player: &PlayerId,
+    other: &PlayerId,
+    role: &str,
+    features: &mut FeatureVector,
+) {
+    for (direction, relationship) in [
+        ("out", seen.diplomacy_relationship(player, other)),
+        ("in", seen.diplomacy_relationship(other, player)),
+    ] {
+        for (name, value) in [
+            ("trust", f64::from(relationship.trust)),
+            ("cooperation", f64::from(relationship.cooperation)),
+            ("threat", f64::from(relationship.threat)),
+            ("hostility", f64::from(relationship.hostility)),
+        ] {
+            if value != 0.0 {
+                add_named(
+                    features,
+                    format_args!("diplomacy:{role}:{direction}:{name}"),
+                    value / 100.0,
+                );
+            }
+        }
+    }
+    if seen.recent_diplomacy_attack(player, other) {
+        add_named(
+            features,
+            format_args!("diplomacy:{role}:recent-attack"),
+            1.0,
+        );
+    }
+    if seen.recent_diplomacy_breach(player, other) {
+        add_named(
+            features,
+            format_args!("diplomacy:{role}:recent-breach"),
+            1.0,
+        );
+    }
+    if let Some(index) = seen
+        .opponent_slots(player)
+        .iter()
+        .position(|slot| *slot == other)
+    {
+        add_named(features, format_args!("diplomacy:{role}:slot-{index}"), 1.0);
+    }
 }
 
 /// Local choice kinds translated to the oracle identity used by imported explicit weights.
@@ -2904,7 +3171,7 @@ pub const FEATURE_PREFIXES: [&str; 13] = [
 /// M09-021 extends the closed set with the five bare objective families (F-M09-021-2): they are
 /// the MLP plan section 5.1 names emitted verbatim on every option, disjoint from the legacy
 /// vocabulary by construction.
-const EXPLICIT_FIXED_FAMILIES: [&str; 40] = [
+const EXPLICIT_FIXED_FAMILIES: [&str; 41] = [
     "kind",
     "option",
     "prompt-kind",
@@ -2945,6 +3212,7 @@ const EXPLICIT_FIXED_FAMILIES: [&str; 40] = [
     "combat",
     "strategy",
     "content",
+    "diplomacy",
 ];
 
 /// The closed grammar of fixed explicit families, for callers that must enumerate every family —
@@ -3988,6 +4256,142 @@ mod tests {
         );
         assert_eq!(value_of(&projected, "casualty-unit:is-ship"), Some(1.0));
         assert!(crate::projection::admits("casualty-unit:sustain"));
+    }
+
+    /// Diplomacy Stage 7: a bundle reads from the deciding seat's side, carries the counterparty's
+    /// public relationship, and never leaks its per-bundle hash as an option token.
+    #[test]
+    fn diplomacy_bundle_options_read_from_the_deciding_seats_side() {
+        use ti4_engine::decision_context::{DecisionContext, DecisionSource, DecisionTarget};
+        use ti4_engine::diplomacy::candidates::{CandidateBundle, CandidateFeatures, DealTemplate};
+        use ti4_model::state::Phase;
+        use ti4_model::{DealRevision, DealTerm, DiplomacyState, TransferAsset};
+
+        let content = ti4_content::ContentStore::embedded();
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let mut state = ti4_engine::fixtures::game(&["a", "b"]);
+        state.diplomacy = DiplomacyState::for_players(&state.seating_order, true);
+        state.diplomacy.relationship_mut(&b, &a).unwrap().trust = 50;
+        let seen = Observed::new(&state, content, POK, None);
+
+        // a pays 2 trade goods now; b promises not to attack a this round.
+        let revision = DealRevision::new(
+            0,
+            a.clone(),
+            vec![DealTerm::ImmediateTransfer(TransferAsset::TradeGoods(2))],
+            vec![DealTerm::DoNotAttack {
+                player: a.clone(),
+                deadline_round: 1,
+            }],
+            1,
+        )
+        .unwrap();
+        let bundle = CandidateBundle {
+            id: "diplomacy|PayForNonAggression|00ff00ff".to_owned(),
+            template: DealTemplate::PayForNonAggression,
+            revision,
+            features: CandidateFeatures {
+                immediate_value_self: 0.0,
+                immediate_value_other: 0.0,
+                future_value_self: 0.0,
+                future_value_other: 0.0,
+                target_relationship_effect: 0.0,
+                objective_relevance: 0.0,
+                military_relevance: 0.0,
+            },
+        };
+        let payload = serde_json::to_value(&bundle).unwrap();
+        let accept = ChoiceOption::labelled("diplomacy|accept", "diplomacy_response", "Accept")
+            .with("bundle", payload.clone())
+            .with("actor_is_proposer", false);
+        let counter = ChoiceOption::labelled(bundle.id.clone(), "diplomacy_counter", "counter")
+            .with("bundle", payload)
+            .with("actor_is_proposer", false);
+        let decline = ChoiceOption::labelled("diplomacy|decline", "diplomacy_response", "Decline");
+        let choice = Choice::new(b.clone(), "respond", vec![accept, counter, decline])
+            .contextualized(
+                DecisionContext::new(
+                    b.clone(),
+                    DecisionSource::Rule("94".to_owned()),
+                    "diplomacy_response",
+                    Phase::Action,
+                    1,
+                )
+                .optional(true)
+                .about(DecisionTarget::Player(a.clone())),
+            );
+
+        let accepting = explicit_option_features(&seen, &choice, &choice.options[0], &b, &[]);
+        for (name, value) in [
+            ("diplomacy:template:pay_for_non_aggression", 1.0),
+            ("diplomacy:gets-now", 2.0),
+            ("diplomacy:i-promise:non-aggression", 1.0),
+            ("diplomacy:i-promise:due-this-round", 1.0),
+            ("diplomacy:counterparty:out:trust", 0.5),
+            ("diplomacy:counterparty:slot-0", 1.0),
+        ] {
+            assert_eq!(value_of(&accepting, name), Some(value), "missing {name}");
+        }
+        assert_eq!(value_of(&accepting, "diplomacy:gives-now"), None);
+        assert_eq!(
+            value_of(&accepting, "diplomacy:they-promise:non-aggression"),
+            None
+        );
+
+        let countering = explicit_option_features(&seen, &choice, &choice.options[1], &b, &[]);
+        assert_eq!(
+            value_of(&countering, "option:payfornonaggression"),
+            Some(1.0)
+        );
+        assert_eq!(value_of(&countering, "option:00ff00ff"), None);
+
+        let declining = explicit_option_features(&seen, &choice, &choice.options[2], &b, &[]);
+        assert_eq!(
+            value_of(&declining, "diplomacy:counterparty:out:trust"),
+            Some(0.5)
+        );
+        assert_eq!(value_of(&declining, "diplomacy:gets-now"), None);
+    }
+
+    #[test]
+    fn diplomacy_signal_options_expose_their_structured_statement() {
+        use ti4_engine::decision_context::{DecisionContext, DecisionSource, DecisionTarget};
+        use ti4_model::state::Phase;
+
+        let content = ti4_content::ContentStore::embedded();
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let mut state = ti4_engine::fixtures::game(&["a", "b"]);
+        state.diplomacy = ti4_model::DiplomacyState::for_players(&state.seating_order, true);
+        let seen = Observed::new(&state, content, POK, None);
+        let option = ChoiceOption::labelled(
+            "diplomacy|signal|will_vote|agenda|for",
+            ti4_engine::diplomacy::window::SIGNAL_KIND,
+            "I will vote for",
+        )
+        .with("signal_kind", "assurance")
+        .with("signal_statement", "will-vote");
+        let choice = Choice::new(a.clone(), "signal", vec![option]).contextualized(
+            DecisionContext::new(
+                a.clone(),
+                DecisionSource::Rule("94".to_owned()),
+                "diplomacy_offer",
+                Phase::Agenda,
+                1,
+            )
+            .about(DecisionTarget::Player(b)),
+        );
+
+        let features = explicit_option_features(&seen, &choice, &choice.options[0], &a, &[]);
+        assert_eq!(
+            value_of(&features, "diplomacy:signal-kind:assurance"),
+            Some(1.0)
+        );
+        assert_eq!(
+            value_of(&features, "diplomacy:signal-statement:will-vote"),
+            Some(1.0)
+        );
     }
 
     /// OBS-008b2: a reroll option's `Chanced` hit-count preview reaches the policy as its exact
@@ -6735,6 +7139,7 @@ mod tests {
                 "combat",
                 "strategy",
                 "content",
+                "diplomacy",
             ]
         );
 

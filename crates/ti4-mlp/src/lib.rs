@@ -40,6 +40,8 @@ pub mod bot;
 pub mod bundle;
 pub mod critic_warmup;
 pub mod distill;
+pub mod gpu_batch;
+pub mod perf;
 pub mod positive_corpus;
 pub mod ppo;
 pub mod repair;
@@ -169,6 +171,46 @@ impl FactionRow {
 #[must_use]
 pub fn heads() -> &'static [&'static str] {
     &ti4_policy::learned::STAGE1_DECISION_HEADS
+}
+
+/// Every head any supported bundle layout names, in tensor-row order.
+///
+/// Layouts only ever append, so index `i` names the same head in every layout that has a row `i`.
+/// A stored head index resolves through this list; the actor it is then scored against refuses a
+/// head its own layout lacks, so a legacy actor handed a diplomacy decision fails loudly.
+#[must_use]
+pub fn all_heads() -> &'static [&'static str] {
+    HeadLayout::Diplomacy.heads()
+}
+
+/// Resolve a recorded decision to the newest supported layout without requiring a live actor.
+/// Legacy-only families still fold to `other`; diplomacy retains its dedicated appended row.
+#[must_use]
+pub fn capture_head(requested: &str) -> &str {
+    if all_heads().contains(&requested) {
+        requested
+    } else {
+        "other"
+    }
+}
+
+/// Positional readout layout carried by an actor bundle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HeadLayout {
+    /// Frozen schemas 7/8: the original fourteen rows.
+    Legacy,
+    /// Schemas 9/10: the same rows plus `diplomacy` at the end.
+    Diplomacy,
+}
+
+impl HeadLayout {
+    #[must_use]
+    pub const fn heads(self) -> &'static [&'static str] {
+        match self {
+            Self::Legacy => &ti4_policy::learned::STAGE1_DECISION_HEADS,
+            Self::Diplomacy => &ti4_policy::learned::DIPLOMACY_DECISION_HEADS,
+        }
+    }
 }
 
 /// Anything that stopped a forward pass.
@@ -415,17 +457,123 @@ impl SeparateCritic {
     }
 }
 
+fn migrated_input_table(
+    table: &Tensor,
+    migration: ti4_policy::vocabulary::V10ToV11Migration,
+) -> Result<Tensor, ActorError> {
+    let old_capacity =
+        usize::try_from(table.size().first().copied().unwrap_or(-1)).map_err(|_| {
+            ActorError::NotUsable {
+                what: "vocabulary migration",
+                detail: "input table has no valid row dimension".to_owned(),
+            }
+        })?;
+    if old_capacity != migration.old_capacity
+        || migration.inserted_column > migration.old_slot_count
+        || migration.old_slot_count > migration.old_capacity
+        || migration.old_slot_count.saturating_add(1) > migration.new_capacity
+    {
+        return Err(ActorError::NotUsable {
+            what: "vocabulary migration",
+            detail: format!(
+                "table has {old_capacity} rows, migration expects {} rows and {} assigned slots",
+                migration.old_capacity, migration.old_slot_count
+            ),
+        });
+    }
+    let width = table
+        .size()
+        .get(1)
+        .copied()
+        .ok_or_else(|| ActorError::NotUsable {
+            what: "vocabulary migration",
+            detail: "input table is not rank two".to_owned(),
+        })?;
+    let migrated = Tensor::zeros(
+        [i64::try_from(migration.new_capacity).unwrap_or(0), width],
+        (table.kind(), table.device()),
+    );
+    let inserted = i64::try_from(migration.inserted_column).unwrap_or(0);
+    let suffix = i64::try_from(migration.old_slot_count - migration.inserted_column).unwrap_or(0);
+    tch::no_grad(|| {
+        if inserted > 0 {
+            migrated
+                .narrow(0, 0, inserted)
+                .copy_(&table.narrow(0, 0, inserted));
+        }
+        if suffix > 0 {
+            migrated
+                .narrow(0, inserted + 1, suffix)
+                .copy_(&table.narrow(0, inserted, suffix));
+        }
+    });
+    Ok(migrated.set_requires_grad(table.requires_grad()))
+}
+
+/// One residual block after the two-layer trunk: `z + W_out · relu(W_in · z + b_in) + b_out`.
+///
+/// `W_out` and `b_out` start at zero, so a block adds nothing until training moves it and an actor
+/// that gains one computes exactly what it computed before. `W_in` starts random: were it zero as
+/// well, neither weight would ever receive a gradient.
+#[derive(Debug)]
+struct Residual {
+    /// `[width, width]`.
+    w_in: Tensor,
+    /// `[width]`.
+    b_in: Tensor,
+    /// `[width, width]`, zero at creation.
+    w_out: Tensor,
+    /// `[width]`, zero at creation.
+    b_out: Tensor,
+}
+
+impl Residual {
+    /// The four tensors, in the order the bundle names them.
+    const NAMES: [&'static str; 4] = ["W_in", "b_in", "W_out", "b_out"];
+
+    const fn tensors(&self) -> [&Tensor; 4] {
+        [&self.w_in, &self.b_in, &self.w_out, &self.b_out]
+    }
+
+    const fn tensors_mut(&mut self) -> [&mut Tensor; 4] {
+        [
+            &mut self.w_in,
+            &mut self.b_in,
+            &mut self.w_out,
+            &mut self.b_out,
+        ]
+    }
+
+    fn copied(&self) -> Self {
+        Self {
+            w_in: self.w_in.detach().copy(),
+            b_in: self.b_in.detach().copy(),
+            w_out: self.w_out.detach().copy(),
+            b_out: self.b_out.detach().copy(),
+        }
+    }
+
+    fn apply(&self, z: &Tensor) -> Tensor {
+        let inner = (z.matmul(&self.w_in.tr()) + &self.b_in).relu();
+        z + inner.matmul(&self.w_out.tr()) + &self.b_out
+    }
+}
+
 /// The actor: one shared trunk, one shared readout, and a thin per-faction residual.
 #[derive(Debug)]
 pub struct Actor {
     width: i64,
     capacity: i64,
+    head_layout: HeadLayout,
     /// `W1`, the sparse input table. `[capacity, width]`.
     input: Tensor,
     b1: Tensor,
     /// `W2`, the hidden layer. `[width, width]`.
     hidden: Tensor,
     b2: Tensor,
+    /// Residual blocks after the two-layer trunk, applied in order. Empty unless a bundle or
+    /// [`Actor::add_residual_blocks`] put them there.
+    blocks: Vec<Residual>,
     /// `[heads, width]`.
     w_shared: Tensor,
     /// `[heads]`.
@@ -442,6 +590,10 @@ pub struct Actor {
     b_value: Tensor,
     /// Present only when the fixed shared-critic fallback selected the separate trunk.
     separate_critic: Option<SeparateCritic>,
+    /// The frozen space-combat predictor an arena-capable bundle carries. It travels with the
+    /// actor so every load, copy and save keeps it, and an arena bundle never silently plays as
+    /// the baseline policy.
+    battle: Option<std::sync::Arc<ti4_policy::battle::BattlePredictor>>,
 }
 
 impl Actor {
@@ -454,10 +606,12 @@ impl Actor {
         Self {
             width: self.width,
             capacity: self.capacity,
+            head_layout: self.head_layout,
             input: self.input.detach().copy(),
             b1: self.b1.detach().copy(),
             hidden: self.hidden.detach().copy(),
             b2: self.b2.detach().copy(),
+            blocks: self.blocks.iter().map(Residual::copied).collect(),
             w_shared: self.w_shared.detach().copy(),
             b_shared: self.b_shared.detach().copy(),
             delta: self.delta.detach().copy(),
@@ -466,7 +620,24 @@ impl Actor {
             w_value: self.w_value.detach().copy(),
             b_value: self.b_value.detach().copy(),
             separate_critic: self.separate_critic.as_ref().map(SeparateCritic::copied),
+            battle: self.battle.clone(),
         }
+    }
+
+    /// Attach or clear the frozen battle predictor.
+    pub fn set_battle_predictor(
+        &mut self,
+        predictor: Option<std::sync::Arc<ti4_policy::battle::BattlePredictor>>,
+    ) {
+        self.battle = predictor;
+    }
+
+    /// The frozen battle predictor, when this actor is arena-capable.
+    #[must_use]
+    pub const fn battle_predictor(
+        &self,
+    ) -> Option<&std::sync::Arc<ti4_policy::battle::BattlePredictor>> {
+        self.battle.as_ref()
     }
 
     /// Install or clear the separately trained fallback critic.
@@ -500,6 +671,11 @@ impl Actor {
         open!(delta);
         open!(b_delta);
         open!(embedding);
+        for block in &mut self.blocks {
+            for tensor in block.tensors_mut() {
+                *tensor = tensor.detach().copy().set_requires_grad(true);
+            }
+        }
         if include_value {
             open!(w_value);
             open!(b_value);
@@ -543,6 +719,9 @@ impl Actor {
             self.b_delta.shallow_clone(),
             self.embedding.shallow_clone(),
         ];
+        for block in &self.blocks {
+            parameters.extend(block.tensors().map(Tensor::shallow_clone));
+        }
         if include_value {
             parameters.push(self.w_value.shallow_clone());
             parameters.push(self.b_value.shallow_clone());
@@ -567,17 +746,29 @@ impl Actor {
     /// (F-M09-026-7). It is always `FACTION_ROSTER.len()`.
     #[must_use]
     pub fn zeros(width: Width, capacity: i64) -> Self {
+        Self::zeros_with_layout(width, capacity, HeadLayout::Legacy)
+    }
+
+    /// A zero-initialised schema-9/10 actor with a dedicated diplomacy readout.
+    #[must_use]
+    pub fn zeros_diplomacy(width: Width, capacity: i64) -> Self {
+        Self::zeros_with_layout(width, capacity, HeadLayout::Diplomacy)
+    }
+
+    fn zeros_with_layout(width: Width, capacity: i64, head_layout: HeadLayout) -> Self {
         let w = width.dim();
-        let heads = i64::try_from(heads().len()).expect("fourteen heads");
+        let heads = i64::try_from(head_layout.heads().len()).expect("bounded heads");
         let factions_dim = i64::try_from(FACTION_ROSTER.len()).expect("thirty-three seats");
         let opts = (Kind::Float, Device::Cpu);
         Self {
             width: w,
             capacity,
+            head_layout,
             input: Tensor::zeros([capacity, w], opts),
             b1: Tensor::zeros([w], opts),
             hidden: Tensor::zeros([w, w], opts),
             b2: Tensor::zeros([w], opts),
+            blocks: Vec::new(),
             w_shared: Tensor::zeros([heads, w], opts),
             b_shared: Tensor::zeros([heads], opts),
             delta: Tensor::zeros([factions_dim, heads, w], opts),
@@ -586,13 +777,154 @@ impl Actor {
             w_value: Tensor::zeros([w], opts),
             b_value: Tensor::zeros([1], opts),
             separate_critic: None,
+            battle: None,
         }
+    }
+
+    /// The positional head layout this actor's tensors use.
+    #[must_use]
+    pub const fn head_layout(&self) -> HeadLayout {
+        self.head_layout
+    }
+
+    /// Head names in tensor-row order.
+    #[must_use]
+    pub const fn head_names(&self) -> &'static [&'static str] {
+        self.head_layout.heads()
+    }
+
+    /// The explicit schema 7→9 (and residual 8→10) migration: the same weights with a
+    /// `diplomacy` readout row appended from the existing trade head.
+    ///
+    /// Rows only append, so every legacy head keeps its index and scores exactly as before, and the
+    /// new head starts as the documented trade-head warm start. An actor that already carries the
+    /// diplomacy layout is returned unchanged. Whether each readout required a
+    /// gradient is preserved, but the rows are fresh tensors: migrate before opening an optimiser.
+    ///
+    /// # Panics
+    /// Never for an actor built by this crate: the readout axes are the constants 0 and 1.
+    #[must_use]
+    pub fn with_diplomacy_head(mut self) -> Self {
+        if self.head_layout == HeadLayout::Diplomacy {
+            return self;
+        }
+        let trade = i64::try_from(Self::head_index("trade").expect("legacy trade head"))
+            .expect("head fits");
+        let append = |tensor: &Tensor, dim: i64| {
+            let row = tensor.select(dim, trade).unsqueeze(dim);
+            Tensor::cat(&[tensor.detach(), row], dim).set_requires_grad(tensor.requires_grad())
+        };
+        tch::no_grad(|| {
+            self.w_shared = append(&self.w_shared, 0);
+            self.b_shared = append(&self.b_shared, 0);
+            self.delta = append(&self.delta, 1);
+            self.b_delta = append(&self.b_delta, 1);
+        });
+        self.head_layout = HeadLayout::Diplomacy;
+        self
+    }
+
+    /// Apply the row movement paired with a v10→v11 vocabulary migration.
+    ///
+    /// This updates both policy and separate-critic input tables atomically in memory. Callers
+    /// write the returned actor and migrated vocabulary as one immutable bundle.
+    pub fn migrate_v10_to_v11_inputs(
+        &mut self,
+        migration: ti4_policy::vocabulary::V10ToV11Migration,
+    ) -> Result<(), ActorError> {
+        let input = migrated_input_table(&self.input, migration)?;
+        let critic_input = if let Some(critic) = &self.separate_critic {
+            Some(migrated_input_table(&critic.input, migration)?)
+        } else {
+            None
+        };
+        self.input = input;
+        self.capacity =
+            i64::try_from(migration.new_capacity).map_err(|_| ActorError::NotUsable {
+                what: "vocabulary migration",
+                detail: "new capacity does not fit i64".to_owned(),
+            })?;
+        if let (Some(critic), Some(input)) = (&mut self.separate_critic, critic_input) {
+            critic.input = input;
+        }
+        Ok(())
     }
 
     /// The trunk width.
     #[must_use]
     pub const fn width(&self) -> i64 {
         self.width
+    }
+
+    /// How many residual blocks follow the two-layer trunk.
+    #[must_use]
+    pub fn residual_blocks(&self) -> usize {
+        self.blocks.len()
+    }
+
+    /// Append `count` residual blocks after the trunk, each `z + W_out·relu(W_in·z + b_in) + b_out`.
+    ///
+    /// `W_in` is drawn He-uniform from `seed` with this crate's own generator, never libtorch's
+    /// process-global one; `b_in`, `W_out` and `b_out` start at zero. The actor therefore computes
+    /// exactly what it computed before, and training decides what the blocks become.
+    pub fn add_residual_blocks(&mut self, count: usize, seed: u64) {
+        use rand::{Rng as _, SeedableRng as _};
+        let w = self.width;
+        let units = usize::try_from(w).unwrap_or(0);
+        let bound = (6.0f64 / f64::from(u32::try_from(w).unwrap_or(1))).sqrt();
+        let device = self.device();
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+        for _ in 0..count {
+            let w_in: Vec<f32> = (0..units * units)
+                .map(|_| {
+                    #[expect(
+                        clippy::cast_possible_truncation,
+                        reason = "weights are f32 by manifest"
+                    )]
+                    let value = rng.random_range(-bound..bound) as f32;
+                    value
+                })
+                .collect();
+            let zeros = |shape: &[i64]| Tensor::zeros(shape, (Kind::Float, device));
+            self.blocks.push(Residual {
+                w_in: Tensor::from_slice(&w_in).view([w, w]).to_device(device),
+                b_in: zeros(&[w]),
+                w_out: zeros(&[w, w]),
+                b_out: zeros(&[w]),
+            });
+        }
+    }
+
+    /// Every residual tensor, under the name a bundle stores it by: `R{block}_{part}`.
+    #[must_use]
+    pub fn residual_tensors(&self) -> Vec<(String, &Tensor)> {
+        self.blocks
+            .iter()
+            .enumerate()
+            .flat_map(|(index, block)| {
+                Residual::NAMES
+                    .iter()
+                    .zip(block.tensors())
+                    .map(move |(part, tensor)| (format!("R{index}_{part}"), tensor))
+            })
+            .collect()
+    }
+
+    /// Replace the residual blocks with loaded tensors, `[W_in, b_in, W_out, b_out]` per block.
+    pub(crate) fn set_residual_blocks(&mut self, blocks: Vec<[Tensor; 4]>) {
+        self.blocks = blocks
+            .into_iter()
+            .map(|[w_in, b_in, w_out, b_out]| Residual {
+                w_in,
+                b_in,
+                w_out,
+                b_out,
+            })
+            .collect();
+    }
+
+    fn through_blocks(&self, z: Tensor) -> Tensor {
+        self.blocks.iter().fold(z, |z, block| block.apply(&z))
     }
 
     /// Faction rows allocated. Always [`FACTION_ROSTER`]'s length.
@@ -640,6 +972,11 @@ impl Actor {
             &mut self.b_value,
         ] {
             *tensor = tensor.to_device(device);
+        }
+        for block in &mut self.blocks {
+            for tensor in block.tensors_mut() {
+                *tensor = tensor.to_device(device);
+            }
         }
         if let Some(critic) = &mut self.separate_critic {
             critic.move_to(device);
@@ -816,6 +1153,24 @@ impl Actor {
             .ok_or_else(|| ActorError::UnknownHead(name.to_owned()))
     }
 
+    /// Resolve a policy head against this actor's versioned layout.
+    #[must_use]
+    pub fn resolve_layout_head<'a>(&self, requested: &'a str) -> &'a str {
+        if self.head_names().contains(&requested) {
+            requested
+        } else {
+            "other"
+        }
+    }
+
+    /// Locate a head in this actor's versioned layout.
+    pub fn layout_head_index(&self, name: &str) -> Result<usize, ActorError> {
+        self.head_names()
+            .iter()
+            .position(|head| *head == name)
+            .ok_or_else(|| ActorError::UnknownHead(name.to_owned()))
+    }
+
     /// Every option of one decision through the trunk, in one pass.
     ///
     /// Returns `[n, width]`. The gather is per option because the input is sparse; the two dense
@@ -840,7 +1195,7 @@ impl Actor {
         // preactivation, before `b1` and the ReLU.
         let first = (x + self.identity_row(row) + &self.b1).relu();
         let second = (first.matmul(&self.hidden.tr()) + &self.b2).relu();
-        Ok(second)
+        Ok(self.through_blocks(second))
     }
 
     /// Logits for one decision: `[n]`, one per option.
@@ -856,7 +1211,7 @@ impl Actor {
         head: &str,
         row: FactionRow,
     ) -> Result<Tensor, ActorError> {
-        let head_index = Self::head_index(head)?;
+        let head_index = self.layout_head_index(head)?;
         let z = self.trunk(options, row)?;
         let seat_i = i64::try_from(row.index()).expect("roster fits");
         let head_i = i64::try_from(head_index).expect("head fits");
@@ -947,21 +1302,62 @@ impl Actor {
         let head_index = Tensor::from_slice(heads).to_device(device);
         let row_index = Tensor::from_slice(rows).to_device(device);
         let z = self.trunk_mixed(batch, &row_index)?;
+        Ok(self.readout_mixed(&z, &head_index, &row_index))
+    }
 
+    /// [`Self::logits_mixed_parts`] over already flattened sparse inputs: `flat` columns, `offsets`
+    /// where each option's entries start and `weights` per entry, exactly the arrays the gather
+    /// builds. A frozen PPO batch is validated and canonical, so its minibatches hand these over
+    /// directly instead of paying for the flattening and the checks four times per update.
+    ///
+    /// # Errors
+    /// [`ActorError::EmptyLegalSet`] for an empty batch, [`ActorError::NotUsable`] for a length
+    /// disagreement, plus anything the reduction raises.
+    pub(crate) fn logits_mixed_flat(
+        &self,
+        flat: &[i64],
+        offsets: &[i64],
+        weights: &[f32],
+        heads: &[i64],
+        rows: &[i64],
+    ) -> Result<Tensor, ActorError> {
+        if offsets.is_empty() {
+            return Err(ActorError::EmptyLegalSet);
+        }
+        if heads.len() != offsets.len() || rows.len() != offsets.len() {
+            return Err(ActorError::NotUsable {
+                what: "per-option head/row indices",
+                detail: format!(
+                    "{} options, {} heads, {} rows",
+                    offsets.len(),
+                    heads.len(),
+                    rows.len()
+                ),
+            });
+        }
+        let device = self.input.device();
+        let head_index = Tensor::from_slice(heads).to_device(device);
+        let row_index = Tensor::from_slice(rows).to_device(device);
+        let x = ti4_tensor::embedding_bag_flat(&self.input, flat, offsets, weights)?;
+        let z = self.trunk_from(x, &row_index);
+        Ok(self.readout_mixed(&z, &head_index, &row_index))
+    }
+
+    /// Each option's logit from its trunk row, through its own head and faction's readout.
+    fn readout_mixed(&self, z: &Tensor, head_index: &Tensor, row_index: &Tensor) -> Tensor {
         // w_effective[option] = w_shared[head] + delta[faction, head], gathered rather than looped.
         // `delta` is [factions, heads, width]; flattening to [factions*heads, width] turns the pair
         // into one index.
-        let heads_count = i64::try_from(crate::heads().len()).unwrap_or(0);
-        let pair_index = &row_index * heads_count + &head_index;
+        let heads_count = i64::try_from(self.head_names().len()).unwrap_or(0);
+        let pair_index = row_index * heads_count + head_index;
         let delta_flat = self.delta.view([-1, self.width]);
-        let w =
-            self.w_shared.index_select(0, &head_index) + delta_flat.index_select(0, &pair_index);
-        let b = self.b_shared.index_select(0, &head_index)
+        let w = self.w_shared.index_select(0, head_index) + delta_flat.index_select(0, &pair_index);
+        let b = self.b_shared.index_select(0, head_index)
             + self.b_delta.view([-1]).index_select(0, &pair_index);
 
         // A row-wise dot product, which is what `z.matmul(w)` degenerates to when every row has its
         // own weight vector.
-        Ok((z * w).sum_dim_intlist([1i64].as_slice(), false, Kind::Float) + b)
+        (z * w).sum_dim_intlist([1i64].as_slice(), false, Kind::Float) + b
     }
 
     /// The two-layer trunk over a batch whose rows may each belong to a different faction.
@@ -974,8 +1370,15 @@ impl Actor {
         batch: &[(&[i64], &[f32])],
         row_index: &Tensor,
     ) -> Result<Tensor, ActorError> {
-        let device = self.input.device();
         let x = ti4_tensor::gather_reduce_batch(&self.input, batch)?;
+        Ok(self.trunk_from(x, row_index))
+    }
+
+    /// The trunk after its sparse gather: identity embedding, first layer, hidden layer and the
+    /// residual blocks. Shared by the gathering and the prepared paths, so both run the same
+    /// operations in the same order.
+    fn trunk_from(&self, x: Tensor, row_index: &Tensor) -> Tensor {
+        let device = self.input.device();
         let identity = self.embedding.index_select(0, row_index);
         let padding = self.width - EMBED_DIM;
         let identity = if padding > 0 {
@@ -985,7 +1388,7 @@ impl Actor {
             identity
         };
         let first = (x + identity + &self.b1).relu();
-        Ok((first.matmul(&self.hidden.tr()) + &self.b2).relu())
+        self.through_blocks((first.matmul(&self.hidden.tr()) + &self.b2).relu())
     }
 
     /// `V(s)` for a batch of positions, each with its own faction row: `[n]`.
@@ -1025,6 +1428,112 @@ impl Actor {
         }
         let row_index = Tensor::from_slice(rows).to_device(self.input.device());
         let z = self.trunk_mixed(&batch, &row_index)?;
+        Ok(z.matmul(&self.w_value) + &self.b_value)
+    }
+
+    /// [`Self::value_batch`] over already flattened critic inputs, the arrays its gather would build.
+    ///
+    /// The shared critic only: a separate critic has its own trunk and is scored by `value_batch`.
+    ///
+    /// # Errors
+    /// [`ActorError::EmptyLegalSet`] for an empty batch, [`ActorError::NotUsable`] for a length
+    /// disagreement or a separate critic, plus anything the reduction raises.
+    pub(crate) fn value_batch_flat(
+        &self,
+        flat: &[i64],
+        offsets: &[i64],
+        weights: &[f32],
+        rows: &[i64],
+    ) -> Result<Tensor, ActorError> {
+        if offsets.is_empty() {
+            return Err(ActorError::EmptyLegalSet);
+        }
+        if rows.len() != offsets.len() {
+            return Err(ActorError::NotUsable {
+                what: "per-position faction rows",
+                detail: format!("{} positions, {} rows", offsets.len(), rows.len()),
+            });
+        }
+        if self.separate_critic.is_some() {
+            return Err(ActorError::NotUsable {
+                what: "a flattened critic batch",
+                detail: "the separate critic is scored through value_batch".to_owned(),
+            });
+        }
+        let row_index = Tensor::from_slice(rows).to_device(self.input.device());
+        let x = ti4_tensor::embedding_bag_flat(&self.input, flat, offsets, weights)?;
+        let z = self.trunk_from(x, &row_index);
+        Ok(z.matmul(&self.w_value) + &self.b_value)
+    }
+
+    /// [`Self::logits_mixed_flat`] over index, offset and weight tensors already on the actor's
+    /// device. A PPO batch kept on the device assembles each minibatch's arrays there, identical to
+    /// the ones the flat path uploads.
+    ///
+    /// # Errors
+    /// [`ActorError::EmptyLegalSet`] for an empty batch, [`ActorError::NotUsable`] for a length
+    /// disagreement.
+    pub(crate) fn logits_mixed_device(
+        &self,
+        indices: &Tensor,
+        offsets: &Tensor,
+        weights: &Tensor,
+        heads: &[i64],
+        rows: &[i64],
+    ) -> Result<Tensor, ActorError> {
+        let options = usize::try_from(offsets.size()[0]).unwrap_or(0);
+        if options == 0 {
+            return Err(ActorError::EmptyLegalSet);
+        }
+        if heads.len() != options || rows.len() != options {
+            return Err(ActorError::NotUsable {
+                what: "per-option head/row indices",
+                detail: format!(
+                    "{options} options, {} heads, {} rows",
+                    heads.len(),
+                    rows.len()
+                ),
+            });
+        }
+        let device = self.input.device();
+        let head_index = Tensor::from_slice(heads).to_device(device);
+        let row_index = Tensor::from_slice(rows).to_device(device);
+        let x = ti4_tensor::embedding_bag_tensors(&self.input, indices, offsets, weights);
+        let z = self.trunk_from(x, &row_index);
+        Ok(self.readout_mixed(&z, &head_index, &row_index))
+    }
+
+    /// [`Self::value_batch_flat`] over tensors already on the actor's device. Shared critic only.
+    ///
+    /// # Errors
+    /// [`ActorError::EmptyLegalSet`] for an empty batch, [`ActorError::NotUsable`] for a length
+    /// disagreement or a separate critic.
+    pub(crate) fn value_batch_device(
+        &self,
+        indices: &Tensor,
+        offsets: &Tensor,
+        weights: &Tensor,
+        rows: &[i64],
+    ) -> Result<Tensor, ActorError> {
+        let positions = usize::try_from(offsets.size()[0]).unwrap_or(0);
+        if positions == 0 {
+            return Err(ActorError::EmptyLegalSet);
+        }
+        if rows.len() != positions {
+            return Err(ActorError::NotUsable {
+                what: "per-position faction rows",
+                detail: format!("{positions} positions, {} rows", rows.len()),
+            });
+        }
+        if self.separate_critic.is_some() {
+            return Err(ActorError::NotUsable {
+                what: "a device critic batch",
+                detail: "the separate critic is scored through value_batch".to_owned(),
+            });
+        }
+        let row_index = Tensor::from_slice(rows).to_device(self.input.device());
+        let x = ti4_tensor::embedding_bag_tensors(&self.input, indices, offsets, weights);
+        let z = self.trunk_from(x, &row_index);
         Ok(z.matmul(&self.w_value) + &self.b_value)
     }
 
@@ -1401,6 +1910,49 @@ mod tests {
     }
 
     #[test]
+    fn residual_blocks_start_as_the_identity_and_still_receive_a_gradient() {
+        let plain = actor(Width::W128);
+        let mut deeper = actor(Width::W128);
+        deeper.add_residual_blocks(2, 7);
+        assert_eq!(deeper.residual_blocks(), 2);
+        assert_eq!(deeper.inference_copy().residual_blocks(), 2);
+        assert_eq!(
+            deeper.main_parameters(true).len(),
+            plain.main_parameters(true).len() + 8
+        );
+
+        // Zero output weights: exactly the logits the plain actor produces.
+        let options = [option(&[5, 9], &[1.0, 1.0]), option(&[3], &[0.5])];
+        let logits = |actor: &Actor| {
+            ti4_tensor::to_vec(
+                &actor
+                    .logits(&options, "movement", row("sol"))
+                    .expect("logits"),
+            )
+            .expect("vec")
+        };
+        assert_eq!(logits(&plain), logits(&deeper));
+
+        // And the zero output weights still receive a gradient, so training can move them.
+        deeper.open_main_for_training(true);
+        deeper
+            .logits(&options, "movement", row("sol"))
+            .expect("logits")
+            .sum(Kind::Float)
+            .backward();
+        let gradient = deeper.blocks[1]
+            .w_out
+            .grad()
+            .abs()
+            .sum(Kind::Float)
+            .double_value(&[]);
+        assert!(
+            gradient > 0.0,
+            "the last block's W_out received no gradient"
+        );
+    }
+
+    #[test]
     fn only_two_widths_exist() {
         assert_eq!(Width::W256.dim(), 256);
         assert_eq!(Width::W128.dim(), 128);
@@ -1418,6 +1970,71 @@ mod tests {
         // Schema 5 heads fold to `other` rather than failing at a call site.
         assert_eq!(Actor::resolve_head("scoring"), "other");
         assert_eq!(Actor::resolve_head("movement"), "movement");
+    }
+
+    #[test]
+    fn migrating_to_the_diplomacy_layout_keeps_every_legacy_head_and_warm_starts_from_trade() {
+        assert_eq!(&all_heads()[..heads().len()], heads());
+        assert_eq!(all_heads().last().copied(), Some("diplomacy"));
+
+        let mut actor = Actor::zeros(Width::W128, 16);
+        *actor.input_mut() = actor.input().f_add_scalar(0.25).expect("add");
+        *actor.hidden_mut() = actor.hidden().f_add_scalar(0.01).expect("add");
+        *actor.shared_readout_mut() = actor.shared_readout().f_add_scalar(0.5).expect("add");
+        let row = FactionRow::of("sol").expect("roster");
+        let options = vec![option(&[1, 2], &[1.0, 0.5]), option(&[3], &[1.0])];
+        let scores = |actor: &Actor, head: &str| {
+            ti4_tensor::to_vec(&actor.logits(&options, head, row).expect("logits")).expect("vec")
+        };
+        let before: Vec<Vec<f32>> = heads().iter().map(|head| scores(&actor, head)).collect();
+        assert!(matches!(
+            actor.logits(&options, "diplomacy", row),
+            Err(ActorError::UnknownHead(_))
+        ));
+
+        let migrated = actor.with_diplomacy_head();
+
+        assert_eq!(migrated.head_layout(), HeadLayout::Diplomacy);
+        for (head, expected) in heads().iter().zip(&before) {
+            assert_eq!(&scores(&migrated, head), expected, "{head} moved");
+        }
+        assert_eq!(
+            scores(&migrated, "diplomacy"),
+            scores(&migrated, "trade"),
+            "the new head is not the documented trade warm start"
+        );
+    }
+
+    #[test]
+    fn vocabulary_row_migration_preserves_named_feature_logits() {
+        let mut actor = actor(Width::W128);
+        let row = row("sol");
+        let before_option = option(&[3, 48, 79], &[0.25, 1.0, -0.5]);
+        let before = ti4_tensor::to_vec(
+            &actor
+                .logits(&[before_option], "trade", row)
+                .expect("legacy logits"),
+        )
+        .expect("vec");
+        let movement = ti4_policy::vocabulary::V10ToV11Migration {
+            inserted_column: 48,
+            old_slot_count: 100,
+            old_capacity: usize::try_from(CAPACITY).unwrap(),
+            new_capacity: usize::try_from(CAPACITY).unwrap(),
+        };
+        actor
+            .migrate_v10_to_v11_inputs(movement)
+            .expect("input rows migrate");
+        let after_option = option(&[3, 49, 80], &[0.25, 1.0, -0.5]);
+        let after = ti4_tensor::to_vec(
+            &actor
+                .logits(&[after_option], "trade", row)
+                .expect("migrated logits"),
+        )
+        .expect("vec");
+        assert_eq!(before, after);
+        let inserted: Vec<f32> = ti4_tensor::to_vec(&actor.input().get(48)).expect("row");
+        assert!(inserted.iter().all(|value| *value == 0.0));
     }
 
     #[test]

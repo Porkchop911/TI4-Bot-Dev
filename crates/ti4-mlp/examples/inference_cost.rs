@@ -82,7 +82,7 @@ fn profile_probabilities(
     let second = (first.matmul(&actor.hidden().tr()) + actor.b2()).relu();
     profile.borrow_mut().add("hidden_matmul", started.elapsed());
     let started = Instant::now();
-    let head_i = i64::try_from(Actor::head_index(head)?).expect("head fits");
+    let head_i = i64::try_from(actor.layout_head_index(head)?).expect("head fits");
     let seat_i = i64::try_from(row.index()).expect("seat fits");
     let w = actor.shared_readout().get(head_i) + actor.delta().get(seat_i).get(head_i);
     let b = actor.b_shared().get(head_i) + actor.b_delta().get(seat_i).get(head_i);
@@ -165,7 +165,17 @@ fn play(
     let assignments: BTreeMap<_, _> = players
         .iter()
         .enumerate()
-        .map(|(i, p)| (p.clone(), FactionId::new(FACTIONS[(i + rotation) % 6])))
+        .map(|(i, p)| {
+            (
+                p.clone(),
+                ti4_training::rollout::seated_faction(
+                    &FACTIONS.map(FactionId::new),
+                    seed,
+                    rotation,
+                    i,
+                ),
+            )
+        })
         .collect();
     let boundary = Rc::new(RefCell::new(Boundary::default()));
     let profile = Rc::new(RefCell::new(Profile {

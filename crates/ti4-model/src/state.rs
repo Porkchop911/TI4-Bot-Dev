@@ -807,8 +807,8 @@ pub type PromiseKey = (PlayerId, PlayerId, String);
 /// iteration is sorted, so the encoding is canonical.
 mod promise_map {
     use super::{PlayerId, PromiseKey};
+    use serde::Deserializer;
     use serde::de::Deserialize as _;
-    use serde::{Deserializer, Serialize as _, Serializer};
     use std::collections::BTreeMap;
 
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -818,22 +818,6 @@ mod promise_map {
         promise: String,
         /// `None` while the promise is still outstanding.
         kept: Option<bool>,
-    }
-
-    pub(super) fn serialize<S: Serializer>(
-        promises: &BTreeMap<PromiseKey, Option<bool>>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
-        let records: Vec<Record> = promises
-            .iter()
-            .map(|((promiser, partner, promise), kept)| Record {
-                promiser: promiser.clone(),
-                partner: partner.clone(),
-                promise: promise.clone(),
-                kept: *kept,
-            })
-            .collect();
-        records.serialize(serializer)
     }
 
     pub(super) fn deserialize<'de, D: Deserializer<'de>>(
@@ -966,6 +950,10 @@ pub struct GameState {
     pub phase: Phase,
     pub round: u32,
     pub active: Option<PlayerId>,
+
+    /// Opt-in, match-scoped structured diplomacy. Missing legacy snapshots remain disabled.
+    #[serde(default)]
+    pub diplomacy: crate::DiplomacyState,
 
     // -- strategy cards ---------------------------------------------------------
     pub unclaimed_strategy_cards: Vec<StrategyCardId>,
@@ -1322,7 +1310,11 @@ pub struct GameState {
     pub traded_goods_for_promissory: BTreeMap<PlayerId, i32>,
     /// Promise outcomes. Absent, or present with `None`, means still outstanding.
     /// Not compared.
-    #[serde(with = "promise_map")]
+    #[serde(
+        default,
+        deserialize_with = "promise_map::deserialize",
+        skip_serializing
+    )]
     pub promises: BTreeMap<PromiseKey, Option<bool>>,
     /// Support for the Throne: owner to the player holding it faceup. An absent owner still
     /// has their own note in hand.
@@ -1397,6 +1389,67 @@ impl PartialEq for GameState {
 }
 
 impl GameState {
+    /// Decode a state snapshot and migrate legacy free-text promises into inert history.
+    ///
+    /// This is the compatibility boundary for persisted game states. Legacy text is retained for
+    /// audit only and is never compiled into an executable diplomacy predicate.
+    ///
+    /// # Errors
+    /// Returns a JSON error when decoding or migrated-state validation fails.
+    pub fn from_compatible_json(json: &str) -> Result<Self, serde_json::Error> {
+        let mut state: Self = serde_json::from_str(json)?;
+        state
+            .migrate_legacy_promises()
+            .map_err(<serde_json::Error as serde::de::Error>::custom)?;
+        state
+            .diplomacy
+            .validate(&state.seating_order, state.round)
+            .map_err(<serde_json::Error as serde::de::Error>::custom)?;
+        Ok(state)
+    }
+
+    /// Move legacy free-text promises into inert terminal summaries atomically.
+    ///
+    /// # Errors
+    /// Returns [`crate::DiplomacyError::IdExhausted`] if IDs cannot be reserved.
+    pub fn migrate_legacy_promises(&mut self) -> Result<(), crate::DiplomacyError> {
+        let count =
+            u64::try_from(self.promises.len()).map_err(|_| crate::DiplomacyError::IdExhausted)?;
+        self.diplomacy
+            .next_deal_id
+            .checked_add(count)
+            .ok_or(crate::DiplomacyError::IdExhausted)?;
+        let legacy = std::mem::take(&mut self.promises);
+        for ((promiser, partner, text), kept) in legacy {
+            let id = crate::DealId(self.diplomacy.next_deal_id);
+            self.diplomacy.next_deal_id += 1;
+            self.diplomacy.history.push(crate::TerminalDealSummary {
+                id,
+                proposer: promiser,
+                recipient: partner,
+                created_round: self.round,
+                terminal_round: self.round,
+                status: crate::DealStatus::Legacy,
+                latest_revision: None,
+                legacy_promise: Some(text),
+                legacy_status: Some(match kept {
+                    None => crate::PromiseStatus::Pending,
+                    Some(true) => crate::PromiseStatus::Fulfilled,
+                    Some(false) => crate::PromiseStatus::Broken,
+                }),
+            });
+        }
+        let excess = self
+            .diplomacy
+            .history
+            .len()
+            .saturating_sub(crate::MAX_TERMINAL_HISTORY);
+        if excess > 0 {
+            self.diplomacy.history.drain(..excess);
+        }
+        Ok(())
+    }
+
     /// A game at the start of its first strategy phase.
     #[must_use]
     pub fn new(
@@ -1416,6 +1469,7 @@ impl GameState {
             phase: Phase::Strategy,
             round: 1,
             active: None,
+            diplomacy: crate::DiplomacyState::for_players(player_ids, false),
             unclaimed_strategy_cards: strategy_card_ids.to_vec(),
             strategy_card_goods: BTreeMap::new(),
             card_initiative,
@@ -1500,6 +1554,7 @@ impl GameState {
     #[must_use]
     pub fn identical(&self, other: &Self) -> bool {
         self == other
+            && self.diplomacy == other.diplomacy
             && self.board == other.board
             && self.card_initiative == other.card_initiative
             && self.scored_objectives == other.scored_objectives
@@ -2500,10 +2555,35 @@ mod tests {
             .add(&[unit("carrier", "a")]);
         g.deal_strategy_card(&pid("a"), card("leadership"));
         g.record_promise(&pid("a"), &pid("b"), "p");
+        g.migrate_legacy_promises().unwrap();
 
         let json = serde_json::to_string(&g).unwrap();
-        let back: GameState = serde_json::from_str(&json).unwrap();
+        let back = GameState::from_compatible_json(&json).unwrap();
         assert!(g.identical(&back));
+        assert!(!json.contains("\"promises\""));
+    }
+
+    #[test]
+    fn compatible_loader_migrates_legacy_promises_without_executable_terms() {
+        let g = game(&["a", "b"]);
+        let mut value = serde_json::to_value(&g).unwrap();
+        value.as_object_mut().unwrap().insert(
+            "promises".to_owned(),
+            serde_json::json!([{
+                "promiser": "a", "partner": "b", "promise": "help me somehow", "kept": false
+            }]),
+        );
+        let loaded = GameState::from_compatible_json(&value.to_string()).unwrap();
+        assert!(loaded.promises.is_empty());
+        assert!(loaded.diplomacy.active_deals.is_empty());
+        assert_eq!(
+            loaded.diplomacy.history[0].status,
+            crate::DealStatus::Legacy
+        );
+        assert_eq!(
+            loaded.diplomacy.history[0].legacy_status,
+            Some(crate::PromiseStatus::Broken)
+        );
     }
 
     #[test]

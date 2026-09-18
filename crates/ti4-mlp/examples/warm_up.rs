@@ -100,7 +100,7 @@ fn main() {
                 refused += 1;
             }
             if cluster == Cluster::Train && probes.len() < PROBES {
-                if let Some(head) = ti4_mlp::heads().iter().position(|h| *h == decision.head) {
+                if let Some(head) = actor.head_names().iter().position(|h| *h == decision.head) {
                     probes.push(Sample {
                         row,
                         head,

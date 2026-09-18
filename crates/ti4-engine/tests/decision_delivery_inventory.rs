@@ -144,13 +144,21 @@ fn tokens(source: &str) -> Vec<String> {
 
 fn source_files() -> Vec<PathBuf> {
     let source_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    let mut files: Vec<PathBuf> = fs::read_dir(source_dir)
-        .expect("read engine source directory")
-        .map(|entry| entry.expect("source entry").path())
-        .filter(|path| path.extension().and_then(|extension| extension.to_str()) == Some("rs"))
-        .collect();
+    let mut files = Vec::new();
+    collect_rust_files(&source_dir, &mut files);
     files.sort();
     files
+}
+
+fn collect_rust_files(directory: &Path, files: &mut Vec<PathBuf>) {
+    for entry in fs::read_dir(directory).expect("read engine source directory") {
+        let path = entry.expect("source entry").path();
+        if path.is_dir() {
+            collect_rust_files(&path, files);
+        } else if path.extension().and_then(|extension| extension.to_str()) == Some("rs") {
+            files.push(path);
+        }
+    }
 }
 
 fn scan() -> BTreeMap<Site, usize> {
@@ -373,6 +381,13 @@ const PRODUCERS: &[Producer] = &[
         delivery: Delivery::ObservedHere,
     },
     Producer {
+        // War Funding: offered to the holder after both sides have rolled a combat round.
+        module: "combat.rs",
+        function: "roll_round",
+        count: 1,
+        delivery: Delivery::ObservedHere,
+    },
+    Producer {
         module: "combat.rs",
         function: "pending_choice",
         count: 4,
@@ -440,6 +455,20 @@ const PRODUCERS: &[Producer] = &[
         delivery: Delivery::ObservedVia("game.rs::step"),
     },
     Producer {
+        // Structured diplomacy: each voter, in voting order, may open contacts before the vote.
+        module: "game.rs",
+        function: "agenda_talks_choice",
+        count: 1,
+        delivery: Delivery::ObservedVia("game.rs::step_agenda_talks"),
+    },
+    Producer {
+        // Political Favor and Political Secret: whether the holder uses the note at its window.
+        module: "game.rs",
+        function: "ask_to_use_note",
+        count: 1,
+        delivery: Delivery::ObservedHere,
+    },
+    Producer {
         module: "game.rs",
         function: "committee_formation",
         count: 1,
@@ -496,6 +525,22 @@ const PRODUCERS: &[Producer] = &[
     Producer {
         module: "laws.rs",
         function: "offer_discard",
+        count: 1,
+        delivery: Delivery::ObservedHere,
+    },
+    Producer {
+        // LEADER-FIX-001: the action-phase leaders ask their targets here — which planet to
+        // ready, whether to remove the infantry, gain-or-replenish, which system to gather in,
+        // and per-technology swap or keep.
+        module: "leaders.rs",
+        function: "use_leader",
+        count: 7,
+        delivery: Delivery::ObservedHere,
+    },
+    Producer {
+        // Harrugh Gefhara, the Hacan hero: offered when a production is about to be paid for.
+        module: "leaders.rs",
+        function: "offer_production_hero",
         count: 1,
         delivery: Delivery::ObservedHere,
     },
@@ -808,6 +853,12 @@ const PRODUCERS: &[Producer] = &[
         delivery: Delivery::ObservedVia("game.rs::step_trade"),
     },
     Producer {
+        module: "window.rs",
+        function: "pending_choice",
+        count: 2,
+        delivery: Delivery::ObservedVia("game.rs::step_diplomacy"),
+    },
+    Producer {
         module: "transit.rs",
         function: "pending_choice",
         count: 1,
@@ -843,6 +894,7 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("combat.rs", "choose_reroll_dice", 1),
     ("combat.rs", "heart_ixth", 1),
     ("combat.rs", "offer_sustain", 1),
+    ("combat.rs", "roll_round", 1),
     ("exploration.rs", "ask", 1),
     ("faction_abilities.rs", "perform_component", 2),
     ("faction_abilities.rs", "space_combat_round_started", 1),
@@ -856,7 +908,10 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("game.rs", "step_tactical", 1),
     ("game.rs", "step_token_gain", 1),
     ("game.rs", "step_trade", 1),
+    ("game.rs", "step_diplomacy", 1),
+    ("game.rs", "step_agenda_talks", 1),
     ("game.rs", "step_vote", 1),
+    ("game.rs", "ask_to_use_note", 1),
     ("game.rs", "committee_formation", 1),
     ("game.rs", "imperial_arbiter", 2),
     ("game.rs", "minister_of_war", 1),
@@ -880,6 +935,8 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("invasion.rs", "apply_bombard_plan", 1),
     ("invasion.rs", "dunlain_reaper", 1),
     ("laws.rs", "offer_discard", 1),
+    ("leaders.rs", "use_leader", 7),
+    ("leaders.rs", "offer_production_hero", 1),
     ("legendary.rs", "end_turn", 1),
     ("legendary.rs", "pass", 1),
     ("legendary.rs", "place_on_own_planet", 1),

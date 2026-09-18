@@ -4,6 +4,7 @@
 //! and not publicly mutable. Views provide redacted access for bots and TTS.
 
 pub mod content_types;
+pub mod diplomacy;
 pub mod hex;
 pub mod id;
 pub mod schema;
@@ -12,6 +13,7 @@ pub mod units;
 pub mod view;
 
 pub use content_types::*;
+pub use diplomacy::*;
 pub use hex::Hex;
 pub use id::*;
 pub use schema::*;

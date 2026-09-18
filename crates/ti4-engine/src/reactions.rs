@@ -85,6 +85,14 @@ fn party_to_transaction(event: &Event, player: &PlayerId, _state: &GameState) ->
     event.text("player") == Some(player.as_str()) || event.text("partner") == Some(player.as_str())
 }
 
+/// "At the start of a combat round" and its kin — Morale Boost, Emergency Repairs, Skilled
+/// Retreat, Reveal Prototype. Each acts on the player's own units in this combat, so only the two
+/// combatants the event names may play one.
+fn combatant(event: &Event, player: &PlayerId, _state: &GameState) -> bool {
+    event.text("attacker") == Some(player.as_str())
+        || event.text("defender") == Some(player.as_str())
+}
+
 /// "When you would return your strategy card(s) during the status phase" — Political
 /// Stability. The window fires per seat, named by that seat, and only a seat that
 /// actually holds strategy cards has anything to keep.
@@ -253,11 +261,11 @@ pub fn window_table() -> BTreeMap<&'static str, Window> {
         ),
         (
             "At the start of a combat round",
-            window("COMBAT_ROUND_STARTED", After),
+            guarded("COMBAT_ROUND_STARTED", After, combatant),
         ),
         (
             "At the start or end of a combat round",
-            window("COMBAT_ROUND_STARTED", After),
+            guarded("COMBAT_ROUND_STARTED", After, combatant),
         ),
         (
             "At the start of the first round of a space combat",
@@ -297,7 +305,10 @@ pub fn window_table() -> BTreeMap<&'static str, Window> {
             "After another player activates a system that contains 1 or more of your structures",
             guarded("SYSTEM_ACTIVATED", After, actor_is_not),
         ),
-        ("At the start of a combat", window("COMBAT_ROUND_STARTED", After)),
+        (
+            "At the start of a combat",
+            guarded("COMBAT_ROUND_STARTED", After, combatant),
+        ),
         (
             "When another player chooses a strategy card during the strategy phase",
             guarded("STRATEGY_CARD_CHOSEN", After, actor_is_not),
@@ -957,6 +968,35 @@ mod tests {
         assert!(
             playable_now(&state, content, &player(), &theirs, Relation::After).is_empty(),
             "another player's activation is not yours"
+        );
+    }
+
+    #[test]
+    fn only_the_combatants_may_play_a_combat_round_card() {
+        // Skilled Retreat moves "all of your ships" out of the combat; a seat with no ships there
+        // was once offered it, and played it for nothing.
+        let content = ContentStore::embedded();
+        let c = PlayerId::new("c");
+        let mut state = crate::fixtures::game(&["a", "b", "c"]);
+        for seat in ["a", "c"] {
+            state.player_mut(&PlayerId::new(seat)).unwrap().action_cards =
+                vec![ActionCardId::new("s_retreat1")];
+        }
+        let mut payload = BTreeMap::new();
+        payload.insert("system".to_owned(), "69".to_owned().into());
+        payload.insert("round".to_owned(), 1.into());
+        payload.insert("attacker".to_owned(), "a".to_owned().into());
+        payload.insert("defender".to_owned(), "b".to_owned().into());
+        let round = Event::new(1, "COMBAT_ROUND_STARTED", payload);
+
+        assert_eq!(
+            playable_now(&state, content, &player(), &round, Relation::After),
+            vec![ActionCardId::new("s_retreat1")],
+            "a combatant may play it"
+        );
+        assert!(
+            playable_now(&state, content, &c, &round, Relation::After).is_empty(),
+            "a bystander may not"
         );
     }
 

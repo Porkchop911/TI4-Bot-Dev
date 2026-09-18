@@ -103,7 +103,7 @@ impl Sample {
         if options.len() < 2 {
             return Err(SampleError::TooFewOptions(options.len()));
         }
-        if head >= crate::heads().len() {
+        if head >= crate::all_heads().len() {
             return Err(SampleError::UnknownHead(head));
         }
         if failed >= options.len() {
@@ -149,7 +149,7 @@ pub fn loss(actor: &Actor, samples: &[Sample]) -> Result<Option<Tensor>, String>
     }
     let mut total: Option<Tensor> = None;
     for sample in samples {
-        let head = crate::heads()
+        let head = crate::all_heads()
             .get(sample.head)
             .ok_or_else(|| format!("head index {} is out of range", sample.head))?;
         let scores = actor
@@ -228,7 +228,7 @@ pub fn anchor_loss(actor: &Actor, anchors: &[Anchor]) -> Result<Option<Tensor>, 
                 anchor.options.len()
             ));
         }
-        let head = crate::heads()
+        let head = crate::all_heads()
             .get(anchor.head)
             .ok_or_else(|| format!("head index {} is out of range", anchor.head))?;
         let scores = actor

@@ -11,6 +11,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::fs;
+use std::io::Read as _;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
@@ -34,13 +35,16 @@ use ti4_policy::progress::Baseline;
 use ti4_policy::vocabulary::Vocabulary;
 use ti4_sim::MapPool;
 use ti4_training::rollout::{
-    OpeningMap, scrambled_seated_faction, setup_game_with_decider_factory,
+    OpeningMap, SimulationCapabilities, seated_faction,
+    setup_game_with_capabilities_and_decider_factory,
 };
 
+pub mod diplomacy;
 pub mod gui;
 
 pub const SESSION_SCHEMA: &str = "ti4-review-session";
-pub const SESSION_VERSION: u32 = 2;
+pub const SESSION_VERSION: u32 = 3;
+pub const LEGACY_SESSION_VERSION: u32 = 2;
 pub const TILE_SEED_OFFSET: u64 = 20_000_000;
 pub const MAX_INPUT_BYTES: u64 = 1024 * 1024 * 1024;
 pub const MAX_SESSION_BYTES: usize = 1024 * 1024 * 1024;
@@ -103,6 +107,8 @@ pub struct SimulationConfig {
     pub rotation: usize,
     pub table: ProfileTable,
     pub temperature: f64,
+    /// Play with structured diplomacy (deals, promises, signals, relationships) switched on.
+    pub diplomacy: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -134,6 +140,10 @@ pub struct SessionManifest {
     pub content_sha256: Option<String>,
     #[serde(default)]
     pub source_scope: Option<String>,
+    /// Whether the game was played with structured diplomacy. Sessions written before the option
+    /// existed were not.
+    #[serde(default)]
+    pub diplomacy: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -178,6 +188,18 @@ pub struct BoardTile {
     pub q: i32,
     pub r: i32,
     pub hyperlane: bool,
+    /// `fracture` or `nexus` for systems drawn outside the ordinary galaxy geometry.
+    #[serde(default)]
+    pub special_area: Option<String>,
+    /// Printed anomaly kinds retained from the content corpus for renderer-independent display.
+    #[serde(default)]
+    pub anomalies: Vec<String>,
+    /// Printed wormholes. Dynamic token wormholes remain in `GameState`.
+    #[serde(default)]
+    pub wormholes: Vec<String>,
+    /// Whether this Fracture system carries one of the two printed egresses.
+    #[serde(default)]
+    pub egress: bool,
     pub planets: Vec<PlanetMeta>,
 }
 
@@ -221,6 +243,32 @@ pub struct DecisionDetail {
     pub context: Option<Value>,
 }
 
+/// Stable replay copy of one fully resolved engine timing event.
+///
+/// This is intentionally reviewer-owned rather than serializing the engine's `Event` type into
+/// the long-lived artifact contract. The payload supplies causality that cannot be reconstructed
+/// reliably from two state snapshots, while the cancellation bit distinguishes an attempted event
+/// from one whose effect actually resolved.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct ReviewEvent {
+    pub id: u64,
+    pub event_type: String,
+    pub payload: BTreeMap<String, Value>,
+    pub cancelled: bool,
+}
+
+impl From<&ti4_engine::event::Event> for ReviewEvent {
+    fn from(event: &ti4_engine::event::Event) -> Self {
+        Self {
+            id: event.id,
+            event_type: event.event_type.clone(),
+            payload: event.payload.clone(),
+            cancelled: event.cancelled,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ActionSummary {
@@ -230,6 +278,8 @@ pub struct ActionSummary {
     pub start_frame: usize,
     pub end_frame: usize,
     pub details: Vec<String>,
+    /// True while the same player is still active and the period has not reached its boundary.
+    pub in_progress: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -246,9 +296,15 @@ pub struct ReviewFrame {
     pub finished: bool,
     pub error: Option<String>,
     pub new_events: Vec<String>,
+    /// Payload-bearing events finalized during this engine step.
+    #[serde(default)]
+    pub structured_events: Vec<ReviewEvent>,
     pub decisions: Vec<DecisionDetail>,
     #[serde(default)]
     pub action_summary: Option<ActionSummary>,
+    /// Best-effort summary of the active player's still-open period at this exact frame.
+    #[serde(default)]
+    pub action_in_progress: Option<ActionSummary>,
     pub state: GameState,
 }
 
@@ -531,6 +587,19 @@ impl Decider for MlpTraceBot {
             &seen.held_secret_progress(),
             self.baseline,
         );
+        // The battle facts an arena bundle adds in play, so the trace scores what the model saw.
+        let vectors = match self.actor.battle_predictor() {
+            Some(predictor) => {
+                let facts = ti4_policy::battle::decision_facts(
+                    seen.observed(),
+                    choice,
+                    &choice.player,
+                    predictor,
+                );
+                ti4_policy::battle::append_facts(vectors, &facts)
+            }
+            None => vectors,
+        };
         let sparse: Vec<SparseOption> = vectors
             .iter()
             .map(|vector| SparseOption {
@@ -593,6 +662,7 @@ pub struct LiveReview {
     decisions: Rc<RefCell<Vec<DecisionDetail>>>,
     captured_decisions: usize,
     captured_events: usize,
+    captured_applied_events: usize,
     engine_steps: usize,
     action_count: usize,
     action: Option<ActionCapture>,
@@ -607,6 +677,7 @@ struct ActionCapture {
     last_state: GameState,
     transitions: Vec<StateTransition>,
     events: Vec<String>,
+    structured_events: Vec<ReviewEvent>,
     decisions: Vec<DecisionDetail>,
     activated_systems: BTreeSet<String>,
 }
@@ -660,7 +731,7 @@ impl LiveReview {
             .map(|(index, player)| {
                 (
                     player.clone(),
-                    scrambled_seated_faction(&faction_roster, config.seed, config.rotation, index),
+                    seated_faction(&faction_roster, config.seed, config.rotation, index),
                 )
             })
             .collect();
@@ -675,13 +746,16 @@ impl LiveReview {
             pool: Arc::new(pool),
             tile_seed_offset: TILE_SEED_OFFSET,
         };
-        let game = setup_game_with_decider_factory(
+        let game = setup_game_with_capabilities_and_decider_factory(
             content,
             &players,
             &factions,
             FULL,
             config.seed,
             &map,
+            SimulationCapabilities {
+                diplomacy: config.diplomacy,
+            },
             move |baselines| {
                 let mut table: BTreeMap<PlayerId, Box<dyn Decider>> = BTreeMap::new();
                 for (index, player) in decider_players.iter().enumerate() {
@@ -763,6 +837,7 @@ impl LiveReview {
             engine_dirty: env!("TI4_REVIEW_ENGINE_DIRTY") == "true",
             content_sha256: Some(content_sha256),
             source_scope: Some("FULL (base + PoK + codices + Thunder's Edge)".to_owned()),
+            diplomacy: config.diplomacy,
         };
         let initial = ReviewFrame {
             index: 0,
@@ -777,8 +852,15 @@ impl LiveReview {
             finished: game.state.finished,
             error: None,
             new_events: game.events.clone(),
+            structured_events: game
+                .timing
+                .applied_events()
+                .iter()
+                .map(ReviewEvent::from)
+                .collect(),
             decisions: Vec::new(),
             action_summary: None,
+            action_in_progress: None,
             state: game.state.clone(),
         };
         Ok(Self {
@@ -792,6 +874,7 @@ impl LiveReview {
                 outcome: SessionOutcome::InProgress,
             },
             captured_events: game.events.len(),
+            captured_applied_events: game.timing.applied_events().len(),
             game,
             decisions,
             captured_decisions: 0,
@@ -833,6 +916,11 @@ impl LiveReview {
         };
         let new_events = self.game.events[self.captured_events..].to_vec();
         self.captured_events = self.game.events.len();
+        let structured_events = self.game.timing.applied_events()[self.captured_applied_events..]
+            .iter()
+            .map(ReviewEvent::from)
+            .collect::<Vec<_>>();
+        self.captured_applied_events = self.game.timing.applied_events().len();
         if let Some(action) = &mut self.action {
             let before = std::mem::replace(&mut action.last_state, self.game.state.clone());
             action.transitions.push(StateTransition {
@@ -841,6 +929,9 @@ impl LiveReview {
                 events: new_events.clone(),
             });
             action.events.extend(new_events.iter().cloned());
+            action
+                .structured_events
+                .extend(structured_events.iter().cloned());
             action.decisions.extend(decisions.iter().cloned());
             if let Some(system) = &self.game.state.active_system {
                 action.activated_systems.insert(system.to_string());
@@ -850,14 +941,30 @@ impl LiveReview {
             action_period_ended(&action.actor, &self.game.state, result.finished)
         });
         let action_summary = action_finished.then(|| {
-            let action = self.action.take().expect("checked above");
             summarize_action(
-                action,
+                self.action.as_ref().expect("checked above"),
                 &self.game.state,
                 &self.session.board,
                 self.session.frames.len(),
+                false,
             )
         });
+        let action_in_progress = (!action_finished)
+            .then(|| {
+                self.action.as_ref().map(|action| {
+                    summarize_action(
+                        action,
+                        &self.game.state,
+                        &self.session.board,
+                        self.session.frames.len(),
+                        true,
+                    )
+                })
+            })
+            .flatten();
+        if action_finished {
+            self.action = None;
+        }
         let action_completed = action_summary.is_some();
         if action_completed {
             self.action_count += 1;
@@ -883,8 +990,10 @@ impl LiveReview {
             finished: result.finished,
             error,
             new_events,
+            structured_events,
             decisions,
             action_summary,
+            action_in_progress,
             state: self.game.state.clone(),
         };
         self.session.frames.push(frame);
@@ -911,6 +1020,7 @@ impl LiveReview {
             last_state: self.game.state.clone(),
             transitions: Vec::new(),
             events: Vec::new(),
+            structured_events: Vec::new(),
             decisions: Vec::new(),
             activated_systems: BTreeSet::new(),
         });
@@ -980,17 +1090,24 @@ fn action_period_ended(actor: &PlayerId, state: &GameState, finished: bool) -> b
 }
 
 fn summarize_action(
-    action: ActionCapture,
+    action: &ActionCapture,
     end: &GameState,
     board: &[BoardTile],
     end_frame: usize,
+    in_progress: bool,
 ) -> ActionSummary {
     let chosen_actions: Vec<String> = action
         .decisions
         .iter()
         .filter(|decision| decision.requested_head == "turn")
         .filter_map(selected_option)
-        .filter(|option| option.kind != ti4_engine::transactions::OPEN_KIND)
+        // Opening a transaction or a diplomatic contact, or paying a promised sum, does not end the
+        // turn; the diplomacy lines below describe them rather than the headline.
+        .filter(|option| {
+            option.kind != ti4_engine::transactions::OPEN_KIND
+                && option.kind != ti4_engine::diplomacy::candidates::OPEN_KIND
+                && option.kind != ti4_engine::diplomacy::candidates::PAYMENT_KIND
+        })
         .map(|option| option.label.clone())
         .collect();
     let system_names: Vec<String> = action
@@ -998,16 +1115,28 @@ fn summarize_action(
         .iter()
         .map(|system| system_label(board, system))
         .collect();
-    let headline = if action.events.iter().any(|event| event == "PLAYER_PASSED") {
+    let cancelled_strategy = action.events.iter().find_map(|event| {
+        event
+            .strip_prefix("STRATEGIC_ACTION_CANCELLED:")
+            .map(|card| {
+                review_content_label(ti4_model::content_types::ContentType::StrategyCards, card)
+            })
+            .or_else(|| (event == "STRATEGIC_ACTION_CANCELLED").then(String::new))
+    });
+    let headline = if in_progress {
+        format!("{} ({}) is taking an action", action.actor, action.faction)
+    } else if action.events.iter().any(|event| event == "PLAYER_PASSED") {
         format!("{} ({}) passed", action.actor, action.faction)
-    } else if action
-        .events
-        .iter()
-        .any(|event| event == "STRATEGIC_ACTION_CANCELLED")
-    {
+    } else if let Some(card) = cancelled_strategy {
         format!(
-            "{} ({}) had their strategic action cancelled",
-            action.actor, action.faction
+            "{} ({}) had their strategic action{} cancelled",
+            action.actor,
+            action.faction,
+            if card.is_empty() {
+                String::new()
+            } else {
+                format!(" with {card}")
+            }
         )
     } else if action
         .events
@@ -1110,7 +1239,9 @@ fn summarize_action(
         }
     }
     append_transactions(&mut details, &action.decisions, &action.events);
+    diplomacy::append_action_lines(&mut details, &action.start_state, end, &action.decisions);
     append_notable_decisions(&mut details, &action.decisions);
+    append_structured_event_details(&mut details, &action.structured_events, board);
     append_event_outcomes(&mut details, &action.events);
     for event in &action.events {
         if let Some(objective) = event.strip_prefix("OBJECTIVE_SCORED:") {
@@ -1122,11 +1253,108 @@ fn summarize_action(
     }
     ActionSummary {
         actor: action.actor.to_string(),
-        faction: action.faction,
+        faction: action.faction.clone(),
         headline,
         start_frame: action.start_frame,
         end_frame,
         details,
+        in_progress,
+    }
+}
+
+fn event_text<'a>(event: &'a ReviewEvent, key: &str) -> Option<&'a str> {
+    event.payload.get(key).and_then(Value::as_str)
+}
+
+fn review_content_label(category: ti4_model::content_types::ContentType, id: &str) -> String {
+    let content = ContentStore::embedded();
+    let Some(record) = content.get(category, id) else {
+        return id.to_owned();
+    };
+    record
+        .text("name")
+        .or_else(|| record.text("shortName"))
+        .or_else(|| record.text("title"))
+        .filter(|name| !name.eq_ignore_ascii_case(id))
+        .map_or_else(|| id.to_owned(), |name| format!("{name} [{id}]"))
+}
+
+fn append_structured_event_details(
+    details: &mut Vec<String>,
+    events: &[ReviewEvent],
+    board: &[BoardTile],
+) {
+    for event in events {
+        let cancelled = if event.cancelled { " · CANCELLED" } else { "" };
+        let detail = match event.event_type.as_str() {
+            "ACTION_CARD_PLAYED" | "ACTION_CARD_DISCARDED" | "ACTION_CARD_UNRESOLVED" => {
+                let card = event_text(event, "card").unwrap_or("unknown card");
+                let card =
+                    review_content_label(ti4_model::content_types::ContentType::ActionCards, card);
+                let player = event_text(event, "player")
+                    .map_or_else(String::new, |player| format!(" by {player}"));
+                let verb = match event.event_type.as_str() {
+                    "ACTION_CARD_PLAYED" => "played",
+                    "ACTION_CARD_DISCARDED" => "discarded",
+                    _ => "did not resolve",
+                };
+                Some(format!("Action card {card} {verb}{player}{cancelled}"))
+            }
+            "SHIP_DESTROYED" => {
+                let player = event_text(event, "player").unwrap_or("unknown player");
+                let unit = event_text(event, "unit").unwrap_or("ship");
+                let system = event_text(event, "system")
+                    .map_or_else(|| "unknown system".to_owned(), |id| system_label(board, id));
+                let damage = event
+                    .payload
+                    .get("damaged")
+                    .and_then(Value::as_bool)
+                    .is_some_and(|damaged| damaged);
+                Some(format!(
+                    "{player} lost {}{unit} in {system}{cancelled}",
+                    if damage { "damaged " } else { "" }
+                ))
+            }
+            "PLANET_CONTROL_GAINED" => {
+                let player = event_text(event, "player").unwrap_or("unknown player");
+                let planet = event_text(event, "planet").unwrap_or("unknown planet");
+                let planet = location_label(board, &format!("planet:{planet}"));
+                Some(event_text(event, "previous_owner").map_or_else(
+                    || format!("{player} gained control of {planet}{cancelled}"),
+                    |old| format!("{player} took {planet} from {old}{cancelled}"),
+                ))
+            }
+            "UNITS_COMMITTED" => {
+                let player = event_text(event, "player").unwrap_or("unknown player");
+                let planet = event_text(event, "planet").unwrap_or("unknown planet");
+                let planet = location_label(board, &format!("planet:{planet}"));
+                Some(format!("{player} committed a unit to {planet}{cancelled}"))
+            }
+            "RETREAT_DECLARED" => {
+                let player = event_text(event, "player").unwrap_or("unknown player");
+                let system = event_text(event, "system")
+                    .map_or_else(|| "unknown system".to_owned(), |id| system_label(board, id));
+                Some(format!(
+                    "{player} declared retreat from {system}{cancelled}"
+                ))
+            }
+            "SPACE_COMBAT_WON" => {
+                let player = event_text(event, "player").unwrap_or("unknown player");
+                let system = event_text(event, "system")
+                    .map_or_else(|| "unknown system".to_owned(), |id| system_label(board, id));
+                Some(format!("{player} won space combat in {system}{cancelled}"))
+            }
+            "STRATEGIC_ACTION_BEGAN" if event.cancelled => Some(format!(
+                "{}'s strategic action event was cancelled",
+                event_text(event, "player").unwrap_or("A player")
+            )),
+            _ => None,
+        };
+        if let Some(detail) = detail
+            && !details.contains(&detail)
+        {
+            details.push(detail);
+        }
     }
 }
 
@@ -1202,7 +1430,11 @@ fn append_event_outcomes(details: &mut Vec<String>, events: &[String]) {
     for (event, label) in OUTCOMES {
         let count = events
             .iter()
-            .filter(|candidate| candidate.as_str() == event)
+            .filter(|candidate| {
+                candidate.as_str() == event
+                    || matches!(event, "STRATEGIC_ACTION_CANCELLED" | "TURN_SKIPPED")
+                        && candidate.starts_with(&format!("{event}:"))
+            })
             .count();
         if count == 1 {
             details.push(label.to_owned());
@@ -1609,38 +1841,88 @@ fn board_metadata(content: &ContentStore, galaxy: &ti4_content::galaxy::Galaxy) 
         .into_iter()
         .filter_map(|id| {
             let coord = galaxy.coord_of(id)?;
-            let system = ti4_content::galaxy::system(content, id, FULL)?;
-            let planets = system
-                .planets()
-                .into_iter()
-                .filter_map(|planet_id| ti4_content::galaxy::planet(content, planet_id, FULL))
-                .map(|planet| PlanetMeta {
-                    id: planet.id().to_owned(),
-                    label: planet.name().unwrap_or(planet.id()).to_owned(),
-                    resources: planet.resources(),
-                    influence: planet.influence(),
-                    traits: planet.traits().into_iter().map(str::to_owned).collect(),
-                    tech_specialties: planet
-                        .tech_specialties()
-                        .into_iter()
-                        .map(str::to_owned)
-                        .collect(),
-                    legendary: planet.is_legendary(),
-                    space_station: planet.is_space_station(),
-                })
-                .collect();
-            Some(BoardTile {
-                system: id.to_owned(),
-                label: system.name().unwrap_or(id).to_owned(),
-                q: coord.q,
-                r: coord.r,
-                hyperlane: system.is_hyperlane(),
-                planets,
-            })
+            let special_area = matches!(id, "82a" | "82b").then_some("nexus");
+            system_metadata(content, id, coord.q, coord.r, special_area)
         })
         .collect();
-    board.sort_by_key(|tile| (tile.q, tile.r));
+    board.sort_by_key(|tile| (tile.special_area.is_some(), tile.q, tile.r));
+    for id in ["82a", "82b"] {
+        if !board.iter().any(|tile| tile.system == id)
+            && let Some(tile) = system_metadata(content, id, 0, 0, Some("nexus"))
+        {
+            board.push(tile);
+        }
+    }
+    board.extend(
+        ti4_engine::fracture::systems(content, FULL)
+            .into_iter()
+            .enumerate()
+            .filter_map(|(index, id)| {
+                system_metadata(
+                    content,
+                    id.as_str(),
+                    i32::try_from(index).ok()?,
+                    0,
+                    Some("fracture"),
+                )
+            }),
+    );
     board
+}
+
+fn system_metadata(
+    content: &ContentStore,
+    id: &str,
+    q: i32,
+    r: i32,
+    special_area: Option<&str>,
+) -> Option<BoardTile> {
+    let system = ti4_content::galaxy::system(content, id, FULL)?;
+    let planets = system
+        .planets()
+        .into_iter()
+        .filter_map(|planet_id| ti4_content::galaxy::planet(content, planet_id, FULL))
+        .map(|planet| PlanetMeta {
+            id: planet.id().to_owned(),
+            label: planet.name().unwrap_or(planet.id()).to_owned(),
+            resources: planet.resources(),
+            influence: planet.influence(),
+            traits: planet.traits().into_iter().map(str::to_owned).collect(),
+            tech_specialties: planet
+                .tech_specialties()
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
+            legendary: planet.is_legendary(),
+            space_station: planet.is_space_station(),
+        })
+        .collect();
+    let anomalies = [
+        (system.is_nebula(), "nebula"),
+        (system.is_supernova(), "supernova"),
+        (system.is_asteroid_field(), "asteroid field"),
+        (system.is_gravity_rift(), "gravity rift"),
+        (system.is_scar(), "entropic scar"),
+    ]
+    .into_iter()
+    .filter(|(present, _)| *present)
+    .map(|(_, kind)| kind.to_owned())
+    .collect();
+    Some(BoardTile {
+        system: id.to_owned(),
+        label: system.name().unwrap_or(id).to_owned(),
+        q,
+        r,
+        hyperlane: system.is_hyperlane(),
+        special_area: special_area.map(str::to_owned),
+        anomalies,
+        wormholes: system.wormholes().into_iter().map(str::to_owned).collect(),
+        egress: special_area == Some("fracture")
+            && system
+                .name()
+                .is_some_and(|name| name.to_ascii_lowercase().contains("egress")),
+        planets,
+    })
 }
 
 fn planet_catalog(content: &ContentStore) -> Vec<PlanetMeta> {
@@ -1697,24 +1979,63 @@ fn sha256(bytes: &[u8]) -> String {
 
 pub fn save_session(path: &Path, session: &ReviewSession) -> Result<()> {
     session.validate()?;
-    let bytes = serde_json::to_vec(session)
+    let plain = serde_json::to_vec(session)
         .map_err(|error| ReviewError::Invalid(format!("serialize session: {error}")))?;
-    if bytes.len() > MAX_SESSION_BYTES {
+    if plain.len() > MAX_SESSION_BYTES {
         return Err(ReviewError::SessionTooLarge);
     }
+    let bytes = if compressed_review(path) {
+        zstd::encode_all(plain.as_slice(), 3)
+            .map_err(|error| ReviewError::Invalid(format!("compress review session: {error}")))?
+    } else {
+        plain
+    };
     replace_file(path, &bytes)
 }
 
 pub fn load_session(path: &Path) -> Result<ReviewSession> {
-    let bytes = read_bounded(path)?;
-    let mut session: ReviewSession = serde_json::from_slice(&bytes)
+    let stored = read_bounded(path)?;
+    let bytes = if compressed_review(path) {
+        let decoder = zstd::Decoder::new(stored.as_slice()).map_err(|error| {
+            ReviewError::Invalid(format!("open compressed review session: {error}"))
+        })?;
+        let mut bytes = Vec::new();
+        decoder
+            .take(MAX_SESSION_BYTES as u64 + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|error| ReviewError::Invalid(format!("decompress review session: {error}")))?;
+        if bytes.len() > MAX_SESSION_BYTES {
+            return Err(ReviewError::SessionTooLarge);
+        }
+        bytes
+    } else {
+        stored
+    };
+    decode_session(&bytes)
+}
+
+fn compressed_review(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("zst"))
+}
+
+fn decode_session(bytes: &[u8]) -> Result<ReviewSession> {
+    let mut session: ReviewSession = serde_json::from_slice(bytes)
         .map_err(|error| ReviewError::Invalid(format!("review session JSON: {error}")))?;
+    if session.version == LEGACY_SESSION_VERSION {
+        session.version = SESSION_VERSION;
+    }
     session.validate()?;
     populate_action_summaries(&mut session);
     Ok(session)
 }
 
 fn populate_action_summaries(session: &mut ReviewSession) {
+    // Current sessions persist both complete and in-progress summaries. Older sessions that already
+    // contain completed summaries must not rebuild thousands of full-state transitions merely to
+    // synthesize optional in-progress text; a measured 3,357-frame review takes about three times
+    // longer to open if every historical action is reconstructed here.
     if session
         .frames
         .iter()
@@ -1743,6 +2064,7 @@ fn populate_action_summaries(session: &mut ReviewSession) {
                 last_state: frame.state.clone(),
                 transitions: Vec::new(),
                 events: Vec::new(),
+                structured_events: Vec::new(),
                 decisions: Vec::new(),
                 activated_systems: BTreeSet::new(),
             });
@@ -1754,6 +2076,9 @@ fn populate_action_summaries(session: &mut ReviewSession) {
                 events: frame.new_events.clone(),
             });
             capture.events.extend(frame.new_events.iter().cloned());
+            capture
+                .structured_events
+                .extend(frame.structured_events.iter().cloned());
             capture.decisions.extend(frame.decisions.iter().cloned());
             if let Some(system) = &frame.state.active_system {
                 capture.activated_systems.insert(system.to_string());
@@ -1765,18 +2090,28 @@ fn populate_action_summaries(session: &mut ReviewSession) {
         });
         let summary = finished.then(|| {
             summarize_action(
-                action.take().expect("checked above"),
+                action.as_ref().expect("checked above"),
                 &session.frames[index].state,
                 &board,
                 index,
+                false,
             )
         });
+        let progress = (!finished)
+            .then(|| {
+                action.as_ref().map(|capture| {
+                    summarize_action(capture, &session.frames[index].state, &board, index, true)
+                })
+            })
+            .flatten();
         if summary.is_some() {
             action_count += 1;
+            action = None;
         }
         let frame = &mut session.frames[index];
         frame.action_completed = summary.is_some();
         frame.action_summary = summary;
+        frame.action_in_progress = progress;
         frame.action_count = action_count;
     }
 }
@@ -1846,16 +2181,10 @@ pub fn render_html(session: &ReviewSession) -> Result<String> {
         .collect::<BTreeSet<_>>()
         .into_iter()
         .map(|objective| {
-            // Both decks, for the reason `objectives::points_for` gives: Classified Document
-            // Leaks moves a secret into the public area, where it is scoreable by everyone and
-            // shows up in `revealed_objectives`. A public-only lookup missed it and fell back to
-            // the raw alias and zero -- so a real 1-point secret rendered as "mrm · 0 VP".
-            let record = [
+            let record = content.get(
                 ti4_model::content_types::ContentType::PublicObjectives,
-                ti4_model::content_types::ContentType::SecretObjectives,
-            ]
-            .into_iter()
-            .find_map(|category| content.get(category, &objective));
+                &objective,
+            );
             let meta = serde_json::json!({
                 "name": record.as_ref().and_then(|record| record.text("name")).unwrap_or(&objective),
                 "text": record.as_ref().and_then(|record| record.text("text")).unwrap_or(""),
@@ -1920,8 +2249,9 @@ main{display:grid;grid-template-columns:2fr 1fr;gap:12px;padding:12px}section{ba
 #board{width:100%;height:720px}.tile{fill:#162b43;stroke:#7098bd;stroke-width:2}.hyper{fill:#342555}svg text{fill:#fff;text-anchor:middle;font-size:11px}.legend{font-size:12px;color:#afbdd0;margin:6px}
 button,input{background:#1c304a;color:#fff;border:1px solid #5b7da1;border-radius:5px;padding:6px}pre{white-space:pre-wrap;word-break:break-word;max-height:500px;overflow:auto}
 .player{border-left:7px solid var(--pc);background:#0b1625;padding:8px;margin:8px 0;border-radius:6px}.player h4{margin:0 0 6px}.stats{display:flex;flex-wrap:wrap;gap:5px}.stat,.chip{background:#1a2b42;border-radius:5px;padding:3px 6px}.sheet{margin-top:6px}.sheet b{color:var(--pc)}.chips{display:flex;flex-wrap:wrap;gap:4px;margin:3px 0 7px}.chip{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--pc) 55%,transparent)}.objective,.action{background:#0b1625;border:1px solid #29415f;border-radius:6px;padding:7px;margin:5px 0}.objective small,.action small{color:#afbdd0}
+.rel{border-collapse:collapse;font-size:12px;margin:6px 0}.rel td,.rel th{border:1px solid #29415f;padding:3px 6px;white-space:nowrap}
 </style></head><body><header><button onclick="move(-1)">Previous</button> <input id="frame" type="range" min="0" max="0" value="0" oninput="show(+this.value)"> <button onclick="move(1)">Next</button> <b id="where"></b></header>
-<main><section><div class="legend">Thick outer edge = exclusive space control. Thin inner edge = planet control and is split when ownership is mixed. Planet fill = planet owner. Planet labels: resources/influence · C/H/I trait · B/G/R/Y specialty · ★ legendary · S station · × destroyed. Gray units are neutral; red slash = damaged; yellow ring = galvanized.</div><svg id="board" viewBox="-600 -500 1200 1000"></svg></section><section><h3>Current policy profiles</h3><div id="policy"></div><h3>Open objectives</h3><div id="objectives"></div><h3>Latest completed action</h3><div id="action"></div><h3>Table state</h3><div id="table-state"></div><h3>Player sheets</h3><div id="players"></div><h3>Decision</h3><div id="decision"></div><h3>Events</h3><pre id="events"></pre></section></main>
+<main><section><div class="legend">Thick outer edge = exclusive space control. Thin inner edge = planet control and is split when ownership is mixed. Planet fill = planet owner. Wormholes use lettered rings; a white outer rim marks a placed token and a red slash marks a suppressed wormhole. IN/OUT portals connect the galaxy and Fracture. Planet labels: resources/influence · C/H/I trait · B/G/R/Y specialty · ★ legendary · S station · × destroyed. Gray units are neutral; red slash = damaged; yellow ring = galvanized.</div><svg id="board" viewBox="-600 -500 1200 1000"></svg></section><section><h3>Current policy profiles</h3><div id="policy"></div><h3>Open objectives</h3><div id="objectives"></div><h3>Current/latest action</h3><div id="action"></div><h3>Table state</h3><div id="table-state"></div><h3>Diplomacy</h3><div id="diplomacy"></div><h3>Player sheets</h3><div id="players"></div><h3>Decision</h3><div id="decision"></div><h3>Events</h3><pre id="events"></pre></section></main>
 <script>const session=__SESSION_DATA__,objectiveMeta=__OBJECTIVE_META__,contentMeta=__CONTENT_META__;const slider=document.querySelector('#frame');slider.max=session.frames.length-1;let at=0;
 const colors=['#e04242','#428eeb','#f2c638','#36b874','#ad67e0','#ee7e31'];
 const esc=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
@@ -1934,26 +2264,42 @@ function controlledPlanets(f,p){const held=[];for(const t of session.board){cons
 function notesOf(f,p){const notes=Object.entries(f.state.promissory_notes||{}).filter(([,holder])=>holder===p.id).map(([note])=>`${named('promissory',note)}${list(f.state.promissory_faceup).includes(note)?' · faceup':''}`);for(const[owner,holder]of Object.entries(f.state.support_holders||{}))if(holder===p.id)notes.push(`Support for the Throne:${owner} · faceup`);return [...new Set(notes)].sort()}
 function playerCard(p,f){const c=colorOf(p.id);const scored=list(f.state.scored_objectives?.[p.id]).map(x=>named('public',x));const strategy=list(p.strategy_cards).map(x=>p.exhausted_strategy_cards.includes(x)?`${named('strategy',x)} · used`:named('strategy',x));const tech=list(p.technologies).map(x=>p.exhausted_technologies.includes(x)?`${named('technology',x)} · exhausted`:named('technology',x));const relics=list(p.relics).map(x=>list(p.exhausted_relics).includes(x)?`${named('relic',x)} · exhausted`:named('relic',x));return `<article class="player" style="--pc:${c}"><h4>● ${esc(p.id)} · ${esc(p.faction)} · ${p.victory_points} VP</h4><div class="stats"><span class="stat">◆ TG ${p.trade_goods}</span><span class="stat">◇ Com ${p.commodities}</span><span class="stat">▲ T ${p.tactic_tokens}</span><span class="stat">⬟ F ${p.fleet_tokens}</span><span class="stat">● S ${p.strategic_tokens}</span><span class="stat">${p.passed?'PASSED':'ACTIVE'}</span></div>${chips('◆','Strategy cards',strategy)}${chips('●','Planets',controlledPlanets(f,p))}${chips('⚙','Technologies',tech)}${chips('✓','Scored objectives',scored)}${chips('?','Secret objectives',list(p.secret_objectives).map(x=>named('secret',x)))}${chips('▣','Action cards',list(p.action_cards).map(x=>named('action',x)))}${chips('✦','Relics / fragments',[...relics,...objList(p.relic_fragments)])}${chips('◈','Exploration cards in play',list(p.exploration_cards).map(x=>named('explore',x)))}${chips('✉','Promissory notes',notesOf(f,p))}${chips('♟','Leaders',Object.entries(p.leaders||{}).map(([k,v])=>`${named('leader',k)} · ${v}`))}${chips('⌁','Plots',p.plots)}${p.breakthrough?chips('⚡','Breakthrough',[named('breakthrough',p.breakthrough)]):''}</article>`}
 function initiativeOrder(f){const seat=new Map(list(f.state.seating_order).map((id,index)=>[id,index]));return [...f.state.players].sort((a,b)=>{const ai=Math.min(...list(a.strategy_cards).map(c=>f.state.card_initiative?.[c]??99),99),bi=Math.min(...list(b.strategy_cards).map(c=>f.state.card_initiative?.[c]??99),99);return (ai-bi)||((seat.get(a.id)??999)-(seat.get(b.id)??999))}).map(p=>`${p.id} ${p.faction}${list(p.strategy_cards).length?' · '+list(p.strategy_cards).map(c=>`${named('strategy',c)} (${f.state.card_initiative?.[c]??99})`).join(', '):''}`)}
-function tableState(f){const unclaimed=list(f.state.unclaimed_strategy_cards).map(card=>{const goods=f.state.strategy_card_goods?.[card]||0;return goods?`${named('strategy',card)} · ${goods} TG`:named('strategy',card)}),previous=at>0?session.frames[at-1]:null,speakerChange=previous&&previous.state.speaker!==f.state.speaker?`<div class="action">Speaker changed: ${esc(previous.state.speaker)} → ${esc(f.state.speaker)} · ${esc(list(f.new_events).join(', ')||'unrecorded cause')}</div>`:'';return `<div class="stats"><span class="stat">♛ Speaker ${esc(f.state.speaker)}</span><span class="stat">◎ Custodians ${f.state.custodians_removed?'removed':'present'}</span><span class="stat">▣ Action discard ${list(f.state.discarded_action_cards).length}</span></div>${speakerChange}${chips('➜','Initiative turn order',initiativeOrder(f))}${chips('◆','Unclaimed strategy cards',unclaimed)}${chips('⚖','Laws in play',Object.entries(f.state.laws||{}).map(([law,outcome])=>`${named('agenda',law)} · ${outcome}`))}${chips('↯','Discarded action cards',list(f.state.discarded_action_cards).map(x=>named('action',x)))}`}
+function tableState(f){const unclaimed=list(f.state.unclaimed_strategy_cards).map(card=>{const goods=f.state.strategy_card_goods?.[card]||0;return goods?`${named('strategy',card)} · ${goods} TG`:named('strategy',card)}),previous=at>0?session.frames[at-1]:null,speakerChange=previous&&previous.state.speaker!==f.state.speaker?`<div class="action">Speaker changed: ${esc(previous.state.speaker)} → ${esc(f.state.speaker)} · ${esc(list(f.new_events).join(', ')||'unrecorded cause')}</div>`:'';return `<div class="stats"><span class="stat">♛ Speaker ${esc(f.state.speaker)}</span><span class="stat">◎ Custodians ${f.state.custodians_removed?'removed':'present'}</span><span class="stat">⬡ Active system ${esc(f.state.active_system||'—')}</span><span class="stat">⌛ Pending ${esc(f.state.pending||'—')}</span><span class="stat">▣ Action discard ${list(f.state.discarded_action_cards).length}</span></div>${speakerChange}${chips('➜','Initiative turn order',initiativeOrder(f))}${chips('◆','Unclaimed strategy cards',unclaimed)}${chips('⚖','Laws in play',Object.entries(f.state.laws||{}).map(([law,outcome])=>`${named('agenda',law)} · ${outcome}`))}${chips('☷','Agenda votes',Object.entries(f.state.agenda_votes||{}).map(([player,vote])=>`${player} → ${vote}`))}${chips('⌁','Agenda predictions',Object.entries(f.state.agenda_predictions||{}).map(([player,prediction])=>`${player} → ${prediction}`))}${chips('↯','Discarded action cards',list(f.state.discarded_action_cards).map(x=>named('action',x)))}`}
+function seatLabel(f,id){const p=(f.state.players||[]).find(x=>x.id===id);return p&&p.faction?`${id} (${p.faction})`:String(id)}
+function assetText(a){const[k,v]=Object.entries(a||{})[0]||['?',''];const n={trade_goods:'trade good(s)',commodities:'commodity/commodities',cultural_fragments:'cultural fragment(s)',hazardous_fragments:'hazardous fragment(s)',industrial_fragments:'industrial fragment(s)',unknown_fragments:'unknown fragment(s)',promissory_note:'promissory note',action_card:'action card',secret_objective:'secret objective'}[k]||k;return typeof v==='number'?`${v} ${n}`:`${n} ${v}`}
+function termText(f,who,t){const[k,v]=Object.entries(t||{})[0]||['?',{}];const w=(third,base)=>who?`${who} ${third}`:base;switch(k){case'immediate_transfer':return `${w('gives','give')} ${assetText(v)} now`;case'future_payment':return `${w('pays','pay')} ${assetText(v.asset)} by the end of round ${v.deadline_round}`;case'do_not_activate':return `${w('does not activate','do not activate')} system ${v.system} through round ${v.deadline_round}`;case'do_not_attack':return `${w('does not attack','do not attack')} ${seatLabel(f,v.player)} through round ${v.deadline_round}`;case'vote':return `${w('votes','vote')} ${v.outcome} on ${v.agenda} by round ${v.deadline_round}`;case'attack':return `${w('attacks','attack')} ${seatLabel(f,v.player)} by the end of round ${v.deadline_round}`;case'replenish_for':return `${w('replenishes','replenish')} ${seatLabel(f,v.beneficiary)} with the Trade primary by the end of round ${v.deadline_round}`;case'use_leader_for':return `${w('uses','use')} agent ${v.leader} for ${seatLabel(f,v.beneficiary)} by the end of round ${v.deadline_round}`;default:return JSON.stringify(t)}}
+const promiseMark=s=>({pending:'…',fulfilled:'✓',broken:'✗',expired:'⌛'}[s]||'·');
+function revisionLines(f,proposer,recipient,r){if(!r)return[];const side=(terms,statuses,who)=>(terms||[]).map((t,i)=>`${promiseMark((statuses||[])[i])} ${termText(f,seatLabel(f,who),t)}`);return[...side(r.proposer_terms,r.proposer_statuses,proposer),...side(r.recipient_terms,r.recipient_statuses,recipient)]}
+function signalText(f,s){const[k,v]=typeof s.statement==='string'?[s.statement,{}]:(Object.entries(s.statement||{})[0]||['?',{}]),until=s.expires_round;const sentence=k==='will_not_attack'?`Assurance: I will not attack you through round ${until}`:k==='stay_out_of'?`Request: stay out of system ${v.system} through round ${until}`:k==='do_not_attack_me'?`Request: do not attack me through round ${until}`:k==='retaliate_if_attacked'?`Threat: if you attack me before round ${until} ends, I will attack you back`:k==='attack_if_you_activate'?`Warning: if you activate system ${v.system} before round ${until} ends, I will attack you`:JSON.stringify(s.statement);const status={open:'open',honoured:'honoured (the assurance was kept)',broken:'broken (the speaker attacked anyway)',heeded:'heeded',ignored:'ignored',triggered:'triggered: waiting to see whether the speaker acts',carried_out:'carried out',bluffed:'a bluff (never acted on)'}[s.status]||s.status||'open';return `${seatLabel(f,s.speaker)} → ${seatLabel(f,s.target)}: ${sentence} · ${status}`}
+function bundleText(f,o){const b=o.payload.bundle,mine=o.payload.actor_is_proposer!==false,r=b.revision||{},you=mine?r.proposer_terms:r.recipient_terms,they=mine?r.recipient_terms:r.proposer_terms,part=ts=>(ts||[]).map(t=>termText(f,null,t)).join('; ')||'nothing';return `Deal: ${String(b.template).replaceAll('_',' ')}${r.number?` · counter ${r.number}`:''} · you commit to: ${part(you)} · they commit to: ${part(they)}`}
+function stanceOf(r){return r.hostility>=40||r.trust<=-40?'hostile':r.hostility>=20||r.trust<=-20||r.threat>=30?'wary':r.trust>=20?'friendly':'neutral'}
+function diplomacyPanel(f){const d=f.state.diplomacy;if(!d||!d.enabled)return '<small>Structured diplomacy is off for this game.</small>';const seats=list(f.state.seating_order),sign=v=>v>0?`+${v}`:`${v}`,recent=(m,o,s)=>{const r=m?.[o]?.[s];return r!=null&&f.state.round<=r+1};const head=`<tr><th>regards →</th>${seats.map(s=>`<th style="color:${colorOf(s)}">${esc(s)}</th>`).join('')}</tr>`;const rows=seats.map(o=>`<tr><th style="color:${colorOf(o)}">${esc(o)}</th>${seats.map(s=>{if(o===s)return '<td>—</td>';const r=d.relationships?.[o]?.[s]||{trust:0,cooperation:0,threat:0,hostility:0};return `<td>${stanceOf(r)} · T${sign(r.trust)} C${sign(r.cooperation)} Th${r.threat} H${r.hostility}${recent(d.last_attacks,o,s)?' ⚔':''}${recent(d.last_breaches,o,s)?' ✗':''}</td>`}).join('')}</tr>`).join('');const deals=Object.values(d.active_deals||{}).map(deal=>{const r=deal.revisions[deal.revisions.length-1];return `<div class="action"><b>Deal #${deal.id}: ${esc(seatLabel(f,deal.proposer))} ↔ ${esc(seatLabel(f,deal.recipient))} · ${esc(deal.status)}</b><br><small>offered in round ${deal.created_round}${deal.revisions.length>1?` · countered ${deal.revisions.length-1}×, latest by ${esc(seatLabel(f,r.author))}`:''}</small>${revisionLines(f,deal.proposer,deal.recipient,r).map(l=>`<div>${esc(l)}</div>`).join('')}</div>`}).join('')||'<small>No active deals.</small>';const signals=(d.recent_signals||[]).map(s=>`<div>${esc(signalText(f,s))}</div>`).join('')||'<small>No recent signals.</small>';const history=(d.history||[]).slice().reverse().map(h=>`<div class="action"><b>Deal #${h.id}: ${esc(seatLabel(f,h.proposer))} ↔ ${esc(seatLabel(f,h.recipient))} · ${esc(h.status)}</b><br><small>rounds ${h.created_round}–${h.terminal_round}</small>${h.legacy_promise?`<div>legacy promise “${esc(h.legacy_promise)}”</div>`:''}${revisionLines(f,h.proposer,h.recipient,h.latest_revision).map(l=>`<div>${esc(l)}</div>`).join('')}</div>`).join('')||'<small>None yet.</small>';return `<div>How each row seat regards each column seat.</div><small>T trust and C cooperation run from -100 to 100; Th threat and H hostility from 0 to 100. Stance: hostile = hostility 40+ or trust -40 or lower; wary = hostility 20+, trust -20 or lower, or threat 30+; friendly = trust 20+ with hostility under 20; neutral otherwise. ⚔ attacked recently, ✗ broke a promise recently.</small><div style="overflow-x:auto"><table class="rel">${head}${rows}</table></div><h4>Active deals</h4>${deals}<h4>Recent signals</h4>${signals}<details><summary>Finished deals · ${(d.history||[]).length}</summary>${history}</details><small>Journal events so far: ${(d.journal||[]).length}</small>`}
 function policySummary(){const p=session.manifest.policy||{},m=session.manifest,format=p.format||'Legacy review · profile details unavailable',schema=p.schema==null?'':` · schema ${p.schema}`,source=p.source?`<div>Source: ${esc(p.source)}</div>`:'',commit=p.git_commit?`<small>Training commit: ${esc(p.git_commit)}</small><br>`:'',update=p.update==null?'':`<small>Training update: ${p.update}</small><br>`,dimensions=p.dimensions?`<small>${esc(p.dimensions)}</small><br>`:'',mode=p.format==='MLP inference bundle'?'shared actor with faction rows':m.profile_table,seats=list(m.factions).map((faction,index)=>`seat${index}: ${faction}`).join(' · '),runtime=[p.projection_abi==null?'':`projection ABI ${p.projection_abi}`,p.oov_registry_version==null?'':`OOV registry v${p.oov_registry_version}`,p.critic_mode?`critic ${p.critic_mode}`:'',p.trained_temperature==null?'':`trained temperature ${p.trained_temperature}`].filter(Boolean).join(' · '),engine=m.engine_commit?`${m.engine_commit}${m.engine_dirty?' (dirty build)':''}`:'legacy/unrecorded';return `<div class="action"><b>${esc(format)}${schema}</b><br><small>${esc(m.checkpoint_path)} · ${esc(mode)} · temperature ${m.temperature}</small><br><small>${esc(seats)}</small>${source}${commit}${update}${dimensions}<small>${esc(runtime)}</small><hr><small>Initial speaker: ${esc(m.initial_speaker||'legacy/unrecorded')} · map arrangement: ${m.map_arrangement_index??'legacy/unrecorded'}<br>Review engine: ${esc(engine)}<br>Content: ${esc(m.content_sha256||'legacy/unrecorded')}<br>Scope: ${esc(m.source_scope||'legacy/unrecorded')}</small>${chips('◫','Decision heads',p.heads)}${chips('♙','Available faction rows',p.factions)}${chips('ƒ','Loaded profiles',p.profiles)}</div>`}
 function objectives(f){return list(f.state.revealed_objectives).map(id=>{const m=objectiveMeta[id]||{name:id,text:'',points:0},scored=Object.entries(f.state.scored_objectives||{}).filter(([,v])=>list(v).includes(id)).map(([p])=>p);return `<div class="objective"><b>${esc(m.name)} · ${m.points} VP</b><br><small>${esc(id)} · scored by ${esc(scored.join(', ')||'nobody')}</small><div>${esc(m.text)}</div></div>`}).join('')||'None revealed yet.'}
-function actionSummary(i){for(let n=i;n>=0;n--){const a=session.frames[n].action_summary;if(a)return `<div class="action"><b>${esc(a.headline)}</b><br><small>frames ${a.start_frame}–${a.end_frame} · active-player period</small>${list(a.details).map(d=>`<div>• ${esc(d)}</div>`).join('')}</div>`}return 'No action-phase turn has completed yet.'}
-function decisionCards(f){if(!f.decisions.length)return 'No policy decision on this engine step.';return f.decisions.map(d=>{const chosen=d.options.find(o=>o.id===d.chosen),context=d.context?`<details><summary>Decision context</summary><pre>${esc(JSON.stringify(d.context,null,2))}</pre></details>`:'<small>Legacy review: decision context unavailable.</small>',options=d.options.map(o=>`<div class="chip">${o.id===d.chosen?'✓ ':''}${esc(o.label)}${o.score==null?'':` · score ${Number(o.score).toFixed(5)}`}${o.probability==null?'':` · p ${Number(o.probability).toFixed(5)}`}${Object.keys(o.payload||{}).length?`<pre>${esc(JSON.stringify(o.payload,null,2))}</pre>`:''}${o.preview?`<details><summary>Consequence preview</summary><pre>${esc(JSON.stringify(o.preview,null,2))}</pre></details>`:''}</div>`).join('');return `<div class="action"><b>${esc(d.player)} (${esc(d.faction)}) · ${esc(d.prompt)}</b><div>Path: ${esc(d.path)} · head ${esc(d.requested_head)} → ${esc(d.resolved_head)}${d.temperature==null?'':` · temperature ${d.temperature}`}</div><div>Chosen: ${esc(chosen?.label||d.chosen||'illegal/no choice')}</div>${context}<details><summary>${d.options.length} options</summary>${options}</details></div>`}).join('')}
+function actionSummary(i){const progress=session.frames[i].action_in_progress;if(progress)return `<div class="action"><b>${esc(progress.headline)}</b><br><small>frames ${progress.start_frame}–${progress.end_frame} · active-player period · IN PROGRESS</small>${list(progress.details).map(d=>`<div>• ${esc(d)}</div>`).join('')}</div>`;for(let n=i;n>=0;n--){const a=session.frames[n].action_summary;if(a)return `<div class="action"><b>${esc(a.headline)}</b><br><small>frames ${a.start_frame}–${a.end_frame} · active-player period</small>${list(a.details).map(d=>`<div>• ${esc(d)}</div>`).join('')}</div>`}return 'No action-phase turn has started yet.'}
+function decisionCards(f){if(!f.decisions.length)return 'No policy decision on this engine step.';return f.decisions.map(d=>{const chosen=d.options.find(o=>o.id===d.chosen),context=d.context?`<details><summary>Decision context</summary><pre>${esc(JSON.stringify(d.context,null,2))}</pre></details>`:'<small>Legacy review: decision context unavailable.</small>',options=d.options.map(o=>`<div class="chip">${o.id===d.chosen?'✓ ':''}${esc(o.label)}${o.score==null?'':` · score ${Number(o.score).toFixed(5)}`}${o.probability==null?'':` · p ${Number(o.probability).toFixed(5)}`}${o.payload?.bundle?`<div><b>${esc(bundleText(f,o))}</b></div>`:''}${Object.keys(o.payload||{}).length?`<pre>${esc(JSON.stringify(o.payload,null,2))}</pre>`:''}${o.preview?`<details><summary>Consequence preview</summary><pre>${esc(JSON.stringify(o.preview,null,2))}</pre></details>`:''}</div>`).join('');return `<div class="action"><b>${esc(d.player)} (${esc(d.faction)}) · ${esc(d.prompt)}</b><div>Path: ${esc(d.path)} · head ${esc(d.requested_head)} → ${esc(d.resolved_head)}${d.temperature==null?'':` · temperature ${d.temperature}`}</div><div>Chosen: ${esc(chosen?.label||d.chosen||'illegal/no choice')}</div>${context}<details><summary>${d.options.length} options</summary>${options}</details></div>`}).join('')}
 function move(n){show(Math.max(0,Math.min(session.frames.length-1,at+n)))}
-function show(i){at=i;slider.value=i;const f=session.frames[i];document.querySelector('#where').textContent=` frame ${i} · step ${f.engine_step} · round ${f.round} · ${f.phase}`;drawDynamic(f);document.querySelector('#policy').innerHTML=policySummary();document.querySelector('#objectives').innerHTML=objectives(f);document.querySelector('#action').innerHTML=actionSummary(i);document.querySelector('#table-state').innerHTML=tableState(f);document.querySelector('#players').innerHTML=f.state.players.map(p=>playerCard(p,f)).join('');document.querySelector('#decision').innerHTML=decisionCards(f);document.querySelector('#events').textContent=f.new_events.join('\n')||'—'}
+function show(i){at=i;slider.value=i;const f=session.frames[i];document.querySelector('#where').textContent=` frame ${i} · step ${f.engine_step} · round ${f.round} · ${f.phase}`;drawDynamic(f);document.querySelector('#policy').innerHTML=policySummary();document.querySelector('#objectives').innerHTML=objectives(f);document.querySelector('#action').innerHTML=actionSummary(i);document.querySelector('#table-state').innerHTML=tableState(f);document.querySelector('#diplomacy').innerHTML=diplomacyPanel(f);document.querySelector('#players').innerHTML=f.state.players.map(p=>playerCard(p,f)).join('');document.querySelector('#decision').innerHTML=decisionCards(f);const typed=Array.from(f.structured_events||[]).map(e=>`#${e.id} ${e.event_type}${e.cancelled?' · CANCELLED':''}\n${JSON.stringify(e.payload,null,2)}`),legacy=list(f.new_events).map(e=>`legacy · ${e}`);document.querySelector('#events').textContent=[...typed,...legacy].join('\n')||'—'}
 const ns='http://www.w3.org/2000/svg';function el(tag,attrs={},text=''){const n=document.createElementNS(ns,tag);for(const[k,v]of Object.entries(attrs))n.setAttribute(k,v);if(text)n.textContent=text;return n}
 function kind(id){id=String(id).toLowerCase();if(id==='nowarsun')return id;for(const k of ['warsun','spacedock','dreadnought','destroyer','flagship','carrier','cruiser','fighter','infantry','mech','pds'])if(id.includes(k))return k;return id}
 function unit(svg,x,y,u,count){const c=colorOf(u.owner),k=kind(u.type_id),s=7;let n;if(k==='fighter')n=el('polygon',{points:`${x},${y-s} ${x-s},${y+s} ${x+s},${y+s}`,fill:c});else if(k==='destroyer')n=el('polygon',{points:`${x},${y-s} ${x+s},${y} ${x},${y+s} ${x-s},${y}`,fill:c});else if(k==='carrier'||k==='spacedock')n=el('rect',{x:x-s*1.4,y:y-s*.65,width:s*2.8,height:s*1.3,rx:2,fill:c});else if(k==='cruiser'||k==='pds')n=el('rect',{x:x-s,y:y-s,width:s*2,height:s*2,fill:c});else if(k==='dreadnought'||k==='mech')n=el('polygon',{points:Array.from({length:k==='mech'?5:6},(_,i)=>{const a=Math.PI*2*i/(k==='mech'?5:6)-Math.PI/2;return `${x+s*Math.cos(a)},${y+s*Math.sin(a)}`}).join(' '),fill:c});else n=el('circle',{cx:x,cy:y,r:k==='warsun'?s*1.4:s,fill:c});n.setAttribute('stroke','#07101a');n.setAttribute('stroke-width','2');svg.appendChild(n);if(u.galvanized)svg.appendChild(el('circle',{cx:x,cy:y,r:s*1.7,fill:'none',stroke:'#ffd84d','stroke-width':2}));if(u.sustained_damage)svg.appendChild(el('line',{x1:x-s,y1:y+s,x2:x+s,y2:y-s,stroke:'#ff3030','stroke-width':3}));svg.appendChild(el('text',{x,y:y+17,'font-size':8},`${k.slice(0,2)}×${count}`))}
 function draw(f){const svg=document.querySelector('#board');svg.innerHTML='';for(const t of session.board){const x=150*(t.q+t.r/2),y=130*t.r,pts=[];for(let k=0;k<6;k++){const a=Math.PI/6+Math.PI/3*k;pts.push(`${x+72*Math.cos(a)},${y+72*Math.sin(a)}`)}const state=f.state.board[t.system]||{units:[],planet_control:{},planet_units:{},command_tokens:[]};const groundKinds=['infantry','mech','pds','spacedock'];const owners=[...new Set(state.units.filter(u=>!groundKinds.includes(kind(u.type_id))).map(u=>u.owner))];const tile=el('polygon',{points:pts.join(' '),class:t.hyperlane?'tile hyper':'tile'});if(owners.length===1){tile.setAttribute('stroke',colorOf(owners[0]));tile.setAttribute('stroke-width','8')}svg.appendChild(tile);svg.appendChild(el('text',{x,y:y-53},t.label));const groups=new Map;for(const u of state.units){const key=[u.owner,kind(u.type_id),u.sustained_damage,u.galvanized].join('|');if(!groups.has(key))groups.set(key,{u,count:0});groups.get(key).count++}let gi=0;for(const {u,count} of groups.values()){unit(svg,x+(gi%5-2)*24,y-28+Math.floor(gi/5)*25,u,count);gi++}const pc=t.planets.length;for(let pi=0;pi<pc;pi++){const p=t.planets[pi],px=x+(pc===1?0:(pi-(pc-1)/2)*45),py=y+34,owner=state.planet_control?.[p.id],c=owner?colorOf(owner):'#5b6069';svg.appendChild(el('circle',{cx:px,cy:py,r:20,fill:c,stroke:owner?c:'#89919e','stroke-width':3}));svg.appendChild(el('text',{x:px,y:py-3,'font-size':9},`${p.resources}/${p.influence}`));const traits=(p.traits||[]).map(v=>v[0]).join(''),tech=(p.tech_specialties||[]).map(v=>({propulsion:'B',biotic:'G',warfare:'R',cybernetic:'Y'}[v.toLowerCase()]||'T')).join('');svg.appendChild(el('text',{x:px,y:py+9,'font-size':8},`${traits}${traits&&tech?'·':''}${tech}`));svg.appendChild(el('text',{x:px,y:py+31,'font-size':8},`${p.legendary?'★':''}${p.label}`));const ground=state.planet_units?.[p.id]||[];const gg=new Map;for(const u of ground){const key=[u.owner,kind(u.type_id),u.sustained_damage,u.galvanized].join('|');if(!gg.has(key))gg.set(key,{u,count:0});gg.get(key).count++}let ui=0;for(const {u,count} of gg.values()){unit(svg,px-10+ui*20,py-17,u,count);ui++}}for(let ci=0;ci<(state.command_tokens||[]).length;ci++)svg.appendChild(el('circle',{cx:x-52+ci*13,cy:y+55,r:5,fill:colorOf(state.command_tokens[ci]),stroke:'#fff'}))}}
+function anomalyStyle(kinds){const values=list(kinds);if(values.includes('entropic scar'))return['#4a2025','SCAR'];if(values.includes('supernova'))return['#6b271a','SUPERNOVA'];if(values.includes('gravity rift'))return['#38235f','GRAVITY RIFT'];if(values.includes('nebula'))return['#173f57','NEBULA'];if(values.includes('asteroid field'))return['#3f3b35','ASTEROIDS'];return null}
+function wormholeStyle(kind){switch(String(kind).toLowerCase()){case'alpha':return['#2da8ff','α'];case'beta':return['#ff7bc8','β'];case'gamma':return['#7fe35b','γ'];case'delta':return['#ffb24a','δ'];default:return['#aeb8c7',String(kind).slice(0,1).toUpperCase()]}}
+function wormholeBadge(svg,x,y,kind,token=false,suppressed=false){const[color,symbol]=wormholeStyle(kind);if(token)svg.appendChild(el('circle',{cx:x,cy:y,r:10,fill:'none',stroke:'#f5f7fb','stroke-width':3}));svg.appendChild(el('circle',{cx:x,cy:y,r:8,fill:'#08111d',stroke:color,'stroke-width':3}));svg.appendChild(el('text',{x,y:y+4,'font-size':11,fill:color},symbol));if(suppressed)svg.appendChild(el('line',{x1:x-9,y1:y+9,x2:x+9,y2:y-9,stroke:'#ff3f4a','stroke-width':3}))}
+function fracturePortal(svg,x,y,ingress){const color=ingress?'#43d8e8':'#ba73ee',label=ingress?'IN':'OUT',g=el('g',{class:`portal ${ingress?'ingress':'egress'}`});g.appendChild(el('circle',{cx:x,cy:y,r:13,fill:'#08111d',stroke:color,'stroke-width':4}));g.appendChild(el('circle',{cx:x,cy:y,r:8,fill:'none',stroke:color,'stroke-width':1.5}));g.appendChild(el('text',{x,y:y+3,'font-size':7,fill:color},label));svg.appendChild(g)}
 function drawDynamic(f){
- const svg=document.querySelector('#board');svg.innerHTML='';
+ const svg=document.querySelector('#board');svg.innerHTML='';const fractureVisible=!!f.state.fracture_in_play,mainYOffset=fractureVisible?-85:0;
+ if(fractureVisible)svg.appendChild(el('text',{x:0,y:330,'font-size':13,fill:'#43d8e8'},'THE FRACTURE · SPECIAL AREA'));
  for(const t of session.board){
-  const x=150*(t.q+t.r/2),y=130*t.r,pts=[];for(let k=0;k<6;k++){const a=Math.PI/6+Math.PI/3*k;pts.push(`${x+72*Math.cos(a)},${y+72*Math.sin(a)}`)}
-  const state=f.state.board[t.system]||{units:[],planet_control:{},planet_units:{},command_tokens:[],purged_planets:[],coexisting:{}},purgedSystem=list(f.state.purged_systems).includes(t.system),planets=planetsIn(t,f);
+  if(t.special_area==='fracture'&&!fractureVisible)continue;if(t.special_area==='nexus'&&!f.state.board[t.system])continue;
+  let x,y;if(t.special_area==='fracture'){x=(t.q-3)*125;y=420}else if(t.special_area==='nexus'){x=-500;y=420}else{x=150*(t.q+t.r/2);y=130*t.r+mainYOffset}const pts=[];for(let k=0;k<6;k++){const a=Math.PI/6+Math.PI/3*k;pts.push(`${x+72*Math.cos(a)},${y+72*Math.sin(a)}`)}
+  const state=f.state.board[t.system]||{units:[],planet_control:{},planet_units:{},command_tokens:[],purged_planets:[],coexisting:{}},purgedSystem=list(f.state.purged_systems).includes(t.system),planets=planetsIn(t,f),anomaly=anomalyStyle(t.anomalies);
   const groundKinds=['infantry','mech','pds','spacedock'],owners=[...new Set(state.units.filter(u=>!groundKinds.includes(kind(u.type_id))).map(u=>u.owner))];
-  const tile=el('polygon',{points:pts.join(' '),class:t.hyperlane?'tile hyper':'tile'});if(purgedSystem)tile.setAttribute('fill','#18181c');if(owners.length===1){tile.setAttribute('stroke',colorOf(owners[0]));tile.setAttribute('stroke-width','8')}svg.appendChild(tile);const planetOwners=[...new Set(planets.filter(p=>!list(state.purged_planets).includes(p.id)).map(p=>state.planet_control?.[p.id]).filter(Boolean))];const inner=pts.map(point=>{const[a,b]=point.split(',').map(Number);return `${x+(a-x)*.92},${y+(b-y)*.92}`});if(planetOwners.length===1)svg.appendChild(el('polygon',{points:inner.join(' '),fill:'none',stroke:colorOf(planetOwners[0]),'stroke-width':3}));else if(planetOwners.length>1)for(let edge=0;edge<inner.length;edge++){const[a,b]=inner[edge].split(','),[c,d]=inner[(edge+1)%inner.length].split(',');svg.appendChild(el('line',{x1:a,y1:b,x2:c,y2:d,stroke:colorOf(planetOwners[edge%planetOwners.length]),'stroke-width':4}))}svg.appendChild(el('text',{x,y:y-53},`${t.label}${purgedSystem?' · PURGED':''}`));
+  const tile=el('polygon',{points:pts.join(' '),class:t.hyperlane?'tile hyper':'tile'});if(purgedSystem)tile.setAttribute('fill','#18181c');else if(t.special_area==='fracture')tile.setAttribute('fill','#112f39');else if(t.special_area==='nexus')tile.setAttribute('fill','#29304d');else if(anomaly)tile.setAttribute('fill',anomaly[0]);if(owners.length===1){tile.setAttribute('stroke',colorOf(owners[0]));tile.setAttribute('stroke-width','8')}svg.appendChild(tile);const planetOwners=[...new Set(planets.filter(p=>!list(state.purged_planets).includes(p.id)).map(p=>state.planet_control?.[p.id]).filter(Boolean))];const inner=pts.map(point=>{const[a,b]=point.split(',').map(Number);return `${x+(a-x)*.92},${y+(b-y)*.92}`});if(planetOwners.length===1)svg.appendChild(el('polygon',{points:inner.join(' '),fill:'none',stroke:colorOf(planetOwners[0]),'stroke-width':3}));else if(planetOwners.length>1)for(let edge=0;edge<inner.length;edge++){const[a,b]=inner[edge].split(','),[c,d]=inner[(edge+1)%inner.length].split(',');svg.appendChild(el('line',{x1:a,y1:b,x2:c,y2:d,stroke:colorOf(planetOwners[edge%planetOwners.length]),'stroke-width':4}))}svg.appendChild(el('text',{x,y:y-53},`${t.label}${purgedSystem?' · PURGED':''}`));if(anomaly)svg.appendChild(el('text',{x,y:y-39,'font-size':8,fill:'#ffd9a0'},anomaly[1]));
   const groups=new Map;for(const u of state.units){const key=[u.owner,kind(u.type_id),u.sustained_damage,u.galvanized].join('|');if(!groups.has(key))groups.set(key,{u,count:0});groups.get(key).count++}let gi=0;for(const {u,count} of groups.values()){unit(svg,x+(gi%5-2)*24,y-28+Math.floor(gi/5)*25,u,count);gi++}
-  const tokens=[];if(list(f.state.frontier_tokens).includes(t.system))tokens.push('Frontier');for(const[k,s]of Object.entries(f.state.wormhole_tokens||{}))if(s===t.system)tokens.push(`${k} WH`);if(f.state.ion_storm?.[0]===t.system)tokens.push(`Ion ${f.state.ion_storm[1]}`);if(list(f.state.ingress_tokens).includes(t.system))tokens.push('Ingress');if(list(f.state.breach_tokens).includes(t.system))tokens.push('Breach');if(f.state.thunders_edge_system===t.system)tokens.push("Thunder's Edge");if(tokens.length)svg.appendChild(el('text',{x,y:y+59,'font-size':8,fill:'#81dded'},tokens.join(' · ')));
+  const travelBan=Object.prototype.hasOwnProperty.call(f.state.laws||{},'travel_ban'),nexusBan=t.special_area==='nexus'&&String(f.state.laws?.nexus||'').toLowerCase()==='for';let wi=0;for(const wh of list(t.wormholes)){wormholeBadge(svg,x-43+wi*20,y-18,wh,false,(travelBan||nexusBan)&&['alpha','beta'].includes(String(wh).toLowerCase()));wi++}for(const[k,s]of Object.entries(f.state.wormhole_tokens||{}))if(s===t.system){wormholeBadge(svg,x-43+wi*20,y-18,k,true,travelBan&&['alpha','beta'].includes(String(k).toLowerCase()));wi++}if(f.state.ion_storm?.[0]===t.system)wormholeBadge(svg,x-43+wi*20,y-18,f.state.ion_storm[1],true,travelBan&&['alpha','beta'].includes(String(f.state.ion_storm[1]).toLowerCase()));if(list(f.state.ingress_tokens).includes(t.system))fracturePortal(svg,x+46,y+41,true);if(t.egress)fracturePortal(svg,x+46,y+41,false);
+  const tokens=[];if(list(f.state.frontier_tokens).includes(t.system))tokens.push('Frontier');if(list(f.state.breach_tokens).includes(t.system))tokens.push('Breach');if(f.state.thunders_edge_system===t.system)tokens.push("Thunder's Edge");if(tokens.length)svg.appendChild(el('text',{x,y:y+59,'font-size':8,fill:'#81dded'},tokens.join(' · ')));
   const pc=planets.length;for(let pi=0;pi<pc;pi++){const p=planets[pi],px=x+(pc===1?0:(pi-(pc-1)/2)*45),py=y+34,owner=state.planet_control?.[p.id],purged=list(state.purged_planets).includes(p.id),c=purged?'#26262a':owner?colorOf(owner):'#5b6069';svg.appendChild(el('circle',{cx:px,cy:py,r:20,fill:c,stroke:owner&&!purged?c:'#89919e','stroke-width':3}));svg.appendChild(el('text',{x:px,y:py-3,'font-size':9},`${p.resources}/${p.influence}`));const traits=(p.traits||[]).map(v=>v[0]).join(''),tech=(p.tech_specialties||[]).map(v=>({propulsion:'B',biotic:'G',warfare:'R',cybernetic:'Y'}[v.toLowerCase()]||'T')).join('');svg.appendChild(el('text',{x:px,y:py+9,'font-size':8},`${traits}${traits&&tech?'·':''}${tech}`));const prefix=purged?'× ':p.space_station?'S ':p.legendary?'★':'';svg.appendChild(el('text',{x:px,y:py+31,'font-size':8},`${prefix}${p.label}`));const attachments=list(f.state.planet_attachments?.[p.id]);if(attachments.length)svg.appendChild(el('text',{x:px+18,y:py-17,'font-size':8,fill:'#ffd84d'},`+${attachments.length}`));const coexist=list(state.coexisting?.[p.id]);for(let ci=0;ci<coexist.length;ci++){const a=Math.PI*2*ci/coexist.length;svg.appendChild(el('circle',{cx:px+25*Math.cos(a),cy:py+25*Math.sin(a),r:4,fill:colorOf(coexist[ci]),stroke:'#fff'}))}const ground=state.planet_units?.[p.id]||[];const gg=new Map;for(const u of ground){const key=[u.owner,kind(u.type_id),u.sustained_damage,u.galvanized].join('|');if(!gg.has(key))gg.set(key,{u,count:0});gg.get(key).count++}let ui=0;for(const {u,count} of gg.values()){unit(svg,px-10+ui*20,py-17,u,count);ui++}}
   for(let ci=0;ci<(state.command_tokens||[]).length;ci++)svg.appendChild(el('circle',{cx:x-52+ci*13,cy:y+55,r:5,fill:colorOf(state.command_tokens[ci]),stroke:'#fff'}));
  }
@@ -2003,8 +2349,10 @@ mod tests {
             finished: false,
             error: None,
             new_events: vec![],
+            structured_events: vec![],
             decisions: vec![],
             action_summary: None,
+            action_in_progress: None,
             state,
         };
         ReviewSession {
@@ -2029,12 +2377,29 @@ mod tests {
                 engine_dirty: false,
                 content_sha256: None,
                 source_scope: None,
+                diplomacy: false,
             },
             board: vec![],
             planet_catalog: vec![],
             frames: vec![frame],
             outcome: SessionOutcome::InProgress,
         }
+    }
+
+    #[test]
+    fn old_sessions_have_diplomacy_off_and_html_carries_the_diplomacy_panel() {
+        let mut value = serde_json::to_value(fixture_session()).unwrap();
+        value["manifest"]
+            .as_object_mut()
+            .unwrap()
+            .remove("diplomacy");
+        let restored: ReviewSession = serde_json::from_value(value).unwrap();
+        assert!(!restored.manifest.diplomacy);
+
+        let html = render_html(&restored).unwrap();
+        assert!(html.contains("<div id=\"diplomacy\">"));
+        assert!(html.contains("function diplomacyPanel"));
+        assert!(html.contains("function bundleText"));
     }
 
     #[test]
@@ -2129,11 +2494,11 @@ mod tests {
     }
 
     #[test]
-    fn faction_order_is_seeded_reproducible_and_not_fixed() {
+    fn faction_order_is_seeded_reproducible_and_rotated() {
         let factions = FACTIONS.map(FactionId::new);
         let seating = |seed, rotation| {
             (0..FACTIONS.len())
-                .map(|seat| scrambled_seated_faction(&factions, seed, rotation, seat).to_string())
+                .map(|seat| seated_faction(&factions, seed, rotation, seat).to_string())
                 .collect::<Vec<_>>()
         };
         let first = seating(42, 0);
@@ -2228,6 +2593,7 @@ mod tests {
             rotation: 0,
             table: ProfileTable::Learner,
             temperature: 0.0,
+            diplomacy: false,
         };
 
         let error = match LiveReview::start(&config) {
@@ -2292,6 +2658,7 @@ mod tests {
         populate_action_summaries(&mut session);
 
         assert!(!session.frames[1].action_completed);
+        assert!(session.frames[1].action_in_progress.is_some());
         assert!(session.frames[2].action_completed);
         assert_eq!(session.frames[2].action_count, 1);
         assert_eq!(
@@ -2301,6 +2668,85 @@ mod tests {
                 .map(|summary| summary.actor.as_str()),
             Some(actor.as_str())
         );
+    }
+
+    #[test]
+    fn v2_sessions_upgrade_with_empty_structured_events() {
+        let session = fixture_session();
+        let mut value = serde_json::to_value(session).unwrap();
+        value["version"] = Value::from(LEGACY_SESSION_VERSION);
+        value["frames"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("structured_events");
+        value["frames"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("action_in_progress");
+
+        let restored = decode_session(&serde_json::to_vec(&value).unwrap()).unwrap();
+
+        assert_eq!(restored.version, SESSION_VERSION);
+        assert!(restored.frames[0].structured_events.is_empty());
+        assert!(restored.frames[0].action_in_progress.is_none());
+    }
+
+    #[test]
+    fn compressed_review_sessions_round_trip() {
+        let path = std::env::temp_dir().join(format!(
+            "ti4-review-compressed-{}.ti4review.json.zst",
+            std::process::id()
+        ));
+        let session = fixture_session();
+
+        save_session(&path, &session).unwrap();
+        let restored = load_session(&path).unwrap();
+        let stored_bytes = fs::metadata(&path).unwrap().len();
+        let plain_bytes = serde_json::to_vec(&session).unwrap().len() as u64;
+        fs::remove_file(&path).unwrap();
+
+        assert_eq!(restored, session);
+        assert!(stored_bytes < plain_bytes);
+    }
+
+    #[test]
+    fn structured_events_explain_exact_destroyed_ship_and_cancellation() {
+        let mut details = Vec::new();
+        append_structured_event_details(
+            &mut details,
+            &[
+                ReviewEvent {
+                    id: 4,
+                    event_type: "SHIP_DESTROYED".to_owned(),
+                    payload: BTreeMap::from([
+                        ("player".to_owned(), Value::from("seat2")),
+                        ("unit".to_owned(), Value::from("dreadnought")),
+                        ("system".to_owned(), Value::from("18")),
+                        ("damaged".to_owned(), Value::from(true)),
+                    ]),
+                    cancelled: false,
+                },
+                ReviewEvent {
+                    id: 5,
+                    event_type: "ACTION_CARD_PLAYED".to_owned(),
+                    payload: BTreeMap::from([
+                        ("player".to_owned(), Value::from("seat1")),
+                        ("card".to_owned(), Value::from("dh1")),
+                    ]),
+                    cancelled: true,
+                },
+            ],
+            &[],
+        );
+
+        assert!(details.iter().any(|detail| {
+            detail.contains("seat2 lost damaged dreadnought") && detail.contains("system 18")
+        }));
+        assert!(details.iter().any(|detail| {
+            detail.contains("Action card")
+                && detail.contains("seat1")
+                && detail.contains("CANCELLED")
+        }));
     }
 
     #[test]
@@ -2343,14 +2789,40 @@ mod tests {
         append_event_outcomes(
             &mut details,
             &[
-                "STRATEGIC_ACTION_CANCELLED".to_owned(),
+                "STRATEGIC_ACTION_CANCELLED:pok5trade".to_owned(),
                 "TURN_RETAINED".to_owned(),
+                "TURN_SKIPPED:seat4".to_owned(),
                 "COMPONENT_ACTION_FAILED".to_owned(),
             ],
         );
         assert!(details.iter().any(|detail| detail.contains("cancelled")));
         assert!(details.iter().any(|detail| detail.contains("retained")));
         assert!(details.iter().any(|detail| detail.contains("failed")));
+        assert!(details.iter().any(|detail| detail.contains("skipped")));
+    }
+
+    #[test]
+    fn suffixed_strategic_cancellation_controls_the_action_headline() {
+        let state = fixture_session().frames[0].state.clone();
+        let actor = state.players[0].id.clone();
+        let capture = ActionCapture {
+            actor: actor.clone(),
+            faction: state.players[0].faction.to_string(),
+            start_frame: 3,
+            start_state: state.clone(),
+            last_state: state.clone(),
+            transitions: Vec::new(),
+            events: vec!["STRATEGIC_ACTION_CANCELLED:pok5trade".to_owned()],
+            structured_events: Vec::new(),
+            decisions: Vec::new(),
+            activated_systems: BTreeSet::new(),
+        };
+
+        let summary = summarize_action(&capture, &state, &[], 5, false);
+
+        assert!(summary.headline.contains("cancelled"));
+        assert!(summary.headline.contains("Trade"));
+        assert!(!summary.headline.contains("took a strategic action"));
     }
 
     #[test]
@@ -2370,6 +2842,10 @@ mod tests {
         assert!(html.contains("Thick outer edge = exclusive space control"));
         assert!(html.contains("function playerCard"));
         assert!(html.contains("function drawDynamic"));
+        assert!(html.contains("function anomalyStyle"));
+        assert!(html.contains("function wormholeBadge"));
+        assert!(html.contains("function fracturePortal"));
+        assert!(html.contains("THE FRACTURE · SPECIAL AREA"));
         assert!(html.contains("function tableState"));
         assert!(html.contains("function policySummary"));
         assert!(html.contains("Current policy profiles"));
@@ -2377,7 +2853,7 @@ mod tests {
         assert!(html.contains("Gray units are neutral"));
         assert!(html.contains("function unit(svg"));
         assert!(html.contains("Open objectives"));
-        assert!(html.contains("Latest completed action"));
+        assert!(html.contains("Current/latest action"));
         assert!(html.contains("const a=Math.PI/6+Math.PI/3*k"));
         assert!(html.contains(SESSION_SCHEMA));
         assert!(!html.contains("<script src="));
@@ -2398,5 +2874,61 @@ mod tests {
         assert!(planet.tech_specialties.is_empty());
         assert!(!planet.legendary);
         assert!(!planet.space_station);
+    }
+
+    #[test]
+    fn old_board_metadata_defaults_special_system_visual_fields() {
+        let tile: BoardTile = serde_json::from_value(serde_json::json!({
+            "system": "42",
+            "label": "Nebula",
+            "q": 0,
+            "r": 0,
+            "hyperlane": false,
+            "planets": []
+        }))
+        .unwrap();
+        assert_eq!(tile.special_area, None);
+        assert!(tile.anomalies.is_empty());
+        assert!(tile.wormholes.is_empty());
+        assert!(!tile.egress);
+    }
+
+    #[test]
+    fn current_system_metadata_preserves_anomalies_wormholes_and_special_areas() {
+        let content = ContentStore::embedded();
+        let nebula = system_metadata(content, "42", 0, 0, None).unwrap();
+        assert_eq!(nebula.anomalies, ["nebula"]);
+
+        let alpha = system_metadata(content, "39", 0, 0, None).unwrap();
+        assert_eq!(alpha.wormholes, ["ALPHA"]);
+
+        let egress = system_metadata(content, "fracture2", 0, 0, Some("fracture")).unwrap();
+        assert_eq!(egress.special_area.as_deref(), Some("fracture"));
+        assert!(egress.egress);
+
+        let nexus = system_metadata(content, "82b", 0, 0, Some("nexus")).unwrap();
+        assert_eq!(nexus.special_area.as_deref(), Some("nexus"));
+        assert_eq!(nexus.wormholes, ["ALPHA", "BETA", "GAMMA"]);
+    }
+
+    #[test]
+    fn replay_metadata_carries_detached_special_areas_before_they_enter_play() {
+        let content = ContentStore::embedded();
+        let galaxy = ti4_content::galaxy::Galaxy::placed(
+            content,
+            &[("18", ti4_model::hex::Hex::ORIGIN)],
+            FULL,
+        )
+        .unwrap();
+        let board = board_metadata(content, &galaxy);
+        assert!(board.iter().any(|tile| tile.system == "82a"));
+        assert!(board.iter().any(|tile| tile.system == "82b"));
+        assert_eq!(
+            board
+                .iter()
+                .filter(|tile| tile.special_area.as_deref() == Some("fracture"))
+                .count(),
+            7
+        );
     }
 }

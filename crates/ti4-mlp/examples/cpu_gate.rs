@@ -170,7 +170,9 @@ impl Decider for Shadow {
             }
         }
         if !options.is_empty() {
-            let head = Actor::resolve_head(ti4_policy::learned::decision_head(choice));
+            let head = self
+                .actor
+                .resolve_layout_head(ti4_policy::learned::decision_head(choice));
             // Discarded on purpose. The cost is the measurement; the value is not used.
             let model_enabled = std::env::var("SKIP_MODEL").is_err();
             if model_enabled {
@@ -257,7 +259,12 @@ fn run_batch(
                 .map(|(index, player)| {
                     (
                         player.clone(),
-                        FactionId::new(FACTIONS[(index + rotation) % FACTIONS.len()]),
+                        ti4_training::rollout::seated_faction(
+                            &FACTIONS.map(FactionId::new),
+                            seed,
+                            rotation,
+                            index,
+                        ),
                     )
                 })
                 .collect();

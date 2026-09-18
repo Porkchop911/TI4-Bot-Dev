@@ -32,9 +32,10 @@ use rayon::prelude::*;
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::io::Write as _;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use ti4_content::ContentStore;
 use ti4_engine::Choice;
@@ -52,6 +53,27 @@ const CORPUS_TILE_SEED_OFFSET: u64 = 0;
 const DEMO_TEMPERATURES_MILLI: [u64; 4] = [1, 250, 500, 750];
 /// §6.3: "Each update is 16 game seeds × six rotations."
 const SEEDS_PER_UPDATE: u64 = 16;
+
+enum WorkerInference {
+    Cpu(ti4_mlp::Actor),
+    Gpu(ti4_mlp::gpu_batch::GpuInferenceClient),
+}
+
+enum WorkerScopedInference {
+    Cpu(Rc<ti4_mlp::Actor>),
+    Gpu(ti4_mlp::gpu_batch::GpuInferenceClient),
+}
+
+enum RolloutBackend {
+    Cpu,
+    GpuBatched { batch_size: usize, flush: Duration },
+}
+
+/// The temperature a frozen benchmark seat acts at.
+///
+/// Near-argmax on purpose: the benchmark is a fixed standard, so it must not wander between
+/// updates. `crossplay_eval` freezes its opponents the same way.
+const OPPONENT_TEMPERATURE: f64 = 0.001;
 
 /// Recorded decisions one seat may contribute from one game before the game is refused.
 ///
@@ -89,6 +111,79 @@ fn argument(name: &str) -> Option<String> {
 fn refuse(reason: &str) -> ! {
     eprintln!("\nREFUSED: {reason}");
     std::process::exit(2);
+}
+
+/// Every flag that takes a value, so a mistyped one is refused rather than silently ignored.
+const VALUE_FLAGS: &[&str] = &[
+    "--bundle",
+    "--clear-bonus",
+    "--clearance-weight",
+    "--conjunctive-weight",
+    "--curriculum-seeds",
+    "--demo-corpus",
+    "--demo-per-update",
+    "--device",
+    "--entropy-final",
+    "--expansion-weight",
+    "--fleet-hoard-penalty",
+    "--fleet-weight",
+    "--fracture-entry-bonus",
+    "--fracture-planet-bonus",
+    "--high-vp-bonus",
+    "--learning-rate",
+    "--map-pool",
+    "--movement-entropy",
+    "--objective-weight",
+    "--opponent",
+    "--out",
+    "--r1-bonus",
+    "--r1-shaping",
+    "--report-every",
+    "--rounds",
+    "--secret-weight",
+    "--seed-base",
+    "--stage",
+    "--strategy-diversity-weight",
+    "--styx-bonus",
+    "--tech-weight",
+    "--temperature",
+    "--trade-goods-hoard-weight",
+    "--unit-weight",
+    "--updates",
+    "--vp-weight",
+    "--waste-penalties",
+    "--waste-penalty",
+    "--zero-fleet-penalty",
+    "--diag",
+    "--capture-batch",
+    "--rollout-backend",
+    "--gpu-batch",
+    "--gpu-flush-ms",
+];
+/// Every flag that stands alone.
+const BOOLEAN_FLAGS: &[&str] = &[
+    "--no-checkpoint",
+    "--diag-sync",
+    "--hash-games",
+    "--diplomacy",
+];
+
+fn check_flags() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut index = 0;
+    while index < args.len() {
+        let arg = args[index].as_str();
+        if BOOLEAN_FLAGS.contains(&arg) {
+            index += 1;
+        } else if VALUE_FLAGS.contains(&arg) {
+            if index + 1 >= args.len() {
+                refuse(&format!("{arg} expects a value"));
+            }
+            index += 2;
+        } else {
+            refuse(&format!("unknown argument {arg:?}"));
+        }
+    }
 }
 
 /// Force a stored successful line while allowing the MLP recorder to rebuild its features.
@@ -302,7 +397,8 @@ fn reference_drift(
     let mut flips = 0usize;
     tch::no_grad(|| -> Result<(), String> {
         for item in demos {
-            let head = ti4_mlp::heads()
+            let head = reference
+                .head_names()
                 .get(item.demo.head)
                 .copied()
                 .ok_or_else(|| format!("demo head {} is out of range", item.demo.head))?;
@@ -337,17 +433,32 @@ fn reference_drift(
 struct Watching {
     inner: Box<dyn Decider>,
     log: std::rc::Rc<std::cell::RefCell<Vec<ti4_mlp::positive_corpus::Note>>>,
+    /// With `--hash-games`, a running hash of every choice this seat made.
+    all: Option<Rc<RefCell<sha2::Sha256>>>,
 }
 
 impl Watching {
     fn record(&self, choice: &Choice, chosen: &ti4_engine::choice::ChoiceOption) {
+        // Every choice, forced ones included, in order: who chose, from what, and which.
+        if let Some(all) = &self.all {
+            use sha2::Digest as _;
+            let mut hasher = all.borrow_mut();
+            hasher.update(choice.player.as_str().as_bytes());
+            hasher.update([0x1d]);
+            for option in &choice.options {
+                hasher.update(option.id.as_bytes());
+                hasher.update([0x1f]);
+            }
+            hasher.update(chosen.id.as_bytes());
+            hasher.update([0x1e]);
+        }
         // Forced decisions are absent from `MlpBot::record` too, so the indices of this log and the
         // recorded PPO steps line up. Counting them here and not there would shift every charge
         // after the first forced decision onto the wrong decision.
         if choice.options.len() < 2 {
             return;
         }
-        let head = ti4_mlp::Actor::resolve_head(ti4_policy::learned::decision_head(choice));
+        let head = ti4_mlp::capture_head(ti4_policy::learned::decision_head(choice));
         self.log.borrow_mut().push(ti4_mlp::positive_corpus::Note {
             head: head.to_owned(),
             chosen: chosen.id.clone(),
@@ -384,7 +495,9 @@ impl Decider for Watching {
     reason = "a game's inputs; bundling them into a struct would move the list, not shorten it"
 )]
 fn play_one(
-    actor: &std::rc::Rc<ti4_mlp::Actor>,
+    inference: &WorkerScopedInference,
+    opponent: Option<&Rc<ti4_mlp::Actor>>,
+    learner_faction: usize,
     content: &ContentStore,
     players: &[PlayerId],
     vocabulary: &ti4_policy::vocabulary::Vocabulary,
@@ -396,6 +509,8 @@ fn play_one(
     rotation: usize,
     temperature: f64,
     waste_penalties: &[f64],
+    diplomacy: bool,
+    hash: bool,
 ) -> Result<Played, String> {
     let seated: BTreeMap<PlayerId, FactionId> = players
         .iter()
@@ -403,7 +518,12 @@ fn play_one(
         .map(|(index, player)| {
             (
                 player.clone(),
-                FactionId::new(FACTIONS[(index + rotation) % FACTIONS.len()]),
+                ti4_training::rollout::seated_faction(
+                    &FACTIONS.map(FactionId::new),
+                    seed,
+                    rotation,
+                    index,
+                ),
             )
         })
         .collect();
@@ -415,66 +535,115 @@ fn play_one(
     //
     // The handles are `Rc`, which is exactly why they are created, filled and drained inside this
     // function: nothing thread-local ever crosses back to the caller.
+    // Which physical seat the learner occupies this game: the one holding the faction this
+    // rotation trains. `seated` is the seeded permutation, so this varies by seed as intended.
+    let learner_seat = {
+        let wanted = FACTIONS[learner_faction % FACTIONS.len()];
+        players
+            .iter()
+            .position(|player| {
+                seated
+                    .get(player)
+                    .is_some_and(|faction| faction.as_str() == wanted)
+            })
+            .unwrap_or(0)
+    };
     let mut handles: BTreeMap<PlayerId, _> = BTreeMap::new();
+    let mut statuses = Vec::new();
+    let mut choice_hashers: BTreeMap<PlayerId, Rc<RefCell<sha2::Sha256>>> = BTreeMap::new();
     let mut watched: BTreeMap<
         PlayerId,
         std::rc::Rc<std::cell::RefCell<Vec<ti4_mlp::positive_corpus::Note>>>,
     > = BTreeMap::new();
-    let rollout = ti4_training::rollout::play_with_decider_factory(
-        content,
-        players,
-        &seated,
-        DEFAULT,
-        seed,
-        ti4_training::rollout::Horizon {
-            rounds,
-            steps: 10_000,
-        },
-        ti4_engine::opening::DEFAULT_REQUIREMENT,
-        &ti4_training::rollout::OpeningMap::PythonPool {
-            pool: Arc::clone(pool),
-            tile_seed_offset: TILE_SEED_OFFSET,
-        },
-        |baselines| {
-            let mut deciders: BTreeMap<PlayerId, Box<dyn Decider>> = BTreeMap::new();
-            for (index, player) in players.iter().enumerate() {
-                let row = ti4_mlp::FactionRow::of(seated[player].as_str())
-                    .map_err(|error| format!("{player}: {error}"))?;
-                let baseline = baselines
-                    .get(player)
-                    .copied()
-                    .ok_or_else(|| format!("{player} has no setup baseline"))?;
-                let stream = seed
-                    .wrapping_mul(1_000_003)
-                    .wrapping_add(u64::try_from(index).unwrap_or(0));
-                // The seats share this worker's one actor. Inference never mutates it, and a
-                // per-seat `inference_copy` meant 96 games x 6 seats of deep tensor copies per
-                // update — gigabytes of allocation to produce identical read-only weights.
-                // Reading the *bundle* here, which the first version did, was worse still: an
-                // SHA-256 over ~17 MB and a reparse of 1.1 MB of slots.json per seat per game.
-                let bot = ti4_mlp::bot::MlpBot::sharing(actor, vocabulary.clone(), row, stream)
-                    .at_temperature(temperature)
-                    .recording_ppo(critic_mode)
-                    .from_setup(baseline);
-                if handles.insert(player.clone(), bot.ppo_records()).is_some() {
-                    return Err(format!("{player} was seated twice"));
+    let (rollout, game_digest) =
+        ti4_training::rollout::play_with_capabilities_and_decider_factory_digest(
+            content,
+            players,
+            &seated,
+            DEFAULT,
+            seed,
+            ti4_training::rollout::Horizon {
+                rounds,
+                steps: 10_000,
+            },
+            ti4_engine::opening::DEFAULT_REQUIREMENT,
+            &ti4_training::rollout::OpeningMap::PythonPool {
+                pool: Arc::clone(pool),
+                tile_seed_offset: TILE_SEED_OFFSET,
+            },
+            ti4_training::rollout::SimulationCapabilities { diplomacy },
+            hash,
+            |baselines| {
+                let mut deciders: BTreeMap<PlayerId, Box<dyn Decider>> = BTreeMap::new();
+                for (index, player) in players.iter().enumerate() {
+                    let row = ti4_mlp::FactionRow::of(seated[player].as_str())
+                        .map_err(|error| format!("{player}: {error}"))?;
+                    let baseline = baselines
+                        .get(player)
+                        .copied()
+                        .ok_or_else(|| format!("{player} has no setup baseline"))?;
+                    let stream = seed
+                        .wrapping_mul(1_000_003)
+                        .wrapping_add(u64::try_from(index).unwrap_or(0));
+                    // CPU workers share one local read-only actor. The experimental GPU path keeps
+                    // the per-seat state here but routes immutable sparse inputs to one owner.
+                    let learns = opponent.is_none() || index == learner_seat;
+                    let bot = if let (false, Some(frozen)) = (learns, opponent) {
+                        // A benchmark seat: frozen weights, near-argmax, and no PPO recording, so
+                        // nothing it does can reach the learner's batch.
+                        ti4_mlp::bot::MlpBot::sharing(frozen, vocabulary.clone(), row, stream)
+                            .at_temperature(OPPONENT_TEMPERATURE)
+                            .from_setup(baseline)
+                    } else {
+                        match inference {
+                            WorkerScopedInference::Cpu(actor) => ti4_mlp::bot::MlpBot::sharing(
+                                actor,
+                                vocabulary.clone(),
+                                row,
+                                stream,
+                            ),
+                            WorkerScopedInference::Gpu(client) => ti4_mlp::bot::MlpBot::batched(
+                                client.clone(),
+                                vocabulary.clone(),
+                                row,
+                                stream,
+                            ),
+                        }
+                        .at_temperature(temperature)
+                        .recording_ppo(critic_mode)
+                        .from_setup(baseline)
+                    };
+                    if learns && handles.insert(player.clone(), bot.ppo_records()).is_some() {
+                        return Err(format!("{player} was seated twice"));
+                    }
+                    let (decider, status) = bot.seat();
+                    statuses.push(status);
+                    let log = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+                    let all = hash.then(|| {
+                        let hasher = Rc::new(RefCell::new(<sha2::Sha256 as sha2::Digest>::new()));
+                        choice_hashers.insert(player.clone(), Rc::clone(&hasher));
+                        hasher
+                    });
+                    watched.insert(player.clone(), std::rc::Rc::clone(&log));
+                    deciders.insert(
+                        player.clone(),
+                        Box::new(Watching {
+                            inner: decider,
+                            log,
+                            all,
+                        }),
+                    );
                 }
-                let (decider, _status) = bot.seat();
-                let log = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
-                watched.insert(player.clone(), std::rc::Rc::clone(&log));
-                deciders.insert(
-                    player.clone(),
-                    Box::new(Watching {
-                        inner: decider,
-                        log,
-                    }),
-                );
-            }
-            Ok(deciders)
-        },
-    );
+                Ok(deciders)
+            },
+        );
     if let Some(error) = &rollout.error {
         return Err(format!("self-play game {seed}/{rotation} failed: {error}"));
+    }
+    for status in statuses {
+        status
+            .into_result()
+            .map_err(|error| format!("self-play game {seed}/{rotation}: {error}"))?;
     }
 
     // The returns, matched to the seat that earned them. A missing handle is refused rather than
@@ -489,17 +658,22 @@ fn play_one(
     // tell that apart from getting better. Seen together they can.
     let mut tactical = 0usize;
     for seat in &rollout.seats {
+        // A frozen seat is not this policy: reporting its clearance and points as the learner's
+        // would read the benchmark's play as progress.
+        let Some(handle) = handles.get(&seat.player) else {
+            if opponent.is_some() {
+                continue;
+            }
+            return Err(format!(
+                "seed {seed} rotation {rotation}: {} has no recording handle",
+                seat.player
+            ));
+        };
         outcomes.push(SeatOutcome {
             faction: seat.faction.to_string(),
             cleared: seat.episode.cleared,
             victory_points: seat.episode.final_progress.victory_points,
         });
-        let handle = handles.get(&seat.player).ok_or_else(|| {
-            format!(
-                "seed {seed} rotation {rotation}: {} has no recording handle",
-                seat.player
-            )
-        })?;
         let mut recorded = handle.borrow_mut();
         // A single seat cannot contribute more decisions than a sane game has.
         //
@@ -619,11 +793,50 @@ fn play_one(
         }
         steps.extend(recorded.drain(..).map(|record| record.step));
     }
-    Ok((steps, outcomes, wasted, tactical))
+    // With --hash-games: what this game did, in forms two runs can be compared by exactly.
+    let record = if hash {
+        let choices: BTreeMap<String, String> = choice_hashers
+            .iter()
+            .map(|(player, hasher)| {
+                (
+                    player.as_str().to_owned(),
+                    format!(
+                        "{:x}",
+                        <sha2::Sha256 as sha2::Digest>::finalize(hasher.borrow().clone())
+                    ),
+                )
+            })
+            .collect();
+        let digest = game_digest.as_ref();
+        Some(serde_json::json!({
+            "kind": "game",
+            "seed": seed,
+            "rotation": rotation,
+            "state_sha256": digest.map(|d| d.state_sha256.clone()),
+            "log_sha256": digest.map(|d| d.log_sha256.clone()),
+            "events": digest.map(|d| d.events),
+            "choices_sha256": choices,
+            "steps_sha256": ti4_mlp::perf::steps_digest(&steps).map_err(|error| error.to_string())?,
+            "steps": steps.len(),
+            "outcomes": outcomes
+                .iter()
+                .map(|o| serde_json::json!([o.faction, o.cleared, o.victory_points]))
+                .collect::<Vec<_>>(),
+        }))
+    } else {
+        None
+    };
+    Ok((steps, outcomes, wasted, tactical, record))
 }
 
 /// One played game: the decisions it contributed and what each seat ended with.
-type Played = (Vec<Step>, Vec<SeatOutcome>, usize, usize);
+type Played = (
+    Vec<Step>,
+    Vec<SeatOutcome>,
+    usize,
+    usize,
+    Option<serde_json::Value>,
+);
 
 /// What one seat's game produced, beyond the decisions it contributed to the batch.
 ///
@@ -865,6 +1078,28 @@ mod cadence_tests {
 }
 
 fn main() {
+    let process_started = Instant::now();
+    check_flags();
+    // Diagnostics (plans/TRAINING_PERFORMANCE_HANDOFF_2026-09-11.md), all off by default: with none
+    // of these flags the run is exactly the run it always was.
+    let diag_path = argument("--diag");
+    let capture_path = argument("--capture-batch");
+    let no_checkpoint = std::env::args().any(|a| a == "--no-checkpoint");
+    let hash_games = std::env::args().any(|a| a == "--hash-games");
+    let diag_sync = std::env::args().any(|a| a == "--diag-sync");
+    let diplomacy = std::env::args().any(|a| a == "--diplomacy");
+    if diag_path.is_some() {
+        ti4_mlp::perf::enable(diag_sync);
+    } else if hash_games || diag_sync {
+        refuse("--hash-games and --diag-sync need --diag <file>");
+    }
+    let mut diag = diag_path.as_ref().map(|path| {
+        std::fs::File::options()
+            .create(true)
+            .append(true)
+            .open(path)
+            .unwrap_or_else(|error| refuse(&format!("opening {path}: {error}")))
+    });
     let updates: usize = argument("--updates")
         .and_then(|value| value.parse().ok())
         .unwrap_or(1);
@@ -876,6 +1111,32 @@ fn main() {
     let device = optimizer_device
         .resolve()
         .unwrap_or_else(|error| refuse(&format!("--device cuda: {error}")));
+    let rollout_backend = match argument("--rollout-backend").as_deref().unwrap_or("cpu") {
+        "cpu" => RolloutBackend::Cpu,
+        "gpu-batched" => {
+            if !matches!(device, ti4_tensor::Device::Cuda(_)) {
+                refuse("--rollout-backend gpu-batched requires --device cuda");
+            }
+            let batch_size = argument("--gpu-batch")
+                .map_or(Ok(32usize), |value| value.parse::<usize>())
+                .unwrap_or_else(|_| refuse("--gpu-batch expects an unsigned integer"));
+            let flush_ms = argument("--gpu-flush-ms")
+                .map_or(Ok(2u64), |value| value.parse::<u64>())
+                .unwrap_or_else(|_| refuse("--gpu-flush-ms expects an unsigned integer"));
+            RolloutBackend::GpuBatched {
+                batch_size,
+                flush: Duration::from_millis(flush_ms),
+            }
+        }
+        other => refuse(&format!(
+            "--rollout-backend {other}: expected cpu or gpu-batched"
+        )),
+    };
+    if matches!(rollout_backend, RolloutBackend::Cpu)
+        && (argument("--gpu-batch").is_some() || argument("--gpu-flush-ms").is_some())
+    {
+        refuse("--gpu-batch and --gpu-flush-ms require --rollout-backend gpu-batched");
+    }
 
     ti4_tensor::configure_deterministic(20_260_826)
         .unwrap_or_else(|error| refuse(&format!("configuring the backend: {error}")));
@@ -893,7 +1154,23 @@ fn main() {
         .unwrap_or_else(|error| refuse(&format!("reading {bundle_path}: {error}")));
     let vocabulary = loaded.vocabulary;
     let mut actor = loaded.actor;
+    if diplomacy && !actor.head_names().contains(&"diplomacy") {
+        refuse("--diplomacy requires a schema-9/10 bundle with the diplomacy head");
+    }
     let critic_mode = loaded.critic_mode;
+    // With `--opponent`, one seat per game learns and the rest play a frozen benchmark. Only the
+    // learner's decisions enter PPO: frozen trajectories are off-policy for this batch.
+    let opponent_actor = argument("--opponent").map(|path| {
+        let frozen = ti4_mlp::bundle::read(std::path::Path::new(&path))
+            .unwrap_or_else(|error| refuse(&format!("reading {path}: {error}")));
+        if frozen.actor.head_names() != actor.head_names() {
+            refuse("--opponent has a different head layout than --bundle");
+        }
+        if diplomacy && !frozen.actor.head_names().contains(&"diplomacy") {
+            refuse("--diplomacy requires an --opponent bundle with the diplomacy head");
+        }
+        (path, frozen.actor)
+    });
     let replay_actor = Rc::new(actor.inference_copy());
     let demo_per_update: usize = argument("--demo-per-update").map_or(0, |value| {
         value
@@ -1113,9 +1390,34 @@ fn main() {
         "--strategy-diversity-weight",
         reward.strategy_diversity_weight,
     );
+    // Command tokens, trade goods and Styx. Off by default like every term above: a run that
+    // prices them says so on its command line.
+    reward.fleet_hoard_penalty = weight("--fleet-hoard-penalty", reward.fleet_hoard_penalty);
+    reward.zero_fleet_penalty = weight("--zero-fleet-penalty", reward.zero_fleet_penalty);
+    reward.trade_goods_hoard_weight = weight(
+        "--trade-goods-hoard-weight",
+        reward.trade_goods_hoard_weight,
+    );
+    reward.styx_bonus = weight("--styx-bonus", reward.styx_bonus);
+    // The first entry into the Fracture. `Reward` now defaults it to zero and says an experiment
+    // must select it explicitly, but no flag existed, so the term could not be selected at all:
+    // runs built before that change had it silently on at 0.1, and runs built after it silently
+    // off.
+    reward.fracture_entry_bonus = weight("--fracture-entry-bonus", reward.fracture_entry_bonus);
+    // Each Fracture planet held at the end of the horizon; Styx also earns `--styx-bonus`.
+    reward.fracture_planet_bonus = weight("--fracture-planet-bonus", reward.fracture_planet_bonus);
     // `returns` gates both terminal bonuses on `> 0.0`, so a negative value here would be read as
     // "off" and the run would silently not be the experiment its command line describes.
     for (name, value) in [
+        ("--fracture-entry-bonus", reward.fracture_entry_bonus),
+        ("--fracture-planet-bonus", reward.fracture_planet_bonus),
+        ("--fleet-hoard-penalty", reward.fleet_hoard_penalty),
+        ("--zero-fleet-penalty", reward.zero_fleet_penalty),
+        (
+            "--trade-goods-hoard-weight",
+            reward.trade_goods_hoard_weight,
+        ),
+        ("--styx-bonus", reward.styx_bonus),
         ("--clearance-weight", reward.clearance_weight),
         ("--high-vp-bonus", reward.high_vp_bonus),
         // `returns` gates the monoculture penalty on `> 0.0` as well, so the same trap applies:
@@ -1135,10 +1437,25 @@ fn main() {
         .validate()
         .unwrap_or_else(|error| refuse(&format!("the reward is not self-consistent: {error}")));
 
+    if opponent_actor.is_some() && matches!(rollout_backend, RolloutBackend::GpuBatched { .. }) {
+        refuse("--opponent needs the CPU rollout backend: the GPU service owns a single actor");
+    }
+
     println!("M10-034 PPO update");
     println!("  bundle      {bundle_path}");
+    if let Some((path, _)) = &opponent_actor {
+        println!("  opponent    {path} (frozen, every seat but the learner's)");
+        println!(
+            "  learner     one rotating seat per game; only its decisions enter PPO, benchmark at temperature {OPPONENT_TEMPERATURE}"
+        );
+    }
     println!("  seeds       {seed_base}.. ({SEEDS_PER_UPDATE} per update)");
     println!("  critic mode {critic_mode:?}");
+    println!(
+        "  trunk       width {} | residual blocks {}",
+        actor.width(),
+        actor.residual_blocks()
+    );
     if matches!(stage, ti4_training::reward::Stage::One) {
         println!(
             "  potential   planets+systems {} | capacity+infantry {} | conjunctive {} | clear bonus {}",
@@ -1161,6 +1478,17 @@ fn main() {
             "  shaping     fleet {} | tech {} | strategy diversity {}",
             reward.fleet_weight, reward.tech_weight, reward.strategy_diversity_weight
         );
+        println!(
+            "  holdings    fleet pool >= {} at end {} | empty fleet pool {} | trade goods > {} {} per excess good per round | Styx at end {} | first Fracture entry {} | per Fracture planet at end {}",
+            ti4_training::reward::FLEET_HOARD_AT,
+            reward.fleet_hoard_penalty,
+            reward.zero_fleet_penalty,
+            ti4_training::reward::TRADE_GOODS_FREE,
+            reward.trade_goods_hoard_weight,
+            reward.styx_bonus,
+            reward.fracture_entry_bonus,
+            reward.fracture_planet_bonus
+        );
     }
     println!(
         "  reward      {stage:?} ({}) | {rounds} round(s) per game",
@@ -1169,7 +1497,14 @@ fn main() {
             ti4_training::reward::Stage::Two => "victory points",
         }
     );
-    println!("  optimiser   {device:?}   (rollouts always CPU, §7.1)");
+    println!("  optimiser   {device:?}");
+    match &rollout_backend {
+        RolloutBackend::Cpu => println!("  rollout     CPU inference on Rayon workers"),
+        RolloutBackend::GpuBatched { batch_size, flush } => println!(
+            "  rollout     experimental CUDA service, batch {batch_size}, partial flush {:.1} ms",
+            flush.as_secs_f64() * 1_000.0
+        ),
+    }
     println!(
         "  ppo         clip {} | {} epochs | minibatch {} | value {} | entropy {}/{} (movement {}), x{entropy_final} by the end",
         settings.clip_epsilon,
@@ -1189,6 +1524,10 @@ fn main() {
     // whole difference between that run and the one before it. A log that cannot say what it was
     // run at cannot be compared against another.
     println!("  sampling    temperature {temperature} (acting and recorded behaviour)");
+    println!(
+        "  diplomacy   {}",
+        if diplomacy { "enabled" } else { "disabled" }
+    );
     println!("  adam        learning rate {}", settings.learning_rate);
     println!(
         "  waste       penalty per faction {}",
@@ -1243,17 +1582,33 @@ fn main() {
     let mut reported_at = 0usize;
 
     for update in 0..updates {
-        // ---- rollout, on CPU ----
+        // ---- rollout ----
         //
-        // §7.1 pins inference to the CPU, so self-play needs CPU weights. It takes a *copy* rather
-        // than moving the training actor: `Adam::new` established the parameters as leaf tensors,
-        // and `to_device` on a tensor that requires a gradient returns a non-leaf view of the move.
-        // Backward then populates `.grad` on the leaves that were left behind, Adam sees none, and
-        // the update silently applies nothing. On CPU the move is a no-op so the bug is invisible;
-        // on CUDA it is fatal, which is how it was found.
-        //
-        // One transfer per update, not one per seat: the per-seat copies are made from this.
-        let inference = actor.inference_copy().to_device(ti4_tensor::Device::Cpu);
+        // The optimiser's leaves never act. Every backend takes a frozen inference copy before
+        // workers start, then the service is stopped before Adam can mutate the training actor.
+        let update_started = Instant::now();
+        let (cpu_inference, mut gpu_service) = match &rollout_backend {
+            RolloutBackend::Cpu => (
+                Some(actor.inference_copy().to_device(ti4_tensor::Device::Cpu)),
+                None,
+            ),
+            RolloutBackend::GpuBatched { batch_size, flush } => (
+                None,
+                Some(
+                    ti4_mlp::gpu_batch::GpuInferenceService::spawn(
+                        actor
+                            .inference_copy()
+                            .to_device(ti4_tensor::Device::Cuda(0)),
+                        *batch_size,
+                        *flush,
+                    )
+                    .unwrap_or_else(|error| {
+                        refuse(&format!("starting GPU inference service: {error}"))
+                    }),
+                ),
+            ),
+        };
+        let inference_copy_time = update_started.elapsed();
         let rolled = Instant::now();
         let mut steps: Vec<Step> = Vec::new();
         let mut seated_decisions = 0usize;
@@ -1281,27 +1636,77 @@ fn main() {
             .into_iter()
             .flat_map(|seed| (0..FACTIONS.len()).map(move |rotation| (seed, rotation)))
             .collect();
-        let workers = rayon::current_num_threads().max(1);
-        let per_worker = jobs.len().div_ceil(workers);
-        let chunks: Vec<(ti4_mlp::Actor, Vec<(u64, usize)>)> = jobs
-            .chunks(per_worker)
-            .map(|chunk| (inference.inference_copy(), chunk.to_vec()))
-            .collect();
+        let workers = rayon::current_num_threads().max(1).min(jobs.len());
+        let locals: Vec<(WorkerInference, Option<ti4_mlp::Actor>)> = match &rollout_backend {
+            RolloutBackend::Cpu => {
+                let inference = cpu_inference
+                    .as_ref()
+                    .unwrap_or_else(|| refuse("CPU rollout has no inference snapshot"));
+                (0..workers)
+                    .map(|_| {
+                        (
+                            WorkerInference::Cpu(inference.inference_copy()),
+                            opponent_actor.as_ref().map(|(_, frozen)| {
+                                frozen.inference_copy().to_device(ti4_tensor::Device::Cpu)
+                            }),
+                        )
+                    })
+                    .collect()
+            }
+            RolloutBackend::GpuBatched { .. } => {
+                let client = gpu_service
+                    .as_ref()
+                    .map(ti4_mlp::gpu_batch::GpuInferenceService::client)
+                    .unwrap_or_else(|| refuse("GPU rollout has no inference service"));
+                (0..workers)
+                    .map(|_| (WorkerInference::Gpu(client.clone()), None))
+                    .collect()
+            }
+        };
+        let chunk_copy_time = rolled.elapsed();
+        let harvest_started = Instant::now();
 
-        // Collected in chunk order and flattened in job order, so the batch a given update sees does
-        // not depend on which worker finished first. Determinism here is not decoration: §6.3's
-        // shuffle is seeded, and a batch assembled in scheduling order would make every downstream
-        // fingerprint irreproducible.
-        let harvest: Vec<Result<Vec<Played>, String>> = chunks
+        // Games are claimed one at a time from a shared cursor, so a worker that drew short games
+        // takes more of them instead of idling while the slowest fixed share finishes. With fixed
+        // shares of three the slowest of 32 workers measured 1.21x the mean, about 2.3 s of every
+        // update spent waiting (plans/TRAINING_PERFORMANCE_HANDOFF_2026-09-11.md, A1).
+        //
+        // Each result keeps its job index and the batch is reassembled in job order below, so the
+        // batch a given update sees still does not depend on which worker finished first.
+        // Determinism here is not decoration: §6.3's shuffle is seeded, and a batch assembled in
+        // scheduling order would make every downstream fingerprint irreproducible.
+        let cursor = std::sync::atomic::AtomicUsize::new(0);
+        let harvest: Vec<(
+            Vec<(usize, Result<Played, String>)>,
+            ti4_mlp::perf::StageTotals,
+            f64,
+        )> = locals
             .into_par_iter()
-            .map(|(local, chunk)| {
-                // One handle per worker, shared by every game it plays and every seat in them.
-                let local = std::rc::Rc::new(local);
-                chunk
-                    .iter()
-                    .map(|(seed, rotation)| {
+            .map(|(local, frozen)| {
+                let worker_started = Instant::now();
+                let _ = ti4_mlp::perf::take_stages();
+                // One CPU actor or one GPU-service client per worker, shared by every game it plays.
+                let local = match local {
+                    WorkerInference::Cpu(actor) => WorkerScopedInference::Cpu(Rc::new(actor)),
+                    WorkerInference::Gpu(client) => WorkerScopedInference::Gpu(client),
+                };
+                let frozen = frozen.map(Rc::new);
+                let mut played = Vec::new();
+                loop {
+                    let job = cursor.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let Some((seed, rotation)) = jobs.get(job) else {
+                        break;
+                    };
+                    played.push((
+                        job,
                         play_one(
                             &local,
+                            frozen.as_ref(),
+                            // One faction learns per rotation, so a seed block trains each faction
+                            // exactly once. Choosing by seat index instead left the learner's
+                            // faction to the seeded permutation, which skewed a smoke update to 22
+                            // hacan games against 10 letnev.
+                            *rotation,
                             content,
                             &players,
                             &vocabulary,
@@ -1313,29 +1718,75 @@ fn main() {
                             *rotation,
                             temperature,
                             &waste_penalties,
-                        )
-                    })
-                    .collect()
+                            diplomacy,
+                            hash_games,
+                        ),
+                    ));
+                }
+                (
+                    played,
+                    ti4_mlp::perf::take_stages(),
+                    worker_started.elapsed().as_secs_f64(),
+                )
             })
             .collect();
 
+        let service_shutdown_started = Instant::now();
+        let gpu_stats = gpu_service.take().map(|service| {
+            service
+                .shutdown()
+                .unwrap_or_else(|error| refuse(&format!("stopping GPU inference service: {error}")))
+        });
+        let service_shutdown_time = service_shutdown_started.elapsed();
+
         let mut wasted_activations = 0usize;
         let mut tactical_actions = 0usize;
-        for chunk in harvest {
-            for (game, outcomes, wasted, tactical) in chunk.unwrap_or_else(|error| refuse(&error)) {
-                games += 1;
-                wasted_activations += wasted;
-                tactical_actions += tactical;
-                seated_decisions += game.len();
-                steps.extend(game);
-                for outcome in &outcomes {
-                    window
-                        .entry(outcome.faction.clone())
-                        .or_default()
-                        .add(outcome);
-                }
+        let merge_started = Instant::now();
+        let harvest_time = merge_started.duration_since(harvest_started);
+        let mut workers_json = Vec::new();
+        let mut game_lines = Vec::new();
+        let mut by_job: Vec<Option<Result<Played, String>>> =
+            (0..jobs.len()).map(|_| None).collect();
+        for (played, stages, worker_wall) in harvest {
+            if diag.is_some() {
+                let stage_s: serde_json::Map<String, serde_json::Value> = ti4_mlp::perf::STAGES
+                    .iter()
+                    .zip(stages.nanos)
+                    .map(|(name, nanos)| {
+                        ((*name).to_owned(), serde_json::json!(nanos as f64 / 1e9))
+                    })
+                    .collect();
+                workers_json.push(serde_json::json!({
+                    "wall_s": worker_wall,
+                    "decisions": stages.decisions,
+                    "stage_s": stage_s,
+                }));
+            }
+            for (job, result) in played {
+                by_job[job] = Some(result);
             }
         }
+        // Job order, whatever order the games finished in.
+        for result in by_job {
+            let (game, outcomes, wasted, tactical, record) = result
+                .unwrap_or_else(|| refuse("a rollout job was never played"))
+                .unwrap_or_else(|error| refuse(&error));
+            if let Some(record) = record {
+                game_lines.push(record);
+            }
+            games += 1;
+            wasted_activations += wasted;
+            tactical_actions += tactical;
+            seated_decisions += game.len();
+            steps.extend(game);
+            for outcome in &outcomes {
+                window
+                    .entry(outcome.faction.clone())
+                    .or_default()
+                    .add(outcome);
+            }
+        }
+        let merge_time = merge_started.elapsed();
         let rollout_time = rolled.elapsed();
         if steps.is_empty() {
             refuse("self-play recorded no decisions");
@@ -1418,8 +1869,32 @@ fn main() {
                 refuse("the requested clean demonstration slice replayed empty");
             }
         }
+        let freeze_started = Instant::now();
         let batch = Batch::freeze(steps, critic_mode)
             .unwrap_or_else(|error| refuse(&format!("freezing: {error}")));
+        let freeze_time = freeze_started.elapsed();
+        // With --hash-games: the whole frozen batch, content and order, as one digest -- the same
+        // encoding `ppo_replay` reports for a captured batch, so the two compare directly.
+        let batch_digest = hash_games.then(|| {
+            ti4_mlp::perf::steps_digest(batch.steps())
+                .unwrap_or_else(|error| refuse(&format!("digesting the batch: {error}")))
+        });
+        let raw_options: usize = batch.steps().iter().map(|step| step.options.len()).sum();
+        let mut head_counts: BTreeMap<String, usize> = BTreeMap::new();
+        for step in batch.steps() {
+            let name = ti4_mlp::all_heads()
+                .get(step.head)
+                .copied()
+                .unwrap_or("unknown");
+            *head_counts.entry(name.to_owned()).or_default() += 1;
+        }
+        if update == 0
+            && let Some(path) = &capture_path
+        {
+            ti4_mlp::perf::write_capture(batch.steps(), std::path::Path::new(path))
+                .unwrap_or_else(|error| refuse(&format!("capturing the batch to {path}: {error}")));
+            println!("  captured    {} decisions to {path}", batch.len());
+        }
         if batch.steps().len() != seated_decisions {
             refuse(&format!(
                 "freezing changed the decision count from {seated_decisions} to {}",
@@ -1478,6 +1953,7 @@ fn main() {
         }
         .unwrap_or_else(|error| refuse(&format!("update: {error}")));
         let optimise_time = optimised.elapsed();
+        let phases = ti4_mlp::perf::take_phases();
 
         let last = stats.last().unwrap_or_else(|| refuse("no epoch ran"));
         println!(
@@ -1522,6 +1998,7 @@ fn main() {
             refuse("batch_mean mode reported a critic loss");
         }
 
+        let report_started = Instant::now();
         // ---- the periodic report ----
         let done = update + 1;
         if cadence.due(done) || done == updates {
@@ -1541,20 +2018,78 @@ fn main() {
             reported_at = done;
             let fingerprint = ti4_mlp::ppo::parameter_fingerprint(&actor, critic_mode)
                 .unwrap_or_else(|error| refuse(&format!("fingerprinting parameters: {error}")));
-            publish(
-                &actor,
-                &std::path::Path::new(&out).join(format!("checkpoint-{}", optimizer.steps())),
-                &slots_text,
-                critic_mode,
-                &ti4_mlp::bundle::Provenance {
-                    source: format!("M10-034 PPO, {done} update(s) from {bundle_path}"),
-                    git_commit: std::env::var("GIT_COMMIT")
-                        .unwrap_or_else(|_| "unrecorded".to_owned()),
-                    update: u64::try_from(optimizer.steps()).unwrap_or(0),
-                },
-                &fingerprint,
-            );
+            if !no_checkpoint {
+                publish(
+                    &actor,
+                    &std::path::Path::new(&out).join(format!("checkpoint-{}", optimizer.steps())),
+                    &slots_text,
+                    critic_mode,
+                    &ti4_mlp::bundle::Provenance {
+                        source: format!("M10-034 PPO, {done} update(s) from {bundle_path}"),
+                        git_commit: std::env::var("GIT_COMMIT")
+                            .unwrap_or_else(|_| "unrecorded".to_owned()),
+                        update: u64::try_from(optimizer.steps()).unwrap_or(0),
+                    },
+                    &fingerprint,
+                );
+            }
             previous = Some(std::mem::take(&mut window));
+        }
+        if let Some(file) = diag.as_mut() {
+            let report_time = report_started.elapsed();
+            let phase_s: serde_json::Map<String, serde_json::Value> = ti4_mlp::perf::PHASES
+                .iter()
+                .zip(phases.nanos)
+                .map(|(name, nanos)| ((*name).to_owned(), serde_json::json!(nanos as f64 / 1e9)))
+                .collect();
+            let gpu_service = gpu_stats.map(|stats| {
+                serde_json::json!({
+                    "requests": stats.requests,
+                    "batches": stats.batches,
+                    "options": stats.options,
+                    "critics": stats.critics,
+                    "max_batch": stats.max_batch,
+                    "mean_batch": if stats.batches == 0 { 0.0 } else { stats.requests as f64 / stats.batches as f64 },
+                    "mean_queue_ms": if stats.requests == 0 { 0.0 } else { stats.queue_nanos as f64 / stats.requests as f64 / 1e6 },
+                    "max_queue_ms": stats.max_queue_nanos as f64 / 1e6,
+                    "pack_s": stats.pack_nanos as f64 / 1e9,
+                    "score_s": stats.score_nanos as f64 / 1e9,
+                    "shutdown_s": service_shutdown_time.as_secs_f64(),
+                })
+            });
+            let line = serde_json::json!({
+                "kind": "update",
+                "update": update,
+                "rollout_backend": match &rollout_backend { RolloutBackend::Cpu => "cpu", RolloutBackend::GpuBatched { .. } => "gpu-batched" },
+                "games": games,
+                "decisions": batch.len(),
+                "raw_options": raw_options,
+                "head_counts": head_counts,
+                "batch_steps_sha256": batch_digest,
+                "wall_s": update_started.elapsed().as_secs_f64(),
+                "driver_process_s": process_started.elapsed().as_secs_f64(),
+                "inference_copy_s": inference_copy_time.as_secs_f64(),
+                "chunk_copy_s": chunk_copy_time.as_secs_f64(),
+                "harvest_s": harvest_time.as_secs_f64(),
+                "merge_s": merge_time.as_secs_f64(),
+                "rollout_s": rollout_time.as_secs_f64(),
+                "freeze_s": freeze_time.as_secs_f64(),
+                "optimise_s": optimise_time.as_secs_f64(),
+                "report_s": report_time.as_secs_f64(),
+                "ppo_phase_s": phase_s,
+                "ppo_minibatches": phases.minibatches,
+                "ppo_options": phases.options,
+                "ppo_cells": phases.cells,
+                "ppo_widest_max": phases.widest_max,
+                "workers": workers_json,
+                "gpu_service": gpu_service,
+            });
+            writeln!(file, "{line}")
+                .unwrap_or_else(|error| refuse(&format!("writing --diag: {error}")));
+            for game in &game_lines {
+                writeln!(file, "{game}")
+                    .unwrap_or_else(|error| refuse(&format!("writing --diag: {error}")));
+            }
         }
     }
 
@@ -1575,6 +2110,6 @@ fn main() {
     println!("  adam state  advanced, {} steps", optimizer.steps());
 
     println!(
-        "\n  done. Rollouts are CPU-bound and sequential here; the optimiser honoured --device."
+        "\n  done. Rollouts are CPU inference across rayon workers; the optimiser honoured --device."
     );
 }

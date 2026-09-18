@@ -96,6 +96,25 @@ pub const STAGE1_DECISION_HEADS: [&str; 14] = [
     "other",
 ];
 
+/// Schema-9/10 MLP layout. The frozen schema-4 layout above is never mutated.
+pub const DIPLOMACY_DECISION_HEADS: [&str; 15] = [
+    "strategy",
+    "secondary",
+    "turn",
+    "activation",
+    "movement",
+    "cargo",
+    "landing",
+    "trade",
+    "tokens",
+    "production",
+    "payment",
+    "development",
+    "combat",
+    "other",
+    "diplomacy",
+];
+
 const SCHEMA3_HEADS: [&str; 11] = [
     "strategy",
     "secondary",
@@ -173,6 +192,12 @@ fn local_head(kind: &str) -> Option<&'static str> {
         "spend" => "payment",
         "ready_technology" => "development",
         "open_transaction" | "answer" => "trade",
+        "open_diplomacy"
+        | "diplomacy_offer"
+        | "diplomacy_response"
+        | "diplomacy_counter"
+        | "diplomacy_fulfill_payment"
+        | "diplomacy_signal" => "diplomacy",
         "discard" | "return" | "remove" => "scoring",
         _ => return None,
     };

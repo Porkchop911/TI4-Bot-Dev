@@ -327,7 +327,11 @@ pub fn why_illegal(
     if offer.given.is_empty() && offer.received.is_empty() {
         return Some(OfferError::Empty);
     }
-    if !are_neighbours(state, galaxy, &offer.proposer, &offer.partner) {
+    // Neighbours bound transactions during a turn; during the agenda phase any two players may
+    // transact (94), which is when votes are bought.
+    if state.phase != ti4_model::state::Phase::Agenda
+        && !are_neighbours(state, galaxy, &offer.proposer, &offer.partner)
+    {
         return Some(OfferError::NotNeighbours(
             offer.proposer.clone(),
             offer.partner.clone(),
@@ -635,6 +639,9 @@ fn note_cost(state: &GameState, content: &ContentStore, note: &str) -> f64 {
 ///
 /// 94.1 allows one transaction per neighbour per turn, so a partner already dealt with is not
 /// offered again — which is also what stops a free action from being taken forever.
+///
+/// With structured diplomacy on there is no separate transaction window: a diplomatic contact
+/// with a partner carries every trade this window would have offered, so nothing is offered here.
 #[must_use]
 pub fn available_actions(
     state: &GameState,
@@ -642,6 +649,9 @@ pub fn available_actions(
     galaxy: &Galaxy,
     player: &PlayerId,
 ) -> Vec<crate::choice::ChoiceOption> {
+    if state.diplomacy.enabled {
+        return Vec::new();
+    }
     let already = state.transacted_with(player);
     partners(state, content, galaxy, player)
         .into_iter()
@@ -1097,6 +1107,9 @@ impl TradeWindow {
     #[must_use]
     pub fn open(state: &mut GameState, proposer: &PlayerId, partner: &PlayerId) -> Self {
         state.record_transaction(proposer, partner);
+        if state.diplomacy.enabled {
+            let _ = state.diplomacy.consume_initiation(proposer, partner);
+        }
         Self {
             proposer: proposer.clone(),
             partner: partner.clone(),
@@ -1218,8 +1231,24 @@ impl TradeWindow {
                     return Traded::Refused;
                 }
                 if answer.id == "accept" {
+                    let fair = (offer.given.worth_to_receiver(state, content)
+                        - offer.received.worth_to_receiver(state, content))
+                    .abs()
+                        <= 0.5;
                     return match resolve(state, content, galaxy, &offer) {
-                        Ok(()) => Traded::Resolved,
+                        Ok(()) => {
+                            if fair {
+                                crate::diplomacy::apply_relationship_event(
+                                    state,
+                                    &crate::diplomacy::RelationshipEvent::FairTransaction {
+                                        a: offer.proposer.clone(),
+                                        b: offer.partner.clone(),
+                                    },
+                                )
+                                .expect("transaction participants are distinct");
+                            }
+                            Traded::Resolved
+                        }
                         Err(reason) => Traded::Rejected(reason),
                     };
                 }

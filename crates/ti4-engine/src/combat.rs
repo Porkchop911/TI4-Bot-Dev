@@ -72,6 +72,19 @@ pub fn combatants(
             found.push(player.clone());
         }
     }
+    // Thunder's Edge neutral units, rule 2: "If a player has ships in a space area that contains
+    // neutral units, they will resolve a space combat against those units." The neutral owner is
+    // never seated (rule 6), so the loop above cannot find it, and every combat against the
+    // Fracture's garrison used to end before it began with the player declared the winner.
+    let neutral = crate::neutral_units::owner();
+    if state.system_state(system).units.iter().any(|unit| {
+        unit.owner == neutral
+            && types
+                .get(unit.type_id.as_str())
+                .is_some_and(UnitType::is_ship)
+    }) {
+        found.push(neutral);
+    }
     found
 }
 
@@ -757,6 +770,121 @@ struct FleetGroup {
     types: std::collections::BTreeMap<String, u32>,
 }
 
+/// J.N.S. Hylarim, the Jol-Nar flagship: "When making a combat roll for this ship, each result of
+/// 9 or 10, before applying modifiers, produces 2 additional hits."
+const JOLNAR_FLAGSHIP: &str = "jolnar_flagship";
+
+/// Arc Secundus, the Letnev flagship: "At the start of each space combat round, repair this ship."
+const LETNEV_FLAGSHIP: &str = "letnev_flagship";
+
+/// 0.0.1, the L1Z1X flagship: "During a space combat, hits produced by this ship and by your
+/// dreadnoughts in this system must be assigned to non-fighter ships if able."
+const L1Z1X_FLAGSHIP: &str = "l1z1x_flagship";
+
+/// Whether `player` has 0.0.1 among its ships in `system`.
+fn forces_non_fighters(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    system: &SystemId,
+) -> bool {
+    ships_of(state, content, sources, player, system)
+        .iter()
+        .any(|unit| unit.type_id.as_str() == L1Z1X_FLAGSHIP)
+}
+
+/// Whether a ship's hits are ones 0.0.1 forces onto non-fighters.
+fn forced_hull(kind: UnitType<'_>) -> bool {
+    matches!(kind.base_type(), "flagship" | "dreadnought")
+}
+
+/// A ship's roll group beyond its combat value. A ship whose hits follow a rule the others' do not
+/// rolls on its own, so the staged entry says whose dice they were: 1 for J.N.S. Hylarim, 2 for
+/// the hulls 0.0.1 binds.
+fn roll_tag(kind: UnitType<'_>, id: &str, forced: bool) -> u8 {
+    if id == JOLNAR_FLAGSHIP {
+        1
+    } else if forced && forced_hull(kind) {
+        2
+    } else {
+        0
+    }
+}
+
+/// A staged fleet roll's hits: those free to land anywhere, and those 0.0.1 forces onto
+/// non-fighters. J.N.S. Hylarim's extra hits are counted from the natural faces.
+fn fleet_hits(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    system: &SystemId,
+    set: &RerollSet,
+) -> (usize, usize) {
+    let types = catalogue(content, sources);
+    let binding = forces_non_fighters(state, content, sources, player, system);
+    let (mut free, mut forced) = (0, 0);
+    for entry in &set.rolls {
+        let only = |test: &dyn Fn(&str) -> bool| {
+            !entry.unit_types.is_empty() && entry.unit_types.keys().all(|id| test(id))
+        };
+        let mut hits = entry.hits();
+        if only(&|id| id == JOLNAR_FLAGSHIP) {
+            hits += 2 * entry.faces.iter().filter(|face| **face >= 9).count();
+        }
+        if binding && only(&|id| types.get(id).is_some_and(|kind| forced_hull(*kind))) {
+            forced += hits;
+        } else {
+            free += hits;
+        }
+    }
+    (free, forced)
+}
+
+/// Arc Secundus repairs itself at the start of each space combat round.
+fn repair_self_repairing(state: &mut GameState, system: &SystemId, player: &PlayerId) {
+    let damaged: Vec<Unit> = state
+        .system_state(system)
+        .units
+        .iter()
+        .filter(|unit| {
+            &unit.owner == player
+                && unit.type_id.as_str() == LETNEV_FLAGSHIP
+                && unit.sustained_damage
+        })
+        .cloned()
+        .collect();
+    for unit in damaged {
+        let mut repaired = unit.clone();
+        repaired.sustained_damage = false;
+        state.system_mut(system).replace_unit(&unit, repaired);
+    }
+}
+
+/// The first other player with ships in `system`: whom the active player's space cannon
+/// offense fires at.
+pub fn opponent_with_ships(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    active: &PlayerId,
+    system: &SystemId,
+) -> Option<PlayerId> {
+    let types = catalogue(content, sources);
+    state
+        .system_state(system)
+        .units
+        .iter()
+        .find(|unit| {
+            &unit.owner != active
+                && types
+                    .get(unit.type_id.as_str())
+                    .is_some_and(UnitType::is_ship)
+        })
+        .map(|unit| unit.owner.clone())
+}
+
 /// The fleet's rolls, grouped by combat value in the ascending order 78.5b/78.5c fixes.
 ///
 /// Three destroyers are one roll of three dice, not three rolls of one: the number of
@@ -768,15 +896,17 @@ fn fleet_groups(
     sources: SourceSet,
     player: &PlayerId,
     system: &SystemId,
-) -> std::collections::BTreeMap<i64, FleetGroup> {
+) -> std::collections::BTreeMap<(i64, u8), FleetGroup> {
     let types = catalogue(content, sources);
+    let forced = forces_non_fighters(state, content, sources, player, system);
     let extra_die = state.player(player).and_then(|seat| {
         (seat.extra_die_round == Some(state.combat_round_seq))
             .then_some(seat.extra_die_unit.as_ref())
             .flatten()
     });
     let mut extra_die_added = false;
-    let mut groups: std::collections::BTreeMap<i64, FleetGroup> = std::collections::BTreeMap::new();
+    let mut groups: std::collections::BTreeMap<(i64, u8), FleetGroup> =
+        std::collections::BTreeMap::new();
     for unit in ships_of(state, content, sources, player, system) {
         let Some(kind) = types.get(unit.type_id.as_str()) else {
             continue;
@@ -789,7 +919,8 @@ fn fleet_groups(
             dice += 1;
             extra_die_added = true;
         }
-        let group = groups.entry(value).or_insert(FleetGroup {
+        let tag = roll_tag(*kind, unit.type_id.as_str(), forced);
+        let group = groups.entry((value, tag)).or_insert(FleetGroup {
             dice: 0,
             types: std::collections::BTreeMap::new(),
         });
@@ -813,7 +944,7 @@ pub fn roll_fleet(
     system: &SystemId,
 ) -> usize {
     let mut hits = 0;
-    for (value, group) in fleet_groups(state, content, sources, player, system) {
+    for ((value, _), group) in fleet_groups(state, content, sources, player, system) {
         let dice_count = usize::try_from(group.dice).unwrap_or(0);
         if dice_count == 0 {
             continue;
@@ -838,6 +969,19 @@ pub fn roll_fleet_and_open(
     player: &PlayerId,
     system: &SystemId,
 ) -> usize {
+    roll_fleet_and_open_staged(state, ctx, player, system).0
+}
+
+/// [`roll_fleet_and_open`], also handing back the staged dice the hits were read from.
+///
+/// War Funding acts after *both* sides have rolled, so the dice have to outlive the staging this
+/// function clears.
+pub fn roll_fleet_and_open_staged(
+    state: &mut GameState,
+    ctx: &mut Resolving<'_>,
+    player: &PlayerId,
+    system: &SystemId,
+) -> (usize, Option<RerollSet>) {
     let (content, sources) = (ctx.content, ctx.sources);
     let mut set = RerollSet {
         kind: "fleet".into(),
@@ -845,7 +989,7 @@ pub fn roll_fleet_and_open(
         rolls: Vec::new(),
     };
     let mut hits = 0;
-    for (value, group) in fleet_groups(state, content, sources, player, system) {
+    for ((value, _), group) in fleet_groups(state, content, sources, player, system) {
         let dice_count = usize::try_from(group.dice).unwrap_or(0);
         if dice_count == 0 {
             continue;
@@ -871,10 +1015,28 @@ pub fn roll_fleet_and_open(
         state.last_reroll_player = Some(player.clone());
     }
     open_fleet_reroll_windows(state, ctx, player);
-    let hits = state.reroll_staging.get(player).map_or(hits, staged_hits);
-    state.reroll_staging.remove(player);
+    let staged = state.reroll_staging.remove(player);
+    let hits = staged.as_ref().map_or(hits, |set| {
+        let (free, forced) = fleet_hits(state, content, sources, player, system, set);
+        free + forced
+    });
     state.last_reroll_player = None;
-    hits
+    (hits, staged)
+}
+
+/// The War Funding note this combatant holds from another player, if any.
+fn war_funding_note(state: &GameState, holder: &PlayerId) -> Option<String> {
+    state
+        .promissory_notes
+        .iter()
+        .find(|(note, held_by)| {
+            *held_by == holder
+                && crate::promissory::alias_of(note) == "war_funding"
+                // By faction, as in `promissory::holder_of`: seats sharing a faction share the id.
+                && crate::promissory::owner_of(note)
+                    .is_some_and(|name| name != crate::promissory::faction_name(state, holder))
+        })
+        .map(|(note, _)| note.clone())
 }
 
 /// 78.3: anti-fighter barrage — simultaneous, first round only, and hits fall only on fighters.
@@ -1232,13 +1394,13 @@ fn reaches_adjacent(kind: ti4_content::units::UnitType<'_>) -> bool {
 ///
 /// Scans the space area as well as the planets. The planet-only version could not see the Xxcha
 /// flagship, which is a ship and never stands on a planet, so that gun was unreachable even before
-/// the id list is considered.
-fn reaching_guns(
+/// the id list is considered. `fires` says whose guns count.
+fn reaching_guns_by(
     state: &GameState,
     types: &std::collections::BTreeMap<&str, ti4_content::units::UnitType<'_>>,
     galaxy: Option<&ti4_content::galaxy::Galaxy>,
     system: &SystemId,
-    active: &PlayerId,
+    fires: impl Fn(&PlayerId) -> bool,
 ) -> Vec<Unit> {
     let Some(galaxy) = galaxy else {
         return Vec::new();
@@ -1253,7 +1415,7 @@ fn reaching_guns(
             .chain(board.units.iter());
         found.extend(
             standing
-                .filter(|unit| &unit.owner != active)
+                .filter(|unit| fires(&unit.owner))
                 .filter(|unit| {
                     types
                         .get(unit.type_id.as_str())
@@ -1276,23 +1438,29 @@ pub fn space_cannon_offense(
     galaxy: Option<&ti4_content::galaxy::Galaxy>,
 ) -> Vec<(PlayerId, usize, Vec<RerollEntry>)> {
     // Solar Flare: during the named tactical action, other players cannot use SPACE CANNON
-    // against the active player's ships. Every gun below belongs to another player and fires
-    // at the active player's ships, which is exactly what the card forbids, so the whole step
-    // is suppressed rather than gun by gun. The marker is activation-scoped, like the card's
-    // "this tactical action" wording.
-    if state
+    // against the active player's ships. Every other player's gun fires at the active player, so
+    // the card silences all of them; the active player's own guns are untouched. The marker is
+    // activation-scoped, like the card's "this tactical action" wording.
+    let solar_flare = state
         .player(active)
-        .is_some_and(|seat| seat.solar_flare.contains(&state.activation_seq))
-    {
-        return Vec::new();
-    }
+        .is_some_and(|seat| seat.solar_flare.contains(&state.activation_seq));
     let types = catalogue(content, sources);
     let board = state.system_state(system);
+    // The active player's guns fire too (as ti4calc has it; user ruling 2026-09-17), at the ships
+    // of the player being attacked. With no such ships there is nothing to roll at.
+    let targets = opponent_with_ships(state, content, sources, active, system).is_some();
+    let may_fire = |owner: &PlayerId| {
+        if owner == active {
+            targets
+        } else {
+            !solar_flare
+        }
+    };
 
     let mut guns: Vec<Unit> = board
         .units
         .iter()
-        .filter(|unit| &unit.owner != active)
+        .filter(|unit| may_fire(&unit.owner))
         .cloned()
         .collect();
     for planet in board.planet_units.keys() {
@@ -1300,7 +1468,7 @@ pub fn space_cannon_offense(
             board
                 .on_planet(planet)
                 .iter()
-                .filter(|unit| &unit.owner != active)
+                .filter(|unit| may_fire(&unit.owner))
                 .cloned(),
         );
     }
@@ -1309,7 +1477,7 @@ pub fn space_cannon_offense(
     // ships that are in adjacent systems." Two cards, one clause, and neither reached the active
     // system before: `space_cannon_offense` read only the system being activated, so an upgraded
     // PDS next door -- a technology every faction can research -- never fired at all.
-    guns.extend(reaching_guns(state, &types, galaxy, system, active));
+    guns.extend(reaching_guns_by(state, &types, galaxy, system, &may_fire));
 
     let mut by_player: std::collections::BTreeMap<PlayerId, (usize, Vec<RerollEntry>)> =
         std::collections::BTreeMap::new();
@@ -1454,6 +1622,24 @@ fn non_euclidean_shielding(state: &GameState, player: &PlayerId) -> bool {
         .is_some_and(|seat| seat.technologies.iter().any(|held| held.as_str() == "nes"))
 }
 
+/// Whether this unit may use SUSTAIN DAMAGE against a hit in space.
+///
+/// Only ships can be assigned space hits, so a mech carried in the space area never sustains
+/// one, whatever its card says.
+fn sustains_in_space(state: &GameState, player: &PlayerId, unit: &Unit, kind: &UnitType) -> bool {
+    &unit.owner == player
+        && kind.is_ship()
+        && !unit.sustained_damage
+        // Publicize Weapon Schematics: all war suns lose SUSTAIN DAMAGE. Asked of the unit here
+        // rather than removed from the type, so repealing the law gives it back.
+        && !crate::laws::sustain_suppressed(state, kind.base_type())
+        // Metali Void Shielding grants the ability to a non-fighter ship that lacks it. Asked here
+        // rather than of the unit type, so a dreadnought is not given a second sustain it never
+        // had.
+        && (kind.sustain_damage()
+            || (crate::relics::grants_sustain(state, player) && !kind.is_fighter()))
+}
+
 fn offer_sustain(
     state: &mut GameState,
     content: &ContentStore,
@@ -1473,22 +1659,9 @@ fn offer_sustain(
             .iter()
             .enumerate()
             .filter(|(_, unit)| {
-                let Some(kind) = types.get(unit.type_id.as_str()) else {
-                    return false;
-                };
-                &unit.owner == player
-                    && !unit.sustained_damage
-                    // Publicize Weapon Schematics: all war suns lose SUSTAIN DAMAGE. Asked of the
-                    // unit here rather than removed from the type, so repealing the law gives it
-                    // back.
-                    && !crate::laws::sustain_suppressed(state, kind.base_type())
-                    // Metali Void Shielding grants the ability to a non-fighter ship that lacks it.
-                    // Asked here rather than of the unit type, so a dreadnought is not given a
-                    // second sustain it never had.
-                    && (kind.sustain_damage()
-                        || (crate::relics::grants_sustain(state, player)
-                            && kind.is_ship()
-                            && !kind.is_fighter()))
+                types
+                    .get(unit.type_id.as_str())
+                    .is_some_and(|kind| sustains_in_space(state, player, unit, kind))
             })
             .map(|(index, _)| index)
             .collect();
@@ -1550,9 +1723,22 @@ fn offer_sustain(
                 )
                 .about(DecisionTarget::System(system.clone())),
             );
-        let answer = ctx
-            .table
-            .ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
+        // Neutral units rule 5: they use every ability they can, so they always sustain and are
+        // never asked.
+        let answer = if crate::neutral_units::is_neutral(player) {
+            match choice
+                .options
+                .iter()
+                .find(|option| !option.is_decline())
+                .cloned()
+            {
+                Some(option) => option,
+                None => return Ok(hits),
+            }
+        } else {
+            ctx.table
+                .ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?
+        };
         if answer.is_decline() {
             return Ok(hits);
         }
@@ -1804,6 +1990,16 @@ pub(crate) fn choose_casualty(
     if let [only] = units {
         return Ok(only.clone());
     }
+    // Neutral units rule 7: nobody chooses; the hit goes to the unit lowest on the reference card.
+    if crate::neutral_units::is_neutral(player)
+        && let Some(unit) = crate::neutral_units::next_casualty(
+            &crate::neutral_units::roster(content, sources),
+            units,
+            |_| true,
+        )
+    {
+        return Ok(unit.clone());
+    }
     // One option per distinguishable loss. Five fighters are one decision, not five, and
     // offering it five times mattered: a sampling decider draws per option, so with five
     // fighters and one dreadnought it destroyed a fighter five times in six whatever it thought
@@ -2021,22 +2217,31 @@ struct Pending {
     /// Whose roll produced these hits: the `producer` of the SUSTAIN DAMAGE use that
     /// cancels them, and what Direct Hit keys on.
     producer: PlayerId,
+    /// 0.0.1: these hits must be assigned to non-fighter ships if able.
+    non_fighters_only: bool,
 }
 
 /// Where an open space combat has reached.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Stage {
-    /// 78.4: retreats are announced before any dice, and the defender decides first.
+    /// A round opens: its start-of-round events and, in round 1, the anti-fighter barrage
+    /// (78.3, step 1), before anyone announces a retreat.
+    Opening {
+        round: u32,
+    },
+    /// 78.4 (step 2): retreats are announced after the barrage and before any combat dice, and
+    /// the defender decides first.
     Announcing {
         round: u32,
         asking: PlayerId,
         announced: Vec<PlayerId>,
     },
-    /// Start of a round: roll, then queue both sides' hits.
+    /// Retreats announced: roll, then queue both sides' hits.
     Rolling {
         round: u32,
     },
-    /// Anti-fighter barrage scored a secret before ordinary space-combat dice.
+    /// Anti-fighter barrage scored a secret; the round resumes at the announcement once the
+    /// scoring window has closed.
     RollingAfterBarrage {
         round: u32,
     },
@@ -2128,11 +2333,7 @@ impl CombatWindow {
             system: system.clone(),
             attacker: attacker.clone(),
             defender: defender.clone(),
-            stage: Stage::Announcing {
-                round: 1,
-                asking: defender.clone(),
-                announced: Vec::new(),
-            },
+            stage: Stage::Opening { round: 1 },
             galaxy: None,
             pending_retreats: Vec::new(),
             combat_occurrence: None,
@@ -2155,6 +2356,10 @@ impl CombatWindow {
         sources: SourceSet,
         player: &PlayerId,
     ) -> Vec<SystemId> {
+        // Neutral units rule 6: they cannot retreat, so they are never asked to announce one.
+        if crate::neutral_units::is_neutral(player) && !crate::neutral_units::may_retreat() {
+            return Vec::new();
+        }
         // Intercept: "your opponent cannot retreat during this round of space combat." A seat with
         // nowhere to go is not asked (78.4c), so barring is expressed as having nowhere to go.
         if retreat_barred(state, player) {
@@ -2256,14 +2461,93 @@ impl CombatWindow {
             .iter()
             .enumerate()
             .filter(|(_, unit)| {
-                &unit.owner == player
-                    && !unit.sustained_damage
-                    && types
-                        .get(unit.type_id.as_str())
-                        .is_some_and(UnitType::sustain_damage)
+                types
+                    .get(unit.type_id.as_str())
+                    .is_some_and(|kind| sustains_in_space(state, player, unit, kind))
             })
             .map(|(index, _)| index)
             .collect()
+    }
+
+    /// The answer the neutral-unit rules give at a pending sustain or casualty decision.
+    ///
+    /// Nobody decides for neutral units. Rule 5: they use every ability they can, so a sustain is
+    /// always taken. Rule 7: a hit is assigned to the unit lowest on the neutral reference card.
+    /// Answering through [`Window::resolve`] keeps every effect of the ordinary path (events,
+    /// hit counting) rather than re-implementing it for one owner.
+    fn neutral_answer(
+        &self,
+        state: &GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+    ) -> Option<ChoiceOption> {
+        let choice = self.pending_choice(state, content, sources)?;
+        match &self.stage {
+            Stage::Sustaining { .. } => choice
+                .options
+                .iter()
+                .find(|option| !option.is_decline())
+                .cloned(),
+            Stage::Assigning { queue, .. } => {
+                let front = queue.first()?;
+                let units = ships_of(state, content, sources, &front.player, &self.system);
+                let pool: Vec<Unit> = self
+                    .casualty_candidates(state, content, sources, front)
+                    .into_iter()
+                    .map(|(_, unit)| unit)
+                    .collect();
+                let order = crate::neutral_units::roster(content, sources);
+                let doomed = crate::neutral_units::next_casualty(&order, &pool, |_| true)
+                    .or_else(|| pool.first())?;
+                choice
+                    .options
+                    .iter()
+                    .find(|option| {
+                        option
+                            .id
+                            .strip_prefix("destroy|")
+                            .and_then(|rest| rest.parse::<usize>().ok())
+                            .and_then(|index| units.get(index))
+                            .is_some_and(|unit| {
+                                unit.type_id == doomed.type_id
+                                    && unit.sustained_damage == doomed.sustained_damage
+                            })
+                    })
+                    .or_else(|| choice.options.first())
+                    .cloned()
+            }
+            _ => None,
+        }
+    }
+
+    /// The ships a pending hit may destroy, with their `ships_of` index: every ship, or only the
+    /// non-fighters when 0.0.1 forced the hit and a non-fighter is left.
+    fn casualty_candidates(
+        &self,
+        state: &GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+        front: &Pending,
+    ) -> Vec<(usize, Unit)> {
+        let types = catalogue(content, sources);
+        let units: Vec<(usize, Unit)> =
+            ships_of(state, content, sources, &front.player, &self.system)
+                .into_iter()
+                .enumerate()
+                .collect();
+        let non_fighter = |unit: &Unit| {
+            types
+                .get(unit.type_id.as_str())
+                .is_none_or(|kind| !kind.is_fighter())
+        };
+        if front.non_fighters_only && units.iter().any(|(_, unit)| non_fighter(unit)) {
+            units
+                .into_iter()
+                .filter(|(_, unit)| non_fighter(unit))
+                .collect()
+        } else {
+            units
+        }
     }
 
     /// Roll a round and queue both sides' hits, or finish.
@@ -2271,15 +2555,14 @@ impl CombatWindow {
         clippy::too_many_lines,
         reason = "one windowed step per side, read as a table"
     )]
-    fn roll_round(
+    fn open_round(
         &mut self,
         state: &mut GameState,
         ctx: &mut Resolving<'_>,
         round: u32,
-        run_barrage: bool,
     ) -> Result<(), CombatError> {
         let (content, sources) = (ctx.content, ctx.sources);
-        if run_barrage {
+        {
             state.combat_round_seq = state.combat_round_seq.saturating_add(1);
 
             // Announced before anything is rolled, because eight action cards read "at the start of
@@ -2287,8 +2570,21 @@ impl CombatWindow {
             // the round would apply it to the next one.
             let mut payload = std::collections::BTreeMap::new();
             payload.insert("system".to_owned(), self.system.to_string().into());
+            // Who is fighting, so the round's card window can admit only them: every card that
+            // hooks it acts on the player's own units in this combat.
+            payload.insert("attacker".to_owned(), self.attacker.to_string().into());
+            payload.insert("defender".to_owned(), self.defender.to_string().into());
             payload.insert("round".to_owned(), i64::from(round).into());
             if round == 1 {
+                crate::diplomacy::evaluate_event(
+                    state,
+                    &crate::diplomacy::DiplomacyEventContext::HostileEngagement {
+                        attacker: self.attacker.clone(),
+                        victim: self.defender.clone(),
+                        activation_seq: state.activation_seq,
+                    },
+                )
+                .expect("validated attack promises settle deterministically");
                 let mut opening = payload.clone();
                 opening.insert("player".to_owned(), self.attacker.to_string().into());
                 let _ = ctx.emit(state, "SPACE_COMBAT_STARTED", opening);
@@ -2301,10 +2597,11 @@ impl CombatWindow {
                 crate::faction_abilities::space_combat_round_started(
                     state, content, sources, ctx.table, &side,
                 );
+                repair_self_repairing(state, &self.system, &side);
             }
         }
 
-        if run_barrage && round == 1 {
+        if round == 1 {
             let occurrence = self.ensure_combat_occurrence(state);
             // Both barrages are rolled before either is applied (78.3), one side at a time:
             // each side's reroll windows (Agnlan Oln, Scramble Frequency) open between its
@@ -2362,34 +2659,151 @@ impl CombatWindow {
                 return Ok(());
             }
         }
+        self.stage = Stage::Announcing {
+            round,
+            asking: self.defender.clone(),
+            announced: Vec::new(),
+        };
+        Ok(())
+    }
 
+    /// Roll a round's combat dice and queue both sides' hits.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one windowed step per side, read as a table"
+    )]
+    fn roll_round(
+        &mut self,
+        state: &mut GameState,
+        ctx: &mut Resolving<'_>,
+        round: u32,
+    ) -> Result<(), CombatError> {
+        let (content, sources) = (ctx.content, ctx.sources);
         // 78.5f: the attacker rolls everything first. 78.6: both sides' hits are computed
         // before either is absorbed. Each side's window opens before the next side's dice
         // are drawn, like the barrage's, so a reroll can empty a fleet mid-roll and end
         // the fight where it stands.
-        let attacker_hits = roll_fleet_and_open(state, ctx, &self.attacker, &self.system);
+        let (attacker_hits, attacker_dice) =
+            roll_fleet_and_open_staged(state, ctx, &self.attacker, &self.system);
         if self.over(state, content, sources) {
             self.stage = self.conclude(state, content, sources, round);
             return Ok(());
         }
-        let defender_hits = roll_fleet_and_open(state, ctx, &self.defender, &self.system);
+        let (defender_hits, defender_dice) =
+            roll_fleet_and_open_staged(state, ctx, &self.defender, &self.system);
         if self.over(state, content, sources) {
             self.stage = self.conclude(state, content, sources, round);
             return Ok(());
         }
 
+        // War Funding (Letnev): "After you and your opponent roll dice during space combat: You may
+        // reroll all of your opponent's dice. You may reroll any number of your dice. Then, return
+        // this card to the Letnev player." Both sides' dice are in hand here and no hit has landed.
+        // The holder rerolls every opposing die and their own misses -- rerolling a hit can only
+        // lose it. Priced for trading since the port, the card was never offered.
+        let mut sets = [attacker_dice, defender_dice];
+        let sides = [self.attacker.clone(), self.defender.clone()];
+        for (holder_index, opponent_index) in [(0usize, 1usize), (1, 0)] {
+            let holder = sides[holder_index].clone();
+            let Some(note) = war_funding_note(state, &holder) else {
+                continue;
+            };
+            let opponent_dice: Vec<(usize, usize)> = sets[opponent_index]
+                .as_ref()
+                .map(|set| {
+                    set.rolls
+                        .iter()
+                        .enumerate()
+                        .flat_map(|(unit, entry)| {
+                            (0..entry.faces.len()).map(move |die| (unit, die))
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let own_misses: Vec<(usize, usize)> = sets[holder_index]
+                .as_ref()
+                .map(|set| {
+                    set.rolls
+                        .iter()
+                        .enumerate()
+                        .flat_map(|(unit, entry)| {
+                            entry
+                                .faces
+                                .iter()
+                                .enumerate()
+                                .filter(|&(die, face)| {
+                                    let adjusted = i64::from(*face)
+                                        + entry
+                                            .deltas
+                                            .get(&die)
+                                            .map_or(0, |offset| i64::from(*offset));
+                                    entry.hits_on.is_some_and(|on| adjusted < i64::from(on))
+                                })
+                                .map(move |(die, _)| (unit, die))
+                                .collect::<Vec<_>>()
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let opponent_hits = sets[opponent_index].as_ref().map_or(0, staged_hits);
+            if opponent_hits == 0 && own_misses.is_empty() {
+                continue; // nothing to gain from it this round
+            }
+            let choice = Choice::new(
+                holder.clone(),
+                "War Funding: reroll all of your opponent's dice and your misses",
+                vec![
+                    ChoiceOption::labelled("use", "promissory_note", "use War Funding"),
+                    ChoiceOption::decline(),
+                ],
+            )
+            .contextualized(
+                DecisionContext::new(
+                    holder.clone(),
+                    DecisionSource::Content("war_funding".to_owned()),
+                    "war_funding",
+                    state.phase,
+                    state.round,
+                )
+                .about(DecisionTarget::System(self.system.clone())),
+            );
+            let answer = ctx.table.ask_seeing(
+                &choice,
+                &Observed::new(state, content, sources, self.galaxy.as_ref()),
+            )?;
+            if answer.is_decline() {
+                continue;
+            }
+            if let Some(set) = sets[opponent_index].as_mut() {
+                apply_reroll_dice(ctx.dice, ctx.rng, set, &opponent_dice, "war_funding");
+            }
+            if let Some(set) = sets[holder_index].as_mut() {
+                apply_reroll_dice(ctx.dice, ctx.rng, set, &own_misses, "war_funding");
+            }
+            crate::promissory::give_back(state, &note);
+        }
+        let split = |set: &Option<RerollSet>, rolled: usize, side: &PlayerId| {
+            set.as_ref().map_or((rolled, 0), |set| {
+                fleet_hits(state, content, sources, side, &self.system, set)
+            })
+        };
+        let (attacker_free, attacker_forced) = split(&sets[0], attacker_hits, &self.attacker);
+        let (defender_free, defender_forced) = split(&sets[1], defender_hits, &self.defender);
+
+        // Forced hits first, so a free hit can still take a fighter the forced ones had to spare.
         let queue: Vec<Pending> = [
-            Pending {
-                player: self.defender.clone(),
-                hits: attacker_hits,
-                producer: self.attacker.clone(),
-            },
-            Pending {
-                player: self.attacker.clone(),
-                hits: defender_hits,
-                producer: self.defender.clone(),
-            },
+            (&self.defender, attacker_forced, &self.attacker, true),
+            (&self.defender, attacker_free, &self.attacker, false),
+            (&self.attacker, defender_forced, &self.defender, true),
+            (&self.attacker, defender_free, &self.defender, false),
         ]
+        .into_iter()
+        .map(|(player, hits, producer, non_fighters_only)| Pending {
+            player: player.clone(),
+            hits,
+            producer: producer.clone(),
+            non_fighters_only,
+        })
         .into_iter()
         .filter(|pending| pending.hits > 0)
         .collect();
@@ -2490,9 +2904,9 @@ impl CombatWindow {
                         continue;
                     }
                     // A single possible casualty is not a decision.
-                    if matches!(self.stage, Stage::Assigning { .. }) && alive == 1 {
-                        let only = ships_of(state, content, sources, &front.player, &self.system)
-                            .remove(0);
+                    let candidates = self.casualty_candidates(state, content, sources, &front);
+                    if matches!(self.stage, Stage::Assigning { .. }) && candidates.len() == 1 {
+                        let only = candidates[0].1.clone();
                         state
                             .system_mut(&self.system)
                             .remove(std::slice::from_ref(&only));
@@ -2509,6 +2923,13 @@ impl CombatWindow {
                         rest[0].hits -= 1;
                         self.stage = Stage::Sustaining { queue: rest, round };
                         continue;
+                    }
+                    // A decision is pending. Neutral units never wait on a decider (rules 5, 7):
+                    // answer for them and let `resolve` carry the combat on from there.
+                    if crate::neutral_units::is_neutral(&front.player)
+                        && let Some(answer) = self.neutral_answer(state, content, sources)
+                    {
+                        return self.resolve(state, ctx, answer).map_err(CombatError::from);
                     }
                     return Ok(());
                 }
@@ -2553,11 +2974,7 @@ impl CombatWindow {
                             self.stage = self.conclude(state, content, sources, round);
                             return Ok(());
                         }
-                        self.stage = Stage::Announcing {
-                            round: round + 1,
-                            asking: self.defender.clone(),
-                            announced: Vec::new(),
-                        };
+                        self.stage = Stage::Opening { round: round + 1 };
                         continue;
                     };
                     let destinations = self.retreats(state, content, sources, &player);
@@ -2582,17 +2999,30 @@ impl CombatWindow {
                         _ => return Ok(()),
                     }
                 }
+                Stage::Opening { round } => {
+                    if self.over(state, content, sources) {
+                        self.stage = self.conclude(state, content, sources, round - 1);
+                        return Ok(());
+                    }
+                    self.open_round(state, ctx, round)?;
+                    if matches!(self.stage, Stage::RollingAfterBarrage { .. }) {
+                        return Ok(());
+                    }
+                }
                 Stage::Rolling { round } => {
                     if self.over(state, content, sources) {
                         self.stage = self.conclude(state, content, sources, round - 1);
                         return Ok(());
                     }
-                    self.roll_round(state, ctx, round, true)?;
+                    self.roll_round(state, ctx, round)?;
                     return Ok(());
                 }
                 Stage::RollingAfterBarrage { round } => {
-                    self.roll_round(state, ctx, round, false)?;
-                    return Ok(());
+                    self.stage = Stage::Announcing {
+                        round,
+                        asking: self.defender.clone(),
+                        announced: Vec::new(),
+                    };
                 }
                 Stage::Done(_) => return Ok(()),
             }
@@ -2609,7 +3039,10 @@ impl Window for CombatWindow {
         sources: SourceSet,
     ) -> Option<Choice> {
         match &self.stage {
-            Stage::Done(_) | Stage::Rolling { .. } | Stage::RollingAfterBarrage { .. } => None,
+            Stage::Done(_)
+            | Stage::Opening { .. }
+            | Stage::Rolling { .. }
+            | Stage::RollingAfterBarrage { .. } => None,
             Stage::Announcing { asking, .. } => {
                 if self.retreats(state, content, sources, asking).is_empty() {
                     return None; // 78.4c: nothing to retreat to, so nothing to announce
@@ -2796,14 +3229,15 @@ impl Window for CombatWindow {
             }
             Stage::Assigning { queue, .. } => {
                 let front = queue.first()?;
-                let units = ships_of(state, content, sources, &front.player, &self.system);
-                if units.len() < 2 {
+                let candidates = self.casualty_candidates(state, content, sources, front);
+                if candidates.len() < 2 {
                     return None;
                 }
                 // One option per distinguishable loss; damage is part of what distinguishes.
                 let mut seen = std::collections::BTreeSet::new();
                 let mut options = Vec::new();
-                for (index, unit) in units.iter().enumerate() {
+                for (index, unit) in &candidates {
+                    let index = *index;
                     if !seen.insert((unit.type_id.to_string(), unit.sustained_damage)) {
                         continue;
                     }
@@ -2855,7 +3289,10 @@ impl Window for CombatWindow {
         let option = crate::choice::validate(&choice, answer)?;
 
         match self.stage.clone() {
-            Stage::Done(_) | Stage::Rolling { .. } | Stage::RollingAfterBarrage { .. } => {}
+            Stage::Done(_)
+            | Stage::Opening { .. }
+            | Stage::Rolling { .. }
+            | Stage::RollingAfterBarrage { .. } => {}
             Stage::Announcing {
                 round,
                 asking,
@@ -3371,7 +3808,10 @@ mod tests {
 
         let types = catalogue(ContentStore::embedded(), POK);
         let guns = |state: &GameState| {
-            reaching_guns(state, &types, Some(&hub.galaxy), &active, &attacker()).len()
+            reaching_guns_by(state, &types, Some(&hub.galaxy), &active, |owner| {
+                owner != &attacker()
+            })
+            .len()
         };
 
         if let Some(here) = state.board.get_mut(&next_door) {
@@ -3467,11 +3907,17 @@ mod tests {
         state.board.entry(refuge.clone()).or_default();
         put(&mut state, &refuge, "fighter", &defender(), 1);
 
-        let window = CombatWindow::new(&state, ContentStore::embedded(), POK, &system)
+        let mut window = CombatWindow::new(&state, ContentStore::embedded(), POK, &system)
             .with_galaxy(hub.galaxy);
+        // As it stands once round 1 has opened (no barrage between two fighters).
+        window.stage = Stage::Announcing {
+            round: 1,
+            asking: defender(),
+            announced: Vec::new(),
+        };
         let choice = window
             .pending_choice(&state, ContentStore::embedded(), POK)
-            .expect("a fresh combat opens by asking the defender to announce");
+            .expect("round 1 asks the defender to announce");
         let context = choice.context.as_ref().expect("typed context");
         assert_eq!(context.source, DecisionSource::Rule("78.9".to_owned()));
         assert_eq!(context.subtype, "announce_retreat");
@@ -3495,6 +3941,7 @@ mod tests {
                 player: defender(),
                 hits: 1,
                 producer: attacker(),
+                non_fighters_only: false,
             }],
             round: 1,
         };
@@ -3511,6 +3958,7 @@ mod tests {
                 player: defender(),
                 hits: 1,
                 producer: attacker(),
+                non_fighters_only: false,
             }],
             round: 1,
         };
@@ -4294,6 +4742,143 @@ mod tests {
     }
 
     #[test]
+    fn the_active_players_guns_fire_at_the_ships_it_attacks() {
+        // User ruling 2026-09-17: space cannon offense is not only for the defender. An Xxcha
+        // flagship moving in fires at the defender's ships before combat.
+        let (mut state, system) = arena();
+        put(&mut state, &system, "xxcha_flagship", &attacker(), 1);
+        put(&mut state, &system, "cruiser", &defender(), 2);
+        let (_, mut dice, mut rng) = kit();
+
+        let _ = space_cannon_offense(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut dice,
+            &mut rng,
+            &system,
+            &attacker(),
+            None,
+        );
+
+        assert_eq!(
+            dice.count(),
+            1,
+            "the attacker's flagship rolled its space cannon"
+        );
+        assert!(
+            state.reroll_staging.contains_key(&attacker()),
+            "the attacker's roll is staged for its reroll window"
+        );
+        assert_eq!(
+            opponent_with_ships(&state, ContentStore::embedded(), POK, &attacker(), &system),
+            Some(defender()),
+            "and its hits go to the defender"
+        );
+    }
+
+    #[test]
+    fn hylarim_turns_each_nine_or_ten_into_two_extra_hits() {
+        let (mut state, system) = arena();
+        put(&mut state, &system, "jolnar_flagship", &attacker(), 1);
+        let set = RerollSet {
+            kind: "fleet".into(),
+            system: system.clone(),
+            rolls: vec![RerollEntry {
+                unit: "jolnar_flagship".into(),
+                planet: None,
+                hits_on: Some(7),
+                faces: vec![9, 3],
+                rerolled: std::collections::BTreeSet::new(),
+                deltas: std::collections::BTreeMap::new(),
+                unit_types: std::iter::once(("jolnar_flagship".to_owned(), 1)).collect(),
+            }],
+        };
+        // One ordinary hit from the 9, and two more because it was a 9.
+        assert_eq!(
+            fleet_hits(
+                &state,
+                ContentStore::embedded(),
+                POK,
+                &attacker(),
+                &system,
+                &set
+            ),
+            (3, 0)
+        );
+    }
+
+    #[test]
+    fn zero_zero_one_forces_its_fleets_hits_onto_non_fighters() {
+        let (mut state, system) = arena();
+        put(&mut state, &system, "l1z1x_flagship", &attacker(), 1);
+        put(&mut state, &system, "l1z1x_dreadnought", &attacker(), 1);
+        put(&mut state, &system, "carrier", &attacker(), 1);
+        put(&mut state, &system, "fighter", &defender(), 3);
+        put(&mut state, &system, "cruiser", &defender(), 1);
+        let entry = |unit: &str, hits_on: u32| RerollEntry {
+            unit: unit.into(),
+            planet: None,
+            hits_on: Some(hits_on),
+            faces: vec![10],
+            rerolled: std::collections::BTreeSet::new(),
+            deltas: std::collections::BTreeMap::new(),
+            unit_types: std::iter::once((unit.to_owned(), 1)).collect(),
+        };
+        let set = RerollSet {
+            kind: "fleet".into(),
+            system: system.clone(),
+            rolls: vec![entry("l1z1x_dreadnought", 5), entry("carrier", 9)],
+        };
+        let content = ContentStore::embedded();
+        assert_eq!(
+            fleet_hits(&state, content, POK, &attacker(), &system, &set),
+            (1, 1),
+            "the dreadnought's hit is forced, the carrier's is not"
+        );
+
+        let window = CombatWindow::new(&state, content, POK, &system);
+        let forced = Pending {
+            player: defender(),
+            hits: 1,
+            producer: attacker(),
+            non_fighters_only: true,
+        };
+        let candidates = window.casualty_candidates(&state, content, POK, &forced);
+        assert_eq!(candidates.len(), 1, "only the cruiser may take it");
+        assert_eq!(candidates[0].1.type_id.as_str(), "cruiser");
+
+        // "If able": with no non-fighter left, the hit falls on a fighter as usual.
+        state
+            .system_mut(&system)
+            .units
+            .retain(|unit| unit.type_id.as_str() != "cruiser");
+        let candidates = window.casualty_candidates(&state, content, POK, &forced);
+        assert_eq!(candidates.len(), 3);
+    }
+
+    #[test]
+    fn arc_secundus_repairs_itself_and_nothing_else() {
+        let (mut state, system) = arena();
+        for kind in ["letnev_flagship", "dreadnought"] {
+            state
+                .system_mut(&system)
+                .units
+                .push(Unit::new(UnitTypeId::new(kind), attacker()).sustained());
+        }
+        repair_self_repairing(&mut state, &system, &attacker());
+        let damage: Vec<(String, bool)> = state
+            .system_state(&system)
+            .units
+            .iter()
+            .filter(|unit| unit.owner == attacker())
+            .map(|unit| (unit.type_id.to_string(), unit.sustained_damage))
+            .collect();
+        assert!(damage.contains(&("letnev_flagship".to_owned(), false)));
+        assert!(damage.contains(&("dreadnought".to_owned(), true)));
+    }
+
+    #[test]
     fn a_retreat_needs_somewhere_that_is_yours_and_unthreatened() {
         // 78.7c: adjacent, holds your units or a planet you control, and no enemy ships.
         let hub = crate::fixtures::plain_hub();
@@ -4627,6 +5212,54 @@ mod tests {
     }
 
     #[test]
+    fn a_carried_mech_cannot_sustain_a_space_hit() {
+        // Only ships are assigned hits in space combat; a mech in the space area is cargo. Before
+        // the fix FirstOption sustained the mech and the carrier lived.
+        let (mut state, system) = arena();
+        put(&mut state, &system, "carrier", &defender(), 1);
+        put(&mut state, &system, "letnev_mech", &defender(), 1);
+        let mut table = Table::with_default(Box::new(FirstOption));
+
+        absorb_hits(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut table,
+            &defender(),
+            &system,
+            &attacker(),
+            1,
+        )
+        .unwrap();
+
+        assert!(
+            ships_of(&state, ContentStore::embedded(), POK, &defender(), &system).is_empty(),
+            "the carrier took the hit"
+        );
+        assert!(
+            state
+                .system_state(&system)
+                .units
+                .iter()
+                .all(|unit| !unit.sustained_damage),
+            "no unit sustained"
+        );
+    }
+
+    #[test]
+    fn a_combat_window_offers_no_sustain_to_a_carried_mech() {
+        let (mut state, system) = arena();
+        put(&mut state, &system, "carrier", &defender(), 1);
+        put(&mut state, &system, "letnev_mech", &defender(), 1);
+        let window = CombatWindow::new(&state, ContentStore::embedded(), POK, &system);
+        assert!(
+            window
+                .sustainers(&state, ContentStore::embedded(), POK, &defender())
+                .is_empty()
+        );
+    }
+
+    #[test]
     fn sustain_is_optional_and_declining_loses_the_ship() {
         let (mut state, system) = arena();
         put(&mut state, &system, "dreadnought", &defender(), 1);
@@ -4801,6 +5434,7 @@ mod tests {
                 player: defender(),
                 hits: 1,
                 producer: attacker(),
+                non_fighters_only: false,
             }],
             round: 1,
         };
@@ -4877,6 +5511,7 @@ mod tests {
                 player: defender(),
                 hits: 1,
                 producer: attacker(),
+                non_fighters_only: false,
             }],
             round: 1,
         };
@@ -5040,14 +5675,20 @@ mod tests {
         put(&mut state, &refuge_a, "fighter", &defender(), 1);
         put(&mut state, &refuge_b, "fighter", &defender(), 3);
 
-        let window = CombatWindow::new(&state, ContentStore::embedded(), POK, &system)
+        let mut window = CombatWindow::new(&state, ContentStore::embedded(), POK, &system)
             .with_galaxy(hub.galaxy);
+        // As it stands once round 1 has opened (no barrage between fighters).
+        window.stage = Stage::Announcing {
+            round: 1,
+            asking: defender(),
+            announced: Vec::new(),
+        };
 
         // Announcing: the defender's own two fighters here previews 2 -> 2 for "stay" and
         // 2 -> 0 for "retreat", both carrying `system`.
         let announcing = window
             .pending_choice(&state, ContentStore::embedded(), POK)
-            .expect("a fresh combat opens by asking the defender to announce");
+            .expect("round 1 asks the defender to announce");
         for (id, before, after) in [("stay", 2, 2), ("retreat", 2, 0)] {
             let option = announcing
                 .options
@@ -5192,6 +5833,7 @@ mod tests {
                 player: player.clone(),
                 hits: 1,
                 producer: attacker(),
+                non_fighters_only: false,
             }],
             round: 1,
         };
@@ -5649,6 +6291,142 @@ mod tests {
         assert_eq!(
             notes.get(&b),
             Some(&std::collections::BTreeSet::from([a.clone()]))
+        );
+    }
+
+    #[test]
+    fn war_funding_is_offered_after_both_sides_roll_and_goes_home_when_used() {
+        // Priced for trading, the card was never offered in a combat.
+        struct UsesWarFunding;
+        impl crate::choice::Decider for UsesWarFunding {
+            fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+                if choice.prompt.starts_with("War Funding") {
+                    return Ok(choice
+                        .options
+                        .iter()
+                        .find(|option| option.id == "use")
+                        .cloned()
+                        .expect("use is offered"));
+                }
+                choice
+                    .options
+                    .first()
+                    .cloned()
+                    .ok_or_else(|| IllegalChoice::NoOptions {
+                        player: choice.player.clone(),
+                        prompt: choice.prompt.clone(),
+                    })
+            }
+        }
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.player_mut(&a).unwrap().faction = ti4_model::id::FactionId::new("hacan");
+        state.player_mut(&b).unwrap().faction = ti4_model::id::FactionId::new("letnev");
+        state.active = Some(a.clone());
+        let note = crate::promissory::note_id("war_funding", "letnev");
+        state.promissory_notes.insert(note.clone(), a.clone());
+        let system = SystemId::new(&crate::fixtures::plain_systems(1)[0]);
+        crate::fixtures::put(&mut state, &system, "dreadnought", &a, 2);
+        crate::fixtures::put(&mut state, &system, "dreadnought", &b, 2);
+        let mut table = Table::with_default(Box::new(UsesWarFunding));
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(11);
+
+        resolve(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut table,
+            &mut dice,
+            &mut rng,
+            &system,
+        )
+        .expect("the combat resolves");
+
+        assert_eq!(
+            state.promissory_notes.get(&note),
+            Some(&b),
+            "War Funding was used and went home to Letnev"
+        );
+    }
+
+    #[test]
+    fn neutral_ships_are_a_side_in_space_combat() {
+        // Thunder's Edge neutral rule 2. The neutral owner is never seated, so a combatant list
+        // built only from the seating order left a player alone against the Fracture's garrison.
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        let system = SystemId::new("fracture1");
+        let a = PlayerId::new("a");
+        let neutral = crate::neutral_units::owner();
+        crate::fixtures::put(&mut state, &system, "cruiser", &a, 1);
+        crate::fixtures::put(&mut state, &system, "neutral_cruiser", &neutral, 2);
+
+        let sides = combatants(
+            &state,
+            ContentStore::embedded(),
+            ti4_model::content_types::FULL,
+            &system,
+        );
+
+        assert_eq!(sides, vec![a, neutral]);
+    }
+
+    #[test]
+    fn a_space_combat_against_neutral_units_is_fought_without_asking_the_neutral_side() {
+        // Rules 2, 5, 6, 7 together: the combat happens, and nobody is ever asked to decide for
+        // the neutral side -- not whether to retreat, not whether to sustain, not which unit dies.
+        // The default decider refuses every question, so any neutral ask fails the combat.
+        struct NeverAsked;
+        impl crate::choice::Decider for NeverAsked {
+            fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+                Err(IllegalChoice::DeciderFailed {
+                    player: choice.player.clone(),
+                    prompt: choice.prompt.clone(),
+                    reason: "the neutral side must never be asked".to_owned(),
+                })
+            }
+        }
+        let a = PlayerId::new("a");
+        let neutral = crate::neutral_units::owner();
+        let system = SystemId::new("fracture4");
+        let mut state = crate::fixtures::game(&["a"]);
+        state.active = Some(a.clone());
+        crate::fixtures::put(&mut state, &system, "dreadnought", &a, 3);
+        crate::fixtures::put(&mut state, &system, "neutral_destroyer", &neutral, 1);
+        crate::fixtures::put(&mut state, &system, "neutral_dreadnought", &neutral, 2);
+        let mut table = Table::with_default(Box::new(NeverAsked));
+        table.seat(a.clone(), Box::new(crate::choice::FirstOption));
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(7);
+
+        let outcome = resolve(
+            &mut state,
+            ContentStore::embedded(),
+            ti4_model::content_types::FULL,
+            &mut table,
+            &mut dice,
+            &mut rng,
+            &system,
+        )
+        .expect("the combat resolves without ever asking the neutral side");
+
+        assert!(outcome.rounds >= 1, "a combat was actually fought");
+        let content = ContentStore::embedded();
+        let mine = ships_of(&state, content, ti4_model::content_types::FULL, &a, &system);
+        let theirs = ships_of(
+            &state,
+            content,
+            ti4_model::content_types::FULL,
+            &neutral,
+            &system,
+        );
+        assert!(
+            mine.is_empty() || theirs.is_empty() || outcome.rounds >= MAX_ROUNDS,
+            "the combat ran until one side was gone: {} vs {} left after {} rounds",
+            mine.len(),
+            theirs.len(),
+            outcome.rounds
         );
     }
 

@@ -107,6 +107,15 @@ pub fn bombardable(
     if has_warsun {
         return true;
     }
+    // Arc Secundus, the Letnev flagship: "Other player's units in this system lose PLANETARY
+    // SHIELD." Its own player's shields are untouched, and the invader is the only one bombarding.
+    let arc_secundus = board
+        .units_of(invader)
+        .into_iter()
+        .any(|unit| unit.type_id.as_str() == "letnev_flagship");
+    if arc_secundus {
+        return true;
+    }
     // L1Z1X's commander ignores a planetary shield outright, which is the whole card.
     if crate::leaders::ignores_planetary_shield(state, invader) {
         return true;
@@ -405,7 +414,12 @@ fn roll_bombard_plan(
             .system_state(system)
             .on_planet(&planet)
             .iter()
-            .filter(|unit| &unit.owner != invader)
+            .filter(|unit| {
+                &unit.owner != invader
+                    && types
+                        .get(unit.type_id.as_str())
+                        .is_some_and(UnitType::is_ground_force)
+            })
             .cloned()
             .collect();
         if defenders.is_empty() {
@@ -496,27 +510,16 @@ fn roll_bombard_plan(
 /// chosen player's own units and do not spill to anyone else's.
 fn take_bombard_hits(
     state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
     system: &SystemId,
     planet: &PlanetId,
     owner: &PlayerId,
     produced: usize,
 ) -> usize {
-    if produced == 0 {
-        return 0;
-    }
-    let doomed: Vec<Unit> = state
-        .system_state(system)
-        .on_planet(planet)
-        .iter()
-        .filter(|unit| unit.owner == *owner)
-        .take(produced)
-        .cloned()
-        .collect();
-    if doomed.is_empty() {
-        return 0;
-    }
-    state.system_mut(system).remove_from_planet(planet, &doomed);
-    doomed.len()
+    (0..produced)
+        .filter(|_| ground_hit(state, content, sources, system, planet, owner).is_some())
+        .count()
 }
 
 /// The coexistence 7/7.1 question: whose units on the planet take this bombarding unit's
@@ -619,7 +622,15 @@ fn apply_bombard_plan(
                         .id,
                 )
             };
-            taken += take_bombard_hits(state, system, &entry.planet, &target, *produced);
+            taken += take_bombard_hits(
+                state,
+                content,
+                sources,
+                system,
+                &entry.planet,
+                &target,
+                *produced,
+            );
         }
         killed += taken;
         // Make an Example of Their World asks for the last ground force on a planet and asks
@@ -945,6 +956,64 @@ fn roll_ground(
     hits
 }
 
+/// Apply one hit to `player`'s ground forces on `planet`: an undamaged unit with SUSTAIN DAMAGE
+/// (a mech) absorbs it; otherwise the cheapest ground force is destroyed, a damaged unit before a
+/// fresh one of the same cost. Structures never take it (KD-2). Returns the destroyed unit, or
+/// `None` when the hit was sustained or nothing was left to take it (15.2a).
+///
+/// Shared by ground combat, bombardment, Harrow and space cannon defense, so every ground hit
+/// follows one rule.
+fn ground_hit(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    system: &SystemId,
+    planet: &PlanetId,
+    player: &PlayerId,
+) -> Option<Unit> {
+    let types = catalogue(content, sources);
+    let forces: Vec<Unit> = state
+        .system_state(system)
+        .on_planet_of(planet, player)
+        .into_iter()
+        .filter(|unit| {
+            types
+                .get(unit.type_id.as_str())
+                .is_some_and(UnitType::is_ground_force)
+        })
+        .cloned()
+        .collect();
+    if let Some(sturdy) = forces.iter().find(|unit| {
+        !unit.sustained_damage
+            && types
+                .get(unit.type_id.as_str())
+                .is_some_and(|kind| kind.sustain_damage())
+    }) {
+        state
+            .system_mut(system)
+            .replace_planet_unit(planet, sturdy, sturdy.sustained());
+        return None;
+    }
+    let cost = |unit: &Unit| {
+        types
+            .get(unit.type_id.as_str())
+            .map_or(0.0, |kind| kind.cost())
+    };
+    let doomed = forces
+        .iter()
+        .min_by(|a, b| {
+            cost(a)
+                .total_cmp(&cost(b))
+                .then(b.sustained_damage.cmp(&a.sustained_damage))
+                .then(a.type_id.as_str().cmp(b.type_id.as_str()))
+        })?
+        .clone();
+    state
+        .system_mut(system)
+        .remove_from_planet(planet, std::slice::from_ref(&doomed));
+    Some(doomed)
+}
+
 /// Remove `hits` of one player's ground forces from a planet, the owner choosing.
 fn absorb_ground(
     state: &mut GameState,
@@ -958,6 +1027,24 @@ fn absorb_ground(
 ) -> Result<(), IllegalChoice> {
     let types = catalogue(content, sources);
     for _ in 0..hits {
+        // A mech's SUSTAIN DAMAGE cancels the hit before anyone chooses a casualty.
+        let sturdy = state
+            .system_state(system)
+            .on_planet_of(planet, player)
+            .into_iter()
+            .find(|unit| {
+                !unit.sustained_damage
+                    && types
+                        .get(unit.type_id.as_str())
+                        .is_some_and(|kind| kind.is_ground_force() && kind.sustain_damage())
+            })
+            .cloned();
+        if let Some(sturdy) = sturdy {
+            state
+                .system_mut(system)
+                .replace_planet_unit(planet, &sturdy, sturdy.sustained());
+            continue;
+        }
         // LRR 42: only ground forces take hits in a ground combat; structures survive the
         // fight and die when control changes hands instead (KD-2).
         let present: Vec<Unit> = state
@@ -974,7 +1061,21 @@ fn absorb_ground(
         if present.is_empty() {
             return Ok(()); // 15.2a
         }
-        let doomed = if let [only] = present.as_slice() {
+        // Neutral units rule 7: nobody chooses; the hit goes to the unit lowest on the reference
+        // card.
+        let neutral_pick = if crate::neutral_units::is_neutral(player) {
+            crate::neutral_units::next_casualty(
+                &crate::neutral_units::roster(content, sources),
+                &present,
+                |_| true,
+            )
+            .cloned()
+        } else {
+            None
+        };
+        let doomed = if let Some(unit) = neutral_pick {
+            unit
+        } else if let [only] = present.as_slice() {
             only.clone()
         } else {
             let mut seen = std::collections::BTreeSet::new();
@@ -1354,7 +1455,12 @@ impl InvasionWindow {
     /// Advance the bombardment as far as it can without asking anyone: assign the hits on
     /// single-owner planets inline, and pause (stopping the loop) on the first planet that
     /// needs a per-unit target choice.
-    fn step_bombardment(&mut self, state: &mut GameState) {
+    fn step_bombardment(
+        &mut self,
+        state: &mut GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+    ) {
         loop {
             let Some(entry) = self.bombard_plan.get(self.bombard_index) else {
                 self.stage = Stage::Custodians;
@@ -1375,7 +1481,15 @@ impl InvasionWindow {
                 let target = victims.iter().next().expect("a single owner");
                 let mut taken = 0;
                 for produced in &groups {
-                    taken += take_bombard_hits(state, &self.system, &planet, target, *produced);
+                    taken += take_bombard_hits(
+                        state,
+                        content,
+                        sources,
+                        &self.system,
+                        &planet,
+                        target,
+                        *produced,
+                    );
                 }
                 self.report.bombardment_kills += taken;
                 self.complete_bombard_plan(
@@ -1467,7 +1581,7 @@ impl InvasionWindow {
                         self.bombard_announced = true;
                         self.announce_bombard_rerolls(state, ctx);
                     }
-                    self.step_bombardment(state);
+                    self.step_bombardment(state, ctx.content, ctx.sources);
                     // The stage moved on (a later bombardment step, the custodians stage, or
                     // the coexistence pause); re-match it.
                 }
@@ -1622,6 +1736,9 @@ impl InvasionWindow {
 
     fn finish_committing(&mut self, state: &mut GameState, ctx: &mut Resolving<'_>) {
         let planets = self.report.committed.clone();
+        for planet in &planets {
+            space_cannon_defense(state, ctx, &self.system, planet, &self.invader);
+        }
         if planets.is_empty() {
             self.stage = Stage::Done;
         } else {
@@ -1740,6 +1857,35 @@ impl InvasionWindow {
             &self.invader,
             defender_hits,
         );
+        // L1Z1X's Harrow: at the end of each round of ground combat, bombard the defender again.
+        // A planetary shield stops it as it stops any bombardment (63.2).
+        if bombardable(
+            state,
+            content,
+            sources,
+            &self.system,
+            &planet,
+            &self.invader,
+        ) {
+            let harrow = crate::faction_abilities::ground_combat_round_ended(
+                state,
+                content,
+                sources,
+                ctx.dice,
+                ctx.rng,
+                &self.invader,
+                &self.system,
+            );
+            remove_ground(
+                state,
+                content,
+                sources,
+                &self.system,
+                &planet,
+                &defender,
+                harrow,
+            );
+        }
         self.finish_ground_round(state, ctx, planets, index, defender, &planet);
     }
 
@@ -2303,8 +2449,15 @@ impl Window for InvasionWindow {
                     .find(|&i| groups[i] > 0)
                     .expect("paused on a bombardment that had hits to assign");
                 let target = PlayerId::new(option.id);
-                let applied =
-                    take_bombard_hits(state, &self.system, &planet, &target, groups[next]);
+                let applied = take_bombard_hits(
+                    state,
+                    content,
+                    sources,
+                    &self.system,
+                    &planet,
+                    &target,
+                    groups[next],
+                );
                 self.report.bombardment_kills += applied;
                 let taken = taken + applied;
                 let exhausted = next + 1 >= groups.len()
@@ -2444,6 +2597,17 @@ impl Window for InvasionWindow {
                         payload.insert("player".to_owned(), self.invader.to_string().into());
                         if let Some(holder) = controller {
                             payload.insert("controller".to_owned(), holder.to_string().into());
+                            if holder != self.invader {
+                                crate::diplomacy::evaluate_event(
+                                    state,
+                                    &crate::diplomacy::DiplomacyEventContext::HostileEngagement {
+                                        attacker: self.invader.clone(),
+                                        victim: holder,
+                                        activation_seq: state.activation_seq,
+                                    },
+                                )
+                                .expect("validated attack promises settle deterministically");
+                            }
                         }
                         let _ = ctx.emit(state, "UNITS_COMMITTED", payload);
 
@@ -2530,30 +2694,62 @@ fn remove_ground(
     player: &PlayerId,
     hits: usize,
 ) {
-    let types = catalogue(content, sources);
     for _ in 0..hits {
-        // LRR 42: only ground forces take hits in a ground combat; structures survive the
-        // fight and die when control changes hands instead (KD-2).
-        let present: Vec<Unit> = state
-            .system_state(system)
-            .on_planet_of(planet, player)
-            .into_iter()
-            .cloned()
-            .collect();
-        let doomed = present
-            .iter()
-            .find(|unit| {
-                types
-                    .get(unit.type_id.as_str())
-                    .is_some_and(UnitType::is_ground_force)
-            })
-            .cloned();
-        let Some(doomed) = doomed else {
-            return; // 15.2a
+        let _ = ground_hit(state, content, sources, system, planet, player);
+    }
+}
+
+/// Space cannon defense: after ground forces are committed, the other players' SPACE CANNON
+/// units on the planet fire at them (PDS, and the Xxcha mech). Disable strips an opponent's PDS
+/// of SPACE CANNON for the invasion, as it does for space cannon offense.
+fn space_cannon_defense(
+    state: &mut GameState,
+    ctx: &mut Resolving<'_>,
+    system: &SystemId,
+    planet: &PlanetId,
+    invader: &PlayerId,
+) {
+    let (content, sources) = (ctx.content, ctx.sources);
+    if !crate::entropic_scars::abilities_usable(content, sources, system, Some(system)) {
+        return;
+    }
+    let types = catalogue(content, sources);
+    let guns: Vec<Unit> = state
+        .system_state(system)
+        .on_planet(planet)
+        .iter()
+        .filter(|unit| &unit.owner != invader)
+        .cloned()
+        .collect();
+    let mut hits = 0;
+    for unit in guns {
+        let Some(kind) = types.get(unit.type_id.as_str()) else {
+            continue;
         };
-        state
-            .system_mut(system)
-            .remove_from_planet(planet, std::slice::from_ref(&doomed));
+        let Some(value) = kind.space_cannon_hits_on() else {
+            continue;
+        };
+        if kind.base_type() == "pds"
+            && state.players.iter().any(|seat| {
+                seat.id != unit.owner && seat.disable_invasion.contains(&state.activation_seq)
+            })
+        {
+            continue;
+        }
+        let count = usize::try_from(kind.space_cannon_dice()).unwrap_or(0);
+        if count == 0 {
+            continue;
+        }
+        let roll = ctx.dice.roll(
+            ctx.rng,
+            count,
+            "space cannon defense",
+            Some(u32::try_from(value).unwrap_or(u32::MAX)),
+        );
+        hits += roll.hits();
+    }
+    for _ in 0..hits {
+        let _ = ground_hit(state, content, sources, system, planet, invader);
     }
 }
 
@@ -3251,8 +3447,9 @@ mod tests {
 
         // A ground casualty names its unit.
         let mut state = crate::fixtures::game(&["a", "b"]);
+        // Two kinds of infantry: a mech would sustain the hit and nothing would be asked.
         on_planet(&mut state, &system, &planet, "infantry", &player, 1);
-        on_planet(&mut state, &system, &planet, "mech", &player, 1);
+        on_planet(&mut state, &system, &planet, "infantry2", &player, 1);
         let (decider, seen) = crate::choice::Capturing::new(Box::new(crate::choice::FirstOption));
         let mut table = Table::with_default(Box::new(decider));
         absorb_ground(
@@ -3836,6 +4033,112 @@ mod tests {
         }
     }
 
+    fn planet_units(
+        state: &GameState,
+        system: &SystemId,
+        planet: &PlanetId,
+    ) -> Vec<(String, bool)> {
+        let mut units: Vec<(String, bool)> = state
+            .system_state(system)
+            .on_planet(planet)
+            .iter()
+            .map(|unit| (unit.type_id.to_string(), unit.sustained_damage))
+            .collect();
+        units.sort();
+        units
+    }
+
+    #[test]
+    fn a_ground_hit_is_sustained_then_takes_the_cheapest_force_and_never_a_structure() {
+        let content = ContentStore::embedded();
+        let (mut state, system, planet) = arena_off_mecatol();
+        on_planet(&mut state, &system, &planet, "mech", &holder(), 1);
+        on_planet(&mut state, &system, &planet, "infantry", &holder(), 1);
+        on_planet(&mut state, &system, &planet, "pds", &holder(), 1);
+        let mut hit = || ground_hit(&mut state, content, POK, &system, &planet, &holder());
+        assert!(hit().is_none(), "the mech sustains the first hit");
+        assert_eq!(
+            hit().map(|unit| unit.type_id.to_string()),
+            Some("infantry".to_owned()),
+            "then the cheapest force falls"
+        );
+        assert_eq!(
+            hit().map(|unit| unit.type_id.to_string()),
+            Some("mech".to_owned())
+        );
+        assert!(hit().is_none(), "nothing is left to take a hit");
+        assert_eq!(
+            planet_units(&state, &system, &planet),
+            vec![("pds".to_owned(), false)],
+            "the structure is untouched"
+        );
+    }
+
+    #[test]
+    fn bombardment_hits_ground_forces_only() {
+        let content = ContentStore::embedded();
+        let (mut state, system, planet) = arena_off_mecatol();
+        on_planet(&mut state, &system, &planet, "spacedock", &holder(), 1);
+        on_planet(&mut state, &system, &planet, "infantry", &holder(), 1);
+        let taken = take_bombard_hits(&mut state, content, POK, &system, &planet, &holder(), 3);
+        assert_eq!(taken, 1);
+        assert_eq!(
+            planet_units(&state, &system, &planet),
+            vec![("spacedock".to_owned(), false)]
+        );
+    }
+
+    #[test]
+    fn arc_secundus_strips_the_defenders_planetary_shield() {
+        let content = ContentStore::embedded();
+        let (mut state, system, planet) = arena_off_mecatol();
+        on_planet(&mut state, &system, &planet, "pds", &holder(), 1);
+        on_planet(&mut state, &system, &planet, "infantry", &holder(), 1);
+        in_space(&mut state, &system, "dreadnought", &invader(), 1);
+        assert!(!bombardable(
+            &state,
+            content,
+            POK,
+            &system,
+            &planet,
+            &invader()
+        ));
+        in_space(&mut state, &system, "letnev_flagship", &invader(), 1);
+        assert!(bombardable(
+            &state,
+            content,
+            POK,
+            &system,
+            &planet,
+            &invader()
+        ));
+    }
+
+    #[test]
+    fn space_cannon_defense_fires_at_the_forces_that_landed() {
+        let content = ContentStore::embedded();
+        let (mut state, system, planet) = arena_off_mecatol();
+        on_planet(&mut state, &system, &planet, "pds", &holder(), 1);
+        on_planet(&mut state, &system, &planet, "infantry", &invader(), 2);
+        let mut table = Table::with_default(Box::new(crate::choice::FirstOption));
+        let mut dice = Dice::from_faces([10u32]);
+        let mut rng = GameRng::new(7);
+        let mut ctx = crate::choice::Resolving {
+            content,
+            sources: POK,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut table,
+            timing: None,
+        };
+        space_cannon_defense(&mut state, &mut ctx, &system, &planet, &invader());
+        let landed = state
+            .system_state(&system)
+            .on_planet_of(&planet, &invader())
+            .len();
+        assert_eq!(landed, 1, "the PDS hit one of the two infantry");
+    }
+
     #[test]
     fn a_structure_only_planet_falls_without_resistance() {
         // LRR 49 (KD-2): structures are not ground forces, so a planet holding only rival
@@ -3856,8 +4159,9 @@ mod tests {
             planet: planet.clone(),
             seen: seen.clone(),
         }));
-        // Pre-fix, the spurious fight consumes exactly these two faces in round one.
-        let mut dice = Dice::from_faces([10u32, 8]);
+        // The PDS fires space cannon defense at the landing infantry first; a 1 misses, so both
+        // land. Pre-fix, the spurious fight consumed the next two faces in round one.
+        let mut dice = Dice::from_faces([1u32, 10, 8]);
         let mut rng = GameRng::new(7);
         let mut window = InvasionWindow::new(
             &mut state,

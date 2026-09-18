@@ -17,6 +17,252 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 
 ## Current position
 
+### Structured diplomacy v2 continuation (2026-09-15)
+
+- Claude resume point: `plans/CLAUDE_HANDOVER_2026-09-16.md`.
+
+- Branch `codex/diplomacy-v1`; the legality/schema package remains uncommitted pending independent
+  Tier-C review. Detailed handover: `plans/DIPLOMACY_HANDOVER_2026-09-15.md`; verification:
+  `plans/evidence/DIPLOMACY_V2_CONTINUATION_2026-09-15.md`.
+- Continuation completed seat-addressed contact IDs, typed agenda vote assurances, bounded structured
+  signal features, explicit diplomacy-log-v2 / offline-v3 / observation-v3 schemas, the derived
+  43-option cap, strict scoped Clippy, full affected test gates, and a 60-seed x 6-round release soak.
+- Simulation reproduced inside the existing v38 behavior envelope. Its only failure is the already
+  documented missing map-pool fixture; no behavioral rebaseline was performed.
+- Next correctness package: remove the full append-only diplomacy journal from checkpointed
+  `GameState` without truncating or weakening authenticated export/replay/reviewer evidence.
+- Remaining downstream work: broader `UseLeaderFor` hooks, reviewer browser QA, paired greedy
+  evaluation, fresh v3 corpus capture, BC, then PPO qualification.
+- The first exploratory diplomacy PPO process stopped at its update-25 publish boundary because a
+  descriptive suffix had been appended to `GIT_COMMIT`; bundle provenance requires 7–64 hexadecimal
+  characters. Its `checkpoint-5988.tmp` has tensors but no manifest and is not a bundle.
+- The corrected run is active as PID 77484. It starts from migrated schema-10
+  `checkpoint-19280-diplomacy-v11`, uses the established faction waste penalties
+  `15,12,5,5,8,8`, trains 1,000 four-round updates on CUDA, and writes to
+  `D:/Projects/ti4-engine-rs/out/ppo-diplomacy-overnight-waste-20260915`. Checkpoint 240 was
+  published after update 1 and reloaded identically, including its manifest. This is an experiment,
+  not a qualification run. The PPO driver now has an explicit `--diplomacy` switch; without it the
+  legacy rollout remains unchanged.
+
+### Repository-wide seeded seating (2026-09-15)
+
+- Seeded faction permutation plus rotation is now the sole game-seating contract across reviewer,
+  simulation, training, evaluation, corpus capture, and diagnostics.
+- The legacy scramble toggle cannot disable the contract. Evidence:
+  `plans/evidence/SEEDED-SEATING-CONTRACT-2026-09-15.md`.
+
+### OFFLINE-PILOT-SINGLE-CHECKPOINT — single-checkpoint multi-temperature capture (2026-09-14)
+
+- Operator request: a generation run using **only**
+  `out/vponly-main-20260911/checkpoints/checkpoint-236464` at various temperatures.
+- Implemented in `crates/ti4-mlp/examples/capture_offline_pilot.rs`: `--single <dir>` +
+  `--temperatures t1,t2,...` (default `0.25,1.0,2.5`, matching the existing greedy/standard/hot
+  trio). The checkpoint loads into the current slot; unused older/evolutionary slots get inert
+  deep copies so worker machinery stays uniform. Seat assignment cycles over temperatures with
+  the same offset arithmetic as the mixed mode. Manifest gains additive `policy_mode` field;
+  single-mode `checkpoint_manifests` has exactly one entry.
+- Verified: **14/14 example tests**; determinism proven (12 games, seed base 9500001,
+  workers 32 vs 1 → every data shard byte-identical); per-seat audit of 60 seats shows only
+  `single_mlp_t025/t100/t250` at the requested checkpoint; clippy clean for the example.
+- Evidence: `plans/evidence/OFFLINE_PILOT_SINGLE_CHECKPOINT.md`. Launch script ready:
+  `out/launch_single_ckpt_run.ps1` (game count + fresh seed base marked at top).
+- **Awaiting operator**: game count and go/no-go for the actual run on E:. Note the killed
+  200k staging dirs (`pilot-retained-200k-20260913.staging-*`) are still on E: — unrelated to
+  this run (different output path) but worth deleting at some point.
+
+### LEADER-FIX-001 — deployment, unlock, and component actions (2026-09-13)
+
+- Plan: `plans/LEADER-FIX-2026-09-13.md` package 1. Branch `codex/fix-six-faction-leaders` from
+  `d38c592`. Implemented in this session on top of codex's red-first tests (uncommitted at start:
+  his three tests + plan file).
+- Delivered: Xxcha hero replacement resolved (`for_faction` excludes `homebrewReplacesID`; FULL
+  deploys only `xxchahero-te`, PoK only `xxchahero`); commanders out of the generic offer;
+  `component_actions` offers 7 implemented action leaders (xxchaagent, hacanagent, solhero,
+  letnevhero, jolnarhero, l1z1xhero, **xxchahero-te** — added this session because without it the
+  replacement fix would leave FULL-scope Xxcha with an inert hero and no production modifier);
+  `use_leader` rewritten (was dead code) with per-arm player selections; `end_of_round` hook in
+  `phase.rs::begin_next_round`; `fleet::is_unlimited` choke point for Letnev's round-limited supply;
+  commander unlock refresh at decision boundaries (`game.rs::refresh_commander_unlocks`).
+- Tests: **44/44 leader tests** (incl. codex's 3 red-first + 9 new), full engine suite
+  **1288 passed / 0 failed**, `decision_delivery_inventory` registry updated to 7 choice sites in
+  `leaders.rs::use_leader` and passing, clippy clean for ti4-engine.
+- Behavioral re-baseline **v37** (versioned process): only `share_SHIP_MOVED` left its v36 interval
+  ([0.046170, 0.050472] → [0.044424, 0.047795], point 0.046010) — dilution from new component
+  actions + Xxcha's changed hero; all other points inside v36 intervals, completion still 1.0.
+  Old/new table in `plans/evidence/M08-021.md`; **review approval requested at package exit**.
+- Workspace: 2184 passed / 21 failed — all 21 pre-existing ti4-bridge golden suites (missing
+  fixtures), identical failure set before this package.
+- Evidence: `plans/evidence/LEADER_FIX_001.md`. **Independent review pending** (required; includes
+  v37 sign-off).
+- **Reviewer-app fix follow-up (2026-09-14)**: `ti4-review` panicked at startup — the unlimited
+  fleet sentinel (`i64::MAX`) leaked into two observation-surface paths (FleetSupply constraint,
+  FleetSupplyHeadroom preview deltas) that `ti4-policy::features` encodes through an i32-bounded
+  encoder. Fixed at the single choke point: `fleet.rs::UNLIMITED_FLEET_BILL = 10_000` for
+  unlimited seats (far above any reachable fleet; headroom/excess arithmetic unchanged in play).
+  Regression test added (`the_unlimited_fleet_bill_stays_within_printed_integers`). Verified
+  through the actual app: four full `ti4-review simulate --until end` games with Letnev's hero
+  active for multiple rounds (seeds 101/103/104/105) completed without error. Engine suite now
+  **1289 passed / 0 failed**; ti4-policy lib 244 passed; behavior suite 5/5 within v37 bounds.
+  Side observation: seed 102 is a long-but-finite game whose session exceeds ti4-review's
+  pre-existing 1 GiB save limit (app limitation, not an engine defect).
+- Next safe action: independent review of the package including this follow-up.
+
+### OFFLINE-BC-PLAIN-JSONL-INPUT — plain JSONL corpora into the CUDA pipeline (2026-09-13)
+
+- Operator-requested change, outside the M00–M13 table. Branch: `wp/offline-pilot-streaming-retention`
+  (codex committed directly on top of this branch; tree was clean at start — his earlier in-flight
+  files are all committed now).
+- Context: codex already did half of it — `412f706` makes capture write plain `.jsonl` (no zstd),
+  `fce1a54`/`40a67b7` parallelize packing/loading with a pool defaulting to
+  `available_parallelism()` (32 ≥ one per physical core). This package completed the chain:
+  `offline_bc.rs` still hard-coded `.jsonl.zst`, so future corpora would have been unreadable by the
+  CUDA pipeline. Now: dual-format input (magic sniff) in `pack` and `train-raw-parallel`; plain
+  decisions files are split into line-aligned chunks parsed/compiled on all 32 workers; packed
+  `.ti4bc.zst` output contract unchanged.
+- Verified: plain capture is byte-deterministic across worker counts (sha256 match, 12 games);
+  pack works on both encodings (zstd regression green); `train-raw-parallel` on a plain corpus logs
+  "parallel-parsing 32 decision chunks" and stops only at CUDA device resolution (this libtorch
+  build is CPU-only). Clippy: zero new warnings (9 vs baseline 10).
+- **Retention semantics resolved (operator, 2026-09-13)**: "6 or more is correct" — the inclusive
+  `>= 6` that codex's snapshot `1820db0` introduced in current HEAD is canonical. The completed
+  32k corpus and its BC model were generated under the earlier strictly-above reading (verified via
+  retention.jsonl: 4,738 games at max VP == 6, none retained as standout); future corpora retain a
+  strictly larger set.
+- Evaluation (operator-requested): BC-32k vs checkpoint-318956 head-to-head — indistinguishable
+  (VP 3.299/−1.587 vs 3.362/−1.585 over 2,160 games each direction); the BC student reproduces its
+  teacher at this horizon. Log: `out/eval-bc32k-vs-ckpt318956.log`.
+- Evidence: `plans/evidence/OFFLINE_BC_PLAIN_JSONL_INPUT.md`. Historical Python reference not
+  inspected.
+- Next: superseded by OFFLINE-PILOT-BUCKETED-ZSTD below (operator chose zstd + bucket folders).
+
+### OFFLINE-PILOT-BUCKETED-ZSTD — per-reason bucket folders, zstd output (2026-09-13)
+
+- Operator decision after measuring the plain-JSONL 32k run: E: is a mechanical HDD and each
+  retained game dumps ~140 MB of uncompressed records (~95 KB/decision; this data compresses ~150×
+  under zstd level 9), so generation went disk-write-bound (CPU at ~3.5/32 cores, ~1.5 games/s vs
+  ~5/s). Operator chose: **zstd output + files in folders by retention reason** (`good` = standout|
+  strong_table, `bad` = weak_table, `random` = random_control; `failed/` only when a game fails —
+  recorded deviation) and additionally requested a **200k-game corpus**.
+- Single-file change to `capture_offline_pilot.rs`: restored `JsonlZstdWriter`; parts/final shards
+  per bucket folder; running-sha256 byte-exactness gate now per shard; empty buckets publish a valid
+  deterministic zero-record zstd frame; manifest gains additive `buckets` stats, `shards` keyed by
+  relative path, `storage_encoding = "zstd"`; each training bucket gets a scoped `manifest.json` so
+  `offline_bc pack --corpus <root>/<bucket>` works directly (pack refuses corpora without one).
+- Verified: build clean; **13/13 unit tests** (new `buckets_map_reasons_to_folders`); clippy at
+  baseline; two 12-game runs (`--workers 32` vs `--workers 1`, seed base 9000001) → every data shard
+  byte-identical across worker counts, manifests identical except legitimate `workers`/`created_utc`
+  (good: decisions sha256 `5dc04ca6…3e`; bad `37243bce…dd3c`; empty random frame `6fb85438…cbd`);
+  `offline_bc pack` on the `good/` bucket published successfully.
+- Evidence: `plans/evidence/OFFLINE_PILOT_BUCKETED_ZSTD.md`. Historical Python reference not
+  inspected.
+- **Runs launched (supervisor script, sequential, full 32 workers each)**:
+  - `E:/ti4-corpus/pilot-retained-32k-20260913-v2` — seed base `1_026_091_500` (reused from the
+    killed plain-JSONL attempt; never published), ETA ~1.7 h.
+  - `E:/ti4-corpus/pilot-retained-200k-20260913` — seed base `1_026_091_600` (fresh), ETA ~10 h;
+    starts only after the 32k run exits 0. Logs: `out/run-bucketed-32k.log`,
+    `out/run-bucketed-200k.log`; supervisor log `out/launch-bucketed-runs.log`.
+
+### OFFLINE-PILOT-STREAMING-RETENTION — write-or-discard at game end (2026-09-13)
+
+- Operator-requested change, outside the M00–M13 table. Branch:
+  `wp/offline-pilot-streaming-retention` from `488c0bc`. Codex's in-flight dirty files remain
+  untouched and uncommitted.
+- Change: `capture_offline_pilot.rs` now decides retention **at game end while records are still in
+  memory** (rule `vp-threshold-v1`, agreed with codex): any faction > 6 VP, or table ≥ 24 VP, or
+  table < 10 VP → write frames; else seeded 5% coin (pure function of the game seed) → keep or
+  discard. Discarded games write nothing to disk. Failed games are always retained for visibility.
+- Also in this package: loss-alignment gate moved from a serial end-of-run shard re-parse (~0.13 ms
+  per decision, ~1.8 h at 32k scale) to an in-memory pre-write check (same predicate); assembly now
+  proves the published shards are byte-identical to the validated frames via running sha256;
+  `file_sha` streams in 1 MiB chunks (the old whole-file read would OOM on large corpora);
+  deterministic smallest-index failure reporting; `retention.jsonl` sidecar + additive manifest
+  fields (`retention_rule`, `games_played`, `games_retained`, `retention_breakdown`; `games` now =
+  retained count).
+- Checks: 12 new unit tests pass (rule boundaries, coin determinism, ~5% rate); full `-p ti4-mlp`
+  suite green; clippy no new warnings; rustfmt clean. Determinism proof: 12 games with `--workers
+  32` vs `--workers 1` → byte-identical shards (decisions sha256 `038610fb…d2168377a`, games
+  `d8a65c34…f4ad78479af197`) with retention active; codex's `validate_offline_corpus` passes on a
+  retained corpus (finite NLL).
+- Expected scale: ~13% retention from the existing 240-game block → ~4,300 retained games; current
+  engine records are ~0.9 MB/game compressed (222 MB for the 240-game block), so expect a ~4–5 GB
+  corpus (vs ~35 GB unfiltered). Evidence:
+  `plans/evidence/OFFLINE_PILOT_STREAMING_RETENTION.md`. Historical Python reference not inspected.
+- Completed: the 32,768-game run finished (`E:/ti4-corpus/pilot-retained-32k-20260913`, seed base
+  `1026091400`): games phase 5,806 s + assembly/integrity 28 s; **published 5,374/32,768 games
+  (16.4% retention) / 8,177,628 decisions** — above the ~13% estimate from the old-engine block.
+  Codex then packed it (`E:/ti4-corpus/pilot-retained-32k-20260913-bc-v1`) and trained
+  `out/offline-bc-32k-20260913-from-318956` from checkpoint-318956.
+
+### OFFLINE-PILOT-PARALLEL-CAPTURE — parallel offline pilot capture (2026-09-13)
+
+- Operator-requested change, outside the M00–M13 table. Branch:
+  `wp/offline-pilot-parallel-capture` from `4d7f08c`. Codex's in-flight dirty files (choice.rs,
+  progress.rs, reward.rs, review gui/lib, vp_sources.rs) were preserved untouched and are not
+  committed by this package; the only non-example files committed are the offline-corpus examples'
+  dev-dependencies (`serde`/`zstd`/`chrono` in `ti4-mlp/Cargo.toml` + lock), which the committed
+  example needs to build.
+- Change: `crates/ti4-mlp/examples/capture_offline_pilot.rs` now plays games on rayon's global
+  pool (one thread per logical processor — 32 here; `--workers N` pins a dedicated pool of exactly
+  N). Game plans are precomputed on the main thread so faction/policy assignment is identical to
+  the old sequential loop; each worker chunk owns deep inference copies of both actors (`tch`
+  tensors cross threads by value only, per the `build_positive_corpus` pattern); workers write
+  per-game zstd frames that the main thread concatenates in game order (bounded memory at any
+  corpus size). Manifest gains an additive `workers` field.
+- Determinism proof: identical seeds with `--workers 1`, `--workers 8` and default (32) produce
+  **byte-identical shards** (decisions sha256 `bace70e3…c3bcce9`, games `13ac4150…f1c24246ab`,
+  12 games / 18520 decisions); a 64-game run's first 12 games are byte-identical to the dedicated
+  12-game runs. Speed: 12 games 39.7 s (1 worker) → 9.3 s (32 workers); 64 games in 29.6 s on 32
+  workers (~7× wall-clock including startup).
+- Checks: build/fmt clean; clippy no new warnings (5 pre-existing in the file, all on unchanged
+  code); `cargo test -p ti4-mlp` all pass (lib 99 + integration); `validate_offline_corpus.rs`
+  passes on a multi-frame shard (256 decisions, finite NLL); `tools/filter_offline_corpus.py`
+  consumes the new format.
+- Evidence: `plans/evidence/OFFLINE_PILOT_PARALLEL_CAPTURE.md`. Historical Python reference not
+  inspected. Review tier: routine implementation change with self-contained determinism proof;
+  no legality/hidden-information/schema-migration surface touched (additive manifest field only).
+
+### BUG-001 — Analytical and Rin exclude every unit upgrade, generic included (2026-09-12)
+
+- Operator-requested bug fix, outside the M00–M13 table. Branch:
+  `wp/bug-001-analytical-rin-upgrade-exclusion` from `main` @ `22266e1e`. The unrelated dirty
+  PPO/speedup files present in the working tree were preserved untouched and are not committed
+  by this package.
+- Defect: Jol-Nar's **Analytical** (`waived_prerequisites`, `faction_abilities.rs`) and Rin, the
+  Master's Legacy (`jolnarhero`, `leaders.rs`) derived "is a unit upgrade" from the `baseUpgrade`
+  content key. The corpus has 25 UNITUPGRADE technologies; the 10 **generic** ones (`ws, sd2,
+  cr2, dn2, dd2, pds2, cv2, ff2, inf2, m2`) carry no `baseUpgrade`, so Analytical waived one
+  prerequisite for them (e.g. a Jol-Nar with one blue researched Carrier II, needs `BB`), and
+  Rin swapped a held generic upgrade for another via the phantom `"UNITUPGRADE"` colour.
+  Generated-legal, not late-rejected: `can_research`/`research` re-validate through the same
+  broken gate.
+- Fix: both sites now use the canonical `technology::is_unit_upgrade` (types ∋ `UNITUPGRADE`)
+  already used by the AI Development Algorithm and war-sun gating; Rin's replacement pool also
+  carries an explicit record-level UNITUPGRADE guard. The two pre-existing regression tests
+  shared the broken `baseUpgrade` fixture selector (vacuous for the generic shape) and were
+  strengthened to the canonical check; three new tests added (corpus-wide waiver census, end-to-
+  end `can_research(cv2)` with one blue, Rin holds a generic upgrade untouched / hero not spent).
+- Checks (post-fix, post-fmt): engine 1,276 lib + 1 + 4 + 5 integration, 0 failed; policy 244,
+  0 failed; clippy: no new warnings from this package (one pre-existing `ti4-model` bool-struct
+  warning remains); `rustfmt --edition 2024 --check` clean on the two changed files.
+- Compatibility: the offered research set for Jol-Nar shrinks (spurious generic-upgrade options
+  are no longer generated). Policies trained on pre-fix checkpoints (incl. checkpoint-132144
+  reviewed 2026-09-12) carry learned priors over option ids that are no longer offered; no
+  schema, choice-ID, or feature-vector change, no replay migration.
+- Evidence: `plans/evidence/BUG-001_ANALYTICAL_RIN_UPGRADE_EXCLUSION.md`. Spec:
+  `plans/BUG-001_ANALYTICAL_RIN_UPGRADE_EXCLUSION.md`. Historical Python reference not inspected.
+- Independent (frontier-tier, legality) review: **OUTSTANDING** — no review peer available this
+  session; not merge-complete until it lands.
+
+### Reviewer/current-engine integration (2026-09-11)
+
+- Ported the session-v3 reviewer UI onto integration commit `e1ee387`, which contains the current
+  Fracture activation, Thunder's Edge, anomaly, wormhole, and Wormhole Nexus mechanics.
+- Restored the resolver's read-only finalized-event journal required by reviewer structured events.
+- Corrected the shared empty-system assumption: reviewer selection always exposes static map
+  metadata, and Fracture ingress placement retains specialty planets from empty map systems.
+- No TTS or bridge file was inspected or changed. Verification is recorded in
+  `plans/evidence/R01-CURRENT-ENGINE-INTEGRATION.md`.
+
 - Historical Python repository: `D:\Projects\ti4-engine` (read-only; not behavioral acceptance)
 - Historical branch: `codex/fully-learned-policy`
 - Historical pinned commit: `37061c511a4780d4c0719e0342533a498cd4b457`
@@ -8282,3 +8528,365 @@ source edited, no staging/commit/branch change. Supply patch independent review 
 Next safe action: owner reconciles the delivery registry; rerun full suite and independently
 review the small supply change before integration. This investigation does not advance any
 migration milestone or approve a policy/observation-surface change.
+
+## Offline BC v2 corpus, training, and evaluation (2026-09-13)
+
+- **Corpus published**: `E:/ti4-corpus/pilot-retained-32k-20260913-v2` (bucketed zstd:
+  `good/ bad/ random/`, canonical inclusive ≥6 retention, seed base `1_026_091_500`). No
+  `failed/` folder = zero engine failures. The requested **200k run was stopped by the operator
+  prematurely at ~game 948**; partial staging remains on E: (`pilot-retained-200k-20260913.staging-*`)
+  and is not resumable (capture refuses an existing staging dir) — a clean restart would need it
+  deleted. Restart pending operator intent.
+- **Model**: `out/offline-bc-v2-20260913-from-318956` trained by codex from the v2 `good + random`
+  buckets via `train-raw-parallel` (update 3380, created 22:37).
+- **Evaluation** (`crossplay_eval`, vs frozen checkpoint-318956, holdout pool, 60 seeds × 6
+  rotations × 6 candidate seats = 2,160 games/direction, log `out/eval-bcv2-vs-ckpt318956.log`):
+
+| faction | games | VP    | margin   | win     | cleared | waste   | offers |
+|---------|-------|-------|----------|---------|---------|---------|--------|
+| hacan   | 360   | 3.369 | −1.517   | 13.9%   | 85.83%  | 13.89%  | 3.39   |
+| jolnar  | 360   | 3.500 | −1.425   | 12.8%   | 48.33%  | 18.89%  | 2.97   |
+| l1z1x   | 360   | 3.239 | −1.808   | 8.9%    | 93.06%  | 15.00%  | 2.88   |
+| letnev  | 360   | 3.061 | −1.942   | 6.9%    | 81.39%  | 12.50%  | 2.65   |
+| sol     | 360   | 3.481 | −1.394   | 11.9%   | 93.33%  | 14.72%  | 2.86   |
+| xxcha   | 360   | 2.928 | −2.075   | 6.4%    | 88.89%  | 19.44%  | 2.93   |
+| ALL     | 2160  | 3.263 | **−1.694** | **10.1%** | 81.81%  | 15.74%  | 2.95   |
+
+- Reading: the null for this horizon (candidate == benchmark, i.e. checkpoint vs itself) is
+  margin ≈ −1.585 / win ≈ 11.4%. BC-v2 at −1.694 / 10.1% sits ~0.1 VP-margin below the teacher's
+  self-play null — distillation reproduces roughly teacher-level play, does not exceed it (expected
+  for pure behavior cloning). The earlier run-#1 model (`offline-bc-32k-20260913-from-318956`,
+  strict >6 corpus) measured −1.587 / 10.8%, essentially at the null; BC-v2 is slightly worse,
+  within plausible run-to-run variance but worth a repeat before drawing conclusions. Per-faction:
+  xxcha weakest (win 6.4%), jolnar's cleared rate (48.3%) is an outlier vs ~81–93% elsewhere —
+  more horizon cutoffs when the candidate plays Jol-Nar.
+
+## Single-checkpoint capture mode added (2026-09-14)
+
+`capture_offline_pilot` gained `--single <checkpoint-dir>` + `--temperatures t1,t2,...`
+(default 0.25,1.0,2.5) so a run can use one checkpoint at several temperatures for every seat
+instead of the mixed 11-kind cycle. Requested target:
+`out/vponly-main-20260911/checkpoints/checkpoint-236464`. Determinism verified byte-identical
+across worker counts; per-seat audit confirms only the requested checkpoint is used.
+Evidence: `plans/evidence/OFFLINE_PILOT_SINGLE_CHECKPOINT.md`; launch script
+`out/launch_single_ckpt_run.ps1` ready, run pending operator's game count / go-ahead.
+
+## Reviewer app (ti4-review) unblocked by LEADER-FIX-001 follow-up (2026-09-14)
+
+The operator's game-inspection app panicked after the leader fix (`features.rs:2838`, i32
+overflow). Root cause and fix as recorded in `plans/evidence/LEADER_FIX_001.md` under
+"Reviewer-app fix follow-up": bounded sentinel `UNLIMITED_FLEET_BILL = 10_000` replaces the
+unbounded `i64::MAX` fleet bill for Letnev's unlimited round, at the single choke point in
+`fleet.rs`. Verified end-to-end through `ti4-review simulate --until end` on four seeds where
+the hero is actually used (flag active rounds 5–7); all completed. The app is usable again;
+its pre-existing 1 GiB session save limit can still reject very long games (observed on seed
+102, which terminates normally).
+
+## Partial publish of killed capture runs + single-ckpt training launcher (2026-09-14)
+
+`capture_offline_pilot` gained `--publish-staging <dir> [--out] --checkpoint --games N
+[--workers N]`: it decodes/validates every staged per-game part, excludes truncated kill
+artifacts with a report (refusing on decodable-but-inconsistent data), reconstructs outcomes,
+and assembles a fully valid corpus (root + scoped manifests, retention sidecar, byte-exactness
+gates) from whatever complete games exist. `Manifest.workers` became `Option<usize>`; normal
+run path unchanged (`keep_parts = false`). 18/18 example tests incl. truncation/corruption/
+publish cases; clippy clean for new code; real-data regression (20 games → published 13/20)
+and newline-count validation on real shards passed. Evidence:
+`plans/evidence/OFFLINE_PILOT_PARTIAL_PUBLISH.md`. Launcher `out/train_single_ckpt.ps1`
+(gitignored): kill capture → rebuild release binary → publish staging to
+`E:\ti4-corpus\vponly-single-236464-20260914-partial` → rebuild CUDA `offline_bc` →
+`train-raw-parallel` on good+random (v2 recipe) into `out/offline-bc-single-<date>-from-236464`.
+
+Working-tree note: four unrelated example files (`fracture_census.rs`,
+`objective_signal_audit.rs`, `rng_probe.rs`, `route_conversion.rs`) carry pre-existing
+formatting-only drift from an earlier whole-crate fmt; left uncommitted, out of scope.
+
+**Run status (2026-09-14):** the operator killed the 332k single-checkpoint capture with a
+BREAK event (`forrtl: error (200)` in `out/run-single-ckpt.log`). At kill time **158,755 /
+332,768 games had completed** (~48%). Staging is intact at
+`E:\ti4-corpus\vponly-single-236464-20260914.staging-59548`. Next action: run
+`out/train_single_ckpt.ps1` (rebuilds release capture, publishes staging to
+`...-partial`, rebuilds CUDA offline_bc, trains good+random). Part counts/sizes not yet
+tallied; a few parts may be truncated by the kill and will be excluded with a report.
+
+### Recovery review correction and authorized continuation
+
+The earlier partial-publish description above is superseded by the hardened recovery boundary in
+the next commit. It fully deserializes every decision, checks game/seat/faction/policy identity and
+loss alignment, rejects duplicate indices and checkpoint-digest conflicts, validates the pinned
+map-pool digest, and records actual (`158,755`) and planned (`332,768`) game counts separately.
+Generation commit/dirty state/binary SHA are distinct from the publisher commit. Recovery uses the
+requested 32-thread Rayon pool and builds in a sibling directory before atomic rename; the original
+staging remains untouched and retryable. Future single-checkpoint runs rotate temperatures across
+seats. Focused verification is 20/20 tests; strict Clippy is blocked only by existing unrelated
+library warnings listed in `plans/evidence/OFFLINE_PILOT_PARTIAL_PUBLISH.md`.
+
+The authoritative committed launcher is now `scripts/publish_and_train_stopped_corpus.ps1`. After
+publication it trains the `good + random` buckets for five epochs on CUDA with 32 parser workers,
+initialized from `out/offline-bc-v2-20260913-from-318956`. The output is experimental because this
+corpus predates the leader fix and retains the historical seat/temperature confound; it requires
+evaluation before promotion.
+
+### Astra advisory review — 2026-09-16
+
+- Completed the review requested in `plans/ASTRA_REVIEW_REQUEST_2026-09-16.md`.
+- Response and source evidence: `plans/ASTRA_REVIEW_RESPONSE_2026-09-16.md`.
+- Reviewed branch `codex/diplomacy-v1`, HEAD `85d01517a196315a5062b706199513c7570f15c0`,
+  with existing uncommitted work preserved. Advisory documentation only; no code changes,
+  commits, training runs, benchmarks, or new test results. This does not close the pending
+  full Tier-C legality/schema review.
+- Key corrections: PPO games already execute through Rayon despite the stale sequential footer;
+  no-offer contacts do not prove empty menus; crossplay wins are strict horizon VP leadership;
+  the Fracture census uses an audit helper that can return partial state after errors/step caps.
+- Next recommended work: collect the training-regime contact funnel and existing performance
+  diagnostics, correct census completion reporting, then compare explicitly configured VP-focused
+  pilots and paired round-4 evaluations. Implementation remains proposed, not completed.
+- Operator clarification: do not extend beyond four rounds. Maximizing VP by the end of round 4
+  is the intended playing-to-win objective. The review's earlier longer-horizon recommendation
+  is withdrawn; Fracture opportunities must be assessed by their payoff within four rounds.
+- Verification: `git diff --check` passed; scoped tracked and new-file whitespace checks also
+  passed for the review documentation. Tree remains intentionally dirty.
+
+### GPU inference smoke — 2026-09-16
+
+- User authorized a GPU simulation smoke test. Added only the diagnostic example
+  `crates/ti4-mlp/examples/gpu_inference_smoke.rs`, evidence
+  `plans/evidence/GPU_INFERENCE_SMOKE_2026-09-16.md`, and this state entry. Existing dirty
+  implementation preserved; production PPO remains unchanged, no commits or training runs.
+- Four rounds fixed; one real CPU game and one unbatched CUDA game, plus identical-input
+  actor/critic replay at batch sizes 1/8/32. Checkpoint 212544, held-out pool, diplomacy on,
+  temperature 2.5, seed 1261600101. RTX 3090 and existing CUDA libtorch.
+- Final smoke passed: 2,649 decisions per game; final-state/event hashes match. CPU game 2.62 s,
+  unbatched GPU game 4.47 s. Median batch-32 GPU replay 19,462 decisions/s versus 3,435 for
+  ordinary single-thread CPU scoring and 6,057 for CPU batch 32. These exclude engine/features
+  and do not compare against the parallel CPU worker pool; no training speedup is established.
+- Numerical probability/critic tolerances pass, but 7/512 greedy choices differ in the mixed
+  batch paths. Common-draw sampled choices in the replay did not change. Production integration
+  needs numerical/behavioral qualification; the smoke is not a bitwise-parity gate.
+- Release build, two regression tests, CLI bounds checks, rustfmt and whitespace checks passed.
+  Global strict Clippy hits 17 pre-existing library warnings; scoped Clippy passed with warnings
+  denied inside the new example. All owned test/build processes exited; no background run remains.
+- Next useful experiment: live cross-game batched inference service with bounded queue/flush,
+  compared against existing parallel CPU rollouts at the same four-round workload. Not implemented
+  or promoted by this smoke. Reproduction command and raw-result hashes are in the evidence.
+
+### Live GPU rollout disposition and combat-arena assessment — 2026-09-16
+
+- User requested a minimally briefed Terra agent and measured PPO update throughput;
+  later requested evaluating whether continued GPU work was worthwhile, with combat
+  arena learning as an alternative. Four-round limit remains fixed.
+- Two 96-game, 32-worker CPU updates took 36.415/36.272 s; two GPU batch-32 updates
+  took 82.508/83.458 s. GPU averaged 2.283 times the update duration. Stop this tuning
+  branch; retain CPU rollouts and CUDA optimization. No GPU speedup established.
+- CPU repetitions match all 96 state/event/choice digests. GPU runs differ on a few
+  trajectories and from each other. Experimental GPU path is not qualified for
+  deterministic production training. Three service tests passed as reported by
+  Terra; full final qualification and exact command manifest were interrupted by
+  its usage limit. Parent independently verified raw logs and hashes.
+- Evidence and concrete arena feasibility/transfer gates:
+  `plans/evidence/GPU_BATCHED_ROLLOUT_EXPERIMENT_2026-09-16.md`.
+- Other concurrent work committed the experimental code in `ae3980f`; parent found
+  clean branch `codex/diplomacy-v1` at `740dc82` before adding these two documentation
+  changes. This task made no commits and did not alter those subsequent source edits.
+- No owned trainer/build remained at inspection. No additional GPU runs or arena
+  training were started. Next useful step is an engine-backed combat-label pilot,
+  gated by actor-input sufficiency and eventual round-4 VP transfer, not an assumed
+  improvement from battle prediction alone.
+
+### Battle-arena plan and adjacent mechanics — 2026-09-16
+
+- Operator requested a battle-arena plan and other applicable areas of play.
+- Added `plans/BATTLE_ARENA_PLAN_2026-09-16.md`: input/coverage audit, bounded
+  engine-backed labels, held-out outcome prediction, explicit policy integration,
+  then equal-total-time round-4 VP transfer. Separate prediction, combat decisions
+  and strategic attack selection; do not replace the VP critic or PPO reward.
+- Proposed first unit ARENA-001 is audit plus 4,096-fight smoke, with a five-minute
+  runtime cap. Larger label generation, training and integration are gated future
+  work; none were executed in this planning turn.
+- Other candidates prioritized: objective/payment puzzles, movement/cargo, invasion;
+  then production and token planning. Diplomacy/agenda subgames are later because
+  value depends strongly on hidden intent and subsequent opponent behavior.
+- All full-game generation and evaluation stays capped at four game rounds.
+  Existing engine combat-round bounds are separate from that game horizon.
+- This turn changes documentation only; no source edits, training, commits or
+  checkpoint promotion. Existing GPU evidence changes remain preserved.
+
+### Battle-arena integration design — 2026-09-16
+
+- Operator requested starting the design with explicit main-model integration.
+  Added `plans/BATTLE_ARENA_DESIGN_2026-09-16.md` and linked it from the plan.
+- Chosen initial design: frozen small combat predictor packaged with the policy;
+  option-specific factual/predicted battle features enter the existing sparse MLP.
+  PPO learns strategic use from round-4 VP; no battle reward or VP-critic replacement.
+- First live surface is incremental movement including done_moving. Activation is
+  deferred until a legal concrete commitment can be described. Already committed
+  ships, candidate ship/cargo, private-information independence and unsupported
+  mechanics are explicit input/coverage contracts.
+- Design covers typed crate boundaries, engine labels, conditional continuation
+  semantics, materialized PPO inputs, predictor freezing, migration/resume, CPU-local
+  inference and concrete acceptance fixtures. No unconditional combat odds claim.
+- ARENA-001 remains the first implementation: typed contract/input audit and bounded
+  engine generator. No predictor, runtime integration, dataset or training run was
+  implemented in this design turn. Architecture review is pending; no commits made.
+
+### Pitched-battle clarification and agent handoff — 2026-09-16
+
+- User clarified isolated pitched battles with varied compositions, upgrades and
+  factions, optionally random action cards, with only combat decisions remaining.
+- Added `plans/BATTLE_ARENA_AGENT_HANDOFF_2026-09-16.md` as the authoritative entry
+  point for a different agent. Linked supersession notices in both older documents.
+- Earlier ordinary-fleet/20-input scope is only a smoke baseline. Build the arena
+  before downstream movement integration; include tested faction/upgrade coverage
+  and explicit timing support for any later action-card experiments.
+- Handoff supplies the first bounded task, contracts, integration boundary, tests,
+  resource limits and current status. Documentation only; no arena implementation,
+  training or commits performed.
+
+### ARENA-001 probe — 2026-09-16
+
+- First executable unit of `plans/BATTLE_ARENA_AGENT_HANDOFF_2026-09-16.md`. Evidence:
+  `plans/evidence/ARENA_001_PROBE_2026-09-16.md`.
+- New `crates/ti4-training/examples/battle_arena_probe.rs`, **uncommitted**: the handoff requests no
+  commits for this task. No dataset, predictor, PPO, vocabulary or checkpoint change.
+- Drives the real engine through the public `combat::resolve`. `CombatWindow::pending_choice` and
+  `resolve` are private to `ti4-engine`, so the stepped driver is not reachable from `ti4-training`.
+  Limitation recorded: `combat::resolve` consumes the scoring pause internally, so a pause cannot be
+  reported as a failure by this probe.
+- Gates met on one matchup, 32 dice seeds per policy: zero failures, zero contaminated positions
+  (`intruders` 0 throughout, so `start_game` home fleets do not leak in), seed 0 reproducible
+  including survivor counts, ~2,100 fights/second single-threaded.
+- Policy sensitivity demonstrated: changing only the casualty rule moved attacker wins 7 to 9,
+  added 3 mutual destructions, and changed surviving damaged dreadnoughts 1 to 9 against cruisers
+  49 to 36. Labels are outcomes under a named continuation policy, not combat odds.
+- Two corrections to claims made earlier in the session, both the assistant's: the casualty rule
+  moved the win rate modestly rather than sharply, and the flat "mean rounds 3.00" was coincidence
+  (rounds spread 1 to 5 under both policies; `MAX_ROUNDS` 50 was never approached).
+- Next exact step: scenario schema with split families assigned before dice repetitions, then
+  128 scenarios x 32 seeds with a failure ledger and fights/second, including at least one upgrade
+  and one faction-specific combat effect in that first report.
+
+### ARENA-001 scenario generator and first labelled corpus — 2026-09-16
+
+- Second pass over `plans/BATTLE_ARENA_AGENT_HANDOFF_2026-09-16.md`. Evidence:
+  `plans/evidence/ARENA_001_PROBE_2026-09-16.md`, which **replaces** the earlier probe report of the
+  same name (its results table, throughput figure and "not done" list are superseded).
+- `crates/ti4-training/examples/battle_arena_probe.rs` remains **uncommitted**: the handoff requests
+  no commits for this task. No predictor, PPO, vocabulary or checkpoint change.
+- Generator enumerates legal fleets per profile with a profile-dependent capacity check, plays both
+  role assignments, and groups by order-independent `family()` so a matchup and its mirror share a
+  split. Runs across all cores via `par_chunks`, merged in chunk order.
+- Throughput 1,344 -> 9,705 -> 17,740 fights/s (single-threaded; 32 workers; 32 workers with
+  `fixtures::game()` and `plain_systems()` hoisted to one `GameState` per worker, cloned per fight).
+  13.2x overall, ~13x on 32 workers rather than 32x; residual serial cost not isolated.
+- Correctness across both rewrites: cap 3 reproduced 75,325 / 77,172 / 2,071 and cap 2 with four
+  factions reproduced 692,762 / 705,957 / 25,953, identical before and after. Zero contaminated
+  positions and zero failures across ~2.5M fights.
+- Upgrade and faction coverage delivered in the first report via a cap-2 panel over Hacan, Sol,
+  Sardakk and Jol-Nar, each with and without upgrades, as the handoff requires.
+- First labelled corpus emitted behind `--emit` (absent the flag the probe only reports): cap 3,
+  64 seeds, 19,321 rows from 1,236,544 fights in 69.7s. Label is three rates -- attacker, defender,
+  mutual -- summing to 1, verified 0 violations; a single attacker rate could not distinguish a
+  defender win from mutual destruction. Split is deterministic FNV-1a over `family()`, verified
+  **0 families spanning more than one split**. Manifest records the casualty policy, seed panel and
+  caveats.
+- Two corpus properties recorded for any consumer: 34.6% of rows are foregone conclusions (label
+  stdev 0.406, bimodal), so evaluation must be stratified by contestedness or the easy rows dominate
+  the score; and uniform enumeration does not match play frequencies, which matters because the
+  design freezes this predictor into the actor's input layer.
+- Limitation unchanged: `combat::resolve` consumes the scoring pause internally, so a pause cannot be
+  reported as a failure by this probe.
+- Six further corrections to assistant claims recorded in the evidence document: sizing ~3x low; a
+  false mirror diagnosis; the defender "landslide" as an artefact of canonical ordering (58,010 to
+  18,839, versus 75,325 to 77,172 once both orderings are played); "attacker fires first" wrong, fire
+  is simultaneous under LRR 78.6; throughput twice reported from a stale binary after `link.exe` 1104
+  failures, with cap-6 runtime estimated 27 minutes then ~2.0 hours then ~64 minutes; and mutual
+  destruction overstated from one symmetric duel (corpus mean 0.0116).
+- The design document's typed contract (`ArenaScenarioV1`, `ArenaOutcomeV1`, `BattleFeatureEmitter`)
+  does not exist in code; the probe emits JSONL directly. Corpus lives in the session scratchpad; no
+  home chosen inside the repository.
+- Next exact step: decide where a corpus belongs in the repository, then either reweight toward
+  played positions or train a first predictor on the contested stratum, reporting calibration
+  separately for contested and foregone rows.
+
+### ARENA-002 lean simulator, predictor and battle facts — 2026-09-17
+
+- Evidence: `plans/evidence/ARENA_002_PREDICTOR_2026-09-17.md`. User overrode the design's
+  engine-only labelling rule; the design doc carries the note.
+- `ti4-training::battle_arena`: two-fleet simulator (six factions +/- upgrades, war suns,
+  flagships and their Jol-Nar/Letnev/L1Z1X effects, Hacan at 0 trade goods, both sides' space
+  cannon, starting damage, supply limits). Matches the engine with effects off (0.36pp mean gap)
+  and ti4calc with effects on (0.2pp, 0 of 300 beyond |z| 3).
+- `battle_predictor` trains straight from it (no stored corpus): 0.43pp held-out MAE, 1.15pp on
+  contested fights, in ~3.5 minutes. Exported to `ti4_policy::battle::BattlePredictor`.
+- Live play: movement options carry `action-plan:battle-*` facts; bundle schema 11/12 (ABI 4)
+  carries the predictor. `checkpoint-212544-arena-v1` migrated from 212544, identical play,
+  +1.4% wall time.
+- Queued engine fixes (need ti4-sim): attacker space cannon offense; Jol-Nar, Letnev, L1Z1X
+  flagship abilities.
+- Next: `scripts/arena_pilot.psd1`, the VP-only pilot mirrored with the arena learner;
+  `checkpoint-10456` is the no-arena control.
+
+### Engine: attacker space cannon and three flagships — 2026-09-17
+
+- `b3c5702`: space cannon offense includes the active player's guns (user ruling, as ti4calc);
+  J.N.S. Hylarim, Arc Secundus and 0.0.1 implemented. Engine now matches the arena's lean
+  simulator with flagship effects on (0.37pp mean gap, 400 scenarios x 2000).
+- `e551018`: ti4-sim behaviour bounds re-baselined to v39 with user approval. Only the space
+  cannon rule moves the batch (score_spread, vp_pace); recorded in `plans/evidence/M08-021.md`.
+  ti4-sim 51/52; the remaining failure is the pool file missing from this worktree.
+- The arena pilot running since c02a49f uses the engine from before these fixes, as does its
+  control; later runs get the fixed engine.
+
+### ARENA battle features v2: guns and survivors — 2026-09-17
+
+- Guns (PDS, PDS II, Xxcha mech, reaching guns) and guns-only defenders in the lean simulator,
+  encoding and live query; survival outputs and cost-lost facts. Checked against ti4calc.
+- Predictor v2: 0.41pp win MAE, 0.74pp survival MAE. `checkpoint-212544-arena-v2` migrated,
+  identical play. Version 1 bundles unchanged in behaviour.
+- Next by user order: ground combat, then retreat. Evidence: ARENA_002_PREDICTOR_2026-09-17.md.
+
+### ARENA ground combat and predictor v3 — 2026-09-17
+
+- Engine ground fixes `d573e7a`; ti4-sim v40 `ebb5fbf` (51/52, pool-file env failure only).
+- Lean ground simulator checked against ti4calc (0.19pp) and the fixed engine (0.36pp).
+- Predictor v3 adds a ground network and invasion facts on commit options;
+  `checkpoint-212544-arena-v3` migrated, identical play. Evidence in
+  `plans/evidence/ARENA_002_PREDICTOR_2026-09-17.md`.
+- Next: retreat; action cards last. The arena PPO pilot (v1) still awaits evaluation.
+
+### ARENA retreat: engine round order and predictor v4 — 2026-09-17
+
+- `a6524a6` announces retreats after the round-1 barrage; ti4-sim v41 `0bc379e`.
+- Predictor v4: fights under way and staying-in facts on retreat announcements;
+  `checkpoint-212544-arena-v4`, identical play. Remaining: action cards; the arena PPO pilot
+  still awaits evaluation, and nothing has trained with v2-v4 yet.
+
+## 2026-09-17 — arena v1 pilot result; v4 pilot pair launched
+
+- Eval vs champion (20 blocks, 4 rounds, fixed engine): control 10456 VP 3.34 / margin −1.39 /
+  cleared 89.3%; arena v1 pilot 9480 VP 2.98 / margin −1.78 / cleared 76.8%. The v1 pilot lost.
+  Both were trained on the pre-fix engine.
+- Launched `scripts/arena_v4_pilot.psd1` (learner checkpoint-212544-arena-v4), then
+  `scripts/vp_v4_control.psd1` (plain 212544), same seeds, fixed engine, commit 44f130b.
+- Reviewer now scores MLP traces with arena battle facts (they were missing).
+
+## 2026-09-17 — Astra activation-rework advisory review
+
+- Reviewed `plans/ASTRA_ACTIVATION_REWORK_2026-09-17.md` and relevant code at
+  `7b22aff81284d0d2a9abad317f47a665be8d7899`. Opinion and concrete conditions in
+  `plans/ASTRA_ACTIVATION_REWORK_RESPONSE_2026-09-17.md`.
+- Supports preactivation candidate-fleet information and a bounded macro-policy
+  pilot, but not the three fixed templates as the only action space. Recommends
+  diverse candidates/manual branch, joint movement-resource feasibility, explicit
+  plan invalidation and correct package likelihood recording; retain adaptive
+  landings initially and compare against an information-only activation control.
+- Index is a shortlist heuristic; opening-adjusted strength depends on the enemy.
+  Probe favorite accuracy excludes close matches. Require shortlist recall/regret
+  before fitting more weights. Current invasion query is post-bombardment; separate
+  conditional odds from whole-action capture probability.
+- Additional source finding: lean arena's 50-round cap shares `winner: None` with
+  mutual destruction. Require explicit unresolved labels and an incidence count;
+  no claim made about frequency in existing datasets.
+- Review only: no engine/code fixes, replay, calibration rerun, training or commits.
+  Does not qualify the proposed implementation or independently reproduce reported
+  figures. Accepted lean-simulator user override and four-round objective preserved.

@@ -147,7 +147,7 @@ impl Intervene {
             });
         };
         if self.swap.is_none() {
-            let head = ti4_mlp::Actor::resolve_head(ti4_policy::learned::decision_head(choice));
+            let head = ti4_mlp::capture_head(ti4_policy::learned::decision_head(choice));
             self.seen_heads
                 .borrow_mut()
                 .push((head.to_owned(), choice.options.len()));

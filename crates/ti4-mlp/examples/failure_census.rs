@@ -97,7 +97,7 @@ impl Counting {
     fn record(&self, choice: &Choice) {
         // The same classifier the policy routes on, so the per-head cost profile is stated in the
         // heads the replay will actually have to enumerate.
-        let head = ti4_mlp::Actor::resolve_head(ti4_policy::learned::decision_head(choice));
+        let head = ti4_mlp::capture_head(ti4_policy::learned::decision_head(choice));
         self.log.borrow_mut().push(Decision {
             head: head.to_owned(),
             options: choice.options.len(),

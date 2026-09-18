@@ -128,8 +128,8 @@ pub struct Reward {
     /// Zero keeps the reference reward exactly (Stage-2 gate experiments).
     pub clearance_weight: f64,
     /// Moderate reward for fleet strength, as a potential difference over the seat's fleet value
-    /// in resources ([`Progress::fleet_value_permille`]: fighters 0.75 each, upgraded ships 1.3x
-    /// their base unit's cost). Paid when the fleet grows and taken back when it is lost, like
+    /// in resources ([`Progress::fleet_value_permille`]: fighters 1.0 each, upgraded ships 1.3x
+    /// their base unit's cost; infantry and mechs at normal resource cost). Paid when the fleet grows and taken back when it is lost, like
     /// every other term here. Off by default; keep it well below `clearance_weight`, so a whole
     /// game of fleet-building never pays more than an uncleared opening costs.
     pub fleet_weight: f64,
@@ -143,6 +143,36 @@ pub struct Reward {
     /// pays exactly `weight`, three-of-four (75%) pays nothing. Credited at the final slot like
     /// the clearance floor, so every decision's return carries it. Off by default.
     pub strategy_diversity_weight: f64,
+    /// Terminal penalty for finishing with [`FLEET_HOARD_AT`] or more command tokens in the fleet
+    /// pool: tokens parked there were not spent on tactical or strategic actions. Credited at the
+    /// final slot, so every decision's return carries it. Off by default.
+    #[serde(default)]
+    pub fleet_hoard_penalty: f64,
+    /// Penalty for an empty fleet pool, charged once: on the transition into the first captured
+    /// snapshot that shows it, so every decision up to the one that emptied it carries the charge
+    /// and none after it does. Redistribution never offers fewer than two fleet tokens, so only
+    /// effects that spend a fleet token can reach it. Off by default.
+    #[serde(default)]
+    pub zero_fleet_penalty: f64,
+    /// Penalty for stockpiling trade goods. Each round is charged on the holding it ends with --
+    /// the last captured snapshot of the round -- at `weight * excess`, where excess is how far
+    /// the seat's trade goods exceed [`TRADE_GOODS_FREE`]: eight goods cost one weight, ten cost
+    /// three. Off by default.
+    #[serde(default)]
+    pub trade_goods_hoard_weight: f64,
+    /// Terminal bonus for finishing in control of Styx, on top of the victory point A Song Like
+    /// Marrow already attaches to it. Credited at the final slot. Off by default.
+    #[serde(default)]
+    pub styx_bonus: f64,
+    /// One small Stage-2 bonus on the first observed entry into the Fracture. Paid once per
+    /// seat-game, before discounting, and never again for leaving and re-entering. Off by default;
+    /// an experiment must select its value explicitly.
+    #[serde(default)]
+    pub fracture_entry_bonus: f64,
+    /// Terminal bonus per planet in the Fracture this seat controls at the horizon, Styx included
+    /// (so Styx also earns `styx_bonus` on top). Credited at the final slot. Off by default.
+    #[serde(default)]
+    pub fracture_planet_bonus: f64,
     /// How much a decision is credited for what happens later (gamma).
     ///
     /// One (the default) is the undiscounted suffix sum this trainer has always used: every
@@ -195,9 +225,21 @@ impl Default for Reward {
             fleet_weight: 0.0,
             tech_weight: 0.0,
             strategy_diversity_weight: 0.0,
+            fleet_hoard_penalty: 0.0,
+            zero_fleet_penalty: 0.0,
+            trade_goods_hoard_weight: 0.0,
+            styx_bonus: 0.0,
+            fracture_entry_bonus: 0.0,
+            fracture_planet_bonus: 0.0,
         }
     }
 }
+
+/// A fleet pool at least this large at the end of the game is charged `fleet_hoard_penalty`.
+pub const FLEET_HOARD_AT: i64 = 7;
+
+/// Trade goods up to this many are free of `trade_goods_hoard_weight`.
+pub const TRADE_GOODS_FREE: i64 = 7;
 
 impl Reward {
     /// The default coefficients for a stage.
@@ -405,6 +447,7 @@ pub fn returns(episode: &Episode, reward: &Reward) -> Vec<f64> {
                     }
                 }
             }
+            charge_holdings(&snapshots, reward, &mut rewards);
         }
     }
 
@@ -418,6 +461,70 @@ pub fn returns(episode: &Episode, reward: &Reward) -> Vec<f64> {
         result[index] = future;
     }
     result
+}
+
+/// The holding terms, credited into `rewards` -- one shorter than `snapshots`, whose last entry is
+/// the final progress: the fleet pool and Styx at the horizon, the first empty fleet pool, and the
+/// trade goods each round ends with.
+fn charge_holdings(snapshots: &[Progress], reward: &Reward, rewards: &mut [f64]) {
+    let (Some(horizon), Some(last)) = (snapshots.last(), rewards.last_mut()) else {
+        return;
+    };
+    // Command tokens parked in the fleet pool at the horizon, and Styx held there: both credited at
+    // the final slot, so every decision's return carries them.
+    if reward.fleet_hoard_penalty > 0.0 && horizon.fleet_tokens >= FLEET_HOARD_AT {
+        *last -= reward.fleet_hoard_penalty;
+    }
+    if reward.styx_bonus > 0.0 && horizon.holds_styx {
+        *last += reward.styx_bonus;
+    }
+    // Every Fracture planet held at the horizon, at the same final slot.
+    if reward.fracture_planet_bonus > 0.0 && horizon.fracture_planets > 0 {
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "a handful of planets is exact in f64"
+        )]
+        let held = horizon.fracture_planets as f64;
+        *last += reward.fracture_planet_bonus * held;
+    }
+    // Credit the transition into the first observed presence. Starting in the Fracture is not
+    // entry, and leaving/re-entering cannot farm the bonus. Snapshots are per decision, including
+    // the final progress; no public game-state or policy-feature field is added.
+    if reward.fracture_entry_bonus > 0.0
+        && let Some(first) = snapshots.iter().position(|progress| progress.in_fracture)
+        && first > 0
+    {
+        rewards[first - 1] += reward.fracture_entry_bonus;
+    }
+    // An empty fleet pool, charged once, on the transition into the first snapshot that shows it:
+    // the decisions up to the one that emptied it carry it, none after do.
+    if reward.zero_fleet_penalty > 0.0
+        && let Some(first) = snapshots
+            .iter()
+            .position(|progress| progress.fleet_tokens == 0)
+    {
+        rewards[first.saturating_sub(1)] -= reward.zero_fleet_penalty;
+    }
+    // Trade goods beyond the free allowance, charged per round on the holding the round ends with,
+    // at the transition into that round's last snapshot.
+    if reward.trade_goods_hoard_weight > 0.0 {
+        let mut start = 0;
+        while start < snapshots.len() {
+            let round = snapshots[start].round_number;
+            let mut end = start;
+            while snapshots
+                .get(end + 1)
+                .is_some_and(|next| next.round_number == round)
+            {
+                end += 1;
+            }
+            let excess = (snapshots[end].trade_goods - TRADE_GOODS_FREE).max(0);
+            #[expect(clippy::cast_precision_loss, reason = "goods counts are small")]
+            let charge = reward.trade_goods_hoard_weight * excess as f64;
+            rewards[end.saturating_sub(1)] -= charge;
+            start = end + 1;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -664,6 +771,7 @@ mod tests {
         let reference = Reward::for_stage(Stage::Two);
         assert!(reference.fleet_weight.abs() < f64::EPSILON);
         assert!(reference.tech_weight.abs() < f64::EPSILON);
+        assert!(reference.fracture_entry_bonus.abs() < f64::EPSILON);
     }
 
     fn episode_with_plays(plays: &[(&str, i64)]) -> Episode {
@@ -1013,5 +1121,193 @@ mod tests {
             one[0],
             two[0]
         );
+    }
+
+    fn holding(round: u32, fleet: i64, goods: i64) -> Progress {
+        Progress {
+            round_number: round,
+            fleet_tokens: fleet,
+            trade_goods: goods,
+            ..Progress::default()
+        }
+    }
+
+    fn holdings_episode(steps: Vec<Progress>, final_progress: Progress) -> Episode {
+        Episode {
+            steps,
+            final_progress,
+            cleared: true,
+            shortfall: 0.0,
+            traded_goods: 0.0,
+            strategy_card_plays: std::collections::BTreeMap::new(),
+        }
+    }
+
+    /// Each return's change against the reference Stage-2 reward.
+    fn shift(episode: &Episode, reward: &Reward) -> Vec<f64> {
+        returns(episode, reward)
+            .iter()
+            .zip(returns(episode, &Reward::for_stage(Stage::Two)))
+            .map(|(got, base)| got - base)
+            .collect()
+    }
+
+    fn assert_shift(got: &[f64], expected: &[f64]) {
+        assert_eq!(got.len(), expected.len(), "{got:?}");
+        for (g, e) in got.iter().zip(expected) {
+            assert!((g - e).abs() < 1e-9, "{got:?} against {expected:?}");
+        }
+    }
+
+    #[test]
+    fn the_holding_terms_are_off_by_default() {
+        let reference = Reward::for_stage(Stage::Two);
+        assert!(reference.fleet_hoard_penalty.abs() < f64::EPSILON);
+        assert!(reference.zero_fleet_penalty.abs() < f64::EPSILON);
+        assert!(reference.trade_goods_hoard_weight.abs() < f64::EPSILON);
+        assert!(reference.styx_bonus.abs() < f64::EPSILON);
+        assert!(reference.fracture_planet_bonus.abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn each_fracture_planet_held_at_the_horizon_pays_every_return() {
+        let mut reward = Reward::for_stage(Stage::Two);
+        reward.fracture_planet_bonus = 8.0;
+        let planets = |count: i64, progress: Progress| Progress {
+            fracture_planets: count,
+            ..progress
+        };
+        // Two planets at the end: 8 each, on every return.
+        let held = holdings_episode(
+            vec![holding(1, 3, 0), planets(1, holding(2, 3, 0))],
+            planets(2, holding(4, 3, 0)),
+        );
+        assert_shift(&shift(&held, &reward), &[16.0, 16.0]);
+        // Held along the way and lost by the end pays nothing.
+        let lost = holdings_episode(
+            vec![planets(3, holding(2, 3, 0)), holding(3, 3, 0)],
+            holding(4, 3, 0),
+        );
+        assert_shift(&shift(&lost, &reward), &[0.0, 0.0]);
+        // Styx is a Fracture planet and also takes its own bonus: 8 + 8 for Styx alone.
+        reward.styx_bonus = 8.0;
+        let styx = holdings_episode(
+            vec![holding(1, 3, 0)],
+            Progress {
+                holds_styx: true,
+                ..planets(1, holding(4, 3, 0))
+            },
+        );
+        assert_shift(&shift(&styx, &reward), &[16.0]);
+    }
+
+    #[test]
+    fn a_fleet_pool_of_seven_at_the_horizon_is_charged_on_every_return() {
+        let mut reward = Reward::for_stage(Stage::Two);
+        reward.fleet_hoard_penalty = 5.0;
+        let steps = vec![holding(1, 3, 0), holding(2, 8, 0)];
+        let seven = holdings_episode(steps.clone(), holding(4, 7, 0));
+        assert_shift(&shift(&seven, &reward), &[-5.0, -5.0]);
+        // Six at the end is fine, however large the pool was along the way.
+        let six = holdings_episode(steps, holding(4, 6, 0));
+        assert_shift(&shift(&six, &reward), &[0.0, 0.0]);
+    }
+
+    #[test]
+    fn an_empty_fleet_pool_is_charged_once_up_to_the_decision_that_emptied_it() {
+        let mut reward = Reward::for_stage(Stage::Two);
+        reward.zero_fleet_penalty = 10.0;
+        // Emptied by the second decision, refilled, and empty again at the end: charged once.
+        let episode = holdings_episode(
+            vec![
+                holding(1, 3, 0),
+                holding(2, 2, 0),
+                holding(2, 0, 0),
+                holding(3, 2, 0),
+            ],
+            holding(4, 0, 0),
+        );
+        assert_shift(&shift(&episode, &reward), &[-10.0, -10.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn trade_goods_beyond_seven_are_charged_per_round_per_excess_good() {
+        let mut reward = Reward::for_stage(Stage::Two);
+        reward.trade_goods_hoard_weight = 0.1;
+        // Round one ends on 8 goods (excess 1: 0.1), round two on 7 (free) after peaking at 9,
+        // round three on 10 (excess 3: 0.3).
+        let episode = holdings_episode(
+            vec![
+                holding(1, 3, 3),
+                holding(1, 3, 8),
+                holding(2, 3, 9),
+                holding(2, 3, 7),
+                holding(3, 3, 10),
+            ],
+            holding(3, 3, 10),
+        );
+        assert_shift(&shift(&episode, &reward), &[-0.4, -0.3, -0.3, -0.3, -0.3]);
+    }
+
+    #[test]
+    fn fracture_entry_pays_once_only_to_decisions_before_first_entry() {
+        let progress = |inside| Progress {
+            in_fracture: inside,
+            ..holding(2, 3, 0)
+        };
+        let mut reward = Reward::for_stage(Stage::Two);
+        reward.fracture_entry_bonus = 0.1;
+        let mut off = reward.clone();
+        off.fracture_entry_bonus = 0.0;
+        for (presence, expected) in [
+            (
+                vec![false, false, true, false, true],
+                vec![0.1, 0.1, 0.0, 0.0],
+            ),
+            (vec![false, false, true], vec![0.1, 0.1]),
+            (vec![false, false, false], vec![0.0, 0.0]),
+            (vec![true, false, true], vec![0.0, 0.0]),
+        ] {
+            let snapshots: Vec<_> = presence.into_iter().map(progress).collect();
+            let episode = holdings_episode(
+                snapshots[..snapshots.len() - 1].to_vec(),
+                *snapshots.last().unwrap(),
+            );
+            let delta: Vec<_> = returns(&episode, &reward)
+                .iter()
+                .zip(returns(&episode, &off))
+                .map(|(on, off)| on - off)
+                .collect();
+            assert_shift(&delta, &expected);
+            let mut stage_one = reward.clone();
+            stage_one.stage = Stage::One;
+            let mut stage_one_off = stage_one.clone();
+            stage_one_off.fracture_entry_bonus = 0.0;
+            assert_eq!(
+                returns(&episode, &stage_one),
+                returns(&episode, &stage_one_off)
+            );
+        }
+    }
+
+    #[test]
+    fn holding_styx_at_the_horizon_pays_every_return() {
+        let mut reward = Reward::for_stage(Stage::Two);
+        reward.styx_bonus = 1.0;
+        let styx = |progress: Progress| Progress {
+            holds_styx: true,
+            ..progress
+        };
+        let held = holdings_episode(
+            vec![holding(1, 3, 0), holding(2, 3, 0)],
+            styx(holding(4, 3, 0)),
+        );
+        assert_shift(&shift(&held, &reward), &[1.0, 1.0]);
+        // Held along the way and lost by the end pays nothing.
+        let lost = holdings_episode(
+            vec![styx(holding(2, 3, 0)), holding(3, 3, 0)],
+            holding(4, 3, 0),
+        );
+        assert_shift(&shift(&lost, &reward), &[0.0, 0.0]);
     }
 }

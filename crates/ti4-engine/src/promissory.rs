@@ -174,8 +174,10 @@ pub fn give_back(state: &mut GameState, note: &str) {
 pub fn holder_of(state: &GameState, alias: &str, owner: &PlayerId) -> Option<PlayerId> {
     let name = faction_name(state, owner);
     let note = note_id(alias, &name);
+    // Compared by faction, not seat: the id carries the faction, so seats sharing a faction share
+    // one note id, and a seat comparison would read a player's own card as lent out.
     match state.promissory_notes.get(&note) {
-        Some(holder) if holder != owner => Some(holder.clone()),
+        Some(holder) if faction_name(state, holder) != name => Some(holder.clone()),
         _ => None,
     }
 }
@@ -267,8 +269,22 @@ pub fn return_support(state: &mut GameState, owner: &PlayerId) -> bool {
     let Some(holder) = state.support_holders.remove(owner) else {
         return false;
     };
+    let before = state.player(&holder).map(|seat| seat.victory_points);
     if let Some(seat) = state.player_mut(&holder) {
         seat.victory_points = (seat.victory_points - 1).max(0);
+    }
+    // The ledger follows the point too. `receive` records the +1, and every VP-source report
+    // reads the ledger rather than the seat total, so a return that only touched the total left
+    // those reports crediting a note the holder had already given back.
+    let after = state.player(&holder).map(|seat| seat.victory_points);
+    if let (Some(before), Some(after)) = (before, after)
+        && after != before
+    {
+        state.note_vp(
+            &holder,
+            (after - before).try_into().unwrap_or(-1),
+            "support_for_the_throne",
+        );
     }
     true
 }
@@ -361,7 +377,15 @@ pub fn denies_movement_into(
     state
         .promissory_notes
         .get(&note)
-        .is_some_and(|holder| holder != mover && present.contains(holder))
+        .is_some_and(|holder| lent_out(state, holder, mover, &name) && present.contains(holder))
+}
+
+/// Whether `holder` holds `owner_name`'s note as a loan rather than as its own copy.
+///
+/// Seats without distinct factions share a name, so their notes share an id; a holder of that same
+/// faction holds its own copy, which denies nothing.
+fn lent_out(state: &GameState, holder: &PlayerId, mover: &PlayerId, owner_name: &str) -> bool {
+    holder != mover && faction_name(state, holder) != owner_name
 }
 
 /// Spend the Ceasefire that just denied a movement, returning it to its owner.
@@ -374,7 +398,7 @@ pub fn use_ceasefire(state: &mut GameState, mover: &PlayerId) -> bool {
     let held = state
         .promissory_notes
         .get(&note)
-        .is_some_and(|holder| holder != mover);
+        .is_some_and(|holder| lent_out(state, holder, mover, &name));
     if held {
         give_back(state, &note);
     }
@@ -465,6 +489,62 @@ pub fn turn_started(
     let name = faction_name(state, player);
     give_back(state, &note_id("ms", &name));
     true
+}
+
+/// Trade Agreement: "When the <color> player replenishes commodities: The <color> player gives you
+/// all of their commodities. Then, return this card to the <color> player."
+///
+/// Call wherever `player`'s commodities are replenished. Commodities given to another player
+/// become that player's trade goods, which is where they land. Returns the holder that was paid.
+/// Priced for trading since the port, it never paid out, so a traded Trade Agreement bought
+/// nothing.
+pub fn trade_agreement_on_replenish(state: &mut GameState, player: &PlayerId) -> Option<PlayerId> {
+    let holder = holder_of(state, "ta", player)?;
+    let given = state.player(player).map_or(0, |seat| seat.commodities);
+    if given <= 0 {
+        return None;
+    }
+    if let Some(seat) = state.player_mut(player) {
+        seat.commodities = 0;
+    }
+    if let Some(seat) = state.player_mut(&holder) {
+        seat.trade_goods += given;
+    }
+    let name = faction_name(state, player);
+    give_back(state, &note_id("ta", &name));
+    Some(holder)
+}
+
+/// How many of other factions' `alias` notes this player holds.
+#[must_use]
+pub fn held_foreign(state: &GameState, player: &PlayerId, alias: &str) -> usize {
+    let own = faction_name(state, player);
+    state
+        .promissory_notes
+        .iter()
+        .filter(|(note, holder)| {
+            *holder == player
+                && alias_of(note) == alias
+                && owner_of(note).is_some_and(|owner| owner != own)
+        })
+        .count()
+}
+
+/// Return every `alias` note held by a player other than its owner.
+pub fn return_all_foreign(state: &mut GameState, alias: &str) {
+    let lent: Vec<String> = state
+        .promissory_notes
+        .iter()
+        .filter(|(note, holder)| {
+            // By faction, as in `holder_of`: seats sharing a faction share the note id.
+            alias_of(note) == alias
+                && owner_of(note).is_some_and(|owner| owner != faction_name(state, holder))
+        })
+        .map(|(note, _)| note.clone())
+        .collect();
+    for note in lent {
+        give_back(state, &note);
+    }
 }
 
 /// What a particular Trade Agreement is worth: its owner's commodity value.
@@ -918,6 +998,63 @@ mod tests {
             "the point went home with the card"
         );
         assert!(state.support_holders.is_empty(), "and the card with it");
+    }
+
+    #[test]
+    fn a_returned_support_takes_its_point_out_of_the_ledger_too() {
+        // `vp_sources` and `game_cost` read the ledger, not the seat total. A return that only
+        // decremented `victory_points` left every report still crediting the lost note.
+        let mut state = game_hacan_jolnar();
+        assert!(receive(&mut state, &b(), &support("hacan")));
+        assert!(return_support(&mut state, &a()));
+
+        let net: i32 = state
+            .vp_ledger
+            .iter()
+            .filter(|(player, _, reason)| *player == b() && reason == "support_for_the_throne")
+            .map(|(_, delta, _)| *delta)
+            .sum();
+        assert_eq!(net, 0, "the +1 on receipt and the -1 on return cancel");
+    }
+
+    #[test]
+    fn a_trade_agreement_hands_over_the_replenished_commodities_and_goes_home() {
+        let mut state = game_hacan_jolnar();
+        let note = note_id("ta", "hacan");
+        state.promissory_notes.insert(note.clone(), b()); // a's (Hacan's) Trade Agreement, held by b
+        state.player_mut(&a()).unwrap().commodities = 6;
+        let goods = state.player(&b()).unwrap().trade_goods;
+
+        assert_eq!(trade_agreement_on_replenish(&mut state, &a()), Some(b()));
+
+        assert_eq!(state.player(&a()).unwrap().commodities, 0);
+        assert_eq!(state.player(&b()).unwrap().trade_goods, goods + 6);
+        assert_eq!(
+            state.promissory_notes.get(&note),
+            Some(&a()),
+            "the card went home"
+        );
+        assert_eq!(
+            trade_agreement_on_replenish(&mut state, &a()),
+            None,
+            "once home it pays nobody"
+        );
+    }
+
+    #[test]
+    fn foreign_notes_are_counted_and_returned_but_a_players_own_are_not() {
+        let mut state = game_hacan_jolnar();
+        let theirs = note_id("ce", "jolnar");
+        let mine = note_id("ce", "hacan");
+        state.promissory_notes.insert(theirs.clone(), a());
+        state.promissory_notes.insert(mine.clone(), a());
+        assert_eq!(held_foreign(&state, &a(), "ce"), 1);
+
+        return_all_foreign(&mut state, "ce");
+
+        assert_eq!(state.promissory_notes.get(&theirs), Some(&b()));
+        assert_eq!(state.promissory_notes.get(&mine), Some(&a()));
+        assert_eq!(held_foreign(&state, &a(), "ce"), 0);
     }
 
     #[test]
