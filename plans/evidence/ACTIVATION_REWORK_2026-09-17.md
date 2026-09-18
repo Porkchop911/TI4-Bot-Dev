@@ -126,3 +126,36 @@ at this budget. Choosing the whole fleet does not, and the pilot cannot separate
 from its start: arm B's fleet rows begin at zero, so it opens by picking uniformly among a
 destination's candidates, while arms 0 and A open exactly as 212544 played. Screening only, one
 seed base, 50 updates.
+
+## Arm B trained on, 2026-09-18
+
+Two continuations of the arm B pilot, both on the fleet-decision architecture (fact version 7),
+evaluated greedily (candidate temperature 0.001) against the champion, 20 seed blocks, 4 rounds.
+
+| run | reward | updates | VP | margin | lead | cleared | waste |
+|---|---|---:|---:|---:|---:|---:|---:|
+| start (212544) | — | — | 3.12 | −1.52 | 12.2% | 94.0% | 12.6% |
+| arm A (information) | VP only | 50 | 3.43 | −1.28 | 16.4% | 88.6% | 22.6% |
+| arm B pilot | VP only | 50 | 2.74 | −1.98 | 9.3% | 91.7% | 32.1% |
+| arm B, pure VP | VP only | +201 | 3.15 | −1.49 | 13.9% | **71.7%** | 59.4% |
+| arm B, opening priced | VP 1, clearance 0.5, r1 3 / 0.1 | +1200 | 3.21 | −1.56 | 12.1% | 85.7% | 71.7% |
+
+Victory points recovered to the starting level and beyond the pilot, but neither run reaches arm A,
+and two things get worse the longer arm B trains:
+
+- **Clearance.** VP-only took it to 71.7%, far below the start's 94%. `clearance-weight 0.5` with
+  the opening priced (`r1-bonus 3`, `r1-shaping 0.1`, the reward's own defaults) brought it back to
+  85.7%, still short.
+- **Wasted activations.** 12.6% at the start, 22.6% for arm A, then 59.4% and 71.7% here. Nothing in
+  either reward prices waste (`waste-penalty` is 0 and reported only as a diagnostic).
+
+**What the fleet decision learned** (one greedy holdout game per checkpoint, fleets picked):
+
+| run | step by step | capture | strong | light | efficient | hold |
+|---|---:|---:|---:|---:|---:|---:|
+| pure VP, +201 | 31 | 8 | 6 | 0 | 0 | 3 |
+| opening priced, +1200 | 29 | 17 | 10 | 3 | 2 | 0 |
+
+The manual option started at probability 0.003 (its row is zero at migration) and is now chosen about
+half the time: given the choice, the trained policy often goes back to building the fleet ship by
+ship. That is a result about the menu, not only about training length.
