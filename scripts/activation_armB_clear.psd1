@@ -1,6 +1,8 @@
 @{
     # Arm B overnight, 2026-09-18: the fleet-decision architecture (fact version 7) on victory
-    # points with the opening priced, continuing checkpoint-1776 (the arm B pilot plus 50 updates).
+    # points with the opening priced, continuing
+    # checkpoint-6392, the last checkpoint of the pure-VP overnight run (201 updates on top of the
+    # pilot's 100).
     #
     # Victory points are still the objective. What is added is the opening: `clearance-weight` is a
     # per-game penalty when the opening does not clear (charged at the final slot, so every
@@ -22,7 +24,7 @@
     #   .\scripts\ppo_train.ps1 -Config .\scripts\activation_armB_clear.psd1 -DryRun
     #   .\scripts\ppo_train.ps1 -Config .\scripts\activation_armB_clear.psd1
 
-    Bundle = 'D:\Projects\ti4-engine-rs\out\ppo-activation-armB-train-20260917\checkpoints\checkpoint-1776'
+    Bundle = 'D:\Projects\ti4-engine-rs\out\ppo-activation-armB-vp-20260918\checkpoints\checkpoint-6392'
     Pool = 'D:\Projects\ti4-engine-rs\out\pools\full_np8_12_train.json'
     Run = 'D:\Projects\ti4-engine-rs\out\ppo-activation-armB-clear-20260918'
     LibTorch = 'D:\Projects\ti4-engine-rs\out\libtorch-2.9.1-cu128'
