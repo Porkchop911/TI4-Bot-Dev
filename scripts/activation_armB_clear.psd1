@@ -26,7 +26,7 @@
 
     Bundle = 'D:\Projects\ti4-engine-rs\out\ppo-activation-armB-vp-20260918\checkpoints\checkpoint-6392'
     Pool = 'D:\Projects\ti4-engine-rs\out\pools\full_np8_12_train.json'
-    Run = 'D:\Projects\ti4-engine-rs\out\ppo-activation-armB-clear-20260918'
+    Run = 'D:\Projects\ti4-engine-rs\out\ppo-activation-armB-clear2-20260918'
     LibTorch = 'D:\Projects\ti4-engine-rs\out\libtorch-2.9.1-cu128'
 
     Diplomacy = $true
