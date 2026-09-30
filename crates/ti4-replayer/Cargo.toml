@@ -34,5 +34,17 @@ ti4-engine.workspace = true
 ti4-model.workspace = true
 ti4-review = { workspace = true, default-features = false }
 
+# eframe's Linux display backends. The workspace pins eframe with default features off, which costs
+# nothing on Windows. On Linux it is subtler than a build failure: winit still gets `x11` and `wayland`
+# through `accesskit_winit`'s default features, so windows open and the client compiles cleanly — but
+# `glutin` and `glutin-winit` are left with `egl` alone and `egui_glow`/`egui-winit` with no platform
+# at all, so nothing can create the OpenGL context the window draws into. Measured with
+# `cargo tree -e features --target x86_64-unknown-linux-gnu` before and after this block (2026-09-30).
+# `ti4-join` is the binary that runs on players' machines, and players run Linux, so both backends are
+# on; winit picks whichever the session provides. Scoped to Linux targets: the Windows feature graph
+# is identical with or without it.
+[target.'cfg(target_os = "linux")'.dependencies]
+eframe = { workspace = true, features = ["x11", "wayland"] }
+
 [lints]
 workspace = true
