@@ -59,3 +59,50 @@ $size = [math]::Round((Get-Item -LiteralPath $zipPath).Length / 1MB, 1)
 "size     $size MB"
 "sha256   $hash"
 "commit   $commit"
+
+# --- The setup exe (Inno Setup), when the compiler is installed --------------------------------------
+#
+# The zip stays the portable form. The setup exe is what players are meant to get: one file, a normal
+# install wizard, an entry in Settings > Apps, and an uninstaller that removes only what it installed.
+$iscc = @(
+    (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'),
+    'C:\Program Files (x86)\Inno Setup 6\ISCC.exe',
+    'C:\Program Files\Inno Setup 6\ISCC.exe'
+) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+if (-not $iscc) {
+    'setup    skipped: Inno Setup 6 is not installed (winget install JRSoftware.InnoSetup)'
+    return
+}
+
+# The installed README describes the installed program, not the zip: there is no Install.cmd and no
+# uninstall.ps1, and uninstalling goes through Settings > Apps. Each replaced passage is asserted, so a
+# reworded template fails here instead of shipping instructions for files that are not there.
+$setupReadme = $readme
+$swaps = @(
+    @(
+        "Double-click Install.cmd. It copies the program to`r`n%LOCALAPPDATA%\Programs\TI4 Join and adds `"TI4 Join`" to the Start menu and the desktop.`r`nNo administrator rights are needed. Or skip installing and just run ti4-join.exe from this folder.",
+        "Installed by TI4-Join-Setup into %LOCALAPPDATA%\Programs\TI4 Join, for this Windows user only;`r`nno administrator rights were needed. Start it from the Start menu: TI4 Join."
+    ),
+    @(
+        "Run uninstall.ps1 from %LOCALAPPDATA%\Programs\TI4 Join, or delete that folder and the two shortcuts.",
+        "Settings > Apps > Installed apps > TI4 Join > Uninstall. It removes only what the setup installed.`r`nTo move to a newer build, run the newer TI4-Join-Setup: it upgrades this install in place."
+    )
+)
+foreach ($swap in $swaps) {
+    $from = $swap[0] -replace "`r`n", "`n"
+    $norm = $setupReadme -replace "`r`n", "`n"
+    if (-not $norm.Contains($from)) {
+        throw "README template no longer contains the passage the setup replaces:`n$from"
+    }
+    $setupReadme = $norm.Replace($from, ($swap[1] -replace "`r`n", "`n"))
+}
+$setupReadme = $setupReadme -replace "`r?`n", "`r`n"
+$readmePath = Join-Path $env:TEMP "ti4-join-README-$short.txt"
+[System.IO.File]::WriteAllText($readmePath, $setupReadme, (New-Object System.Text.UTF8Encoding($false)))
+
+& $iscc /Q "/O$outDir" "/DCommit=$commit" "/DShort=$short" "/DExe=$exe" "/DReadme=$readmePath" (Join-Path $root 'scripts\ti4-join.iss')
+if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
+$setupPath = Join-Path $outDir "TI4-Join-Setup-$short.exe"
+"setup    $setupPath"
+"size     $([math]::Round((Get-Item -LiteralPath $setupPath).Length / 1MB, 1)) MB"
+"sha256   $((Get-FileHash -Algorithm SHA256 -LiteralPath $setupPath).Hash.ToLower())"
