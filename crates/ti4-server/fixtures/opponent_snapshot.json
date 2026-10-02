@@ -1,0 +1,578 @@
+{
+  "type": "initial_snapshot",
+  "protocol_version": 3,
+  "game_id": "game_12345",
+  "game_version": 42,
+  "viewer": {
+    "role": "player",
+    "seat": "seat_b"
+  },
+  "view": {
+    "round": 2,
+    "phase": "action",
+    "speaker": "seat_a",
+    "seating_order": [
+      "seat_a",
+      "seat_b",
+      "seat_c"
+    ],
+    "active_player": "seat_a",
+    "finished": false,
+    "players": [
+      {
+        "id": "seat_a",
+        "faction": "sol",
+        "victory_points": 3,
+        "trade_goods": 4,
+        "commodities": 2,
+        "tactic_tokens": 3,
+        "fleet_tokens": 4,
+        "strategic_tokens": 2,
+        "passed": false,
+        "strategy_cards": [
+          "leadership"
+        ],
+        "exhausted_strategy_cards": [],
+        "technologies": [],
+        "exhausted_technologies": [],
+        "relics": [],
+        "exhausted_relics": [],
+        "action_cards_count": 2,
+        "secret_objectives_count": 1,
+        "leaders": {}
+      },
+      {
+        "id": "seat_b",
+        "faction": "hacan",
+        "victory_points": 2,
+        "trade_goods": 8,
+        "commodities": 6,
+        "tactic_tokens": 2,
+        "fleet_tokens": 3,
+        "strategic_tokens": 3,
+        "passed": false,
+        "strategy_cards": [
+          "trade"
+        ],
+        "exhausted_strategy_cards": [],
+        "technologies": [],
+        "exhausted_technologies": [],
+        "relics": [],
+        "exhausted_relics": [],
+        "action_cards_count": 1,
+        "secret_objectives_count": 1,
+        "held_action_cards": [
+          "flank_speed"
+        ],
+        "held_secret_objectives": [
+          "brave_the_void"
+        ],
+        "leaders": {}
+      },
+      {
+        "id": "seat_c",
+        "faction": "letnev",
+        "victory_points": 1,
+        "trade_goods": 1,
+        "commodities": 0,
+        "tactic_tokens": 3,
+        "fleet_tokens": 3,
+        "strategic_tokens": 2,
+        "passed": false,
+        "strategy_cards": [
+          "warfare"
+        ],
+        "exhausted_strategy_cards": [],
+        "technologies": [],
+        "exhausted_technologies": [],
+        "relics": [],
+        "exhausted_relics": [],
+        "action_cards_count": 1,
+        "secret_objectives_count": 1,
+        "leaders": {}
+      }
+    ],
+    "board": {
+      "systems": {
+        "18": {
+          "system_id": "18",
+          "command_tokens": [
+            "seat_a"
+          ],
+          "planets": {},
+          "units": [
+            {
+              "unit_type": "carrier",
+              "owner": "seat_a",
+              "planet": null,
+              "damaged": false
+            },
+            {
+              "unit_type": "fighter",
+              "owner": "seat_a",
+              "planet": null,
+              "damaged": false
+            }
+          ]
+        }
+      }
+    },
+    "table": {
+      "revealed_objectives": [
+        "corner_the_market",
+        "develop_weaponry"
+      ],
+      "scored_objectives": {},
+      "objective_progress": {
+        "seat_a": {
+          "corner_the_market": {
+            "have": 0,
+            "threshold": 4,
+            "satisfied": false
+          },
+          "develop_weaponry": {
+            "have": 0,
+            "threshold": 2,
+            "satisfied": false
+          }
+        },
+        "seat_b": {
+          "corner_the_market": {
+            "have": 0,
+            "threshold": 4,
+            "satisfied": false
+          },
+          "develop_weaponry": {
+            "have": 0,
+            "threshold": 2,
+            "satisfied": false
+          }
+        },
+        "seat_c": {
+          "corner_the_market": {
+            "have": 0,
+            "threshold": 4,
+            "satisfied": false
+          },
+          "develop_weaponry": {
+            "have": 0,
+            "threshold": 2,
+            "satisfied": false
+          }
+        }
+      },
+      "unclaimed_strategy_cards": [],
+      "strategy_card_goods": {},
+      "laws": {}
+    }
+  },
+  "state": {
+    "players": [
+      {
+        "id": "seat_a",
+        "faction": "sol",
+        "home_system": null,
+        "home_planets": [],
+        "strategy_cards": [
+          "leadership"
+        ],
+        "exhausted_strategy_cards": [],
+        "tactic_tokens": 3,
+        "fleet_tokens": 4,
+        "strategic_tokens": 2,
+        "passed": false,
+        "victory_points": 3,
+        "trade_goods": 4,
+        "commodities": 2,
+        "secret_objectives": [
+          "?"
+        ],
+        "technologies": [],
+        "exhausted_technologies": [],
+        "action_cards": [
+          "?",
+          "?"
+        ],
+        "breakthrough": null,
+        "relic_fragments": {},
+        "relics": [],
+        "exhausted_relics": [],
+        "exhausted_legendary": [],
+        "exploration_cards": [],
+        "plots": [],
+        "plot_objectives": [],
+        "public_objectives_forbidden": false,
+        "leaders": {},
+        "fleet_supply_unlimited_until": null,
+        "combat_bonus_round": null,
+        "extra_votes_agenda": null,
+        "hack_votes_last_agenda": null,
+        "rout_round": null,
+        "waylay_barrage_round": null,
+        "cancel_hits_round": null,
+        "retreat_barred_round": null,
+        "extra_die_round": null,
+        "extra_die_unit": null,
+        "munitions_round": null,
+        "free_production_use": null,
+        "conduit_activation": null,
+        "move_bonus_activation": null,
+        "gravity_drive_used_activation": null,
+        "ground_roll_suppressed_round": null,
+        "sustained_damage_round": null,
+        "sustained_damage_types": [],
+        "agency_supply_used_turn": null,
+        "fleet_logistics_used_turn": null,
+        "anomalies_ignored_activation": null,
+        "silence_activation": null,
+        "silence_system": null,
+        "fighter_bonus_round": [],
+        "bunker_invasion": [],
+        "war_machine_use": [],
+        "blitz_invasion": [],
+        "disable_invasion": [],
+        "solar_flare": [],
+        "lost_star": [],
+        "dominus_orb": [],
+        "stability": false,
+        "duress_by": null,
+        "infantry_returning": 0,
+        "technology_units_returning": [],
+        "spec_ops_returning": 0,
+        "captured_units": [],
+        "assimilated_technologies": {},
+        "event_feats": []
+      },
+      {
+        "id": "seat_b",
+        "faction": "hacan",
+        "home_system": null,
+        "home_planets": [],
+        "strategy_cards": [
+          "trade"
+        ],
+        "exhausted_strategy_cards": [],
+        "tactic_tokens": 2,
+        "fleet_tokens": 3,
+        "strategic_tokens": 3,
+        "passed": false,
+        "victory_points": 2,
+        "trade_goods": 8,
+        "commodities": 6,
+        "secret_objectives": [
+          "brave_the_void"
+        ],
+        "technologies": [],
+        "exhausted_technologies": [],
+        "action_cards": [
+          "flank_speed"
+        ],
+        "breakthrough": null,
+        "relic_fragments": {},
+        "relics": [],
+        "exhausted_relics": [],
+        "exhausted_legendary": [],
+        "exploration_cards": [],
+        "plots": [],
+        "plot_objectives": [],
+        "public_objectives_forbidden": false,
+        "leaders": {},
+        "fleet_supply_unlimited_until": null,
+        "combat_bonus_round": null,
+        "extra_votes_agenda": null,
+        "hack_votes_last_agenda": null,
+        "rout_round": null,
+        "waylay_barrage_round": null,
+        "cancel_hits_round": null,
+        "retreat_barred_round": null,
+        "extra_die_round": null,
+        "extra_die_unit": null,
+        "munitions_round": null,
+        "free_production_use": null,
+        "conduit_activation": null,
+        "move_bonus_activation": null,
+        "gravity_drive_used_activation": null,
+        "ground_roll_suppressed_round": null,
+        "sustained_damage_round": null,
+        "sustained_damage_types": [],
+        "agency_supply_used_turn": null,
+        "fleet_logistics_used_turn": null,
+        "anomalies_ignored_activation": null,
+        "silence_activation": null,
+        "silence_system": null,
+        "fighter_bonus_round": [],
+        "bunker_invasion": [],
+        "war_machine_use": [],
+        "blitz_invasion": [],
+        "disable_invasion": [],
+        "solar_flare": [],
+        "lost_star": [],
+        "dominus_orb": [],
+        "stability": false,
+        "duress_by": null,
+        "infantry_returning": 0,
+        "technology_units_returning": [],
+        "spec_ops_returning": 0,
+        "captured_units": [],
+        "assimilated_technologies": {},
+        "event_feats": []
+      },
+      {
+        "id": "seat_c",
+        "faction": "letnev",
+        "home_system": null,
+        "home_planets": [],
+        "strategy_cards": [
+          "warfare"
+        ],
+        "exhausted_strategy_cards": [],
+        "tactic_tokens": 3,
+        "fleet_tokens": 3,
+        "strategic_tokens": 2,
+        "passed": false,
+        "victory_points": 1,
+        "trade_goods": 1,
+        "commodities": 0,
+        "secret_objectives": [
+          "?"
+        ],
+        "technologies": [],
+        "exhausted_technologies": [],
+        "action_cards": [
+          "?"
+        ],
+        "breakthrough": null,
+        "relic_fragments": {},
+        "relics": [],
+        "exhausted_relics": [],
+        "exhausted_legendary": [],
+        "exploration_cards": [],
+        "plots": [],
+        "plot_objectives": [],
+        "public_objectives_forbidden": false,
+        "leaders": {},
+        "fleet_supply_unlimited_until": null,
+        "combat_bonus_round": null,
+        "extra_votes_agenda": null,
+        "hack_votes_last_agenda": null,
+        "rout_round": null,
+        "waylay_barrage_round": null,
+        "cancel_hits_round": null,
+        "retreat_barred_round": null,
+        "extra_die_round": null,
+        "extra_die_unit": null,
+        "munitions_round": null,
+        "free_production_use": null,
+        "conduit_activation": null,
+        "move_bonus_activation": null,
+        "gravity_drive_used_activation": null,
+        "ground_roll_suppressed_round": null,
+        "sustained_damage_round": null,
+        "sustained_damage_types": [],
+        "agency_supply_used_turn": null,
+        "fleet_logistics_used_turn": null,
+        "anomalies_ignored_activation": null,
+        "silence_activation": null,
+        "silence_system": null,
+        "fighter_bonus_round": [],
+        "bunker_invasion": [],
+        "war_machine_use": [],
+        "blitz_invasion": [],
+        "disable_invasion": [],
+        "solar_flare": [],
+        "lost_star": [],
+        "dominus_orb": [],
+        "stability": false,
+        "duress_by": null,
+        "infantry_returning": 0,
+        "technology_units_returning": [],
+        "spec_ops_returning": 0,
+        "captured_units": [],
+        "assimilated_technologies": {},
+        "event_feats": []
+      }
+    ],
+    "seating_order": [
+      "seat_a",
+      "seat_b",
+      "seat_c"
+    ],
+    "speaker": "seat_a",
+    "phase": "action",
+    "round": 2,
+    "active": "seat_a",
+    "diplomacy": {
+      "enabled": false,
+      "rules_version": "diplomacy-rules-v1",
+      "relationships": {
+        "seat_a": {
+          "seat_b": {
+            "trust": 0,
+            "threat": 0,
+            "cooperation": 0,
+            "hostility": 0
+          },
+          "seat_c": {
+            "trust": 0,
+            "threat": 0,
+            "cooperation": 0,
+            "hostility": 0
+          }
+        },
+        "seat_b": {
+          "seat_a": {
+            "trust": 0,
+            "threat": 0,
+            "cooperation": 0,
+            "hostility": 0
+          },
+          "seat_c": {
+            "trust": 0,
+            "threat": 0,
+            "cooperation": 0,
+            "hostility": 0
+          }
+        },
+        "seat_c": {
+          "seat_a": {
+            "trust": 0,
+            "threat": 0,
+            "cooperation": 0,
+            "hostility": 0
+          },
+          "seat_b": {
+            "trust": 0,
+            "threat": 0,
+            "cooperation": 0,
+            "hostility": 0
+          }
+        }
+      },
+      "active_deals": {},
+      "history": [],
+      "recent_signals": [],
+      "journal": [],
+      "next_deal_id": 1,
+      "next_signal_id": 1,
+      "initiations_this_turn": {},
+      "last_attacks": {},
+      "last_breaches": {},
+      "judged_attacks": []
+    },
+    "unclaimed_strategy_cards": [],
+    "strategy_card_goods": {},
+    "card_initiative": {},
+    "strategy_cards_per_player": 1,
+    "board": {
+      "18": {
+        "units": [
+          {
+            "type_id": "carrier",
+            "owner": "seat_a",
+            "sustained_damage": false,
+            "galvanized": false
+          },
+          {
+            "type_id": "fighter",
+            "owner": "seat_a",
+            "sustained_damage": false,
+            "galvanized": false
+          }
+        ],
+        "command_tokens": [
+          "seat_a"
+        ],
+        "planet_control": {},
+        "planet_units": {},
+        "coexisting": {},
+        "purged_planets": []
+      }
+    },
+    "active_system": null,
+    "pending": null,
+    "exhausted_planets": [],
+    "revealed_objectives": [
+      "corner_the_market",
+      "develop_weaponry"
+    ],
+    "objective_deck": [],
+    "scored_objectives": {},
+    "finished": false,
+    "exploration_decks": {},
+    "planet_attachments": {},
+    "relic_deck": [],
+    "agenda_deck": [],
+    "action_card_deck": [],
+    "discarded_action_cards": [],
+    "salvage_yard": [],
+    "secret_deck": [],
+    "laws": {},
+    "custodians_removed": false,
+    "frontier_tokens": [],
+    "expedition_slices": {},
+    "fracture_in_play": false,
+    "ingress_tokens": [],
+    "wormhole_tokens": {},
+    "ion_storm": null,
+    "nexus_unlocked": false,
+    "styx_holder": null,
+    "rng_seed": 0,
+    "placed_planets": {},
+    "influence_pays_for_units": [],
+    "breach_tokens": [],
+    "thunders_edge_system": null,
+    "galactic_event": null,
+    "purged_systems": [],
+    "combat_round_seq": 0,
+    "production_seq": 0,
+    "activation_seq": 0,
+    "agenda_seq": 0,
+    "transactions_this_round": [],
+    "turn_seq": 0,
+    "feat_occurrence_seq": 0,
+    "scored_feat_occurrences": [],
+    "vp_ledger": [],
+    "combat_draw_round": null,
+    "reroll_staging": {},
+    "last_reroll_player": null,
+    "last_committed_unit": null,
+    "last_sustain": null,
+    "pending_destructions": [],
+    "last_ship_destroyed": null,
+    "last_control_gained": null,
+    "last_combat_sides": null,
+    "last_action_discarded": null,
+    "pending_reflective_hits": null,
+    "last_strategy_choice": null,
+    "agenda_veto_replacement": null,
+    "agenda_elected_override": null,
+    "agenda_votes": {},
+    "transient_flags": 0,
+    "fighters_produced_this_use": 0,
+    "nonfighter_ships_produced_this_use": 0,
+    "units_produced_this_use": 0,
+    "production_discount_remaining": 0,
+    "production_value_swapped_planet": null,
+    "gravleash_move_values": {},
+    "agenda_choices": [],
+    "agenda_predictions": {},
+    "transactions_this_turn": {},
+    "traded_goods": {},
+    "traded_goods_for_promissory": {},
+    "support_holders": {},
+    "promissory_notes": {},
+    "promissory_faceup": []
+  },
+  "galaxy_layout": {
+    "version": 1,
+    "active_sources": [],
+    "placements": []
+  },
+  "turn_status": {
+    "kind": "waiting_for_decision",
+    "seat": "seat_a",
+    "phase": "action",
+    "round": 2,
+    "stage": "Waiting for player"
+  }
+}

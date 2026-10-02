@@ -611,4 +611,3 @@ fn warfare_asks_the_strategy_spend_before_production() {
         "no seat followed Warfare; the check is vacuous"
     );
 }
-

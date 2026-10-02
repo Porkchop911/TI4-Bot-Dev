@@ -361,7 +361,8 @@ fn the_wormhole_nexus_is_drawn_before_anybody_has_been_there() {
         .map(|tile| tile.system.clone())
         .collect();
     assert_eq!(
-        locked, ["82a".to_owned()],
+        locked,
+        ["82a".to_owned()],
         "the locked face, and one tile rather than two stacked on the same corner"
     );
 
@@ -372,7 +373,8 @@ fn the_wormhole_nexus_is_drawn_before_anybody_has_been_there() {
         .map(|tile| tile.system.clone())
         .collect();
     assert_eq!(
-        open, ["82b".to_owned()],
+        open,
+        ["82b".to_owned()],
         "once it is triggered the open face is what is on the table"
     );
 }

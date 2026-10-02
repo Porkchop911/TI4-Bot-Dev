@@ -1,0 +1,12 @@
+{
+  "type": "game_over",
+  "protocol_version": 3,
+  "game_id": "game_12345",
+  "game_version": 156,
+  "winner": "seat_a",
+  "final_scores": {
+    "seat_a": 10,
+    "seat_b": 8,
+    "seat_c": 7
+  }
+}

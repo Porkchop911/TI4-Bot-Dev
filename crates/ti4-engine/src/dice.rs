@@ -88,7 +88,6 @@ impl Dice {
     }
 
     /// A roller with a non-standard die, for content that calls for one.
-    /// A roller with a non-standard die, for content that calls for one.
     #[must_use]
     pub const fn with_sides(sides: u32) -> Self {
         Self {

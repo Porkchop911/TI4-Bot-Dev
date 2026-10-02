@@ -207,6 +207,8 @@ fn validate_manifest(manifest: &Manifest) -> Result<(), CorpusError> {
 
 fn is_safe_relative_path(path: &Path) -> bool {
     !path.as_os_str().is_empty()
+        // Manifest paths must remain relative when the corpus moves between platforms.
+        && path.to_str().is_some_and(|text| !text.contains([':', '\\']))
         && path
             .components()
             .all(|component| matches!(component, Component::Normal(_)))
@@ -237,5 +239,7 @@ mod tests {
         assert!(!is_safe_relative_path(Path::new("./trace-001.ndjson")));
         assert!(!is_safe_relative_path(Path::new("../trace-001.ndjson")));
         assert!(!is_safe_relative_path(Path::new("C:/trace-001.ndjson")));
+        assert!(!is_safe_relative_path(Path::new("C:trace-001.ndjson")));
+        assert!(!is_safe_relative_path(Path::new("..\\trace-001.ndjson")));
     }
 }

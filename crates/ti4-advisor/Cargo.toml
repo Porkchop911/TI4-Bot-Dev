@@ -1,0 +1,22 @@
+[package]
+name = "ti4-advisor"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ti4-content.workspace = true
+ti4-engine.workspace = true
+ti4-mlp.workspace = true
+ti4-model.workspace = true
+ti4-policy.workspace = true
+ti4-server.workspace = true
+ti4-tensor.workspace = true
+ti4-training.workspace = true
+axum = { version = "0.8", features = ["json"] }
+serde.workspace = true
+serde_json.workspace = true
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
+
+[lints]
+workspace = true

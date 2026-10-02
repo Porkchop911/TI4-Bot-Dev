@@ -77,8 +77,17 @@ pub fn decision_hash(version: CanonicalHashVersion, decision: &DecisionRecord) -
 /// sentence asked with none, and a replay that could not tell those apart would not be a replay.
 /// `actor` participates too even though `DecisionRecord::player` already carries it, because the
 /// fingerprint should be checkable from the context alone rather than by knowing they agree.
-pub const V2_CONTEXT_FIELDS: [&str; 8] = [
-    "version", "actor", "source", "subtype", "phase", "round", "optional", "target",
+pub const V2_CONTEXT_FIELDS: [&str; 10] = [
+    "version",
+    "actor",
+    "source",
+    "subtype",
+    "phase",
+    "round",
+    "optional",
+    "target",
+    "space_battle",
+    "invasion_seq",
 ];
 
 /// The one context field carrying values rather than identity, bound alongside the fields above.
@@ -302,7 +311,7 @@ mod tests {
     fn the_participating_context_fields_are_pinned() {
         // Pinned as data so that adding a context field is a deliberate fingerprint decision rather
         // than an accident of `derive(Serialize)`.
-        assert_eq!(V2_CONTEXT_FIELDS.len(), 8);
+        assert_eq!(V2_CONTEXT_FIELDS.len(), 10);
         assert_eq!(V2_CONTEXT_QUANTITIES, "outstanding");
         let named: std::collections::BTreeSet<&str> = V2_CONTEXT_FIELDS
             .iter()

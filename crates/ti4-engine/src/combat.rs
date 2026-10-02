@@ -13,11 +13,13 @@ use ti4_content::galaxy::Galaxy;
 use ti4_content::units::{UnitType, catalogue};
 use ti4_model::content_types::SourceSet;
 use ti4_model::id::{PlayerId, RelicId, SystemId};
-use ti4_model::state::{Feat, FeatOccurrence, GameState, RerollEntry, RerollSet};
+use ti4_model::state::{CombatRollRecord, Feat, FeatOccurrence, GameState, RerollEntry, RerollSet};
 use ti4_model::units::Unit;
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Resolving, Table, Window};
-use crate::decision_context::{DecisionContext, DecisionSource, DecisionTarget};
+use crate::decision_context::{
+    ConstraintKind, DecisionContext, DecisionSource, DecisionTarget, OutstandingConstraint,
+};
 use crate::dice::Dice;
 use crate::preview::{Delta, Preview, Quantity, stochastic};
 use crate::rng::GameRng;
@@ -2515,6 +2517,9 @@ pub struct CombatWindow {
     galaxy: Option<ti4_content::galaxy::Galaxy>,
     /// Players who announced a retreat this round and will leave once it ends (78.7).
     pending_retreats: Vec<PlayerId>,
+    /// One before-assignment reaction window per seat and combat round, even when
+    /// a card cancels some (but not all) of that seat's incoming hits.
+    hit_reaction_offered: std::collections::BTreeSet<(u32, PlayerId)>,
     /// One identity spans the barrage and resolution of this combat (61.7).
     combat_occurrence: Option<FeatOccurrence>,
     /// A timing pause that the game driver has not yet opened a scoring window for.
@@ -2564,6 +2569,7 @@ impl CombatWindow {
                 }),
                 galaxy: None,
                 pending_retreats: Vec::new(),
+                hit_reaction_offered: Default::default(),
                 combat_occurrence: None,
                 pending_scoring_occurrence: None,
                 damaged_before_round: std::collections::BTreeMap::new(),
@@ -2576,6 +2582,7 @@ impl CombatWindow {
             stage: Stage::Opening { round: 1 },
             galaxy: None,
             pending_retreats: Vec::new(),
+            hit_reaction_offered: Default::default(),
             combat_occurrence: None,
             pending_scoring_occurrence: None,
             damaged_before_round: std::collections::BTreeMap::new(),
@@ -2805,6 +2812,28 @@ impl CombatWindow {
         let (content, sources) = (ctx.content, ctx.sources);
         {
             state.combat_round_seq = state.combat_round_seq.saturating_add(1);
+            state.combat_presentation.phase = "pre_roll".to_owned();
+            state.combat_presentation.round = round;
+            state.combat_presentation.remaining_hits.clear();
+            state.combat_round_hits.clear();
+            state.combat_round_dice.clear();
+            state.combat_presentation.round_start =
+                ships_of(state, content, sources, &self.attacker, &self.system)
+                    .into_iter()
+                    .chain(ships_of(
+                        state,
+                        content,
+                        sources,
+                        &self.defender,
+                        &self.system,
+                    ))
+                    .collect();
+            if round == 1 {
+                state.combat_presentation.barrage_start =
+                    state.combat_presentation.round_start.clone();
+                state.combat_presentation.barrage_hits.clear();
+                state.combat_presentation.barrage_dice.clear();
+            }
 
             // Announced before anything is rolled, because eight action cards read "at the start of
             // a combat round" and Morale Boost scopes its bonus to `combat_round_seq`. Emitting after
@@ -2907,6 +2936,7 @@ impl CombatWindow {
                 payload.insert("player".to_owned(), side.to_string().into());
                 payload.insert("round".to_owned(), i64::from(round).into());
                 let _ = ctx.emit(state, "ANTI_FIGHTER_BARRAGE_STARTED", payload);
+                state.combat_presentation.phase = "barrage".to_owned();
                 let _ = roll_barrage_side(
                     state,
                     content,
@@ -2919,6 +2949,27 @@ impl CombatWindow {
                 open_reroll_windows(state, ctx, &side);
                 if let Some(set) = state.reroll_staging.get(&side).cloned() {
                     let hits = staged_hits(&set);
+                    state
+                        .combat_presentation
+                        .barrage_hits
+                        .insert(side.clone(), hits as u32);
+                    for entry in &set.rolls {
+                        for (index, face) in entry.faces.iter().enumerate() {
+                            let target = entry.hits_on.unwrap_or(0);
+                            let adjusted = i64::from(*face)
+                                + i64::from(entry.deltas.get(&index).copied().unwrap_or(0));
+                            state
+                                .combat_presentation
+                                .barrage_dice
+                                .push(CombatRollRecord {
+                                    player: side.clone(),
+                                    unit: entry.unit.clone(),
+                                    roll: *face,
+                                    target,
+                                    hit: target > 0 && adjusted >= i64::from(target),
+                                });
+                        }
+                    }
                     if hits > 0 {
                         results.push((side.clone(), hits));
                     }
@@ -2926,6 +2977,7 @@ impl CombatWindow {
                 state.reroll_staging.remove(&side);
             }
             state.last_reroll_player = None;
+            state.combat_presentation.phase = "barrage".to_owned();
             let feat_players = apply_barrage(
                 state,
                 content,
@@ -2948,7 +3000,19 @@ impl CombatWindow {
                 self.stage = self.conclude(state, content, sources, round);
                 return Ok(());
             }
+            state.combat_presentation.phase = "pre_roll".to_owned();
         }
+        state.combat_presentation.round_start =
+            ships_of(state, content, sources, &self.attacker, &self.system)
+                .into_iter()
+                .chain(ships_of(
+                    state,
+                    content,
+                    sources,
+                    &self.defender,
+                    &self.system,
+                ))
+                .collect();
         self.stage = Stage::Announcing {
             round,
             asking: self.defender.clone(),
@@ -2969,6 +3033,18 @@ impl CombatWindow {
         round: u32,
     ) -> Result<(), CombatError> {
         let (content, sources) = (ctx.content, ctx.sources);
+        state.combat_presentation.phase = "resolving_hits".to_owned();
+        state.combat_presentation.round_start =
+            ships_of(state, content, sources, &self.attacker, &self.system)
+                .into_iter()
+                .chain(ships_of(
+                    state,
+                    content,
+                    sources,
+                    &self.defender,
+                    &self.system,
+                ))
+                .collect();
         // 78.5f: the attacker rolls everything first. 78.6: both sides' hits are computed
         // before either is absorbed. Each side's window opens before the next side's dice
         // are drawn, like the barrage's, so a reroll can empty a fleet mid-roll and end
@@ -3080,6 +3156,37 @@ impl CombatWindow {
         let (attacker_free, attacker_forced) = split(&sets[0], attacker_hits, &self.attacker);
         let (defender_free, defender_forced) = split(&sets[1], defender_hits, &self.defender);
 
+        state.combat_round_hits.insert(
+            self.attacker.clone(),
+            (attacker_free + attacker_forced) as u32,
+        );
+        state.combat_round_hits.insert(
+            self.defender.clone(),
+            (defender_free + defender_forced) as u32,
+        );
+
+        let mut round_dice = Vec::new();
+        for (side, set) in [(&self.attacker, &sets[0]), (&self.defender, &sets[1])] {
+            if let Some(s) = set {
+                for entry in &s.rolls {
+                    let threshold = entry.hits_on.unwrap_or(0);
+                    for (die_idx, face) in entry.faces.iter().enumerate() {
+                        let delta = entry.deltas.get(&die_idx).copied().unwrap_or(0);
+                        let final_val = (*face as i64 + delta as i64).max(0) as u32;
+                        let hit = threshold > 0 && final_val >= threshold;
+                        round_dice.push(CombatRollRecord {
+                            player: (*side).clone(),
+                            unit: entry.unit.clone(),
+                            roll: *face,
+                            target: threshold,
+                            hit,
+                        });
+                    }
+                }
+            }
+        }
+        state.combat_round_dice = round_dice;
+
         // Forced hits first, so a free hit can still take a fighter the forced ones had to spare.
         let queue: Vec<Pending> = [
             (&self.defender, attacker_forced, &self.attacker, true),
@@ -3144,6 +3251,26 @@ impl CombatWindow {
     ) -> Result<(), CombatError> {
         let (content, sources) = (ctx.content, ctx.sources);
         loop {
+            state.combat_presentation.phase = match &self.stage {
+                Stage::Opening { .. } | Stage::Announcing { .. } => "pre_roll",
+                Stage::RollingAfterBarrage { .. } => "barrage",
+                Stage::Sustaining { .. } | Stage::Assigning { .. } | Stage::Rolling { .. } => {
+                    "resolving_hits"
+                }
+                Stage::Retreating { .. } => "retreating",
+                Stage::Done(_) => "complete",
+            }
+            .to_owned();
+            state.combat_presentation.remaining_hits = match &self.stage {
+                Stage::Sustaining { queue, .. } | Stage::Assigning { queue, .. } => {
+                    let mut remaining = std::collections::BTreeMap::new();
+                    for pending in queue {
+                        *remaining.entry(pending.player.clone()).or_insert(0) += pending.hits;
+                    }
+                    remaining
+                }
+                _ => Default::default(),
+            };
             match self.stage.clone() {
                 Stage::Sustaining { queue, round } | Stage::Assigning { queue, round } => {
                     let Some(front) = queue.first().cloned() else {
@@ -3192,7 +3319,11 @@ impl CombatWindow {
                     // "Before you assign hits to your ships during a space combat." Emitted as the
                     // first of a player's hits is about to land: `front` still carries its full
                     // count here and the stage has consumed none of it.
-                    if matches!(self.stage, Stage::Sustaining { .. }) {
+                    if matches!(self.stage, Stage::Sustaining { .. })
+                        && self
+                            .hit_reaction_offered
+                            .insert((round, front.player.clone()))
+                    {
                         let mut payload = std::collections::BTreeMap::new();
                         payload.insert("system".to_owned(), self.system.to_string().into());
                         payload.insert("player".to_owned(), front.player.to_string().into());
@@ -3202,6 +3333,16 @@ impl CombatWindow {
                         );
                         payload.insert("round".to_owned(), i64::from(round).into());
                         let _ = ctx.emit(state, "HITS_TO_ASSIGN", payload);
+                        // The reaction window may have granted cancellations while `emit`
+                        // was waiting for its players. Apply them before offering sustain or
+                        // casualties; the earlier spend only covers grants from prior windows.
+                        let cancelled = spend_cancellations(state, &front.player, front.hits);
+                        if cancelled > 0 {
+                            let mut rest = queue.clone();
+                            rest[0].hits -= cancelled;
+                            self.stage = Stage::Sustaining { queue: rest, round };
+                            continue;
+                        }
                     }
                     // A sustain is only offered when something can take one.
                     if matches!(self.stage, Stage::Sustaining { .. })
@@ -3532,7 +3673,12 @@ impl Window for CombatWindow {
                             state.phase,
                             state.round,
                         )
-                        .about(DecisionTarget::System(self.system.clone())),
+                        .about(DecisionTarget::System(self.system.clone()))
+                        .owing(OutstandingConstraint::new(
+                            ConstraintKind::UnitsToRemove,
+                            i64::try_from(front.hits).unwrap_or(0),
+                            0,
+                        )),
                     ),
                 )
             }
@@ -3574,7 +3720,12 @@ impl Window for CombatWindow {
                             state.phase,
                             state.round,
                         )
-                        .about(DecisionTarget::System(self.system.clone())),
+                        .about(DecisionTarget::System(self.system.clone()))
+                        .owing(OutstandingConstraint::new(
+                            ConstraintKind::UnitsToRemove,
+                            i64::try_from(front.hits).unwrap_or(0),
+                            0,
+                        )),
                     ),
                 )
             }

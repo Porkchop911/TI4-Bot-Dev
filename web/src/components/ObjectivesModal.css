@@ -1,0 +1,469 @@
+.objectives-dialog .objectives-modal-panel {
+  width: min(1360px, calc(100vw - 32px));
+  max-width: 1360px;
+  max-height: calc(100dvh - 40px);
+  height: 85vh;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  background: #090d16;
+  border: 1px solid #1e293b;
+  border-radius: 12px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+}
+
+.objectives-modal__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px;
+  background: #0f172a;
+  border-bottom: 1px solid #1e293b;
+  flex-shrink: 0;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.objectives-modal__title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.objectives-modal__title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: #f8fafc;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.objectives-modal__subtitle {
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.objectives-modal__scroll-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: auto;
+  padding: 16px 24px 32px;
+  background: #090d16;
+}
+
+.objectives-modal__empty {
+  padding: 48px 24px;
+  text-align: center;
+  color: #64748b;
+  font-size: 15px;
+}
+
+/* Matrix Table Styling */
+.objectives-matrix-container {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  background: #0c1220;
+}
+
+.objectives-matrix {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 13px;
+}
+
+.objectives-matrix th,
+.objectives-matrix td {
+  padding: 12px 14px;
+  border-bottom: 1px solid #1e293b;
+  border-right: 1px solid #1e293b;
+}
+
+.objectives-matrix th:last-child,
+.objectives-matrix td:last-child {
+  border-right: none;
+}
+
+.objectives-matrix thead th {
+  background: #0f172a;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.objectives-matrix__card-col {
+  min-width: 320px;
+  max-width: 440px;
+  width: 40%;
+}
+
+.objectives-matrix__player-col {
+  min-width: 130px;
+  vertical-align: middle;
+}
+
+.objectives-matrix__player-col--self {
+  background: rgba(56, 189, 248, 0.08) !important;
+  border-bottom: 2px solid #38bdf8 !important;
+}
+
+.objectives-matrix__player-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.objectives-matrix__player-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f1f5f9;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.objectives-matrix__self-tag {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #0284c7;
+  color: #ffffff;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.objectives-matrix__player-faction {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+/* Stage Group Header Rows */
+.objectives-matrix__stage-header-row td {
+  background: #111827;
+  padding: 8px 14px;
+  font-weight: 700;
+  border-top: 1px solid #334155;
+  border-bottom: 1px solid #334155;
+}
+
+.objectives-matrix__stage-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.objectives-matrix__stage-badge--stage-1 {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.objectives-matrix__stage-badge--stage-2 {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+
+/* Row & Card Cell */
+.objectives-matrix__row {
+  transition: background-color 0.15s ease;
+}
+
+.objectives-matrix__row:hover {
+  background-color: rgba(30, 41, 59, 0.4);
+}
+
+.objectives-matrix__card-cell {
+  vertical-align: top;
+}
+
+.objectives-matrix__card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.objectives-matrix__card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.objectives-matrix__point-pill {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.objectives-matrix__point-pill--stage-1 {
+  background: #f59e0b;
+  color: #0b0f19;
+}
+
+.objectives-matrix__point-pill--stage-2 {
+  background: #0284c7;
+  color: #ffffff;
+}
+
+.objectives-matrix__card-name-btn {
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #f8fafc;
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.15s ease;
+}
+
+.objectives-matrix__card-name-btn:hover {
+  color: #38bdf8;
+  text-decoration: underline;
+}
+
+.objectives-matrix__card-desc {
+  font-size: 12px;
+  line-height: 1.4;
+  color: #94a3b8;
+}
+
+/* Progress Cells */
+.objectives-matrix__progress-cell {
+  vertical-align: middle;
+  text-align: center;
+}
+
+.objectives-matrix__progress-cell--self {
+  background: rgba(56, 189, 248, 0.04);
+}
+
+.objectives-matrix__status-scored {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: rgba(34, 197, 94, 0.15);
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  color: #4ade80;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.objectives-matrix__icon-check {
+  font-weight: bold;
+}
+
+.objectives-matrix__status-ready {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: rgba(16, 185, 129, 0.2);
+  border: 1px solid #10b981;
+  color: #6ee7b7;
+  font-weight: 700;
+  font-size: 12px;
+  animation: pulse-ready 2.5s infinite;
+}
+
+@keyframes pulse-ready {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(16, 185, 129, 0);
+  }
+}
+
+.objectives-matrix__status-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+  min-width: 80px;
+}
+
+.objectives-matrix__progress-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #cbd5e1;
+}
+
+.objectives-matrix__progress-bar-bg {
+  width: 100%;
+  height: 6px;
+  background: #1e293b;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.objectives-matrix__progress-bar-fill {
+  height: 100%;
+  background: #38bdf8;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.objectives-matrix__status-empty {
+  color: #475569;
+  font-size: 14px;
+}
+
+/* Scoring Mode Styles */
+.objectives-matrix__row--scoreable {
+  cursor: pointer;
+}
+
+.objectives-matrix__row--scoreable:hover {
+  background: rgba(56, 189, 248, 0.08) !important;
+}
+
+.objectives-matrix__row--selected {
+  background: rgba(56, 189, 248, 0.12) !important;
+}
+
+.objectives-matrix__row--selected td:first-child {
+  box-shadow: inset 4px 0 0 #38bdf8;
+}
+
+.objectives-matrix__card-cell--scoreable {
+  transition: background-color 0.15s ease;
+}
+
+.objectives-matrix__card-cell--scoreable:hover {
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.objectives-matrix__radio {
+  margin: 0;
+  accent-color: #38bdf8;
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+}
+
+.objectives-matrix__selected-tag {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #0284c7;
+  color: #ffffff;
+}
+
+.objectives-modal__scoring-badge {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(56, 189, 248, 0.2);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+}
+
+.objectives-matrix__status-selected {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: rgba(56, 189, 248, 0.25);
+  border: 1px solid #38bdf8;
+  color: #38bdf8;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.objectives-modal__footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 24px;
+  background: #0f172a;
+  border-top: 1px solid #1e293b;
+  flex-shrink: 0;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.objectives-modal__footer-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.objectives-modal__selection-summary {
+  font-size: 14px;
+  color: #e2e8f0;
+}
+
+.objectives-modal__error {
+  font-size: 12px;
+  color: #f87171;
+  font-weight: 600;
+}
+
+.objectives-modal__footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.objectives-matrix__decline-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #334155;
+  background: #1e293b;
+  color: #94a3b8;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.objectives-matrix__decline-label:hover {
+  background: #334155;
+  color: #f8fafc;
+}
+
+.objectives-matrix__decline-label--selected {
+  border-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+.objectives-matrix__confirm-btn {
+  padding: 8px 20px;
+  font-weight: 700;
+}

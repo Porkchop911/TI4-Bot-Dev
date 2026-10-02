@@ -1,0 +1,29 @@
+[package]
+name = "ti4-bot-agent"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+real-e2e = ["dep:ti4-advisor", "dep:ti4-tensor"]
+
+[dependencies]
+ti4-model.workspace = true
+ti4-server.workspace = true
+ti4-advisor = { workspace = true, optional = true }
+ti4-tensor = { workspace = true, optional = true }
+futures-util = "0.3"
+rand.workspace = true
+rand_chacha.workspace = true
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time"] }
+tokio-tungstenite = "0.26"
+
+[dev-dependencies]
+axum = { version = "0.8", features = ["json"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,79 @@
+.decision-gallery {
+  height: 100dvh;
+  overflow: auto;
+  padding: 16px;
+}
+.decision-gallery__header {
+  position: relative;
+  z-index: calc(var(--layer-dialog) + 1);
+  padding: 12px 20px;
+}
+.decision-gallery__header h1 {
+  margin: 0;
+}
+.decision-gallery__header small {
+  font-size: 0.55em;
+  color: var(--color-text-muted);
+}
+.decision-gallery__header p {
+  margin: 8px 0;
+}
+.decision-gallery__header .workflow-row {
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.decision-gallery__header label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.decision-gallery__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 12px;
+}
+.decision-gallery__case {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  gap: 8px;
+  color: var(--color-text);
+  cursor: pointer;
+}
+.decision-gallery__case span {
+  color: var(--color-text-muted);
+}
+.decision-gallery__preview {
+  position: relative;
+  min-height: 65dvh;
+}
+.decision-gallery__details {
+  position: relative;
+  z-index: calc(var(--layer-dialog) + 1);
+  padding: 12px;
+  max-width: 860px;
+  margin: 8px auto;
+  max-height: 30dvh;
+  overflow-y: auto;
+}
+.decision-gallery__details code {
+  overflow-wrap: anywhere;
+  margin-right: 8px;
+}
+.decision-gallery__preview .app-shell {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  width: 100%;
+}
+@media (max-width: 700px) {
+  .decision-gallery {
+    padding: 6px;
+  }
+  .decision-gallery__header {
+    padding: 8px;
+  }
+  .decision-gallery__details {
+    max-height: 22dvh;
+  }
+}

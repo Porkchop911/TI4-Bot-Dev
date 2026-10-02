@@ -864,6 +864,9 @@ pub fn specialties(
 ) -> BTreeMap<&'static str, usize> {
     let mut found = BTreeMap::new();
     for (_, planet) in state.controlled_planets(player) {
+        if state.exhausted_planets.contains(planet) {
+            continue;
+        }
         for specialty in crate::planets::tech_specialties_now(state, content, sources, planet) {
             let upper = specialty.to_ascii_uppercase();
             if let Some(colour) = COLOURS.iter().find(|c| **c == upper) {
@@ -1082,6 +1085,68 @@ pub fn apply_unit_upgrades(
     }
 }
 
+fn exhaust_specialties_for_research(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    alias: &TechnologyId,
+) {
+    if crate::laws::war_sun_prerequisites_waived(state, content, alias) {
+        return;
+    }
+    let reqs = prerequisites(content, alias);
+    if reqs.is_empty() {
+        return;
+    }
+    let held = owned_colours(state, content, player);
+    let mut waivable = crate::faction_abilities::waived_prerequisites(
+        state,
+        content,
+        sources,
+        player,
+        alias.as_str(),
+    );
+    for colour in COLOURS {
+        waivable += crate::laws::research_team_waivers(state, player, colour);
+    }
+    waivable += crate::relics::prerequisite_waivers(state, player);
+
+    let mut to_exhaust = Vec::new();
+    for (colour, req_count) in reqs {
+        let owned_count = held.get(colour).copied().unwrap_or(0);
+        if req_count > owned_count {
+            let mut shortage = req_count - owned_count;
+            if waivable > 0 {
+                let waived = shortage.min(waivable);
+                shortage -= waived;
+                waivable -= waived;
+            }
+            if shortage > 0 {
+                let mut exhausted_for_colour = 0;
+                for (_, planet) in state.controlled_planets(player) {
+                    if exhausted_for_colour >= shortage {
+                        break;
+                    }
+                    if state.exhausted_planets.contains(planet) || to_exhaust.contains(planet) {
+                        continue;
+                    }
+                    if crate::planets::tech_specialties_now(state, content, sources, planet)
+                        .iter()
+                        .any(|s| s.eq_ignore_ascii_case(colour))
+                    {
+                        to_exhaust.push(planet.clone());
+                        exhausted_for_colour += 1;
+                    }
+                }
+            }
+        }
+    }
+    for planet in to_exhaust {
+        state.exhaust_planet(planet);
+    }
+}
+
 /// Research a technology, having satisfied its prerequisites. `false` if it could not be.
 pub fn research(
     state: &mut GameState,
@@ -1115,6 +1180,8 @@ pub fn research(
             seat.trade_goods -= plan.trade_goods;
             seat.exhausted_technologies.insert(TechnologyId::new("is"));
         }
+    } else {
+        exhaust_specialties_for_research(state, content, sources, player, alias);
     }
     grant(state, player, alias);
     // 90.8: the upgrade covers the unit on the faction sheet, so units already on the board
@@ -1948,11 +2015,27 @@ mod tests {
         let Some((system, planet)) = planet else {
             return; // no propulsion specialty in this scope
         };
-        state.system_mut(&system).set_control(planet, player());
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player());
 
         assert!(
             can_research(&state, ContentStore::embedded(), POK, &player(), &target),
             "the specialty covers the prerequisite"
+        );
+        assert!(
+            research(
+                &mut state,
+                ContentStore::embedded(),
+                POK,
+                &player(),
+                &target
+            ),
+            "research should succeed using specialty"
+        );
+        assert!(
+            state.exhausted_planets.contains(&planet),
+            "specialty planet must be exhausted after being used for research"
         );
     }
 

@@ -1784,6 +1784,8 @@ impl ProductionWindow {
         // The position before any of these options is taken, read once for all of them.
         let before =
             crate::fleet::standing_using(&types, state, content, &self.player, &self.system, None);
+        let spendable_resources =
+            available(state, content, sources, &self.player, Spend::Resources);
         let mut options = Vec::new();
         for id in buildable_for(state, content, sources, &self.player) {
             let Some(kind) = types.get(id.as_str()) else {
@@ -1795,9 +1797,7 @@ impl ProductionWindow {
             // paid for would be withheld as unaffordable. Affordability is judged on the
             // discounted bill: a unit Sarween Tools or Harrugh Gefhara brings within reach must
             // not be withheld for a price nobody would actually charge.
-            if cost
-                > available(state, content, sources, &self.player, Spend::Resources) + self.credit
-            {
+            if cost > spendable_resources + self.credit {
                 continue;
             }
             let spots = placements(state, content, sources, &self.player, &self.system, kind);
@@ -1845,6 +1845,8 @@ impl ProductionWindow {
             .with("placed", i64::try_from(placed).unwrap_or(1))
             .with("yield", i64::try_from(pair).unwrap_or(1))
             .with("credit", self.credit)
+            .with("available_resources", spendable_resources)
+            .with("free_this_use", self.free_this_use)
             .with("credit_used", credit_used)
             .with("owed", cost - credit_used)
             .with("production_spent", production_spent)
@@ -3500,6 +3502,13 @@ mod tests {
         assert_eq!(
             fighter
                 .payload
+                .get("available_resources")
+                .and_then(serde_json::Value::as_i64),
+            Some(available(&state, content, POK, &player(), Spend::Resources))
+        );
+        assert_eq!(
+            fighter
+                .payload
                 .get("credit_used")
                 .and_then(serde_json::Value::as_i64),
             Some(1)
@@ -3792,6 +3801,13 @@ mod tests {
             Some(3),
             "the whole printed price is discounted away"
         );
+        assert_eq!(
+            carrier
+                .payload
+                .get("free_this_use")
+                .and_then(serde_json::Value::as_bool),
+            Some(true)
+        );
     }
 
     /// A marker left over from a different production sequence must not make an unrelated later
@@ -3816,6 +3832,13 @@ mod tests {
             .into_iter()
             .find(|option| option.id.starts_with("build|carrier|"))
             .expect("carrier");
+        assert_eq!(
+            carrier
+                .payload
+                .get("free_this_use")
+                .and_then(serde_json::Value::as_bool),
+            Some(false)
+        );
         assert_eq!(
             carrier
                 .payload

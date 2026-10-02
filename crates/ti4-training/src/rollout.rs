@@ -2328,14 +2328,11 @@ mod tests {
         // found. A pool of a thousand arrangements has no `82` in any of them, because what was
         // captured is the ring of hexes and the Nexus does not sit on a hex.
         let players = seats(&["a", "b", "c"]);
-        let factions: BTreeMap<PlayerId, FactionId> = [
-            ("a", "letnev"),
-            ("b", "jolnar"),
-            ("c", "hacan"),
-        ]
-        .into_iter()
-        .map(|(seat, faction)| (PlayerId::new(seat), FactionId::new(faction)))
-        .collect();
+        let factions: BTreeMap<PlayerId, FactionId> =
+            [("a", "letnev"), ("b", "jolnar"), ("c", "hacan")]
+                .into_iter()
+                .map(|(seat, faction)| (PlayerId::new(seat), FactionId::new(faction)))
+                .collect();
         let pool = save54_pool();
         let families: Vec<(&str, OpeningMap)> = vec![
             ("rust spiral", OpeningMap::RustVaried),
@@ -2349,15 +2346,9 @@ mod tests {
             ),
         ];
         for (name, map) in families {
-            let (_state, galaxy, _) = seated(
-                ContentStore::embedded(),
-                &players,
-                &factions,
-                POK,
-                3,
-                &map,
-            )
-            .unwrap_or_else(|error| panic!("{name}: {error}"));
+            let (_state, galaxy, _) =
+                seated(ContentStore::embedded(), &players, &factions, POK, 3, &map)
+                    .unwrap_or_else(|error| panic!("{name}: {error}"));
             let nexus = ti4_engine::seating::LOCKED_NEXUS;
             let kinds = galaxy.wormhole_kinds(nexus);
             assert!(
@@ -2402,8 +2393,11 @@ mod tests {
 
         ti4_engine::seating::place_wormhole_nexus(&mut galaxy, content, POK)
             .expect("the corpus has a Nexus");
-        let once: std::collections::BTreeSet<String> =
-            galaxy.wormhole_kinds(nexus).into_iter().map(str::to_owned).collect();
+        let once: std::collections::BTreeSet<String> = galaxy
+            .wormhole_kinds(nexus)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
         assert!(!once.is_empty(), "the Nexus did not come into play");
         ti4_engine::seating::place_wormhole_nexus(&mut galaxy, content, POK)
             .expect("placing it twice is not an error");

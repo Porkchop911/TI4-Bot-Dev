@@ -29,6 +29,7 @@ __pycache__/
 *.log
 /.tmp-m00-*/
 /.tmp-m00-011/
+data/
 
 # IDE
 .idea/

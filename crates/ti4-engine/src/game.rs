@@ -279,6 +279,29 @@ impl AftermathWindow {
             notes_at_tactical_start.clone(),
         );
         let mut window = crate::combat::CombatWindow::new(state, ctx.content, ctx.sources, system);
+        let sides = crate::combat::combatants(state, ctx.content, ctx.sources, system);
+        state.active_space_combat = (sides.len() == 2).then(|| {
+            let attacker = state
+                .active
+                .clone()
+                .filter(|seat| sides.contains(seat))
+                .unwrap_or_else(|| sides[0].clone());
+            let defender = sides
+                .iter()
+                .find(|seat| **seat != attacker)
+                .expect("two sides")
+                .clone();
+            (system.clone(), attacker, defender)
+        });
+        if state.active_space_combat.is_some() {
+            state.combat_presentation = ti4_model::state::CombatPresentation {
+                battle_seq: state.combat_round_seq.saturating_add(1),
+                phase: "pre_roll".to_owned(),
+                ..Default::default()
+            };
+            state.combat_round_hits.clear();
+            state.combat_round_dice.clear();
+        }
         if let Some(galaxy) = galaxy {
             window = window.with_galaxy(galaxy.clone());
         }
@@ -301,19 +324,6 @@ impl AftermathWindow {
         self.pending_event_scoring.take()
     }
 
-    /// Open the production step for this activation.
-    ///
-    /// "When 1 or more of your units use PRODUCTION" is a *before* window: the driver opens it
-    /// once the step is built and before its first choice, so a War Machine changes this
-    /// production rather than one that already spent its budget. The step produces nothing for
-    /// a player with no budget at all, so the window stays shut for them (and a War Machine
-    /// cannot create the production it answers). Reactions resolve inside the emit; [`ProductionWindow::refresh`]
-    /// then re-derives the budget so faces a reaction added are spent, and a step that would
-    /// otherwise have been done re-opens.
-    ///
-    /// # Errors
-    /// [`IllegalChoice`] if a decider answers a discount or reaction prompt with something not
-    /// offered.
     /// Open the step after combat (or after a negotiation pause): invasion when the active
     /// player holds the space, else production.
     fn next_step(
@@ -324,6 +334,16 @@ impl AftermathWindow {
     ) -> Result<Aftermath, IllegalChoice> {
         let holds = invade;
         Ok(if holds {
+            state.active_invasion = Some(ti4_model::state::ActiveInvasion {
+                system: self.system.clone(),
+                invader: self.player.clone(),
+                seq: u64::from(state.activation_seq),
+                phase: "bombardment".to_owned(),
+                planet: None,
+                defender: None,
+                ground_round: 0,
+                last_step: None,
+            });
             // Two cards read "at the start of an invasion", so the window opens
             // before the invasion does rather than after it has resolved.
             let mut payload = BTreeMap::new();
@@ -354,6 +374,19 @@ impl AftermathWindow {
         })
     }
 
+    /// Open the production step for this activation.
+    ///
+    /// "When 1 or more of your units use PRODUCTION" is a *before* window: the driver opens it
+    /// once the step is built and before its first choice, so a War Machine changes this
+    /// production rather than one that already spent its budget. The step produces nothing for
+    /// a player with no budget at all, so the window stays shut for them (and a War Machine
+    /// cannot create the production it answers). Reactions resolve inside the emit; [`ProductionWindow::refresh`]
+    /// then re-derives the budget so faces a reaction added are spent, and a step that would
+    /// otherwise have been done re-opens.
+    ///
+    /// # Errors
+    /// [`IllegalChoice`] if a decider answers a discount or reaction prompt with something not
+    /// offered.
     fn enter_production(
         &self,
         state: &mut GameState,
@@ -532,6 +565,7 @@ impl AftermathWindow {
                         }
                         self.log.push("SPACE_COMBAT_RESOLVED".to_owned());
                     }
+                    state.active_space_combat = None;
                     // 16.3 at the moment the carrier dies, not at the end of the turn.
                     //
                     // A space combat that destroys a carrier strands whatever it was holding:
@@ -586,6 +620,7 @@ impl AftermathWindow {
                         return Ok(());
                     }
                     window.settle(state, ctx);
+                    window.update_public_boundary(state);
                     if let Some((occurrence, combat)) = window.take_scoring_occurrence() {
                         self.pending_event_scoring = Some((
                             occurrence,
@@ -597,16 +632,23 @@ impl AftermathWindow {
                         ));
                         return Ok(());
                     }
-                    if window
-                        .pending_choice(state, ctx.content, ctx.sources)
-                        .is_some()
-                    {
+                    if let Some(offered) = window.pending_choice(state, ctx.content, ctx.sources) {
+                        if offered
+                            .context
+                            .as_ref()
+                            .is_some_and(|context| context.subtype == "commit_ground_forces")
+                        {
+                            if let Some(active) = state.active_invasion.as_mut() {
+                                active.phase = "landing".to_owned();
+                            }
+                        }
                         return Ok(());
                     }
                     if !window.is_done() {
                         return Ok(());
                     }
                     self.log.push("INVASION_RESOLVED".to_owned());
+                    state.active_invasion = None;
                     if crate::diplomacy::candidates::available_contacts(state, &self.player)
                         .is_empty()
                     {
@@ -949,6 +991,12 @@ impl<'a> Game<'a> {
     /// single choice table through [`TimingContext`].
     pub fn timing_mut(&mut self) -> &mut Resolver {
         &mut self.timing
+    }
+
+    /// Access the game dice roller and its roll history.
+    #[must_use]
+    pub const fn dice(&self) -> &Dice {
+        &self.dice
     }
 
     /// Every die this game has rolled, in order. Read-only: a viewer shows them, nothing may

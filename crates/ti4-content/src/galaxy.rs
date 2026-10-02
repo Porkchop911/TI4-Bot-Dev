@@ -556,6 +556,16 @@ impl Galaxy {
         self.placement.values().map(String::as_str).collect()
     }
 
+    /// System ids in play beside the hex grid, in deterministic order.
+    #[must_use]
+    pub fn off_map_system_ids(&self) -> Vec<&str> {
+        self.wormholes
+            .keys()
+            .filter(|id| !self.coords.contains_key(*id))
+            .map(String::as_str)
+            .collect()
+    }
+
     /// The hex a system sits on.
     #[must_use]
     pub fn coord_of(&self, system_id: &str) -> Option<Hex> {

@@ -31,8 +31,8 @@ pub mod reward;
 pub mod rollout;
 pub mod stage1;
 pub mod stage2;
-pub mod trade_arena;
 pub mod teacher_corpus;
+pub mod trade_arena;
 pub mod vocabulary_corpus;
 
 pub use archive::*;

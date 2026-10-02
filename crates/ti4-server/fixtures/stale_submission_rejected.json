@@ -1,0 +1,11 @@
+{
+  "type": "action_rejected",
+  "protocol_version": 3,
+  "game_id": "game_12345",
+  "game_version": 42,
+  "reason": {
+    "reason": "stale_version",
+    "expected": 40,
+    "current": 42
+  }
+}

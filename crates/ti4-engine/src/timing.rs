@@ -108,8 +108,12 @@ impl TimingContext<'_> {
         &mut self,
         choice: &crate::choice::Choice,
     ) -> Result<crate::choice::ChoiceOption, crate::choice::IllegalChoice> {
+        let mut choice = choice.clone();
+        if let Some(context) = choice.context.take() {
+            choice.context = Some(context.about_battle(self.state).about_invasion(self.state));
+        }
         self.table.ask_seeing(
-            choice,
+            &choice,
             &crate::choice::Observed::new(self.state, self.content, self.sources, self.galaxy),
         )
     }
@@ -769,6 +773,29 @@ impl Resolver {
             .map(|ability| {
                 let mut option = ChoiceOption::labelled(&ability.id, "ability", &ability.id)
                     .with("event", event.event_type.clone());
+                if ability.id.starts_with("reaction:") {
+                    let cards = crate::reactions::playable_now(
+                        context.state,
+                        context.content,
+                        player,
+                        event,
+                        relation,
+                    );
+                    if let Some(card) = cards.first().filter(|first| {
+                        cards.iter().all(|candidate| {
+                            crate::action_cards::name_of(context.content, candidate)
+                                == crate::action_cards::name_of(context.content, first)
+                        })
+                    }) {
+                        let name = crate::action_cards::name_of(context.content, card);
+                        option.label = format!("Play {name}");
+                        option = option
+                            .with("card", card.to_string())
+                            .with("card_name", name);
+                    } else if cards.len() > 1 {
+                        option.label = "Choose an action card…".to_owned();
+                    }
+                }
                 if let Some(payload) = &ability.option_payload {
                     option.payload.extend(payload(event, self));
                 }
@@ -782,6 +809,17 @@ impl Resolver {
             player.clone(),
             format!("{} {}", relation_name(relation), event.event_type),
             options,
+        );
+        let choice = choice.contextualized(
+            crate::decision_context::DecisionContext::new(
+                player.clone(),
+                crate::decision_context::DecisionSource::Reaction(event.event_type.clone()),
+                format!("reaction_{}_{}", relation_name(relation), event.event_type),
+                context.state.phase,
+                context.state.round,
+            )
+            .optional(declinable)
+            .about_battle(context.state),
         );
         let chosen = context
             .ask_seeing(&choice)
