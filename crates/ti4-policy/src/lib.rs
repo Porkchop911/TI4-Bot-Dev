@@ -19,6 +19,7 @@ pub mod intern;
 pub mod learned;
 pub mod progress;
 pub mod projection;
+pub mod power_map;
 pub mod scoring;
 pub mod tactical_plan;
 pub mod valuation;

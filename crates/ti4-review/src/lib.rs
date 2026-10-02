@@ -60,6 +60,8 @@ pub mod diplomacy;
 #[cfg(feature = "simulate")]
 pub mod gui;
 pub mod panels;
+#[cfg(feature = "simulate")]
+pub mod power;
 pub mod view;
 
 /// The `ti4-engine` commit this reviewer build was compiled against. Recorded in every session and

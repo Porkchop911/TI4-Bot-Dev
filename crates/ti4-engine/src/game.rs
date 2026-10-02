@@ -827,6 +827,11 @@ pub struct Game<'a> {
     /// Turn sequence whose free start-of-turn technology choices have been resolved.
     prepared_turn_seq: Option<u32>,
     blocked: Option<GameError>,
+    /// Experiment only: trade goods every seat receives as each later round begins. Zero, the
+    /// default, is the game as printed. See [`Game::with_round_income`].
+    round_income_trade_goods: i32,
+    /// Experiment only: when set, only this seat receives the round income.
+    round_income_seat: Option<PlayerId>,
 }
 
 impl<'a> Game<'a> {
@@ -899,7 +904,25 @@ impl<'a> Game<'a> {
             actions_this_turn: 0,
             prepared_turn_seq: None,
             blocked: None,
+            round_income_trade_goods: 0,
+            round_income_seat: None,
         }
+    }
+
+    /// Experiment only, not a rule: every seat gains `trade_goods` as each round after the first
+    /// begins. The first round's income is the caller's to grant before play, since this game may
+    /// already be inside round one when it is built.
+    #[must_use]
+    pub const fn with_round_income(mut self, trade_goods: i32) -> Self {
+        self.round_income_trade_goods = trade_goods;
+        self
+    }
+
+    /// Experiment only: restrict [`Game::with_round_income`] to one seat (`None`: every seat).
+    #[must_use]
+    pub fn with_round_income_seat(mut self, seat: Option<PlayerId>) -> Self {
+        self.round_income_seat = seat;
+        self
     }
 
     /// The map this game is played on, when it has one.
@@ -2455,16 +2478,20 @@ impl<'a> Game<'a> {
         let path = ti4_content::units::catalogue(self.content, self.sources)
             .get(ship.type_id.as_str())
             .and_then(|kind| {
-                rules.path_from(
+                // The same per-ship value and route the offer used (`tactical::movable_into`), so a
+                // ship a faction module lets move further or pass ships is not refused here.
+                rules.path_from_ship(
                     origin.as_str(),
-                    crate::tactical::effective_move_value_with_boosts(
+                    crate::tactical::effective_move_value_for_ship(
                         &self.state,
                         kind,
                         &window.player,
                         origin,
+                        Some(index),
                         gravity_drive,
                         ionian,
                     ),
+                    Some(ship.type_id.as_str()),
                 )
             })
             .ok_or_else(|| TacticalError::UnknownSystem(origin.clone()))?;
@@ -2496,7 +2523,18 @@ impl<'a> Game<'a> {
         {
             let own_move =
                 ti4_content::units::unit_type(self.content, ship.type_id.as_str(), self.sources)
-                    .map_or(0, |kind| i32::try_from(kind.move_value()).unwrap_or(0))
+                    .map_or(0, |kind| {
+                        i32::try_from(kind.move_value()).unwrap_or(0)
+                            + crate::factions::hooks_movement::move_bonus(
+                                &self.state,
+                                &crate::factions::hooks_movement::MoveSite {
+                                    player: &window.player,
+                                    origin,
+                                    index: Some(index),
+                                    ship: &kind,
+                                },
+                            )
+                    })
                     + crate::action_cards::move_bonus(
                         &self.state,
                         &window.player,
@@ -4330,6 +4368,17 @@ impl<'a> Game<'a> {
             }
             PhaseOutcome::RoundEnded => {
                 begin_next_round(&mut self.state, self.strategy_cards.clone());
+                if self.round_income_trade_goods != 0 {
+                    for player in &mut self.state.players {
+                        if self
+                            .round_income_seat
+                            .as_ref()
+                            .is_none_or(|only| *only == player.id)
+                        {
+                            player.trade_goods += self.round_income_trade_goods;
+                        }
+                    }
+                }
                 self.status_resolved = false;
                 self.agenda_resolved = false;
                 self.emit("ROUND_BEGAN");

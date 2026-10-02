@@ -133,6 +133,12 @@ pub struct Reward {
     /// every other term here. Off by default; keep it well below `clearance_weight`, so a whole
     /// game of fleet-building never pays more than an uncleared opening costs.
     pub fleet_weight: f64,
+    /// Shaping toward power projection: a potential difference over
+    /// [`Progress::projection_permille`], the planet value one activation could expect to take.
+    /// The final snapshot's projection is zeroed in [`returns`], so over a whole game this term
+    /// sums to minus the opening projection: it moves credit toward the decisions that create
+    /// opportunity without changing which policy is best. Off by default.
+    pub projection_weight: f64,
     /// Small reward per technology owned beyond the setup baseline ([`Progress::technologies_gained`]).
     /// Off by default; keep it below `vp_weight`, so researching is a path to points rather than
     /// an end in itself.
@@ -223,6 +229,7 @@ impl Default for Reward {
             high_vp_bonus: 0.0,
             clearance_weight: 0.0,
             fleet_weight: 0.0,
+            projection_weight: 0.0,
             tech_weight: 0.0,
             strategy_diversity_weight: 0.0,
             fleet_hoard_penalty: 0.0,
@@ -280,7 +287,13 @@ impl Reward {
         let fleet = progress.fleet_value_permille as f64 / 1000.0;
         #[expect(clippy::cast_precision_loss, reason = "tech counts are single digits")]
         let techs = progress.technologies_gained as f64;
-        self.vp_weight * points
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "permille opportunity stays small"
+        )]
+        let projection = progress.projection_permille as f64 / 1000.0;
+        self.projection_weight * projection
+            + self.vp_weight * points
             + self.objective_weight * public
             + self.secret_weight * secret
             + self.fleet_weight * fleet
@@ -381,7 +394,10 @@ pub fn returns(episode: &Episode, reward: &Reward) -> Vec<f64> {
         return Vec::new();
     }
     let mut snapshots = episode.steps.clone();
-    snapshots.push(episode.final_progress);
+    let mut last = episode.final_progress;
+    // Projection is pure shaping: no potential is left standing at the end of the game.
+    last.projection_permille = 0;
+    snapshots.push(last);
     let mut rewards = step_rewards(&snapshots, reward);
     if rewards.is_empty() {
         return Vec::new();
@@ -723,6 +739,37 @@ mod tests {
 
     #[test]
     fn fleet_and_tech_shaping_pay_for_gains_and_claw_back_losses() {
+        // Projection shaping is pure: over a game it sums to minus the opening projection, whatever
+        // happened in between, because the final snapshot's projection is zeroed.
+        let mut shaped = Reward::for_stage(Stage::Two);
+        shaped.vp_weight = 0.0;
+        shaped.r1_bonus = 0.0;
+        shaped.r1_shaping = 0.0;
+        shaped.projection_weight = 0.5;
+        let at = |projection_permille: i64| Progress {
+            projection_permille,
+            round_number: 2,
+            ..Progress::default()
+        };
+        let episode = Episode {
+            steps: vec![at(4000), at(9000), at(1000)],
+            final_progress: at(7000),
+            cleared: false,
+            shortfall: 0.0,
+            traded_goods: 0.0,
+            strategy_card_plays: std::collections::BTreeMap::new(),
+        };
+        let credited = returns(&episode, &shaped);
+        // Returns are suffix sums: the first decision's return is the whole game's shaping.
+        assert!((credited[0] - (-0.5 * 4.0)).abs() < 1e-9, "{credited:?}");
+        // Off by default: the reference reward ignores projection entirely.
+        let reference = Reward::for_stage(Stage::Two);
+        assert!(reference.projection_weight.abs() < f64::EPSILON);
+        assert!(
+            (reference.horizon_potential(&at(9000)) - reference.horizon_potential(&at(0))).abs()
+                < 1e-12
+        );
+
         // Both terms are potential differences: building the fleet and researching pay, losing
         // them takes it back. Off by default, so the reference reward stays exact.
         let mut reward = Reward::for_stage(Stage::Two);

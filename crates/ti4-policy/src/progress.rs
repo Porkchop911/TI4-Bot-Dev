@@ -70,6 +70,11 @@ pub struct Progress {
     /// Planets in Fracture systems this seat controls, Styx included; reward bookkeeping only.
     #[serde(default)]
     pub fracture_planets: i64,
+    /// Opportunity, in thousandths: planet value this seat could expect to take with one activation
+    /// ([`crate::power_map::opportunity`]). Zero unless [`MEASURE_PROJECTION`] is on and a
+    /// recording bot fills it, because the movement search behind it costs about a millisecond.
+    #[serde(default)]
+    pub projection_permille: i64,
 }
 
 /// What a seat held at setup, so the gains above can be deltas.
@@ -99,6 +104,12 @@ impl Baseline {
         }
     }
 }
+
+/// Experiment switch: a recording bot fills [`Progress::projection_permille`] from
+/// [`crate::power_map::summary`]. Off unless a trainer that rewards projection turns it on, so
+/// every other run pays nothing for it.
+pub static MEASURE_PROJECTION: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 /// Measure one seat's progress against its setup baseline.
 #[must_use]
@@ -145,6 +156,9 @@ pub fn measure(seen: &Observed<'_>, player: &PlayerId, baseline: Baseline) -> Pr
         holds_styx: controlled
             .iter()
             .any(|(_, planet)| planet.as_str() == "styx"),
+        // Filled by the recording bot, which computes the power summary once per decision for
+        // both this and the critic; see `MEASURE_PROJECTION`.
+        projection_permille: 0,
     }
 }
 

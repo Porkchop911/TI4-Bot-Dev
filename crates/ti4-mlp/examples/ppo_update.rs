@@ -127,6 +127,7 @@ const VALUE_FLAGS: &[&str] = &[
     "--expansion-weight",
     "--fleet-hoard-penalty",
     "--fleet-weight",
+    "--projection-weight",
     "--fracture-entry-bonus",
     "--fracture-planet-bonus",
     "--high-vp-bonus",
@@ -1401,6 +1402,12 @@ fn main() {
     // default to zero, so until now an MLP run silently trained the reference reward no matter what
     // the surrounding experiment thought it was configuring.
     reward.fleet_weight = weight("--fleet-weight", reward.fleet_weight);
+    // Power-projection shaping. Measuring it costs a movement search per recorded decision, so the
+    // progress measure only computes it when a run actually rewards it.
+    reward.projection_weight = weight("--projection-weight", reward.projection_weight);
+    if reward.projection_weight != 0.0 {
+        ti4_policy::progress::MEASURE_PROJECTION.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
     reward.tech_weight = weight("--tech-weight", reward.tech_weight);
     reward.strategy_diversity_weight = weight(
         "--strategy-diversity-weight",
@@ -1491,8 +1498,11 @@ fn main() {
             reward.vp_weight, reward.objective_weight, reward.secret_weight
         );
         println!(
-            "  shaping     fleet {} | tech {} | strategy diversity {}",
-            reward.fleet_weight, reward.tech_weight, reward.strategy_diversity_weight
+            "  shaping     fleet {} | projection {} | tech {} | strategy diversity {}",
+            reward.fleet_weight,
+            reward.projection_weight,
+            reward.tech_weight,
+            reward.strategy_diversity_weight
         );
         println!(
             "  holdings    fleet pool >= {} at end {} | empty fleet pool {} | trade goods > {} {} per excess good per round | Styx at end {} | first Fracture entry {} | per Fracture planet at end {}",
