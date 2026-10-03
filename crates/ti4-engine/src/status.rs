@@ -89,6 +89,9 @@ pub fn resolve_before_token_gain_with(
     if state.phase != Phase::Status {
         return Err(StatusPhaseError::WrongPhase(state.phase));
     }
+    // The discard choice follows objective reveal and one or more deck-to-hand draws. If its
+    // answer is invalid, undo the whole status step, including earlier seats' draws.
+    let snapshot = draw_effects.as_ref().map(|_| state.clone());
 
     let mut report = StatusPhaseReport::default();
 
@@ -133,10 +136,14 @@ pub fn resolve_before_token_gain_with(
         }
         if let Some((content, table)) = draw_effects.as_mut()
             && !drawn.is_empty()
-        {
-            crate::factions::hooks_economy::action_cards_drawn(
+            && let Err(error) = crate::factions::hooks_economy::action_cards_drawn(
                 state, content, table, &player_id, &drawn,
-            )?;
+            )
+        {
+            if let Some(before) = snapshot {
+                *state = before;
+            }
+            return Err(error.into());
         }
         report.action_cards_drawn.push((player_id, drawn_count));
     }
@@ -364,6 +371,28 @@ mod tests {
                 .command_tokens
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn an_illegal_scheming_discard_leaves_the_status_state_unchanged() {
+        let content = ContentStore::embedded();
+        let mut state = crate::fixtures::seated_game(&[("a", "yssaril"), ("b", "sol")], POK);
+        state.phase = Phase::Status;
+        state.action_card_deck = ["bribery", "flank_speed", "skilled_retreat"]
+            .into_iter()
+            .map(ti4_model::id::ActionCardId::new)
+            .collect();
+        assert!(!state.objective_deck.is_empty());
+        let before = serde_json::to_value(&state).unwrap();
+        let mut table =
+            crate::choice::Table::with_default(Box::new(crate::choice::Scripted::new([
+                "not_offered",
+            ])));
+
+        let error = resolve_before_token_gain_with(&mut state, Some((content, &mut table)))
+            .expect_err("an answer outside the discard options is illegal");
+        assert!(matches!(error, StatusPhaseError::IllegalChoice(_)));
+        assert_eq!(serde_json::to_value(&state).unwrap(), before);
     }
 
     #[test]
