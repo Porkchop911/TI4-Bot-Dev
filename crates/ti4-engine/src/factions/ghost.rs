@@ -3,8 +3,7 @@
 //!
 //! Implemented: Creuss Gate (the seating placement, verified), Quantum Entanglement, Slipstream,
 //! Dimensional Splicer, Wormhole Generator, Hil Colish (delta wormhole), Icarus Drive, Creuss IFF,
-//! Emissary Taivra, Riftwalker Meian, the Sai Seravus unlock, and Particle Synthesis. Not
-//! implemented (no route; see `plans/evidence/BF-ghost.md`): the Sai Seravus effect.
+//! Emissary Taivra, Riftwalker Meian, Sai Seravus, and Particle Synthesis.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -31,7 +30,7 @@ pub const MODULE: FactionModule = FactionModule {
     technologies: &["ds", "wg"],
     units: &["ghost_flagship", "ghost_mech"],
     promissory: &["iff"],
-    leaders: &["ghostagent", "ghosthero"],
+    leaders: &["ghostagent", "ghostcommander", "ghosthero"],
     breakthroughs: &["ghostbt"],
     hooks: Hooks {
         component_actions: Some(component_actions),
@@ -700,14 +699,162 @@ fn timing_abilities(_state: &GameState, owner_name: &str, seat: &PlayerId) -> Ve
         icarus_drive(owner_name, seat),
         iff(owner_name, seat),
         emissary_taivra(owner_name, seat),
+        commander_moved(owner_name, seat),
+        commander_finished(owner_name, seat),
     ]
 }
 
-// -- Sai Seravus (unlock only) -------------------------------------------------------------------
+// -- Sai Seravus -------------------------------------------------------------------------------
 
-/// Sai Seravus, unlock: "Have units in 3 systems that contain alpha or beta wormholes." The
-/// commander's own text needs to know which ships moved through a wormhole (a hook request), so it
-/// is not claimed in [`MODULE`].
+const COMMANDER_MARK: &str = "private:#ghost:commander:";
+
+fn commander_mark(state: &GameState, owner: &PlayerId) -> String {
+    format!("{COMMANDER_MARK}{owner}:{}", state.activation_seq)
+}
+
+/// Sai Seravus: "After your ships move: For each ship that has a capacity value and moved
+/// through 1 or more wormholes, you may place 1 fighter from your reinforcements with that ship
+/// if you have unused capacity in the active system."
+///
+/// `SHIP_MOVED` names one ship and its actual route. Record eligible ships until the entire
+/// movement step is over; placing fighters on each ship's arrival would make those fighters
+/// available to load onto later ships in the same move.
+fn commander_moved(owner_name: &str, seat: &PlayerId) -> Ability {
+    let (owner, condition_seat) = (seat.clone(), seat.clone());
+    let eligible = |event: &crate::event::Event, context: &TimingContext<'_>, player: &PlayerId| {
+        event.text("player") == Some(player.as_str())
+            && event.text("system") == context.state.active_system.as_ref().map(SystemId::as_str)
+            && leader_status(context.state, player, "ghostcommander")
+                == Some(LeaderStatus::Unlocked)
+            && event.integer("wormholes").is_some_and(|hops| hops > 0)
+            && event
+                .text("unit")
+                .and_then(|id| ti4_content::units::unit_type(context.content, id, context.sources))
+                .is_some_and(|ship| ship.is_ship() && ship.capacity() > 0)
+    };
+    Ability::stateful(
+        format!("leader:{owner_name}:ghostcommander:SHIP_MOVED:after"),
+        seat.clone(),
+        "SHIP_MOVED",
+        Relation::After,
+        Arc::new(move |event, _resolver, context| {
+            if eligible(event, context, &owner) {
+                let key = commander_mark(context.state, &owner);
+                let count = context
+                    .state
+                    .faction_marks
+                    .get(&key)
+                    .and_then(|value| value.parse::<u32>().ok())
+                    .unwrap_or(0);
+                context
+                    .state
+                    .faction_marks
+                    .insert(key, count.saturating_add(1).to_string());
+            }
+            Ok(())
+        }),
+    )
+    .with_stateful_condition(Arc::new(move |event, _, context| {
+        eligible(event, context, &condition_seat)
+    }))
+}
+
+fn commander_count(state: &GameState, owner: &PlayerId) -> usize {
+    state
+        .faction_marks
+        .get(&commander_mark(state, owner))
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(0)
+}
+
+fn commander_fighters(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    owner: &PlayerId,
+    system: &SystemId,
+) -> usize {
+    if leader_status(state, owner, "ghostcommander") != Some(LeaderStatus::Unlocked) {
+        return 0;
+    }
+    let free = crate::fleet::standing(state, content, sources, owner, system, None).capacity_free();
+    let plastic = crate::supply::remaining(
+        state,
+        content,
+        sources,
+        owner,
+        &ti4_model::id::UnitTypeId::new("fighter"),
+    );
+    commander_count(state, owner)
+        .min(usize::try_from(free).unwrap_or(0))
+        .min(usize::try_from(plastic).unwrap_or(0))
+}
+
+fn commander_finished(owner_name: &str, seat: &PlayerId) -> Ability {
+    let (owner, condition_seat) = (seat.clone(), seat.clone());
+    Ability::stateful(
+        format!("leader:{owner_name}:ghostcommander:MOVEMENT_FINISHED:after"),
+        seat.clone(),
+        "MOVEMENT_FINISHED",
+        Relation::After,
+        Arc::new(move |event, _resolver, context| {
+            let key = commander_mark(context.state, &owner);
+            let Some(system) = event.text("system").map(SystemId::new) else {
+                return Ok(());
+            };
+            let available = commander_fighters(
+                context.state,
+                context.content,
+                context.sources,
+                &owner,
+                &system,
+            );
+            if available == 0 {
+                context.state.faction_marks.remove(&key);
+                return Ok(());
+            }
+            let options = (1..=available)
+                .map(|count| {
+                    ChoiceOption::labelled(
+                        format!("fighters|{count}"),
+                        "fighter",
+                        format!("place {count} fighter(s) in {system}"),
+                    )
+                    .with("count", count)
+                })
+                .collect();
+            let answer = ask(
+                context,
+                &owner,
+                "Sai Seravus: how many fighters do you place from reinforcements",
+                "ghostcommander",
+                "commander_fighters",
+                options,
+                true,
+            )
+            .map_err(illegal)?;
+            if !answer.is_decline() {
+                let count = answer
+                    .payload
+                    .get("count")
+                    .and_then(serde_json::Value::as_u64)
+                    .and_then(|value| usize::try_from(value).ok())
+                    .unwrap_or(0);
+                crate::action_cards::place_units_counted(
+                    context, &owner, &system, None, "fighter", count,
+                );
+            }
+            context.state.faction_marks.remove(&key);
+            Ok(())
+        }),
+    )
+    .with_stateful_condition(Arc::new(move |event, _, context| {
+        event.text("player") == Some(condition_seat.as_str())
+            && commander_count(context.state, &condition_seat) > 0
+    }))
+}
+
+/// Sai Seravus, unlock: "Have units in 3 systems that contain alpha or beta wormholes."
 fn commander_unlocked(
     state: &GameState,
     _content: &ContentStore,
@@ -1759,6 +1906,221 @@ mod tests {
             &activated("b", "39"),
         );
         assert_eq!(state, before);
+    }
+
+    // -- Sai Seravus -----------------------------------------------------------------------------
+
+    #[test]
+    fn sai_seravus_places_one_fighter_per_capacity_ship_after_the_whole_move() {
+        let mut state = ghost_game();
+        let destination = sys("40");
+        state.active_system = Some(destination.clone());
+        state
+            .player_mut(&a())
+            .unwrap()
+            .leaders
+            .insert(LeaderId::new("ghostcommander"), LeaderStatus::Unlocked);
+        put(&mut state, &destination, "carrier", &a(), 2);
+        let payload = [
+            ("player", serde_json::json!("a")),
+            ("system", serde_json::json!("40")),
+            ("unit", serde_json::json!("carrier")),
+            ("wormholes", serde_json::json!(1)),
+        ];
+        let mut table = scripted(&["fighters|2"]);
+        for _ in 0..2 {
+            emit(
+                &mut state,
+                Some(&galaxy()),
+                &mut table,
+                "SHIP_MOVED",
+                &payload,
+            );
+        }
+        assert_eq!(commander_count(&state, &a()), 2);
+        assert_eq!(
+            state
+                .system_state(&destination)
+                .units
+                .iter()
+                .filter(|unit| unit.type_id.as_str() == "fighter")
+                .count(),
+            0,
+            "the fighters are not placed between ship moves",
+        );
+        emit(
+            &mut state,
+            Some(&galaxy()),
+            &mut table,
+            "MOVEMENT_FINISHED",
+            &[
+                ("player", serde_json::json!("a")),
+                ("system", serde_json::json!("40")),
+            ],
+        );
+        assert_eq!(
+            state
+                .system_state(&destination)
+                .units
+                .iter()
+                .filter(|unit| unit.type_id.as_str() == "fighter" && unit.owner == a())
+                .count(),
+            2,
+        );
+        assert_eq!(
+            commander_count(&state, &a()),
+            0,
+            "the activation mark is cleared"
+        );
+    }
+
+    #[test]
+    fn sai_seravus_needs_the_unlocked_commander_a_wormhole_and_unused_capacity() {
+        let destination = sys("40");
+        let moved = |state: &mut GameState, table: &mut Table, unit: &str, wormholes: i64| {
+            emit(
+                state,
+                Some(&galaxy()),
+                table,
+                "SHIP_MOVED",
+                &[
+                    ("player", serde_json::json!("a")),
+                    ("system", serde_json::json!("40")),
+                    ("unit", serde_json::json!(unit)),
+                    ("wormholes", serde_json::json!(wormholes)),
+                ],
+            );
+        };
+        let finish = |state: &mut GameState, table: &mut Table| {
+            emit(
+                state,
+                Some(&galaxy()),
+                table,
+                "MOVEMENT_FINISHED",
+                &[
+                    ("player", serde_json::json!("a")),
+                    ("system", serde_json::json!("40")),
+                ],
+            );
+        };
+        let mut state = ghost_game();
+        state.active_system = Some(destination.clone());
+        put(&mut state, &destination, "carrier", &a(), 1);
+        let mut table = never();
+        moved(&mut state, &mut table, "carrier", 1);
+        finish(&mut state, &mut table);
+        assert_eq!(
+            commander_count(&state, &a()),
+            0,
+            "a locked commander does nothing"
+        );
+
+        state
+            .player_mut(&a())
+            .unwrap()
+            .leaders
+            .insert(LeaderId::new("ghostcommander"), LeaderStatus::Unlocked);
+        moved(&mut state, &mut table, "carrier", 0);
+        moved(&mut state, &mut table, "cruiser", 1);
+        finish(&mut state, &mut table);
+        assert_eq!(
+            commander_count(&state, &a()),
+            0,
+            "no wormhole or no capacity value"
+        );
+
+        moved(&mut state, &mut table, "carrier", 1);
+        let free = crate::fleet::standing(&state, content(), DEFAULT, &a(), &destination, None)
+            .capacity_free();
+        put(
+            &mut state,
+            &destination,
+            "infantry",
+            &a(),
+            usize::try_from(free).unwrap(),
+        );
+        finish(&mut state, &mut table);
+        assert_eq!(commander_count(&state, &a()), 0);
+        assert!(
+            !state
+                .system_state(&destination)
+                .units
+                .iter()
+                .any(|unit| unit.type_id.as_str() == "fighter" && unit.owner == a())
+        );
+    }
+
+    #[test]
+    fn sai_seravus_places_a_fighter_after_a_real_quantum_wormhole_move() {
+        use crate::game::{Game, TACTICAL_ACTION_ID};
+        struct Drive {
+            from: String,
+            to: String,
+        }
+        impl Decider for Drive {
+            fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+                let preferred = [
+                    TACTICAL_ACTION_ID.to_owned(),
+                    self.to.clone(),
+                    format!("move|{}|0", self.from),
+                    "done_moving".to_owned(),
+                    "fighters|1".to_owned(),
+                ];
+                for id in preferred {
+                    if let Some(option) = choice.options.iter().find(|option| option.id == id) {
+                        return Ok(option.clone());
+                    }
+                }
+                choice
+                    .options
+                    .iter()
+                    .find(|option| option.is_decline())
+                    .cloned()
+                    .ok_or_else(|| IllegalChoice::DeciderFailed {
+                        player: choice.player.clone(),
+                        prompt: choice.prompt.clone(),
+                        reason: "unexpected live Ghost commander choice".to_owned(),
+                    })
+            }
+        }
+        let mut state = ghost_game();
+        let galaxy = galaxy();
+        let (from, to) = alpha_beta_far_apart(&galaxy);
+        let destination = sys(to);
+        state.phase = Phase::Action;
+        state.active = Some(a());
+        state
+            .player_mut(&a())
+            .unwrap()
+            .leaders
+            .insert(LeaderId::new("ghostcommander"), LeaderStatus::Unlocked);
+        put(&mut state, &sys(from), "carrier", &a(), 1);
+        let table = Table::with_default(Box::new(Drive {
+            from: from.to_owned(),
+            to: to.to_owned(),
+        }));
+        let mut game = Game::with_table(state, content(), table).with_galaxy(galaxy);
+        for _ in 0..20 {
+            assert_eq!(game.step().error, None, "log: {:?}", game.events);
+            if game
+                .events
+                .iter()
+                .any(|event| event == "TACTICAL_ACTION_COMPLETE")
+            {
+                break;
+            }
+        }
+        assert!(
+            game.events
+                .iter()
+                .any(|event| event == "TACTICAL_ACTION_COMPLETE")
+        );
+        assert_eq!(
+            game.state.ships_of(&a(), &destination).len(),
+            2,
+            "the carrier and its one new fighter reach the active system"
+        );
+        assert_eq!(commander_count(&game.state, &a()), 0);
     }
 
     // -- Riftwalker Meian and Sai Seravus --------------------------------------------------------
