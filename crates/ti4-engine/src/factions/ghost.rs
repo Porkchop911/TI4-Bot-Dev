@@ -3,19 +3,20 @@
 //!
 //! Implemented: Creuss Gate (the seating placement, verified), Quantum Entanglement, Slipstream,
 //! Dimensional Splicer, Wormhole Generator, Hil Colish (delta wormhole), Icarus Drive, Creuss IFF,
-//! Emissary Taivra, Riftwalker Meian, and the Sai Seravus unlock. Not implemented (no route; see
-//! `plans/evidence/BF-ghost.md`): the Sai Seravus effect and Particle Synthesis.
+//! Emissary Taivra, Riftwalker Meian, the Sai Seravus unlock, and Particle Synthesis. Not
+//! implemented (no route; see `plans/evidence/BF-ghost.md`): the Sai Seravus effect.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use ti4_content::ContentStore;
 use ti4_content::galaxy::Galaxy;
-use ti4_model::content_types::SourceSet;
+use ti4_model::content_types::{DEFAULT, SourceSet};
 use ti4_model::id::{LeaderId, PlayerId, SystemId, TechnologyId};
 use ti4_model::state::{GameState, LeaderStatus, Phase};
 
 use super::hooks_combat::{CombatHooks, CombatMoment, HitSite, ProducedHits};
+use super::hooks_economy::EconomyHooks;
 use super::hooks_movement::{MoveSite, MovementHooks, has_alpha_or_beta, wormholes_at};
 use super::{FactionModule, Hooks};
 use crate::choice::{Choice, ChoiceOption, IllegalChoice};
@@ -31,7 +32,7 @@ pub const MODULE: FactionModule = FactionModule {
     units: &["ghost_flagship", "ghost_mech"],
     promissory: &["iff"],
     leaders: &["ghostagent", "ghosthero"],
-    breakthroughs: &[],
+    breakthroughs: &["ghostbt"],
     hooks: Hooks {
         component_actions: Some(component_actions),
         perform_component: Some(perform_component),
@@ -48,6 +49,11 @@ pub const MODULE: FactionModule = FactionModule {
             linked_systems: Some(linked_systems),
             move_bonus: Some(move_bonus),
             ..MovementHooks::NONE
+        },
+        economy: EconomyHooks {
+            extra_production: Some(extra_production),
+            production_cost_reduction: Some(production_cost_reduction),
+            ..EconomyHooks::NONE
         },
         ..Hooks::NONE
     },
@@ -131,6 +137,77 @@ fn has_units(state: &GameState, system: &SystemId, player: &PlayerId) -> bool {
                 .flatten()
                 .any(|unit| &unit.owner == player)
     })
+}
+
+fn has_ships(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    system: &SystemId,
+    player: &PlayerId,
+) -> bool {
+    let types = ti4_content::units::catalogue(content, sources);
+    state.system_state(system).units.iter().any(|unit| {
+        &unit.owner == player
+            && types
+                .get(unit.type_id.as_str())
+                .is_some_and(ti4_content::UnitType::is_ship)
+    })
+}
+
+/// Counts physical wormholes, rather than their distinct kinds. In particular, a printed alpha
+/// plus an alpha token are two wormholes even though [`wormholes_at`] reports one alpha kind.
+fn wormhole_count(state: &GameState, system: &SystemId) -> i64 {
+    let printed = ti4_content::galaxy::system(ContentStore::embedded(), system.as_str(), DEFAULT)
+        .map_or(0, |tile| {
+            i64::try_from(tile.wormholes().len()).unwrap_or(i64::MAX)
+        });
+    let tokens = i64::try_from(
+        state
+            .wormhole_tokens
+            .values()
+            .filter(|at| *at == system)
+            .count(),
+    )
+    .unwrap_or(i64::MAX);
+    let storm = i64::from(state.ion_storm.as_ref().is_some_and(|(at, _)| at == system));
+    let nexus =
+        i64::from(state.nexus_unlocked && system.as_str() == crate::seating::LOCKED_NEXUS) * 2;
+    let hil_colish = i64::try_from(
+        extra_wormholes(state)
+            .into_iter()
+            .filter(|(at, _)| at == system.as_str())
+            .count(),
+    )
+    .unwrap_or(i64::MAX);
+    printed + tokens + storm + nexus + hil_colish
+}
+
+/// Particle Synthesis: "Each wormhole in a system that contains your ships gains PRODUCTION 1
+/// as if it were a unit you control. Reduce the combined cost of units you produce in systems
+/// that contain wormholes by 1 for each wormhole in that system."
+fn extra_production(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    system: &SystemId,
+) -> i64 {
+    if crate::breakthroughs::holds(state, player, "ghostbt")
+        && has_ships(state, content, sources, system, player)
+    {
+        wormhole_count(state, system)
+    } else {
+        0
+    }
+}
+
+fn production_cost_reduction(state: &GameState, player: &PlayerId, system: &SystemId) -> i64 {
+    if crate::breakthroughs::holds(state, player, "ghostbt") {
+        wormhole_count(state, system)
+    } else {
+        0
+    }
 }
 
 // -- Quantum Entanglement and Emissary Taivra's link ---------------------------------------------
@@ -765,11 +842,12 @@ fn hero_swap(context: &mut TimingContext<'_>, player: &PlayerId) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::choice::{Decider, Scripted, Table};
+    use crate::choice::{Decider, Scripted, Table, Window};
     use crate::fixtures::{armed_resolver, put, put_on_planet, seated_game, with_context};
     use crate::movement::PlayerAdjacency;
+    use crate::production::{ProductionWindow, capacity};
     use ti4_model::content_types::DEFAULT;
-    use ti4_model::id::PlanetId;
+    use ti4_model::id::{BreakthroughId, PlanetId};
 
     fn a() -> PlayerId {
         PlayerId::new("a")
@@ -822,6 +900,36 @@ mod tests {
             .unwrap()
             .technologies
             .insert(TechnologyId::new(alias));
+    }
+    fn give_breakthrough(state: &mut GameState, player: &PlayerId, alias: &str) {
+        state.player_mut(player).unwrap().breakthrough = Some(BreakthroughId::new(alias));
+    }
+    fn cruiser_cost(state: &GameState, player: &PlayerId, system: &SystemId) -> i64 {
+        ProductionWindow::new(state, content(), DEFAULT, player, system)
+            .pending_choice(state, content(), DEFAULT)
+            .expect("a live production choice")
+            .options
+            .iter()
+            .find(|option| {
+                option
+                    .payload
+                    .get("unit")
+                    .and_then(serde_json::Value::as_str)
+                    == Some("cruiser")
+            })
+            .and_then(|option| option.payload.get("cost"))
+            .and_then(serde_json::Value::as_i64)
+            .expect("cruiser is offered with a cost")
+    }
+    fn add_dock(state: &mut GameState, system: &SystemId, player: &PlayerId) {
+        let planet = ti4_content::galaxy::system(content(), system.as_str(), DEFAULT)
+            .and_then(|tile| tile.planets().into_iter().next())
+            .map(PlanetId::new)
+            .expect("the selected system has a planet");
+        state
+            .system_mut(system)
+            .set_control(planet.clone(), player.clone());
+        put_on_planet(state, system, &planet, "spacedock", player, 1);
     }
     fn emit(
         state: &mut GameState,
@@ -996,6 +1104,90 @@ mod tests {
             vec![("20".to_owned(), "DELTA".to_owned())]
         );
         assert!(extra_wormholes(&sol_game()).is_empty());
+    }
+
+    // -- Particle Synthesis ---------------------------------------------------------------------
+
+    #[test]
+    fn particle_synthesis_counts_physical_wormholes_for_live_production_capacity() {
+        let mut state = ghost_game();
+        give_breakthrough(&mut state, &a(), "ghostbt");
+        let system = sys("39"); // Printed alpha.
+        put(&mut state, &system, "cruiser", &a(), 1);
+        state
+            .wormhole_tokens
+            .insert("ALPHA".to_owned(), system.clone());
+        state
+            .wormhole_tokens
+            .insert("BETA".to_owned(), system.clone());
+        assert_eq!(
+            wormhole_count(&state, &system),
+            3,
+            "a printed alpha plus alpha and beta tokens are three physical wormholes"
+        );
+        assert_eq!(
+            capacity(&state, content(), DEFAULT, &a(), &system),
+            3,
+            "the live capacity route sees one PRODUCTION per physical wormhole"
+        );
+
+        let plain = sys("19");
+        put(&mut state, &plain, "ghost_flagship", &a(), 1);
+        state
+            .wormhole_tokens
+            .insert("GAMMA".to_owned(), plain.clone());
+        state.ion_storm = Some((plain.clone(), "ALPHA".to_owned()));
+        assert_eq!(
+            wormhole_count(&state, &plain),
+            3,
+            "token, storm, and Hil Colish"
+        );
+
+        let nexus = sys(crate::seating::LOCKED_NEXUS);
+        put(&mut state, &nexus, "cruiser", &a(), 1);
+        state.nexus_unlocked = true;
+        assert_eq!(
+            wormhole_count(&state, &nexus),
+            3,
+            "the printed gamma and unlocked alpha/beta are distinct"
+        );
+    }
+
+    #[test]
+    fn particle_synthesis_needs_its_card_and_a_ship_and_reduces_a_live_production_bill() {
+        let mut state = ghost_game();
+        let system = sys("26");
+        add_dock(&mut state, &system, &a());
+        let ordinary_capacity = capacity(&state, content(), DEFAULT, &a(), &system);
+        assert_eq!(
+            cruiser_cost(&state, &a(), &system),
+            2,
+            "without the card the ordinary production bill is unchanged"
+        );
+
+        give_breakthrough(&mut state, &a(), "ghostbt");
+        assert_eq!(
+            extra_production(&state, content(), DEFAULT, &a(), &system),
+            0,
+            "a ground unit or structure is not a ship"
+        );
+        put(&mut state, &system, "infantry", &a(), 1);
+        assert_eq!(
+            extra_production(&state, content(), DEFAULT, &a(), &system),
+            0,
+            "ground forces in the space area do not qualify"
+        );
+        put(&mut state, &system, "cruiser", &a(), 1);
+        assert_eq!(
+            capacity(&state, content(), DEFAULT, &a(), &system),
+            ordinary_capacity + 1,
+            "the printed alpha adds one to the ordinary dock capacity"
+        );
+        assert_eq!(
+            cruiser_cost(&state, &a(), &system),
+            1,
+            "the live production window applies the combined-bill reduction"
+        );
     }
 
     // -- Slipstream ------------------------------------------------------------------------------
