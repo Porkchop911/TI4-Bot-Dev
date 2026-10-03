@@ -2652,18 +2652,16 @@ impl<'a> Game<'a> {
         // Hops of the route that went through a wormhole rather than across a hex edge (Creuss
         // commander Sai Seravus: "ships that moved through 1 or more wormholes").
         if let Some(galaxy) = self.galaxy.as_ref() {
-            let mut previous = origin.as_str();
-            let mut wormholes = 0_u32;
-            for step in path {
-                let through_wormhole = step != previous
-                    && galaxy.distance(previous, step) != Some(1)
-                    && !galaxy
-                        .wormhole_kinds(previous)
-                        .is_disjoint(&galaxy.wormhole_kinds(step));
-                wormholes += u32::from(through_wormhole);
-                previous = step.as_str();
-            }
-            payload.insert("wormholes".to_owned(), serde_json::Value::from(wormholes));
+            payload.insert(
+                "wormholes".to_owned(),
+                serde_json::Value::from(wormhole_hops(
+                    &self.state,
+                    galaxy,
+                    player,
+                    origin.as_str(),
+                    path,
+                )),
+            );
         }
         let _ = self.emit_typed("SHIP_MOVED", payload);
     }
@@ -5045,6 +5043,56 @@ impl<'a> Game<'a> {
     }
 }
 
+/// Count route hops actually supplied by wormhole adjacency. `extra_links` can also describe
+/// technologies and faction abilities that are not wormholes, so classify against a map without
+/// those links; Quantum Entanglement is the Creuss exception that joins alpha to beta even when a
+/// law disables ordinary wormhole movement.
+fn wormhole_hops(
+    state: &GameState,
+    galaxy: &Galaxy,
+    player: &PlayerId,
+    origin: &str,
+    path: &[String],
+) -> u32 {
+    let mut stripped = None;
+    if !galaxy.extra_links.is_empty() {
+        let mut copy = galaxy.clone();
+        copy.extra_links.clear();
+        stripped = Some(copy);
+    }
+    let wormhole_map = stripped.as_ref().unwrap_or(galaxy);
+    let quantum_entanglement = state
+        .player(player)
+        .is_some_and(|seat| seat.faction.as_str() == "ghost");
+    let mut unsuppressed_nexus = None;
+    if quantum_entanglement && wormhole_map.nexus_wormholes_off {
+        let mut copy = wormhole_map.clone();
+        copy.nexus_wormholes_off = false;
+        unsuppressed_nexus = Some(copy);
+    }
+    let quantum_map = unsuppressed_nexus.as_ref().unwrap_or(wormhole_map);
+    let has_alpha_or_beta = |system: &str| {
+        quantum_map
+            .wormhole_kinds(system)
+            .iter()
+            .any(|kind| *kind == "ALPHA" || *kind == "BETA")
+    };
+    let mut previous = origin;
+    let mut hops = 0_u32;
+    for step in path {
+        if step != previous && galaxy.distance(previous, step) != Some(1) {
+            let ordinary = wormhole_map.are_adjacent(previous, step)
+                && !wormhole_map.wormhole_kinds(previous).is_empty()
+                && !wormhole_map.wormhole_kinds(step).is_empty();
+            let quantum =
+                quantum_entanglement && has_alpha_or_beta(previous) && has_alpha_or_beta(step);
+            hops += u32::from(ordinary || quantum);
+        }
+        previous = step;
+    }
+    hops
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -5112,6 +5160,159 @@ mod tests {
     use crate::setup::start_game;
     use crate::timing::{Ability, Relation};
     use crate::tokens::STATUS_TOKENS;
+
+    #[test]
+    fn ship_moved_wormholes_count_ghost_cross_links_but_not_plain_ability_links() {
+        let content = ContentStore::embedded();
+        let mut galaxy = Galaxy::placed(
+            content,
+            &[
+                ("39", ti4_model::hex::Hex::new(0, 0)),
+                ("40", ti4_model::hex::Hex::new(3, 0)),
+                ("19", ti4_model::hex::Hex::new(6, 0)),
+            ],
+            ti4_model::content_types::DEFAULT,
+        )
+        .unwrap();
+        let state = crate::fixtures::seated_game(
+            &[("a", "ghost"), ("b", "sol")],
+            ti4_model::content_types::DEFAULT,
+        );
+        assert_eq!(
+            wormhole_hops(
+                &state,
+                &galaxy,
+                &PlayerId::new("a"),
+                "39",
+                &["40".to_owned()]
+            ),
+            1,
+            "Quantum Entanglement crosses alpha to beta",
+        );
+        assert_eq!(
+            wormhole_hops(
+                &state,
+                &galaxy,
+                &PlayerId::new("b"),
+                "39",
+                &["40".to_owned()]
+            ),
+            0,
+            "Sol has no alpha-beta wormhole link",
+        );
+        galaxy
+            .extra_links
+            .entry("39".to_owned())
+            .or_default()
+            .insert("19".to_owned());
+        assert_eq!(
+            wormhole_hops(
+                &state,
+                &galaxy,
+                &PlayerId::new("a"),
+                "39",
+                &["19".to_owned()]
+            ),
+            0,
+            "a non-wormhole ability link does not count",
+        );
+        galaxy
+            .token_wormholes
+            .entry("19".to_owned())
+            .or_default()
+            .insert("ALPHA".to_owned());
+        assert_eq!(
+            wormhole_hops(
+                &state,
+                &galaxy,
+                &PlayerId::new("a"),
+                "39",
+                &["19".to_owned()]
+            ),
+            1,
+            "a token creates a real wormhole link",
+        );
+        galaxy.wormholes_off = true;
+        assert_eq!(
+            wormhole_hops(
+                &state,
+                &galaxy,
+                &PlayerId::new("b"),
+                "39",
+                &["19".to_owned()]
+            ),
+            0,
+            "the travel ban closes an ordinary token wormhole for Sol",
+        );
+        assert_eq!(
+            wormhole_hops(
+                &state,
+                &galaxy,
+                &PlayerId::new("a"),
+                "39",
+                &["40".to_owned()]
+            ),
+            1,
+            "Quantum Entanglement remains usable through the ban",
+        );
+    }
+
+    #[test]
+    fn ship_moved_wormholes_include_flagship_delta_and_exclude_hex_travel() {
+        let content = ContentStore::embedded();
+        let mut state = crate::fixtures::seated_game(
+            &[("a", "ghost"), ("b", "sol")],
+            ti4_model::content_types::DEFAULT,
+        );
+        let mut galaxy = Galaxy::placed(
+            content,
+            &[
+                ("17", ti4_model::hex::Hex::new(0, 0)),
+                ("19", ti4_model::hex::Hex::new(3, 0)),
+            ],
+            ti4_model::content_types::DEFAULT,
+        )
+        .unwrap();
+        crate::fixtures::put(
+            &mut state,
+            &SystemId::new("19"),
+            "ghost_flagship",
+            &PlayerId::new("a"),
+            1,
+        );
+        crate::laws::apply_to_galaxy(&state, &mut galaxy);
+        assert_eq!(
+            wormhole_hops(
+                &state,
+                &galaxy,
+                &PlayerId::new("a"),
+                "17",
+                &["19".to_owned()]
+            ),
+            1,
+            "Hil Colish carries a delta wormhole into its system",
+        );
+        let neighbouring = Galaxy::placed(
+            content,
+            &[
+                ("39", ti4_model::hex::Hex::new(0, 0)),
+                ("40", ti4_model::hex::Hex::new(1, 0)),
+            ],
+            ti4_model::content_types::DEFAULT,
+        )
+        .unwrap();
+        assert_eq!(
+            wormhole_hops(
+                &state,
+                &neighbouring,
+                &PlayerId::new("a"),
+                "39",
+                &["40".to_owned()]
+            ),
+            0,
+            "a hex hop is not counted as a wormhole hop",
+        );
+    }
 
     #[test]
     fn one_step_resolves_exactly_one_generated_strategy_choice() {
