@@ -1212,6 +1212,8 @@ impl<'a> Game<'a> {
         reason = "the driver keeps the ordered window/phase precedence visible in one place"
     )]
     pub fn step(&mut self) -> StepResult {
+        // Identical-ask counts are per step: a cycle inside one step is what trips the guard.
+        self.table.begin_step();
         if let Err(error) = self.announce_staged_ground_events() {
             return self.result(false, Some(error));
         }
@@ -13298,6 +13300,24 @@ mod tests {
             "same two-to-one tally in the ordinary order; log {events:?}"
         );
         let _ = state;
+    }
+
+    #[test]
+    fn each_step_starts_the_identical_ask_count_afresh() {
+        let players = [PlayerId::new("a"), PlayerId::new("b"), PlayerId::new("c")];
+        let state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+        let mut game = Game::new(state, ContentStore::embedded());
+
+        // Use the whole allowance for the very choice the next step will put.
+        let choice = game.legal_options().expect("the game opens on a choice");
+        for _ in 0..crate::choice::MAX_IDENTICAL_ASKS_PER_STEP {
+            game.table.ask(&choice).unwrap();
+        }
+        // Without a per-step reset the step's own ask would be the 501st.
+        for _ in 0..3 {
+            let result = game.step();
+            assert!(result.error.is_none(), "{:?}", result.error);
+        }
     }
 
     #[test]

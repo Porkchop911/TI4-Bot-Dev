@@ -30,8 +30,10 @@ evaluate each final checkpoint with `clearance_eval --roster six --seeds 600 --r
 
 | Job | Owner | Resource | Started |
 |---|---|---|---|
-| (none from Claude) | | | |
+| Card effect-tag labelling (Sonnet + 2 Haiku; reads content, writes two plans/ files; no cargo, no GPU) | BF unification session (Claude) | CPU, light | 2026-10-09 |
 
 ## Log
 
 - 2026-10-09: GPU reserved for `strata` by the operator; self-imitation pilot pinned.
+- 2026-10-09: engine no-progress guard started (CPU only); finished and committed (2809 engine tests, 40-game wide smoke clean).
+- 2026-10-09: card effect-tag labelling started (no build, no GPU).
