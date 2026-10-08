@@ -785,6 +785,43 @@ impl Actor {
         masks
     }
 
+    /// Gradient masks (for [`crate::ppo::Adam::restrict`]) that train only the per-faction rows of
+    /// `rows` -- each one's readout residual, readout bias and identity embedding -- and freeze
+    /// everything shared: the trunk, the input table, the shared readout, and the value head when
+    /// `include_value` lists it. For giving untrained factions their own rows without moving what
+    /// every other faction plays with (BF-22).
+    #[must_use]
+    pub fn faction_rows_masks(&self, rows: &[FactionRow], include_value: bool) -> Vec<Tensor> {
+        let delta = self.delta.zeros_like();
+        let b_delta = self.b_delta.zeros_like();
+        let embedding = self.embedding.zeros_like();
+        for row in rows {
+            let at = i64::try_from(row.index()).unwrap_or(0);
+            let _ = delta.get(at).fill_(1.0);
+            let _ = b_delta.get(at).fill_(1.0);
+            let _ = embedding.get(at).fill_(1.0);
+        }
+        let mut masks = vec![
+            self.input.zeros_like(),
+            self.b1.zeros_like(),
+            self.hidden.zeros_like(),
+            self.b2.zeros_like(),
+            self.w_shared.zeros_like(),
+            self.b_shared.zeros_like(),
+            delta,
+            b_delta,
+            embedding,
+        ];
+        for block in &self.blocks {
+            masks.extend(block.tensors().map(Tensor::zeros_like));
+        }
+        if include_value {
+            masks.push(self.w_value.zeros_like());
+            masks.push(self.b_value.zeros_like());
+        }
+        masks
+    }
+
     pub(crate) fn main_parameters(&self, include_value: bool) -> Vec<Tensor> {
         let mut parameters = vec![
             self.input.shallow_clone(),
@@ -2231,6 +2268,31 @@ mod tests {
         assert!(actor.copy_input_rows(&[(7, CAPACITY)]).is_err(), "out of range is refused");
         actor.copy_input_rows(&[(7, 300)]).expect("copies");
         assert_eq!(score(&actor, option(&[3, 300], &[0.25, 1.0])), before);
+    }
+
+    #[test]
+    fn faction_rows_masks_open_only_the_named_factions_rows() {
+        let actor = actor(Width::W128);
+        let rows = [row("sardakk"), row("naalu")];
+        let masks = actor.faction_rows_masks(&rows, true);
+        assert_eq!(masks.len(), actor.main_parameters(true).len());
+        let total = |t: &Tensor| t.sum(Kind::Float).double_value(&[]);
+        for (index, mask) in masks.iter().enumerate() {
+            // delta, b_delta and embedding are parameters 6, 7 and 8.
+            if matches!(index, 6..=8) {
+                assert!(total(mask) > 0.0, "parameter {index} opens the named rows");
+            } else {
+                assert!(total(mask).abs() < f64::EPSILON, "parameter {index} is shared");
+            }
+        }
+        let opened = |mask: &Tensor, faction: &str| {
+            let at = i64::try_from(row(faction).index()).unwrap();
+            total(&mask.get(at)) > 0.0
+        };
+        for parameter in 6..=8 {
+            assert!(opened(&masks[parameter], "sardakk") && opened(&masks[parameter], "naalu"));
+            assert!(!opened(&masks[parameter], "sol"), "a trained faction stays frozen");
+        }
     }
 
     #[test]

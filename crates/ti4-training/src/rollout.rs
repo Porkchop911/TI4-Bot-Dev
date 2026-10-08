@@ -249,7 +249,8 @@ pub fn scrambled_seated_faction(
     order[(seat + rotation) % count].clone()
 }
 
-/// Read a `--roster` value: `six` (the default, [`FactionRoster::InScope`]) or `wide`.
+/// Read a `--roster` value: `six` (the default, [`FactionRoster::InScope`]), `wide` or `new` (the
+/// wide roster without the six).
 ///
 /// # Errors
 /// Any other value.
@@ -257,7 +258,8 @@ pub fn parse_roster(value: &str) -> Result<ti4_engine::seating::FactionRoster, S
     match value {
         "six" => Ok(ti4_engine::seating::FactionRoster::InScope),
         "wide" => Ok(ti4_engine::seating::FactionRoster::Wide),
-        other => Err(format!("--roster expects six or wide, not {other:?}")),
+        "new" => Ok(ti4_engine::seating::FactionRoster::New),
+        other => Err(format!("--roster expects six, wide or new, not {other:?}")),
     }
 }
 
@@ -284,9 +286,10 @@ pub fn game_factions(
         ti4_engine::seating::FactionRoster::InScope => {
             Ok(fixed.iter().map(|alias| FactionId::new(*alias)).collect())
         }
-        ti4_engine::seating::FactionRoster::Wide => {
-            let drawn = ti4_engine::seating::seat_wide(content, players, sources, seed)
-                .map_err(|error| format!("wide roster for seed {seed}: {error}"))?;
+        ti4_engine::seating::FactionRoster::Wide | ti4_engine::seating::FactionRoster::New => {
+            let drawn =
+                ti4_engine::seating::seat_roster(roster, content, players, sources, seed)
+                    .map_err(|error| format!("{roster:?} roster for seed {seed}: {error}"))?;
             players
                 .iter()
                 .map(|player| {
@@ -2491,6 +2494,31 @@ mod tests {
             .filter(|alias| !SIX.contains(&alias.as_str()))
             .collect();
         assert!(new.len() >= 20, "120 wide tables reached only {seen:?}");
+    }
+
+    #[test]
+    fn the_new_roster_seats_only_factions_outside_the_six() {
+        use ti4_engine::seating::FactionRoster;
+        let content = ContentStore::embedded();
+        let players = six_players();
+        let mut seen: BTreeSet<String> = BTreeSet::new();
+        for seed in 0..120 {
+            let drawn =
+                game_factions(content, FactionRoster::New, &SIX, &players, DEFAULT, seed).unwrap();
+            assert_eq!(
+                drawn,
+                game_factions(content, FactionRoster::New, &SIX, &players, DEFAULT, seed).unwrap()
+            );
+            let distinct: BTreeSet<&str> = drawn.iter().map(FactionId::as_str).collect();
+            assert_eq!(distinct.len(), players.len(), "seed {seed}: {drawn:?}");
+            assert!(
+                drawn.iter().all(|f| !SIX.contains(&f.as_str())),
+                "seed {seed}: {drawn:?}"
+            );
+            seen.extend(distinct.into_iter().map(str::to_owned));
+        }
+        assert!(seen.len() >= 24, "120 tables reached only {seen:?}");
+        assert_eq!(parse_roster("new"), Ok(FactionRoster::New));
     }
 
     #[test]

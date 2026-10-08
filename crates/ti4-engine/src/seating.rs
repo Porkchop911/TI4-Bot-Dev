@@ -225,6 +225,9 @@ pub enum FactionRoster {
     InScope,
     /// Every choosable implemented faction ([`wide_roster`]), drawn by seed ([`seat_wide`]).
     Wide,
+    /// The wide roster without the six [`IN_SCOPE_FACTIONS`], drawn by seed ([`seat_new`]): tables
+    /// of factions a six-faction policy never trained on.
+    New,
 }
 
 /// The roster entry that stands for the Council Keleres in [`wide_roster`]. The variant (one of
@@ -290,13 +293,40 @@ pub fn seat_wide(
     sources: SourceSet,
     seed: u64,
 ) -> Result<BTreeMap<PlayerId, FactionId>, FactionAssignmentError> {
+    seat_wide_from(content, players, sources, seed, &[])
+}
+
+/// [`seat_wide`] without the six [`IN_SCOPE_FACTIONS`]: the same shuffle and Keleres handling over
+/// the remaining roster. Same inputs and seed give the same table.
+///
+/// # Errors
+/// As [`seat_wide`].
+pub fn seat_new(
+    content: &ContentStore,
+    players: &[PlayerId],
+    sources: SourceSet,
+    seed: u64,
+) -> Result<BTreeMap<PlayerId, FactionId>, FactionAssignmentError> {
+    seat_wide_from(content, players, sources, seed, &IN_SCOPE_FACTIONS)
+}
+
+fn seat_wide_from(
+    content: &ContentStore,
+    players: &[PlayerId],
+    sources: SourceSet,
+    seed: u64,
+    excluded: &[&str],
+) -> Result<BTreeMap<PlayerId, FactionId>, FactionAssignmentError> {
     let mut seen_players = BTreeSet::new();
     for player in players {
         if !seen_players.insert(player.to_string()) {
             return Err(FactionAssignmentError::DuplicatePlayer(player.to_string()));
         }
     }
-    let roster = wide_roster(content, sources);
+    let roster: Vec<&'static str> = wide_roster(content, sources)
+        .into_iter()
+        .filter(|entry| !excluded.contains(entry))
+        .collect();
     let catalogue = factions::catalogue(content, sources);
     let mut rng = crate::rng::GameRng::new(seed);
     let shuffled = rng.shuffled(WIDE_ROSTER_DOMAIN, &roster);
@@ -354,6 +384,7 @@ pub fn seat_roster(
     match roster {
         FactionRoster::InScope => Ok(seat_in_scope(players)),
         FactionRoster::Wide => seat_wide(content, players, sources, seed),
+        FactionRoster::New => seat_new(content, players, sources, seed),
     }
 }
 

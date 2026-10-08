@@ -54,7 +54,8 @@ $allowed = @(
     'strategy-diversity-weight', 'styx-bonus', 'tech-weight', 'temperature',
     'opponent', 'trade-goods-hoard-weight', 'unit-weight', 'updates', 'vp-weight',
     'waste-penalties',
-    'waste-penalty', 'zero-fleet-penalty', 'diag', 'capture-batch', 'seeds-per-update', 'rotations'
+    'waste-penalty', 'zero-fleet-penalty', 'diag', 'capture-batch', 'seeds-per-update', 'rotations',
+    'roster'
 )
 
 $unknown = @($flags.Keys | Where-Object { $_ -notin $allowed })
@@ -68,6 +69,10 @@ if ($flags.ContainsKey('waste-penalty') -and $flags.ContainsKey('waste-penalties
 $arguments = @('--bundle', $bundle, '--map-pool', $pool, '--out', (Join-Path $run 'checkpoints'))
 if ($diplomacy) {
     $arguments += '--diplomacy'
+}
+# Train only the per-faction rows of the factions outside the six (BF-22).
+if ($settings.ContainsKey('FactionRowsOnly') -and [bool]$settings.FactionRowsOnly) {
+    $arguments += '--faction-rows-only'
 }
 foreach ($name in ($flags.Keys | Sort-Object)) {
     $arguments += "--$name"

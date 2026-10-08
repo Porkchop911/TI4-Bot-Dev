@@ -169,6 +169,7 @@ const VALUE_FLAGS: &[&str] = &[
 /// Every flag that stands alone.
 const BOOLEAN_FLAGS: &[&str] = &[
     "--no-checkpoint",
+    "--faction-rows-only",
     "--check-likelihood",
     "--diag-sync",
     "--hash-games",
@@ -1243,6 +1244,13 @@ fn main() {
             .unwrap_or_else(|| refuse("--entropy-start expects a non-negative number"))
     });
     let mut settings = Settings::default();
+    // Train only the per-faction rows of the factions outside the six (their readout residual,
+    // bias and embedding); everything shared stays where it is (BF-22: populate untrained rows).
+    // A restricted optimiser needs weight decay 0, or decay would still shrink the frozen weights.
+    let faction_rows_only = std::env::args().any(|a| a == "--faction-rows-only");
+    if faction_rows_only {
+        settings.weight_decay = 0.0;
+    }
     settings.movement_entropy = argument("--movement-entropy").map_or(settings.entropy, |value| {
         value
             .parse()
@@ -1277,10 +1285,10 @@ fn main() {
     // single carrier (its two cruisers carry nothing, which is why the bar's composition clause was
     // written to bind on it), so a wasted activation costs it a far larger share of its capacity
     // than it costs a faction with spare hulls.
-    if roster == ti4_engine::seating::FactionRoster::Wide
+    if roster != ti4_engine::seating::FactionRoster::InScope
         && argument("--waste-penalties").is_some()
     {
-        refuse("--waste-penalties is per faction of the six; with --roster wide use --waste-penalty");
+        refuse("--waste-penalties is per faction of the six; with --roster wide or new use --waste-penalty");
     }
     let waste_penalties: Vec<f64> = argument("--waste-penalties").map_or_else(
         || vec![waste_penalty; FACTIONS.len()],
@@ -1620,6 +1628,27 @@ fn main() {
     actor = actor.to_device(device);
     let mut optimizer = ti4_mlp::ppo::Adam::new(&mut actor, critic_mode, settings)
         .unwrap_or_else(|error| refuse(&format!("optimiser: {error}")));
+    if faction_rows_only {
+        if critic_mode == ti4_mlp::bundle::CriticMode::Separate {
+            refuse("--faction-rows-only covers the shared and batch-mean critics");
+        }
+        let rows: Vec<ti4_mlp::FactionRow> = ti4_mlp::FACTION_ROSTER
+            .iter()
+            .filter(|alias| !FACTIONS.contains(alias))
+            .map(|alias| ti4_mlp::FactionRow::of(alias).expect("a roster row"))
+            .collect();
+        let masks = actor.faction_rows_masks(
+            &rows,
+            critic_mode == ti4_mlp::bundle::CriticMode::Shared,
+        );
+        optimizer
+            .restrict(masks)
+            .unwrap_or_else(|error| refuse(&format!("restricting the optimiser: {error}")));
+        println!(
+            "  training    faction rows only: {} factions outside the six; trunk, input table, shared readout and value frozen",
+            rows.len()
+        );
+    }
 
     // F-M10-034-D6. Loss telemetry is not evidence that an update happened: a broken optimiser
     // still produces a full, plausible table of losses, and the vacuous tests this milestone kept

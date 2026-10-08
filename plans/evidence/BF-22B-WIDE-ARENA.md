@@ -119,6 +119,40 @@ Deepwrought flagship's +1 per own-unit system was earned on every pass, so a loo
 rift gained steps without end. Fixed in `fcb85791` (once per system, exact pruning key); the three
 seeds now take about 2 s each.
 
+## Diplomacy teacher (wide roster) and evaluation
+
+`trade_teacher --roster wide --games 480 --epochs 20` from out/bf22-checkpoint-41476-wide-v8:
+480 games in 171 s, 63,915 contacts (deal planned in 37%), 102,163 examples (10,298 held out).
+Held-out accuracy 29.0% -> 69.6% (accept 100%, decline 90%, amount 88%, no offer 86%, propose 63%,
+done 46%, item 40%). Checkpoint: **out/trade-teacher-wide-v8-20261008/checkpoint-20**.
+
+`clearance_eval`, 20 seeds x 6 rotations, 4 rounds, diplomacy, T=0.25, holdout pool:
+
+| Checkpoint | six: clearance / VP | wide: clearance / VP |
+|---|---|---|
+| migrated, predictor v7 | 93.47% / 3.561 | 46.53% / 3.160 |
+| + predictor v8 | 93.47% / 3.567 | 46.81% / 3.169 |
+| + v8 + wide diplomacy teacher | 94.31% / 3.538 | 47.08% / 3.171 |
+
+Second engine cycle found by the wide evaluation: the Argent hero's Flock Migration re-offered
+moved ships (seed 900000010 rotation 0, ~145k decisions in 120 s). Fixed in its own commit.
+Hang sweep after both fixes: 200 more wide seeds x 6 rotations (1,200 games) with the combined
+checkpoint, each seed capped at 150 s: none hit the cap (out/stallsweep-summary.txt).
+
+## Faction-row pilot (operator 2026-10-08)
+
+"Run 50 updates for all untrained factions, always in games with only new factions ... just so
+the faction heads populate with something."
+
+- `--roster new` (`FactionRoster::New`, `seating::seat_new`): six distinct factions per seed from
+  the wide roster without the six (test: `the_new_roster_seats_only_factions_outside_the_six`).
+- `--faction-rows-only` (`Actor::faction_rows_masks` + `Adam::restrict`, weight decay 0): only
+  the 27 non-six factions' readout residual, bias and embedding rows train; trunk, input table,
+  shared readout, value head and the six's rows are frozen (test:
+  `faction_rows_masks_open_only_the_named_factions_rows`).
+- Smoke: 1 update, 6 games, CUDA: parameters moved (out/rows-smoke.log).
+- Run: scripts/pilot_newfactions_rows50.psd1 -> out/ppo-newfactions-rows-pilot50-20261008.
+
 ## Open
 
 - Train predictor v8, export, swap into the migrated checkpoint, evaluate.
