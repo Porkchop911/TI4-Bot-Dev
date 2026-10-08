@@ -1733,6 +1733,34 @@ mod tests {
     }
 
     #[test]
+    fn the_luminous_earns_each_systems_step_once_so_a_rift_loop_cannot_grow_its_move() {
+        // A gravity rift holding the owner's units, beside another system holding them. Earning the
+        // step on every pass made rift -> neighbour -> rift worth three steps for the two it cost,
+        // so a search that found no destination never ended (BF-22 wide-roster trade teacher).
+        let hub = crate::fixtures::hub_with_centre("41");
+        let centre = SystemId::new(hub.centre.as_str());
+        let start = hub.outer[0].clone();
+        let beside = hub.outer[1].clone();
+        let mut state = game();
+        crate::fixtures::put(
+            &mut state,
+            &SystemId::new(start.as_str()),
+            "deepwrought_flagship",
+            &a(),
+            1,
+        );
+        crate::fixtures::put(&mut state, &centre, "cruiser", &a(), 1);
+        crate::fixtures::put(&mut state, &SystemId::new(beside.as_str()), "cruiser", &a(), 1);
+        let flagship = Some("deepwrought_flagship");
+        // No such destination: the search has to run out and say so.
+        assert!(!rules(&hub, &state, "nowhere").can_reach_ship(&start, 1, flagship));
+        // The honest reach is still there: through the rift (its own step plus the Luminous step)
+        // to the far side of the ring on move 1.
+        let across = hub.across(&start);
+        assert!(rules(&hub, &state, &across).can_reach_ship(&start, 1, flagship));
+    }
+
+    #[test]
     fn the_tactical_action_offers_the_luminous_the_blockaded_move_and_no_other_ship() {
         let hub = crate::fixtures::plain_hub();
         let (near_a, near_b) = (hub.outer[0].clone(), hub.across(&hub.outer[0]));

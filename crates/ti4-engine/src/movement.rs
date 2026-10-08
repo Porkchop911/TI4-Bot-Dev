@@ -618,14 +618,26 @@ impl<'a> MovementRules<'a> {
             return None;
         }
 
-        // The last field is whether this route has already taken the Crucible bonus: it is worth
-        // +1 in total however many rifts the route passes, so it is carried per route.
-        let mut queue: VecDeque<(String, i32, i32, Vec<String>, bool)> =
-            VecDeque::from([(origin.to_owned(), 0, budget, vec![origin.to_owned()], false)]);
+        // The fifth field is whether this route has already taken the Crucible bonus: it is worth
+        // +1 in total however many rifts the route passes, so it is carried per route. The sixth is
+        // the own-unit systems whose Luminous step this route has already earned: "+1 for each of
+        // those systems" counts a system once, however often the route passes it.
+        let mut queue: VecDeque<(String, i32, i32, Vec<String>, bool, BTreeSet<String>)> =
+            VecDeque::from([(
+                origin.to_owned(),
+                0,
+                budget,
+                vec![origin.to_owned()],
+                false,
+                BTreeSet::new(),
+            )]);
         // Revisiting is only worthwhile with a larger budget left over (and the same bonus state).
-        let mut best: BTreeMap<(String, bool), i32> = BTreeMap::new();
+        // The earned Luminous systems are part of that state: a route that has not yet passed an
+        // own-unit system can still earn its step, so it is not dominated by one that has.
+        let mut best: BTreeMap<(String, bool, BTreeSet<String>), i32> = BTreeMap::new();
 
-        while let Some((current, entered, mut allowance, route, mut bonus_used)) = queue.pop_front()
+        while let Some((current, entered, mut allowance, route, mut bonus_used, mut earned)) =
+            queue.pop_front()
         {
             // 41.1: leaving a rift is worth an extra step, and 41.3 allows that to happen more
             // than once in one movement. The bonus must land *before* the budget is judged,
@@ -642,15 +654,20 @@ impl<'a> MovementRules<'a> {
             // Moving through a system that holds the mover's own units earns a step for ships that
             // may (Deepwrought Luminous). Only an intermediate system is "moved through": the
             // origin is entered at 0 and the active system ends the route before it is queued.
+            //
+            // Once per system: earning the step again on every pass let a route loop through a
+            // rift and an own-unit system for more steps than the loop cost, so the search never
+            // ended (BF-22 wide-roster trade teacher, a Deepwrought seat).
             if entered > 0
                 && ship_type.is_some_and(|kind| self.own_passage_types.contains(kind))
                 && self.own_unit_systems.contains(&current)
+                && earned.insert(current.clone())
             {
                 allowance += 1;
             }
 
             let remaining = allowance - entered;
-            let key = (current.clone(), bonus_used);
+            let key = (current.clone(), bonus_used, earned.clone());
             if best.get(&key).is_some_and(|seen| *seen >= remaining) {
                 continue;
             }
@@ -714,7 +731,14 @@ impl<'a> MovementRules<'a> {
                 if !self.passes(&neighbour, Some(origin), ship_type, past_ships) {
                     continue;
                 }
-                queue.push_back((neighbour, entered + 1, allowance, arrived, bonus_used));
+                queue.push_back((
+                    neighbour,
+                    entered + 1,
+                    allowance,
+                    arrived,
+                    bonus_used,
+                    earned.clone(),
+                ));
             }
         }
 
