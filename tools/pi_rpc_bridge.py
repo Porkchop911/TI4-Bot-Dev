@@ -107,6 +107,10 @@ class Controller:
             str(args.session),
             "--approve",
         ]
+        if args.model:
+            command.extend(["--model", args.model])
+        if args.no_extensions:
+            command.append("--no-extensions")
         self.process = subprocess.Popen(
             command,
             cwd=args.workspace,
@@ -218,6 +222,12 @@ class Controller:
             elif event_type == "message_end" and isinstance(event.get("message"), dict):
                 message = event["message"]
                 self.last_stop_reason = message.get("stopReason")
+                if message.get("role") == "assistant" and (
+                    message.get("stopReason") == "error" or message.get("errorMessage")
+                ):
+                    task["failureReason"] = _short(
+                        message.get("errorMessage") or "assistant ended with an error", EVENT_TEXT_LIMIT
+                    )
                 text = _message_text(message)
                 if message.get("role") == "assistant" and text:
                     task["finalText"] = _short(text, FINAL_TEXT_LIMIT)
@@ -229,7 +239,7 @@ class Controller:
                 task["status"] = "settling"
                 task["agentEndAt"] = time.time()
             elif event_type == "agent_settled":
-                task["status"] = "completed" if not task.get("abortReason") else "aborted"
+                task["status"] = ("aborted" if task.get("abortReason") else "failed" if task.get("failureReason") else "completed")
                 task["finishedAt"] = time.time()
                 task["finalGit"] = self._git_snapshot()
 
@@ -258,7 +268,7 @@ class Controller:
                     continue
                 status = task.get("status")
                 if status == "settling" and now - task.get("agentEndAt", now) >= 3:
-                    task["status"] = "completed" if not task.get("abortReason") else "aborted"
+                    task["status"] = ("aborted" if task.get("abortReason") else "failed" if task.get("failureReason") else "completed")
                     task["finishedAt"] = now
                     task["finalGit"] = self._git_snapshot()
                     continue
@@ -488,6 +498,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--state-dir", type=Path, required=True)
     parser.add_argument("--node", type=Path, required=True)
     parser.add_argument("--pi-cli", type=Path, required=True)
+    parser.add_argument("--model", help="Explicit model/provider for this isolated session")
+    parser.add_argument("--no-extensions", action="store_true", help="Disable extension discovery for bounded local work")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=41873)
     parser.add_argument("--event-memory", type=int, default=5000)

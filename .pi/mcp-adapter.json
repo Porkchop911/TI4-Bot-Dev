@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "whiteboard": {
+      "disabled": true
+    },
+    "dbhub": {
+      "disabled": true
+    }
+  }
+}
