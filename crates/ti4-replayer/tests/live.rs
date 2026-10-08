@@ -51,6 +51,7 @@ fn config() -> SimulationConfig {
         table: ProfileTable::Learner,
         temperature: TEMPERATURE,
         diplomacy: false,
+        lineup: None,
     }
 }
 
@@ -689,4 +690,361 @@ fn a_manual_offer_carries_the_policys_numbers() {
         pending.options.iter().all(|option| option.score.is_some()),
         "every option carries its score"
     );
+}
+
+/// Drive the real Ssruu copied-round timing callback through the same engine Table and manual
+/// Gate used by LiveBranch. This is intentionally an event-callback acceptance test: the public
+/// LiveBranch API starts from a checkpoint/map pool and cannot accept a caller-built GameState.
+#[test]
+fn a_manual_ssruu_round_copy_parks_with_target_labels_and_resumes_on_the_chosen_unit() {
+    use ti4_engine::choice::{AlwaysDecline, Table};
+    use ti4_engine::event::Event;
+    use ti4_engine::fixtures;
+    use ti4_content::ContentStore;
+    use ti4_model::content_types::DEFAULT;
+    use ti4_model::id::LeaderId;
+    use ti4_model::state::LeaderStatus;
+    use ti4_replayer::decider::ControlledDecider;
+    use ti4_replayer::live::Gate;
+
+    let borrower = PlayerId::new("a");
+    let source = PlayerId::new("b");
+    let target_owner = PlayerId::new("c");
+    let (system, _) = fixtures::a_placed_planet();
+    let mut state = fixtures::seated_game(
+        &[("a", "yssaril"), ("b", "letnev"), ("c", "sol")],
+        DEFAULT,
+    );
+    state.combat_round_seq = 4;
+    state
+        .player_mut(&borrower)
+        .expect("Yssaril is seated")
+        .leaders
+        .insert(LeaderId::new("yssarilagent"), LeaderStatus::Readied);
+    state
+        .player_mut(&source)
+        .expect("Letnev is seated")
+        .leaders
+        .insert(LeaderId::new("letnevagent"), LeaderStatus::Exhausted);
+    fixtures::put(&mut state, &system, "cruiser", &target_owner, 2);
+
+    let mut payload = BTreeMap::new();
+    payload.insert("system".to_owned(), system.to_string().into());
+    payload.insert("attacker".to_owned(), borrower.to_string().into());
+    payload.insert("defender".to_owned(), target_owner.to_string().into());
+    payload.insert("round_seq".to_owned(), 4_i64.into());
+    let event = Event::new(1, "COMBAT_ROUND_STARTED", payload);
+
+    let mut seat_control = SeatControl::all_auto();
+    seat_control.set_mode(&borrower, SeatMode::Manual);
+    let gate = std::sync::Arc::new(Gate::live(seat_control));
+    let _shutdown_on_failure = ShutdownGateOnDrop(gate.clone());
+    let callback_gate = gate.clone();
+    let callback_borrower = borrower.clone();
+    let callback = std::thread::spawn(move || {
+        let mut resolver = fixtures::armed_resolver(&state);
+        let mut table = Table::with_default(Box::new(AlwaysDecline));
+        table.seat(
+            callback_borrower.clone(),
+            Box::new(ControlledDecider::new(
+                Box::new(AlwaysDecline),
+                callback_borrower,
+                callback_gate,
+            )),
+        );
+        let result = fixtures::with_context(&mut state, DEFAULT, None, &mut table, |context| {
+            resolver.emit_with_context(context, event, |_, _| {})
+        });
+        (state, result)
+    });
+
+    let wait_for = |matches: &dyn Fn(&PendingManualChoice) -> bool| {
+        let deadline = Instant::now() + WAIT;
+        loop {
+            if let Some(pending) = gate.pending().filter(matches) {
+                return pending;
+            }
+            assert!(Instant::now() < deadline, "resolver did not park the expected offer");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    };
+
+    let ability_offer = wait_for(&|offer| {
+        offer.actor == borrower
+            && offer.options.iter().any(|option| {
+                option.id.contains("leader:ssruu-copy:a:letnevagent:b:COMBAT_ROUND_STARTED")
+            })
+    });
+    let copy_id = ability_offer
+        .options
+        .iter()
+        .find(|option| {
+            option.id.contains("leader:ssruu-copy:a:letnevagent:b:COMBAT_ROUND_STARTED")
+        })
+        .expect("actual resolver offered the copied Letnev round ability")
+        .id
+        .clone();
+    assert!(matches!(
+        gate.submit(&ManualSubmission::to(&ability_offer, copy_id)),
+        SubmitOutcome::Accepted { .. }
+    ));
+
+    let target_offer = wait_for(&|offer| {
+        offer.actor == borrower
+            && offer.prompt.contains("choose one unit for +1 combat die")
+    });
+    assert_eq!(
+        target_offer.context.as_ref().and_then(|context| context["subtype"].as_str()),
+        Some("leader_ssruu_round_agent_unit")
+    );
+    assert_eq!(target_offer.options.len(), 2);
+    assert!(target_offer
+        .options
+        .iter()
+        .any(|option| option.label.contains("c's cruiser (unit 1)")));
+    let selected = target_offer
+        .options
+        .iter()
+        .find(|option| option.label.contains("c's cruiser (unit 2)"))
+        .expect("the second eligible unit has its own readable choice")
+        .id
+        .clone();
+    assert!(matches!(
+        gate.submit(&ManualSubmission::to(&target_offer, selected)),
+        SubmitOutcome::Accepted { .. }
+    ));
+
+    let (state, result) = callback.join().expect("timing callback worker completes");
+    result.expect("the engine settles the submitted target through Table::ask");
+    let content = ContentStore::embedded();
+    assert_eq!(
+        ti4_engine::factions::borrowed_round_agents::extra_die_for(
+            &state,
+            content,
+            DEFAULT,
+            &system,
+            None,
+            &target_owner,
+            "cruiser",
+            0,
+            4,
+        ),
+        0,
+        "the unselected first cruiser receives no copied die"
+    );
+    assert_eq!(
+        ti4_engine::factions::borrowed_round_agents::extra_die_for(
+            &state,
+            content,
+            DEFAULT,
+            &system,
+            None,
+            &target_owner,
+            "cruiser",
+            1,
+            4,
+        ),
+        1,
+        "the human's selected second cruiser receives the copied die"
+    );
+    assert_eq!(
+        state.player(&borrower).expect("borrower remains seated").leaders
+            [&LeaderId::new("yssarilagent")],
+        LeaderStatus::Exhausted
+    );
+    assert_eq!(
+        state.player(&source).expect("source remains seated").leaders
+            [&LeaderId::new("letnevagent")],
+        LeaderStatus::Exhausted,
+        "copying does not ready or exhaust the source again"
+    );
+}
+
+/// The second genuine BF callback in scope: Ssruu borrows L1Z1X's agent on the active player's
+/// activation and resumes the actual replacement on the planet selected from the manual offer.
+#[test]
+fn a_manual_ssruu_l1z1x_copy_preserves_planet_choice_and_replaces_that_planets_infantry() {
+    use ti4_content::ContentStore;
+    use ti4_engine::choice::{AlwaysDecline, Table};
+    use ti4_engine::event::Event;
+    use ti4_engine::fixtures;
+    use ti4_model::content_types::DEFAULT;
+    use ti4_model::id::{LeaderId, PlanetId, SystemId};
+    use ti4_model::state::LeaderStatus;
+    use ti4_replayer::decider::ControlledDecider;
+    use ti4_replayer::live::Gate;
+
+    let borrower = PlayerId::new("a");
+    let source = PlayerId::new("b");
+    let beneficiary = PlayerId::new("c");
+    let content = ContentStore::embedded();
+    let (system_record_id, system_record) =
+        ti4_content::galaxy::all_systems(content, DEFAULT)
+            .into_iter()
+            .find(|(_, record)| record.planets().len() >= 2)
+            .expect("content has a system with two planets");
+    let system = SystemId::new(system_record_id);
+    let first_planet = PlanetId::new(system_record.planets()[0]);
+    let second_planet = PlanetId::new(system_record.planets()[1]);
+    let sol_mech = ti4_content::units::faction_unit(content, "sol", "mech", DEFAULT)
+        .expect("the Sol faction has a mech")
+        .id()
+        .to_owned();
+    let mut state = fixtures::seated_game(
+        &[("a", "yssaril"), ("b", "l1z1x"), ("c", "sol")],
+        DEFAULT,
+    );
+    state.active = Some(beneficiary.clone());
+    state.active_system = Some(system.clone());
+    state
+        .player_mut(&borrower)
+        .expect("Yssaril is seated")
+        .leaders
+        .insert(LeaderId::new("yssarilagent"), LeaderStatus::Readied);
+    state
+        .player_mut(&source)
+        .expect("L1Z1X is seated")
+        .leaders
+        .insert(LeaderId::new("l1z1xagent"), LeaderStatus::Exhausted);
+    fixtures::put_on_planet(
+        &mut state,
+        &system,
+        &first_planet,
+        "infantry",
+        &beneficiary,
+        1,
+    );
+    fixtures::put_on_planet(
+        &mut state,
+        &system,
+        &second_planet,
+        "infantry",
+        &beneficiary,
+        1,
+    );
+
+    let mut payload = BTreeMap::new();
+    payload.insert("player".to_owned(), beneficiary.to_string().into());
+    payload.insert("system".to_owned(), system.to_string().into());
+    let event = Event::new(1, "SYSTEM_ACTIVATED", payload);
+
+    let mut seat_control = SeatControl::all_auto();
+    seat_control.set_mode(&borrower, SeatMode::Manual);
+    seat_control.set_mode(&beneficiary, SeatMode::Manual);
+    let gate = std::sync::Arc::new(Gate::live(seat_control));
+    let _shutdown_on_failure = ShutdownGateOnDrop(gate.clone());
+    let callback_gate = gate.clone();
+    let callback_borrower = borrower.clone();
+    let callback_beneficiary = beneficiary.clone();
+    let callback = std::thread::spawn(move || {
+        let mut resolver = fixtures::armed_resolver(&state);
+        let mut table = Table::with_default(Box::new(AlwaysDecline));
+        table.seat(
+            callback_borrower.clone(),
+            Box::new(ControlledDecider::new(
+                Box::new(AlwaysDecline),
+                callback_borrower,
+                callback_gate.clone(),
+            )),
+        );
+        table.seat(
+            callback_beneficiary.clone(),
+            Box::new(ControlledDecider::new(
+                Box::new(AlwaysDecline),
+                callback_beneficiary,
+                callback_gate,
+            )),
+        );
+        let result = fixtures::with_context(&mut state, DEFAULT, None, &mut table, |context| {
+            resolver.emit_with_context(context, event, |_, _| {})
+        });
+        (state, result)
+    });
+
+    let wait_for = |matches: &dyn Fn(&PendingManualChoice) -> bool| {
+        let deadline = Instant::now() + WAIT;
+        loop {
+            if let Some(pending) = gate.pending().filter(matches) {
+                return pending;
+            }
+            assert!(Instant::now() < deadline, "resolver did not park the expected offer");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    };
+    let ability_offer = wait_for(&|offer| {
+        offer.actor == borrower
+            && offer.options.iter().any(|option| {
+                option.id.contains("leader:ssruu-copy:a:l1z1xagent:b:SYSTEM_ACTIVATED")
+            })
+    });
+    let copy_id = ability_offer
+        .options
+        .iter()
+        .find(|option| {
+            option.id.contains("leader:ssruu-copy:a:l1z1xagent:b:SYSTEM_ACTIVATED")
+        })
+        .expect("actual resolver offered the copied L1Z1X activation ability")
+        .id
+        .clone();
+    assert!(matches!(
+        gate.submit(&ManualSubmission::to(&ability_offer, copy_id)),
+        SubmitOutcome::Accepted { .. }
+    ));
+
+    let target_offer = wait_for(&|offer| {
+        offer.actor == beneficiary
+            && offer.prompt.contains("replace which infantry in the active system")
+    });
+    assert_eq!(
+        target_offer.context.as_ref().and_then(|context| context["subtype"].as_str()),
+        Some("leader_l1z1xagent_copy_planet")
+    );
+    assert_eq!(target_offer.options.len(), 2);
+    assert!(target_offer.options.iter().all(|option| {
+        option.label.starts_with("replace infantry on ") && option.label.ends_with(" with a mech")
+    }));
+    let chosen_planet_id = second_planet.to_string();
+    let chosen = target_offer
+        .options
+        .iter()
+        .find(|option| option.id == chosen_planet_id)
+        .expect("the offer preserves the second planet ID")
+        .id
+        .clone();
+    assert!(matches!(
+        gate.submit(&ManualSubmission::to(&target_offer, chosen)),
+        SubmitOutcome::Accepted { .. }
+    ));
+
+    let (state, result) = callback.join().expect("timing callback worker completes");
+    result.expect("the engine settles the submitted planet through Table::ask");
+    let board = state.board.get(&system).expect("callback system remains on board");
+    let first_units = board.planet_units.get(&first_planet).expect("first planet units");
+    let second_units = board.planet_units.get(&second_planet).expect("second planet units");
+    assert!(first_units.iter().any(|unit| {
+        unit.owner == beneficiary && unit.type_id.as_str() == "infantry"
+    }));
+    assert!(second_units.iter().any(|unit| {
+        unit.owner == beneficiary && unit.type_id.as_str() == sol_mech
+    }));
+    assert_eq!(
+        state.player(&borrower).expect("borrower remains seated").leaders
+            [&LeaderId::new("yssarilagent")],
+        LeaderStatus::Exhausted
+    );
+    assert_eq!(
+        state.player(&source).expect("source remains seated").leaders
+            [&LeaderId::new("l1z1xagent")],
+        LeaderStatus::Exhausted,
+        "copying leaves the source status unchanged"
+    );
+}
+
+/// A failed assertion must release a callback parked in a manual ask before the test exits.
+struct ShutdownGateOnDrop(std::sync::Arc<ti4_replayer::live::Gate>);
+
+impl Drop for ShutdownGateOnDrop {
+    fn drop(&mut self) {
+        self.0.shutdown();
+    }
 }

@@ -36,6 +36,7 @@ fn session() -> ReviewSession {
         table: ProfileTable::Learner,
         temperature: 0.5,
         diplomacy: false,
+        lineup: None,
     };
     LiveReview::start(&config)
         .expect("the committed example inputs start a review")
@@ -206,6 +207,7 @@ fn the_painter_and_the_frame_agree_about_the_fracture() {
         table: ProfileTable::Learner,
         temperature: 0.5,
         diplomacy: false,
+        lineup: None,
     };
     let mut live = LiveReview::start(&config).expect("the review starts");
     let frames = live.session.frames.len();

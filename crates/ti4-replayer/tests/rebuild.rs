@@ -51,6 +51,7 @@ fn config() -> SimulationConfig {
         table: ProfileTable::Learner,
         temperature: TEMPERATURE,
         diplomacy: false,
+        lineup: None,
     };
     for path in [&config.checkpoint, &config.map_pool] {
         assert!(

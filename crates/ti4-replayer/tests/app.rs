@@ -206,6 +206,7 @@ fn inputs() -> ReplayInputs {
         profile_table: "learner".to_owned(),
         temperature: 0.5,
         diplomacy: false,
+        lineup: None,
     }
 }
 

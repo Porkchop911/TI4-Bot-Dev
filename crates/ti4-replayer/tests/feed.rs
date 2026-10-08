@@ -42,6 +42,7 @@ fn config() -> SimulationConfig {
         table: ti4_review::ProfileTable::Learner,
         temperature: 0.5,
         diplomacy: false,
+        lineup: None,
     }
 }
 

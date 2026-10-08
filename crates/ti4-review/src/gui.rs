@@ -342,6 +342,7 @@ impl ReviewApp {
             table: self.table,
             temperature: self.temperature,
             diplomacy: self.diplomacy,
+            lineup: None,
         };
         match LiveReview::start(&config) {
             Ok(live) => {

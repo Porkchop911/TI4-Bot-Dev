@@ -75,6 +75,9 @@ fn simulate(args: &[String]) -> Result<(), String> {
     };
     let count = parse_flag::<usize>(args, "--count")?.unwrap_or(1);
     let diplomacy = args.iter().any(|argument| argument == "--diplomacy");
+    // Six comma-separated factions to rotate instead of the standard lineup.
+    let lineup: Option<Vec<String>> =
+        flag(args, "--lineup").map(|list| list.split(',').map(|f| f.trim().to_owned()).collect());
     let config = SimulationConfig {
         checkpoint: PathBuf::from(checkpoint),
         map_pool: PathBuf::from(map_pool),
@@ -83,6 +86,7 @@ fn simulate(args: &[String]) -> Result<(), String> {
         table,
         temperature,
         diplomacy,
+        lineup,
     };
     let mut review = LiveReview::start(&config).map_err(|error| error.to_string())?;
     let report = match flag(args, "--until").as_deref() {

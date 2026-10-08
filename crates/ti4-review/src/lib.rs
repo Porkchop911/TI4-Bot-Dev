@@ -60,6 +60,8 @@ pub mod diplomacy;
 #[cfg(feature = "simulate")]
 pub mod gui;
 pub mod panels;
+#[cfg(feature = "simulate")]
+pub mod power;
 pub mod view;
 
 /// The `ti4-engine` commit this reviewer build was compiled against. Recorded in every session and
@@ -134,6 +136,10 @@ pub struct SimulationConfig {
     pub temperature: f64,
     /// Play with structured diplomacy (deals, promises, signals, relationships) switched on.
     pub diplomacy: bool,
+    /// Six factions to seat instead of the standard lineup, rotated across the seats exactly as the
+    /// standard six are. `None` is the standard lineup. Factions outside the trained six are still
+    /// being implemented in the engine and are played by an untrained policy row.
+    pub lineup: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -169,6 +175,9 @@ pub struct SessionManifest {
     /// existed were not.
     #[serde(default)]
     pub diplomacy: bool,
+    /// The six factions this table rotated, when it was not the standard lineup.
+    #[serde(default)]
+    pub lineup: Option<Vec<String>>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -372,11 +381,15 @@ impl ReviewSession {
         }
         let mut session_factions = self.manifest.factions.clone();
         session_factions.sort();
-        let mut standard_factions = FACTIONS.map(str::to_owned).to_vec();
-        standard_factions.sort();
-        if session_factions != standard_factions {
+        let mut expected = self
+            .manifest
+            .lineup
+            .clone()
+            .unwrap_or_else(|| FACTIONS.map(str::to_owned).to_vec());
+        expected.sort();
+        if session_factions != expected {
             return Err(ReviewError::Invalid(
-                "session does not carry the standard six-faction lineup".to_owned(),
+                "session does not carry the lineup its manifest names".to_owned(),
             ));
         }
         if !self.manifest.temperature.is_finite() || self.manifest.temperature <= 0.0 {
@@ -881,7 +894,26 @@ impl LiveReview {
         let players: Vec<PlayerId> = (0..FACTIONS.len())
             .map(|index| PlayerId::new(format!("seat{index}")))
             .collect();
-        let faction_roster = FACTIONS.map(FactionId::new);
+        let faction_roster: Vec<FactionId> = match &config.lineup {
+            None => FACTIONS.map(FactionId::new).to_vec(),
+            Some(lineup) => {
+                let mut distinct = lineup.clone();
+                distinct.sort();
+                distinct.dedup();
+                if lineup.len() != FACTIONS.len() || distinct.len() != lineup.len() {
+                    return Err(ReviewError::Invalid(
+                        "a lineup names six different factions".to_owned(),
+                    ));
+                }
+                if let Some(unknown) = lineup
+                    .iter()
+                    .find(|faction| ti4_content::factions::get(content, faction).is_none())
+                {
+                    return Err(ReviewError::Invalid(format!("unknown faction {unknown}")));
+                }
+                lineup.iter().map(FactionId::new).collect()
+            }
+        };
         let factions: BTreeMap<PlayerId, FactionId> = players
             .iter()
             .enumerate()
@@ -1001,6 +1033,7 @@ impl LiveReview {
             content_sha256: Some(content_sha256),
             source_scope: Some("FULL (base + PoK + codices + Thunder's Edge)".to_owned()),
             diplomacy: config.diplomacy,
+            lineup: config.lineup.clone(),
         };
         let initial = ReviewFrame {
             index: 0,
@@ -2583,6 +2616,7 @@ mod tests {
                 content_sha256: None,
                 source_scope: None,
                 diplomacy: false,
+                lineup: None,
             },
             board: vec![],
             planet_catalog: vec![],
@@ -2799,6 +2833,7 @@ mod tests {
             table: ProfileTable::Learner,
             temperature: 0.0,
             diplomacy: false,
+            lineup: None,
         };
 
         let error = match LiveReview::start(&config) {

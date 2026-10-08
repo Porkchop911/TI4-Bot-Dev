@@ -76,6 +76,7 @@ fn inputs() -> ReplayInputs {
         profile_table: "learner".to_owned(),
         temperature: 0.5,
         diplomacy: false,
+        lineup: None,
     }
 }
 
@@ -845,6 +846,7 @@ fn an_import_hashes_what_it_is_given() {
         table: ti4_review::ProfileTable::Learner,
         temperature: 0.5,
         diplomacy: false,
+        lineup: None,
     };
     // A session this build wrote, through R01's own save path: the import contract is about the
     // files, so the session under import has to be a real one.
@@ -943,6 +945,7 @@ fn importing_something_that_is_not_a_session_is_refused() {
         table: ti4_review::ProfileTable::Learner,
         temperature: 0.5,
         diplomacy: false,
+        lineup: None,
     };
     let error = ReplayerProject::import(&session, &config, &root, None, None)
         .expect_err("junk cannot be imported");
@@ -1006,6 +1009,7 @@ fn persisted_branch(
         table: ti4_review::ProfileTable::Learner,
         temperature: 0.5,
         diplomacy: false,
+        lineup: None,
     };
     let branch =
         LiveBranch::start(config.clone(), SeatControl::all_auto()).expect("spawn a branch");
@@ -1241,6 +1245,7 @@ fn record_a_game(temp: &TempDir, steps: usize) -> (PathBuf, Vec<ReplayRecord>) {
         table: ti4_review::ProfileTable::Learner,
         temperature: 0.5,
         diplomacy: false,
+        lineup: None,
     };
     let branch =
         LiveBranch::start(config.clone(), SeatControl::all_auto()).expect("spawn a branch");
@@ -1287,6 +1292,7 @@ fn a_live_table_is_a_project_before_it_is_a_recording() {
         table: ti4_review::ProfileTable::Learner,
         temperature: 0.5,
         diplomacy: false,
+        lineup: None,
     };
     // The reviewer's own opening session supplies the seating and the content digest, which is all of
     // it the project needs from a game that has not advanced a step.
