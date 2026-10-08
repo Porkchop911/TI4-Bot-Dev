@@ -183,7 +183,9 @@ pub fn seeded_faction_assignments(
     for candidate in candidates {
         // Nocturne: "This faction cannot be chosen during setup."
         if crate::factions::obsidian::NOT_CHOOSABLE_DURING_SETUP.contains(candidate) {
-            return Err(FactionAssignmentError::NotChoosable((*candidate).to_owned()));
+            return Err(FactionAssignmentError::NotChoosable(
+                (*candidate).to_owned(),
+            ));
         }
         if !seen_candidates.insert(*candidate) {
             return Err(FactionAssignmentError::DuplicateCandidate(
@@ -211,6 +213,148 @@ pub fn seeded_faction_assignments(
         .zip(shuffled)
         .map(|(player, alias)| (player.clone(), FactionId::new(alias)))
         .collect())
+}
+
+/// Which factions a table draws from. An explicit opt-in: [`FactionRoster::InScope`] is the default
+/// everywhere and reproduces [`seat_in_scope`] exactly, so no existing rollout, dataset or
+/// checkpoint changes unless a caller names [`FactionRoster::Wide`] (BF-20/BF-21).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FactionRoster {
+    /// The six [`IN_SCOPE_FACTIONS`], seated in order (the historical behaviour).
+    #[default]
+    InScope,
+    /// Every choosable implemented faction ([`wide_roster`]), drawn by seed ([`seat_wide`]).
+    Wide,
+}
+
+/// The roster entry that stands for the Council Keleres in [`wide_roster`]. The variant (one of
+/// [`crate::factions::keleres::VARIANTS`]) is decided by [`seat_wide`].
+pub const KELERES_FAMILY: &str = "keleres";
+
+/// RNG domain that shuffles the wide roster. Not one of the map/dice/deck domains.
+const WIDE_ROSTER_DOMAIN: &str = "seating:wide-roster:v1";
+/// RNG domain that picks a Keleres variant among the Tribuni-legal ones.
+const KELERES_VARIANT_DOMAIN: &str = "seating:keleres-variant:v1";
+
+/// The wide roster under `sources`, in canonical order: the six [`IN_SCOPE_FACTIONS`], then every
+/// engine faction module in [`crate::factions::MODULES`] order.
+///
+/// Excluded: factions that cannot be chosen at setup (the Obsidian, Nocturne) and factions the
+/// `sources` do not include (Thunder's Edge factions need `thunders_edge`, Prophecy of Kings
+/// factions need `pok`). The three Keleres variants collapse into one [`KELERES_FAMILY`] entry at
+/// the position of the first variant: a table has at most one Council Keleres.
+#[must_use]
+pub fn wide_roster(content: &ContentStore, sources: SourceSet) -> Vec<&'static str> {
+    let catalogue = factions::catalogue(content, sources);
+    let mut roster: Vec<&'static str> = Vec::new();
+    let candidates = IN_SCOPE_FACTIONS
+        .iter()
+        .copied()
+        .chain(crate::factions::MODULES.iter().map(|module| module.alias));
+    for alias in candidates {
+        if crate::factions::obsidian::NOT_CHOOSABLE_DURING_SETUP.contains(&alias)
+            || !catalogue.contains_key(alias)
+        {
+            continue;
+        }
+        let entry = if crate::factions::keleres::is_keleres_faction(alias) {
+            KELERES_FAMILY
+        } else {
+            alias
+        };
+        if !roster.contains(&entry) {
+            roster.push(entry);
+        }
+    }
+    roster
+}
+
+/// Deterministic faction draw from the [`wide_roster`] for a table, by seed.
+///
+/// * The roster is shuffled on the dedicated `seating:wide-roster:v1` stream of a fresh
+///   [`crate::rng::GameRng`], so no map, dice or deck stream moves; players take the first entries
+///   in input order. Same inputs and seed give the same map.
+/// * Every faction is distinct. A table larger than the roster is refused with
+///   [`FactionAssignmentError::InsufficientCandidates`]; factions are never reused.
+/// * The Council Keleres: when its entry is drawn the variant is picked among the Tribuni-legal
+///   variants ([`tribuni_variants_available`] over the factions already seated, which the engine's
+///   own rule uses), on the separate `seating:keleres-variant:v1` stream. If none is legal the
+///   entry is skipped, and a base faction (Mentak, Xxcha, Argent) a drawn variant took is skipped
+///   when it comes up, so the table always passes [`validate_tribuni`].
+///
+/// # Errors
+/// Duplicate players, or too few seatable factions.
+pub fn seat_wide(
+    content: &ContentStore,
+    players: &[PlayerId],
+    sources: SourceSet,
+    seed: u64,
+) -> Result<BTreeMap<PlayerId, FactionId>, FactionAssignmentError> {
+    let mut seen_players = BTreeSet::new();
+    for player in players {
+        if !seen_players.insert(player.to_string()) {
+            return Err(FactionAssignmentError::DuplicatePlayer(player.to_string()));
+        }
+    }
+    let roster = wide_roster(content, sources);
+    let catalogue = factions::catalogue(content, sources);
+    let mut rng = crate::rng::GameRng::new(seed);
+    let shuffled = rng.shuffled(WIDE_ROSTER_DOMAIN, &roster);
+
+    let mut picked: Vec<&'static str> = Vec::with_capacity(players.len());
+    let mut taken_base: Option<&'static str> = None;
+    for entry in shuffled {
+        if picked.len() == players.len() {
+            break;
+        }
+        if entry == KELERES_FAMILY {
+            let available: Vec<&'static str> = tribuni_variants_available(picked.iter().copied())
+                .into_iter()
+                .filter(|variant| catalogue.contains_key(variant))
+                .collect();
+            if available.is_empty() {
+                continue;
+            }
+            let draw = rng.die(KELERES_VARIANT_DOMAIN, available.len() as u32) as usize;
+            let variant = available[draw - 1];
+            taken_base = tribuni_base(variant);
+            picked.push(variant);
+        } else if Some(entry) == taken_base {
+            continue;
+        } else {
+            picked.push(entry);
+        }
+    }
+    if picked.len() < players.len() {
+        return Err(FactionAssignmentError::InsufficientCandidates {
+            players: players.len(),
+            candidates: picked.len(),
+        });
+    }
+    debug_assert!(validate_tribuni(picked.iter().copied()).is_ok());
+    Ok(players
+        .iter()
+        .zip(picked)
+        .map(|(player, alias)| (player.clone(), FactionId::new(alias)))
+        .collect())
+}
+
+/// Faction assignments for a table under `roster`. [`FactionRoster::InScope`] ignores `seed` and
+/// is exactly [`seat_in_scope`]; [`FactionRoster::Wide`] is [`seat_wide`].
+///
+/// # Errors
+/// Only for [`FactionRoster::Wide`]; see [`seat_wide`].
+pub fn seat_roster(
+    roster: FactionRoster,
+    content: &ContentStore,
+    players: &[PlayerId],
+    sources: SourceSet,
+    seed: u64,
+) -> Result<BTreeMap<PlayerId, FactionId>, FactionAssignmentError> {
+    match roster {
+        FactionRoster::InScope => Ok(seat_in_scope(players)),
+        FactionRoster::Wide => seat_wide(content, players, sources, seed),
+    }
 }
 
 /// Home system tile ids for a player-to-faction assignment, in assignment order.
@@ -262,7 +406,10 @@ pub fn tribuni_variants_available<'a>(
         .into_iter()
         .filter(|variant| {
             let base = tribuni_base(variant);
-            !others.clone().into_iter().any(|played| Some(played) == base)
+            !others
+                .clone()
+                .into_iter()
+                .any(|played| Some(played) == base)
         })
         .collect()
 }
@@ -454,7 +601,12 @@ pub fn build_board(
     filler: &[&str],
     sources: SourceSet,
 ) -> Result<Galaxy, SeatingError> {
-    validate_tribuni(assignments.values().map(FactionId::as_str).collect::<Vec<_>>())?;
+    validate_tribuni(
+        assignments
+            .values()
+            .map(FactionId::as_str)
+            .collect::<Vec<_>>(),
+    )?;
     let homes = home_systems(content, assignments)?;
     let outer = RING_SIZES[3];
     // Evenly spaced: with six homes on an eighteen-tile ring that is every third slot. With
@@ -1558,5 +1710,246 @@ mod tests {
                 candidates: 1,
             })
         );
+    }
+
+    // -- wide roster (BF-20 / BF-21) ----------------------------------------------------
+
+    use ti4_model::content_types::FULL;
+
+    fn wide_players() -> Vec<PlayerId> {
+        ["a", "b", "c", "d", "e", "f"]
+            .iter()
+            .map(|name| PlayerId::new(*name))
+            .collect()
+    }
+
+    #[test]
+    fn the_default_roster_is_the_in_scope_six_and_ignores_the_seed() {
+        assert_eq!(FactionRoster::default(), FactionRoster::InScope);
+        let players = wide_players();
+        for seed in [0, 1, 7, 12345] {
+            assert_eq!(
+                seat_roster(FactionRoster::InScope, content(), &players, FULL, seed).unwrap(),
+                seat_in_scope(&players)
+            );
+        }
+    }
+
+    #[test]
+    fn the_wide_roster_is_exactly_this_list() {
+        // A list, asserted as a list: widening or narrowing the roster is a deliberate edit here.
+        let full = wide_roster(content(), FULL);
+        assert_eq!(
+            full,
+            [
+                "sol",
+                "hacan",
+                "letnev",
+                "xxcha",
+                "jolnar",
+                "l1z1x",
+                "arborec",
+                "argent",
+                "bastion",
+                "cabal",
+                "crimson",
+                "deepwrought",
+                "empyrean",
+                "firmament",
+                "ghost",
+                "keleres",
+                "mahact",
+                "mentak",
+                "muaat",
+                "naalu",
+                "naaz",
+                "nekro",
+                "nomad",
+                "ralnel",
+                "saar",
+                "sardakk",
+                "titans",
+                "winnu",
+                "yin",
+                "yssaril",
+            ]
+        );
+        assert!(
+            !full.contains(&"obsidian"),
+            "Nocturne: not choosable at setup"
+        );
+        // Thunder's Edge factions only when the sources include thunders_edge.
+        let pok = wide_roster(content(), POK);
+        let te = ["bastion", "crimson", "deepwrought", "firmament", "ralnel"];
+        for alias in te {
+            assert!(full.contains(&alias));
+            assert!(!pok.contains(&alias), "{alias} needs thunders_edge");
+        }
+        assert_eq!(pok.len(), full.len() - te.len());
+        // Every module faction is either on the roster, a Keleres variant, or the Obsidian.
+        for module in crate::factions::MODULES {
+            let alias = module.alias;
+            assert!(
+                full.contains(&alias)
+                    || crate::factions::keleres::is_keleres_faction(alias)
+                    || alias == "obsidian",
+                "{alias} is neither on the wide roster nor deliberately excluded"
+            );
+        }
+    }
+
+    #[test]
+    fn wide_draw_is_unique_replays_and_varies_by_seed() {
+        let players = wide_players();
+        let first = seat_wide(content(), &players, FULL, 42).unwrap();
+        assert_eq!(first, seat_wide(content(), &players, FULL, 42).unwrap());
+        assert_eq!(first.len(), 6);
+        let distinct: BTreeSet<&str> = first.values().map(FactionId::as_str).collect();
+        assert_eq!(distinct.len(), 6);
+        let draws: BTreeSet<Vec<String>> = (0..20)
+            .map(|seed| {
+                seat_wide(content(), &players, FULL, seed)
+                    .unwrap()
+                    .values()
+                    .map(ToString::to_string)
+                    .collect()
+            })
+            .collect();
+        assert!(
+            draws.len() > 15,
+            "seeds barely vary the draw: {}",
+            draws.len()
+        );
+        // Fixed fixture: a change to the stream or the walk is a deliberate edit.
+        let fixture: Vec<String> = seat_wide(content(), &players, FULL, 0)
+            .unwrap()
+            .values()
+            .map(ToString::to_string)
+            .collect();
+        assert_eq!(
+            fixture,
+            [
+                "deepwrought",
+                "letnev",
+                "ghost",
+                "mentak",
+                "ralnel",
+                "arborec"
+            ]
+        );
+    }
+
+    #[test]
+    fn wide_draw_uses_its_own_streams() {
+        for domain in [WIDE_ROSTER_DOMAIN, KELERES_VARIANT_DOMAIN] {
+            for other in [
+                crate::rng::domain::GALAXY,
+                crate::rng::domain::MAP,
+                crate::rng::domain::EXPLORATION,
+                "seating:faction-assignment:v1",
+            ] {
+                assert_ne!(
+                    crate::rng::GameRng::derive_seed(9, domain),
+                    crate::rng::GameRng::derive_seed(9, other)
+                );
+            }
+        }
+        // Drawing never touches the map filler for the same seed.
+        let before = map_filler(content(), 30, FULL, 5);
+        let _ = seat_wide(content(), &wide_players(), FULL, 5).unwrap();
+        assert_eq!(before, map_filler(content(), 30, FULL, 5));
+    }
+
+    #[test]
+    fn oversized_tables_are_refused_never_wrapped() {
+        let roster = wide_roster(content(), FULL);
+        let many: Vec<PlayerId> = (0..roster.len() + 1)
+            .map(|index| PlayerId::new(format!("p{index}")))
+            .collect();
+        assert!(matches!(
+            seat_wide(content(), &many, FULL, 1),
+            Err(FactionAssignmentError::InsufficientCandidates { .. })
+        ));
+        // Duplicate players are refused as in the explicit helper.
+        let twice = [PlayerId::new("a"), PlayerId::new("a")];
+        assert_eq!(
+            seat_wide(content(), &twice, FULL, 1),
+            Err(FactionAssignmentError::DuplicatePlayer("a".to_owned()))
+        );
+        // A table as large as the roster is seatable only when the Tribuni allows it: here the
+        // roster has all three Keleres bases, so the Keleres is skipped and one seat is short.
+        let exact: Vec<PlayerId> = (0..roster.len())
+            .map(|index| PlayerId::new(format!("p{index}")))
+            .collect();
+        assert!(seat_wide(content(), &exact, FULL, 1).is_err());
+    }
+
+    #[test]
+    fn keleres_is_at_most_one_seat_with_an_unplayed_base() {
+        let players = wide_players();
+        let mut variants = BTreeSet::new();
+        for seed in 0..400 {
+            let seats = seat_wide(content(), &players, FULL, seed).unwrap();
+            let held: Vec<&str> = seats.values().map(FactionId::as_str).collect();
+            validate_tribuni(held.iter().copied()).unwrap();
+            assert!(
+                !held.contains(&KELERES_FAMILY),
+                "the family is never seated"
+            );
+            for alias in held {
+                if crate::factions::keleres::is_keleres_faction(alias) {
+                    variants.insert(alias.to_owned());
+                }
+            }
+        }
+        assert_eq!(variants.len(), 3, "all three variants appear: {variants:?}");
+        // A table of Keleres-adjacent bases only: variant must avoid every played base.
+        let tight: Vec<PlayerId> = (0..wide_roster(content(), FULL).len() - 1)
+            .map(|index| PlayerId::new(format!("p{index}")))
+            .collect();
+        for seed in 0..20 {
+            if let Ok(seats) = seat_wide(content(), &tight, FULL, seed) {
+                validate_tribuni(seats.values().map(FactionId::as_str)).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn every_wide_faction_deploys_through_seating_with_its_own_home() {
+        // Crimson (Sorrow -> tile 118) and the Firmament (tile 96a) included.
+        let roster = wide_roster(content(), FULL);
+        for alias in roster {
+            let alias = if alias == KELERES_FAMILY {
+                "keleresm"
+            } else {
+                alias
+            };
+            let mut state = start_game(content(), &[PlayerId::new("a")], FULL, None).unwrap();
+            deploy(
+                &mut state,
+                content(),
+                &PlayerId::new("a"),
+                &FactionId::new(alias),
+                FULL,
+            )
+            .unwrap_or_else(|error| panic!("{alias}: {error}"));
+            let seat = state.player(&PlayerId::new("a")).unwrap();
+            assert!(seat.home_system.is_some(), "{alias} has a home");
+            if alias == "crimson" {
+                assert_eq!(seat.home_system, Some(SystemId::new(CRIMSON_HOME)));
+            }
+        }
+    }
+
+    #[test]
+    fn wide_tables_build_boards_for_a_sample_of_seeds() {
+        let players = wide_players();
+        let filler = neutral_systems(content(), 30, FULL);
+        let refs: Vec<&str> = filler.iter().map(SystemId::as_str).collect();
+        for seed in 0..50 {
+            let seats = seat_wide(content(), &players, FULL, seed).unwrap();
+            build_board(content(), &seats, &refs, FULL)
+                .unwrap_or_else(|error| panic!("seed {seed}: {error}"));
+        }
     }
 }

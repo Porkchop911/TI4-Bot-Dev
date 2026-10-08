@@ -119,6 +119,28 @@ impl Table {
             sources,
         }
     }
+
+    /// Seat `players` from an explicit [`FactionRoster`]. [`FactionRoster::InScope`] is exactly
+    /// [`Table::seated`]; [`FactionRoster::Wide`] draws distinct factions from the wide roster by
+    /// `seed` (BF-21), on a stream separate from the map and dice.
+    ///
+    /// # Errors
+    /// The draw's [`ti4_engine::seating::FactionAssignmentError`], as text.
+    pub fn seated_with_roster(
+        content: &ContentStore,
+        players: &[PlayerId],
+        sources: SourceSet,
+        roster: ti4_engine::seating::FactionRoster,
+        seed: u64,
+    ) -> Result<Self, String> {
+        let factions = ti4_engine::seating::seat_roster(roster, content, players, sources, seed)
+            .map_err(|error| error.to_string())?;
+        Ok(Self {
+            players: players.to_vec(),
+            factions,
+            sources,
+        })
+    }
 }
 
 /// Build a seated game: a board, factions, and starting fleets on it.
