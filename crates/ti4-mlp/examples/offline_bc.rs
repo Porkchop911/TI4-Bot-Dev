@@ -555,23 +555,78 @@ fn read_record(input: &mut impl Read) -> Result<Option<Packed>, String> {
     }))
 }
 
-fn finish_file(
-    encoder: zstd::Encoder<'static, BufWriter<std::fs::File>>,
-    path: &Path,
-    decisions: u64,
-) -> Result<FileInfo, String> {
-    let mut w = encoder.finish().map_err(|e| e.to_string())?;
-    w.flush().map_err(|e| e.to_string())?;
-    Ok(FileInfo {
-        file: path
-            .file_name()
-            .and_then(|x| x.to_str())
-            .ok_or("bad output name")?
-            .to_owned(),
-        decisions,
-        bytes: std::fs::metadata(path).map_err(|e| e.to_string())?.len(),
-        sha256: digest(path)?,
-    })
+/// How many records live in one zstd frame of a packed file. Rotating to a fresh frame every
+/// `FRAME_RECORDS` records (instead of one continuous stream for the whole file) is what lets
+/// `load_samples` decode a packed file on multiple threads instead of one: each frame is
+/// independently decodable, so many can be decompressed in parallel and their results merged
+/// afterward. A record is never split across the boundary.
+const FRAME_RECORDS: u64 = 65_536;
+
+/// Writes `Packed` records to disk as a sequence of independent zstd frames rather than one
+/// continuous stream, purely so the reader can later parallelize decode. Byte-for-byte, the
+/// records themselves are identical to the single-frame format; only the frame boundaries differ.
+struct FramedWriter {
+    encoder: Option<zstd::Encoder<'static, BufWriter<std::fs::File>>>,
+    in_frame: u64,
+    total: u64,
+}
+
+impl FramedWriter {
+    fn create(path: &Path) -> Result<Self, String> {
+        let mut encoder = zstd::Encoder::new(
+            BufWriter::new(std::fs::File::create(path).map_err(|e| e.to_string())?),
+            3,
+        )
+        .map_err(|e| e.to_string())?;
+        put(&mut encoder, MAGIC)?;
+        Ok(Self {
+            encoder: Some(encoder),
+            in_frame: 0,
+            total: 0,
+        })
+    }
+
+    fn write_record(&mut self, p: &Packed) -> Result<(), String> {
+        write_record(
+            self.encoder
+                .as_mut()
+                .expect("encoder present between writes"),
+            p,
+        )?;
+        self.in_frame += 1;
+        self.total += 1;
+        if self.in_frame >= FRAME_RECORDS {
+            let inner = self
+                .encoder
+                .take()
+                .expect("encoder present between writes")
+                .finish()
+                .map_err(|e| e.to_string())?;
+            self.encoder = Some(zstd::Encoder::new(inner, 3).map_err(|e| e.to_string())?);
+            self.in_frame = 0;
+        }
+        Ok(())
+    }
+
+    fn finish(mut self, path: &Path) -> Result<FileInfo, String> {
+        let mut w = self
+            .encoder
+            .take()
+            .expect("encoder present at finish")
+            .finish()
+            .map_err(|e| e.to_string())?;
+        w.flush().map_err(|e| e.to_string())?;
+        Ok(FileInfo {
+            file: path
+                .file_name()
+                .and_then(|x| x.to_str())
+                .ok_or("bad output name")?
+                .to_owned(),
+            decisions: self.total,
+            bytes: std::fs::metadata(path).map_err(|e| e.to_string())?.len(),
+            sha256: digest(path)?,
+        })
+    }
 }
 
 fn compile_decision(
@@ -1170,19 +1225,8 @@ fn pack() -> Result<(), String> {
     std::fs::create_dir_all(&staging).map_err(|e| e.to_string())?;
     let train_path = staging.join("train.ti4bc.zst");
     let valid_path = staging.join("validation.ti4bc.zst");
-    let mut train = zstd::Encoder::new(
-        BufWriter::new(std::fs::File::create(&train_path).map_err(|e| e.to_string())?),
-        3,
-    )
-    .map_err(|e| e.to_string())?;
-    let mut valid = zstd::Encoder::new(
-        BufWriter::new(std::fs::File::create(&valid_path).map_err(|e| e.to_string())?),
-        3,
-    )
-    .map_err(|e| e.to_string())?;
-    put(&mut train, MAGIC)?;
-    put(&mut valid, MAGIC)?;
-    let mut counts = [0_u64; 2];
+    let mut train = FramedWriter::create(&train_path)?;
+    let mut valid = FramedWriter::create(&valid_path)?;
     let mut buckets = BTreeMap::new();
     let mut policies = BTreeMap::new();
     let batch_size = num("--parse-batch", 4_096_usize);
@@ -1220,11 +1264,10 @@ fn pack() -> Result<(), String> {
                 *buckets.entry(p.bucket.name().to_owned()).or_insert(0) += 1;
                 let split = usize::from(p.game % 100 < u64::from(validation_percent));
                 if split == 0 {
-                    write_record(&mut train, &p)?;
+                    train.write_record(&p)?;
                 } else {
-                    write_record(&mut valid, &p)?;
+                    valid.write_record(&p)?;
                 }
-                counts[split] += 1;
             }
             batch = Vec::with_capacity(batch_size);
             parsed += batch_size as u64;
@@ -1239,15 +1282,14 @@ fn pack() -> Result<(), String> {
             *buckets.entry(p.bucket.name().to_owned()).or_insert(0) += 1;
             let split = usize::from(p.game % 100 < u64::from(validation_percent));
             if split == 0 {
-                write_record(&mut train, &p)?;
+                train.write_record(&p)?;
             } else {
-                write_record(&mut valid, &p)?;
+                valid.write_record(&p)?;
             }
-            counts[split] += 1;
         }
     }
-    let train = finish_file(train, &train_path, counts[0])?;
-    let validation = finish_file(valid, &valid_path, counts[1])?;
+    let train = train.finish(&train_path)?;
+    let validation = valid.finish(&valid_path)?;
     let manifest = Manifest {
         schema: if diplomacy {
             PACKED_SCHEMA_V2
@@ -1304,22 +1346,65 @@ impl Reservoir {
         }
     }
 }
+/// Locate the independent zstd frames in a packed file: one or more frames written by
+/// `FramedWriter`, each holding a whole number of records with no gap between them, and no gap
+/// before the first. `MAGIC` is not a raw file prefix — `FramedWriter` writes it *through* the
+/// first frame's encoder, so it is the first 8 bytes of that frame's decompressed content, not of
+/// the file itself.
+fn packed_frame_ranges(bytes: &[u8]) -> Result<Vec<std::ops::Range<usize>>, String> {
+    let mut ranges = Vec::new();
+    let mut cursor = 0;
+    while cursor < bytes.len() {
+        let size = zstd::zstd_safe::find_frame_compressed_size(&bytes[cursor..])
+            .map_err(|_| format!("corrupt packed frame at offset {cursor}"))?;
+        let end = cursor
+            .checked_add(size)
+            .ok_or("packed frame size overflow")?;
+        if end > bytes.len() {
+            return Err(format!(
+                "packed frame at offset {cursor} extends past end of file"
+            ));
+        }
+        ranges.push(cursor..end);
+        cursor = end;
+    }
+    Ok(ranges)
+}
+
 fn load_samples(root: &Path, info: &FileInfo, max: usize) -> Result<Vec<Sample>, String> {
     let path = root.join(&info.file);
     if digest(&path)? != info.sha256 {
         return Err(format!("checksum mismatch: {}", path.display()));
     }
-    let f = std::fs::File::open(&path).map_err(|e| e.to_string())?;
-    let mut input = zstd::Decoder::new(BufReader::new(f)).map_err(|e| e.to_string())?;
-    if &exact::<8>(&mut input)? != MAGIC {
-        return Err("bad packed magic".into());
-    }
+    let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+    let ranges = packed_frame_ranges(&bytes)?;
+    // Each frame decodes and parses independently, so this is the parallel step; the reservoirs
+    // themselves stay single-threaded (fed sequentially below) since sampling order matters for
+    // Reservoir's running `seen` count, not for statistical correctness of which order frames
+    // arrive in.
+    let decoded: Result<Vec<Vec<Packed>>, String> = ranges
+        .par_iter()
+        .enumerate()
+        .map(|(index, range)| {
+            let plain = zstd::decode_all(std::io::Cursor::new(&bytes[range.clone()]))
+                .map_err(|error| format!("decoding packed frame: {error}"))?;
+            let mut cursor = std::io::Cursor::new(plain);
+            if index == 0 && &exact::<8>(&mut cursor)? != MAGIC {
+                return Err("bad packed magic".into());
+            }
+            let mut records = Vec::new();
+            while let Some(record) = read_record(&mut cursor)? {
+                records.push(record);
+            }
+            Ok(records)
+        })
+        .collect();
     let mut r = [
         Reservoir::new(max * 60 / 100, 0x51a0),
         Reservoir::new(max * 30 / 100, 0x57a0),
         Reservoir::new(max - max * 90 / 100, 0xc017),
     ];
-    while let Some(p) = read_record(&mut input)? {
+    for p in decoded?.into_iter().flatten() {
         match p.bucket {
             Bucket::Standout => r[0].add(p),
             Bucket::Strong => r[1].add(p),
@@ -1566,5 +1651,121 @@ mod tests {
                 .unwrap_err()
                 .contains("does not authenticate")
         );
+    }
+
+    fn synthetic_packed(key: u64) -> Packed {
+        Packed {
+            bucket: Bucket::Standout,
+            row: FactionRow::of(ti4_mlp::FACTION_ROSTER[0]).expect("known faction"),
+            head: 0,
+            policy: 1,
+            game: key,
+            key,
+            chosen: 0,
+            options: vec![SparseOption::default(), SparseOption::default()],
+        }
+    }
+
+    #[test]
+    fn framed_writer_round_trips_across_multiple_frames() {
+        let path =
+            std::env::temp_dir().join(format!("ti4-framed-{}.ti4bc.zst", std::process::id()));
+        let mut writer = FramedWriter::create(&path).expect("create");
+        let total = FRAME_RECORDS * 2 + 137;
+        for key in 0..total {
+            writer.write_record(&synthetic_packed(key)).expect("write");
+        }
+        writer.finish(&path).expect("finish");
+
+        let bytes = std::fs::read(&path).expect("read back");
+        let ranges = packed_frame_ranges(&bytes).expect("frame ranges");
+        assert!(
+            ranges.len() >= 3,
+            "expected at least 3 frames for {total} records, got {}",
+            ranges.len()
+        );
+
+        let mut keys: Vec<u64> = ranges
+            .iter()
+            .enumerate()
+            .flat_map(|(index, range)| {
+                let plain = zstd::decode_all(std::io::Cursor::new(&bytes[range.clone()]))
+                    .expect("decode frame");
+                let mut cursor = std::io::Cursor::new(plain);
+                if index == 0 {
+                    assert_eq!(&exact::<8>(&mut cursor).expect("magic"), MAGIC);
+                }
+                let mut records = Vec::new();
+                while let Some(record) = read_record(&mut cursor).expect("read record") {
+                    records.push(record.key);
+                }
+                records
+            })
+            .collect();
+        keys.sort_unstable();
+        let expected: Vec<u64> = (0..total).collect();
+        assert_eq!(
+            keys, expected,
+            "every written record must round-trip exactly once"
+        );
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn load_samples_reads_a_multi_frame_packed_file() {
+        let root = std::env::temp_dir().join(format!("ti4-loadsamples-{}", std::process::id()));
+        std::fs::create_dir_all(&root).expect("mkdir");
+        let path = root.join("train.ti4bc.zst");
+        let mut writer = FramedWriter::create(&path).expect("create");
+        let total = FRAME_RECORDS + 500;
+        for key in 0..total {
+            writer.write_record(&synthetic_packed(key)).expect("write");
+        }
+        let info = writer.finish(&path).expect("finish");
+        assert_eq!(info.decisions, total);
+
+        let samples = load_samples(&root, &info, 10_000).expect("load samples");
+        // All records are Bucket::Standout with a fixed seed reservoir target of max*60/100; every
+        // record was seen, so the reservoir fills exactly to its target since total > target.
+        assert_eq!(samples.len(), 10_000 * 60 / 100);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn load_samples_still_reads_the_old_single_frame_format() {
+        // Sets already packed before this change wrote MAGIC and every record through one
+        // continuous encoder, finished once at the very end: a single zstd frame for the whole
+        // file. New code must keep reading that correctly, not just its own multi-frame output.
+        let root = std::env::temp_dir().join(format!("ti4-loadsamples-old-{}", std::process::id()));
+        std::fs::create_dir_all(&root).expect("mkdir");
+        let path = root.join("train.ti4bc.zst");
+        let mut encoder = zstd::Encoder::new(
+            BufWriter::new(std::fs::File::create(&path).expect("create")),
+            3,
+        )
+        .expect("encoder");
+        put(&mut encoder, MAGIC).expect("magic");
+        let total = 500_u64;
+        for key in 0..total {
+            write_record(&mut encoder, &synthetic_packed(key)).expect("write");
+        }
+        let mut w = encoder.finish().expect("finish");
+        w.flush().expect("flush");
+        drop(w);
+
+        let info = FileInfo {
+            file: "train.ti4bc.zst".to_owned(),
+            decisions: total,
+            bytes: std::fs::metadata(&path).expect("meta").len(),
+            sha256: digest(&path).expect("digest"),
+        };
+        let samples = load_samples(&root, &info, 10_000).expect("load samples");
+        // total (500) is well under the reservoir's target (10_000 * 60 / 100), so it holds
+        // everything it saw rather than filling to target.
+        assert_eq!(samples.len() as u64, total);
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
