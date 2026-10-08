@@ -152,6 +152,16 @@ the faction heads populate with something."
   `faction_rows_masks_open_only_the_named_factions_rows`).
 - Smoke: 1 update, 6 games, CUDA: parameters moved (out/rows-smoke.log).
 - Run: scripts/pilot_newfactions_rows50.psd1 -> out/ppo-newfactions-rows-pilot50-20261008.
+- Result: 50 updates x 30 games (1,500 games, ~15 min), final **checkpoint-3144** (saved and
+  reloaded identically). Tensor diff against the start: trunk, input table, shared readout and
+  value head bit-identical; the six's rows unchanged; the readout residual, readout bias and
+  embedding rows of 26 factions changed and are now non-zero. The Obsidian's row stays zero: it
+  cannot be chosen at setup (it only appears when the Firmament flips), so it was never seated.
+  Last window (updates 41-50, 1,800 seat-games): table clearance 29.11%, mean VP 2.557; by
+  faction from 0% (Bastion, Crimson, Ghost, Naalu, Saar, Winnu) to 75% (Argent).
+- The launcher's own build step fails under Windows PowerShell 5.1 with `ErrorActionPreference
+  Stop` (cargo's stderr progress is raised as an error); the pilot ran with `Build = $false` on a
+  trainer built from the same commit.
 
 ## Open
 

@@ -14,7 +14,7 @@
     Diplomacy       = $true
     FactionRowsOnly = $true
     Background      = $true
-    Build           = $true
+    Build           = $false
     AllowConcurrent = $false
 
     Flags = @{
