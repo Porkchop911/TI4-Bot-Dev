@@ -668,6 +668,17 @@ impl Galaxy {
         Ok(())
     }
 
+    /// Systems in play beside the board, with no hex ([`Self::place_off_map`]): the Wormhole Nexus,
+    /// an off-map home system (the Creuss, the Crimson Rebellion). Sorted.
+    #[must_use]
+    pub fn off_map_systems(&self) -> Vec<&str> {
+        self.wormholes
+            .keys()
+            .filter(|id| !self.coords.contains_key(*id))
+            .map(String::as_str)
+            .collect()
+    }
+
     /// System ids on the board, in placement order (centre outwards).
     #[must_use]
     pub fn system_ids(&self) -> Vec<&str> {
@@ -1258,6 +1269,15 @@ mod tests {
         severed.suppress_wormholes_at("39");
         assert!(severed.wormhole_kinds("39").is_empty());
         assert!(!severed.wormhole_kinds("25").is_empty(), "only that system");
+    }
+
+    #[test]
+    fn off_map_systems_are_the_placed_systems_without_a_hex() {
+        let mut galaxy = Galaxy::build(store(), &["18", "21", "22", "17"], FULL, 1).unwrap();
+        assert!(galaxy.off_map_systems().is_empty());
+        galaxy.place_off_map(store(), "51", FULL).unwrap();
+        assert_eq!(galaxy.off_map_systems(), ["51"]);
+        assert!(!galaxy.system_ids().contains(&"51"));
     }
 
     #[test]

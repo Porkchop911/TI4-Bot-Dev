@@ -215,6 +215,74 @@ pub struct PlanetMeta {
     pub space_station: bool,
 }
 
+/// Every faction a table can seat: each one choosable at setup under the game's sources, with the
+/// three Council Keleres variants listed separately. Canonical order (the standard six first).
+#[must_use]
+pub fn seatable_factions(content: &ContentStore) -> Vec<&'static str> {
+    let mut out = Vec::new();
+    for entry in ti4_engine::seating::wide_roster(content, ti4_model::content_types::DEFAULT) {
+        if entry == ti4_engine::seating::KELERES_FAMILY {
+            out.extend(ti4_engine::factions::keleres::VARIANTS);
+        } else {
+            out.push(entry);
+        }
+    }
+    out
+}
+
+/// Whether `lineup` is a table the engine can seat: six different factions, each choosable at
+/// setup ([`seatable_factions`]: the Obsidian is not), and at most one Council Keleres whose
+/// Tribuni faction (Mentak, Xxcha or Argent) nobody else plays.
+///
+/// # Errors
+/// The first reason it is not, in words the replayer shows.
+pub fn check_lineup(content: &ContentStore, lineup: &[String]) -> std::result::Result<(), String> {
+    if lineup.len() != FACTIONS.len() {
+        return Err(format!(
+            "a lineup names {} factions, not {}",
+            FACTIONS.len(),
+            lineup.len()
+        ));
+    }
+    let mut distinct: Vec<&String> = lineup.iter().collect();
+    distinct.sort();
+    distinct.dedup();
+    if distinct.len() != lineup.len() {
+        return Err("a lineup names six different factions".to_owned());
+    }
+    let seatable = seatable_factions(content);
+    if let Some(faction) = lineup.iter().find(|f| !seatable.contains(&f.as_str())) {
+        return Err(if ti4_content::factions::get(content, faction).is_none() {
+            format!("unknown faction {faction}")
+        } else {
+            format!("{faction} cannot be chosen at setup")
+        });
+    }
+    ti4_engine::seating::validate_tribuni(lineup.iter().map(String::as_str))
+        .map_err(|error| error.to_string())
+}
+
+/// A seeded draw of six from [`seatable_factions`], exactly as a `--roster wide` trainer seats a
+/// table for `seed` (`ti4_engine::seating::seat_wide`).
+///
+/// # Errors
+/// When the roster cannot seat six.
+pub fn drawn_lineup(content: &ContentStore, seed: u64) -> std::result::Result<Vec<String>, String> {
+    let players: Vec<PlayerId> = (0..FACTIONS.len())
+        .map(|index| PlayerId::new(format!("seat{index}")))
+        .collect();
+    let drawn =
+        ti4_engine::seating::seat_wide(content, &players, ti4_model::content_types::DEFAULT, seed)
+            .map_err(|error| error.to_string())?;
+    Ok(players
+        .iter()
+        .filter_map(|player| drawn.get(player).map(ToString::to_string))
+        .collect())
+}
+
+/// [`BoardTile::special_area`] for a system in play with no hex of its own (an off-map home).
+pub const OFF_MAP_AREA: &str = "off-map";
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BoardTile {
     pub system: String,
@@ -222,7 +290,8 @@ pub struct BoardTile {
     pub q: i32,
     pub r: i32,
     pub hyperlane: bool,
-    /// `fracture` or `nexus` for systems drawn outside the ordinary galaxy geometry.
+    /// `fracture`, `nexus` or [`OFF_MAP_AREA`] for systems drawn outside the ordinary galaxy
+    /// geometry.
     #[serde(default)]
     pub special_area: Option<String>,
     /// Printed anomaly kinds retained from the content corpus for renderer-independent display.
@@ -897,20 +966,7 @@ impl LiveReview {
         let faction_roster: Vec<FactionId> = match &config.lineup {
             None => FACTIONS.map(FactionId::new).to_vec(),
             Some(lineup) => {
-                let mut distinct = lineup.clone();
-                distinct.sort();
-                distinct.dedup();
-                if lineup.len() != FACTIONS.len() || distinct.len() != lineup.len() {
-                    return Err(ReviewError::Invalid(
-                        "a lineup names six different factions".to_owned(),
-                    ));
-                }
-                if let Some(unknown) = lineup
-                    .iter()
-                    .find(|faction| ti4_content::factions::get(content, faction).is_none())
-                {
-                    return Err(ReviewError::Invalid(format!("unknown faction {unknown}")));
-                }
+                check_lineup(content, lineup).map_err(ReviewError::Invalid)?;
                 lineup.iter().map(FactionId::new).collect()
             }
         };
@@ -2072,6 +2128,26 @@ fn board_metadata(content: &ContentStore, galaxy: &ti4_content::galaxy::Galaxy) 
             }
         }
     }
+    // Every other system in play beside the board: an off-map home (the Creuss beside its Gate,
+    // the Crimson Rebellion), whatever the lineup. Found from the map rather than by faction, so a
+    // faction added later is drawn too. Its hex is the frame's to choose (`view::board_view` puts it
+    // beside the on-grid system its wormholes reach), so the stored coordinates are only an order.
+    for (index, id) in galaxy
+        .off_map_systems()
+        .into_iter()
+        .filter(|id| !matches!(*id, "82a" | "82b"))
+        .enumerate()
+    {
+        if let Some(tile) = system_metadata(
+            content,
+            id,
+            i32::try_from(index).unwrap_or(0),
+            0,
+            Some(OFF_MAP_AREA),
+        ) {
+            board.push(tile);
+        }
+    }
     board.extend(
         ti4_engine::fracture::systems(content, FULL)
             .into_iter()
@@ -2089,8 +2165,8 @@ fn board_metadata(content: &ContentStore, galaxy: &ti4_content::galaxy::Galaxy) 
     board
 }
 
-#[cfg(feature = "simulate")]
-fn system_metadata(
+/// One system's board metadata from the content corpus, at `(q, r)` in `special_area`.
+pub(crate) fn system_metadata(
     content: &ContentStore,
     id: &str,
     q: i32,
@@ -3181,6 +3257,40 @@ mod tests {
                 .filter(|tile| tile.special_area.as_deref() == Some("fracture"))
                 .count(),
             7
+        );
+    }
+
+    #[test]
+    fn metadata_lists_an_off_map_home_once_as_off_map() {
+        // The Creuss home sits beside the board, reached through the Gate. It used to be dropped
+        // from the session because it has no hex, so a Creuss table had no home on its board.
+        let content = ContentStore::embedded();
+        let mut galaxy = ti4_content::galaxy::Galaxy::placed(
+            content,
+            &[
+                ("18", ti4_model::hex::Hex::ORIGIN),
+                ("17", ti4_model::hex::Hex::new(0, -1)),
+            ],
+            FULL,
+        )
+        .unwrap();
+        galaxy
+            .place_off_map(content, "51", FULL)
+            .expect("Creuss home");
+        let board = board_metadata(content, &galaxy);
+        let homes: Vec<&BoardTile> = board.iter().filter(|tile| tile.system == "51").collect();
+        assert_eq!(homes.len(), 1);
+        assert_eq!(homes[0].special_area.as_deref(), Some(OFF_MAP_AREA));
+        assert!(
+            !homes[0].planets.is_empty(),
+            "the home's planets are carried"
+        );
+        assert!(
+            board
+                .iter()
+                .filter(|tile| tile.special_area.as_deref() == Some(OFF_MAP_AREA))
+                .all(|tile| !matches!(tile.system.as_str(), "82a" | "82b")),
+            "the Nexus keeps its own area"
         );
     }
 

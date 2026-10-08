@@ -316,3 +316,63 @@ fn a_wider_window_moves_the_board_not_the_meaning() {
         tiles.len()
     );
 }
+
+/// Every hex of a ring-`radius` board as plain tiles.
+fn ring_board(radius: i32) -> Vec<TileView> {
+    let mut tiles = Vec::new();
+    for q in -radius..=radius {
+        for r in (-radius).max(-q - radius)..=radius.min(-q + radius) {
+            tiles.push(TileView {
+                q,
+                r,
+                ..tile_like()
+            });
+        }
+    }
+    tiles
+}
+
+#[test]
+fn a_standard_board_is_fitted_exactly_as_before() {
+    for size in [ROOMY, Vec2::new(800.0, 600.0), Vec2::new(300.0, 200.0)] {
+        let rect = Rect::from_center_size(Pos2::ZERO, size);
+        let tiles = ring_board(3);
+        assert_eq!(
+            BoardLayout::fitted(rect, size, &tiles),
+            BoardLayout::new(rect, size, false),
+            "{size:?}"
+        );
+    }
+}
+
+#[test]
+fn a_tile_beside_the_board_shrinks_it_until_every_tile_fits() {
+    let rect = Rect::from_center_size(Pos2::ZERO, ROOMY);
+    let mut tiles = ring_board(3);
+    // An off-map home placed outside the Creuss Gate at the top of the ring.
+    tiles.push(TileView {
+        q: 0,
+        r: -4,
+        special_area: Some(ti4_review::OFF_MAP_AREA.to_owned()),
+        ..tile_like()
+    });
+    let layout = BoardLayout::fitted(rect, ROOMY, &tiles);
+    assert!(layout.scale < 1.0, "{}", layout.scale);
+    for tile in &tiles {
+        let point = view::tile_point(&layout, tile);
+        assert!(
+            point.y - layout.radius >= rect.top() - 0.5
+                && point.y + layout.radius <= rect.bottom() + 0.5,
+            "({}, {}) leaves the rect vertically",
+            tile.q,
+            tile.r
+        );
+        assert!(
+            point.x - layout.radius >= rect.left() - 0.5
+                && point.x + layout.radius <= rect.right() + 0.5,
+            "({}, {}) leaves the rect horizontally",
+            tile.q,
+            tile.r
+        );
+    }
+}

@@ -842,12 +842,11 @@ impl ReviewApp {
             );
             let available = ui.available_size();
             let (response, painter) = ui.allocate_painter(available, Sense::click());
-            let layout =
-                BoardLayout::new(response.rect, available, frame.state.fracture_in_play);
             // What each tile *means* is `board_view`'s answer for the frame; where it goes is
             // `BoardLayout`; the strokes are `draw_board`. All three are shared, so the replayer
             // paints this board without restating a single number from it.
             let tiles = board_view(content, session, frame, self.selected_tile.as_deref());
+            let layout = BoardLayout::fitted(response.rect, available, &tiles);
             if let Some(system) = draw_board(&painter, &response, &layout, &tiles) {
                 self.selected_tile = Some(system);
             }

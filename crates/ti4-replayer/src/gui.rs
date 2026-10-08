@@ -162,17 +162,14 @@ struct SetupForm {
     temperature: f64,
     diplomacy: bool,
     take_a_seat: bool,
-    /// A faction to seat in place of one of the standard six (`swap_out`), or empty for none.
-    swap_in: String,
-    swap_out: String,
+    /// The six factions the table seats, in the order the rotation turns them round the seats.
+    lineup: Vec<String>,
 }
 
-/// Factions being implemented outside the trained six (plans/BASE_FACTIONS_PLAN_2026-10-02.md).
-/// They play with an untrained policy row, and parts of them are still unfinished in the engine.
-const NEW_FACTIONS: [&str; 12] = [
-    "arborec", "argent", "ghost", "mentak", "muaat", "naalu", "naaz", "saar", "sardakk", "winnu",
-    "yin", "yssaril",
-];
+/// The standard six, the lineup every table used before any other could be picked.
+fn standard_lineup() -> Vec<String> {
+    ti4_review::FACTIONS.map(str::to_owned).to_vec()
+}
 
 impl Default for SetupForm {
     fn default() -> Self {
@@ -191,8 +188,7 @@ impl Default for SetupForm {
             temperature: 0.5,
             diplomacy: false,
             take_a_seat: true,
-            swap_in: String::new(),
-            swap_out: "letnev".to_owned(),
+            lineup: standard_lineup(),
         }
     }
 }
@@ -224,6 +220,10 @@ impl SetupForm {
             form.temperature = remembered.temperature;
         }
         form.diplomacy = remembered.diplomacy;
+        // A remembered lineup is kept only if it can still be seated; otherwise the standard six.
+        if ti4_review::check_lineup(ContentStore::embedded(), &remembered.lineup).is_ok() {
+            form.lineup.clone_from(&remembered.lineup);
+        }
         form
     }
 
@@ -240,18 +240,9 @@ impl SetupForm {
             .trim()
             .parse::<u64>()
             .map_err(|_| "The seed has to be a whole number.".to_owned())?;
-        let lineup = (!self.swap_in.is_empty()).then(|| {
-            ti4_review::FACTIONS
-                .iter()
-                .map(|f| {
-                    if *f == self.swap_out {
-                        self.swap_in.clone()
-                    } else {
-                        (*f).to_owned()
-                    }
-                })
-                .collect()
-        });
+        ti4_review::check_lineup(ContentStore::embedded(), &self.lineup)
+            .map_err(|reason| format!("The lineup cannot be seated: {reason}."))?;
+        let lineup = (self.lineup != standard_lineup()).then(|| self.lineup.clone());
         Ok(SimulationConfig {
             checkpoint: PathBuf::from(self.checkpoint.trim()),
             map_pool: PathBuf::from(self.map_pool.trim()),
@@ -999,33 +990,49 @@ impl Replayer {
             if !self.setup.diplomacy {
                 ui.weak("Off: nobody at this table can offer a deal or a transaction.");
             }
-            ui.label("Seat");
-            egui::ComboBox::from_id_salt("setup-swap-in")
-                .selected_text(if self.setup.swap_in.is_empty() {
-                    "standard six".to_owned()
-                } else {
-                    self.setup.swap_in.clone()
-                })
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.setup.swap_in, String::new(), "standard six");
-                    for faction in NEW_FACTIONS {
-                        ui.selectable_value(&mut self.setup.swap_in, faction.to_owned(), faction);
-                    }
-                })
-                .response
-                .on_hover_text(
-                    "Seat one of the factions being implemented in place of a standard one. They \
-                     are unfinished in the engine and the policy has never trained on them.",
-                );
-            if !self.setup.swap_in.is_empty() {
-                ui.label("instead of");
-                egui::ComboBox::from_id_salt("setup-swap-out")
-                    .selected_text(self.setup.swap_out.clone())
+            ui.label("Lineup");
+            let seatable = ti4_review::seatable_factions(ContentStore::embedded());
+            for (index, faction) in self.setup.lineup.iter_mut().enumerate() {
+                egui::ComboBox::from_id_salt(("setup-lineup", index))
+                    .selected_text(faction.clone())
+                    .width(92.0)
                     .show_ui(ui, |ui| {
-                        for faction in ti4_review::FACTIONS {
-                            ui.selectable_value(&mut self.setup.swap_out, faction.to_owned(), faction);
+                        for option in &seatable {
+                            ui.selectable_value(faction, (*option).to_owned(), *option);
                         }
                     });
+            }
+            if ui
+                .button("Standard six")
+                .on_hover_text("The six factions the policy trained on.")
+                .clicked()
+            {
+                self.setup.lineup = standard_lineup();
+            }
+            if ui
+                .button("Draw from seed")
+                .on_hover_text(
+                    "Six different factions drawn from every seatable faction with this seed, the                      same draw a wide-roster trainer makes for it.",
+                )
+                .clicked()
+            {
+                match self.setup.seed.trim().parse::<u64>().map_err(|_| {
+                    "The seed has to be a whole number.".to_owned()
+                }) {
+                    Ok(seed) => match ti4_review::drawn_lineup(ContentStore::embedded(), seed) {
+                        Ok(lineup) => self.setup.lineup = lineup,
+                        Err(reason) => self.status = reason,
+                    },
+                    Err(reason) => self.status = reason,
+                }
+            }
+            if let Err(reason) = ti4_review::check_lineup(ContentStore::embedded(), &self.setup.lineup)
+            {
+                ui.colored_label(egui::Color32::from_rgb(230, 140, 110), reason);
+            } else if self.setup.lineup != standard_lineup() {
+                ui.weak(
+                    "Factions outside the standard six play an untrained policy row unless the                      checkpoint was trained with them.",
+                );
             }
             ui.checkbox(&mut self.setup.take_a_seat, "Take seat 0 now")
                 .on_hover_text(
@@ -1773,8 +1780,8 @@ impl Replayer {
             });
             let available = ui.available_size();
             let (response, painter) = ui.allocate_painter(available, Sense::click());
-            let layout = BoardLayout::new(response.rect, available, frame.state.fracture_in_play);
             let tiles = board_view(content, session, frame, self.selected_tile.as_deref());
+            let layout = BoardLayout::fitted(response.rect, available, &tiles);
             if let Some(system) = draw_board(&painter, &response, &layout, &tiles) {
                 self.selected_tile = Some(system);
             }
@@ -1911,6 +1918,7 @@ impl Replayer {
                 profile_table: profile_table_text(self.setup.table).to_owned(),
                 temperature: self.setup.temperature,
                 diplomacy: self.setup.diplomacy,
+                lineup: self.setup.lineup.clone(),
             },
         };
         if let Err(error) = settings.save(Path::new(SETTINGS_PATH)) {

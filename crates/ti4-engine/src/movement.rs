@@ -873,6 +873,13 @@ impl MapEdit {
 
 const MAP_EDIT_PREFIX: &str = "map_edit|";
 
+/// The map edits this state records, oldest first: what a viewer applies to the setup board to
+/// show the tiles where they stand in this frame.
+#[must_use]
+pub fn recorded_map_edits(state: &GameState) -> Vec<MapEdit> {
+    recorded_edits(state)
+}
+
 /// The recorded edits, oldest first.
 fn recorded_edits(state: &GameState) -> Vec<MapEdit> {
     state

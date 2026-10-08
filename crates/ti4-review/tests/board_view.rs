@@ -829,3 +829,257 @@ fn the_model_is_a_function_of_the_frame() {
     }
     assert_eq!(chosen.iter().filter(|tile| tile.selected).count(), 1);
 }
+
+// --- frame_board: off-map systems and recorded tile edits -------------------------------------
+
+fn grid_tile(system: &str, q: i32, r: i32, wormholes: &[&str]) -> ti4_review::BoardTile {
+    ti4_review::BoardTile {
+        system: system.to_owned(),
+        label: system.to_owned(),
+        q,
+        r,
+        hyperlane: false,
+        special_area: None,
+        anomalies: Vec::new(),
+        wormholes: wormholes.iter().map(|kind| (*kind).to_owned()).collect(),
+        egress: false,
+        planets: Vec::new(),
+    }
+}
+
+fn off_map_tile(system: &str, wormholes: &[&str]) -> ti4_review::BoardTile {
+    ti4_review::BoardTile {
+        special_area: Some(ti4_review::OFF_MAP_AREA.to_owned()),
+        ..grid_tile(system, 0, 0, wormholes)
+    }
+}
+
+/// A ring-one board with the Creuss Gate at the top and its home beside the board.
+fn creuss_board() -> Vec<ti4_review::BoardTile> {
+    vec![
+        grid_tile("18", 0, 0, &[]),
+        grid_tile("17", 0, -1, &["DELTA"]),
+        grid_tile("21", 1, -1, &[]),
+        grid_tile("22", 1, 0, &[]),
+        grid_tile("24", 0, 1, &[]),
+        grid_tile("25", -1, 1, &[]),
+        grid_tile("26", -1, 0, &[]),
+        off_map_tile("51", &["DELTA"]),
+    ]
+}
+
+fn position(board: &[ti4_review::BoardTile], system: &str) -> (i32, i32) {
+    let tile = board
+        .iter()
+        .find(|tile| tile.system == system)
+        .expect(system);
+    (tile.q, tile.r)
+}
+
+#[test]
+fn an_off_map_home_is_drawn_outside_its_gate_on_a_free_hex() {
+    let state = ti4_engine::fixtures::game(&["a"]);
+    let board = ti4_review::view::frame_board(ContentStore::embedded(), &creuss_board(), &state);
+    let home = position(&board, "51");
+    let gate = position(&board, "17");
+    assert_eq!(home, (0, -2), "straight outward from the gate");
+    let distance = |(q, r): (i32, i32), (q2, r2): (i32, i32)| {
+        ((q - q2).abs() + (r - r2).abs() + (q + r - q2 - r2).abs()) / 2
+    };
+    assert_eq!(distance(home, gate), 1, "adjacent to the gate");
+    let mut cells: Vec<(i32, i32)> = board.iter().map(|tile| (tile.q, tile.r)).collect();
+    cells.sort_unstable();
+    cells.dedup();
+    assert_eq!(cells.len(), board.len(), "no two tiles share a hex");
+}
+
+#[test]
+fn the_off_map_home_follows_its_gate_when_a_swap_moves_it() {
+    let content = ContentStore::embedded();
+    let mut state = ti4_engine::fixtures::game(&["a"]);
+    let start = creuss_board();
+    let placed: Vec<(&str, ti4_model::hex::Hex)> = start
+        .iter()
+        .filter(|tile| tile.special_area.is_none())
+        .map(|tile| {
+            (
+                tile.system.as_str(),
+                ti4_model::hex::Hex::new(tile.q, tile.r),
+            )
+        })
+        .collect();
+    let mut galaxy =
+        ti4_content::galaxy::Galaxy::placed(content, &placed, ti4_model::content_types::FULL)
+            .unwrap();
+    ti4_engine::movement::apply_map_edit(
+        &mut state,
+        &mut galaxy,
+        content,
+        ti4_model::content_types::FULL,
+        &ti4_engine::movement::MapEdit::Swap {
+            a: "17".to_owned(),
+            b: "24".to_owned(),
+        },
+    )
+    .unwrap();
+    let board = ti4_review::view::frame_board(content, &creuss_board(), &state);
+    assert_eq!(
+        position(&board, "17"),
+        (0, 1),
+        "the gate moved to the bottom"
+    );
+    assert_eq!(position(&board, "24"), (0, -1));
+    assert_eq!(position(&board, "51"), (0, 2), "and its home went with it");
+}
+
+#[test]
+fn a_replaced_tile_takes_the_new_tiles_metadata_on_the_same_hex() {
+    let content = ContentStore::embedded();
+    let mut state = ti4_engine::fixtures::game(&["a"]);
+    let board = creuss_board();
+    let placed: Vec<(&str, ti4_model::hex::Hex)> = board
+        .iter()
+        .filter(|tile| tile.special_area.is_none())
+        .map(|tile| {
+            (
+                tile.system.as_str(),
+                ti4_model::hex::Hex::new(tile.q, tile.r),
+            )
+        })
+        .collect();
+    let mut galaxy =
+        ti4_content::galaxy::Galaxy::placed(content, &placed, ti4_model::content_types::FULL)
+            .unwrap();
+    // 43 is a supernova in the corpus; the Muaat hero replaces a tile with its own supernova.
+    ti4_engine::movement::apply_map_edit(
+        &mut state,
+        &mut galaxy,
+        content,
+        ti4_model::content_types::FULL,
+        &ti4_engine::movement::MapEdit::Replace {
+            old: "21".to_owned(),
+            new: "43".to_owned(),
+        },
+    )
+    .unwrap();
+    let shown = ti4_review::view::frame_board(content, &board, &state);
+    assert!(shown.iter().all(|tile| tile.system != "21"));
+    assert_eq!(position(&shown, "43"), (1, -1));
+    let supernova = shown.iter().find(|tile| tile.system == "43").unwrap();
+    assert_eq!(supernova.anomalies, ["supernova"]);
+}
+
+#[test]
+fn an_off_map_system_with_no_partner_on_the_grid_goes_outside_the_ring() {
+    let state = ti4_engine::fixtures::game(&["a"]);
+    let mut board = creuss_board();
+    board.push(off_map_tile("118", &["EPSILON"]));
+    let shown = ti4_review::view::frame_board(ContentStore::embedded(), &board, &state);
+    let lone = position(&shown, "118");
+    let ring = (lone.0.abs() + lone.1.abs() + (lone.0 + lone.1).abs()) / 2;
+    assert!(ring >= 2, "{lone:?} is not beside the board");
+    let mut cells: Vec<(i32, i32)> = shown.iter().map(|tile| (tile.q, tile.r)).collect();
+    cells.sort_unstable();
+    cells.dedup();
+    assert_eq!(cells.len(), shown.len());
+}
+
+#[test]
+fn lineups_are_checked_against_what_the_engine_can_seat() {
+    let content = ContentStore::embedded();
+    let lineup = |names: [&str; 6]| names.map(str::to_owned).to_vec();
+    assert!(ti4_review::check_lineup(content, &ti4_review::FACTIONS.map(str::to_owned)).is_ok());
+    assert!(
+        ti4_review::check_lineup(
+            content,
+            &lineup(["sol", "ghost", "crimson", "argent", "naalu", "keleresx"])
+        )
+        .is_ok()
+    );
+    let refused = |names: [&str; 6]| ti4_review::check_lineup(content, &lineup(names)).unwrap_err();
+    assert!(refused(["sol", "sol", "hacan", "letnev", "xxcha", "jolnar"]).contains("different"));
+    assert!(refused(["sol", "obsidian", "hacan", "letnev", "xxcha", "jolnar"]).contains("setup"));
+    assert!(refused(["sol", "nobody", "hacan", "letnev", "xxcha", "jolnar"]).contains("unknown"));
+    // The Tribuni: Keleres (Xxcha) cannot sit with the Xxcha.
+    assert!(!refused(["sol", "keleresx", "hacan", "letnev", "xxcha", "jolnar"]).is_empty());
+    assert!(
+        ti4_review::check_lineup(
+            content,
+            &ti4_review::FACTIONS[..5]
+                .iter()
+                .map(|f| (*f).to_owned())
+                .collect::<Vec<_>>()
+        )
+        .is_err()
+    );
+
+    // A drawn lineup is deterministic and always seatable.
+    for seed in 0..40 {
+        let drawn = ti4_review::drawn_lineup(content, seed).unwrap();
+        assert_eq!(drawn, ti4_review::drawn_lineup(content, seed).unwrap());
+        ti4_review::check_lineup(content, &drawn)
+            .unwrap_or_else(|reason| panic!("{seed}: {reason}"));
+    }
+    assert!(ti4_review::seatable_factions(content).len() >= 30);
+}
+
+#[test]
+fn a_creuss_table_shows_its_home_beside_the_gate() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|crates| crates.parent())
+        .unwrap()
+        .to_path_buf();
+    let config = SimulationConfig {
+        checkpoint: root.join("examples/reviewer/checkpoint-473312/slots.json"),
+        map_pool: root.join("examples/reviewer/full_np8_12_holdout.json"),
+        seed: 4_242,
+        rotation: 0,
+        table: ProfileTable::Learner,
+        temperature: 0.5,
+        diplomacy: false,
+        lineup: Some(
+            ["sol", "ghost", "letnev", "xxcha", "hacan", "jolnar"]
+                .map(str::to_owned)
+                .to_vec(),
+        ),
+    };
+    let review = LiveReview::start(&config).expect("a Creuss table starts");
+    let session = &review.session;
+    let home = session
+        .board
+        .iter()
+        .find(|tile| tile.system == "51")
+        .expect("the Creuss home is in the session");
+    assert_eq!(home.special_area.as_deref(), Some(ti4_review::OFF_MAP_AREA));
+    let frame = session.frames.first().expect("a starting frame");
+    let tiles = ti4_review::view::board_view(ContentStore::embedded(), session, frame, None);
+    let home = tiles
+        .iter()
+        .find(|tile| tile.system == "51")
+        .expect("drawn");
+    let gate = tiles
+        .iter()
+        .find(|tile| tile.system == "17")
+        .expect("gate on the grid");
+    let distance = ((home.q - gate.q).abs()
+        + (home.r - gate.r).abs()
+        + (home.q + home.r - gate.q - gate.r).abs())
+        / 2;
+    assert_eq!(
+        distance, 1,
+        "home ({}, {}) beside gate ({}, {})",
+        home.q, home.r, gate.q, gate.r
+    );
+    assert!(home.label.ends_with("off-map"));
+    assert_eq!(home.fill, TileFill::OffMap);
+    let mut cells: Vec<(i32, i32)> = tiles
+        .iter()
+        .filter(|tile| tile.special_area.is_none() || tile.fill == TileFill::OffMap)
+        .map(|tile| (tile.q, tile.r))
+        .collect();
+    let drawn = cells.len();
+    cells.sort_unstable();
+    cells.dedup();
+    assert_eq!(cells.len(), drawn, "no two drawn tiles share a hex");
+}

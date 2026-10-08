@@ -16,7 +16,7 @@ use ti4_model::units::Unit;
 
 use ti4_model::id::{PlanetId, SystemId};
 
-use crate::{PlanetMeta, ReviewFrame, ReviewSession};
+use crate::{BoardTile, OFF_MAP_AREA, PlanetMeta, ReviewFrame, ReviewSession};
 
 pub const SEAT_COLORS: [Color32; 6] = [
     Color32::from_rgb(224, 66, 66),
@@ -859,6 +859,8 @@ pub enum TileFill {
     Fracture,
     /// The Nexus, drawn outside the ordinary geometry.
     Nexus,
+    /// A system in play beside the board with no hex of its own (an off-map home).
+    OffMap,
     /// An ordinary system the hyperlane network crosses.
     Hyperlane,
     /// An anomaly tints the tile; its label comes from [`anomaly_style`].
@@ -884,6 +886,8 @@ pub fn tile_fill(
         (TileFill::Fracture, Color32::from_rgb(39, 25, 57))
     } else if special_area == Some("nexus") {
         (TileFill::Nexus, Color32::from_rgb(25, 48, 61))
+    } else if special_area == Some(OFF_MAP_AREA) {
+        (TileFill::OffMap, Color32::from_rgb(52, 46, 30))
     } else if hyperlane {
         (TileFill::Hyperlane, Color32::from_rgb(55, 39, 91))
     } else if let Some((color, _)) = anomaly_style(anomalies) {
@@ -1024,6 +1028,112 @@ pub struct TileView {
     pub planets: Vec<PlanetView>,
 }
 
+/// Axial neighbour steps, in a fixed order.
+const HEX_STEPS: [(i32, i32); 6] = [(1, 0), (1, -1), (0, -1), (-1, 0), (-1, 1), (0, 1)];
+
+/// The session's board as it stands in `state`: the recorded tile edits applied (a Creuss hero swap,
+/// a Muaat supernova), and every off-map system given a free hex beside the board.
+///
+/// An off-map system goes next to the on-grid system its printed wormholes reach (the Creuss home
+/// beside the Creuss Gate, wherever the Gate is in this frame), on the side facing away from the
+/// centre, and further out if that hex is taken. One that reaches nothing on the grid goes outside
+/// the ring. Nothing here depends on which factions are seated, so any lineup is laid out the same
+/// way; and the result is a function of the frame alone, so every frame of a game agrees.
+#[must_use]
+pub fn frame_board(
+    content: &ContentStore,
+    board: &[BoardTile],
+    state: &ti4_model::state::GameState,
+) -> Vec<BoardTile> {
+    let mut tiles = board.to_vec();
+    let on_grid = |tile: &BoardTile| tile.special_area.is_none();
+    for edit in ti4_engine::movement::recorded_map_edits(state) {
+        match edit {
+            ti4_engine::movement::MapEdit::Swap { a, b } => {
+                let at = |id: &str| tiles.iter().position(|t| on_grid(t) && t.system == id);
+                if let (Some(i), Some(j)) = (at(&a), at(&b)) {
+                    let (qi, ri) = (tiles[i].q, tiles[i].r);
+                    tiles[i].q = tiles[j].q;
+                    tiles[i].r = tiles[j].r;
+                    tiles[j].q = qi;
+                    tiles[j].r = ri;
+                }
+            }
+            ti4_engine::movement::MapEdit::Replace { old, new } => {
+                if let Some(i) = tiles.iter().position(|t| on_grid(t) && t.system == old)
+                    && let Some(tile) =
+                        crate::system_metadata(content, &new, tiles[i].q, tiles[i].r, None)
+                {
+                    tiles[i] = tile;
+                }
+            }
+        }
+    }
+
+    let mut occupied: std::collections::BTreeSet<(i32, i32)> = tiles
+        .iter()
+        .filter(|tile| on_grid(tile))
+        .map(|tile| (tile.q, tile.r))
+        .collect();
+    let grid: Vec<(String, (i32, i32), Vec<String>)> = tiles
+        .iter()
+        .filter(|tile| on_grid(tile))
+        .map(|tile| {
+            (
+                tile.system.clone(),
+                (tile.q, tile.r),
+                tile.wormholes.clone(),
+            )
+        })
+        .collect();
+    for tile in tiles
+        .iter_mut()
+        .filter(|tile| tile.special_area.as_deref() == Some(OFF_MAP_AREA))
+    {
+        let anchor = grid
+            .iter()
+            .filter(|(_, _, kinds)| kinds.iter().any(|kind| tile.wormholes.contains(kind)))
+            .min_by(|a, b| a.0.cmp(&b.0))
+            .map(|(_, hex, _)| *hex);
+        let hex = beside(anchor, &occupied);
+        tile.q = hex.0;
+        tile.r = hex.1;
+        occupied.insert(hex);
+    }
+    tiles
+}
+
+/// The first free hex beside `anchor` (the centre when there is none), trying the steps that point
+/// most directly away from the centre first and walking further out along each until one is free.
+fn beside(
+    anchor: Option<(i32, i32)>,
+    occupied: &std::collections::BTreeSet<(i32, i32)>,
+) -> (i32, i32) {
+    let (q, r) = anchor.unwrap_or((0, 0));
+    let flat = |q: i32, r: i32| (q as f32 + r as f32 / 2.0, r as f32 * 0.866);
+    let (ox, oy) = flat(q, r);
+    let mut steps: Vec<(usize, f32)> = HEX_STEPS
+        .iter()
+        .enumerate()
+        .map(|(index, (dq, dr))| {
+            let (x, y) = flat(*dq, *dr);
+            (index, x * ox + y * oy)
+        })
+        .collect();
+    // Most outward first; the fixed step order breaks ties, so the choice is deterministic.
+    steps.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+    for distance in 1..=12 {
+        for (index, _) in &steps {
+            let (dq, dr) = HEX_STEPS[*index];
+            let hex = (q + dq * distance, r + dr * distance);
+            if !occupied.contains(&hex) {
+                return hex;
+            }
+        }
+    }
+    (q + 12, r)
+}
+
 /// The board as one frame shows it: visible tiles only, in the order the session lists them.
 #[must_use]
 pub fn board_view(
@@ -1044,8 +1154,9 @@ pub fn board_view(
     });
     let alpha_beta_suppressed = ti4_engine::laws::wormholes_suppressed(state);
 
+    let board = frame_board(content, &session.board, state);
     let mut tiles = Vec::new();
-    for tile in &session.board {
+    for tile in &board {
         if tile.special_area.as_deref() == Some("fracture") && !fracture_visible {
             continue;
         }
@@ -1222,6 +1333,8 @@ pub fn board_view(
             system: tile.system.clone(),
             label: if system_purged {
                 format!("{} · PURGED", tile.label)
+            } else if tile.special_area.as_deref() == Some(OFF_MAP_AREA) {
+                format!("{} · off-map", tile.label)
             } else {
                 tile.label.clone()
             },
@@ -1880,7 +1993,43 @@ impl BoardLayout {
     /// Lay the board out inside `rect`, given `size` as the space that was asked for.
     #[must_use]
     pub fn new(rect: egui::Rect, size: Vec2, fracture_visible: bool) -> Self {
-        let scale = (size.x / 1150.0).min(size.y / 900.0).clamp(0.45, 1.2);
+        Self::with_design(rect, size, fracture_visible, Vec2::new(1150.0, 900.0), 0.45)
+    }
+
+    /// [`Self::new`], sized to the tiles this frame draws: a board whose hexes reach past the
+    /// usual three rings (an off-map home placed beside the edge, a larger map) shrinks to keep
+    /// every tile inside `rect`. A standard board gets exactly the scale [`Self::new`] gives.
+    #[must_use]
+    pub fn fitted(rect: egui::Rect, size: Vec2, tiles: &[TileView]) -> Self {
+        let on_grid = tiles.iter().filter(|tile| {
+            tile.special_area.is_none() || tile.special_area.as_deref() == Some(OFF_MAP_AREA)
+        });
+        let (mut reach_x, mut reach_r) = (3.0_f32, 3.0_f32);
+        for tile in on_grid {
+            reach_x = reach_x.max((tile.q as f32 + tile.r as f32 / 2.0).abs());
+            reach_r = reach_r.max((tile.r as f32).abs());
+        }
+        let design = Vec2::new(
+            1150.0 + 2.0 * 126.0 * (reach_x - 3.0),
+            900.0 + 2.0 * 108.0 * (reach_r - 3.0),
+        );
+        // A wider board may go smaller than the standard floor, or its outer tiles leave the rect.
+        let floor = if design.x > 1150.0 || design.y > 900.0 {
+            0.3
+        } else {
+            0.45
+        };
+        Self::with_design(rect, size, fracture_shown(tiles), design, floor)
+    }
+
+    fn with_design(
+        rect: egui::Rect,
+        size: Vec2,
+        fracture_visible: bool,
+        design: Vec2,
+        floor: f32,
+    ) -> Self {
+        let scale = (size.x / design.x).min(size.y / design.y).clamp(floor, 1.2);
         let center =
             rect.center() - Vec2::new(0.0, if fracture_visible { 72.0 * scale } else { 0.0 });
         Self {
