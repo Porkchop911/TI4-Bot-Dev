@@ -5,6 +5,8 @@
 //! receives for tactical choices.  Thunder's Edge Construction and Warfare are dispatched by
 //! card id because they share printed names with materially different cards.
 
+use std::collections::BTreeSet;
+
 use ti4_content::ContentStore;
 use ti4_content::galaxy::Galaxy;
 use ti4_model::content_types::{ContentType, SourceSet};
@@ -430,8 +432,17 @@ fn offer_research_inner(
     table: &mut Table,
     player: &PlayerId,
 ) -> Result<Option<TechnologyId>, IllegalChoice> {
+    // A technology whose optional faction waiver was declined is not offered again in this
+    // research. Re-offering it let a player select it and decline the waiver forever: an
+    // unbounded cycle of decisions inside one step (BF-22 wide-roster evaluation, Cabal cv2).
+    // Each pass now researches or shrinks the offer, so the loop ends.
+    let mut declined_waivers: BTreeSet<TechnologyId> = BTreeSet::new();
     loop {
-        let open = crate::technology::researchable(state, content, sources, player);
+        let open: Vec<TechnologyId> =
+            crate::technology::researchable(state, content, sources, player)
+                .into_iter()
+                .filter(|id| !declined_waivers.contains(id))
+                .collect();
         if open.is_empty() {
             return Ok(None);
         }
@@ -470,6 +481,7 @@ fn offer_research_inner(
         if resolve_research(state, content, sources, galaxy, table, player, &technology)? {
             return Ok(Some(technology));
         }
+        declined_waivers.insert(technology);
     }
 }
 
@@ -1188,8 +1200,14 @@ fn paid_research(
         )?;
         // Choose before paying. A declined optional prerequisite waiver returns here, restoring
         // the resource plan too, so the player may choose another legal technology or decline.
+        // That technology is not offered again (see `offer_research_inner`), so the loop ends.
+        let mut declined_waivers: BTreeSet<TechnologyId> = BTreeSet::new();
         loop {
-            let open = crate::technology::researchable(state, content, sources, player);
+            let open: Vec<TechnologyId> =
+                crate::technology::researchable(state, content, sources, player)
+                    .into_iter()
+                    .filter(|id| !declined_waivers.contains(id))
+                    .collect();
             if open.is_empty() {
                 return Ok(false);
             }
@@ -1247,6 +1265,7 @@ fn paid_research(
             if !waiver_required {
                 return Ok(false);
             }
+            declined_waivers.insert(technology);
         }
     })();
     if agent_window {
@@ -2267,6 +2286,70 @@ mod tests {
                     prompt: choice.prompt.clone(),
                 })
         }
+    }
+
+    #[test]
+    fn a_technology_whose_waiver_was_declined_is_not_offered_again() {
+        // BF-22: a near-greedy bot selected a waiver-only technology and declined the waiver
+        // forever (Cabal cv2), an unbounded decision cycle inside one step. The declined
+        // technology now leaves the offer, so the research ends.
+        let content = ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let other = PlayerId::new("b");
+        let technology = TechnologyId::new("ws");
+        let mut state = seated_game(&[("a", "yin"), ("b", "sol")], POK);
+        state.player_mut(&player).expect("Yin seat").leaders.insert(
+            ti4_model::id::LeaderId::new("yincommander"),
+            ti4_model::state::LeaderStatus::Unlocked,
+        );
+        state
+            .player_mut(&other)
+            .expect("other seat")
+            .technologies
+            .insert(technology.clone());
+        put(&mut state, &SystemId::new("18"), "infantry", &player, 1);
+        assert!(crate::technology::faction_waiver_required(
+            &state,
+            content,
+            POK,
+            &player,
+            &technology
+        ));
+        let open = crate::technology::researchable(&state, content, POK, &player);
+        assert!(open.contains(&technology), "the waiver makes it researchable");
+        let alternative = open
+            .iter()
+            .find(|id| **id != technology)
+            .expect("another technology")
+            .clone();
+
+        // Selecting it again after declining its waiver is no longer legal.
+        let mut again = state.clone();
+        let mut repeat = Table::with_default(Box::new(crate::choice::Scripted::new(vec![
+            technology.to_string(),
+            "decline".to_owned(),
+            technology.to_string(),
+        ])));
+        // Before the fix the third answer was legal and the script's fallback finished the
+        // research; now the third offer lacks it and the script diverges there.
+        assert!(
+            matches!(
+                offer_research_inner(&mut again, content, POK, None, &mut repeat, &player),
+                Err(IllegalChoice::ScriptDiverged { .. })
+            ),
+            "the declined technology was offered again"
+        );
+
+        let mut table = Table::with_default(Box::new(crate::choice::Scripted::new(vec![
+            technology.to_string(),
+            "decline".to_owned(),
+            alternative.to_string(),
+        ])));
+        assert_eq!(
+            offer_research_inner(&mut state, content, POK, None, &mut table, &player)
+                .expect("researches another"),
+            Some(alternative)
+        );
     }
 
     #[test]
