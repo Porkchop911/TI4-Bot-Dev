@@ -505,8 +505,35 @@ fn ability_facts(seen: &Observed<'_>, player: &PlayerId) -> Vec<(String, f64)> {
 /// The critic vector, keyed and ordered like any other.
 #[must_use]
 pub fn critic_vector(view: &SeatObservation<'_>, enabled: CriticFeatures) -> CriticVector {
+    critic_vector_with(view, enabled, None)
+}
+
+/// The power-projection facts ([`crate::power_map::Summary`]) a critic may carry. A bundle opts in
+/// by having these names in its vocabulary; one without them never sees them, so its value input
+/// is exactly what it always was.
+pub const POWER_FACTS: [&str; 3] = [
+    "critic-state:power:opportunity",
+    "critic-state:power:best_target",
+    "critic-state:power:reach_systems",
+];
+
+/// [`critic_vector`], plus the seat's power summary when one is given. Values are scaled to sit
+/// near the other critic counts: opportunity and best target in tens of planet value, reach in
+/// tens of systems.
+#[must_use]
+pub fn critic_vector_with(
+    view: &SeatObservation<'_>,
+    enabled: CriticFeatures,
+    power: Option<&crate::power_map::Summary>,
+) -> CriticVector {
+    let mut facts = critic_facts(view, enabled);
+    if let Some(power) = power {
+        facts.push((POWER_FACTS[0].to_owned(), power.opportunity / 10.0));
+        facts.push((POWER_FACTS[1].to_owned(), power.best_target / 10.0));
+        facts.push((POWER_FACTS[2].to_owned(), power.reach_systems / 10.0));
+    }
     CriticVector(FeatureVector::from_pairs(
-        critic_facts(view, enabled)
+        facts
             .into_iter()
             .map(|(name, value)| (register(&name), value)),
     ))

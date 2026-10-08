@@ -124,9 +124,12 @@ const VALUE_FLAGS: &[&str] = &[
     "--demo-per-update",
     "--device",
     "--entropy-final",
+    "--entropy-start",
     "--expansion-weight",
     "--fleet-hoard-penalty",
     "--fleet-weight",
+    "--projection-weight",
+    "--status-income-tg",
     "--fracture-entry-bonus",
     "--fracture-planet-bonus",
     "--high-vp-bonus",
@@ -1219,6 +1222,17 @@ fn main() {
             .parse()
             .unwrap_or_else(|_| refuse("--entropy-final expects a number"))
     });
+    // Where the schedule starts. 1.0 by default; a resume passes the multiplier its predecessor
+    // ended on, so the entropy bonus carries on from there instead of jumping back to full strength.
+    // Every 50-update resume that restarted at 1.0 lost about 0.13 VP of greedy play before it began
+    // to recover (paired greedy evals, 2026-10-02).
+    let entropy_start: f64 = argument("--entropy-start").map_or(1.0, |value| {
+        value
+            .parse()
+            .ok()
+            .filter(|start: &f64| start.is_finite() && *start >= 0.0)
+            .unwrap_or_else(|| refuse("--entropy-start expects a non-negative number"))
+    });
     let mut settings = Settings::default();
     settings.movement_entropy = argument("--movement-entropy").map_or(settings.entropy, |value| {
         value
@@ -1401,6 +1415,23 @@ fn main() {
     // default to zero, so until now an MLP run silently trained the reference reward no matter what
     // the surrounding experiment thought it was configuring.
     reward.fleet_weight = weight("--fleet-weight", reward.fleet_weight);
+    // Power-projection shaping. Measuring it costs a movement search per recorded decision, so the
+    // progress measure only computes it when a run actually rewards it.
+    reward.projection_weight = weight("--projection-weight", reward.projection_weight);
+    // Experiment: trade goods every seat gains as each status phase begins (engine switch).
+    if let Some(income) = argument("--status-income-tg") {
+        let income: i32 = income
+            .parse()
+            .unwrap_or_else(|_| refuse("--status-income-tg expects a whole number"));
+        ti4_engine::game::STATUS_INCOME_TRADE_GOODS
+            .store(income, std::sync::atomic::Ordering::Relaxed);
+        println!(
+            "  experiment  every seat gains {income} trade goods at the start of each status phase"
+        );
+    }
+    if reward.projection_weight != 0.0 {
+        ti4_policy::progress::MEASURE_PROJECTION.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
     reward.tech_weight = weight("--tech-weight", reward.tech_weight);
     reward.strategy_diversity_weight = weight(
         "--strategy-diversity-weight",
@@ -1491,8 +1522,11 @@ fn main() {
             reward.vp_weight, reward.objective_weight, reward.secret_weight
         );
         println!(
-            "  shaping     fleet {} | tech {} | strategy diversity {}",
-            reward.fleet_weight, reward.tech_weight, reward.strategy_diversity_weight
+            "  shaping     fleet {} | projection {} | tech {} | strategy diversity {}",
+            reward.fleet_weight,
+            reward.projection_weight,
+            reward.tech_weight,
+            reward.strategy_diversity_weight
         );
         println!(
             "  holdings    fleet pool >= {} at end {} | empty fleet pool {} | trade goods > {} {} per excess good per round | Styx at end {} | first Fracture entry {} | per Fracture planet at end {}",
@@ -1522,7 +1556,7 @@ fn main() {
         ),
     }
     println!(
-        "  ppo         clip {} | {} epochs | minibatch {} | value {} | entropy {}/{} (movement {}), x{entropy_final} by the end",
+        "  ppo         clip {} | {} epochs | minibatch {} | value {} | entropy {}/{} (movement {}), x{entropy_start} at the start, x{entropy_final} by the end",
         settings.clip_epsilon,
         settings.epochs,
         settings.minibatch,
@@ -1955,7 +1989,7 @@ fn main() {
         } else {
             1.0
         };
-        let scale = entropy_final.mul_add(progress, 1.0 - progress);
+        let scale = entropy_start + (entropy_final - entropy_start) * progress;
         let settings = Settings {
             entropy: settings.entropy * scale,
             strategy_entropy: settings.strategy_entropy * scale,

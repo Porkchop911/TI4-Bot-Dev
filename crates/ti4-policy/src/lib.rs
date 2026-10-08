@@ -17,6 +17,8 @@ pub mod fleet_strength;
 pub mod inference;
 pub mod intern;
 pub mod learned;
+pub mod power_facts;
+pub mod power_map;
 pub mod progress;
 pub mod projection;
 pub mod scoring;

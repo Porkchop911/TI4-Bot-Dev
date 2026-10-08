@@ -329,6 +329,19 @@ impl CriticInput {
         Self { sparse }
     }
 
+    /// Diagnostics: this input with `delta` added to the value already at `column`.
+    ///
+    /// `None` when the input has no such column. Only existing columns move, so this cannot
+    /// introduce an option-derived column the way a public [`Self::from_sparse`] could; it answers
+    /// "how does `V` respond to more of something the critic already sees".
+    #[must_use]
+    pub fn with_shifted_value(&self, column: i64, delta: f32) -> Option<Self> {
+        let index = self.sparse.columns.iter().position(|c| *c == column)?;
+        let mut sparse = self.sparse.clone();
+        sparse.values[index] += delta;
+        Some(Self { sparse })
+    }
+
     /// How many distinct columns this input actually occupies.
     ///
     /// Exposed because it is the difference between a critic and a rank-1 sum: when every

@@ -147,6 +147,17 @@ fn main() {
     let per_seat = argument("--per-seat");
     // --diplomacy: structured diplomacy on, as the trainer plays it.
     let diplomacy = std::env::args().any(|a| a == "--diplomacy");
+    // Experiment: trade goods every seat gains at the start of each status phase (engine switch).
+    if let Some(income) = argument("--status-income-tg") {
+        let income: i32 = income
+            .parse()
+            .unwrap_or_else(|_| refuse("--status-income-tg expects a whole number"));
+        ti4_engine::game::STATUS_INCOME_TRADE_GOODS
+            .store(income, std::sync::atomic::Ordering::Relaxed);
+        println!(
+            "  experiment  every seat gains {income} trade goods at the start of each status phase"
+        );
+    }
     let rounds: u32 = argument("--rounds").map_or(1, |value| {
         value
             .parse()
