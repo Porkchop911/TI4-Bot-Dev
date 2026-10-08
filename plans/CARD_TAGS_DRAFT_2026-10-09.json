@@ -10,12 +10,12 @@
   "sustain-grant": "Gives other units/ships the ability to sustain damage, or cancel a hit by sustaining.",
   "sustain-deny": "Prevents units from using SUSTAIN DAMAGE or from being repaired.",
   "repair-units": "Repairs damaged units (removes damage markers).",
-  "cancel-hit": "Cancels or ignores hits produced against your units, or prevents a unit from being destroyed.",
+  "cancel-hit": "Cancels or ignores hits produced against your units.",
   "pre-combat-hits": "Produces hits at the start of / before combat rolls (ambush, assault cannon, first strike), or destroys units at combat start.",
   "assign-hits-control": "Lets a player choose which units take hits, or forces/limits how hits are assigned.",
   "anti-fighter-barrage": "A unit has or enhances ANTI-FIGHTER BARRAGE.",
   "space-cannon": "A unit has, grants, or enhances SPACE CANNON (including offense/defense variants and ranged use).",
-  "space-cannon-immunity": "Units or players are protected from SPACE CANNON hits, or the effect is reduced.",
+  "space-cannon-immunity": "Units or players are protected from SPACE CANNON hits (or from ANTI-FIGHTER BARRAGE), or the effect is reduced.",
   "bombardment": "A unit has, grants, or enhances BOMBARDMENT.",
   "planetary-shield": "A unit has/grants PLANETARY SHIELD or prevents bombardment.",
   "ignore-planetary-shield": "Units ignore or remove PLANETARY SHIELD.",
@@ -53,7 +53,7 @@
   "steal-trade-goods": "Take trade goods or commodities from another player.",
   "give-trade-goods": "Give trade goods/commodities to others (including as a cost).",
   "spend-trade-goods": "Requires spending trade goods as a cost to use an effect. magnitude = cost.",
-  "trade-goods-as-resources": "Trade goods count as resources/influence or are worth more when spent.",
+  "trade-goods-as-resources": "Trade goods count as resources/influence or are worth more when spent; commodities may be spent as trade goods.",
   "resources-bonus": "Increases resources of planets or available resources. magnitude = N.",
   "influence-bonus": "Increases influence of planets or available influence. magnitude = N.",
   "exhaust-planets": "Exhausts planets (yours or others').",
@@ -134,7 +134,13 @@
   "mech-effect": "Directly affects mechs (deploy, boost, revive, mech ability).",
   "fighter-effect": "Directly affects fighters (placing, capacity, barrage).",
   "structure-effect": "Directly affects structures (docks, PDS).",
-  "war-sun-effect": "Directly affects war suns or flagships."
+  "war-sun-effect": "Directly affects war suns or flagships.",
+  "direct-hit-immunity": "Unit cannot be destroyed by \"Direct Hit\" action cards (immunity to one destruction effect; not a hit cancellation).",
+  "action-card-restriction": "Prevents players from playing action cards, or restricts when/which action cards may be played.",
+  "movement-exemption": "Lifts a normal movement/activation restriction (e.g. move out of or activate systems that contain your command tokens).",
+  "influence-as-resources": "Influence may be spent as if it were resources (or resources as influence, or both values combined).",
+  "end-turn-skip": "Ends or skips a player's turn.",
+  "reveal-public-objective": "Draws, reveals, replaces or creates a public objective."
  },
  "cards": [
   {
@@ -203,7 +209,7 @@
      "evidence": "Apply +1 to the move value of each of your ships"
     },
     {
-     "tag": "timing-action",
+     "tag": "timing-passive",
      "magnitude": null,
      "evidence": "During your tactical actions"
     },
@@ -381,11 +387,6 @@
    "faction": "mentak",
    "tags": [
     {
-     "tag": "extra-dice",
-     "magnitude": 2,
-     "evidence": "You may roll 1 die for each of up to 2 of your cruisers"
-    },
-    {
      "tag": "pre-combat-hits",
      "magnitude": null,
      "evidence": "produce 1 hit"
@@ -494,11 +495,6 @@
      "tag": "timing-end-turn",
      "magnitude": null,
      "evidence": "At the end of the strategy phase"
-    },
-    {
-     "tag": "place-command-token",
-     "magnitude": null,
-     "evidence": "Place the Naalu \"0\" token on your strategy card"
     },
     {
      "tag": "initiative-change",
@@ -645,6 +641,11 @@
      "tag": "place-units-free",
      "magnitude": null,
      "evidence": "place 2 infantry from your reinforcements"
+    },
+    {
+     "tag": "ground-force-effect",
+     "magnitude": null,
+     "evidence": "place 2 infantry from your reinforcements"
     }
    ]
   },
@@ -671,13 +672,7 @@
    "id": "blood_ties",
    "source": "base",
    "faction": "winnu",
-   "tags": [
-    {
-     "tag": "no-token-cost",
-     "magnitude": null,
-     "evidence": "You do not have to spend influence to remove the custodians token"
-    }
-   ]
+   "tags": []
   },
   {
    "kind": "ability",
@@ -1084,11 +1079,6 @@
      "tag": "purge",
      "magnitude": null,
      "evidence": "purge your \"Alliance\" promissory note"
-    },
-    {
-     "tag": "gain-promissory",
-     "magnitude": null,
-     "evidence": "Other players cannot give you their"
     }
    ]
   },
@@ -1829,7 +1819,7 @@
      "evidence": "to gain 1 trade good"
     },
     {
-     "tag": "timing-action",
+     "tag": "timing-passive",
      "magnitude": null,
      "evidence": "During the action phase"
     }
@@ -2064,6 +2054,11 @@
      "tag": "timing-reaction",
      "magnitude": null,
      "evidence": "After 1 of your mechs is destroyed"
+    },
+    {
+     "tag": "mech-effect",
+     "magnitude": null,
+     "evidence": "place 1 mech from your reinforcements"
     }
    ]
   },
@@ -2270,9 +2265,9 @@
      "evidence": "BOMBARDMENT 5"
     },
     {
-     "tag": "cancel-hit",
+     "tag": "direct-hit-immunity",
      "magnitude": null,
-     "evidence": "This unit cannot be destroyed by"
+     "evidence": "This unit cannot be destroyed by \"Direct Hit\" action cards"
     }
    ]
   },
@@ -2536,9 +2531,9 @@
      "evidence": "BOMBARDMENT 4"
     },
     {
-     "tag": "cancel-hit",
+     "tag": "direct-hit-immunity",
      "magnitude": null,
-     "evidence": "This unit cannot be destroyed by"
+     "evidence": "This unit cannot be destroyed by \"Direct Hit\" action cards"
     }
    ]
   },
@@ -2677,9 +2672,9 @@
      "evidence": "BOMBARDMENT 4(x2)"
     },
     {
-     "tag": "cancel-hit",
+     "tag": "direct-hit-immunity",
      "magnitude": null,
-     "evidence": "This unit cannot be destroyed by"
+     "evidence": "This unit cannot be destroyed by \"Direct Hit\" action cards"
     },
     {
      "tag": "destroy-units",
@@ -2766,7 +2761,7 @@
     {
      "tag": "requires-planets-controlled",
      "magnitude": null,
-     "evidence": "if you control Mecatol Rex"
+     "evidence": "If you control Mecatol Rex"
     },
     {
      "tag": "exhaust",
@@ -3359,7 +3354,7 @@
      "evidence": "spend 1 token from your strategy pool"
     },
     {
-     "tag": "timing-end-turn",
+     "tag": "end-turn-skip",
      "magnitude": null,
      "evidence": "immediately end that player's turn"
     }
@@ -3418,12 +3413,12 @@
    "faction": "yssaril",
    "tags": [
     {
-     "tag": "restrict-activation",
+     "tag": "action-card-restriction",
      "magnitude": null,
      "evidence": "players that have passed cannot play action cards"
     },
     {
-     "tag": "timing-action",
+     "tag": "timing-passive",
      "magnitude": null,
      "evidence": "During your turn of the action phase"
     }
@@ -3845,9 +3840,9 @@
    "faction": null,
    "tags": [
     {
-     "tag": "cancel-hit",
+     "tag": "direct-hit-immunity",
      "magnitude": null,
-     "evidence": "This unit cannot be destroyed by"
+     "evidence": "This unit cannot be destroyed by \"Direct Hit\" action cards"
     }
    ]
   },
@@ -4329,9 +4324,9 @@
    "faction": "l1z1x",
    "tags": [
     {
-     "tag": "cancel-hit",
+     "tag": "direct-hit-immunity",
      "magnitude": null,
-     "evidence": "This unit cannot be destroyed by"
+     "evidence": "This unit cannot be destroyed by \"Direct Hit\" action cards"
     }
    ]
   },
@@ -4498,7 +4493,7 @@
      "evidence": "After a player whose command token is in your fleet pool activates this system"
     },
     {
-     "tag": "timing-end-turn",
+     "tag": "end-turn-skip",
      "magnitude": null,
      "evidence": "to end their turn"
     },
@@ -4904,9 +4899,9 @@
    "faction": "sardakk",
    "tags": [
     {
-     "tag": "cancel-hit",
+     "tag": "direct-hit-immunity",
      "magnitude": null,
-     "evidence": "This unit cannot be destroyed by"
+     "evidence": "This unit cannot be destroyed by \"Direct Hit\" action cards"
     },
     {
      "tag": "destroy-units",
@@ -5379,7 +5374,7 @@
      "evidence": "you may commit 1 mech"
     },
     {
-     "tag": "timing-action",
+     "tag": "timing-passive",
      "magnitude": null,
      "evidence": "your tactical action in a system that contains an active breach"
     }
@@ -6204,9 +6199,9 @@
      "evidence": "You may exhaust this card"
     },
     {
-     "tag": "assign-hits-control",
+     "tag": "reroll",
      "magnitude": null,
-     "evidence": "hits are not assigned to either player's units"
+     "evidence": "Return to the start of this combat round's \"Roll Dice\" step"
     }
    ]
   },
@@ -6641,7 +6636,7 @@
    "faction": "mahact",
    "tags": [
     {
-     "tag": "timing-action",
+     "tag": "timing-passive",
      "magnitude": null,
      "evidence": "During your tactical actions"
     },
@@ -6656,7 +6651,7 @@
      "evidence": "return both command tokens to your reinforcements"
     },
     {
-     "tag": "timing-end-turn",
+     "tag": "end-turn-skip",
      "magnitude": null,
      "evidence": "end your turn"
     },
@@ -6664,6 +6659,11 @@
      "tag": "leader-unlock-condition",
      "magnitude": null,
      "evidence": "Have 2 other factions' command tokens in your fleet pool"
+    },
+    {
+     "tag": "movement-exemption",
+     "magnitude": null,
+     "evidence": "you can activate systems that contain your command tokens"
     }
    ]
   },
@@ -7232,6 +7232,11 @@
      "tag": "leader-unlock-condition",
      "magnitude": null,
      "evidence": "Have 3 scored objectives"
+    },
+    {
+     "tag": "research-free",
+     "magnitude": null,
+     "evidence": "replace that technology with any technology of the same color from the deck"
     }
    ]
   },
@@ -7655,7 +7660,7 @@
      "evidence": "ACTION:"
     },
     {
-     "tag": "restrict-movement",
+     "tag": "movement-exemption",
      "magnitude": null,
      "evidence": "your flagship and units it transports can move out of systems that contain your command tokens"
     },
@@ -7858,7 +7863,7 @@
      "evidence": "When you exhaust planets"
     },
     {
-     "tag": "resources-bonus",
+     "tag": "influence-as-resources",
      "magnitude": null,
      "evidence": "Treat the combined value as if it were both resources and influence"
     },
@@ -8823,8 +8828,8 @@
      "evidence": "When you produce 3 or more non-fighter ships"
     },
     {
-     "tag": "place-command-token",
-     "magnitude": null,
+     "tag": "gain-command-token",
+     "magnitude": 1,
      "evidence": "place 1 command token from your reinforcements into your fleet pool"
     }
    ]
@@ -8933,7 +8938,7 @@
    "faction": "xxcha",
    "tags": [
     {
-     "tag": "resources-bonus",
+     "tag": "influence-as-resources",
      "magnitude": null,
      "evidence": "You can spend influence as if it were resources"
     }
@@ -9216,9 +9221,9 @@
      "evidence": "Exhaust this card and spend any amount of resources"
     },
     {
-     "tag": "extra-dice",
+     "tag": "destroy-units",
      "magnitude": null,
-     "evidence": "roll a number of dice equal to the amount spent"
+     "evidence": "assign 1 hit to a ground force on that planet for each roll of 4 or greater"
     },
     {
      "tag": "ground-force-effect",
@@ -9316,6 +9321,11 @@
      "tag": "deal-enforcement",
      "magnitude": null,
      "evidence": "return this card to the <color> player"
+    },
+    {
+     "tag": "action-card-restriction",
+     "magnitude": null,
+     "evidence": "cannot vote, play action cards, or use faction abilities"
     }
    ]
   },
@@ -9349,7 +9359,7 @@
    "faction": null,
    "tags": [
     {
-     "tag": "give-trade-goods",
+     "tag": "steal-trade-goods",
      "magnitude": null,
      "evidence": "The <color> player gives you all of their commodities"
     },
@@ -9683,11 +9693,6 @@
      "evidence": "you are the first in initiative order"
     },
     {
-     "tag": "place-command-token",
-     "magnitude": null,
-     "evidence": "place the Naalu '0' token on your strategy card"
-    },
-    {
      "tag": "negate-ability",
      "magnitude": null,
      "evidence": "cannot use their Telepathic faction ability"
@@ -9841,6 +9846,11 @@
      "tag": "deal-enforcement",
      "magnitude": null,
      "evidence": "ACTION: Attach this card to a non-home planet you control"
+    },
+    {
+     "tag": "gain-attachment",
+     "magnitude": null,
+     "evidence": "Attach this card to a non-home planet you control"
     }
    ]
   },
@@ -10258,6 +10268,11 @@
      "tag": "deal-enforcement",
      "magnitude": null,
      "evidence": "When you receive this card, if you are not the"
+    },
+    {
+     "tag": "puppet-control",
+     "magnitude": null,
+     "evidence": "place 1 facedown plot card in their play area with your control token on it"
     }
    ]
   },
@@ -10352,7 +10367,7 @@
    "faction": "bastion",
    "tags": [
     {
-     "tag": "repair-units",
+     "tag": "gain-attachment",
      "magnitude": null,
      "evidence": "Galvanize 1 of your units that participated"
     },
@@ -10383,6 +10398,11 @@
      "tag": "timing-agenda-phase",
      "magnitude": null,
      "evidence": "At the start of the agenda phase"
+    },
+    {
+     "tag": "planetary-trait-bonus",
+     "magnitude": null,
+     "evidence": "Exhaust each cultural planet owned by that player"
     }
    ]
   },
@@ -10498,11 +10518,6 @@
    "faction": null,
    "tags": [
     {
-     "tag": "extra-dice",
-     "magnitude": 2,
-     "evidence": "Roll 2 dice"
-    },
-    {
      "tag": "destroy-units",
      "magnitude": 1,
      "evidence": "your opponent must choose and destroy 1 of their ships"
@@ -10522,7 +10537,7 @@
    "tags": [
     {
      "tag": "destroy-units",
-     "magnitude": 1,
+     "magnitude": null,
      "evidence": "Destroy each PDS on that planet"
     },
     {
@@ -10698,6 +10713,11 @@
      "tag": "timing-action",
      "magnitude": null,
      "evidence": "Action"
+    },
+    {
+     "tag": "planetary-trait-bonus",
+     "magnitude": null,
+     "evidence": "Ready each cultural planet you control"
     }
    ]
   },
@@ -11343,11 +11363,6 @@
      "evidence": "Roll 1 die for each infantry on that planet"
     },
     {
-     "tag": "extra-dice",
-     "magnitude": null,
-     "evidence": "Roll 1 die for each infantry on that planet"
-    },
-    {
      "tag": "destroy-units",
      "magnitude": null,
      "evidence": "For each result of 6 or greater, destroy 1 of those units"
@@ -11481,7 +11496,7 @@
    "faction": null,
    "tags": [
     {
-     "tag": "law-permanent",
+     "tag": "agenda-cancel",
      "magnitude": null,
      "evidence": "Discard 1 law from play"
     },
@@ -12610,6 +12625,11 @@
      "tag": "timing-reaction",
      "magnitude": null,
      "evidence": "When another player would perform a strategic action"
+    },
+    {
+     "tag": "end-turn-skip",
+     "magnitude": null,
+     "evidence": "End that player's turn"
     }
    ]
   },
@@ -13355,7 +13375,7 @@
    "faction": null,
    "tags": [
     {
-     "tag": "restrict-activation",
+     "tag": "end-turn-skip",
      "magnitude": null,
      "evidence": "Skip the next player's turn"
     },
@@ -13471,6 +13491,11 @@
    "tags": [
     {
      "tag": "elect-outcome",
+     "magnitude": null,
+     "evidence": "The elected secret objective becomes a public objective"
+    },
+    {
+     "tag": "reveal-public-objective",
      "magnitude": null,
      "evidence": "The elected secret objective becomes a public objective"
     }
@@ -13644,11 +13669,6 @@
      "evidence": "Each player cannot have more than 4 tokens in their fleet pool"
     },
     {
-     "tag": "fleet-limit-bonus",
-     "magnitude": null,
-     "evidence": "Each player cannot have more than 4 tokens in their fleet pool"
-    },
-    {
      "tag": "place-command-token",
      "magnitude": null,
      "evidence": "Each player places 1 command token from their reinforcements in their fleet pool"
@@ -13708,12 +13728,7 @@
    "faction": null,
    "tags": [
     {
-     "tag": "gain-secret-objective",
-     "magnitude": null,
-     "evidence": "Draw and reveal 1 stage I public objective from the deck"
-    },
-    {
-     "tag": "timing-agenda-phase",
+     "tag": "reveal-public-objective",
      "magnitude": null,
      "evidence": "Draw and reveal 1 stage I public objective from the deck"
     }
@@ -13749,7 +13764,7 @@
      "evidence": "Discard the elected law from play"
     },
     {
-     "tag": "law-permanent",
+     "tag": "agenda-cancel",
      "magnitude": null,
      "evidence": "Discard the elected law from play"
     }
@@ -13846,7 +13861,7 @@
      "evidence": "After a player activates a system that contains 1 or more of a different player's units"
     },
     {
-     "tag": "restrict-activation",
+     "tag": "end-turn-skip",
      "magnitude": null,
      "evidence": "immediately end the active player's turn"
     }
@@ -13892,7 +13907,7 @@
      "evidence": "they do not need to spend resources to research technology"
     },
     {
-     "tag": "timing-action",
+     "tag": "timing-reaction",
      "magnitude": null,
      "evidence": "primary or secondary ability of the \"Technology\" strategy card"
     }
@@ -13920,7 +13935,7 @@
      "evidence": "then they may perform 1 additional action"
     },
     {
-     "tag": "timing-action",
+     "tag": "timing-reaction",
      "magnitude": null,
      "evidence": "after performing an action"
     }
@@ -13964,7 +13979,7 @@
    "faction": null,
    "tags": [
     {
-     "tag": "law-permanent",
+     "tag": "agenda-cancel",
      "magnitude": null,
      "evidence": "Discard all laws from play"
     },
@@ -14784,9 +14799,9 @@
      "evidence": "gains this card and 1 victory point"
     },
     {
-     "tag": "restrict-activation",
+     "tag": "action-card-restriction",
      "magnitude": null,
-     "evidence": "The elected player cannot play action cards"
+     "evidence": "cannot play action cards"
     }
    ]
   },
@@ -16016,7 +16031,7 @@
    "faction": null,
    "tags": [
     {
-     "tag": "obj-ownership-count",
+     "tag": "obj-units-in-systems",
      "magnitude": null,
      "evidence": "Have 9 or more ground forces on a planet"
     },
@@ -16045,13 +16060,7 @@
    "id": "pe",
    "source": "pok",
    "faction": null,
-   "tags": [
-    {
-     "tag": "timing-end-turn",
-     "magnitude": null,
-     "evidence": "Be the last player to pass during a game round"
-    }
-   ]
+   "tags": []
   },
   {
    "kind": "secret_objective",
@@ -16203,7 +16212,7 @@
      "evidence": "you may purge one of your relics"
     },
     {
-     "tag": "gain-secret-objective",
+     "tag": "reveal-public-objective",
      "magnitude": null,
      "evidence": "replace it with a random objective from any objective deck"
     },
@@ -16282,6 +16291,11 @@
      "tag": "initiative-change",
      "magnitude": null,
      "evidence": "gain the speaker token"
+    },
+    {
+     "tag": "purge",
+     "magnitude": null,
+     "evidence": "Purge this card"
     }
    ]
   },
@@ -16320,12 +16334,12 @@
    "faction": null,
    "tags": [
     {
-     "tag": "move-without-transport",
+     "tag": "movement-exemption",
      "magnitude": null,
-     "evidence": "move and transport units"
+     "evidence": "to move and transport units that are in systems that contain 1 of your command tokens"
     },
     {
-     "tag": "timing-action",
+     "tag": "timing-reaction",
      "magnitude": null,
      "evidence": "Before you move units during a tactical action"
     },
@@ -16738,6 +16752,11 @@
      "tag": "game-structure-change",
      "magnitude": null,
      "evidence": "Put The Fracture into play"
+    },
+    {
+     "tag": "purge",
+     "magnitude": null,
+     "evidence": "Roll 1 die and purge this card"
     }
    ]
   },
@@ -16869,7 +16888,7 @@
      "evidence": "You may produce 1 unit in this system"
     },
     {
-     "tag": "trade-goods-as-resources",
+     "tag": "influence-as-resources",
      "magnitude": null,
      "evidence": "You may spend influence as if it were resources"
     }
@@ -16887,7 +16906,7 @@
      "evidence": "You may produce 1 unit in this system"
     },
     {
-     "tag": "trade-goods-as-resources",
+     "tag": "influence-as-resources",
      "magnitude": null,
      "evidence": "You may spend influence as if it were resources"
     }
@@ -16905,7 +16924,7 @@
      "evidence": "You may produce 1 unit in this system"
     },
     {
-     "tag": "trade-goods-as-resources",
+     "tag": "influence-as-resources",
      "magnitude": null,
      "evidence": "You may spend influence as if it were resources"
     }
@@ -18522,11 +18541,6 @@
      "evidence": "place neutral infantry on each hazardous planet"
     },
     {
-     "tag": "produce-units",
-     "magnitude": null,
-     "evidence": "replenish any neutral units that were destroyed"
-    },
-    {
      "tag": "planetary-trait-bonus",
      "magnitude": null,
      "evidence": "for each hazardous planet that is not controlled"
@@ -18591,6 +18605,11 @@
      "tag": "timing-action",
      "magnitude": null,
      "evidence": "ACTION: Exhaust ***Dark Energy Tap***"
+    },
+    {
+     "tag": "gain-relic",
+     "magnitude": null,
+     "evidence": "Relics require only 2 matching fragments be purged instead of 3"
     }
    ]
   },
@@ -18670,6 +18689,11 @@
      "tag": "timing-action",
      "magnitude": null,
      "evidence": "Discard your control marker from this card"
+    },
+    {
+     "tag": "action-card-restriction",
+     "magnitude": null,
+     "evidence": "you cannot vote or play action cards during the agenda phase"
     }
    ]
   },
@@ -19188,7 +19212,7 @@
      "evidence": "You may exhaust this card when you pass"
     },
     {
-     "tag": "discard-opponent-card",
+     "tag": "draw-action-card",
      "magnitude": null,
      "evidence": "place 1 action card from the discard pile faceup on this card"
     },
@@ -19605,7 +19629,7 @@
     {
      "tag": "timing-action",
      "magnitude": null,
-     "evidence": "PRIMARY: Choose 1 system other than the Mecatol Rex system"
+     "evidence": "Choose 1 system other than the Mecatol Rex system"
     },
     {
      "tag": "place-command-token",
@@ -19633,7 +19657,7 @@
     {
      "tag": "timing-action",
      "magnitude": null,
-     "evidence": "PRIMARY: Place 1 PDS or 1 Space Dock"
+     "evidence": "Place 1 PDS or 1 Space Dock"
     },
     {
      "tag": "place-structure",
@@ -19661,7 +19685,7 @@
     {
      "tag": "timing-action",
      "magnitude": null,
-     "evidence": "PRIMARY: Gain 3 command tokens"
+     "evidence": "Gain 3 command tokens"
     },
     {
      "tag": "gain-command-token",
@@ -19679,7 +19703,7 @@
     {
      "tag": "timing-action",
      "magnitude": null,
-     "evidence": "PRIMARY: Choose 1 system other than the Mecatol Rex system"
+     "evidence": "Choose 1 system other than the Mecatol Rex system"
     },
     {
      "tag": "place-command-token",
@@ -19707,7 +19731,7 @@
     {
      "tag": "timing-action",
      "magnitude": null,
-     "evidence": "PRIMARY: Choose a player other than the speaker"
+     "evidence": "Choose a player other than the speaker"
     },
     {
      "tag": "initiative-change",
@@ -19745,7 +19769,7 @@
     {
      "tag": "timing-action",
      "magnitude": null,
-     "evidence": "PRIMARY: Place 1 PDS or 1 Space Dock"
+     "evidence": "Place 1 PDS or 1 Space Dock"
     },
     {
      "tag": "place-structure",
@@ -19768,7 +19792,7 @@
     {
      "tag": "timing-action",
      "magnitude": null,
-     "evidence": "PRIMARY: Gain 3 trade goods"
+     "evidence": "Gain 3 trade goods"
     },
     {
      "tag": "gain-trade-goods",
@@ -19801,7 +19825,7 @@
     {
      "tag": "timing-action",
      "magnitude": null,
-     "evidence": "PRIMARY: Remove 1 of your command tokens"
+     "evidence": "Remove 1 of your command tokens"
     },
     {
      "tag": "remove-command-token",
@@ -19839,7 +19863,7 @@
     {
      "tag": "timing-action",
      "magnitude": null,
-     "evidence": "PRIMARY: Research 1 technology"
+     "evidence": "Research 1 technology"
     },
     {
      "tag": "research-free",
@@ -19862,7 +19886,7 @@
     {
      "tag": "timing-action",
      "magnitude": null,
-     "evidence": "PRIMARY: Immediately score 1 public objective"
+     "evidence": "Immediately score 1 public objective"
     },
     {
      "tag": "score-objective-help",
@@ -19900,7 +19924,7 @@
     {
      "tag": "timing-action",
      "magnitude": null,
-     "evidence": "PRIMARY: Either place 1 structure on a planet you control"
+     "evidence": "Either place 1 structure on a planet you control"
     },
     {
      "tag": "place-structure",
@@ -19928,7 +19952,7 @@
     {
      "tag": "timing-action",
      "magnitude": null,
-     "evidence": "PRIMARY: Perform a tactical action in any system"
+     "evidence": "Perform a tactical action in any system"
     },
     {
      "tag": "extra-activation",

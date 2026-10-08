@@ -242,3 +242,148 @@ every tag in the taxonomy and used by at least 2 cards; no duplicate (kind, id).
   restricts receiving the Alliance note. Expect others of this kind; that is what the spot-check is for.
 - Low-signal tags to consider dropping or splitting before integration: timing-reaction (271 cards),
   deal-enforcement (on every promissory note).
+
+## Second review (Sonnet, 2026-10-09)
+
+Reviewer: Sonnet 5.5 (a different agent from the labellers; no Haiku helpers used). Every one of the 896 cards was read against its source text in `crates/ti4-content/content/*.json` (text rebuilt per card as window | effect | UNLOCK; strategy cards as PRIMARY/SECONDARY segments), followed by keyword cross-checks for missed `purge`/`relic`/timing tags. Ambiguous labels were left alone; only clear mismatches with the tag definition were changed. Labels were NOT re-derived from scratch.
+
+### Counts
+
+| item | count |
+|---|---|
+| labels changed (tag swapped) | 40 |
+| labels removed | 11 |
+| labels added | 15 |
+| evidence-only fixes (tag kept) | 13 (the 12 strategy-card "PRIMARY:" quotes + technology `lgf`) |
+| magnitude-only fixes | 1 (`cripple` destroy-units 1 -> null, it destroys EACH PDS) |
+| tags added to taxonomy | 6 (direct-hit-immunity, action-card-restriction, movement-exemption, influence-as-resources, end-turn-skip, reveal-public-objective) |
+| tag definitions revised | 3 (cancel-hit, space-cannon-immunity, trade-goods-as-resources) |
+| result | 896 cards, 2,536 labels (2532 - 11 + 15), 139 tags |
+
+Cards with no tags: still 8 (covert agenda, 5 "mutated" plots, `cr2`, `cv2`).
+
+### Taxonomy changes
+
+| tag | cards | definition |
+|---|---|---|
+| direct-hit-immunity (new) | 6 | Unit cannot be destroyed by "Direct Hit" action cards (immunity to one destruction effect; not a hit cancellation). |
+| action-card-restriction (new) | 4 | Prevents players from playing action cards, or restricts when/which action cards may be played. |
+| movement-exemption (new) | 3 | Lifts a normal movement/activation restriction (e.g. move out of or activate systems that contain your command tokens). |
+| influence-as-resources (new) | 5 | Influence may be spent as if it were resources (or resources as influence, or both values combined). |
+| end-turn-skip (new) | 6 | Ends or skips a player's turn. |
+| reveal-public-objective (new) | 3 | Draws, reveals, replaces or creates a public objective. |
+| cancel-hit (revised) | 12 | Now "Cancels or ignores hits produced against your units." (dropped "or prevents a unit from being destroyed"; Direct Hit immunity has its own tag). |
+| space-cannon-immunity (revised) | 12 | Now also covers immunity to ANTI-FIGHTER BARRAGE (`naalu_mech_omega`; a separate tag would have had 1 card). |
+| trade-goods-as-resources (revised) | 2 | Now also covers commodities spent as trade goods (`keleresagent`); with the exploration cards moved out only `mc` and `keleresagent` use it. |
+
+Evidence-quote rule used for validation: every quote must be a substring of ONE segment of the card text, with no "PRIMARY:"/"SECONDARY:" prefix.
+
+### Every change (kind, id, before -> after, reason)
+
+| kind | id | change | reason |
+|---|---|---|---|
+| ability | slipstream | timing-action → timing-passive | "During your tactical actions" is a standing modifier, not an ACTION |
+| ability | ambush | extra-dice → (removed) | rolls separate pre-combat dice for cruisers/destroyers, not additional dice for units |
+| ability | telepathic | place-command-token → (removed) | places the Naalu "0" initiative token, not a command token |
+| ability | orbital_drop | (none) → ground-force-effect | places infantry (consistent with mitosis) |
+| ability | blood_ties | no-token-cost → (removed) | saves influence cost of the custodians token, not a command token |
+| ability | hubris | gain-promissory → (removed) | text purges Alliance and forbids receiving it; nothing is gained |
+| technology | lgf | evidence fixed | evidence not a substring (case) |
+| technology | pa | timing-action → timing-passive | "During the action phase" is a standing permission, not an ACTION |
+| technology | tp | timing-action → timing-passive | standing restriction, not an ACTION |
+| technology | tp | restrict-activation → action-card-restriction | restricts playing action cards (not activation) |
+| technology | sar | (none) → mech-effect | both effects concern mechs |
+| technology | dn2 | cancel-hit → direct-hit-immunity | immunity to Direct Hit action cards, not cancelling a hit |
+| technology | sdn2 | cancel-hit → direct-hit-immunity | immunity to Direct Hit action cards, not cancelling a hit |
+| technology | exo2 | cancel-hit → direct-hit-immunity | immunity to Direct Hit action cards, not cancelling a hit |
+| unit | dreadnought2 | cancel-hit → direct-hit-immunity | immunity to Direct Hit action cards, not cancelling a hit |
+| unit | l1z1x_dreadnought2 | cancel-hit → direct-hit-immunity | immunity to Direct Hit action cards, not cancelling a hit |
+| unit | sardakk_dreadnought2 | cancel-hit → direct-hit-immunity | immunity to Direct Hit action cards, not cancelling a hit |
+| unit | crimson_mech | timing-action → timing-passive | DEPLOY during commit step is not an ACTION |
+| leader | nomadagentthundarian | assign-hits-control → reroll | cancels hit assignment and returns to Roll Dice step = reroll |
+| leader | mahactcommander | timing-action → timing-passive | "During your tactical actions" is a standing ability |
+| leader | mahactcommander | (none) → movement-exemption | lifts the normal restriction on activating systems that hold your tokens |
+| leader | nomadhero | restrict-movement → movement-exemption | grants movement out of command-token systems (inverted: was a restriction tag) |
+| leader | jolnarhero | (none) → research-free | gains replacement technologies outside research |
+| leader | xxchahero | resources-bonus → influence-as-resources | combines resource and influence so each counts as both |
+| breakthrough | xxchabt | resources-bonus → influence-as-resources | spend influence as resources and vice versa |
+| breakthrough | hacanbt | place-command-token → gain-command-token | moves reinforcements token into fleet pool = gain a token |
+| breakthrough | saarbt | extra-dice → destroy-units | rolls dice equal to resources spent to hit ground forces; no additional dice |
+| promissory | <color>_ta | give-trade-goods → steal-trade-goods | you receive the other player's commodities |
+| promissory | gift | place-command-token → (removed) | places the Naalu "0" initiative token, not a command token |
+| promissory | terraform | (none) → gain-attachment | card attaches to a planet |
+| promissory | blackops | (none) → puppet-control | puts a control token on a plot (puppeting the receiver) |
+| promissory | raisethestandard | repair-units → gain-attachment | galvanizes a unit; no repair |
+| action_card | abs | (none) → planetary-trait-bonus | effect keyed to cultural planets (as industrial_initiative/unstable) |
+| action_card | economic_initiative | (none) → planetary-trait-bonus | effect keyed to cultural planets |
+| action_card | courageous | extra-dice → (removed) | rolls 2 separate dice once, not additional dice for units |
+| action_card | plague | extra-dice → (removed) | rolls one die per infantry as the whole effect, not additional dice |
+| action_card | cripple | destroy-units magnitude 1 → None | destroys EACH PDS; magnitude 1 is wrong |
+| action_card | repeal | law-permanent → agenda-cancel | removes a law from play; law-permanent means a law that stays in play |
+| action_card | crisis | restrict-activation → end-turn-skip | skips the next player's turn; no activation restriction |
+| agenda | incentive | gain-secret-objective → reveal-public-objective | reveals public objectives (stage I/II), draws no secret objective |
+| agenda | classified | (none) → reveal-public-objective | turns a secret objective into a public one |
+| agenda | abolishment | law-permanent → agenda-cancel | discards a law from play; does not itself stay in play |
+| agenda | constitution | law-permanent → agenda-cancel | For discards all laws from play |
+| agenda | minister_peace | restrict-activation → end-turn-skip | discarding it ends the active player's turn; not an activation restriction |
+| agenda | minister_sciences | timing-action → timing-reaction | triggers when resolving Technology; not an ACTION |
+| agenda | minister_war | timing-action → timing-reaction | used after performing an action; not itself an ACTION |
+| agenda | censure | restrict-activation → action-card-restriction | "cannot play action cards", not an activation restriction |
+| secret_objective | otf | obj-ownership-count → obj-units-in-systems | ground forces on one planet = units in location (cf. mtm) |
+| secret_objective | pe | timing-end-turn → (removed) | passing order, not an end-of-turn trigger |
+| relic | neuraloop | gain-secret-objective → reveal-public-objective | replaces a revealed public objective with a random one; draws no secret objective |
+| relic | dominusorb | timing-action → timing-reaction | "Before you move units during a tactical action" is a trigger inside a tactical action, not an ACTION |
+| relic | dominusorb | move-without-transport → movement-exemption | lets units leave command-token systems; units still need normal transport |
+| exploration | frln1 | trade-goods-as-resources → influence-as-resources | spends INFLUENCE as resources; trade goods are not involved |
+| exploration | frln2 | trade-goods-as-resources → influence-as-resources | spends INFLUENCE as resources; trade goods are not involved |
+| exploration | frln3 | trade-goods-as-resources → influence-as-resources | spends INFLUENCE as resources; trade goods are not involved |
+| promissory | <color>_ps | (none) → action-card-restriction | target cannot play action cards |
+| galactic_event | stellar_atomics | (none) → action-card-restriction | players without a marker cannot play action cards |
+| technology | nf | timing-end-turn → end-turn-skip | effect is to end the player's turn immediately; not an end-of-turn trigger |
+| unit | mahact_mech | timing-end-turn → end-turn-skip | spends the token to end the player's turn |
+| leader | mahactcommander | timing-end-turn → end-turn-skip | activating a token system ends your turn |
+| action_card | coup | (none) → end-turn-skip | ends the player's turn and cancels the strategic action |
+| agenda | regulations | fleet-limit-bonus → (removed) | For caps the fleet pool at 4 (a restriction, not a bonus) |
+| galactic_event | dangerous_wilds | produce-units → (removed) | replenishing neutral units is not player production |
+| galactic_event | age_exploration | (none) → gain-relic | changes relic-fragment requirements |
+| legendary_planet | garbozia | discard-opponent-card → draw-action-card | takes action cards from the discard pile to play; no opponent hand is affected |
+| relic | thesilverflame | (none) → purge | card is purged on use |
+| relic | bookoflatvinia | (none) → purge | card is purged on use |
+| agenda | incentive | timing-agenda-phase → (removed) | text has no agenda-phase trigger; it only reveals an objective |
+| strategy_card | base2 | timing-action: quote prefix "PRIMARY:" removed | quote was not a substring of the stored text |
+| strategy_card | base4 | timing-action: quote prefix "PRIMARY:" removed | quote was not a substring of the stored text |
+| strategy_card | pok1leadership | timing-action: quote prefix "PRIMARY:" removed | quote was not a substring of the stored text |
+| strategy_card | pok2diplomacy | timing-action: quote prefix "PRIMARY:" removed | quote was not a substring of the stored text |
+| strategy_card | pok3politics | timing-action: quote prefix "PRIMARY:" removed | quote was not a substring of the stored text |
+| strategy_card | pok4construction | timing-action: quote prefix "PRIMARY:" removed | quote was not a substring of the stored text |
+| strategy_card | pok5trade | timing-action: quote prefix "PRIMARY:" removed | quote was not a substring of the stored text |
+| strategy_card | pok6warfare | timing-action: quote prefix "PRIMARY:" removed | quote was not a substring of the stored text |
+| strategy_card | pok7technology | timing-action: quote prefix "PRIMARY:" removed | quote was not a substring of the stored text |
+| strategy_card | pok8imperial | timing-action: quote prefix "PRIMARY:" removed | quote was not a substring of the stored text |
+| strategy_card | te4construction | timing-action: quote prefix "PRIMARY:" removed | quote was not a substring of the stored text |
+| strategy_card | te6warfare | timing-action: quote prefix "PRIMARY:" removed | quote was not a substring of the stored text |
+
+### Recommendation on low-signal tags (NOT applied)
+
+- **deal-enforcement** (41 cards: all 40 promissory notes + `exchangeprogram`): drop. It equals `kind == promissory` (plus one card), so it adds no information, and it is wrong for `terraform`, which has no return clause. If the "goes back to its owner when X" mechanic matters, replace it with a precise tag such as `returns-to-owner`, set only where the text says "return this card to the ... player" (36 of the 40 notes); that also separates standing notes (`convoys`, `pop`, `an`) from one-shot notes.
+- **timing-reaction** (274 cards, 31% of all cards; never alone, it always sits next to an effect tag): split rather than drop. It lumps "When/After/Before <trigger>" of very different kinds. Suggested split by trigger: `trigger-own-event` (you gain/produce/research/activate), `trigger-other-player-action` (another player moves/activates/plays a card), `trigger-agenda-reveal`, `trigger-unit-destroyed`. The phase/turn `timing-*` tags already cover phase triggers. If a split is too costly, keep the tag but treat it as a weak feature (it is a near-constant prior on action_card/leader/ability kinds: 69 of 142 action cards, 48 of 103 leaders). Do not drop it without the split, because "reacts to another player" is real information for the policy.
+- Also weak (for information): `timing-passive` is applied inconsistently (26 cards; many standing abilities have no timing tag). `timing-action` is now reserved for true ACTION: abilities (it had been used for "During your tactical actions" modifiers).
+
+### Cards I am unsure about (left as is)
+
+- agenda `covert`: the content record has empty `text1`/`text2` (the rule text sits in the `target` field), so it stays untagged because no quote can be taken from the stored text. Intended tags: agenda-manipulation + look-at-hidden-info. Fix the content record or the text builder first.
+- `jolnar_flagship` (combat-stat-change): "each 9 or 10 produces 2 additional hits" is an extra-hit rule, not a combat-value change; no tag fits (earlier proposed: combat-hit-production).
+- `htp` (resources-bonus): swaps resource and influence values; no exact tag.
+- `regulations`: the For clause is a fleet-pool cap, the Against clause adds fleet tokens; fleet-limit-bonus was removed, place-command-token kept.
+- `edict`: redistribute-tokens is applied to a restriction ("cannot be redistributed").
+- `cr2`, `cv2` (stat-only upgrades) stay empty by convention.
+- promissory `terraform` keeps deal-enforcement although it has no return clause (covered by the recommendation above).
+
+### Validation results (script run after the final write)
+
+- JSON parses; file rewritten with the same layout (indent 1, CRLF line endings, no trailing newline); `taxonomy_version`, `status` and key order unchanged (new tags appended at the end of `tags`).
+- Cards: 896; duplicate (kind, id) pairs: 0.
+- Every label tag is in the taxonomy: yes (0 unknown). No card carries the same tag twice.
+- Every taxonomy tag is used by at least 2 cards: yes (139 tags).
+- Every evidence quote is a substring of one segment of its card text rebuilt from the content files: yes (0 failures; was 13).
+- Labels: 2,536; tags: 139.

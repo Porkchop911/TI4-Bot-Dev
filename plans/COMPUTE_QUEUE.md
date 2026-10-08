@@ -37,3 +37,4 @@ evaluate each final checkpoint with `clearance_eval --roster six --seeds 600 --r
 - 2026-10-09: GPU reserved for `strata` by the operator; self-imitation pilot pinned.
 - 2026-10-09: engine no-progress guard started (CPU only); finished and committed (2809 engine tests, 40-game wide smoke clean).
 - 2026-10-09: card effect-tag labelling started (no build, no GPU); draft finished (896 cards), awaiting operator spot-check.
+- 2026-10-09: card-tag second review (Sonnet) ran and finished; 80 changes, 139 tags.
