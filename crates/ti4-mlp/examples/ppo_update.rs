@@ -165,6 +165,9 @@ const VALUE_FLAGS: &[&str] = &[
     "--rollout-backend",
     "--gpu-batch",
     "--gpu-flush-ms",
+    "--self-imitation",
+    "--sil-margin",
+    "--sil-keep",
 ];
 /// Every flag that stands alone.
 const BOOLEAN_FLAGS: &[&str] = &[
@@ -509,6 +512,7 @@ fn play_one(
     roster: ti4_engine::seating::FactionRoster,
     diplomacy: bool,
     hash: bool,
+    sil_margin: f64,
 ) -> Result<Played, String> {
     // The six this game draws: FACTIONS itself, or a seeded wide draw shared by every rotation of
     // the seed (BF-22).
@@ -653,7 +657,19 @@ fn play_one(
     // tactical actions 37% and losing 1.68 points of clearance -- and the waste figure alone cannot
     // tell that apart from getting better. Seen together they can.
     let mut tactical = 0usize;
-    for seat in &rollout.seats {
+    // Which of the returned steps came from a seat that beat its own table's mean final VP by
+    // `sil_margin`; aligned one-to-one with `steps`. The mean is over every seat of the game,
+    // frozen opponents included, because the point is "better than the table", not "better than
+    // the other learners".
+    let mut qualifying: Vec<Option<usize>> = Vec::new();
+    #[expect(clippy::cast_precision_loss, reason = "six seats; VP counts are tiny")]
+    let table_mean = rollout
+        .seats
+        .iter()
+        .map(|seat| seat.episode.final_progress.victory_points as f64)
+        .sum::<f64>()
+        / rollout.seats.len().max(1) as f64;
+    for (seat_number, seat) in rollout.seats.iter().enumerate() {
         // A frozen seat is not this policy: reporting its clearance and points as the learner's
         // would read the benchmark's play as progress.
         let Some(handle) = handles.get(&seat.player) else {
@@ -788,6 +804,13 @@ fn play_one(
                 }
             }
         }
+        #[expect(clippy::cast_precision_loss, reason = "victory points are tiny")]
+        let seat_qualifies =
+            seat.episode.final_progress.victory_points as f64 >= table_mean + sil_margin;
+        qualifying.extend(std::iter::repeat_n(
+            seat_qualifies.then_some(seat_number),
+            recorded.len(),
+        ));
         steps.extend(recorded.drain(..).map(|record| record.step));
     }
     // With --hash-games: what this game did, in forms two runs can be compared by exactly.
@@ -823,7 +846,14 @@ fn play_one(
     } else {
         None
     };
-    Ok((steps, outcomes, wasted, tactical, record))
+    if qualifying.len() != steps.len() {
+        return Err(format!(
+            "seed {seed} rotation {rotation}: {} self-imitation flags for {} steps",
+            qualifying.len(),
+            steps.len()
+        ));
+    }
+    Ok((steps, outcomes, wasted, tactical, record, qualifying))
 }
 
 /// One played game: the decisions it contributed and what each seat ended with.
@@ -833,6 +863,8 @@ type Played = (
     usize,
     usize,
     Option<serde_json::Value>,
+    // Per step: the seat number when that seat beat its table (see `play_one`), else None.
+    Vec<Option<usize>>,
 );
 
 /// What one seat's game produced, beyond the decisions it contributed to the batch.
@@ -1201,6 +1233,36 @@ fn main() {
     if demo_per_update > 0 && demo_corpus.is_empty() {
         refuse("--demo-per-update requires --demo-corpus");
     }
+    // Filtered self-imitation: imitate this run's own decisions from seats that beat their table.
+    let self_imitation: f64 = argument("--self-imitation").map_or(0.0, |value| {
+        value
+            .parse()
+            .unwrap_or_else(|_| refuse("--self-imitation expects a number"))
+    });
+    if !self_imitation.is_finite() || !(0.0..=1.0).contains(&self_imitation) {
+        refuse("--self-imitation must be a fraction in (0, 1] (0 or absent disables it)");
+    }
+    let sil_margin: f64 = argument("--sil-margin").map_or(1.0, |value| {
+        value
+            .parse()
+            .unwrap_or_else(|_| refuse("--sil-margin expects a number of victory points"))
+    });
+    if !sil_margin.is_finite() {
+        refuse("--sil-margin must be finite");
+    }
+    let sil_keep: usize = argument("--sil-keep").map_or(4, |value| {
+        value
+            .parse()
+            .unwrap_or_else(|_| refuse("--sil-keep expects an unsigned integer"))
+    });
+    if self_imitation > 0.0 && demo_per_update > 0 {
+        refuse("--self-imitation and --demo-per-update are both auxiliary objectives; use one");
+    }
+    if self_imitation > 0.0 && sil_keep == 0 {
+        refuse("--sil-keep must be at least 1 with --self-imitation");
+    }
+    let mut sil_buffer: std::collections::VecDeque<Vec<ti4_mlp::positive_corpus::AdvantageDemo>> =
+        std::collections::VecDeque::new();
 
     let pool_path =
         argument("--map-pool").unwrap_or_else(|| "out/pools/full_np8_12_train.json".to_owned());
@@ -1593,6 +1655,12 @@ fn main() {
             "  auxiliary   {demo_per_update} clean trajectories/update, advantage weighted, 10% gradient cap"
         );
     }
+    if self_imitation > 0.0 {
+        println!(
+            "  self-imit   seats >= table mean + {sil_margin} VP, advantage weighted, faction balanced, last {sil_keep} updates, {:.0}% gradient cap",
+            self_imitation * 100.0
+        );
+    }
     // Recorded in the header because run-030's log did not name it, and the temperature is the
     // whole difference between that run and the one before it. A log that cannot say what it was
     // run at cannot be compared against another.
@@ -1813,6 +1881,7 @@ fn main() {
                             roster,
                             diplomacy,
                             hash_games,
+                            sil_margin,
                         ),
                     ));
                 }
@@ -1860,10 +1929,34 @@ fn main() {
             }
         }
         // Job order, whatever order the games finished in.
-        for result in by_job {
-            let (game, outcomes, wasted, tactical, record) = result
+        // This update's self-imitation picks, in job order (deterministic), and the seats they
+        // came from. Built before `Batch::freeze` consumes the steps.
+        let mut sil_selected: Vec<ti4_mlp::positive_corpus::AdvantageDemo> = Vec::new();
+        let mut sil_seats: std::collections::BTreeSet<(usize, usize)> =
+            std::collections::BTreeSet::new();
+        for (job, result) in by_job.into_iter().enumerate() {
+            let (game, outcomes, wasted, tactical, record, qualifying) = result
                 .unwrap_or_else(|| refuse("a rollout job was never played"))
                 .unwrap_or_else(|error| refuse(&error));
+            if self_imitation > 0.0 {
+                for (step, seat) in game.iter().zip(&qualifying) {
+                    let (Some(seat), Some(critic)) = (seat, &step.critic) else {
+                        continue;
+                    };
+                    sil_seats.insert((job, *seat));
+                    sil_selected.push(ti4_mlp::positive_corpus::AdvantageDemo {
+                        demo: ti4_mlp::positive_corpus::Demo {
+                            row: step.row,
+                            head: step.head,
+                            options: step.options.clone(),
+                            chosen: step.chosen,
+                            weight: 1.0,
+                        },
+                        return_to_go: step.return_to_go,
+                        critic: critic.clone(),
+                    });
+                }
+            }
             if let Some(record) = record {
                 game_lines.push(record);
             }
@@ -1879,6 +1972,35 @@ fn main() {
                     .add(outcome);
             }
         }
+        // Each faction row's picks share one unit of weight, so a strong faction that qualifies
+        // more often does not dominate the imitation.
+        if self_imitation > 0.0 {
+            let mut count: BTreeMap<usize, f64> = BTreeMap::new();
+            for demo in &sil_selected {
+                *count.entry(demo.demo.row.index()).or_default() += 1.0;
+            }
+            for demo in &mut sil_selected {
+                if let Some(total) = count.get(&demo.demo.row.index()) {
+                    demo.demo.weight = 1.0 / *total;
+                }
+            }
+        }
+        let sil_selected_count = sil_selected.len();
+        let sil_seat_count = sil_seats.len();
+        if self_imitation > 0.0 {
+            if !sil_selected.is_empty() {
+                sil_buffer.push_back(sil_selected);
+            }
+            // An update with no qualifying seat still ages the buffer.
+            else if !sil_buffer.is_empty() {
+                sil_buffer.pop_front();
+            }
+            while sil_buffer.len() > sil_keep {
+                sil_buffer.pop_front();
+            }
+        }
+        let sil_demos: Vec<ti4_mlp::positive_corpus::AdvantageDemo> =
+            sil_buffer.iter().flatten().cloned().collect();
         let merge_time = merge_started.elapsed();
         let rollout_time = rolled.elapsed();
         if steps.is_empty() {
@@ -2043,7 +2165,15 @@ fn main() {
             ..settings
         };
 
-        let stats = if demonstrations.is_empty() {
+        // The auxiliary set and its gradient cap: the stored-corpus demonstrations at 10%, else the
+        // run's own recent good decisions at `--self-imitation`.
+        let (auxiliary, auxiliary_cap): (&[ti4_mlp::positive_corpus::AdvantageDemo], f64) =
+            if demonstrations.is_empty() {
+                (&sil_demos, self_imitation)
+            } else {
+                (&demonstrations, 0.10)
+            };
+        let stats = if auxiliary.is_empty() {
             ti4_mlp::ppo::update(
                 &mut actor,
                 &batch,
@@ -2061,14 +2191,12 @@ fn main() {
                 settings,
                 seed_base ^ update as u64,
                 &mut optimizer,
-                0.10,
+                auxiliary_cap,
                 |current, epoch, minibatch| {
                     let width = 128usize;
-                    let start = ((epoch * batches + minibatch) * width) % demonstrations.len();
-                    let selected: Vec<_> = (0..width.min(demonstrations.len()))
-                        .map(|offset| {
-                            demonstrations[(start + offset) % demonstrations.len()].clone()
-                        })
+                    let start = ((epoch * batches + minibatch) * width) % auxiliary.len();
+                    let selected: Vec<_> = (0..width.min(auxiliary.len()))
+                        .map(|offset| auxiliary[(start + offset) % auxiliary.len()].clone())
                         .collect();
                     ti4_mlp::positive_corpus::advantage_weighted_clone_loss(current, &selected)
                 },
@@ -2134,6 +2262,12 @@ fn main() {
             println!(
                 "              tactical/seat {tactical_per_seat:.3}  waste/seat {per_seat:.3}  waste/tactical {per_tactical:.3}"
             );
+            if self_imitation > 0.0 {
+                println!(
+                    "              self-imitation  {sil_selected_count} decisions from {sil_seat_count} seats this update, buffer {}",
+                    sil_demos.len()
+                );
+            }
         }
 
         // Non-vacuity: an update that moved nothing is not an update, however plausible its
@@ -2170,7 +2304,14 @@ fn main() {
                     critic_mode,
                     &ti4_mlp::bundle::Provenance {
                         source: format!(
-                            "M10-034 PPO, {done} update(s) from {bundle_path}, roster {roster:?}"
+                            "M10-034 PPO, {done} update(s) from {bundle_path}, roster {roster:?}{}",
+                            if self_imitation > 0.0 {
+                                format!(
+                                    ", self-imitation {self_imitation} margin {sil_margin} keep {sil_keep}"
+                                )
+                            } else {
+                                String::new()
+                            }
                         ),
                         git_commit: std::env::var("GIT_COMMIT")
                             .unwrap_or_else(|_| "unrecorded".to_owned()),
