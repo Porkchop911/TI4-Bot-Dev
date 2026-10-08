@@ -249,6 +249,57 @@ pub fn scrambled_seated_faction(
     order[(seat + rotation) % count].clone()
 }
 
+/// Read a `--roster` value: `six` (the default, [`FactionRoster::InScope`]) or `wide`.
+///
+/// # Errors
+/// Any other value.
+pub fn parse_roster(value: &str) -> Result<ti4_engine::seating::FactionRoster, String> {
+    match value {
+        "six" => Ok(ti4_engine::seating::FactionRoster::InScope),
+        "wide" => Ok(ti4_engine::seating::FactionRoster::Wide),
+        other => Err(format!("--roster expects six or wide, not {other:?}")),
+    }
+}
+
+/// The factions one game draws, as the list [`seated_faction`] scrambles over the seats (BF-22).
+///
+/// [`FactionRoster::InScope`](ti4_engine::seating::FactionRoster::InScope) returns `fixed` as
+/// given: the caller's historical six, in the order its rotations and per-faction settings index,
+/// so a six-faction run is unchanged. [`FactionRoster::Wide`](ti4_engine::seating::FactionRoster::Wide)
+/// draws one distinct faction per player with [`ti4_engine::seating::seat_wide`] on its own seating
+/// stream for `seed`, in player order: every rotation of a seed sees the same six, and no map, dice
+/// or deck stream moves.
+///
+/// # Errors
+/// A wide draw that cannot seat every player.
+pub fn game_factions(
+    content: &ContentStore,
+    roster: ti4_engine::seating::FactionRoster,
+    fixed: &[&str],
+    players: &[PlayerId],
+    sources: SourceSet,
+    seed: u64,
+) -> Result<Vec<FactionId>, String> {
+    match roster {
+        ti4_engine::seating::FactionRoster::InScope => {
+            Ok(fixed.iter().map(|alias| FactionId::new(*alias)).collect())
+        }
+        ti4_engine::seating::FactionRoster::Wide => {
+            let drawn = ti4_engine::seating::seat_wide(content, players, sources, seed)
+                .map_err(|error| format!("wide roster for seed {seed}: {error}"))?;
+            players
+                .iter()
+                .map(|player| {
+                    drawn
+                        .get(player)
+                        .cloned()
+                        .ok_or_else(|| format!("wide roster seated no faction for {player}"))
+                })
+                .collect()
+        }
+    }
+}
+
 /// Board family used by a parity rollout.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OpeningMap {
@@ -2386,6 +2437,93 @@ mod tests {
 
     fn seats(names: &[&str]) -> Vec<PlayerId> {
         names.iter().map(|name| PlayerId::new(*name)).collect()
+    }
+
+    const SIX: [&str; 6] = ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"];
+
+    fn six_players() -> Vec<PlayerId> {
+        seats(&["p0", "p1", "p2", "p3", "p4", "p5"])
+    }
+
+    #[test]
+    fn the_six_roster_returns_the_callers_list_in_its_order() {
+        use ti4_engine::seating::FactionRoster;
+        for seed in [0, 7, 991] {
+            let drawn = game_factions(
+                ContentStore::embedded(),
+                FactionRoster::InScope,
+                &SIX,
+                &six_players(),
+                DEFAULT,
+                seed,
+            )
+            .unwrap();
+            assert_eq!(drawn, SIX.map(FactionId::new).to_vec());
+        }
+        assert_eq!(parse_roster("six"), Ok(FactionRoster::InScope));
+        assert_eq!(parse_roster("wide"), Ok(FactionRoster::Wide));
+        assert!(parse_roster("eighteen").is_err());
+    }
+
+    #[test]
+    fn the_wide_roster_draws_six_distinct_factions_by_seed_and_reaches_new_ones() {
+        use ti4_engine::seating::FactionRoster;
+        let content = ContentStore::embedded();
+        let players = six_players();
+        let mut seen: BTreeSet<String> = BTreeSet::new();
+        for seed in 0..120 {
+            let draw = |seed| {
+                game_factions(content, FactionRoster::Wide, &SIX, &players, DEFAULT, seed).unwrap()
+            };
+            let drawn = draw(seed);
+            assert_eq!(drawn, draw(seed), "same seed, same factions");
+            let distinct: BTreeSet<&str> = drawn.iter().map(FactionId::as_str).collect();
+            assert_eq!(distinct.len(), players.len(), "seed {seed}: {drawn:?}");
+            // Every drawn table passes the seating checks a board build applies.
+            let assignments: BTreeMap<PlayerId, FactionId> =
+                players.iter().cloned().zip(drawn.iter().cloned()).collect();
+            ti4_engine::seating::home_systems(content, &assignments)
+                .unwrap_or_else(|error| panic!("seed {seed}: {error}"));
+            seen.extend(distinct.into_iter().map(str::to_owned));
+        }
+        let new: Vec<&String> = seen
+            .iter()
+            .filter(|alias| !SIX.contains(&alias.as_str()))
+            .collect();
+        assert!(new.len() >= 20, "120 wide tables reached only {seen:?}");
+    }
+
+    #[test]
+    fn wide_tables_set_up_and_play_a_bounded_game() {
+        use ti4_engine::seating::FactionRoster;
+        let content = ContentStore::embedded();
+        let players = six_players();
+        for seed in 0..12 {
+            let drawn =
+                game_factions(content, FactionRoster::Wide, &SIX, &players, DEFAULT, seed)
+                    .unwrap();
+            let assignments: BTreeMap<PlayerId, FactionId> = players
+                .iter()
+                .enumerate()
+                .map(|(seat, player)| (player.clone(), seated_faction(&drawn, seed, 0, seat)))
+                .collect();
+            let played = play_assigned_on_map(
+                content,
+                &players,
+                &assignments,
+                &BTreeMap::new(),
+                DEFAULT,
+                seed,
+                Horizon {
+                    rounds: 1,
+                    steps: 400,
+                },
+                DEFAULT_REQUIREMENT,
+                &OpeningMap::RustVaried,
+            );
+            assert_eq!(played.error, None, "seed {seed} {drawn:?}");
+            assert_eq!(played.seats.len(), players.len());
+        }
     }
 
     fn rollout(seed: u64, horizon: Horizon) -> Rollout {

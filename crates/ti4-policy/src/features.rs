@@ -6342,6 +6342,40 @@ mod tests {
     }
 
     #[test]
+    fn every_selectable_seat_emits_each_decomposition_family_it_has_content_for() {
+        // BF-22: the wide roster seats all 33, so each family is checked per seat, not just "some
+        // fact". The one family that may be empty is fixed starting technology, and only where the
+        // record gives none: twelve seats choose theirs at setup (Argent, Winnu, the Keleres, the
+        // Thunder's Edge factions) or start with none (Sardakk, Deepwrought).
+        let content = ti4_content::ContentStore::embedded();
+        let sources = ti4_model::content_types::DEFAULT;
+        let families = [
+            "ability:",
+            "faction-start-tech:",
+            "faction-tech:",
+            "faction-start-unit:",
+            "faction-home:",
+            "faction-commodities",
+        ];
+        let mut missing: BTreeMap<&str, Vec<String>> = BTreeMap::new();
+        for (alias, faction) in ti4_content::factions::catalogue(content, sources) {
+            if !is_selectable_seat(&faction) {
+                continue;
+            }
+            let pairs = seat_decomposition(content, sources, alias);
+            for family in families {
+                let expected =
+                    family != "faction-start-tech:" || !faction.starting_tech().is_empty();
+                let emitted = pairs.iter().any(|pair| pair.starts_with(family));
+                if emitted != expected {
+                    missing.entry(family).or_default().push(alias.to_owned());
+                }
+            }
+        }
+        assert!(missing.is_empty(), "family emitted against the record: {missing:?}");
+    }
+
+    #[test]
     fn keleres_variants_separate_only_on_the_last_row() {
         // Section 5.3 records one collision, pinned here rather than restated: the three Keleres
         // share abilities, starting technology and faction technology, and are told apart only by

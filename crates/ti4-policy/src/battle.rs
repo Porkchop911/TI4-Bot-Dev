@@ -108,6 +108,14 @@ pub const GUN_IDS: [&str; 4] = ["pds", "pds2", "xxcha_mech", "xxcha_flagship"];
 const REACHING_GUNS: [&str; 3] = ["pds2", "xxcha_mech", "xxcha_flagship"];
 
 /// Factions covered, with their shift to every combat roll.
+///
+/// This is the faction support of **every** version in [`SUPPORTED_VERSIONS`]: each predictor was
+/// trained on fights between these six only. A seat of any other faction (the wide roster, BF-22)
+/// is [`Unsupported::Faction`], a public reason, never a relabel onto a known row: a new faction's
+/// combat abilities and units are things no existing predictor saw, and equal tensor shapes would
+/// not make it compatible. Adding a faction here therefore needs a new feature version whose
+/// predictors were trained with it, and a lookup gated by version so older predictors keep
+/// refusing it.
 pub const FACTIONS: [(&str, i64); 6] = [
     ("sol", 0),
     ("letnev", 0),
@@ -2107,6 +2115,49 @@ mod tests {
             movement_query(&seen, &choice, &carrier, &a, 1),
             BattleQuery::Unsupported(Unsupported::Guns)
         );
+    }
+
+    #[test]
+    fn every_faction_outside_the_six_is_refused_by_every_supported_version() {
+        // BF-22, operator decision 2026-10-08 (migrate, never relabel): a wide-roster faction is
+        // a public Unsupported::Faction for every predictor this build can feed, as defender and
+        // as attacker, until a new feature version is trained with it.
+        let content = ti4_content::ContentStore::embedded();
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let carrier = ChoiceOption::new("move|18|0", "move").with("unit", "carrier");
+        let choice = movement(vec![carrier.clone()]);
+        let mut aliases: Vec<&str> =
+            ti4_engine::seating::wide_roster(content, ti4_model::content_types::DEFAULT)
+                .into_iter()
+                .filter(|alias| *alias != ti4_engine::seating::KELERES_FAMILY)
+                .collect();
+        aliases.extend(ti4_engine::factions::keleres::VARIANTS);
+        let outside: Vec<&str> = aliases
+            .into_iter()
+            .filter(|alias| !FACTIONS.iter().any(|(known, _)| known == alias))
+            .collect();
+        assert!(outside.len() >= 20, "{outside:?}");
+        for alias in outside {
+            for version in SUPPORTED_VERSIONS {
+                let (mut state, system) = board("sol", alias);
+                ti4_engine::fixtures::put(&mut state, &system, "cruiser", &b, 1);
+                let seen = Observed::new(&state, content, ti4_model::POK, None);
+                assert_eq!(
+                    movement_query(&seen, &choice, &carrier, &a, version),
+                    BattleQuery::Unsupported(Unsupported::Faction(alias.to_owned())),
+                    "{alias} defending, version {version}"
+                );
+                let (mut state, system) = board(alias, "sol");
+                ti4_engine::fixtures::put(&mut state, &system, "cruiser", &b, 1);
+                let seen = Observed::new(&state, content, ti4_model::POK, None);
+                assert_eq!(
+                    movement_query(&seen, &choice, &carrier, &a, version),
+                    BattleQuery::Unsupported(Unsupported::Faction(alias.to_owned())),
+                    "{alias} attacking, version {version}"
+                );
+            }
+        }
     }
 
     #[test]

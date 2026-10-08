@@ -11,11 +11,18 @@
 //!   --bundle <checkpoint> --map-pool out/pools/full_np8_12_train.json \
 //!   --seeds 2 --rounds 4 --temperature 2.5 --min-count 3 --names-out <file>
 //! ```
+//!
+//! `--roster wide --rotations 1` censuses the whole implemented faction roster (BF-22): each seed
+//! draws six distinct factions, so the names the six-faction regime never produced (other
+//! factions' abilities, technologies, units, home planets, leaders and decisions) are found and
+//! can be appended into zero rows, leaving every original-six decision scored exactly as before.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 use std::sync::Arc;
+
+use rayon::prelude::*;
 
 use ti4_content::ContentStore;
 use ti4_engine::choice::{Choice, Decider};
@@ -99,6 +106,95 @@ fn number<T: std::str::FromStr>(name: &str, fallback: T) -> T {
     })
 }
 
+/// One game's census: unseen admitted names, decisions played, and the failure if any.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one game's complete deterministic input"
+)]
+fn census_game(
+    content: &ContentStore,
+    actor: &Rc<ti4_mlp::Actor>,
+    vocabulary: &ti4_policy::vocabulary::Vocabulary,
+    pool: &Arc<ti4_sim::MapPool>,
+    players: &[PlayerId],
+    roster: ti4_engine::seating::FactionRoster,
+    seed: u64,
+    rotation: usize,
+    rounds: u32,
+    temperature: f64,
+) -> (Census, usize, Option<String>) {
+    let census: Rc<RefCell<Census>> = Rc::new(RefCell::new(Census::new()));
+    let factions = match ti4_training::rollout::game_factions(
+        content, roster, &FACTIONS, players, DEFAULT, seed,
+    ) {
+        Ok(factions) => factions,
+        Err(error) => return (Census::new(), 0, Some(error)),
+    };
+    let seated: BTreeMap<PlayerId, FactionId> = players
+        .iter()
+        .enumerate()
+        .map(|(index, player)| {
+            (
+                player.clone(),
+                ti4_training::rollout::seated_faction(&factions, seed, rotation, index),
+            )
+        })
+        .collect();
+    let (rollout, _) = ti4_training::rollout::play_with_capabilities_and_decider_factory_digest(
+        content,
+        players,
+        &seated,
+        DEFAULT,
+        seed,
+        ti4_training::rollout::Horizon {
+            rounds,
+            steps: 10_000,
+        },
+        ti4_engine::opening::DEFAULT_REQUIREMENT,
+        &ti4_training::rollout::OpeningMap::PythonPool {
+            pool: Arc::clone(pool),
+            tile_seed_offset: TILE_SEED_OFFSET,
+        },
+        ti4_training::rollout::SimulationCapabilities { diplomacy: true },
+        false,
+        |baselines| {
+            let mut deciders: BTreeMap<PlayerId, Box<dyn Decider>> = BTreeMap::new();
+            for (index, player) in players.iter().enumerate() {
+                let row = ti4_mlp::FactionRow::of(seated[player].as_str())
+                    .map_err(|error| format!("{player}: {error}"))?;
+                let baseline = baselines
+                    .get(player)
+                    .copied()
+                    .ok_or_else(|| format!("{player} has no setup baseline"))?;
+                let stream = seed
+                    .wrapping_mul(1_000_003)
+                    .wrapping_add(u64::try_from(index).unwrap_or(0));
+                let bot = ti4_mlp::bot::MlpBot::sharing(actor, vocabulary.clone(), row, stream)
+                    .at_temperature(temperature)
+                    .from_setup(baseline);
+                let (decider, _status) = bot.seat();
+                deciders.insert(
+                    player.clone(),
+                    Box::new(Watching {
+                        inner: decider,
+                        vocabulary: vocabulary.clone(),
+                        baseline,
+                        census: Rc::clone(&census),
+                    }),
+                );
+            }
+            Ok(deciders)
+        },
+    );
+    let decisions = rollout
+        .seats
+        .iter()
+        .map(|seat| seat.trajectory.len())
+        .sum::<usize>();
+    let census = census.borrow().clone();
+    (census, decisions, rollout.error)
+}
+
 fn main() {
     let bundle_path = argument("--bundle").unwrap_or_else(|| refuse("--bundle is required"));
     let pool_path = argument("--map-pool").unwrap_or_else(|| refuse("--map-pool is required"));
@@ -114,7 +210,7 @@ fn main() {
     let bundle = ti4_mlp::bundle::read(std::path::Path::new(&bundle_path))
         .unwrap_or_else(|error| refuse(&format!("reading {bundle_path}: {error}")));
     let vocabulary = bundle.vocabulary;
-    let actor = Rc::new(bundle.actor.inference_copy());
+    let actor = bundle.actor;
     let pool = Arc::new(
         ti4_sim::MapPool::from_reader(std::io::Cursor::new(
             std::fs::read(&pool_path)
@@ -125,91 +221,74 @@ fn main() {
     let players: Vec<PlayerId> = (0..6)
         .map(|index| PlayerId::new(format!("seat{index}")))
         .collect();
-    let factions: [FactionId; 6] = FACTIONS.map(FactionId::new);
-    let census: Rc<RefCell<Census>> = Rc::new(RefCell::new(Census::new()));
+    let roster = argument("--roster").map_or(ti4_engine::seating::FactionRoster::InScope, |value| {
+        ti4_training::rollout::parse_roster(&value).unwrap_or_else(|error| refuse(&error))
+    });
+    // Rotations move the six around the seats. Under `--roster wide` every rotation of a seed seats
+    // the same six, so more seeds at one rotation reach more factions for the same games.
+    let rotations: usize = number("--rotations", FACTIONS.len());
+    if rotations == 0 || rotations > FACTIONS.len() {
+        refuse(&format!("--rotations must be 1..={}", FACTIONS.len()));
+    }
+    println!(
+        "census: {bundle_path}, roster {roster:?}, seeds {seed_base}..{} x {rotations} rotations",
+        seed_base + seeds
+    );
+    let started = std::time::Instant::now();
+
+    // Games run on bounded workers, one actor copy each (`tch::Tensor` is `Send`, not `Sync`).
+    // Every game keeps its own census and they are merged in job order, so the counts and each
+    // name's first subtype are exactly what a serial pass reports.
+    let jobs: Vec<(u64, usize)> = (seed_base..seed_base + seeds)
+        .flat_map(|seed| (0..rotations).map(move |rotation| (seed, rotation)))
+        .collect();
+    let workers = rayon::current_num_threads().max(1);
+    let per_worker = jobs.len().div_ceil(workers).max(1);
+    let chunks: Vec<(ti4_mlp::Actor, Vec<(u64, usize)>)> = jobs
+        .chunks(per_worker)
+        .map(|chunk| (actor.inference_copy(), chunk.to_vec()))
+        .collect();
+    let harvest: Vec<Vec<(u64, usize, Census, usize, Option<String>)>> = chunks
+        .into_par_iter()
+        .map(|(local, chunk)| {
+            let local = Rc::new(local);
+            chunk
+                .into_iter()
+                .map(|(seed, rotation)| {
+                    let (census, decisions, error) = census_game(
+                        content,
+                        &local,
+                        &vocabulary,
+                        &pool,
+                        &players,
+                        roster,
+                        seed,
+                        rotation,
+                        rounds,
+                        temperature,
+                    );
+                    (seed, rotation, census, decisions, error)
+                })
+                .collect()
+        })
+        .collect();
+
+    let mut merged = Census::new();
     let mut games = 0_usize;
     let mut errors = 0_usize;
     let mut decisions = 0_usize;
-    let started = std::time::Instant::now();
-
-    for seed in seed_base..seed_base + seeds {
-        for rotation in 0..FACTIONS.len() {
-            let seated: BTreeMap<PlayerId, FactionId> = players
-                .iter()
-                .enumerate()
-                .map(|(index, player)| {
-                    (
-                        player.clone(),
-                        ti4_training::rollout::seated_faction(&factions, seed, rotation, index),
-                    )
-                })
-                .collect();
-            let (rollout, _) =
-                ti4_training::rollout::play_with_capabilities_and_decider_factory_digest(
-                    content,
-                    &players,
-                    &seated,
-                    DEFAULT,
-                    seed,
-                    ti4_training::rollout::Horizon {
-                        rounds,
-                        steps: 10_000,
-                    },
-                    ti4_engine::opening::DEFAULT_REQUIREMENT,
-                    &ti4_training::rollout::OpeningMap::PythonPool {
-                        pool: Arc::clone(&pool),
-                        tile_seed_offset: TILE_SEED_OFFSET,
-                    },
-                    ti4_training::rollout::SimulationCapabilities { diplomacy: true },
-                    false,
-                    |baselines| {
-                        let mut deciders: BTreeMap<PlayerId, Box<dyn Decider>> = BTreeMap::new();
-                        for (index, player) in players.iter().enumerate() {
-                            let row = ti4_mlp::FactionRow::of(seated[player].as_str())
-                                .map_err(|error| format!("{player}: {error}"))?;
-                            let baseline = baselines
-                                .get(player)
-                                .copied()
-                                .ok_or_else(|| format!("{player} has no setup baseline"))?;
-                            let stream = seed
-                                .wrapping_mul(1_000_003)
-                                .wrapping_add(u64::try_from(index).unwrap_or(0));
-                            let bot = ti4_mlp::bot::MlpBot::sharing(
-                                &actor,
-                                vocabulary.clone(),
-                                row,
-                                stream,
-                            )
-                            .at_temperature(temperature)
-                            .from_setup(baseline);
-                            let (decider, _status) = bot.seat();
-                            deciders.insert(
-                                player.clone(),
-                                Box::new(Watching {
-                                    inner: decider,
-                                    vocabulary: vocabulary.clone(),
-                                    baseline,
-                                    census: Rc::clone(&census),
-                                }),
-                            );
-                        }
-                        Ok(deciders)
-                    },
-                );
-            games += 1;
-            decisions += rollout
-                .seats
-                .iter()
-                .map(|seat| seat.trajectory.len())
-                .sum::<usize>();
-            if let Some(error) = &rollout.error {
-                errors += 1;
-                eprintln!("  seed {seed} rotation {rotation}: {error}");
-            }
+    for (seed, rotation, census, played, error) in harvest.into_iter().flatten() {
+        games += 1;
+        decisions += played;
+        if let Some(error) = error {
+            errors += 1;
+            eprintln!("  seed {seed} rotation {rotation}: {error}");
+        }
+        for (name, (count, subtype)) in census {
+            merged.entry(name).or_insert((0, subtype)).0 += count;
         }
     }
-
-    let census = census.borrow();
+    let census = merged;
     println!(
         "{games} games ({errors} errors), {decisions} decisions, {:.1}s",
         started.elapsed().as_secs_f64()

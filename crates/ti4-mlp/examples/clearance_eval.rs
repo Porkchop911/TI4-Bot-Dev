@@ -147,6 +147,11 @@ fn main() {
     let per_seat = argument("--per-seat");
     // --diplomacy: structured diplomacy on, as the trainer plays it.
     let diplomacy = std::env::args().any(|a| a == "--diplomacy");
+    // `wide` seats six distinct factions per seed from the whole implemented roster (BF-22);
+    // `six`, the default, is the fixed FACTIONS rotation every earlier evaluation used.
+    let roster = argument("--roster").map_or(ti4_engine::seating::FactionRoster::InScope, |value| {
+        ti4_training::rollout::parse_roster(&value).unwrap_or_else(|error| refuse(&error))
+    });
     // Experiment: trade goods every seat gains at the start of each status phase (engine switch).
     if let Some(income) = argument("--status-income-tg") {
         let income: i32 = income
@@ -193,6 +198,7 @@ fn main() {
 
     println!("stage-1 clearance for {bundle_path}");
     println!("  temperature {temperature}");
+    println!("  roster      {roster:?}");
     println!("  maps        {pool_path} (Validation)");
     println!(
         "  seeds       {seed_base}..{} x {} rotations",
@@ -221,18 +227,16 @@ fn main() {
             let local = std::rc::Rc::new(local);
             let mut seats = Vec::new();
             for (seed, rotation) in chunk {
+                let factions = ti4_training::rollout::game_factions(
+                    content, roster, &FACTIONS, &players, DEFAULT, seed,
+                )?;
                 let seated: BTreeMap<PlayerId, FactionId> = players
                     .iter()
                     .enumerate()
                     .map(|(index, player)| {
                         (
                             player.clone(),
-                            ti4_training::rollout::seated_faction(
-                                &FACTIONS.map(FactionId::new),
-                                seed,
-                                rotation,
-                                index,
-                            ),
+                            ti4_training::rollout::seated_faction(&factions, seed, rotation, index),
                         )
                     })
                     .collect();

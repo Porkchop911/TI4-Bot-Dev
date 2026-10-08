@@ -147,6 +147,7 @@ const VALUE_FLAGS: &[&str] = &[
     "--seed-base",
     "--seeds-per-update",
     "--rotations",
+    "--roster",
     "--stage",
     "--strategy-diversity-weight",
     "--styx-bonus",
@@ -503,21 +504,22 @@ fn play_one(
     rotation: usize,
     temperature: f64,
     waste_penalties: &[f64],
+    waste_default: f64,
+    roster: ti4_engine::seating::FactionRoster,
     diplomacy: bool,
     hash: bool,
 ) -> Result<Played, String> {
+    // The six this game draws: FACTIONS itself, or a seeded wide draw shared by every rotation of
+    // the seed (BF-22).
+    let factions =
+        ti4_training::rollout::game_factions(content, roster, &FACTIONS, players, DEFAULT, seed)?;
     let seated: BTreeMap<PlayerId, FactionId> = players
         .iter()
         .enumerate()
         .map(|(index, player)| {
             (
                 player.clone(),
-                ti4_training::rollout::seated_faction(
-                    &FACTIONS.map(FactionId::new),
-                    seed,
-                    rotation,
-                    index,
-                ),
+                ti4_training::rollout::seated_faction(&factions, seed, rotation, index),
             )
         })
         .collect();
@@ -532,7 +534,7 @@ fn play_one(
     // Which physical seat the learner occupies this game: the one holding the faction this
     // rotation trains. `seated` is the seeded permutation, so this varies by seed as intended.
     let learner_seat = {
-        let wanted = FACTIONS[learner_faction % FACTIONS.len()];
+        let wanted = factions[learner_faction % factions.len()].as_str();
         players
             .iter()
             .position(|player| {
@@ -772,7 +774,8 @@ fn play_one(
                 .position(|name| *name == seat.faction.as_str())
                 .and_then(|index| waste_penalties.get(index))
                 .copied()
-                .unwrap_or(0.0);
+                // A faction outside the six (`--roster wide`) takes the scalar penalty.
+                .unwrap_or(waste_default);
             if waste_penalty > 0.0 {
                 let gamma = reward.discount;
                 for end in ends {
@@ -1084,6 +1087,12 @@ fn main() {
     let hash_games = std::env::args().any(|a| a == "--hash-games");
     let diag_sync = std::env::args().any(|a| a == "--diag-sync");
     let diplomacy = std::env::args().any(|a| a == "--diplomacy");
+    // Which factions a game seats (BF-22). `six` is the historical FACTIONS rotation; `wide` draws
+    // six distinct factions per seed from the whole implemented roster, and the bundle's pinned
+    // faction rows (ti4_mlp::FACTION_ROSTER) condition every one of them.
+    let roster = argument("--roster").map_or(ti4_engine::seating::FactionRoster::InScope, |value| {
+        ti4_training::rollout::parse_roster(&value).unwrap_or_else(|error| refuse(&error))
+    });
     if diag_path.is_some() {
         ti4_mlp::perf::enable(diag_sync);
     } else if hash_games || diag_sync {
@@ -1268,6 +1277,11 @@ fn main() {
     // single carrier (its two cruisers carry nothing, which is why the bar's composition clause was
     // written to bind on it), so a wasted activation costs it a far larger share of its capacity
     // than it costs a faction with spare hulls.
+    if roster == ti4_engine::seating::FactionRoster::Wide
+        && argument("--waste-penalties").is_some()
+    {
+        refuse("--waste-penalties is per faction of the six; with --roster wide use --waste-penalty");
+    }
     let waste_penalties: Vec<f64> = argument("--waste-penalties").map_or_else(
         || vec![waste_penalty; FACTIONS.len()],
         |text| {
@@ -1497,6 +1511,7 @@ fn main() {
         );
     }
     println!("  seeds       {seed_base}.. ({seeds_per_update} per update)");
+    println!("  roster      {roster:?}");
     println!("  critic mode {critic_mode:?}");
     println!(
         "  trunk       width {} | residual blocks {}",
@@ -1765,6 +1780,8 @@ fn main() {
                             *rotation,
                             temperature,
                             &waste_penalties,
+                            waste_penalty,
+                            roster,
                             diplomacy,
                             hash_games,
                         ),
@@ -2123,7 +2140,9 @@ fn main() {
                     &slots_text,
                     critic_mode,
                     &ti4_mlp::bundle::Provenance {
-                        source: format!("M10-034 PPO, {done} update(s) from {bundle_path}"),
+                        source: format!(
+                            "M10-034 PPO, {done} update(s) from {bundle_path}, roster {roster:?}"
+                        ),
                         git_commit: std::env::var("GIT_COMMIT")
                             .unwrap_or_else(|_| "unrecorded".to_owned()),
                         update: u64::try_from(optimizer.steps()).unwrap_or(0),
