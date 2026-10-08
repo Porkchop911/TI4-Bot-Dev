@@ -790,6 +790,39 @@ impl<'a> Observed<'a> {
         self.state.systems_with_token(player)
     }
 
+    /// Whose command tokens sit in `mahact`'s fleet pool (Edict), one entry per token. Public: the
+    /// tokens are on the table in the owner's colour.
+    #[must_use]
+    pub fn mahact_fleet_pool_owners(&self, mahact: &PlayerId) -> Vec<PlayerId> {
+        crate::factions::mahact::fleet_pool_owners(self.state, mahact)
+    }
+
+    /// Players with a control token on one of `owner`'s faceup plots (the Firmament's puppets),
+    /// which the Heaven's Eye reads. Public: the tokens sit on faceup cards.
+    #[must_use]
+    pub fn firmament_puppets(&self, owner: &PlayerId) -> BTreeSet<PlayerId> {
+        crate::factions::firmament::puppeted(self.state, owner)
+    }
+
+    /// Whether `system` holds an active breach (the Crimson Rebellion). Public: the token's face
+    /// shows.
+    #[must_use]
+    pub fn active_breach_in(&self, system: &SystemId) -> bool {
+        crate::factions::crimson::active_breaches(self.state).contains(system)
+    }
+
+    /// Non-home systems containing a planet `player` controls, the count the Bastion flagship
+    /// reads. Public: control is on the board.
+    #[must_use]
+    pub fn non_home_systems_with_planets(&self, player: &PlayerId) -> usize {
+        crate::factions::bastion_units::non_home_systems_with_planets(
+            self.state,
+            self.content,
+            self.sources,
+            player,
+        )
+    }
+
     /// A seat's public standing: what anybody at the table can count.
     #[must_use]
     pub fn seat(&self, player: &PlayerId) -> Option<PublicSeat<'a>> {

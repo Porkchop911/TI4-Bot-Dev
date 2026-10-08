@@ -9,7 +9,10 @@
 
 use ti4_content::ContentStore;
 use ti4_content::units::UnitType;
-use ti4_model::POK;
+/// The content scope the arena reads units in: the scope games are played at (Thunder's Edge
+/// included). The original six's units print the same here as under Prophecy of Kings
+/// (`the_original_units_print_the_same_in_the_full_scope`).
+const SOURCES: ti4_model::content_types::SourceSet = ti4_model::content_types::FULL;
 
 /// Ship base types in composition order. Index 0 is always the fighter.
 pub const SHIP_TYPES: [&str; 7] = [
@@ -56,6 +59,34 @@ impl Profile {
         ),
     ];
 
+    /// Every faction a game can seat (the wide roster, the three Council Keleres listed apart),
+    /// with and without upgrades when asked: the arena of battle feature version 8.
+    #[must_use]
+    pub fn wide(content: &ContentStore, upgrades: bool) -> Vec<Self> {
+        let mut factions: Vec<&'static str> = Vec::new();
+        for entry in ti4_engine::seating::wide_roster(content, SOURCES) {
+            if entry == ti4_engine::seating::KELERES_FAMILY {
+                factions.extend(ti4_engine::factions::keleres::VARIANTS);
+            } else {
+                factions.push(entry);
+            }
+        }
+        let mut out = Vec::new();
+        for faction in factions {
+            out.push(Self {
+                faction,
+                upgraded: false,
+            });
+            if upgrades {
+                out.push(Self {
+                    faction,
+                    upgraded: true,
+                });
+            }
+        }
+        out
+    }
+
     /// Every catalogue faction, with and without upgrades when asked.
     #[must_use]
     pub fn all(upgrades: bool) -> Vec<Self> {
@@ -88,13 +119,13 @@ impl Profile {
     /// upgraded where the profile says so.
     #[must_use]
     pub fn unit_for(self, content: &ContentStore, base: &str) -> String {
-        let own = ti4_content::units::faction_unit(content, self.faction, base, POK)
+        let own = ti4_content::units::faction_unit(content, self.faction, base, SOURCES)
             .map(|unit| unit.id().to_owned());
         let id = own.unwrap_or_else(|| base.to_owned());
         if !self.upgraded {
             return id;
         }
-        ti4_content::units::unit_type(content, &id, POK)
+        ti4_content::units::unit_type(content, &id, SOURCES)
             .and_then(|unit| unit.upgrades_to().map(ToOwned::to_owned))
             .unwrap_or(id)
     }
@@ -122,7 +153,7 @@ pub fn fighters_fit(content: &ContentStore, profile: Profile, composition: &Comp
     for (index, base) in SHIP_TYPES.iter().enumerate().skip(1) {
         let id = profile.unit_for(content, base);
         let provided =
-            ti4_content::units::unit_type(content, &id, POK).map_or(0, |unit| unit.capacity());
+            ti4_content::units::unit_type(content, &id, SOURCES).map_or(0, |unit| unit.capacity());
         capacity += provided * i64::try_from(composition[index]).unwrap_or(0);
     }
     i64::try_from(composition[0]).unwrap_or(i64::MAX) <= capacity
@@ -230,6 +261,44 @@ struct Ship {
     self_repair: bool,
     /// 0.0.1 in the fleet: this ship's hits must be assigned to non-fighters if able.
     forces_non_fighters: bool,
+    /// A cruiser or destroyer, which Ambush may roll for.
+    ambusher: bool,
+    /// A static shift to this ship's own combat rolls: the Arvicon Rex's +2 under an edict, the
+    /// Bastion flagship's +1 per conquered system.
+    own_bonus: i64,
+    /// The flagship whose ability this is, while it stands (see [`Flagship`]).
+    flagship: Flagship,
+}
+
+/// Flagships whose abilities act inside a pitched space battle, each while it stands.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Flagship {
+    None,
+    /// The Fourth Moon (Mentak): other players' ships in this system cannot use SUSTAIN DAMAGE.
+    FourthMoon,
+    /// The C'morran N'orr (Sardakk): +1 to each of its owner's other ships' combat rolls.
+    Cmorran,
+    /// The Salai Sai Corian (Winnu): rolls one die, hitting on 7, per opposing non-fighter ship.
+    Salai,
+    /// The Van Hauge (Yin): when destroyed, destroy all ships in the system.
+    VanHauge,
+    /// The Quetzecoatl (Argent): other players cannot use SPACE CANNON against its owner's ships.
+    Quetzecoatl,
+}
+
+/// What a fight's position says about a side beyond its units: conditions a flagship reads
+/// from the rest of the board, carried as encoder inputs (battle feature version 8).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SideContext {
+    /// The Arvicon Rex (Mahact): the opponent's command token is not in this side's fleet pool, so
+    /// the flagship rolls +2.
+    pub edict: bool,
+    /// The Bastion flagship: non-home systems containing a planet this side controls (+1 each).
+    pub conquests: i64,
+    /// The Heaven's Eye (Firmament): the opponent has a control token on one of this side's plots,
+    /// so the flagship is repaired at the end of every combat round -- for the outcome, the same
+    /// as the Arc Secundus's repair at the start of the next.
+    pub plot_repair: bool,
 }
 
 /// One side of a fight, ships kept in casualty order so assignment is a scan.
@@ -237,6 +306,12 @@ struct Ship {
 pub struct Side {
     ships: Vec<Ship>,
     modifier: i64,
+    /// Mentak Ambush: at the start of a space combat, up to 2 cruisers or destroyers each roll
+    /// one die against their combat value, unmodified; each success is a hit.
+    ambush: bool,
+    /// Argent Raid Formation: barrage hits beyond the opponent's fighters each damage one of
+    /// their ships that can sustain damage.
+    raid_formation: bool,
     /// Space cannon that fires before combat but takes no part in it: PDS and mechs on planets
     /// here, and guns next door whose card lets them reach. `(hits_on, dice)`.
     guns: Vec<(i64, u32)>,
@@ -264,10 +339,23 @@ impl Side {
     ) -> Self {
         let l1z1x_flagship =
             effects && fleet.iter().any(|(id, n)| *n > 0 && id == "l1z1x_flagship");
+        let flagship_of = |id: &str| -> Flagship {
+            if !effects {
+                return Flagship::None;
+            }
+            match id {
+                "mentak_flagship" => Flagship::FourthMoon,
+                "sardakk_flagship" => Flagship::Cmorran,
+                "winnu_flagship" => Flagship::Salai,
+                "yin_flagship" => Flagship::VanHauge,
+                "argent_flagship" => Flagship::Quetzecoatl,
+                _ => Flagship::None,
+            }
+        };
         let mut keyed: Vec<((usize, String), Ship)> = Vec::new();
         let mut names: Vec<String> = Vec::new();
         for (id, count) in fleet {
-            let unit = ti4_content::units::unit_type(content, id, POK).expect("unit exists");
+            let unit = ti4_content::units::unit_type(content, id, SOURCES).expect("unit exists");
             let name = names
                 .iter()
                 .position(|known| known == id)
@@ -295,6 +383,9 @@ impl Side {
                 self_repair: effects && id == "letnev_flagship",
                 forces_non_fighters: l1z1x_flagship
                     && matches!(unit.base_type(), "flagship" | "dreadnought"),
+                ambusher: matches!(unit.base_type(), "cruiser" | "destroyer"),
+                own_bonus: 0,
+                flagship: flagship_of(id),
             };
             let hurt = damaged
                 .iter()
@@ -312,7 +403,39 @@ impl Side {
             guns: Vec::new(),
             names,
             modifier: modifier(faction),
+            ambush: effects && faction == "mentak",
+            raid_formation: effects && faction == "argent",
         }
+    }
+
+    /// The same side under a board context: the Arvicon Rex's edict and the Bastion flagship's
+    /// conquests become fixed shifts to those flagships' own rolls.
+    #[must_use]
+    pub fn with_context(mut self, context: SideContext) -> Self {
+        for ship in &mut self.ships {
+            let id = self.names[usize::from(ship.name)].as_str();
+            ship.own_bonus = match id {
+                "mahact_flagship" if context.edict => 2,
+                "bastion_flagship" => context.conquests.max(0),
+                _ => 0,
+            };
+            if id == "firmament_flagship" {
+                ship.self_repair = context.plot_repair;
+            }
+        }
+        self
+    }
+
+    fn standing(&self, flagship: Flagship) -> bool {
+        self.ships.iter().any(|ship| ship.flagship == flagship)
+    }
+
+    fn non_fighters(&self) -> usize {
+        self.ships.iter().filter(|ship| !ship.fighter).count()
+    }
+
+    fn fighters(&self) -> usize {
+        self.ships.iter().filter(|ship| ship.fighter).count()
     }
 
     /// The same side with its space cannon silenced: what `combat::resolve` fights, since the
@@ -350,7 +473,7 @@ impl Side {
     #[must_use]
     pub fn with_guns(mut self, content: &ContentStore, guns: &[(String, usize)]) -> Self {
         for (id, count) in guns {
-            let unit = ti4_content::units::unit_type(content, id, POK).expect("unit exists");
+            let unit = ti4_content::units::unit_type(content, id, SOURCES).expect("unit exists");
             let (Some(hits_on), dice) = (unit.space_cannon_hits_on(), unit.space_cannon_dice())
             else {
                 continue;
@@ -362,13 +485,23 @@ impl Side {
         self
     }
 
-    /// Hits free to land anywhere, and hits that must land on non-fighters.
-    fn roll(&self, rng: &mut Rng) -> (usize, usize) {
+    /// Hits free to land anywhere, and hits that must land on non-fighters. `opposing_hulls` is the
+    /// opponent's non-fighter ships, which the Salai Sai Corian rolls one die for each.
+    fn roll(&self, rng: &mut Rng, opposing_hulls: usize) -> (usize, usize) {
         let (mut free, mut forced) = (0, 0);
+        let cmorran = self.standing(Flagship::Cmorran);
         for ship in &self.ships {
-            for _ in 0..ship.dice {
+            let dice = if ship.flagship == Flagship::Salai {
+                u32::try_from(opposing_hulls).unwrap_or(u32::MAX)
+            } else {
+                ship.dice
+            };
+            let shift = self.modifier
+                + ship.own_bonus
+                + i64::from(cmorran && ship.flagship != Flagship::Cmorran);
+            for _ in 0..dice {
                 let face = rng.die();
-                let mut hits = usize::from(face + self.modifier >= ship.hits_on);
+                let mut hits = usize::from(face + shift >= ship.hits_on);
                 if ship.bonus_on_nine && face >= 9 {
                     hits += 2;
                 }
@@ -431,17 +564,21 @@ impl Side {
         }
     }
 
-    fn absorb(&mut self, hits: usize, non_fighters_only: bool) {
+    /// Take `hits` under the declared casualty policy. `may_sustain` is false while the opponent's
+    /// Fourth Moon stands. Returns whether the Van Hauge was destroyed, which destroys every ship
+    /// in the system: the caller empties both sides.
+    fn absorb(&mut self, hits: usize, non_fighters_only: bool, may_sustain: bool) -> bool {
         for _ in 0..hits {
             if self.ships.is_empty() {
-                return;
+                return false;
             }
             // "If able": with no non-fighter left, the hit falls on fighters as usual.
             let restrict = non_fighters_only && self.ships.iter().any(|s| !s.fighter);
-            if let Some(ship) = self
-                .ships
-                .iter_mut()
-                .find(|s| (!restrict || !s.fighter) && s.sustain && !s.damaged)
+            if may_sustain
+                && let Some(ship) = self
+                    .ships
+                    .iter_mut()
+                    .find(|s| (!restrict || !s.fighter) && s.sustain && !s.damaged)
             {
                 ship.damaged = true;
                 continue;
@@ -452,8 +589,48 @@ impl Side {
                 .position(|s| (!restrict || !s.fighter) && !s.damaged)
                 .or_else(|| self.ships.iter().position(|s| !restrict || !s.fighter))
                 .unwrap_or(0);
-            self.ships.remove(at);
+            let lost = self.ships.remove(at);
+            if lost.flagship == Flagship::VanHauge {
+                return true;
+            }
         }
+        false
+    }
+
+    /// Raid Formation: each excess barrage hit damages one undamaged ship that can sustain damage,
+    /// the largest first (the Argent player chooses; the arena declares the largest).
+    fn raid(&mut self, excess: usize) {
+        for _ in 0..excess {
+            let Some(ship) = self
+                .ships
+                .iter_mut()
+                .rev()
+                .find(|s| !s.fighter && s.sustain && !s.damaged)
+            else {
+                return;
+            };
+            ship.damaged = true;
+        }
+    }
+
+    /// Ambush: the (up to) two cruisers or destroyers with the best combat value each roll once,
+    /// unmodified.
+    fn ambush_hits(&self, rng: &mut Rng) -> usize {
+        if !self.ambush {
+            return 0;
+        }
+        let mut values: Vec<i64> = self
+            .ships
+            .iter()
+            .filter(|ship| ship.ambusher)
+            .map(|ship| ship.hits_on)
+            .collect();
+        values.sort_unstable();
+        values
+            .into_iter()
+            .take(2)
+            .map(|value| usize::from(rng.die() >= value))
+            .sum()
     }
 }
 
@@ -553,16 +730,36 @@ fn fight_core(
     let mut rng = Rng::new(seed);
     let (mut a, mut d) = (attacker.clone(), defender.clone());
     let defender_had_ships = !d.ships.is_empty();
+    // Whether each side may sustain: not while the other side's Fourth Moon stands.
+    let sustains = |a: &Side, d: &Side| {
+        (
+            !d.standing(Flagship::FourthMoon),
+            !a.standing(Flagship::FourthMoon),
+        )
+    };
+    // The Van Hauge destroyed: every ship in the system goes with it.
+    let blast = |a: &mut Side, d: &mut Side| {
+        a.ships.clear();
+        d.ships.clear();
+    };
     if !in_progress {
-        // Space cannon offence: both sides roll, then both absorb.
-        let a_hits = if attacker_cannon {
+        // Space cannon offence: both sides roll, then both absorb. Nobody may fire on a side
+        // whose Quetzecoatl stands.
+        let a_hits = if attacker_cannon && !d.standing(Flagship::Quetzecoatl) {
             a.cannon(&mut rng)
         } else {
             0
         };
-        let d_hits = d.cannon(&mut rng);
-        d.absorb(a_hits, false);
-        a.absorb(d_hits, false);
+        let d_hits = if a.standing(Flagship::Quetzecoatl) {
+            0
+        } else {
+            d.cannon(&mut rng)
+        };
+        let (a_may, d_may) = sustains(&a, &d);
+        let blown = d.absorb(a_hits, false, d_may) | a.absorb(d_hits, false, a_may);
+        if blown {
+            blast(&mut a, &mut d);
+        }
     }
     let mut rounds = 0;
     for round in 1..=ROUND_CAP {
@@ -572,20 +769,44 @@ fn fight_core(
         a.repair();
         d.repair();
         if round == 1 && !in_progress {
+            // "At the start of a space combat" (Ambush), then the barrage.
+            let (ha, hd) = (a.ambush_hits(&mut rng), d.ambush_hits(&mut rng));
+            let (a_may, d_may) = sustains(&a, &d);
+            if d.absorb(ha, false, d_may) | a.absorb(hd, false, a_may) {
+                blast(&mut a, &mut d);
+                break;
+            }
+            if a.ships.is_empty() || d.ships.is_empty() {
+                break;
+            }
             let (ha, hd) = (a.barrage(&mut rng), d.barrage(&mut rng));
+            let (a_fighters, d_fighters) = (a.fighters(), d.fighters());
             d.lose_fighters(ha);
             a.lose_fighters(hd);
+            if a.raid_formation {
+                d.raid(ha.saturating_sub(d_fighters));
+            }
+            if d.raid_formation {
+                a.raid(hd.saturating_sub(a_fighters));
+            }
             if a.ships.is_empty() || d.ships.is_empty() {
                 break;
             }
         }
         rounds = round;
-        let (a_free, a_forced) = a.roll(&mut rng);
-        let (d_free, d_forced) = d.roll(&mut rng);
-        d.absorb(a_forced, true);
-        d.absorb(a_free, false);
-        a.absorb(d_forced, true);
-        a.absorb(d_free, false);
+        let (a_free, a_forced) = a.roll(&mut rng, d.non_fighters());
+        let (d_free, d_forced) = d.roll(&mut rng, a.non_fighters());
+        // The defender takes its casualties first, then the attacker -- the engine's order -- so a
+        // Fourth Moon destroyed by the attacker's hits no longer stops the attacker sustaining.
+        let d_may = sustains(&a, &d).1;
+        let mut blown = d.absorb(a_forced, true, d_may);
+        blown |= d.absorb(a_free, false, d_may);
+        let a_may = sustains(&a, &d).0;
+        blown |= a.absorb(d_forced, true, a_may);
+        blown |= a.absorb(d_free, false, a_may);
+        if blown {
+            blast(&mut a, &mut d);
+        }
     }
     let unresolved = !a.ships.is_empty() && !d.ships.is_empty();
     let winner = match (a.ships.is_empty(), d.ships.is_empty()) {
@@ -652,7 +873,7 @@ impl GroundSide {
         let mut names: Vec<String> = Vec::new();
         let mut troops = Vec::new();
         for (id, count) in forces {
-            let unit = ti4_content::units::unit_type(content, id, POK).expect("unit exists");
+            let unit = ti4_content::units::unit_type(content, id, SOURCES).expect("unit exists");
             let name = names
                 .iter()
                 .position(|known| known == id)
@@ -799,7 +1020,7 @@ fn dice_of(
 ) -> Vec<(i64, u32)> {
     let mut out = Vec::new();
     for (id, count) in units {
-        let unit = ti4_content::units::unit_type(content, id, POK).expect("unit exists");
+        let unit = ti4_content::units::unit_type(content, id, SOURCES).expect("unit exists");
         if let Some((on, dice)) = read(unit) {
             let dice = u32::try_from(dice).unwrap_or(0);
             out.extend(std::iter::repeat_n((on, dice), *count));
@@ -925,5 +1146,215 @@ mod tests {
         assert_eq!(hurt.ships.iter().filter(|s| s.damaged).count(), 1);
         let empty = Side::of(content, &[], &[], "hacan", true);
         assert_eq!(fight(&hurt, &empty, 7).0, Some("a"));
+    }
+}
+
+#[cfg(test)]
+mod wide_tests {
+    //! The version-8 arena: every seatable faction, and the space-combat effects the engine's
+    //! comparison probe cannot reach (timing-window abilities) or reaches only statistically.
+    use super::*;
+
+    fn fleet(units: &[(&str, usize)]) -> Vec<(String, usize)> {
+        units.iter().map(|(id, n)| ((*id).to_owned(), *n)).collect()
+    }
+
+    fn side(units: &[(&str, usize)], faction: &str) -> Side {
+        Side::of(ContentStore::embedded(), &fleet(units), &[], faction, true)
+    }
+
+    /// Attacker win rate over `n` seeds.
+    fn win_rate(a: &Side, d: &Side, n: u64) -> f64 {
+        let wins = (0..n)
+            .filter(|seed| fight_outcome(a, d, *seed, true).winner == Some("a"))
+            .count();
+        #[expect(clippy::cast_precision_loss, reason = "small counts")]
+        let rate = wins as f64 / n as f64;
+        rate
+    }
+
+    #[test]
+    fn the_original_units_print_the_same_in_the_full_scope() {
+        let content = ContentStore::embedded();
+        let ids = [
+            "carrier",
+            "carrier2",
+            "cruiser",
+            "cruiser2",
+            "destroyer",
+            "destroyer2",
+            "dreadnought",
+            "dreadnought2",
+            "fighter",
+            "fighter2",
+            "hacan_flagship",
+            "jolnar_flagship",
+            "l1z1x_dreadnought",
+            "l1z1x_dreadnought2",
+            "l1z1x_flagship",
+            "letnev_flagship",
+            "sol_carrier",
+            "sol_carrier2",
+            "sol_flagship",
+            "warsun",
+            "xxcha_flagship",
+            "pds",
+            "pds2",
+            "xxcha_mech",
+            "infantry",
+            "infantry2",
+        ];
+        for id in ids {
+            let old = ti4_content::units::unit_type(content, id, ti4_model::POK).unwrap();
+            let new = ti4_content::units::unit_type(content, id, SOURCES).unwrap();
+            let stats = |u: &UnitType| {
+                (
+                    u.combat_hits_on(),
+                    u.combat_dice(),
+                    u.afb_hits_on(),
+                    u.afb_dice(),
+                    u.space_cannon_hits_on(),
+                    u.space_cannon_dice(),
+                    u.sustain_damage(),
+                    u.capacity(),
+                )
+            };
+            assert_eq!(stats(&old), stats(&new), "{id}");
+        }
+    }
+
+    #[test]
+    fn every_seatable_faction_fields_legal_fleets() {
+        let content = ContentStore::embedded();
+        let profiles = Profile::wide(content, true);
+        assert!(profiles.len() >= 60, "{} profiles", profiles.len());
+        for profile in profiles {
+            let fleets = compositions(content, profile, 2, 2);
+            assert!(!fleets.is_empty(), "{}", profile.label());
+            for composition in fleets.iter().take(50) {
+                let units = profile.resolve(content, composition);
+                let a = Side::of(content, &units, &[], profile.faction, true);
+                let d = side(&[("cruiser", 2)], "hacan");
+                let _ = fight_outcome(&a, &d, 1, true);
+            }
+        }
+    }
+
+    #[test]
+    fn the_van_hauge_takes_every_ship_with_it() {
+        // A lone Van Hauge against a lone dreadnought: whenever the flagship dies, so does the
+        // dreadnought -- the defender never loses while the attacker survives.
+        let yin = side(&[("yin_flagship", 1)], "yin");
+        let dread = side(&[("dreadnought", 1)], "hacan");
+        let mut blasts = 0;
+        for seed in 0..400 {
+            let outcome = fight_outcome(&dread, &yin, seed, true);
+            if outcome.defender_left.iter().sum::<usize>() == 0 {
+                assert_eq!(
+                    outcome.attacker_left.iter().sum::<usize>(),
+                    0,
+                    "seed {seed}"
+                );
+                assert_eq!(outcome.winner, None);
+                blasts += 1;
+            }
+        }
+        assert!(blasts > 0, "the flagship never died in 400 fights");
+    }
+
+    #[test]
+    fn the_fourth_moon_stops_the_opponent_sustaining() {
+        let content = ContentStore::embedded();
+        let dreads = side(&[("dreadnought", 2)], "hacan");
+        let with = side(&[("mentak_flagship", 1)], "mentak");
+        let without = Side::of(
+            content,
+            &fleet(&[("mentak_flagship", 1)]),
+            &[],
+            "hacan",
+            false,
+        );
+        assert!(win_rate(&dreads, &with, 4000) < win_rate(&dreads, &without, 4000) - 0.05);
+    }
+
+    #[test]
+    fn the_cmorran_lifts_its_owners_other_ships() {
+        let content = ContentStore::embedded();
+        // A close fight (about 53% without it), so the +1 to the cruisers shows.
+        let enemy = side(&[("cruiser", 6)], "hacan");
+        let fleet_ids = fleet(&[("sardakk_flagship", 1), ("cruiser", 3)]);
+        let on = Side::of(content, &fleet_ids, &[], "sardakk", true);
+        let off = Side::of(content, &fleet_ids, &[], "sardakk", false);
+        assert!(win_rate(&on, &enemy, 4000) > win_rate(&off, &enemy, 4000) + 0.03);
+    }
+
+    #[test]
+    fn the_salai_rolls_a_die_per_opposing_hull() {
+        let winnu = side(&[("winnu_flagship", 1)], "winnu");
+        let carrier = side(&[("carrier", 1)], "hacan");
+        // No dice printed: against a carrier it rolls one die a round and usually wins.
+        assert!(win_rate(&winnu, &carrier, 2000) > 0.4);
+        let fighters_only = side(&[("fighter", 3)], "hacan");
+        assert!(
+            win_rate(&winnu, &fighters_only, 500).abs() < f64::EPSILON,
+            "fighters are not hulls, so it never rolls"
+        );
+    }
+
+    #[test]
+    fn the_quetzecoatl_silences_space_cannon_against_its_owner() {
+        let content = ContentStore::embedded();
+        let argent = side(&[("argent_flagship", 1)], "argent");
+        let guns =
+            Side::of(content, &[], &[], "hacan", true).with_guns(content, &fleet(&[("pds2", 4)]));
+        assert!((win_rate(&argent, &guns, 300) - 1.0).abs() < f64::EPSILON);
+        let hacan = side(&[("hacan_flagship", 1)], "hacan");
+        assert!(
+            win_rate(&hacan, &guns, 2000) < 1.0,
+            "an ordinary flagship can be shot"
+        );
+    }
+
+    #[test]
+    fn ambush_and_raid_formation_fire_only_for_their_factions() {
+        let content = ContentStore::embedded();
+        let enemy = side(&[("destroyer", 3)], "hacan");
+        let cruisers = fleet(&[("cruiser", 2)]);
+        let mentak = Side::of(content, &cruisers, &[], "mentak", true);
+        let plain = Side::of(content, &cruisers, &[], "hacan", true);
+        assert!(win_rate(&mentak, &enemy, 4000) > win_rate(&plain, &enemy, 4000) + 0.05);
+
+        // Raid Formation: barrage hits beyond the fighters damage sustaining ships.
+        let destroyers = fleet(&[("argent_destroyer2", 4)]);
+        let argent = Side::of(content, &destroyers, &[], "argent", true);
+        let neutral = Side::of(content, &destroyers, &[], "hacan", true);
+        let target = side(&[("dreadnought", 2)], "letnev");
+        assert!(win_rate(&argent, &target, 4000) > win_rate(&neutral, &target, 4000));
+    }
+
+    #[test]
+    fn board_context_shifts_the_conditional_flagships() {
+        // Two cruisers: a fight each flagship can win or lose (66%, 10%, 66% without context).
+        let enemy = side(&[("cruiser", 2)], "hacan");
+        let mahact = side(&[("mahact_flagship", 1)], "mahact");
+        let edict = mahact.clone().with_context(SideContext {
+            edict: true,
+            ..SideContext::default()
+        });
+        assert!(win_rate(&edict, &enemy, 4000) > win_rate(&mahact, &enemy, 4000) + 0.05);
+
+        let bastion = side(&[("bastion_flagship", 1)], "bastion");
+        let conquered = bastion.clone().with_context(SideContext {
+            conquests: 4,
+            ..SideContext::default()
+        });
+        assert!(win_rate(&conquered, &enemy, 4000) > win_rate(&bastion, &enemy, 4000) + 0.05);
+
+        let firmament = side(&[("firmament_flagship", 1)], "firmament");
+        let puppeted = firmament.clone().with_context(SideContext {
+            plot_repair: true,
+            ..SideContext::default()
+        });
+        assert!(win_rate(&puppeted, &enemy, 4000) > win_rate(&firmament, &enemy, 4000) + 0.05);
     }
 }

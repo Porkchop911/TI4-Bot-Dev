@@ -22,7 +22,7 @@ use rayon::prelude::*;
 
 use ti4_content::ContentStore;
 use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice, Table};
-use ti4_model::POK;
+use ti4_model::content_types::FULL;
 use ti4_model::id::{PlayerId, SystemId};
 use ti4_model::state::GameState;
 
@@ -80,7 +80,7 @@ impl DeclaredCombatPolicy {
 
     /// Casualty order by base type, so an upgraded ship ranks with its base hull.
     pub(crate) fn hull_rank(unit: &str) -> usize {
-        let base = ti4_content::units::unit_type(ContentStore::embedded(), unit, POK)
+        let base = ti4_content::units::unit_type(ContentStore::embedded(), unit, FULL)
             .map_or(unit, |kind| kind.base_type());
         ti4_training::battle_arena::hull_rank(base)
     }
@@ -145,6 +145,43 @@ impl Decider for DeclaredCombatPolicy {
                 )
             });
         if let Some(option) = casualty {
+            return Ok(option.clone());
+        }
+        // Ambush: the group that rolls for the most ships, with the best combat values -- the
+        // lean arena's "two best cruisers or destroyers".
+        let content = ContentStore::embedded();
+        let value = |kind: &str| {
+            ti4_content::units::unit_type(content, kind, FULL)
+                .and_then(|unit| unit.combat_hits_on())
+                .unwrap_or(11)
+        };
+        if let Some(option) = choice
+            .options
+            .iter()
+            .filter(|option| option.kind == "ambush_roll")
+            .min_by_key(|option| {
+                let kinds: Vec<&str> = option.id.split('+').collect();
+                (
+                    std::cmp::Reverse(kinds.len()),
+                    kinds.iter().map(|kind| value(kind)).sum::<i64>(),
+                    option.id.clone(),
+                )
+            })
+        {
+            return Ok(option.clone());
+        }
+        // Raid Formation: damage the largest ship, as the lean arena declares.
+        if let Some(option) = choice
+            .options
+            .iter()
+            .filter(|option| option.kind == "raid_formation_damage")
+            .max_by_key(|option| (Self::hull_rank(&option.id), option.id.clone()))
+        {
+            return Ok(option.clone());
+        }
+        // Every other optional ability (a sacrifice, a repair for influence, a retreat) is
+        // declined: the lean arena declares none of them.
+        if let Some(option) = choice.options.iter().find(|option| option.is_decline()) {
             return Ok(option.clone());
         }
         // Anything else -- retreat offers, ability prompts -- takes the first option, which the
@@ -221,13 +258,13 @@ impl Profile {
     /// The unit this profile fields for a base type: the faction's own version where it has one,
     /// upgraded where the profile says so.
     fn unit_for(self, content: &ContentStore, base: &str) -> String {
-        let own = ti4_content::units::faction_unit(content, self.faction, base, POK)
+        let own = ti4_content::units::faction_unit(content, self.faction, base, FULL)
             .map(|unit| unit.id().to_owned());
         let id = own.unwrap_or_else(|| base.to_owned());
         if !self.upgraded {
             return id;
         }
-        ti4_content::units::unit_type(content, &id, POK)
+        ti4_content::units::unit_type(content, &id, FULL)
             .and_then(|unit| unit.upgrades_to().map(ToOwned::to_owned))
             .unwrap_or(id)
     }
@@ -248,7 +285,7 @@ fn fighters_fit(content: &ContentStore, profile: Profile, composition: &Composit
         }
         let id = profile.unit_for(content, base);
         let provided =
-            ti4_content::units::unit_type(content, &id, POK).map_or(0, |unit| unit.capacity());
+            ti4_content::units::unit_type(content, &id, FULL).map_or(0, |unit| unit.capacity());
         capacity += provided * i64::try_from(composition[index]).unwrap_or(0);
     }
     i64::try_from(composition[0]).unwrap_or(i64::MAX) <= capacity
@@ -498,7 +535,15 @@ fn count_units(fleet: &[(String, usize)]) -> BTreeMap<String, usize> {
 mod lean {
     use super::Resolved;
     use ti4_content::ContentStore;
-    pub use ti4_training::battle_arena::{Side, fight};
+    pub use ti4_training::battle_arena::{Side, SideContext, fight};
+
+    /// The probe's board as the engine sees it: nobody's command token is in a Mahact fleet pool
+    /// (so the Arvicon Rex's +2 applies), and nobody controls a planet outside a home system.
+    const BOARD: SideContext = SideContext {
+        edict: true,
+        conquests: 0,
+        plot_repair: false,
+    };
 
     /// Both sides of a resolved scenario, starting undamaged.
     pub fn sides(content: &ContentStore, resolved: &Resolved, effects: bool) -> (Side, Side) {
@@ -509,14 +554,16 @@ mod lean {
                 &[],
                 resolved.attacker_faction,
                 effects,
-            ),
+            )
+            .with_context(BOARD),
             Side::of(
                 content,
                 &resolved.defender,
                 &[],
                 resolved.defender_faction,
                 effects,
-            ),
+            )
+            .with_context(BOARD),
         )
     }
 }
@@ -588,6 +635,8 @@ fn fight(
     }
     // LRR 13: the active seat is the attacker. Without this the roles fall back to seating order.
     state.active = Some(attacker.clone());
+    // And the fight is in the active system, which flagship abilities read ("in this system").
+    state.active_system = Some(system.clone());
 
     // The declared policy answers for both sides. `combat::resolve` owns the retained window,
     // drives it to completion and consumes the scoring pause the synchronous API cannot service,
@@ -616,7 +665,7 @@ fn fight(
     let resolved = ti4_engine::combat::resolve(
         &mut state,
         content,
-        POK,
+        FULL,
         &mut answers,
         &mut dice,
         &mut rng,
@@ -673,10 +722,14 @@ fn main() {
         .unwrap_or_else(|| vec!["hacan".to_owned()]);
     let upgrades = std::env::args().any(|arg| arg == "--upgrades");
 
-    let profiles: Vec<Profile> = Profile::CATALOGUE
+    let roster: Vec<&'static str> = ti4_training::battle_arena::Profile::wide(content, false)
+        .into_iter()
+        .map(|profile| profile.faction)
+        .collect();
+    let profiles: Vec<Profile> = roster
         .iter()
-        .filter(|(faction, _)| profiles_wanted.iter().any(|want| want == faction))
-        .flat_map(|(faction, _)| {
+        .filter(|faction| profiles_wanted.iter().any(|want| want == *faction))
+        .flat_map(|faction| {
             let mut out = vec![Profile {
                 faction,
                 upgraded: false,

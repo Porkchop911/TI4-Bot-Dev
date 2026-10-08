@@ -29,15 +29,24 @@ use rayon::prelude::*;
 use tch::nn::{self, Module, OptimizerConfig};
 use tch::{Device, Kind, Tensor};
 use ti4_content::ContentStore;
-use ti4_model::POK;
+use ti4_model::content_types::FULL;
 use ti4_policy::battle::{
     self as policy_battle, BattlePredictor, BattleSide, FEATURE_VERSION, INPUT_WIDTH, OUTPUT_WIDTH,
-    UNIT_IDS,
 };
-use ti4_training::battle_arena::{self as arena, Profile, Rng, Side};
+use ti4_training::battle_arena::{self as arena, Profile, Rng, Side, SideContext};
 
 /// Survival slots per side.
-const SLOTS: usize = UNIT_IDS.len();
+const SLOTS: usize = policy_battle::unit_ids(FEATURE_VERSION).len();
+
+/// Factions whose fleets fight differently from the same ships under another name: the key keeps
+/// them apart, or Ambush and Raid Formation would be merged away.
+fn effect_tag(faction: &str) -> &str {
+    if matches!(faction, "mentak" | "argent") {
+        faction
+    } else {
+        ""
+    }
+}
 
 /// One label: three outcome rates, then attacker and defender survival, then their masks.
 const LABEL_WIDTH: usize = 3 + 4 * SLOTS;
@@ -69,20 +78,28 @@ struct Fleet {
 
 struct Space {
     fleets: Vec<Fleet>,
+    /// Every faction a game can seat, for a defender that is guns alone.
+    factions: Vec<&'static str>,
 }
 
 impl Space {
     fn build(content: &ContentStore, max_ships: usize, max_fighters: usize) -> Self {
         let mut distinct: BTreeMap<String, Fleet> = BTreeMap::new();
-        for profile in Profile::all(true) {
+        let profiles = Profile::wide(content, true);
+        for profile in &profiles {
+            let profile = *profile;
             for composition in arena::compositions(content, profile, max_ships, max_fighters) {
                 let units = profile.resolve(content, &composition);
-                let key = format!("{}|{units:?}", arena::modifier(profile.faction));
+                let key = format!(
+                    "{}|{}|{units:?}",
+                    arena::modifier(profile.faction),
+                    effect_tag(profile.faction)
+                );
                 distinct.entry(key.clone()).or_insert_with(|| {
                     let sustainers = units
                         .iter()
                         .filter(|(id, _)| {
-                            ti4_content::units::unit_type(content, id, POK)
+                            ti4_content::units::unit_type(content, id, FULL)
                                 .is_some_and(|unit| unit.sustain_damage())
                         })
                         .cloned()
@@ -100,12 +117,14 @@ impl Space {
         for fleet in &fleets {
             for (id, _) in &fleet.units {
                 assert!(
-                    UNIT_IDS.contains(&id.as_str()),
+                    policy_battle::unit_ids(FEATURE_VERSION).contains(&id.as_str()),
                     "{id} is outside the battle encoding"
                 );
             }
         }
-        Self { fleets }
+        let mut factions: Vec<&'static str> = profiles.iter().map(|p| p.faction).collect();
+        factions.dedup();
+        Self { fleets, factions }
     }
 }
 
@@ -116,6 +135,25 @@ struct Party {
     faction: &'static str,
     damage: Vec<(String, usize)>,
     guns: Vec<(String, usize)>,
+    /// The board conditions its flagship reads (battle feature version 8).
+    context: SideContext,
+}
+
+/// Board conditions for a fleet's flagship, sampled where they matter: the Arvicon Rex's edict
+/// and the Heaven's Eye's plot repair half the time, the Bastion flagship's conquests 0 to 6.
+fn context(space: &Space, fleet: Option<usize>, rng: &mut Rng) -> SideContext {
+    let fields = |id: &str| {
+        fleet.is_some_and(|index| space.fleets[index].units.iter().any(|(unit, _)| unit == id))
+    };
+    SideContext {
+        edict: fields("mahact_flagship") && rng.below(2) == 0,
+        conquests: if fields("bastion_flagship") {
+            i64::try_from(rng.below(7)).unwrap_or(0)
+        } else {
+            0
+        },
+        plot_repair: fields("firmament_flagship") && rng.below(2) == 0,
+    }
 }
 
 struct Position {
@@ -176,7 +214,7 @@ impl Position {
             let bare = may_be_bare && rng.below(12) == 0;
             let fleet = (!bare).then(|| rng.below(space.fleets.len()));
             let faction = fleet.map_or_else(
-                || Profile::CATALOGUE[rng.below(Profile::CATALOGUE.len())].0,
+                || space.factions[rng.below(space.factions.len())],
                 |index| space.fleets[index].faction,
             );
             let damage = fleet.map_or_else(Vec::new, |index| damage(&space.fleets[index], rng));
@@ -187,11 +225,13 @@ impl Position {
             } else {
                 Vec::new()
             };
+            let context = context(space, fleet, rng);
             Party {
                 fleet,
                 faction,
                 damage,
                 guns,
+                context,
             }
         };
         let attacker = party(rng, false);
@@ -208,6 +248,7 @@ impl Position {
                 defender.faction = space.fleets[index].faction;
                 defender.damage = damage(&space.fleets[index], rng);
                 defender.fleet = Some(index);
+                defender.context = context(space, Some(index), rng);
             }
         }
         Self {
@@ -222,8 +263,8 @@ impl Position {
             .fleet
             .map_or("-", |index| space.fleets[index].key.as_str());
         format!(
-            "{fleet}#{:?}#{:?}#{}",
-            party.damage, party.guns, party.faction
+            "{fleet}#{:?}#{:?}#{}#{:?}",
+            party.damage, party.guns, party.faction, party.context
         )
     }
 
@@ -247,6 +288,10 @@ impl Position {
             damaged: party.damage.clone(),
             guns: party.guns.clone(),
             modifier: arena::modifier(party.faction),
+            ambush: party.faction == "mentak",
+            raid_formation: party.faction == "argent",
+            edict: party.context.edict || party.context.plot_repair,
+            conquests: party.context.conquests,
         }
     }
 
@@ -264,6 +309,7 @@ impl Position {
             .fleet
             .map_or_else(Vec::new, |index| space.fleets[index].units.clone());
         Side::of(content, &units, &party.damage, party.faction, true)
+            .with_context(party.context)
             .with_guns(content, &party.guns)
     }
 
@@ -275,7 +321,12 @@ impl Position {
         let slots = |side: &Side| -> Vec<usize> {
             side.names()
                 .iter()
-                .map(|id| UNIT_IDS.iter().position(|known| known == id).expect("slot"))
+                .map(|id| {
+                    policy_battle::unit_ids(FEATURE_VERSION)
+                        .iter()
+                        .position(|known| known == id)
+                        .expect("slot")
+                })
                 .collect()
         };
         let (a_slots, d_slots) = (slots(&a), slots(&d));
@@ -479,7 +530,7 @@ fn main() {
         rayon::current_num_threads()
     );
     println!(
-        "  fleets        {} distinct  (max {max_ships} ships, {max_fighters} fighters, six factions +/- upgrades)",
+        "  fleets        {} distinct  (max {max_ships} ships, {max_fighters} fighters, every seatable faction +/- upgrades)",
         space.fleets.len()
     );
     println!(

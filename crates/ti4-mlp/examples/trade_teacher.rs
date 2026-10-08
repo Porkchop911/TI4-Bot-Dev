@@ -21,7 +21,8 @@
 //! ```text
 //! cargo run --release -p ti4-mlp --example trade_teacher -- --bundle <dir> --out <dir> \
 //!     [--games 240] [--epochs 20] [--learning-rate 1e-3] [--minibatch 256] \
-//!     [--temperature 1.0] [--seed-base 1265000000] [--device cuda]
+//!     [--temperature 1.0] [--seed-base 1265000000] [--device cuda] [--roster six|wide]
+//!     [--collect-only]
 //! ```
 
 use rand::{Rng, SeedableRng};
@@ -210,6 +211,15 @@ impl Decider for TeacherSeat {
         seen: &SeatObservation<'_>,
     ) -> Result<ChoiceOption, IllegalChoice> {
         let sub = subtype(choice);
+        if TRACE.load(std::sync::atomic::Ordering::Relaxed) {
+            eprintln!(
+                "  trace {} {} | {} | {} options",
+                self.seat,
+                sub,
+                choice.prompt,
+                choice.options.len()
+            );
+        }
         let open = self.shared.borrow().open.clone();
         let negotiating = BUILDING.contains(&sub) || sub == RESPONSE;
         if negotiating && let Some((proposer, recipient)) = &open {
@@ -461,15 +471,19 @@ fn collect_game(
     content: &ContentStore,
     seed: u64,
     temperature: f64,
+    roster: ti4_engine::seating::FactionRoster,
 ) -> Result<Collected, String> {
     let players: Vec<PlayerId> = (0..6).map(|i| PlayerId::new(format!("seat{i}"))).collect();
+    // `--roster wide` seats six distinct factions per seed from the whole roster (BF-22).
+    let drawn =
+        ti4_training::rollout::game_factions(content, roster, &FACTIONS, &players, DEFAULT, seed)?;
     let factions: BTreeMap<PlayerId, FactionId> = players
         .iter()
         .enumerate()
         .map(|(i, p)| {
             (
                 p.clone(),
-                ti4_training::rollout::seated_faction(&FACTIONS.map(FactionId::new), seed, 0, i),
+                ti4_training::rollout::seated_faction(&drawn, seed, 0, i),
             )
         })
         .collect();
@@ -566,6 +580,9 @@ fn collect_game(
     Ok(out)
 }
 
+/// `--trace`: log every decision a seat is asked through `choose_seeing` (for one stuck seed).
+static TRACE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// Mean cross-entropy of the labelled options over `batch`, and how many labels were ranked first.
 fn loss_and_hits(
     actor: &ti4_mlp::Actor,
@@ -622,6 +639,15 @@ fn main() {
     let minibatch: usize = parsed("--minibatch", 256);
     let temperature: f64 = parsed("--temperature", 1.0);
     let seed_base: u64 = parsed("--seed-base", 1_265_000_000);
+    // Collect and report only: for finding slow or stuck games without writing a checkpoint.
+    let collect_only = std::env::args().any(|arg| arg == "--collect-only");
+    if std::env::args().any(|arg| arg == "--trace") {
+        TRACE.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+    let roster = argument("--roster")
+        .map_or(ti4_engine::seating::FactionRoster::InScope, |value| {
+            ti4_training::rollout::parse_roster(&value).unwrap_or_else(|error| refuse(&error))
+        });
     let device = match argument("--device").as_deref().unwrap_or("cuda") {
         "cuda" => ti4_tensor::Device::Cuda(0),
         "cpu" => ti4_tensor::Device::Cpu,
@@ -681,8 +707,26 @@ fn main() {
             seeds
                 .into_iter()
                 .map(|seed| {
-                    collect_game(&copy, &vocabulary, &pool, content, seed, temperature)
-                        .unwrap_or_else(|error| refuse(&error))
+                    let clock = Instant::now();
+                    let game = collect_game(
+                        &copy,
+                        &vocabulary,
+                        &pool,
+                        content,
+                        seed,
+                        temperature,
+                        roster,
+                    )
+                    .unwrap_or_else(|error| refuse(&error));
+                    // Progress per game, so a long collection shows how far it is, and a game that
+                    // never ends shows which seed it is.
+                    eprintln!(
+                        "  game {seed} in {:.1}s: {} contacts, {} examples",
+                        clock.elapsed().as_secs_f64(),
+                        game.contacts,
+                        game.examples.len()
+                    );
+                    game
                 })
                 .collect::<Vec<_>>()
         })
@@ -717,6 +761,11 @@ fn main() {
         examples.len(),
         examples.iter().filter(|e| e.held_out).count()
     );
+
+    if collect_only {
+        println!("  --collect-only: no training, no checkpoint");
+        return;
+    }
 
     // ---- supervised training ----
     let settings = ti4_mlp::ppo::Settings {
@@ -811,7 +860,9 @@ fn main() {
         &slots_text,
         bundle_mode,
         &ti4_mlp::bundle::Provenance {
-            source: format!("trade teacher, {epochs} epoch(s) from {bundle_path}"),
+            source: format!(
+                "trade teacher, {epochs} epoch(s) from {bundle_path}, roster {roster:?}"
+            ),
             git_commit: std::env::var("GIT_COMMIT").unwrap_or_else(|_| "unrecorded".to_owned()),
             update: epochs as u64,
         },

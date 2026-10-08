@@ -30,8 +30,16 @@
 //! - **7** — version 6's facts; the bot also samples which candidate fleet to send and the plan
 //!   answers the movement and cargo prompts.
 //!
-//! From version 5 on, a version only adds facts: the encoding stays version 4's, so a predictor
+//! From version 5 to 7 a version only adds facts: the encoding stays version 4's, so a predictor
 //! moves up with [`BattlePredictor::relabelled`] and no retraining.
+//!
+//! - **8** — version 7's facts on a wider space encoding (BF-22): every faction a game can seat.
+//!   Units come from [`UNIT_IDS_V8`] (version 7's slots, then every faction ship appended), the
+//!   dice shift covers Sardakk's Unrelenting, and each side gains four inputs: Mentak Ambush,
+//!   Argent Raid Formation, the Arvicon Rex's edict, and the Bastion flagship's conquests (with
+//!   the Heaven's Eye's plot repair folded into the edict-style flags). A version-7 predictor cannot
+//!   move up to it: the encoding changed, and an old predictor keeps refusing every faction
+//!   outside [`FACTIONS`]. The ground network is version 7's.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -40,10 +48,96 @@ use ti4_engine::choice::{Choice, ChoiceOption, Observed};
 use ti4_model::id::{PlayerId, SystemId};
 
 /// The version new predictors are trained on.
-pub const FEATURE_VERSION: u32 = 4;
+pub const FEATURE_VERSION: u32 = 8;
 
 /// Every version this build can feed.
-pub const SUPPORTED_VERSIONS: [u32; 7] = [1, 2, 3, 4, 5, 6, 7];
+pub const SUPPORTED_VERSIONS: [u32; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
+
+/// The first version whose space encoding covers the wide roster (see the module notes).
+pub const WIDE_VERSION: u32 = 8;
+
+/// Version 8's units: [`UNIT_IDS`] in their slots, then every faction ship the wide roster fields,
+/// appended in id order. Never reorder; append under a new version.
+pub const UNIT_IDS_V8: [&str; 64] = [
+    "carrier",
+    "carrier2",
+    "cruiser",
+    "cruiser2",
+    "destroyer",
+    "destroyer2",
+    "dreadnought",
+    "dreadnought2",
+    "fighter",
+    "fighter2",
+    "hacan_flagship",
+    "jolnar_flagship",
+    "l1z1x_dreadnought",
+    "l1z1x_dreadnought2",
+    "l1z1x_flagship",
+    "letnev_flagship",
+    "sol_carrier",
+    "sol_carrier2",
+    "sol_flagship",
+    "warsun",
+    "xxcha_flagship",
+    "arborec_flagship",
+    "argent_destroyer",
+    "argent_destroyer2",
+    "argent_flagship",
+    "bastion_flagship",
+    "cabal_flagship",
+    "crimson_destroyer",
+    "crimson_destroyer2",
+    "crimson_flagship",
+    "deepwrought_flagship",
+    "empyrean_flagship",
+    "firmament_flagship",
+    "ghemina_carrier",
+    "ghemina_carrier2",
+    "ghost_flagship",
+    "keleres_flagship",
+    "mahact_flagship",
+    "mentak_cruiser3",
+    "mentak_flagship",
+    "muaat_flagship",
+    "muaat_warsun",
+    "muaat_warsun2",
+    "naalu_fighter",
+    "naalu_fighter2",
+    "naalu_flagship",
+    "naaz_flagship",
+    "nekro_flagship",
+    "nomad_flagship",
+    "nomad_flagship2",
+    "obsidian_flagship",
+    "ralnel_destroyer",
+    "ralnel_destroyer2",
+    "ralnel_flagship",
+    "saar_flagship",
+    "sardakk_dreadnought",
+    "sardakk_dreadnought2",
+    "sardakk_flagship",
+    "titans_cruiser",
+    "titans_cruiser2",
+    "titans_flagship",
+    "winnu_flagship",
+    "yin_flagship",
+    "yssaril_flagship",
+];
+
+/// The units `version` encodes.
+#[must_use]
+pub const fn unit_ids(version: u32) -> &'static [&'static str] {
+    if version >= WIDE_VERSION {
+        &UNIT_IDS_V8
+    } else {
+        &UNIT_IDS
+    }
+}
+
+/// Per-side inputs version 8 adds after the guns: Ambush, Raid Formation, edict (the Arvicon Rex's
+/// +2, or the Heaven's Eye's repair), and conquests over six.
+const SIDE_FLAGS_V8: usize = 4;
 
 /// Units the encoding knows, in slot order. Never reorder; append under a new version.
 pub const UNIT_IDS: [&str; 21] = [
@@ -109,13 +203,11 @@ const REACHING_GUNS: [&str; 3] = ["pds2", "xxcha_mech", "xxcha_flagship"];
 
 /// Factions covered, with their shift to every combat roll.
 ///
-/// This is the faction support of **every** version in [`SUPPORTED_VERSIONS`]: each predictor was
-/// trained on fights between these six only. A seat of any other faction (the wide roster, BF-22)
-/// is [`Unsupported::Faction`], a public reason, never a relabel onto a known row: a new faction's
-/// combat abilities and units are things no existing predictor saw, and equal tensor shapes would
-/// not make it compatible. Adding a faction here therefore needs a new feature version whose
-/// predictors were trained with it, and a lookup gated by version so older predictors keep
-/// refusing it.
+/// This is the faction support of versions 1 to 7: each of those predictors was trained on fights
+/// between these six only. A seat of any other faction is [`Unsupported::Faction`] for them, a
+/// public reason, never a relabel onto a known row. Version 8 ([`WIDE_VERSION`]) was trained with
+/// every seatable faction and covers them through its own lookup, so an old predictor keeps
+/// refusing what it never saw.
 pub const FACTIONS: [(&str, i64); 6] = [
     ("sol", 0),
     ("letnev", 0),
@@ -128,8 +220,10 @@ pub const FACTIONS: [(&str, i64); 6] = [
 /// Width of one side's block: counts, damaged counts, dice shift, and from version 2 the guns.
 #[must_use]
 pub const fn side_width(version: u32) -> usize {
-    let ships = 2 * UNIT_IDS.len() + 1;
-    if version >= 2 {
+    let ships = 2 * unit_ids(version).len() + 1;
+    if version >= WIDE_VERSION {
+        ships + GUN_IDS.len() + SIDE_FLAGS_V8
+    } else if version >= 2 {
         ships + GUN_IDS.len()
     } else {
         ships
@@ -148,7 +242,7 @@ pub const fn input_width(version: u32) -> usize {
 #[must_use]
 pub const fn output_width(version: u32) -> usize {
     if version >= 2 {
-        3 + 2 * UNIT_IDS.len()
+        3 + 2 * unit_ids(version).len()
     } else {
         3
     }
@@ -168,6 +262,15 @@ pub struct BattleSide {
     pub damaged: Vec<(String, usize)>,
     pub guns: Vec<(String, usize)>,
     pub modifier: i64,
+    /// Version 8: Mentak Ambush.
+    pub ambush: bool,
+    /// Version 8: Argent Raid Formation.
+    pub raid_formation: bool,
+    /// Version 8: the Arvicon Rex rolls +2 (the opponent's token is not in this side's fleet pool),
+    /// or the Heaven's Eye repairs each round (the opponent holds a token on this side's plot).
+    pub edict: bool,
+    /// Version 8: non-home systems with a planet this side controls (the Bastion flagship).
+    pub conquests: i64,
 }
 
 /// Why a fight cannot be encoded.
@@ -187,6 +290,9 @@ pub enum Unsupported {
     Guns,
     /// A galvanized ship, whose modifiers the predictor never saw.
     Galvanized,
+    /// A board condition the arena does not model changes this fight (version 8): the Nekro
+    /// flagship with ground forces beside it, the Crimson flagship at an active breach.
+    Context(&'static str),
     /// The acting seat would fight with no ships.
     EmptyFleet,
 }
@@ -361,10 +467,7 @@ pub fn fleet_query(
             .seat(owner)
             .map(|seat| seat.faction.as_str().to_owned())
             .unwrap_or_default();
-        let modifier = FACTIONS
-            .iter()
-            .find(|(known, _)| *known == faction)
-            .map(|(_, shift)| *shift)
+        let modifier = faction_shift(seen, version, &faction)
             .ok_or_else(|| Unsupported::Faction(faction.clone()))?;
         let mut units: BTreeMap<String, usize> = BTreeMap::new();
         let mut damaged: BTreeMap<String, usize> = BTreeMap::new();
@@ -393,12 +496,17 @@ pub fn fleet_query(
                 *side_guns.entry(id.clone()).or_default() += 1;
             }
         }
-        Ok(BattleSide {
+        let mut built = BattleSide {
             units: units.into_iter().collect(),
             damaged: damaged.into_iter().collect(),
             guns: side_guns.into_iter().collect(),
             modifier,
-        })
+            ..BattleSide::default()
+        };
+        if version >= WIDE_VERSION {
+            wide_context(seen, active, owner, &faction, &mut built)?;
+        }
+        Ok(built)
     };
     // Every other player's guns fire at the attacker, so all of them join the defender.
     let built = side(player, arriving, &|gunner| gunner == player).and_then(|attacker| {
@@ -415,8 +523,82 @@ pub fn fleet_query(
     }
 }
 
+/// A ship's survival slot. Version 8's list starts with every earlier version's, so one lookup
+/// serves both; a prediction shorter than the slot simply has no entry for it.
 fn slot(id: &str) -> Option<usize> {
-    UNIT_IDS.iter().position(|known| *known == id)
+    UNIT_IDS_V8.iter().position(|known| *known == id)
+}
+
+/// A faction's shift to every combat roll as `version` covers it, or `None` for a faction the
+/// version never saw: [`FACTIONS`] through version 7, every seatable faction from version 8.
+fn faction_shift(seen: &Observed<'_>, version: u32, faction: &str) -> Option<i64> {
+    if version < WIDE_VERSION {
+        return FACTIONS
+            .iter()
+            .find(|(known, _)| *known == faction)
+            .map(|(_, shift)| *shift);
+    }
+    let seatable = ti4_engine::seating::wide_roster(seen.content(), seen.sources())
+        .contains(&faction)
+        || (ti4_engine::factions::keleres::is_keleres_faction(faction)
+            && ti4_content::factions::get(seen.content(), faction).is_some());
+    seatable.then_some(match faction {
+        "jolnar" => -1,
+        "sardakk" => 1,
+        _ => 0,
+    })
+}
+
+/// Version 8's side inputs read from the board, and the conditions it refuses.
+fn wide_context(
+    seen: &Observed<'_>,
+    system: &SystemId,
+    owner: &PlayerId,
+    faction: &str,
+    side: &mut BattleSide,
+) -> Result<(), Unsupported> {
+    let here = seen.system(system);
+    let opponents: BTreeSet<PlayerId> = here
+        .units
+        .iter()
+        .chain(here.planet_units.values().flatten())
+        .filter(|unit| &unit.owner != owner)
+        .map(|unit| unit.owner.clone())
+        .collect();
+    let fields = |id: &str| side.units.iter().any(|(unit, n)| unit == id && *n > 0);
+    if fields("nekro_flagship")
+        && here
+            .units
+            .iter()
+            .chain(here.planet_units.values().flatten())
+            .any(|unit| {
+                &unit.owner == owner
+                    && ti4_content::units::unit_type(
+                        seen.content(),
+                        unit.type_id.as_str(),
+                        seen.sources(),
+                    )
+                    .is_some_and(|kind| kind.is_ground_force())
+            })
+    {
+        return Err(Unsupported::Context("nekro flagship with ground forces"));
+    }
+    if fields("crimson_flagship") && seen.active_breach_in(system) {
+        return Err(Unsupported::Context("crimson flagship at an active breach"));
+    }
+    side.ambush = faction == "mentak";
+    side.raid_formation = faction == "argent";
+    side.edict = (fields("mahact_flagship") && {
+        let pool = seen.mahact_fleet_pool_owners(owner);
+        !opponents.is_empty() && !opponents.iter().any(|other| pool.contains(other))
+    }) || (fields("firmament_flagship") && {
+        let puppets = seen.firmament_puppets(owner);
+        opponents.iter().any(|other| puppets.contains(other))
+    });
+    if fields("bastion_flagship") {
+        side.conquests = i64::try_from(seen.non_home_systems_with_planets(owner)).unwrap_or(0);
+    }
+    Ok(())
 }
 
 fn scale(id: &str, count: usize) -> f32 {
@@ -431,6 +613,8 @@ fn scale(id: &str, count: usize) -> f32 {
 
 impl BattleSide {
     fn encode(&self, version: u32, out: &mut [f32]) -> Result<(), Unsupported> {
+        let ids = unit_ids(version);
+        let slot = |id: &str| ids.iter().position(|known| *known == id);
         for (id, count) in &self.units {
             let at = slot(id).ok_or_else(|| Unsupported::Unit(id.clone()))?;
             out[at] += scale(id, *count);
@@ -446,11 +630,15 @@ impl BattleSide {
             if *count > fielded {
                 return Err(Unsupported::Damage(id.clone()));
             }
-            out[UNIT_IDS.len() + at] += scale(id, *count);
+            out[ids.len() + at] += scale(id, *count);
         }
         #[expect(clippy::cast_precision_loss, reason = "a dice shift of -1, 0 or 1")]
         let shift = self.modifier as f32;
-        out[2 * UNIT_IDS.len()] = shift;
+        out[2 * ids.len()] = shift;
+        let wide = self.ambush || self.raid_formation || self.edict || self.conquests != 0;
+        if version < WIDE_VERSION && wide {
+            return Err(Unsupported::Context("a version-8 side input"));
+        }
         if version < 2 {
             return if self.guns.is_empty() {
                 Ok(())
@@ -465,7 +653,16 @@ impl BattleSide {
                 .ok_or(Unsupported::Guns)?;
             #[expect(clippy::cast_precision_loss, reason = "counts are small")]
             let value = *count as f32 / 4.0;
-            out[2 * UNIT_IDS.len() + 1 + at] += value;
+            out[2 * ids.len() + 1 + at] += value;
+        }
+        if version >= WIDE_VERSION {
+            let flags = 2 * ids.len() + 1 + GUN_IDS.len();
+            out[flags] = f32::from(u8::from(self.ambush));
+            out[flags + 1] = f32::from(u8::from(self.raid_formation));
+            out[flags + 2] = f32::from(u8::from(self.edict));
+            #[expect(clippy::cast_precision_loss, reason = "a handful of systems")]
+            let conquests = self.conquests.clamp(0, 12) as f32 / 6.0;
+            out[flags + 3] = conquests;
         }
         Ok(())
     }
@@ -719,7 +916,10 @@ impl BattlePredictor {
         let predictor = Self {
             feature_version: version,
             continuation: continuation.into(),
-            unit_ids: UNIT_IDS.iter().map(|id| (*id).to_owned()).collect(),
+            unit_ids: unit_ids(version)
+                .iter()
+                .map(|id| (*id).to_owned())
+                .collect(),
             layers: to_layers(layers),
             ground_layers: Vec::new(),
         };
@@ -741,7 +941,10 @@ impl BattlePredictor {
         let predictor = Self {
             feature_version: version,
             continuation: continuation.into(),
-            unit_ids: UNIT_IDS.iter().map(|id| (*id).to_owned()).collect(),
+            unit_ids: unit_ids(version)
+                .iter()
+                .map(|id| (*id).to_owned())
+                .collect(),
             layers: to_layers(space),
             ground_layers: to_layers(ground),
         };
@@ -794,8 +997,10 @@ impl BattlePredictor {
     ///
     /// This predictor is older than version 4, or `version` is not a later supported version.
     pub fn relabelled(mut self, version: u32) -> Result<Self, LoadError> {
+        // Versions 5-7 only add facts; version 8 changes the encoding, so nothing crosses into it.
         if self.feature_version < 4
             || version <= self.feature_version
+            || (self.feature_version < WIDE_VERSION && version >= WIDE_VERSION)
             || !SUPPORTED_VERSIONS.contains(&version)
         {
             return Err(LoadError::Version { found: version });
@@ -837,7 +1042,12 @@ impl BattlePredictor {
                 found: self.feature_version,
             });
         }
-        if self.unit_ids.iter().map(String::as_str).ne(UNIT_IDS) {
+        if self
+            .unit_ids
+            .iter()
+            .map(String::as_str)
+            .ne(unit_ids(self.feature_version).iter().copied())
+        {
             return Err(LoadError::Units);
         }
         let version = self.feature_version;
@@ -1204,6 +1414,7 @@ pub fn retreat_query(
     seen: &Observed<'_>,
     choice: &Choice,
     player: &PlayerId,
+    version: u32,
 ) -> Option<(BattleSide, BattleSide, bool)> {
     let announcing = choice
         .context
@@ -1243,10 +1454,7 @@ pub fn retreat_query(
     }
     let side = |owner: &PlayerId| -> Option<BattleSide> {
         let faction = seen.seat(owner)?.faction.as_str().to_owned();
-        let modifier = FACTIONS
-            .iter()
-            .find(|(known, _)| *known == faction)
-            .map(|(_, shift)| *shift)?;
+        let modifier = faction_shift(seen, version, &faction)?;
         let mut units: BTreeMap<String, usize> = BTreeMap::new();
         let mut damaged: BTreeMap<String, usize> = BTreeMap::new();
         for unit in here
@@ -1262,12 +1470,17 @@ pub fn retreat_query(
                 *damaged.entry(unit.type_id.to_string()).or_default() += 1;
             }
         }
-        Some(BattleSide {
+        let mut built = BattleSide {
             units: units.into_iter().collect(),
             damaged: damaged.into_iter().collect(),
             guns: Vec::new(),
             modifier,
-        })
+            ..BattleSide::default()
+        };
+        if version >= WIDE_VERSION {
+            wide_context(seen, &system, owner, &faction, &mut built).ok()?;
+        }
+        Some(built)
     };
     let attacker = side(&active)?;
     let defender = side(enemy)?;
@@ -1282,38 +1495,40 @@ fn retreat_facts(
     predictor: &BattlePredictor,
 ) -> Vec<Vec<(&'static str, f64)>> {
     let names = &FACT_NAMES_V4[14..];
-    let facts: Vec<(&'static str, f64)> = retreat_query(seen, choice, player)
-        .and_then(|(attacker, defender, acting_attacks)| {
-            let input = encode_at(predictor.feature_version, &attacker, &defender, true).ok()?;
-            let p = predictor.predict(&input);
-            let (own, enemy, own_survival, enemy_survival) = if acting_attacks {
-                (
-                    &attacker,
-                    &defender,
-                    &p.attacker_survival,
-                    &p.defender_survival,
-                )
-            } else {
-                (
-                    &defender,
-                    &attacker,
-                    &p.defender_survival,
-                    &p.attacker_survival,
-                )
-            };
-            let (win, loss) = if acting_attacks {
-                (p.attacker_wins, p.defender_wins)
-            } else {
-                (p.defender_wins, p.attacker_wins)
-            };
-            Some(vec![
-                (names[0], f64::from(win)),
-                (names[1], f64::from(loss)),
-                (names[2], cost_lost(seen, own, own_survival)),
-                (names[3], cost_lost(seen, enemy, enemy_survival)),
-            ])
-        })
-        .unwrap_or_default();
+    let facts: Vec<(&'static str, f64)> =
+        retreat_query(seen, choice, player, predictor.feature_version)
+            .and_then(|(attacker, defender, acting_attacks)| {
+                let input =
+                    encode_at(predictor.feature_version, &attacker, &defender, true).ok()?;
+                let p = predictor.predict(&input);
+                let (own, enemy, own_survival, enemy_survival) = if acting_attacks {
+                    (
+                        &attacker,
+                        &defender,
+                        &p.attacker_survival,
+                        &p.defender_survival,
+                    )
+                } else {
+                    (
+                        &defender,
+                        &attacker,
+                        &p.defender_survival,
+                        &p.attacker_survival,
+                    )
+                };
+                let (win, loss) = if acting_attacks {
+                    (p.attacker_wins, p.defender_wins)
+                } else {
+                    (p.defender_wins, p.attacker_wins)
+                };
+                Some(vec![
+                    (names[0], f64::from(win)),
+                    (names[1], f64::from(loss)),
+                    (names[2], cost_lost(seen, own, own_survival)),
+                    (names[3], cost_lost(seen, enemy, enemy_survival)),
+                ])
+            })
+            .unwrap_or_default();
     choice.options.iter().map(|_| facts.clone()).collect()
 }
 
@@ -1327,7 +1542,7 @@ fn cost_lost(seen: &Observed<'_>, side: &BattleSide, survival: &[f32]) -> f64 {
                 .map_or(0.0, |kind| kind.cost());
             #[expect(clippy::cast_precision_loss, reason = "counts are small")]
             let count = *count as f64;
-            Some(cost * count * (1.0 - f64::from(survival[at])))
+            Some(cost * count * (1.0 - f64::from(*survival.get(at)?)))
         })
         .sum::<f64>()
         / 10.0
@@ -1622,7 +1837,7 @@ fn ground_cost_lost(seen: &Observed<'_>, side: &GroundBattleSide, survival: &[f3
                 .map_or(0.0, |kind| kind.cost());
             #[expect(clippy::cast_precision_loss, reason = "counts are small")]
             let count = *count as f64;
-            Some(cost * count * (1.0 - f64::from(survival[at])))
+            Some(cost * count * (1.0 - f64::from(*survival.get(at)?)))
         })
         .sum::<f64>()
         / 10.0
@@ -1832,6 +2047,7 @@ mod tests {
             damaged: owned(damaged),
             guns: Vec::new(),
             modifier,
+            ..BattleSide::default()
         }
     }
 
@@ -1955,7 +2171,11 @@ mod tests {
             let total = p.attacker_wins + p.defender_wins + p.mutual_destruction;
             assert!((total - 1.0).abs() < 1e-5);
             assert_eq!(p, predictor.predict(&x));
-            let expected = if version >= 2 { UNIT_IDS.len() } else { 0 };
+            let expected = if version >= 2 {
+                unit_ids(version).len()
+            } else {
+                0
+            };
             assert_eq!(p.attacker_survival.len(), expected);
             assert_eq!(p.defender_survival.len(), expected);
         }
@@ -2118,10 +2338,10 @@ mod tests {
     }
 
     #[test]
-    fn every_faction_outside_the_six_is_refused_by_every_supported_version() {
+    fn every_faction_outside_the_six_is_refused_before_version_8_and_seated_from_it() {
         // BF-22, operator decision 2026-10-08 (migrate, never relabel): a wide-roster faction is
-        // a public Unsupported::Faction for every predictor this build can feed, as defender and
-        // as attacker, until a new feature version is trained with it.
+        // a public Unsupported::Faction for every predictor before version 8, as defender and as
+        // attacker; version 8 was trained with every seatable faction and covers them.
         let content = ti4_content::ContentStore::embedded();
         let a = PlayerId::new("a");
         let b = PlayerId::new("b");
@@ -2139,7 +2359,7 @@ mod tests {
             .collect();
         assert!(outside.len() >= 20, "{outside:?}");
         for alias in outside {
-            for version in SUPPORTED_VERSIONS {
+            for version in SUPPORTED_VERSIONS.into_iter().filter(|v| *v < WIDE_VERSION) {
                 let (mut state, system) = board("sol", alias);
                 ti4_engine::fixtures::put(&mut state, &system, "cruiser", &b, 1);
                 let seen = Observed::new(&state, content, ti4_model::POK, None);
@@ -2157,7 +2377,118 @@ mod tests {
                     "{alias} attacking, version {version}"
                 );
             }
+            let (mut state, system) = board("sol", alias);
+            ti4_engine::fixtures::put(&mut state, &system, "cruiser", &b, 1);
+            let seen = Observed::new(&state, content, ti4_model::content_types::FULL, None);
+            assert!(
+                matches!(
+                    movement_query(&seen, &choice, &carrier, &a, WIDE_VERSION),
+                    BattleQuery::Supported { .. }
+                ),
+                "{alias} defending, version {WIDE_VERSION}"
+            );
         }
+    }
+
+    #[test]
+    fn version_8_units_cover_every_faction_ship_and_keep_the_old_slots() {
+        let content = ti4_content::ContentStore::embedded();
+        let full = ti4_model::content_types::FULL;
+        assert_eq!(
+            &UNIT_IDS_V8[..UNIT_IDS.len()],
+            &UNIT_IDS[..],
+            "old slots never move"
+        );
+        let mut seen = BTreeSet::new();
+        for id in UNIT_IDS_V8 {
+            assert!(seen.insert(id), "{id} listed twice");
+            let unit = ti4_content::units::unit_type(content, id, full)
+                .unwrap_or_else(|| panic!("{id} is not in the corpus"));
+            assert!(unit.is_ship(), "{id} is not a ship");
+        }
+        // Every ship a seatable faction can field, upgraded or not, has a slot.
+        let mut factions: Vec<&str> = ti4_engine::seating::wide_roster(content, full)
+            .into_iter()
+            .filter(|alias| *alias != ti4_engine::seating::KELERES_FAMILY)
+            .collect();
+        factions.extend(ti4_engine::factions::keleres::VARIANTS);
+        for faction in factions {
+            for base in [
+                "fighter",
+                "destroyer",
+                "cruiser",
+                "carrier",
+                "dreadnought",
+                "warsun",
+                "flagship",
+            ] {
+                let own = ti4_content::units::faction_unit(content, faction, base, full)
+                    .map(|unit| unit.id().to_owned());
+                let id = own.unwrap_or_else(|| base.to_owned());
+                if base == "flagship" && ti4_content::units::unit_type(content, &id, full).is_none()
+                {
+                    continue;
+                }
+                let upgraded = ti4_content::units::unit_type(content, &id, full)
+                    .and_then(|unit| unit.upgrades_to().map(ToOwned::to_owned));
+                for unit in std::iter::once(id).chain(upgraded) {
+                    assert!(
+                        UNIT_IDS_V8.contains(&unit.as_str()),
+                        "{faction} fields {unit}, which version 8 does not encode"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_version_7_predictor_cannot_be_relabelled_into_version_8() {
+        let seven = tiny(4).relabelled(7).expect("versions 5-7 only add facts");
+        assert!(seven.relabelled(8).is_err(), "the encoding changed at 8");
+        assert_eq!(
+            (input_width(7), output_width(7)),
+            (input_width(4), output_width(4)),
+            "versions 5-7 keep version 4's encoding"
+        );
+        assert!(input_width(8) > input_width(7) && output_width(8) > output_width(7));
+        let eight = tiny(8);
+        assert_eq!(eight.unit_ids.len(), UNIT_IDS_V8.len());
+    }
+
+    #[test]
+    fn version_8_seats_new_factions_with_their_shift_and_flags() {
+        let content = ti4_content::ContentStore::embedded();
+        let a = PlayerId::new("a");
+        let carrier = ChoiceOption::new("move|18|0", "move").with("unit", "carrier");
+        let choice = movement(vec![carrier.clone()]);
+
+        let (mut state, system) = board("sardakk", "mentak");
+        ti4_engine::fixtures::put(&mut state, &system, "cruiser", &PlayerId::new("b"), 1);
+        let seen = Observed::new(&state, content, ti4_model::POK, None);
+        assert_eq!(
+            movement_query(&seen, &choice, &carrier, &a, 7),
+            BattleQuery::Unsupported(Unsupported::Faction("sardakk".to_owned())),
+            "version 7 still refuses them"
+        );
+        let BattleQuery::Supported { attacker, defender } =
+            movement_query(&seen, &choice, &carrier, &a, 8)
+        else {
+            panic!("version 8 covers Sardakk against Mentak");
+        };
+        assert_eq!(attacker.modifier, 1, "Unrelenting");
+        assert!(
+            !attacker.ambush && defender.ambush,
+            "only the Mentak side ambushes"
+        );
+        let input = encode(8, &attacker, &defender).expect("encodes at 8");
+        assert_eq!(input.len(), input_width(8));
+        let flags = 2 * UNIT_IDS_V8.len() + 1 + GUN_IDS.len();
+        let width = side_width(8);
+        assert!(
+            (input[width + flags] - 1.0).abs() < f32::EPSILON,
+            "defender's Ambush input"
+        );
+        assert!(input[flags].abs() < f32::EPSILON);
     }
 
     #[test]
@@ -2280,8 +2611,8 @@ mod tests {
             vec![0.0; 3],
         )];
         assert!(matches!(
-            BattlePredictor::new(8, "test", layers.clone()),
-            Err(LoadError::Version { found: 8 })
+            BattlePredictor::new(9, "test", layers.clone()),
+            Err(LoadError::Version { found: 9 })
         ));
         // Version 3 is only reachable by adding ground layers, and they must chain.
         assert!(matches!(
@@ -2437,7 +2768,7 @@ mod tests {
             1,
         ));
         let (attacker, defender, acting_attacks) =
-            retreat_query(&seen, &choice, &b).expect("a covered fight");
+            retreat_query(&seen, &choice, &b, 4).expect("a covered fight");
         assert_eq!(attacker.units, vec![("dreadnought".to_owned(), 1)]);
         assert_eq!(defender.units, vec![("cruiser".to_owned(), 2)]);
         assert!(!acting_attacks, "the defender is the one asked");
