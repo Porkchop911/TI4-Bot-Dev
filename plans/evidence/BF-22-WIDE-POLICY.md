@@ -149,4 +149,6 @@ it fine.
 ## Open
 
 1. Tier-C frontier review of this package by a reviewer other than the author.
-2. A 16-seed, 16-worker wide PPO smoke from out/bf22-checkpoint-41476-wide-oov before any long run.
+2. Done 2026-10-08: `ppo_update --bundle out/bf22-checkpoint-41476-wide-oov --roster wide --updates 1
+   --seeds-per-update 16 --device cpu --no-checkpoint`, 16 workers: 16 games, 45,120 decisions,
+   0 failed games, parameters moved (out/bf22-ppo-wide-smoke3.log).
