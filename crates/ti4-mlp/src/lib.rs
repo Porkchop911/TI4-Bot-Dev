@@ -470,6 +470,34 @@ impl SeparateCritic {
     }
 }
 
+fn grown_input_table(
+    table: &Tensor,
+    growth: ti4_policy::vocabulary::CapacityGrowth,
+) -> Result<Tensor, ActorError> {
+    let rows = table.size().first().copied().unwrap_or(-1);
+    let old = i64::try_from(growth.old_capacity).unwrap_or(-1);
+    let new = i64::try_from(growth.new_capacity).unwrap_or(-1);
+    if rows != old || new < old || table.size().len() != 2 {
+        return Err(ActorError::NotUsable {
+            what: "capacity growth",
+            detail: format!(
+                "table {:?} against growth {} -> {} rows",
+                table.size(),
+                growth.old_capacity,
+                growth.new_capacity
+            ),
+        });
+    }
+    let width = table.size()[1];
+    let grown = Tensor::zeros([new, width], (table.kind(), table.device()));
+    tch::no_grad(|| {
+        if old > 0 {
+            grown.narrow(0, 0, old).copy_(table);
+        }
+    });
+    Ok(grown.set_requires_grad(table.requires_grad()))
+}
+
 fn migrated_input_table(
     table: &Tensor,
     migration: ti4_policy::vocabulary::V10ToV11Migration,
@@ -896,6 +924,71 @@ impl Actor {
             })?;
         if let (Some(critic), Some(input)) = (&mut self.separate_critic, critic_input) {
             critic.input = input;
+        }
+        Ok(())
+    }
+
+    /// Pad the input tables to a vocabulary grown by
+    /// [`ti4_policy::vocabulary::Vocabulary::append_reallocating`] (BF-22).
+    ///
+    /// Rows `0..old_capacity` are copied unchanged and the new rows are zero, in the policy input
+    /// and the separate critic's input alike, so every existing column scores exactly as before and
+    /// a new column contributes nothing until training moves it. Atomic: both tables are built
+    /// before either is replaced.
+    ///
+    /// # Errors
+    /// [`ActorError::NotUsable`] when a table does not have `old_capacity` rows or the new capacity
+    /// is smaller.
+    pub fn grow_input_capacity(
+        &mut self,
+        growth: ti4_policy::vocabulary::CapacityGrowth,
+    ) -> Result<(), ActorError> {
+        let input = grown_input_table(&self.input, growth)?;
+        let critic_input = if let Some(critic) = &self.separate_critic {
+            Some(grown_input_table(&critic.input, growth)?)
+        } else {
+            None
+        };
+        self.input = input;
+        self.capacity = i64::try_from(growth.new_capacity).map_err(|_| ActorError::NotUsable {
+            what: "capacity growth",
+            detail: "new capacity does not fit i64".to_owned(),
+        })?;
+        if let (Some(critic), Some(input)) = (&mut self.separate_critic, critic_input) {
+            critic.input = input;
+        }
+        Ok(())
+    }
+
+    /// Copy input rows `from -> to`, in the policy input and the separate critic's input alike.
+    ///
+    /// For a vocabulary append that must not change play: a name that used to resolve to its
+    /// family's out-of-vocabulary column starts its own row as a copy of that column, so every
+    /// option scores exactly as before the append (BF-22). Atomic: every pair is checked first.
+    ///
+    /// # Errors
+    /// [`ActorError::NotUsable`] for a row outside the table.
+    pub fn copy_input_rows(&mut self, pairs: &[(i64, i64)]) -> Result<(), ActorError> {
+        if let Some((from, to)) = pairs
+            .iter()
+            .find(|(from, to)| !(0..self.capacity).contains(from) || !(0..self.capacity).contains(to))
+        {
+            return Err(ActorError::NotUsable {
+                what: "row copy",
+                detail: format!("{from} -> {to} outside capacity {}", self.capacity),
+            });
+        }
+        let copy = |table: &mut Tensor| {
+            tch::no_grad(|| {
+                for (from, to) in pairs {
+                    let source = table.get(*from).copy();
+                    table.get(*to).copy_(&source);
+                }
+            });
+        };
+        copy(&mut self.input);
+        if let Some(critic) = &mut self.separate_critic {
+            copy(&mut critic.input);
         }
         Ok(())
     }
@@ -2085,6 +2178,59 @@ mod tests {
         assert_eq!(before, after);
         let inserted: Vec<f32> = ti4_tensor::to_vec(&actor.input().get(48)).expect("row");
         assert!(inserted.iter().all(|value| *value == 0.0));
+    }
+
+    #[test]
+    fn capacity_growth_keeps_every_logit_and_adds_zero_rows() {
+        // BF-22: growing the vocabulary pads W1 with zero rows; an option over existing columns
+        // scores exactly as before, and a new column contributes nothing.
+        let mut actor = actor(Width::W128);
+        let row = row("sol");
+        let old = option(&[3, 48, 79], &[0.25, 1.0, -0.5]);
+        let score = |actor: &Actor, option: SparseOption| {
+            ti4_tensor::to_vec(&actor.logits(&[option], "trade", row).expect("logits"))
+                .expect("vec")
+        };
+        let before = score(&actor, old.clone());
+        let old_capacity = usize::try_from(CAPACITY).unwrap();
+        let growth = ti4_policy::vocabulary::CapacityGrowth {
+            added: 40,
+            old_slot_count: old_capacity - 10,
+            old_capacity,
+            new_capacity: old_capacity * 2,
+        };
+        let wrong = ti4_policy::vocabulary::CapacityGrowth {
+            old_capacity: old_capacity + 1,
+            ..growth
+        };
+        assert!(actor.grow_input_capacity(wrong).is_err());
+        assert_eq!(actor.capacity(), CAPACITY, "a refused growth changed the actor");
+
+        actor.grow_input_capacity(growth).expect("grows");
+        assert_eq!(actor.capacity(), CAPACITY * 2);
+        assert_eq!(actor.input().size(), vec![CAPACITY * 2, 128]);
+        assert_eq!(score(&actor, old), before);
+        let new_column = CAPACITY + 5;
+        let with_new = option(&[3, 48, 79, new_column], &[0.25, 1.0, -0.5, 1.0]);
+        assert_eq!(score(&actor, with_new), before, "a new row is not zero");
+        let padded = actor.input().narrow(0, CAPACITY, CAPACITY).abs().sum(Kind::Float);
+        assert!(padded.double_value(&[]) == 0.0);
+    }
+
+    #[test]
+    fn copying_a_fallback_row_keeps_the_logit_of_a_moved_name() {
+        // BF-22 --init-from-oov: a name that resolved to column 7 (its OOV column) now has its own
+        // column 300; copying row 7 to 300 leaves the option's score unchanged.
+        let mut actor = actor(Width::W128);
+        let row = row("sol");
+        let score = |actor: &Actor, option: SparseOption| {
+            ti4_tensor::to_vec(&actor.logits(&[option], "trade", row).expect("logits"))
+                .expect("vec")
+        };
+        let before = score(&actor, option(&[3, 7], &[0.25, 1.0]));
+        assert!(actor.copy_input_rows(&[(7, CAPACITY)]).is_err(), "out of range is refused");
+        actor.copy_input_rows(&[(7, 300)]).expect("copies");
+        assert_eq!(score(&actor, option(&[3, 300], &[0.25, 1.0])), before);
     }
 
     #[test]

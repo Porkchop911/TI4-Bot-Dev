@@ -573,6 +573,16 @@ pub struct Vocabulary {
     index: BTreeMap<FeatureKey, usize>,
 }
 
+/// What [`Vocabulary::append_reallocating`] did: columns added, and the input-table rows before
+/// and after. `old_capacity == new_capacity` when the batch fit the free rows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CapacityGrowth {
+    pub added: usize,
+    pub old_slot_count: usize,
+    pub old_capacity: usize,
+    pub new_capacity: usize,
+}
+
 /// Exact row movement required when v10's reserved prefix gains v11's diplomacy row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct V10ToV11Migration {
@@ -814,6 +824,65 @@ impl Vocabulary {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
+        let batch = self.new_names(names)?;
+        if batch.is_empty() {
+            return Ok(0);
+        }
+        if self.slots.len() + batch.len() > self.capacity {
+            return Err(VocabularyError::AppendOverflow {
+                adding: batch.len(),
+                slots: self.slots.len(),
+                capacity: self.capacity,
+            });
+        }
+        Ok(self.push_batch(batch))
+    }
+
+    /// [`Self::append`], re-allocating capacity when the batch does not fit the free rows.
+    ///
+    /// The same append-only assignment, so every existing column, OOV column and trained weight
+    /// keeps its index. When the batch overflows, the vocabulary is re-allocated for its new
+    /// column count: `allocated_for` becomes that count and capacity follows the ordinary sizing
+    /// rule ([`capacity_for`]), exactly as a fresh build of the same names would size it. The
+    /// caller pads the model's input tables from `old_capacity` to `new_capacity` with zero rows
+    /// and writes both as one new bundle (BF-22). A batch that fits leaves capacity unchanged.
+    ///
+    /// Atomic: on any error the vocabulary is unchanged.
+    ///
+    /// # Errors
+    /// [`VocabularyError::Collision`] as for [`Self::append`]; [`VocabularyError::OverCapacity`]
+    /// when the re-allocated capacity would pass [`CAPACITY_LIMIT`].
+    pub fn append_reallocating<I, S>(&mut self, names: I) -> Result<CapacityGrowth, VocabularyError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let batch = self.new_names(names)?;
+        let old_slot_count = self.slots.len();
+        let old_capacity = self.capacity;
+        let total = old_slot_count + batch.len();
+        let mut next = self.clone();
+        if total > next.capacity {
+            next.capacity = capacity_for(total)?;
+            next.allocated_for = total;
+        }
+        let added = next.push_batch(batch);
+        next.validate()?;
+        *self = next;
+        Ok(CapacityGrowth {
+            added,
+            old_slot_count,
+            old_capacity,
+            new_capacity: self.capacity,
+        })
+    }
+
+    /// The names in `names` this vocabulary does not hold yet, keyed and deduplicated.
+    fn new_names<I, S>(&self, names: I) -> Result<BTreeMap<FeatureKey, String>, VocabularyError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
         let mut batch: BTreeMap<FeatureKey, String> = BTreeMap::new();
         for name in names {
             let name = name.as_ref();
@@ -840,16 +909,11 @@ impl Vocabulary {
             }
             batch.insert(key, name.to_owned());
         }
-        if batch.is_empty() {
-            return Ok(0);
-        }
-        if self.slots.len() + batch.len() > self.capacity {
-            return Err(VocabularyError::AppendOverflow {
-                adding: batch.len(),
-                slots: self.slots.len(),
-                capacity: self.capacity,
-            });
-        }
+        Ok(batch)
+    }
+
+    /// Assign `batch` the next columns in ascending key order. The caller has checked capacity.
+    fn push_batch(&mut self, batch: BTreeMap<FeatureKey, String>) -> usize {
         let added = batch.len();
         let first_new = self.slots.len();
         for (key, name) in batch {
@@ -862,7 +926,7 @@ impl Vocabulary {
             self.index
                 .insert(FeatureKey::from_bits(slot.key), first_new + offset);
         }
-        Ok(added)
+        added
     }
 
     /// Serialize to the canonical `slots.json` bytes.
@@ -1368,6 +1432,59 @@ mod tests {
         // Idempotent: appending what is already assigned adds nothing.
         assert_eq!(vocabulary.append(["option:zeta"]).expect("no-op"), 0);
         assert!(vocabulary.is_assigned("option:zeta"));
+    }
+
+    #[test]
+    fn reallocating_append_grows_capacity_and_moves_nothing() {
+        let mut vocabulary = Vocabulary::build(sample()).expect("builds");
+        let before = vocabulary.slots.clone();
+        let old_capacity = vocabulary.capacity();
+
+        // A batch that fits is an ordinary append: capacity unchanged.
+        let growth = vocabulary
+            .append_reallocating(["option:fits"])
+            .expect("fits");
+        assert_eq!(growth.added, 1);
+        assert_eq!(growth.old_capacity, old_capacity);
+        assert_eq!(growth.new_capacity, old_capacity);
+
+        // One that overflows re-allocates for the new column count, by the ordinary rule.
+        let room = vocabulary.free_rows();
+        let many: Vec<String> = (0..room + 5).map(|n| format!("option:grown{n}")).collect();
+        let slots_before = vocabulary.slot_count();
+        let growth = vocabulary.append_reallocating(&many).expect("grows");
+        assert_eq!(growth.added, room + 5);
+        assert_eq!(growth.old_slot_count, slots_before);
+        assert_eq!(growth.old_capacity, old_capacity);
+        assert_eq!(vocabulary.slot_count(), slots_before + room + 5);
+        assert_eq!(
+            growth.new_capacity,
+            capacity_for(vocabulary.slot_count()).unwrap()
+        );
+        assert!(growth.new_capacity > old_capacity);
+        assert_eq!(vocabulary.capacity(), growth.new_capacity);
+        assert_eq!(vocabulary.allocated_for(), vocabulary.slot_count());
+        assert_eq!(
+            vocabulary.slots[..before.len()],
+            before[..],
+            "an existing column moved"
+        );
+        // The grown vocabulary is a valid stored vocabulary.
+        let text = vocabulary.to_json().unwrap();
+        assert_eq!(Vocabulary::from_json(&text).unwrap(), vocabulary);
+    }
+
+    #[test]
+    fn reallocating_past_the_limit_is_refused_and_changes_nothing() {
+        let mut vocabulary = Vocabulary::build(sample()).expect("builds");
+        let snapshot = vocabulary.clone();
+        let far_too_many: Vec<String> =
+            (0..CAPACITY_LIMIT).map(|n| format!("option:limit{n}")).collect();
+        match vocabulary.append_reallocating(&far_too_many) {
+            Err(VocabularyError::OverCapacity { .. }) => {}
+            other => panic!("wrong result: {other:?}"),
+        }
+        assert_eq!(vocabulary, snapshot, "a refused growth changed the vocabulary");
     }
 
     #[test]

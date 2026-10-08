@@ -56,14 +56,83 @@ allocation (`DefaultCPUAllocator: not enough memory`) for both rosters, so it wa
 infrastructure failure, not a wide-roster defect. `cargo test -j16` failed on the same pressure
 (os error 1455); tests were rerun as `cargo test --no-fail-fast -j1 -p ti4-policy -p ti4-training --lib --tests -- --test-threads=4`: **430 passed, 0 failed, 1 ignored** (out/bf22-tests.log). `cargo check -p ti4-mlp --examples`: exit 0, no warnings in the edited examples.
 
-## Blocked: vocabulary capacity
+## Vocabulary migration (part 2)
 
-checkpoint-41476 holds 20,054 slots in capacity 20,480 (426 free rows). Appending the wide names
-into zero rows (`migrate_bundle_append_names`) does not fit, because `Vocabulary::append` refuses
-to overflow. Growing capacity means re-allocating (`allocated_for` = new slot count, capacity =
-`capacity_for`, about 49,152 for about 39k slots, under the 65,536 `CAPACITY_LIMIT`) and padding
-trunk `W1` with zero rows: about +7.3M zero parameters. Old decisions would score identically. This
-is a material size choice and needs operator approval.
+Operator, 2026-10-08: grow capacity ("there is no other option").
+
+checkpoint-41476 holds 20,054 slots in capacity 20,480 (426 free rows); `Vocabulary::append` refuses
+to overflow.
+
+- `Vocabulary::append_reallocating` (ti4-policy): the same append-only, key-ordered assignment. On
+  overflow it re-allocates (`allocated_for` = new column count, capacity = `capacity_for`, the rule
+  a fresh build uses); it is atomic (works on a copy) and refuses past `CAPACITY_LIMIT`. Tests:
+  `reallocating_append_grows_capacity_and_moves_nothing`,
+  `reallocating_past_the_limit_is_refused_and_changes_nothing`.
+- `Actor::grow_input_capacity` (ti4-mlp): pads `W1`, and a separate critic's input, with zero rows,
+  atomically. `Actor::copy_input_rows` copies rows in both tables. Tests:
+  `capacity_growth_keeps_every_logit_and_adds_zero_rows`,
+  `copying_a_fallback_row_keeps_the_logit_of_a_moved_name`.
+- `migrate_bundle_append_names --grow [--init-from-oov]`.
+
+**Finding: zero rows are not neutral.** A name the vocabulary lacks resolves to its family's
+out-of-vocabulary column, and in checkpoint-41476 those columns are trained (L2: `critic-state`
+0.64, `state-kind` 0.25, `option` 0.20, and smaller ones in 12 other families). Starting appended
+rows at zero, the tool's previous behaviour, which its doc wrongly called score-preserving,
+changes the score of every option carrying such a name, including 833 names that already occur in
+six-faction games. `--init-from-oov` starts each new row as a copy of the OOV column it used to
+resolve to, so scores are unchanged at migration time. The new names are still untrained: each
+begins as the generic fallback and diverges only under training. That is operator option 3
+without a silent behaviour change.
+
+| Artifact | Contents |
+|---|---|
+| out/bf22-migrate-41476.names | 19,337 names = union of the wide and six censuses (>= 3 sightings) |
+| out/bf22-checkpoint-41476-wide-oov | **the migrated bundle**: 39,391 slots, capacity 49,152, rows from OOV; provenance records the source, the growth and the init |
+| out/bf22-checkpoint-41476-wide | superseded first attempt (zero rows), kept because nothing is deleted; do not train from it |
+
+### Equivalence: source vs migrated (clearance_eval, 20 seeds x 6 rotations, 4 rounds, diplomacy, T=0.25, holdout pool)
+
+| Roster | Source vs `-wide-oov` per-seat TSV | Table (source) |
+|---|---|---|
+| six | **byte-identical** (720 seats) | 93.47% clearance, 3.561 VP |
+| wide | 712 of 720 seat rows identical; 8 differ | 46.53% clearance, 3.165 VP |
+| six, zero-row copy (superseded) | differs (92.50%, 3.589 VP) | shows zero rows are not neutral |
+
+The 8 wide differences are float rounding, not semantics. libtorch's fused embedding bag is not
+bit-stable across mathematically equal inputs: with one row copied to two columns, the
+duplicate-column form and the split form differ by up to 4.6e-5 in a logit (diagnostic test,
+since removed). Near-greedy sampling flips the occasional near-tie. Wide games carry many migrated
+names; six-faction games carry few, and those stayed byte-identical. The six-roster result is also
+byte-identical before and after the engine fix below. Logs: out/bf22-equiv2-*.{log,tsv}.
+
+## Engine defect found by wide-roster evaluation: endless research-waiver cycle
+
+A near-greedy (T=0.25) wide `clearance_eval` over 20 seeds never finished: 6 of 20 seeds ran more
+than 5 minutes alone, and one ran 25 minutes without reaching the step cap. `wide_stall_probe` (new example:
+one game, every decision logged with a timestamp) showed seed 900000003 rotation 2 cycling
+**Cabal: "research a technology" -> pick cv2 -> "research cv2: choose a prerequisite waiver" ->
+decline -> "research a technology"**, about 265k decisions in 240 s. Cause: `offer_research_inner`
+(the Technology primary) and the paid secondary research loop re-offered a technology whose
+optional faction waiver had just been declined, and those sub-decisions sit inside one
+`Game::run` step, so the runaway cap never fired. Higher temperatures (training T=1, census 2.5)
+leave the cycle by chance, so it only showed at evaluation temperature.
+
+Fix (`ti4-engine` strategy_cards.rs): within one research, a technology whose waiver was declined
+is not offered again; every pass researches or shrinks the offer, so both loops terminate. Test:
+`strategy_cards::tests::a_technology_whose_waiver_was_declined_is_not_offered_again` (Yin
+commander waiver: re-selecting the declined technology is now `ScriptDiverged`; another technology
+is researched). After the fix the 6 stalled seeds finish in 17-18 s each.
+
+This is a Tier-C legality change and needs frontier review together with this package.
+
+### Checks (part 2)
+
+`cargo test --no-fail-fast -j16 -p ti4-engine -p ti4-policy -p ti4-training -p ti4-mlp --
+--test-threads=16`: **3363 passed, 1 failed, 2 ignored** (out/bf22-tests2.log). The failure is the
+known environmental `ti4-mlp smoke_refusals::a_pool_without_an_allowed_manifest_role_is_refused`
+(out/vocabulary provenance placeholders from the 2026-09-08 reconstruction; unrelated). One
+earlier attempt hit a transient LNK1104 file lock on an unrelated example binary; the rerun linked
+it fine.
 
 ## Scope ledger
 
@@ -79,7 +148,5 @@ is a material size choice and needs operator approval.
 
 ## Open
 
-1. Operator: approve or decline the capacity growth; then build the growth migration (tool +
-   tests) and write a migrated copy of checkpoint-41476 (never in place).
-2. Tier-C frontier review of this package by a reviewer other than the author.
-3. A full 16-worker smoke when memory allows.
+1. Tier-C frontier review of this package by a reviewer other than the author.
+2. A 16-seed, 16-worker wide PPO smoke from out/bf22-checkpoint-41476-wide-oov before any long run.
