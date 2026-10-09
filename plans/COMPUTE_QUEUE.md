@@ -8,7 +8,7 @@ time is organised between agents.
 
 | Resource | Owner | Since | Rule |
 |---|---|---|---|
-| **GPU (RTX 3090, 24 GB)** | **`strata`** (operator's local LLM server, `D:\strataflashnext`) | 2026-10-09 | **Operator: "strata is busy with important stuff". No agent uses the GPU** (no `--device cuda`, no CUDA optimiser, no GPU inference) until the operator lifts this here. |
+| GPU (RTX 3090, 24 GB) | self-imitation pilot (BF session, Claude) | 2026-10-09 | Operator lifted the strata reservation 2026-10-09 ("gpu is free"). Check "Running now" before adding GPU work. |
 | RAM | `strata` holds ~43 GB | 2026-10-09 | Expect ~6 GB commit headroom: keep cargo at `-j4`..`-j8`, CPU rollouts at 8..16 threads, watch for allocation failures (infrastructure, not code). |
 | CPU (16 physical cores) | free for agents | — | AGENTS.md: bounded parallelism for multi-minute jobs; one cargo coordinator at a time. |
 
@@ -30,7 +30,7 @@ evaluate each final checkpoint with `clearance_eval --roster six --seeds 600 --r
 
 | Job | Owner | Resource | Started |
 |---|---|---|---|
-| (none from Claude) | | | |
+| Self-imitation pilot, two arms concurrent: `scripts/pilot_sil_A.psd1` (SIL 0.2) and `scripts/pilot_sil_C.psd1` (control), 50 updates each; then greedy 600-seed evals | BF unification session (Claude) | GPU + all CPU | 2026-10-09 |
 
 ## Log
 
@@ -38,3 +38,4 @@ evaluate each final checkpoint with `clearance_eval --roster six --seeds 600 --r
 - 2026-10-09: engine no-progress guard started (CPU only); finished and committed (2809 engine tests, 40-game wide smoke clean).
 - 2026-10-09: card effect-tag labelling started (no build, no GPU); draft finished (896 cards), awaiting operator spot-check.
 - 2026-10-09: card-tag second review (Sonnet) ran and finished; 80 changes, 139 tags.
+- 2026-10-09: operator: GPU free; self-imitation pilot unpinned and launched (both arms concurrently, commit 37305da5).
