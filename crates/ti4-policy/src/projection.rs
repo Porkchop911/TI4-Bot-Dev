@@ -79,7 +79,7 @@ pub enum FamilyRole {
 /// dense input as a side effect of an ordinary edit. Admission is an architecture decision, and
 /// `the_classification_covers_exactly_the_registry` fails when this table and the registry drift
 /// so the decision cannot be skipped.
-const FAMILY_ROLES: [(&str, FamilyRole); 48] = [
+const FAMILY_ROLES: [(&str, FamilyRole); 50] = [
     // M10-035. Transferable: every action-feasibility fact is a bounded count or flag about the
     // option under consideration -- "planets this activation could take" means the same thing in
     // every game, on every map, for every faction.
@@ -91,6 +91,15 @@ const FAMILY_ROLES: [(&str, FamilyRole); 48] = [
     // every game, the same way `faction-commodities` and `ability` already do.
     ("actor-inventory", FamilyRole::Transferable),
     ("card", FamilyRole::Transferable),
+    // Card-text features (2026-10-09). Transferable: the name is a tag from a closed effect
+    // taxonomy (`card-tag:plus1-combat`), never a card or option identity, so the column a
+    // faction's card trained is the one an unseen faction's card with the same effect fires. This
+    // family and `card-tag-opt` are CLOSED: their whole vocabulary is pre-assigned at migration, so
+    // they have no OOV row (see `CLOSED_FAMILIES`).
+    ("card-tag", FamilyRole::Transferable),
+    // Same taxonomy, attached to the option rather than the seat: the tags of the card the option
+    // would use (research this technology, play this action card, ...). Option-specific by design.
+    ("card-tag-opt", FamilyRole::Transferable),
     // OBS-008b2. Transferable: the combat decision surface is a stable subtype, an option count,
     // and a bounded hit-count fact or expectation -- each means the same thing in any game.
     ("combat", FamilyRole::Transferable),
@@ -160,6 +169,16 @@ const FAMILY_ROLES: [(&str, FamilyRole); 48] = [
     ("tactical", FamilyRole::Transferable),
     ("target", FamilyRole::Transferable),
 ];
+
+/// Families whose vocabulary is closed and fully pre-assigned, so they have **no OOV row**.
+///
+/// The OOV registry gives every open family a fallback column for names it has not seen. These two
+/// cannot meet an unseen name: their names are `<family>:<tag>` over the closed taxonomy in
+/// [`crate::card_tags`], and every one is appended to the vocabulary at migration. Registering an
+/// OOV row would bump `OOV_REGISTRY_VERSION` and move reserved columns for nothing. The price is
+/// that a bundle whose vocabulary lacks any of these names must not emit them at all -- which is
+/// what [`card_tags_enabled_for`] checks.
+pub const CLOSED_FAMILIES: [&str; 2] = [CARD_TAG_FAMILY, CARD_TAG_OPT_FAMILY];
 
 /// The role of a family, or `None` if it has none.
 ///
@@ -1253,6 +1272,9 @@ fn project_vector(
 /// held-secret records, so the hidden-information boundary is exactly the one M09-021 established:
 /// live play passes the acting seat's own cards, bound at ask time; offline contexts compute them
 /// on state they already hold.
+///
+/// Card tags are **off**: this is [`mlp_choice_features_with`] with `None`, which is what every
+/// bundle trained before the card-text families sees.
 #[must_use]
 pub fn mlp_choice_features(
     seen: &Observed<'_>,
@@ -1261,7 +1283,24 @@ pub fn mlp_choice_features(
     held_secrets: &[ti4_engine::objectives::CardProgress],
     baseline: crate::progress::Baseline,
 ) -> Vec<FeatureVector> {
-    let seat_state = interned_seat_state(seen, player, baseline);
+    mlp_choice_features_with(seen, choice, player, held_secrets, baseline, None)
+}
+
+/// [`mlp_choice_features`] with the card-text families when `card_tags` is `Some`.
+///
+/// `None` is byte-for-byte the legacy projection. `Some` adds `card-tag:<tag>` (the acting seat's
+/// own faction cards, shared by every option) and `card-tag-opt:<tag>` (the card each option uses)
+/// -- see [`CardTagInput`] for what the caller must supply and why.
+#[must_use]
+pub fn mlp_choice_features_with(
+    seen: &Observed<'_>,
+    choice: &Choice,
+    player: &PlayerId,
+    held_secrets: &[ti4_engine::objectives::CardProgress],
+    baseline: crate::progress::Baseline,
+    card_tags: Option<&CardTagInput<'_>>,
+) -> Vec<FeatureVector> {
+    let seat_state = interned_seat_state(seen, player, baseline, card_tags.is_some());
     // Seat facts are shared by every option of the choice; action facts are not, and that is the
     // point of them. Zipping by position is safe because `explicit_choice_features` returns one
     // vector per option in the choice's own order -- a contract the length check below pins rather
@@ -1280,11 +1319,14 @@ pub fn mlp_choice_features(
         .iter()
         .zip(&choice.options)
         .map(|(vector, option)| {
-            let action: Vec<(crate::intern::FeatureKey, f64)> =
-                action_facts_within(&context, seen, option, player)
-                    .into_iter()
-                    .map(|(name, value)| (crate::intern::register(&name), value))
-                    .collect();
+            let mut facts = action_facts_within(&context, seen, option, player);
+            if let Some(held) = card_tags {
+                facts.extend(card_tag_option_facts(option, held));
+            }
+            let action: Vec<(crate::intern::FeatureKey, f64)> = facts
+                .into_iter()
+                .map(|(name, value)| (crate::intern::register(&name), value))
+                .collect();
             project_vector(vector, &seat_state, &action)
         })
         .collect()
@@ -1300,8 +1342,13 @@ fn interned_seat_state(
     seen: &Observed<'_>,
     player: &PlayerId,
     baseline: crate::progress::Baseline,
+    card_tags: bool,
 ) -> Vec<(crate::intern::FeatureKey, f64)> {
-    seat_state_facts(seen, player, baseline)
+    let mut facts = seat_state_facts(seen, player, baseline);
+    if card_tags {
+        facts.extend(card_tag_seat_facts(seen, player));
+    }
+    facts
         .into_iter()
         .map(|(name, value)| (crate::intern::register(&name), value))
         .collect()
@@ -1317,14 +1364,279 @@ pub fn mlp_option_features(
     held_secrets: &[ti4_engine::objectives::CardProgress],
     baseline: crate::progress::Baseline,
 ) -> FeatureVector {
-    let seat_state = interned_seat_state(seen, player, baseline);
+    mlp_option_features_with(seen, choice, option, player, held_secrets, baseline, None)
+}
+
+/// [`mlp_option_features`] with the card-text families when `card_tags` is `Some`.
+#[must_use]
+pub fn mlp_option_features_with(
+    seen: &Observed<'_>,
+    choice: &Choice,
+    option: &ChoiceOption,
+    player: &PlayerId,
+    held_secrets: &[ti4_engine::objectives::CardProgress],
+    baseline: crate::progress::Baseline,
+    card_tags: Option<&CardTagInput<'_>>,
+) -> FeatureVector {
+    let seat_state = interned_seat_state(seen, player, baseline, card_tags.is_some());
     let vector =
         crate::features::prompt_free_option_features(seen, choice, option, player, held_secrets);
-    let action: Vec<(crate::intern::FeatureKey, f64)> = action_facts(seen, option, player)
+    let mut facts = action_facts(seen, option, player);
+    if let Some(held) = card_tags {
+        facts.extend(card_tag_option_facts(option, held));
+    }
+    let action: Vec<(crate::intern::FeatureKey, f64)> = facts
         .into_iter()
         .map(|(name, value)| (crate::intern::register(&name), value))
         .collect();
     project_vector(&vector, &seat_state, &action)
+}
+
+// -- card-text features (2026-10-09) -------------------------------------------------------------
+
+/// The family carrying the tags of the acting seat's own faction cards.
+pub const CARD_TAG_FAMILY: &str = "card-tag";
+
+/// The family carrying the tags of the card an option uses.
+pub const CARD_TAG_OPT_FAMILY: &str = "card-tag-opt";
+
+/// What the caller must supply to turn the card-text families on.
+///
+/// The public [`Observed`] cannot read a hand: a card's identity in hand is private, and the only
+/// accessors for it live on the engine-bound `SeatObservation` of the **acting seat**. So the
+/// caller hands over exactly those two lists, bound to the seat being projected, and the projection
+/// resolves an option to a card only through them. An option that names a hand position, or a note
+/// the seat does not hold, resolves to nothing -- absent, not guessed.
+#[derive(Debug, Clone, Copy)]
+pub struct CardTagInput<'a> {
+    /// The acting seat's action cards, in hand order (`SeatObservation::held_action_cards`).
+    pub held_action_cards: &'a [ti4_model::id::ActionCardId],
+    /// The acting seat's unplayed promissory notes (`SeatObservation::held_promissory_notes`).
+    pub held_promissory_notes: &'a [String],
+}
+
+/// Every name the card-text families can emit: `card-tag:<t>` and `card-tag-opt:<t>` for each tag
+/// in the taxonomy, sorted. This is the list a checkpoint migration appends.
+#[must_use]
+pub fn card_tag_names() -> Vec<String> {
+    let mut names: Vec<String> = CLOSED_FAMILIES
+        .iter()
+        .flat_map(|family| {
+            crate::card_tags::all_tags()
+                .iter()
+                .map(move |tag| format!("{family}:{tag}"))
+        })
+        .collect();
+    names.sort();
+    names
+}
+
+/// Whether a vocabulary places **every** card-text name, which is the condition for emitting them.
+///
+/// All or nothing. A bundle trained before the families existed places none, and must see exactly
+/// the vectors it always did; a name missing from a partly migrated vocabulary would fall to the
+/// global out-of-vocabulary column (these families have no OOV row), which is a different, silent
+/// input. Checked once, when the bot is built, not per decision.
+#[must_use]
+pub fn card_tags_enabled_for(vocabulary: &crate::vocabulary::Vocabulary) -> bool {
+    card_tag_names()
+        .iter()
+        .all(|name| vocabulary.is_assigned(name))
+}
+
+/// The cards a faction owns, as `(artifact kind, id)` pairs, sorted and unique.
+///
+/// Resolved through the observation's own store and source scope, never `ContentStore::embedded()`,
+/// exactly as `features::ability_facts` does. Sources: printed abilities; faction technologies
+/// (the faction record's `factionTech`, plus any starting technology that is itself a faction
+/// technology); faction units (those in the faction's unit list that belong to it -- flagship,
+/// mech -- and its unit upgrades); agent, commander and hero; the breakthrough; and the faction's
+/// own promissory note.
+fn faction_cards(seen: &Observed<'_>, player: &PlayerId) -> BTreeSet<(&'static str, String)> {
+    use crate::card_tags::kind;
+    use ti4_model::content_types::ContentType;
+
+    let mut cards: BTreeSet<(&'static str, String)> = BTreeSet::new();
+    let Some(seat) = seen.seat(player) else {
+        return cards;
+    };
+    let content = seen.content();
+    let Some(faction) = content
+        .get(ContentType::Factions, seat.faction.as_str())
+        .filter(|record| record.in_sources(seen.sources()))
+        .map(ti4_content::factions::Faction::new)
+    else {
+        return cards;
+    };
+    if !crate::features::is_selectable_seat(&faction) {
+        return cards;
+    }
+    let alias = faction.alias();
+
+    for ability in faction.abilities() {
+        cards.insert((kind::ABILITY, ability.to_owned()));
+    }
+    for tech in faction.faction_tech() {
+        cards.insert((kind::TECHNOLOGY, tech.to_owned()));
+    }
+    // A starting technology is a faction card only when the technology belongs to the faction
+    // (most starting technologies are generic and carry no faction field).
+    for tech in faction.starting_tech() {
+        let owned = content
+            .get(ContentType::Technologies, tech)
+            .and_then(|record| record.text("faction"))
+            == Some(alias);
+        if owned {
+            cards.insert((kind::TECHNOLOGY, tech.to_owned()));
+        }
+    }
+    // Units: the faction's own entries in its unit list (flagship, mech, faction infantry...) ...
+    for unit in faction.record().strings("units") {
+        let owned = content
+            .get(ContentType::Units, unit)
+            .and_then(|record| record.text("faction"))
+            == Some(alias);
+        if owned {
+            cards.insert((kind::UNIT, unit.to_owned()));
+        }
+    }
+    // ... and its unit upgrades, which are not in that list (`upgradesFromUnitId` marks them).
+    for record in content.from_sources(ContentType::Units, seen.sources()) {
+        if record.text("faction") == Some(alias)
+            && record.text("upgradesFromUnitId").is_some()
+            && let Some(id) = record.id()
+        {
+            cards.insert((kind::UNIT, id.to_owned()));
+        }
+    }
+    for leader in faction.leaders() {
+        cards.insert((kind::LEADER, leader.to_owned()));
+    }
+    for record in content.from_sources(ContentType::Breakthroughs, seen.sources()) {
+        if record.text("faction") == Some(alias)
+            && let Some(id) = record.id()
+        {
+            cards.insert((kind::BREAKTHROUGH, id.to_owned()));
+        }
+    }
+    for note in faction.promissory_notes() {
+        cards.insert((kind::PROMISSORY, note.to_owned()));
+    }
+    cards
+}
+
+/// Family A: `card-tag:<tag>` for the acting seat -- how many of its own faction cards carry each
+/// tag. Option-invariant, so it lives with the seat facts; sorted, zero-skipped. Only the acting
+/// seat is read: no fact here names, or is derived from, another seat's faction.
+fn card_tag_seat_facts(seen: &Observed<'_>, player: &PlayerId) -> Vec<(String, f64)> {
+    let mut counts: std::collections::BTreeMap<&'static str, usize> =
+        std::collections::BTreeMap::new();
+    for (kind, id) in faction_cards(seen, player) {
+        for tag in crate::card_tags::tags_of(kind, &id) {
+            *counts.entry(tag).or_default() += 1;
+        }
+    }
+    counts
+        .into_iter()
+        .map(|(tag, n)| {
+            (
+                format!("{CARD_TAG_FAMILY}:{tag}"),
+                crate::features::count_value(n),
+            )
+        })
+        .collect()
+}
+
+/// The tags of a promissory note id (`<alias>:<owner faction>`): a faction's own note is keyed by
+/// its alias; the four generic notes are keyed `<color>_<alias>` in the corpus.
+fn note_tags(note: &str) -> &'static [&'static str] {
+    use crate::card_tags::{kind, tags_of};
+    let alias = ti4_engine::promissory::alias_of(note);
+    let direct = tags_of(kind::PROMISSORY, alias);
+    if direct.is_empty() {
+        tags_of(kind::PROMISSORY, &format!("<color>_{alias}"))
+    } else {
+        direct
+    }
+}
+
+/// Family B: `card-tag-opt:<tag>` for the card this option uses, value 1.0, sorted.
+///
+/// Only option kinds whose id-to-card mapping is read off the engine's own constructors, and only
+/// cards the acting seat may see:
+///
+/// | option kind / id | card | how it is known |
+/// |---|---|---|
+/// | `research` / `<technology id>` | technology | `strategy_cards::research_option`, `deepwrought_cards`; the technology tree is public |
+/// | `strategy_card` / `<strategy card id>` | strategy card | `draft::strategy_options`; unclaimed cards are public |
+/// | `component` / `action_card|<n>` | action card | `action_cards::available_actions`: `n` indexes the acting seat's own hand, resolved through `held_action_cards` |
+/// | `action_card` / `<alias>` | action card | `reactions::reaction_card_options`: the acting seat's own hand; mapped only if held |
+/// | `component` / `component|leader|<leader id>` | leader | `leaders::component_actions`: exactly three segments |
+/// | `diplomacy_item` / `diplomacy|note|<note>` | promissory note | `diplomacy::builder::item_options`; only a note the seat holds |
+/// | `diplomacy_item` / `diplomacy|card|<alias>` | action card | same; only a card the seat holds |
+///
+/// Everything else yields nothing. In particular `action_card|salvaged|..` (a public yard, not
+/// mapped), `component|leader|yssarilagent|..` (Ssruu's borrowed agent), per-faction ad hoc
+/// component ids, `offer`/`transaction` options (the payload does not say which side gives the
+/// note) and the leader-specific decision kinds are left alone: absent is not wrong.
+fn card_tag_option_facts(option: &ChoiceOption, held: &CardTagInput<'_>) -> Vec<(String, f64)> {
+    use crate::card_tags::{kind, tags_of};
+
+    let holds_card = |alias: &str| {
+        held.held_action_cards
+            .iter()
+            .any(|card| card.as_str() == alias)
+    };
+    let tags: &'static [&'static str] = match option.kind.as_str() {
+        ti4_engine::strategy_cards::RESEARCH_KIND => tags_of(kind::TECHNOLOGY, &option.id),
+        ti4_engine::draft::STRATEGY_CARD_KIND => tags_of(kind::STRATEGY_CARD, &option.id),
+        ti4_engine::reactions::ACTION_CARD_KIND => {
+            if holds_card(&option.id) {
+                tags_of(kind::ACTION_CARD, &option.id)
+            } else {
+                &[]
+            }
+        }
+        // `component` is shared by action cards, leaders, relics and faction abilities.
+        ti4_engine::action_cards::ACTION_KIND => {
+            if let Some(index) = option.id.strip_prefix("action_card|") {
+                index
+                    .parse::<usize>()
+                    .ok()
+                    .and_then(|index| held.held_action_cards.get(index))
+                    .map_or(&[][..], |card| tags_of(kind::ACTION_CARD, card.as_str()))
+            } else if let Some(leader) = option.id.strip_prefix("component|leader|") {
+                if leader.contains('|') {
+                    &[]
+                } else {
+                    tags_of(kind::LEADER, leader)
+                }
+            } else {
+                &[]
+            }
+        }
+        ti4_engine::diplomacy::builder::ITEM_KIND => {
+            if let Some(note) = option.id.strip_prefix("diplomacy|note|") {
+                if held.held_promissory_notes.iter().any(|held| held == note) {
+                    note_tags(note)
+                } else {
+                    &[]
+                }
+            } else if let Some(card) = option.id.strip_prefix("diplomacy|card|") {
+                if holds_card(card) {
+                    tags_of(kind::ACTION_CARD, card)
+                } else {
+                    &[]
+                }
+            } else {
+                &[]
+            }
+        }
+        _ => &[],
+    };
+    tags.iter()
+        .map(|tag| (format!("{CARD_TAG_OPT_FAMILY}:{tag}"), 1.0))
+        .collect()
 }
 
 /// The projection applied to a set of discovered names.
@@ -2286,14 +2598,31 @@ mod tests {
         // fails and the correct response is an architecture decision about whether it belongs in
         // the dense input — not adding it to the table to make the test green.
         let classified: BTreeSet<&str> = FAMILY_ROLES.iter().map(|(name, _)| *name).collect();
-        let registered: BTreeSet<&str> =
-            crate::vocabulary::oov_families().iter().copied().collect();
+        // The OOV registry plus the closed families, which have a fully pre-assigned vocabulary
+        // and therefore no OOV row.
+        let registered: BTreeSet<&str> = crate::vocabulary::oov_families()
+            .iter()
+            .copied()
+            .chain(CLOSED_FAMILIES)
+            .collect();
         assert_eq!(
             classified, registered,
             "a registered family has no MLP role, or a role names a family nobody registers. \
              Admission is an architecture decision: classify it deliberately, do not default it."
         );
-        assert_eq!(FAMILY_ROLES.len(), 48, "one role per registered family");
+        assert_eq!(
+            FAMILY_ROLES.len(),
+            crate::vocabulary::oov_families().len() + CLOSED_FAMILIES.len(),
+            "one role per registered family"
+        );
+        assert_eq!(FAMILY_ROLES.len(), 50);
+        // A closed family must not also be in the OOV registry: it would have two homes.
+        for family in CLOSED_FAMILIES {
+            assert!(
+                !crate::vocabulary::oov_families().contains(&family),
+                "{family} is closed and must have no OOV row"
+            );
+        }
     }
 
     #[test]
@@ -2404,5 +2733,524 @@ mod tests {
             role_of("faction-start-unit"),
             Some(FamilyRole::Transferable)
         );
+    }
+}
+
+/// Card-text features (2026-10-09): family A (`card-tag`), family B (`card-tag-opt`), the gate that
+/// keeps every older bundle's input unchanged, and the closed-family vocabulary contract.
+#[cfg(test)]
+mod card_tag_tests {
+    use super::*;
+    use crate::card_tags::{kind, tags_of};
+    use std::collections::BTreeMap;
+    use ti4_content::ContentStore;
+    use ti4_model::content_types::FULL;
+    use ti4_model::id::{ActionCardId, FactionId};
+    use ti4_model::state::GameState;
+
+    fn table_of(a: &str, b: &str) -> (GameState, PlayerId, PlayerId) {
+        let mut state = ti4_engine::fixtures::game(&["a", "b"]);
+        let (pa, pb) = (PlayerId::new("a"), PlayerId::new("b"));
+        state.player_mut(&pa).unwrap().faction = FactionId::new(a);
+        state.player_mut(&pb).unwrap().faction = FactionId::new(b);
+        (state, pa, pb)
+    }
+
+    fn seat_tags(state: &GameState, player: &PlayerId) -> BTreeMap<String, f64> {
+        let seen = Observed::new(state, ContentStore::embedded(), FULL, None);
+        card_tag_seat_facts(&seen, player).into_iter().collect()
+    }
+
+    /// What the family must say for a hand-listed set of cards, computed from the artifact alone.
+    fn expected(cards: &[(&str, &str)]) -> BTreeMap<String, f64> {
+        let mut counts: BTreeMap<String, f64> = BTreeMap::new();
+        for (kind, id) in cards {
+            for tag in tags_of(kind, id) {
+                *counts.entry(format!("{CARD_TAG_FAMILY}:{tag}")).or_default() += 1.0;
+            }
+        }
+        counts
+    }
+
+    #[test]
+    fn sol_reads_its_own_faction_cards() {
+        let (state, a, _) = table_of("sol", "winnu");
+        let sol = [
+            ("ability", "orbital_drop"),
+            ("ability", "versatile"),
+            ("technology", "so2"),
+            ("technology", "ac2"),
+            ("unit", "sol_flagship"),
+            ("unit", "sol_infantry2"),
+            ("unit", "sol_mech"),
+            ("leader", "solagent"),
+            ("leader", "solcommander"),
+            ("leader", "solhero"),
+            ("breakthrough", "solbt"),
+            ("promissory", "ms"),
+        ];
+        let facts = seat_tags(&state, &a);
+        assert_eq!(facts, expected(&sol));
+        // Non-vacuity: a count above one exists, so `count_value` is exercised, and orbital drop's
+        // infantry placement is among the tags.
+        assert!(facts.contains_key("card-tag:ground-force-effect"));
+        assert!(!facts.is_empty());
+    }
+
+    #[test]
+    fn winnu_reads_its_own_faction_cards_and_not_sols() {
+        let (state, _, b) = table_of("sol", "winnu");
+        let winnu = [
+            ("ability", "blood_ties"),
+            ("ability", "reclamation"),
+            ("technology", "lgf"),
+            ("technology", "htp"),
+            ("unit", "winnu_flagship"),
+            ("unit", "winnu_mech"),
+            ("leader", "winnuagent"),
+            ("leader", "winnucommander"),
+            ("leader", "winnuhero"),
+            ("breakthrough", "winnubt"),
+            ("promissory", "acq"),
+        ];
+        assert_eq!(seat_tags(&state, &b), expected(&winnu));
+    }
+
+    #[test]
+    fn a_thunders_edge_faction_resolves_through_the_observed_scope() {
+        let (state, a, _) = table_of("ralnel", "sol");
+        let ralnel = [
+            ("ability", "survivalinstinct"),
+            ("ability", "miniaturization"),
+            ("technology", "nanomachines"),
+            ("technology", "linkship2"),
+            ("unit", "ralnel_flagship"),
+            ("unit", "ralnel_mech"),
+            ("unit", "ralnel_destroyer"),
+            ("unit", "ralnel_destroyer2"),
+            ("leader", "ralnelagent"),
+            ("leader", "ralnelcommander"),
+            ("leader", "ralnelhero"),
+            ("breakthrough", "ralnelbt"),
+            ("promissory", "nanolink"),
+        ];
+        assert_eq!(seat_tags(&state, &a), expected(&ralnel));
+        // Out of scope the faction record itself is out: the seat gets nothing rather than a guess.
+        let seen = Observed::new(&state, ContentStore::embedded(), ti4_model::content_types::POK, None);
+        assert!(card_tag_seat_facts(&seen, &a).is_empty());
+    }
+
+    #[test]
+    fn only_the_acting_seat_is_read() {
+        let (state, a, b) = table_of("sol", "winnu");
+        let before = seat_tags(&state, &a);
+        // Changing the opponent's faction cannot move the acting seat's facts ...
+        let (other, a2, _) = table_of("sol", "ralnel");
+        assert_eq!(seat_tags(&other, &a2), before);
+        // ... and the two seats' facts are their own.
+        assert_ne!(before, seat_tags(&state, &b));
+        // An unseated player reads nothing.
+        assert!(seat_tags(&state, &PlayerId::new("nobody")).is_empty());
+    }
+
+    #[test]
+    fn family_a_is_sorted_closed_and_zero_skipped() {
+        let (state, a, _) = table_of("sol", "winnu");
+        let seen = Observed::new(&state, ContentStore::embedded(), FULL, None);
+        let facts = card_tag_seat_facts(&seen, &a);
+        let names: Vec<&String> = facts.iter().map(|(name, _)| name).collect();
+        assert!(names.windows(2).all(|pair| pair[0] < pair[1]));
+        let closed: BTreeSet<String> = card_tag_names().into_iter().collect();
+        for (name, value) in &facts {
+            assert!(*value >= 1.0, "{name} is zero");
+            assert!(closed.contains(name), "{name} is not a closed-family name");
+        }
+    }
+
+    fn input<'a>(
+        cards: &'a [ActionCardId],
+        notes: &'a [String],
+    ) -> CardTagInput<'a> {
+        CardTagInput {
+            held_action_cards: cards,
+            held_promissory_notes: notes,
+        }
+    }
+
+    fn opt_names(vector: &FeatureVector) -> BTreeSet<String> {
+        crate::features::names_of(vector)
+            .into_iter()
+            .filter(|name| name.starts_with("card-tag-opt:"))
+            .collect()
+    }
+
+    fn opt_expected(kind: &str, id: &str) -> BTreeSet<String> {
+        tags_of(kind, id)
+            .iter()
+            .map(|tag| format!("{CARD_TAG_OPT_FAMILY}:{tag}"))
+            .collect()
+    }
+
+    /// Project `choice` for `player` with the families on, one option-name set per option.
+    fn projected(
+        state: &GameState,
+        choice: &Choice,
+        player: &PlayerId,
+        held: &CardTagInput<'_>,
+    ) -> Vec<FeatureVector> {
+        let seen = Observed::new(state, ContentStore::embedded(), ti4_model::content_types::POK, None);
+        mlp_choice_features_with(
+            &seen,
+            choice,
+            player,
+            &[],
+            crate::progress::Baseline::default(),
+            Some(held),
+        )
+    }
+
+    #[test]
+    fn a_strategy_card_option_carries_that_cards_tags() {
+        let content = ContentStore::embedded();
+        let state = ti4_engine::fixtures::game(&["a", "b"]);
+        let choice = ti4_engine::draft::strategy_options(&state, content)
+            .expect("the draft opens with a picker");
+        let held = input(&[], &[]);
+        let vectors = projected(&state, &choice, &choice.player, &held);
+        let mut checked = 0;
+        for (option, vector) in choice.options.iter().zip(&vectors) {
+            let want = opt_expected(kind::STRATEGY_CARD, &option.id);
+            assert_eq!(opt_names(vector), want, "{}", option.id);
+            checked += usize::from(!want.is_empty());
+        }
+        assert!(checked >= 6, "most real strategy cards carry tags: {checked}");
+    }
+
+    #[test]
+    fn a_research_option_carries_that_technologys_tags() {
+        let content = ContentStore::embedded();
+        let mut state = ti4_engine::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        let (decider, seen) = ti4_engine::choice::Capturing::new(Box::new(ti4_engine::choice::FirstOption));
+        let mut table = ti4_engine::choice::Table::with_default(Box::new(decider));
+        ti4_engine::strategy_cards::primary(
+            &mut state,
+            content,
+            ti4_model::content_types::POK,
+            None,
+            &mut table,
+            &player,
+            "pok7technology",
+        )
+        .unwrap();
+        let asked = seen.borrow().clone();
+        let choice = asked
+            .iter()
+            .find(|choice| choice.options.iter().any(|o| o.kind == "research"))
+            .expect("the Technology primary asks which technology to research");
+        let held = input(&[], &[]);
+        let vectors = projected(&state, choice, &player, &held);
+        let mut checked = 0;
+        for (option, vector) in choice.options.iter().zip(&vectors) {
+            let want = opt_expected(kind::TECHNOLOGY, &option.id);
+            assert_eq!(opt_names(vector), want, "{}", option.id);
+            checked += usize::from(!want.is_empty());
+        }
+        assert!(checked >= 3, "real technologies carry tags: {checked}");
+    }
+
+    /// A component-action card (printed window "Action") from the corpus, by property.
+    fn a_component_action_card() -> ActionCardId {
+        let content = ContentStore::embedded();
+        content
+            .records(ti4_model::content_types::ContentType::ActionCards)
+            .iter()
+            .filter_map(|record| record.id())
+            .map(ActionCardId::new)
+            .find(|alias| {
+                ti4_engine::action_cards::is_component_action(content, alias)
+                    && alias.as_str() != "jamming"
+                    && !tags_of(kind::ACTION_CARD, alias.as_str()).is_empty()
+            })
+            .expect("the corpus has a tagged component-action card")
+    }
+
+    #[test]
+    fn a_played_action_card_option_resolves_through_the_seats_own_hand() {
+        let content = ContentStore::embedded();
+        let (mut state, a, _) = table_of("sol", "winnu");
+        let card = a_component_action_card();
+        // Index 1, so a mapping that forgot to index the hand would read the wrong card.
+        let hand = vec![ActionCardId::new("fs1"), card.clone()];
+        state.player_mut(&a).unwrap().action_cards = hand.clone();
+        let options = ti4_engine::action_cards::available_actions(
+            &state,
+            content,
+            ti4_model::content_types::POK,
+            None,
+            &a,
+        );
+        let played: Vec<&ChoiceOption> = options
+            .iter()
+            .filter(|option| option.id.starts_with("action_card|"))
+            .collect();
+        assert_eq!(played.len(), 1, "{options:?}");
+        assert_eq!(played[0].id, "action_card|1");
+        let choice = Choice::new(a.clone(), "act", options.clone());
+        let held = input(&hand, &[]);
+        let vectors = projected(&state, &choice, &a, &held);
+        let index = choice.options.iter().position(|o| o.id == "action_card|1").unwrap();
+        let want = opt_expected(kind::ACTION_CARD, card.as_str());
+        assert!(!want.is_empty());
+        assert_eq!(opt_names(&vectors[index]), want);
+
+        // Hidden information: a caller that supplies no hand gets no card tags for the option,
+        // and an index outside the hand resolves to nothing.
+        let empty = input(&[], &[]);
+        let vectors = projected(&state, &choice, &a, &empty);
+        assert!(opt_names(&vectors[index]).is_empty());
+        let out_of_range = ChoiceOption::new("action_card|9", "component");
+        assert!(card_tag_option_facts(&out_of_range, &held).is_empty());
+        let salvaged = ChoiceOption::new("action_card|salvaged|fs1", "component");
+        assert!(card_tag_option_facts(&salvaged, &held).is_empty());
+    }
+
+    #[test]
+    fn a_leader_component_option_carries_that_leaders_tags() {
+        let content = ContentStore::embedded();
+        // Ready each agent in turn until the engine really offers one as a component action.
+        let mut found = None;
+        for record in content.records(ti4_model::content_types::ContentType::Leaders) {
+            let Some(id) = record.id() else { continue };
+            if record.text("type") != Some("agent") || tags_of(kind::LEADER, id).is_empty() {
+                continue;
+            }
+            let (mut state, a, _) = table_of("sol", "winnu");
+            state.player_mut(&a).unwrap().leaders.insert(
+                ti4_model::id::LeaderId::new(id),
+                ti4_model::state::LeaderStatus::Readied,
+            );
+            let options = ti4_engine::leaders::component_actions(&state, content, &a);
+            if let Some(option) = options.iter().find(|o| o.id.ends_with(id)) {
+                found = Some((state, a, options.clone(), option.clone()));
+                break;
+            }
+        }
+        let (state, a, options, option) = found.expect("some tagged agent is offered");
+        assert!(option.id.starts_with("component|leader|"));
+        let leader = option.id.strip_prefix("component|leader|").unwrap();
+        let choice = Choice::new(a.clone(), "act", options);
+        let held = input(&[], &[]);
+        let vectors = projected(&state, &choice, &a, &held);
+        let index = choice.options.iter().position(|o| o.id == option.id).unwrap();
+        assert_eq!(opt_names(&vectors[index]), opt_expected(kind::LEADER, leader));
+        // Ssruu's borrowed form has four segments and is deliberately not mapped.
+        let borrowed = ChoiceOption::new(format!("component|leader|yssarilagent|{leader}"), "component");
+        assert!(card_tag_option_facts(&borrowed, &held).is_empty());
+    }
+
+    #[test]
+    fn a_promissory_note_item_carries_the_notes_tags_only_when_held() {
+        use ti4_engine::diplomacy::builder::{ContactScope, Draft, ITEM_KIND, item_options};
+        let content = ContentStore::embedded();
+        let (mut state, a, b) = table_of("sol", "winnu");
+        // The fixture deals no notes: hold a mix of generic and faction notes, and give the
+        // opponent one the acting seat must not see tags for.
+        for note in ["cf:sol", "ps:sol", "ta:sol", "ms:sol", "acq:winnu"] {
+            state.promissory_notes.insert(note.to_owned(), a.clone());
+        }
+        state
+            .promissory_notes
+            .insert("war_funding:hacan".to_owned(), b.clone());
+        let scope = ContactScope {
+            physical: true,
+            ..ContactScope::default()
+        };
+        let options = item_options(&state, content, &scope, &Draft::new(a.clone(), b.clone()));
+        let notes: Vec<&ChoiceOption> = options
+            .iter()
+            .filter(|o| o.kind == ITEM_KIND && o.id.starts_with("diplomacy|note|"))
+            .collect();
+        assert!(!notes.is_empty(), "the dealt hand offers notes: {options:?}");
+        // The seat's real unplayed notes, as the engine-bound accessor would report them.
+        let hand: Vec<String> = state
+            .promissory_notes
+            .iter()
+            .filter(|(id, holder)| **holder == a && !state.promissory_faceup.contains(*id))
+            .map(|(id, _)| id.clone())
+            .collect();
+        let choice = Choice::new(a.clone(), "build", options.clone());
+        let held = input(&[], &hand);
+        let vectors = projected(&state, &choice, &a, &held);
+        let mut tagged = 0;
+        for (option, vector) in choice.options.iter().zip(&vectors) {
+            let Some(note) = option.id.strip_prefix("diplomacy|note|") else {
+                continue;
+            };
+            let alias = ti4_engine::promissory::alias_of(note);
+            let want = if tags_of(kind::PROMISSORY, alias).is_empty() {
+                opt_expected(kind::PROMISSORY, &format!("<color>_{alias}"))
+            } else {
+                opt_expected(kind::PROMISSORY, alias)
+            };
+            assert_eq!(opt_names(vector), want, "{note}");
+            tagged += usize::from(!want.is_empty());
+        }
+        assert!(tagged >= 5, "generic and faction notes carry tags: {tagged}");
+        // A note the seat does not hold resolves to nothing.
+        let none = input(&[], &[]);
+        let vectors = projected(&state, &choice, &a, &none);
+        assert!(vectors.iter().all(|vector| opt_names(vector).is_empty()));
+    }
+
+    #[test]
+    fn a_reaction_card_option_carries_the_card_tags_only_when_held() {
+        // Driven through the real reaction window: the inner card choice is what the engine asks.
+        let content = ContentStore::embedded();
+        let (mut state, a, _) = table_of("hacan", "sol");
+        state.player_mut(&a).unwrap().action_cards =
+            vec![ActionCardId::new("silence_space"), ActionCardId::new("fs1")];
+        state
+            .player_mut(&PlayerId::new("b"))
+            .unwrap()
+            .action_cards
+            .clear();
+        let hand = state.player(&a).unwrap().action_cards.clone();
+        let (decider, seen) = ti4_engine::choice::Capturing::new(Box::new(ti4_engine::choice::FirstOption));
+        let mut table = ti4_engine::choice::Table::with_default(Box::new(decider));
+        let mut resolver = ti4_engine::timing::Resolver::new(
+            vec![a.clone(), PlayerId::new("b")],
+            Some(a.clone()),
+            ti4_engine::choice::Table::default(),
+        );
+        ti4_engine::reactions::arm(&mut resolver, &state);
+        let mut dice = ti4_engine::dice::Dice::new();
+        let mut rng = ti4_engine::rng::GameRng::new(0);
+        let mut event_sequence = ti4_engine::event::EventSequence::new();
+        let mut working = state.clone();
+        let mut context = ti4_engine::timing::TimingContext {
+            state: &mut working,
+            content,
+            sources: ti4_model::content_types::POK,
+            table: &mut table,
+            dice: &mut dice,
+            rng: &mut rng,
+            event_sequence: &mut event_sequence,
+            galaxy: None,
+        };
+        let mut payload = std::collections::BTreeMap::new();
+        payload.insert("player".to_owned(), "a".into());
+        let event = context.event_sequence.next("SYSTEM_ACTIVATED", payload).unwrap();
+        resolver.emit_with_context(&mut context, event, |_, _| {}).unwrap();
+        let asked = seen.borrow().clone();
+        let choice = asked
+            .iter()
+            .find(|choice| choice.options.iter().any(|o| o.kind == "action_card"))
+            .expect("two playable cards make the engine ask which to play");
+
+        let held = input(&hand, &[]);
+        let vectors = projected(&state, choice, &a, &held);
+        let mut tagged = 0;
+        for (option, vector) in choice.options.iter().zip(&vectors) {
+            let want = opt_expected(kind::ACTION_CARD, &option.id);
+            assert_eq!(opt_names(vector), want, "{}", option.id);
+            tagged += usize::from(!want.is_empty());
+        }
+        assert!(tagged >= 1, "a reaction card carries tags");
+        // Not held, not mapped.
+        let none = input(&[], &[]);
+        let vectors = projected(&state, choice, &a, &none);
+        assert!(vectors.iter().all(|vector| opt_names(vector).is_empty()));
+    }
+
+    #[test]
+    fn the_gate_leaves_the_legacy_projection_untouched() {
+        let content = ContentStore::embedded();
+        let (state, a, _) = table_of("sol", "winnu");
+        let seen = Observed::new(&state, content, ti4_model::content_types::POK, None);
+        let choice = ti4_engine::draft::strategy_options(&state, content).unwrap();
+        let baseline = crate::progress::Baseline::default();
+        let legacy = mlp_choice_features(&seen, &choice, &choice.player, &[], baseline);
+        let off = mlp_choice_features_with(&seen, &choice, &choice.player, &[], baseline, None);
+        assert_eq!(legacy, off, "None must be byte-identical to the wrapper");
+        assert!(
+            legacy.iter().all(|vector| crate::features::names_of(vector)
+                .iter()
+                .all(|name| !name.starts_with("card-tag"))),
+            "the legacy projection emitted a card-tag name"
+        );
+
+        // On, the vectors are the legacy ones plus card-tag names and nothing else.
+        let held = input(&[], &[]);
+        let on = mlp_choice_features_with(&seen, &choice, &choice.player, &[], baseline, Some(&held));
+        let mut saw_seat = false;
+        let mut saw_opt = false;
+        for (legacy, on) in legacy.iter().zip(&on) {
+            let legacy_names: BTreeSet<String> = crate::features::names_of(legacy).into_iter().collect();
+            let on_names: BTreeSet<String> = crate::features::names_of(on).into_iter().collect();
+            let extra: BTreeSet<String> = on_names.difference(&legacy_names).cloned().collect();
+            assert!(legacy_names.is_subset(&on_names));
+            assert!(
+                extra.iter().all(|name| name.starts_with("card-tag:") || name.starts_with("card-tag-opt:")),
+                "{extra:?}"
+            );
+            saw_seat |= extra.iter().any(|name| name.starts_with("card-tag:"));
+            saw_opt |= extra.iter().any(|name| name.starts_with("card-tag-opt:"));
+        }
+        assert!(saw_seat && saw_opt, "non-vacuity: both families fired");
+        let _ = a;
+    }
+
+    #[test]
+    fn every_emitted_closed_name_is_in_the_taxonomy_and_the_names_list() {
+        let content = ContentStore::embedded();
+        let closed: BTreeSet<String> = card_tag_names().into_iter().collect();
+        assert_eq!(closed.len(), 2 * crate::card_tags::all_tags().len());
+        for family in CLOSED_FAMILIES {
+            assert_eq!(role_of(family), Some(FamilyRole::Transferable));
+            assert!(admits(&format!("{family}:anything")));
+        }
+        for name in &closed {
+            let (family, tag) = name.split_once(':').unwrap();
+            assert!(CLOSED_FAMILIES.contains(&family), "{name}");
+            assert!(crate::card_tags::all_tags().contains(&tag), "{name}");
+        }
+        // Every name the projection can emit, over every faction, is on the list.
+        let factions: Vec<String> = ti4_content::factions::catalogue(content, FULL)
+            .into_iter()
+            .filter(|(_, faction)| crate::features::is_selectable_seat(faction))
+            .map(|(alias, _)| alias.to_owned())
+            .collect();
+        assert!(factions.len() >= 30, "{}", factions.len());
+        for faction in &factions {
+            let (state, a, _) = table_of(faction, "sol");
+            for name in seat_tags(&state, &a).keys() {
+                assert!(closed.contains(name), "{faction}: {name}");
+            }
+        }
+        // Every tag a card can carry is on it too (family B emits tags_of verbatim).
+        for tag in crate::card_tags::all_tags() {
+            assert!(closed.contains(&format!("card-tag-opt:{tag}")));
+        }
+    }
+
+    #[test]
+    fn card_tags_are_enabled_only_for_a_vocabulary_that_places_every_name() {
+        use crate::vocabulary::Vocabulary;
+        // A bundle that predates the families places none of them.
+        let old = Vocabulary::build(["seat-state:round"]).unwrap();
+        assert!(!card_tags_enabled_for(&old));
+        // Placing all but one is refused: the missing name would fall to the global OOV column.
+        let names = card_tag_names();
+        let (last, rest) = names.split_last().unwrap();
+        let mut partial = Vocabulary::build(["seat-state:round"]).unwrap();
+        partial.append_reallocating(rest.iter()).unwrap();
+        assert!(!card_tags_enabled_for(&partial));
+        // All of them: enabled.
+        partial.append_reallocating([last]).unwrap();
+        assert!(card_tags_enabled_for(&partial));
+        let mut migrated = old.clone();
+        migrated.append_reallocating(names.iter()).unwrap();
+        assert!(card_tags_enabled_for(&migrated));
     }
 }

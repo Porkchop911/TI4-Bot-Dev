@@ -3188,7 +3188,7 @@ fn small_integer_value(value: i64) -> f64 {
     f64::from(i32::try_from(value).expect("TI4 printed integer values fit in i32"))
 }
 
-fn count_value(value: usize) -> f64 {
+pub(crate) fn count_value(value: usize) -> f64 {
     f64::from(u32::try_from(value).expect("TI4 component counts fit in u32"))
 }
 

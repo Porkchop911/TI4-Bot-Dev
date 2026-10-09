@@ -10,6 +10,7 @@
 
 pub mod battle;
 pub mod bot;
+pub mod card_tags;
 pub mod critic;
 pub mod deal_value;
 pub mod features;

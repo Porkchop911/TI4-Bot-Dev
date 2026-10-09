@@ -90,6 +90,14 @@ pub struct MlpBot {
     /// Experimental bounded cross-game scorer. Absent in the ordinary CPU path.
     gpu: Option<crate::gpu_batch::GpuInferenceClient>,
     vocabulary: Vocabulary,
+    /// Whether the card-text families (`card-tag:*`, `card-tag-opt:*`) are part of this bot's input.
+    ///
+    /// Decided once, at construction, from the vocabulary alone: on iff it places **every** name of
+    /// both families ([`ti4_policy::projection::card_tags_enabled_for`]). A bundle trained before
+    /// the families places none of them and therefore sees exactly the vectors it always did; the
+    /// migrated bundle places all of them. Play and the PPO records both go through this bot, so
+    /// the features a step is trained on are the features it was played with.
+    card_tags: bool,
     /// Resolved `FeatureKey -> (column, assigned)`, memoised for this bot.
     ///
     /// The same feature names recur constantly — across the options of one decision, across the
@@ -225,6 +233,7 @@ impl MlpBot {
         Self {
             actor: Some(actor),
             gpu: None,
+            card_tags: ti4_policy::projection::card_tags_enabled_for(&vocabulary),
             vocabulary,
             resolved: std::collections::HashMap::new(),
             row,
@@ -257,6 +266,7 @@ impl MlpBot {
         Self {
             actor: None,
             gpu: Some(gpu),
+            card_tags: ti4_policy::projection::card_tags_enabled_for(&vocabulary),
             vocabulary,
             resolved: std::collections::HashMap::new(),
             row,
@@ -471,6 +481,41 @@ impl MlpBot {
         }
     }
 
+    /// The MLP projection of a choice, with the card-text families when this bot's vocabulary
+    /// places them. The hands come from the bound seat's own observation, so no other seat's cards
+    /// are reachable.
+    fn project(
+        &self,
+        seen: &SeatObservation<'_>,
+        choice: &Choice,
+        held: &[ti4_engine::objectives::CardProgress],
+    ) -> Vec<ti4_policy::features::FeatureVector> {
+        if self.card_tags {
+            let cards = seen.held_action_cards();
+            let notes = seen.held_promissory_notes();
+            let input = ti4_policy::projection::CardTagInput {
+                held_action_cards: &cards,
+                held_promissory_notes: &notes,
+            };
+            ti4_policy::projection::mlp_choice_features_with(
+                seen.observed(),
+                choice,
+                &choice.player,
+                held,
+                self.baseline,
+                Some(&input),
+            )
+        } else {
+            ti4_policy::projection::mlp_choice_features(
+                seen.observed(),
+                choice,
+                &choice.player,
+                held,
+                self.baseline,
+            )
+        }
+    }
+
     /// Fact version 7: after an activation, sample which candidate fleet to send and keep it as
     /// the plan. A recorded step of the movement head, with its own options and probability.
     #[expect(
@@ -526,13 +571,7 @@ impl MlpBot {
         ));
         let synthetic = Choice::new(choice.player.clone(), "movement", options);
         let held = seen.held_secret_progress();
-        let vectors = ti4_policy::projection::mlp_choice_features(
-            seen.observed(),
-            &synthetic,
-            &synthetic.player,
-            &held,
-            self.baseline,
-        );
+        let vectors = self.project(seen, &synthetic, &held);
         let facts: Vec<Vec<(&'static str, f64)>> = menu
             .iter()
             .map(|package| ti4_policy::battle::package_facts(Some(package)))
@@ -882,13 +921,7 @@ impl MlpBot {
         // The seat's own setup baseline goes in with the features: the opening-progress facts are
         // deltas against it, and a bot that passed a default would report absolute holdings as
         // gains — wrong in the flattering direction, and invisible.
-        let vectors = ti4_policy::projection::mlp_choice_features(
-            seen.observed(),
-            choice,
-            &choice.player,
-            &held,
-            self.baseline,
-        );
+        let vectors = self.project(seen, choice, &held);
         // An arena-capable actor adds each movement option's battle facts; any other actor sees
         // exactly the vectors it always did.
         let vectors = match self
@@ -1186,5 +1219,28 @@ mod tests {
             draws.len(),
             "two seats share a sampling stream"
         );
+    }
+
+    /// The card-text families are on exactly when the vocabulary places every one of their names.
+    /// An older bundle places none and must keep its input; a partly migrated one is refused.
+    #[test]
+    fn card_tags_are_on_only_for_a_vocabulary_that_places_every_name() {
+        let actor = std::rc::Rc::new(Actor::zeros(crate::Width::W128, 4_096));
+        let row = FactionRow::of("sol").expect("roster");
+        let names = ti4_policy::projection::card_tag_names();
+        assert!(!names.is_empty());
+
+        let old = ti4_policy::vocabulary::Vocabulary::build(["seat-state:vp"]).expect("builds");
+        assert!(!MlpBot::sharing(&actor, old.clone(), row, 1).card_tags);
+
+        let mut partial = old.clone();
+        partial
+            .append_reallocating(names.iter().skip(1))
+            .expect("appends");
+        assert!(!MlpBot::sharing(&actor, partial, row, 1).card_tags);
+
+        let mut migrated = old;
+        migrated.append_reallocating(names.iter()).expect("appends");
+        assert!(MlpBot::sharing(&actor, migrated, row, 1).card_tags);
     }
 }
