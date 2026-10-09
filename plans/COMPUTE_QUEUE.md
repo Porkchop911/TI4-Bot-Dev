@@ -18,7 +18,7 @@ Do not stop, unload or restart `strata` (or LM Studio) to free memory. Ask the o
 
 | Job | Prepared by | Ready | Notes |
 |---|---|---|---|
-| (none) | | | |
+| Card-tag pilot: arm T from `out/card-tags-migrated-20261009/checkpoint-20` vs control from `out/trade-teacher-wide-v8-20261008/checkpoint-20`, same 50-update main-line settings (copy `scripts/pilot_sil_C.psd1`, new seed base, roster wide or train/hold-out split per plans/CARD_TEXT_FEATURES_DESIGN_2026-10-09.md section 4); greedy 600-seed evals | BF session (Claude), 2026-10-09 | Code committed c319b6e4; configs not written | Needs operator choice of roster split before configs are written. |
 
 ## Running now
 
@@ -35,3 +35,4 @@ Do not stop, unload or restart `strata` (or LM Studio) to free memory. Ask the o
 - 2026-10-09: operator: GPU free; self-imitation pilot unpinned and launched (both arms concurrently, commit 37305da5).
 - 2026-10-09: self-imitation pilot finished (evidence plans/evidence/SIL-PILOT-2026-10-09.md); GPU free.
 - 2026-10-09: operator blocked the GPU again ("gpu blocked"). Card-text feature work continues on CPU only.
+- 2026-10-09: card-tag features implemented and committed (c319b6e4, CPU only); pilot pinned for the GPU.
