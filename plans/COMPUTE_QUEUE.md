@@ -8,7 +8,7 @@ time is organised between agents.
 
 | Resource | Owner | Since | Rule |
 |---|---|---|---|
-| GPU (RTX 3090, 24 GB) | self-imitation pilot (BF session, Claude) | 2026-10-09 | Operator lifted the strata reservation 2026-10-09 ("gpu is free"). Check "Running now" before adding GPU work. |
+| GPU (RTX 3090, 24 GB) | free | 2026-10-09 | Operator lifted the strata reservation 2026-10-09 ("gpu is free"). Check "Running now" before adding GPU work. |
 | RAM | `strata` holds ~43 GB | 2026-10-09 | Expect ~6 GB commit headroom: keep cargo at `-j4`..`-j8`, CPU rollouts at 8..16 threads, watch for allocation failures (infrastructure, not code). |
 | CPU (16 physical cores) | free for agents | — | AGENTS.md: bounded parallelism for multi-minute jobs; one cargo coordinator at a time. |
 
@@ -18,19 +18,13 @@ Do not stop, unload or restart `strata` (or LM Studio) to free memory. Ask the o
 
 | Job | Prepared by | Ready | Notes |
 |---|---|---|---|
-| Self-imitation pilot vs plain PPO control: two arms, 50 updates each, same start, seeds and settings; then greedy 600-seed eval of each | BF unification session (Claude), 2026-10-09 | Code in `crates/ti4-mlp/examples/ppo_update.rs` (`--self-imitation 0.2 --sil-margin 1 --sil-keep 4`); the two `.psd1` configs are not written yet -- see below | On CPU it is ~2-2.5 h per arm (optimiser ~150 s/update); acceptable to run on CPU only if the operator says so. |
-
-Configs for the pinned pilot (write them when it is unpinned, from `scripts/pilot_newfactions_rows50.psd1`):
-start `out/trade-teacher-wide-v8-20261008/checkpoint-20`, roster six, main-line rewards, 50 updates,
-30 seeds per update, `--device cuda`; arm A adds `--self-imitation 0.2 --sil-margin 1 --sil-keep 4`;
-evaluate each final checkpoint with `clearance_eval --roster six --seeds 600 --rounds 4
---temperature 0.001 --diplomacy` (holdout pool).
+| (none) | | | |
 
 ## Running now
 
 | Job | Owner | Resource | Started |
 |---|---|---|---|
-| Self-imitation pilot, two arms concurrent: `scripts/pilot_sil_A.psd1` (SIL 0.2) and `scripts/pilot_sil_C.psd1` (control), 50 updates each; then greedy 600-seed evals | BF unification session (Claude) | GPU + all CPU | 2026-10-09 |
+| (none from Claude) | | | |
 
 ## Log
 
@@ -39,3 +33,4 @@ evaluate each final checkpoint with `clearance_eval --roster six --seeds 600 --r
 - 2026-10-09: card effect-tag labelling started (no build, no GPU); draft finished (896 cards), awaiting operator spot-check.
 - 2026-10-09: card-tag second review (Sonnet) ran and finished; 80 changes, 139 tags.
 - 2026-10-09: operator: GPU free; self-imitation pilot unpinned and launched (both arms concurrently, commit 37305da5).
+- 2026-10-09: self-imitation pilot finished (evidence plans/evidence/SIL-PILOT-2026-10-09.md); GPU free.
