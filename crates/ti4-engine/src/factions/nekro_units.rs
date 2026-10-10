@@ -819,7 +819,7 @@ fn flayesh(context: &mut TimingContext<'_>, player: &PlayerId) -> Result<bool, I
         HERO,
     );
     if let Some(alias) = technology {
-        crate::technology::grant(context.state, player, &alias);
+        crate::technology::gain(context.state, content, sources, player, &alias);
     }
     Ok(true)
 }

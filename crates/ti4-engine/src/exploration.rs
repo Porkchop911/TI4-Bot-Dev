@@ -459,7 +459,7 @@ pub fn perform_action(
     {
         seat.exploration_cards.remove(at); // purged
     }
-    crate::technology::grant(state, player, &TechnologyId::new(technology));
+    crate::technology::gain(state, content, sources, player, &TechnologyId::new(technology));
     true
 }
 

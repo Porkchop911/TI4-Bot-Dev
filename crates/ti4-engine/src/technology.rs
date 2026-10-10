@@ -1158,6 +1158,19 @@ pub fn grant(state: &mut GameState, player: &PlayerId, alias: &TechnologyId) {
     }
 }
 
+/// Gain a technology by any route other than research, and let a unit upgrade reach the units
+/// already on the board (90.8). Research does this in `complete_research`.
+pub fn gain(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    alias: &TechnologyId,
+) {
+    grant(state, player, alias);
+    apply_unit_upgrades(state, content, sources, player);
+}
+
 /// Purge one of a player's technologies: the card leaves the game.
 ///
 /// Returns `false`, changing nothing, when the player does not own it. A unit upgrade that is
@@ -1394,8 +1407,7 @@ fn complete_research(
             .player(&holder)
             .is_some_and(|seat| !seat.technologies.contains(alias))
     {
-        grant(state, &holder, alias);
-        apply_unit_upgrades(state, content, sources, &holder);
+        gain(state, content, sources, &holder, alias);
         let name = crate::promissory::faction_name(state, player);
         crate::promissory::give_back(state, &crate::promissory::note_id("ra", &name));
     }
@@ -2218,6 +2230,81 @@ mod tests {
                 "{faction} {tech}"
             );
         }
+    }
+
+    /// Every faction unit upgrade in the corpus -- not a hand-picked few -- replaces that faction's
+    /// units already on the board once `apply_unit_upgrades` runs.
+    #[test]
+    fn every_faction_unit_upgrade_replaces_the_units_already_on_the_board() {
+        let content = ContentStore::embedded();
+        let sources = ti4_model::content_types::FULL;
+        let (planet_system, planet) = crate::fixtures::a_placed_planet();
+        let plain = ti4_model::id::SystemId::new(crate::fixtures::plain_systems(1)[0].clone());
+        let mut failures = Vec::new();
+        let mut checked = 0;
+        for after in ti4_content::units::catalogue(content, sources).values() {
+            let (Some(faction), Some(tech), Some(before)) = (
+                after.faction(),
+                after.required_technology(),
+                after.upgrades_from(),
+            ) else {
+                continue;
+            };
+            if content.get(ti4_model::content_types::ContentType::Factions, faction).is_none() {
+                continue; // homebrew faction with no faction record (Ghemina)
+            }
+            checked += 1;
+            let on_planet = ti4_content::units::unit_type(content, before, sources)
+                .is_some_and(|unit| !unit.is_ship() && !unit.is_space_only_structure());
+            let mut state =
+                crate::fixtures::seated_game(&[("a", faction), ("b", "hacan")], sources);
+            let player = PlayerId::new("a");
+            let system = if on_planet { &planet_system } else { &plain };
+            state.board.entry(system.clone()).or_default();
+            if on_planet {
+                crate::fixtures::put_on_planet(&mut state, system, &planet, before, &player, 2);
+            } else {
+                crate::fixtures::put(&mut state, system, before, &player, 2);
+            }
+            grant(&mut state, &player, &TechnologyId::new(tech));
+            apply_unit_upgrades(&mut state, content, sources, &player);
+            let board = state.system_state(system);
+            let ids: Vec<String> = if on_planet {
+                board.on_planet(&planet).to_vec()
+            } else {
+                board.units_of(&player).into_iter().cloned().collect()
+            }
+            .iter()
+            .filter(|unit| unit.owner == player)
+            .map(|unit| unit.type_id.to_string())
+            .collect();
+            if !ids.iter().any(|id| id == after.id()) || ids.iter().any(|id| id == before) {
+                failures.push(format!("{faction} {tech}: {before} -> {} left {ids:?}", after.id()));
+            }
+        }
+        assert!(checked >= 17, "only {checked} faction upgrades found");
+        assert!(failures.is_empty(), "{failures:#?}");
+    }
+
+    /// Gaining (not researching) an upgrade converts the board too, and so does an Entropic Scar grant.
+    #[test]
+    fn a_gained_unit_upgrade_replaces_units_on_the_board() {
+        let content = ContentStore::embedded();
+        let sources = ti4_model::content_types::FULL;
+        let plain = ti4_model::id::SystemId::new(crate::fixtures::plain_systems(1)[0].clone());
+        let mut state = crate::fixtures::seated_game(&[("a", "sol"), ("b", "hacan")], sources);
+        let player = PlayerId::new("a");
+        state.board.entry(plain.clone()).or_default();
+        crate::fixtures::put(&mut state, &plain, "sol_carrier", &player, 2);
+        gain(&mut state, content, sources, &player, &TechnologyId::new("ac2"));
+        let ids: Vec<String> = state
+            .system_state(&plain)
+            .units_of(&player)
+            .iter()
+            .map(|unit| unit.type_id.to_string())
+            .filter(|id| id.starts_with("sol_carrier"))
+            .collect();
+        assert!(ids.len() >= 2 && ids.iter().all(|id| id == "sol_carrier2"), "{ids:?}");
     }
 
     #[test]

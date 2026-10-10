@@ -649,7 +649,7 @@ fn radical(owner_name: &str, seat: &PlayerId) -> Ability {
                 seat.technologies.remove(&swap.old);
                 seat.exhausted_technologies.remove(&swap.old);
             }
-            crate::technology::grant(context.state, &owner, &swap.new);
+            crate::technology::gain(context.state, context.content, context.sources, &owner, &swap.new);
             Ok(())
         }),
     )

@@ -3654,7 +3654,7 @@ fn plagiarize(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId)
     else {
         return; // the answer named nothing on offer
     };
-    crate::technology::grant(context.state, player, &tech);
+    crate::technology::gain(context.state, context.content, context.sources, player, &tech);
     if let Some(seat) = context.state.player_mut(&owner) {
         seat.technologies.remove(&tech);
     }

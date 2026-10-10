@@ -507,8 +507,7 @@ fn gain_technology(
     owner: &PlayerId,
     tech: &TechnologyId,
 ) {
-    crate::technology::grant(state, owner, tech);
-    crate::technology::apply_unit_upgrades(state, content, sources, owner);
+    crate::technology::gain(state, content, sources, owner, tech);
 }
 
 /// Extract, revealed: gain 1 non-faction technology `puppet` owns; the owner chooses which.
