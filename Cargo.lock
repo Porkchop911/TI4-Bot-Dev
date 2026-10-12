@@ -4412,6 +4412,7 @@ dependencies = [
  "ti4-mlp",
  "ti4-model",
  "ti4-policy",
+ "ti4-server",
  "ti4-sim",
  "ti4-tensor",
  "ti4-training",
