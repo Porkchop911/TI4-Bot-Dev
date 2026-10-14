@@ -230,7 +230,8 @@ impl ReplayScript {
         let context = choice
             .context
             .as_ref()
-            .and_then(|context| serde_json::to_value(context).ok());
+            // Display-only fields (the reaction trigger) are not part of what a replay binds.
+            .and_then(|context| serde_json::to_value(context.without_display_fields()).ok());
         if record.context != context {
             return mismatch(
                 MismatchKind::Context,

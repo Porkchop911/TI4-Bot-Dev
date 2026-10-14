@@ -1,0 +1,13 @@
+{
+  "title": "Copy replay",
+  "description": "The event log's Copy replay button: any seated player can put the game's replay JSON (seed, seats, decisions, events) on the clipboard. Synthetic mocked game, not a captured engine state.",
+  "tag": "web/e2e/screenshots/N-copy-replay",
+  "shots": [
+    { "file": "out/1-idle.png", "heading": "Event log: Copy replay", "caption": "The button sits at the top of the open event log for every seated player, not only the host. Spectators do not get it." },
+    { "file": "out/2-copied.png", "heading": "Copied", "caption": "One click loads the replay from GET /api/games/{id}/replay and writes it to the clipboard; the status line (a polite live region) says it was copied and how big it is. If the clipboard is blocked the same text is saved as ti4-replay-<game>.json instead and the status says so." },
+    { "file": "out/3-error.png", "heading": "Server refused", "caption": "A refusal shows the server's reason in the status line; the button is usable again. The button is disabled only while the replay is loading." }
+  ],
+  "notes": [
+    "The replay contains every player's decisions and the game seed, so it is not a spectator-safe export: sharing it reveals hidden information."
+  ]
+}

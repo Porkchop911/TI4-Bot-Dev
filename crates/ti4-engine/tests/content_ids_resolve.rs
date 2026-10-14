@@ -206,3 +206,65 @@ fn every_hardcoded_content_id_resolves_in_the_corpus() {
         dead.join("\n  ")
     );
 }
+
+/// Constructors whose argument becomes a `DecisionSource::ActionCard` id.
+const ACTION_CARD_SOURCES: [&str; 2] = ["DecisionSource::ActionCard(", "played_card_source("];
+
+/// Every action-card decision source the engine emits names a card in `action_cards.json`.
+///
+/// Night 1 (F4) found the same card under two ids in the decision traces: the effects built their
+/// sources from names (`public_disgrace`, `skilled_retreat`, `exchange_program`,
+/// `in_the_silence_of_space`) while the play itself carried the content id (`disgrace`,
+/// `s_retreat1..4`, `exchangeprogram`, `silence_space`). Sources now come from the played card;
+/// a literal is allowed only as the fallback for a direct call, and it must still be a real id.
+#[test]
+fn every_action_card_decision_source_names_an_action_card() {
+    let content = ContentStore::embedded();
+    let cards: BTreeSet<String> = content
+        .records(ti4_model::content_types::ContentType::ActionCards)
+        .iter()
+        .filter_map(|record| record.text("alias").map(str::to_owned))
+        .collect();
+    assert!(cards.contains("disgrace"), "action card corpus not loaded");
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut files = Vec::new();
+    source_files(&root, &mut files);
+    let mut wrong: Vec<String> = Vec::new();
+    let mut checked = 0;
+    for file in &files {
+        let Ok(text) = std::fs::read_to_string(file) else {
+            continue;
+        };
+        let production = text.split("#[cfg(test)]").next().unwrap_or(&text);
+        let name = file.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+        for constructor in ACTION_CARD_SOURCES {
+            for (at, _) in production.match_indices(constructor) {
+                if production[..at].ends_with("fn ") {
+                    continue; // the helper's own definition
+                }
+                // The argument may sit on the next line. Only a string literal is checked: an
+                // expression (the played card's id) is correct by construction.
+                let argument = production[at + constructor.len()..].trim_start();
+                let Some(literal) = argument.strip_prefix('"') else {
+                    continue;
+                };
+                let literal = &literal[..literal.find('"').unwrap_or(0)];
+                checked += 1;
+                if !cards.contains(literal) {
+                    let line = production[..at].lines().count();
+                    wrong.push(format!("{name}:{line}  {literal:?}"));
+                }
+            }
+        }
+    }
+    assert!(
+        checked > 0,
+        "no action-card decision sources found to check"
+    );
+    assert!(
+        wrong.is_empty(),
+        "action-card decision sources that are not action_cards.json ids:\n  {}",
+        wrong.join("\n  ")
+    );
+}

@@ -561,6 +561,27 @@ fn payment_options(
     options
 }
 
+/// The ready planets that pay `kind` in their own currency, each with the worth of that face,
+/// exactly as the payment loop would list them for an unbounded bill. Cross-source faces
+/// (Archon's Gift) are left out.
+pub fn native_payment_planets(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    kind: Spend,
+) -> Vec<(PlanetId, i64)> {
+    spendable_planets(state, player)
+        .into_iter()
+        .filter_map(|planet| {
+            payment_faces(state, content, sources, player, &planet, kind)
+                .into_iter()
+                .find(|(source, _)| *source == kind)
+                .map(|(_, worth)| (planet, worth))
+        })
+        .collect()
+}
+
 /// Apply the chosen payment option; returns its value against the bill.
 ///
 /// `None` means the id was never offered (defensive — validated tables cannot produce it). As in
@@ -797,9 +818,7 @@ fn pay_with_observation_credit(
         }
 
         // The oracle takes a lone option without asking; only real choices reach a decider.
-        let answer = if options.len() == 1 {
-            options[0].clone()
-        } else {
+        let answer = {
             // Oracle wording: each iteration names the remaining debt and its kind
             // (`pay {cost - paid} more {kind}` in engine/production.py).
             let choice = Choice::new(
@@ -814,7 +833,11 @@ fn pay_with_observation_credit(
                 cost,
                 used_credit + paid,
             ));
-            table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?
+            if let Some(only) = table.auto_resolve(&choice, "it was the only way left to pay") {
+                only
+            } else {
+                table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?
+            }
         };
 
         match apply_payment_option(state, content, sources, player, kind, &answer) {
@@ -1177,8 +1200,42 @@ pub fn produce_one(
     player: &PlayerId,
     system: &SystemId,
 ) -> Result<bool, IllegalChoice> {
+    produce_one_from(state, content, sources, galaxy, table, player, system, None)
+}
+
+/// The effect a single-unit production comes from, for the prompt and the decision context:
+/// `(content alias, printed name)`, e.g. `("frln1", "Freelancers")`.
+type ProduceOneSource<'a> = Option<(&'a str, &'a str)>;
+
+/// The context subtype of the "which unit" question a named single-unit production asks.
+pub const PRODUCE_ONE_SUBTYPE: &str = "produce_one_unit";
+
+/// [`produce_one`], naming the effect that grants it.
+///
+/// Every single-unit production is a "may" (Chaos Mapping, Minister of Industry, Freelancers), so
+/// the unit question always ends with a decline: answering it produces nothing and pays nothing.
+/// It is appended last, so the ids and positions of the unit options do not move.
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    reason = "single-unit production needs the complete observed rules position"
+)]
+fn produce_one_from(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&Galaxy>,
+    table: &mut Table,
+    player: &PlayerId,
+    system: &SystemId,
+    source: ProduceOneSource<'_>,
+) -> Result<bool, IllegalChoice> {
     let types = catalogue(content, sources);
     let affordable = available(state, content, sources, player, Spend::Resources);
+    // Units the player could build in general but not here, with the first thing in the way. Shown
+    // beside the question (`details.not_offered`) so a short list is not a mystery; it never
+    // changes the options or their ids.
+    let mut not_offered: Vec<serde_json::Value> = Vec::new();
     let candidates: Vec<(String, i64)> = buildable_for(state, content, sources, player)
         .into_iter()
         .filter_map(|id| {
@@ -1194,42 +1251,71 @@ pub fn produce_one(
             } else {
                 true
             };
-            (cost <= affordable
-                && !placements(state, content, sources, player, system, kind).is_empty()
-                && within_fleet_supply
-                && crate::supply::allowed(
-                    state,
-                    content,
-                    sources,
-                    player,
-                    &UnitTypeId::new(&id),
-                    1,
-                ) > 0)
-                .then_some((id, cost))
+            let blocked = if cost > affordable {
+                Some(format!("costs {cost}, you can pay {affordable}"))
+            } else if placements(state, content, sources, player, system, kind).is_empty() {
+                Some("no place to put it in this system (ground forces need a planet you control)".to_owned())
+            } else if !within_fleet_supply {
+                Some("the fleet supply in this system is full".to_owned())
+            } else if crate::supply::allowed(state, content, sources, player, &UnitTypeId::new(&id), 1)
+                == 0
+            {
+                Some("none left in your reinforcements".to_owned())
+            } else {
+                None
+            };
+            match blocked {
+                None => Some((id, cost)),
+                Some(reason) => {
+                    not_offered.push(serde_json::json!({ "unit": id, "reason": reason }));
+                    None
+                }
+            }
         })
         .collect();
     if candidates.is_empty() {
         return Ok(false);
     }
-    let choice = Choice::new(
-        player.clone(),
-        format!("produce one unit in {system}"),
-        candidates
-            .iter()
-            .map(|(id, cost)| {
-                ChoiceOption::labelled(
-                    format!("build|{id}|1"),
-                    PRODUCE_KIND,
-                    format!("produce 1x {id} for {cost}"),
-                )
-                .with("unit", id.clone())
-                .with("count", 1)
-                .with("cost", *cost)
-                .with("system", system.to_string())
-            })
-            .collect(),
-    );
+    let mut options: Vec<ChoiceOption> = candidates
+        .iter()
+        .map(|(id, cost)| {
+            ChoiceOption::labelled(
+                format!("build|{id}|1"),
+                PRODUCE_KIND,
+                format!("produce 1x {id} for {cost}"),
+            )
+            .with("unit", id.clone())
+            .with("count", 1)
+            .with("cost", *cost)
+            .with("system", system.to_string())
+        })
+        .collect();
+    options.push(ChoiceOption::decline());
+    let prompt = match source {
+        Some((_, name)) => format!("{name}: produce one unit in {system}"),
+        None => format!("produce one unit in {system}"),
+    };
+    let mut choice = Choice::new(player.clone(), prompt, options);
+    if !not_offered.is_empty() {
+        choice = choice.detailed("not_offered", serde_json::Value::Array(not_offered));
+    }
+    if let Some((alias, _)) = source {
+        choice = choice.contextualized(
+            DecisionContext::new(
+                player.clone(),
+                DecisionSource::Content(alias.to_owned()),
+                PRODUCE_ONE_SUBTYPE,
+                state.phase,
+                state.round,
+            )
+            .optional(true)
+            .about(DecisionTarget::System(system.clone())),
+        );
+    }
     let answer = table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
+    if answer.is_decline() {
+        return Ok(false);
+    }
     let Some((id, cost)) = candidates
         .iter()
         .find(|(id, _)| answer.id == format!("build|{id}|1"))
@@ -1314,9 +1400,10 @@ pub fn produce_one_paying_with_influence(
     ctx: &mut crate::choice::Resolving<'_>,
     player: &PlayerId,
     system: &SystemId,
+    card: &str,
 ) -> bool {
     state.influence_pays_for_units.insert(player.clone());
-    let made = produce_one(
+    let made = produce_one_from(
         state,
         ctx.content,
         ctx.sources,
@@ -1324,6 +1411,7 @@ pub fn produce_one_paying_with_influence(
         ctx.table,
         player,
         system,
+        Some((card, "Freelancers")),
     );
     state.influence_pays_for_units.remove(player);
     made.unwrap_or(false)
@@ -1802,7 +1890,11 @@ pub fn buildable_for(
                 held.iter()
                     .any(|tech| tech.as_str() == *gate || tech.as_str().ends_with(*gate))
             });
-            if !has {
+            // A faction whose sheet prints its own unit of this type (the Muaat's Prototype War
+            // Sun) builds it from the start; its upgrade (`pws2`) does not end in the gate.
+            let native =
+                ti4_content::units::faction_unit(content, &faction, base, sources).is_some();
+            if !has && !native {
                 continue;
             }
         }
@@ -2439,6 +2531,8 @@ impl ProductionWindow {
         // The position before any of these options is taken, read once for all of them.
         let before =
             crate::fleet::standing_using(&types, state, content, &self.player, &self.system, None);
+        let spendable_resources =
+            available(state, content, sources, &self.player, Spend::Resources);
         let mut options = Vec::new();
         for id in buildable_for(state, content, sources, &self.player) {
             let Some(kind) = types.get(id.as_str()) else {
@@ -2486,8 +2580,8 @@ impl ProductionWindow {
             // discounted bill: a unit Sarween Tools or Harrugh Gefhara brings within reach must
             // not be withheld for a price nobody would actually charge. A unit bought with a
             // captured model is not withheld at all, because no resource is being asked for it.
-            let affordable =
-                cost <= available(state, content, sources, &self.player, Spend::Resources) + self.credit;
+            let affordable = cost
+                <= available(state, content, sources, &self.player, Spend::Resources) + self.credit;
             if !affordable && !exchange {
                 continue;
             }
@@ -2571,6 +2665,8 @@ impl ProductionWindow {
                 .with("placed", i64::try_from(placed).unwrap_or(1))
                 .with("yield", i64::try_from(pair).unwrap_or(1))
                 .with("credit", self.credit)
+                .with("available_resources", spendable_resources)
+                .with("free_this_use", self.free_this_use)
                 .with("credit_used", credit_used)
                 .with("owed", cost - credit_used)
                 .with("production_spent", production_spent)
@@ -2642,8 +2738,11 @@ impl ProductionWindow {
                 if let [only] = spots.as_slice() {
                     let after = self.standing_after(&types, state, content, *kind, only, 1);
                     deltas.extend(limit_deltas(&before, &after));
-                    exchange =
-                        placement_facts(exchange.with("destination", only.clone()), &before, &after);
+                    exchange = placement_facts(
+                        exchange.with("destination", only.clone()),
+                        &before,
+                        &after,
+                    );
                 } else {
                     exchange =
                         exchange.with("placement_pending", i64::try_from(spots.len()).unwrap_or(2));
@@ -2697,7 +2796,12 @@ impl ProductionWindow {
                     .or_default()
                     .push(unit);
             }
-            crate::supply::stage_naaz_mech_placed(state, &self.player, &target, &UnitTypeId::new(id));
+            crate::supply::stage_naaz_mech_placed(
+                state,
+                &self.player,
+                &target,
+                &UnitTypeId::new(id),
+            );
             self.report
                 .produced
                 .push((UnitTypeId::new(id), where_to.to_owned()));
@@ -2770,13 +2874,31 @@ impl Window for ProductionWindow {
                     "decline",
                     "produce nothing further",
                 ));
+                // Display only (`Choice::details`): ships charged against the fleet pool in this
+                // system and the pool's limit (LRR 37), so a client can show the room left.
+                let standing = crate::fleet::standing(
+                    state,
+                    content,
+                    sources,
+                    &self.player,
+                    &self.system,
+                    None,
+                );
+                let mut fleet_supply = serde_json::json!({
+                    "used": standing.fleet_charged,
+                    "limit": standing.fleet_limit,
+                });
+                if crate::fleet::is_unlimited(state, &self.player) {
+                    fleet_supply["unlimited"] = serde_json::Value::Bool(true);
+                }
                 Some(
                     Choice::new(
                         self.player.clone(),
                         format!("produce in {} ({} left)", self.system, self.remaining),
                         options,
                     )
-                    .contextualized(self.context(state)),
+                    .contextualized(self.context(state))
+                    .detailed("fleet_supply", fleet_supply),
                 )
             }
             Stage::Paying {
@@ -2872,7 +2994,12 @@ impl Window for ProductionWindow {
                     // same way a bill the player cannot pay ends the stage instead of becoming a
                     // partial purchase.
                     if !crate::factions::hooks_economy::perform_production_unit_exchange(
-                        state, content, sources, &self.player, &self.system, id,
+                        state,
+                        content,
+                        sources,
+                        &self.player,
+                        &self.system,
+                        id,
                     ) {
                         self.stage = Stage::Done;
                         return Ok(());
@@ -3342,8 +3469,9 @@ pub fn produce_unit_by_ability(
     unit: &str,
 ) -> Result<ProductionReport, IllegalChoice> {
     let (content, sources) = (ctx.content, ctx.sources);
-    let mut window = ProductionWindow::for_ability(state, content, sources, player, system, Some(1))
-        .with_only_unit(Some(unit.to_owned()));
+    let mut window =
+        ProductionWindow::for_ability(state, content, sources, player, system, Some(1))
+            .with_only_unit(Some(unit.to_owned()));
     while let Some(choice) = window.pending_choice(state, content, sources) {
         ctx.table
             .ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))
@@ -3734,6 +3862,36 @@ mod tests {
             .unwrap()
         );
         assert_eq!(state.player(&player).unwrap().trade_goods, 0);
+    }
+
+    #[test]
+    fn a_lone_payment_option_is_noted_but_never_journaled() {
+        let (mut state, _, _) = seated();
+        state.player_mut(&player()).unwrap().trade_goods = 2;
+        let mut table = Table::new();
+        assert!(
+            pay(
+                &mut state,
+                ContentStore::embedded(),
+                POK,
+                &mut table,
+                &player(),
+                2,
+                Spend::Resources
+            )
+            .unwrap()
+        );
+        assert!(
+            table.log.is_empty(),
+            "a skipped ask must not enter the journal"
+        );
+        let notes = table.take_auto_resolved();
+        assert!(!notes.is_empty());
+        assert!(
+            notes
+                .iter()
+                .all(|n| n.player == player() && n.prompt.starts_with("pay "))
+        );
     }
 
     #[test]
@@ -4813,6 +4971,13 @@ mod tests {
         assert_eq!(
             fighter
                 .payload
+                .get("available_resources")
+                .and_then(serde_json::Value::as_i64),
+            Some(available(&state, content, POK, &player(), Spend::Resources))
+        );
+        assert_eq!(
+            fighter
+                .payload
                 .get("credit_used")
                 .and_then(serde_json::Value::as_i64),
             Some(1)
@@ -5105,6 +5270,13 @@ mod tests {
             Some(3),
             "the whole printed price is discounted away"
         );
+        assert_eq!(
+            carrier
+                .payload
+                .get("free_this_use")
+                .and_then(serde_json::Value::as_bool),
+            Some(true)
+        );
     }
 
     /// A marker left over from a different production sequence must not make an unrelated later
@@ -5129,6 +5301,13 @@ mod tests {
             .into_iter()
             .find(|option| option.id.starts_with("build|carrier|"))
             .expect("carrier");
+        assert_eq!(
+            carrier
+                .payload
+                .get("free_this_use")
+                .and_then(serde_json::Value::as_bool),
+            Some(false)
+        );
         assert_eq!(
             carrier
                 .payload
@@ -5328,6 +5507,40 @@ mod tests {
             let fighter = *types.get("fighter").unwrap();
             assert!(window.spots(&state, content, POK, fighter).is_empty());
         });
+    }
+
+    #[test]
+    fn the_produce_choice_reports_fleet_supply_used_and_limit() {
+        let content = ContentStore::embedded();
+        let (mut state, system, planet) = seated();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player());
+        put_on_planet(&mut state, &system, &planet, "spacedock", &player(), 1);
+        put(&mut state, &system, "cruiser", &player(), 2);
+        // Fighters ride the capacity of ships, not the pool, so they must not be charged.
+        put(&mut state, &system, "fighter", &player(), 2);
+        let window = ProductionWindow::new(&state, content, POK, &player(), &system);
+        let choice = window
+            .pending_choice(&state, content, POK)
+            .expect("production choice");
+        let standing = crate::fleet::standing(&state, content, POK, &player(), &system, None);
+        let supply = choice
+            .details
+            .get("fleet_supply")
+            .expect("fleet_supply detail");
+        assert_eq!(supply["used"].as_i64(), Some(standing.fleet_charged));
+        assert_eq!(supply["limit"].as_i64(), Some(standing.fleet_limit));
+        assert_eq!(
+            supply["used"].as_i64(),
+            Some(2),
+            "two cruisers, no fighters"
+        );
+        assert_eq!(
+            supply["limit"].as_i64(),
+            Some(i64::from(crate::fleet::limit(&state, content, &player())))
+        );
+        assert!(supply.get("unlimited").is_none());
     }
 
     #[test]

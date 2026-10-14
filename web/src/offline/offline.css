@@ -1,0 +1,59 @@
+.offline-panel { display: flex; flex-direction: column; gap: 12px; width: min(100%, 640px); }
+.offline-heading { margin: 8px 0 0; font-size: 18px; color: var(--color-accent); }
+.session-error.offline-error { position: static; margin: 0; }
+.offline-banner {
+  display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center;
+  padding: 8px 12px; border: 1px solid var(--color-warning); border-radius: var(--radius-sm);
+  background: rgba(245, 158, 11, 0.1); color: var(--color-text-strong); font-size: 13px;
+}
+.offline-banner__tag { color: var(--color-warning); }
+.offline-banner__missing { color: var(--color-text-muted); }
+.offline-banner__queue {
+  margin-left: auto; padding: 2px 8px; border-radius: 999px;
+  border: 1px solid var(--color-border-muted); color: var(--color-text-strong);
+}
+.offline-link { background: none; border: 0; color: var(--color-accent); text-decoration: underline; cursor: pointer; margin-left: 6px; min-height: 24px; }
+.offline-progress { display: flex; flex-direction: column; gap: 12px; padding: 20px; width: min(100%, 560px); }
+.offline-progress h2 { margin: 0; color: var(--color-accent); font-size: 20px; }
+.offline-bar { height: 12px; border-radius: 999px; background: var(--color-surface-raised); overflow: hidden; }
+.offline-bar__fill { height: 100%; background: var(--color-accent); border-radius: 999px; transition: width 0.15s linear; }
+.offline-bar--indeterminate .offline-bar__fill { width: 35%; animation: offline-slide 1.2s ease-in-out infinite alternate; }
+@keyframes offline-slide { from { margin-left: 0; } to { margin-left: 65%; } }
+@media (prefers-reduced-motion: reduce) { .offline-bar--indeterminate .offline-bar__fill { animation: none; margin-left: 30%; } }
+.offline-games__row .button { min-height: 44px; }
+.offline-start-button { margin-top: 4px; }
+.feedback__queued { color: var(--color-text-muted); }
+.offline-form .field-label { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.offline-form select.input { width: 100%; }
+
+/* The game screen under the banner: the banner takes a strip, the shell the rest. */
+.offline-game-frame {
+  display: grid; grid-template-rows: auto minmax(0, 1fr);
+  height: 100vh; width: 100vw; overflow: hidden;
+}
+.offline-game-frame .offline-banner { border-radius: 0; border-width: 0 0 1px; padding: 4px 12px; font-size: 12px; }
+.offline-game-frame > .app-shell { height: 100%; min-height: 0; }
+@media (max-width: 760px) {
+  .offline-game-frame .offline-banner { flex-wrap: nowrap; white-space: nowrap; overflow: hidden; }
+  .offline-game-frame .offline-banner__text, .offline-game-frame .offline-banner__missing { display: none; }
+}
+
+.offline-games-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.offline-games-head .offline-heading { margin: 0; }
+.offline-games-head .button { min-height: 44px; }
+.offline-banner__engine { font-family: var(--font-mono, monospace); color: var(--color-text-muted); }
+.offline-banner__viewonly { color: var(--color-warning); }
+.offline-banner-stack { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.offline-storage-notice {
+  padding: 8px 12px; border: 1px solid var(--color-danger); border-radius: var(--radius-sm);
+  background: #450a0a; color: #fecaca; font-size: 13px;
+}
+.offline-game-frame > .offline-banner-stack { gap: 0; }
+.offline-game-frame .offline-storage-notice { border-radius: 0; border-width: 0 0 1px; font-size: 12px; padding: 4px 12px; }
+.offline-mismatch { display: flex; flex-direction: column; gap: 12px; padding: 20px; width: min(100%, 560px); border: 1px solid var(--color-warning); }
+.offline-mismatch h2 { margin: 0; color: var(--color-warning); font-size: 20px; }
+.offline-mismatch__engines { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; font-size: 13px; }
+.offline-mismatch__engines dt { color: var(--color-text-muted); }
+.offline-mismatch__engines dd { margin: 0; font-family: var(--font-mono, monospace); }
+.offline-mismatch__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.offline-mismatch__actions .button { min-height: 44px; }

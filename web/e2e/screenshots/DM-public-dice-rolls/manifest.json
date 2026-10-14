@@ -1,0 +1,15 @@
+{
+  "title": "Public dice rolls",
+  "description": "Every die the engine rolls that the table would see (gravity rifts, combat, abilities) is a public event with who rolled, what for, the faces, the outcome and the system. The web shows it as a corner toast and as a line in the event log. All shots are the real app against a mocked game; the server side is covered by engine, server and replay tests.",
+  "tag": "web/e2e/screenshots/DM-public-dice-rolls",
+  "shots": [
+    { "file": "out/1-rift-destroyed-desktop.png", "heading": "Gravity rift roll toast", "caption": "Another player's ship leaves a gravity rift: the toast names who rolled, the rift system, the die and what it did (ship destroyed). This is the case from alpha feedback fb_1791904377." },
+    { "file": "out/1-rift-destroyed-390x844.png", "heading": "On a phone", "caption": "The same toast at 390x844." },
+    { "file": "out/2a-own-roll-survives.png", "heading": "Your own roll", "caption": "The roller is told too; the toast carries the Dice tag." },
+    { "file": "out/2b-combat-round-merged.png", "heading": "A combat round is one toast", "caption": "Two dice rolls of one combat round for one player merge into a single toast with the hits totalled, not one toast per die." },
+    { "file": "out/3-event-log-rolls.png", "heading": "Event log", "caption": "Rolls are lines of their own between the decisions they happened between: faces as chips (hits filled, misses dimmed, rerolled dice dashed), the reason, the system and the outcome. They have no Undo button; the decisions around them keep theirs." }
+  ],
+  "notes": [
+    { "title": "Not shown", "text": "Spy's die is not public (it would reveal which card was taken from a hand). Rolls appear in the log after the engine step that made them returns, so a roll inside a long combat window appears once the window moves on." }
+  ]
+}

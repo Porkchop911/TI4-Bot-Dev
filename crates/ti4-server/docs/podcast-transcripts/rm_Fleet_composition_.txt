@@ -1,0 +1,383 @@
+### range 0-1200s
+[0:00:00] Hello and welcome to Radio Mecatol. My name is Kale and I think about Twilight Imperium every day.
+[0:00:10] And my name is Ula and I think about setting up a game of Twilight Imperium every day. Excellent.
+[0:00:17] So today's topic is fleet composition. We're talking about how to organize your fleets so
+[0:00:24] that they are as good as possible. Any initial thoughts?
+[0:00:29] Yeah, I think the first and most important thing to recognize when considering how combat
+[0:00:36] works in Twilight Imperium is the simple calculation that ships hit quite seldomly.
+[0:00:47] Meaning for each wound you have in the form of a ship, the likelihood of that wound getting
+[0:00:56] lost is lower than the amount of enemy ships. So a fighter hits on nines for example, that's
+[0:01:05] one out of five times, right? And even the best ships except the warzone only hits half the time.
+[0:01:15] So fleet combat is a little bit of a grind and that's important to consider I think when you
+[0:01:24] you when choosing what ships to bring to bear.
+[0:01:29] Yeah, that's a good point.
+[0:01:31] I mean, except the worse one,
+[0:01:32] there are no glass cannons in Twilight Imperium.
+[0:01:36] Exactly.
+[0:01:38] Yeah.
+[0:01:38] And the sustain, and this is also why
+[0:01:41] the sustain damage ability matters.
+[0:01:44] In other games, you might say,
+[0:01:46] oh, you get one extra hit point,
+[0:01:49] like how much does that really count?
+[0:01:52] but in the very, very tight combat or twilight imperium,
+[0:01:55] where victory or defeat is often just a question of one or two hits.
+[0:02:00] So, in that matter, it becomes very significant.
+[0:02:03] True, true.
+[0:02:05] I also thought about this when we were preparing the episode that
+[0:02:09] almost all factions have some unique consideration
+[0:02:15] when considering fleet composition.
+[0:02:20] So for example, I mean, Muat has their war sons and Mantac wants to have their cruisers and so on.
+[0:02:27] And I counted only maybe two or three maximum five factions that have like a very generic fleet composition.
+[0:02:36] Yeah, this has grown stronger over time as well.
+[0:02:40] With the expansions, the factions get more kind of like siloed into certain styles.
+[0:02:48] Yeah, and also with new abilities to certain units or that is easier with some units than
+[0:02:55] you want to think about that.
+[0:02:57] But even though that is true, I think one can still talk about like general fleet composition
+[0:03:04] that's valid in all cases, even though you have to adjust it somewhat to what faction
+[0:03:10] you're playing.
+[0:03:12] Yes.
+[0:03:13] And of course, in Trault Imperium, you really have two resources for building fleet ships, right?
+[0:03:19] You have the resources cost, but most importantly, you have your production value.
+[0:03:28] And a third value, that is the fleet supply.
+[0:03:31] Oh yeah, that too, yeah. But I find production value, yeah, the amount of ships you can build in a system.
+[0:03:38] to be a rule that beginners often have a very hard time to wrap their head around.
+[0:03:44] But I still think it was a good choice to keep it in this edition because it's key actually
+[0:03:53] to the whole question of fleet composition.
+[0:03:58] If it were not for that rule, you would just bare-viters.
+[0:04:01] Yeah, absolutely.
+[0:04:02] I mean, if you have five resources and want to build the absolute most bang for your bucks, then of course, 10 fighters is the best.
+[0:04:12] And I mean, 10 fighters will will or let's say four resources, then then you have eight fighters and eight fighters will easily take on a dreadnought.
+[0:04:22] Exactly.
+[0:04:22] So, fleet, it's called production value, right?
+[0:04:27] That is always something you need to consider as part of your fleet composition.
+[0:04:32] Yeah, and that is what makes fleet composition so hard, because you're always limited by both how much money you have and the production capacity, but sometimes it's one more than the other.
+[0:04:46] Yeah, so to stock this discussion off, I would actually like to ask a kind of adjacent question, which is
+[0:04:54] What do you think of building a space stock in
+[0:04:58] statistical systems?
+[0:04:59] Even if they have low production value. I mean a classical example is you want to have a space stock next to Megatol
+[0:05:06] X
+[0:05:07] But the planet only has one resource value meaning your production capacity in that space stock will always be very low
+[0:05:14] Do you still find it worth it to build a space doctor?
+[0:05:18] Because more and more, I don't.
+[0:05:22] I feel like it depends a lot on your mobility.
+[0:05:25] If you're a very low mobility faction and you've had to make some tough choices, maybe
+[0:05:30] you have to forsake gravity drive for something else because of objectives or something, then
+[0:05:37] that space dock could be worth it.
+[0:05:40] then you can build those two dreadnoughts on the mech that could make a huge difference
+[0:05:47] going into mech at all. But otherwise it's tight. Yeah true. Still if you build stuff in
+[0:05:54] your home system, though those stuff will never reach mech at all in one round. Maybe
+[0:06:00] a ship or two will, but there are exceptions of course. The game is also about action economy,
+[0:06:08] right? Which means that the optimal play is to build as much as you can for each command
+[0:06:16] counter. Yes. In a vacuum, that's what you want to do. You want to build the largest fleet
+[0:06:22] possible with just one activation. And if you have two space stocks in two different systems,
+[0:06:30] that still holds true. You want to build as much as possible with each activation of those
+[0:06:36] space stocks and the more you can build the more bang for your buck you get out of the
+[0:06:41] command counter that you spend.
+[0:06:44] And I've spent so much time thinking about this in regards to Twilight Imperium 3rd edition
+[0:06:50] that I feel like even though I've played a lot of 4th edition games by now, I don't
+[0:06:55] know maybe 50 or something, I'm still a bit biased from the 3rd edition times and I won't
+[0:07:01] well too much on that. But in third edition, the carrier could carry six units, even though
+[0:07:08] not upgraded. And the dreadnought costed five instead of four. And that made the dreadnought
+[0:07:18] horrible. But it could be very valuable if you had a lot of money and you had a fleet
+[0:07:25] that you were never going to move. So for example, in defense, in defense where you
+[0:07:29] had a lot of money then the dreadnought was superb otherwise it was useless.
+[0:07:33] Yeah. And now it's the other way around. I mean the dreadnought is the bread and butter
+[0:07:39] of most fleets. Do you agree? Yeah, I don't entirely agree. I still tend to find that I
+[0:07:48] build a dreadnought primarily for defence but then I tend to play slow factions. If I
+[0:07:59] do if I am a faction with Gravity Drive or I have an easy time to get upgraded
+[0:08:06] red knots, yeah then these changes but if I do not plan on upgrading my
+[0:08:11] dreadnoughts, meaning they all limited to movement one, I primarily use them for
+[0:08:16] Defence Duty. I think it's changed a little bit with Thunder's Edge because
+[0:08:22] so much more tech is in play and new paths are open with the break
+[0:08:27] throughs and everything, but if you think about the prophecy of Kings and I think it's still valid
+[0:08:32] in some sense, then the going gravity drive and going Dreadnought 2 has been like the classical
+[0:08:39] strategy for so many factions, almost all of them in fact, that you kind of, and in the early game,
+[0:08:46] your fleets are composed of whatever you can afford, and then you want to go Dreadnought for that
+[0:08:53] ultimate push in the end game because you have a lot of money and you still don't have a lot of production capacity, but...
+[0:09:01] But I'm not convinced about this.
+[0:09:04] Is this really the best way to go about it?
+[0:09:08] Are carriers really that bad compared to dreadnoughts?
+[0:09:12] I mean, they can bring four fighters to bear, that's significant.
+[0:09:18] And they cost less still, they cost three, not four.
+[0:09:21] Yeah, I've thought a lot about that, but I mean, a Dreadnought is 4, but let's say 2 Dreadnought's, that's 8.
+[0:09:30] If you have a carrier, that's 3, and if you fill it with fighters, that's another 4, so that's 5.
+[0:09:36] So, I mean, it's the thing about it is, though, that you need 5 in production capacity to build a carrier and fill it with fighters.
+[0:09:48] 5 production capacity, that's about what you have.
+[0:09:51] Maybe you have a 3-planet system with a space stock on it.
+[0:09:55] That is true, and of course the Dreadnought has an additional benefit that is not to be disregarded,
+[0:10:03] that is often why I choose it, and that is the bombardment.
+[0:10:07] Yeah, but I mean sure, if a Dreadnought faces off against a carrier with 4 fighters,
+[0:10:14] they will basically always win. I mean, on average, what will they do? Maybe a hit every round,
+[0:10:23] that's about what, or every two rounds, and that about what the Dreadnought done and the Dreadnought
+[0:10:28] has two HP and the others have five. So yeah. But yeah, production capacity makes a large fighter force,
+[0:10:39] a tricky thing to build and personally I also like to have a few fighters
+[0:10:45] just in orbit around my space dogs at all times meaning I have less fighters to send abroad
+[0:10:52] and so it's certainly tricky and this is actually still why I like to play factions
+[0:11:01] that has more than one home planet because I do like building an additional space dog in your home
+[0:11:08] system to gain that extra production value. Yeah, I mean, that is cool. And especially
+[0:11:15] with the new Megan defense grid, where you get a ground force on each structure when
+[0:11:20] you activate the system, then that could be a lot of units.
+[0:11:26] Yeah, I honestly think four factions that have to even Hakan with the brilliant triple
+[0:11:34] system, it can be worthwhile to not build that forward deployment base but instead build
+[0:11:43] an additional space stock in your home system because it allows you to build more ships
+[0:11:49] significantly so and it gives you a significant edge in production value.
+[0:11:55] Yeah and I think if you do that you really need to go blue though still because you
+[0:12:00] need to have carrier two. Yes. So that they... You kind of do. It is true. It depends of course
+[0:12:09] on the general, on your board position and the faction you play etc. Like all you're gonna have
+[0:12:16] gravity drive and red not to. But yes, it does require that additional mobility. And like you said
+[0:12:22] earlier, if you do play a slow faction and you're not taking for speed, then you're gonna need
+[0:12:28] your forward deployment base, you're gonna need to build space stocks closer to Mac at all.
+[0:12:34] Yeah, and I guess it would be cool if you are a faction with a yellow and blue breakthrough
+[0:12:41] synergy, because then you could go blue and then get space stock too. Anyways,
+[0:12:47] yeah, space stock too is an interesting tech that I have never ever seen in play
+[0:12:53] in all my games. It's just no one has ever gone for it.
+[0:12:58] I think the reason is obvious, the yellow tech tree kind of sucks,
+[0:13:03] and compared to all the other shiny upgrades you can take,
+[0:13:06] why waste tech on that?
+[0:13:10] But hopefully it can see some new play with Tondo's Edge.
+[0:13:16] Yeah, I mean, I played a game a while ago where I was Hakan and played
+[0:13:22] with a very weird fleet composition, because I wanted to try out to see if I could maximize the
+[0:13:28] they are breakthrough, the auto factories that says that if you produce three or more ships,
+[0:13:33] you get one in fleet capacity.
+[0:13:35] And the first four rounds, I think I got up to eight tokens from that, which is pretty
+[0:13:40] wild.
+[0:13:41] But yeah, that sounds amazing, especially for a can, because they can build two space stocks
+[0:13:47] at the... so they have three space stocks in the home system.
+[0:13:50] Yeah, but no, no, no.
+[0:13:51] What I did was I spread them out.
+[0:13:53] So I had three systems with a token each and every round or at least round three or four
+[0:14:01] I built in all three of them.
+[0:14:03] Oh, I see.
+[0:14:04] I don't think I could pass off the opportunity to have three space stocks in one system with
+[0:14:08] a can.
+[0:14:09] It's just too fun.
+[0:14:10] I couldn't resist, I think.
+[0:14:11] Yeah, but I think there was a lot of fun to be made in that.
+[0:14:14] But that also meant that I had to build really weird fleets because I had to build a lot
+[0:14:21] of, I mean, to afford them, even being Hakan, I had to build a lot of very soon all my
+[0:14:28] destroyers and cruisers were built because those were what I could afford.
+[0:14:33] Yeah. Yeah. And that is, and that is actually a fourth thing to keep in mind when building
+[0:14:40] your fleets that you have a limited amount of plastic. And, yes, and factions that love
+[0:14:47] a certain unit will often run out of it. I mean, what Argent players had not wished that they had more than 8 destroyers?
+[0:14:55] Or what Soul player did not wish for more than 4 carriers?
+[0:15:00] Yeah, this is very true, not to mention Titans and the Cruises.
+[0:15:05] Absolutely.
+[0:15:07] Yeah, no, it's a hard limit and a necessary one, I think.
+[0:15:10] Because it does encourage you to diversify a bit even.
+[0:15:14] So you can have your amazing ship but you're not just building your amazing ship.
+[0:15:19] And that's important. Another thing to consider is your movement speed.
+[0:15:27] For example, playing the moat as I like to do, right? If you choose to upgrade a war sun,
+[0:15:35] which almost everyone does, though I as previously stated have some reservations about this,
+[0:15:41] but if you choose to upgrade your Warsan so that it can move three, there is nothing else that can move three, except the Closer2.
+[0:15:50] And coincidentally, if you have Warsan, you tend to also be able to get Closer2.
+[0:15:55] So for what? Interestingly, Closer2 could be an option, just so that something can accompany your Warsan.
+[0:16:04] Warzone. Yeah, I haven't thought about that. That could be a pretty formidable
+[0:16:10] strike force because typically speaking your movement 3 Warzone becomes a
+[0:16:15] movement 2 Warzone because nothing can follow it three steps. But Cruso 2 can.
+[0:16:23] That would be an interesting use over unit upgrade you seldomly would choose otherwise because
+[0:16:29] let's face it, crucial to isn't the shyness the best of the unit upgrades. And
+[0:16:35] generally speaking, would you rather build a cruiser or a destroyer?
+[0:16:40] A destroyer. Why? Two reasons, right? When I build a cruiser or destroyer, the
+[0:16:54] primary reason that I do so is because I want a fast ship. I want the fast ship
+[0:17:00] typically for claiming objectives such as being in empty space and stuff like that.
+[0:17:07] And the destroyer is simply better at that because it's cheaper. But secondarily of
+[0:17:14] course the destroyer can destroy fighters and the upgraded destroyer is really good
+[0:17:22] at destroying fighters and that is very powerful if your enemy is building
+[0:17:27] fighters. So that's why I would go for the destroyer because, but if I did not plan on upgrading it,
+[0:17:35] the equation shifts a little bit. But still, I think the destroyer is a slightly better bang
+[0:17:42] for the buck than the crew service. Yeah, I mean, it's better bang for your buck because two
+[0:17:48] destroyers are much better than having one cruiser. Exactly. And but I mean, sometimes you're sitting
+[0:17:54] there and you're building and you have one extra money floating and it will you won't have it?
+[0:18:02] Yes, yes, yes. In that case I build a cruiser. I don't hate the cruiser, not by any stretch of
+[0:18:10] the imagination. It's just that if I have to choose, I kind of prefer the destroyer.
+[0:18:17] I just think that Clusor II is not a super good upgrade, whereas the Destroyer II is a fantastic upgrade, possibly to my mind the second best unit upgrade after the Dreadnought.
+[0:18:36] I think the carrier goes above for me, but...
+[0:18:42] Oh yeah, true, true, true.
+[0:18:44] It's just the...
+[0:18:46] For movement one to movement two is just tremendous.
+[0:18:50] And the carrier also adds two in the carrying capacity.
+[0:18:54] You're right, carrier two is the best.
+[0:18:56] It's just a fantastic power-up.
+[0:19:00] It's also what it can accomplish.
+[0:19:02] I haven't tried the soul in Thunder's Edge yet, but their breakthrough is that when they build a ship with capacity,
+[0:19:10] then they can fill up that capacity and not respect production capacity.
+[0:19:17] So in a vacuum, if you're a faction without other bonuses, I think Carrier 2 is the best upgrade,
+[0:19:26] followed by Dreadnought and Destroyer.
+[0:19:30] But if you have any bonus to hit, the fighter is the better upgrade.
+[0:19:36] If you are sad, ignore for example.
+[0:19:38] Because then you go to hitting on 7th, which is insane for fighters.
+[0:19:48] So in that scenario, the fighter becomes my favorite upgrade.
+[0:19:54] I'm very seldom see Fighter II and especially I don't see Fighter II like the advanced
+### range 1200-2400s
+[0:20:00] Spider is moving around by themselves. No. It's because, again, there are better unit upgrades, typically speaking, unless you have Ardenarlu, then you will always see Fighter II, because they have a special Fighter II. But again, for the Sardakk N'orr as well, the Fighter II is a fantastic choice, fantastic. But it's a very poor choice typically for you all now.
+[0:20:30] because of the minus one.
+[0:20:32] But they need it still as damage punches.
+[0:20:35] It's just not, but it's not,
+[0:20:37] the, any other unit upgrade I would say
+[0:20:40] is probably what I would go for with your NAR.
+[0:20:43] Though of course, hitting on nimes,
+[0:20:46] which we should do with the fight upgraded fighter,
+[0:20:49] is still extremely much better than hitting on tens,
+[0:20:52] which is what they do with the,
+[0:20:54] so maybe actually they might have to get an upgrade,
+[0:20:57] to compensate for the weakness in this regard actually. So yeah I think the fighter is strong
+[0:21:05] as well but the the the the and this is why I think the except for the space dock right I think
+[0:21:13] the the cruiser is kind of the and they and of course the ground troop right I never upgrade
+[0:21:19] the ground troop and the cruiser and the and the space dock but then the cruiser because the
+[0:21:25] And the space canon has tons of utility obviously.
+[0:21:29] And I think people should consider, I mean, I said I wouldn't go into factions but I can't
+[0:21:35] help myself here, but I think people should consider the strengths and weaknesses of different
+[0:21:42] units also, not just regarding like bonuses and stuff, but also what they want to achieve
+[0:21:50] with the athletes.
+[0:21:51] So for example, like a Necro player, you just want to make a hit on something.
+[0:21:57] And how do you as cheaply as possible perform that one hit?
+[0:22:03] And maybe the same as Mahak, you want to win a combat.
+[0:22:07] And you want to win it at any cost, but you still want to win it cheaply of course.
+[0:22:14] And maybe you don't want to take a planet, so you don't need carrying capacity.
+[0:22:19] So maybe three destroyers is an amazing force because it can deal with a lot of stuff.
+[0:22:25] Yeah, this is true.
+[0:22:28] And if you're building an invasion fleet, it might be, for example, be better to build
+[0:22:34] a red knot than a carrier.
+[0:22:36] Because the bombardment hit die is much better than the hit die of a ground troop.
+[0:22:46] So depending on how many ground troops you could bring in the carrier, the dreadnought
+[0:22:51] might be a better choice.
+[0:22:52] Yeah, I haven't thought about it that way, but sure.
+[0:22:58] And yeah, of course, similar things, like how close are you to your enemy, how wind
+[0:23:06] is your path to make it all what you need for speed, right?
+[0:23:10] Of course speed is always very beneficial in trialed imperium, but your board position
+[0:23:16] will influence how big the importance becomes.
+[0:23:23] I mean a classic mistake is people who build the mega fleet in the last round and it is
+[0:23:32] never moved.
+[0:23:34] Very classic yes.
+[0:23:35] And I mean the mega fleet that you build at home that never moves, you might not regret
+[0:23:40] gets as much because it's protecting you against losing your home system.
+[0:23:43] Yeah.
+[0:23:44] But the other ones, yeah, that's hoping for something that never happens.
+[0:23:52] Yeah, but on the other hand, right?
+[0:23:54] It's not always easy to determine when the game is gonna end.
+[0:23:58] No.
+[0:23:59] And maybe you hope, but maybe you're hoping to use it for something, you're hoping it's
+[0:24:04] gonna be another round and that round never happens, right?
+[0:24:08] So it's not, I think it's quite understandable that people build mega fleets.
+[0:24:14] But of course they had they done it one round earlier, they might have won, right?
+[0:24:18] Yeah, and I mean, I recently won a game in round four where I got six points.
+[0:24:24] So people were not expecting that.
+[0:24:26] You have to build ships every round.
+[0:24:28] Yeah, and most of the time.
+[0:24:30] Yeah, and the fleets that you build on like round two and round three, those are the two
+[0:24:38] are going to be the ones that fight your major battles.
+[0:24:42] It doesn't feel like that when you're building them,
+[0:24:44] but they are.
+[0:24:46] Yes, they are.
+[0:24:49] So, and of course, the recent element
+[0:24:51] of rock, paper, sister to this, right?
+[0:24:54] Like look at what your enemy is building.
+[0:24:59] If you have identified an enemy
+[0:25:01] and think about what ships do I need to count or that?
+[0:25:05] Is he building fighters?
+[0:25:06] well, then you build destroyers.
+[0:25:09] Is he not building fighters?
+[0:25:10] Well, then you should.
+[0:25:11] Mm.
+[0:25:12] Yeah, like that.
+[0:25:15] So that's, it's not a super hard calculation,
+[0:25:17] but if you see him, she, if he's fielding a fleet of big ships,
+[0:25:23] you're gonna get more mileage out of having more damage punches,
+[0:25:27] like fighters to, to attack that.
+[0:25:29] And yeah, it's,
+[0:25:32] but I love, I kind of self-explanatory.
+[0:25:34] But I still love the design of Twilight Imperium with these four limiting factors that we have mentioned
+[0:25:41] on what you can build, because it makes it so that basically every time that I'm building in all of my games,
+[0:25:49] I have to think about what I actually want, and I will sit there and angst, and like,
+[0:25:53] should I build this or should I build that?
+[0:25:56] Yes, yes, it's building in Twilight Imperium
+[0:26:01] never becomes a chore.
+[0:26:02] It's always an interesting choice that you have to make in terms of what to build and why I find building really fun because of all those choices.
+[0:26:13] It's fun. Those choices are interesting and they are impactful.
+[0:26:18] And of course, we should talk a little bit, I think, about specific factions,
+[0:26:25] Because the whole dynamic that we've been talking about, how difficult it can be to get a hit on your enemy,
+[0:26:33] that is why ships and rules that gives you a free hit are so very powerful,
+[0:26:41] like the jinn or the exotereim of the sadaknor, those abilities that produce an auto hit, they matter a lot.
+[0:26:52] Yeah, yeah, yeah.
+[0:26:54] So that is also something.
+[0:26:56] So it can look like, oh, I have to sacrifice a hip to produce a hip.
+[0:27:00] Yeah, but that's actually pretty good in many situations.
+[0:27:06] And being able to choose the hip that you hit.
+[0:27:10] Like if the exotraim is destroyed.
+[0:27:13] That's just insane.
+[0:27:16] Yeah, yeah, yeah, it is.
+[0:27:18] The Assault Cannon is a fantastic tech because of this.
+[0:27:23] I would rather have the Assault Cannon than most unit upgrades.
+[0:27:29] If I have to choose, because it produces an auto hit.
+[0:27:34] Yeah, and before combat also, so it's an extra round.
+[0:27:37] Yes, meaning one ship less is attacking you.
+[0:27:42] It's a great tech, it's very, very powerful.
+[0:27:46] Sure, movement is king, right?
+[0:27:48] But the assault canon is, it's a great thing.
+[0:27:54] Then we have, of course, I think the factions that have special ships,
+[0:27:59] I think they speak for themselves.
+[0:28:01] Obviously, you should be building those ships.
+[0:28:05] I mean, there is no denying that, right?
+[0:28:10] Though, occasionally, for example, the Letna being perceived as a dread-not-factual, right?
+[0:28:17] That might not be true.
+[0:28:20] Let Neveshud certainly build a very, very fleet,
+[0:28:25] because they have the capacity to do so with their amazing home system.
+[0:28:29] And also the breakthrough encourages this, if I'm not mistaken.
+[0:28:33] Yeah, true.
+[0:28:35] I mean, in the Twilight's fall scenario,
+[0:28:40] where you play Mahakt Kings fighting against each other,
+[0:28:43] Then you can get access to all unit upgrades.
+[0:28:49] Then they've actually added,
+[0:28:52] because there aren't enough unit upgrades available,
+[0:28:54] they've added like faction specific unit upgrades
+[0:28:58] that doesn't exist yet.
+[0:28:59] Then let them actually get a dreadmought.
+[0:29:04] Oh, interesting.
+[0:29:05] This is also why I kind of,
+[0:29:09] this is one reason I'm so fascinated by the moat.
+[0:29:13] Because they have a unique situation when it comes to fleet composition.
+[0:29:17] Because they all of their fleet composition is about how do you support your warson.
+[0:29:24] And you can create ships where your warson is.
+[0:29:29] Due to their various special rules, you basically don't need a space dock.
+[0:29:35] But you can only create a limited amount of ships at the time around the warson.
+[0:29:40] and it's expensive, it costs a lot of command counters.
+[0:29:44] It's interesting and it's all about having that enormous gun platform and shielding it from harm.
+[0:29:52] That's how you're successful with them what?
+[0:29:55] And it's a slightly different take-on-fit composition than your normal considerations, I would say.
+[0:30:03] Yeah, or like saw where you could build a naked carrier because because with with
+[0:30:10] Chaos mapping and building before you move then you can just like add on up fighters as you go
+[0:30:16] Yeah, so that today's are certainly interesting factions where you can do things and you need to think about fleet
+[0:30:24] Composition in ways you wouldn't do otherwise and those are of course super fun to play
+[0:30:29] because of that. Though the base rules are also very compelling.
+[0:30:35] Yeah, and when I did the checking all the factions to see if there were any that did not have any special rules,
+[0:30:42] I mean, what did I find? Yeah, no mad basically has no special rules.
+[0:30:49] I mean, they have their flagship of course, but that's...
+[0:30:51] Yeah, speaking of that!
+[0:30:53] Mm-hmm. Flag ships. Should you build them?
+[0:30:57] I think that's an extra episode by itself.
+[0:31:00] Yeah, fair enough.
+[0:31:02] It depends on your flagship, I guess, right?
+[0:31:04] Right.
+[0:31:06] Warsons, then.
+[0:31:07] That would be the final question.
+[0:31:09] Do you build Warsons?
+[0:31:12] In Prophecy of Kings, very seldomly, but now with Thunder's Edge,
+[0:31:18] there's a lot of openings with the breakthroughs.
+[0:31:21] Ah, yeah.
+[0:31:23] Yeah, I know we have probably brought it up before,
+[0:31:26] but in a normal game of 10 points, typically speaking, I wouldn't go for War
+[0:31:32] Sans because I think the tech, your tech pipeline doesn't facilitate it very well.
+[0:31:40] But in 12 points, or maybe with a good, with breakthroughs and Professor King
+[0:31:45] at a Tondo Sage, this calculation might change and War Sans might become more worth it.
+[0:31:54] But I quite seldomly see myself taking War Son when I play Twilight Imperium.
+[0:32:01] Let me know there.
+[0:32:03] For again, I would rather take the salt cannon tech than the War Son tech most of the time, for example.
+[0:32:10] Depends on how much money I have, if you have a lot of money.
+[0:32:13] That is very true, yes.
+[0:32:16] If I am filthy rich, then War Son is of course the obvious thing to go for.
+[0:32:20] Yeah.
+[0:32:21] The main limitation is really that they are very, very expensive and you need to be able
+[0:32:26] to afford them.
+[0:32:32] The show is over but if you want to discuss the episode please find our channel on Discord
+[0:32:39] or if you love Radio Mecatol and want to support us please go to buymeacoffee.com.radio-mecatol.

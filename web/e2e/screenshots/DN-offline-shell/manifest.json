@@ -1,0 +1,28 @@
+{
+  "title": "Offline play: UI shell",
+  "description": "The shell for playing one human against rule bots on this device: start-screen entry, setup form, My offline games, resume progress, the offline banner that names the features that are off, and the queued-feedback state. All shots are the real app with an in-memory stand-in for the offline launcher (the wasm host is a later task), so no game board is shown.",
+  "tag": "web/e2e/screenshots/DN-offline-shell",
+  "shots": [
+    { "file": "out/1-start-screen-desktop.png", "heading": "Start screen entry", "caption": "Play offline appears under My games when the build has an offline launcher registered. Without one the button is absent." },
+    { "file": "out/1-start-screen-390x844.png", "heading": "Start screen on a phone", "caption": "The same screen at 390x844." },
+    { "file": "out/2-setup-form-desktop.png", "heading": "Setup form", "caption": "3 to 6 players, your seat (or random), your faction (or random), nickname. Every other seat is a rule bot. The Seed field is shown only in dev builds, as in the online lobby; the banner at the top already says what is not available offline." },
+    { "file": "out/2-setup-form-390x844.png", "heading": "Setup form on a phone", "caption": "One column, no horizontal scroll." },
+    { "file": "out/3-my-offline-games-desktop.png", "heading": "My offline games", "caption": "Each saved game with faction, table size, round and phase, seat, age and how long restoring takes. Resume (View for a finished game), Export a backup file, Delete." },
+    { "file": "out/3-my-offline-games-390x844.png", "heading": "My offline games on a phone", "caption": "Rows wrap; buttons keep a 44 px height." },
+    { "file": "out/4-delete-confirm-desktop.png", "heading": "Delete asks first", "caption": "Delete turns the row's buttons into a confirmation." },
+    { "file": "out/5-resume-progress-desktop.png", "heading": "Resume progress", "caption": "Replaying a saved game can take up to about 14 s. The bar shows the replayed move count and percent, says how long a long game takes, and can be cancelled." },
+    { "file": "out/5-resume-progress-390x844.png", "heading": "Resume progress on a phone", "caption": "The same at 390x844." },
+    { "file": "out/6-engine-loading.png", "heading": "Loading the engine", "caption": "While the total is unknown (engine download, new game setup) the bar is indeterminate." },
+    { "file": "out/7-unsupported-browser.png", "heading": "Browser without JSPI", "caption": "Chrome or Edge 137+ only in v1. The reason is shown, the setup form is hidden and saved games cannot be resumed." },
+    { "file": "out/8-resume-failed.png", "heading": "A save that cannot be replayed", "caption": "The error stays on the screen with the list below it, so the save can still be exported or deleted." },
+    { "file": "out/9-banner-desktop.png", "heading": "Offline banner above a game", "caption": "The strip names what is off, taken from the capability flags: map splice preview, turn redo, advisor, multiplayer. The game board itself (a later task) sits below it; this placeholder stands in for it." },
+    { "file": "out/9-banner-390x844.png", "heading": "Banner on a phone", "caption": "The strip wraps." },
+    { "file": "out/10-feedback-sheet-desktop.png", "heading": "Feedback during an offline game", "caption": "The existing feedback sheet, unchanged to the user." },
+    { "file": "out/11-feedback-queued-desktop.png", "heading": "Queued feedback", "caption": "Send does not wait for the network: the report is saved on this device with the seed, the answers and the engine hash, and goes to the server in the background. The sheet says Will be sent." },
+    { "file": "out/12-queue-chip-desktop.png", "heading": "Queue chip", "caption": "A small chip in the banner counts reports still to be sent, and offers Retry when a send failed." },
+    { "file": "out/12-queue-chip-390x844.png", "heading": "Queue chip on a phone", "caption": "The chip drops under the banner text." }
+  ],
+  "notes": [
+    { "title": "Not shown", "text": "Real game play, the real wasm launcher, IndexedDB storage and the background sender are T3 to T5. The feedback queue's states (sending, failed) are covered by unit tests; only queued is drawn here." }
+  ]
+}

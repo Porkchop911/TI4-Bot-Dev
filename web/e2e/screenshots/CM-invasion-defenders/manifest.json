@@ -1,0 +1,17 @@
+{
+  "title": "Invasion Landing Defenders",
+  "description": "While assigning ground forces to planets, each planet card in the landing tray now lists the other players' units on it: owner, ground forces by type (damaged mechs called out), PDS, and other structures such as space docks as secondary info, plus the Space Cannon Defense those units roll against forces landed there (dice, hit values from the defender's faction and researched technologies, expected hits), or that it is silenced by the invader's L4 Disruptors. Synthetic fixtures, not captured engine states. Regenerate with npm run screenshots -- CM.",
+  "tag": "web/e2e/screenshots/CM-invasion-defenders",
+  "shots": [
+    { "file": "out/1-mixed-desktop.png", "heading": "Three planets, desktop", "caption": "Moll: Hacan with 1 mech, 3 infantry, 1 PDS and a space dock; Space Cannon Defense 1 die hitting on 6. Jord has no defenders (no block). Quann: only a PDS, so no ground forces but still Space Cannon Defense." },
+    { "file": "out/1-mixed-390x844.png", "heading": "Three planets, 390x844", "caption": "Same on a phone: the defender line wraps inside the card, no horizontal scroll." },
+    { "file": "out/2-pds2-damaged-mech-desktop.png", "heading": "PDS II and a damaged mech, desktop", "caption": "The defender has PDS II researched: 2 PDS roll 2 dice hitting on 5, about 1.2 hits expected. The damaged mech is marked." },
+    { "file": "out/2-pds2-damaged-mech-390x844.png", "heading": "PDS II and a damaged mech, 390x844", "caption": "Same on a phone." },
+    { "file": "out/3-l4-silenced-desktop.png", "heading": "L4 Disruptors, desktop", "caption": "The invader owns L4 Disruptors, so the PDS is listed but Space Cannon Defense is shown as silenced (greyed)." },
+    { "file": "out/3-l4-silenced-390x844.png", "heading": "L4 Disruptors, 390x844", "caption": "Same on a phone." }
+  ],
+  "notes": [
+    { "title": "Data", "text": "Everything comes from the board view the client already has (units with a planet in board.systems[system].units) and the content catalog for unit values (resolveUnit for the owner's faction and public technologies). No engine change; nothing added to canonical() or the fingerprint." },
+    { "title": "Not modelled", "text": "Plasma Scoring's extra die, Disable, Quietus, Entropic Scars and other card or faction modifiers the engine applies when Space Cannon Defense actually fires." }
+  ]
+}

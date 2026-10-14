@@ -209,6 +209,20 @@ impl<'a> UnitType<'a> {
         self.bombard_hits_on().is_some()
     }
 
+    /// The special rule that is printed on the unit, as on its card. `None`: the unit has no
+    /// rule beyond its values and its keywords.
+    #[must_use]
+    pub fn ability_text(&self) -> Option<&str> {
+        self.record.text("ability")
+    }
+
+    /// The printed production value: "5", or "+2" for the resources of the planet plus two.
+    #[must_use]
+    pub fn production_text(&self) -> Option<String> {
+        let raw = self.record.raw("productionValue")?;
+        Some(raw.as_str().map_or_else(|| raw.to_string(), str::to_owned))
+    }
+
     #[must_use]
     pub fn planetary_shield(&self) -> bool {
         self.record.flag("planetaryShield")
@@ -300,10 +314,26 @@ const fn positive(value: Option<i64>) -> Option<i64> {
 /// Every unit type in scope, keyed by id.
 #[must_use]
 pub fn catalogue(store: &ContentStore, sources: SourceSet) -> BTreeMap<&str, UnitType<'_>> {
-    store
-        .from_sources(ContentType::Units, sources)
-        .filter_map(|r| r.id().map(|id| (id, UnitType::new(r))))
-        .collect()
+    fn build(store: &ContentStore, sources: SourceSet) -> BTreeMap<&str, UnitType<'_>> {
+        store
+            .by_id_in_sources(ContentType::Units, sources)
+            .map(|(id, r)| (id, UnitType::new(r)))
+            .collect()
+    }
+    // The engine asks for this map many times per step. For the compiled-in corpus (the one every
+    // game runs on) it is built once per source scope; a copy costs no comparisons.
+    static EMBEDDED: [std::sync::OnceLock<BTreeMap<&'static str, UnitType<'static>>>; 128] =
+        [const { std::sync::OnceLock::new() }; 128];
+    if store.is_embedded() {
+        let embedded = ContentStore::embedded();
+        if let Some(slot) = usize::try_from(sources.as_u32())
+            .ok()
+            .and_then(|bits| EMBEDDED.get(bits))
+        {
+            return slot.get_or_init(|| build(embedded, sources)).clone();
+        }
+    }
+    build(store, sources)
 }
 
 /// One unit type by id, within a source scope.

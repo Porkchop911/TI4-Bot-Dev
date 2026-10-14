@@ -1,0 +1,13 @@
+{
+  "title": "Nightly UI Fixes",
+  "description": "Two UI changes from the 2026-10-11 nightly report. Reaction windows no longer show the engine's raw ids (ability:empyrean:aetherpassage:SYSTEM_ACTIVATED:after) for faction abilities and leaders: the engine labels them with the printed name and the window, ids unchanged. The 'Prepared ... Confirm / Choose myself' bar docks at the bottom of the board column instead of covering the head of the token panel. Mocked fixtures; regenerate with npm run screenshots -- CW.",
+  "tag": "web/e2e/screenshots/CW-nightly-ui-fixes",
+  "shots": [
+    { "file": "out/1-reaction-labels-before.png", "heading": "Reaction window, before", "caption": "Option labels are the raw engine ids." },
+    { "file": "out/1-reaction-labels-after.png", "heading": "Reaction window, after", "caption": "Aetherpassage and Agent I48S with their window in words. The mocked labels are what the engine now sends (see the engine test reaction_options_get_the_printed_name_instead_of_the_raw_id)." },
+    { "file": "out/2-prepared-bar-desktop-before.png", "heading": "Prepared bar, before (desktop)", "caption": "At the top of the board column, over the panel header." },
+    { "file": "out/2-prepared-bar-desktop-after.png", "heading": "Prepared bar, after (desktop)", "caption": "Docked at the bottom of the board column." },
+    { "file": "out/2-prepared-bar-phone-before.png", "heading": "Prepared bar, before (390x844)", "caption": "Top of the screen over the decision." },
+    { "file": "out/2-prepared-bar-phone-after.png", "heading": "Prepared bar, after (390x844)", "caption": "Above the bottom buttons." }
+  ]
+}

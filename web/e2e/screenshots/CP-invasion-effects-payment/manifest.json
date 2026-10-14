@@ -1,0 +1,18 @@
+{
+  "title": "Invasion effects: planet values and a decline for builds",
+  "description": "Payments that arise inside an invasion (the custodians' six influence on the first landing on Mecatol Rex, a Dunlain Reaper's two resources, Freelancers' unit) used to show up in the invasion card as bare 'exhaust <planet> for N' buttons, without the planets' values or a running total. They now use the ordinary payment panel and map badges: resource and influence value beside every payable planet, the total staged against the cost. Building as a consequence of invasion (Freelancers, and every other single-unit production) now has a decline in the engine, and the invasion card shows it. Synthetic fixtures through a mocked server; regenerate with npm run screenshots -- CP.",
+  "tag": "web/e2e/screenshots/CP-invasion-effects-payment",
+  "shots": [
+    { "file": "out/1-custodians-offer-desktop.png", "heading": "Custodians offer", "caption": "First landing on Mecatol Rex: the engine offers to remove the custodians token for 6 influence (unchanged)." },
+    { "file": "out/2-custodians-payment-desktop.png", "heading": "Custodians payment: values per planet", "caption": "After 'remove it', the payment panel opens instead of exhaust buttons: each planet shows its resource and influence value (influence highlighted), and the button counts what is still owed." },
+    { "file": "out/3-custodians-payment-staged-desktop.png", "heading": "Custodians payment: staged", "caption": "After Auto-pay (or picking planets) the running total meets the 6 influence and Pay is enabled." },
+    { "file": "out/4-custodians-map-desktop.png", "heading": "Custodians payment on the map", "caption": "Pick on map: payable planets carry badges with both values while the invasion is still under way." },
+    { "file": "out/5-custodians-payment-390x844.png", "heading": "Custodians payment, 390x844", "caption": "Same panel on a phone, no horizontal scroll." },
+    { "file": "out/6-build-decline-desktop.png", "heading": "Build after invasion with decline", "caption": "Freelancers explored on the new planet: each unit by name and cost, plus 'Decline: build nothing' (sends the engine's new decline option)." },
+    { "file": "out/6-build-decline-390x844.png", "heading": "Build after invasion with decline, 390x844", "caption": "Same on a phone." }
+  ],
+  "notes": [
+    { "title": "Web", "text": "ChoiceRendererDispatcher no longer hands the invader's payment questions to the InvasionOverlay; the payment workflow (PaymentDrawer, PaymentBar, map payment marks) renders them. boardPresentation keeps payment mode on during invasions. Other seats still see the invasion overlay while the invader pays." },
+    { "title": "Engine", "text": "production::produce_one (Freelancers, Chaos Mapping, Minister of Industry) ends its unit question with a decline (appended last, so unit option ids and positions are unchanged); answering it builds and pays nothing. Freelancers' question is named ('Freelancers: produce one unit in <system>') and typed: subtype produce_one_unit, source Content(frln*), optional, about the system." }
+  ]
+}

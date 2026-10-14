@@ -1,0 +1,40 @@
+{
+  "title": "Community Maps",
+  "description": "The map picker with 31 community galaxy layouts for 3 to 6 players (official Learn to Play, Chart the Galaxy entries, SCPT and BSFP tournament maps, the Map Atlas and BGA balanced maps). Each card and summary shows the map's own name, and the boards are the real layouts the server builds.",
+  "tag": "web/e2e/screenshots/CO-community-maps",
+  "shots": [
+    {
+      "file": "out/1-six-balanced-spiral.png",
+      "heading": "Six players: Balanced Spiral",
+      "caption": "The host's picker for six seats. The community layouts follow the upstream templates in the strip, each titled by its own name with the author beside the system count. Standard is still marked Recommended. Balanced Spiral (Jon, Map Atlas) is chosen, and the board below is its fixed layout, with the homes on the outer ring one step off the corners."
+    },
+    {
+      "file": "out/2-five-learn-to-play.png",
+      "heading": "Five players: Learn to Play (PoK)",
+      "caption": "The official Prophecy of Kings learn-to-play layout for five. The card carries the Hyperlanes badge and the summary reads with hyperlanes. The converted hyperlane tiles (purple) fill the wedge a sixth player would have used."
+    },
+    {
+      "file": "out/3-four-outer-rim.png",
+      "heading": "Four players: Outer Rim",
+      "caption": "DaveBot777's Outer Rim for four, from the Map Atlas: a full three-ring board with no hyperlanes and the homes on the outer ring."
+    },
+    {
+      "file": "out/4-three-threes-company.png",
+      "heading": "Three players: Three's Company",
+      "caption": "A Chart the Galaxy contest entry for three. The homes sit on the second ring, and the converted B-side hyperlanes (and 91a) run between them through the inner rings. The board has 22 systems and gaps where the map string leaves no tile."
+    },
+    {
+      "file": "out/5-phone-neighbor.png",
+      "heading": "Phone, 390 px: Won't You Be My Neighbor?",
+      "caption": "On a phone the long name fits the card and the summary line. The board is the contest map with all six homes on the second ring."
+    },
+    {
+      "file": "out/6-lobby-row.png",
+      "heading": "Lobby row",
+      "caption": "Outside the picker, the lobby row names the chosen community map SCPT 2021 Final instead of its alias 6pScpt2021Final."
+    }
+  ],
+  "notes": [
+    "The pictured catalog and boards are the real server's answers, snapshotted by fetch-real.mjs into server-snapshot/; the lobby itself is routed HTTP as in J-map-picker."
+  ]
+}

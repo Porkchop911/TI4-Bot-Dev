@@ -364,10 +364,7 @@ pub fn receive(state: &mut GameState, holder: &PlayerId, note: &str) -> bool {
         return false;
     }
     state.support_holders.insert(owner, holder.clone());
-    if let Some(seat) = state.player_mut(holder) {
-        seat.victory_points = (seat.victory_points + 1).min(crate::objectives::VICTORY_TARGET);
-    }
-    state.note_vp(holder, 1, "support_for_the_throne");
+    crate::objectives::adjust_victory_points(state, holder, 1, "support_for_the_throne");
     true
 }
 

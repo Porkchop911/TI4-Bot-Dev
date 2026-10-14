@@ -1,0 +1,15 @@
+{
+  "title": "Feedback reports record who sent them",
+  "description": "The feedback sheet now says who is sending. A seated player sees 'Sending as <nickname>' and the report carries the nickname, seat position, the lobby nickname if it differs, and every seat's nickname and faction (so 'np gave me a note' can be mapped). Without a nickname (a spectator) an optional 'Your name' field appears. Mocked fixtures; the shots assert the payload. Regenerate with npm run screenshots -- CH.",
+  "tag": "web/e2e/screenshots/CH-feedback-names",
+  "shots": [
+    { "file": "out/named-phone.png", "heading": "Seated player, phone", "caption": "'Sending as Alex'. The nickname comes from the lobby roster; no name field is shown." },
+    { "file": "out/named-desktop.png", "heading": "Seated player, desktop", "caption": "Same on desktop. The privacy line now lists the name and the other players' nicknames." },
+    { "file": "out/typed-name-phone.png", "heading": "No nickname: optional name, phone", "caption": "A spectator has no nickname, so an optional 'Your name' field (44 px, 16 px text) appears; what is typed is stored as typed_name." },
+    { "file": "out/typed-name-desktop.png", "heading": "No nickname: optional name, desktop", "caption": "Same on desktop." }
+  ],
+  "notes": [
+    { "title": "Stored in the report", "text": "context.sender: nickname, position, lobby_nickname (only when the nickname this browser remembers differs), typed_name. context.players (game info ticked): seat, position, nickname, bot, faction, is_sender for every seat. Never the seat token or any credential. Old reports lack these fields and still list fine." },
+    { "title": "Lister", "text": "tools/public/list_feedback.sh and server feedback-list print 'from Alex | table: Alex* (sol), np (letnev)' under each header line." }
+  ]
+}

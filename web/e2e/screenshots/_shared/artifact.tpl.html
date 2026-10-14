@@ -1,0 +1,38 @@
+<title>{{TITLE}}</title>
+<style>
+/* Layout: one column; each screenshot is a figure with a caption, optional notes below. Dark by choice, matching the hit-assignment demo. */
+:root {
+  --bg: #0b1020;
+  --surface: #131a30;
+  --line: #2a3454;
+  --fg: #e6ebf7;
+  --muted: #9aa6c4;
+  --accent: #5cc8ff;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding-inline: 16px; padding-block: 32px 56px; }
+main { max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 32px; }
+h1 { margin: 0 0 6px; font-size: clamp(1.6rem, 4vw, 2.2rem); line-height: 1.15; text-wrap: balance; }
+h2 { margin: 0 0 12px; font-size: 1.1rem; padding-bottom: 8px; border-bottom: 1px solid var(--line); text-wrap: balance; }
+p { margin: 0 0 10px; max-width: 70ch; }
+.lede { color: var(--muted); font-size: 1.05rem; max-width: 64ch; }
+.tag { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); }
+figure { margin: 0; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+figure img { display: block; max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 8px; background: #101a33; }
+figcaption { color: var(--muted); font-size: 0.9rem; max-width: 80ch; }
+.notes { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.notes li { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; min-width: 0; }
+.notes b { display: block; color: var(--accent); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 2px; }
+code { font-family: var(--mono); font-size: 0.85em; background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; }
+</style>
+<main>
+  <header>
+    <h1>{{TITLE}}</h1>
+    <p class="lede">{{DESCRIPTION}}</p>
+    <p class="tag">{{TAG}}</p>
+  </header>
+  {{SHOTS}}
+  {{NOTES}}
+</main>

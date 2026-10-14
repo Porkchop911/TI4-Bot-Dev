@@ -1,0 +1,58 @@
+{
+  "title": "UI quick wins",
+  "description": "Ten small UI fixes from the 2026-10-07 review: header buttons no longer clipped, human stage label in the turn banner, no 'You (You)', a single 'Combat complete', a readable map summary, clearer agenda ballot, a styled undo dialog, a 12 px type floor, and an accessible galaxy map.",
+  "tag": "web/e2e/screenshots/AJ-ui-quick-wins",
+  "shots": [
+    {
+      "file": "out/1-header-1440.png",
+      "heading": "Header at 1440 px",
+      "caption": "Status bar, turn banner and the Technologies and Objectives buttons all fit. The banner reads 'Awaiting your choice (Activate system)' instead of the raw engine id activate_system."
+    },
+    {
+      "file": "out/2-header-1024.png",
+      "heading": "Header at 1024 px",
+      "caption": "The status bar wraps onto a second line; the button group does not shrink, so Objectives is no longer cut at the right edge."
+    },
+    {
+      "file": "out/3-header-760.png",
+      "heading": "Header at 760 px",
+      "caption": "On a narrow window the status text wraps further while both buttons keep their full size."
+    },
+    {
+      "file": "out/4-player-sheet.png",
+      "heading": "Own card in the player sheet",
+      "caption": "The viewer's card shows 'You' once; '(You)' is only added when the visible name is something else."
+    },
+    {
+      "file": "out/5-combat-complete.png",
+      "heading": "Finished combat",
+      "caption": "'Combat complete' appears once (the phase line). The title is just 'Space Combat · System N', the duplicate footer notice is gone, and the round is stated once in the summary."
+    },
+    {
+      "file": "out/6-map-picker.png",
+      "heading": "Map picker summary",
+      "caption": "The line under the preview reads '6 players · Standard by Community · 37 systems · no hyperlanes'. The Start preset (dev) control is only rendered in dev builds, so it appears here because the capture runs the dev server."
+    },
+    {
+      "file": "out/7-agenda-ballot.png",
+      "heading": "Agenda ballot with two planets staged",
+      "caption": "One 'Staged: +8 votes' line, a check mark and bold name on staged rows (not only the purple border), '6 votes' instead of '6 v', and one action row: Reset as a link, 'Finish without voting more' secondary, 'Cast votes' primary."
+    },
+    {
+      "file": "out/8-undo-dialog.png",
+      "heading": "Undo confirmation",
+      "caption": "Undo from the event log opens the game's own dialog, 'Undo for everyone?', with Keep playing and Undo for everyone. One dialog replaces up to two native confirms."
+    },
+    {
+      "file": "out/9-reaction-prefs.png",
+      "heading": "Reaction dialog text and checkboxes",
+      "caption": "Helper text is at least 12 px, the faint text colour now has at least 4.5:1 contrast on the dark surfaces, and the Compact card text and Pin checkboxes are 20 px with a 24 px row, with the whole label clickable."
+    }
+  ],
+  "notes": [
+    {
+      "title": "Already fine: ",
+      "text": "the dev start-preset select was already gated on import.meta.env.DEV, and the board cursor is accurate because dragging always pans. Item 10 therefore adds the group role, the 'Galaxy map' name and a pan/zoom description."
+    }
+  ]
+}

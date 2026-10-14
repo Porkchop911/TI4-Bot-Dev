@@ -1,0 +1,67 @@
+{
+  "title": "Reaction waits no longer name the seat",
+  "description": "While a reaction window waits on a seat (a player holding a playable action card), every other player and spectator now sees the same generic status 'Waiting for reactions' instead of 'Waiting for <player>', because naming the seat tells everybody who holds a card. A bluff hold sends exactly the same status, so the two stay indistinguishable. Ordinary questions (turn menu, payments, votes, secondary abilities, combat choices) still name the seat, and the asked seat itself still sees its own prompt.",
+  "tag": "web/e2e/screenshots/AP-hidden-reaction-wait",
+  "shots": [
+    {
+      "file": "out/before-1-reaction-wait-other-seat.png",
+      "heading": "Before: another seat during a reaction window",
+      "caption": "The banner named the seat the game was waiting for, which reveals that this player holds an action card that fits the window."
+    },
+    {
+      "file": "out/after-1-reaction-wait-other-seat.png",
+      "heading": "After: another seat during a reaction window",
+      "caption": "'Waiting for reactions': no seat, no stage. The capture asserts the text does not contain the holder's id."
+    },
+    {
+      "file": "out/before-2-bluff-hold-other-seat.png",
+      "heading": "Before: another seat during a bluff hold",
+      "caption": "The bluff banner named the bluffer, so the bluff pointed straight at the player trying to hide."
+    },
+    {
+      "file": "out/after-2-bluff-hold-other-seat.png",
+      "heading": "After: another seat during a bluff hold",
+      "caption": "Identical to the real reaction wait: the capture asserts the two banners have the same markup, and a Rust test asserts the same status payload is sent."
+    },
+    {
+      "file": "out/before-3-ordinary-wait.png",
+      "heading": "Before: an ordinary question",
+      "caption": "A question that is not a reaction window names the seat being waited for."
+    },
+    {
+      "file": "out/after-3-ordinary-wait.png",
+      "heading": "After: an ordinary question",
+      "caption": "Unchanged: ordinary waits (turn menu, payments, votes, secondary abilities, non-reaction combat choices) still name the seat."
+    },
+    {
+      "file": "out/before-4-reaction-wait-full-view.png",
+      "heading": "Before: full view of another seat",
+      "caption": "The whole screen of a seat that is not asked."
+    },
+    {
+      "file": "out/after-4-reaction-wait-full-view.png",
+      "heading": "After: full view of another seat",
+      "caption": "Same screen with the generic banner."
+    },
+    {
+      "file": "out/before-5-asked-seat.png",
+      "heading": "Before: the asked seat",
+      "caption": "The seat that is asked sees its own prompt status."
+    },
+    {
+      "file": "out/after-5-asked-seat.png",
+      "heading": "After: the asked seat",
+      "caption": "Unchanged: the server sends the asked seat the named status and its own pending choice."
+    }
+  ],
+  "notes": [
+    {
+      "title": "Before shots",
+      "text": "Captured on the base commit (bluff-reaction-intent-2026-10-08) with TI4_SHOT_PREFIX=before and committed as PNGs; npm run screenshots -- AP regenerates the after-* shots from the current code. The mocked status is what each commit's server sends."
+    },
+    {
+      "title": "Other leaks closed or noted",
+      "text": "The combat view no longer carries active_player / stage for other viewers during a reaction window. The public event log still records a DecisionResolved entry with the asking seat and stage 'reactions' after the fact; that is a follow-up."
+    }
+  ]
+}

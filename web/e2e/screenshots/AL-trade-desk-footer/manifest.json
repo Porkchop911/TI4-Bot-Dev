@@ -1,0 +1,19 @@
+{
+  "title": "Trade desk action bar",
+  "description": "The trade desk's sticky action bar (Offer nothing / Clear desk / Propose Deal, Accept / Refuse / Counter) now sits flush with the dialog's bottom edge, so no card or hint text shows below it. Each shot is scrolled to just short of the end of a long deal list.",
+  "tag": "web/e2e/screenshots/AL-trade-desk-footer",
+  "shots": [
+    { "file": "out/before-desktop-propose.png", "heading": "Propose, desktop 1280x720, before", "caption": "The bar stopped 2 px short of the padding, so the dialog's 24 px bottom padding stayed uncovered and card text continued below the buttons." },
+    { "file": "out/after-desktop-propose.png", "heading": "Propose, desktop 1280x720, after", "caption": "The bar is flush with the dialog's bottom edge on an opaque panel background with a top divider and shadow; content slides under it. The capture script asserts the bar's bottom equals the container's bottom and the last card ends above the bar." },
+    { "file": "out/before-phone-propose.png", "heading": "Propose, phone 390x844, before", "caption": "A strip of the Quick deals list shows under the Propose / Offer nothing / Clear desk bar." },
+    { "file": "out/after-phone-propose.png", "heading": "Propose, phone 390x844, after", "caption": "Propose on its own row, the other two below it, extra bottom padding clears the floating Players / Events buttons, and nothing peeks below the bar." },
+    { "file": "out/before-desktop-answer.png", "heading": "Answer, desktop 1280x720, before", "caption": "The answer screen's Accept / Refuse / Counter-offer bar on the base commit." },
+    { "file": "out/after-desktop-answer.png", "heading": "Answer, desktop 1280x720, after", "caption": "Same screen with the flush bar." },
+    { "file": "out/before-phone-answer.png", "heading": "Answer, phone 390x844, before", "caption": "The answer screen on a phone on the base commit." },
+    { "file": "out/after-phone-answer.png", "heading": "Answer, phone 390x844, after", "caption": "Same screen with the flush bar." }
+  ],
+  "notes": [
+    { "title": "Before shots", "text": "Captured on the base commit (unified-2026-10-08) with TI4_SHOT_PREFIX=before and committed as PNGs; npm run screenshots -- AL regenerates the after-* shots and runs the flushness assertions (propose, answer and counter prefill, desktop and phone)." },
+    { "title": "Fix", "text": "Same approach as the production drawer's footer: negative bottom and margin-bottom equal to the dialog's padding (24 px, 12 px on phones) so the sticky bar reaches the container's bottom edge." }
+  ]
+}

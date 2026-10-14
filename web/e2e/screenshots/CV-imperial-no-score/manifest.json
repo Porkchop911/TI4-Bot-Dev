@@ -1,0 +1,20 @@
+{
+  "title": "Imperial Scored Nothing",
+  "description": "In game 8261fb3f the Xxcha played Imperial in round 5 with Push Boundaries (ahead of 3 of 3 neighbours) and Unify the Colonies (6 hazardous planets) met, but Letnev had landed on Archon Ren nine minutes earlier. Rule 61.16 bars every public objective while a home planet is lost, so the engine asked nothing and only the Mecatol Rex point followed; the UI still showed both objectives as a pulsing 'Ready'. Now the Objectives dialog says why (banner, 'Met · home system lost') and playing Imperial with nothing scoreable shows a corner notice. Mocked fixtures; regenerate with npm run screenshots -- CV.",
+  "tag": "web/e2e/screenshots/CV-imperial-no-score",
+  "shots": [
+    { "file": "out/1-home-lost-desktop.png", "heading": "Objectives dialog, home planet lost (desktop)", "caption": "Amber banner: you cannot score public objectives, you do not control Archon Ren (held by Letnev's seat) in your home system (rule 61.16)." },
+    { "file": "out/1-home-lost-rows-desktop.png", "heading": "Met but blocked (desktop)", "caption": "Push Boundaries 3/2 and Unify the Colonies 6/6 read 'Met · home system lost' in amber instead of the green pulsing 'Ready'. Other seats keep their normal status." },
+    { "file": "out/1-home-lost-390x844.png", "heading": "Objectives dialog, home planet lost (390x844)", "caption": "The banner on a phone, above the matrix, without horizontal page scroll." },
+    { "file": "out/1-home-lost-rows-390x844.png", "heading": "Met but blocked (390x844)", "caption": "The viewer's column on a phone." },
+    { "file": "out/1-home-held-desktop.png", "heading": "Control: home system whole (desktop)", "caption": "With Archon Ren back, no banner and the same objectives read 'Ready (6/6)' as before." },
+    { "file": "out/2-notice-home-lost-desktop.png", "heading": "Imperial notice, home planet lost (desktop)", "caption": "Right after the viewer's 'played Imperial' entry: 'No public objective could be scored: you do not control Archon Ren (held by ...) in your home system (rule 61.16).' Amber accent, Imperial tag." },
+    { "file": "out/2-notice-home-lost-390x844.png", "heading": "Imperial notice, home planet lost (390x844)", "caption": "Same notice on a phone, inside the viewport." },
+    { "file": "out/2-notice-none-met-desktop.png", "heading": "Imperial notice, nothing met (desktop)", "caption": "Home intact but no unscored objective met: the notice lists each one's progress (Push Boundaries 1/2, Unify the Colonies 5/6)." }
+  ],
+  "notes": [
+    { "title": "Root cause (not an engine bug)", "text": "Replaying the game's 1382 decisions on the current engine: Xxcha controls 14 planets but Archon Ren is Letnev's (landed 05:26:24, Imperial played 05:35:08). counting/position progress: unify_colonies 6/6, push_boundaries 3/2 (14 vs Sol 12, Hacan 4, Letnev 11). controls_home_system = false, so objectives::scoreable_on returns [] (61.16) and imperial_primary skips the scoring question; Xxcha holds Mecatol Rex, so it gained the 1 VP (7 to 8)." },
+    { "title": "Data", "text": "The server now sends table.home_system_lost: per seat, the home planets it does not control, only for seats that therefore cannot score (engine objectives::home_planets_not_controlled, the same test as controls_home_system, so Saar's Nomadic is honoured). Display only: no rule changed; planet control is public." },
+    { "title": "When the notice shows", "text": "Only for the viewer's own Imperial, and only when it is certain from the view: a lost home planet, or every unscored revealed objective has progress and none is met. While the viewer is being asked which objective to score, nothing is shown." }
+  ]
+}

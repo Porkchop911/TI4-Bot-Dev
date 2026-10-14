@@ -1,0 +1,56 @@
+{
+  "title": "Leadership payment on the map",
+  "description": "Paying for Leadership command tokens by clicking planets on the map: ringed payable planets, a payment bar with paid against the bill, the panel's list kept in sync, and the confirm rules. Agenda influence voting is unchanged.",
+  "tag": "web/e2e/screenshots/V-leadership-map-payment",
+  "shots": [
+    {
+      "file": "out/1-panel-pay-on-map.png",
+      "heading": "Panel: Pay on the map",
+      "caption": "One token bought on the Leadership panel. Auto-pay planned Lodor; the new Pay on the map button minimises the panel so planets can be clicked. The Change payment list stays as before."
+    },
+    {
+      "file": "out/2-map-auto-pay.png",
+      "heading": "Map: Auto-pay staged",
+      "caption": "Panel minimised. Planets that can pay are ringed with their influence (Jord 2, Lodor 3, Quann 1); Lodor, Auto-pay's pick, is staged. The bar shows Paid 3 / 3 influence, Covered, and Confirm tokens and purchase is enabled. Nothing is sent yet."
+    },
+    {
+      "file": "out/3-map-nothing-selected.png",
+      "heading": "Nothing selected",
+      "caption": "Lodor clicked off: no planet is staged, Paid 0 / 3, 3 remaining, Confirm is disabled."
+    },
+    {
+      "file": "out/4-map-partial.png",
+      "heading": "Partially covered",
+      "caption": "Jord staged (2 of 3): 1 remaining, a problem line says to stage more, Confirm is disabled."
+    },
+    {
+      "file": "out/5-map-exact.png",
+      "heading": "Exactly covered",
+      "caption": "Jord and Quann (2 + 1) staged instead of Lodor: Paid 3 / 3, Covered, Confirm is enabled."
+    },
+    {
+      "file": "out/6-map-over-covered.png",
+      "heading": "Over-covered",
+      "caption": "Lodor and Jord staged (5 against 3): the bar says Overpaying by 2 and that the engine would stop asking once the bill is covered, so Confirm is disabled until one is taken out (the panel enforces the same rule)."
+    },
+    {
+      "file": "out/7-map-two-tokens-short.png",
+      "heading": "Two tokens: insufficient",
+      "caption": "Two tokens bought (bill 6, all the influence there is); Quann clicked off leaves 5 of 6: Short by 1, Confirm disabled."
+    },
+    {
+      "file": "out/8-panel-synced.png",
+      "heading": "Panel list in sync",
+      "caption": "After the map clicks, the panel is reopened: its planet list shows Jord and Quann pressed and Lodor not, the same selection, with the account line agreeing."
+    },
+    {
+      "file": "out/9-phone-exact.png",
+      "heading": "Phone width",
+      "caption": "The exactly-covered state at 390 px wide: the map with ringed planets and the bar with its tally and actions."
+    }
+  ],
+  "notes": [
+    "Fixtures are synthetic, not captured engine states.",
+    "Auto-pay's suggestion is unchanged; the map starts from it."
+  ]
+}

@@ -265,12 +265,18 @@ pub(crate) fn stage_naaz_mech_placed(
     unit: &UnitTypeId,
 ) {
     if unit.as_str() == "naaz_mech"
-        && state.player(player).is_some_and(|seat| seat.faction.as_str() == "naaz")
+        && state
+            .player(player)
+            .is_some_and(|seat| seat.faction.as_str() == "naaz")
     {
-        stage_event(state, "NAAZ_MECH_PLACED", &std::collections::BTreeMap::from([
-            ("player".to_owned(), player.to_string().into()),
-            ("system".to_owned(), system.to_string().into()),
-        ]));
+        stage_event(
+            state,
+            "NAAZ_MECH_PLACED",
+            &std::collections::BTreeMap::from([
+                ("player".to_owned(), player.to_string().into()),
+                ("system".to_owned(), system.to_string().into()),
+            ]),
+        );
     }
 }
 
@@ -1949,20 +1955,78 @@ mod bf_f3_tests {
     #[test]
     fn maximum_forbids_reinforcement_mechs_without_changing_the_box_count() {
         let content = ContentStore::embedded();
-        let mut state = crate::fixtures::seated_game(&[("a", "naaz"), ("b", "sol")], ti4_model::content_types::DEFAULT);
+        let mut state = crate::fixtures::seated_game(
+            &[("a", "naaz"), ("b", "sol")],
+            ti4_model::content_types::DEFAULT,
+        );
         let a = PlayerId::new("a");
         let b = PlayerId::new("b");
         let (system, planet) = crate::fixtures::a_placed_planet();
         crate::fixtures::put_on_planet(&mut state, &system, &planet, "naaz_voltron", &a, 1);
         let mech = UnitTypeId::new("naaz_mech");
-        assert!(remaining(&state, content, ti4_model::content_types::DEFAULT, &a, &mech) > 0);
-        assert_eq!(allowed(&state, content, ti4_model::content_types::DEFAULT, &a, &mech, 1), 0);
-        assert_eq!(allowed(&state, content, ti4_model::content_types::DEFAULT, &a, &UnitTypeId::new("mech"), 1), 0);
-        assert_eq!(allowed(&state, content, ti4_model::content_types::DEFAULT, &b, &UnitTypeId::new("sol_mech"), 1), 1);
-        assert_eq!(allowed(&state, content, ti4_model::content_types::DEFAULT, &a, &UnitTypeId::new("infantry"), 1), 1);
-        assert!(capture_from_reinforcements(&mut state, content, ti4_model::content_types::DEFAULT, &b, &a, &mech),
-            "capture consumes box plastic without placing or producing a mech");
-
+        assert!(
+            remaining(
+                &state,
+                content,
+                ti4_model::content_types::DEFAULT,
+                &a,
+                &mech
+            ) > 0
+        );
+        assert_eq!(
+            allowed(
+                &state,
+                content,
+                ti4_model::content_types::DEFAULT,
+                &a,
+                &mech,
+                1
+            ),
+            0
+        );
+        assert_eq!(
+            allowed(
+                &state,
+                content,
+                ti4_model::content_types::DEFAULT,
+                &a,
+                &UnitTypeId::new("mech"),
+                1
+            ),
+            0
+        );
+        assert_eq!(
+            allowed(
+                &state,
+                content,
+                ti4_model::content_types::DEFAULT,
+                &b,
+                &UnitTypeId::new("sol_mech"),
+                1
+            ),
+            1
+        );
+        assert_eq!(
+            allowed(
+                &state,
+                content,
+                ti4_model::content_types::DEFAULT,
+                &a,
+                &UnitTypeId::new("infantry"),
+                1
+            ),
+            1
+        );
+        assert!(
+            capture_from_reinforcements(
+                &mut state,
+                content,
+                ti4_model::content_types::DEFAULT,
+                &b,
+                &a,
+                &mech
+            ),
+            "capture consumes box plastic without placing or producing a mech"
+        );
     }
-
 }

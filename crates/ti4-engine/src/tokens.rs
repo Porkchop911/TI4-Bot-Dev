@@ -129,6 +129,18 @@ impl TokenGain {
         self.pending.last()
     }
 
+    /// How many tokens the next player still has to place in this window, this one included.
+    #[must_use]
+    pub fn remaining_for_next_player(&self) -> usize {
+        self.next_player().map_or(0, |next| {
+            self.pending
+                .iter()
+                .rev()
+                .take_while(|player| *player == next)
+                .count()
+        })
+    }
+
     /// Every token placed so far, in resolution order.
     #[must_use]
     pub fn placed(&self) -> &[TokenPlacement] {
@@ -185,6 +197,38 @@ impl TokenGain {
             pool,
         });
         Ok(pool)
+    }
+}
+
+/// Display-only facts for a command-token decision (see [`Choice::details`]): the pools as they
+/// stand now, the tokens still in reinforcements, and what the decision hands out or moves.
+///
+/// `mode` is `"buy"` (nothing free to place; the decision is Leadership's influence purchase),
+/// `"gain"` (with `tokens_to_place` tokens still to place, this one included) or
+/// `"redistribute"` (with the total held).
+#[must_use]
+pub fn with_pool_details(
+    choice: Choice,
+    state: &GameState,
+    mode: &str,
+    tokens_to_place: Option<usize>,
+) -> Choice {
+    let (tactic, fleet, strategic) = state.player(&choice.player).map_or((0, 0, 0), |seat| {
+        (seat.tactic_tokens, seat.fleet_tokens, seat.strategic_tokens)
+    });
+    let reinforcements = state.tokens_in_reinforcements(&choice.player);
+    let choice = choice
+        .detailed("kind", "command_tokens")
+        .detailed("mode", mode)
+        .detailed(
+            "pools",
+            serde_json::json!({ "tactic": tactic, "fleet": fleet, "strategic": strategic }),
+        )
+        .detailed("reinforcements", reinforcements);
+    match (mode, tokens_to_place) {
+        ("gain" | "buy", Some(count)) => choice.detailed("tokens_to_place", count),
+        ("redistribute" | "restack", _) => choice.detailed("total", tactic + fleet + strategic),
+        _ => choice,
     }
 }
 
@@ -483,7 +527,7 @@ pub fn wormhole_generator_destinations(
     let types = ti4_content::units::catalogue(content, sources);
     let homes = ti4_content::galaxy::home_systems(content, sources);
     let mut systems = Vec::new();
-    for id in galaxy.system_ids() {
+    for id in galaxy.system_ids_holding_things() {
         let here = state.board.get(&SystemId::new(id));
         let controls = here.is_some_and(|system| system.controls_a_planet(player));
         let others_ships = here.is_some_and(|system| {
@@ -535,6 +579,70 @@ mod tests {
         // Two tokens each, player a first: a, a, b, b.
         assert_eq!(window.next_player(), Some(&PlayerId::new("a")));
         assert_eq!(window.pending.len(), 4);
+    }
+
+    #[test]
+    fn the_window_says_how_many_tokens_the_next_player_still_places() {
+        let (mut state, players) = game();
+        let mut window = TokenGain::new(&players, 2);
+        // a, a, b, b: two for a, then two for b.
+        assert_eq!(window.remaining_for_next_player(), 2);
+        window
+            .resolve(&mut state, pick(&window, "tactic_tokens"))
+            .unwrap();
+        assert_eq!(window.remaining_for_next_player(), 1);
+        window
+            .resolve(&mut state, pick(&window, "tactic_tokens"))
+            .unwrap();
+        assert_eq!(window.next_player(), Some(&players[1]));
+        assert_eq!(window.remaining_for_next_player(), 2);
+    }
+
+    #[test]
+    fn a_gain_decision_carries_the_pools_the_reinforcements_and_the_count() {
+        let (mut state, players) = game();
+        {
+            let seat = state.player_mut(&players[0]).unwrap();
+            seat.tactic_tokens = 3;
+            seat.fleet_tokens = 4;
+            seat.strategic_tokens = 2;
+        }
+        let window = TokenGain::new(&players[..1], 2);
+        let choice = with_pool_details(window.pending_choice().unwrap(), &state, "gain", Some(2));
+        assert_eq!(choice.details["kind"], "command_tokens");
+        assert_eq!(choice.details["mode"], "gain");
+        assert_eq!(choice.details["tokens_to_place"], 2);
+        assert_eq!(choice.details["pools"]["tactic"], 3);
+        assert_eq!(choice.details["pools"]["fleet"], 4);
+        assert_eq!(choice.details["pools"]["strategic"], 2);
+        assert_eq!(
+            choice.details["reinforcements"],
+            state.tokens_in_reinforcements(&players[0])
+        );
+        assert!(choice.details.get("total").is_none());
+    }
+
+    #[test]
+    fn a_redistribution_decision_carries_the_pools_and_the_total_held() {
+        let (mut state, players) = game();
+        {
+            let seat = state.player_mut(&players[0]).unwrap();
+            seat.tactic_tokens = 3;
+            seat.fleet_tokens = 4;
+            seat.strategic_tokens = 2;
+        }
+        let window = TokenRedistribution::new(players[0].clone());
+        let choice = with_pool_details(
+            window.pending_choice(&state).unwrap(),
+            &state,
+            "redistribute",
+            None,
+        );
+        assert_eq!(choice.details["mode"], "redistribute");
+        assert_eq!(choice.details["total"], 9);
+        assert!(choice.details.get("tokens_to_place").is_none());
+        // The offered arrangements are unchanged by the details.
+        assert_eq!(choice.options.len(), distribution_options(9).len());
     }
 
     #[test]

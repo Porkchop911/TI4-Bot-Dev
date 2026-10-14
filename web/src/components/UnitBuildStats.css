@@ -1,0 +1,308 @@
+/* Inline unit numbers on a build option (UnitBuildStats) and the rows that carry them. */
+.unit-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--color-text-strong);
+}
+.unit-stats__item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  white-space: nowrap;
+}
+.unit-stats__label {
+  color: var(--color-text-muted);
+}
+.unit-stats__item strong {
+  font-weight: 700;
+  color: var(--color-text);
+}
+.unit-stats__item--cost strong {
+  color: var(--color-warning);
+}
+.unit-stats__was {
+  color: var(--color-text-muted);
+}
+.unit-stats__chip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--color-accent-strong);
+  color: var(--color-accent);
+  white-space: nowrap;
+}
+
+.production-drawer__groups {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.production-drawer__group-title {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.production-drawer__group {
+  /* One column of unit cards at every width: a second column made the +/- controls hard to
+     match with their unit on a wide dialog. */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+.production-drawer .production-drawer__unit {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+}
+.production-drawer__unit-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.production-drawer .production-drawer__unit-head .production-drawer__unit-name {
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 700;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.production-drawer__unit-icon {
+  flex-shrink: 0;
+  color: var(--color-text-strong);
+}
+.production-drawer__unit[data-blocked="true"] {
+  border-style: dashed;
+  border-color: var(--color-border-muted);
+}
+.production-drawer__unit[data-blocked="true"] .production-drawer__unit-name {
+  color: var(--color-text-muted);
+}
+.production-drawer__blocked {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-warning);
+}
+/* One scroll for the whole dialog; the confirm bar stays in reach. A row that is focused or scrolled
+   into view stops above the bar (scroll-padding), and the bar's upper edge fades the rows behind it, so a
+   half-hidden row reads as "more below" instead of as a cut-off one (nightly 2026-10-08, run 30). */
+.production-drawer {
+  scroll-padding-bottom: 140px;
+}
+.production-drawer .production-drawer__footer {
+  position: sticky;
+  bottom: -20px;
+  margin-bottom: -20px;
+  padding: 10px 0 20px;
+  background: rgba(15, 23, 42, 0.98);
+  box-shadow: 0 -14px 14px -2px rgba(15, 23, 42, 0.95);
+  z-index: 1;
+}
+/* A short screen: the header, meters and settings take less room, so more unit rows show above the bar. */
+@media (max-height: 800px) {
+  .production-drawer {
+    gap: 10px;
+  }
+  .production-drawer .production-drawer__meter {
+    padding: 8px 14px;
+  }
+}
+/* The floating Players/Events buttons sit over the bottom of a phone-width dialog. */
+@media (max-width: 720px) {
+  .production-drawer .production-drawer__footer {
+    padding-bottom: 64px;
+  }
+}
+/* The Amalgamation exchange: the same unit bought by returning a captured model. */
+.production-drawer__unit[data-exchange="true"] {
+  border-color: var(--color-accent, var(--color-border-muted));
+}
+.production-drawer__exchange-tag {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.production-drawer__exchange-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+/* The total of everything staged, in the footer so it is on screen while units are added. */
+.production-total {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  font-size: 12px;
+}
+.production-total__sum {
+  font-size: 14px;
+  color: var(--color-text);
+}
+.production-total__lines {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--color-text-muted);
+}
+.production-total__cost {
+  margin-left: 4px;
+  font-weight: 700;
+  color: var(--color-warning);
+}
+.production-total__discount .production-total__cost {
+  color: var(--color-success);
+}
+.production-total__avail {
+  color: var(--color-text-strong);
+}
+
+/* Phone (portrait, landscape and "desktop site" through the compact-layout plugin): one scrolling
+   column of 44 px rows; the payment lists are not a second scroller inside the dialog. */
+@media (max-width: 720px), (max-height: 500px) {
+  .production-drawer__group,
+  .production-drawer__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .production-drawer .production-drawer__footer {
+    background: #0f172a;
+    gap: 6px;
+  }
+  .production-drawer .production-drawer__footer .button {
+    flex: 1 1 140px;
+    min-height: 44px;
+  }
+  .production-drawer .production-drawer__setting {
+    flex: 1 1 100%;
+    min-height: 32px;
+  }
+  /* The total above already says how the builds are paid; the long note would fill the sticky bar. */
+  .production-drawer [data-testid="production-queue-note"] {
+    display: none;
+  }
+  .production-drawer__unit .button--icon {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .payment-drawer__list,
+  .decision-modal .payment-drawer__list {
+    display: flex;
+    flex-direction: column;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  .payment-drawer__planet {
+    min-height: 44px;
+  }
+  .payment-drawer__footer {
+    flex-wrap: wrap;
+    justify-content: stretch;
+  }
+  .payment-drawer__footer .button {
+    flex: 1 1 140px;
+    min-height: 44px;
+  }
+}
+/* Portrait: the payment buttons stack and Pay stays in reach at the bottom of the dialog. */
+@media (max-width: 720px) {
+  .production-drawer .production-drawer__footer .button {
+    flex: 1 1 100%;
+  }
+  .payment-drawer__footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    background: var(--color-surface);
+  }
+  .payment-drawer__footer .button {
+    flex: 1 1 100%;
+  }
+}
+
+/* Production dialog: the resource budget split into planets and trade goods, and where the trade
+   goods came from. */
+.production-drawer__split {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+.production-drawer__split strong {
+  color: var(--color-text-strong);
+}
+.trade-good-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+p.trade-good-sources {
+  margin: 4px 0 0;
+}
+.trade-good-sources__row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.trade-good-sources__delta {
+  min-width: 2.2em;
+  color: var(--color-warning);
+}
+.trade-good-sources__row[data-gain="true"] .trade-good-sources__delta {
+  color: var(--color-success);
+}
+.trade-good-sources__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* One-unit production: why the other units are missing from the list. */
+.not-offered {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+.not-offered__title {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.not-offered__list {
+  margin: 4px 0 0;
+  padding-left: 16px;
+}
+.not-offered__list strong {
+  color: var(--color-text-strong);
+  text-transform: capitalize;
+}

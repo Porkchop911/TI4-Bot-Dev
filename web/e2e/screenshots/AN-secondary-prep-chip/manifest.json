@@ -1,0 +1,147 @@
+{
+  "title": "Secondary prep chip position",
+  "description": "The 'Prepare your secondary' chip and prepare banner, before and after anchoring them in the board's own toolbar strip and board column, at 1280x720, 1440x900, 1024x768 and 390x844.",
+  "tag": "web/e2e/screenshots/AN-secondary-prep-chip",
+  "shots": [
+    {
+      "file": "out/before-1280x720-chip.png",
+      "heading": "Waiting: the Prepare chip at 1280x720, before",
+      "caption": "Base commit: the chip is positioned from the viewport-relative toolbar bottom inside a container that starts at the top of the app, so it lands header-height too low and covers the top tile row (on a phone it covers the turn banner and the Technologies/Objectives row)."
+    },
+    {
+      "file": "out/after-1280x720-chip.png",
+      "heading": "Waiting: the Prepare chip at 1280x720, after",
+      "caption": "The chip is a row of the board's own toolbar strip: the map is fitted below it, so it cannot cover the toolbar, the seat legend, the header or a tile. The capture script asserts that."
+    },
+    {
+      "file": "out/before-1280x720-panel.png",
+      "heading": "Prepare panel open at 1280x720, before",
+      "caption": "Base commit: the banner is offset by the same wrong amount."
+    },
+    {
+      "file": "out/after-1280x720-panel.png",
+      "heading": "Prepare panel open at 1280x720, after",
+      "caption": "The banner floats directly below the toolbar strip, measured from the board column's own top (no viewport math); on a phone it docks at the bottom as before, above the Players/Events buttons. The strip keeps the chip's height, so the map does not jump."
+    },
+    {
+      "file": "out/before-1280x720-prepared.png",
+      "heading": "Prepared at 1280x720, before",
+      "caption": "Base commit: the Prepared chip sits at the same wrong offset, over the top tiles."
+    },
+    {
+      "file": "out/after-1280x720-prepared.png",
+      "heading": "Prepared at 1280x720, after",
+      "caption": "Same slot, with the Prepared badge and Clear prepared; asserted clear of toolbar, legend, header and top tile row."
+    },
+    {
+      "file": "out/before-1440x900-chip.png",
+      "heading": "Waiting: the Prepare chip at 1440x900, before",
+      "caption": "Base commit: the chip is positioned from the viewport-relative toolbar bottom inside a container that starts at the top of the app, so it lands header-height too low and covers the top tile row (on a phone it covers the turn banner and the Technologies/Objectives row)."
+    },
+    {
+      "file": "out/after-1440x900-chip.png",
+      "heading": "Waiting: the Prepare chip at 1440x900, after",
+      "caption": "The chip is a row of the board's own toolbar strip: the map is fitted below it, so it cannot cover the toolbar, the seat legend, the header or a tile. The capture script asserts that."
+    },
+    {
+      "file": "out/before-1440x900-panel.png",
+      "heading": "Prepare panel open at 1440x900, before",
+      "caption": "Base commit: the banner is offset by the same wrong amount."
+    },
+    {
+      "file": "out/after-1440x900-panel.png",
+      "heading": "Prepare panel open at 1440x900, after",
+      "caption": "The banner floats directly below the toolbar strip, measured from the board column's own top (no viewport math); on a phone it docks at the bottom as before, above the Players/Events buttons. The strip keeps the chip's height, so the map does not jump."
+    },
+    {
+      "file": "out/before-1440x900-prepared.png",
+      "heading": "Prepared at 1440x900, before",
+      "caption": "Base commit: the Prepared chip sits at the same wrong offset, over the top tiles."
+    },
+    {
+      "file": "out/after-1440x900-prepared.png",
+      "heading": "Prepared at 1440x900, after",
+      "caption": "Same slot, with the Prepared badge and Clear prepared; asserted clear of toolbar, legend, header and top tile row."
+    },
+    {
+      "file": "out/before-1024x768-chip.png",
+      "heading": "Waiting: the Prepare chip at 1024x768, before",
+      "caption": "Base commit: the chip is positioned from the viewport-relative toolbar bottom inside a container that starts at the top of the app, so it lands header-height too low and covers the top tile row (on a phone it covers the turn banner and the Technologies/Objectives row)."
+    },
+    {
+      "file": "out/after-1024x768-chip.png",
+      "heading": "Waiting: the Prepare chip at 1024x768, after",
+      "caption": "The chip is a row of the board's own toolbar strip: the map is fitted below it, so it cannot cover the toolbar, the seat legend, the header or a tile. The capture script asserts that."
+    },
+    {
+      "file": "out/before-1024x768-panel.png",
+      "heading": "Prepare panel open at 1024x768, before",
+      "caption": "Base commit: the banner is offset by the same wrong amount."
+    },
+    {
+      "file": "out/after-1024x768-panel.png",
+      "heading": "Prepare panel open at 1024x768, after",
+      "caption": "The banner floats directly below the toolbar strip, measured from the board column's own top (no viewport math); on a phone it docks at the bottom as before, above the Players/Events buttons. The strip keeps the chip's height, so the map does not jump."
+    },
+    {
+      "file": "out/before-1024x768-prepared.png",
+      "heading": "Prepared at 1024x768, before",
+      "caption": "Base commit: the Prepared chip sits at the same wrong offset, over the top tiles."
+    },
+    {
+      "file": "out/after-1024x768-prepared.png",
+      "heading": "Prepared at 1024x768, after",
+      "caption": "Same slot, with the Prepared badge and Clear prepared; asserted clear of toolbar, legend, header and top tile row."
+    },
+    {
+      "file": "out/before-390x844-chip.png",
+      "heading": "Waiting: the Prepare chip at 390x844, before",
+      "caption": "Base commit: the chip is positioned from the viewport-relative toolbar bottom inside a container that starts at the top of the app, so it lands header-height too low and covers the top tile row (on a phone it covers the turn banner and the Technologies/Objectives row)."
+    },
+    {
+      "file": "out/after-390x844-chip.png",
+      "heading": "Waiting: the Prepare chip at 390x844, after",
+      "caption": "The chip is a row of the board's own toolbar strip: the map is fitted below it, so it cannot cover the toolbar, the seat legend, the header or a tile. The capture script asserts that."
+    },
+    {
+      "file": "out/before-390x844-panel.png",
+      "heading": "Prepare panel open at 390x844, before",
+      "caption": "Base commit: the banner is offset by the same wrong amount."
+    },
+    {
+      "file": "out/after-390x844-panel.png",
+      "heading": "Prepare panel open at 390x844, after",
+      "caption": "The banner floats directly below the toolbar strip, measured from the board column's own top (no viewport math); on a phone it docks at the bottom as before, above the Players/Events buttons. The strip keeps the chip's height, so the map does not jump."
+    },
+    {
+      "file": "out/before-390x844-prepared.png",
+      "heading": "Prepared at 390x844, before",
+      "caption": "Base commit: the Prepared chip sits at the same wrong offset, over the top tiles."
+    },
+    {
+      "file": "out/after-390x844-prepared.png",
+      "heading": "Prepared at 390x844, after",
+      "caption": "Same slot, with the Prepared badge and Clear prepared; asserted clear of toolbar, legend, header and top tile row."
+    },
+    {
+      "file": "out/before-tall-header.png",
+      "heading": "Tall app header (140 px), before",
+      "caption": "Base commit with a 140 px header: the chip sits 140 px too low, well into the map."
+    },
+    {
+      "file": "out/after-tall-header.png",
+      "heading": "Tall app header (140 px), after",
+      "caption": "The same header: the chip stays in the toolbar strip, directly under the toolbar."
+    }
+  ],
+  "notes": [
+    {
+      "title": "Before shots",
+      "text": "Captured on the base commit (unified-2026-10-08) with TI4_SHOT_PREFIX=before and committed as PNGs; npm run screenshots -- AN regenerates the after-* shots and asserts the chip is clear of the toolbar, the seat legend, the header and the top tile row."
+    },
+    {
+      "title": "Approach",
+      "text": "The chip is portaled into a slot in .board-chrome (flow item, no coordinates). The banner and bars are mounted in the board column and positioned from --board-chrome-bottom, now measured relative to that column and refreshed by a ResizeObserver on the strip and the column plus window resize."
+    }
+  ]
+}

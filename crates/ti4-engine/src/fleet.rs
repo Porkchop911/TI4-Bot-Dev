@@ -572,11 +572,19 @@ fn remove_one(
             format!("remove {}", unit.type_id),
         ));
     }
+    // Display-only: where the seat stands, so a client can say "7 ships against a fleet supply of 6".
+    let standing = standing(state, content, sources, player, system, None);
     let choice = Choice::new(
         player.clone(),
         format!("remove a unit: over {reason} in {system}"),
         options,
-    );
+    )
+    .detailed("reason", reason)
+    .detailed("system", system.to_string())
+    .detailed("fleet_charged", standing.fleet_charged)
+    .detailed("fleet_limit", standing.fleet_limit)
+    .detailed("capacity_consumed", standing.consumed)
+    .detailed("capacity_transport", standing.transport);
     let answer = table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
     let index = answer
         .id
@@ -957,6 +965,52 @@ mod tests {
         assert_eq!(
             over_supply(&state, ContentStore::embedded(), POK, &player, &system),
             0
+        );
+    }
+
+    /// The remove-a-unit question carries where the seat stands, for clients to show.
+    #[test]
+    fn the_remove_question_states_the_fleet_standing() {
+        use crate::choice::Decider;
+        struct Peek(std::sync::Arc<std::sync::Mutex<Option<Choice>>>);
+        impl Decider for Peek {
+            fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+                *self.0.lock().unwrap() = Some(choice.clone());
+                Ok(choice.options[0].clone())
+            }
+        }
+        let (mut state, system, player) = arena();
+        state.player_mut(&player).unwrap().fleet_tokens = 2;
+        put(&mut state, &system, "cruiser", &player, 3);
+        put(&mut state, &system, "destroyer", &player, 1);
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let mut table = Table::with_default(Box::new(Peek(seen.clone())));
+        enforce(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut table,
+            &player,
+            &system,
+        )
+        .unwrap();
+        let first = seen.lock().unwrap().clone().expect("asked");
+        // The first question: four ships against a pool of two.
+        assert_eq!(
+            first.details.get("reason").and_then(|v| v.as_str()),
+            Some("fleet supply")
+        );
+        assert_eq!(
+            first.details.get("fleet_limit").and_then(|v| v.as_i64()),
+            Some(2)
+        );
+        assert!(
+            first
+                .details
+                .get("fleet_charged")
+                .and_then(|v| v.as_i64())
+                .unwrap()
+                >= 3
         );
     }
 

@@ -24,9 +24,16 @@ without spending or placing a token, allows a system that already contains the p
 defers its follower window until that tactical action finishes.
 
 The printed TE Warfare card also permits command-token redistribution before and after the free
-action. The Python reference implements neither redistribution, and Rust currently matches that
-measured environment. This is an explicit rules-coverage gap; adding it to Rust alone would make
-solved-checkpoint comparison less faithful.
+action. Rust now offers the existing Warfare redistribution decision from the primary ability
+(before, ahead of the system choice) and when the free tactical action ends (after, ahead of the
+secondary window; the Winnu hero path included). It adds two decisions per TE Warfare play, so
+recorded TE decision sequences, and any golden that contains one, change. The Python reference
+still implements no redistribution, so solved-checkpoint comparison for TE Warfare is no longer
+like for like (the PoK Warfare is unchanged). The change is its own commit (593caee on
+`strategy-card-set-option-2026-10-07`) and can be dropped on its own.
+
+New games choose their strategy-card set at creation (`strategy_card_set`, default `te`; a game
+record without one means `pok`), see `crates/ti4-server/src/card_set.rs`.
 
 ## Driver order
 

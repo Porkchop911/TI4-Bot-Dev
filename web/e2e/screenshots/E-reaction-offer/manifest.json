@@ -1,0 +1,56 @@
+{
+  "title": "Reaction Offers",
+  "description": "What a player sees when the game offers a reaction: what happened, who did it, and what they can do now, shaped like the engine's real decision (context.trigger from the new DecisionTrigger).",
+  "tag": "web/e2e/screenshots/E-reaction-offer",
+  "shots": [
+    {
+      "file": "out/1-action-card-played.png",
+      "heading": "Sabotage after an action card was played",
+      "caption": "What happened names the player (faction and colour), the card (Uprising) and its full printed text, with a Shrink link. You can now says \"Before this resolves, you can play Sabotage\", with the card's printed window and text. Play Sabotage, Pass, Compact card text and Pin sit below."
+    },
+    {
+      "file": "out/2-system-activated.png",
+      "heading": "A system with your units was activated",
+      "caption": "The activated system is named with its planets, links to the map (Show on map) and notes how many of the viewer's units stand there; Decoy Operation is offered with its window (\"After another player activates a system that contains 1 or more of your structures\")."
+    },
+    {
+      "file": "out/3-ships-moved.png",
+      "heading": "Ships moved into a system",
+      "caption": "The engine's SHIP_MOVED now carries the destination and the arriving ships: \"moved ships into System 26: 2 cruisers, 1 dreadnought\", then Rescue."
+    },
+    {
+      "file": "out/4-two-cards.png",
+      "heading": "Two different cards for one window",
+      "caption": "The inner step repeats the same trigger and lists each card with its window and full text, with one Play button per card."
+    },
+    {
+      "file": "out/5-phone.png",
+      "heading": "Phone width (390 px)",
+      "caption": "One scrolling column: what happened, you can now, then Play / Pass."
+    },
+    {
+      "file": "out/6-fallback.png",
+      "heading": "No trigger data (older server)",
+      "caption": "Without a trigger the dialog says only which window opened, in words (\"A reaction window opened: after a ship is destroyed\"), never an engine identifier."
+    },
+    {
+      "file": "out/7-shrunk.png",
+      "heading": "A card shrunk to its first sentence",
+      "caption": "A player who knows Plague shrinks it: only the first sentence stays, with Show full text. The choice is remembered per card; Compact card text shrinks every card. New players see everything in full."
+    }
+  ],
+  "notes": [
+    {
+      "title": "Fixed since the first capture",
+      "text": "The three earlier gaps are fixed: the dialog names what was reacted to and who did it, the button reads \"Play Sabotage\" (built from the card name), and no engine identifier appears inside the dialog."
+    },
+    {
+      "title": "Mock artifact: the orange banner",
+      "text": "The banner above the board prints the pending subtype because this mock reuses it as the turn status stage. A real server sends \"Waiting for player\" there."
+    },
+    {
+      "title": "Remaining",
+      "text": "The per-card \"never offer again\" switch is not in the dialog yet (phase 3: it needs a server message and engine wiring), and the public waiting notice for other seats does not name the trigger yet (phase 4)."
+    }
+  ]
+}

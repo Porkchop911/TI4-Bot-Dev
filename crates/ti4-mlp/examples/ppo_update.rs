@@ -302,10 +302,6 @@ impl Decider for Replaying {
     }
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "a deterministic corpus replay needs its table"
-)]
 fn replay_advantage(
     frozen: &Rc<ti4_mlp::Actor>,
     trajectory: &Trajectory,
@@ -315,8 +311,9 @@ fn replay_advantage(
     pool: &Arc<ti4_sim::MapPool>,
     reward: &ti4_training::reward::Reward,
 ) -> Result<Vec<AdvantageDemo>, String> {
-    let handle: Rc<RefCell<Option<Rc<RefCell<Vec<ti4_mlp::bot::PpoRecord>>>>>> =
-        Rc::new(RefCell::new(None));
+    type RecordLog = Rc<RefCell<Vec<ti4_mlp::bot::PpoRecord>>>;
+    type RecordHandle = Rc<RefCell<Option<RecordLog>>>;
+    let handle: RecordHandle = Rc::new(RefCell::new(None));
     let forced = Rc::new(RefCell::new(Vec::new()));
     let broken = Rc::new(RefCell::new(None));
     let wanted_faction = trajectory.faction.clone();
@@ -1955,11 +1952,12 @@ fn main() {
         // Determinism here is not decoration: §6.3's shuffle is seeded, and a batch assembled in
         // scheduling order would make every downstream fingerprint irreproducible.
         let cursor = std::sync::atomic::AtomicUsize::new(0);
-        let harvest: Vec<(
+        type WorkerResult = (
             Vec<(usize, Result<Played, String>)>,
             ti4_mlp::perf::StageTotals,
             f64,
-        )> = locals
+        );
+        let harvest: Vec<WorkerResult> = locals
             .into_par_iter()
             .map(|(local, frozen)| {
                 let worker_started = Instant::now();

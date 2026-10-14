@@ -364,6 +364,11 @@ fn ask_ids(term: &DealTerm) -> Option<Vec<String>> {
 }
 
 /// The planner's deal, as the proposer's option ids; one "no offer" when nothing suits both.
+type DealSides = (Vec<DealTerm>, Vec<DealTerm>);
+type PlannedDeal = (VecDeque<String>, Option<DealSides>);
+type DealChoice = (Vec<String>, Vec<DealTerm>);
+type RankedDeal = (f64, Vec<String>, Vec<DealTerm>, Vec<DealTerm>);
+
 fn plan(
     selfish: bool,
     state: &GameState,
@@ -371,7 +376,7 @@ fn plan(
     galaxy: &ti4_content::galaxy::Galaxy,
     proposer: &PlayerId,
     recipient: &PlayerId,
-) -> (VecDeque<String>, Option<(Vec<DealTerm>, Vec<DealTerm>)>) {
+) -> PlannedDeal {
     let physical =
         ti4_engine::transactions::may_transact(state, content, galaxy, proposer, recipient);
     let context = ti4_engine::diplomacy::candidates::CandidateContext {
@@ -406,10 +411,10 @@ fn plan(
     let choices = |atoms: Vec<(Vec<String>, DealTerm)>| {
         std::iter::once((Vec::new(), Vec::new()))
             .chain(atoms.into_iter().map(|(ids, term)| (ids, vec![term])))
-            .collect::<Vec<(Vec<String>, Vec<DealTerm>)>>()
+            .collect::<Vec<DealChoice>>()
     };
     let (gives, takes) = (choices(gives), choices(takes));
-    let mut best: Option<(f64, Vec<String>, Vec<DealTerm>, Vec<DealTerm>)> = None;
+    let mut best: Option<RankedDeal> = None;
     for (give_ids, give) in &gives {
         for (take_ids, take) in &takes {
             if give.is_empty() && take.is_empty() {

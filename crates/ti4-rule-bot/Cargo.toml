@@ -1,0 +1,17 @@
+[package]
+name = "ti4-rule-bot"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+ti4-model = { workspace = true }
+ti4-content = { workspace = true }
+ti4-engine = { workspace = true }
+serde_json = { workspace = true }
+# No default features, as in `ti4-engine`: this crate is linked into the wasm build.
+rand = { version = "0.9", default-features = false }
+rand_chacha = { workspace = true }

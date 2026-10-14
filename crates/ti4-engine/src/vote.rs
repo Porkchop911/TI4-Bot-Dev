@@ -9,6 +9,9 @@
 
 use std::collections::BTreeMap;
 
+/// Key of the display-only `details` entry that names the agenda being voted on.
+const AGENDA_DETAIL: &str = "agenda";
+
 use ti4_content::ContentStore;
 use ti4_content::galaxy::all_planets;
 use ti4_model::content_types::{ContentType, SourceSet};
@@ -96,6 +99,32 @@ pub fn outcomes(
     // and "Elect Strategy Card" from the cards in play. Neither is modelled here, so there
     // is no candidate and the caller must discard rather than hold an empty vote.
     Vec::new()
+}
+
+/// Whether this agenda elects a planet, read off the printed `target` exactly as [`outcomes`]
+/// reads it. Only used to tell a map UI that an outcome is a planet (`payload.planet`).
+fn elects_planet(content: &ContentStore, alias: &str) -> bool {
+    let Some(record) = content.get(ContentType::Agendas, alias) else {
+        return false;
+    };
+    let target = record.text("target").unwrap_or("For/Against");
+    let head = target.split('(').next().unwrap_or(target).trim();
+    head.starts_with("Elect") && !head.contains("Player") && head.contains("Planet")
+}
+
+/// An outcome option, carrying `planet`/`system` when the agenda elects a planet.
+fn locate_outcome(
+    option: ChoiceOption,
+    planet_outcomes: bool,
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+) -> ChoiceOption {
+    if !planet_outcomes || option.id == FOR || option.id == AGAINST {
+        return option;
+    }
+    let planet = option.id.clone();
+    option.with_planet_located(state, content, sources, &planet)
 }
 
 /// Votes a card has added to this seat's total for the agenda being voted on.
@@ -442,6 +471,12 @@ impl VoteWindow {
         &self.alias
     }
 
+    /// The outcomes this agenda offered.
+    #[must_use]
+    pub fn choices(&self) -> &[String] {
+        &self.choices
+    }
+
     #[must_use]
     pub const fn is_complete(&self) -> bool {
         matches!(self.stage, Stage::Done(_))
@@ -479,9 +514,24 @@ impl VoteWindow {
         }
     }
 
-    /// The decision currently owed, or `None` once the vote is finished.
+    /// The decision currently owed, or `None` once the vote is finished. Every vote decision
+    /// carries the agenda being voted on as display-only `details.agenda` (name, type, text) so a
+    /// client can keep it on screen for the whole vote; option ids and kinds are untouched.
     #[must_use]
     pub fn pending_choice(
+        &self,
+        state: &GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+    ) -> Option<Choice> {
+        self.pending_choice_bare(state, content, sources)
+            .map(|choice| {
+                let agenda = crate::strategy_cards::agenda_details(content, &self.alias);
+                choice.detailed(AGENDA_DETAIL, agenda)
+            })
+    }
+
+    fn pending_choice_bare(
         &self,
         state: &GameState,
         content: &ContentStore,
@@ -496,13 +546,15 @@ impl VoteWindow {
                 // effect. `Ballot` lives on this window, not on `GameState`, so nothing an
                 // `Observed` builds from state alone could recover it; each option's own running
                 // tally closes that gap through the existing generic payload-number pipeline.
+                let planet_outcomes = elects_planet(content, &self.alias);
                 let mut options: Vec<ChoiceOption> = self
                     .choices
                     .iter()
                     .map(|outcome| {
                         let tally = self.ballot.counts.get(outcome).copied().unwrap_or(0);
-                        ChoiceOption::labelled(outcome, VOTE_KIND, outcome)
-                            .with("current_votes", tally)
+                        let option = ChoiceOption::labelled(outcome, VOTE_KIND, outcome)
+                            .with("current_votes", tally);
+                        locate_outcome(option, planet_outcomes, state, content, sources)
                     })
                     .collect();
                 // Genetic Recombination: a voter who must cast a vote for an outcome may back
@@ -553,13 +605,13 @@ impl VoteWindow {
                         } else {
                             format!("exhaust {planet} for {cast} votes")
                         };
-                        ChoiceOption::labelled(id, VOTE_PLANET_KIND, label).previewed(
-                            Preview::certain(vec![Delta::new(
+                        ChoiceOption::labelled(id, VOTE_PLANET_KIND, label)
+                            .with_planet_located(state, content, sources, planet.as_str())
+                            .previewed(Preview::certain(vec![Delta::new(
                                 Quantity::Votes,
                                 votes_so_far,
                                 votes_so_far + cast,
-                            )]),
-                        )
+                            )]))
                     })
                     .collect();
                 // Genetic Recombination: the first planet is not optional.
@@ -618,6 +670,15 @@ impl VoteWindow {
                         format!("spend trade goods for votes on {outcome}"),
                         options,
                     )
+                    .detailed("kind", "vote_trade_goods")
+                    .detailed(
+                        "card",
+                        crate::strategy_cards::commander_card(content, "hacancommander"),
+                    )
+                    .detailed("outcome", outcome.as_str())
+                    .detailed("votes", *votes)
+                    .detailed("goods", i64::from(goods))
+                    .detailed("votes_per_good", 2)
                     .contextualized(DecisionContext::new(
                         player.clone(),
                         DecisionSource::Content(
@@ -705,13 +766,22 @@ impl VoteWindow {
             }
             Stage::Tiebreak => {
                 let candidates = tiebreak_candidates(&self.ballot, &self.choices);
+                let planet_outcomes = elects_planet(content, &self.alias);
                 Some(
                     Choice::new(
                         state.speaker.clone(),
                         "speaker breaks the tie",
                         candidates
                             .iter()
-                            .map(|outcome| ChoiceOption::labelled(outcome, TIEBREAK_KIND, outcome))
+                            .map(|outcome| {
+                                locate_outcome(
+                                    ChoiceOption::labelled(outcome, TIEBREAK_KIND, outcome),
+                                    planet_outcomes,
+                                    state,
+                                    content,
+                                    sources,
+                                )
+                            })
                             .collect(),
                     )
                     .contextualized(DecisionContext::new(
@@ -1196,6 +1266,63 @@ mod tests {
         assert_ne!(cast_context.subtype, tiebreak_context.subtype);
     }
 
+    /// An Elect Planet agenda's outcomes (cast and tiebreak) and every planet exhausted to vote
+    /// carry `planet` + `system`; For/Against outcomes and declines do not.
+    #[test]
+    fn planet_votes_carry_planet_and_system_payloads() {
+        use crate::choice::planet_payload::{assert_locates, assert_not_a_planet, offered};
+        let content = ContentStore::embedded();
+        let (mut state, players) = game(&["a", "b"]);
+        state
+            .system_mut(&ti4_model::id::SystemId::new("26"))
+            .set_control(PlanetId::new("lodor"), players[0].clone());
+        state
+            .system_mut(&ti4_model::id::SystemId::new("28"))
+            .set_control(PlanetId::new("torkan"), players[1].clone());
+        let subtype = |choice: &Choice| choice.context.as_ref().unwrap().subtype.clone();
+
+        let ordinary = VoteWindow::new(&state, "some_agenda", for_against());
+        let cast = ordinary.pending_choice(&state, content, POK).unwrap();
+        for option in &cast.options {
+            assert_not_a_planet(option);
+        }
+
+        let elect_planet = content
+            .records(ContentType::Agendas)
+            .iter()
+            .find(|record| record.text("target") == Some("Elect Planet"))
+            .and_then(|record| record.text("alias"))
+            .expect("the corpus has an Elect Planet agenda")
+            .to_owned();
+        let choices = outcomes(&state, content, POK, &elect_planet);
+        let mut window = VoteWindow::new(&state, &elect_planet, choices);
+        let cast = window.pending_choice(&state, content, POK).unwrap();
+        assert_eq!(subtype(&cast), "cast_vote");
+        assert_locates(offered(&cast, "lodor"), "lodor", "26");
+        assert_locates(offered(&cast, "torkan"), "torkan", "28");
+        assert_not_a_planet(offered(&cast, crate::choice::DECLINE_ID));
+
+        let voter = cast.player.clone();
+        let (own, own_system) = if voter == players[0] {
+            ("lodor", "26")
+        } else {
+            ("torkan", "28")
+        };
+        window
+            .resolve(&mut state, content, POK, offered(&cast, "torkan").clone())
+            .unwrap();
+        let exhaust = window.pending_choice(&state, content, POK).unwrap();
+        assert_eq!(subtype(&exhaust), "vote_exhaust_planet");
+        assert_locates(offered(&exhaust, own), own, own_system);
+        assert_not_a_planet(offered(&exhaust, crate::choice::DECLINE_ID));
+
+        window.stage = Stage::Tiebreak;
+        let tiebreak = window.pending_choice(&state, content, POK).unwrap();
+        assert_eq!(subtype(&tiebreak), "vote_tiebreak");
+        assert_locates(offered(&tiebreak, "lodor"), "lodor", "26");
+        assert_locates(offered(&tiebreak, "torkan"), "torkan", "28");
+    }
+
     /// Give `player` a planet with influence, so they have something to vote with.
     fn give_voting_planet(state: &mut GameState, player: &PlayerId) -> PlanetId {
         let catalogue = all_planets(ContentStore::embedded(), POK);
@@ -1441,6 +1568,13 @@ mod tests {
             .expect("Gila asks how many trade goods");
         let ids: Vec<&str> = choice.options.iter().map(|o| o.id.as_str()).collect();
         assert_eq!(ids, ["spend|1", "spend|2", "spend|3", "decline"]);
+        // Display only: what the panel needs to show votes before and after.
+        assert_eq!(choice.details["kind"], "vote_trade_goods");
+        assert_eq!(choice.details["outcome"], FOR);
+        assert_eq!(choice.details["votes"], first_influence);
+        assert_eq!(choice.details["goods"], 3);
+        assert_eq!(choice.details["votes_per_good"], 2);
+        assert_eq!(choice.details["card"]["title"], "Gila the Silvertongue");
         let two = choice.options[1].clone();
         window.resolve(&mut state, content, POK, two).unwrap();
         assert_eq!(state.player(&players[0]).unwrap().trade_goods, 1);

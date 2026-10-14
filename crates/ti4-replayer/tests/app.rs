@@ -182,6 +182,7 @@ fn option(id: &str, kind: &str, label: &str) -> ChoiceOption {
         label: label.to_owned(),
         payload: BTreeMap::new(),
         preview: None,
+        auto_resolved: false,
     }
 }
 
@@ -207,6 +208,7 @@ fn inputs() -> ReplayInputs {
         temperature: 0.5,
         diplomacy: false,
         lineup: None,
+        rule_seats: Vec::new(),
     }
 }
 
@@ -735,6 +737,7 @@ fn the_replayer_never_reads_or_writes_the_reviewers_settings() {
             lineup: ["sol", "ghost", "keleresx", "argent", "naalu", "crimson"]
                 .map(str::to_owned)
                 .to_vec(),
+            rule_seats: Vec::new(),
         },
         ..ReplaySettings::default()
     };

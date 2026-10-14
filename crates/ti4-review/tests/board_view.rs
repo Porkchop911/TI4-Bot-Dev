@@ -52,6 +52,7 @@ fn started_session() -> ReviewSession {
         temperature: 0.5,
         diplomacy: false,
         lineup: None,
+        rule_seats: Vec::new(),
     };
     let review = LiveReview::start(&config).expect("the committed example inputs start a review");
     review.session
@@ -1043,6 +1044,7 @@ fn a_creuss_table_shows_its_home_beside_the_gate() {
                 .map(str::to_owned)
                 .to_vec(),
         ),
+        rule_seats: Vec::new(),
     };
     let review = LiveReview::start(&config).expect("a Creuss table starts");
     let session = &review.session;

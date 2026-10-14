@@ -1,0 +1,1480 @@
+### range 0-1200s
+[0:00:04] This is Space Cats Peace Turtles, the unofficial podcast for fantasy flights Twilight Imperium, Episode 226, Round One, Negothia Thorns, Music by Ben Prunty, featuring Matt Martin and Hunter Donaldson.
+[0:00:21] Oh, it's so good to have you in the same room as me, Hunter. Oh, welcome back to Arkansas. You're here. Here we are in the same room again as it was meant to be.
+[0:00:52] Uh huh.
+[0:00:54] So what happened was I got COVID, okay?
+[0:00:57] So I have the coronavirus and let's just open it up with,
+[0:01:02] I'm sure you hear, everyone hears enough about COVID everyday.
+[0:01:05] But maybe you don't.
+[0:01:07] And I just wanna put it out there that you can get that.
+[0:01:10] So try not to.
+[0:01:12] And you should get about not having it,
+[0:01:16] especially the week you get home for the holidays.
+[0:01:17] Listen, if you listen to the show,
+[0:01:19] you probably think that I am somewhere between
+[0:01:23] sort of stupid and quite smart, okay?
+[0:01:26] You probably think I'm somewhere in that range
+[0:01:29] of just barely stupid or actually a really smart guy.
+[0:01:32] And I'm telling you, wherever I fall in that spectrum
+[0:01:36] for you, you know, if it's quite stupid,
+[0:01:38] then whatever, just ignore me.
+[0:01:40] But if you think I'm one of those people that thinks
+[0:01:42] that I'm quite smart, I'm telling you,
+[0:01:44] you can get that thing, okay?
+[0:01:47] It can happen to you.
+[0:01:49] I thought I was too smart for it.
+[0:01:51] I was like, you know, they told me what to do.
+[0:01:54] I would do it.
+[0:01:55] I had no issues.
+[0:01:56] I love being told what to do.
+[0:01:58] Are you serious?
+[0:01:59] Some guy in a lab coat saying like,
+[0:02:01] all right, you got to do this and this,
+[0:02:02] and then you won't get it.
+[0:02:03] Easy peasy for me.
+[0:02:05] I realize there's a lot of people
+[0:02:06] that don't feel the same way.
+[0:02:07] They need to be told several different ways and whatever.
+[0:02:10] But I'm not, I didn't think I was one of those people
+[0:02:13] and I still got it.
+[0:02:14] And it's ruined by Christmas.
+[0:02:16] My Christmas right now.
+[0:02:17] This is, welcome to Hunter's Complain Corner.
+[0:02:20] Right now, I am in this empty house in Arkansas,
+[0:02:25] where I will be, or I don't know, the next,
+[0:02:28] I think the next week, I think the next seven days,
+[0:02:31] I will be here.
+[0:02:32] And that's through Christmas.
+[0:02:34] So hey, sorry the episode was late.
+[0:02:36] So, sorry about that.
+[0:02:39] Sorry, sorry I guess.
+[0:02:41] Sorry I guess.
+[0:02:42] The holiday spectacular might be kind of weird too.
+[0:02:44] I don't know, where it's on the fly.
+[0:02:46] Everything's happening on the fly.
+[0:02:47] we're trying to figure it all out.
+[0:02:48] So either-
+[0:02:49] My life will not stop melting down.
+[0:02:52] It will not stop doing that.
+[0:02:57] And I don't understand why it is.
+[0:02:59] Well, today at the very least, Hunter,
+[0:03:02] we have a Galactic Council episode,
+[0:03:05] so we don't have to put in a ton of legwork.
+[0:03:08] The Galactic Council gives us episodes
+[0:03:10] that you and I don't have to prep,
+[0:03:12] which for the holidays, boy, thank you.
+[0:03:14] Thanks, Galactic, I appreciate that.
+[0:03:15] Appreciate that.
+[0:03:16] and this month's Galactic Council episode,
+[0:03:20] beating out the Sederial Confluence Coalition
+[0:03:25] was round one negotiations.
+[0:03:28] So we are gonna talk through that today
+[0:03:31] and all of the people-
+[0:03:32] Wait, so hold up, hold up.
+[0:03:33] Yeah, yeah, yeah.
+[0:03:34] So the Galactic, so government fails.
+[0:03:36] Government fails.
+[0:03:37] Because we're telling me.
+[0:03:37] Well, I don't know, did it?
+[0:03:39] Or is that just part of government?
+[0:03:40] Well, no, so, well, here's what happened.
+[0:03:43] So a month ago in the Galactic Council,
+[0:03:46] which is sort of like a Congress,
+[0:03:48] they made a deal on this one bill, okay?
+[0:03:51] And they were like, we're gonna pass this bill,
+[0:03:52] but on the condition that the second bill gets passed,
+[0:03:58] then we get to second bill time.
+[0:04:00] And somebody's like, well, is this good for West Virginia?
+[0:04:03] And then no, scenario compliments is what happened.
+[0:04:06] Yeah, that's exactly what happened.
+[0:04:08] And I can't promise we'll be putting
+[0:04:10] to the real confluence back in a future galactic council poll.
+[0:04:13] I don't know.
+[0:04:13] Because West Virginia hates it.
+[0:04:15] West Virginia really hates the real confluence.
+[0:04:18] And they prefer just the boring nothing option.
+[0:04:21] Just kidding.
+[0:04:22] I'm actually kind of excited to do a round one
+[0:04:24] negotiations episode because it's a topic we've never
+[0:04:28] like honed in on.
+[0:04:30] And we talk about round ones a lot,
+[0:04:32] but we haven't really ever kind of laid out.
+[0:04:35] Like what does it mean to like be bartering for this stuff
+[0:04:39] and what are you bartering for and why are you bartering?
+[0:04:42] And like what's, you know, round one is significantly
+[0:04:45] more complicated than just like take a couple systems
+[0:04:48] and play your strategy card.
+[0:04:50] Yeah, sure.
+[0:04:51] Especially, I feel like in the TTS meta,
+[0:04:53] people start like making game long promises round one.
+[0:04:57] Yeah, also I think a goal of this episode should be
+[0:05:00] to maybe, I feel like there's a lot of stuff
+[0:05:03] that comes up with newer players where they'll be like,
+[0:05:07] Like, simple stuff that the community has kind of already
+[0:05:11] decided what the value of certain things are.
+[0:05:15] So you can just get through it really easy.
+[0:05:16] We can cover really basic stuff like that too.
+[0:05:18] And I feel like it's kind of under-talked about in the show.
+[0:05:21] Definitely.
+[0:05:22] Or we'll just kind of assume like, I see it.
+[0:05:24] Everyone's following me.
+[0:05:25] I'll see someone be wanting to have x minus 1 re-explained.
+[0:05:29] Like, what is x minus 1?
+[0:05:31] So we could take an opportunity to explain that
+[0:05:34] and also kind of get into the minutiae of it.
+[0:05:36] Yeah.
+[0:05:37] So well let's start with a baseline, Hunter, in round one as any faction, as anything, what
+[0:05:45] are like your primary goals?
+[0:05:48] And it can be like a checklist or it can be like a well number one this, but then like
+[0:05:51] number two this and then maybe number three or whatever, however you think about it.
+[0:05:55] What are the main things you're thinking about round one?
+[0:05:57] Okay.
+[0:05:58] So round one, I would like to, I mean, if we're, if we're going to start this general, then
+[0:06:02] around what I would like to score,
+[0:06:04] or I would like to get the custodians.
+[0:06:07] Gotcha.
+[0:06:08] What does that have to do with negotiations?
+[0:06:09] Well, custodians, it could have a lot to do with it.
+[0:06:12] And depending on the objective,
+[0:06:14] it could have a lot to do with it as well.
+[0:06:16] Right underneath that is fill out the slice.
+[0:06:20] Yeah.
+[0:06:20] And then underneath that would be trade
+[0:06:23] with neighbors if possible.
+[0:06:25] Yeah, guess I might hear whatever.
+[0:06:27] Yeah, yeah, I would kind of,
+[0:06:29] the baseline for me is generally that idea
+[0:06:32] of like, and this isn't as static anymore as maybe it used to be,
+[0:06:37] but it's like I would like to take two systems, ideally.
+[0:06:41] I'd like to get tech, but I don't have refaction has that as an option.
+[0:06:47] But I like the idea of scoring or setting up for custodians is absolutely
+[0:06:51] number one and should be number one for anybody.
+[0:06:56] And you can very quickly look at your position and look at everything going on
+[0:06:59] and go, oh, scoring or custodians is out.
+[0:07:02] So now I'll move on to the other goals,
+[0:07:05] but every once in a while you get objectives where it's like,
+[0:07:07] nope, that's, no, we will not be scoring that round one
+[0:07:10] and we are not in a position to get that custodians token.
+[0:07:13] If I had done a fourth priority,
+[0:07:15] I would have included tech and plastic.
+[0:07:17] Yeah, yeah, just build up.
+[0:07:19] Just build up.
+[0:07:20] For the coming rounds.
+[0:07:22] So I do think it is more important to,
+[0:07:24] because trade can be so,
+[0:07:26] I think it has an out-weight influence on Round One
+[0:07:31] versus the rest of the game.
+[0:07:33] The trade strategy card holder has a lot of power
+[0:07:36] and the timing of trade is important
+[0:07:38] and I think when we're talking about negotiations,
+[0:07:41] timings is actually the number one thing
+[0:07:44] we're talking about with anything going on in Round One
+[0:07:47] because everybody's trying to make their money for trade.
+[0:07:50] I wanna make a net money where I can build another carrier
+[0:07:53] and get trade.
+[0:07:54] I mean, get tech.
+[0:07:55] Um, but more important than that is like, well, I need to get the money before tech pops.
+[0:08:01] And then after tech pops, like I need to, like it always has so much more to do with the sequence
+[0:08:07] of the strategy cards and getting to specific sentence systems and making specific neighbors
+[0:08:13] and all of that. So when we talk about round one negotiations, I feel like the main purpose
+[0:08:18] of all negotiations is getting things to happen in the right pecking order for your game.
+[0:08:24] and generally that means doing things in the right order
+[0:08:28] for someone else's game.
+[0:08:29] Oftentimes when it comes to getting things to happen
+[0:08:31] in the right order, your leverage points are
+[0:08:35] the timing of the strategy card that you have.
+[0:08:38] So some strategy cards don't lend a lot of weight
+[0:08:41] to this idea.
+[0:08:43] We've obviously got tech and warfare,
+[0:08:45] the two biggest ones in round one,
+[0:08:47] the timing of those can really matter a lot.
+[0:08:50] This is also I think why you see a six pick dip low pick happen more often.
+[0:08:56] It's not so much that people are picking dip low round one because they're like,
+[0:09:00] oh, I just need that raw value.
+[0:09:01] That is part of it.
+[0:09:02] But I often find when someone picks dip low,
+[0:09:05] the rest of the table sort of looks at the dip low person round one.
+[0:09:08] It is like, okay, so like, how do we get you to play this?
+[0:09:12] Yeah, exactly.
+[0:09:13] The nicest way so we can all have like a great round one.
+[0:09:16] I think if your last pick round one and you're like,
+[0:09:19] scoring is gonna be hard,
+[0:09:21] XYZ, the tech is gonna be hard,
+[0:09:23] all these things are gonna be hard.
+[0:09:25] I think Diplo is the better pick than construction
+[0:09:29] more often these days as last pick,
+[0:09:31] because you can sort of say, fine,
+[0:09:34] it looked like, and this is a situation
+[0:09:37] I'm describing kind of abstractly,
+[0:09:39] but imagine a table where like four of the players
+[0:09:41] you're looking at are gonna be able to score round one,
+[0:09:44] have a good time, one of them's gonna score
+[0:09:46] around one and get custodians.
+[0:09:48] Why not take Diplo and try and make yourself
+[0:09:52] just as rich as they are?
+[0:09:53] You know what I mean?
+[0:09:54] You're not gonna be able to exceed their wealth.
+[0:09:56] Especially now that you've taken Diplo,
+[0:09:57] you're definitely not gonna be able to.
+[0:09:59] But if you can take Diplo in a way that ensures
+[0:10:03] that you're gonna have a lot more plastic going
+[0:10:05] into round two, you're gonna get tech in a way
+[0:10:07] that you wouldn't have gotten it before.
+[0:10:09] Oftentimes people are willing to play
+[0:10:11] with you as far as timings go.
+[0:10:13] So yeah, when it comes to timing negotiation,
+[0:10:15] the thing you need to look at
+[0:10:16] is what strategy card do you have in front of you?
+[0:10:18] Another special note for that one is politics.
+[0:10:21] So politics feels like a card that has no leverage
+[0:10:24] when it comes to timing, right?
+[0:10:25] Because the secondary is rather unimportant.
+[0:10:28] The speaker token trade though,
+[0:10:30] if you are sitting next to the right person
+[0:10:32] with the right timing, you've kind of got a leverage there.
+[0:10:35] And you should always think about that.
+[0:10:37] Right.
+[0:10:38] Yeah, the dipla point is an interesting one to me too
+[0:10:40] because I feel like in strategy guides,
+[0:10:43] when we do faction specific strategy guides,
+[0:10:44] anytime Diplo gets brought up as like,
+[0:10:47] oh, actually this one could be a time
+[0:10:49] where we like Diplo or whatever.
+[0:10:51] The suggestion I always see that I really like
+[0:10:54] is start talking to the table before you even grab Diplo.
+[0:10:57] Like work that stuff out in the strategy phase.
+[0:10:59] Like, hey, I'm considering taking Diplo.
+[0:11:01] I'm not gonna do it if you all don't make it worth my while,
+[0:11:04] but like I'm not gonna be the one that gets screwed out here.
+[0:11:06] I'm the one taking Diplo.
+[0:11:08] So I can make everybody's life better if we all just make this stuff time out the correct way.
+[0:11:14] But that's the condition under which I take Diplo.
+[0:11:17] I will not take Diplo if you're going to hose me or whatever.
+[0:11:20] Yeah.
+[0:11:21] I can't imagine a newer player being a little intimidated by the idea of like
+[0:11:25] negotiating with two because it's like when you take Diplo, you're really just going to be talking to the tech player
+[0:11:31] and the player that took warfare, right?
+[0:11:32] Right.
+[0:11:33] To try and make sure that the three of you make each other happy.
+[0:11:36] Yeah.
+[0:11:36] It's a lot, that's kind of a big ask for a newer player to like negotiate with two others,
+[0:11:42] but if you were playing in like a group where you know everybody else or you feel like you
+[0:11:46] can handle that, I think the Dippalo Play is worthwhile especially in a situation similar
+[0:11:54] to what I was describing before.
+[0:11:56] Yeah, yeah.
+[0:11:58] And the big thing too within those timing negotiations then is like even literally the sequence of
+[0:12:04] like your strategy cards themselves, right?
+[0:12:06] Like the two always being before the six before the seven
+[0:12:10] and all of that.
+[0:12:11] And that's the thing that really gives
+[0:12:12] the biggest hiccup to Diplo.
+[0:12:13] So if you're talking about this Diplo thing,
+[0:12:15] the biggest problem with Diplo is the idea that like
+[0:12:18] you're a turn ahead of the two main people
+[0:12:21] you're always wanting to talk to.
+[0:12:23] You're always like one full turn ahead of them.
+[0:12:25] It's sort of like the whole problem
+[0:12:27] of always playing Nalu where it's just like
+[0:12:28] round one is really rough for Nalu
+[0:12:30] because you finish your round before everybody else
+[0:12:33] and you miss out on timings all the time,
+[0:12:34] which is why it's doubly important to try to talk
+[0:12:37] to people who maybe they can stall for one round,
+[0:12:41] just so that then everything lines up in a way
+[0:12:43] where they pop tech, then you do Diplo,
+[0:12:45] so everyone gets their money back,
+[0:12:46] and then you do all the next stuff.
+[0:12:48] Yeah, I mean, it's manageable,
+[0:12:51] but yeah, it can be a little stressful
+[0:12:52] because you're the point person on,
+[0:12:56] everyone else has a little more leverage than you have.
+[0:12:58] Diplo is just gonna help people
+[0:13:01] haven't even better round one than they were gonna have,
+[0:13:03] but they can easily at some point look at it and be like,
+[0:13:05] well, my round one was already gonna be pretty good,
+[0:13:07] so I don't need this perfect dip-low timing or whatever.
+[0:13:12] You do have to be careful a little bit.
+[0:13:13] Something I'd like to do,
+[0:13:14] I wanna talk about custodians later,
+[0:13:16] because that's a big one.
+[0:13:18] But honestly, I'd like to kind of burn through
+[0:13:21] the objectives real quick of like the top objectives
+[0:13:24] to look for as scoreable round one,
+[0:13:26] or maybe it's the inverse,
+[0:13:27] I don't know if there's more that we think of
+[0:13:29] as scoreable than not,
+[0:13:30] but it feels like there's a handful of scoreable stage one objectives that can come out on the flop,
+[0:13:36] the first two objectives to come out.
+[0:13:38] And that makes or breaks the round one for how people are going to talk through stuff.
+[0:13:42] Is there any that come immediately to you?
+[0:13:45] Or do we want to burn through them and just give a yes, no on each one?
+[0:13:48] Economic objectives, yeah.
+[0:13:50] Are those obvious ones?
+[0:13:51] The main ones.
+[0:13:51] A mass wealth, three resources, three resources, influence resources and trade goods.
+[0:13:56] That's the easiest thing in the world.
+[0:13:59] because almost everybody can definitely get three trade goods.
+[0:14:02] And then it's just like, well, okay, I'm not taking this, like I'm going to use
+[0:14:06] my home system to like pull this off.
+[0:14:08] Now, there's plenty of home systems that it's like you don't have the influence.
+[0:14:10] So you do have to find like extra trade goods on top of that.
+[0:14:13] But yeah, any economic one is easy.
+[0:14:15] There's like random control ones that are easier than others.
+[0:14:21] Um, sometimes like, I mean, obviously we could, you could get so conditional for
+[0:14:25] things like empty systems.
+[0:14:26] I don't know how many empty systems do you have near you.
+[0:14:28] But the edge of the game board one is, I feel like the most complicated one and the one where you see the most negotiations start like immediately because the populate the outer rim have units in three systems on the edge of the game board other than your home system obviously includes
+[0:14:46] each of your systems directly adjacent to your home system,
+[0:14:49] and then you have to get next to somebody else.
+[0:14:52] So there's no way for everyone to populate the outer rim,
+[0:14:57] round one.
+[0:14:58] And so your negotiations always have to start immediately
+[0:15:01] when that one comes out because it's like,
+[0:15:02] well, I need to talk to a neighbor about maybe them
+[0:15:05] letting me do it this round,
+[0:15:06] and then I'll get out of their way
+[0:15:08] so that they can do it next round.
+[0:15:10] Yeah, that one's kind of tricky.
+[0:15:11] I don't know how to break that down.
+[0:15:14] I feel like if like if we were to role play that one real quick
+[0:15:17] Let's say I'm the player that's not getting to score it round one and you are the right that is getting to score at round one
+[0:15:22] Exactly
+[0:15:23] I feel like you owe me something more than just letting me score the point for sure
+[0:15:28] Yeah, it's it's you can you can try to word it as a point swap
+[0:15:31] But it's not because I'm the one with the point tempo now. I'm the one with a score in round one
+[0:15:36] I'm gonna win one round earlier than you do if you didn't have a point available to you
+[0:15:41] It's different if we both can find a point to score and we're just like you do this one
+[0:15:45] I'll do that one
+[0:15:46] But when it's just like only one of us are scoring round one yeah, you won't I owe you big time in that situation
+[0:15:50] I mean I I want to be completely clear because oftentimes in this situation in in real life in real Twilight Imperium
+[0:15:59] What's happened is that so let's say I you're you're sitting next to me
+[0:16:03] You can you have the command counters and the ships to score it. Let's say I don't yeah a lot of times people will frame that
+[0:16:10] negotiation like I'm gonna let me score this round one I'll let you score it
+[0:16:14] round two and you can't even do it anyways right so like you may as well just
+[0:16:19] let me I still think I'm owed something yeah in that I would because I don't
+[0:16:23] have to cooperate and let my neighbor score a point round one because scoring
+[0:16:27] a point round one is so important that I feel like that's just that now it's like
+[0:16:34] I don't even know if we're trying to teach people so much as I'm just like
+[0:16:37] pointing out a pressure point that I've noticed that people don't.
+[0:16:41] And I'm not saying you can extract unlimited value, because that's the thing about Round
+[0:16:45] 1 is nobody has a lot of poker chips to play with at this point.
+[0:16:49] Everything is small numbers, but it's funny because the small numbers mean a lot more
+[0:16:53] in Round 1 than they do in Round 4 or Round 5.
+[0:16:59] And it's all about setting up that tempo.
+[0:17:00] It's all about what we are setting ourselves up for so that are Round 2.
+[0:17:03] I mean if you have a horrible round one your round two looks significantly worse than everyone else's round two
+[0:17:10] So yeah, there's a bunch of objectives that are like no go. I mean tech objectives are kind of undoable
+[0:17:16] You see intimidate council have some possibility
+[0:17:19] Lead from the front is a funny one because the person who gets leadership is always just like okay
+[0:17:24] I I do this I can do this easily
+[0:17:27] But the last one I actually just wanted to call attention to because I feel like it's a it's a transition into something else to talk about
+[0:17:32] push boundaries, controlling more planets
+[0:17:36] than each of two of your neighbors sets up the conversation
+[0:17:39] of making neighbors round one.
+[0:17:42] Because in future rounds, and the reason trade
+[0:17:45] is a big deal and all that, is the idea that,
+[0:17:47] well, in round one, almost none of us are neighbors.
+[0:17:50] I mean, we start the game, neighbors with absolutely nobody,
+[0:17:53] and we might get one or two neighbors,
+[0:17:56] or if the wormholes are just perfect,
+[0:17:58] we can get a few more than that or whatever.
+[0:18:01] and push boundaries becomes like the big question of like,
+[0:18:05] where are all the right planets and who's becoming neighbors
+[0:18:08] and how do you become neighbors with enough people
+[0:18:10] to pull this stuff off?
+[0:18:12] Yeah, honestly, if someone's trying to negotiate
+[0:18:14] push boundaries with me, I'm just gonna kind of roll my eyes.
+[0:18:17] I'm just rolling my eyes even at the idea of talking
+[0:18:19] about it right now because it's like,
+[0:18:21] yeah, if somebody can get push boundaries,
+[0:18:22] they can get push boundaries.
+[0:18:24] I don't wanna deal over that one.
+[0:18:26] I get your three edge system.
+[0:18:28] Yeah, yeah.
+[0:18:29] But like, because push boundaries so often comes down
+[0:18:32] to how many planets you have in your home system,
+[0:18:36] it's kind of just like some people having a innate advantage
+[0:18:39] and they get to score push boundaries easily
+[0:18:41] and some people don't, you know?
+[0:18:42] And then also even if every player at the table
+[0:18:47] has a single plan at home system,
+[0:18:49] then it comes down to, okay, well,
+[0:18:51] what is your slice set up like, you know?
+[0:18:53] Who has two plan at systems next to their home system?
+[0:18:56] and then that third can go get some weird adjacency
+[0:19:00] or something like that, I don't know.
+[0:19:01] For sure.
+[0:19:02] But when talking about neighbors then,
+[0:19:04] and talking about trade in general,
+[0:19:06] is like why we start getting into stuff about trade ships.
+[0:19:09] So like any faction that starts with a cruiser
+[0:19:13] or a destroyer basically has this potential
+[0:19:16] to get more money than factions that don't have that.
+[0:19:19] The ones that don't have, I mean like,
+[0:19:21] there's only a couple factions that don't have
+[0:19:22] any form of trade ship and they are regarded
+[0:19:25] is very bad factions because they don't have a way
+[0:19:27] to make extra cash round one.
+[0:19:31] Is that true?
+[0:19:32] Are there factions that don't have any,
+[0:19:34] yeah, they'll start with either a destroyer or a cruiser?
+[0:19:37] Yeah, Muwaht.
+[0:19:39] Oh right, of course.
+[0:19:40] Yeah, but Muwaht has a way to get it.
+[0:19:42] They have a way and don't get it a lot, could they?
+[0:19:44] And then Joelnar is two carriers and a dreadnought
+[0:19:50] and very often Joelnar considers like
+[0:19:53] not sending a ship way out
+[0:19:54] that like they're trying to use all of their ships for expansion and they don't have a way to move to like that's the big thing is having
+### range 1200-2400s
+[0:20:00] The thing about Jol-Nar though, is they're always so worthwhile, is it, like, people will come to you? Yeah, that's true. But within all of this like trade stuff then, what Hunter are your thoughts on like, when do you go to them and when do they come to you? I guess that's the debate I always have, is like, I'm always trying to not send the trade ship out. Are you looser than that?
+[0:20:30] No, I mean, I think the person that sends the trade ship is the person that needs this
+[0:20:35] trade to happen more, basically.
+[0:20:38] And if you've determined that you, and I mean, it's weird because it's one of those things
+[0:20:43] where if you try and talk to the other player about it to figure out who needs this more,
+[0:20:47] they're always going to say that you need it more.
+[0:20:49] Yeah, sure.
+[0:20:50] So you have to kind of decide this yourself, like who needs this to happen more?
+[0:20:54] Yeah.
+[0:20:55] Or really actually I can frame it in an even more personal sense.
+[0:20:58] If you are realizing that, well, this trade comes down to me sending a trade ship, I don't
+[0:21:03] want to do it.
+[0:21:04] You should just tell them that.
+[0:21:05] You say, hey, if the only way this trade works is by me committing a ship to here, then
+[0:21:10] I don't think I'm going to do it.
+[0:21:12] I'm sorry.
+[0:21:13] Yeah.
+[0:21:14] And then if they realize that they need it that much, then they will, that's when they
+[0:21:18] will say, hey, okay, well, I can spare the ship or whatever.
+[0:21:22] Oftentimes, one of the things that I like about P.O.K. is that I feel like this whole trade
+[0:21:26] trade ship thing in a lot of scenarios. There's more reasons than not to want to send a trade
+[0:21:32] ship anyways. So in base game, it was a real discussion of who sends the ship. Now I find
+[0:21:38] people just go get it. But you do have to pay attention to just your own game and never
+[0:21:43] send a trade ship. Because remember, anytime you send a ship anywhere, you're spending a
+[0:21:47] command counter. So we're putting that value on the table. And then you're going to do
+[0:21:51] your trade. Now math heads, I feel like get way too invested in this type of thinking,
+[0:21:58] and they forget the old adage of, you know, a bird in the hand is worth two in the bush
+[0:22:02] or whatever. Money now, especially round one, sometimes better than money later. And if I'm
+[0:22:08] spending a command counter to make, as the math people might say, lose value, but I'm getting
+[0:22:14] two crucial trade goods, round one, that I'm going to spend on doing X thing. So worth
+[0:22:20] And obviously I'm sure no one would disagree if I was talking about a victory point, but I even mean for other things.
+[0:22:24] Yeah, some crucial amount of plastic attack. I was not going to be able to
+[0:22:28] To research any other way tempo is so important in Twilight Imperium and so the money that you have access to Ramon is
+[0:22:35] Doubly important right yeah, you can spend that command counter
+[0:22:38] But if the one trade good you get out of the deal gets you gravity drive that gets you the custodians next round like yeah
+[0:22:44] It was worse. It was worth the investment. I could be a break
+[0:22:48] Well, that's funny too to talk about the non-binding nature of Rattle because this is directly related to the neighbor's question
+[0:22:57] because there's going to be a lot of people you aren't neighbors with and then, okay, it's the big question of what does the trade holder do, round one?
+[0:23:07] And we can define X minus one here. This is why X minus one exists.
+[0:23:11] exists is yeah, the trade strategy card you get your own three trade goods you replenish your commodities and then it's got this tricky little
+[0:23:19] bugger paragraph about
+[0:23:21] letting someone else
+[0:23:23] refresh their commodity replenish their commodities I should say and
+[0:23:29] It's if anything at this point that was a thing
+[0:23:32] I was very excited about when Twilight Imperium fourth edition was like first announced and the longer things have gone on
+[0:23:38] I wish that wasn't there.
+[0:23:39] I wish you just had to pay a command token.
+[0:23:41] I wish it would be simpler if you just had to spend
+[0:23:44] the command token and we didn't have to work
+[0:23:46] through all of this all scratch of your bag.
+[0:23:49] But Matt, round one would be so hard.
+[0:23:51] It would be really hard.
+[0:23:52] Yeah, it would be a lot harder if every game you sit down
+[0:23:56] and round one you're like, I'm either gonna trade
+[0:23:59] or tech or warfare.
+[0:24:00] One of those three things is not happening.
+[0:24:02] Right.
+[0:24:03] But so the idea is the trade holder gets all this power
+[0:24:06] of deciding who gets replenished.
+[0:24:08] And I feel like a lot of groups in their infancy
+[0:24:12] go through this process.
+[0:24:13] And we went through exactly this,
+[0:24:14] which is you start off and you're like, well, okay,
+[0:24:18] I have a lot of power here.
+[0:24:19] I'll play hardball.
+[0:24:20] And I'm only replenishing the exact people I can trade with.
+[0:24:24] And then sometime goes on, you're like,
+[0:24:25] oh, I realize I made a bunch of enemies.
+[0:24:27] And so next game, you replenish everyone.
+[0:24:29] Oh, the whole galaxy can get replenished.
+[0:24:31] And then you realize like that boosted everyone too much.
+[0:24:33] And the reason we've fallen into X minus one
+[0:24:36] is because it has just come to feel out the idea
+[0:24:40] that if you're getting replenished,
+[0:24:43] like you owe something, and X minus one
+[0:24:46] is the easiest way to make some sort of value
+[0:24:50] for the trade holder.
+[0:24:51] X minus one meaning I will give you
+[0:24:54] my total amount of commodities
+[0:24:57] for the same number of trade goods minus one.
+[0:25:01] If I'm a four commodity faction,
+[0:25:03] I'll give you four commodities.
+[0:25:04] So you gain four trade goods, but then you lose one trade goods.
+[0:25:08] So you only gain three, but I'm also actually only gaining three in the end.
+[0:25:13] Now, if it's a commodity for commodity swap, then the trade holder is gaining a lot more
+[0:25:17] than that.
+[0:25:18] So the first trade the trade holder does is where they make a bunch of money, and then
+[0:25:22] every X minus one after that is just making a single dollar off of each transaction.
+[0:25:27] Yeah.
+[0:25:28] Well, that depends on your attitude about commodity.
+[0:25:31] I mean, I would say that your commodities are a minimum value that you should be looking to get.
+[0:25:39] I mean, obviously, if you're on the other side of an X minus one, you're not getting your max commodity value in trade goods.
+[0:25:44] But I get what you're saying.
+[0:25:47] It's a weird thing to break down this one, actually, because it's very simple.
+[0:25:52] Yeah.
+[0:25:52] But I also feel like when you listen to people talk about this, it's easy to get stuck in the weeds.
+[0:25:56] I would imagine it like this, whoever has the trade card can save you a command counter.
+[0:26:03] Yeah.
+[0:26:04] And then the community has decided that that saving you a command counter is worth one trade
+[0:26:10] good.
+[0:26:11] Apparently.
+[0:26:11] I think it's reasonable.
+[0:26:13] I think it's very reasonable.
+[0:26:15] Well, it's a command counter for a trade good.
+[0:26:18] And then from there, and again, this is a baseline.
+[0:26:21] This is not a rule we are intending to apply to all things evenly.
+[0:26:25] No.
+[0:26:26] What I see is a lot of people will say x divided by two.
+[0:26:30] Instead of x minus one, it's x divided by two.
+[0:26:32] So a four commodity faction owes you two bucks.
+[0:26:37] And sometimes that's a stretch for me,
+[0:26:39] but if you look at something like Joel Narr,
+[0:26:41] I get why people apply that kind of extra pressure
+[0:26:43] on Joel Narr because Joel Narr has a killer promissory note
+[0:26:47] that they are gonna get sold a few times this game.
+[0:26:50] They're gonna make all this extra money.
+[0:26:52] So why am I just giving the easy deal to Joel Narr?
+[0:26:55] Well, the answer to that is always, well, someone might give them, someone else might give them the easy deal and then you just lost out on value.
+[0:27:00] But generally, you can get a table on board with the idea of like, hey, let's kind of like put a little bit of extra pressure on Joel and R because they're going to make all this extra money anyways.
+[0:27:09] Oh, that's fine.
+[0:27:10] Yeah.
+[0:27:10] And I mean, I wouldn't, X divided by two is so annoying to me because there's most actions are three commodities.
+[0:27:16] So then it begs the question of you.
+[0:27:17] We round and up or down.
+[0:27:19] Yeah.
+[0:27:19] I think yeah, it's X minus one,
+[0:27:22] or some people do X minus two for wealthy factions.
+[0:27:26] And that's fine.
+[0:27:27] I think X minus two is not the worst thing in the world.
+[0:27:31] I think, if I ask somebody for X minus two,
+[0:27:34] it's because I've looked at their situation already.
+[0:27:36] Exactly.
+[0:27:37] And I know that they don't want to spend the command counter,
+[0:27:40] maybe the money that they need this money really bad.
+[0:27:43] So I ask for an X minus two because I've looked at it
+[0:27:46] and it's like, you have a little more need,
+[0:27:48] So that means I'm gonna ask for you to give me
+[0:27:51] a little more money, basically.
+[0:27:53] Yeah, that's like my big thing that I can't grapple with
+[0:27:57] as Muwatt when I'm Muwatt.
+[0:27:59] Like should I accept the X minus two because they,
+[0:28:02] I mean a player like you Hunter could look at me
+[0:28:04] and be like, hey I know you need Muwatt.
+[0:28:05] Like I know you wanna get that second war son out
+[0:28:07] at some point.
+[0:28:08] You would love to accrue as many trade goods as possible
+[0:28:09] and I could just deny you any or you could accept the two.
+[0:28:13] And my side of it is like, but I'm just this Muwatt right now
+[0:28:17] with none of my stuff unlocked,
+[0:28:18] you can help me get somewhere,
+[0:28:20] so give me the X-minus one.
+[0:28:22] Just give me a normal deal for everybody else.
+[0:28:24] I'm not crazy rich or anything,
+[0:28:26] and I never know how that shakes out.
+[0:28:28] I'm always very un-not confident
+[0:28:30] in that round one negotiation thing as Muwah.
+[0:28:33] I definitely don't do X-minus two with Muwah automatically.
+[0:28:38] I mean, I would have to see what situation,
+[0:28:41] because even the saving the money
+[0:28:42] for the second war, son,
+[0:28:44] I'm not thinking about that on round one.
+[0:28:46] I'm just looking at who can score, who can't score.
+[0:28:49] I would say probably Joel Narr and Hakan,
+[0:28:53] 100% of the time I'm asking for X minus two,
+[0:28:55] just always because I know that economically
+[0:28:58] they're gonna get there.
+[0:28:58] Hakan's the hilarious one because very early on,
+[0:29:01] we did not know what to do with Hakan.
+[0:29:03] We were all over the map with Hakan on how harsh we went.
+[0:29:08] I think we were asking for X minus three's from Hakan
+[0:29:10] at one point.
+[0:29:11] And then there's, I mean, the very, very first holiday
+[0:29:13] spectacular we ever did.
+[0:29:15] Sean was just like, give me four trade goods.
+[0:29:18] Because I want them for nothing.
+[0:29:19] I'm extorting you, you have to give me four trades.
+[0:29:20] I just want four.
+[0:29:21] Yeah, that was funny.
+[0:29:23] I forgot to mention though, it is different with Akon
+[0:29:26] because Akon does not need you to refresh modities.
+[0:29:29] Oftentimes, Akon does end up trading
+[0:29:32] with the person that has the trade strategy card
+[0:29:34] because most of the time the person with the trade strategy
+[0:29:37] card is gonna trade with everybody that's possible,
+[0:29:40] but on round one, actually, it doesn't really work out that way.
+[0:29:42] And you're gonna probably end up trading
+[0:29:44] with as Hakan, whoever the trade strategy card person
+[0:29:48] can't trade with because of adjacency.
+[0:29:51] Right.
+[0:29:52] Let's talk about the idea of a debt token.
+[0:29:53] This is also really basic.
+[0:29:55] Oftentimes on round one, you're gonna offer X minus one
+[0:29:59] to the whole table, and whether you can trade
+[0:30:02] with them right now or not.
+[0:30:03] Right.
+[0:30:03] And those that can't, they'll just give you
+[0:30:05] a little token, one of their little flags
+[0:30:08] used to mark that this planet belongs to me.
+[0:30:12] And that just means that I owe you one.
+[0:30:14] This is something we do, okay?
+[0:30:16] Yeah, we do it.
+[0:30:17] It is obviously abusable.
+[0:30:20] I have abused it for sure.
+[0:30:22] Not even, I would say intentionally,
+[0:30:24] but just like sometimes you spend,
+[0:30:26] you try to spend all your money every round
+[0:30:28] and you forget to save a dollar for the agenda phase
+[0:30:31] to give to old so-and-so on the other side.
+[0:30:33] There was a game recently, I think it was my moo-aw game,
+[0:30:36] I don't know, but like it was like round five.
+[0:30:39] I think it was maybe the round four agenda phase
+[0:30:41] going into round five and the person was finally like,
+[0:30:43] Hey, Matt, you still owe me a debt token from round one.
+[0:30:48] Will you please give me that?
+[0:30:50] And I was like, oh my God, I'm sorry.
+[0:30:51] Yeah, here it is.
+[0:30:52] Here, sorry, here's the dollar.
+[0:30:54] And I do think that is the like,
+[0:30:57] when people do that kind of X minus one,
+[0:30:59] debt meta as it's called,
+[0:31:02] when people do that,
+[0:31:03] they're doing it for more than the value of the thing.
+[0:31:07] At that point, they're doing it for the good graces
+[0:31:09] and working the table,
+[0:31:10] and they're doing it because of the social aspect
+[0:31:12] of the game of like, hey, I want you to remember that I was like the friendly guy that helped
+[0:31:16] everyone and I didn't fret about when you got me that dollar.
+[0:31:19] You just owed me a dollar at some point and it's not a big deal.
+[0:31:21] It's kind of the more economic way of doing the all refresh everybody.
+[0:31:27] To just refresh everybody is like, well, you've just missed out on a lot of value and you just
+[0:31:30] threw money around the table and it feels a little kind of wacky.
+[0:31:34] It feels wild to do that.
+[0:31:36] And to ask for a single trade good at some point is like the slightly more fair version
+[0:31:41] of that same exact thing.
+[0:31:43] I'm a little more of an attitude of I call in my debts.
+[0:31:46] If you owe me something, I'm reminding you.
+[0:31:49] And I feel like it's on me to get that money out of you
+[0:31:52] because you said you was gonna pay me.
+[0:31:55] So yeah, I feel like I'm more inclined to remind people.
+[0:32:00] And also though, here's the other thing,
+[0:32:03] is if somebody owes you a trade good
+[0:32:05] and then they don't have a trade good to give you,
+[0:32:07] That to me just sounds like the new,
+[0:32:11] a new round of a new negotiation
+[0:32:13] where I'm gonna try and negotiate,
+[0:32:14] you give me something else that's better right now.
+[0:32:17] Yeah, you know what I mean?
+[0:32:18] My favorite thing is to turn debt tokens
+[0:32:20] into not trade goods.
+[0:32:21] And it's like, hey, yeah, I mean, yeah,
+[0:32:22] the best thing ever is when people,
+[0:32:24] especially with like two commodity factions
+[0:32:26] where they have trouble getting trade goods anyways,
+[0:32:29] you get that debt token and it's like,
+[0:32:31] listen, get me that Greyfire Mutagen Promissory note.
+[0:32:34] Get me that Sartaknoa Promissory note.
+[0:32:37] Like, let's make it something else instead.
+[0:32:39] I'm totally happy for that.
+[0:32:40] We can wash your debt.
+[0:32:42] And this debt becomes this cloud hanging over the person's head of like,
+[0:32:46] you still owe me something.
+[0:32:48] And if you can't make the money work, you can do something else for me.
+[0:32:52] Well, and I think it's reasonable because it's like, I mean,
+[0:32:54] they were given something, something for free basically.
+[0:32:58] And now this token is just a representation of that.
+[0:33:01] I mean, I'm always way more inclined to like, uh, kind of trade,
+[0:33:05] trade the debt up into something better than I am to just wait another round for a single trade
+[0:33:11] good. I would rather just have it resolved too because if you try and resolve the debt as quickly
+[0:33:16] as possible, you don't run into the problem that you're talking about where it's round five and
+[0:33:20] someone's like, hey Matt, do you remember that trade good? Because now it's not that was never a
+[0:33:23] fair deal then at that point. By the time I'm getting giving you a single trade good in round five,
+[0:33:27] that trade good is not doing nearly as much as it did for me in round one. It's true. It's true.
+[0:33:32] The money's more critical at the very beginning of the game and as you go the money is sort of less critical
+[0:33:38] I mean it's it could still be critical. I mean stay to economic objectives exist
+[0:33:42] So but there's a reason people don't take trade in round five generally speaking. I mean, yeah
+[0:33:47] Rando Calorizian has some fun pre-erada. That's a lot of the same points
+[0:33:52] But I wanted to read it because it was it was some good stuff
+[0:33:54] I
+[0:33:55] Have a different idea especially with regard to trade
+[0:33:57] I know it's very common for people to expect a refresh,
+[0:34:01] be it X minus one or whatever,
+[0:34:02] but I don't really agree with it.
+[0:34:04] People say, you're cutting me out of trade a lot,
+[0:34:06] but the secondary lets you spend
+[0:34:08] the strategy token to refresh.
+[0:34:09] So that's not really what's happening.
+[0:34:11] I see the trade strategy card much more
+[0:34:13] as something that provides leverage for you
+[0:34:15] to make favorable deals for yourself
+[0:34:18] than a pool of money that gets shared out
+[0:34:20] and you get the largest chunk.
+[0:34:21] It's not the latter.
+[0:34:22] It is leverage to get favorable deals.
+[0:34:25] If people expect a refresh and then get salty when it's not automatic, I still have to factor that into my actions because if you're salty, it doesn't matter if I think your salt is justified or not.
+[0:34:38] It'll still affect the game as a whole.
+[0:34:40] I have no problem with debt meta and non-binding deals can be really useful around one.
+[0:34:45] And I think that if you make the point that a refresh isn't guaranteed, then you can use the trade strategy card to get far more interesting deals done than a trade good and a wash from other people.
+[0:34:54] wash from other people using a refresh or even an X minus one to make neighbors by future use of
+[0:34:59] promissory notes or just as a sweetener on a deal you can't quite get over the line can improve your
+[0:35:05] game and the game of the other person without giving out too much value to the rest of the table.
+[0:35:09] Okay I totally agree and what Rando is doing there for us is giving the sort of next level take.
+[0:35:16] Yeah. What we are what we've been describing with X minus one and debt meta in general is like
+[0:35:21] like you're meat and potatoes.
+[0:35:23] This is just your most basic way of doing it.
+[0:35:25] And I really like the point Randall was making there
+[0:35:27] about that you get to refresh regardless.
+[0:35:31] Like you're getting an opportunity to do that thing
+[0:35:34] in the game.
+[0:35:35] It's just that a lot of the times people
+[0:35:37] assume that they're gonna get to do it for free
+[0:35:39] and they shouldn't assume that.
+[0:35:40] And you just shouldn't.
+[0:35:42] You give up your leverage if they are assuming
+[0:35:45] that they get to do that for free.
+[0:35:48] So yeah, I think Randall's making a great point there
+[0:35:50] which is like perhaps the refresh round one
+[0:35:53] can be an even sweeter opportunity for trade.
+[0:35:56] So yeah, I totally agree.
+[0:35:59] Random is good.
+[0:35:59] Random is good.
+[0:36:00] And I love the point too of your salt doesn't matter.
+[0:36:02] Like it doesn't matter if I think your salt is justified.
+[0:36:05] Like if it makes you mad, then we have a matter problem.
+[0:36:07] And that's something I run into all the time
+[0:36:09] because I for a while was really trying to avoid
+[0:36:13] any sort of debt meta or anything like that.
+[0:36:14] Like I really just didn't wanna do it.
+[0:36:17] But all these people have these expectations
+[0:36:19] and they get mad when you don't do it,
+[0:36:21] and then it bites me later.
+[0:36:23] And I was not getting any,
+[0:36:25] like, you know, if I don't do a really comfortable debt meta,
+[0:36:28] X minus one for you later,
+[0:36:29] it's not about the idea that you owe me a trade good later.
+[0:36:33] It's about you won't make me
+[0:36:36] a decent little trade offering in round two.
+[0:36:38] And that's what I was always missing out on.
+[0:36:40] If I played a hard shrewd trade strategy card holder
+[0:36:43] in round one, round two,
+[0:36:45] I would be the only person left out
+[0:36:48] because I was mean last round.
+[0:36:49] And they would do debt meta with everybody else,
+[0:36:52] but they wouldn't even give me a chance to do it.
+[0:36:53] It was like, no, you cut me out last round,
+[0:36:56] I'm cutting you out now.
+[0:36:57] And that always hurt.
+[0:36:58] That hurt too many times where I was like,
+[0:36:59] I have to just play ball,
+[0:37:00] like I have to play nice meta because it's the way.
+[0:37:02] Well, to be fair though, Matt,
+[0:37:03] even in the situation you're describing,
+[0:37:06] you're describing it like this like,
+[0:37:07] oh, it really sucked.
+[0:37:08] What you did to the other person is much worse
+[0:37:10] than what they did to you, actually.
+[0:37:12] You actually hurt them way more.
+[0:37:14] Because it was round one.
+[0:37:14] Just because they hurt you then on round two,
+[0:37:17] doesn't mean that somehow this is a worse situation for you.
+[0:37:20] You did the worst thing.
+[0:37:21] I denied the tech one or whatever.
+[0:37:22] Yeah, absolutely.
+[0:37:30] Do we have any faction considerations within this?
+[0:37:34] I'm looking through Pre-Erotter right now.
+[0:37:36] And I see there's a whole conversation we could have.
+[0:37:39] And honestly, people could go listen
+[0:37:41] to the Empyrean episode, but sad says,
+[0:37:43] as Empyrean, I like dark-packed for commodity factions
+[0:37:47] because it means they'll be more likely to spend a token
+[0:37:50] to keep the gravy flowing.
+[0:37:52] So do we want to talk about dark packed for a second within all of this?
+[0:37:55] Yeah, I'm good with talking about dark packed.
+[0:37:58] Dark pack is, you know, that one that Empyrean has that wants to be sold round one.
+[0:38:04] Just the math of it is sell it round one has a high value and kind of puts you in bed.
+[0:38:10] Together, dark packed is you play it in your play area.
+[0:38:14] And then now every time you give all of your commodities to Empyrean, you both get an extra trade.
+[0:38:20] Good.
+[0:38:20] I believe it's the exact.
+[0:38:22] Not the exact wording, but that's the process.
+[0:38:25] Yeah, and that does two things too.
+[0:38:26] We talked about already, we've talked about the idea
+[0:38:29] that timings matter a lot.
+[0:38:31] So, dark packed is a stall,
+[0:38:33] and sometimes that's incredibly important.
+[0:38:35] The idea of you're giving this dark packed
+[0:38:37] to someone who then, it helps them stall tech
+[0:38:39] so that everyone can get the trade before the tech happens,
+[0:38:42] and then we do tech or whatever.
+[0:38:43] But there was some debate in the pre-arata
+[0:38:46] about whether or not dark packing
+[0:38:48] a four commodity faction is better or worse.
+[0:38:50] Are you lifting the good factions up too much
+[0:38:54] by hitting a four commodity faction,
+[0:38:55] or should you try to get it to two
+[0:38:57] or even three commodity factions?
+[0:39:00] So in a generic way, I think that it's smart
+[0:39:03] for the reason that Stads is saying.
+[0:39:04] It's always wise to make a rich buddy.
+[0:39:09] And that's why I feel like sometimes people
+[0:39:11] get a little caught up on Dark Pack
+[0:39:12] because they kind of want like,
+[0:39:14] they want some sort of extra added value on it,
+[0:39:16] But the value is that one of your rich neighbors loves you.
+[0:39:22] And it wants to be your buddy all game long.
+[0:39:25] That is good enough.
+[0:39:27] That is awesome.
+[0:39:28] Now, let me get into, so now just come with me
+[0:39:30] to my little nook, Hunter's nook.
+[0:39:33] This is the type of stuff that I've been playing a lot
+[0:39:37] in my head whenever I play.
+[0:39:39] So the idea of looking at my neighbors as Empyrene
+[0:39:43] and saying, okay, so we got Joel Nara over here,
+[0:39:47] that's cool, I'm sure me and Joel Nara could do this,
+[0:39:50] I get a lot of extra tech, but what faction could I pick
+[0:39:54] that I'm next to that would upset the general balance
+[0:39:57] of this game more than...
+### range 2400-3600s
+[0:40:00] You know what I mean? Who could I possibly empower? Because the thing about Jol-Nar or Hacan or Bill in the Blank, whatever rich faction you want to put next to yourself as Empyrean, if you make them rich, okay cool, they're going to be richer than they were normally. That's not, to me, it's always going to help you in a really reliable way. But what's a faction that shouldn't be rich? And now I'm going to make them rich? You're our partnership.
+[0:40:30] somebody like, well, I'm just gonna say start ignore for starters.
+[0:40:36] Maybe Muah even.
+[0:40:39] Like what if Muah is my special buddy?
+[0:40:41] I guess Muah is a four commodity faction,
+[0:40:42] that doesn't really work as well.
+[0:40:44] Barony of Letnav, L1Z1X.
+[0:40:48] Actions like that that like if their economic engine
+[0:40:51] gets out of control, they start just in general
+[0:40:53] getting out of control.
+[0:40:54] And in a situation where I've picked one of the little guys
+[0:40:58] to empower, I have way more leverage in that relationship
+[0:41:02] than the rich faction getting richer in a deal.
+[0:41:07] The other part I like about Stads' thing
+[0:41:09] is the idea of specifically picking
+[0:41:11] for commodity factions because they will spend a token
+[0:41:14] to get that money.
+[0:41:15] It now becomes an obvious deal for them
+[0:41:18] when neither of you are the trade strategy card holder.
+[0:41:21] And I've seen it in other people's Imperium games
+[0:41:23] where trade just doesn't,
+[0:41:25] I've seen the dark pack recipient
+[0:41:27] just not get refreshed, right?
+[0:41:29] Because the trade holder can look at it and be like,
+[0:41:32] if I refresh you, you're getting all this extra value
+[0:41:34] and it's not just you getting value,
+[0:41:35] it's you an Empyrene getting value.
+[0:41:37] And the two of you don't wanna trade with me.
+[0:41:39] So when you have Dark Pact,
+[0:41:41] it automatically makes you less likely
+[0:41:43] to get refreshed for free by the trade holder.
+[0:41:46] Because you are the person who doesn't want to be,
+[0:41:48] you don't wanna do deals with the trade holder,
+[0:41:50] you wanna do deals with Empyrene, like explicitly.
+[0:41:53] That's true, that can be a slightly deceptive point
+[0:41:56] because you've also been giving dark packed out.
+[0:41:59] Now there's two people at the table
+[0:42:00] that are effectively you as far as trade.
+[0:42:04] You know what I mean?
+[0:42:05] You've also doubled the amount of people at this table
+[0:42:07] that are definitely refreshing you for free.
+[0:42:10] You know what I mean?
+[0:42:11] It is a problem that can arise,
+[0:42:13] and there's still four other people,
+[0:42:14] so that's still four people that could take trade
+[0:42:16] and do this.
+[0:42:17] I just feel like oftentimes in the practicality
+[0:42:20] of an Imperial game,
+[0:42:22] you're gonna wanna take trade a lot,
+[0:42:24] and then if you don't take trade sell with the other person.
+[0:42:26] Right, that's true.
+[0:42:27] Well cool, so I feel like it is a point in time
+[0:42:30] in which we need to, we've put off talking about custodians
+[0:42:33] for a while and it seems like that's the other
+[0:42:36] big negotiating factor and if anything,
+[0:42:39] I think that's where the meta is leaning more into right now
+[0:42:43] and I hope it leans even more into it of the idea
+[0:42:46] that someone is gonna get custodians.
+[0:42:49] Probably not round one but sometimes round one,
+[0:42:52] but usually not round one, but someone's gonna take custodians
+[0:42:55] first action around two, and we should stop,
+[0:42:59] in the same way that we should stop thinking
+[0:43:01] everyone's trade should get replenished automatically
+[0:43:05] off a trade, we should stop like treating custodians,
+[0:43:07] like well it's just a thing someone's definitely gonna get.
+[0:43:09] Like that's a sellable thing, like in selling timings
+[0:43:12] and moving the speaker token wherever you want,
+[0:43:14] like you can crown the custodian point getter.
+[0:43:19] Like you can make that happen.
+[0:43:21] Sure, well, let's be careful not to overstate this point,
+[0:43:24] though, because I don't want to make it sound like there's
+[0:43:25] a million opportunities to do this.
+[0:43:27] There's plenty of games where this just can't happen,
+[0:43:30] where there is no deal to be made.
+[0:43:32] So I don't want to encourage a bunch of people to be like,
+[0:43:35] oh, okay, let's talk about this for a long time,
+[0:43:37] but actually it's just not possible
+[0:43:39] because it's not going to work out
+[0:43:40] because the person with the speaker token around too
+[0:43:41] is just going to get it.
+[0:43:43] Let's talk about what are our pressure points?
+[0:43:45] What are the things we should look out for if we're like,
+[0:43:48] because here's the thing,
+[0:43:49] If you're not gonna get custodians,
+[0:43:51] you probably shouldn't care who gets it.
+[0:43:53] I mean, there's some factions who are probably like,
+[0:43:55] I don't want them to get it.
+[0:43:57] But you should probably think of it more like,
+[0:44:00] all right, well, there's no way for me to get it.
+[0:44:02] Is there a way for someone else to get it with my help
+[0:44:05] where they owe me money?
+[0:44:06] That's value right there.
+[0:44:08] Right, that's the point at which this becomes a negotiation.
+[0:44:12] When everybody is a faction that is not getting
+[0:44:15] Gravity Drive and Argent got warfare round one.
+[0:44:19] Like, we're done.
+[0:44:20] So that we have already crowned the Casterian holder.
+[0:44:23] Yeah, that's done.
+[0:44:24] But in many other games, so the key points to look out for
+[0:44:29] are who's gonna get Gravity Drive,
+[0:44:31] because the idea with Gravity Drive is
+[0:44:33] you expand one forward, this round,
+[0:44:35] and the next round you have two movement
+[0:44:36] to go from the system in front of your home system
+[0:44:39] straight to Mercatorx, right?
+[0:44:40] So there's all the people with that.
+[0:44:41] That's like the most basic prerequisite.
+[0:44:43] The person who had warfare round one,
+[0:44:46] potentially also joins that category
+[0:44:48] because they could end up adjacent to
+[0:44:51] Mecatorex round one.
+[0:44:52] Honestly, Matt, that's the, in the strictest sense,
+[0:44:56] that's the only person I would be looking at.
+[0:44:58] Because whoever gets the speaker token round one,
+[0:45:01] what do you, I mean, besides selling them,
+[0:45:04] let's say you have politics and you are selling them
+[0:45:06] the speaker token, I don't, I mean,
+[0:45:07] I feel like we don't need to explain that.
+[0:45:09] Like, that's, that's simple.
+[0:45:11] But the only person I would really be looking at
+[0:45:13] in most games to check is there a custodians deal
+[0:45:17] on the table would be whoever has warfare around one.
+[0:45:21] Because they, all they need, and this is a lot,
+[0:45:24] but all they need is the six and some ability to get there.
+[0:45:30] So I mean, if you are the person with tech,
+[0:45:33] perhaps you are able to pop tech in such a way
+[0:45:36] as to, hey, now you can get Gravity Drive
+[0:45:38] after you've done the warfare primary and go there.
+[0:45:41] but even still in that situation, you need the money.
+[0:45:44] The faction I wanna call out the most that I think
+[0:45:47] in a very specific situation can help a lot
+[0:45:51] is that cabal promissory note, to be honest.
+[0:45:54] That seems like something that should be out there
+[0:45:57] as a consideration of like,
+[0:45:58] all right, I'm gonna try and sell this to so-and-so
+[0:46:00] for the point.
+[0:46:01] But the one thing I hate about this,
+[0:46:04] I remember we talked about this a while ago, Matt,
+[0:46:06] as a potential thing.
+[0:46:08] And the more I thought about, the more I was like,
+[0:46:09] I think we're talking about a situation
+[0:46:11] that just doesn't come up that much
+[0:46:12] because they still gotta have six.
+[0:46:15] Yeah, they still gotta have the six months.
+[0:46:16] And that's actually hard.
+[0:46:18] That's pretty hard.
+[0:46:19] And also it makes it hard to deal with them
+[0:46:20] because they need that six in order for this deal to work.
+[0:46:24] So you are kind of limited.
+[0:46:26] Like let's say, let's imagine a situation
+[0:46:28] where they have eight trade goods for summary.
+[0:46:30] I don't know why they would have that and warfare.
+[0:46:32] Let's say they do.
+[0:46:33] I can only ask for two.
+[0:46:35] That's all I can ask for.
+[0:46:36] So I ask for anymore, there's no point in doing this deal.
+[0:46:39] So that's what's kind of hard about it.
+[0:46:40] You get what I'm saying?
+[0:46:41] Yeah, for sure.
+[0:46:42] The money always matters.
+[0:46:43] I feel like that's the reason you so often see custodians become just sort of this like,
+[0:46:49] well, all right.
+[0:46:50] And so so and so is going to get it.
+[0:46:51] It's because they're the only ones with the money.
+[0:46:54] The money and the range.
+[0:46:56] You do need a lot to get custodians.
+[0:46:58] And some factions just get handed that on a silver platter.
+[0:47:01] There's also the Mahak's conversation kind of to have, which is that Mahak's A, Mahak's
+[0:47:07] can get custodians round one quite reliably because they start with a green and a yellow
+[0:47:14] tech and all there are red skip away from just getting cruisers or two round one. Their home
+[0:47:20] system is five influence, so they could potentially just go there. But more importantly, their agent
+[0:47:28] allows them to unlock someone else's fleet, thus giving somebody else warfare, right?
+[0:47:33] We just talked about how like, well, you got to keep an eye on the warfare person because
+[0:47:35] because they have this extra benefit.
+[0:47:38] Everyone comes to Mahawk's table around one.
+[0:47:41] That ability is great all game long,
+[0:47:43] but round one, that is a game maker ability.
+[0:47:47] That is a, I can crown a custodian's person if I want to.
+[0:47:50] I can get anybody that maybe wasn't thinking
+[0:47:52] they would get it.
+[0:47:53] I can guarantee Nalu the chance to do custodians next round.
+[0:47:59] Well, and we should also talk about Nalu.
+[0:48:00] Nalu can sell the zero token round two,
+[0:48:03] which is they're probably the most effective
+[0:48:05] at selling custodians, basically, as an idea,
+[0:48:09] because you don't have to pack in any of the extra value
+[0:48:11] of getting them to six,
+[0:48:12] because they're gonna get it the normal way
+[0:48:14] at the beginning of round two.
+[0:48:15] So yeah, I feel like you can,
+[0:48:17] I feel like selling gift to the Precious,
+[0:48:19] round one should become far more common.
+[0:48:21] I believe we said that in our recent Nalu episode,
+[0:48:24] but I think it's worth restating it.
+[0:48:27] That you are the most effective at selling custodians.
+[0:48:31] Now, you have to be on the lookout
+[0:48:32] for a situation where, I mean, it comes up with certain factions.
+[0:48:35] We just talked about Argent.
+[0:48:36] There's other factions that can pull it off,
+[0:48:38] especially if Mahok does at the table.
+[0:48:41] Also, remember, if a Sorrow and Mahok are at the table,
+[0:48:44] we've got two of those annoying agents available.
+[0:48:47] So in that situation, I would find it very difficult to read
+[0:48:50] who is actually going to get the Stodians.
+[0:48:52] Yeah.
+[0:48:53] The most fun games are the ones where
+[0:48:55] Round 1 custodians becomes a question.
+[0:48:59] And sometimes it's like totally random,
+[0:49:01] but there are a handful of factions
+[0:49:03] that are reliably round one custodian's factions.
+[0:49:07] The main ones that come to mind for me are
+[0:49:09] Mohawk, Nas Roka a little bit.
+[0:49:12] Nas Roka's probably lower.
+[0:49:13] I'm bringing them up too soon,
+[0:49:14] but Nas Roka start with Psycho-arc and AI dev.
+[0:49:17] So if there's a yellow skip in their slice,
+[0:49:19] they can also get Cruiser too.
+[0:49:20] Now they don't start with a Cruiser,
+[0:49:21] so they have to get a Cruiser
+[0:49:23] and have the sixth influence to take Microsoft around.
+[0:49:25] So there's a little bit less, but then also Sarr.
+[0:49:28] Sarr can very easily get Gravity Drive.
+[0:49:30] they make money as they expand,
+[0:49:32] they can almost always get the six influence they need
+[0:49:35] to do mechatol round one.
+[0:49:37] And they just need, oh, they only have their agent,
+[0:49:39] they don't even need gravity drive, right?
+[0:49:40] So they like, SARS can 100% do mechatol
+[0:49:43] almost every single round one if they want to,
+[0:49:46] if that's where they wanna go.
+[0:49:48] Sometimes it's just a decision of SARS decided
+[0:49:50] to like eat their neighbor instead of do mechatol round one.
+[0:49:54] True, true.
+[0:49:55] I feel like in those situations, yeah,
+[0:49:58] It's like look for that, find that,
+[0:50:00] and then see if you can get a little taste,
+[0:50:02] see if you can get a little money
+[0:50:04] to help grease the wheels.
+[0:50:06] I also wonder how often this situation
+[0:50:08] like this might come up where it's not that
+[0:50:13] the player in question can get to the custodians and take it,
+[0:50:17] but could they get to the custodians token
+[0:50:20] with a big enough fleet to actually prevent anyone else
+[0:50:24] from taking it round two
+[0:50:26] and then take it themselves later.
+[0:50:28] So be on the lookout for that possibility.
+[0:50:31] I feel like an L1 could do that somewhat.
+[0:50:35] Who else could possibly do?
+[0:50:36] I was gonna call out, I mean,
+[0:50:36] Taitons and Argent are also some viability for round one,
+[0:50:41] but they're even more viability
+[0:50:42] for what you're describing of.
+[0:50:43] They get there, maybe they don't bring much,
+[0:50:46] or they don't have the influence to take it this round,
+[0:50:48] but they can park a couple cruisers
+[0:50:50] or a couple, you know,
+[0:50:52] Argent destroyers or whatever,
+[0:50:54] and maybe hold it that way.
+[0:50:57] Yeah, it's tough because you gotta really calculate it
+[0:50:59] because it's like, you need to be looking at,
+[0:51:03] where they are at in speaker position as well
+[0:51:06] because if they're like last,
+[0:51:07] then it could be that someone makes an attempt fails
+[0:51:10] and then a second person makes an attempt
+[0:51:12] and does not fail.
+[0:51:13] You know, it's a tricky one.
+[0:51:18] So yeah, I don't know.
+[0:51:19] You have to look at the board state
+[0:51:20] and then find opportunities to sell custodians,
+[0:51:23] but I do think it comes up in some games
+[0:51:26] and players miss the opportunity,
+[0:51:29] and I include myself in that.
+[0:51:30] I think I've missed the opportunity
+[0:51:31] to influence the custodians' ownership.
+[0:51:35] You should think of it as the whole early game
+[0:51:38] is just about who gets the custodians.
+[0:51:40] That's all, that's like the main concern.
+[0:51:42] Yeah, we started this episode talking about objectives,
+[0:51:45] and it's like, yes, the objectives can come up,
+[0:51:48] and when they do, like, you know,
+[0:51:50] 109 commentary and a tournament,
+[0:51:52] That's all we're talking about the whole round is like who's going to score, who's going to score?
+[0:51:55] But the thing that has always talked about every single game is who's building up the path to get the custodians for their guac point.
+[0:52:03] Their free point that they didn't need to score an objective for.
+[0:52:06] Right. And another thing I want to bring back up the diplomacy card.
+[0:52:11] The diplomacy card I think is kind of underrated right now.
+[0:52:14] Yeah. You think warfare is overrated and you think diplomacy is underrated at this point.
+[0:52:19] I think warfare, yes.
+[0:52:20] Those are my feelings.
+[0:52:22] I think warfare is overrated, realm one,
+[0:52:24] and I think diplomacy is underrated.
+[0:52:26] I think if you have diplomacy in your hand,
+[0:52:29] you can potentially sell custodians.
+[0:52:31] You can't get it yourself, right?
+[0:52:34] Because you're late in pick.
+[0:52:36] I mean, I don't want to make it where diplomacy
+[0:52:39] is now overstated.
+[0:52:40] I still think diplomacy is like a fifth or sixth.
+[0:52:43] Yeah, yeah, yeah.
+[0:52:45] So, but if you have diplomacy in your hands,
+[0:52:47] you can potentially sell it to a new custodians person
+[0:52:50] of some of these other things that we've talked about
+[0:52:52] have been met.
+[0:52:53] Yeah.
+[0:52:53] Do you have anything else?
+[0:52:54] Are there any other special faction considerations
+[0:52:57] we have to make?
+[0:52:58] We could talk about like MENTAC, but honestly,
+[0:53:00] I don't think MENTAC's pillaging actually comes up
+[0:53:02] as a major deterrent round one, because they're
+[0:53:04] not neighbors with anybody.
+[0:53:06] Asaural agenting is always like a crazy thing,
+[0:53:09] but we could lose ourselves in the weeds
+[0:53:11] of too many faction considerations.
+[0:53:14] But I didn't know if there was any final big name.
+[0:53:17] I didn't bring up Winu in a round one, Meccitol thing.
+[0:53:20] Obviously, Winu with the right tech timing
+[0:53:23] and warfare can just take mekataw
+[0:53:27] because they don't need the answer.
+[0:53:27] But do you want to sell it to Winu?
+[0:53:29] Yeah, that might be a little scary to me.
+[0:53:31] You shouldn't work with that Winu player
+[0:53:33] is the realistic thing.
+[0:53:34] That should not be a thing the table wants.
+[0:53:36] You should just ask for a high price.
+[0:53:40] Set a high price for it.
+[0:53:42] I'm thinking alliance or something like that.
+[0:53:46] Right, right.
+[0:53:46] some non-monetary value of actual raw power.
+[0:53:51] And the other thing too is with that one,
+[0:53:53] you got to look at who else is at the table,
+[0:53:57] because you would want to manipulate the situation
+[0:53:59] to where Winu gets to take Mechital Rex,
+[0:54:01] but then there is a rival that could unseat them,
+[0:54:06] because Winu on Mechital Rex Round 2
+[0:54:10] is not the most guaranteed position.
+[0:54:13] I don't know.
+[0:54:14] in the table at table L.
+[0:54:16] Who I saw a lot of factions, even with the plus two,
+[0:54:19] Winu generally can't get very many units
+[0:54:22] to mechatar X round one.
+[0:54:23] So it's not like it's a big force.
+[0:54:25] But the other thing is you gotta work
+[0:54:27] into your calculation is like,
+[0:54:28] are these other factions gonna move quickly?
+[0:54:30] Because that's the problem with the Winu plus two
+[0:54:32] is that it eventually makes it unworkable.
+[0:54:35] With any amount of plastic, it's just like,
+[0:54:38] well that plus two and all those fighters there,
+[0:54:40] I mean it looks stupid, but they're all hitting.
+[0:54:43] so I don't know what to do.
+[0:54:44] Right, right.
+[0:54:45] Well, I feel like we've covered the gist
+[0:54:48] of the basics of round one negotiations.
+[0:54:51] This feels like a good episode to me.
+[0:54:53] Yeah, I think it does feel like a good episode.
+[0:54:56] Is there anything else in your nog in at all
+[0:54:59] or any other pre-erada we have in the end of our time?
+[0:55:01] I have one other, I do have one final pre-erada
+[0:55:03] that I think is worth noting at this point.
+[0:55:05] And this is a meta-dependent thing,
+[0:55:07] but I still think it matters
+[0:55:09] and that people should consider it.
+[0:55:10] And this is from Peter H.
+[0:55:12] My one note would be to not talk about things too early or too much.
+[0:55:18] Unless something is immediately relevant to your actions in Round 1, don't talk about
+[0:55:21] it in Round 1.
+[0:55:22] Don't get a reputation for wasting time.
+[0:55:25] And if you don't know what you want from a trade, or don't expect the other person
+[0:55:30] to be able to pay what you want, don't bring it up, even more so than in other rounds.
+[0:55:34] I think it's important for trade to be concise and purposeful.
+[0:55:38] And more than in any other round, it's easy to make the mistake of not doing that.
+[0:55:42] Yeah.
+[0:55:43] I think that in general, when people are talking in Twilight Imperium on TTS, I think it should
+[0:55:51] be about proposing a price or making an offer and then rejecting or accepting.
+[0:55:57] Instead, we get into this kind of wiggle room used car salesman world, which is actually
+[0:56:04] hilarious and kind of great sometimes.
+[0:56:07] The problem you can run into is like,
+[0:56:09] sometimes people are just trying to play a game.
+[0:56:11] I don't know, a lot of the times when I'm trying to play,
+[0:56:13] I wanna try and get in under six hours, you know?
+[0:56:17] And if that means that it's gonna screw up
+[0:56:20] someone's style of play, it's hard to feel too bad about that.
+[0:56:24] It's like, in a tournament setting, we love Crayken.
+[0:56:27] In a tournament setting, we love Crayken.
+[0:56:29] And when you play with Crayken in a not-tournament setting,
+[0:56:31] Crayken doesn't go crazy.
+[0:56:33] Crayken can be a normal dude to see.
+[0:56:36] He brings a special game to the tournament
+[0:56:37] because it's the time that you're allowed to do that.
+[0:56:41] Right, you have a stage to do with what you will.
+[0:56:44] I completely understand that.
+[0:56:46] I'm just talking about in your normal everyday game.
+[0:56:50] You know, yeah, if we can get down to prices
+[0:56:53] and just, and just, and that's I think why,
+[0:56:56] why we have things like X minus one is,
+[0:56:59] is the point is for there to be a norm set
+[0:57:02] so that the game takes less time.
+[0:57:04] Now, you do not have to respect norms like they are just like,
+[0:57:08] absolute and there's no strain from them,
+[0:57:11] but also be aware of the norms so that if you want to change it a little bit,
+[0:57:15] you can say, hey, normally it's the X minus one,
+[0:57:16] I'm gonna say, I'm gonna alter the deal just a little bit.
+[0:57:19] I know there's the norm.
+[0:57:20] Here's my thing, you wanna take that or leave it, basically.
+[0:57:25] I mean, that's always the hardest part of like playing with like,
+[0:57:27] maybe let's say two brand new players,
+[0:57:29] is like there's four people with all these assumptions,
+[0:57:32] and then there's one new player at the table being like,
+[0:57:34] I'll refresh you and give you a trade good.
+[0:57:36] And it's like, well, hang on, slow down.
+[0:57:38] Please, this is quite a disruption
+[0:57:40] to what we talked about.
+[0:57:41] So let's slow down a little bit.
+[0:57:44] Yeah, and you know what?
+[0:57:45] That's actually a really good note, Matt.
+[0:57:46] Whenever you're playing with a newer player,
+[0:57:48] chill.
+[0:57:49] I think you should just keep the deals standard.
+[0:57:53] Don't, don't like if the new player is like,
+[0:57:55] I wanna get all creative with the deal baking good stuff.
+[0:57:58] Just let them know, actually a lot of times
+[0:58:01] newer players reject this stuff.
+[0:58:02] They just say you're lying to me.
+[0:58:04] They just say you're lying to me.
+[0:58:05] Yeah, nobody ever wants to trust you.
+[0:58:06] I think the tactic with newer players
+[0:58:08] is to sort of go along with them,
+[0:58:09] but also encourage them to find a solution quickly.
+[0:58:14] It's not about telling them what your rules are.
+[0:58:17] It's about like, listen, we could spend all day with this
+[0:58:20] and we should probably just find something quickly.
+[0:58:22] But for a lot of people's first or second game of TI,
+[0:58:25] it's the adventure of this is the big game
+[0:58:28] that's supposed to take all day
+[0:58:29] and everything's negotiable and all that.
+[0:58:31] So it's hard to-
+[0:58:32] They want their creativity to be.
+[0:58:33] They want their creativity.
+[0:58:34] And you should, the point is, you know,
+[0:58:37] it's so hard when experienced players are playing
+[0:58:39] with like brand new players because we have all these
+[0:58:43] assumptions about how negotiations are supposed to shake out
+[0:58:45] and things can go wildly different.
+[0:58:47] And I think sometimes you have to just take the stance of like,
+[0:58:50] well, let's let them do their thing.
+[0:58:53] Like Hunter and I have this issue, you know,
+[0:58:56] decently often, not all the time these days,
+[0:58:59] but where the two of us step on each other's feet all the time
+[0:59:04] within negotiations, because we just like,
+[0:59:06] we have our eye on each other,
+[0:59:08] and we've been like actively for like a year
+[0:59:10] trying to work ourselves out of like,
+[0:59:13] constantly renegotiating each other's deals
+[0:59:16] and like, how we think about how the other person
+[0:59:20] is playing a newer player.
+[0:59:21] I think early on at TI4, we would have like a brand new player,
+[0:59:24] and we both were like, you're just completely trying
+[0:59:26] to screw them over, like you're completely taking advantage
+[0:59:28] of them and like were Matt and I never was.
+[0:59:31] You always just, you know, it's like you sell them,
+[0:59:35] you sell them this problem.
+[0:59:37] You sell them like a car with salt or with sugar
+[0:59:40] in the engine or whatever.
+[0:59:42] You know, it's like, that's the kind of stuff that you do.
+[0:59:44] And meanwhile, my philosophy is that the new player,
+[0:59:48] I just put a handicap on myself, which is like
+[0:59:50] whatever silly stuff they come up with,
+[0:59:52] that is really bad for me deal wise.
+[0:59:54] I generally try and say yes to.
+[0:59:56] Like I'll be like, this is a bad deal for me,
+[0:59:58] But, okay, let's do it. It's fine.
+### range 3600-4200s
+[1:00:00] And then you're just trying to trick them and ruin their day and win this game off of them and it's not ethical, it's immoral.
+[1:00:09] And I'm just not willing to engage with that kind of stuff. I have a strong backbone, a backbone that is riddled with COVID.
+[1:00:17] I'm going to thank our weird players. Big Al Capuccino, Squeamish Inu, Brassbird, Brian, Kaloo, and Son of Leto, Astoria,
+[1:00:26] Alice, M. Lachowski, Sunfax, Absol, R.Y.'s, Fancy Zealing, and T.G. Welch, and I want
+[1:00:31] to thank our little piece to those Patience of Virtue. My son is also named more Anvilier
+[1:00:34] Sturmister and Boo-Poo, Dobr-Hwa-Wah-Wah, Frank G. Gazky, O'Gundock, Rekka, Jaddy M.
+[1:00:39] Jedi, Carnal, Rollo, Uncle Baddy, and Teddy's Jam for you.
+[1:00:44] Awesome.
+[1:00:45] Uh, homebrewer skilled game.
+[1:00:47] It will happen.
+[1:00:48] Yeah.
+[1:00:49] I don't know.
+[1:00:50] I don't know when, don't know how.
+[1:00:52] It won't-
+[1:00:53] I mean, well, I know how.
+[1:00:54] I think we have to start looking at non-weekend because people got holiday breaks and stuff like I feel like it needs to be like
+[1:01:00] 27th 28th 29th something like that
+[1:01:03] Something like that. It will probably come together really quickly and I apologize for that
+[1:01:07] Yeah
+[1:01:07] But my life has been upside down topsy-turvy real bad lately and I just got to a point where I can just like sit and think and work
+[1:01:17] Oh boy, and that's it. Oh, I hunter you sure can do a lot of that specifically right now
+[1:01:21] You know, I would say that's all I can do right now.
+[1:01:25] Like- You're trapped in a house alone with nothing on the trees at work.
+[1:01:28] I am trapped in a house alone with Christmas sharply approaching.
+[1:01:33] Like, Xmas and Xmas Eve is right around the corner.
+[1:01:37] Yep.
+[1:01:37] And I will be spending it in this room by myself.
+[1:01:41] Yeah.
+[1:01:42] With my family avoiding me utterly.
+[1:01:45] Those homebrewers guild subjects are strategy cards and secrets.
+[1:01:49] I think you've cut off strategy cards,
+[1:01:51] but secret objectives is there still time to get them in.
+[1:01:54] Yeah, if you want to throw more secret objectives in there,
+[1:01:56] go ahead and throw them in.
+[1:01:57] Next time you hear from me, I promise,
+[1:01:59] I'll either have already done the game
+[1:02:01] or we will be announcing the exact date.
+[1:02:04] Yeah, so yeah, don't worry about it.
+[1:02:06] I'm hoping the holiday spectacular is this coming weekend.
+[1:02:11] So next week's episode will be kind of our general,
+[1:02:15] slow episode where we just,
+[1:02:16] with the people that played the holiday spectacular,
+[1:02:18] we talk through the game.
+[1:02:19] It's Twilight Imperium, Survivor.
+[1:02:22] I'm very excited.
+[1:02:23] I've been working very hard on it.
+[1:02:24] I want to give a shout out to DJ38s,
+[1:02:28] who is a fellow Survivor fan,
+[1:02:29] who I got to spend a whole day prepping Survivor ideas
+[1:02:33] with them and we were bouncing fun Survivor ideas
+[1:02:36] off of each other.
+[1:02:37] So this game, whenever and however it actually happens,
+[1:02:40] should be very, very, very fun.
+[1:02:43] It's kind of the TI game I maybe have
+[1:02:46] and most excited to be a part of.
+[1:02:48] and I'm not even playing in it,
+[1:02:49] but I've never been more excited for a game of TI
+[1:02:52] than this one.
+[1:02:53] Yeah.
+[1:02:54] I'm hoping it's the 26th, but Hunter has COVID.
+[1:02:59] So I don't know.
+[1:03:01] Oh yeah, we'll see how that goes.
+[1:03:03] You can rate our show on Apple Podcast and iTunes
+[1:03:06] or wherever you listen to us, give us a five star rating.
+[1:03:08] It really helps out the algorithms.
+[1:03:10] We all know what algorithms are these day.
+[1:03:12] So also spacecatspistials.com for more information
+[1:03:15] on our Patreon, our Twitter, our Discord, our merch.
+[1:03:18] You can buy the new awesome shirt
+[1:03:20] that is Titans of all wearing a Gundam armor.
+[1:03:24] You can become a Galactic Council on our Patreon
+[1:03:27] and vote for episodes like this.
+[1:03:29] You can also send us this Imperium Life
+[1:03:33] or Play of the Week stories
+[1:03:34] to spacecatspeaceturtles at gmail.com.
+[1:03:38] And Hunter, I've got a little play of the week
+[1:03:39] from you from our buddy, otherwise.
+[1:03:41] Yeah, ROI is my new best in IRL friend soon,
+[1:03:48] because I'm coming to New York, really.
+[1:03:51] It's perfect because this is a New York set game.
+[1:03:55] I had my first and probably last eight player IRL game,
+[1:03:59] the last game of the New York City TI4 League season.
+[1:04:03] After nine hours, the first stage two flipped,
+[1:04:07] conquer the week.
+[1:04:09] And it was clear that the game would thankfully end, and this would be the last round.
+[1:04:14] I had played a pretty violent SARS, with much of my plastics smashed against wars with
+[1:04:18] nearby barony and Nazroca, but was still looking great as I was able to nab Imperial.
+[1:04:24] Being SARS meant I had been cut out of support swaps, but it also meant I somewhat easily
+[1:04:29] took the Nazroca home system for the second time that game.
+[1:04:33] Inevitably, the table worked together to slay me off of it before I could pop Imperial.
+[1:04:38] This included the Mentak Hero, War Funding, Cavalry, Teklar Legion, and the Thunderion
+[1:04:45] to reroll the very last round of ground combat.
+[1:04:48] I was distraught and salty, and at that point just wanted the game to end.
+[1:04:52] I even offered my support to other players at 9 points, but they wouldn't take it.
+[1:04:57] I just had to sit there for another hour till the next in line was crowned.
+[1:05:03] But as everyone else went through things and I stewed, I saw a window.
+[1:05:08] I could maybe draw an action phase secret with dark energy tap, even though all I had left
+[1:05:13] was my lone flagship in the Nexus and a random destroyer, so I sent the destroyer to the
+[1:05:17] frontier and got a colorless relic fragment, which was useless with my one green fragment.
+[1:05:22] All was lost.
+[1:05:24] Except, in the meanwhile, the Nalu had taken the Nomad home system and threw a series of
+[1:05:30] convoluted and incomprehensible secret deals also gotten the Nomad ceasefire from Barony.
+[1:05:37] So when Nomad attempted to liberate Arc Turis, his hopes were dashed by the ceasefire.
+[1:05:44] This opened another glimmer of hope.
+[1:05:46] I offered Nomad my support for the throne so that they could end with one more point.
+[1:05:53] All I asked for was their single green relic fragment.
+[1:05:57] Even though not so long ago he had thrown everything he had to help in the effort to
+[1:06:01] stop me, he made the deal.
+[1:06:04] I purged the fragments and top decked shard of the throne for the 10th point.
+[1:06:08] The best part was the game ended immediately, so we didn't have to play out any more endgame slaying for another ruling hour.
+[1:06:15] That is so funny.
+[1:06:19] That's like the best play of the week we've had in like, oh wait, we just brought it back, but that's a really good one.
+[1:06:24] It's a really good one.
+[1:06:25] My favorite thing is when TI games devolve into everybody just wanting it to be over.
+[1:06:30] The finals of the Invitational are the best example of that, where it's like, yeah, we spent the entirety of round
+[1:06:35] win-slaying deft only for around six to be like I guess we'll just hand it to
+[1:06:39] deaf I'm sick of playing. What are we doing last round? Why does this matter?
+[1:06:44] Like we're just gonna hand points out okay fine but sometimes people win
+[1:06:48] slay in in their heart I think they're expecting to lose. Like they're like I'm
+[1:06:54] gonna win slay but I hope that I don't actually have a shot I just want to
+[1:06:59] win slay right and it's like yeah I don't know if you don't have a plan for
+[1:07:02] winning than the win-slade.
+[1:07:04] Right.
+[1:07:05] Like, you don't have to win-slade every time
+[1:07:08] as if it is some sort of,
+[1:07:09] as if you will get in trouble if you don't do it.
+[1:07:11] Right.
+[1:07:12] That's how some people act sometimes.
+[1:07:13] I'm just like, no.
+[1:07:14] I've had games where I just was like,
+[1:07:15] I crossed my arms and I said,
+[1:07:18] I got nothing.
+[1:07:19] Yep.
+[1:07:19] And I don't wanna do it anymore.
+[1:07:20] Yeah.
+[1:07:21] I will not.
+[1:07:22] And I would like to go home.
+[1:07:23] They're like, but so and so is gonna win.
+[1:07:24] I'm like, someone's gonna win.
+[1:07:26] Someone's gonna win.
+[1:07:27] They played good and so they win.
+[1:07:31] I will not.
+[1:07:31] I had Mahawk games that were like that because I'm so bad at Mahawk.
+[1:07:35] Sure, but then you get to the final round and everyone's like Mahawk give us all your goodies. Come on
+[1:07:40] We need you and I'm just like ah, no, but I don't think I win. Yeah
+[1:07:44] And the world where I could win I don't have the heart to do it. Yeah, that's why I say to people
+[1:07:48] I don't have the heart to play that game where I just barely win this time. I'm not like patience
+[1:07:54] That is exactly our mua in a sorrow recent game that I ended up technically winning
+[1:07:58] but it was like the dumb things that we had to go through that resulted in my win
+[1:08:03] Didn't make any of it feel satisfying and it just took an hour and a half
+[1:08:07] And I would have rather just crowned hunter the winner and felt pretty good about my position then gone
+[1:08:13] That wind
+[1:08:16] Give me anything. I need I know when that's all I earned on my matter. That's the thing
+[1:08:21] That's the thing is it's never gonna be good enough. You're never gonna be satisfied
+[1:08:25] It's it's it's it's just that's how that's how it works for you. Here's how I will be satisfied
+[1:08:32] Survivor Twilight Imperium. I'm Jeff Probst. I don't even play I just get to make all the rules
+[1:08:36] That is the true way to play Twilight Imperium. I win everyone else loses
+[1:08:41] That is that is kind of the theme of the show. Yes
+[1:08:46] Thank you for listening to space cats peace turtles and thanks to Ben Prunty for the use of his music
+[1:08:55] You can find more at benpruntymusic.com and benprunty.bandcamp.com.
+[1:09:00] Pax Magnifica, Bellum, L'Oreal Sum.

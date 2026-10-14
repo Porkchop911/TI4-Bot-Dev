@@ -19,8 +19,5 @@ itertools.workspace = true
 chrono.workspace = true
 parquet.workspace = true
 
-[dev-dependencies]
-rstest.workspace = true
-
 [lints]
 workspace = true

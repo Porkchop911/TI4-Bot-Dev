@@ -34,6 +34,35 @@ pub fn in_system(
     found
 }
 
+/// The system a planet sits in: a placed planet's recorded tile, else its printed tile, else
+/// whichever board system has it in `planet_units` / `planet_control`. `None` when none knows.
+///
+/// Used to locate a planet answer on the map (`payload.system`); it decides nothing.
+#[must_use]
+pub fn system_of(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    planet: &str,
+) -> Option<SystemId> {
+    let id = PlanetId::new(planet);
+    if let Some(system) = state.placed_planets.get(&id) {
+        return Some(system.clone());
+    }
+    if let Some(system) =
+        ti4_content::galaxy::planet(content, planet, sources).and_then(|record| record.system_id())
+    {
+        return Some(SystemId::new(system));
+    }
+    state
+        .board
+        .iter()
+        .find(|(_, board)| {
+            board.planet_units.contains_key(&id) || board.planet_control.contains_key(&id)
+        })
+        .map(|(system, _)| system.clone())
+}
+
 /// Put a planet that has no printed tile onto one, and give its card to a player.
 ///
 /// The planet arrives readied and controlled (LRR: a planet card gained this way is gained
@@ -196,7 +225,9 @@ pub fn attachment_cannons(
         })
         .collect();
     // Custodian's Favour (Custodia Vigilia): Mecatol Rex gains SPACE CANNON 5 for its controller.
-    found.extend(crate::factions::keleres::custodian_cannon(state, planet, owner));
+    found.extend(crate::factions::keleres::custodian_cannon(
+        state, planet, owner,
+    ));
     found
 }
 
@@ -266,6 +297,39 @@ mod tests {
         assert!(
             !place(&mut state, &system, &mirage, &player),
             "and it cannot be placed twice"
+        );
+    }
+
+    /// `system_of`: placed planets by their recorded tile, printed ones by the corpus, and a
+    /// planet nobody knows about by nothing at all.
+    #[test]
+    fn system_of_reads_placement_then_corpus_then_board() {
+        let content = ContentStore::embedded();
+        let sources = ti4_model::content_types::POK;
+        let player = ti4_model::id::PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a"]);
+        assert_eq!(
+            system_of(&state, content, sources, "lodor"),
+            Some(SystemId::new("26"))
+        );
+        assert_eq!(system_of(&state, content, sources, "not_a_planet"), None);
+
+        let (system, _) = crate::fixtures::a_placed_planet();
+        assert!(place(
+            &mut state,
+            &system,
+            &PlanetId::new("mirage"),
+            &player
+        ));
+        assert_eq!(system_of(&state, content, sources, "mirage"), Some(system));
+
+        let board_only = SystemId::new("board_only_system");
+        state
+            .system_mut(&board_only)
+            .set_control(PlanetId::new("board_only_planet"), player);
+        assert_eq!(
+            system_of(&state, content, sources, "board_only_planet"),
+            Some(board_only)
         );
     }
 }

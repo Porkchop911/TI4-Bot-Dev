@@ -1,0 +1,35 @@
+{
+  "title": "Invasion steps: bombardment, Space Cannon Defense and result toasts",
+  "description": "The bombardment and Space Cannon Defense steps of a planet invasion in the invasion panel, with unit names, planet names, player names, dice and hit thresholds instead of raw ids, and three corner toasts: bombardment result, Space Cannon Defense result and the invasion summary. Before shots were taken with TI4_SHOT_PREFIX=before on the base commit (7f922896); npm run screenshots -- BW regenerates the after shots. Fixtures are synthetic invasion states through the mocked server; seat ids are long participant ids as the engine sends them.",
+  "tag": "web/e2e/screenshots/BW-invasion-steps",
+  "shots": [
+    { "file": "before/before-bombardment-decision-desktop.png", "heading": "Bombardment target, desktop: before", "caption": "Two players have ground forces on Jord; the invader must pick whose forces take 2 bombardment hits. Two bare buttons named after the seat; nothing says who fires, how many hits, or what each answer puts at risk." },
+    { "file": "out/after-bombardment-decision-desktop.png", "heading": "Bombardment target, desktop: after", "caption": "An offer card: titled Bombardment hits, step 1 of the invasion, the planet, who bombards, hits to assign, an explanation (ground forces only, a Mech may sustain damage) and one button per player naming their forces on the planet." },
+    { "file": "before/before-bombardment-decision-phone.png", "heading": "Bombardment target, 390x844: before", "caption": "Same decision on a phone." },
+    { "file": "out/after-bombardment-decision-phone.png", "heading": "Bombardment target, 390x844: after", "caption": "Same offer card on a phone." },
+    { "file": "before/before-bombardment-result-desktop.png", "heading": "Bombardment result, desktop: before", "caption": "'ROUND RESULT jord · bombardment' with Before and After lists made of raw participant ids and unit ids, and dice chips that show only 'gallery_seat · dreadnought: 9 / 5 hit'." },
+    { "file": "out/after-bombardment-result-desktop.png", "heading": "Bombardment result, desktop: after", "caption": "Badge BOMBARDMENT for Jord, what the step is, each firing unit with its threshold ('Dreadnought, Bombardment 5 x3'), every die with its face, a Result sentence and per-player effects (what they had, lost, sustained, have left)." },
+    { "file": "before/before-bombardment-result-phone.png", "heading": "Bombardment result, 390x844: before", "caption": "Raw ids overflow the card on a phone." },
+    { "file": "out/after-bombardment-result-phone.png", "heading": "Bombardment result, 390x844: after", "caption": "The same card at phone width." },
+    { "file": "before/before-space-cannon-result-desktop.png", "heading": "Space Cannon Defense, desktop: before", "caption": "'jord · space cannon defense' with ids and 'player_...: pds: 8 / 6 hit'." },
+    { "file": "out/after-space-cannon-result-desktop.png", "heading": "Space Cannon Defense, desktop: after", "caption": "Names which player's PDS fired ('PDS, Space Cannon 6 x2'), each die, the Result sentence ('1 hit from 2 dice, destroyed 1 Infantry') and that the hits fell on the landed ground forces." },
+    { "file": "before/before-space-cannon-result-phone.png", "heading": "Space Cannon Defense, 390x844: before", "caption": "Same step on a phone." },
+    { "file": "out/after-space-cannon-result-phone.png", "heading": "Space Cannon Defense, 390x844: after", "caption": "Same card at phone width." },
+    { "file": "before/before-toast-bombardment-desktop.png", "heading": "Bombardment toast, desktop: before", "caption": "No toast." },
+    { "file": "out/after-toast-bombardment-desktop.png", "heading": "Bombardment toast, desktop: after", "caption": "A corner toast with a Bombardment tag: hits from dice and the ground forces destroyed." },
+    { "file": "before/before-toast-bombardment-phone.png", "heading": "Bombardment toast, 390x844: before", "caption": "No toast." },
+    { "file": "out/after-toast-bombardment-phone.png", "heading": "Bombardment toast, 390x844: after", "caption": "The toast sits at the bottom left, clear of the map controls." },
+    { "file": "before/before-toast-space-cannon-desktop.png", "heading": "Space Cannon toast, desktop: before", "caption": "No toast." },
+    { "file": "out/after-toast-space-cannon-desktop.png", "heading": "Space Cannon toast, desktop: after", "caption": "Space Cannon Defense toast: hits against the landed forces and what was destroyed." },
+    { "file": "before/before-toast-space-cannon-phone.png", "heading": "Space Cannon toast, 390x844: before", "caption": "No toast." },
+    { "file": "out/after-toast-space-cannon-phone.png", "heading": "Space Cannon toast, 390x844: after", "caption": "The same toast on a phone." },
+    { "file": "before/before-toast-summary-desktop.png", "heading": "Invasion summary toast, desktop: before", "caption": "No toast." },
+    { "file": "out/after-toast-summary-desktop.png", "heading": "Invasion summary toast, desktop: after", "caption": "When the invasion ends: who invaded, units landed, losses on both sides, bombardment and Space Cannon hits, the ground combat outcome and who controls the planet now." },
+    { "file": "before/before-toast-summary-phone.png", "heading": "Invasion summary toast, 390x844: before", "caption": "No toast." },
+    { "file": "out/after-toast-summary-phone.png", "heading": "Invasion summary toast, 390x844: after", "caption": "The same summary on a phone." }
+  ],
+  "notes": [
+    { "title": "Engine change", "text": "The bombardment target decision now carries display-only offer-card details (planet, bombarding seat, hits, per-player forces). Option ids, order and kinds are unchanged; details stay out of decision records and fingerprints." },
+    { "title": "Toast limits", "text": "Toasts are derived from the board's last invasion step, so a step that the engine never records (no dice rolled, e.g. the planet is shielded or nobody can bombard) raises none. Steps already visible when the page loads, or after an undo, do not toast." }
+  ]
+}

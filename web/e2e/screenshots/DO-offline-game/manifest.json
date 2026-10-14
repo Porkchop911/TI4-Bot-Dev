@@ -1,0 +1,22 @@
+{
+  "title": "Offline play: the game screen",
+  "description": "A real game against rule bots with no server: the rules engine runs in a Web Worker on this device (WebAssembly JSPI) and the page talks to it through LocalTransport, so every game component is the one the online game uses. Every shot is the production code path against the real engine (seed 11, 4 players, seat 3); calls to /api, /ws, /advisor and /health are blocked while it is taken.",
+  "tag": "web/e2e/screenshots/DO-offline-game",
+  "shots": [
+    { "file": "out/1-strategy-choice-desktop.png", "heading": "First decision", "caption": "Seat 3 is asked after the two bots before it picked their strategy cards. The same decision dialog as an online game." },
+    { "file": "out/1-strategy-choice-390x844.png", "heading": "First decision on a phone", "caption": "The same at 390x844." },
+    { "file": "out/2-board-and-banner-desktop.png", "heading": "Board and offline banner", "caption": "With the dialog folded away: the banner above the game says it runs on this device and names what is off (map splice preview, turn redo, advisor, multiplayer)." },
+    { "file": "out/2-board-and-banner-390x844.png", "heading": "Board on a phone", "caption": "On a phone the banner shrinks to one line so the game keeps the screen." },
+    { "file": "out/3-action-phase-desktop.png", "heading": "Action phase", "caption": "Played through the real UI into the action phase: turn bar, player sheet and map as in an online game." },
+    { "file": "out/3-action-phase-390x844.png", "heading": "Action phase on a phone", "caption": "The same at 390x844." },
+    { "file": "out/4-event-log-no-turn-redo-desktop.png", "heading": "Event log: undo yes, turn redo no", "caption": "History controls that the engine supports (Undo from a decision, copy replay) stay; turn redo is hidden because the offline transport reports turnRedo: false." },
+    { "file": "out/4-event-log-no-turn-redo-390x844.png", "heading": "Event log on a phone", "caption": "The same at 390x844." },
+    { "file": "out/5-resumed-after-refresh-desktop.png", "heading": "After a refresh", "caption": "Reloading the tab in the middle of a game plays the stored answers again in a new engine and shows the same question. The game comes back from the IndexedDB save store." },
+    { "file": "out/6-feedback-sheet-desktop.png", "heading": "Feedback from an offline game", "caption": "The feedback button exists in an offline game even though there is no server to ask." },
+    { "file": "out/7-feedback-queued-desktop.png", "heading": "Queued feedback", "caption": "Send does not wait for the network: the report is queued with the seed, the answers and the engine hash and goes out in the background." }
+  ],
+  "notes": [
+    { "title": "Reproduce", "text": "cd web && npm run build:wasm && npm run screenshots -- DO (needs cargo with the wasm32-unknown-unknown target; TI4_WASM_FILE=<file> reuses a prebuilt engine)." },
+    { "title": "Not shown", "text": "The advisor odds in space and ground combat fall back to the rough estimate offline (tag: Rough fleet estimate); a combat in these seeds is not guaranteed in the first rounds, so it is covered by unit-level wiring only." }
+  ]
+}

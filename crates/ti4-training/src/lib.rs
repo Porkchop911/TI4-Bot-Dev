@@ -21,7 +21,39 @@
 static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 pub mod archive;
-pub mod battle_arena;
+pub use ti4_calc::arena as battle_arena;
+
+/// Every faction a game can seat (the wide roster, the three Council Keleres listed apart), with
+/// and without upgrades when asked: the arena of battle feature version 8. Lives here rather than
+/// on [`battle_arena::Profile`] because `ti4-calc` stays free of the engine (it links into wasm).
+#[must_use]
+pub fn wide_profiles(
+    content: &ti4_content::ContentStore,
+    upgrades: bool,
+) -> Vec<battle_arena::Profile> {
+    let mut factions: Vec<&'static str> = Vec::new();
+    for entry in ti4_engine::seating::wide_roster(content, ti4_model::content_types::FULL) {
+        if entry == ti4_engine::seating::KELERES_FAMILY {
+            factions.extend(ti4_engine::factions::keleres::VARIANTS);
+        } else {
+            factions.push(entry);
+        }
+    }
+    let mut out = Vec::new();
+    for faction in factions {
+        out.push(battle_arena::Profile {
+            faction,
+            upgraded: false,
+        });
+        if upgrades {
+            out.push(battle_arena::Profile {
+                faction,
+                upgraded: true,
+            });
+        }
+    }
+    out
+}
 pub mod capture;
 pub mod evaluation;
 pub mod gradient;

@@ -293,6 +293,7 @@ mod tests {
                 source_scope: None,
                 diplomacy: false,
                 lineup: None,
+                rule_seats: Vec::new(),
             },
             board: vec![ti4_review::BoardTile {
                 system: "sol".to_owned(),
@@ -336,6 +337,7 @@ mod tests {
                     temperature: 0.5,
                     diplomacy: false,
                     lineup: None,
+                    rule_seats: Vec::new(),
                 };
                 let review = ti4_review::LiveReview::start(&config)
                     .expect("a real starting table to take frames from");

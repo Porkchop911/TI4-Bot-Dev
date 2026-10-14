@@ -1,0 +1,126 @@
+{
+  "title": "Hit kind clarity: Assault Cannon, anti-fighter barrage, Courageous, Space Cannon, bombardment",
+  "description": "What each hit decision now says: the source, whether it is a destroy or a normal hit, which ships may take it, and whether Sustain Damage applies. Before shots are the real-game captures of BJ-combat-decisions; after shots are synthetic fixtures through a mocked server (the engine now sends a display-only context.hit; the web falls back to the subtype for older payloads).",
+  "tag": "web/e2e/screenshots/BK-hit-kind-clarity",
+  "shots": [
+    {
+      "file": "out/before-assault-cannon-desktop.png",
+      "heading": "Assault Cannon, desktop 1440x900: before",
+      "caption": "Real engine game (BJ capture, Hacan attacker): generic combat view, the header still reads 'Retreat / next round', nothing names the card or says it is a destroy."
+    },
+    {
+      "file": "out/after-assault-cannon-desktop.png",
+      "heading": "Assault Cannon, desktop 1440x900: after",
+      "caption": "Banner names the source (Assault Cannon), says the opponent destroys 1 of YOUR non-fighter ships, 'Destroy, not a hit', 'Cannot be sustained', 'Non-fighter ships only'. Fighters and infantry are dimmed with 'Not a legal target' (tooltip: cannot be assigned). Rows say 'Click to destroy'. Synthetic fixture through the mocked server."
+    },
+    {
+      "file": "out/before-assault-cannon-phone.png",
+      "heading": "Assault Cannon, phone 390x844: before",
+      "caption": "Real engine game (BJ capture, Hacan attacker): generic combat view, the header still reads 'Retreat / next round', nothing names the card or says it is a destroy."
+    },
+    {
+      "file": "out/after-assault-cannon-phone.png",
+      "heading": "Assault Cannon, phone 390x844: after",
+      "caption": "Banner names the source (Assault Cannon), says the opponent destroys 1 of YOUR non-fighter ships, 'Destroy, not a hit', 'Cannot be sustained', 'Non-fighter ships only'. Fighters and infantry are dimmed with 'Not a legal target' (tooltip: cannot be assigned). Rows say 'Click to destroy'. Synthetic fixture through the mocked server."
+    },
+    {
+      "file": "out/before-barrage-window-desktop.png",
+      "heading": "Anti-fighter barrage window, desktop 1440x900: before",
+      "caption": "Real engine game (BJ capture): the raw label 'when ANTI FIGHTER BARRAGE STARTED' above the Waylay offer, no explanation."
+    },
+    {
+      "file": "out/after-barrage-window-desktop.png",
+      "heading": "Anti-fighter barrage window, desktop 1440x900: after",
+      "caption": "Banner: 'Anti-Fighter Barrage: before <roller> rolls', explaining that every barrage hit destroys one opposing fighter automatically (nobody is asked, no sustain, extra hits are lost) and that Waylay is the exception. The raw label is replaced by 'Before the barrage dice are rolled'."
+    },
+    {
+      "file": "out/before-barrage-window-phone.png",
+      "heading": "Anti-fighter barrage window, phone 390x844: before",
+      "caption": "Real engine game (BJ capture): the raw label 'when ANTI FIGHTER BARRAGE STARTED' above the Waylay offer, no explanation."
+    },
+    {
+      "file": "out/after-barrage-window-phone.png",
+      "heading": "Anti-fighter barrage window, phone 390x844: after",
+      "caption": "Banner: 'Anti-Fighter Barrage: before <roller> rolls', explaining that every barrage hit destroys one opposing fighter automatically (nobody is asked, no sustain, extra hits are lost) and that Waylay is the exception. The raw label is replaced by 'Before the barrage dice are rolled'."
+    },
+    {
+      "file": "out/after-barrage-waylay-hits-desktop.png",
+      "heading": "Barrage hits after Waylay, desktop 1440x900: after",
+      "caption": "Once Waylay widened the roll, the hits are assigned like normal hits: banner 'Anti-Fighter Barrage: 2 hits from <roller> to assign', chips Normal hit / Any ship (Waylay) / Sustain was offered first. No before shot: the base UI showed the generic Assign hits panel with no source."
+    },
+    {
+      "file": "out/after-barrage-waylay-hits-phone.png",
+      "heading": "Barrage hits after Waylay, phone 390x844: after",
+      "caption": "Once Waylay widened the roll, the hits are assigned like normal hits: banner 'Anti-Fighter Barrage: 2 hits from <roller> to assign', chips Normal hit / Any ship (Waylay) / Sustain was offered first. No before shot: the base UI showed the generic Assign hits panel with no source."
+    },
+    {
+      "file": "out/before-courageous-desktop.png",
+      "heading": "Courageous to the End, desktop 1440x900: before",
+      "caption": "Real engine game (BJ capture): generic combat view, no card name."
+    },
+    {
+      "file": "out/after-courageous-desktop.png",
+      "heading": "Courageous to the End, desktop 1440x900: after",
+      "caption": "Banner: 'Courageous to the End: destroy 1 of your ships (<opponent>'s die hit)', 'Destroy, not a hit', 'Any ship', 'Cannot be sustained'. Ground forces in space are dimmed as not legal."
+    },
+    {
+      "file": "out/before-courageous-phone.png",
+      "heading": "Courageous to the End, phone 390x844: before",
+      "caption": "Real engine game (BJ capture): generic combat view, no card name."
+    },
+    {
+      "file": "out/after-courageous-phone.png",
+      "heading": "Courageous to the End, phone 390x844: after",
+      "caption": "Banner: 'Courageous to the End: destroy 1 of your ships (<opponent>'s die hit)', 'Destroy, not a hit', 'Any ship', 'Cannot be sustained'. Ground forces in space are dimmed as not legal."
+    },
+    {
+      "file": "out/after-space-cannon-graviton-desktop.png",
+      "heading": "Space Cannon hits bound by Graviton, desktop 1440x900: after",
+      "caption": "Banner 'Space Cannon: 2 hits from <opponent> to assign' with 'Non-fighter ships only' (Graviton Laser System binds the hits to non-fighters). No before shot (the base UI showed the generic panel)."
+    },
+    {
+      "file": "out/after-space-cannon-graviton-phone.png",
+      "heading": "Space Cannon hits bound by Graviton, phone 390x844: after",
+      "caption": "Banner 'Space Cannon: 2 hits from <opponent> to assign' with 'Non-fighter ships only' (Graviton Laser System binds the hits to non-fighters). No before shot (the base UI showed the generic panel)."
+    },
+    {
+      "file": "out/before-bombardment-target-desktop.png",
+      "heading": "Bombardment target, desktop 1440x900: before",
+      "caption": "Real engine game (BJ capture): the options read \"player_<64 hex>'s units\" (the invasion path never ran option labels through the participant-name substitution)."
+    },
+    {
+      "file": "out/after-bombardment-target-desktop.png",
+      "heading": "Bombardment target, desktop 1440x900: after",
+      "caption": "Options read the seat's name; the card is headed 'Bombardment: choose a target' with the rule: hits go to ground forces only, each hit destroys one, a Mech may sustain. Synthetic fixture (a fake lobby with player_<hash> ids)."
+    },
+    {
+      "file": "out/before-bombardment-target-phone.png",
+      "heading": "Bombardment target, phone 390x844: before",
+      "caption": "Real engine game (BJ capture): the options read \"player_<64 hex>'s units\" (the invasion path never ran option labels through the participant-name substitution)."
+    },
+    {
+      "file": "out/after-bombardment-target-phone.png",
+      "heading": "Bombardment target, phone 390x844: after",
+      "caption": "Options read the seat's name; the card is headed 'Bombardment: choose a target' with the rule: hits go to ground forces only, each hit destroys one, a Mech may sustain. Synthetic fixture (a fake lobby with player_<hash> ids)."
+    }
+  ],
+  "notesHeading": "Follow-ups (not fixed here)",
+  "notes": [
+    {
+      "title": "Raw strings in the Vortex / Cabal agent / Stillness decisions: ",
+      "text": "the BJ real-game shots show 'VTX', 'CABALAGENT' and 'sol_infantry' as option or prompt text. They come from the faction content's labels, not the combat UI; list for a separate labels pass."
+    },
+    {
+      "title": "Staged hit panel on a phone: ",
+      "text": "the plus buttons of the Assign hits rows are clipped at 390px width when a row has a capacity label (visible in the Waylay and Space Cannon shots)."
+    },
+    {
+      "title": "Bombardment hits on ground forces: ",
+      "text": "assign_ground_casualty still uses the generic ground-combat view; only the target pick was clarified."
+    },
+    {
+      "title": "After shots are synthetic: ",
+      "text": "no real-engine game was driven for them, so the real path is covered by the engine test (context.hit on assault_cannon_destroy) and the vitest rendering tests."
+    }
+  ]
+}

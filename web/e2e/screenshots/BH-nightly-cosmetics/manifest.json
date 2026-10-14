@@ -1,0 +1,40 @@
+{
+  "title": "Nightly cosmetics: banner, popup, production rows",
+  "description": "The cosmetic findings of the 2026-10-08 nightly, reproduced on the base commit and fixed. Before shots are taken on the base commit and committed under before/; after shots and the Playwright measurements (no overlap, controls on top at their centre, every production row reachable) are regenerated with npm run screenshots -- BH. Synthetic fixtures through a mocked server.",
+  "tag": "web/e2e/screenshots/BH-nightly-cosmetics",
+  "shots": [
+    { "file": "before/before-banner-desktop-short.png", "heading": "Before: prepare banner over the question, short desktop window", "caption": "The Preparing banner floats over the top of the stand-in question and covers its title (nightly runs 44 and 60). The dialog was centred in the whole screen, so a window that is not tall enough puts them on top of each other." },
+    { "file": "out/after-banner-desktop-short.png", "heading": "After: question starts below the banner, short desktop window", "caption": "The dialog starts under the banner (padding measured from it) and scrolls inside the rest." },
+    { "file": "out/after-banner-folded-desktop-short.png", "heading": "After: banner folded, short desktop window", "caption": "The fold control now exists on windows up to 640 px high too; folded, the whole question fits." },
+    { "file": "before/before-banner-390x844.png", "heading": "Before: phone 390x844", "caption": "The banner docks at the bottom; a tall question had its lower part (and buttons) under it." },
+    { "file": "out/after-banner-390x844.png", "heading": "After: phone 390x844, banner open", "caption": "The dialog ends above the docked banner; title, Spend and Skip clear of it." },
+    { "file": "out/after-banner-folded-390x844.png", "heading": "After: phone 390x844, banner folded", "caption": "Folded banner, 58 px; the question gets the room back." },
+    { "file": "out/after-banner-360x740.png", "heading": "After: phone 360x740", "caption": "Same at 360 px." },
+    { "file": "before/before-banner-844x390.png", "heading": "Before: landscape 844x390", "caption": "The docked banner at the right edge lies over the right of the question (Spend and the minimize control)." },
+    { "file": "out/after-banner-844x390.png", "heading": "After: landscape 844x390", "caption": "The question is padded away from the banner on the left side." },
+    { "file": "out/after-banner-folded-844x390.png", "heading": "After: landscape, folded", "caption": "Folded banner, the question keeps most of the width." },
+
+    { "file": "before/before-popup-390x844.png", "heading": "Before: system popup over the activation bar, 390x844", "caption": "The popup reaches y=759, the Confirm Activation bar starts at y=688: Confirm and Cancel are partly under the popup (nightly runs 21 and 25)." },
+    { "file": "out/after-popup-390x844.png", "heading": "After: popup ends above the bar, 390x844", "caption": "The popup's bottom edge follows the measured top of the bar. Confirm Activation and Cancel are the topmost elements at their centres." },
+    { "file": "before/before-popup-360x740.png", "heading": "Before: 360x740", "caption": "Same overlap." },
+    { "file": "out/after-popup-360x740.png", "heading": "After: 360x740", "caption": "Clear." },
+    { "file": "out/after-popup-desktop.png", "heading": "Desktop 1280x720", "caption": "The popup already ended at y=470 above the bar at y=632 here; the guarantee is now measured instead of a fixed 250 px inset, so a taller bar (error line, wrapped label) moves the popup up on desktop as well." },
+    { "file": "out/after-popup-desktop-log.png", "heading": "Desktop with the event log open", "caption": "No overlap with the activation bar. The bar itself lies over the event-log rows, which is the existing floating-bar design." },
+    { "file": "out/after-popup-844x390.png", "heading": "Landscape 844x390", "caption": "Popup and bar do not overlap (the popup has its 160 px minimum)." },
+
+    { "file": "before/before-production-top-desktop.png", "heading": "Before: production builder, desktop 1280x720", "caption": "The Dreadnought row is cut by the sticky Reset / Confirm / Done bar (nightly run 30). The dialog scrolls and every row is reachable at the end of the scroll; what was wrong is the hard cut, and that a focused row could land under the bar." },
+    { "file": "out/after-production-top-desktop.png", "heading": "After: desktop", "caption": "Tighter spacing on short screens shows more rows, the bar fades the rows behind it, and scroll-padding keeps a focused or scrolled-to row above the bar." },
+    { "file": "out/after-production-end-desktop.png", "heading": "After: end of the scroll, desktop", "caption": "The last row clears the bar." },
+    { "file": "before/before-production-top-390x844.png", "heading": "Before: phone 390x844", "caption": "Top of the dialog on a phone." },
+    { "file": "out/after-production-top-390x844.png", "heading": "After: phone 390x844", "caption": "Top of the dialog." },
+    { "file": "out/after-production-end-390x844.png", "heading": "After: end of the scroll, 390x844", "caption": "Last rows fully visible above the bar (64 px bottom padding keeps clear of Players / Events)." },
+    { "file": "out/after-production-top-360x740.png", "heading": "After: 360x740", "caption": "Top of the dialog." },
+    { "file": "out/after-production-top-844x390.png", "heading": "After: landscape 844x390", "caption": "Top of the dialog on a landscape phone." },
+    { "file": "out/after-production-end-844x390.png", "heading": "After: landscape, end of the scroll", "caption": "Every row's - and + reachable (measured with elementFromPoint after scrolling each row to the centre and the last to the end)." }
+  ],
+  "notesHeading": "Checked and left as it is",
+  "notes": [
+    { "title": "Support for the Throne in both trade columns", "text": "Correct. The staging desk offers each side its own copy of the note (a toggle per side; the swap hands over both copies), and the answer view names them by owner: 'Support (hacan)' in You give, 'Support (sol)' in You receive. No change." },
+    { "title": "Activation bar over the event log", "text": "With the docked event log open the floating activation bar lies over its rows. That is the floating-bar design (it must stay reachable); not changed." }
+  ]
+}

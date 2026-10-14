@@ -218,6 +218,9 @@ where
 }
 
 /// Play a game recording the target seat's decisions, and return them.
+type RecordLog = Rc<RefCell<Vec<ti4_mlp::bot::PpoRecord>>>;
+type RecordHandle = Rc<RefCell<Option<RecordLog>>>;
+
 fn record_line(
     table: &Table<'_>,
     actor: &Rc<ti4_mlp::Actor>,
@@ -225,8 +228,7 @@ fn record_line(
     rotation: usize,
     faction: &str,
 ) -> Result<(bool, Vec<ti4_mlp::ppo::Step>), String> {
-    let handle: Rc<RefCell<Option<Rc<RefCell<Vec<ti4_mlp::bot::PpoRecord>>>>>> =
-        Rc::new(RefCell::new(None));
+    let handle: RecordHandle = Rc::new(RefCell::new(None));
     // `recording_ppo` is a builder step on `MlpBot`, not something that can wrap a finished
     // decider, so the target seat is *built* as the recorder rather than wrapped. `record` refuses
     // a decision it cannot record rather than skipping it, so the step list is one entry per
@@ -248,7 +250,7 @@ fn play_recording(
     seed: u64,
     rotation: usize,
     faction: &str,
-    handle: &Rc<RefCell<Option<Rc<RefCell<Vec<ti4_mlp::bot::PpoRecord>>>>>>,
+    handle: &RecordHandle,
 ) -> Result<bool, String> {
     let (_events, _setup, assignments, openings, _final) =
         ti4_training::rollout::audit_game_with_deciders(
@@ -608,7 +610,8 @@ fn main() {
         // ---- enumerate and build samples ----------------------------------------------------
         let workers = rayon::current_num_threads().max(1);
         let per_worker = targets.len().div_ceil(workers).max(1);
-        let harvest: Vec<Result<(Vec<Sample>, usize, usize), String>> = targets
+        type SampleHarvest = Result<(Vec<Sample>, usize, usize), String>;
+        let harvest: Vec<SampleHarvest> = targets
             .chunks(per_worker)
             .map(|chunk| (actor.inference_copy(), chunk.to_vec()))
             .collect::<Vec<_>>()
@@ -750,7 +753,6 @@ fn main() {
         // `distill::Adam` over the actor's own parameter handles. `ppo::Adam` wraps the same
         // optimiser but its `step` is private and keyed to a PPO batch; here the gradient comes from
         // one backward over the whole preference set, which is small enough to need no minibatching.
-        #[expect(unused_mut, reason = "reassigned inside the sweep loop")]
         let settings = ti4_mlp::ppo::Settings {
             learning_rate,
             ..ti4_mlp::ppo::Settings::default()

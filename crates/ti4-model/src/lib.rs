@@ -4,6 +4,7 @@
 //! and not publicly mutable. Views provide redacted access for bots and TTS.
 
 pub mod content_types;
+pub mod deck_reserve;
 pub mod diplomacy;
 pub mod hex;
 pub mod id;

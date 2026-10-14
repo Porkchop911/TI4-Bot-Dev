@@ -153,7 +153,9 @@ fn main() {
         "  workers     {workers} ({} games, {per_worker} per worker)",
         jobs.len()
     );
-    let chunks: Vec<(ti4_mlp::Actor, ti4_mlp::Actor, Vec<(u64, usize)>)> = jobs
+    type Job = (u64, usize);
+    type ActorChunk = (ti4_mlp::Actor, ti4_mlp::Actor, Vec<Job>);
+    let chunks: Vec<ActorChunk> = jobs
         .chunks(per_worker)
         .map(|chunk| {
             (

@@ -1,0 +1,53 @@
+{
+  "title": "Map Picker",
+  "description": "The map picker the host uses in the lobby to choose a ready-made layout or a random galaxy (with Re-roll), the read-only view for other players, and its loading, error and empty states.",
+  "tag": "web/e2e/screenshots/J-map-picker",
+  "shots": [
+    {
+      "file": "out/1-host-standard.png",
+      "heading": "Host: Standard selected",
+      "caption": "Six players: the host sees a strip of choices with Standard highlighted and marked Recommended, the large board below with the host's own seat ringed (you), the seat list, the summary line, Re-roll and Done."
+    },
+    {
+      "file": "out/2-host-random.png",
+      "heading": "Host: Random selected",
+      "caption": "Picking Random highlights its card and swaps the summary to Random map; the board is a freshly drawn galaxy and Re-roll stays available. (The Start preset control is a dev-build only extra.)"
+    },
+    {
+      "file": "out/3-host-rerolled.png",
+      "heading": "Host: after Re-roll",
+      "caption": "Re-roll on the Random map keeps the same choice but draws a different board: the home seats stay put while the systems between them have been reshuffled."
+    },
+    {
+      "file": "out/4-readonly-player.png",
+      "heading": "Another player: read-only",
+      "caption": "A non-host player (seat 2, ringed as you) sees only the title The table's map, the board, seats and summary: no choice strip, no Re-roll, and a Close button instead of Done."
+    },
+    {
+      "file": "out/5-phone.png",
+      "heading": "Phone layout, 390 px",
+      "caption": "On a phone the sheet fills the screen: the choice strip scrolls sideways (cards are cut off at the edge), the board scales to the width and the footer wraps with Re-roll and Done still reachable."
+    },
+    {
+      "file": "out/6-loading.png",
+      "heading": "Loading",
+      "caption": "Before anything has answered the strip shows four grey placeholder cards and the preview area says Loading the map; the summary already names the chosen map and the buttons stay in place."
+    },
+    {
+      "file": "out/7-error.png",
+      "heading": "Error: preview failed",
+      "caption": "The choice strip loaded, but the board request failed: a message names the failing request and a Retry button sits in the preview area; choosing and Done still work."
+    },
+    {
+      "file": "out/8-empty.png",
+      "heading": "Empty: no layout for 7 players",
+      "caption": "With seven players the server lists no ready-made layouts, so the picker says so and offers only Random. Here a Random pick was rejected (the red error line is hidden behind the dialog) and the old board stays."
+    },
+    {
+      "file": "out/9-lobby-row.png",
+      "heading": "Lobby row before Start",
+      "caption": "Outside the picker, the lobby shows Map: 6pHyperlanes with a Choose map button above the seats, while Start game is still disabled; the host can reopen the picker until Start."
+    }
+  ],
+  "notes": []
+}

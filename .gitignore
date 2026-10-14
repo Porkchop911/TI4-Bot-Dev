@@ -29,6 +29,7 @@ __pycache__/
 *.log
 /.tmp-m00-*/
 /.tmp-m00-011/
+data/
 
 # IDE
 .idea/
@@ -79,3 +80,9 @@ fixtures/legacy_entropy/*
 
 # ti4calc reference clone for arena validation, never committed
 /tools/ti4calc/
+
+# Nightly UI smoke sweep output (tools/nightly-smoke)
+/nightly-reports/
+/nightly-reports-test/
+node_modules/
+web/.e2e-dist/

@@ -1,0 +1,855 @@
+### range 360-900s
+[0:06:00] I think I did normal production once. All my production was a sling, so they also have a good token economy. Because you don't have to produce. You can just sling out, sling a carrier, eight fighters, infantry. That's more than most factions building around. You didn't have to use a command token to do it. It's unlocked. You have next rounds plastic already online and available, and it's more than anybody else can handle. It's funny, actually, that's a great thing to even bring up. Because, in fact, when we're talking about today,
+[0:06:30] has relatively few downsides. One of the only downsides they have, really, is that they are
+[0:06:35] like a carrier to fighter faction, but their production capabilities are—they just have no—I mean,
+[0:06:41] they can fix it. Anybody can fix it, but they don't have any natural ability to sort of side step
+[0:06:47] that problem. So they have to solve for it, right?
+[0:06:50] Yeah. I think that's something that Imperium players—and we're going to get into this later,
+[0:06:54] we talked about slice selection—is that that's something you actively need to think about,
+[0:06:59] because if you don't, you're gonna have to be a dread faction, I think.
+[0:07:04] If your only production is five at home, you can't be a carrier to fight no action.
+[0:07:11] It doesn't work, which is a shame because that's really what their identity is built around.
+[0:07:16] You get carriers and fighters, then maybe you have one dread to use with your flagship,
+[0:07:20] and then that's your fleet.
+[0:07:22] And if you have enough money, that can do a lot.
+[0:07:25] But yeah, you need to solve the production.
+[0:07:28] Yeah.
+[0:07:29] But meanwhile, I mean, you've got Sol over here just like stunting on the idea.
+[0:07:34] I think if you're talking base game factions, I think at this point, like the top three
+[0:07:39] for me would be like Sol, Jonar, and Sar.
+[0:07:43] And honestly, in that sort of trifecta, I feel like Sol might even be like just because of
+[0:07:50] how ridiculous they are outpacing everyone else
+[0:07:54] as far as hit points, as far as cardboard.
+[0:07:57] It's like, yeah, Joel Narr is really good at tech.
+[0:07:59] It's like, well, yeah, everybody's good at tech now.
+[0:08:01] Like, not everybody.
+[0:08:03] Some factions are still, their synergies are so out of whack
+[0:08:07] and it doesn't make sense.
+[0:08:08] But most factions have a pretty decent situation
+[0:08:12] and you don't need, I mean, what?
+[0:08:14] I love talking about tech on this show,
+[0:08:17] but how often are we basically just saying,
+[0:08:19] You need Blue Tech in X89.
+[0:08:22] Like that's basically the recommendation.
+[0:08:24] I mean, it's what we're gonna say today.
+[0:08:26] Like what we're gonna say today, yeah.
+[0:08:28] But sometimes not easy to get that, right?
+[0:08:30] No, no, it's not always easy.
+[0:08:32] I think that's what makes a good faction.
+[0:08:34] Yes.
+[0:08:36] The S tier consists of factions that check,
+[0:08:40] there's like a checklist.
+[0:08:41] And some factions will do most of them
+[0:08:44] and pretty much all of the S tier factions will do all of them.
+[0:08:47] Yeah, exactly.
+[0:08:48] I think, I think Empyrean just doesn't have one of those important ones.
+[0:08:53] And that's why they're an A tier.
+[0:08:55] Yeah.
+[0:08:55] And that's what people say that they don't think they're an A tier.
+[0:08:58] I think people have said that they don't like them as much.
+[0:09:01] I don't know if you've heard that, but I have seen that.
+[0:09:05] I do not get it.
+[0:09:06] I personally do not understand.
+[0:09:08] Yeah, I think this, a lot of this episode is going to be, you know, listing like a series of facts
+[0:09:15] and me gesturing at it and be like,
+[0:09:17] this adds up to very good faction.
+[0:09:19] Like I don't know what to tell you.
+[0:09:21] I think they have a lot of pitfalls.
+[0:09:22] I think we've been around the block,
+[0:09:27] so we know what pitfalls to avoid,
+[0:09:29] but I can understand why,
+[0:09:32] and it has to do with Frontier Tokens and DET.
+[0:09:35] For sure.
+[0:09:36] The biggest one.
+[0:09:37] I understand why people fall for that trap,
+[0:09:40] but if you wanna win,
+[0:09:43] You got to do a moderation a bit.
+[0:09:45] For sure.
+[0:09:46] And that's in addition to the other problem
+[0:09:49] we mentioned earlier.
+[0:09:50] Those are the two big ones, in my opinion.
+[0:09:52] Yeah, honestly, to me, they've gotten,
+[0:09:55] it's like it's not even about the Frontier tokens anymore.
+[0:09:59] Like I would play, I would play them and have a great time
+[0:10:02] even if we're ignoring that part.
+[0:10:03] That's just like, maybe that part turns out good for you.
+[0:10:07] And then you get even more boon.
+[0:10:09] But I think as far as like what we've got on the table,
+[0:10:13] it's a very nice kit even beyond, you know, whatever you happen to get.
+[0:10:17] It's like they have like sort of a gamblers thing going on on top of a kit
+[0:10:21] that would work without that, basically.
+[0:10:24] Would it be as good? No, because a lot of times,
+[0:10:27] Empyrean, what happens is you'll be like, oh, I've got a great game plan.
+[0:10:30] We've got all of these really good components.
+[0:10:32] And then I then then they're like, oh, but I got all these command tokens in the early game
+[0:10:36] that were just extra.
+[0:10:38] So many times that's kind of what's happening.
+[0:10:41] That's what the story is, is like, yep,
+[0:10:43] they got two command tokens, round one,
+[0:10:46] and then they got two more, round two,
+[0:10:48] and then they got another one,
+[0:10:49] and three trade goods, round three,
+[0:10:51] and it's just kind of like, yep,
+[0:10:52] that's a pretty big deal, you know?
+[0:10:54] A huge deal.
+[0:10:55] A huge deal is ridiculous.
+[0:10:57] It's not one.
+[0:10:58] It lets you solve those problems that we mentioned.
+[0:11:01] Yes.
+[0:11:02] That's for every faction,
+[0:11:05] is that they have problems.
+[0:11:06] Most factions have problems,
+[0:11:08] and finding the tools, finding the options
+[0:11:11] to fix those problems is part of the early and mid game.
+[0:11:15] Yes, yeah.
+[0:11:16] And I, but I do wonder, maybe before we like,
+[0:11:19] actually get deep into this guide,
+[0:11:21] I do wanna wonder like, what do you think it is
+[0:11:24] that people are, like, what is it that's making people think
+[0:11:27] that like, oh, like, Imperial is not like up in that,
+[0:11:30] like, top half or maybe people wouldn't say
+[0:11:33] they're not in the top half, but like,
+[0:11:34] Anyone putting them lower than like A tier
+[0:11:38] is a little bit confusing for me.
+[0:11:40] I think, so if I had to put a pin on it,
+[0:11:43] I think I'd say that they'd have seen
+[0:11:47] or experienced themselves a lot of glass,
+[0:11:49] canon, imperient players.
+[0:11:51] Yeah.
+[0:11:52] Just like you get to that round four situation
+[0:11:55] where, you know, imperient doesn't have any way
+[0:11:57] to unlock their ships normally.
+[0:11:58] I mean, they need help to do it with making matter.
+[0:12:01] So like if you wanna go to sticks,
+[0:12:02] you just start doing it in round four.
+[0:12:04] And then you look at the board and oh, my plastic is all over the place.
+[0:12:08] It's not centralized.
+[0:12:09] I don't have enough to, you know, contend with the real sticks factions.
+[0:12:14] And, you know, if they try for an Imperial play, they don't have the way to get to Rex or it's easy to take their home system.
+[0:12:23] And that's because of the dark energy trap.
+[0:12:26] Yes.
+[0:12:26] I think.
+[0:12:27] And maybe not solving that production issue.
+[0:12:30] Yeah.
+[0:12:31] You just, you just don't have the plastic.
+[0:12:33] And I think that's happened enough to where people are like, okay, that means they're a bad faction.
+[0:12:38] I'm like, no, that means that we haven't caught up to T.E. and what you need to do and how early you need to do it.
+[0:12:44] Right. That's so true. Yeah, because there are some things that did change as far as the way that Thunder's Edge has affected in Perien.
+[0:12:54] And they do sound like I can list some and make it sound negative.
+[0:12:58] I think overall the net is positive for Empyrean and Thunder's Edge, but there are some things.
+[0:13:04] Like one thing, this might be fun actually to talk about up top.
+[0:13:07] In the POK era, a lot of what I thought was cool about, I won't speak for you, but what
+[0:13:11] I thought was cool about Empyrean was how neutral they sort of were on unit upgrades.
+[0:13:19] Now Carrier 2 capacity is like a really good upgrade for even POK Empyrean, don't get
+[0:13:24] me wrong, but part of what was interesting about them was that Aether stream, depending
+[0:13:28] on the shape of the map, basically added up to being like a catch-all unit upgrade where,
+[0:13:33] I mean, all we really care about with unit upgrades anyways is movement.
+[0:13:37] So like, it would be sort of like, is this the most like tech independent faction of all
+[0:13:42] time, what you just get like gravity drive or maybe not even gravity drive and then you
+[0:13:46] get aether stream and you're like, all right, we're all good.
+[0:13:49] I don't believe that that is the case with Thunder's Edge.
+[0:13:52] I think it actually sort of effectively neutralized aether stream in most cases.
+[0:13:58] Now, of course, when I say that, somebody's going to be like,
+[0:13:59] well, I played on this map where blah blah blah happened.
+[0:14:01] And where Cabal was, they had all their space
+[0:14:04] docks in the fracture.
+[0:14:06] And it's like, OK, sure, fine, whatever.
+[0:14:08] That's OK.
+[0:14:09] But that's not what I'm talking about.
+[0:14:11] I'm saying that we literally built a little highway away
+[0:14:14] from everything where Aether Stream is not really
+[0:14:18] very doable.
+[0:14:19] It's not feasible.
+[0:14:20] And so therefore, and also sticks is so important
+[0:14:24] to the outcome of the game, that Aether Stream is not
+[0:14:27] it's completely not useful. It's just that it's not a de facto tech to just grab in all situations.
+[0:14:34] It's kind of more supplemental or honestly, I think they just kind of went from, and maybe even
+[0:14:40] this was always the case. And I was just like distracted by other stream to me. They're a more
+[0:14:45] traditional carrier to gravity drive faction now, whereas just like, I don't really care about
+[0:14:51] out. You don't need to.
+[0:14:53] You really don't need it.
+[0:14:54] If you have, so basically,
+[0:14:55] Aether Stream is useful for wrecks now, I think.
+[0:14:57] Yes.
+[0:14:58] We're in a mostly.
+### range 6420-7620s
+[1:47:00] That will be a Jason DeBekatol, they're all going to be. And so therefore, you know, as long as I don't draft, well, I mean, I guess even if I do draft that and it's like an Intropic Scar or whatever, I'm getting through, it's all going to be good. There's no weirdness is going to happen. I guess nebulas are kind of the same way. But if you see one at all, then you just know Aether Stream is in play for the early game. And so therefore, right away, when you check that box, you can be like, okay, we might be playing an Aether Stream game. I also happen to think that you need, yeah, you do need to be able to do that.
+[1:47:30] need a high resource planet in there.
+[1:47:32] You need a forward dock staging area.
+[1:47:35] You need to be thinking about your slice in those terms
+[1:47:37] and evaluating it in that way.
+[1:47:39] Because a game where you don't have that
+[1:47:41] is very different from a game where you do.
+[1:47:43] And I think it's one of your only major hurdles.
+[1:47:46] So you need to solve it in the draft.
+[1:47:48] You can survive with less influence
+[1:47:52] than a lot of factions can.
+[1:47:55] It's a little scary.
+[1:47:56] We never like to draft a slice that has low influence.
+[1:47:59] but just make sure that your priorities are straight and your priority should be,
+[1:48:04] I need one of them good resource plans. We're looking for three resources somewhere
+[1:48:08] and we're putting a dock there. We love to be two plants.
+[1:48:10] Bonus points of a double dock. Yes.
+[1:48:12] Like Starpoint new Albion, Baraglirda, this Freya, Bicolile, Yoprima,
+[1:48:17] all good ones. Places like that where you can get seven, eight, nine production in a single system.
+[1:48:24] That's another point of efficiency. If I'm going to, I want to spend one token to build.
+[1:48:29] I don't want to spend one token to build forward and one token to build at another dock.
+[1:48:35] Let's have one token be my build.
+[1:48:38] Yes.
+[1:48:38] And that can make up for influence, right?
+[1:48:41] If you have less influence, I mean, we were talking about this with a soul earlier.
+[1:48:44] They obviously have their own ways of getting extra tokens, but also, if you're not
+[1:48:49] produce, if you're not spending tokens to build, you're going to have more tokens.
+[1:48:53] Same with SAR, same with Arburek, any faction that has mobile production
+[1:48:57] has an inherent token advantage because they don't have to spend to build elsewhere.
+[1:49:03] It's the same with double docking. You want to be as efficient as possible.
+[1:49:08] Yeah. I think also, influence, you're getting four from your home system and you're getting
+[1:49:14] one from your agent. And that's not even taking into account what you get from the frontier deck.
+[1:49:19] So I even think, slice with two influence to pair with that six-influenced home system,
+[1:49:25] I think I could survive on that and be okay.
+[1:49:28] Obviously I'd want more.
+[1:49:29] So like if I'm thinking,
+[1:49:31] amount of influence to ideally pair
+[1:49:33] with my home system, I'm thinking five.
+[1:49:34] Five with my four goes to nine,
+[1:49:37] and that's more than enough influence.
+[1:49:38] And then I would want mostly resources.
+[1:49:41] But you're gonna have a good economy with trade goods.
+[1:49:43] So it's not the end of the world
+[1:49:45] if my trade goods are going to production
+[1:49:47] and my planets are going to tokens.
+[1:49:50] Like that's fine.
+[1:49:50] Yeah, but obviously if you have a choice,
+[1:49:54] go for the resources first.
+[1:49:56] It's really just that no amount of trade goods
+[1:49:59] will let you overcome a production limit.
+[1:50:02] If your slice doesn't allow you to get higher production,
+[1:50:05] that's it.
+[1:50:06] Your trade goods will do nothing
+[1:50:08] for buying you more production cap.
+[1:50:10] Yeah, no, that's true.
+[1:50:11] Like my order of like what I'm looking for would be,
+[1:50:15] firstly, when we talk about just objective ability.
+[1:50:18] So I want four of a trade.
+[1:50:19] I want three tech skips.
+[1:50:21] I want, well, you have an anomaly at home
+[1:50:23] You don't even really need that.
+[1:50:24] No, but just you make history easily.
+[1:50:26] And it's outside of home.
+[1:50:27] Yeah, that's just really important, right?
+[1:50:29] That's always first, like, I don't need to restate that.
+[1:50:32] We talk about it in every super guy.
+[1:50:33] Right.
+[1:50:34] Qualification for planet-based control objectives is hard.
+[1:50:39] That's what you should draft for.
+[1:50:40] Secondly is production.
+[1:50:42] Third is fracture and then fourth, I think is spending.
+[1:50:46] Yep.
+[1:50:47] Yeah, and that's obviously gonna, like,
+[1:50:49] on poor factions that that spending is gonna be flipped
+[1:50:53] go right to the top for sure.
+[1:50:55] With Empyrean, I'm fine with it being lower priority.
+[1:50:58] Yeah, we have the flexibility.
+[1:51:00] Also, just some live errata, these are the ultimate guides.
+[1:51:03] The super guides we've already done.
+[1:51:04] This is the ultimate, I just wanna make sure
+[1:51:06] you have the brain incorrectly.
+[1:51:07] You know, it's all blur and together.
+[1:51:10] It's all the years, the years are blurred together.
+[1:51:14] Okay, let's talk about strategy cards.
+[1:51:15] Let's talk about early game.
+[1:51:17] Honestly, the funny thing about Empyrean
+[1:51:21] is I think they're less defined by what strategy card
+[1:51:24] they take in round one.
+[1:51:26] And it really just comes down to like,
+[1:51:28] who ended up with trade, who ended up with tech.
+[1:51:30] And beyond that, it's not,
+[1:51:32] I don't put a whole lot of stock in this section
+[1:51:36] because I think if Empyrean is able to tech,
+[1:51:42] round one, then they succeeded and it's all good.
+[1:51:45] Like they didn't do any,
+[1:51:47] so you're not really gonna do anything wrong.
+[1:51:49] But my priors kind of lead me to feel this way.
+[1:51:53] So if we're going to talk about leadership,
+[1:51:55] I would rate leadership as like a mid
+[1:51:57] to maybe even low priority for Empyrene.
+[1:52:00] I think it can tempt you into going down the dark path
+[1:52:04] of over exploring, building too many destroyers,
+[1:52:08] that kind of thing.
+[1:52:09] If you're playing leadership to get extra tokens,
+[1:52:12] following warfare to get more destroyers,
+[1:52:15] to go ahead and explore more frontiers,
+[1:52:19] you might be heading for like a bad habit.
+[1:52:21] It also could pay off for you though,
+[1:52:23] because technically the explorers can end up,
+[1:52:25] you know, kind of creating a feedback loop
+[1:52:27] where yes, you're spending more tokens,
+[1:52:29] but you're gaining more tokens from the explorers.
+[1:52:32] So that one's kind of, it's tough to evaluate,
+[1:52:35] so I just kind of give it a mid.
+[1:52:37] I'm not really sure.
+[1:52:38] Yeah.
+[1:52:38] You don't need to bum rush the DTE tokens.
+[1:52:41] No, you'll probably get them eventually.
+[1:52:44] You want to be doing it with your agents.
+[1:52:46] If you get all them early game,
+[1:52:47] your agent's gonna not have much value in the future.
+[1:52:51] That leadership's fine if you're doing control objective.
+[1:52:56] So if empties is an objective, which to be clear
+[1:52:59] is bad for Imperial, ironically.
+[1:53:01] Empties is bad because with the hero,
+[1:53:03] you want to leave your destroyers there.
+[1:53:04] Yes.
+[1:53:05] But with empties as an objective,
+[1:53:06] other people obviously need to go into that.
+[1:53:08] They don't want to do that.
+[1:53:09] So that's no good.
+[1:53:11] You don't like that.
+[1:53:12] But if that is an objective, leadership's fine.
+[1:53:13] and you gotta go there early.
+[1:53:15] And it lets you follow secondaries.
+[1:53:17] But if it's just like a spendy objective,
+[1:53:20] I don't really care much about leadership,
+[1:53:22] it doesn't really help you that much round one
+[1:53:23] unless you're really using it for something.
+[1:53:25] Because you already start with a lot of tokens
+[1:53:27] and you're gonna get another one from your agent.
+[1:53:30] So, leadership mid to low for me as well.
+[1:53:32] Right, up next is diplomacy.
+[1:53:35] I'm actually also gonna rank this one as being kind of low.
+[1:53:38] I do like that it gets you,
+[1:53:39] it's one of the breakthrough ones
+[1:53:41] and we wanna have our breakthrough,
+[1:53:43] But we're not really like, like we said before,
+[1:53:45] it's not like we're like a broke down car,
+[1:53:47] and then the breakthrough kick starts us.
+[1:53:50] We want it, and I think it will make a difference
+[1:53:53] between whether we have a great game or just a good game,
+[1:53:57] but it's not something that we're gonna utilize immediately.
+[1:54:01] And so therefore I don't really feel like there is like
+[1:54:03] a rush for it personally.
+[1:54:05] I also think like our home system,
+[1:54:08] it's not like I'm desperate to spend it twice.
+[1:54:11] So like, I guess ultimately I'm gonna end up with,
+[1:54:15] after spending, you know, what,
+[1:54:18] I mean, I'm gonna pick up the breakthrough,
+[1:54:22] and then I'll get like another extra three resources,
+[1:54:25] kind of, that feels like kind of a low limit.
+[1:54:28] It's okay if you're like a late pick,
+[1:54:31] tech and politics trade, blah blah blah,
+[1:54:33] have already been picked,
+[1:54:35] and there's like an influent spendy.
+[1:54:36] Yeah.
+[1:54:37] You get your breakthrough,
+[1:54:39] and then you refresh for influence,
+[1:54:40] and then with trade and DT and Dark Pact,
+[1:54:43] that's enough to get into a real life.
+[1:54:45] Yeah, yeah.
+[1:54:45] That's really when I'd consider it,
+[1:54:48] but I hate giving other people diplo.
+[1:54:52] Yeah.
+[1:54:53] And it just feels so bad.
+[1:54:54] I hate that like,
+[1:54:55] I'm not getting any value for my strat card.
+[1:54:57] It's just the same as what other people are doing.
+[1:54:59] That does not feel good.
+[1:55:00] Yeah.
+[1:55:01] Especially, I mean,
+[1:55:02] even if there is an influence money,
+[1:55:03] this probably enables like half the table to score.
+[1:55:06] But again, if it's my only way to score,
+[1:55:09] I'll do it.
+[1:55:10] I don't feel good about it, but I'll do it.
+[1:55:12] Yeah, I will say just to skip around to it,
+[1:55:14] I will say I rate construction higher from a last perspective
+[1:55:20] because of our need for that forward dock, right?
+[1:55:23] Like that's homework that I would love to just go ahead and get done.
+[1:55:26] And honestly, it's one of the only factions where I might not even use the production on the primary
+[1:55:33] because I'm like, ah, not really wanting for anything.
+[1:55:36] it would be sick to go into this game with a double docked system right off the bat.
+[1:55:41] Like that would just be such a sick start.
+[1:55:44] So like if I can make that work, I probably do want that.
+[1:55:49] Whereas with diplomacy, it's really easy to talk yourself out of it.
+[1:55:51] Cause you're like, well, I mean, I don't know how much money I'm going to make.
+[1:55:54] You know what I mean?
+[1:55:55] Like that's every Imperial start you can sort of be like, listen,
+[1:55:58] we could be making a lot of money around one.
+[1:56:00] I guess like I don't, I don't know.
+[1:56:02] Yeah. I don't know what the vibe is going to be.
+[1:56:05] Diplo is just, yeah, I think if it's not for the breakthrough,
+[1:56:07] I'd be much less inclined to do it.
+[1:56:10] But if it's the only way to get the breakthrough,
+[1:56:11] and it's, because some tables contain factions
+[1:56:16] that really like their breakthrough.
+[1:56:18] And you could see the writing on the wall and say,
+[1:56:21] okay, I'm not gonna get my breakthrough
+[1:56:23] if I don't pick a strategy card for it.
+[1:56:25] But if there's a Necro and a Joel Narr,
+[1:56:28] just don't care about their breakthrough,
+[1:56:29] it's like, okay, I don't need my breakthrough round one.
+[1:56:32] I'll get it round two,
+[1:56:33] And maybe even get Thunder's Edge while I'm at it.
+[1:56:35] Right.
+[1:56:36] Because being later in the order to do it.
+[1:56:38] Thunder's Edge is pretty good on Imperial.
+[1:56:40] Oh, for sure.
+[1:56:41] For sure.
+[1:56:42] I mean, that can be where you put one of your docs.
+[1:56:43] And then you're like, yo.
+[1:56:44] Yeah, that's the four doc that, you know,
+[1:56:46] it's an empty system.
+[1:56:46] So when you build there, you can get the DT token.
+[1:56:48] Yeah.
+[1:56:50] Resources good.
+[1:56:51] Yeah.
+[1:56:52] That's what we said.
+[1:56:54] So yeah, that's not super high on Diplo.
+[1:56:57] I'll take it if I need it.
+[1:56:58] Right.
+[1:56:59] But definitely low.
+[1:57:00] All right, politics.
+[1:57:02] What do you know? I rate it high.
+[1:57:04] For a couple of reasons.
+[1:57:05] First of all, we've got four influence at home,
+[1:57:07] so like, and we're a blue star.
+[1:57:08] So I mean, like, if they ain't getting custodians
+[1:57:11] round one, then it's yours, all right?
+[1:57:13] And it's pretty simple.
+[1:57:15] I also, you know, of the things that you can do
+[1:57:18] to get your breakthrough, like, I don't wanna,
+[1:57:21] not contradicting myself.
+[1:57:22] I'm just saying that, like, if I'm drawing two action cards
+[1:57:26] off politics and they're like mid, then I'm like,
+[1:57:29] all right, let's just go ahead and get the breakthrough.
+[1:57:31] We'll just have it done.
+[1:57:32] And then I'm not worried about spending any of my economy on it at all.
+[1:57:37] And obviously what's kind of,
+[1:57:38] it's actually kind of goes both ways a little bit
+[1:57:40] because a lot of times with a faction like, let's say,
+[1:57:42] Barony is like a great example of this.
+[1:57:44] If I'm taking politics, I don't care, I mean,
+[1:57:46] unless it's overruled, I don't really care
+[1:57:48] what those action cards are, buddy.
+[1:57:49] I'm throwing them away.
+[1:57:50] You know what I mean?
+[1:57:51] Like I need to get online, I'm desperate.
+[1:57:53] With Empyrene, if you do, if you draw some good ones,
+[1:57:56] some heaters, then yeah, you could just be like,
+[1:57:58] I'll just get a top around two.
+[1:58:00] You know what I mean?
+[1:58:01] It'll be okay.
+[1:58:02] I'm gonna have leadership.
+[1:58:03] You know what I mean?
+[1:58:04] I'm gonna get to move first round two.
+[1:58:06] And while it's a lot of influence to pay for,
+[1:58:08] like if you happen to be going that direction with it,
+[1:58:10] hopefully you have an easier time
+[1:58:13] as far as options go for getting your breakthrough.
+[1:58:17] But I think it's good.
+[1:58:18] What do you think about politics for Empyrene?
+[1:58:21] You concur?
+[1:58:22] Yeah.
+[1:58:23] I think a lot of the times you don't need,
+[1:58:26] a lot of times you don't need a strategy card to score.
+[1:58:28] Yes.
+[1:58:29] You have an anomaly at home.
+[1:58:31] You have a home system plant
+[1:58:35] that has both high influence and resources,
+[1:58:37] for comp faction, extra with dark packed.
+[1:58:41] You're gonna get your comms washed
+[1:58:42] because you're gonna get a neighbor.
+[1:58:44] You're gonna have money.
+[1:58:46] You can score pretty much any spendy, I wanna say,
+[1:58:51] if the trade player is being friendly, which is not a given,
+[1:58:53] but you can always spend the token yourself.
+[1:58:56] And yeah, I think those are the kind of factions
+[1:58:58] that want to prioritize politics.
+[1:59:01] And again, look at your game, is Sarr in the game, right?
+[1:59:04] Is Deepra in the game.
+[1:59:06] If so, don't count on, or like, Nalu.
+[1:59:09] Don't count on being the one to get custodians right to.
+[1:59:12] It's not gonna happen.
+[1:59:14] Sometimes you'll look at Imperial,
+[1:59:16] I mean, if it's Sarr, even Imperial Round Two
+[1:59:18] isn't gonna work out for you.
+[1:59:20] So in a sense, you probably want to let speaker go.
+[1:59:24] Look at me, this is me saying that's the situation
+[1:59:26] where I would just like let it go.
+[1:59:27] Cause it hopefully it'll come back around
+[1:59:29] and then you can catch up on tempo in like round three
+[1:59:32] would kind of be my goal in that situation.
+[1:59:35] But yeah, it's a-
+[1:59:37] No, it's good.
+[1:59:37] It's good.
+[1:59:38] I'd probably my second favorite to take.
+[1:59:39] Yes, that's exactly where I'm at
+[1:59:42] which is yeah, trade is the best.
+[1:59:44] I will say this for, I don't know why,
+[1:59:45] but like my game, I like,
+[1:59:48] have you ever, when we're recording,
+[1:59:50] like your brain like goes into a game
+[1:59:52] and you have like a very specific thought
+[1:59:55] And I don't know why this is important to put the episode,
+[1:59:57] but for some reason I just remembered that,
+[2:00:00] hey, Lister, if you have politics,
+[2:00:02] you should do your D.T. explore before you play politics,
+[2:00:04] if Diplo's not in the game,
+[2:00:06] so that you can take a look at four action cards
+[2:00:08] and decide which are the two that you might get rid of.
+[2:00:10] I was actually thinking about that
+[2:00:11] when we were talking about politics.
+[2:00:12] I don't wanna bring it up about that.
+[2:00:14] Two specific.
+[2:00:15] Yeah, no, that would be two specific.
+[2:00:17] But no, even if you don't have politics,
+[2:00:18] like, you know, if you score D.T. token.
+[2:00:20] You might get the-
+[2:00:21] You might get two action cards.
+[2:00:23] Which is pretty sick.
+[2:00:24] So if you're in the game with Empyrean,
+[2:00:25] Or I guess like Windu who can also start with D2 and be brought.
+[2:00:27] Yes.
+[2:00:29] And you need your breakthrough.
+[2:00:30] Just play it like first turn.
+[2:00:31] First don't don't don't risk.
+[2:00:33] Empyrean looking into two action cards, ditching them.
+[2:00:37] And then you're just you're just completely screwed.
+[2:00:39] Yep.
+[2:00:41] Or even like or even like Rallenell and Yisarle being the game that could both
+[2:00:45] use the agent to get action cards or something stupid like that.
+[2:00:50] Yeah.
+[2:00:50] No, I I've seen that happen before.
+[2:00:52] It's a very sad time for the politics player.
+[2:00:55] Yeah, poor politics player.
+[2:00:57] They'll just have to deal with speaker token
+[2:00:59] to help them feel better.
+[2:01:01] Up next is trade,
+[2:01:02] because we already talked about construction trade.
+[2:01:05] It's probably your top pick.
+[2:01:06] It's kind of, I mean, it's boring.
+[2:01:07] Every time we say that trade is the top pick,
+[2:01:08] it's kind of boring because, of course, it's the most money.
+[2:01:12] There are some specific and purian elements to it, though,
+[2:01:14] like because you no longer have to worry about tech now,
+[2:01:19] because you decide when the money happens.
+[2:01:21] Hopefully you decided,
+[2:01:22] I mean, maybe you just play trade first action
+[2:01:24] if you're like worried about it,
+[2:01:26] which is, you know, not, it's sub-optimal,
+[2:01:28] but it is like, okay, because what you could do
+[2:01:31] is decide who you want to have dark packed,
+[2:01:35] say, hey, I'm giving dark pack to you,
+[2:01:37] I'm gonna go ahead and refresh your comms though,
+[2:01:38] so you need to keep those and play dark packed
+[2:01:41] and then we can do this, you know, the right way.
+[2:01:44] And then that should all work out and be good
+[2:01:47] and you're no longer scared about tech-popping first action
+[2:01:50] and you being like left out in any way.
+[2:01:52] also you're gonna make a lot of money.
+[2:01:53] You're jump-starting your economy in a way that is pretty sick,
+[2:01:57] and you might get a lot done, frankly.
+[2:01:59] Yeah, I don't think Imperialians should be,
+[2:02:02] you know, if we're doing like a military draft,
+[2:02:04] I'd be questioning what people did in the draft
+[2:02:07] for Imperialian to get a speaker.
+[2:02:08] I mean, I guess sometimes you might just have a faction pool
+[2:02:11] that's really good.
+[2:02:12] It could be all stars.
+[2:02:13] And yeah, it can just, and then someone just picks speaker
+[2:02:15] and then Imperial wheels back to them.
+[2:02:17] Yeah.
+[2:02:18] Yeah, no, if you, if you get a speaker as Imperialian,
+[2:02:20] I'd be hard pressed to take anything.
+[2:02:22] I mean, trade.
+[2:02:24] So like the pool is, it's not that,
+[2:02:26] there's like, so like the pool would be like,
+[2:02:28] let's say if it was, you know, Crimson Deep Rott,
+[2:02:30] Mahawk, Soul, Joel Narsar, whatever.
+[2:02:34] That's our pool.
+[2:02:35] I mean, you got to be honest.
+[2:02:36] You got to be honest.
+[2:02:37] You know?
+[2:02:38] Yeah, yeah, yeah.
+[2:02:38] Basically just be, if the pool has six, eight year factions,
+[2:02:42] I, you know, I could reasonably be like,
+[2:02:45] okay, I'm like third or fourth pick.
+[2:02:47] I'll pick speaker, I'm okay with any of the factions.
+[2:02:49] I can choose my slice to it around the same time.
+[2:02:51] I guess it's not that crazy to build.
+[2:02:54] Yeah, yeah.
+[2:02:55] So yeah, I guess, yeah, not weird,
+[2:02:57] but getting Imperialan speaker,
+[2:02:59] I'd consider that a good draft.
+[2:03:01] Yeah, that's going well.
+[2:03:02] That's a great start.
+[2:03:04] But yeah, trade is good, it's helpful.
+[2:03:07] It solves kind of a lot of our issues,
+[2:03:09] although hopefully construction got picked.
+[2:03:12] I do, I will say sometimes,
+[2:03:14] even though I didn't even say it was high tier,
+[2:03:17] sometimes whenever I'm playing Imperialan,
+[2:03:18] If I have an especially juicy option,
+[2:03:21] I will think, ah man, maybe I should just grab construction
+[2:03:24] and just like get this done.
+[2:03:26] We've said a couple times in this discussion,
+[2:03:28] like they don't even really need a strategy card.
+[2:03:30] Like who cares?
+[2:03:31] The production limit is like, uh oh,
+[2:03:34] like, and sometimes I'll be in a pool
+[2:03:38] where I'll be, you know, overthinking it a little bit
+[2:03:40] or like kind of scared.
+[2:03:41] They're like, oh, if I don't take construction,
+[2:03:43] does it just not get taken at all?
+[2:03:45] And then I go into round two, no,
+[2:03:47] Like this happens to me with politics sometimes.
+[2:03:50] I'll be like going for custodians,
+[2:03:52] no one takes construction,
+[2:03:54] then I go into round two, I have to pick leadership
+[2:03:57] so I can make good on my investment
+[2:03:59] and then nobody takes construction round two either.
+[2:04:02] And then I'm like, yeah, now it's not good.
+[2:04:05] Now it's looking bad.
+[2:04:07] I feel like a lot of times construction
+[2:04:08] is taking round one and round two.
+[2:04:09] It's a really good strategy card.
+[2:04:11] A lot of times it's really good.
+[2:04:12] It's a really good construction than warfare.
+[2:04:13] It is really good.
+[2:04:14] It feels like a better warfare.
+[2:04:15] I mean, it is a better warfare.
+[2:04:16] But sometimes people have weird goals with warfare as what.
+[2:04:20] That'll be like what it is,
+[2:04:22] is they have some sort of weird plan they made up.
+[2:04:25] Also, when players do things that I don't expect
+[2:04:29] in our suboptimal, that's the bane of my existence.
+[2:04:33] When that happens and it's hurt me,
+[2:04:35] then I remember it forever.
+[2:04:37] Speaking of which, warfare, not taking that, I don't know.
+[2:04:40] I don't see that in their DNA really at all.
+[2:04:43] I guess technically they can be.
+[2:04:47] Round one custodians.
+[2:04:47] Round one custodians because of that,
+[2:04:49] because we got four influence at home
+[2:04:50] and not even just four influence at home.
+[2:04:52] We got all kinds of money coming in
+[2:04:53] regardless of what strategy card we have.
+[2:04:55] But I don't know if,
+[2:04:57] like if you're like,
+[2:04:59] let's say you're in a game
+[2:05:02] with another round one custodians player,
+[2:05:04] which is why you would even care,
+[2:05:07] you know what I mean?
+[2:05:07] Otherwise, like what are you even doing?
+[2:05:09] Why not just like take something else?
+[2:05:11] Or I guess if it was, I'm gonna score nothing or custodians,
+[2:05:15] then maybe I would be like, all right,
+[2:05:16] I'm gonna do this work in place.
+[2:05:18] Or if, like make history as the objective
+[2:05:21] and getting custodians also scores me in the public.
+[2:05:24] That is also a good one.
+[2:05:25] That's what I consider it.
+[2:05:27] Yeah.
+[2:05:27] And if politics is already taken, right?
+[2:05:31] I can't do it round two.
+[2:05:32] Right.
+[2:05:33] I can see a world for it.
+[2:05:36] It might be tough to tech
+[2:05:39] and then get the money for custodians.
+[2:05:41] That's what I think.
+[2:05:42] So I'd really only do it if I'm last pick
+[2:05:45] and I know Diplo is in the round.
+[2:05:49] And I know that, but then again,
+[2:05:52] like the tech player might just stall tech for a while
+[2:05:55] and the Diplo happens at four tech.
+[2:05:56] I mean, there's a lot that can go wrong
+[2:05:58] and taking warfare against the table a lot.
+[2:06:01] So a lot of the times I would still rather just take
+[2:06:04] construction and play it a little slower.
+[2:06:07] But there are some times where you need warfare to score,
+[2:06:10] you know, if two adjacent to mekatala comes out,
+[2:06:12] like the, there are times it can be a good pick,
+[2:06:17] but generally this is of the non-imperial cards,
+[2:06:21] which just, it may be a girl's not a consideration,
+[2:06:23] of the non-pperial cards,
+[2:06:24] it's, I think, the lowest, in my opinion,
+[2:06:27] just in general, on average.
+[2:06:29] Yeah, that's how I feel.
+[2:06:30] But that there is, yeah, I mean, I think,
+[2:06:33] you're given a good call to it,
+[2:06:35] although, like, I think sometimes it's good to,
+[2:06:38] Because you can't ensure that all those things
+[2:06:42] are gonna happen in the perfect order.
+[2:06:44] Sometimes it's better to just accept
+[2:06:46] that your point tempo is gonna be a little bit slower
+[2:06:48] in the early game if you're solving
+[2:06:49] for some of these other problems.
+[2:06:51] That's why ultimately in the situation you're describing,
+[2:06:53] I would rather take construction.
+[2:06:55] Now it could be some bogus situation
+[2:06:57] though where you're choosing between like,
+[2:06:59] let's say it's like
+### range 7620-8040s
+[2:07:00] Warfare, Leadership, and Diplo. That's your worst choice. Diplo is not really doing much for you. Maybe in that case, I take warfare just hoping that things are going to work out, I guess. I'll fall back on just like, well, I'm Empyrean. It'll be okay. That's true. Yeah. There are situations for sure. Uplast is technology. I'd put this right below trade and politics.
+[2:07:30] and politics is like kind of a funny one
+[2:07:32] because it's like it's either gonna make sense or not.
+[2:07:34] But tech is good obviously like,
+[2:07:36] I mean we've been talking about tech a lot.
+[2:07:38] So like in a way, you're very safe with tech in your hands.
+[2:07:42] I wonder, I don't think I have,
+[2:07:45] but I'm wondering if you ever double tech
+[2:07:47] as imperiying round one,
+[2:07:49] just take care of your two and gravity drive,
+[2:07:52] you know what I mean?
+[2:07:54] I think if you double tech round one,
+[2:07:57] you're probably not gonna be using it.
+[2:07:59] Yeah, right.
+[2:08:00] Because so then what's the point?
+[2:08:01] Are you really going to be able to double tech and kick
+[2:08:03] the stadium?
+[2:08:03] So that's the only real reason I can see is double tech
+[2:08:05] and grab drive and carry to and using custodians?
+[2:08:07] You don't have that company.
+[2:08:08] Or I guess maybe another thing is like if you have tech skips
+[2:08:12] or four of a trait and you need to tech grab drive carrier
+[2:08:15] to get that round one before say your neighbor gets
+[2:08:20] to their northern most position.
+[2:08:22] Oh sure.
+[2:08:22] Yeah.
+[2:08:24] It's better to get the control.
+[2:08:25] If you have a movement early, it's better to get the control
+[2:08:27] object up out of the way, round one,
+[2:08:30] before you have to go into something else's slice
+[2:08:32] and negotiate blah, blah, blah.
+[2:08:33] Yeah.
+[2:08:34] So that's a situation where I could see it,
+[2:08:37] but if you're taking tech to double tech,
+[2:08:39] it means you're not gonna follow warfare.
+[2:08:42] So you're only gonna have two carriers.
+[2:08:44] Is two carriers gonna be enough to score
+[2:08:46] said control objective?
+[2:08:47] Probably not.
+[2:08:49] So yeah, it would have to be like,
+[2:08:52] I have bear glitter in my slice,
+[2:08:54] and if I do this, I can go get two of this for you.
+[2:08:57] Those are four hazardous plants.
+[2:08:59] Honestly, double-teching in general,
+[2:09:01] I think has kind of gone out of fashion
+[2:09:03] because of expeditions.
+[2:09:05] It kind of has.
+[2:09:05] You need any extra gas you might have
+[2:09:08] as far as economy goes, it's like better served
+[2:09:10] most of the time getting that out of the way, you know?
+[2:09:13] Yeah.
+[2:09:14] So yeah, I do like, I do think there's nothing wrong
+[2:09:17] with a tech start though, because even though
+[2:09:20] you're just getting gravity drive out of it,
+[2:09:21] you're getting gravity drive and it's on your terms,
+[2:09:23] it's happening when makes sense for you.
+[2:09:26] Also in build later, you know, if you're, you could use your home or like if it's a spendy, you can use that to do spend the influence spendy or something.
+[2:09:35] Yes.
+[2:09:36] Yeah. I mean, tech, tech was good and P.
+[2:09:38] Okay.
+[2:09:39] Because it allowed you to save you a token for resources.
+[2:09:43] It let you, you know, dip low and I mean, okay, warfare, obviously, the case anymore.
+[2:09:50] But for factions that don't need warfare on one of which, Imperial is one, they have two C4i.
+[2:09:56] they have their trade ship.
+[2:09:57] They don't need to follow warfare.
+[2:09:59] Tech's good.
+[2:10:00] Tech's good.
+[2:10:01] Especially when you grab drives.
+[2:10:02] Big time, big time.
+[2:10:04] Okay, that's it.
+[2:10:05] We're not talking about Imperial, there's no point.
+[2:10:07] Let's talk about tech paths in general.
+[2:10:09] And I've got a, this one's really simple.
+[2:10:11] I don't really have a whole lot to talk about.
+[2:10:14] And it's all very obvious,
+[2:10:15] but you know, just for kids in the back of the class
+[2:10:17] or people that have fell asleep at their desk,
+[2:10:20] you know, I'm gonna wake them up
+[2:10:21] just to give the old lecture.
+[2:10:23] For me, core tech-wise, I only have four.
+[2:10:26] Basically, and honestly, I could have argued for a fifth,
+[2:10:29] but I just like, I like to keep whatever
+[2:10:30] core tech recommendations, I like to keep them like kind of tight.
+[2:10:34] And you might disagree with one of these.
+[2:10:35] I've got Gravity Drive, I got Carrier 2, I got X89,
+[2:10:40] and I went ahead and put Lightwave in instead of Fleet Logistics,
+[2:10:44] but it was almost Fleet Logistics.
+[2:10:46] And honestly, it probably should be Fleet Logistics,
+[2:10:48] but I kept running into situations
+[2:10:50] where Lightwave would get me more right now
+[2:10:54] because either it was that they were trying to keep me
+[2:10:58] out of the fracture, you know, and I wanted in
+[2:11:01] because you don't really win the,
+[2:11:03] we've said it many times overall in this episode,
+[2:11:06] but you don't really win the race for the fracture
+[2:11:08] most of the time.
+[2:11:10] And so therefore sometimes what can happen
+[2:11:13] is they'll just start clogging the egress.
+[2:11:16] And of course you could just blow it up,
+[2:11:18] but sometimes it's like I want to leapfrog and surprise,
+[2:11:22] you know what I mean?
+[2:11:23] surprise, I think is a big element to success, especially if you can light wave carrier two,
+[2:11:30] three movement into sticks suddenly with like a bunch of fighters and mechs as well.
+[2:11:38] That's the type of thing that can like add up to you winning the game. Where is I found?
+[2:11:43] I didn't end up so much in the I have Imperial late game and I'm going to make a quick
+[2:11:50] like, mexalrex play, like that didn't come up as often.
+[2:11:52] But obviously, if you're kind of on that path,
+[2:11:55] FleetLog is gonna make way more difference than LightWave.
+[2:11:57] LightWave is gonna be kind of irrelevant.
+[2:12:00] But how do you feel about that?
+[2:12:02] So, so first things first,
+[2:12:06] you start DT, Tech Grabtribes.
+[2:12:08] And once you have a blue or green skip,
+[2:12:10] you can't get LightWave or XCD9.
+[2:12:13] It's true.
+[2:12:14] You would need, you would need another blue tag.
+[2:12:15] Yeah, yeah.
+[2:12:16] So in the world where you don't have those tech skips,
+[2:12:19] It's fleet log, obviously, for sure.
+[2:12:21] If you can't, so in this world where you only have four techs,
+[2:12:24] which sometimes that's the case,
+[2:12:25] but I will point out Enigmag device is a frontier tech.
+[2:12:29] You're gonna get more tech in this.
+[2:12:30] You're gonna get more tech.
+[2:12:31] I think you're gonna get more tech in this.
+[2:12:33] I'd say the core tech, I'm willing to put five in my core tech.
+[2:12:37] Yeah, yeah.
+[2:12:38] And you'll throw a fleet log in there
+[2:12:40] and then now I'll throw a fleet log in there.
+[2:12:42] And you don't have to worry about the skips.
+[2:12:43] Yes.
+[2:12:45] X89, no, obviously, X89 is very good.
+[2:12:48] Yes, but there are some games where you don't need it.
+[2:12:51] Sure.
+[2:12:52] Which, you know, I'm probably gonna get some pushback on that.
+[2:12:55] But there are some times where people just defend the space
+[2:12:58] and they don't have a lot on the ground
+[2:13:00] and the places that you need to get,
+[2:13:01] maybe they also don't have X89
+[2:13:03] and you can bring enough to beat it.
+[2:13:05] Yep.
+[2:13:06] Whereas I feel like,
+[2:13:09] if you like without Lightwave,
+[2:13:10] it's really hard to do all the things you want to do.
+[2:13:13] Yeah, yeah.
+[2:13:15] So if I'm picking four, I don't know.
+[2:13:18] Some games is gonna be exciting.
+[2:13:20] Some games is not gonna be exciting.
+[2:13:21] Yeah, yeah.
+[2:13:22] A lot of the games will be.
+[2:13:23] Hey, I actually, no, I consider this a W for me,
+[2:13:26] for my research though,
+[2:13:27] because you're not pushing back on Lightwave,
+[2:13:30] which was the only thing I thought was gonna happen.
+[2:13:31] So there we go.
+[2:13:32] I actually think that I'm glad we're kind of
+[2:13:34] on the same page here, because even though,
+[2:13:37] in period, because in period is one of those like,
+[2:13:40] almost gnaloo types where are,
+[2:13:44] Like our strength is in output as in the factory is turning
+[2:13:48] and putting out enough plastic so that we just outnumber
+[2:13:52] the opponent.
+[2:13:54] And so therefore a faction like that,
+[2:13:56] they need the flexibility of light wave.

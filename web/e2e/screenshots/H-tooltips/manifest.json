@@ -1,0 +1,162 @@
+{
+  "title": "Tooltips",
+  "description": "Every hover tooltip added on this branch, one picture each, with the element being hovered in view.",
+  "tag": "web/e2e/screenshots/H-tooltips",
+  "shots": [
+    {
+      "file": "out/01-board-tile.png",
+      "heading": "Board tile hover",
+      "caption": "Hovering a hex lists its planets with resources and influence and who controls them, anomalies, wormholes, and the unit and command token counts."
+    },
+    {
+      "file": "out/02-zoom-controls.png",
+      "heading": "Map zoom button",
+      "caption": "The zoom buttons name their action. (Zoom In sits at the left edge of the window and its tooltip is partly cut off there.)"
+    },
+    {
+      "file": "out/03-overlay-toolbar.png",
+      "heading": "Map overlay button",
+      "caption": "Each overlay button says what it shows: Ground Combat gives defenders, average hits and planetary shields. The tooltips now open below the toolbar; before, the map container clipped them."
+    },
+    {
+      "file": "out/04-vp-breakdown.png",
+      "heading": "Victory point breakdown",
+      "caption": "The victory point badge lists where the points come from: public and secret objectives, Mecatol Rex and Shards of the Throne."
+    },
+    {
+      "file": "out/05-resources.png",
+      "heading": "Resources badge",
+      "caption": "Ready resources out of total resources."
+    },
+    {
+      "file": "out/06-influence.png",
+      "heading": "Influence badge",
+      "caption": "Ready influence out of total influence."
+    },
+    {
+      "file": "out/07-controlled-systems.png",
+      "heading": "Controlled systems",
+      "caption": "How many systems the player controls."
+    },
+    {
+      "file": "out/08-controlled-planets.png",
+      "heading": "Controlled planets",
+      "caption": "How many planets the player controls."
+    },
+    {
+      "file": "out/09-production-capacity.png",
+      "heading": "Production capacity",
+      "caption": "Production capacity still available out of the total."
+    },
+    {
+      "file": "out/10-strategy-card.png",
+      "heading": "Strategy card",
+      "caption": "A strategy card chip shows the card's initiative and the primary and secondary abilities."
+    },
+    {
+      "file": "out/11-action-card.png",
+      "heading": "Action card in hand",
+      "caption": "A held action card shows its name, phase and full effect text."
+    },
+    {
+      "file": "out/12-secret-objective.png",
+      "heading": "Secret objective",
+      "caption": "A held secret objective shows its phase, victory points and requirement."
+    },
+    {
+      "file": "out/13-sound-button.png",
+      "heading": "Turn sound",
+      "caption": "The sound button says what a click does (Mute turn sound or Turn sound on)."
+    },
+    {
+      "file": "out/14-eventlog-card-name.png",
+      "heading": "Event log: action card",
+      "caption": "An action card named in the log is underlined and shows its effect on hover."
+    },
+    {
+      "file": "out/15-eventlog-actor.png",
+      "heading": "Event log: actor",
+      "caption": "The coloured symbol in the log names the player and their position."
+    },
+    {
+      "file": "out/16-roll-badge.png",
+      "heading": "Combat: roll results",
+      "caption": "The hit count beside a ship type opens each die: the roll, the target number and whether it hit."
+    },
+    {
+      "file": "out/17-invasion-default.png",
+      "heading": "Invasion: default target",
+      "caption": "The star badge on the pre-selected planet says it is the default target."
+    },
+    {
+      "file": "out/18-invasion-reset.png",
+      "heading": "Invasion: reset button",
+      "caption": "The reset button says it restores the default planet and all available troops."
+    },
+    {
+      "file": "out/19-combat-destroyed.png",
+      "heading": "Combat: destroyed this step",
+      "caption": "The red minus on a ship row counts ships destroyed in this step."
+    },
+    {
+      "file": "out/20-combat-card.png",
+      "heading": "Combat: action card chip",
+      "caption": "Action cards a player holds are listed in the combat window and show their effect on hover."
+    },
+    {
+      "file": "out/21-fleet-supply.png",
+      "heading": "Combat: fleet supply gauge",
+      "caption": "Explains the fleet supply gauge: non-fighter ships against the fleet supply pool."
+    },
+    {
+      "file": "out/22-capacity.png",
+      "heading": "Combat: capacity gauge",
+      "caption": "Explains the capacity gauge: capacity used by fighters and infantry against total transport capacity."
+    },
+    {
+      "file": "out/23-reaction-toggle.png",
+      "heading": "Reaction switch",
+      "caption": "The per-card switch says whether a click turns the card to Never or back to Always."
+    },
+    {
+      "file": "out/24-odds-attacker-win.png",
+      "heading": "Combat odds: attacker win",
+      "caption": "Before the first roll the odds card shows a bar; hovering the attacker's part says \"Attacker Win: 62%\". The numbers come from a fixed simulated response."
+    },
+    {
+      "file": "out/25-odds-mutual-destruction.png",
+      "heading": "Combat odds: mutual destruction",
+      "caption": "The thin middle part of the bar is the chance both fleets are destroyed: \"Mutual Destruction: 10%\"."
+    },
+    {
+      "file": "out/26-odds-defender-win.png",
+      "heading": "Combat odds: defender win",
+      "caption": "The defender's part of the bar: \"Defender Win: 28%\"."
+    },
+    {
+      "file": "out/27-legendary-planet.png",
+      "heading": "Legendary planet",
+      "caption": "In the system inspector the star beside a legendary planet's name is labelled \"Legendary Planet\" (Primor here)."
+    },
+    {
+      "file": "out/28-lobby-remove-button.png",
+      "heading": "Lobby: remove player",
+      "caption": "In the lobby the host sees a cross on every other player's seat; its label names the seat: \"Remove player at position 2\"."
+    }
+  ],
+  "notesHeading": "Notes",
+  "notes": [
+    {
+      "title": "How they were captured",
+      "text": "Custom tooltips (the map, the victory point breakdown, the roll results) are real hover states. Browsers draw native title tooltips outside the page, so for those the capture draws the element's own title text where the browser would, and rings the element."
+    },
+    {
+      "title": "Fixes made while capturing",
+      "text": "Map overlay and zoom tooltips opened upward and were clipped by the map container; they now open downward. Tooltips no longer wrap into a narrow column."
+    },
+    {
+      "title": "Win-probability tooltips",
+      "text": "They need the odds service (POST /advisor/battle). The capture intercepts that request with Playwright route interception and answers a fixed simulation result (62% / 10% / 28%), so no advisor process is needed and the pixels are repeatable."
+    }
+  ]
+}

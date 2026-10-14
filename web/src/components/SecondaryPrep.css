@@ -1,0 +1,303 @@
+/* Preparing a strategy-card secondary while another player resolves the card.
+
+   The chip lives in the board's toolbar strip (.board-chrome__prep, a flow item there), so it needs no
+   coordinates. The banner and the bars float in the board column (.app-shell__board, the containing
+   block) just below that strip; --board-chrome-bottom is measured from the column's own top. */
+.board-chrome__prep {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+.board-chrome__prep:empty {
+  display: none;
+}
+.secondary-prep-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+/* Keeps the strip as tall as the chip while the banner is open, so the map does not jump. */
+.secondary-prep__chip-spacer {
+  height: 34px;
+}
+.secondary-prep {
+  position: absolute;
+  top: calc(var(--board-chrome-bottom, 56px) + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: calc(var(--layer-modal, 30) + 1);
+  width: min(520px, calc(100% - 24px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.secondary-prep > * {
+  pointer-events: auto;
+}
+/* The answer bars (Prepared ... Confirm / Choose myself, Needs review, auto-play toasts) dock at the
+   bottom of the board column: at the top they covered the token panel header and its pay-with-planets
+   row. The preparing banner keeps the top. */
+.secondary-prep:not(.secondary-prep--preparing) {
+  top: auto;
+  bottom: 16px;
+}
+@media (max-width: 720px) {
+  /* The board column is only as tall as the map strip on a phone: dock to the screen. */
+  .secondary-prep:not(.secondary-prep--preparing) {
+    position: fixed;
+    bottom: 72px;
+  }
+}
+@media (max-width: 720px) {
+  .secondary-prep {
+    left: 12px;
+    right: 12px;
+    width: auto;
+    transform: none;
+  }
+  /* The decision sits at the top on a phone: the preparing banner docks at the bottom instead. */
+  .secondary-prep--preparing {
+    position: fixed;
+    top: auto;
+    bottom: 72px;
+  }
+}
+/* A landscape phone is too short for the banner above the dialog (the dialog was squeezed to 0 px:
+   the banner is taller than the screen). It docks at the bottom right, narrow and scrollable. */
+@media (max-height: 500px) {
+  .secondary-prep--preparing {
+    position: fixed;
+    top: auto;
+    bottom: 8px;
+    left: auto;
+    right: 12px;
+    width: min(380px, 45vw);
+    max-height: calc(100dvh - 16px);
+    overflow-y: auto;
+    transform: none;
+  }
+}
+
+.secondary-prep__banner {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid #f59e0b;
+  border-radius: 10px;
+  background: rgba(11, 18, 34, 0.97);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+  color: var(--color-text, #f8fafc);
+  font-size: 0.9rem;
+  line-height: 1.4;
+  max-height: calc(100dvh - 120px);
+  overflow-y: auto;
+}
+.secondary-prep__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+}
+.secondary-prep__title {
+  font-weight: 700;
+}
+.secondary-prep__eyebrow {
+  display: block;
+  color: var(--color-accent, #38bdf8);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.secondary-prep__badge {
+  padding: 1px 8px;
+  border: 1px solid #16a34a;
+  border-radius: 999px;
+  background: rgba(22, 163, 74, 0.18);
+  color: #86efac;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.secondary-prep__badge--review {
+  border-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.16);
+  color: #fcd34d;
+}
+.secondary-prep__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.secondary-prep__label {
+  color: var(--color-text-muted, #94a3b8);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.secondary-prep__warning {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid #f59e0b;
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.12);
+  color: #fde68a;
+  font-size: 0.82rem;
+}
+.secondary-prep__note {
+  margin: 6px 0 0;
+  color: var(--color-text-muted, #94a3b8);
+  font-size: 0.75rem;
+}
+.secondary-prep__note--attention {
+  color: #fde68a;
+}
+.secondary-prep__chip {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--color-accent, #38bdf8);
+  border-radius: 999px;
+  background: rgba(11, 18, 34, 0.97);
+  color: #e0f2fe;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+}
+
+/* The prepared answer, when the real question arrives. */
+.secondary-prep__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 14px;
+  border: 1px solid #16a34a;
+  border-radius: 10px;
+  background: rgba(8, 28, 20, 0.97);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+  color: #dcfce7;
+  font-size: 0.9rem;
+}
+.secondary-prep__bar--review {
+  border-color: #f59e0b;
+  background: rgba(40, 28, 6, 0.97);
+  color: #fef3c7;
+}
+.secondary-prep__bar-text {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.secondary-prep__bar-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* The viewer-local mode switch in the player sheet header. */
+.secondary-prep-mode {
+  display: inline-flex;
+  border: 1px solid #94a3b8;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.secondary-prep-mode button {
+  padding: 4px 8px;
+  border: 0;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.secondary-prep-mode button[aria-pressed="true"] {
+  background: rgba(148, 163, 184, 0.22);
+  color: #e2e8f0;
+}
+
+.secondary-prep__warning summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+/* While a backdrop dialog is open the overlays container rises to --layer-dialog (index.css), which
+   would cover the prepared answer's Confirm bar of the real question that opened that dialog. The
+   floating prep panel rises with it. */
+:root:has(
+    .app-shell__overlays :is(.choice-dialog, .choice-workflow-dialog, .decision-modal, .invasion-overlay)
+  )
+  .secondary-prep {
+  z-index: calc(var(--layer-dialog, 50) + 1);
+}
+
+/* The fold control only exists on a phone or a short window. Folded, the banner keeps its title and the Save / Clear row
+   (44 px high) and drops the explanations, so a minimized stand-in question leaves the map visible. */
+.button.secondary-prep__fold {
+  display: none;
+}
+/* A desktop window up to 640 px high gets it too: banner and question together do not fit there. */
+@media (max-width: 720px), (max-height: 640px) {
+  .button.secondary-prep__fold {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    font-size: 20px;
+  }
+  .secondary-prep--preparing .secondary-prep__head .button {
+    min-height: 44px;
+  }
+  .secondary-prep__banner[data-folded="true"] > :not(.secondary-prep__head) {
+    display: none;
+  }
+  .secondary-prep__banner[data-folded="true"] {
+    padding-block: 6px;
+  }
+  .secondary-prep__banner[data-folded="true"] .secondary-prep__head {
+    flex-wrap: nowrap;
+  }
+  .secondary-prep__banner[data-folded="true"] [data-testid="prep-clear"] {
+    display: none;
+  }
+  .secondary-prep__banner[data-folded="true"] .secondary-prep__eyebrow,
+  /* the note carries an inline display, hence !important */
+  .secondary-prep__banner[data-folded="true"] .secondary-prep__title .secondary-prep__note {
+    display: none !important;
+  }
+  .secondary-prep__banner[data-folded="true"] .secondary-prep__row {
+    flex-wrap: nowrap;
+  }
+}
+
+/* While the preparing banner is open the dialog of the stand-in question starts below it: the banner
+   floats over the board column and used to cover the top of full-screen dialogs (the production
+   builder's meters, the technology modal's skip toggles). --prep-banner-bottom is measured from the
+   banner by SecondaryPrepHost (0 on a phone, where the banner docks at the bottom). */
+:root:has(.secondary-prep--preparing) :is(.choice-workflow-dialog, .choice-dialog) {
+  box-sizing: border-box;
+  padding-top: var(--prep-banner-bottom, 0px);
+  padding-bottom: var(--prep-pad-bottom, 0px);
+  padding-right: var(--prep-pad-right, 0px);
+}
+:root:has(.secondary-prep--preparing) :is(.choice-workflow-dialog, .choice-dialog) > * {
+  max-height: calc(100dvh - var(--prep-banner-bottom, 0px) - var(--prep-pad-bottom, 0px) - 16px) !important;
+}
+/* A phone dialog is full height (index.css); with the banner docked at the bottom (or at the right
+   on a landscape phone) it shrinks to what the banner leaves, so the question's title and its
+   buttons are never behind the banner. */
+@media (max-width: 720px), (max-height: 500px) {
+  :root:has(.secondary-prep--preparing) :is(.choice-workflow-dialog, .choice-dialog) > * {
+    height: auto !important;
+    max-width: 100% !important;
+    box-sizing: border-box;
+  }
+}

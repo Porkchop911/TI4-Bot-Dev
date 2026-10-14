@@ -346,7 +346,7 @@ fn main() -> Result<(), String> {
         {
             return Err("a Stage-1 rollout failed; refusing to continue".to_owned());
         }
-        if let Some(clip) = run.generations.iter().filter_map(|g| g.clip).last() {
+        if let Some(clip) = run.generations.iter().filter_map(|g| g.clip).next_back() {
             println!(
                 "  trust region: clip fraction {:.4}, approximate KL {:.5}",
                 clip.clip_fraction, clip.kl_mean

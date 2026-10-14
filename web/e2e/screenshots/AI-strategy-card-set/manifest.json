@@ -1,0 +1,56 @@
+{
+  "title": "Strategy Card Set",
+  "description": "Choosing which strategy card set a table plays when it is created (Thunder's Edge by default, Prophecy of Kings, or Base game + Codex I), how the lobby names it, and the strategy card draft showing Thunder's Edge versus Prophecy of Kings Construction and Warfare.",
+  "tag": "web/e2e/screenshots/AI-strategy-card-set",
+  "shots": [
+    {
+      "file": "out/1-create-default.png",
+      "heading": "Create form: Thunder's Edge is the default",
+      "caption": "A new Strategy cards selector sits under Players. It starts on Thunder's Edge (default), and the line below says what that set changes. The choice is sent with the create request as strategy_card_set."
+    },
+    {
+      "file": "out/2-create-pok.png",
+      "heading": "Create form: Prophecy of Kings selected",
+      "caption": "Picking Prophecy of Kings swaps the description to the PoK Construction and Warfare. Games saved before this option existed are Prophecy of Kings games."
+    },
+    {
+      "file": "out/3-create-phone.png",
+      "heading": "Create form on a phone, 390 px",
+      "caption": "On a phone the selector and its description stack with the other fields in the same column; nothing scrolls sideways."
+    },
+    {
+      "file": "out/4-create-options.png",
+      "heading": "The three sets on offer",
+      "caption": "Thunder's Edge (default), Prophecy of Kings and Base game + Codex I (the original Construction). The plain Base game set is not offered: its Diplomacy text does not match what the engine plays."
+    },
+    {
+      "file": "out/5-lobby-row.png",
+      "heading": "Lobby: Strategy cards row",
+      "caption": "After creation every player sees Strategy cards: Thunder's Edge under the map row, before Start."
+    },
+    {
+      "file": "out/6-lobby-row-pok.png",
+      "heading": "Lobby: Prophecy of Kings table",
+      "caption": "The same row for a Prophecy of Kings table. A lobby from a server that predates the option shows no row."
+    },
+    {
+      "file": "out/7-draft-te.png",
+      "heading": "Draft in a Thunder's Edge game",
+      "caption": "The eight cards of the game's set: Construction offers one structure or PRODUCTION, and Warfare is a free tactical action with You may redistribute your command tokens before and after this action. The text comes from the card ids the game deals."
+    },
+    {
+      "file": "out/8-draft-pok.png",
+      "heading": "Draft in a Prophecy of Kings game",
+      "caption": "The same draft with the PoK Construction and Warfare: Warfare removes a command token from the board, gains one and redistributes."
+    },
+    {
+      "file": "out/9-draft-te-phone.png",
+      "heading": "Thunder's Edge draft on a phone",
+      "caption": "At 390 px the card grid becomes a single column; each card shows its Primary and Secondary text."
+    }
+  ],
+  "notes": [
+    "Fixtures are synthetic: the server's lobby, map and websocket answers are routed in the browser, the components are the real ones.",
+    "Thunder's Edge text exists in the catalog only for Construction and Warfare; the other six cards have one version each. Text for any other Thunder's Edge card changes is needed from the user."
+  ]
+}

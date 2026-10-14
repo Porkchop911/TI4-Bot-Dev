@@ -1,0 +1,17 @@
+{
+  "title": "Space Combat Result",
+  "description": "The screen a player sees when a space combat is over: the surviving fleets plus a summary of who won and what the last round cost each side.",
+  "tag": "web/e2e/screenshots/F-space-combat-result",
+  "shots": [
+    {
+      "file": "out/1-result.png",
+      "heading": "Combat complete",
+      "caption": "The surviving fleets sit above a new result summary. It names the winner (\"You won the battle\"), says why, and lists for each side the hits scored, the ships lost, any damage sustained and the ships left. Here the attacker lost 2 fighters and damaged a dreadnought, and the defender's four ships were all destroyed."
+    }
+  ],
+  "notes": [
+    { "title": "Scope of the numbers", "text": "The server sends the fleets as they were at the start of the current round, so the summary covers the last round, not a whole multi-round battle." },
+    { "title": "Other outcomes", "text": "A fight that ends with ships of both sides left reads \"Both fleets survive\"; a mutual wipe-out reads \"Both fleets were destroyed\"." },
+    { "title": "Fixture", "text": "A synthetic finished combat in system 18 rendered through the mocked game, not a captured engine state." }
+  ]
+}

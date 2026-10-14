@@ -483,9 +483,10 @@ pub fn uses_the_action(content: &ContentStore, leader: &LeaderId) -> bool {
 /// hold the two halves of the offer — "we deliver it" and "the corpus says it is an action" —
 /// against each other. Membership alone was never proof of delivery: Hacan's agent was in the
 /// `matches!` from LEADER-FIX-001 and still never reached a table.
-const DELIVERED_ACTION_LEADERS: [&str; 7] = [
+const DELIVERED_ACTION_LEADERS: [&str; 8] = [
     "xxchaagent",
     "hacanagent",
+    ZEU,
     "solhero",
     "letnevhero",
     "jolnarhero",
@@ -495,6 +496,39 @@ const DELIVERED_ACTION_LEADERS: [&str; 7] = [
 
 fn action_leader_delivered(leader: &LeaderId) -> bool {
     DELIVERED_ACTION_LEADERS.contains(&leader.as_str())
+}
+
+/// Z'eu, the Naalu's Prophecy of Kings agent: "ACTION: Exhaust this card and choose a player. That
+/// player may perform a tactical action in a non-home system without placing a command token. That
+/// system still counts as being activated."
+///
+/// A Prophecy of Kings game deals this card (the Thunder's Edge `naaluagent-te` is out of scope
+/// there), and until 2026-10-12 nothing offered or resolved it: the Naalu played without an agent.
+/// The game resolves it (`Game::perform_zeu`) for the Naalu seat itself; choosing another player,
+/// whose tactical action would run inside the Naalu's turn, is not offered.
+pub const ZEU: &str = "naaluagent";
+
+/// Systems Z'eu lets `player` perform its tactical action in: the ones it could activate, less
+/// every home system and every system already holding its command token.
+#[must_use]
+pub fn zeu_systems(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: &ti4_content::galaxy::Galaxy,
+    player: &PlayerId,
+) -> Vec<ti4_model::id::SystemId> {
+    let tokens = state.systems_with_token(player);
+    crate::tactical::activatable_with(state, content, sources, galaxy, player)
+        .into_iter()
+        .filter(|system| !tokens.contains(system))
+        .filter(|system| {
+            !state
+                .players
+                .iter()
+                .any(|seat| seat.home_system.as_ref() == Some(system))
+        })
+        .collect()
 }
 
 /// Cheap preconditions for offering an action-phase leader: only what is checkable without a map.
@@ -507,6 +541,19 @@ fn can_resolve_action(
     match leader.as_str() {
         // "Ready any planet" needs a planet to be readying.
         "xxchaagent" => !state.exhausted_planets.is_empty(),
+        // A non-home system without its token to act in (the map is checked when it resolves;
+        // a board that tracks no system yet is a map whose systems are all still open).
+        ZEU => {
+            let tokens = state.systems_with_token(player);
+            state.board.is_empty()
+                || state.board.keys().any(|system| {
+                    !tokens.contains(system)
+                        && !state
+                            .players
+                            .iter()
+                            .any(|seat| seat.home_system.as_ref() == Some(system))
+                })
+        }
         // "Gain 2 commodities or replenish another player's commodities" — with every hand at its
         // cap neither branch can change anything, and offering a use that burns the agent for
         // nothing is a dead button, not an option.
@@ -637,6 +684,8 @@ fn borrowed_component_actions(
     crate::factions::hooks_cards::borrowable_agents(state, content, player)
         .into_iter()
         .map(|(_, agent)| agent)
+        // Z'eu resolves for its owner only (`Game::perform_zeu`), not as a copied text.
+        .filter(|agent| agent.as_str() != ZEU)
         .filter(|agent| is_action_window(content, agent))
         .filter(|agent| {
             action_leader_delivered(agent)
@@ -840,6 +889,8 @@ pub fn registered_abilities() -> Vec<&'static str> {
         "solcommander",
         "solhero",
         "xxchaagent",
+        // Resolved by the game (`Game::perform_zeu`): it starts a tactical action.
+        ZEU,
     ]
     .into_iter()
     .chain(crate::factions::registered_leaders())
@@ -1021,20 +1072,14 @@ fn dispatch_leader(
             } else {
                 "cruiser"
             };
-            let unit = ti4_content::units::faction_unit(
+            let unit = crate::action_cards::placed_unit_id(
+                context.state,
                 context.content,
-                &context
-                    .state
-                    .player(player)
-                    .map(|seat| seat.faction.to_string())
-                    .unwrap_or_default(),
-                wanted,
                 context.sources,
+                player,
+                wanted,
             )
-            .map_or_else(
-                || ti4_model::id::UnitTypeId::new(wanted),
-                |kind| ti4_model::id::UnitTypeId::new(kind.id()),
-            );
+            .unwrap_or_else(|| ti4_model::id::UnitTypeId::new(wanted));
             if let Some(seat) = context.state.player_mut(player) {
                 seat.extra_die_round = Some(round);
                 seat.extra_die_unit = Some(unit);
@@ -1092,6 +1137,12 @@ fn dispatch_leader(
                                     p.to_string(),
                                     "planet",
                                     p.to_string(),
+                                )
+                                .with_planet_located(
+                                    context.state,
+                                    context.content,
+                                    context.sources,
+                                    p.as_str(),
                                 )
                             })
                             .collect(),
@@ -1251,22 +1302,14 @@ fn dispatch_leader(
             if controlled.is_empty() {
                 return false; // nothing to place on, so it was never offered
             }
-            let faction = context
-                .state
-                .player(player)
-                .map(|seat| seat.faction.to_string())
-                .unwrap_or_default();
-            let catalogue = ti4_content::units::catalogue(context.content, context.sources);
             let unit_id = |base_type: &str| -> Option<ti4_model::id::UnitTypeId> {
-                let faction_unit = ti4_content::units::faction_unit(
+                crate::action_cards::placed_unit_id(
+                    context.state,
                     context.content,
-                    &faction,
-                    base_type,
                     context.sources,
+                    player,
+                    base_type,
                 )
-                .map(|unit| unit.id().to_owned());
-                let generic = catalogue.get(base_type).map(|unit| unit.id().to_owned());
-                faction_unit.or(generic).map(ti4_model::id::UnitTypeId::new)
             };
             let pds = unit_id("pds");
             let mech = unit_id("mech");
@@ -1355,6 +1398,7 @@ fn dispatch_leader(
                                 "leader_xxchahero_te_planet",
                                 format!("{planet} in {system}"),
                             )
+                            .with_planet(planet.as_str(), Some(system.as_str()))
                         })
                         .collect();
                     let choice = crate::choice::Choice::new(
@@ -1435,7 +1479,12 @@ fn dispatch_leader(
                 "leader_hacanagent_branch",
                 context.state.phase,
                 context.state.round,
-            ));
+            ))
+            // Display only: the seat's own commodities, which the "gain 2" branch adds to.
+            .detailed(
+                "commodities",
+                crate::strategy_cards::commodity_standing(context.state, context.content, player),
+            );
             let Ok(answer) = context.ask_seeing(&choice) else {
                 return false;
             };
@@ -1523,7 +1572,7 @@ fn dispatch_leader(
                 return false;
             }
             let safe: Vec<ti4_model::id::SystemId> = galaxy
-                .system_ids()
+                .system_ids_holding_things()
                 .into_iter()
                 .map(ti4_model::id::SystemId::new)
                 .filter(|system| {
@@ -1947,6 +1996,13 @@ pub fn ssruu_l1z1x_activation_abilities(state: &GameState) -> Vec<crate::timing:
                                                     .and_then(|record| record.name())
                                                     .unwrap_or(planet.as_str())
                                                 ),
+                                            )
+                                            // Display only: lets the web client pick it on the map.
+                                            .with_planet_located(
+                                                context.state,
+                                                context.content,
+                                                context.sources,
+                                                planet.as_str(),
                                             )
                                         })
                                         .collect(),
@@ -2898,9 +2954,21 @@ mod tests {
             !missing.contains(&LeaderId::new("xxchahero")),
             "and the hero's effect lives in combines_planet_values"
         );
-        // The older PoK Naalu agent is still uncovered; the DEFAULT reprint is implemented.
+        // The half that keeps this test honest: a leader nothing handles is still reported, so
+        // the list is not simply always empty. Naalu's Prophecy of Kings agent was the example
+        // until Z'eu was delivered (2026-10-12); across every faction one is still left (the
+        // Keleres' Orlando hero, 2026-10-12), so the whole roster stands in now.
         assert!(
-            !unimplemented(ContentStore::embedded(), POK, &["naalu"]).is_empty(),
+            !unimplemented(ContentStore::embedded(), POK, &["naalu"])
+                .contains(&LeaderId::new(ZEU)),
+            "Z'eu is delivered by the game"
+        );
+        let all: Vec<&str> =
+            ti4_content::factions::catalogue(ContentStore::embedded(), SourceSet::all())
+                .into_keys()
+                .collect();
+        assert!(
+            !unimplemented(ContentStore::embedded(), SourceSet::all(), &all).is_empty(),
             "a leader this module does not handle is still reported"
         );
         assert!(
@@ -3325,6 +3393,84 @@ mod tests {
         holding(&mut state, "muaatagent", LeaderStatus::Readied);
 
         assert!(component_actions(&state, ContentStore::embedded(), &player()).is_empty());
+    }
+
+    /// Use a leader through a capturing table and return every choice it asked.
+    fn use_capturing(
+        state: &mut GameState,
+        leader: &str,
+        answers: Vec<String>,
+    ) -> Vec<crate::choice::Choice> {
+        let (decider, seen) =
+            crate::choice::Capturing::new(Box::new(crate::choice::Scripted::new(answers)));
+        let mut table = crate::choice::Table::with_default(Box::new(decider));
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(0);
+        let mut sequence = crate::event::EventSequence::new();
+        let mut context = crate::timing::TimingContext {
+            state,
+            content: ContentStore::embedded(),
+            sources: POK,
+            table: &mut table,
+            dice: &mut dice,
+            rng: &mut rng,
+            event_sequence: &mut sequence,
+            galaxy: None,
+        };
+        use_leader(&mut context, &player(), &LeaderId::new(leader));
+        seen.borrow().clone()
+    }
+
+    /// Xxcha's agent (ready a planet) and the Thunder's Edge hero (which planet gets the unit)
+    /// both carry `planet` + `system` on their planet options.
+    #[test]
+    fn xxcha_leader_planet_options_carry_planet_and_system_payloads() {
+        use crate::choice::planet_payload::{assert_locates, offered};
+        let mut state = game(&["a"]);
+        holding(&mut state, "xxchaagent", LeaderStatus::Readied);
+        state
+            .exhausted_planets
+            .insert(ti4_model::id::PlanetId::new("lodor"));
+        state
+            .exhausted_planets
+            .insert(ti4_model::id::PlanetId::new("torkan"));
+        let seen = use_capturing(&mut state, "xxchaagent", vec!["lodor".to_owned()]);
+        let ready = &seen[0];
+        assert_eq!(
+            ready.context.as_ref().unwrap().subtype,
+            "leader_xxchaagent_ready_planet"
+        );
+        assert_locates(offered(ready, "lodor"), "lodor", "26");
+        assert_locates(offered(ready, "torkan"), "torkan", "28");
+
+        let mut state = game(&["a"]);
+        state.player_mut(&player()).unwrap().faction = ti4_model::id::FactionId::new("xxcha");
+        holding(&mut state, "xxchahero-te", LeaderStatus::Unlocked);
+        for (system, planet) in [("26", "lodor"), ("28", "torkan")] {
+            state
+                .system_mut(&ti4_model::id::SystemId::new(system))
+                .set_control(ti4_model::id::PlanetId::new(planet), player().clone());
+        }
+        let seen = use_capturing(
+            &mut state,
+            "xxchahero-te",
+            vec![
+                "place|pds".to_owned(),
+                "planet|lodor".to_owned(),
+                "stop".to_owned(),
+            ],
+        );
+        let planet = seen
+            .iter()
+            .find(|choice| {
+                choice
+                    .context
+                    .as_ref()
+                    .is_some_and(|c| c.subtype == "leader_xxchahero_te_planet")
+            })
+            .expect("the planet was asked");
+        assert_locates(offered(planet, "planet|lodor"), "lodor", "26");
+        assert_locates(offered(planet, "planet|torkan"), "torkan", "28");
     }
 
     #[test]

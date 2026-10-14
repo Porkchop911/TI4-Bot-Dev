@@ -1578,13 +1578,22 @@ pub enum GroundQuery {
     /// A fight follows, but outside what the predictor covers.
     Unsupported(Unsupported),
     /// The invasion as it would stand with this unit landed, and without it.
-    Supported {
-        attacker: GroundBattleSide,
-        defender: GroundBattleSide,
-        /// The forces already committed there, when there are any.
-        baseline: Option<GroundBattleSide>,
-    },
+    Supported(Box<SupportedGroundBattle>),
 }
+
+/// Combat sides inferred from public information for a supported invasion query.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SupportedGroundBattle {
+    /// The invading side, including the committed landing.
+    pub attacker: GroundBattleSide,
+    /// The defending side.
+    pub defender: GroundBattleSide,
+    /// The forces already committed there, when there are any.
+    pub baseline: Option<GroundBattleSide>,
+}
+
+type GroundUnitCounts = Vec<(String, usize)>;
+type GroundTally = (GroundUnitCounts, GroundUnitCounts);
 
 /// The ground combat a commit option leads to, from public information only.
 ///
@@ -1655,24 +1664,23 @@ pub fn invasion_query(
             .map(|(_, shift)| (faction.clone(), *shift))
             .ok_or(Unsupported::Faction(faction))
     };
-    let tally =
-        |owner: &PlayerId| -> Result<(Vec<(String, usize)>, Vec<(String, usize)>), Unsupported> {
-            let mut forces: BTreeMap<String, usize> = BTreeMap::new();
-            let mut damaged: BTreeMap<String, usize> = BTreeMap::new();
-            for u in standing
-                .iter()
-                .filter(|u| &u.owner == owner && is_ground(u.type_id.as_str()))
-            {
-                if u.galvanized {
-                    return Err(Unsupported::Galvanized);
-                }
-                *forces.entry(u.type_id.to_string()).or_default() += 1;
-                if u.sustained_damage {
-                    *damaged.entry(u.type_id.to_string()).or_default() += 1;
-                }
+    let tally = |owner: &PlayerId| -> Result<GroundTally, Unsupported> {
+        let mut forces: BTreeMap<String, usize> = BTreeMap::new();
+        let mut damaged: BTreeMap<String, usize> = BTreeMap::new();
+        for u in standing
+            .iter()
+            .filter(|u| &u.owner == owner && is_ground(u.type_id.as_str()))
+        {
+            if u.galvanized {
+                return Err(Unsupported::Galvanized);
             }
-            Ok((forces.into_iter().collect(), damaged.into_iter().collect()))
-        };
+            *forces.entry(u.type_id.to_string()).or_default() += 1;
+            if u.sustained_damage {
+                *damaged.entry(u.type_id.to_string()).or_default() += 1;
+            }
+        }
+        Ok((forces.into_iter().collect(), damaged.into_iter().collect()))
+    };
     let built = (|| -> Result<GroundQuery, Unsupported> {
         let (_, own_shift) = faction_of(player)?;
         let (enemy_faction, enemy_shift) = faction_of(&enemy)?;
@@ -1737,11 +1745,11 @@ pub fn invasion_query(
             modifier: enemy_shift,
         };
         encode_ground(&attacker, &defender)?;
-        Ok(GroundQuery::Supported {
+        Ok(GroundQuery::Supported(Box::new(SupportedGroundBattle {
             attacker,
             defender,
             baseline,
-        })
+        })))
     })();
     built.unwrap_or_else(GroundQuery::Unsupported)
 }
@@ -1884,11 +1892,10 @@ fn ground_facts(
                     facts.push((names[0], 1.0));
                     facts.push((names[1], 1.0));
                 }
-                GroundQuery::Supported {
-                    attacker,
-                    defender,
-                    baseline,
-                } => {
+                GroundQuery::Supported(supported) => {
+                    let attacker = &supported.attacker;
+                    let defender = &supported.defender;
+                    let baseline = &supported.baseline;
                     facts.push((names[0], 1.0));
                     let predict = |a: &GroundBattleSide| {
                         encode_ground(a, &defender)
@@ -2838,14 +2845,14 @@ mod tests {
         .with("planet", "contested")
         .with("unit", "l1z1x_mech");
 
-        let GroundQuery::Supported {
+        let GroundQuery::Supported(supported) = invasion_query(&seen, &mech, &a) else {
+            panic!("an invasion is supported");
+        };
+        let SupportedGroundBattle {
             attacker,
             defender,
             baseline,
-        } = invasion_query(&seen, &mech, &a)
-        else {
-            panic!("an invasion is supported");
-        };
+        } = *supported;
         assert_eq!(
             attacker.forces,
             vec![("infantry".to_owned(), 1), ("l1z1x_mech".to_owned(), 1)]

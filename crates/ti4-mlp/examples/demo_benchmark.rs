@@ -214,8 +214,9 @@ fn score(
     trajectory: &Trajectory,
     opponents: Opponents,
 ) -> Result<Vec<Scored>, String> {
-    let records: Rc<RefCell<Option<Rc<RefCell<Vec<ti4_mlp::bot::PpoRecord>>>>>> =
-        Rc::new(RefCell::new(None));
+    type RecordLog = Rc<RefCell<Vec<ti4_mlp::bot::PpoRecord>>>;
+    type RecordHandle = Rc<RefCell<Option<RecordLog>>>;
+    let records: RecordHandle = Rc::new(RefCell::new(None));
     let forced = Rc::new(RefCell::new(Vec::new()));
     let broken = Rc::new(RefCell::new(false));
     let handle = Rc::clone(&records);

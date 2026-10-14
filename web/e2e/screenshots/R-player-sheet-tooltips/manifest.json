@@ -1,0 +1,27 @@
+{
+  "title": "Player sheet: token and economy tooltips",
+  "description": "The player sheet's token line is now just the three numbers (tactic, fleet, strategy) joined by diamonds, and the token, trade goods and commodities values explain themselves on hover or keyboard focus.",
+  "tag": "web/e2e/screenshots/R-player-sheet-tooltips",
+  "shots": [
+    {
+      "file": "out/01-overview.png",
+      "heading": "At rest",
+      "caption": "TG and Comm stay compact; the old 'Tokens: a/b/c' label became '3 ◆ 3 ◆ 2' (tactic, fleet, strategy)."
+    },
+    {
+      "file": "out/02-tokens-tooltip.png",
+      "heading": "Token line tooltip",
+      "caption": "Hover or focus the numbers: 'Tactic 3 · Fleet 3 · Strategy 2'. The element also carries an aria-label for screen readers."
+    },
+    {
+      "file": "out/03-trade-goods-tooltip.png",
+      "heading": "Trade goods tooltip",
+      "caption": "TG shows 'Trade goods' on hover or focus."
+    },
+    {
+      "file": "out/04-commodities-tooltip.png",
+      "heading": "Commodities tooltip",
+      "caption": "Comm shows 'Commodities' on hover or focus."
+    }
+  ]
+}

@@ -68,10 +68,14 @@ pub fn resolve_agenda_phase(state: &mut GameState) -> Result<AgendaPhaseReport, 
     }
     let mut report = AgendaPhaseReport::default();
     for _ in 0..AGENDAS_PER_PHASE {
-        let Some(alias) = state.agenda_deck.first().cloned() else {
+        let Some(alias) = ti4_model::deck_reserve::take_top(
+            &mut state.deck_reserve,
+            "agenda",
+            &mut state.agenda_deck,
+            None,
+        ) else {
             break;
         };
-        state.agenda_deck.remove(0);
         report.agendas.push(RevealedAgenda {
             alias,
             voting_order: voting_order.clone(),

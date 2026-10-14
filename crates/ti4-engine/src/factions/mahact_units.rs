@@ -188,12 +188,16 @@ fn legionnaire(owner_name: &str, seat: &PlayerId, unit: &'static str) -> Ability
                         ),
                     ],
                 )
-                .contextualized(decision(
-                    context.state,
-                    &owner,
-                    unit,
-                    "legionnaire_payment",
-                ));
+                .contextualized(decision(context.state, &owner, unit, "legionnaire_payment"))
+                // Display only: the owner's commodities now and at the limit.
+                .detailed(
+                    "commodities",
+                    crate::strategy_cards::commodity_standing(
+                        context.state,
+                        context.content,
+                        &owner,
+                    ),
+                );
                 context.ask_seeing(&choice).map_err(illegal)?.id == "convert"
             } else {
                 can_convert

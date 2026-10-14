@@ -9,9 +9,14 @@
 //! wormhole kind are adjacent however far apart they sit. It is derived on demand rather
 //! than stored, so no cached neighbour list can drift from the placement.
 //!
-//! Hyperlanes are not modelled. The corpus marks a tile `isHyperlane` but carries no path
-//! data, and guessing the paths would produce adjacency that is wrong in a way tests would
-//! not catch. [`Galaxy::hyperlanes`] lists them so a caller can see what is excluded.
+//! Hyperlane *paths* are not modelled. The corpus marks a tile `isHyperlane` but carries no
+//! path data, and guessing the paths would produce adjacency that is wrong in a way tests would
+//! not catch. A hyperlane tile therefore still sits in the adjacency graph as an empty hex a
+//! ship may pass through (the model's only approximation of a lane). What is modelled is that a
+//! hyperlane is not a *system*: it cannot be activated, ended a move in, hold units, tokens or
+//! planets, or be chosen as a placement target. [`Galaxy::is_hyperlane`] is the one predicate for
+//! that; [`Galaxy::system_ids_holding_things`] is `system_ids` without them, and
+//! [`Galaxy::hyperlanes`] lists them.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -364,7 +369,6 @@ const NEXUS_TILE: &str = "82";
 // The five switches below are independent rules that happen to be booleans -- three laws, one
 // action card and one relic -- set by the game before each step. Grouping them into a struct would
 // name a thing that does not exist and would not make any call site clearer.
-#[expect(clippy::struct_excessive_bools, reason = "independent rule switches")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Galaxy {
     /// Hex to system id.
@@ -685,6 +689,16 @@ impl Galaxy {
         self.placement.values().map(String::as_str).collect()
     }
 
+    /// System ids in play beside the hex grid, in deterministic order.
+    #[must_use]
+    pub fn off_map_system_ids(&self) -> Vec<&str> {
+        self.wormholes
+            .keys()
+            .filter(|id| !self.coords.contains_key(*id))
+            .map(String::as_str)
+            .collect()
+    }
+
     /// The hex a system sits on.
     #[must_use]
     pub fn coord_of(&self, system_id: &str) -> Option<Hex> {
@@ -697,10 +711,33 @@ impl Galaxy {
         self.placement.get(&hex).map(String::as_str)
     }
 
-    /// Systems flagged as hyperlanes, whose paths are not modelled here.
+    /// Systems flagged as hyperlanes, whose paths are not modelled here. See [`Self::is_hyperlane`].
     #[must_use]
     pub fn hyperlanes(&self) -> Vec<&str> {
         self.hyperlanes.iter().map(String::as_str).collect()
+    }
+
+    /// Whether `system_id` is a hyperlane tile on this board.
+    ///
+    /// The single rule predicate for "this tile is not a system" (ruling: hyperlanes may not be
+    /// moved into). A hyperlane tile cannot be activated, cannot be the destination or the end of
+    /// a move or retreat, and cannot hold units, command or other tokens. It is still an
+    /// intermediate step in a path, because its connections are not modelled (see the module
+    /// docs). Every place that offers a system as a target must test this.
+    #[must_use]
+    pub fn is_hyperlane(&self, system_id: &str) -> bool {
+        self.hyperlanes.contains(system_id)
+    }
+
+    /// [`Self::system_ids`] without hyperlane tiles: the systems that can be activated, entered
+    /// and hold things. Use this wherever a system is to be offered as a target.
+    #[must_use]
+    pub fn system_ids_holding_things(&self) -> Vec<&str> {
+        self.placement
+            .values()
+            .map(String::as_str)
+            .filter(|id| !self.hyperlanes.contains(*id))
+            .collect()
     }
 
     /// Neighbouring systems, including wormhole pairs (LRR: Adjacency).
@@ -1178,6 +1215,24 @@ mod tests {
             .expect("the corpus has hyperlane tiles");
         let galaxy = Galaxy::build(store(), &["18", hyperlane], FULL, 3).unwrap();
         assert_eq!(galaxy.hyperlanes(), vec![hyperlane]);
+    }
+
+    #[test]
+    fn a_hyperlane_tile_is_not_a_system_that_can_hold_things() {
+        let hyperlane = all_systems(store(), FULL)
+            .into_iter()
+            .find(|(_, s)| s.is_hyperlane())
+            .map(|(id, _)| id)
+            .expect("the corpus has hyperlane tiles");
+        let galaxy = Galaxy::build(store(), &["18", hyperlane, "19"], FULL, 3).unwrap();
+        assert!(galaxy.is_hyperlane(hyperlane));
+        assert!(!galaxy.is_hyperlane("18"));
+        assert!(!galaxy.is_hyperlane("not-on-the-board"));
+        assert!(
+            galaxy.system_ids().contains(&hyperlane),
+            "it is still on the map"
+        );
+        assert_eq!(galaxy.system_ids_holding_things(), vec!["18", "19"]);
     }
 
     #[test]

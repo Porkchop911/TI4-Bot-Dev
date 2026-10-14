@@ -1,0 +1,17 @@
+{
+  "title": "System Overview: Structures",
+  "description": "The system inspector now shows each planet's PDS and space docks inside its planet card: icon in the owner's colour, seat badge, name (II card when researched), count, and the production value or space cannon number from the game content. They no longer appear a second time in the unit list. Also: the icon gallery of three candidates per structure; option (a) of each was chosen. Before shots are taken on the base commit and committed; npm run screenshots -- BA regenerates the after shots. Synthetic fixtures, not captured engine states.",
+  "tag": "web/e2e/screenshots/BA-system-structures",
+  "shots": [
+    { "file": "before/1-desktop.png", "heading": "Before: structures only as chips in the unit list", "caption": "Jord's PDS and Space Dock sit among the infantry under 'On Jord'; the planet cards show nothing about them." },
+    { "file": "out/after-1-desktop.png", "heading": "After: structures inside the planet card", "caption": "Jord shows its PDS (space cannon) and Space Dock (production); Exhausted World shows its PDS. The unit list keeps only ground forces." },
+    { "file": "before/2-phone.png", "heading": "Before (390 px)", "caption": "Same as above on a phone." },
+    { "file": "out/after-2-phone.png", "heading": "After (390 px)", "caption": "Rows wrap inside the card; text is 12 px or larger." },
+    { "file": "before/3-opponent.png", "heading": "Before: an opponent's PDS", "caption": "The opponent's PDS and infantry share one chip row." },
+    { "file": "out/after-3-opponent.png", "heading": "After: an opponent's PDS", "caption": "The opponent's PDS shows with their colour bar and seat badge in the planet card; their infantry stays in the unit list." },
+    { "file": "out/after-4-icon-gallery.png", "heading": "Icon candidates", "caption": "Three candidates each for PDS and Space Dock at 16, 20 and 28 px, in three owner colours, on dark and light backgrounds. Chosen: PDS (a) turret on a base, Space Dock (a) ring station with docking arms." }
+  ],
+  "notes": [
+    { "title": "Reproduce. ", "text": "Before shots: TI4_SHOT_PREFIX=before npm run screenshots -- BA on the base commit, then moved into before/ and committed." }
+  ]
+}

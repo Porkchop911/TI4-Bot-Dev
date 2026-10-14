@@ -1,0 +1,202 @@
+{
+  "title": "Turn redo on a phone",
+  "description": "The redo status strip covered 14-25% of a phone screen and its entry in the event log sat behind the turn action bar. Now it is one 46 px pill in the board toolbar strip that opens a sheet capped at 40% of the height above the bottom bars. Before and after at 390x844, 360x740 and landscape.",
+  "tag": "web/e2e/screenshots/AW-turn-redo-mobile",
+  "shots": [
+    {
+      "file": "out/before-390x844-1-log-entry.png",
+      "heading": "BEFORE 390x844: Event log: Redo my last turn",
+      "caption": "The phone event log drawer with the redo controls."
+    },
+    {
+      "file": "out/after-390x844-1-log-entry.png",
+      "heading": "AFTER 390x844: Event log: Redo my last turn",
+      "caption": "The phone event log drawer with the redo controls."
+    },
+    {
+      "file": "out/before-390x844-2-rewinding.png",
+      "heading": "BEFORE 390x844: Rewinding",
+      "caption": "After tapping Redo my last turn: the game goes back to the start of the turn. strip 34 px; 4% of the height, 3% of the area; over: header."
+    },
+    {
+      "file": "out/after-390x844-2-rewinding.png",
+      "heading": "AFTER 390x844: Rewinding",
+      "caption": "After tapping Redo my last turn: the game goes back to the start of the turn. strip 46 px; 6% of the height, 5% of the area; over: nothing."
+    },
+    {
+      "file": "out/before-390x844-3-new-turn.png",
+      "heading": "BEFORE 390x844: Playing the new turn",
+      "caption": "The player plays the new turn live. strip 142 px; 17% of the height, 15% of the area; over: header, toolbar."
+    },
+    {
+      "file": "out/after-390x844-3-new-turn.png",
+      "heading": "AFTER 390x844: Playing the new turn",
+      "caption": "The player plays the new turn live. strip 46 px; 6% of the height, 5% of the area; over: nothing."
+    },
+    {
+      "file": "out/before-390x844-4-replaying.png",
+      "heading": "BEFORE 390x844: Replaying the round",
+      "caption": "The recorded decisions replay on top of the new turn (a request is running). strip 130 px; 15% of the height, 14% of the area; over: header."
+    },
+    {
+      "file": "out/after-390x844-4-replaying.png",
+      "heading": "AFTER 390x844: Replaying the round",
+      "caption": "The recorded decisions replay on top of the new turn (a request is running). strip 46 px; 6% of the height, 5% of the area; over: nothing."
+    },
+    {
+      "file": "out/before-390x844-5-handoff.png",
+      "heading": "BEFORE 390x844: Hand-off",
+      "caption": "The replay reached the redoing seat's next turn: Restore / Keep. strip 186 px; 22% of the height, 20% of the area; over: header, toolbar, seat legend."
+    },
+    {
+      "file": "out/after-390x844-5-handoff.png",
+      "heading": "AFTER 390x844: Hand-off",
+      "caption": "The replay reached the redoing seat's next turn: Restore / Keep. strip 46 px, sheet 156 px; 18% of the height, 23% of the area; over: nothing."
+    },
+    {
+      "file": "out/before-390x844-6-complete.png",
+      "heading": "BEFORE 390x844: Complete",
+      "caption": "Every recorded decision was kept. strip 156 px; 18% of the height, 17% of the area; over: header, toolbar."
+    },
+    {
+      "file": "out/after-390x844-6-complete.png",
+      "heading": "AFTER 390x844: Complete",
+      "caption": "Every recorded decision was kept. strip 46 px, sheet 156 px; 18% of the height, 23% of the area; over: nothing."
+    },
+    {
+      "file": "out/before-390x844-7-conflict.png",
+      "heading": "BEFORE 390x844: Conflict",
+      "caption": "A recorded decision no longer fits (options changed). strip 171 px; 20% of the height, 19% of the area; over: header, toolbar."
+    },
+    {
+      "file": "out/after-390x844-7-conflict.png",
+      "heading": "AFTER 390x844: Conflict",
+      "caption": "A recorded decision no longer fits (options changed). strip 46 px, sheet 156 px; 18% of the height, 23% of the area; over: nothing."
+    },
+    {
+      "file": "out/before-390x844-8-reserved-card.png",
+      "heading": "BEFORE 390x844: Conflict: reserved card (long text)",
+      "caption": "A card reserved for a recorded draw is gone: the longest message. strip 186 px; 22% of the height, 20% of the area; over: header, toolbar, seat legend."
+    },
+    {
+      "file": "out/after-390x844-8-reserved-card.png",
+      "heading": "AFTER 390x844: Conflict: reserved card (long text)",
+      "caption": "A card reserved for a recorded draw is gone: the longest message. strip 46 px, sheet 156 px; 18% of the height, 23% of the area; over: nothing."
+    },
+    {
+      "file": "out/before-390x844-9-with-decision.png",
+      "heading": "BEFORE 390x844: With a decision dialog open",
+      "caption": "A hand-off while a Move Units dialog is pending. strip 186 px; 22% of the height, 20% of the area; over: header, toolbar, dialog."
+    },
+    {
+      "file": "out/after-390x844-9-with-decision.png",
+      "heading": "AFTER 390x844: With a decision dialog open",
+      "caption": "A hand-off while a Move Units dialog is pending. strip 46 px, sheet 226 px; 27% of the height, 31% of the area; over: dialog."
+    },
+    {
+      "file": "out/before-390x844-10-with-turn-bar.png",
+      "heading": "BEFORE 390x844: Conflict with the turn action bar up",
+      "caption": "The primary bar and the Players / Events buttons are on screen. strip 171 px; 20% of the height, 19% of the area; over: header, toolbar."
+    },
+    {
+      "file": "out/after-390x844-10-with-turn-bar.png",
+      "heading": "AFTER 390x844: Conflict with the turn action bar up",
+      "caption": "The primary bar and the Players / Events buttons are on screen. strip 46 px, sheet 156 px; 18% of the height, 23% of the area; over: nothing."
+    },
+    {
+      "file": "out/before-390x844-11-replaying-turn-bar.png",
+      "heading": "BEFORE 390x844: Replaying with the turn action bar up",
+      "caption": "Progress only, over the full bottom bars. strip 130 px; 15% of the height, 14% of the area; over: header."
+    },
+    {
+      "file": "out/after-390x844-11-replaying-turn-bar.png",
+      "heading": "AFTER 390x844: Replaying with the turn action bar up",
+      "caption": "Progress only, over the full bottom bars. strip 46 px; 6% of the height, 5% of the area; over: nothing."
+    },
+    {
+      "file": "out/after-390x844-3-new-turn-opened.png",
+      "heading": "AFTER 390x844: new turn, opened by hand",
+      "caption": "Tapping Open on the collapsed pill shows the explanation and Restore original timeline in a sheet above the turn action bar; Close (in the pill and in the sheet) collapses it again."
+    },
+    {
+      "file": "out/after-390x844-4-replaying-opened.png",
+      "heading": "AFTER 390x844: replaying, opened by hand",
+      "caption": "The replaying sheet: why the round is replaying, with Restore original timeline."
+    },
+    {
+      "file": "out/before-360x740-4-replaying.png",
+      "heading": "BEFORE 360x740: Replaying the round",
+      "caption": "The recorded decisions replay on top of the new turn (a request is running). strip 145 px; 20% of the height, 18% of the area; over: header, toolbar."
+    },
+    {
+      "file": "out/after-360x740-4-replaying.png",
+      "heading": "AFTER 360x740: Replaying the round",
+      "caption": "The recorded decisions replay on top of the new turn (a request is running). strip 46 px; 6% of the height, 6% of the area; over: nothing."
+    },
+    {
+      "file": "out/before-360x740-5-handoff.png",
+      "heading": "BEFORE 360x740: Hand-off",
+      "caption": "The replay reached the redoing seat's next turn: Restore / Keep. strip 186 px; 25% of the height, 23% of the area; over: header, toolbar, seat legend."
+    },
+    {
+      "file": "out/after-360x740-5-handoff.png",
+      "heading": "AFTER 360x740: Hand-off",
+      "caption": "The replay reached the redoing seat's next turn: Restore / Keep. strip 46 px, sheet 156 px; 21% of the height, 26% of the area; over: toolbar, seat legend."
+    },
+    {
+      "file": "out/before-360x740-7-conflict.png",
+      "heading": "BEFORE 360x740: Conflict",
+      "caption": "A recorded decision no longer fits (options changed). strip 171 px; 23% of the height, 21% of the area; over: header, toolbar."
+    },
+    {
+      "file": "out/after-360x740-7-conflict.png",
+      "heading": "AFTER 360x740: Conflict",
+      "caption": "A recorded decision no longer fits (options changed). strip 46 px, sheet 156 px; 21% of the height, 26% of the area; over: toolbar, seat legend."
+    },
+    {
+      "file": "out/before-360x740-10-with-turn-bar.png",
+      "heading": "BEFORE 360x740: Conflict with the turn action bar up",
+      "caption": "The primary bar and the Players / Events buttons are on screen. strip 171 px; 23% of the height, 21% of the area; over: header, toolbar."
+    },
+    {
+      "file": "out/after-360x740-10-with-turn-bar.png",
+      "heading": "AFTER 360x740: Conflict with the turn action bar up",
+      "caption": "The primary bar and the Players / Events buttons are on screen. strip 46 px, sheet 156 px; 21% of the height, 26% of the area; over: toolbar, seat legend."
+    },
+    {
+      "file": "out/before-844x390-7-conflict.png",
+      "heading": "BEFORE 844x390: Conflict (landscape)",
+      "caption": "A phone in landscape. strip 81 px; 21% of the height, 18% of the area; over: header, toolbar."
+    },
+    {
+      "file": "out/after-844x390-7-conflict.png",
+      "heading": "AFTER 844x390: Conflict (landscape)",
+      "caption": "A phone in landscape. strip 46 px, sheet 96 px; 25% of the height, 14% of the area; over: nothing."
+    },
+    {
+      "file": "out/before-844x390-9-with-decision.png",
+      "heading": "BEFORE 844x390: With a decision dialog open (landscape)",
+      "caption": "A phone in landscape. strip 96 px; 25% of the height, 21% of the area; over: header, toolbar, dialog."
+    },
+    {
+      "file": "out/after-844x390-9-with-decision.png",
+      "heading": "AFTER 844x390: With a decision dialog open (landscape)",
+      "caption": "A phone in landscape. strip 46 px, sheet 156 px; 40% of the height, 20% of the area; over: dialog."
+    }
+  ],
+  "notesHeading": "Measurements and notes",
+  "notes": [
+    {
+      "title": "Before shots. ",
+      "text": "Captured on the base commit (unified-latest-2026-10-08) with TI4_SHOT_PREFIX=before and committed as PNGs; npm run screenshots -- AW regenerates the after shots and asserts: strip at most 48 px, open sheet at most 40% of the viewport height, nothing of the header, toolbar, seat legend, Players / Events buttons, turn action bar or dialog buttons covered (at 360x740 with the turn bar up there is under 50 px of map between strip and bar, so the open sheet may cover the toolbar and seat legend there)."
+    },
+    {
+      "title": "Event log entry. ",
+      "text": "On a phone with the turn action bar up, the open Events drawer was drawn under the bar and the Redo my last turn button could not be tapped (see the BEFORE 1-log-entry shot). The open drawer now rises above the bar; the Players / Events buttons stay on top."
+    },
+    {
+      "title": "Metrics per state (strip = pill or old bar, height and area as fractions of the viewport). ",
+      "text": "390x844 2-rewinding: BEFORE strip 34 px; 4% of the height, 3% of the area; over: header | AFTER strip 46 px; 6% of the height, 5% of the area; over: nothing || 390x844 3-new-turn: BEFORE strip 142 px; 17% of the height, 15% of the area; over: header, toolbar | AFTER strip 46 px; 6% of the height, 5% of the area; over: nothing || 390x844 4-replaying: BEFORE strip 130 px; 15% of the height, 14% of the area; over: header | AFTER strip 46 px; 6% of the height, 5% of the area; over: nothing || 390x844 5-handoff: BEFORE strip 186 px; 22% of the height, 20% of the area; over: header, toolbar, seat legend | AFTER strip 46 px, sheet 156 px; 18% of the height, 23% of the area; over: nothing || 390x844 6-complete: BEFORE strip 156 px; 18% of the height, 17% of the area; over: header, toolbar | AFTER strip 46 px, sheet 156 px; 18% of the height, 23% of the area; over: nothing || 390x844 7-conflict: BEFORE strip 171 px; 20% of the height, 19% of the area; over: header, toolbar | AFTER strip 46 px, sheet 156 px; 18% of the height, 23% of the area; over: nothing || 390x844 8-reserved-card: BEFORE strip 186 px; 22% of the height, 20% of the area; over: header, toolbar, seat legend | AFTER strip 46 px, sheet 156 px; 18% of the height, 23% of the area; over: nothing || 390x844 9-with-decision: BEFORE strip 186 px; 22% of the height, 20% of the area; over: header, toolbar, dialog | AFTER strip 46 px, sheet 226 px; 27% of the height, 31% of the area; over: dialog || 390x844 10-with-turn-bar: BEFORE strip 171 px; 20% of the height, 19% of the area; over: header, toolbar | AFTER strip 46 px, sheet 156 px; 18% of the height, 23% of the area; over: nothing || 390x844 11-replaying-turn-bar: BEFORE strip 130 px; 15% of the height, 14% of the area; over: header | AFTER strip 46 px; 6% of the height, 5% of the area; over: nothing || 360x740 4-replaying: BEFORE strip 145 px; 20% of the height, 18% of the area; over: header, toolbar | AFTER strip 46 px; 6% of the height, 6% of the area; over: nothing || 360x740 5-handoff: BEFORE strip 186 px; 25% of the height, 23% of the area; over: header, toolbar, seat legend | AFTER strip 46 px, sheet 156 px; 21% of the height, 26% of the area; over: toolbar, seat legend || 360x740 7-conflict: BEFORE strip 171 px; 23% of the height, 21% of the area; over: header, toolbar | AFTER strip 46 px, sheet 156 px; 21% of the height, 26% of the area; over: toolbar, seat legend || 360x740 10-with-turn-bar: BEFORE strip 171 px; 23% of the height, 21% of the area; over: header, toolbar | AFTER strip 46 px, sheet 156 px; 21% of the height, 26% of the area; over: toolbar, seat legend || 412x915 2-rewinding: BEFORE strip 34 px; 4% of the height, 2% of the area; over: header | AFTER strip 46 px; 5% of the height, 5% of the area; over: nothing || 412x915 3-new-turn: BEFORE strip 127 px; 14% of the height, 13% of the area; over: header | AFTER strip 46 px; 5% of the height, 5% of the area; over: nothing || 412x915 4-replaying: BEFORE strip 130 px; 14% of the height, 13% of the area; over: header | AFTER strip 46 px; 5% of the height, 5% of the area; over: nothing || 412x915 5-handoff: BEFORE strip 142 px; 16% of the height, 14% of the area; over: header, toolbar | AFTER strip 46 px, sheet 216 px; 24% of the height, 27% of the area; over: nothing || 412x915 6-complete: BEFORE strip 112 px; 12% of the height, 11% of the area; over: header | AFTER strip 46 px, sheet 153 px; 17% of the height, 21% of the area; over: nothing || 412x915 7-conflict: BEFORE strip 127 px; 14% of the height, 13% of the area; over: header | AFTER strip 46 px, sheet 216 px; 24% of the height, 27% of the area; over: nothing || 412x915 8-reserved-card: BEFORE strip 142 px; 16% of the height, 14% of the area; over: header, toolbar | AFTER strip 46 px, sheet 216 px; 24% of the height, 27% of the area; over: nothing || 412x915 9-with-decision: BEFORE strip 142 px; 16% of the height, 14% of the area; over: header, dialog | AFTER strip 46 px, sheet 216 px; 24% of the height, 27% of the area; over: dialog || 412x915 10-with-turn-bar: BEFORE strip 127 px; 14% of the height, 13% of the area; over: header | AFTER strip 46 px, sheet 216 px; 24% of the height, 27% of the area; over: nothing || 412x915 11-replaying-turn-bar: BEFORE strip 130 px; 14% of the height, 13% of the area; over: header | AFTER strip 46 px; 5% of the height, 5% of the area; over: nothing || 844x390 2-rewinding: BEFORE strip 34 px; 9% of the height, 3% of the area; over: header | AFTER strip 46 px; 12% of the height, 4% of the area; over: nothing || 844x390 3-new-turn: BEFORE strip 81 px; 21% of the height, 18% of the area; over: header, toolbar | AFTER strip 46 px; 12% of the height, 4% of the area; over: nothing || 844x390 4-replaying: BEFORE strip 69 px; 18% of the height, 15% of the area; over: header, toolbar | AFTER strip 46 px; 12% of the height, 4% of the area; over: nothing || 844x390 5-handoff: BEFORE strip 96 px; 25% of the height, 21% of the area; over: header, toolbar | AFTER strip 46 px, sheet 96 px; 25% of the height, 14% of the area; over: nothing || 844x390 6-complete: BEFORE strip 66 px; 17% of the height, 14% of the area; over: header, toolbar | AFTER strip 46 px, sheet 96 px; 25% of the height, 14% of the area; over: nothing || 844x390 7-conflict: BEFORE strip 81 px; 21% of the height, 18% of the area; over: header, toolbar | AFTER strip 46 px, sheet 96 px; 25% of the height, 14% of the area; over: nothing || 844x390 8-reserved-card: BEFORE strip 96 px; 25% of the height, 21% of the area; over: header, toolbar | AFTER strip 46 px, sheet 96 px; 25% of the height, 14% of the area; over: nothing || 844x390 9-with-decision: BEFORE strip 96 px; 25% of the height, 21% of the area; over: header, toolbar, dialog | AFTER strip 46 px, sheet 156 px; 40% of the height, 20% of the area; over: dialog || 844x390 10-with-turn-bar: BEFORE strip 81 px; 21% of the height, 18% of the area; over: header, toolbar | AFTER strip 46 px, sheet 51 px; 13% of the height, 9% of the area; over: nothing || 844x390 11-replaying-turn-bar: BEFORE strip 69 px; 18% of the height, 15% of the area; over: header, toolbar | AFTER strip 46 px; 12% of the height, 4% of the area; over: nothing"
+    }
+  ]
+}

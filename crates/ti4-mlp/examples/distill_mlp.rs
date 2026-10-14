@@ -367,7 +367,9 @@ fn play_one(
             )
         })
         .collect();
-    let mut handles: BTreeMap<PlayerId, (bool, Rc<RefCell<Vec<Sample>>>)> = BTreeMap::new();
+    type SampleLog = Rc<RefCell<Vec<Sample>>>;
+    type SampleHandles = BTreeMap<PlayerId, (bool, SampleLog)>;
+    let mut handles: SampleHandles = BTreeMap::new();
     let rollout = ti4_training::rollout::play_with_decider_factory(
         game.content,
         game.players,

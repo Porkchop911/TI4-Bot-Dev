@@ -1001,7 +1001,6 @@ pub struct PlanetView {
 /// about a board while drawing it at different sizes.
 // Four independent facts about a tile, each drawing its own stroke; collapsing them into one enum
 // would lose combinations that occur, such as a selected system that is also an ingress portal.
-#[allow(clippy::struct_excessive_bools)]
 #[derive(Clone, Debug, PartialEq)]
 pub struct TileView {
     pub system: String,

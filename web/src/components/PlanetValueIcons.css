@@ -1,0 +1,70 @@
+/* Resource / influence icons (PlanetValueIcons.tsx). Colour tokens: the app UI is dark, so the dark
+   values apply by default; a light theme sets [data-theme="light"] on the root. */
+:root {
+  --value-resource: #fbbf24;
+  --value-influence: #38bdf8;
+  --value-spent: #94a3b8;
+}
+:root[data-theme="light"] {
+  --value-resource: #b45309;
+  --value-influence: #0369a1;
+  --value-spent: #64748b;
+}
+.planet-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+  white-space: nowrap;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+/* Never smaller than 12px, grows with the surrounding text. */
+.planet-value__icon--resources {
+  color: var(--value-resource);
+}
+.planet-value__icon--influence {
+  color: var(--value-influence);
+}
+/* On a selected (filled) button the icon follows the button text so it never vanishes into the fill. */
+[aria-pressed="true"] .planet-value__icon,
+.button--primary .planet-value__icon {
+  color: currentColor;
+}
+.planet-value__icon {
+  flex: none;
+  width: max(12px, 1.05em);
+  height: max(12px, 1.05em);
+}
+.planet-value--bar {
+  font-size: 15px;
+  gap: 0.3em;
+}
+.planet-value--bar .planet-value__icon {
+  width: 16px;
+  height: 16px;
+}
+.planet-value--tooltip {
+  font-size: 12px;
+}
+.planet-value--tooltip .planet-value__icon {
+  width: 12px;
+  height: 12px;
+}
+.planet-value--spent .planet-value__num,
+.planet-value--muted .planet-value__num {
+  color: var(--value-spent);
+}
+.planet-value--spent .planet-value__icon,
+.planet-value--muted .planet-value__icon {
+  opacity: 0.55;
+}
+.planet-value__total {
+  font-weight: 500;
+  color: var(--value-spent);
+}
+.planet-value-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6em;
+  white-space: nowrap;
+}

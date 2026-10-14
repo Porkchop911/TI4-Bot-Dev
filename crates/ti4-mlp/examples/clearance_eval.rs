@@ -221,7 +221,9 @@ fn main() {
         .collect();
 
     let started = std::time::Instant::now();
-    let harvest: Vec<Result<Vec<(u64, usize, String, bool, f64)>, String>> = chunks
+    type GameResult = (u64, usize, String, bool, f64);
+    type EvaluationHarvest = Vec<Result<Vec<GameResult>, String>>;
+    let harvest: EvaluationHarvest = chunks
         .into_par_iter()
         .map(|(local, chunk)| {
             let local = std::rc::Rc::new(local);

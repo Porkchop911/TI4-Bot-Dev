@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 use ti4_content::ContentStore;
 use ti4_content::galaxy::{Planet, all_planets};
 use ti4_model::content_types::{ContentType, SourceSet};
-use ti4_model::id::{ObjectiveId, PlayerId};
+use ti4_model::id::{ObjectiveId, PlanetId, PlayerId};
 use ti4_model::state::GameState;
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, validate};
@@ -695,6 +695,42 @@ fn ships_adjacent_to_mecatol_count(position: &Position<'_>) -> Option<usize> {
 /// "More than each of two" is the difficulty: beating one neighbour twice over is not beating
 /// two neighbours.
 fn weaker_neighbours_count(position: &Position<'_>) -> Option<usize> {
+    Some(
+        neighbour_planet_counts(position)?
+            .iter()
+            .filter(|row| row.ahead())
+            .count(),
+    )
+}
+
+/// One neighbour's planet count beside this player's own, as Push Boundaries compares them.
+///
+/// Display-only detail behind [`CountFamily::WeakerNeighbours`]: the count is how many of these
+/// rows are [`NeighbourPlanets::ahead`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NeighbourPlanets {
+    pub neighbour: PlayerId,
+    /// Planets this player controls, counted as the objective counts them.
+    pub mine: usize,
+    /// Planets the neighbour controls, counted the same way.
+    pub theirs: usize,
+}
+
+impl NeighbourPlanets {
+    /// Strictly more planets than this neighbour ("more planets than"); a tie is not ahead.
+    #[must_use]
+    pub const fn ahead(&self) -> bool {
+        self.mine > self.theirs
+    }
+}
+
+/// Every neighbour of `position.player` with both planet counts, in seating order.
+///
+/// The exact comparison [`weaker_neighbours_count`] makes for Push Boundaries, neighbours by
+/// [`crate::transactions::neighbours`] (rule 60), so a row marked ahead is one the requirement
+/// counts. `None` without a map, since adjacency needs one.
+#[must_use]
+pub fn neighbour_planet_counts(position: &Position<'_>) -> Option<Vec<NeighbourPlanets>> {
     let galaxy = position.galaxy?;
     // Counted through the scoring view, not `state.controlled_planets`, so rule 7 applies to both
     // sides of the comparison. Reading the raw state here would have counted stations for everyone
@@ -708,8 +744,12 @@ fn weaker_neighbours_count(position: &Position<'_>) -> Option<usize> {
     Some(
         crate::transactions::neighbours(position.state, galaxy, position.player)
             .into_iter()
-            .filter(|other| planets_of(other) < mine)
-            .count(),
+            .map(|neighbour| NeighbourPlanets {
+                theirs: planets_of(&neighbour),
+                neighbour,
+                mine,
+            })
+            .collect(),
     )
 }
 
@@ -1360,26 +1400,36 @@ pub fn unregistered_objectives(state: &GameState) -> Vec<ObjectiveId> {
 /// once factions are set up.
 #[must_use]
 pub fn controls_home_system(position: &Position<'_>) -> bool {
+    position.state.player(position.player).is_some()
+        && home_planets_not_controlled(position).is_empty()
+}
+
+/// The home planets whose loss bars this player from scoring public objectives (61.16).
+///
+/// Empty when nothing bars them: every home planet is theirs, the faction scores without its home
+/// (Saar Nomadic), or there is no faction home at all. Display reads this to say *why* nothing
+/// could be scored; [`controls_home_system`] is the same test as a yes/no.
+#[must_use]
+pub fn home_planets_not_controlled(position: &Position<'_>) -> Vec<PlanetId> {
     let Some(player) = position.state.player(position.player) else {
-        return false;
+        return Vec::new();
     };
     if crate::factions::hooks_strategy::scores_without_home(position.state, position.player) {
-        return true; // Saar Nomadic
+        return Vec::new(); // Saar Nomadic
     }
     // No faction record, or a faction with no listed homeworlds (the neutral placeholder),
     // means there is no home system to lose.
     let Some(faction) = ti4_content::factions::get(position.content, player.faction.as_str())
     else {
-        return true;
+        return Vec::new();
     };
-    let home_planets = faction.home_planets();
-    if home_planets.is_empty() {
-        return true;
-    }
     let controlled = position.state.controlled_planets(position.player);
-    home_planets
+    faction
+        .home_planets()
         .iter()
-        .all(|planet| controlled.iter().any(|(_, held)| held.as_str() == *planet))
+        .filter(|planet| !controlled.iter().any(|(_, held)| held.as_str() == **planet))
+        .map(|planet| PlanetId::new(*planet))
+        .collect()
 }
 
 /// What an objective scored by spending costs (61.10).
@@ -1429,11 +1479,13 @@ pub fn reveal_stage(
     content: &ContentStore,
     stage: u8,
 ) -> Option<ObjectiveId> {
-    let index = state
-        .objective_deck
-        .iter()
-        .position(|alias| stage_of(content, alias) == Some(stage))?;
-    let alias = state.objective_deck.remove(index);
+    let alias = ti4_model::deck_reserve::take_where(
+        &mut state.deck_reserve,
+        "objective",
+        &mut state.objective_deck,
+        None,
+        &|alias| stage_of(content, alias) == Some(stage),
+    )?;
     state.revealed_objectives.push(alias.clone());
     Some(alias)
 }
@@ -1878,14 +1930,11 @@ pub fn award(
     }
 
     state.record_score(player, alias.clone());
-    {
-        let seat = state
-            .player_mut(player)
-            .ok_or_else(|| ScoreError::PlayerMissing(player.clone()))?;
-        // 98.4a: a player cannot hold more than the target.
-        seat.victory_points = (seat.victory_points + points).min(VICTORY_TARGET);
+    if state.player(player).is_none() {
+        return Err(ScoreError::PlayerMissing(player.clone()));
     }
-    state.note_vp(player, points, "objective");
+    // 98.4a: a player cannot hold more than the target.
+    adjust_victory_points(state, player, points, "objective");
     // 51.7: leaders unlock the moment their condition is met, not at end of phase. A hero
     // unlocked by a third objective must not wait for a status phase the game may never reach.
     // No galaxy here: only Naalu's commander asks about the map, and awarding an objective is
@@ -1914,6 +1963,38 @@ pub fn award(
         );
     }
     Ok(points)
+}
+
+/// Move a seat's victory points and record the move in [`GameState::vp_ledger`].
+///
+/// A gain stops at the target (98.4a) and a loss at zero, exactly as each source wrote it by
+/// hand. The ledger row is the change that actually happened, not the nominal one, so a seat's
+/// points always equal the sum of its rows. Returns that change; 0 for a seat that does not exist.
+pub fn adjust_victory_points(
+    state: &mut GameState,
+    player: &PlayerId,
+    delta: i32,
+    reason: &str,
+) -> i32 {
+    let Some(seat) = state.player_mut(player) else {
+        return 0;
+    };
+    let before = seat.victory_points;
+    seat.victory_points = if delta >= 0 {
+        (before + delta).min(VICTORY_TARGET)
+    } else {
+        (before + delta).max(0)
+    };
+    let applied = seat.victory_points - before;
+    state.note_vp(player, applied, reason);
+    applied
+}
+
+/// Ledger the change in a seat's points since `before`, for a source that moves them itself.
+pub fn note_vp_since(state: &mut GameState, player: &PlayerId, before: i32, reason: &str) {
+    if let Some(after) = state.player(player).map(|seat| seat.victory_points) {
+        state.note_vp(player, after - before, reason);
+    }
 }
 
 /// 98.8, 61.15a: most victory points, ties broken by initiative order.
@@ -2117,7 +2198,8 @@ impl ScoringWindow {
             .into_iter()
             .map(|alias| {
                 // A plot (Plots Within Plots) scores with no victory point.
-                if let Some((secret, token)) = crate::factions::firmament::parse_option(alias.as_str())
+                if let Some((secret, token)) =
+                    crate::factions::firmament::parse_option(alias.as_str())
                 {
                     return ChoiceOption::labelled(
                         alias.as_str(),
@@ -3105,6 +3187,7 @@ mod tests {
 
         assert!(!intimidate_council(&position));
         assert!(!push_boundaries(&position));
+        assert!(neighbour_planet_counts(&position).is_none());
         assert!(!rule_distant_lands(&position));
         assert!(on_the_rim_count(&position).is_none());
     }
@@ -3340,6 +3423,19 @@ mod tests {
             !one_weaker.satisfied(),
             "beating one neighbour is not beating two"
         );
+        // The per-neighbour detail behind that count: ahead of b, tied with c (a tie is not
+        // "more planets than"), in seating order.
+        let rows = neighbour_planet_counts(&on_map(&state, &seat, &hub.galaxy)).unwrap();
+        let summary: Vec<(&str, usize, usize, bool)> = rows
+            .iter()
+            .map(|row| (row.neighbour.as_str(), row.mine, row.theirs, row.ahead()))
+            .collect();
+        assert_eq!(summary, vec![("b", 3, 1, true), ("c", 3, 3, false)]);
+        assert_eq!(
+            rows.iter().filter(|row| row.ahead()).count(),
+            one_weaker.have,
+            "the detail and the count never disagree"
+        );
 
         // Take c's planets away and both are behind.
         state
@@ -3353,6 +3449,9 @@ mod tests {
         .unwrap();
         assert_eq!(two_weaker.have, 2);
         assert!(two_weaker.satisfied());
+        let rows = neighbour_planet_counts(&on_map(&state, &seat, &hub.galaxy)).unwrap();
+        assert!(rows.iter().all(NeighbourPlanets::ahead));
+        assert_eq!(rows[1].theirs, 0);
     }
 
     #[test]

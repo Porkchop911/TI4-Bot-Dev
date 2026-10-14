@@ -1303,6 +1303,9 @@ pub fn offer_from(
         })
     };
 
+    if id.starts_with(FREE_FORM_PREFIX) {
+        return free_form_offer(id, proposer, partner);
+    }
     if id == "ss" {
         let from = crate::promissory::faction_name(state, proposer);
         let to = crate::promissory::faction_name(state, partner);
@@ -1392,6 +1395,92 @@ pub fn offer_from(
     deal(goods(give), goods(want))
 }
 
+/// The id prefix of a free-form deal: the proposer names both sides themselves instead of picking
+/// one of the listed shapes (94.1: a transaction is any exchange of trade goods, commodities,
+/// promissory notes and relic fragments, in any amounts the two seats hold).
+pub const FREE_FORM_PREFIX: &str = "x;";
+
+/// A side's terms as the fields of a free-form id, `{side}t=2;{side}c=1;{side}n=note;...`.
+fn push_fields(out: &mut String, side: char, terms: &Terms) {
+    use std::fmt::Write as _;
+    if terms.trade_goods > 0 {
+        let _ = write!(out, "{side}t={};", terms.trade_goods);
+    }
+    if terms.commodities > 0 {
+        let _ = write!(out, "{side}c={};", terms.commodities);
+    }
+    if let Some(note) = &terms.promissory {
+        let _ = write!(out, "{side}n={note};");
+    }
+    if let Some(card) = &terms.action_card {
+        let _ = write!(out, "{side}a={card};");
+    }
+    if let Some(secret) = &terms.secret {
+        let _ = write!(out, "{side}s={secret};");
+    }
+    if !terms.fragments.is_empty() {
+        let _ = write!(out, "{side}f={};", terms.fragments.join(","));
+    }
+}
+
+/// The free-form id of a deal: `x;` then `g…` fields for what the proposer gives and `r…` fields
+/// for what they receive. The inverse of [`offer_from`] for such ids.
+#[must_use]
+pub fn free_form_id(given: &Terms, received: &Terms) -> String {
+    let mut id = FREE_FORM_PREFIX.to_owned();
+    push_fields(&mut id, 'g', given);
+    push_fields(&mut id, 'r', received);
+    id
+}
+
+/// Read a free-form id. `None` for anything malformed (unknown or repeated field, a count that is
+/// not a plain non-negative number) rather than a guess; legality is `why_illegal`'s business.
+fn free_form_offer(id: &str, proposer: &PlayerId, partner: &PlayerId) -> Option<Offer> {
+    let mut given = Terms::default();
+    let mut received = Terms::default();
+    let mut seen = BTreeSet::new();
+    for field in id.strip_prefix(FREE_FORM_PREFIX)?.split(';') {
+        if field.is_empty() {
+            continue;
+        }
+        let (key, value) = field.split_once('=')?;
+        if !seen.insert(key.to_owned()) || value.is_empty() {
+            return None;
+        }
+        let mut chars = key.chars();
+        let (side, kind) = (chars.next()?, chars.next()?);
+        if chars.next().is_some() {
+            return None;
+        }
+        let terms = match side {
+            'g' => &mut given,
+            'r' => &mut received,
+            _ => return None,
+        };
+        let count = || {
+            // Plain digits only: "+2" and "-2" parse as numbers but are not amounts.
+            (value.len() <= 4 && value.bytes().all(|b| b.is_ascii_digit()))
+                .then(|| value.parse::<i32>().ok())
+                .flatten()
+        };
+        match kind {
+            't' => terms.trade_goods = count()?,
+            'c' => terms.commodities = count()?,
+            'n' => terms.promissory = Some(value.to_owned()),
+            'a' => terms.action_card = Some(ActionCardId::new(value)),
+            's' => terms.secret = Some(SecretObjectiveId::new(value)),
+            'f' => terms.fragments = value.split(',').map(str::to_owned).collect(),
+            _ => return None,
+        }
+    }
+    Some(Offer {
+        proposer: proposer.clone(),
+        partner: partner.clone(),
+        given,
+        received,
+    })
+}
+
 /// How a negotiation ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Traded {
@@ -1456,6 +1545,7 @@ enum Stage {
 ///     .expect("there are deals to propose");
 /// assert!(choice.ids().contains(&"cc3"), "swap three commodities each");
 /// ```
+#[derive(Clone)]
 pub struct TradeWindow {
     proposer: PlayerId,
     partner: PlayerId,
@@ -1529,6 +1619,7 @@ impl TradeWindow {
                         format!("transaction with {}", faction_name(state, &self.partner)),
                         options,
                     )
+                    .accepting_free_form(FREE_FORM_PREFIX)
                     .contextualized(
                         DecisionContext::new(
                             self.proposer.clone(),
@@ -1718,6 +1809,87 @@ mod tests {
         assert_eq!(answer_context.subtype, "answer_transaction");
         assert_eq!(answer_context.target, Some(DecisionTarget::Player(a())));
         assert_ne!(propose_context.subtype, answer_context.subtype);
+    }
+
+    /// A free-form deal names its own amounts: five trade goods for two commodities is not on the
+    /// listed menu (which stops at three), yet it is a legal transaction and must resolve, with the
+    /// commodities turning into trade goods on arrival (21.5).
+    #[test]
+    fn a_free_form_deal_of_unequal_amounts_resolves() {
+        let players = [a(), b()];
+        let content = ContentStore::embedded();
+        let hub = plain_hub();
+        let mut state = crate::setup::start_game(content, &players, POK, None).unwrap();
+        let centre = SystemId::new(hub.centre.clone());
+        put(&mut state, &centre, "cruiser", &a(), 1);
+        put(&mut state, &centre, "cruiser", &b(), 1);
+        state.player_mut(&a()).unwrap().trade_goods = 6;
+        state.player_mut(&b()).unwrap().commodities = 4;
+        state.player_mut(&b()).unwrap().trade_goods = 0;
+
+        let mut window = TradeWindow::open(&mut state, &a(), &b());
+        let choice = window.pending_choice(&state, content).unwrap();
+        let id = free_form_id(&goods(5), &commodities(2));
+        assert!(choice.option(&id).is_none(), "not a listed shape");
+        let answer = choice.answer_for(&id).expect("free-form ids are accepted");
+        crate::choice::validate(&choice, answer.clone()).expect("the table accepts it");
+        assert_eq!(
+            window.resolve(&mut state, content, &hub.galaxy, &answer),
+            Traded::Offered
+        );
+        let accept = ChoiceOption::labelled("accept", ANSWER_KIND, "accept");
+        assert_eq!(
+            window.resolve(&mut state, content, &hub.galaxy, &accept),
+            Traded::Resolved
+        );
+        assert_eq!(state.player(&a()).unwrap().trade_goods, 1 + 2);
+        assert_eq!(state.player(&a()).unwrap().commodities, 0);
+        assert_eq!(state.player(&b()).unwrap().trade_goods, 5);
+        assert_eq!(state.player(&b()).unwrap().commodities, 2);
+    }
+
+    #[test]
+    fn a_free_form_deal_the_proposer_cannot_pay_is_rejected() {
+        let players = [a(), b()];
+        let content = ContentStore::embedded();
+        let hub = plain_hub();
+        let mut state = crate::setup::start_game(content, &players, POK, None).unwrap();
+        let centre = SystemId::new(hub.centre.clone());
+        put(&mut state, &centre, "cruiser", &a(), 1);
+        put(&mut state, &centre, "cruiser", &b(), 1);
+        state.player_mut(&a()).unwrap().trade_goods = 2;
+        let mut window = TradeWindow::open(&mut state, &a(), &b());
+        let choice = window.pending_choice(&state, content).unwrap();
+        let answer = choice
+            .answer_for(&free_form_id(&goods(3), &Terms::default()))
+            .unwrap();
+        assert_eq!(
+            window.resolve(&mut state, content, &hub.galaxy, &answer),
+            Traded::Rejected(OfferError::CannotPay(a()))
+        );
+    }
+
+    #[test]
+    fn free_form_ids_round_trip_and_refuse_nonsense() {
+        let state = game(&["a", "b"]);
+        let given = Terms {
+            trade_goods: 7,
+            commodities: 1,
+            promissory: Some("ra:jolnar".to_owned()),
+            fragments: vec!["cultural".to_owned(), "hazardous".to_owned()],
+            ..Terms::default()
+        };
+        let received = commodities(3);
+        let id = free_form_id(&given, &received);
+        let offer = offer_from(&state, &id, &a(), &b()).expect("parses");
+        assert_eq!((offer.given, offer.received), (given, received));
+        for bad in ["x;gt=-1;", "x;gt=2;gt=3;", "x;zt=1;", "x;gt=;", "x;gt=1x;", "x;gq=1;", "x;gt=99999;"] {
+            assert!(offer_from(&state, bad, &a(), &b()).is_none(), "{bad}");
+        }
+        // A bare prefix names no deal, and the choice does not accept it as an answer.
+        let choice = crate::choice::Choice::new(a(), "q", vec![]).accepting_free_form(FREE_FORM_PREFIX);
+        assert!(choice.answer_for("x;").is_none());
+        assert!(choice.answer_for("y;gt=1;").is_none());
     }
 
     #[test]

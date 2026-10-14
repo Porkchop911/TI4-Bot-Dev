@@ -52,6 +52,7 @@ fn config() -> SimulationConfig {
         temperature: TEMPERATURE,
         diplomacy: false,
         lineup: None,
+        rule_seats: Vec::new(),
     };
     for path in [&config.checkpoint, &config.map_pool] {
         assert!(

@@ -1,0 +1,20 @@
+{
+  "title": "Quash Shows the Agenda",
+  "description": "Xxcha's Quash (\"When an agenda is revealed: you may spend 1 strategy token to discard that agenda...\") was asked with no agenda on screen: the engine already revealed the agenda first, but the question carried nothing naming it, so the dialog (and, for the first agenda of the phase, the agenda strip) could not show what would be discarded. The engine now attaches the printed agenda (display-only details.agenda, as vote decisions already do) to Quash, Political Favor and Political Secret, and to every decision raised by an agenda being revealed or resolved (Veto, riders' windows, Confusing Legal Text). The decision dialog shows it above the options. The real app fed by a mocked game.",
+  "tag": "web/e2e/screenshots/CT-xxcha-quash-agenda",
+  "shots": [
+    { "file": "out/before-quash-desktop.png", "heading": "Before: Quash with nothing to read", "caption": "The payload the engine used to send: a use/decline question with no agenda, so the Xxcha player could not see what Quash would discard." },
+    { "file": "out/quash-mutiny-desktop.png", "heading": "Quash on Mutiny", "caption": "The revealed agenda above the options: name, Directive, For/Against and both printed outcomes. The strip under the top bar names it too. Option ids use/decline are unchanged." },
+    { "file": "out/quash-mutiny-390x844.png", "heading": "Phone: Quash on Mutiny", "caption": "At 390 px the card wraps inside the dialog, above the options." },
+    { "file": "out/quash-replacement-desktop.png", "heading": "Quash again, on the replacement", "caption": "Quash is offered again on the agenda that replaced the first (here an Elect Player directive): the card is the new agenda." },
+    { "file": "out/political-favor-390x844.png", "heading": "Political Favor", "caption": "The Xxcha promissory note, same reveal window: same card." },
+    { "file": "out/veto-window-desktop.png", "heading": "Action-card window on the reveal", "caption": "Veto and the other \"when an agenda is revealed\" cards: the window now carries the full printed agenda, not just its id." },
+    { "file": "out/veto-window-390x844.png", "heading": "Phone: action-card window on the reveal", "caption": "The same window on a phone." },
+    { "file": "out/confusing-window-desktop.png", "heading": "Window on the resolved agenda", "caption": "Confusing Legal Text and other \"when an agenda is resolved\" windows say \"Agenda\" rather than \"Revealed agenda\"." }
+  ],
+  "notes": [
+    { "title": "Engine order was already right", "text": "The reveal loop emits AGENDA_REVEALED and sets the outcomes before Quash, Political Favor or any card window is offered; only the question lacked the agenda. No ordering or option ids changed." },
+    { "title": "Display only", "text": "details.agenda is never read by the engine, is not copied into decision records and is outside canonical()/fingerprints. Decisions triggered by AGENDA_REVEALED/AGENDA_RESOLVED get it in the table's ask path unless the producer already attached one." },
+    { "title": "Known gap", "text": "The strip's \"Agenda n/2\" counter counts a quashed or vetoed agenda as one of the phase's two (already the case for Veto); the card and names are right." }
+  ]
+}

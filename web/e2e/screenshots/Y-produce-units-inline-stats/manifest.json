@@ -1,0 +1,21 @@
+{
+  "title": "Produce units: stats on every option",
+  "description": "Each build option shows its cost, combat value with hit chance per die, movement, capacity and ability chips at rest. The info mark still opens the full card. Options that cannot be added say why.",
+  "tag": "web/e2e/screenshots/Y-produce-units-inline-stats",
+  "shots": [
+    { "file": "out/1-sol-desktop.png", "heading": "Sol with upgrades, desktop", "caption": "Options are grouped into ships and ground forces. Sol owns Dreadnought II (move 2) and Advanced Carrier II, so those rows show the II numbers. Combat reads value, dice and the chance per die (8 or higher on a d10 is 30%). Fighters and infantry read '2 for 1'; the flagship and mech are the seat's own cards." },
+    { "file": "out/2-sol-phone.png", "heading": "Sol, phone width (390 px)", "caption": "One column, text at 12 px or more, no sideways scrolling; the stat chips wrap under the unit name." },
+    { "file": "out/2b-sol-phone-lower.png", "heading": "Sol, phone, scrolled", "caption": "The War Sun costs 12, more than the 9 resources, and says what is missing. Ground forces sit in their own group." },
+    { "file": "out/3-hacan-desktop.png", "heading": "Hacan, desktop", "caption": "No upgrades: the base cards (Carrier I move 1, Dreadnought I move 1) and Hacan's own flagship and mech." },
+    { "file": "out/3b-hacan-phone.png", "heading": "Hacan, phone", "caption": "The same rows at phone width." },
+    { "file": "out/4-unaffordable.png", "heading": "Unaffordable options", "caption": "With 2 resources, options that cost more are dashed and say 'Needs N more resources' at rest; the plus button is disabled." },
+    { "file": "out/4b-staged.png", "heading": "After staging builds", "caption": "A staged Dreadnought and Carrier use the resources and capacity; options that no longer fit say why. The meters above are unchanged." },
+    { "file": "out/5-hover-flagship.png", "heading": "Info card on hover", "caption": "The card is kept for the printed ability text the rows do not carry." },
+    { "file": "out/5b-card-phone.png", "heading": "Info card on a phone", "caption": "A tap opens the card as a sheet." }
+  ],
+  "notesHeading": "Notes",
+  "notes": [
+    { "title": "Hit chance. ", "text": "A unit with combat value N hits on a roll of N or higher on a d10, so one die hits (11 - N) / 10 of the time; several dice multiply the hits per round, not the chance per die." },
+    { "title": "Fixtures. ", "text": "Synthetic mocked game (Sol and Hacan), not an engine capture. Unit numbers come from the real content catalog." }
+  ]
+}

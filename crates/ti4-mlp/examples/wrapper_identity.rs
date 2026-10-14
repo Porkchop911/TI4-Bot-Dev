@@ -91,6 +91,7 @@ impl Decider for Watching {
 
 /// One seat's decisions, as the bot itself recorded them.
 type Line = Vec<(usize, usize, usize)>;
+type PlayResult = (BTreeMap<String, Line>, BTreeMap<String, bool>);
 
 /// Play one game, optionally wrapping every seat, and return each seat's recorded line.
 fn play(
@@ -103,7 +104,7 @@ fn play(
     rotation: usize,
     temperature: f64,
     wrap: bool,
-) -> Result<(BTreeMap<String, Line>, BTreeMap<String, bool>), String> {
+) -> Result<PlayResult, String> {
     let mut handles: BTreeMap<PlayerId, Rc<RefCell<Vec<ti4_mlp::bot::PpoRecord>>>> =
         BTreeMap::new();
 

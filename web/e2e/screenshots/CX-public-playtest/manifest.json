@@ -1,0 +1,87 @@
+{
+  "title": "Public playtest: password screen, Alpha notice, feedback",
+  "description": "The new screens of the public playtest server: the shared-password screen, the Alpha notice with the build footer in the lobby, the floating Feedback button in a game and the lobby, the phone menu entry, and the feedback sheet (empty, filled, sent). Mocked fixtures (health answers public:true); desktop 1440x900 and phone 390x844. Regenerate with npm run screenshots -- CX.",
+  "tag": "web/e2e/screenshots/CX-public-playtest",
+  "shots": [
+    {
+      "file": "out/password-phone.png",
+      "heading": "Password screen, phone 390x844",
+      "caption": "Shown when the API answers 401 access_required. 16px field (no iOS zoom), 48px button, Alpha badge."
+    },
+    {
+      "file": "out/password-desktop.png",
+      "heading": "Password screen, desktop",
+      "caption": "Same screen at 1440x900."
+    },
+    {
+      "file": "out/password-wrong-phone.png",
+      "heading": "Wrong password",
+      "caption": "The error stays on the screen; after too many tries the message changes to a wait notice."
+    },
+    {
+      "file": "out/lobby-phone.png",
+      "heading": "Lobby, phone",
+      "caption": "Alpha notice at the top of the lobby, build footer (commit and protocol) at the bottom, floating Feedback button in the corner."
+    },
+    {
+      "file": "out/lobby-desktop.png",
+      "heading": "Lobby, desktop",
+      "caption": "The same on desktop."
+    },
+    {
+      "file": "out/game-phone.png",
+      "heading": "In a game, phone",
+      "caption": "The Feedback button floats above the Players / Events buttons and the bottom action bar, inside the safe area."
+    },
+    {
+      "file": "out/game-desktop.png",
+      "heading": "In a game, desktop",
+      "caption": "Bottom right, above the turn action bar."
+    },
+    {
+      "file": "out/phone-menu.png",
+      "heading": "Phone top menu",
+      "caption": "Send feedback is also an entry in the phone menu."
+    },
+    {
+      "file": "out/sheet-empty-phone.png",
+      "heading": "Feedback sheet, empty (phone)",
+      "caption": "Category chips (Bug, Confusing, Idea, Other), free text up to 4000 characters, Include game info ticked by default; Send is disabled until there is text."
+    },
+    {
+      "file": "out/sheet-filled-phone.png",
+      "heading": "Feedback sheet, filled (phone)",
+      "caption": "Category Confusing and a typed report."
+    },
+    {
+      "file": "out/sheet-sent-phone.png",
+      "heading": "Feedback sheet, sent (phone)",
+      "caption": "Confirmation with the report id."
+    },
+    {
+      "file": "out/sheet-empty-desktop.png",
+      "heading": "Feedback sheet, empty (desktop)",
+      "caption": "Centered bottom sheet, 520px wide."
+    },
+    {
+      "file": "out/sheet-filled-desktop.png",
+      "heading": "Feedback sheet, filled (desktop)",
+      "caption": ""
+    },
+    {
+      "file": "out/sheet-sent-desktop.png",
+      "heading": "Feedback sheet, sent (desktop)",
+      "caption": ""
+    }
+  ],
+  "notes": [
+    {
+      "title": "What is sent",
+      "text": "Only the build commit, protocol versions, viewport, browser and timestamp, plus (box ticked) game id, the viewer's seat and faction, round and phase, the open decision (subtype, prompt, option ids) and the last 20 public events, all read from the viewer-projected snapshot. Never the raw state, seat tokens or other seats' events."
+    },
+    {
+      "title": "Where",
+      "text": "web/src/access, web/src/feedback, web/src/components/AlphaNotice.tsx; server side crates/ti4-server/src/public and feedback.rs."
+    }
+  ]
+}

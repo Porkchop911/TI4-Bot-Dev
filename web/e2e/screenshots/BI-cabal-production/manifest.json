@@ -1,0 +1,17 @@
+{
+  "title": "Cabal production: exchange option and player names",
+  "description": "The Cabal can produce a unit type it holds captured by returning the captured model (Amalgamation). The builder now shows that as its own row beside the paid build, and the batch it sends names which one was meant. The bombardment target question is checked for raw seat ids (the UI already shows names). Synthetic fixtures through a mocked server; before shots are taken on the base commit and committed under before/.",
+  "tag": "web/e2e/screenshots/BI-cabal-production",
+  "shots": [
+    { "file": "before/before-production-desktop.png", "heading": "Before: builder, desktop", "caption": "The paid carrier and the exchange carrier are two near-identical rows, the exchange showing the printed cost. Staging the plan 'carrier' sent a step that matched both options and the server rejected it (409 ambiguous option)." },
+    { "file": "out/after-production-desktop.png", "heading": "After: builder, desktop", "caption": "The exchange is its own row tagged Exchange, free, with a note: return a captured carrier, no resources, still uses production capacity." },
+    { "file": "out/after-production-staged-desktop.png", "heading": "After: one exchange carrier and one paid fighter staged", "caption": "The resource budget counts only the fighter (1 of 6); capacity counts both (2 of 3). Confirm sends a step with exchange true for the carrier and a plain step for the fighter." },
+    { "file": "before/before-production-phone.png", "heading": "Before: phone 390x844", "caption": "Same two rows at phone width." },
+    { "file": "out/after-production-phone.png", "heading": "After: phone 390x844", "caption": "Exchange row distinguished at phone width." },
+    { "file": "out/after-bombardment-target.png", "heading": "Bombardment target: labels in the UI", "caption": "Checked, not a UI bug: the engine labels the option with the raw seat id (necessary routing identity), and the shell already replaces seat ids in every option label before rendering (GameShell visibleChoice, participantText). The raw id only shows in machine-facing text such as the smoke harness log. Option ids sent to the engine are unchanged." }
+  ],
+  "notesHeading": "Design notes",
+  "notes": [
+    { "title": "Why a flag on the step", "text": "build|carrier|1 and exchange|carrier are both produce options with unit carrier and count 1 in one produce_unit decision. A production step now has an optional exchange flag (default false); a plain step can only match the paid build, an exchange step only the exchange." }
+  ]
+}

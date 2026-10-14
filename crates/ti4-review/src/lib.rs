@@ -141,6 +141,10 @@ pub struct SimulationConfig {
     /// standard six are. `None` is the standard lineup. Factions outside the trained six are still
     /// being implemented in the engine and are played by an untrained policy row.
     pub lineup: Option<Vec<String>>,
+    /// Seat indices (0 through 5) answered by the hand-written rule bot instead of the checkpoint's
+    /// policy. Empty is every seat on the policy. The trace still shows the policy's scores for
+    /// those seats, exactly as it does for a seat a person answers.
+    pub rule_seats: Vec<usize>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -179,6 +183,9 @@ pub struct SessionManifest {
     /// The six factions this table rotated, when it was not the standard lineup.
     #[serde(default)]
     pub lineup: Option<Vec<String>>,
+    /// Seats the rule bot answered. Sessions written before the option existed had none.
+    #[serde(default)]
+    pub rule_seats: Vec<usize>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -569,7 +576,7 @@ impl TraceBot {
             context: choice
                 .context
                 .as_ref()
-                .and_then(|context| serde_json::to_value(context).ok()),
+                .and_then(|context| serde_json::to_value(context.without_display_fields()).ok()),
         });
     }
 }
@@ -691,7 +698,7 @@ impl MlpTraceBot {
             context: choice
                 .context
                 .as_ref()
-                .and_then(|context| serde_json::to_value(context).ok()),
+                .and_then(|context| serde_json::to_value(context.without_display_fields()).ok()),
         });
     }
 }
@@ -942,6 +949,11 @@ impl LiveReview {
                 "temperature must be a finite number greater than zero".to_owned(),
             ));
         }
+        if config.rule_seats.iter().any(|seat| *seat >= FACTIONS.len()) {
+            return Err(ReviewError::Invalid(
+                "rule seats must be 0 through 5".to_owned(),
+            ));
+        }
         let (checkpoint_path, checkpoint_bytes, policy, policy_summary) =
             load_policy(&config.checkpoint, config.table)?;
         let pool_bytes = read_bounded(&config.map_pool)?;
@@ -1014,6 +1026,18 @@ impl LiveReview {
                         .wrapping_mul(1_000_003)
                         .wrapping_add(index as u64);
                     let baseline = baselines.get(player).copied().unwrap_or_default();
+                    // A rule seat keeps its trace (the policy's scores are still shown) but the rule bot
+                    // answers under the hook, so manual control and replay work as for any seat.
+                    let seat_policy = |learned: Box<dyn Decider>| -> Box<dyn Decider> {
+                        if config.rule_seats.contains(&index) {
+                            Box::new(ti4_server::session::random_bot::RuleBotDecider::new(
+                                player.clone(),
+                                config.seed,
+                            ))
+                        } else {
+                            learned
+                        }
+                    };
                     let decider: Box<dyn Decider> = match &policy {
                         LoadedPolicy::Linear(profiles) => {
                             let mut profile = profiles
@@ -1027,7 +1051,7 @@ impl LiveReview {
                             let bot = LearnedBot::from_shared(Arc::clone(&profile), stream)
                                 .from_setup(baseline);
                             Box::new(TraceBot {
-                                inner: hook(player, Box::new(bot)),
+                                inner: hook(player, seat_policy(Box::new(bot))),
                                 profile,
                                 faction,
                                 log: Rc::clone(&decision_sink),
@@ -1042,7 +1066,7 @@ impl LiveReview {
                             let plans = bot.plan_trace();
                             let (bot_inner, status) = bot.seat();
                             status_sink.borrow_mut().push(status);
-                            let inner = hook(player, bot_inner);
+                            let inner = hook(player, seat_policy(bot_inner));
                             Box::new(MlpTraceBot {
                                 inner,
                                 plans,
@@ -1091,6 +1115,7 @@ impl LiveReview {
             source_scope: Some("FULL (base + PoK + codices + Thunder's Edge)".to_owned()),
             diplomacy: config.diplomacy,
             lineup: config.lineup.clone(),
+            rule_seats: config.rule_seats.clone(),
         };
         let initial = ReviewFrame {
             index: 0,
@@ -2694,6 +2719,7 @@ mod tests {
                 source_scope: None,
                 diplomacy: false,
                 lineup: None,
+                rule_seats: Vec::new(),
             },
             board: vec![],
             planet_catalog: vec![],
@@ -2911,6 +2937,7 @@ mod tests {
             temperature: 0.0,
             diplomacy: false,
             lineup: None,
+            rule_seats: Vec::new(),
         };
 
         let error = match LiveReview::start(&config) {

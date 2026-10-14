@@ -77,7 +77,6 @@ struct Rebuilding {
 
 /// The window's toggles are four genuinely independent switches - three panels and the setup form -
 /// and each one mirrors a field of the same name in the settings file, so they stay four.
-#[allow(clippy::struct_excessive_bools)]
 pub struct Replayer {
     opened: Option<Opened>,
     status: String,
@@ -167,6 +166,8 @@ struct SetupForm {
     take_a_seat: bool,
     /// The six factions the table seats, in the order the rotation turns them round the seats.
     lineup: Vec<String>,
+    /// Which seats the rule bot plays instead of the checkpoint's policy.
+    rule_seats: [bool; 6],
 }
 
 /// The standard six, the lineup every table used before any other could be picked.
@@ -192,6 +193,7 @@ impl Default for SetupForm {
             diplomacy: false,
             take_a_seat: true,
             lineup: standard_lineup(),
+            rule_seats: [false; 6],
         }
     }
 }
@@ -227,6 +229,11 @@ impl SetupForm {
         if ti4_review::check_lineup(ContentStore::embedded(), &remembered.lineup).is_ok() {
             form.lineup.clone_from(&remembered.lineup);
         }
+        for seat in &remembered.rule_seats {
+            if let Some(slot) = form.rule_seats.get_mut(*seat) {
+                *slot = true;
+            }
+        }
         form
     }
 
@@ -255,6 +262,9 @@ impl SetupForm {
             temperature: self.temperature,
             diplomacy: self.diplomacy,
             lineup,
+            rule_seats: (0..self.rule_seats.len())
+                .filter(|seat| self.rule_seats[*seat])
+                .collect(),
         })
     }
 }
@@ -1043,6 +1053,27 @@ impl Replayer {
                 ui.weak(
                     "Factions outside the standard six play an untrained policy row unless the                      checkpoint was trained with them.",
                 );
+            }
+            ui.label("Rule bot seats");
+            for (index, rule) in self.setup.rule_seats.iter_mut().enumerate() {
+                ui.checkbox(rule, format!("{index}")).on_hover_text(
+                    "This seat is answered by the hand-written rule bot instead of the checkpoint's \
+                     policy. Its decisions still show the policy's scores.",
+                );
+            }
+            if ui
+                .button("3 v 3")
+                .on_hover_text("Seats 0, 2 and 4 on the rule bot, seats 1, 3 and 5 on the policy.")
+                .clicked()
+            {
+                self.setup.rule_seats = [true, false, true, false, true, false];
+            }
+            if ui
+                .button("All policy")
+                .on_hover_text("Every seat on the checkpoint's policy.")
+                .clicked()
+            {
+                self.setup.rule_seats = [false; 6];
             }
             ui.checkbox(&mut self.setup.take_a_seat, "Take seat 0 now")
                 .on_hover_text(
@@ -1955,6 +1986,9 @@ impl Replayer {
                 temperature: self.setup.temperature,
                 diplomacy: self.setup.diplomacy,
                 lineup: self.setup.lineup.clone(),
+                rule_seats: (0..self.setup.rule_seats.len())
+                    .filter(|seat| self.setup.rule_seats[*seat])
+                    .collect(),
             },
         };
         if let Err(error) = settings.save(Path::new(SETTINGS_PATH)) {

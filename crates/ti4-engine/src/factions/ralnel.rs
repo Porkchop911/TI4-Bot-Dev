@@ -490,7 +490,11 @@ fn miniaturization_window(owner_name: &str, seat: &PlayerId) -> Ability {
 /// Mirrors the window's own condition: a Ral Nel seat with a space-area structure in a system
 /// where it controls a planet. Games without Ral Nel never answer true.
 #[must_use]
-pub fn listens_for_tactical_end(state: &GameState, content: &ContentStore, sources: SourceSet) -> bool {
+pub fn listens_for_tactical_end(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+) -> bool {
     state.players.iter().any(|seat| {
         is_ralnel(state, &seat.id)
             && !space_structure_systems(state, content, sources, &seat.id).is_empty()

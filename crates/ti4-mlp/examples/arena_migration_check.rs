@@ -163,7 +163,6 @@ fn load(path: &str) -> (Rc<ti4_mlp::Actor>, Vocabulary) {
     (Rc::new(loaded.actor), loaded.vocabulary)
 }
 
-#[expect(clippy::cast_precision_loss, reason = "counts are small")]
 fn main() {
     let source = argument("--source").unwrap_or_else(|| refuse("--source is required"));
     let arena = argument("--arena").unwrap_or_else(|| refuse("--arena is required"));

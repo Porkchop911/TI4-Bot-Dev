@@ -1,0 +1,13 @@
+{
+  "title": "Strategy Card UIs",
+  "description": "The new layouts for three strategy card primaries: Construction's step label on the planet bar, the Trade replenish table, and Imperial's objectives overview with the Mecatol or draw-a-secret outcome card. Synthetic gallery fixtures, not captured engine states.",
+  "tag": "web/e2e/screenshots/K-strategy-card-uis",
+  "shots": [
+    { "file": "out/1-construction-first.png", "heading": "Construction: first structure", "caption": "The planet bar carries a 'Structure 1 of 2' badge; after picking Jord on the map it offers a PDS or a space dock and shows what is already there." },
+    { "file": "out/2-construction-second.png", "heading": "Construction: second structure", "caption": "The second placement reads 'Structure 2 of 2 · PDS only', and only PDS options are offered." },
+    { "file": "out/3-trade-replenish.png", "heading": "Trade: replenish another player", "caption": "After the Trade primary's own gain, each eligible seat is a row with its commodities now and after a replenish (for example 1/6 → 6, +5), one Replenish button per seat, and Done to stop." },
+    { "file": "out/4-imperial-mecatol.png", "heading": "Imperial: holding Mecatol Rex", "caption": "The objectives overview as before, with an always-visible card saying the Imperial primary then gives +1 VP because you hold Mecatol Rex. Scoring an objective stays optional (Decline)." },
+    { "file": "out/5-imperial-secret.png", "heading": "Imperial: no Mecatol Rex", "caption": "Without Mecatol Rex the same card says you draw a secret objective afterwards and shows your hand (2/3 held). The point and the draw are alternatives, never both." }
+  ],
+  "notes": []
+}

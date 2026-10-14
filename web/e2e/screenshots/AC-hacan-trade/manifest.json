@@ -1,0 +1,13 @@
+{
+  "title": "Hacan trade: ask shapes in the trade desk",
+  "description": "Audit item H1 (Hacan trade broken). The engine side (Guild Ships reach, Masters of Trade, Trade primary and secondary) checked out in scripted game tests. The defect found is in the trade desk: the ask shapes (buy the partner's note, give a note for commodities, note for note, action card for note) were decoded as zero-for-zero goods trades or a gift of 0 commodities, so a Hacan table's note deals were filed under Commodities or Goods Exchange and the summary did not say what was paid or received. They now sit on the Promissory Notes tab (under Quick deals on the staging desk) and stage into the two columns. Synthetic mocked game with the option ids and payloads the engine builds, not a captured engine state.",
+  "tag": "web/e2e/screenshots/AC-hacan-trade",
+  "shots": [
+    { "file": "out/1-promissory-tab.png", "heading": "Promissory Notes tab (Quick deals)", "caption": "Buying Trade Convoys (goods or commodities), Sol's Political Secrets for commodities, a note-for-note swap and an Arbiters card-for-note all list here." },
+    { "file": "out/2-pay-for-note.png", "heading": "Pay commodities for a note", "caption": "The staging desk shows 3 commodities on the give side and the Trade Convoys note on the receive side (before: a gift of 0 commodities under the Commodities tab)." },
+    { "file": "out/3-card-for-note.png", "heading": "Action card for a note (Arbiters)", "caption": "The card is offered and the Hacan note received." }
+  ],
+  "notes": [
+    "No server-side or engine behaviour changed; only how the web client decodes and displays the option ids."
+  ]
+}

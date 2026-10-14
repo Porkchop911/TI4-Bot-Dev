@@ -1,10 +1,7 @@
 # ti4-engine-rs
 
-This directory is reserved for the isolated Rust rewrite of `ti4-engine`.
-
-No production code has been started. The planning baseline is the Python repository at
-`D:\Projects\ti4-engine`, branch `codex/fully-learned-policy`, commit `37061c5`.
-That repository is an immutable behavioral oracle for the migration.
+Rust engine and multiplayer server for Twilight Imperium 4. The historical
+Python repository is read-only context, not an acceptance oracle.
 
 Start here:
 
@@ -16,8 +13,10 @@ Start here:
 6. [`plans/INDEX.md`](plans/INDEX.md) — milestone subplans and dependencies.
 7. [`plans/PI_RPC_CONTROL.md`](plans/PI_RPC_CONTROL.md) — bounded, low-token monitoring and control of the managed Pi session.
 
-Implementation must not begin beyond M0 until M0 has frozen the compatibility corpus and
-remeasured the Python baseline.
+For local browser play, run `cargo run -p ti4-server --bin server` and
+`npm run dev` from `web/`. Create a lobby in the browser, share its URL, join
+from other tabs, mark all players ready, and start as host. See
+[`web/README.md`](web/README.md) for the current player-session flow.
 
 Stage-1 learning comparisons are documented in
 [`docs/STAGE1_PARITY_COMPARISON.md`](docs/STAGE1_PARITY_COMPARISON.md). Use the gated parity runner,

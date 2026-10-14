@@ -1,0 +1,195 @@
+/* Transit Diodes: what moves, where to, Confirm. The list scrolls inside the panel; header and
+   footer (summary, Confirm, Finish) stay put. */
+.choice-banner.transit-panel {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px 12px;
+  width: min(560px, calc(100vw - 48px));
+  max-width: none;
+  max-height: min(70dvh, 640px);
+  color: #f8fafc;
+}
+.transit-panel span,
+.choice-banner.transit-panel span {
+  overflow: visible;
+  white-space: normal;
+  text-overflow: clip;
+}
+.transit-panel__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.transit-panel__title {
+  font-weight: 600;
+}
+.transit-panel__left {
+  font-size: 13px;
+}
+.transit-panel__toggle {
+  margin-left: auto;
+  min-height: 44px;
+}
+.transit-panel__steps {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: #94a3b8;
+}
+.transit-panel__steps li {
+  flex: 1 1 0;
+  padding: 2px 6px;
+  border-bottom: 2px solid rgba(148, 163, 184, 0.3);
+  text-align: center;
+}
+.transit-panel__steps li[aria-current="step"] {
+  color: #f8fafc;
+  border-bottom-color: #38bdf8;
+  font-weight: 600;
+}
+.transit-panel__picked {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.transit-panel__picked > span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.transit-panel__picked strong {
+  color: #38bdf8;
+}
+.transit-panel__picked .button {
+  min-height: 44px;
+}
+.transit-panel__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-right: 2px;
+}
+.transit-panel__group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.transit-panel__system {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0;
+  padding: 2px 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #94a3b8;
+  background: rgba(15, 23, 42, 0.98);
+}
+.transit-panel__source {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 6px 8px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 8px;
+}
+.transit-panel__place {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  flex: 1 1 140px;
+  min-width: 0;
+}
+.transit-panel__name {
+  font-weight: 600;
+}
+.transit-panel__here {
+  flex-basis: 100%;
+  font-size: 12px;
+}
+.transit-panel__forces {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.transit-panel__force,
+.transit-panel__destination {
+  font: inherit;
+  font-size: 14px;
+  color: #f8fafc;
+  cursor: pointer;
+  border: 1px solid rgba(56, 189, 248, 0.5);
+  background: rgba(56, 189, 248, 0.08);
+  border-radius: 8px;
+  min-height: 44px;
+}
+.transit-panel__force {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+}
+.transit-panel__destination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 10px;
+  width: 100%;
+  padding: 6px 10px;
+  text-align: left;
+}
+.transit-panel__force:hover:not(:disabled),
+.transit-panel__destination:hover:not(:disabled) {
+  background: rgba(56, 189, 248, 0.2);
+}
+.transit-panel__destination[aria-pressed="true"] {
+  background: rgba(22, 101, 52, 0.55);
+  border-color: #4ade80;
+}
+.transit-panel__footer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(148, 163, 184, 0.25);
+}
+.transit-panel__summary {
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+}
+.transit-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.transit-panel__actions .button {
+  min-height: 44px;
+}
+@media (max-width: 720px) {
+  .choice-banner.transit-panel {
+    left: 8px;
+    right: 8px;
+    width: auto;
+    bottom: max(60px, calc(var(--prep-dock, 0px) + 8px));
+    padding: 8px;
+    max-height: min(64dvh, calc(100dvh - 140px));
+  }
+  .transit-panel__actions .button {
+    flex: 1 1 0;
+  }
+}

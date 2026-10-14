@@ -1,0 +1,21 @@
+{
+  "title": "Trade staging desk",
+  "description": "A two-column desk for bilateral trades: stage what you give and what you receive, see card text on every item, and propose only combinations the server lists. Web only, over the existing sequential engine decisions. Synthetic fixtures, not captured engine states.",
+  "tag": "web/e2e/screenshots/AG-trade-staging-desk",
+  "shots": [
+    { "file": "out/1-empty-desk.png", "heading": "Empty desk", "caption": "'You give' on the left (your purse, steppers and the notes and cards the deal list lets you hand over), 'You receive' on the right with the partner's public trade goods and commodities. Propose Deal is disabled until the staged combination is a listed deal. Amounts are capped by what the server lists ('listed up to N')." },
+    { "file": "out/2-simple-trade.png", "heading": "Staging a simple trade", "caption": "Two trade goods for three, set with the steppers. The staged combination matches a listed deal id (2:3), the desk says 'Ready to propose' with the net value, and Propose Deal is enabled." },
+    { "file": "out/3-note-and-card.png", "heading": "Promissory note and action card", "caption": "An action card (offered only because the engine lists it) for the partner's promissory note. Every item shows its card text; a card the client has no text for says so instead of staying silent. This maps to the engine's 'cn' ask shape." },
+    { "file": "out/4-no-match-suggestions.png", "heading": "A combination the server does not list", "caption": "Three trade goods for three. The desk says 'This combination isn't available right now', why (at most 2 trade goods can be given), and offers the nearest listed deals as one-click suggestions. Propose Deal stays disabled." },
+    { "file": "out/5-propose-ready-quick-deals.png", "heading": "Propose ready, Quick deals open", "caption": "The old tabbed catalogue lives on as a collapsible 'Quick deals' fallback. Choosing a deal there stages both sides on the desk; the action bar offers Offer nothing, Clear desk and Propose Deal (one submission, same ids and nonce guards as before)." },
+    { "file": "out/6-answer-screen.png", "heading": "Answer screen", "caption": "The partner's offer in the same two columns: what you give, what you receive, card text on each item, a net summary and the engine's net value, above Accept / Refuse / Counter-offer. The note under the buttons says the engine allows exactly one counter-offer." },
+    { "file": "out/7-counter-prefill.png", "heading": "Counter-offer, pre-filled", "caption": "After Counter-offer the engine asks you to propose from the other chair. The desk opens with their deal staged as you would propose it, including items your own list does not offer, so it is visible why Propose is disabled; the suggestions show what you can propose instead." },
+    { "file": "out/8-hacan-note-asks.png", "heading": "Hacan-style note asks", "caption": "Asking for the partner's note (paying commodities, trade goods, a note or an action card) is staged as a purchase on the desk; the promissory tab of Quick deals lists every ask shape in plain words (np, cp, pc, nn, cn from the decoder fix)." },
+    { "file": "out/9-phone-propose.png", "heading": "Phone width, propose", "caption": "At 390 px the columns stack, buttons are at least 40 px, text is at least 12 px and the action bar sticks to the bottom." },
+    { "file": "out/10-phone-answer.png", "heading": "Phone width, answer", "caption": "The answer screen stacks the same way; Accept, Refuse and Counter-offer stay in a sticky bar." }
+  ],
+  "notes": [
+    { "title": "Catalogue limits. ", "text": "The engine lists a closed menu of deals (0 to 3 trade goods each way, commodity swaps, one note or one card per deal). The desk can only propose what is listed; free-form amounts and bundles need an engine change (free-form deal ids)." },
+    { "title": "No resource or influence icons. ", "text": "Only trade goods and commodities appear on this branch, in plain text." }
+  ]
+}

@@ -78,6 +78,18 @@ fn simulate(args: &[String]) -> Result<(), String> {
     // Six comma-separated factions to rotate instead of the standard lineup.
     let lineup: Option<Vec<String>> =
         flag(args, "--lineup").map(|list| list.split(',').map(|f| f.trim().to_owned()).collect());
+    // Comma-separated seat indices the rule bot plays, e.g. `--rule-seats 0,2,4`.
+    let rule_seats: Vec<usize> = match flag(args, "--rule-seats") {
+        None => Vec::new(),
+        Some(list) => list
+            .split(',')
+            .map(|seat| {
+                seat.trim()
+                    .parse::<usize>()
+                    .map_err(|_| format!("--rule-seats expects seat indices, got {seat:?}"))
+            })
+            .collect::<Result<_, _>>()?,
+    };
     let config = SimulationConfig {
         checkpoint: PathBuf::from(checkpoint),
         map_pool: PathBuf::from(map_pool),
@@ -87,6 +99,7 @@ fn simulate(args: &[String]) -> Result<(), String> {
         temperature,
         diplomacy,
         lineup,
+        rule_seats,
     };
     let mut review = LiveReview::start(&config).map_err(|error| error.to_string())?;
     let report = match flag(args, "--until").as_deref() {
@@ -140,5 +153,5 @@ where
 }
 
 fn usage() -> String {
-    "usage:\n  ti4-review\n  ti4-review validate <game.ti4review.json[.zst]>\n  ti4-review render <game.ti4review.json[.zst]> <game.html>\n  ti4-review simulate --checkpoint <checkpoint.json> --map-pool <pool.json.gz> --out <game.ti4review.json[.zst]> [--seed 42] [--rotation 0] [--table learner|accepted] [--temperature 1.0] [--diplomacy] [--unit step|decision|action] [--count N | --until round|end]".to_owned()
+    "usage:\n  ti4-review\n  ti4-review validate <game.ti4review.json[.zst]>\n  ti4-review render <game.ti4review.json[.zst]> <game.html>\n  ti4-review simulate --checkpoint <checkpoint.json> --map-pool <pool.json.gz> --out <game.ti4review.json[.zst]> [--seed 42] [--rotation 0] [--table learner|accepted] [--temperature 1.0] [--diplomacy] [--rule-seats 0,2,4] [--unit step|decision|action] [--count N | --until round|end]".to_owned()
 }

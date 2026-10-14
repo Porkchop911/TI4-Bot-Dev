@@ -69,7 +69,6 @@ struct Played {
     journal_bytes: usize,
 }
 
-#[expect(clippy::too_many_arguments, reason = "one call site, all required")]
 fn play(
     content: &'static ContentStore,
     actor: &Rc<ti4_mlp::Actor>,

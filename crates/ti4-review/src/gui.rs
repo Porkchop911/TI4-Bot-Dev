@@ -343,6 +343,7 @@ impl ReviewApp {
             temperature: self.temperature,
             diplomacy: self.diplomacy,
             lineup: None,
+            rule_seats: Vec::new(),
         };
         match LiveReview::start(&config) {
             Ok(live) => {

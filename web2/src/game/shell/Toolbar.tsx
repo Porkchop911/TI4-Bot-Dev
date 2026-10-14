@@ -1,0 +1,173 @@
+import type { ToolbarView, Workspace } from "../../model";
+import { Button, Menu } from "../../ui";
+import { useDispatch } from "../context";
+
+export const REFERENCES = [
+  ["objectives", "Objectives"],
+  ["technology", "Technology"],
+  ["cards", "Cards"],
+  ["secrets", "Secrets"],
+  ["agendas", "Agendas"],
+  ["exploration", "Exploration"],
+  ["log", "Log"],
+] as const;
+
+/** The other app of the same address space: the demo, or the local game. A page load, not a game choice. */
+export interface OtherGame {
+  label: string;
+  href: string;
+}
+
+/** One header row: status, workspace, reference sheets, and the controls of the draft. */
+export function Toolbar({
+  view,
+  drawer,
+  onDrawer,
+  phone = false,
+  other,
+  settings = false,
+  table = false,
+}: {
+  view: ToolbarView;
+  drawer: string | null;
+  onDrawer: (id: string) => void;
+  /** A phone has the reference sheets in the menu: the row has no room for four buttons. */
+  phone?: boolean;
+  other?: OtherGame;
+  /** The local game has a Dev sheet, opened like the reference sheets. */
+  settings?: boolean;
+  /** The game has a table: the sheet "Table" is the last reference sheet. */
+  table?: boolean;
+}) {
+  const dispatch = useDispatch();
+  const references: (readonly [string, string])[] = table
+    ? [...REFERENCES, ["table", "Table"]]
+    : [...REFERENCES];
+  const tab = (mode: Workspace, label: string, disabled = false, title?: string) => (
+    <button
+      type="button"
+      aria-pressed={view.workspace === mode}
+      disabled={disabled}
+      title={title}
+      onClick={() => dispatch({ type: "workspace", mode })}
+      className="rounded-[5px] border border-transparent px-3.5 py-1 text-sm font-strong text-muted disabled:opacity-40 aria-pressed:border-line aria-pressed:bg-raised aria-pressed:text-accent"
+    >
+      {label}
+    </button>
+  );
+  const draftItems = [
+    { label: "Start over", onSelect: () => dispatch({ type: "startOver" }) },
+    { label: "Discard draft", onSelect: () => dispatch({ type: "discardDraft" }) },
+  ];
+  return (
+    <header className="flex min-h-12 items-center gap-3.5 border-b border-line bg-surface px-4 py-1.5 phone:flex-wrap phone:gap-x-2 phone:gap-y-1.5 phone:px-3 phone:pt-[max(6px,env(safe-area-inset-top))]">
+      {/* A status can name a player: on a phone it has the room that is left, whatever its length. */}
+      <div className="flex min-w-0 flex-col text-xs leading-[1.3] text-muted phone:w-0 phone:flex-1">
+        <span>
+          Round {view.round} · {view.phase}
+          {view.turn > 0 && ` · Turn ${view.turn}`}
+        </span>
+        <strong className="truncate text-sm font-semibold text-text">
+          <i className="mr-1.5 mb-0.5 inline-block size-1.5 rounded-full bg-accent" />
+          {view.status}
+        </strong>
+      </div>
+      <nav
+        aria-label="Workspace"
+        className="flex gap-0.5 rounded-lg border border-line bg-well p-[3px]"
+      >
+        {tab("live", "Live")}
+        {tab("draft", "Draft", !!view.draftLocked, view.draftLocked ?? undefined)}
+        {view.past && (
+          <>
+            {tab("history", `History · ${view.past.label}`)}
+            <button
+              type="button"
+              className="rounded-[5px] px-2 text-sm text-muted hover:text-text"
+              aria-label="Close history view"
+              title="Close history view"
+              onClick={() => dispatch({ type: "closeHistory" })}
+            >
+              ✕
+            </button>
+          </>
+        )}
+      </nav>
+      {phone ? null : (
+        <nav aria-label="Reference" className="ml-auto flex gap-1">
+          {references.map(([id, label]) => (
+            <Button
+              key={id}
+              tone="quiet"
+              size="sm"
+              active={drawer === id}
+              aria-expanded={drawer === id}
+              onClick={() => onDrawer(id)}
+            >
+              {label}
+            </Button>
+          ))}
+        </nav>
+      )}
+      {other && !phone && (
+        <Button tone="quiet" size="sm" onClick={() => location.assign(other.href)}>
+          {other.label}
+        </Button>
+      )}
+      {settings && !phone && (
+        <Button
+          tone="quiet"
+          size="sm"
+          active={drawer === "settings"}
+          aria-expanded={drawer === "settings"}
+          onClick={() => onDrawer("settings")}
+        >
+          Dev
+        </Button>
+      )}
+      {view.draft && (
+        <div className="flex items-center gap-1.5 phone:order-last phone:w-full phone:[&>:last-child]:flex-1">
+          <Button
+            tone="quiet"
+            size="icon"
+            icon="undo"
+            aria-label="Undo"
+            title="Undo"
+            disabled={!view.draft.canUndo}
+            onClick={() => dispatch({ type: "undo" })}
+          />
+          <Button
+            tone="quiet"
+            size="icon"
+            icon="redo"
+            aria-label="Redo"
+            title="Redo"
+            disabled={!view.draft.canRedo}
+            onClick={() => dispatch({ type: "redo" })}
+          />
+          <Button
+            tone="primary"
+            iconAfter="arrow"
+            title={view.draft.applyHint}
+            disabled={!view.draft.canApply}
+            onClick={() => dispatch({ type: "openApply" })}
+          >
+            Apply to Live
+          </Button>
+          {!phone && <Menu label="More draft actions" items={draftItems} />}
+        </div>
+      )}
+      {phone && (
+        <Menu
+          label="Reference and more"
+          items={[
+            ...references.map(([id, label]) => ({ label, onSelect: () => onDrawer(id) })),
+            ...(view.draft ? draftItems : []),
+            ...(other ? [{ label: other.label, onSelect: () => location.assign(other.href) }] : []),
+            ...(settings ? [{ label: "Dev", onSelect: () => onDrawer("settings") }] : []),
+          ]}
+        />
+      )}
+    </header>
+  );
+}

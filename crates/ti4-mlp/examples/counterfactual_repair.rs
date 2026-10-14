@@ -516,7 +516,8 @@ fn main() {
     // ---- determinism check ------------------------------------------------------------------
     if verify > 0 {
         let per_worker = targets.len().div_ceil(workers).max(1);
-        let checks: Vec<Result<Vec<(Target, bool, usize)>, String>> = targets
+        type CheckResult = Result<Vec<(Target, bool, usize)>, String>;
+        let checks: Vec<CheckResult> = targets
             .chunks(per_worker)
             .map(|chunk| (actor.inference_copy(), chunk.to_vec()))
             .collect::<Vec<_>>()
@@ -844,7 +845,8 @@ fn main() {
             entry.1 += 1;
         }
     }
-    let mut shapes: Vec<((usize, usize, bool), (usize, usize))> = shape_rows.into_iter().collect();
+    type FailureShape = ((usize, usize, bool), (usize, usize));
+    let mut shapes: Vec<FailureShape> = shape_rows.into_iter().collect();
     shapes.sort_by(|a, b| b.1.0.cmp(&a.1.0));
     println!("  by failure shape");
     println!();

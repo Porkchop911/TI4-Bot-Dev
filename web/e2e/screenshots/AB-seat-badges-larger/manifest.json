@@ -1,0 +1,187 @@
+{
+  "title": "Larger seat badges and map fit",
+  "description": "Seat badges about 40% larger (28 px glyph, 18 px command tokens on the map) and the map fitted between the toolbar row and the bottom prompt, before and after at four viewport sizes.",
+  "tag": "web/e2e/screenshots/AB-seat-badges-larger",
+  "shots": [
+    {
+      "file": "out/before-legend.png",
+      "heading": "Legend before",
+      "caption": "Seat legend on the base commit: 20 px badge glyph, 11 px label."
+    },
+    {
+      "file": "out/after-legend.png",
+      "heading": "Legend after",
+      "caption": "Seat legend: 28 px badge glyph (+40%), 15 px label, in the same row as the toolbar so it never covers tiles."
+    },
+    {
+      "file": "out/before-1440x900-standard.png",
+      "heading": "Standard view at 1440x900, before",
+      "caption": "Base commit: toolbar and seat legend float over the top tile row and the prompt pill over the bottom row. (no prompt)"
+    },
+    {
+      "file": "out/after-1440x900-standard.png",
+      "heading": "Standard view at 1440x900, after",
+      "caption": "Toolbar and legend take their own row; the map is fitted between it and a 60 px prompt inset. The capture script asserts the hex rows are clear of both. (no prompt)"
+    },
+    {
+      "file": "out/before-1440x900-system-selection.png",
+      "heading": "System selection at 1440x900, before",
+      "caption": "Base commit: toolbar and seat legend float over the top tile row and the prompt pill over the bottom row. (the activation bar, bottom prompt pill)"
+    },
+    {
+      "file": "out/after-1440x900-system-selection.png",
+      "heading": "System selection at 1440x900, after",
+      "caption": "Toolbar and legend take their own row; the map is fitted between it and a 60 px prompt inset. The capture script asserts the hex rows are clear of both. (the activation bar, bottom prompt pill)"
+    },
+    {
+      "file": "out/before-1440x900-planet-selection.png",
+      "heading": "Planet selection at 1440x900, before",
+      "caption": "Base commit: toolbar and seat legend float over the top tile row and the prompt pill over the bottom row. (the planet bar, bottom prompt pill)"
+    },
+    {
+      "file": "out/after-1440x900-planet-selection.png",
+      "heading": "Planet selection at 1440x900, after",
+      "caption": "Toolbar and legend take their own row; the map is fitted between it and a 60 px prompt inset. The capture script asserts the hex rows are clear of both. (the planet bar, bottom prompt pill)"
+    },
+    {
+      "file": "out/before-1440x900-movement.png",
+      "heading": "Movement at 1440x900, before",
+      "caption": "Base commit: toolbar and seat legend float over the top tile row and the prompt pill over the bottom row. (the movement dialog)"
+    },
+    {
+      "file": "out/after-1440x900-movement.png",
+      "heading": "Movement at 1440x900, after",
+      "caption": "Toolbar and legend take their own row; the map is fitted between it and a 60 px prompt inset. The capture script asserts the hex rows are clear of both. (the movement dialog)"
+    },
+    {
+      "file": "out/before-1280x720-standard.png",
+      "heading": "Standard view at 1280x720, before",
+      "caption": "Base commit: toolbar and seat legend float over the top tile row and the prompt pill over the bottom row. (no prompt)"
+    },
+    {
+      "file": "out/after-1280x720-standard.png",
+      "heading": "Standard view at 1280x720, after",
+      "caption": "Toolbar and legend take their own row; the map is fitted between it and a 60 px prompt inset. The capture script asserts the hex rows are clear of both. (no prompt)"
+    },
+    {
+      "file": "out/before-1280x720-system-selection.png",
+      "heading": "System selection at 1280x720, before",
+      "caption": "Base commit: toolbar and seat legend float over the top tile row and the prompt pill over the bottom row. (the activation bar, bottom prompt pill)"
+    },
+    {
+      "file": "out/after-1280x720-system-selection.png",
+      "heading": "System selection at 1280x720, after",
+      "caption": "Toolbar and legend take their own row; the map is fitted between it and a 60 px prompt inset. The capture script asserts the hex rows are clear of both. (the activation bar, bottom prompt pill)"
+    },
+    {
+      "file": "out/before-1280x720-planet-selection.png",
+      "heading": "Planet selection at 1280x720, before",
+      "caption": "Base commit: toolbar and seat legend float over the top tile row and the prompt pill over the bottom row. (the planet bar, bottom prompt pill)"
+    },
+    {
+      "file": "out/after-1280x720-planet-selection.png",
+      "heading": "Planet selection at 1280x720, after",
+      "caption": "Toolbar and legend take their own row; the map is fitted between it and a 60 px prompt inset. The capture script asserts the hex rows are clear of both. (the planet bar, bottom prompt pill)"
+    },
+    {
+      "file": "out/before-1280x720-movement.png",
+      "heading": "Movement at 1280x720, before",
+      "caption": "Base commit: toolbar and seat legend float over the top tile row and the prompt pill over the bottom row. (the movement dialog)"
+    },
+    {
+      "file": "out/after-1280x720-movement.png",
+      "heading": "Movement at 1280x720, after",
+      "caption": "Toolbar and legend take their own row; the map is fitted between it and a 60 px prompt inset. The capture script asserts the hex rows are clear of both. (the movement dialog)"
+    },
+    {
+      "file": "out/before-1024x768-standard.png",
+      "heading": "Standard view at 1024x768, before",
+      "caption": "Base commit: toolbar and seat legend float over the top tile row and the prompt pill over the bottom row. (no prompt)"
+    },
+    {
+      "file": "out/after-1024x768-standard.png",
+      "heading": "Standard view at 1024x768, after",
+      "caption": "Toolbar and legend take their own row; the map is fitted between it and a 60 px prompt inset. The capture script asserts the hex rows are clear of both. (no prompt)"
+    },
+    {
+      "file": "out/before-1024x768-system-selection.png",
+      "heading": "System selection at 1024x768, before",
+      "caption": "Base commit: toolbar and seat legend float over the top tile row and the prompt pill over the bottom row. (the activation bar, bottom prompt pill)"
+    },
+    {
+      "file": "out/after-1024x768-system-selection.png",
+      "heading": "System selection at 1024x768, after",
+      "caption": "Toolbar and legend take their own row; the map is fitted between it and a 60 px prompt inset. The capture script asserts the hex rows are clear of both. (the activation bar, bottom prompt pill)"
+    },
+    {
+      "file": "out/before-1024x768-planet-selection.png",
+      "heading": "Planet selection at 1024x768, before",
+      "caption": "Base commit: toolbar and seat legend float over the top tile row and the prompt pill over the bottom row. (the planet bar, bottom prompt pill)"
+    },
+    {
+      "file": "out/after-1024x768-planet-selection.png",
+      "heading": "Planet selection at 1024x768, after",
+      "caption": "Toolbar and legend take their own row; the map is fitted between it and a 60 px prompt inset. The capture script asserts the hex rows are clear of both. (the planet bar, bottom prompt pill)"
+    },
+    {
+      "file": "out/before-1024x768-movement.png",
+      "heading": "Movement at 1024x768, before",
+      "caption": "Base commit: toolbar and seat legend float over the top tile row and the prompt pill over the bottom row. (the movement dialog)"
+    },
+    {
+      "file": "out/after-1024x768-movement.png",
+      "heading": "Movement at 1024x768, after",
+      "caption": "Toolbar and legend take their own row; the map is fitted between it and a 60 px prompt inset. The capture script asserts the hex rows are clear of both. (the movement dialog)"
+    },
+    {
+      "file": "out/before-390x844-standard.png",
+      "heading": "Standard view at 390x844, before",
+      "caption": "Base commit: toolbar and seat legend float over the top tile row and the prompt pill over the bottom row. (no prompt)"
+    },
+    {
+      "file": "out/after-390x844-standard.png",
+      "heading": "Standard view at 390x844, after",
+      "caption": "Toolbar and legend take their own row; the map is fitted between it and a 60 px prompt inset. The capture script asserts the hex rows are clear of both. (no prompt)"
+    },
+    {
+      "file": "out/before-390x844-system-selection.png",
+      "heading": "System selection at 390x844, before",
+      "caption": "Base commit: toolbar and seat legend float over the top tile row and the prompt pill over the bottom row. (the activation bar, bottom prompt pill)"
+    },
+    {
+      "file": "out/after-390x844-system-selection.png",
+      "heading": "System selection at 390x844, after",
+      "caption": "Toolbar and legend take their own row; the map is fitted between it and a 60 px prompt inset. The capture script asserts the hex rows are clear of both. (the activation bar, bottom prompt pill)"
+    },
+    {
+      "file": "out/before-390x844-planet-selection.png",
+      "heading": "Planet selection at 390x844, before",
+      "caption": "Base commit: toolbar and seat legend float over the top tile row and the prompt pill over the bottom row. (the planet bar, bottom prompt pill)"
+    },
+    {
+      "file": "out/after-390x844-planet-selection.png",
+      "heading": "Planet selection at 390x844, after",
+      "caption": "Toolbar and legend take their own row; the map is fitted between it and a 60 px prompt inset. The capture script asserts the hex rows are clear of both. (the planet bar, bottom prompt pill)"
+    },
+    {
+      "file": "out/before-390x844-movement.png",
+      "heading": "Movement at 390x844, before",
+      "caption": "Base commit: toolbar and seat legend float over the top tile row and the prompt pill over the bottom row. (the movement dialog)"
+    },
+    {
+      "file": "out/after-390x844-movement.png",
+      "heading": "Movement at 390x844, after",
+      "caption": "Toolbar and legend take their own row; the map is fitted between it and a 60 px prompt inset. The capture script asserts the hex rows are clear of both. (the movement dialog)"
+    }
+  ],
+  "notes": [
+    {
+      "title": "Before shots",
+      "text": "Captured on the base commit (upstream-pr-2026-10-07) with TI4_SHOT_PREFIX=before and committed as PNGs; npm run screenshots -- AB regenerates the after-* shots from the current code."
+    },
+    {
+      "title": "Fit",
+      "text": "The toolbar and seat legend flow in a row above the map (board-chrome); the map stage keeps 60 px free at the bottom for the prompt pill. Reset and zoom operate inside that stage."
+    }
+  ]
+}

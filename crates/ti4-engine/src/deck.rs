@@ -38,6 +38,26 @@ pub fn build_starting_decks(
     sources: SourceSet,
     seed: u64,
 ) -> StartingDecks {
+    build_starting_decks_excluding(content, sources, seed, &Exclusions::default())
+}
+
+/// Objective aliases to keep out of the setup decks (see [`crate::map_feasibility`]).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Exclusions {
+    pub public: Vec<String>,
+    pub secret: Vec<String>,
+}
+
+/// As [`build_starting_decks`], but the excluded objectives are dropped from the shuffled pools
+/// *after* shuffling, so with no exclusions the result is identical and with some the remaining
+/// order is the same one with the excluded cards removed (and the next cards drawn in their place).
+#[must_use]
+pub fn build_starting_decks_excluding(
+    content: &ContentStore,
+    sources: SourceSet,
+    seed: u64,
+    excluded: &Exclusions,
+) -> StartingDecks {
     let mut rng = GameRng::new(seed);
 
     let mut stage_one = ids(content, ContentType::PublicObjectives, sources)
@@ -62,6 +82,8 @@ pub fn build_starting_decks(
         .collect::<Vec<_>>();
     rng.shuffle(domain::OBJECTIVES, &mut stage_one);
     rng.shuffle(domain::OBJECTIVES, &mut stage_two);
+    stage_one.retain(|id| !excluded.public.iter().any(|a| a == id.as_str()));
+    stage_two.retain(|id| !excluded.public.iter().any(|a| a == id.as_str()));
     let objectives = stage_one
         .into_iter()
         .take(5)
@@ -108,6 +130,7 @@ pub fn build_starting_decks(
         .map(SecretObjectiveId::new)
         .collect::<Vec<_>>();
     rng.shuffle(domain::SECRETS, &mut secrets);
+    secrets.retain(|id| !excluded.secret.iter().any(|a| a == id.as_str()));
 
     StartingDecks {
         objectives,

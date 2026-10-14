@@ -771,14 +771,23 @@ pub fn perform_component(
     if !executive_order_ready(context.state, player) {
         return false;
     }
-    let deck = &mut context.state.agenda_deck;
-    let alias = if from_top {
-        deck.remove(0)
+    let drawn = if from_top {
+        ti4_model::deck_reserve::take_top(
+            &mut context.state.deck_reserve,
+            "agenda",
+            &mut context.state.agenda_deck,
+            Some(player.as_str()),
+        )
     } else {
-        let Some(last) = deck.pop() else {
-            return false;
-        };
-        last
+        ti4_model::deck_reserve::take_bottom(
+            &mut context.state.deck_reserve,
+            "agenda",
+            &mut context.state.agenda_deck,
+            Some(player.as_str()),
+        )
+    };
+    let Some(alias) = drawn else {
+        return false;
     };
     if let Some(seat) = context.state.player_mut(player) {
         seat.exhausted_technologies

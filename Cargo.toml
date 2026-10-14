@@ -6,6 +6,7 @@ members = [
     "crates/ti4-engine",
     "crates/ti4-policy",
     "crates/ti4-sim",
+    "crates/ti4-calc",
     "crates/ti4-training",
     "crates/ti4-bridge",
     "crates/ti4-legacy",
@@ -13,7 +14,14 @@ members = [
     "crates/ti4-tensor",
     "crates/ti4-mlp",
     "crates/ti4-review",
+    "crates/ti4-view",
+    "crates/ti4-host",
+    "crates/ti4-server",
+    "crates/ti4-advisor",
+    "crates/ti4-bot-agent",
+    "crates/ti4-rule-bot",
     "crates/ti4-replayer",
+    "crates/ti4-wasm",
     "crates/xtask",
 ]
 
@@ -29,6 +37,7 @@ ti4-content = { path = "crates/ti4-content" }
 ti4-engine = { path = "crates/ti4-engine" }
 ti4-policy = { path = "crates/ti4-policy" }
 ti4-sim = { path = "crates/ti4-sim" }
+ti4-calc = { path = "crates/ti4-calc" }
 ti4-training = { path = "crates/ti4-training" }
 ti4-bridge = { path = "crates/ti4-bridge" }
 ti4-legacy = { path = "crates/ti4-legacy" }
@@ -36,12 +45,18 @@ ti4-cli = { path = "crates/ti4-cli" }
 ti4-tensor = { path = "crates/ti4-tensor" }
 ti4-mlp = { path = "crates/ti4-mlp" }
 ti4-review = { path = "crates/ti4-review", default-features = false }
+ti4-view = { path = "crates/ti4-view" }
+ti4-host = { path = "crates/ti4-host" }
+ti4-server = { path = "crates/ti4-server" }
+ti4-advisor = { path = "crates/ti4-advisor" }
+ti4-bot-agent = { path = "crates/ti4-bot-agent" }
+ti4-rule-bot = { path = "crates/ti4-rule-bot" }
 ti4-replayer = { path = "crates/ti4-replayer" }
 xtask = { path = "crates/xtask" }
 
 # External
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["raw_value"] }
 serde_stacker = "0.1"
 bincode = "2"
 sha2 = "0.10"
@@ -51,7 +66,7 @@ hex = "0.4"
 flate2 = "1"
 zstd = "0.13"
 thiserror = "2"
-tracing = "0.1"
+tracing = { version = "0.1", features = ["log"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 rand = "0.9"
 rand_chacha = "0.9"
@@ -65,17 +80,17 @@ anyhow = "1"
 itertools = "0.14"
 rayon = "1.11"
 mimalloc = { version = "0.1", default-features = false }
-smallvec = "1"
+smallvec = { version = "1", features = ["const_generics", "const_new"] }
 hashbrown = "0.15"
 indexmap = "2"
-bitflags = "2"
+bitflags = { version = "2", features = ["std"] }
 enumset = "1.1.5"
 strum = { version = "0.27", features = ["derive"] }
 strum_macros = "0.27"
 proptest = "1.6"
-rstest = "0.26"
 eframe = { version = "=0.35.0", default-features = false, features = ["accesskit", "default_fonts", "glow"] }
-rfd = { version = "0.17.2", default-features = false, features = ["common-controls-v6"] }
+# Keep GTK/Wayland defaults off; XDG Portal is the Linux backend and builds on WSL without GTK.
+rfd = { version = "0.17.2", default-features = false, features = ["common-controls-v6", "xdg-portal"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
@@ -88,8 +103,11 @@ unused_variables = "warn"
 duplicate_macro_attributes = "deny"
 
 [workspace.lints.clippy]
-all = { level = "warn", priority = -1 }
-pedantic = { level = "warn", priority = -1 }
+# Keep Clippy focused on correctness and runtime performance; opt into type complexity explicitly.
+all = { level = "allow", priority = -2 }
+correctness = { level = "deny", priority = -1 }
+perf = { level = "warn", priority = -1 }
+type_complexity = "warn"
 # The `cargo` group checks publishability — description, license, keywords, categories. These
 # crates are a private workspace and are not published, so it only ever produces noise.
 cargo = { level = "allow", priority = -1 }
@@ -107,11 +125,54 @@ many_single_char_names = "allow"
 # A data model with hundreds of accessors does not benefit from `#[must_use]` on each; the
 # attribute stops meaning anything once it is everywhere.
 must_use_candidate = "allow"
+struct_excessive_bools = "allow"
+too_many_lines = "allow"
 
 [profile.release]
 lto = "thin"
 codegen-units = 1
 strip = true
 
+# The browser build: size first. `cargo build -p ti4-wasm --target wasm32-unknown-unknown
+# --profile wasm-release`.
+[profile.wasm-release]
+inherits = "release"
+opt-level = "z"
+lto = "fat"
+panic = "abort"
+
+# The browser build for development: `web2/scripts/build-wasm.sh --dev`. Not optimized and
+# incremental, so a change of the engine is rebuilt in seconds; the file is about three times the
+# size of the release build and the engine is slower in the page. `panic = "abort"` as in the
+# release build, so a panic looks the same in both.
+[profile.wasm-dev]
+inherits = "dev"
+opt-level = 0
+debug = false
+# Without the names of the functions the file is much smaller, and it loads faster.
+strip = true
+panic = "abort"
+incremental = true
+
 [profile.dev]
+# Line numbers in backtraces, nothing else. Full debuginfo was copied into every test executable's
+# .dwp: 6 GB of a 17 GB target directory. For a debugger session use `--profile debugger`.
+debug = "line-tables-only"
 split-debuginfo = "packed"
+
+# Third-party dependencies are compiled with optimization even in the dev and test profiles, while
+# every workspace crate stays a plain debug build (opt-level 0, debug assertions and overflow checks
+# ON; `"*"` matches only non-workspace-member packages). The server's hot paths run through
+# serde_json, sha2/blake2, zstd/flate2, rand, hashbrown and tokio/axum; optimizing them roughly
+# halves save_history/load_history and the per-decision commit wait without touching the debug
+# checks of our own code. `debug = false` drops dependency debug info (smaller target dir and
+# faster links); backtraces keep file:line for our code. Profile settings do not change Cargo.lock.
+# build scripts and proc-macros are covered by `build-override` (opt-level 0 by default), so the
+# extra compile time is only the final dependency code.
+[profile.dev.package."*"]
+opt-level = 3
+debug = false
+
+[profile.debugger]
+inherits = "dev"
+debug = "full"

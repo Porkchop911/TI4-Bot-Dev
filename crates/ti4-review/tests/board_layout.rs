@@ -37,6 +37,7 @@ fn session() -> ReviewSession {
         temperature: 0.5,
         diplomacy: false,
         lineup: None,
+        rule_seats: Vec::new(),
     };
     LiveReview::start(&config)
         .expect("the committed example inputs start a review")
@@ -208,6 +209,7 @@ fn the_painter_and_the_frame_agree_about_the_fracture() {
         temperature: 0.5,
         diplomacy: false,
         lineup: None,
+        rule_seats: Vec::new(),
     };
     let mut live = LiveReview::start(&config).expect("the review starts");
     let frames = live.session.frames.len();

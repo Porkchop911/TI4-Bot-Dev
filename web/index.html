@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Twilight Imperium 4 - Online Multiplayer</title>
+  </head>
+  <body
+    style="
+      margin: 0;
+      padding: 0;
+      background: #090d16;
+      font-family:
+        -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Roboto, Oxygen, Ubuntu, Cantarell,
+        sans-serif;
+    "
+  >
+    <div id="root"></div>
+    <script>
+      (() => {
+        const match = /^\/games\/([^/]+)$/.exec(window.location.pathname);
+        const params = new URLSearchParams(window.location.hash.slice(1));
+        const token = params.get("token");
+        if (!match || !params.get("seat") || !token) return;
+        try {
+          const gameId = decodeURIComponent(match[1]);
+          sessionStorage.setItem(`ti4.viewer.v1:${gameId}`, token);
+          history.replaceState({}, "", `/games/${encodeURIComponent(gameId)}`);
+        } catch {
+          // Leave malformed paths untouched for the application router to reject.
+        }
+      })();
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

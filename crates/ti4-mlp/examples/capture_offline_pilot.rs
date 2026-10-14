@@ -680,6 +680,8 @@ impl BiasedBot {
             prompt: choice.prompt.clone(),
             options: preferred,
             context: choice.context.clone(),
+            details: choice.details.clone(),
+            free_form: choice.free_form.clone(),
         })
     }
 }
@@ -1380,8 +1382,9 @@ fn play_game(
     shared: &SharedAssets,
     ctx: &PlayContext<'_>,
 ) -> Result<GameOutcome, String> {
-    let handles: Rc<RefCell<BTreeMap<PlayerId, Rc<RefCell<Vec<CapturedDecision>>>>>> =
-        Rc::new(RefCell::new(BTreeMap::new()));
+    type CapturedLog = Rc<RefCell<Vec<CapturedDecision>>>;
+    type CaptureHandles = Rc<RefCell<BTreeMap<PlayerId, CapturedLog>>>;
+    let handles: CaptureHandles = Rc::new(RefCell::new(BTreeMap::new()));
     let policies: Rc<RefCell<BTreeMap<PlayerId, PolicyMetadata>>> =
         Rc::new(RefCell::new(BTreeMap::new()));
     let baselines: Rc<RefCell<BTreeMap<PlayerId, Baseline>>> =
@@ -2584,8 +2587,8 @@ fn scan_staging(staging: &Path) -> Result<Vec<StagedGame>, String> {
         if !dir.is_dir() {
             continue;
         }
-        let mut by_index: BTreeMap<usize, (Option<PathBuf>, Option<PathBuf>, Option<PathBuf>)> =
-            BTreeMap::new();
+        type StagedParts = (Option<PathBuf>, Option<PathBuf>, Option<PathBuf>);
+        let mut by_index: BTreeMap<usize, StagedParts> = BTreeMap::new();
         for entry in std::fs::read_dir(&dir)
             .map_err(|error| format!("reading {}: {error}", dir.display()))?
         {

@@ -48,15 +48,20 @@ pub mod fingerprint;
 /// so carrying the module is the cheaper of the two costs.
 pub mod fixtures;
 pub mod fleet;
+pub mod fleet_strength;
 pub mod fracture;
 pub mod game;
 pub mod invasion;
 pub mod laws;
 pub mod leaders;
 pub mod legendary;
+pub mod map_feasibility;
 pub mod movement;
 pub mod neutral_units;
 pub mod objectives;
+#[cfg(test)]
+mod objectives_monument_tests;
+pub mod observation;
 pub mod opening;
 pub mod payment;
 pub mod phase;
@@ -69,6 +74,8 @@ pub mod registry;
 pub mod relics;
 pub mod rng;
 pub mod seating;
+pub mod reach_query;
+pub mod secondary_preview;
 pub mod secrets;
 pub mod setup;
 pub mod space_stations;
@@ -84,6 +91,8 @@ pub mod timing;
 pub mod tokens;
 pub mod transactions;
 pub mod transit;
+pub mod trigger;
+pub mod valuation;
 pub mod vote;
 #[cfg(test)]
 mod wiring;
@@ -112,15 +121,18 @@ pub use phase::{
 };
 pub use rng::GameRng;
 pub use seating::{SeatingError, build_board, deploy, home_systems, neutral_systems};
-pub use setup::{SetupError, cards_per_player, start_game, start_game_seeded, strategy_card_setup};
+pub use setup::{
+    SetupError, cards_per_player, seeded_speaker, start_game, start_game_seeded,
+    start_game_seeded_with_card_set, strategy_card_setup, strategy_card_setup_for_set,
+};
 pub use status::{
     StatusPhaseError, StatusPhaseReport, resolve_after_token_gain, resolve_before_token_gain,
     resolve_status_phase,
 };
 pub use strategy::{
-    ACTION_KIND, FOLLOW_SECONDARY_ID, STRATEGIC_ACTION_ID, STRATEGY_KIND, SecondaryResolution,
-    StrategyActionError, StrategySecondaryError, StrategySecondaryWindow, begin_strategic_action,
-    strategic_action_options, take_strategic_action,
+    ACTION_KIND, FOLLOW_SECONDARY_ID, STRATEGIC_ACTION_ID, STRATEGY_KIND, SecondaryBlocker,
+    SecondaryResolution, StrategyActionError, StrategySecondaryError, StrategySecondaryWindow,
+    begin_strategic_action, strategic_action_options, take_strategic_action,
 };
 pub use tactical::{TacticalError, activatable, activate, movable, movement_options};
 pub use timing::{

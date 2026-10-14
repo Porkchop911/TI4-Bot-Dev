@@ -1,0 +1,410 @@
+### range 0-1200s
+[0:00:00] Hello and welcome to Radio Mecatol. My name is Kala and I think about Twilight Imperium every day. And my name is Ula and I relatively recently got to play Twilight Imperium but I didn't win. Ah, too bad. Well, a game of Twilight Imperium is still always a game of Twilight Imperium. It is indeed. Today we are going to talk about trade and how to think about it.
+[0:00:29] Yes, and of course especially then the trade strategy card which is core to your trade strategy.
+[0:00:37] Indeed.
+[0:00:38] So here's my initial question.
+[0:00:43] Trade is do you consider trade to be possibly the best pick in the first round?
+[0:00:52] Yes.
+[0:00:53] I mean, it's always tempting to pick something else and if there's an objective related to
+[0:01:03] something else, of course I will pick that. But trade is such a flexible choice and it's so much money.
+[0:01:12] Yeah, the trade strategy in the first round allows you to do things you otherwise absolutely couldn't.
+[0:01:20] For example, it allows you to both build a fleet and possibly play the secondary on the tech card, right?
+[0:01:27] Or just get an enormous economic heads up.
+[0:01:31] And it also gives you negotiation power.
+[0:01:35] So it's really in a vacuum, I personally consider trade to be the obvious choice in round one.
+[0:01:45] And of course there are myths and butts like with everything, right?
+[0:01:50] But it's a very powerful choice that gives you possibly a greater head start than any other strategy card does.
+[0:01:58] And the amount of value it can provide is bigger than most other cards.
+[0:02:07] Yeah, indeed. But I must say also that I've read on the internet how you're supposed to,
+[0:02:16] in quotation marks, play the trade card, and I'm not a big fan of that. So according to
+[0:02:23] tournaments and the internet and so on, what you should do when you play the trade card
+[0:02:29] is to use the so-called X minus one strategy,
+[0:02:33] which means that you should refresh everyone's commodities
+[0:02:39] as long as they give you one trade good
+[0:02:42] and you should also wash them.
+[0:02:45] And I hate this word wash,
+[0:02:48] but for the context of Twilight Imperium,
+[0:02:51] when people say wash, they mean that, for example,
+[0:02:54] I have some amount of trade goods, no commodities,
+[0:02:59] and you have, let's say, three commodities.
+[0:03:02] If I am to wash you, then you give me three commodities
+[0:03:06] and I give you three trade goods.
+[0:03:08] So your three commodities are suddenly available to you
+[0:03:12] to use because, I mean, commodities can't be used
+[0:03:14] for anything, but trade goods can be used
+[0:03:18] as both resources and influence.
+[0:03:22] Yeah, I don't like this word either,
+[0:03:24] primarily because it doesn't mean anything to me.
+[0:03:27] Like that, what you describe here is just a normal trade deal to me.
+[0:03:31] Like it's, I don't see a particular use for the term, washing this scenario.
+[0:03:36] I think it's inherited from the past edition of Twilight Imperium,
+[0:03:41] where this was more of a thing.
+[0:03:43] No, but I mean, it is a thing because let's say that you have three commodities,
+[0:03:48] and I have three commodities, and we trade them,
+[0:03:51] then we both gain something of value.
+[0:03:54] But if you have three commodities and I have, let's say three trade goods,
+[0:03:59] then I'm doing you a service and the Internet does not acknowledge that this is a service,
+[0:04:05] but rather that it's, you should always more or less wash every one.
+[0:04:10] What?
+[0:04:12] Yes.
+[0:04:13] Why?
+[0:04:13] You're giving that a player enormous advantage.
+[0:04:16] He wouldn't have had otherwise.
+[0:04:17] The reasoning is thus that if you do so, then add or end everyone else is in like a mehta
+[0:04:28] where they also agree to do so.
+[0:04:30] You always know that when the trade card is played as long as you pay that one trade
+[0:04:37] good, you will get your commodities and they will turn into traders.
+[0:04:44] Oh, I see. I think this is a flawed reasoning because it's like when you build a system
+[0:04:52] based on total and complete cooperation from everyone and the moment someone goes rogue,
+[0:04:59] the whole system just collapses and that's exactly what this is. The moment one guy says,
+[0:05:05] No, fuck that.
+[0:05:07] The whole system comes crashing down.
+[0:05:10] Yeah.
+[0:05:11] And I would often be that guy who said, no, fuck that.
+[0:05:16] Because I know that there are some players,
+[0:05:20] when they play trade, they let everyone just refresh.
+[0:05:23] Or a lot of people, I certainly do not.
+[0:05:27] Like the guys who are not trading with me,
+[0:05:29] I would never refresh unless they give me something.
+[0:05:33] maybe some occasionally if I desperate for good will for some reason, but basically
+[0:05:39] no, why would I?
+[0:05:41] Yeah and refreshing is one thing, but washing is another in my opinion and the internet
+[0:05:48] says that you should, it's worth basically one trade good to do both of these things
+[0:05:54] and I don't like that.
+[0:05:56] And one of the reasons- Wait, what?
+[0:05:59] Wait, so, okay, so I'm trying to wrap my head around this.
+[0:06:03] So, the first round, I play trade.
+[0:06:08] And then all players pledge to give me one trade good
+[0:06:14] when they have the opportunity to do so.
+[0:06:16] Because currently they cannot do that.
+[0:06:18] Because they're not my neighbors.
+[0:06:20] Okay, so it's a vague promise.
+[0:06:22] And then I let my two neighbors, let's say that I'm adjacent
+[0:06:27] to my two neighbors, right? I let them with a planish commodities and then I
+[0:06:34] date I they both trade with me. Yeah, but not all of them because I'm doing the
+[0:06:42] trade you described. Well, they pay me one trade good. Yeah, but what else do I do in
+[0:06:48] this scenario? No, no, no, no. So you're misunderstanding and because you cannot
+[0:06:52] fathom this idea. So the idea is that you let all other five players refresh their commodities.
+[0:07:02] And if you are a neighbor with them, you make sure that their commodities are turned into
+[0:07:08] trade goods because you will have a lot of trade goods. And other people simply do the same thing.
+[0:07:16] I mean, they're a neighbor with someone. Why would I allow that?
+[0:07:20] Because everyone else will do the same for you when it's their turn to play the trade
+[0:07:26] card.
+[0:07:27] But how does it benefit me that two players across the board get three extra resources
+[0:07:34] each?
+[0:07:35] That sounds like a super bad idea.
+[0:07:37] But they will give you one trade good.
+[0:07:39] Yeah, but that's one, they gain more.
+[0:07:42] That's exactly how I feel.
+[0:07:43] They benefit more than I do, which is like I don't yet, I can't wrap my head around that
+[0:07:48] like, try to premise a game about making sure that you benefit more than your opponent does.
+[0:07:54] And you certainly don't in this scenario. Yeah, I mean, I kind of agree with you, but I think that
+[0:08:02] in the same way that like most markets work, it is more efficient in quotation mark, if everyone
+[0:08:09] cooperates. Like, okay, so if the two players across the table are in a super destructive war
+[0:08:17] against each other, right? Then I don't mind feeding the war machine because they
+[0:08:22] are just gonna destroy each other's ships, right? In that scenario, maybe I
+[0:08:26] could agree to this, but the other problem is I won't get this trade good
+[0:08:31] for possibly rounds because I'm not adjacent to them. So it's also a
+[0:08:38] promise for the far future where we can change this maybe in the in the
+[0:08:43] and politics face or whatever it's called, right?
+[0:08:46] So that's like, no, no, no, this is way to abstract for me.
+[0:08:49] Like, I mean, the alternative is that
+[0:08:52] if they want to replenish,
+[0:08:53] they have to pay a command token, which is expensive.
+[0:08:55] And if there is one thing I do,
+[0:08:57] I want my proponents to not have, it's command tokens.
+[0:09:04] The less command tokens everyone except me has,
+[0:09:08] the happier I am.
+[0:09:09] So to me, forcing them to spend a comment again is what's more than me getting a trade good.
+[0:09:18] Yeah, I agree with you. And I have another complaint against this. And it's primarily against the
+[0:09:24] wash part because I have a feeling like the internet acknowledges that refreshing is worth
+[0:09:32] something and that you should pay like a trade good for that, for the benefit of that. But that
+[0:09:38] washing is basically something that you just do because it's but the boring thing, there are two
+[0:09:45] things that are boring with this. So the first boring thing is that commodities and trade goods
+[0:09:50] are suddenly the same thing and and and that's boring because I mean why should you even play
+[0:09:57] with commodities if you've just agreed basically that commodities equals trade goods.
+[0:10:02] Yeah, for example, it makes Voulret's agent less interesting.
+[0:10:10] Because what he does is that he forces someone to turn the commodities into trade goods,
+[0:10:17] in return for copying a ship of the same value.
+[0:10:20] An interesting hero that has interesting synergies and can really fuck with, for example, Hakan,
+[0:10:30] what is the formal name?
+[0:10:32] the emuettes of Akan, right? Because he can do this before they negotiate
+[0:10:37] trades so that they have no commodities left to negotiate. Yeah, we've talked
+[0:10:45] about this before and I don't agree with that because I think that you're
+[0:10:48] doing them a favor more than a disfavor. How often? Yeah, oh yeah, it was a
+[0:10:55] particular way. Yeah, okay, so yeah, I'm sorry. I miss remember this was in a
+[0:10:59] different context where what happened just to clarify before we leave this
+[0:11:03] subject we were few players and what I did was I didn't mess with Akan
+[0:11:08] specifically. As rule rate I used this ability on one of the presumptive
+[0:11:14] trade partners so that that partner had no longer any reason to trade with Akan
+[0:11:19] because the commodities had already become trade goods. And this is
+[0:11:26] something, yeah, and that could be a strategy. Yeah. Like letting people wash to
+[0:11:33] fuck with the person who has the trade card before they have the ability to
+[0:11:37] start negotiating, that could sometimes be beneficial to you. Because if people
+[0:11:42] are already have their trade goods, they have no reason to agree to a trade
+[0:11:46] deal anymore. And the second reason I don't like this commodities equals trade
+[0:11:52] good thinking is that there are a lot of exploration cards that refer to commodities.
+[0:12:00] Like there are some that says, oh, if you pay one commodity or blah, blah, blah, then you
+[0:12:05] will do this.
+[0:12:06] And suddenly those just disappear because you never have any commodities.
+[0:12:11] Commodities are always instantly turned into trade goods.
+[0:12:13] Yeah, no, I mean, I don't get it.
+[0:12:16] I think it's weird because it's the way you describe it.
+[0:12:21] unspoken tradition that people are kind of expected to participate in and I don't like those.
+[0:12:28] Like it doesn't make sense. Yeah, no mean either. And also it's it's thematically weird because
+[0:12:36] I mean commodities are I guess meant to mean these things that your faction produces that's
+[0:12:45] that they have an overflow of that they just want to sell to the rest of the galaxy because they
+[0:12:51] can't use it themselves. And trade goods is more like money. You can use it for anything.
+[0:12:57] I'm really struggling to comprehend that a person who has three trade goods and their
+[0:13:03] neighbor has three commodities, that they would willingly for no other gain, swap those trade goods.
+[0:13:11] Like it's bizarre. Like what do they gain? The assumption is that when the
+[0:13:17] The roles are changed and you will get the benefit of the equal service.
+[0:13:23] So that when you are sitting on 3 commodities and they have some trade goods then they will
+[0:13:28] do the wash.
+[0:13:30] But that assumes that people pick the trade card equally often.
+[0:13:37] Otherwise you might never be in that situation.
+[0:13:41] If you pick the trade card all the time then you would never need that service.
+[0:13:45] If you have plenty of tokens so that you can refresh your...
+[0:13:49] No, I can't get it. It's so strange.
+[0:13:55] But let me make it a parable to the world we live in.
+[0:14:00] It's politics and stuff, so it's dangerous.
+[0:14:03] Let's see if people hate us after we say this.
+[0:14:06] But it's common knowledge among economists
+[0:14:10] that you should not have any trade barriers.
+[0:14:13] And that's the best for the economy to have no tariffs and stuff.
+[0:14:18] Then the whole world flourishes.
+[0:14:22] But not everyone in the world agrees with that,
+[0:14:27] even though the science of economists say that this is the case.
+[0:14:32] And I mean, yeah.
+[0:14:35] Yeah, true, I guess.
+[0:14:36] Yes, yes. So if you, so what would, but, so to leave this particular venue, what is your
+[0:14:45] approach to playing trade? If you pick this card, which I assume that you sometimes would,
+[0:14:52] because we already established that it's a very good strategy card, it has a lot of
+[0:14:55] utility for scoring, of course, right? Because the great thing with trade goods is that they
+[0:15:00] can be both resources and influence, and a lot of objectives in trade-timperium are
+[0:15:05] about spending resources in some way or the other. So trade is one of the cards that actually
+[0:15:11] in a really tangible way allows you to progress with your objectives. But what is what is
+[0:15:17] some considerations when you pick the trade card?
+[0:15:19] Well, I'm sorry, I have to go back a little to the previous topic because another part
+[0:15:26] of this is that that one trade goods you're paying for this service, it is also assumed
+[0:15:34] that it will be sent along by neighbors.
+[0:15:37] So let's say someone is not neighbor to you, but maybe...
+[0:15:40] No!
+[0:15:42] No!
+[0:15:43] Oh!
+[0:15:44] What?
+[0:15:46] So you get very good from everyone.
+[0:15:48] Yes.
+[0:15:49] That shouldn't be allowed.
+[0:15:51] You shouldn't be allowed to pass on very good.
+[0:15:53] Yeah, but I mean, it's the same reasoning as before.
+[0:15:56] If someone passes along stuff from my next neighbor to me,
+[0:15:59] then maybe someone will pass when I want to send something
+[0:16:03] and stuff like that.
+[0:16:04] It would be interesting to just keep that thing.
+[0:16:07] It would give you, yeah.
+[0:16:09] I think you make a pretty major enemy that way.
+[0:16:13] For one trade good maybe,
+[0:16:15] but like, I mean, you won't be trusted at least.
+[0:16:18] That's one thing that's for sure.
+[0:16:20] But yeah.
+[0:16:23] But of course, trust is a currency in Twilight in Perry.
+[0:16:26] Absolutely.
+[0:16:27] I'm not saying trust doesn't matter.
+[0:16:29] I need to emphasize this.
+[0:16:31] Being trusted is important because that way you can effectively backstab people.
+[0:16:37] If no one trusts you to begin with, you don't have any leverage.
+[0:16:41] Yeah, the thing I also don't like about this meta is that it means that when you play the
+[0:16:49] trade card, you get three trade goods plus whatever your commodity value is because that
+[0:16:55] is instantly turned into trade goods as well because of all these deals.
+[0:16:59] So let's say your average, you have three.
+[0:17:01] So you get six trade goods from that.
+[0:17:05] And then since you give everyone this X minus one deal, then you will get another five trade
+[0:17:10] goods.
+[0:17:11] So you will get 11 trade goods.
+[0:17:13] I mean, trade is already a very good card.
+[0:17:16] And if you know that you're going to get 11 trade goods the first round, it is the obviously
+[0:17:23] best card.
+[0:17:24] It's crazy good.
+[0:17:25] Yes, however, the other players also gain the commodity value in trade goods.
+[0:17:30] Yeah, true. So they gain like somewhere between one, one and three trade goods.
+[0:17:36] Yeah.
+[0:17:37] But I think that that's just crazy because someone said to me that okay, but like the leadership card is three command counters, that's nine.
+[0:17:54] So then it's just slightly better than the leadership card.
+[0:17:59] Yeah, but the leadership card is also overpowered and by far the most picked card in my meta.
+[0:18:05] Yeah, it's a very powerful card.
+[0:18:07] First pick card.
+[0:18:08] So I would argue that card is actually overpowered.
+[0:18:10] Okay, let's save that one.
+[0:18:12] But the thing I don't like about trade being better than that is that trade is so flexible.
+[0:18:19] I mean, trade goods can be used for so many things and they can be saved.
+[0:18:25] Including buying command counters.
+[0:18:27] Yes, and they can be saved in a way that most stuff can't.
+[0:18:31] Indefinitely.
+[0:18:32] I feel that trade, you get a lot of flexibility, but if you get flexibility, the trade off
+[0:18:39] should be like value.
+[0:18:42] If you want to gain a very specific kind of value, I think the value should be greater
+[0:18:48] than if you pick something that gives you a very flexible value.
+[0:18:52] Yes.
+[0:18:54] This is a core rule of game design, right?
+[0:18:59] Like the more specific circumstance where you use something is useful,
+[0:19:05] the less value that has.
+[0:19:07] The most powerful kind of modifying games
+[0:19:11] is always a very genetically useful modifier, right?
+[0:19:15] So, for example, let's take a fantasy game, right?
+[0:19:19] Like, the magic resistance is always better than fire resistance, right?
+[0:19:26] Because fire resistance is more specific.
+[0:19:29] And therefore, as a game designer, you can also hand out fire resistance slightly more
+[0:19:34] liberally.
+[0:19:35] Whereas if you hand out basic magic resistance, it's going to be a power inflation quite quickly,
+[0:19:43] right?
+[0:19:44] But this is holds true in strategy games as well, right?
+[0:19:48] Trade card is great because it's flexible.
+[0:19:51] Trade goods is by far the best resource in Twilight Imperium because they can do everything.
+[0:19:58] I'm still very happy.
+### range 1200-2400s
+[0:20:00] The way trade was changed compared to third edition because it was one of the more flawed parts of Twilight Imperium third edition.
+[0:20:09] Remind me, how did it work?
+[0:20:11] When you played the trade card, trade negotiations were opened and you had to approve all negotiations and you had two cards.
+[0:20:20] So most people had maybe a two and a two, you'll now have a three and a one and then we swapped cards.
+[0:20:27] So and you're only allowed to swap one card with one person.
+[0:20:30] So let's say you and I swap a two for a two and then I swap a two for a three with someone else.
+[0:20:38] And then every time the trade card is played, you get the cards that your neighbor gave to you.
+[0:20:45] Oh, yes.
+[0:20:47] Yeah.
+[0:20:47] And the problem was that the trade card was so good to be played on the first round because either you could get money from all trades or you can break
+[0:20:57] the trades. And if you broke the trades, then of course it would be open for new negotiations
+[0:21:03] if you got a really poor trade or none at all and everyone else had really good trades.
+[0:21:09] But it was so costly to break the trade agreements that mostly the one that were negotiated on
+[0:21:16] turn one lasted the entire game. And the player who picked that often had a huge advantage.
+[0:21:24] Yes, I remember it was even better than it is now and it was like an absolutely fantastic
+[0:21:31] strategy called because of this very fact.
+[0:21:35] Almost never until late in Ometta did people break packs and if you played like 5 player
+[0:21:44] count, one player was basically doomed to be left outside the packs.
+[0:21:50] No, because you could do like a round trade that embers to the left.
+[0:21:55] Oh yeah, true.
+[0:21:56] Yeah, it was.
+[0:21:58] The new system is certainly much more streamlined and much more interesting.
+[0:22:02] But it, and it's easier to wrap your head around as well.
+[0:22:06] And some rounds it just doesn't happen depending on your player count, right?
+[0:22:10] So you can't rely on trade always being picked, especially unless you are eight players, right?
+[0:22:16] Of course, then it's always going to be there.
+[0:22:18] Okay, so with that aggression out of the way,
+[0:22:22] when you pick trade, why and how?
+[0:22:26] Let's say I've picked trade,
+[0:22:28] and I guess the interesting question is,
+[0:22:30] like, who do you refresh and why?
+[0:22:33] Yes, exactly.
+[0:22:33] And I mean, it's, I don't like refreshing a neighbor
+[0:22:39] that I'm kind of in a semi-war situation with
+[0:22:42] because I'm feeding their economy as well as my own,
+[0:22:46] and that doesn't feel good.
+[0:22:48] I also don't like refreshing people that are in a very good position or have a very good economy in general.
+[0:22:55] The person I love to refresh is the person who only has me as a neighbor.
+[0:23:03] That's very seldom. When that happens, it's great because I know they will give their commodities to me.
+[0:23:09] And like a loyal ally is always good to refresh just to keep them happy.
+[0:23:15] Yeah, this is the thing, right?
+[0:23:18] And like the person you would like to trade with the most is often someone you don't actually
+[0:23:25] know about, so you cannot actually trade with them, which is actually secretly one of the
+[0:23:30] better abilities of Hakan that they can trade with anyone.
+[0:23:35] Yeah.
+[0:23:36] Meaning they can buff that player across the table that aligns the best with their interests
+[0:23:42] Because oftentimes the trade card just ends up being a deal with your neighbor, right?
+[0:23:49] And those deals are perilous in the right in perium, especially if your neighbor is the emperor.
+[0:23:55] Yeah.
+[0:23:56] With the dark pact, right?
+[0:23:58] Because they have a promissory note that makes trade deals between you better, right?
+[0:24:02] And but of course they twist it that they're going to benefit more than you do.
+[0:24:06] Yeah, probably.
+[0:24:08] Likely.
+[0:24:08] But I mean, I think that letting people refresh just to keep them happy is not always that
+[0:24:18] bad strategy.
+[0:24:19] It's a good thing to say that it's a very small thing to do and you might get something.
+[0:24:28] I mean, a classic deal for me would be rather to, let's say, two people want to trade with
+[0:24:34] each other and they both want to refresh for free and then I might say that if they are
+[0:24:39] low value commodity factions like let's say it's it's Lizzix and Barony. Lizzix and Barony
+[0:24:47] are sitting next to each other and want to trade. They both have two commodities then
+[0:24:50] I might say okay give me one trade good and I'll allow it.
+[0:24:55] But here's the thing in a lot of games cards like these or abilities like these they scale
+[0:25:03] with the growth of your economy. But in the right opinion, trade does not do that. And
+[0:25:07] what this means in practice is that allowing other players, if you have the trade card,
+[0:25:13] allowing other players to replenish trade goods or even wash it as the term is, unfortunately,
+[0:25:19] right, is actually significantly more impactful for them in the first round than in the fourth
+[0:25:26] round. Yes. And I would almost never allow them to do it if I pick trade the first round,
+[0:25:35] because that's one of the benefits of picking trade I get ahead economically. And I don't want
+[0:25:42] others to also do that. Because for those trade goods in the first round, for my opponents,
+[0:25:49] often is the difference between a second carrier or tech.
+[0:25:53] Yeah. Right? And if I give them, if I allow them to get, to get a trade,
+[0:25:58] they can afford both of those things. And I would very much like them not to
+[0:26:02] afford both of those things.
+[0:26:04] Yeah. You can, the first round, I would argue,
+[0:26:08] it's, it's very important to try to,
+[0:26:11] try to mess with your neighbors and stop them from expanding if you can.
+[0:26:15] Any tool at your disposal that can mess with someone's flow in the first round can significantly hamper them
+[0:26:23] and that's pretty...that's something to consider if you pick a trade card.
+[0:26:28] Yeah, of course, it's always perilous to antagonize people, blah blah blah, classic mantra,
+[0:26:34] but it's really important in the first round.
+[0:26:37] People have very specific strategies in the first round to try to maximize their output.
+[0:26:45] and the expansion.
+[0:26:47] And any kind of issue in the plan can mess it up.
+[0:26:51] And that can be very beneficial for you.
+[0:26:53] Yeah, I agree with you.
+[0:26:55] I'm much more generous in later rounds with refreshing than in the first round.
+[0:27:00] Yes, I think that's good practice.
+[0:27:02] Because in the first round it can really matter.
+[0:27:05] Of course, you should always be mindful
+[0:27:08] because trade goods can and very often will be the difference between victory and defeat.
+[0:27:14] Oftentimes, trade goods is the one thing that allows someone to
+[0:27:19] accomplish trade objective or resource objective and win the game
+[0:27:25] because taking away trade goods is very difficult.
+[0:27:30] So a smart and frugal player looking ahead towards their victory
+[0:27:35] might actually stockpile trade goods in order to achieve a particular resource objective.
+[0:27:42] And that's a strategy that other players can do very little to prevent if they have gotten,
+[0:27:49] if they have acquired that pile of trade goods.
+[0:27:52] So, and of course the issue is it's very hard to know how people are exactly who is winning, right?
+[0:28:00] Or who is about to win.
+[0:28:01] But it's something to consider when you let people replenish, you are also, if there are resource
+[0:28:08] objectives out, you are helping them win.
+[0:28:11] Yeah, and I, speaking again of third edition, that as far as I know there are no action cards
+[0:28:17] that kind of remove trade goods, but rather that there are some agendas that do it,
+[0:28:21] but then everyone is affected and so on. But in third edition there was a... it had a lot of
+[0:28:27] interesting, but also some very swingy action cards, and one of them was called privateers.
+[0:28:32] And the privateers let you take half of someone's trade goods, half of everything they own,
+[0:28:40] and the other half was discarded.
+[0:28:43] I miss that card.
+[0:28:45] Oh, I don't miss it. It was such a joy killer because it stopped people from hoarding too much trade goods.
+[0:28:54] But many action cards are joy killers.
+[0:28:57] I mean, signal-diaming is also a joy killer.
+[0:29:00] You'd better keep a sabotage card in your hand. That's what you learned from this situation.
+[0:29:04] Yeah, I mean...
+[0:29:05] And don't get me wrong. That particular card is a bit too harsh, right?
+[0:29:09] right? Sure, you could let's say it could have let you keep off yourself right or something,
+[0:29:15] but I do think that the current edition has too few opportunities to mess with someone who
+[0:29:21] has stockpiling trade routes. Like there's almost nothing you can do and I do miss at least a few
+[0:29:27] action cards that messes with that behaviour a bit. Yeah I mean there is a galactic event introduced
+[0:29:36] that allows for some of that. So if you want to play that, then you can try that one.
+[0:29:42] And of course, the best person that you should allow to finish is someone very
+[0:29:49] beleaguered and very weak that you want to boost against their enemies, right? That's of course the
+[0:29:54] ideal situation. But that rarely occurs. And in that scenario, you might as well just give them
+[0:30:05] trade goods directly. Like because you want to, oh I'm supporting your economy
+[0:30:11] whatever, because at that point why play koi about it right?
+[0:30:14] Yeah I'm gonna support you against your enemies take some trade goods.
+[0:30:18] Another thing that's fun with having commodities as opposed to trade goods
+[0:30:24] is that you're open for these kind of small deals here and there. Like can you
+[0:30:30] wait with playing that strategy card or can you do this or that? It might feel expensive
+[0:30:37] to pay them with trade goods even though you sometimes must. But paying with commodities,
+[0:30:41] you're like, ah crap, this round is soon over and I'll probably refresh commodities again.
+[0:30:47] So they're kind of burning in my pocket. I have to use them. And then it's a good opportunity
+[0:30:53] to kind of bribe someone for this small thing or something.
+[0:30:57] Yeah, exactly. And of course, this interesting situation is created better in a matter where
+[0:31:05] people are less liberal with allowing people to replenish, no to wash. Yes. So there are several
+[0:31:14] benefits to having a gameplay tradition that is more stingy when you pick the trade card.
+[0:31:21] So it's always worth considering like yes you want to benefit yourself right
+[0:31:27] but in toilet paper you must also hamper your enemies and sometimes that is
+[0:31:34] better and it's less tangible it's less emotional satisfying it's it's it's so
+[0:31:41] it can be hard to refuse a deal but sometimes you really should because
+[0:31:47] sometimes it's just way too good for your opponent. Yeah and I think that's a good
+[0:31:56] wrap for what we think about trade. Yes!
+[0:32:01] The show is over but if you want to discuss the episode please find our
+[0:32:07] channel on Discord or if you love Radio Magnetol and want to support us please
+[0:32:14] go to buymeacoffee.com.com.

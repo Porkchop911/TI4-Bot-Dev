@@ -1,0 +1,18 @@
+{
+  "title": "Trade desk: printed card names",
+  "description": "Promissory notes, action cards and secret objectives in the trade desk show their printed names instead of engine ids (cf:generic, ra:jolnar, sabo1), in the staging summary, the Quick deals list and the answer screen. Before is the base commit, after is this branch. Synthetic fixtures with ids as the engine writes them.",
+  "tag": "web/e2e/screenshots/AM-trade-printed-names",
+  "shots": [
+    { "file": "out/before-staging-summary.png", "heading": "Staging summary, before", "caption": "A Ceasefire (cf:generic) staged for Jolnar's Research Agreement (ra:jolnar): the item tiles and the 'Ready to propose' sentence print the raw ids." },
+    { "file": "out/after-staging-summary.png", "heading": "Staging summary, after", "caption": "The same staging with printed names: 'Ceasefire' and 'Research Agreement (jolnar)' on the tiles and in the 'Ready to propose' sentence (the item tiles were already fixed by 66d8de0; the sentence was not). The raw id stays in the tooltip." },
+    { "file": "out/before-quick-deals.png", "heading": "Quick deals, before", "caption": "The engine's labels as written: 'sell cf:generic for 2 trade goods', 'pay 4 trade goods for the note ra:jolnar'." },
+    { "file": "out/after-quick-deals.png", "heading": "Quick deals, after", "caption": "Labels rebuilt from the decoded deal terms with printed names. An id no card table knows (mystery_pact:generic) becomes 'Mystery Pact' instead of a raw token; the engine label is in the tooltip." },
+    { "file": "out/before-answer-screen.png", "heading": "Answer screen, before", "caption": "The prompt 'Jolnar gives ra:jolnar, the action card sabo1 for 3 commodities, cf:generic -- accept?' shows ids in the header." },
+    { "file": "out/after-answer-screen.png", "heading": "Answer screen, after", "caption": "The prompt and the summary lines use printed names: Research Agreement (jolnar), Sabotage, Ceasefire." },
+    { "file": "out/before-phone-answer.png", "heading": "Phone answer screen, before", "caption": "390 px wide, base commit." },
+    { "file": "out/after-phone-answer.png", "heading": "Phone answer screen, after", "caption": "390 px wide, printed names." }
+  ],
+  "notes": [
+    { "title": "Web only. ", "text": "The engine labels and prompts are unchanged; the client rewrites ids it recognises from the decoded deal terms and falls back to the engine text when a label cannot be decoded." }
+  ]
+}

@@ -1,0 +1,121 @@
+{
+  "title": "Breakthroughs and Exploration Results",
+  "description": "Thunder's Edge breakthroughs are visible (player sheet, faction card, decisions, unlock toast) and what exploring left behind shows on the map (attachment, explored and frontier-token markers), in the system overview and as a longer-lived toast per result. The real app fed by a mocked game; everything is read from the engine state the client already receives (players[].breakthrough, exploration_log, frontier_tokens).",
+  "tag": "web/e2e/screenshots/DC-breakthroughs-exploration",
+  "shots": [
+    {
+      "file": "out/map-desktop.png",
+      "heading": "Map markers",
+      "caption": "Lodor shows a purple + (Dyson Sphere), Mehar Xull / Wellon / system 39 show a teal count of explorations, system 41 shows an amber ? for a frontier token nobody has explored yet. Hover text on each marker names the card and the gain."
+    },
+    {
+      "file": "out/map-390x844.png",
+      "heading": "Map markers on a phone",
+      "caption": "The same markers at 390 px."
+    },
+    {
+      "file": "out/overview-planet-gain.png",
+      "heading": "System overview: planet exploration",
+      "caption": "Mehar Xull: Core Mine, who explored it in which round, and what they got."
+    },
+    {
+      "file": "out/overview-attachment.png",
+      "heading": "System overview: attachment",
+      "caption": "Lodor: Dyson Sphere with the attachment named (and its values) next to the planet."
+    },
+    {
+      "file": "out/overview-frontier-device.png",
+      "heading": "System overview: frontier exploration",
+      "caption": "System 39: the frontier token was explored for an Enigmatic Device, which stays faceup in the play area."
+    },
+    {
+      "file": "out/overview-frontier-waiting.png",
+      "heading": "System overview: frontier token waiting",
+      "caption": "System 41 still has its frontier token."
+    },
+    {
+      "file": "out/toast-enigmatic-device.png",
+      "heading": "Toast: Enigmatic Device",
+      "caption": "Card name and what happened; the toast stays 10 seconds."
+    },
+    {
+      "file": "out/toast-attachment.png",
+      "heading": "Toast: attachment",
+      "caption": "Another player's attachment, with the card's name."
+    },
+    {
+      "file": "out/toast-gain.png",
+      "heading": "Toast: trade goods",
+      "caption": "Core Mine: gained 1 trade good, removed 1 infantry."
+    },
+    {
+      "file": "out/toast-breakthrough.png",
+      "heading": "Toast: breakthrough unlocked",
+      "caption": "Every seat is told when a breakthrough is unlocked."
+    },
+    {
+      "file": "out/sheet-desktop.png",
+      "heading": "Player sheet",
+      "caption": "The viewer's unlocked breakthrough with its printed text; the rival's locked one by name with the text on hover."
+    },
+    {
+      "file": "out/sheet-390x844.png",
+      "heading": "Player sheet on a phone",
+      "caption": "Same rows at 390 px."
+    },
+    {
+      "file": "out/faction-card-unlocked.png",
+      "heading": "Faction card: unlocked",
+      "caption": "A Breakthrough section with name, lock state, synergy and printed text."
+    },
+    {
+      "file": "out/faction-card-locked.png",
+      "heading": "Faction card: locked",
+      "caption": "A rival's breakthrough is public, so a locked one still shows its card."
+    },
+    {
+      "file": "out/decision-breakthrough.png",
+      "heading": "Decision raised by a breakthrough",
+      "caption": "Yssaril's Deepgloom Executable asks its owner: the card's name, synergy and full printed text are in the decision header."
+    },
+    {
+      "file": "out/expedition-note.png",
+      "heading": "Expedition entry",
+      "caption": "The Thunder's Edge turn-menu entry names the breakthrough the slice grants, with its printed text."
+    },
+    {
+      "file": "out/tile-fit-10.png",
+      "heading": "Markers on the bigger tile #10",
+      "caption": "Two-planet tile (Arc Prime, Wren Terra) with frontier token, attachment and exploration markers: they sit in the upper right, clear of the discs and value pills."
+    },
+    {
+      "file": "out/tile-fit-26.png",
+      "heading": "Markers on the bigger tile #26",
+      "caption": "One-planet tile with attachment and explored markers, 3x zoom."
+    },
+    {
+      "file": "out/tile-fit-19.png",
+      "heading": "Markers on the bigger tile #19",
+      "caption": "Activated tile with an exploration marker above the units badge, 3x zoom."
+    },
+    {
+      "file": "out/tile-fit-24.png",
+      "heading": "Markers on the bigger tile #24",
+      "caption": "One-planet tile with a marker, 3x zoom."
+    }
+  ],
+  "notes": [
+    {
+      "title": "No server change",
+      "text": "The client reads players[].breakthrough, exploration_log and frontier_tokens straight from the engine state already sent in every snapshot and update."
+    },
+    {
+      "title": "Not tracked by the engine",
+      "text": "A breakthrough's exhausted/used state is not kept in the game state, so the UI shows locked/unlocked only, and there is no 'used' toast."
+    },
+    {
+      "title": "Why the tester saw no exploration toast",
+      "text": "Not reproducible from the code or the saved game: the log is in every update and the toast code passes its tests. What changed here: toasts stay 10 s instead of 5 s, one unfinished record can no longer hold back every later toast, the Enigmatic Device no longer reads 'nothing happened', and the results are now also permanent on the map and in the system overview."
+    }
+  ]
+}

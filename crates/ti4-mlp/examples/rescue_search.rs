@@ -161,9 +161,6 @@ struct Table<'a> {
 /// What one play produced for the target seat.
 struct Outcome {
     cleared: bool,
-    planets: usize,
-    systems: usize,
-    units_ok: bool,
     notes: Vec<Note>,
     broken: bool,
 }
@@ -252,9 +249,6 @@ fn play(
     if *broken.borrow() {
         return Ok(Outcome {
             cleared: false,
-            planets: 0,
-            systems: 0,
-            units_ok: false,
             notes: Vec::new(),
             broken: true,
         });
@@ -267,9 +261,6 @@ fn play(
         {
             return Ok(Outcome {
                 cleared: opening.cleared(),
-                planets: opening.planets_gained,
-                systems: opening.systems,
-                units_ok: opening.units_ok(),
                 notes: log.borrow().clone(),
                 broken: false,
             });
@@ -325,7 +316,9 @@ fn main() {
     let workers = rayon::current_num_threads().max(1);
     let per_worker = jobs.len().div_ceil(workers).max(1);
 
-    let found: Vec<Result<(usize, Vec<(u64, usize, String, Vec<String>)>), String>> = jobs
+    type Failure = (u64, usize, String, Vec<String>);
+    type Found = Result<(usize, Vec<Failure>), String>;
+    let found: Vec<Found> = jobs
         .chunks(per_worker)
         .map(|chunk| (actor.inference_copy(), chunk.to_vec()))
         .collect::<Vec<_>>()
@@ -360,7 +353,7 @@ fn main() {
         .collect();
 
     let mut seat_games = 0usize;
-    let mut failures: Vec<(u64, usize, String, Vec<String>)> = Vec::new();
+    let mut failures: Vec<Failure> = Vec::new();
     for chunk in found {
         let (n, mut rows) = chunk.unwrap_or_else(|error| refuse(&error));
         seat_games += n * FACTIONS.len();
@@ -379,7 +372,8 @@ fn main() {
     // ---- branch from each depth ---------------------------------------------------------------
     let searching = std::time::Instant::now();
     let per_worker = failures.len().div_ceil(workers).max(1);
-    let harvest: Vec<Vec<(u64, usize, String, usize, Vec<Vec<Note>>)>> = failures
+    type BranchResult = (u64, usize, String, usize, Vec<Vec<Note>>);
+    let harvest: Vec<Vec<BranchResult>> = failures
         .chunks(per_worker)
         .map(|chunk| (actor.inference_copy(), chunk.to_vec()))
         .collect::<Vec<_>>()

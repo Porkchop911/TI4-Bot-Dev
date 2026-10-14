@@ -1,0 +1,18 @@
+{
+  "title": "Corner Notifications",
+  "description": "The toasts in the bottom-left corner of the game: what other players just did, and decisions the game made for you because only one option was legal. All shots are the real mounted component in the real app, fed by a mocked game.",
+  "tag": "web/e2e/screenshots/G-corner-notifications",
+  "shots": [
+    { "file": "out/1-auto-resolved.png", "heading": "A decision made for you", "caption": "When the server marks the only legal option of a decision as auto-resolved, the corner box says what was selected and why: the decision in bold, the choice in green, and \"(the only legal option)\"." },
+    { "file": "out/2-other-player-action.png", "heading": "Another player acted", "caption": "A new public log entry by another seat becomes a toast with the player's name and seat badge: \"Player 2 played Sabotage\". Your own actions never produce one." },
+    { "file": "out/3-burst-merged.png", "heading": "A burst is merged", "caption": "Three moves by Player 2 are one \"moved 3 units\" line, and Player 3 playing the same card twice reads \"played Sabotage x2\". At most three toasts stay; the oldest is dropped." },
+    { "file": "out/4-above-turn-bar.png", "heading": "Clear of the turn action bar", "caption": "The box measures the bars along the bottom edge (turn action bar, event log, decision banners) and sits above them, never over a button. The event log docks directly above the turn action bar (its height is published as --bottom-bar-offset), so its toggle stays clickable, and the toasts stack above the log. The map overlay toolbar and the player badges stay in the top corners." },
+    { "file": "out/5-muted.png", "heading": "Muted", "caption": "The Toasts button in the player sheet header silences notifications about other players (remembered in this browser, like the turn sound). With it off, the same log entry shows nothing; auto-resolved decisions still show." },
+    { "file": "out/6-spectator.png", "heading": "Spectators", "caption": "A spectator has no seat of their own, so every player's public actions get a toast, including the one a player would otherwise be excluded from." }
+  ],
+  "notes": [
+    { "title": "Source", "text": "Toasts come from public event log entries that arrive after the game has loaded (the log already there is history and never toasts) plus a victory point gain of another player. Details the server does not log (a plain objective score, payments, hit assignment) produce no toast; the VP gain covers scoring." },
+    { "title": "Behaviour", "text": "A toast hides after 5 seconds (3.5 for auto-resolved) or on click, is announced politely to screen readers (role log, aria-live polite) and the stack is capped at three." },
+    { "title": "Auto-resolved decisions", "text": "The server type already carries an auto_resolved flag on an option, but nothing sets it yet, so this toast only appears once the server marks one." }
+  ]
+}

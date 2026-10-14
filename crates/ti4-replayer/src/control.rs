@@ -334,7 +334,8 @@ impl ChoiceFingerprint {
         let context = choice
             .context
             .as_ref()
-            .and_then(|context| serde_json::to_value(context).ok());
+            // Display-only fields (the reaction trigger) are not part of what a replay binds.
+            .and_then(|context| serde_json::to_value(context.without_display_fields()).ok());
         Self::compute(&choice.player, &choice.prompt, &options, context.as_ref())
     }
 
@@ -466,7 +467,8 @@ impl PendingManualChoice {
         let context = choice
             .context
             .as_ref()
-            .and_then(|context| serde_json::to_value(context).ok());
+            // Display-only fields (the reaction trigger) are not part of what a replay binds.
+            .and_then(|context| serde_json::to_value(context.without_display_fields()).ok());
         let fingerprint = ChoiceFingerprint::from_choice(choice);
         Ok(Self {
             offer: OfferId::next(),
@@ -818,6 +820,36 @@ mod tests {
         PlayerId::new(name)
     }
 
+    #[test]
+    fn a_reaction_trigger_never_changes_a_choice_fingerprint() {
+        // The trigger is display metadata derived from the event: an old replay of the same
+        // window, written before triggers existed, must keep matching.
+        let context = || {
+            DecisionContext::new(
+                seat("b"),
+                DecisionSource::Reaction("ACTION_CARD_PLAYED".to_owned()),
+                "reaction_when_ACTION_CARD_PLAYED",
+                Phase::Action,
+                1,
+            )
+        };
+        let event = ti4_engine::event::Event::new(
+            3,
+            "ACTION_CARD_PLAYED",
+            [("player".to_owned(), "a".into())].into_iter().collect(),
+        );
+        let plain = Choice::new(seat("b"), "when X", offered(&[("decline", "decline")]))
+            .contextualized(context());
+        let with = Choice::new(seat("b"), "when X", offered(&[("decline", "decline")]))
+            .contextualized(context().with_trigger(
+                ti4_engine::decision_context::DecisionTrigger::from_event(&event, "when", &[]),
+            ));
+        assert_eq!(
+            ChoiceFingerprint::from_choice(&plain),
+            ChoiceFingerprint::from_choice(&with)
+        );
+    }
+
     fn offered(ids: &[(&str, &str)]) -> Vec<ChoiceOption> {
         ids.iter()
             .map(|(id, kind)| ChoiceOption::labelled(*id, *kind, format!("label {id}")))
@@ -837,6 +869,8 @@ mod tests {
                 .map(|index| ChoiceOption::new(format!("opt{index}"), "action"))
                 .collect(),
             context: None,
+            details: serde_json::Map::new(),
+            free_form: None,
         }
     }
 

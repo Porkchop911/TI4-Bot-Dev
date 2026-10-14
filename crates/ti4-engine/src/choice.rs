@@ -61,6 +61,10 @@ pub struct ChoiceOption {
     /// diagnostic reasons.
     #[serde(skip)]
     pub preview: Option<crate::preview::Preview>,
+    /// True when this is the only legal option and was auto-selected. For UX feedback only;
+    /// does not affect game logic or replay.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub auto_resolved: bool,
 }
 
 impl PartialEq for ChoiceOption {
@@ -78,6 +82,7 @@ impl ChoiceOption {
             label: String::new(),
             payload: BTreeMap::new(),
             preview: None,
+            auto_resolved: false,
         }
     }
 
@@ -111,6 +116,35 @@ impl ChoiceOption {
         self
     }
 
+    /// Attach the `planet` (and, when known, `system`) payload a map UI uses to locate a planet
+    /// answer. Keys already present are left as they are; like [`Self::with`], identity is
+    /// unaffected.
+    #[must_use]
+    pub fn with_planet(mut self, planet: &str, system: Option<&str>) -> Self {
+        self.payload
+            .entry("planet".to_owned())
+            .or_insert_with(|| Value::from(planet));
+        if let Some(system) = system {
+            self.payload
+                .entry("system".to_owned())
+                .or_insert_with(|| Value::from(system));
+        }
+        self
+    }
+
+    /// [`Self::with_planet`], looking the planet's system up with [`crate::planets::system_of`].
+    #[must_use]
+    pub fn with_planet_located(
+        self,
+        state: &ti4_model::state::GameState,
+        content: &ti4_content::ContentStore,
+        sources: ti4_model::content_types::SourceSet,
+        planet: &str,
+    ) -> Self {
+        let system = crate::planets::system_of(state, content, sources, planet);
+        self.with_planet(planet, system.as_ref().map(ti4_model::id::SystemId::as_str))
+    }
+
     /// Attach an analytic consequence summary without changing this option's identity.
     #[must_use]
     pub fn previewed(mut self, preview: crate::preview::Preview) -> Self {
@@ -138,6 +172,72 @@ pub struct Choice {
     /// Why this question exists and what remains outstanding in its transaction.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context: Option<crate::decision_context::DecisionContext>,
+    /// Facts a client needs to present the question (current pools, who played a card, tokens
+    /// left). Display only: never read by the engine, never copied into a [`DecisionRecord`],
+    /// and skipped when empty, so records, replays and fingerprints are unaffected.
+    #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
+    pub details: serde_json::Map<String, Value>,
+    /// An id prefix that names answers built by the asker rather than listed in `options`
+    /// (a transaction's free-form deal). Unlisted ids starting with it are accepted as answers;
+    /// whoever resolves the answer parses the rest and rejects what it cannot read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub free_form: Option<String>,
+}
+
+/// Display only: the header of an offer card: what it is, its kind, when it applies and the
+/// printed or summarised effect. See [`Choice::offered`].
+#[must_use]
+pub fn offer_card(title: &str, tag: &str, window: Option<&str>, text: Option<&str>) -> Value {
+    serde_json::json!({ "title": title, "tag": tag, "window": window, "text": text })
+}
+
+/// Display only: one labelled fact of an offer card, shown as text.
+#[must_use]
+pub fn offer_fact(label: &str, value: impl Into<Value>) -> Value {
+    serde_json::json!({ "label": label, "value": value.into() })
+}
+
+/// Display only: a fact whose value is a unit type (shown with its name and icon).
+#[must_use]
+pub fn offer_fact_unit(label: &str, unit: &str) -> Value {
+    serde_json::json!({ "label": label, "unit": unit })
+}
+
+/// Display only: a fact whose value is a planet (shown by its name, with its system).
+#[must_use]
+pub fn offer_fact_planet(label: &str, planet: &str, system: &str) -> Value {
+    serde_json::json!({ "label": label, "planet": planet, "system": system })
+}
+
+/// Display only: a fact whose value is a seat (shown by the player's name).
+#[must_use]
+pub fn offer_fact_seat(label: &str, seat: &str) -> Value {
+    serde_json::json!({ "label": label, "seat": seat })
+}
+
+/// Display only: a fact whose value is a technology (shown by its name).
+#[must_use]
+pub fn offer_fact_technology(label: &str, technology: &str) -> Value {
+    serde_json::json!({ "label": label, "technology": technology })
+}
+
+/// Display only: a number that changes, e.g. commodities `1 -> 2` of at most `of`.
+#[must_use]
+pub fn offer_fact_change(label: &str, from: i64, to: i64, of: Option<i64>) -> Value {
+    serde_json::json!({ "label": label, "from": from, "to": to, "of": of })
+}
+
+/// Display only: the button caption for an option and an optional hint under it.
+#[must_use]
+pub fn offer_caption(label: &str, hint: Option<&str>) -> Value {
+    serde_json::json!({ "label": label, "hint": hint })
+}
+
+/// Display only: [`offer_caption`] for an option about another seat's unit: the client adds the
+/// seat's name beside the hint.
+#[must_use]
+pub fn offer_caption_for_seat(label: &str, hint: Option<&str>, seat: &str) -> Value {
+    serde_json::json!({ "label": label, "hint": hint, "seat": seat })
 }
 
 impl Choice {
@@ -148,7 +248,53 @@ impl Choice {
             prompt: prompt.into(),
             options,
             context: None,
+            details: serde_json::Map::new(),
+            free_form: None,
         }
+    }
+
+    /// Accept answers whose id starts with `prefix` although they are not listed; see
+    /// [`Choice::free_form`]. Also tells clients through `details.free_form`.
+    #[must_use]
+    pub fn accepting_free_form(mut self, prefix: &str) -> Self {
+        self.details
+            .insert("free_form".to_owned(), Value::String(prefix.to_owned()));
+        self.free_form = Some(prefix.to_owned());
+        self
+    }
+
+    /// The option an answer id stands for: the listed one, or a free-form one the asker built.
+    #[must_use]
+    pub fn answer_for(&self, option_id: &str) -> Option<ChoiceOption> {
+        if let Some(listed) = self.option(option_id) {
+            return Some(listed.clone());
+        }
+        let prefix = self.free_form.as_deref()?;
+        (option_id.starts_with(prefix) && option_id.len() > prefix.len())
+            .then(|| ChoiceOption::labelled(option_id, "offer", option_id))
+    }
+
+    /// Attach one display-only fact for clients; see [`Choice::details`].
+    #[must_use]
+    pub fn detailed(mut self, key: &str, value: impl Into<Value>) -> Self {
+        self.details.insert(key.to_owned(), value.into());
+        self
+    }
+
+    /// Present the question as an offer card for clients (display only, like [`Choice::detailed`]):
+    /// `card` names what is asked (see [`offer_card`]), `facts` is a list of [`offer_fact`]s and
+    /// `captions` maps option ids to [`offer_caption`]s that say what each answer does. Option ids,
+    /// order and kinds are untouched, so decision records and replays are unaffected.
+    #[must_use]
+    pub fn offered(self, card: Value, facts: Vec<Value>, captions: &[(&str, Value)]) -> Self {
+        let captions: serde_json::Map<String, Value> = captions
+            .iter()
+            .map(|(id, caption)| ((*id).to_owned(), caption.clone()))
+            .collect();
+        self.detailed("kind", "offer")
+            .detailed("card", card)
+            .detailed("facts", Value::Array(facts))
+            .detailed("captions", Value::Object(captions))
     }
 
     /// Attach producer-authored typed semantics to this decision.
@@ -248,6 +394,9 @@ fn choice_fingerprint(choice: &Choice) -> u64 {
 pub fn validate(choice: &Choice, option: ChoiceOption) -> Result<ChoiceOption, IllegalChoice> {
     if choice.option(&option.id).is_some() {
         return Ok(option);
+    }
+    if let Some(built) = choice.answer_for(&option.id) {
+        return Ok(built);
     }
     Err(IllegalChoice::NotOffered {
         player: choice.player.clone(),
@@ -493,6 +642,17 @@ pub struct Observed<'a> {
 }
 
 impl<'a> Observed<'a> {
+    /// The public battle boundary at this exact decision, including the victory window.
+    #[must_use]
+    pub fn space_battle(&self) -> Option<(SystemId, PlayerId, PlayerId)> {
+        self.state.active_space_combat.clone()
+    }
+
+    /// The public invasion boundary at this exact decision, including nested reactions.
+    pub fn invasion(&self) -> Option<ti4_model::state::ActiveInvasion> {
+        self.state.active_invasion.clone()
+    }
+
     /// Wrap a position. Public so tests and sibling crates can build one.
     #[must_use]
     pub const fn new(
@@ -1880,8 +2040,7 @@ impl Decider for Scripted {
             return self.fallback.choose(choice);
         };
         choice
-            .option(&wanted)
-            .cloned()
+            .answer_for(&wanted)
             .ok_or_else(|| IllegalChoice::ScriptDiverged {
                 player: choice.player.clone(),
                 wanted,
@@ -1933,6 +2092,12 @@ impl Decider for Capturing {
 /// Rust versions in a way Python's is not. The same seed therefore plays a *different* legal
 /// game. Reproducing an oracle game needs its decision log replayed through [`Scripted`],
 /// or the legacy entropy translator planned in M03-007.
+///
+/// A clone continues the same stream from the same position: with [`Game::fork`] it is what a
+/// checkpoint of a game with random seats keeps.
+///
+/// [`Game::fork`]: crate::game::Game::fork
+#[derive(Clone)]
 pub struct SeededRandom {
     rng: ChaCha8Rng,
 }
@@ -1999,7 +2164,12 @@ impl DecisionLog {
             prompt: choice.prompt.clone(),
             chosen: option.id.clone(),
             offered: choice.ids().into_iter().map(str::to_owned).collect(),
-            context: choice.context.clone(),
+            // The trigger is display metadata derived from the event; a record and its fingerprint
+            // hold only what a replay needs.
+            context: choice
+                .context
+                .as_ref()
+                .map(crate::decision_context::DecisionContext::without_display_fields),
         });
     }
 
@@ -2035,14 +2205,64 @@ impl DecisionLog {
 /// let mut table = Table::with_default(Box::new(Scripted::new(vec![String::new()])));
 /// table.seat(PlayerId::new("a"), Box::new(Scripted::new(vec!["first".to_owned()])));
 /// ```
+type ObservedOffer = Box<dyn FnMut(&[DecisionRecord], &ti4_model::state::GameState) + Send>;
+
+/// Told about each decision the engine settles without asking.
+type AutoResolvedObserver = Box<dyn FnMut(&AutoResolved) + Send>;
+
 pub struct Table {
     deciders: BTreeMap<PlayerId, Box<dyn Decider>>,
     default: Box<dyn Decider>,
     pub log: DecisionLog,
+    observed_offer: Option<ObservedOffer>,
+    auto_resolved_observer: Option<AutoResolvedObserver>,
+    window_observer: Option<WindowObserver>,
+    /// Decisions settled without asking, since the last drain. Never part of the decision log.
+    auto_resolved: Vec<AutoResolved>,
     choice_failures: u64,
     last_choice_error: Option<IllegalChoice>,
     /// Identical-choice counts for the current engine step, keyed by [`choice_fingerprint`].
     asks_this_step: BTreeMap<u64, u32>,
+}
+
+/// Callback told that a reaction window opened for a seat that is not asked anything in it.
+///
+/// Arguments: the seat, the window's event type, whether it is a "when" or "after" window, the
+/// current state, and a function that publishes the decisions settled so far. The callback is
+/// presentation only: it gets no way to change the game, answer a choice, or draw from any random
+/// stream, and nothing it does is journaled.
+pub type WindowObserver = Box<
+    dyn FnMut(
+            &PlayerId,
+            &str,
+            crate::timing::Relation,
+            &ti4_model::state::GameState,
+            &mut dyn FnMut(),
+        ) + Send,
+>;
+
+/// A decision the engine settled itself because exactly one option was legal.
+///
+/// Public feedback only. It is deliberately *not* a [`DecisionRecord`]: the skipped ask is
+/// never journaled, so a replay re-derives the same lone option and the log is unchanged.
+/// It carries only what the actor was already shown (the prompt and the option's label).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AutoResolved {
+    pub player: PlayerId,
+    pub prompt: String,
+    pub option_id: String,
+    pub label: String,
+    /// Why there was nothing to decide, in a short sentence.
+    pub reason: String,
+}
+
+/// The state-carrying part of a [`Table`] (see [`Table::state`]). `Send`, unlike a table.
+#[derive(Debug, Clone)]
+pub struct TableState {
+    pub log: DecisionLog,
+    auto_resolved: Vec<AutoResolved>,
+    choice_failures: u64,
+    last_choice_error: Option<IllegalChoice>,
 }
 
 impl Default for Table {
@@ -2051,6 +2271,10 @@ impl Default for Table {
             deciders: BTreeMap::new(),
             default: Box::new(FirstOption),
             log: DecisionLog::default(),
+            observed_offer: None,
+            auto_resolved_observer: None,
+            window_observer: None,
+            auto_resolved: Vec::new(),
             choice_failures: 0,
             last_choice_error: None,
             asks_this_step: BTreeMap::new(),
@@ -2064,6 +2288,83 @@ impl Table {
         Self::default()
     }
 
+    /// Everything about this table that is game state rather than input wiring: the decision
+    /// log and the failure counters. Deciders and observation callbacks are NOT part of it.
+    ///
+    /// FORK RULE: destructured without `..`; a new `Table` field must be copied here or listed
+    /// as input wiring.
+    #[must_use]
+    pub fn state(&self) -> TableState {
+        self.state_with(true)
+    }
+
+    /// [`Table::state`] without copying the decision log (it is left empty). For a snapshot
+    /// whose holder already has the log and puts it back before stepping.
+    #[must_use]
+    pub fn state_unlogged(&self) -> TableState {
+        self.state_with(false)
+    }
+
+    fn state_with(&self, keep_log: bool) -> TableState {
+        let Self {
+            deciders: _, // input wiring: whoever answers is chosen by the caller
+            default: _,  // input wiring
+            log,
+            observed_offer: _,         // input wiring: session callbacks
+            auto_resolved_observer: _, // input wiring
+            // Bluff hook (skipped-window observer): input wiring, intentionally NOT copied, so a
+            // forked batch simulation or a replay never fires bluff holds (AGENTS.md FORK RULE).
+            window_observer: _,
+            auto_resolved,
+            choice_failures,
+            last_choice_error,
+            asks_this_step: _, // per-step scratch, cleared by `begin_step`; not game state
+        } = self;
+        TableState {
+            log: if keep_log {
+                log.clone()
+            } else {
+                DecisionLog::default()
+            },
+            auto_resolved: auto_resolved.clone(),
+            choice_failures: *choice_failures,
+            last_choice_error: last_choice_error.clone(),
+        }
+    }
+
+    /// Take over `state` (the log and counters) while keeping this table's deciders and
+    /// callbacks.
+    pub fn restore_state(&mut self, state: TableState) {
+        let TableState {
+            log,
+            auto_resolved,
+            choice_failures,
+            last_choice_error,
+        } = state;
+        self.log = log;
+        self.auto_resolved = auto_resolved;
+        self.choice_failures = choice_failures;
+        self.last_choice_error = last_choice_error;
+    }
+
+    /// A table with first-option deciders, no callbacks, and the given state.
+    #[must_use]
+    pub fn from_state(state: TableState) -> Self {
+        let TableState {
+            log,
+            auto_resolved,
+            choice_failures,
+            last_choice_error,
+        } = state;
+        Self {
+            log,
+            auto_resolved,
+            choice_failures,
+            last_choice_error,
+            ..Self::default()
+        }
+    }
+
     /// A table where everyone unassigned uses this decider.
     #[must_use]
     pub fn with_default(default: Box<dyn Decider>) -> Self {
@@ -2073,8 +2374,88 @@ impl Table {
         }
     }
 
+    /// Replace the decider that answers for every unseated player (the log is kept).
+    pub fn set_default(&mut self, decider: Box<dyn Decider>) {
+        self.default = decider;
+    }
+
     pub fn seat(&mut self, player: PlayerId, decider: Box<dyn Decider>) {
         self.deciders.insert(player, decider);
+    }
+
+    /// Notify a session when a nested offer is reached, before its decider blocks.
+    pub fn on_observed_offer(
+        &mut self,
+        callback: impl FnMut(&[DecisionRecord], &ti4_model::state::GameState) + Send + 'static,
+    ) {
+        self.observed_offer = Some(Box::new(callback));
+    }
+
+    /// Be told when a reaction window opens for a seat that has nothing to decide in it.
+    pub fn on_window_skipped(&mut self, observer: WindowObserver) {
+        self.window_observer = Some(observer);
+    }
+
+    /// Tell the observer (if any) that `player` is not asked in this window.
+    ///
+    /// Purely informational: the answer sequence, the log and the game state are untouched.
+    pub fn window_skipped(
+        &mut self,
+        player: &PlayerId,
+        event_type: &str,
+        relation: crate::timing::Relation,
+        state: &ti4_model::state::GameState,
+    ) {
+        let Some(mut observer) = self.window_observer.take() else {
+            return;
+        };
+        let records = &self.log.records;
+        let offered = &mut self.observed_offer;
+        observer(player, event_type, relation, state, &mut || {
+            if let Some(callback) = offered {
+                callback(records, state);
+            }
+        });
+        self.window_observer = Some(observer);
+    }
+
+    /// Be told, as it happens, about each decision the engine settles without asking.
+    pub fn on_auto_resolved(&mut self, callback: impl FnMut(&AutoResolved) + Send + 'static) {
+        self.auto_resolved_observer = Some(Box::new(callback));
+    }
+
+    /// Settle a choice that has exactly one option without asking anyone.
+    ///
+    /// Returns the option (flagged `auto_resolved`) and leaves a note for the actor's client.
+    /// Nothing enters the decision log, matching how these skips always behaved. `None` when
+    /// the choice has any other number of options, so the caller asks as usual.
+    pub fn auto_resolve(&mut self, choice: &Choice, reason: &str) -> Option<ChoiceOption> {
+        let option = auto_resolve_single(&choice.options)?;
+        let note = AutoResolved {
+            player: choice.player.clone(),
+            prompt: choice.prompt.clone(),
+            option_id: option.id.clone(),
+            label: if option.label.is_empty() {
+                option.id.clone()
+            } else {
+                option.label.clone()
+            },
+            reason: reason.to_owned(),
+        };
+        if let Some(observer) = &mut self.auto_resolved_observer {
+            observer(&note);
+        }
+        // Bounded: simulations never drain it.
+        if self.auto_resolved.len() >= 64 {
+            self.auto_resolved.remove(0);
+        }
+        self.auto_resolved.push(note);
+        Some(option)
+    }
+
+    /// Take the notes left by [`Table::auto_resolve`] since the last call.
+    pub fn take_auto_resolved(&mut self) -> Vec<AutoResolved> {
+        std::mem::take(&mut self.auto_resolved)
     }
 
     /// Start a new engine step: forget how often each choice was asked.
@@ -2142,6 +2523,31 @@ impl Table {
         seen: &Observed<'_>,
     ) -> Result<ChoiceOption, IllegalChoice> {
         self.count_ask(choice)?;
+        let mut associated = choice.clone();
+        if let Some(context) = associated.context.take() {
+            associated.context = Some(context.about_invasion(seen.state));
+        }
+        // A decision raised by an agenda being revealed or resolved (Veto, a rider, Confusing
+        // Legal Text, any reaction window on it) is about that card: it carries the printed agenda
+        // as display-only `details.agenda`, exactly as vote decisions do, unless the producer
+        // attached it already.
+        let trigger_agenda = associated
+            .context
+            .as_ref()
+            .and_then(|context| context.trigger.as_ref())
+            .and_then(|trigger| trigger.agenda.clone());
+        if let Some(agenda) = trigger_agenda {
+            if !associated.details.contains_key("agenda") {
+                associated.details.insert(
+                    "agenda".to_owned(),
+                    crate::strategy_cards::agenda_details(seen.content, &agenda),
+                );
+            }
+        }
+        let choice = &associated;
+        if let Some(callback) = &mut self.observed_offer {
+            callback(&self.log.records, seen.state);
+        }
         let decider = self
             .deciders
             .get_mut(&choice.player)
@@ -2163,7 +2569,8 @@ impl Table {
 
     pub(crate) fn choice_error_since(&self, checkpoint: u64) -> Option<IllegalChoice> {
         (self.choice_failures != checkpoint)
-            .then(|| self.last_choice_error.clone()).flatten()
+            .then(|| self.last_choice_error.clone())
+            .flatten()
     }
 
     fn remember_choice_error(&mut self, outcome: &Result<ChoiceOption, IllegalChoice>) {
@@ -2197,6 +2604,24 @@ where
         .into_iter()
         .map(|(id, label)| ChoiceOption::labelled(id, kind, label))
         .collect()
+}
+
+/// Auto-resolves single-option choices.
+///
+/// When exactly one legal option exists, returns it with `auto_resolved = true` set.
+/// Otherwise returns `None`, allowing the normal decision flow to proceed.
+///
+/// Used to skip meaningless decisions where the player has no real choice, improving UX
+/// by automatically selecting the only option and showing a non-blocking toast notification.
+#[must_use]
+pub fn auto_resolve_single(options: &[ChoiceOption]) -> Option<ChoiceOption> {
+    if options.len() == 1 {
+        let mut option = options[0].clone();
+        option.auto_resolved = true;
+        Some(option)
+    } else {
+        None
+    }
 }
 
 /// The first index of each distinct item, keeping the original order.
@@ -2250,9 +2675,93 @@ pub fn unit_label(verb: &str, type_id: &UnitTypeId, damaged: bool) -> String {
     format!("{verb} {type_id}{suffix}")
 }
 
+/// Assertions for the map-locating payload (`planet`, `system`) planet answers carry.
+#[cfg(test)]
+pub(crate) mod planet_payload {
+    use super::{Choice, ChoiceOption, Value};
+
+    /// The option offered under `id`, or a panic naming what was offered.
+    pub(crate) fn offered<'a>(choice: &'a Choice, id: &str) -> &'a ChoiceOption {
+        choice
+            .options
+            .iter()
+            .find(|option| option.id == id)
+            .unwrap_or_else(|| panic!("{id} not offered; got {:?}", choice.ids()))
+    }
+
+    /// `option` names `planet` in `system`.
+    pub(crate) fn assert_locates(option: &ChoiceOption, planet: &str, system: &str) {
+        assert_eq!(
+            option.payload.get("planet").and_then(Value::as_str),
+            Some(planet),
+            "planet payload of {}",
+            option.id
+        );
+        assert_eq!(
+            option.payload.get("system").and_then(Value::as_str),
+            Some(system),
+            "system payload of {}",
+            option.id
+        );
+    }
+
+    /// `option` is not a planet and says nothing about one.
+    pub(crate) fn assert_not_a_planet(option: &ChoiceOption) {
+        assert!(
+            !option.payload.contains_key("planet"),
+            "{} is not a planet but carries {:?}",
+            option.id,
+            option.payload
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `with_planet` adds `planet`/`system`, keeps keys already set, and never touches identity.
+    #[test]
+    fn with_planet_adds_location_without_overwriting_or_changing_identity() {
+        let plain = ChoiceOption::labelled("x", "planet", "X");
+        let located = plain.clone().with_planet("lodor", Some("26"));
+        assert_eq!(located, plain, "payload is not identity");
+        planet_payload::assert_locates(&located, "lodor", "26");
+
+        let kept = ChoiceOption::labelled("x", "planet", "X")
+            .with("planet", "quann")
+            .with("system", "25")
+            .with_planet("lodor", Some("26"));
+        planet_payload::assert_locates(&kept, "quann", "25");
+
+        let nowhere = ChoiceOption::labelled("x", "planet", "X").with_planet("lodor", None);
+        assert_eq!(
+            nowhere.payload.get("planet").and_then(Value::as_str),
+            Some("lodor")
+        );
+        assert!(
+            !nowhere.payload.contains_key("system"),
+            "no system invented"
+        );
+    }
+
+    /// `with_planet_located` looks the system up; an unknown planet gets no `system`.
+    #[test]
+    fn with_planet_located_finds_the_printed_tile_and_invents_nothing() {
+        let state = crate::fixtures::game(&["a"]);
+        let content = ContentStore::embedded();
+        let sources = ti4_model::content_types::POK;
+        let lodor = ChoiceOption::labelled("lodor", "planet", "lodor")
+            .with_planet_located(&state, content, sources, "lodor");
+        planet_payload::assert_locates(&lodor, "lodor", "26");
+        let ghost = ChoiceOption::labelled("ghost", "planet", "ghost").with_planet_located(
+            &state,
+            content,
+            sources,
+            "not_a_planet",
+        );
+        assert!(!ghost.payload.contains_key("system"));
+    }
 
     #[test]
     fn obs008c1_context_records_while_runtime_preview_stays_out_of_replay_identity() {
@@ -2347,6 +2856,62 @@ mod tests {
         assert!(!ChoiceOption::new("x", "action").is_decline());
         // A differently-named decline still counts.
         assert!(ChoiceOption::new("pass_window", DECLINE_KIND).is_decline());
+    }
+
+    #[test]
+    fn auto_resolve_single_resolves_single_options() {
+        let single = vec![ChoiceOption::labelled("only", "action", "Only Option")];
+        let resolved = auto_resolve_single(&single).expect("single option");
+        assert_eq!(resolved.id, "only");
+        assert!(resolved.auto_resolved, "flag should be set");
+    }
+
+    #[test]
+    fn table_auto_resolve_notes_the_lone_option_without_journaling_it() {
+        let mut table = Table::new();
+        let one = Choice::new(
+            PlayerId::new("a"),
+            "pay 1 more resources",
+            vec![ChoiceOption::labelled("tg", "pay", "trade goods")],
+        );
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = seen.clone();
+        table.on_auto_resolved(move |n| sink.lock().unwrap().push(n.clone()));
+        let option = table.auto_resolve(&one, "only way").expect("one option");
+        assert!(option.auto_resolved);
+        assert!(table.log.is_empty(), "journal must stay untouched");
+        let notes = table.take_auto_resolved();
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].label, "trade goods");
+        assert_eq!(notes[0].reason, "only way");
+        assert_eq!(seen.lock().unwrap().len(), 1);
+        assert!(table.take_auto_resolved().is_empty());
+
+        let two = Choice::new(
+            PlayerId::new("a"),
+            "p",
+            vec![
+                ChoiceOption::labelled("x", "k", "X"),
+                ChoiceOption::labelled("y", "k", "Y"),
+            ],
+        );
+        assert!(table.auto_resolve(&two, "r").is_none());
+        assert!(table.take_auto_resolved().is_empty());
+    }
+
+    #[test]
+    fn auto_resolve_single_returns_none_for_multiple_options() {
+        let multiple = vec![
+            ChoiceOption::labelled("x", "action", "Do X"),
+            ChoiceOption::labelled("y", "action", "Do Y"),
+        ];
+        assert!(auto_resolve_single(&multiple).is_none());
+    }
+
+    #[test]
+    fn auto_resolve_single_returns_none_for_empty_options() {
+        let empty: Vec<ChoiceOption> = vec![];
+        assert!(auto_resolve_single(&empty).is_none());
     }
 
     #[test]

@@ -1,0 +1,7 @@
+# /etc/systemd/system/ti4-public.slice  -- groups the playtest so its weight beats build jobs.
+[Unit]
+Description=TI4 public playtest slice
+
+[Slice]
+CPUWeight=400
+MemoryMax=6500M

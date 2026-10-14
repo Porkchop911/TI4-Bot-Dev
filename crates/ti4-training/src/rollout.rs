@@ -418,7 +418,7 @@ fn seated(
     // map learns that map, and no batch report would say so.
     let mut galaxy = match map {
         OpeningMap::RustVaried => {
-            let filler: Vec<String> = ti4_engine::seating::map_filler(content, 30, sources, seed)
+            let filler: Vec<String> = ti4_engine::seating::map_filler(content, 36, sources, seed)
                 .into_iter()
                 .map(|system| system.to_string())
                 .collect();

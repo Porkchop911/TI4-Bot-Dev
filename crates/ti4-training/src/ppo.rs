@@ -32,6 +32,9 @@ use crate::gradient::{ROUND_BUCKET, Telemetry};
 use crate::reward::{Episode, Reward, returns};
 use crate::rollout::Rollout;
 
+/// Telemetry grouped first by training faction, then by PPO head.
+pub type EpochTelemetry = BTreeMap<FactionId, BTreeMap<String, (Telemetry, ClipTelemetry)>>;
+
 /// How PPO steps, and how far it trusts a re-used batch.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct PpoStep {
@@ -493,7 +496,7 @@ pub fn update(
     rollouts: &[Rollout],
     reward: &Reward,
     step: PpoStep,
-) -> Vec<BTreeMap<FactionId, BTreeMap<String, (Telemetry, ClipTelemetry)>>> {
+) -> Vec<EpochTelemetry> {
     // Pre-pass: returns are a function of the episode, so this is computed once and every epoch
     // centres against it. Recomputing it per epoch would let the baseline drift with the policy
     // and quietly turn the advantage into something that is not an advantage.

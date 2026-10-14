@@ -1,0 +1,147 @@
+{
+  "title": "Offline saves and engine checks",
+  "description": "The IndexedDB save store and the durable feedback queue wired into the offline game: saved games list with Import, the engine-mismatch dialog (view only, try anyway, delete), the storage warning banner, feedback states and the engine label. Every shot is the real app with the real engine in a Web Worker and the real stores; calls to a server are blocked or answered by the capture where a state needs it.",
+  "tag": "web/e2e/screenshots/DP-offline-saves",
+  "shots": [
+    {
+      "file": "out/1-saved-games-desktop.png",
+      "heading": "My offline games with several games",
+      "caption": "Three real games saved in this browser's IndexedDB (4, 3 and 5 players, played a few rounds each). The new Import a game button sits next to the heading. Resume, Export and Delete as before."
+    },
+    {
+      "file": "out/1-saved-games-390x844.png",
+      "heading": "My offline games with several games on a phone",
+      "caption": "The same at 390x844."
+    },
+    {
+      "file": "out/2-import-done-desktop.png",
+      "heading": "A game imported from a file",
+      "caption": "Export wrote a file, Delete removed the game, Import a game read it back under a new id; the list shows it again with a one-line confirmation."
+    },
+    {
+      "file": "out/2-import-done-390x844.png",
+      "heading": "A game imported from a file on a phone",
+      "caption": "The same at 390x844."
+    },
+    {
+      "file": "out/3-import-refused-desktop.png",
+      "heading": "A file that is not a game",
+      "caption": "The file is checked (shape, version, size) before anything is stored. A refusal names the problem under the button and adds nothing to the list."
+    },
+    {
+      "file": "out/3-import-refused-390x844.png",
+      "heading": "A file that is not a game on a phone",
+      "caption": "The same at 390x844."
+    },
+    {
+      "file": "out/1-engine-changed-desktop.png",
+      "heading": "Saved with another version of the engine",
+      "caption": "Nothing is replayed until you choose. The dialog shows the engine the game was saved with and the one in this page (first 8 hex digits of the wasm file's sha-256, and the engine version) and what differs."
+    },
+    {
+      "file": "out/1-engine-changed-390x844.png",
+      "heading": "Saved with another version of the engine on a phone",
+      "caption": "The same at 390x844."
+    },
+    {
+      "file": "out/2-delete-confirm-desktop.png",
+      "heading": "Delete asks once more",
+      "caption": "Delete this game turns the buttons into a confirmation; Keep goes back."
+    },
+    {
+      "file": "out/2-delete-confirm-390x844.png",
+      "heading": "Delete asks once more on a phone",
+      "caption": "The same at 390x844."
+    },
+    {
+      "file": "out/3-view-only-desktop.png",
+      "heading": "View only",
+      "caption": "The game opens with the current engine, the strip says View only and which engine runs, moves are refused and nothing is written to the saved game."
+    },
+    {
+      "file": "out/3-view-only-390x844.png",
+      "heading": "View only on a phone",
+      "caption": "The same at 390x844."
+    },
+    {
+      "file": "out/1-warning-on-the-list-desktop.png",
+      "heading": "Storage warning on the list",
+      "caption": "This browser gave the page no IndexedDB (the capture removes it). Saves fall back to memory and a visible notice says games are not kept; export before closing."
+    },
+    {
+      "file": "out/1-warning-on-the-list-390x844.png",
+      "heading": "Storage warning on the list on a phone",
+      "caption": "The same at 390x844."
+    },
+    {
+      "file": "out/2-warning-above-the-game-desktop.png",
+      "heading": "Storage warning above the game",
+      "caption": "The same notice stays above the running game."
+    },
+    {
+      "file": "out/2-warning-above-the-game-390x844.png",
+      "heading": "Storage warning above the game on a phone",
+      "caption": "The same at 390x844."
+    },
+    {
+      "file": "out/1-queued-desktop.png",
+      "heading": "Feedback queued",
+      "caption": "Sent from an offline game with no connection: the strip counts it as waiting. The game goes on; the report is stored in IndexedDB."
+    },
+    {
+      "file": "out/1-queued-390x844.png",
+      "heading": "Feedback queued on a phone",
+      "caption": "The same at 390x844."
+    },
+    {
+      "file": "out/2-sent-desktop.png",
+      "heading": "Feedback sent",
+      "caption": "The server answered 200 (a duplicate:true answer counts the same): the report shows as sent for ten minutes."
+    },
+    {
+      "file": "out/2-sent-390x844.png",
+      "heading": "Feedback sent on a phone",
+      "caption": "The same at 390x844."
+    },
+    {
+      "file": "out/3-failed-with-retry-desktop.png",
+      "heading": "Feedback the server refused",
+      "caption": "A 4xx other than 408/429/401 fails at once; the strip says it could not be sent yet and offers Retry (a send that fails for network reasons is retried by itself with a growing delay)."
+    },
+    {
+      "file": "out/3-failed-with-retry-390x844.png",
+      "heading": "Feedback the server refused on a phone",
+      "caption": "The same at 390x844."
+    },
+    {
+      "file": "out/4-game-with-engine-label-desktop.png",
+      "heading": "Engine named in the strip",
+      "caption": "The strip above the game ends with engine and the first 8 hex digits of the sha-256 of the wasm file this page loaded; the same text goes into saves and feedback."
+    },
+    {
+      "file": "out/4-game-with-engine-label-390x844.png",
+      "heading": "Engine named in the strip on a phone",
+      "caption": "The same at 390x844."
+    },
+    {
+      "file": "out/5-build-footer-desktop.png",
+      "heading": "Engine named in the build footer",
+      "caption": "Back on the start screen of the same page the build footer adds the engine to the commit and protocol version."
+    },
+    {
+      "file": "out/5-build-footer-390x844.png",
+      "heading": "Engine named in the build footer on a phone",
+      "caption": "The same at 390x844."
+    }
+  ],
+  "notes": [
+    {
+      "title": "Reproduce",
+      "text": "cd web && npm run build:wasm && npm run screenshots -- DP (needs cargo with the wasm32-unknown-unknown target; TI4_WASM_FILE=<file> reuses a prebuilt engine). The captures play real games, so a run takes a few minutes."
+    },
+    {
+      "title": "What is simulated",
+      "text": "The other-engine save is made by rewriting the stored engine hash; the missing IndexedDB by removing window.indexedDB; the server answers of the feedback states by routes of the capture. Everything else is the production code path."
+    }
+  ]
+}

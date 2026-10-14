@@ -24,7 +24,7 @@ fn main() {
     for (p, f) in &factions {
         state.player_mut(p).unwrap().faction = f.clone();
     }
-    let filler: Vec<String> = ti4_engine::seating::map_filler(content, 30, DEFAULT, 0)
+    let filler: Vec<String> = ti4_engine::seating::map_filler(content, 36, DEFAULT, 0)
         .into_iter()
         .map(|s| s.to_string())
         .collect();

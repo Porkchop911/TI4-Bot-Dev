@@ -1,0 +1,18 @@
+{
+  "title": "Command Tokens",
+  "description": "The command-token panel, where a player assigns gained tokens or rearranges all their tokens across the tactic, fleet and strategy pools before confirming.",
+  "tag": "web/e2e/screenshots/I-command-tokens",
+  "shots": [
+    { "file": "out/1-redistribute-initial.png", "heading": "Redistribute: start", "caption": "Status-phase rearrangement starts from the current 3 / 4 / 2 split of nine tokens; every pip is grey (already there), Remaining is 0, Reset is disabled because nothing changed, while Confirm arrangement is already enabled (keeping the current split is a legal arrangement)." },
+    { "file": "out/2-redistribute-moving.png", "heading": "Redistribute: moving tokens", "caption": "Taking two tokens out of tactic and adding one to strategy: each pool shows its new count, removed pips are marked as moved out, the new pip as moved in, Remaining shows 1 and Confirm stays disabled with a prompt to assign one more." },
+    { "file": "out/3-redistribute-invalid.png", "heading": "Redistribute: not allowed", "caption": "All nine tokens are placed (Remaining 0) but the fleet pool holds only 1, so the arrangement is not offered: the note says to keep at least 2 in fleet and Confirm is disabled." },
+    { "file": "out/4-redistribute-valid.png", "heading": "Redistribute: ready", "caption": "One token moved from tactic to strategy gives 2 / 4 / 3: Remaining is 0, there is no warning, the pips show one moved out and one moved in, and Confirm arrangement is enabled." },
+    { "file": "out/5-gain-initial.png", "heading": "Gain: start", "caption": "Gaining three command tokens: Tokens to assign 3, Remaining 3, the three pools at their current counts with reinforcements shown, and Confirm disabled." },
+    { "file": "out/6-gain-partial.png", "heading": "Gain: partly assigned", "caption": "Two tokens placed (tactic and strategy): their counts rise and new pips appear in the newly-assigned colour, Remaining drops to 1 and Confirm is still disabled with a note." },
+    { "file": "out/7-gain-complete.png", "heading": "Gain: all assigned", "caption": "All three tokens assigned: Remaining is 0, the note is gone and Confirm tokens is enabled; the whole gain goes out as one batch." },
+    { "file": "out/8-leadership-purchase-staged.png", "heading": "Leadership: purchase staged", "caption": "Leadership primary with three free tokens and nine influence: two tokens are bought with the stepper (6 influence spent; Jord plus four trade goods, chosen like Auto-pay), so five tokens are to assign; two are placed and three remain, Confirm is disabled." },
+    { "file": "out/9-leadership-ready.png", "heading": "Leadership: ready to confirm", "caption": "All five tokens (three free, two bought) are assigned: Remaining is 0 and Confirm tokens and purchase is enabled. One batch carries the pools, the two purchases and their payments, in the order the engine asks them." },
+    { "file": "out/10-leadership-change-payment.png", "heading": "Leadership: change payment", "caption": "One token bought, then Change payment: Jord (2) and one trade good replace Auto-pay's Lodor. The editor lists each ready planet with its influence and the trade-good stepper, the account reads paid 3, owed 3, remainder 0, waste 0, and Use Auto-pay resets the choice." }
+  ],
+  "notes": []
+}

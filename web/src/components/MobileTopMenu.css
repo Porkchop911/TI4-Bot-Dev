@@ -1,0 +1,224 @@
+/* Phone top chrome: one slim status bar with a menu button, and the bottom sheet behind it. */
+
+.mobile-top-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  height: 40px;
+  padding: 0 4px 0 12px;
+  background: #0f172a;
+  border-bottom: 1px solid #1e293b;
+  color: #f8fafc;
+  font-size: 13px;
+  overflow: hidden;
+}
+.mobile-top-bar__dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.mobile-top-bar__round {
+  flex: none;
+  color: #94a3b8;
+  white-space: nowrap;
+  text-transform: capitalize;
+}
+.mobile-top-bar__banner {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+.mobile-top-bar__version {
+  flex: none;
+  color: #64748b;
+  font-size: 10px;
+}
+
+.top-menu-button {
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 40px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  color: #e2e8f0;
+  cursor: pointer;
+}
+.top-menu-button__dot {
+  position: absolute;
+  top: 6px;
+  right: 7px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2px solid #0f172a;
+  background: #f59e0b;
+}
+.top-menu-button__dot[data-kind="offline"] {
+  background: #ef4444;
+}
+.top-menu-button__dot[data-kind="turn"] {
+  background: #38bdf8;
+}
+
+.top-menu-sheet {
+  max-height: min(85dvh, 640px);
+  border-radius: 14px 14px 0 0;
+  border-top: 1px solid var(--color-border-strong, #334155);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.top-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 8px 14px 14px;
+}
+.top-menu__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.top-menu__title {
+  font-size: 15px;
+  font-weight: 700;
+}
+.top-menu .button,
+.top-menu__slot .button {
+  min-height: 44px;
+  height: 44px !important;
+  min-width: 44px;
+}
+.top-menu__close {
+  padding: 0 18px;
+}
+.top-menu__status {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+  color: #cbd5e1;
+}
+.top-menu__status-line {
+  font-weight: 700;
+  color: #38bdf8;
+}
+.top-menu__status-line[data-you="true"] {
+  color: #fcd34d;
+}
+.top-menu__status-facts {
+  color: #94a3b8;
+}
+.top-menu__slot {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.top-menu__slot:empty {
+  display: none;
+}
+.top-menu__section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.top-menu__section > h3 {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+.top-menu__slot .map-overlay-toolbar {
+  flex-wrap: wrap;
+  padding: 4px;
+}
+.top-menu__slot .map-overlay-toolbar > div[aria-hidden="true"] {
+  display: none;
+}
+.top-menu__slot .board-controls {
+  flex-wrap: nowrap;
+}
+.top-menu__slot .board-controls .button--icon {
+  width: 56px;
+  height: 44px !important;
+  font-size: 20px !important;
+}
+.top-menu__slot .board-seat-legend {
+  pointer-events: auto;
+}
+.top-menu__links {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+/* A short landscape screen: two columns (status and links | map controls) so the sheet needs no scrolling. */
+@media (max-height: 500px) {
+  .top-menu-sheet {
+    max-height: calc(100dvh - 8px);
+  }
+  .top-menu {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    grid-template-areas:
+      "head head"
+      "status slot"
+      "links slot";
+    align-items: start;
+    column-gap: 20px;
+  }
+  .top-menu__head {
+    grid-area: head;
+  }
+  .top-menu__status {
+    grid-area: status;
+  }
+  .top-menu__slot {
+    grid-area: slot;
+  }
+  .top-menu__links {
+    grid-area: links;
+  }
+}
+
+/* The board's toolbar row on a phone holds only the secondary-prepare chip, when there is one. */
+.board-chrome.board-chrome--compact {
+  min-height: 0;
+  padding: 0;
+  gap: 0;
+}
+.board-chrome.board-chrome--compact:has(.board-chrome__prep > *) {
+  padding: 4px 8px;
+}
+
+.top-menu__layout {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+}
+.top-menu__layout-label {
+  flex: 1;
+  font-size: 13px;
+  color: #94a3b8;
+}
+.top-menu__layout-choice {
+  min-height: 44px;
+  min-width: 44px;
+}
+.top-menu__layout-choice.is-active {
+  border-color: #60a5fa;
+  background: rgba(96, 165, 250, 0.2);
+}

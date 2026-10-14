@@ -1,0 +1,25 @@
+{
+  "title": "Phone layout in desktop-site mode",
+  "description": "A phone that asks for the desktop site (Chrome / Safari 'Request desktop site') lays the page out about 980 px wide, so the (max-width: 720px) media queries never matched: no slim top bar, no minimize pills, 32 px buttons. The layout is now decided once in script (useCompactLayout.ts): compact when the viewport is phone sized (as before), OR the device is touch only (pointer coarse + hover none, or touch points with no fine pointer) with a physical screen whose short side is 600 px or less, OR the manual override says so. The decision is mirrored on <html data-layout> (and data-layout-forced when the viewport is wide) and a build-time PostCSS step repeats every phone @media block under :where(:root[data-layout-forced]), so every phone rule applies in desktop-site mode too. iPads (short side 744 px and up) and mouse desktops keep the desktop layout. Menu > Layout (Auto / Phone / Desktop) and ?layout=compact|desktop|auto override the decision. The before shots force the desktop layout, which is what the phone got before. Decision dialogs were already minimizable everywhere (the control is script driven, not media-query driven); what was missing in desktop-site mode was the 44 px size and the phone chrome. Synthetic fixtures through a mocked server, emulated devices (980x2121 layout viewport, 390x844 screen, coarse pointer, no hover).",
+  "tag": "web/e2e/screenshots/BN-phone-detection",
+  "shots": [
+    { "file": "before/before-desktop-site-your-turn.png", "heading": "Before: phone with desktop site, your turn", "caption": "Desktop layout at 980 px: three-line header, toolbar rows, text that is tiny on a 390 px screen." },
+    { "file": "out/after-desktop-site-your-turn.png", "heading": "After: phone with desktop site, your turn", "caption": "Slim 40 px bar with the amber menu dot, the map directly under it, the action pane with the fold button." },
+    { "file": "before/before-desktop-site-waiting.png", "heading": "Before: desktop site, waiting", "caption": "Desktop header and toolbars." },
+    { "file": "out/after-desktop-site-waiting.png", "heading": "After: desktop site, waiting", "caption": "40 px bar with 'Waiting' status." },
+    { "file": "before/before-desktop-site-decision.png", "heading": "Before: desktop site, a pending decision", "caption": "The decision dialog (32 px minimize button) covers the screen." },
+    { "file": "out/after-desktop-site-decision.png", "heading": "After: desktop site, a pending decision", "caption": "Dialog with the 44 px minimize button over the compact layout." },
+    { "file": "before/before-choice-open-desktop-site.png", "heading": "Before: choice dialog open, desktop site", "caption": "Minimize button is 32x32 px." },
+    { "file": "out/after-choice-open-desktop-site.png", "heading": "After: choice dialog open, desktop site", "caption": "Minimize button is 44x44 px." },
+    { "file": "before/before-choice-minimized-desktop-site.png", "heading": "Before: choice minimized, desktop site", "caption": "Pill at the bottom." },
+    { "file": "out/after-choice-minimized-desktop-site.png", "heading": "After: choice minimized, desktop site", "caption": "The whole map is visible and tappable; the pill ('Resume decision') brings the dialog back and it stays minimized until a new decision arrives." },
+    { "file": "out/after-mobile-your-turn.png", "heading": "After: real phone viewport (390x844)", "caption": "Unchanged: same compact layout as before." },
+    { "file": "out/after-mobile-landscape-your-turn.png", "heading": "After: real phone landscape (844x390)", "caption": "Unchanged." },
+    { "file": "out/after-choice-minimized-mobile.png", "heading": "After: choice minimized on a phone", "caption": "Same pill." },
+    { "file": "out/after-ipad-your-turn.png", "heading": "After: iPad 820x1180 (touch)", "caption": "Tablets keep the desktop layout: short screen side 820 px is above the 600 px phone limit." },
+    { "file": "out/after-desktop-your-turn.png", "heading": "After: desktop 1440x900 with a mouse", "caption": "Unchanged desktop layout." },
+    { "file": "out/after-choice-open-desktop.png", "heading": "After: desktop choice dialog", "caption": "Desktop keeps its 32 px minimize button (mouse); minimize works there as well." },
+    { "file": "out/after-menu-layout-desktop-site.png", "heading": "Menu > Layout", "caption": "Auto / Phone / Desktop; the choice is stored in localStorage (ti4.layout.v1) and wins over the detection." },
+    { "file": "out/after-override-compact-desktop.png", "heading": "?layout=compact on a 1440x900 desktop", "caption": "The URL parameter stores the override and is removed from the address; ?layout=auto clears it." }
+  ]
+}

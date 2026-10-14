@@ -13,7 +13,6 @@ use ti4_model::state::GameState;
 
 use crate::choice::Observed;
 use crate::decision_context::{DecisionContext, DecisionSource};
-use crate::objectives::VICTORY_TARGET;
 use crate::preview::{Delta, Preview, Quantity};
 
 /// The Circlet of the Void: its owner's units do not roll for gravity rifts.
@@ -259,9 +258,7 @@ fn the_silver_flame(
         .unwrap_or(0);
     purge(state, player, relic);
     if roll == 10 {
-        if let Some(seat) = state.player_mut(player) {
-            seat.victory_points = (seat.victory_points + 1).min(VICTORY_TARGET);
-        }
+        crate::objectives::adjust_victory_points(state, player, 1, relic.as_str());
         return Used::Purged {
             relic: relic.clone(),
         };
@@ -478,12 +475,13 @@ fn stellar_converter(
     }
     let options: Vec<crate::choice::ChoiceOption> = targets
         .iter()
-        .map(|(_, planet)| {
+        .map(|(system, planet)| {
             crate::choice::ChoiceOption::labelled(
                 planet.to_string(),
                 "planet",
                 format!("destroy {planet}"),
             )
+            .with_planet(planet.as_str(), Some(system.as_str()))
         })
         .collect();
     let choice = crate::choice::Choice::new(
@@ -659,6 +657,7 @@ pub fn crown_of_emphidia_explore_with(
                 "planet",
                 format!("explore {planet}"),
             )
+            .with_planet_located(state, content, sources, planet.as_str())
         })
         .chain(std::iter::once(crate::choice::ChoiceOption::decline()))
         .collect();
@@ -718,9 +717,7 @@ pub fn crown_of_emphidia_point(state: &mut GameState, player: &PlayerId) -> bool
         return false;
     }
     purge(state, player, &RelicId::new("emphidia"));
-    if let Some(seat) = state.player_mut(player) {
-        seat.victory_points = (seat.victory_points + 1).min(VICTORY_TARGET);
-    }
+    crate::objectives::adjust_victory_points(state, player, 1, "emphidia");
     true
 }
 
@@ -935,15 +932,18 @@ pub const SHARD: &str = "shard";
 /// point the moment it arrives: the Shard was worth nothing when exploration drew it straight
 /// off the deck, and would have been worth nothing again for the next path written.
 pub fn gain(state: &mut GameState, player: &PlayerId) -> Option<RelicId> {
-    let top = state.relic_deck.first().cloned()?; // 73.2a: an empty deck yields nothing
-    state.relic_deck.remove(0);
+    // 73.2a: an empty deck yields nothing
+    let top = ti4_model::deck_reserve::take_top(
+        &mut state.deck_reserve,
+        "relic",
+        &mut state.relic_deck,
+        Some(player.as_str()),
+    )?;
     if let Some(seat) = state.player_mut(player) {
         seat.relics.push(top.clone());
     }
-    if top.as_str() == SHARD
-        && let Some(seat) = state.player_mut(player)
-    {
-        seat.victory_points = (seat.victory_points + 1).min(VICTORY_TARGET);
+    if top.as_str() == SHARD && state.player(player).is_some() {
+        crate::objectives::adjust_victory_points(state, player, 1, SHARD);
     }
     Some(top)
 }
@@ -1051,9 +1051,7 @@ pub fn use_relic(
         "bookoflatvinia" => {
             // All four specialties gains a victory point; otherwise the speaker token.
             if controls_all_four_specialties(state, content, sources, player) {
-                if let Some(seat) = state.player_mut(player) {
-                    seat.victory_points = (seat.victory_points + 1).min(VICTORY_TARGET);
-                }
+                crate::objectives::adjust_victory_points(state, player, 1, "bookoflatvinia");
             } else {
                 state.speaker = player.clone();
             }
@@ -1175,9 +1173,9 @@ pub fn perform(
         let gained = crate::exploration::purge_for_relic(state, player, trait_name);
         if let (Some(relic), Some(_)) = (gained.as_ref(), before)
             && relic.as_str() == SHARD
-            && let Some(seat) = state.player_mut(player)
+            && state.player(player).is_some()
         {
-            seat.victory_points = (seat.victory_points + 1).min(VICTORY_TARGET);
+            crate::objectives::adjust_victory_points(state, player, 1, SHARD);
         }
         return gained.is_some();
     }
@@ -1379,6 +1377,73 @@ mod tests {
     /// nothing left to take, so an invader who lands there afterwards gains nothing. A version that
     /// only cleared the current occupants would pass a units-are-gone check and still let the next
     /// player take the planet on the following turn.
+    /// Stellar Converter's targets and the Crown of Emphidia's planets carry `planet` +
+    /// `system`; the Crown's decline does not.
+    #[test]
+    fn relic_planet_options_carry_planet_and_system_payloads() {
+        use crate::choice::planet_payload::{assert_locates, assert_not_a_planet, offered};
+        let content = ti4_content::ContentStore::embedded();
+        let sources = ti4_model::content_types::DEFAULT;
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        let attacker = PlayerId::new("a");
+        let (target_system, target) = an_ordinary_planet();
+        let hub = crate::fixtures::hub_with_outer(target_system.as_str());
+        let centre = ti4_model::id::SystemId::new(&hub.centre);
+        for id in std::iter::once(&hub.centre).chain(hub.outer.iter()) {
+            state
+                .board
+                .entry(ti4_model::id::SystemId::new(id))
+                .or_default();
+        }
+        crate::fixtures::put(&mut state, &centre, "dreadnought", &attacker, 1);
+        let (decider, seen) = crate::choice::Capturing::new(Box::new(crate::choice::FirstOption));
+        let mut table = crate::choice::Table::with_default(Box::new(decider));
+        assert!(stellar_converter(
+            &mut state,
+            content,
+            sources,
+            &mut table,
+            Some(&hub.galaxy),
+            &attacker,
+        ));
+        let choice = &seen.borrow()[0];
+        assert_eq!(
+            choice.context.as_ref().unwrap().subtype,
+            "stellar_converter_choose_target"
+        );
+        assert_locates(
+            offered(choice, target.as_str()),
+            target.as_str(),
+            target_system.as_str(),
+        );
+        for option in &choice.options {
+            assert!(
+                option.payload.contains_key("system"),
+                "{} located",
+                option.id
+            );
+        }
+
+        let mut state = crate::fixtures::game(&["a"]);
+        state.player_mut(&attacker).unwrap().relics = vec![RelicId::new("emphidia")];
+        for (system, planet) in [("26", "lodor"), ("28", "torkan")] {
+            state
+                .system_mut(&ti4_model::id::SystemId::new(system))
+                .set_control(ti4_model::id::PlanetId::new(planet), attacker.clone());
+        }
+        let (decider, seen) = crate::choice::Capturing::new(Box::new(crate::choice::AlwaysDecline));
+        let mut table = crate::choice::Table::with_default(Box::new(decider));
+        crown_of_emphidia_explore(&mut state, content, sources, &mut table, None, &attacker);
+        let choice = &seen.borrow()[0];
+        assert_eq!(
+            choice.context.as_ref().unwrap().subtype,
+            "crown_of_emphidia_choose_planet"
+        );
+        assert_locates(offered(choice, "lodor"), "lodor", "26");
+        assert_locates(offered(choice, "torkan"), "torkan", "28");
+        assert_not_a_planet(offered(choice, crate::choice::DECLINE_ID));
+    }
+
     #[test]
     fn the_stellar_converter_destroys_a_planet_for_good() {
         let content = ti4_content::ContentStore::embedded();

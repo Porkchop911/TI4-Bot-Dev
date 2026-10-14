@@ -319,6 +319,34 @@ fn resolve_copy(
     ) else {
         return Ok(());
     };
+    // Display only: each candidate by unit and place, with whose it is.
+    let captions: Vec<(String, serde_json::Value)> = plan
+        .candidates
+        .iter()
+        .map(|target| {
+            let place = target.planet.as_ref().map_or_else(
+                || "In the fleet".to_owned(),
+                |planet| {
+                    let name = ti4_content::galaxy::planet(
+                        context.content,
+                        planet.as_str(),
+                        context.sources,
+                    )
+                    .and_then(|record| record.name())
+                    .unwrap_or(planet.as_str());
+                    format!("On {name}")
+                },
+            );
+            (
+                target_id(target),
+                crate::choice::offer_caption_for_seat(
+                    &format!("{} · {place}", target.unit_type),
+                    Some(&format!("Unit {} of that kind there", target.index + 1)),
+                    target.owner.as_str(),
+                ),
+            )
+        })
+        .collect();
     let options = plan
         .candidates
         .iter()
@@ -345,6 +373,18 @@ fn resolve_copy(
         borrower.clone(),
         format!("Ssruu copying {source_agent}: choose one unit for +1 combat die"),
         options,
+    )
+    .offered(
+        crate::strategy_cards::leader_card(
+            context.content,
+            source_agent,
+            "agent (copied by Ssruu)",
+        ),
+        Vec::new(),
+        &captions
+            .iter()
+            .map(|(id, caption)| (id.as_str(), caption.clone()))
+            .collect::<Vec<_>>(),
     )
     .contextualized(DecisionContext::new(
         borrower.clone(),
@@ -709,6 +749,70 @@ mod tests {
             LeaderStatus::Readied,
         );
         assert!(invalid.faction_marks.is_empty());
+    }
+
+    /// The unit question is an offer card: the copied agent as printed and one caption per
+    /// candidate unit with its place and owner (display only; the option ids are unchanged).
+    #[test]
+    fn the_copied_agent_unit_question_is_an_offer_card() {
+        let (mut state, system, planet) = test_state();
+        let ability_id = abilities(&state)
+            .into_iter()
+            .find(|ability| ability.id.contains(LETNEV_AGENT))
+            .expect("Letnev source has a fixed copy slot")
+            .id;
+        let target = target_id(&UnitTarget {
+            owner: PlayerId::new("c"),
+            unit_type: UnitTypeId::new("cruiser"),
+            planet: None,
+            sustained_damage: false,
+            galvanized: false,
+            index: 0,
+        });
+        let event = event(LETNEV_AGENT, &system, &planet, state.combat_round_seq);
+        let mut resolver = crate::timing::Resolver::new(
+            vec![PlayerId::new("a"), PlayerId::new("b"), PlayerId::new("c")],
+            Some(PlayerId::new("a")),
+            crate::choice::Table::new(),
+        );
+        resolver.register(abilities(&state));
+        let (decider, seen) =
+            crate::choice::Capturing::new(Box::new(crate::choice::Scripted::new([
+                ability_id,
+                target.clone(),
+            ])));
+        let mut table = crate::choice::Table::with_default(Box::new(decider));
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(0);
+        let mut event_sequence = crate::event::EventSequence::new();
+        let mut context = TimingContext {
+            state: &mut state,
+            content: ContentStore::embedded(),
+            sources: POK,
+            table: &mut table,
+            dice: &mut dice,
+            rng: &mut rng,
+            event_sequence: &mut event_sequence,
+            galaxy: None,
+        };
+        resolver
+            .emit_with_context(&mut context, event, |_, _| {})
+            .expect("the copy resolves");
+        let asked = seen.borrow();
+        let offer = asked
+            .iter()
+            .find(|choice| {
+                choice
+                    .context
+                    .as_ref()
+                    .is_some_and(|context| context.subtype == "leader_ssruu_round_agent_unit")
+            })
+            .expect("the unit question was asked");
+        assert_eq!(offer.details["kind"], "offer");
+        assert_eq!(offer.details["card"]["tag"], "agent (copied by Ssruu)");
+        let caption = &offer.details["captions"][target.as_str()];
+        assert_eq!(caption["label"], "cruiser · In the fleet");
+        assert_eq!(caption["seat"], "c");
     }
 
     #[test]

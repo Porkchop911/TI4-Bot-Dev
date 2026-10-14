@@ -78,6 +78,7 @@ fn config() -> SimulationConfig {
         temperature: TEMPERATURE,
         diplomacy: false,
         lineup: None,
+        rule_seats: Vec::new(),
     }
 }
 

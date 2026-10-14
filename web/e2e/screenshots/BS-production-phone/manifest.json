@@ -1,0 +1,132 @@
+{
+ "title": "Production on a phone: one column and the total up front",
+ "description": "The production builder and its payment step on phones (390x844, 360x740, 844x390, desktop-site) in one scrolling column of 44 px rows, and the total cost of everything staged shown on the first dialog (sticky footer: total, builds, per-build costs, cost reduction, availability, 'Build (N)') and repeated on the payment panel. Before shots from the commit before the change. Synthetic fixtures through a mocked server.",
+ "tag": "web/e2e/screenshots/BS-production-phone",
+ "shots": [
+  {
+   "file": "before/before-1-builder-390x844.png",
+   "heading": "Before: builder with 2 cruisers + carrier staged, phone 390x844",
+   "caption": "Unit cards in two columns on wide phone layouts; no total, 'Confirm builds'."
+  },
+  {
+   "file": "out/after-1-builder-390x844.png",
+   "heading": "After: builder with 2 cruisers + carrier staged, phone 390x844",
+   "caption": "One column on phones; sticky footer shows 'Total: 7 resources \u2014 3 builds', per-build costs, 'You have 9 available \u00b7 2 left' and 'Build (7)'."
+  },
+  {
+   "file": "before/before-1-builder-360x740.png",
+   "heading": "Before: builder with 2 cruisers + carrier staged, phone 360x740",
+   "caption": "Unit cards in two columns on wide phone layouts; no total, 'Confirm builds'."
+  },
+  {
+   "file": "out/after-1-builder-360x740.png",
+   "heading": "After: builder with 2 cruisers + carrier staged, phone 360x740",
+   "caption": "One column on phones; sticky footer shows 'Total: 7 resources \u2014 3 builds', per-build costs, 'You have 9 available \u00b7 2 left' and 'Build (7)'."
+  },
+  {
+   "file": "before/before-1-builder-844x390.png",
+   "heading": "Before: builder with 2 cruisers + carrier staged, phone landscape 844x390",
+   "caption": "Unit cards in two columns on wide phone layouts; no total, 'Confirm builds'."
+  },
+  {
+   "file": "out/after-1-builder-844x390.png",
+   "heading": "After: builder with 2 cruisers + carrier staged, phone landscape 844x390",
+   "caption": "One column on phones; sticky footer shows 'Total: 7 resources \u2014 3 builds', per-build costs, 'You have 9 available \u00b7 2 left' and 'Build (7)'."
+  },
+  {
+   "file": "before/before-1-builder-desktop-site.png",
+   "heading": "Before: builder with 2 cruisers + carrier staged, desktop-site mode (980 px layout on a phone)",
+   "caption": "Unit cards in two columns on wide phone layouts; no total, 'Confirm builds'."
+  },
+  {
+   "file": "out/after-1-builder-desktop-site.png",
+   "heading": "After: builder with 2 cruisers + carrier staged, desktop-site mode (980 px layout on a phone)",
+   "caption": "One column on phones; sticky footer shows 'Total: 7 resources \u2014 3 builds', per-build costs, 'You have 9 available \u00b7 2 left' and 'Build (7)'."
+  },
+  {
+   "file": "before/before-1-builder-desktop.png",
+   "heading": "Before: builder with 2 cruisers + carrier staged, desktop",
+   "caption": "Unit cards in two columns on wide phone layouts; no total, 'Confirm builds'."
+  },
+  {
+   "file": "out/after-1-builder-desktop.png",
+   "heading": "After: builder with 2 cruisers + carrier staged, desktop",
+   "caption": "Desktop keeps two columns; the total is added to the footer."
+  },
+  {
+   "file": "before/before-3-payment-390x844.png",
+   "heading": "Before: payment step (one payment for 3 cruisers), phone 390x844",
+   "caption": "Payment panel without the builder's total."
+  },
+  {
+   "file": "out/after-3-payment-390x844.png",
+   "heading": "After: payment step (one payment for 3 cruisers), phone 390x844",
+   "caption": "Planet rows in one column of 44 px rows, 'Total: 6 resources \u2014 3 builds' repeats the builder's total, Pay reachable."
+  },
+  {
+   "file": "before/before-3-payment-360x740.png",
+   "heading": "Before: payment step (one payment for 3 cruisers), phone 360x740",
+   "caption": "Payment panel without the builder's total."
+  },
+  {
+   "file": "out/after-3-payment-360x740.png",
+   "heading": "After: payment step (one payment for 3 cruisers), phone 360x740",
+   "caption": "Planet rows in one column of 44 px rows, 'Total: 6 resources \u2014 3 builds' repeats the builder's total, Pay reachable."
+  },
+  {
+   "file": "before/before-3-payment-844x390.png",
+   "heading": "Before: payment step (one payment for 3 cruisers), phone landscape 844x390",
+   "caption": "Payment panel without the builder's total."
+  },
+  {
+   "file": "out/after-3-payment-844x390.png",
+   "heading": "After: payment step (one payment for 3 cruisers), phone landscape 844x390",
+   "caption": "Planet rows in one column of 44 px rows, 'Total: 6 resources \u2014 3 builds' repeats the builder's total, Pay reachable."
+  },
+  {
+   "file": "before/before-3-payment-desktop-site.png",
+   "heading": "Before: payment step (one payment for 3 cruisers), desktop-site mode (980 px layout on a phone)",
+   "caption": "Payment panel without the builder's total."
+  },
+  {
+   "file": "out/after-3-payment-desktop-site.png",
+   "heading": "After: payment step (one payment for 3 cruisers), desktop-site mode (980 px layout on a phone)",
+   "caption": "Planet rows in one column of 44 px rows, 'Total: 6 resources \u2014 3 builds' repeats the builder's total, Pay reachable."
+  },
+  {
+   "file": "before/before-3-payment-desktop.png",
+   "heading": "Before: payment step (one payment for 3 cruisers), desktop",
+   "caption": "Payment panel without the builder's total."
+  },
+  {
+   "file": "out/after-3-payment-desktop.png",
+   "heading": "After: payment step (one payment for 3 cruisers), desktop",
+   "caption": "Desktop unchanged apart from the repeated total."
+  },
+  {
+   "file": "before/before-1-builder-390x844-ask-each.png",
+   "heading": "Before: builder, ask-each mode, phone",
+   "caption": "No total."
+  },
+  {
+   "file": "out/after-1-builder-390x844-ask-each.png",
+   "heading": "After: builder, ask-each mode, phone",
+   "caption": "Total with 'Each build asks for its own payment.'"
+  },
+  {
+   "file": "before/before-3-payment-390x844-ask-each.png",
+   "heading": "Before: payment, ask-each mode, phone",
+   "caption": "One build's payment."
+  },
+  {
+   "file": "out/after-3-payment-390x844-ask-each.png",
+   "heading": "After: payment, ask-each mode, phone",
+   "caption": "One build's payment: no whole-production total line."
+  },
+  {
+   "file": "out/after-4-so-far-390x844.png",
+   "heading": "After: builds already sent",
+   "caption": "After two cruisers were built and paid, one more staged: 'Total so far: 2 resources \u2014 1 build' (covers the new builds only)."
+  }
+ ]
+}

@@ -1,0 +1,6 @@
+node_modules/
+dist/
+test-results/
+shots/
+# The engine, built by scripts/build-wasm.sh.
+src/session/ti4.wasm

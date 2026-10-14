@@ -1,0 +1,51 @@
+{
+  "title": "Secret Objective Progress",
+  "description": "Your own secret objectives now show how far along you are, like the public objectives do: have / threshold, what counts, and a bar (green once met). Shown on the player sheet's private hand and in the Objectives dialog (which now lists your secrets outside the scoring window too). Secrets met by an event (Prove Endurance, Destroy Their Greatest Ship, ...) get a note instead of a bar. Mocked fixtures; regenerate with npm run screenshots -- CN.",
+  "tag": "web/e2e/screenshots/CN-secret-objective-progress",
+  "shots": [
+    {
+      "file": "out/1-player-sheet-desktop.png",
+      "heading": "Player sheet, desktop",
+      "caption": "The private hand in the sidebar: Control the Region 4 / 6 systems with at least one of your ships; Establish a Perimeter met (4 / 4 PDS); Hoard Raw Materials 9 / 12 resources; Prove Endurance is event-based, so a note and no bar."
+    },
+    {
+      "file": "out/1-player-sheet-390x844.png",
+      "heading": "Player sheet, 390x844",
+      "caption": "Same in the phone Players drawer; no horizontal scroll."
+    },
+    {
+      "file": "out/2-objectives-desktop.png",
+      "heading": "Objectives dialog, desktop",
+      "caption": "Under the public objectives, a Your Secret Objectives section; each secret's progress line sits in its card, under the condition."
+    },
+    {
+      "file": "out/2-objectives-390x844.png",
+      "heading": "Objectives dialog, 390x844",
+      "caption": "Opened from the phone Objectives button. The progress is in the card column, so it is on screen although the player columns scroll sideways."
+    },
+    {
+      "file": "out/3-scoring-desktop.png",
+      "heading": "Scoring window, desktop",
+      "caption": "Establish a Perimeter is offered; the other held secrets show their progress beside 'not scoreable now'."
+    },
+    {
+      "file": "out/3-scoring-390x844.png",
+      "heading": "Scoring window, 390x844",
+      "caption": "Same on a phone."
+    }
+  ],
+  "notes": [
+    {
+      "title": "Where the numbers come from",
+      "text": "The server adds secret_objective_progress to the viewing seat's own PlayerView, computed by ti4_engine::secrets::progress: the same counting helpers the secret requirements use (counting_progress and remaining_position_progress), so a full bar means the card is legal to score, timing aside. Display-only: not in canonical() or the fingerprint; no rule or option id changed."
+    },
+    {
+      "title": "Privacy",
+      "text": "Computed only for ViewerRole::Player(seat) and only for that seat's own hand, from that seat's redacted state. Opponents and spectators get no field at all, even for secrets Search Warrant turned face up; covered by projection_redaction.rs. The checked-in actor/opponent/spectator fixtures are unchanged."
+    },
+    {
+      "title": "Coverage",
+      "text": "27 of the 40 secrets have a count: ctr, eap, fwm, gamf, faa, mrm, mp, mlp, mtm, otf, csl, dhw, fsn, sb, lsc, te, fc, dfat, btgk, ans, dp, syc, pem, sai, ose, eh, hrm (lsc, te and fc need the map). The 13 event secrets (baf, bam, btv, dtd, dtgs, dts, dyp, fwp, mew, pe, sar, ttfd, uf) have no running count and show a note."
+    }
+  ]
+}

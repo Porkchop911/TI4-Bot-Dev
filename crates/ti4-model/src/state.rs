@@ -81,6 +81,26 @@ impl TokenPool {
     pub const ALL: [Self; 3] = [Self::Tactic, Self::Fleet, Self::Strategic];
 }
 
+/// How a player wants to handle a specific reaction card during a game (M06-016).
+/// Resets at the start of each new game.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReactionMode {
+    /// Card is offered normally (default behavior).
+    Always,
+    /// Card is automatically declined without player interaction.
+    Never,
+    /// Offered on the turns of the seat only: declined while another seat is the active player
+    /// of the action phase.
+    OwnTurn,
+}
+
+impl Default for ReactionMode {
+    fn default() -> Self {
+        Self::Always
+    }
+}
+
 /// Something a seat *did*, as opposed to something a seat *has*.
 ///
 /// Thirteen secret objectives are written against an event rather than a position — "destroy
@@ -357,6 +377,10 @@ pub struct Player {
     pub exhausted_technologies: BTreeSet<TechnologyId>,
     /// Action cards in hand (LRR 2.3). Ordered, since cards are chosen by index.
     pub action_cards: Vec<ActionCardId>,
+    /// Player preferences for reaction card playback: Always or Never. Resets each game.
+    /// Cards not in this map default to Always.
+    #[serde(default)]
+    pub reaction_card_modes: BTreeMap<ActionCardId, ReactionMode>,
     /// The faction breakthrough, once earned from the Thunder's Edge expedition.
     pub breakthrough: Option<BreakthroughId>,
     /// Relic fragments by trait, awaiting purge for a relic (LRR 35.9). Not compared.
@@ -671,6 +695,7 @@ impl Player {
             technologies: BTreeSet::new(),
             exhausted_technologies: BTreeSet::new(),
             action_cards: Vec::new(),
+            reaction_card_modes: BTreeMap::new(),
             breakthrough: None,
             relic_fragments: BTreeMap::new(),
             relics: Vec::new(),
@@ -984,6 +1009,38 @@ impl RerollEntry {
     }
 }
 
+/// A combat die roll recorded during an active combat round.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CombatRollRecord {
+    pub player: PlayerId,
+    pub unit: String,
+    pub roll: u32,
+    pub target: u32,
+    pub hit: bool,
+}
+
+/// Public, in-flight space combat evidence. `round_start` includes damage already present
+/// before this round; comparing it to the board reveals new damage and destroyed ships.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CombatPresentation {
+    pub battle_seq: u32,
+    pub phase: String,
+    pub round: u32,
+    pub round_start: Vec<Unit>,
+    pub barrage_start: Vec<Unit>,
+    pub barrage_hits: BTreeMap<PlayerId, u32>,
+    pub barrage_dice: Vec<CombatRollRecord>,
+    pub remaining_hits: BTreeMap<PlayerId, usize>,
+}
+
+impl CombatPresentation {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self == &Self::default()
+    }
+}
+
 /// Turn-flow flags set by a reaction card and consumed by the turn driver at the next
 /// boundary. A `u8` bitfield rather than bool fields: `GameState` is already at the three-
 /// bool limit the lints allow, and these four flags live and die together inside
@@ -1022,6 +1079,47 @@ impl TransientFlags {
     pub fn clear(&mut self, flag: u8) {
         self.0 &= !flag;
     }
+}
+
+/// Public invasion boundary, independent of whichever nested choice is currently offered.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InvasionDie {
+    pub planet: PlanetId,
+    pub player: PlayerId,
+    /// Ground pools are named by combat threshold, not by an individual unit.
+    pub group: String,
+    pub face: u32,
+    pub target: u32,
+    pub hit: bool,
+}
+
+/// The latest resolved, planet-local automatic step. Survives cleared reroll staging.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InvasionStep {
+    pub planet: PlanetId,
+    pub kind: String,
+    pub round: u32,
+    pub before: Vec<Unit>,
+    pub after: Vec<Unit>,
+    pub dice: Vec<InvasionDie>,
+    pub hits: BTreeMap<PlayerId, usize>,
+    /// Additional end-of-round bombardment hits, separate from simultaneous ground rolls.
+    #[serde(default)]
+    pub harrow_hits: usize,
+}
+
+/// Public invasion boundary, independent of whichever nested choice is currently offered.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActiveInvasion {
+    pub system: SystemId,
+    pub invader: PlayerId,
+    pub seq: u64,
+    pub phase: String,
+    pub planet: Option<PlanetId>,
+    pub defender: Option<PlayerId>,
+    pub ground_round: u32,
+    #[serde(default)]
+    pub last_step: Option<InvasionStep>,
 }
 
 /// The whole game, as a value.
@@ -1109,6 +1207,15 @@ pub struct GameState {
     /// no rule reads it, so it is not compared.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub exploration_log: Vec<ExplorationRecord>,
+    /// Set when this game's recorded decisions name Enigmatic Device actions in the old
+    /// per-technology form (`play_area:<card>:<tech>`), so a replay keeps offering that form and
+    /// reproduces the recorded offers. Never set for a new game. Not compared.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub legacy_device_ids: bool,
+    /// Every agenda vote that finished, in order, and how it came out. History for viewers (the
+    /// corner notification "Agenda: ... For wins"); no rule reads it, so it is not compared.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub agenda_log: Vec<AgendaRecord>,
     pub relic_deck: Vec<RelicId>,
     pub agenda_deck: Vec<String>,
     pub action_card_deck: Vec<ActionCardId>,
@@ -1186,6 +1293,11 @@ pub struct GameState {
     /// position -- `Game` owns it, not the state.
     #[serde(default)]
     pub rng_seed: u64,
+    /// Card identity across a redone timeline (turn redo). Only a redo replay sets it; `None`
+    /// in every normal game, where draws are plain front-of-deck removals. Not serialized and
+    /// not compared: it steers *which* card a draw takes, it is not part of the position.
+    #[serde(skip)]
+    pub deck_reserve: Option<crate::deck_reserve::DeckReserve>,
     /// Planets placed onto a tile during play, mapped to the system they were placed in.
     ///
     /// Twelve planets in the corpus have no printed `tileId` (Mirage, Custodia Vigilia, the ocean
@@ -1238,6 +1350,11 @@ pub struct GameState {
     /// increment between Fleet Logistics' first and second actions, because those are
     /// explicitly the same turn.
     pub turn_seq: u32,
+    /// The turn of the action phase (LRR 3): 1 for the first player's turn, 2 for the next
+    /// player's, and so on, counting every player's turn through the phase. Zero before the
+    /// first turn. Unlike [`GameState::turn_seq`] it restarts with each action phase.
+    #[serde(default)]
+    pub action_turn: u32,
     /// Allocator for typed secret-objective trigger occurrences.
     ///
     /// This sequence affects replay-visible event identity and is included in structural equality.
@@ -1323,6 +1440,26 @@ pub struct GameState {
     /// reads the handoff instead. In-flight bookkeeping — not compared.
     #[serde(default)]
     pub last_combat_sides: Option<(SystemId, Vec<PlayerId>)>,
+    /// Authoritative announced card plays (including plays later cancelled by Sabotage).
+    /// Aliases here are public only after the card is played; unopened hands are not recorded.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub action_card_plays: Vec<(PlayerId, ActionCardId)>,
+    /// Set by the combat driver while a space battle (including its victory window) is open.
+    /// Cleared before the hand-off to invasion. Unlike ship ownership this is an explicit boundary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_space_combat: Option<(SystemId, PlayerId, PlayerId)>,
+    /// The tactical invasion currently running, including nested reaction windows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_invasion: Option<ActiveInvasion>,
+    /// In-progress space combat hits produced in the current round by player. In-flight bookkeeping — not compared.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub combat_round_hits: BTreeMap<PlayerId, u32>,
+    /// In-progress space combat dice rolled in the current round. In-flight bookkeeping — not compared.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub combat_round_dice: Vec<CombatRollRecord>,
+    /// Public presentation facts for the current space battle; reset at each battle/round.
+    #[serde(default, skip_serializing_if = "CombatPresentation::is_empty")]
+    pub combat_presentation: CombatPresentation,
     /// The action card a `ACTION_CARD_DISCARDED` window is reacting to: the player who
     /// discarded it and the card's alias. The frame records it in the discard announcement
     /// itself, which is the one place that knows both, because the effect — Reverse Engineer
@@ -1512,6 +1649,7 @@ impl PartialEq for GameState {
             && self.production_seq == other.production_seq
             && self.activation_seq == other.activation_seq
             && self.turn_seq == other.turn_seq
+            && self.action_turn == other.action_turn
             && self.feat_occurrence_seq == other.feat_occurrence_seq
             && self.scored_feat_occurrences == other.scored_feat_occurrences
             && self.combat_draw_round == other.combat_draw_round
@@ -1622,6 +1760,8 @@ impl GameState {
             exploration_decks: BTreeMap::new(),
             planet_attachments: BTreeMap::new(),
             exploration_log: Vec::new(),
+            legacy_device_ids: false,
+            agenda_log: Vec::new(),
             relic_deck: Vec::new(),
             agenda_deck: Vec::new(),
             action_card_deck: Vec::new(),
@@ -1639,6 +1779,7 @@ impl GameState {
             nexus_unlocked: false,
             styx_holder: None,
             rng_seed: 0,
+            deck_reserve: None,
             placed_planets: BTreeMap::new(),
             influence_pays_for_units: BTreeSet::new(),
             breach_tokens: BTreeSet::new(),
@@ -1653,6 +1794,7 @@ impl GameState {
             negotiations_this_action: BTreeMap::new(),
             negotiations_this_round: BTreeMap::new(),
             turn_seq: 0,
+            action_turn: 0,
             feat_occurrence_seq: 0,
             scored_feat_occurrences: BTreeSet::new(),
             vp_ledger: Vec::new(),
@@ -1665,6 +1807,12 @@ impl GameState {
             last_ship_destroyed: None,
             last_control_gained: None,
             last_combat_sides: None,
+            action_card_plays: Vec::new(),
+            active_space_combat: None,
+            active_invasion: None,
+            combat_round_hits: BTreeMap::new(),
+            combat_round_dice: Vec::new(),
+            combat_presentation: CombatPresentation::default(),
             last_action_discarded: None,
             pending_reflective_hits: None,
             last_strategy_choice: None,
@@ -2108,10 +2256,12 @@ impl GameState {
 
     /// Turn the top facedown public objective faceup (LRR 81.2).
     pub fn reveal_objective(&mut self) -> Option<ObjectiveId> {
-        if self.objective_deck.is_empty() {
-            return None;
-        }
-        let top = self.objective_deck.remove(0);
+        let top = crate::deck_reserve::take_top(
+            &mut self.deck_reserve,
+            "objective",
+            &mut self.objective_deck,
+            None,
+        )?;
         self.revealed_objectives.push(top.clone());
         Some(top)
     }
@@ -2882,6 +3032,55 @@ pub struct ExplorationRecord {
     pub planet: Option<PlanetId>,
     /// `fragment`, `attached:<attachment>`, `resolved`, `unresolved` (no handler) or `discarded`.
     pub outcome: String,
+    /// The system a frontier token was explored in (`None` for a planet).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system: Option<String>,
+    /// What the card did for the player, in plain words ("gained 1 trade good"; empty when it
+    /// did nothing). Display only: no rule reads it.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub result: String,
+    /// What the card changed in the player's holdings, as signed amounts: `trade_goods`,
+    /// `commodities`, `command_tokens`, `action_cards`, `secret_objectives`, `relics`,
+    /// `technologies`. Absent keys did not change. Display only.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub gains: BTreeMap<String, i32>,
+    /// What the card put on the map or in the play area, one tag each: `wormhole:GAMMA:<system>`,
+    /// `ion_storm:<system>:<ALPHA|BETA>`, `planet:<planet>:<system>`, `attachment:<id>:<planet>`,
+    /// `fragment:<trait>`, `play_area:<card>`. Display only.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub placed: Vec<String>,
+}
+
+/// One finished agenda vote: which agenda, the outcome, and the votes each outcome received.
+/// Display only: no rule reads it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgendaRecord {
+    pub round: u32,
+    /// The agenda's alias.
+    pub agenda: String,
+    /// The printed name ("Minister of Peace").
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
+    /// The winning outcome (`for`, `against`, a player, a planet, ...); `None` when the agenda
+    /// had nothing to vote on.
+    pub outcome: Option<String>,
+    /// Votes per outcome, as cast.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub votes: BTreeMap<String, i64>,
+    /// The speaker decided it: the vote was tied, or nobody cast a vote (8.19).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub speaker_decided: bool,
+    /// The agenda is a law (8.20); `enacted` says whether it entered play.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub law: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub enacted: bool,
+    /// Deadly Plot: the agenda was discarded with no effect.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub discarded: bool,
+    /// Confusing / Confounding Legal Text: who the agenda's effect went to instead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub redirected_to: Option<String>,
 }
 
 /// Negotiations one player may initiate during one action (operator limit, 2026-09-22).

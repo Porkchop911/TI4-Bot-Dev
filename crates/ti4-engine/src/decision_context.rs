@@ -47,6 +47,10 @@ use ti4_model::state::Phase;
 /// hash — would inherit that quietly.
 pub const CONTEXT_VERSION: u16 = 1;
 
+fn is_false(value: &bool) -> bool {
+    !value
+}
+
 /// What raised this decision.
 ///
 /// Named rather than free text so a producer's identity survives rewording. `Rule` carries an LRR
@@ -151,8 +155,160 @@ pub struct DecisionContext {
     /// obligations, and a policy cannot tell those apart from an option list alone.
     pub optional: bool,
     pub target: Option<DecisionTarget>,
+    /// This decision belongs to the currently running space battle, not a separate cannon or invasion.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub space_battle: bool,
+    /// Activation sequence of the invasion that owns this choice, including nested reactions.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invasion_seq: Option<u64>,
     /// Quantities still owed or available within a decision already under way.
     pub outstanding: Vec<OutstandingConstraint>,
+    /// What happened to open this reaction window, for display only (public facts).
+    ///
+    /// Deliberately not part of [`DecisionContext::canonical`] or the replay fingerprint: it is
+    /// derived deterministically from the event, so it adds no information a replay needs, and
+    /// it is stripped from recorded decisions (`DecisionLog::record`). Additive and optional, so
+    /// old saves and old clients are unaffected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trigger: Option<DecisionTrigger>,
+    /// What kind of hit a casualty decision assigns, for display only (public facts).
+    ///
+    /// Like [`DecisionContext::trigger`], deliberately not part of [`DecisionContext::canonical`]
+    /// or the replay fingerprint, stripped from recorded decisions, additive and optional: it
+    /// restates rules the engine already enforces, so a client need not guess them from labels.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hit: Option<HitDetail>,
+}
+
+/// What produced the hits a casualty decision assigns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HitCause {
+    /// Assault Cannon (technology): the opponent destroys one of their non-fighter ships.
+    AssaultCannon,
+    /// Courageous to the End (action card): hits from its two dice.
+    CourageousToTheEnd,
+    /// Anti-fighter barrage hits widened to every ship by Waylay.
+    AntiFighterBarrage,
+    /// Space cannon (offense or defense) hits.
+    SpaceCannon,
+    /// The ordinary dice hits of a combat round.
+    CombatRoll,
+    /// Hits a card or module produced at the start of a combat.
+    StartOfCombat,
+    /// Hits a card or module produced after a combat round.
+    EndOfRound,
+    /// Anything else (an effect's hit).
+    Other,
+}
+
+/// Which of the target's ships a hit may be assigned to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HitRestriction {
+    Any,
+    /// Non-fighter ships only (Assault Cannon; Graviton Laser System while one is left).
+    NonFighter,
+}
+
+/// The kind of hit a casualty decision assigns (see [`DecisionContext::hit`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HitDetail {
+    pub cause: HitCause,
+    /// `true` for a destroy effect: not a hit, so SUSTAIN DAMAGE does not apply to it.
+    pub destroy: bool,
+    pub restriction: HitRestriction,
+    /// The seat whose ability or roll produced it, when public.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub producer: Option<PlayerId>,
+}
+
+/// The family of event a reaction decision answers, in the words a client switches on.
+///
+/// `Other` plus [`DecisionTrigger::event_type`] is the open-ended fallback, so a new window never
+/// breaks a client.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TriggerKind {
+    ActionCardPlayed,
+    ActionCardDiscarded,
+    SystemActivated,
+    ShipMoved,
+    StrategicActionBegan,
+    StrategyCardChosen,
+    StrategyPhaseBegan,
+    TurnBegan,
+    TurnPassed,
+    PlayerPassed,
+    ActionCompleted,
+    StrategyCardsWouldReturn,
+    AgendaPhaseBegan,
+    AgendaRevealed,
+    VotesCast,
+    AgendaResolved,
+    Transaction,
+    PlanetControlGained,
+    InvasionBegan,
+    UnitsCommitted,
+    GroundRolls,
+    CombatStarted,
+    AntiFighterBarrage,
+    SpaceCannonHits,
+    HitsToAssign,
+    SustainDamage,
+    ShipDestroyed,
+    Retreat,
+    SpaceCombatWon,
+    ProductionUsed,
+    UnitAbilityRolled,
+    #[serde(other)]
+    Other,
+}
+
+/// A public unit count named by a trigger: owner, unit type and how many.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TriggerUnits {
+    pub owner: PlayerId,
+    pub unit_type: String,
+    pub count: u32,
+}
+
+/// The public event that opened a reaction window (see [`DecisionContext::trigger`]).
+///
+/// Everything named here has already happened in public: a played action card, an activated
+/// system, a moved fleet. It never carries a vote outcome, a hand, or any unplayed alternative.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DecisionTrigger {
+    pub kind: TriggerKind,
+    /// The raw engine event type, for fallback and debugging.
+    pub event_type: String,
+    /// The engine event id, valid within one trace only: a session-local key, not a durable id.
+    pub event_id: u64,
+    /// `"when"` or `"after"`.
+    pub relation: String,
+    /// The seat that caused the event; absent for phase and agenda events.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actor: Option<PlayerId>,
+    /// A second seat: a transaction partner, the victim of hits, an elected player, a defender.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subject: Option<PlayerId>,
+    /// An action card alias (public once played) or a strategy card id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub card: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agenda: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system: Option<SystemId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub planet: Option<PlanetId>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub units: Vec<TriggerUnits>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hits: Option<u32>,
+    /// Ids of the events being resolved around this one, outermost first: non-empty when this is a
+    /// reaction to a reaction.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub chain: Vec<u64>,
 }
 
 impl DecisionContext {
@@ -174,7 +330,35 @@ impl DecisionContext {
             round,
             optional: false,
             target: None,
+            space_battle: false,
+            invasion_seq: None,
             outstanding: Vec::new(),
+            trigger: None,
+            hit: None,
+        }
+    }
+
+    /// Say what kind of hit this casualty decision assigns (display only).
+    #[must_use]
+    pub fn with_hit(mut self, hit: HitDetail) -> Self {
+        self.hit = Some(hit);
+        self
+    }
+
+    /// Attach the public event that opened this reaction window.
+    #[must_use]
+    pub fn with_trigger(mut self, trigger: DecisionTrigger) -> Self {
+        self.trigger = Some(trigger);
+        self
+    }
+
+    /// The same context without display-only fields, which is what a record and a fingerprint hold.
+    #[must_use]
+    pub fn without_display_fields(&self) -> Self {
+        Self {
+            trigger: None,
+            hit: None,
+            ..self.clone()
         }
     }
 
@@ -187,6 +371,35 @@ impl DecisionContext {
     #[must_use]
     pub fn about(mut self, target: DecisionTarget) -> Self {
         self.target = Some(target);
+        self
+    }
+
+    #[must_use]
+    pub fn about_battle(mut self, state: &ti4_model::state::GameState) -> Self {
+        if let Some((system, _, _)) = &state.active_space_combat {
+            self.space_battle = true;
+            self.target = Some(DecisionTarget::System(system.clone()));
+        }
+        self
+    }
+
+    #[must_use]
+    pub fn about_invasion(mut self, state: &ti4_model::state::GameState) -> Self {
+        if !self.space_battle {
+            if let Some(active) = &state.active_invasion {
+                let in_system = match &self.target {
+                    Some(
+                        DecisionTarget::System(system)
+                        | DecisionTarget::Planet { system, .. }
+                        | DecisionTarget::Unit { system, .. },
+                    ) => system == &active.system,
+                    _ => true,
+                };
+                if in_system {
+                    self.invasion_seq = Some(active.seq);
+                }
+            }
+        }
         self
     }
 
@@ -229,7 +442,7 @@ impl DecisionContext {
             .collect::<Vec<_>>()
             .join(",");
         format!(
-            "v{}|actor={}|source={:?}|subtype={}|phase={:?}|round={}|optional={}|target={:?}|owing=[{}]",
+            "v{}|actor={}|source={:?}|subtype={}|phase={:?}|round={}|optional={}|target={:?}|battle={}|{}owing=[{}]",
             self.version,
             self.actor,
             self.source,
@@ -238,6 +451,9 @@ impl DecisionContext {
             self.round,
             self.optional,
             self.target,
+            self.space_battle,
+            self.invasion_seq
+                .map_or_else(String::new, |seq| format!("invasion={seq}|")),
             owed
         )
     }
@@ -255,7 +471,12 @@ impl DecisionContext {
             ("round", Visibility::Public),
             ("optional", Visibility::Public),
             ("target", Visibility::Public),
+            ("space_battle", Visibility::Public),
+            ("invasion_seq", Visibility::Public),
             ("outstanding", Visibility::ActorOnly),
+            // Public by construction: only facts that already happened at the table.
+            ("trigger", Visibility::Public),
+            ("hit", Visibility::Public),
         ])
     }
 }
@@ -286,6 +507,46 @@ mod tests {
         )
         .optional(true)
         .owing(OutstandingConstraint::new(ConstraintKind::Influence, 3, 4))
+    }
+
+    #[test]
+    fn invasion_association_keeps_planet_target_and_rejects_other_systems() {
+        let content = ti4_content::ContentStore::embedded();
+        let mut state = crate::setup::start_game(
+            content,
+            &[PlayerId::new("a"), PlayerId::new("b")],
+            ti4_model::content_types::POK,
+            None,
+        )
+        .expect("setup");
+        state.active_invasion = Some(ti4_model::state::ActiveInvasion {
+            system: SystemId::new("18"),
+            invader: PlayerId::new("a"),
+            seq: 9,
+            phase: "landing".to_owned(),
+            planet: None,
+            defender: None,
+            ground_round: 0,
+            last_step: None,
+        });
+        let target = DecisionTarget::Planet {
+            system: SystemId::new("18"),
+            planet: PlanetId::new("jord"),
+        };
+        let associated = context().about(target.clone()).about_invasion(&state);
+        assert_eq!(associated.invasion_seq, Some(9));
+        assert_eq!(associated.target, Some(target));
+        assert_eq!(
+            associated.visible_to(&PlayerId::new("b")).invasion_seq,
+            Some(9)
+        );
+        assert_eq!(
+            context()
+                .about(DecisionTarget::System(SystemId::new("19")))
+                .about_invasion(&state)
+                .invasion_seq,
+            None
+        );
     }
 
     #[test]
@@ -374,7 +635,7 @@ mod tests {
         );
         let rider = DecisionContext::new(
             PlayerId::new("a"),
-            DecisionSource::ActionCard("imperial_rider".to_owned()),
+            DecisionSource::ActionCard("imp_rider".to_owned()),
             "agenda_rider_prediction",
             Phase::Agenda,
             3,
@@ -408,6 +669,6 @@ mod tests {
             .iter()
             .filter(|(_, v)| **v == Visibility::Public)
             .count();
-        assert_eq!(public, 8, "every other field describes a public question");
+        assert_eq!(public, 12, "every other field describes a public question");
     }
 }

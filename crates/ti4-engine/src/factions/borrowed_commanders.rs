@@ -55,21 +55,37 @@ fn crimson_ask(
     context: &mut crate::timing::TimingContext<'_>,
     owner: &PlayerId,
 ) -> Result<bool, crate::choice::IllegalChoice> {
-    let choice = crate::choice::Choice::new(
-        owner.clone(),
-        "Crimson commander: gain 1 commodity or convert 1 commodity to a trade good",
-        vec![
-            crate::choice::ChoiceOption::labelled(
-                "gain".to_owned(),
-                "economy",
-                "gain 1 commodity".to_owned(),
-            ),
-            crate::choice::ChoiceOption::labelled(
-                "convert".to_owned(),
-                "economy",
-                "convert 1 commodity to a trade good".to_owned(),
-            ),
-        ],
+    let held = context
+        .state
+        .player(owner)
+        .map_or(0, |seat| seat.commodities);
+    let goods = context
+        .state
+        .player(owner)
+        .map_or(0, |seat| seat.trade_goods);
+    let limit = crate::strategy_cards::commodity_limit(context.state, context.content, owner);
+    let choice = crate::strategy_cards::commander_payment_offer(
+        crate::choice::Choice::new(
+            owner.clone(),
+            "Crimson commander: gain 1 commodity or convert 1 commodity to a trade good",
+            vec![
+                crate::choice::ChoiceOption::labelled(
+                    "gain".to_owned(),
+                    "economy",
+                    "gain 1 commodity".to_owned(),
+                ),
+                crate::choice::ChoiceOption::labelled(
+                    "convert".to_owned(),
+                    "economy",
+                    "convert 1 commodity to a trade good".to_owned(),
+                ),
+            ],
+        ),
+        context.content,
+        "crimsoncommander",
+        held,
+        limit,
+        goods,
     )
     .contextualized(crate::decision_context::DecisionContext::new(
         owner.clone(),
@@ -698,6 +714,63 @@ mod tests {
         ended(&mut state, "GROUND_COMBAT_ENDED", vec!["convert"]);
         assert_eq!(state.player(&a).unwrap().commodities, 0);
         assert_eq!(state.player(&a).unwrap().trade_goods, goods + 1);
+    }
+
+    /// The gain-or-convert question is an offer card: the commander as printed, the holder's
+    /// commodities and trade goods, and what each answer does (display only).
+    #[test]
+    fn the_crimson_commander_payment_is_an_offer_card() {
+        let a = PlayerId::new("a");
+        let mut state = arena();
+        assert!(crate::promissory::grant_commander_ability(
+            &mut state,
+            ContentStore::embedded(),
+            &a,
+            "crimsoncommander"
+        ));
+        let limit = crate::strategy_cards::commodity_limit(&state, ContentStore::embedded(), &a);
+        state.player_mut(&a).unwrap().commodities = 1;
+        state.player_mut(&a).unwrap().trade_goods = 4;
+        let (decider, seen) = crate::choice::Capturing::new(Box::new(Scripted::new(["gain"])));
+        let mut table = Table::with_default(Box::new(decider));
+        let mut resolver = crate::fixtures::armed_resolver(&state);
+        crate::fixtures::with_context(&mut state, DEFAULT, None, &mut table, |ctx| {
+            let event = ctx
+                .event_sequence
+                .next(
+                    "GROUND_COMBAT_ENDED",
+                    [("system".to_owned(), "18".into())].into(),
+                )
+                .unwrap();
+            resolver.emit_with_context(ctx, event, |_, _| {}).unwrap();
+        });
+        let asked = seen.borrow();
+        let offer = asked
+            .iter()
+            .find(|choice| {
+                choice
+                    .context
+                    .as_ref()
+                    .is_some_and(|context| context.subtype == "crimson_payment")
+            })
+            .expect("the holder was asked");
+        assert_eq!(offer.details["kind"], "offer");
+        assert_eq!(offer.details["card"]["title"], "Ahk Siever");
+        assert_eq!(offer.details["card"]["tag"], "commander");
+        assert_eq!(offer.details["facts"][0]["value"], format!("1 of {limit}"));
+        assert_eq!(offer.details["facts"][1]["value"], 4);
+        assert_eq!(
+            offer.details["captions"]["convert"]["hint"],
+            "Commodities 1 → 0, trade goods 4 → 5"
+        );
+        assert_eq!(
+            offer
+                .options
+                .iter()
+                .map(|o| o.id.as_str())
+                .collect::<Vec<_>>(),
+            ["gain", "convert"]
+        );
     }
 
     #[test]

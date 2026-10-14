@@ -491,6 +491,50 @@ mod tests {
         );
     }
 
+    /// Every victory point a seat holds at the end has a `vp_ledger` row behind it.
+    ///
+    /// Run 26 of the 2026-10-06 sweep ended with hacan on 1 VP from the secret `te` and no
+    /// ledger row: secrets, relics and Styx moved points without recording them, and every report
+    /// built on the ledger (`vp_sources`, `game_cost`, the nightly digest) undercounted.
+    #[test]
+    fn every_seats_victory_points_equal_its_ledger_rows() {
+        let content = ContentStore::embedded();
+        let players = seats(&["a", "b", "c", "d"]);
+        let table = Table::seated(content, &players, POK);
+        let mut scored = 0;
+        // Each of these scores a secret; the scored seed-4 game also draws the Shard of the
+        // Throne (a relic point), the custodians and Imperial.
+        for (seed, kind) in [(1, Seats::Random), (2, Seats::Random), (4, Seats::Scored)] {
+            let (state, galaxy) = seat(content, &table, seed).unwrap();
+            let mut game =
+                Game::with_table(state, content, kind.table(&players, seed)).with_galaxy(galaxy);
+            let outcome = game.run(Horizon::default().rounds, Horizon::default().steps);
+            assert!(outcome.is_ok(), "seed {seed} {}: {outcome:?}", kind.label());
+            for player in &game.state.players {
+                let rows: Vec<_> = game
+                    .state
+                    .vp_ledger
+                    .iter()
+                    .filter(|(seat, _, _)| *seat == player.id)
+                    .collect();
+                let ledger: i32 = rows.iter().map(|(_, delta, _)| *delta).sum();
+                assert_eq!(
+                    player.victory_points,
+                    ledger,
+                    "seed {seed} {}: {} holds {} VP but its ledger rows sum to {ledger}: {rows:?}",
+                    kind.label(),
+                    player.id,
+                    player.victory_points,
+                );
+                scored += player.victory_points;
+            }
+        }
+        assert!(
+            scored > 0,
+            "nobody scored, so the ledger was never exercised"
+        );
+    }
+
     #[test]
     fn the_same_seed_plays_the_same_game() {
         // The property the whole harness rests on. Without it a batch is a pile of anecdotes.

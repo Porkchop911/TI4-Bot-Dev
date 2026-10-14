@@ -194,6 +194,9 @@ pub struct ReplayInputs {
     /// existed played the standard lineup.
     #[serde(default)]
     pub lineup: Option<Vec<String>>,
+    /// Seats the rule bot answers. Projects written before this existed had none.
+    #[serde(default)]
+    pub rule_seats: Vec<usize>,
 }
 
 impl ReplayInputs {
@@ -213,6 +216,7 @@ impl ReplayInputs {
             temperature: config.temperature,
             diplomacy: config.diplomacy,
             lineup: config.lineup.clone(),
+            rule_seats: config.rule_seats.clone(),
         }
     }
 
@@ -237,6 +241,7 @@ impl ReplayInputs {
             temperature: manifest.temperature,
             diplomacy: manifest.diplomacy,
             lineup: manifest.lineup.clone(),
+            rule_seats: manifest.rule_seats.clone(),
         }
     }
 
@@ -258,6 +263,7 @@ impl ReplayInputs {
             temperature: self.temperature,
             diplomacy: self.diplomacy,
             lineup: self.lineup.clone(),
+            rule_seats: self.rule_seats.clone(),
         })
     }
 

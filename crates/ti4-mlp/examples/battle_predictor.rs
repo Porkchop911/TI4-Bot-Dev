@@ -85,7 +85,7 @@ struct Space {
 impl Space {
     fn build(content: &ContentStore, max_ships: usize, max_fighters: usize) -> Self {
         let mut distinct: BTreeMap<String, Fleet> = BTreeMap::new();
-        let profiles = Profile::wide(content, true);
+        let profiles = ti4_training::wide_profiles(content, true);
         for profile in &profiles {
             let profile = *profile;
             for composition in arena::compositions(content, profile, max_ships, max_fighters) {

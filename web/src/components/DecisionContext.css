@@ -1,0 +1,474 @@
+.decision-context__eyebrow {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--color-accent, #38bdf8);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.decision-context__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.decision-context__chip {
+  padding: 2px 8px;
+  border: 1px solid var(--color-border, #334155);
+  border-radius: 999px;
+  color: var(--color-text-muted, #94a3b8);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+.card-option__badge {
+  margin-top: 2px;
+  color: var(--color-text-muted, #94a3b8);
+  font-size: 0.75rem;
+  letter-spacing: 0.03em;
+}
+.card-option__text {
+  margin: 4px 0 0;
+  max-width: 62ch;
+  color: #cbd5e1;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+.secondary-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.secondary-panel__card {
+  padding: 12px 14px;
+  border: 1px solid var(--color-border, #334155);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.6);
+}
+.secondary-panel__title {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+.secondary-panel__tag {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border: 1px solid var(--color-border, #334155);
+  border-radius: 999px;
+  color: var(--color-text-muted, #94a3b8);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.secondary-panel__meta {
+  margin-top: 2px;
+  color: var(--color-text-muted, #94a3b8);
+  font-size: 0.85rem;
+}
+.secondary-panel__text {
+  margin: 8px 0 0;
+  max-width: 62ch;
+  color: #e2e8f0;
+  line-height: 1.5;
+}
+.secondary-panel__tokens {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--color-text-muted, #94a3b8);
+  font-size: 0.9rem;
+}
+.secondary-panel__pips {
+  display: inline-flex;
+  gap: 4px;
+}
+.secondary-panel__pip {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-accent, #38bdf8);
+}
+.secondary-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.offer-card__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+  margin: 0;
+}
+.offer-card__fact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.offer-card__fact dt {
+  color: var(--color-text-muted, #94a3b8);
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.offer-card__fact dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.offer-card__answers .button {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+}
+.vote-goods__stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+.vote-goods__amount {
+  min-width: 5ch;
+  font-size: 1.3rem;
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.vote-goods__amount small {
+  font-size: 0.75rem;
+  font-weight: 400;
+  opacity: 0.7;
+}
+.offer-card__hint {
+  font-size: 0.75rem;
+  font-weight: 400;
+  opacity: 0.85;
+}
+.token-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.token-panel__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  align-items: baseline;
+  color: var(--color-text-muted, #94a3b8);
+  font-size: 0.9rem;
+}
+.token-panel__summary strong {
+  color: #e2e8f0;
+  font-size: 1.05rem;
+}
+.token-panel__remaining[data-done="true"] strong {
+  color: #4ade80;
+}
+.token-panel__pools {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.token-panel__pool {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) auto minmax(0, 2fr);
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border, #334155);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.6);
+}
+.token-panel__name {
+  font-weight: 700;
+}
+.token-panel__purpose {
+  display: block;
+  color: var(--color-text-muted, #94a3b8);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+.token-panel__count {
+  min-width: 2ch;
+  font-size: 1.25rem;
+  font-weight: 700;
+  text-align: center;
+}
+.token-panel__stepper {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+.token-panel__pips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.token-panel__pip {
+  box-sizing: border-box;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+.token-panel__pip--kept {
+  background: #64748b;
+}
+.token-panel__pip--added {
+  background: var(--color-accent, #38bdf8);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.35);
+}
+.token-panel__pip--removed {
+  border: 1.5px dashed #94a3b8;
+  background: transparent;
+}
+.token-panel__buy {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 12px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px dashed var(--color-border, #4b5563);
+  border-radius: 8px;
+}
+
+.token-panel__buy > .token-panel__influence,
+.token-panel__buy > .token-panel__note {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.token-panel__split {
+  font-weight: 400;
+  opacity: 0.8;
+}
+
+.token-panel__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  color: var(--color-text-muted, #94a3b8);
+  font-size: 0.75rem;
+}
+.token-panel__legend span {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+.token-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+.token-panel__note {
+  margin: 0;
+  color: #facc15;
+  font-size: 0.85rem;
+}
+@media (max-width: 640px) {
+  .token-panel__pool {
+    grid-template-columns: 1fr auto;
+  }
+  .token-panel__pips {
+    grid-column: 1 / -1;
+  }
+}
+.politics-panel {
+  padding: 10px 12px;
+  border: 1px solid var(--color-border, #334155);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.6);
+}
+.politics-panel__title {
+  font-weight: 700;
+  color: #e2e8f0;
+}
+.politics-panel__eyebrow {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.politics-panel__tag {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border: 1px solid var(--color-border, #334155);
+  border-radius: 999px;
+  color: var(--color-text-muted, #94a3b8);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+}
+.politics-panel__text,
+.politics-panel__reason {
+  margin: 6px 0 0;
+  font-size: 0.85rem;
+  color: #cbd5e1;
+  white-space: pre-line;
+}
+.politics-option-note {
+  margin-top: 2px;
+  font-size: 0.78rem;
+  color: var(--color-text-muted, #94a3b8);
+}
+
+.token-panel__planets {
+  list-style: none;
+  margin: 0.4rem 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.token-panel__payment {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  margin-top: 0.4rem;
+}
+.trade-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.trade-panel__intro {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--color-text-muted, #94a3b8);
+  line-height: 1.5;
+}
+.trade-panel__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.trade-panel__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border, #334155);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.6);
+}
+.trade-panel__who {
+  font-weight: 700;
+}
+.trade-panel__figures {
+  font-variant-numeric: tabular-nums;
+}
+.trade-panel__actions {
+  display: flex;
+  gap: 10px;
+}
+
+/* A prepared answer, shown already picked in the real secondary question. */
+.secondary-panel__actions .button[data-prepared] {
+  outline: 2px solid #16a34a;
+  outline-offset: 2px;
+}
+.secondary-panel__prepared {
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+/* Leadership purchase, planet first: step headings, planet rows (44 px targets), tally, actions. */
+.token-panel__step {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  align-items: baseline;
+  margin: 0;
+  font-size: 1rem;
+  grid-column: 1 / -1;
+}
+.token-panel__step .token-panel__purpose {
+  display: inline;
+}
+.token-panel__buy {
+  grid-template-columns: 1fr;
+}
+.token-panel__planets {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+.token-panel__planets li {
+  flex: 1 1 200px;
+}
+.token-panel__planet {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-start;
+  text-align: left;
+}
+.token-panel__planet[aria-pressed="true"] {
+  border-color: #4ade80;
+  background: rgba(22, 101, 52, 0.45);
+}
+.token-panel__planet-name {
+  flex: 1 1 auto;
+  font-weight: 600;
+}
+.token-panel__planet-state {
+  font-size: 0.75rem;
+  opacity: 0.85;
+}
+.token-panel__tally {
+  margin: 0;
+  color: #e2e8f0;
+  font-size: 0.95rem;
+}
+.token-panel__note--quiet {
+  color: var(--color-text-muted, #94a3b8);
+  font-size: 0.78rem;
+}
+.token-panel__buy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.token-panel__action {
+  min-height: 44px;
+}
+.token-panel__quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--color-text-muted, #94a3b8);
+  font-size: 0.85rem;
+}
+.token-panel__stepper .button--sm {
+  min-width: 44px;
+  min-height: 44px;
+}
+.commodity-standing {
+  margin-top: 8px;
+}
+.commodity-standing__full {
+  color: var(--color-warning, #fbbf24);
+  font-size: 0.8rem;
+  margin-left: 4px;
+}
+.decision-context__card {
+  margin: 8px 0 0;
+  padding: 6px 10px;
+  border-left: 3px solid #f59e0b;
+  background: rgba(245, 158, 11, 0.08);
+  font-size: 0.85rem;
+}
+.decision-context__card-text {
+  margin: 4px 0 0;
+  max-width: 62ch;
+  color: #cbd5e1;
+  line-height: 1.45;
+  white-space: pre-line;
+}

@@ -198,8 +198,9 @@ fn demonstrate(
     trajectory: &Trajectory,
     opponents: Opponents,
 ) -> Result<Vec<Demo>, String> {
-    let records: Rc<RefCell<Option<Rc<RefCell<Vec<ti4_mlp::bot::PpoRecord>>>>>> =
-        Rc::new(RefCell::new(None));
+    type RecordLog = Rc<RefCell<Vec<ti4_mlp::bot::PpoRecord>>>;
+    type RecordHandle = Rc<RefCell<Option<RecordLog>>>;
+    let records: RecordHandle = Rc::new(RefCell::new(None));
     let forced = Rc::new(RefCell::new(Vec::new()));
     let broken = Rc::new(RefCell::new(None));
     let handle = Rc::clone(&records);
@@ -621,10 +622,10 @@ fn main() {
         )]
         let rescued_each = (per_faction as f64 * share) as usize;
         let ordinary_each = per_faction.saturating_sub(rescued_each);
-        let mut take = |rows: &Vec<Trajectory>,
-                        want: usize,
-                        convention: Opponents,
-                        out: &mut Vec<(Trajectory, Opponents)>| {
+        let take = |rows: &Vec<Trajectory>,
+                    want: usize,
+                    convention: Opponents,
+                    out: &mut Vec<(Trajectory, Opponents)>| {
             if rows.is_empty() || want == 0 {
                 return;
             }

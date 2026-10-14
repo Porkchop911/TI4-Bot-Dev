@@ -1,0 +1,21 @@
+{
+  "title": "Dialogs above the top bar",
+  "description": "Dialog headers (the PRODUCTION and TRANSACTION eyebrow labels, first lines of panels) were clipped under the app header at 1280x720. While a backdrop dialog is open the overlays layer now sits above the header. Before and after at 1280x720.",
+  "tag": "web/e2e/screenshots/AK-dialog-header-layer",
+  "shots": [
+    { "file": "out/before-1-production.png", "heading": "Production drawer, before", "caption": "The panel is centred with max-height 100dvh - 32px, so on 720 px its top (16 px) is under the 47 px header: the PRODUCTION label is cut off by the header bar." },
+    { "file": "out/after-1-production.png", "heading": "Production drawer, after", "caption": "The dialog covers the header (dimmed backdrop); the PRODUCTION label and title are fully visible." },
+    { "file": "out/before-2-trade.png", "heading": "Trade desk, before", "caption": "The TRANSACTION eyebrow of the trade desk sits under the header." },
+    { "file": "out/after-2-trade.png", "heading": "Trade desk, after", "caption": "The whole trade desk panel is visible." },
+    { "file": "out/before-3-workflow.png", "heading": "Choice workflow modal (payment list), before", "caption": "The payment list in the generic decision modal. Its top is 62 px, so this one fits; it is the control case." },
+    { "file": "out/after-3-workflow.png", "heading": "Choice workflow modal (payment list), after", "caption": "Unchanged apart from the header now being dimmed behind the backdrop." },
+    { "file": "out/before-4-objectives.png", "heading": "Objectives modal, before", "caption": "The score-objective modal (top 54 px) clears the header, so it was not clipped; the header buttons stay bright above the backdrop." },
+    { "file": "out/after-4-objectives.png", "heading": "Objectives modal, after", "caption": "Same position; the header is now under the backdrop like the rest of the page." }
+  ],
+  "notesHeading": "Notes",
+  "notes": [
+    { "title": "Fix. ", "text": ".app-shell__overlays:has(.choice-dialog, .choice-workflow-dialog, .decision-modal, .invasion-overlay) { z-index: var(--layer-dialog); }. The container is its own stacking context, so raising only the child never beat the header; the container is raised only while such a dialog is mounted. Banners, prompt bars and toasts keep the lower layer." },
+    { "title": "Check. ", "text": "Each capture asserts the panel top is at or below the header bottom, or the overlays layer is above the header. The before shots were taken on unified-2026-10-08 with TI4_SHOT_PREFIX=before and are committed; npm run screenshots -- AK regenerates the after shots." },
+    { "title": "Fixtures. ", "text": "Synthetic mocked game, not an engine capture." }
+  ]
+}

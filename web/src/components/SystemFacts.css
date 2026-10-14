@@ -1,0 +1,4 @@
+.system-facts { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+.system-facts__title { font-size: 13px; }
+.system-facts__line { line-height: 1.35; }
+.system-pick-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }

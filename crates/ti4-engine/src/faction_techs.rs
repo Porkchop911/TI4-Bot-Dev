@@ -517,6 +517,7 @@ pub fn offer_scanlink(
         .iter()
         .map(|planet| {
             ChoiceOption::labelled(planet.to_string(), "planet", format!("explore {planet}"))
+                .with_planet(planet.as_str(), Some(system.as_str()))
         })
         .collect();
     options.push(ChoiceOption::decline());
@@ -556,6 +557,46 @@ mod tests {
         seat.technologies.insert(TechnologyId::new(tech));
         seat.strategic_tokens = 2;
         (state, system, active, holder)
+    }
+
+    /// Scanlink's planet options carry `planet` + `system`; its decline does not.
+    #[test]
+    fn scanlink_planet_options_carry_planet_and_system_payloads() {
+        use crate::choice::planet_payload::{assert_locates, assert_not_a_planet, offered};
+        let mut state = game(&["a", "b"]);
+        let a = PlayerId::new("a");
+        let system = SystemId::new("28");
+        state
+            .player_mut(&a)
+            .unwrap()
+            .technologies
+            .insert(TechnologyId::new("sdn"));
+        for planet in ["tequran", "torkan"] {
+            crate::fixtures::put_on_planet(
+                &mut state,
+                &system,
+                &ti4_model::id::PlanetId::new(planet),
+                "infantry",
+                &a,
+                1,
+            );
+        }
+        let (decider, seen) = crate::choice::Capturing::new(Box::new(crate::choice::AlwaysDecline));
+        let mut table = Table::with_default(Box::new(decider));
+        offer_scanlink(
+            &state,
+            ContentStore::embedded(),
+            POK,
+            &mut table,
+            None,
+            &system,
+            &a,
+        );
+        let choice = &seen.borrow()[0];
+        assert_eq!(choice.context.as_ref().unwrap().subtype, "scanlink_explore");
+        assert_locates(offered(choice, "tequran"), "tequran", "28");
+        assert_locates(offered(choice, "torkan"), "torkan", "28");
+        assert_not_a_planet(offered(choice, crate::choice::DECLINE_ID));
     }
 
     #[test]

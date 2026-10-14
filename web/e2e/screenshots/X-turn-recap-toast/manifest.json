@@ -1,0 +1,18 @@
+{
+  "title": "Turn Recap Toast",
+  "description": "An optional, viewer-local recap toast that appears once when another player's turn ends, summing up what the public log shows of it. Off by default. All shots are the real app fed by a mocked game.",
+  "tag": "web/e2e/screenshots/X-turn-recap-toast",
+  "shots": [
+    { "file": "out/1a-toggle-off.png", "heading": "The toggle, off", "caption": "The Recap button sits next to Sound and Toasts in the player sheet header. It is off by default." },
+    { "file": "out/1b-toggle-on.png", "heading": "The toggle, on", "caption": "Switched on, the button turns green and reads \"Recap on\". The choice is stored in this browser only (localStorage, like the toast mute) and applies to every game." },
+    { "file": "out/2-tactical.png", "heading": "A tactical action", "caption": "While the other player moves, fights and builds, nothing toasts (their live steps are folded into the recap). When the next player starts their action, one toast reads: tactical action in system 27, moved 3 ships, fought (lost 1, destroyed 1), built 2 units. The log names losses, not winners, so the recap does too." },
+    { "file": "out/3-strategic.png", "heading": "A strategic action", "caption": "A strategic action is summed up by the facts the public log shows: command tokens gained and the technology researched. The strategy card's name is not in the public log, so it is not named." },
+    { "file": "out/4-pass.png", "heading": "A pass", "caption": "A pass is the whole turn, so its recap shows immediately: \"passed\"." },
+    { "file": "out/5-phone.png", "heading": "Phone width", "caption": "At 390 px wide the recap wraps inside the corner box like the other toasts." }
+  ],
+  "notes": [
+    { "title": "When a turn ends", "text": "The server groups an action's public log entries by action_id, starting at the player's menu choice. The recap is shown when the first of these happens: a pass; the next player's first entry (a new action_id); a phase change or game end; or you being asked for your own action menu (a plain end-turn click leaves no public entry). Entries seen only mid-turn at load, undone entries and a replaced history generation never produce a recap, and a reconnect that delivers several turns at once shows only the latest." },
+    { "title": "Only public facts", "text": "The recap reads only public log entries and the same wording the event log shows. Seat-only and referee entries, and public entries without a detail, add nothing. Your own turns never get a recap." },
+    { "title": "Relation to the other toasts", "text": "With the recap on, the acting player's live corner toasts for that turn are replaced by it; other seats' plays during the turn, victory point gains and auto-resolved decisions still toast. The Toasts mute silences the recap too." }
+  ]
+}

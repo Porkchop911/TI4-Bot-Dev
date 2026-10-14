@@ -1,0 +1,26 @@
+{
+  "title": "Agenda Voting",
+  "description": "How a player votes during the agenda phase: the agenda card with both outcomes, spending influence on planets, and the speaker's tie-break.",
+  "tag": "web/e2e/screenshots/B-agenda-voting",
+  "shots": [
+    {
+      "file": "out/1-cast-vote.png",
+      "heading": "Casting a vote",
+      "caption": "The modal names the agenda (Sling Relay) and spells out what FOR and AGAINST do, so nobody has to remember the card. Each outcome shows the votes already cast; Abstain is always offered."
+    },
+    {
+      "file": "out/2-spend-influence.png",
+      "heading": "Spending influence",
+      "caption": "Planets are staged into a basket before anything is exhausted. Mecatol Rex (6) and Jord (2) are staged for +8 votes; Lodor (3) is still available. Reset clears the basket, Cast votes sends it."
+    },
+    {
+      "file": "out/3-tiebreak.png",
+      "heading": "Breaking a tie",
+      "caption": "When the tally is level the speaker chooses the outcome, with the same agenda card in view."
+    }
+  ],
+  "notes": [
+    { "title": "Round state", "text": "The top bar keeps the round, the phase and the speaker visible while the vote is open." },
+    { "title": "Known rough edge", "text": "The orange turn banner still prints the raw decision name, for example cast_vote." }
+  ]
+}

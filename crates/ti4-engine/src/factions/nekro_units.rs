@@ -2222,20 +2222,18 @@ mod tests {
         let mut state = game();
         technologies(&mut state, &["dxa", "gd"]);
         let unlocked = |state: &mut GameState| {
-            crate::leaders::check_unlocks(
-                state,
-                ContentStore::embedded(),
-                DEFAULT,
-                None,
-                &a(),
-            )
-            .contains(&LeaderId::new(COMMANDER))
+            crate::leaders::check_unlocks(state, ContentStore::embedded(), DEFAULT, None, &a())
+                .contains(&LeaderId::new(COMMANDER))
         };
         assert!(!unlocked(&mut state), "two technologies");
         technologies(&mut state, &["dxa", "gd", "ac2"]);
         assert!(unlocked(&mut state), "three technologies");
         assert_eq!(
-            state.player(&a()).unwrap().leaders.get(&LeaderId::new(COMMANDER)),
+            state
+                .player(&a())
+                .unwrap()
+                .leaders
+                .get(&LeaderId::new(COMMANDER)),
             Some(&LeaderStatus::Unlocked)
         );
     }
@@ -2254,13 +2252,10 @@ mod tests {
         assert!(route(&state), "offered through the faction route");
         let before = pds_count(&state);
         let option = ChoiceOption::labelled(C4R_PLACE, "component", C4R_PLACE);
-        let done = crate::fixtures::with_context(
-            &mut state,
-            DEFAULT,
-            None,
-            &mut scripted(&[]),
-            |ctx| crate::faction_abilities::perform_component(ctx, &a(), &option),
-        );
+        let done =
+            crate::fixtures::with_context(&mut state, DEFAULT, None, &mut scripted(&[]), |ctx| {
+                crate::faction_abilities::perform_component(ctx, &a(), &option)
+            });
         assert!(done);
         assert_eq!(pds_count(&state), before + 1);
         assert!(exhausted(&state));

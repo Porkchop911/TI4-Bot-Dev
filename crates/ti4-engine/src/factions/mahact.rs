@@ -429,6 +429,22 @@ fn tokens_on_board(state: &GameState, primary: &PlayerId) -> Vec<SystemId> {
         .collect()
 }
 
+/// What a player calls the system in a prompt: its planets ("Mecatol Rex", "Bakal and Alio Prima"),
+/// else the tile number. The tile number follows, so two systems never read alike.
+fn system_name(system: &SystemId) -> String {
+    let content = ContentStore::embedded();
+    let planets: Vec<String> =
+        ti4_content::galaxy::planets_in(content, system.as_str(), ti4_model::content_types::POK)
+            .iter()
+            .filter_map(|planet| planet.name().map(str::to_owned))
+            .collect();
+    if planets.is_empty() {
+        format!("system {system}")
+    } else {
+        format!("{} (system {system})", planets.join(" and "))
+    }
+}
+
 /// "When you would spend a command token during the secondary ability of a strategic action: You
 /// may exhaust this card to remove 1 of the active player's command tokens from the board and use
 /// it instead." Offered beside the ordinary follow as one waiver per system holding a token.
@@ -450,7 +466,8 @@ fn secondary_waivers(
         .map(|system| SecondaryWaiver {
             id: format!("{AGENT_WAIVER_PREFIX}{system}"),
             label: format!(
-                "exhaust Jae Mir Kan: use {primary}'s command token from {system} instead of a token"
+                "exhaust Jae Mir Kan: use {primary}'s command token from {} instead of a token",
+                system_name(&system)
             ),
         })
         .collect()
@@ -1209,6 +1226,11 @@ mod tests {
         let waivers = secondary_waivers(&state, content(), &a(), &b(), "Trade");
         assert_eq!(waivers.len(), 1);
         assert_eq!(waivers[0].id, "agent|27");
+        assert!(
+            waivers[0].label.contains("(system 27)") && !waivers[0].label.contains("from 27"),
+            "the system is named by its planets: {}",
+            waivers[0].label
+        );
         assert!(secondary_waivers(&state, content(), &c(), &b(), "Trade").is_empty());
         assert!(secondary_waivers(&state, content(), &a(), &a(), "Trade").is_empty());
         let tokens = state.player(&a()).unwrap().strategic_tokens;

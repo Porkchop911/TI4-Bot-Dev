@@ -227,10 +227,6 @@ pub fn control_gained(
     if !has(state, content, player, "assimilate") {
         return;
     }
-    let faction = state
-        .player(player)
-        .map(|seat| seat.faction.to_string())
-        .unwrap_or_default();
     let types = ti4_content::units::catalogue(content, sources);
     let standing = state
         .system_state(system)
@@ -259,8 +255,9 @@ pub fn control_gained(
                 &ti4_model::id::UnitTypeId::new(&base),
             ) - i64::try_from(already).unwrap_or(i64::MAX);
             if room > 0 {
-                let own = ti4_content::units::faction_unit(content, &faction, &base, sources)
-                    .map_or(base.clone(), |unit| unit.id().to_owned());
+                let own =
+                    crate::action_cards::placed_unit_id(state, content, sources, player, &base)
+                        .map_or(base.clone(), |unit| unit.as_str().to_owned());
                 *taken.entry(base).or_default() += 1;
                 converted.push(ti4_model::units::Unit::new(
                     ti4_model::id::UnitTypeId::new(own),
@@ -799,6 +796,17 @@ pub fn ground_combat_round_ended(
     hits + modules
 }
 
+/// Display only: a faction ability as printed (its name, when it can be used and what it does).
+fn ability_card(content: &ContentStore, id: &str) -> serde_json::Value {
+    let record = content.get(ContentType::Abilities, id);
+    let field = |key: &str| record.as_ref().and_then(|record| record.text(key));
+    serde_json::json!({
+        "name": field("name"),
+        "window": field("window"),
+        "effect": field("windowEffect"),
+    })
+}
+
 /// The cost of Munitions Reserves, paid at each combat round's opening window.
 const MUNITIONS_COST: i32 = 2;
 
@@ -865,6 +873,12 @@ fn munitions_offer(
             )])),
             crate::choice::ChoiceOption::decline(),
         ],
+    )
+    .detailed("kind", "ability_offer")
+    .detailed("ability", ability_card(content, "munitions"))
+    .detailed(
+        "cost",
+        serde_json::json!({ "trade_goods": MUNITIONS_COST, "have": held }),
     )
     .contextualized(DecisionContext::new(
         player.clone(),
@@ -1843,6 +1857,33 @@ mod tests {
         let seat = state.player(&player).unwrap();
         assert_eq!(seat.trade_goods, 3, "two paid");
         assert_eq!(seat.munitions_round, Some(3), "for this round only");
+    }
+
+    /// The offer carries the printed ability and the trade goods held against its cost, so a
+    /// client can show what is spent for what (display only).
+    #[test]
+    fn munitions_reserves_offer_carries_the_printed_ability_and_the_cost() {
+        let Some(letnev) = faction_with("munitions") else {
+            return;
+        };
+        let content = ContentStore::embedded();
+        let (mut state, player) = seated(&letnev);
+        state.player_mut(&player).unwrap().trade_goods = 5;
+        let (decider, seen) = crate::choice::Capturing::new(Box::new(crate::choice::AlwaysDecline));
+        let mut table = crate::choice::Table::with_default(Box::new(decider));
+
+        space_combat_round_started(&mut state, content, POK, &mut table, &player);
+
+        let ask = seen.borrow();
+        assert_eq!(ask[0].details["kind"], "ability_offer");
+        assert_eq!(ask[0].details["ability"]["name"], "Munitions Reserves");
+        assert!(
+            ask[0].details["ability"]["effect"]
+                .as_str()
+                .is_some_and(|text| text.contains("re-roll"))
+        );
+        assert_eq!(ask[0].details["cost"]["trade_goods"], 2);
+        assert_eq!(ask[0].details["cost"]["have"], 5);
     }
 
     #[test]

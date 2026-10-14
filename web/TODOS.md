@@ -1,0 +1,10 @@
+- multiple map views (ressources, influence, space units, ground units)
+- decisions are still bad (invasion is completely broken, activating a system uses the dialog again, ship movement max values seem broken, ...)
+- event log is has no real value because there is no text (just "Decision resolved")
+- styling of undo/redo is weird
+- "Resume decision" placement is not good (at top makes more sense). also the decision name next to it shouldn't be an identifier e.g. we now have "movement"
+- "Exit Game" has no value
+- ctrl + mouse wheel should zoom the map
+- public objectives with text
+- player sheet with technologies and faction power text
+- popout overviews should close if you click the trigger again (e.g. clicking again on the strategy card)

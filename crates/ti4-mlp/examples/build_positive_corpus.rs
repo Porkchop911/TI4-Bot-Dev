@@ -251,7 +251,9 @@ fn main() {
         let workers = rayon::current_num_threads().max(1);
         let per_worker = jobs.len().div_ceil(workers).max(1);
 
-        let harvest: Vec<Result<Vec<(u64, usize, Played)>, String>> = jobs
+        type GameRows = Vec<(u64, usize, Played)>;
+        type GameHarvest = Vec<Result<GameRows, String>>;
+        let harvest: GameHarvest = jobs
             .chunks(per_worker)
             .map(|chunk| (actor.inference_copy(), chunk.to_vec()))
             .collect::<Vec<_>>()

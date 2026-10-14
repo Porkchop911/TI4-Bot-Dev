@@ -1,0 +1,43 @@
+{
+  "title": "Auto-Trigger Cards",
+  "description": "Every action card in a player's hand has a switch, in the player sheet and in the reaction window, that decides whether the card is offered when its window opens or declined without asking. The setting is held by the server.",
+  "tag": "web/e2e/screenshots/A-auto-trigger-cards",
+  "shots": [
+    {
+      "file": "out/1-all-offered.png",
+      "heading": "Default: every card is offered",
+      "caption": "The private hand in the player sheet. A green tick beside each action card means the card is offered whenever its trigger happens."
+    },
+    {
+      "file": "out/2-some-never.png",
+      "heading": "Two cards set to Never",
+      "caption": "Direct Hit and Skilled Retreat show a red cross. A click is sent to the server (set_reaction_mode) and the cross is drawn from the state update that comes back. When the window of such a card opens, the game declines it without asking, so the player is not interrupted."
+    },
+    {
+      "file": "out/3-toggle-tooltip.png",
+      "heading": "The switch explains itself",
+      "caption": "Hovering the switch shows what a click does. The tooltip is drawn by the capture helper from the button's title text, because browsers draw native tooltips outside the page."
+    },
+    {
+      "file": "out/4-dialog-switch.png",
+      "heading": "The same switch in the reaction window",
+      "caption": "Under each card the window offers: \"Never offer Sabotage again this game\". It is the same setting as in the player sheet."
+    },
+    {
+      "file": "out/5-dialog-switch-ticked.png",
+      "heading": "Ticked from the window",
+      "caption": "Ticking sends the setting to the server and, when this is the only card on offer, passes the window. The box shows what the server answered."
+    },
+    {
+      "file": "out/6-skipped-window-toast.png",
+      "heading": "A skipped window says so",
+      "caption": "When every card of a window is on Never, no window opens. The corner toast names the card so the player knows why nothing was asked."
+    }
+  ],
+  "notes": [
+    { "title": "Who sees it", "text": "Only the owner of the hand gets the switch, and only that seat's clients receive the setting. Other players and spectators never see it." },
+    { "title": "Scope", "text": "The setting is per card name (every copy of Sabotage at once) and per game. It is saved with the game, so it survives a server restart and an undo." },
+    { "title": "What Never does", "text": "The window of that card is declined for the player and the decline is recorded like any other answer, so replays and restarts reproduce the game. A window that also holds another card still opens, without the Never card." },
+    { "title": "Capture setup", "text": "The captures run against a mocked server that behaves like the real one for set_reaction_mode (modes held on the server, returned in the seat's state update). The server side is covered by Rust tests with a real game." }
+  ]
+}

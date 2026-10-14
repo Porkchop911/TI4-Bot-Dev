@@ -1,0 +1,71 @@
+{
+  "title": "Planet Selection",
+  "description": "The ways a player picks a planet: for a card effect, for a structure, a planet or technology, a planet outcome in a vote, and planets to exhaust when paying (now on the map, with a confirm bar).",
+  "tag": "web/e2e/screenshots/D-planet-selection",
+  "shots": [
+    {
+      "file": "out/1a-card-pick-prompt.png",
+      "heading": "A card asks for a planet",
+      "caption": "Mining Initiative: candidate planets are ringed on the map and the bar names the card and what will happen. Planets that cannot be chosen are dimmed."
+    },
+    {
+      "file": "out/1b-card-pick-chosen.png",
+      "heading": "After choosing on the map",
+      "caption": "Clicking Lodor on the map selects it. The bar now reads \"Mining Initiative — mine Lodor (3R/1I)\" with Confirm and Cancel; the other candidates stay available as chips."
+    },
+    {
+      "file": "out/2-planet-then-structure.png",
+      "heading": "Planet first, then the structure",
+      "caption": "When several options share a planet, picking the planet turns the bar into one button per structure: place a PDS or a space dock on Jord."
+    },
+    {
+      "file": "out/3-planet-or-technology.png",
+      "heading": "A planet or a technology",
+      "caption": "Bio-Stims can ready a planet on the map or an exhausted technology. Technologies appear as chips in the same bar."
+    },
+    {
+      "file": "out/4-planet-outcome-vote.png",
+      "heading": "Voting for a planet",
+      "caption": "An Elect Planet agenda has planets as outcomes, so the vote is cast by choosing a planet on the map."
+    },
+    {
+      "file": "out/5a-payment-list.png",
+      "heading": "Paying: the list",
+      "caption": "The payment list shows each ready planet with what it is worth against what is owed (5 resources), with Auto-pay and Pick on map next to Pay. It also says why Pay is still disabled (\"Short by 5 resources\")."
+    },
+    {
+      "file": "out/5b-payment-map-highlighted.png",
+      "heading": "Paying: payable planets on the map",
+      "caption": "Pick on map closes the list and shows the payment bar. Every planet you can exhaust is ringed and labelled with its value (4R, 3R, 1R); everything else is dimmed. The bar shows nothing paid yet."
+    },
+    {
+      "file": "out/5c-payment-partial.png",
+      "heading": "Paying: partially paid from the map",
+      "caption": "Clicking Jord on the map stages it: green ring and tick, and the bar reads Paid 4 / 5 resources, 1 remaining. Pay stays disabled with the reason; clicking Jord again takes it back. The system inspector no longer opens on these clicks."
+    },
+    {
+      "file": "out/5d-payment-auto-pay.png",
+      "heading": "Paying: Auto-pay",
+      "caption": "Auto-pay stages the planets that cover the bill with the least waste (Jord 4 + Quann 1 = 5, not the biggest planets) and uses trade goods only when planets fall short. It only stages: the bar says Covered and Pay (5 staged) is enabled, nothing is paid until you press it."
+    },
+    {
+      "file": "out/5e-payment-synced-list.png",
+      "heading": "Paying: the map and the list agree",
+      "caption": "Open decision list shows the same selection: Jord, picked on the map, is ticked and 4 of 5 resources are staged. Ticking in the list updates the map the same way."
+    }
+  ],
+  "notes": [
+    {
+      "title": "Map clicks",
+      "text": "While paying, a click on a payable planet token stages or unstages it; the hex only inspects. In the other planet selections a click still picks the planet."
+    },
+    {
+      "title": "Still separate",
+      "text": "Influence for votes (the agenda ballot) keeps its own planet list; it is highlighted on the map but has no confirm bar yet."
+    },
+    {
+      "title": "Submission",
+      "text": "Pay sends the same batch plan as before (planet exhausts, then trade goods), from the bar or the list."
+    }
+  ]
+}

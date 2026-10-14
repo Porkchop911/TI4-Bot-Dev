@@ -1,0 +1,39 @@
+{
+  "name": "ti4-web2",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "typecheck": "tsc",
+    "lint": "biome lint",
+    "lint:fix": "biome lint --write && oxfmt .",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "e2e": "playwright test --project=desktop --project=phone",
+    "e2e:slow": "playwright test --project=slow --project=slow-phone",
+    "shots": "WEB2_SHOTS=1 playwright test --project=shots --project=shots-phone"
+  },
+  "dependencies": {
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "@playwright/test": "^1.63.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@types/node": "^26.6.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "jsdom": "^30.1.2",
+    "oxfmt": "^0.72.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1",
+    "vitest": "^5.0.1"
+  }
+}

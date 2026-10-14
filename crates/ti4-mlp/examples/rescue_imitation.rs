@@ -75,11 +75,9 @@ fn play(
     rotation: usize,
     hot: Option<(&PlayerId, f64, u64)>,
 ) -> BTreeMap<PlayerId, (FactionId, Seat)> {
-    let handles: std::rc::Rc<
-        std::cell::RefCell<
-            BTreeMap<PlayerId, std::rc::Rc<std::cell::RefCell<Vec<ti4_mlp::bot::PpoRecord>>>>,
-        >,
-    > = std::rc::Rc::new(std::cell::RefCell::new(BTreeMap::new()));
+    type RecordLog = std::rc::Rc<std::cell::RefCell<Vec<ti4_mlp::bot::PpoRecord>>>;
+    type RecordLogs = std::rc::Rc<std::cell::RefCell<BTreeMap<PlayerId, RecordLog>>>;
+    let handles: RecordLogs = std::rc::Rc::new(std::cell::RefCell::new(BTreeMap::new()));
     let seated_handles = std::rc::Rc::clone(&handles);
 
     let (_events, _picks, assignments, openings, _final) =

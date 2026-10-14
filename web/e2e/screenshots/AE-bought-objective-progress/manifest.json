@@ -1,0 +1,28 @@
+{
+  "title": "Bought objective progress",
+  "description": "Objectives you pay for when you score them (Erect a Monument: spend 8 resources; Sway the Council: spend 8 influence) now say 'can pay N / 8 <unit> now' instead of a bare 'N / 8', which read like a counter that only goes up.",
+  "tag": "web/e2e/screenshots/AE-bought-objective-progress",
+  "shots": [
+    { "file": "out/1-payable-now-desktop.png", "heading": "Payable now (desktop)", "caption": "Your own cells read Ready (8/8) as before. The rival's 8 / 8 cells are also satisfied." },
+    { "file": "out/1-payable-now-phone.png", "heading": "Payable now (phone)", "caption": "The same table at 390 px wide." },
+    { "file": "out/2-partly-payable-desktop.png", "heading": "Partly payable (desktop)", "caption": "Outside a scoring window: 'can pay 5 / 8 resources now · pay at scoring', with the progress bar. Hovering shows the explanation." },
+    { "file": "out/2-partly-payable-phone.png", "heading": "Partly payable (phone)", "caption": "The label wraps inside the narrow cell." },
+    { "file": "out/3-not-payable-desktop.png", "heading": "Not payable (desktop)", "caption": "Nothing ready to spend: 'can pay 0 / 8 ... now'. This is capacity, which is why it dips mid-round and recovers after the status phase readies planets." },
+    { "file": "out/3-not-payable-phone.png", "heading": "Not payable (phone)", "caption": "Same state on a phone." },
+    { "file": "out/4-scoring-window-desktop.png", "heading": "Scoring window open (desktop)", "caption": "Status-phase scoring decision. Your own cell loses the 'pay at scoring' suffix ('can pay 3 / 8 influence now'); Monument is scoreable and reads Ready. The rival's cells, whose window is not open, keep the suffix." },
+    { "file": "out/4-scoring-window-phone.png", "heading": "Scoring window open (phone)", "caption": "Same decision on a phone." },
+    { "file": "out/5-scored-desktop.png", "heading": "Scored (desktop)", "caption": "The Scored badge keeps precedence over the progress text." },
+    { "file": "out/5-scored-phone.png", "heading": "Scored (phone)", "caption": "Same on a phone." }
+  ],
+  "notesHeading": "Notes",
+  "notes": [
+    {
+      "title": "Wording",
+      "text": "Hover text on the label: 'Bought objectives are paid for when you score them; this is how much you could pay right now with your ready planets and trade goods.' The label also carries it as an aria-label. Browsers do not render native tooltips into screenshots, so it is not visible here."
+    },
+    {
+      "title": "Scoring window",
+      "text": "The client treats the window as open for a seat only while a score_objective or imperial_score_objective decision is pending for that seat. Fixtures are synthetic, not captured engine states."
+    }
+  ]
+}

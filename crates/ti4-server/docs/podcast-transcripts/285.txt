@@ -1,0 +1,2080 @@
+### range 0-1200s
+[0:00:04] This is Space Cats Peace Turtles, the unofficial podcast for fantasy flights Twilight Imperium. Episode 285. When you think about it, what actually even really is the mid-game? And like, if it exists, well, like, does it even exist? Music by Ben Prunty, featuring Matt Martin and Hunter Donaldson. Episode 285, what is this episode about?
+[0:00:56] Is this episode or show about anything?
+[0:01:00] This is episode 285.
+[0:01:01] Hi, hello, hi.
+[0:01:03] Hi, Hunter.
+[0:01:05] This is an episode we're gonna try to do.
+[0:01:07] Hello, yes, this is an episode.
+[0:01:10] You pitched this episode.
+[0:01:12] I want to remind everyone of that.
+[0:01:14] In the season premiere, you were like, this one.
+[0:01:18] We're gonna do this one.
+[0:01:19] Can I listen to you pitch it?
+[0:01:20] You pitched it with such confidence.
+[0:01:22] I still like the idea.
+[0:01:23] You came in high.
+[0:01:24] You came in high.
+[0:01:25] Listen, I always knew that it was this open-ended of a thing, but I do regret ever saying it would be called a guide to the mid-game.
+[0:01:32] This will not, today will not be a guide per se. That doesn't make sense for what this thing is going to be.
+[0:01:37] But, hey, can we do some business first? Real quick?
+[0:01:40] Hey, please. Hey, hey, hey. Something I should have said last week.
+[0:01:43] We finally did it. Okay, everybody? We have a date and I think it's going to stick.
+[0:01:47] I think it's going to stick. Boy, it just keeps, that keeps not happening, but we're going to knock on wood and we're going to say that the
+[0:01:53] the Invitational Finals.
+[0:01:55] What was that?
+[0:01:56] Invitational Finals?
+[0:01:57] When was the Invitational?
+[0:01:57] Yes, November, shut up.
+[0:01:58] Invitational Finals are gonna be February 18th
+[0:02:03] at 1,300 UTC.
+[0:02:05] We finally got a new date that everybody,
+[0:02:08] this has been the hardest of any game we've ever had
+[0:02:12] to schedule in SCPT history.
+[0:02:13] This has been a tricky set of players
+[0:02:15] to all find the right time.
+[0:02:17] It's just been a tough one, okay?
+[0:02:19] So as to how it works sometimes.
+[0:02:20] You all have been there.
+[0:02:20] Y'all have had a six player game planned
+[0:02:23] and then it turns into a five player game
+[0:02:25] with the last minute in your IRL life.
+[0:02:27] Well guess what, we don't get to do that
+[0:02:28] with the Invitational Finals.
+[0:02:29] We have to have all six players show up
+[0:02:31] and that's been easier said than done.
+[0:02:34] But I think we're finally gonna get it
+[0:02:36] and I'm very excited to finally see the conclusion
+[0:02:38] to this year's last year's Invitational.
+[0:02:41] Till last year's Invitational, we will finally find out
+[0:02:45] what happened last year.
+[0:02:48] Another announcement, this one very, very exciting.
+[0:02:50] We finally have everything solidified for what we're gonna call SCPT-Con.
+[0:02:59] Okay.
+[0:03:00] Or, no, we have a better name than that, Hunter.
+[0:03:02] Yeah.
+[0:03:03] Well, what is it?
+[0:03:04] What do we call it?
+[0:03:05] It's the SCPT-Hootenany.
+[0:03:06] It's the Space Cats Peas Turtles Hootenany.
+[0:03:08] The Space Cats Peas Turtles Hootenany will be taking place in Portland, Oregon, of all
+[0:03:14] places.
+[0:03:14] It culminates with an opening ceremonies, which is our night at the helium comedy club in Portland, Oregon.
+[0:03:25] It's going to be on Wednesday, March 22, starting at 8 p.m. so get your tickets now.
+[0:03:32] Okay, it's spring break. I know you can show up. I know you'll be there. Okay.
+[0:03:37] I talked to somebody in person in New York who told me they were flying to Portland for the show.
+[0:03:45] When they said that, I was like, I feel guilty.
+[0:03:48] Hey, Cody.
+[0:03:49] That's the real messed up you're doing that, Cody.
+[0:03:51] I'm real.
+[0:03:51] Cody's doing it.
+[0:03:52] What Cody doing?
+[0:03:53] Okay.
+[0:03:53] It's what Cody wants to do.
+[0:03:55] What are you going to stop Cody from doing?
+[0:03:56] What Cody want?
+[0:03:57] Never.
+[0:03:58] Don't take it away from Cody.
+[0:03:59] So after a way that night is two days at Mox boarding house, they are opening early for us so that we can squeeze in as much gaming as possible.
+[0:04:07] So at the Mox Hope boarding house in Portland, Oregon from 10 a.m. Till close Thursday and Friday
+[0:04:12] You know this is an open-ended kind of thing
+[0:04:15] We would like to maybe do like some sort of tournament
+[0:04:17] But that's like a low key part of it
+[0:04:18] We just want to play games with everybody and hang out with everybody and there's food and drink and games and we're just gonna
+[0:04:24] Have a blast for two days Thursday and Friday
+[0:04:27] So Wednesday night show Thursday Friday gaming and then Saturday and Sunday. We're still in
+[0:04:32] Portland, but things get sort of more nebulous in terms of like what we're
+[0:04:37] We just want to do Portland stuff with people.
+[0:04:39] So let's go eat food and things like that.
+[0:04:43] It's a little bit weirder.
+[0:04:45] Yeah, there will probably be some sort of brunch meet up
+[0:04:49] on Saturday, which will be March 25th.
+[0:04:52] And then perhaps a nighttime visit to Quarter World
+[0:04:56] or someplace like that,
+[0:04:57] which is if you don't know an arcade in Portland.
+[0:05:00] But we're still talking about options there.
+[0:05:02] Basically, you come to Portland or you live in Portland
+[0:05:06] or you live in the area.
+[0:05:07] You come descend on the city and we hang out or a week.
+[0:05:12] Yeah, a whole community game just hangs out
+[0:05:15] and does whatever we wanna do.
+[0:05:17] We will, you'll hear this announcement a lot more
+[0:05:18] at the top of episodes here soon.
+[0:05:20] We're getting things together where there'll be just an ad
+[0:05:23] at the start of episode that reminds you of this,
+[0:05:25] but there will also be an event bright thing
+[0:05:28] to just kind of have a more laid out details
+[0:05:30] of what is happening.
+[0:05:33] Then there's also of course you can go
+[0:05:34] Portland.heliumcomity.com and search on the calendar for our show.
+[0:05:39] That's the one thing that is actually ticketed.
+[0:05:41] So if you want to go to the live show, go to the helium website and get your tickets in advance.
+[0:05:47] It's the best way to guarantee a seat, although I don't suspect we'll run out of seats there.
+[0:05:51] But we ran out of GenCon, so who knows?
+[0:05:53] Sky's the limit, right?
+[0:05:54] But the mocks stuff, there's no tickets.
+[0:05:56] Just come hang out with us.
+[0:05:57] You don't have to do anything.
+[0:05:58] All right.
+[0:05:59] You'll be allowed to sign up on the event, right?
+[0:06:00] and that will help us later on to have an idea of how many people are going so that we can sort of plan accordingly,
+[0:06:07] but there is no ticketed requirement for Thursday through Sunday of anything.
+[0:06:11] Yeah, I would encourage you to sign up on the event right though because knowing how many people will have
+[0:06:16] will make it easier for me and Matt to plan what types of games we want to play.
+[0:06:21] Obviously, we're going to be playing Twilight Imperium.
+[0:06:23] Yeah.
+[0:06:24] Don't, you know, don't get free. It's going to be TI.
+[0:06:27] But depending on who we have, we might,
+[0:06:30] there's some talk of things.
+[0:06:33] We might attempt the 25-player canonical game
+[0:06:35] or Twilight Imperium.
+[0:06:37] That might be something we do.
+[0:06:38] I don't know, I don't know.
+[0:06:40] I like the idea of it being one Super Mega game where,
+[0:06:42] I mean, let's say, let's say we have 75 people
+[0:06:46] at this thing.
+[0:06:47] 25 factions, three people teams, every faction piloted
+[0:06:50] by a team, a squadron of three-
+[0:06:53] Oh my God.
+[0:06:53] eyes just ballooned out of his skull.
+[0:06:57] A squadron, yes.
+[0:06:58] A squadron for every faction.
+[0:07:01] How about it?
+[0:07:02] We need a canonical map of this universe.
+[0:07:05] I think one of these.
+[0:07:06] Every game, we're just making up a new map.
+[0:07:09] And I think that's silly.
+[0:07:10] I know from that.
+[0:07:11] I think it's time to build the real one
+[0:07:13] and decide who actually wins the dang thing
+[0:07:17] and then write that into legend.
+[0:07:18] And then if there is a TI 5th edition,
+[0:07:20] it will have to use this canonical game
+[0:07:23] it's foundation.
+[0:07:24] Absolutely.
+[0:07:25] Hey, one other point of order.
+[0:07:27] I have some orata.
+[0:07:28] Boy, doesn't it feel like a hot minute since we've done any proper orata?
+[0:07:32] Feels like it to me.
+[0:07:33] Yeah.
+[0:07:34] But we do have orata because last week, this is mostly a me thing because I just sort of
+[0:07:37] glazed over some stuff.
+[0:07:38] We were talking about the Mahoc'd gene sources and specifically we were talking about the
+[0:07:42] Mahoc'd Promissory Note and I got jumbled up in the wording of the Promissory Note because
+[0:07:49] I thought that if Mohawks didn't have tokens in their own fleet pool, they would then not
+[0:07:53] be affected by their own promissory note.
+[0:07:57] And thus it would be best to get your tokens out before you start giving away your promissory
+[0:08:01] note.
+[0:08:02] But that's foolish because the promissory note says your entire command sheet.
+[0:08:06] If you have command tokens on your command sheet at large, then that's how this whole thing
+[0:08:11] works, which means that's not going to happen.
+[0:08:13] You're not going to have no tokens on you, especially at the start of the strategy phase,
+[0:08:16] because guess what, at the end of the status phase,
+[0:08:19] you add two tokens to your sheet,
+[0:08:21] and there's not that many,
+[0:08:22] there's only one way you can remove two tokens
+[0:08:24] from your sheet in the agenda phase, okay?
+[0:08:26] So you're not, well, okay, I say that,
+[0:08:28] and then people are gonna come at me
+[0:08:29] with weird other ways that you can lose tokens.
+[0:08:31] Thanks, yeah, thanks.
+[0:08:32] Exactly, so anyways.
+[0:08:33] Thanks, and on both.
+[0:08:34] It's extremely rare that you're going to
+[0:08:38] not have any tokens on your sheet at all
+[0:08:40] at the start of a strategy phase
+[0:08:41] when someone would be playing the promissory note.
+[0:08:43] So anyways, that's a whole thing.
+[0:08:45] You can't avoid the promissory note being bad.
+[0:08:48] That's the point of the Arata,
+[0:08:50] is it's just not that great of a promissory note.
+[0:08:52] It's highly situational, is a better way to put it.
+[0:08:55] Yeah, I just, and I didn't correct you, Matt,
+[0:08:58] because I didn't think about the promissory note
+[0:09:00] pretty much because it was unimportant
+[0:09:03] for the overall kit.
+[0:09:05] I did see some other, this wasn't pushback or Arata
+[0:09:09] or anything, but people just kind of being like,
+[0:09:11] y'all said many times we're not gonna talk
+[0:09:13] about genetic recombination,
+[0:09:15] And it's just hard for me to understand why we're not going to talk about genetic recombination.
+[0:09:18] So I do want to put in maybe this, this is a great little beautiful summation I saw in the
+[0:09:23] Arata last week or in the channel last week, a summation of why we're not talking about
+[0:09:27] genetic recombination.
+[0:09:29] Slander says, there's two major problems with it.
+[0:09:32] One, you need an agenda, you care about where there's a disagreement and where negating
+[0:09:39] a single player out of five enables you to win the vote.
+[0:09:46] It's a very specific situation
+[0:09:47] that could easily not come up at all in the entire game,
+[0:09:50] let alone after you've researched genetic recombination.
+[0:09:55] So the other one was too,
+[0:09:57] the target can opt out by being negating a losing,
+[0:10:00] can be negated by losing a fleet token
+[0:10:02] which puts a pretty low ceiling on the value
+[0:10:04] of an already rare agenda you can seize
+[0:10:06] with genetic recombination.
+[0:10:07] That's why this thing doesn't matter.
+[0:10:07] People were trying to come up with the situations
+[0:10:09] like, hey, I can cut one person out of the vote though,
+[0:10:11] but it's like, think about how often cutting a single person,
+[0:10:15] one specific single person out of the vote,
+[0:10:18] how often does that matter?
+[0:10:19] Like never.
+[0:10:20] Okay, there we go, we did it.
+[0:10:21] We covered the bad things about Mohawk
+[0:10:23] that we didn't wanna cover in the big Mohawk episode.
+[0:10:27] Yeah, we off put it until this one,
+[0:10:29] who even knows if a lot of those people
+[0:10:31] listen to this episode in addition?
+[0:10:33] Who cares, I say.
+[0:10:35] I say if you listen to both episodes,
+[0:10:37] you deserve all of the nuggets, okay?
+[0:10:40] That's how it works.
+[0:10:41] That's how we do this show.
+[0:10:43] Absolutely.
+[0:10:44] But it is time now for this proper thing
+[0:10:47] of first and foremost, trying to figure out
+[0:10:50] what we're even talking about.
+[0:10:51] When we talk about the mid game.
+[0:10:56] Yeah, what are we talking about?
+[0:10:57] When we're talking about what we're talking about.
+[0:11:00] Welcome to Matt's Ambiguity Zone,
+[0:11:03] hosted by Matt with Messle Guest Me.
+[0:11:06] I'm your host and I'm also a player.
+[0:11:08] It's that ambiguous.
+[0:11:09] So the mid game, the first and foremost,
+[0:11:13] I wanna put out the idea that really the only reason
+[0:11:15] the mid game exists as a term is because more often
+[0:11:19] we do in fact talk about the early game
+[0:11:23] and we talk about the late game.
+[0:11:26] That's, those are defined things that we talk about.
+[0:11:29] So the issue with the mid game and the point
+[0:11:32] of this episode is to explore what that space
+[0:11:35] between is supposed to mean if it really means anything at all,
+[0:11:41] which I think is maybe the question we'll try to answer
+[0:11:43] is if it means anything at all by the end of this episode.
+[0:11:45] So I'm gonna, I'm gonna dissent many times
+[0:11:49] during this episode, many times I will,
+[0:11:51] because I think that Matt's point of view on this subject
+[0:11:56] because seems disconnected.
+[0:11:58] And I'm not really sure how we got this different
+[0:12:01] on this particular subject.
+[0:12:02] Well, I just might not have to push back.
+[0:12:04] I wanna go ahead and push back on something
+[0:12:06] you've already said.
+[0:12:07] And I will know each time I'm going to come back in
+[0:12:09] and push back more.
+[0:12:11] We talk about the mid game,
+[0:12:13] plenty on the show.
+[0:12:15] A majority of the things that we say
+[0:12:18] on this show about the game apply to the mid game.
+[0:12:23] It's just, I think the confusion that's happening with,
+[0:12:28] it's not just you, it's also people that
+[0:12:30] if Priyarata on this idea,
+[0:12:33] I think there's some confusion as to when you are talking
+[0:12:38] about the mid game, because when you're talking
+[0:12:41] about the early game or the late game,
+[0:12:43] we know that you're talking about that.
+[0:12:45] Right, but I would claim that a majority,
+[0:12:48] if you're talking about the game at all,
+[0:12:51] you are probably talking about the mid game.
+[0:12:53] Because it's like 90, it's the six out of eight hours
+[0:12:56] that you play the game is probably the mid game.
+[0:12:57] There's no way, I just wanna point out,
+[0:13:00] there's no philosophical way that we have
+[0:13:03] a podcast about Twilight Imperium,
+[0:13:06] where we do not somehow talk about a majority of the game.
+[0:13:11] Okay, and I sensed in preparing this episode
+[0:13:14] and even when the topic was proposed,
+[0:13:17] this sense that like, in what way is this not covered
+[0:13:21] every single week?
+[0:13:23] Yeah, yeah.
+[0:13:24] Well, here we are.
+[0:13:25] I'll say this though.
+[0:13:27] I like putting a finer point on things.
+[0:13:29] I mean, listen, we're on our like third slash fourth run
+[0:13:32] of faction guides.
+[0:13:34] We talk about a lot of things a lot of times on this show.
+[0:13:37] So if we're repeating some facts today, excuse me,
+[0:13:41] but it's just to have a nice clean place
+[0:13:44] for those facts to live in a new context.
+[0:13:47] I'm not saying that we're gonna be repeating ourselves.
+[0:13:51] I'm just saying this is kind of a,
+[0:13:53] we're thinking about thinking about stuff, kind of.
+[0:13:56] No, absolutely.
+[0:13:58] Subject. It's very much that.
+[0:13:59] That's why this is no longer called a guide
+[0:14:01] because we're thinking about thinking about stuff.
+[0:14:04] So anyways, let's put more concrete definitions
+[0:14:07] on the other two things that are much, much, much easier
+[0:14:10] to define.
+[0:14:11] So first and foremost is the early game.
+[0:14:13] Obviously the early game is the beginning of the game.
+[0:14:16] That's like, well, Doy.
+[0:14:17] But more importantly, when does the early game
+[0:14:20] end?
+[0:14:21] What is happening in the early game?
+[0:14:23] So by my definition, I think one of the core elements
+[0:14:27] of the early game is just it's when we're
+[0:14:29] doing our opening expansion.
+[0:14:31] Like everyone has to take planets on the map.
+[0:14:33] You would not be able to do well in the game
+[0:14:35] if you just sat in your home system at the start of the game.
+[0:14:38] Like you have to go take neutral territories
+[0:14:40] and then that determines what hunters already,
+[0:14:42] already dissenting it physically.
+[0:14:44] I was like, you just said,
+[0:14:45] Matt, what if you didn't though?
+[0:14:49] Because here's what you would have.
+[0:14:51] Here's what you would have.
+[0:14:52] You would say three tokens.
+[0:14:54] Oh no, the economics are gonna talk economically.
+[0:14:58] Nine influence value.
+[0:15:00] Yeah, yeah, yeah.
+[0:15:01] You are saving yourself.
+[0:15:03] Mm-hmm.
+[0:15:04] You would come in, this point.
+[0:15:05] This point was literally brought up
+[0:15:06] in the pre-er out of my torrents, so thank you.
+[0:15:08] I'm not in an expanding the neutral planets,
+[0:15:11] but it did sort of get addressed.
+[0:15:13] I just wanna throw it out there.
+[0:15:15] Maybe you shouldn't be taking planets.
+[0:15:17] If you don't have to.
+[0:15:18] Yeah.
+[0:15:20] Well actually, I can't, what, is there a single,
+[0:15:23] are there any objectives you could score
+[0:15:24] without taking any planets?
+[0:15:27] Lead from the front.
+[0:15:28] If you take trade a lot,
+[0:15:29] you can accomplish the economic objectives,
+[0:15:33] and that's about it.
+[0:15:34] You can do your hicon.
+[0:15:35] If you're hicon and you take trade,
+[0:15:37] you could have a really great realm one
+[0:15:39] without activating any systems and taking any planets.
+[0:15:42] And I actually think that it maybe
+[0:15:43] would be a worthwhile experience.
+[0:15:46] And like you said, if Lead for the Front just comes out,
+[0:15:48] just try it.
+[0:15:49] One game where Lead from the Front is your first objective,
+[0:15:51] just see what happens when you take no,
+[0:15:53] when you take no planets.
+[0:15:54] Well, see, that's bad,
+[0:15:56] because you're not saving anything, are you?
+[0:15:58] You're spending for lead for the front and then you have no planet.
+[0:16:03] So that seems pretty bad.
+[0:16:05] Okay.
+[0:16:05] But so I think that's the most basic thing you're doing around the one too, though, is you're just sort of getting whatever plants you can.
+[0:16:11] I think a core other aspect of the early game is the early game exists in a time when mecha-tall-rex has not been taken.
+[0:16:20] Right.
+[0:16:21] The fact the custodians isn't taken.
+[0:16:23] you stop really probably being in the early game
+[0:16:27] once custodians has been taken.
+[0:16:29] Although that's not true for everybody, right?
+[0:16:30] Some people have a really bad round one
+[0:16:32] and then someone takes meccitol,
+[0:16:34] but round two is still like, hey, listen,
+[0:16:37] I'm just trying to figure out my thing over here, okay?
+[0:16:40] I'm maybe y'all are in the mid game,
+[0:16:42] but I'm a little bit still in the early game over here.
+[0:16:45] And that might last through round two for some folks.
+[0:16:48] Okay, just said.
+[0:16:49] I think maybe we shouldn't even call it the early game.
+[0:16:55] Oh, because I actually think that perhaps
+[0:16:57] that maybe this is the problem actually.
+[0:17:01] The reason that we're having this ambiguity zone episode
+[0:17:05] where we're thinking about thinking about stuff,
+[0:17:07] I think I may have zeroed in on what the issue is.
+[0:17:10] Maybe instead of calling it the early game,
+[0:17:12] we should call it the pre-game
+[0:17:14] because the way I think of it is before custodians
+[0:17:18] is taking, it's like you're playing a mini game
+[0:17:22] with its own objective, which is to set up
+[0:17:27] and to take custodians if possible.
+[0:17:29] Well, and it's funny too, because honestly,
+[0:17:31] like, Milte draft is a part of that, right?
+[0:17:33] Picking your faction and slice is about,
+[0:17:35] and specifically in Milte draft,
+[0:17:38] what your speaker order is, round one,
+[0:17:40] like you are playing that whole mini game
+[0:17:43] from the second you sit down
+[0:17:44] if you're doing a Milte draft,
+[0:17:45] and a lot of other draft methods for that matter.
+[0:17:48] I mean, so often in tournament prep, people play until custodians gets taken, and that's
+[0:17:54] like a practice session, is to just figure out how to do the draft and how to do custodians,
+[0:17:59] basically.
+[0:18:00] Right, right.
+[0:18:01] Yeah, I think that could be it.
+[0:18:03] That could be it.
+[0:18:04] If we changed it to pregame and then-
+[0:18:06] But then what's the pre-pregame?
+[0:18:07] So what's the pre-pregame?
+[0:18:08] What's your research before the day of?
+[0:18:10] What's listening to space cats, peace turtles?
+[0:18:12] You're trying to trick me.
+[0:18:13] They're trying to trick me.
+[0:18:14] They're trying to trick me.
+[0:18:15] They're trying to trick me.
+[0:18:16] I don't.
+[0:18:17] Okay, all right, fine, fine.
+[0:18:19] That's the preparatory, I can't speak today.
+[0:18:23] Preparatory period is listening to Spacecast P-Stardles.
+[0:18:28] And also, I don't want to include that.
+[0:18:29] Quit listening to the show, everybody.
+[0:18:30] Just stop.
+[0:18:31] If this episode can be evidence of why you should stop.
+[0:18:34] Yeah, listen, you need to start thinking
+[0:18:36] about how you're spending your time
+[0:18:38] and like try to seriously try and do something better.
+[0:18:41] You know what I mean?
+[0:18:42] Learn to build a birdhouse, all right?
+[0:18:43] Yeah.
+[0:18:44] You can learn all kinds of stuff right now.
+[0:18:47] You know, you listen to dust,
+[0:18:50] thinking about thinking about stuff.
+[0:18:52] So then, okay, so we changed early game
+[0:18:54] into the pregame, and then the mid game
+[0:18:56] can be the early game.
+[0:18:57] Oh, interesting, okay.
+[0:18:59] And what's the late game?
+[0:19:00] And the late game is the game.
+[0:19:02] The late game is the game.
+[0:19:03] No, no, no, no, no.
+[0:19:05] Early game, late game, no, so pregame, early game,
+[0:19:10] late game, no mid game.
+[0:19:11] Great, that way there's no confusion.
+[0:19:13] Okay, if that makes you sleep at night, that sounds great.
+[0:19:16] It makes me sleep.
+[0:19:17] And another thing that happens,
+[0:19:19] I don't know that this is a specific goal in mind.
+[0:19:23] Although it's a thing that players keep in mind,
+[0:19:25] but the early game is somewhat defined
+[0:19:28] by establishing the borders and your relationship
+[0:19:31] with their neighbors.
+[0:19:32] I think this is especially true in tournament play
+[0:19:34] when we're talking about the idea of literally just
+[0:19:37] sitting down with five people you don't know,
+[0:19:39] something you're doing in the early game
+[0:19:41] is kind of testing the waters of what these other people are like.
+[0:19:45] So just from a social aspect in a metagame perspective,
+[0:19:49] the early game is like,
+[0:19:51] hey, when I pop trade in round one,
+[0:19:54] what's the feeling on X minus ones?
+[0:19:56] And that the answer to that question answers a lot more.
+### range 1200-2400s
+[0:20:00] Then, people's feelings on X-1, it kind of answers how we intend to do trade deliberations going forward.
+[0:20:07] Yeah, like what are the customs with this group? You know, what's the protocol? What's the etiquette? Taking the temperature on things like that, figuring out, you know, what kind of game is this going to be? That's something that happens in the pregame or as we used to call it the early game.
+[0:20:26] In the post-early game, now pre-game, another thing I think that is essential for some factions more than others is
+[0:20:34] our focus on early game tech. I think there's a big focus in round one about whether or not you're a fording tech because you have to do specific things.
+[0:20:44] I mean, this is mostly related to folks that are gonna try to get Gravity Drive, right?
+[0:20:47] But Gravity Drive is sometimes related to custodians, but it's also related to, in general,
+[0:20:51] it's a part of that expanding to neutral planets kind of stuff and just like solidifying your position.
+[0:20:57] So I think TAC is sort of an adjacent thing to your early game expansion for a lot of factions.
+[0:21:03] Yeah, absolutely. It's gonna decide a lot of your like pace as far as positioning goes.
+[0:21:09] And it's just gonna determine like what you're capable of, you know, getting done in the early game slash mid game
+[0:21:18] versus the pregame slash early game.
+[0:21:20] I also just remembered something Matt.
+[0:21:23] I remembered that in our original Soul Guide in base game,
+[0:21:27] we used to say, oh it's so cool, you can get gravity drive
+[0:21:32] and that will get you to Mechital rec
+[0:21:33] so you can get custodians,
+[0:21:35] or you can just take a random equidistant.
+[0:21:38] Uh huh.
+[0:21:39] I don't know why we would just say,
+[0:21:42] oh it's so cool to have a tech just so you can take
+[0:21:45] an equidistant for no reason.
+[0:21:47] Like I don't know.
+[0:21:48] Because that used to be rare because getting to an equities in early used to be like the mark of a good thing.
+[0:21:54] You know, I mean, like nobody had movement hardly.
+[0:21:56] It was so it was so much more rare.
+[0:21:58] You know, some people literally survived off their single carrier at home and struggled to even get a second carrier on the board round one.
+[0:22:05] So like actually getting to an equities didn't mattered in base game, I would say.
+[0:22:09] Yeah, base game, which a lot of these, a lot of these new shrimps out here don't even know about.
+[0:22:15] Ace game was, it was rough.
+[0:22:17] I'm excited to be on top of it.
+[0:22:19] We need to go feel it out again for ourselves.
+[0:22:22] My last point for early game, and this is just something that you are doing in early
+[0:22:27] game these days, is in round one, you're scoring if you can't.
+[0:22:31] That's the question you try to answer right away.
+[0:22:34] Like the top of the round, you see the objectives, you see the flop as it were, and you determine
+[0:22:39] right away whether or not it's realistic if you can score or not.
+[0:22:42] And that decision changes the rest of your game.
+[0:22:44] You really, really want to score because you need it for all of the tempo reasons we've
+[0:22:48] talked about in many episodes.
+[0:22:49] But if you do not score, it means drastically different things for your mid game.
+[0:22:55] You enter a new kind of mid game depending on whether or not you scored early.
+[0:22:59] Yeah.
+[0:23:00] When you say mid game, of course, you mean early game, right?
+[0:23:04] Or no.
+[0:23:05] Yeah.
+[0:23:06] You are committing sabotage to this concept is what I've realized.
+[0:23:09] Absolutely.
+[0:23:10] Money in the waters as much as possible.
+[0:23:12] You know, a random thought I'm having right now
+[0:23:14] that I'll just throw into this discussion.
+[0:23:17] Just kind of just, you know, I'll just throw this in.
+[0:23:20] Lately I've been doing this thing,
+[0:23:21] this is a good little piece of advice.
+[0:23:23] A lot of times I'll be like early in the speaker order,
+[0:23:27] round one, and I'll be like,
+[0:23:29] ooh, I can't score unless someone takes diplomacy.
+[0:23:34] And what I do is I will look at the last person in order
+[0:23:39] and see if diplomacy would be the difference
+[0:23:41] between them scoring or not.
+[0:23:43] And then if it would be,
+[0:23:45] then I just depend on the other person taking Diplo.
+[0:23:48] If it wouldn't be, no matter how high I am in speaker order,
+[0:23:52] if I'm not getting custodians, I just take Diplo.
+[0:23:55] That's starting to become just a thing.
+[0:23:58] Like for me, more often than not,
+[0:24:01] it's cool if you want your fancy,
+[0:24:04] trmancy strategy card that does whatever thing.
+[0:24:08] But basically, Round One, I really only have the priority of,
+[0:24:13] well, custodians and then what make me score.
+[0:24:17] A lot of times that's trade, and then after trade,
+[0:24:19] it's pretty much Diplo, almost every time,
+[0:24:22] except for if you're playing a weird action with tech,
+[0:24:26] tech might actually make a difference.
+[0:24:28] But to me, in my perfect world,
+[0:24:31] the way Round One strategy phase would go
+[0:24:34] is first player trade, second player, politics,
+[0:24:38] Third player, Diplo, if it looks like no one else will take it.
+[0:24:44] Otherwise they take other things
+[0:24:45] and just try and force that last person
+[0:24:47] to take Diplo.
+[0:24:48] However, lately I've been noticing
+[0:24:50] that whenever I do depend on someone else
+[0:24:51] to take Diplo, they don't take it.
+[0:24:53] Yeah.
+[0:24:54] And that made me sad.
+[0:24:56] Anyways.
+[0:24:56] The world's really changed.
+[0:24:57] We, Diplo used to be a really different thing, huh?
+[0:25:00] Used to be almost never take round one.
+[0:25:03] It was literally worse to take than anything else.
+[0:25:05] Oh yeah, I guess you're right.
+[0:25:06] But that was a long time ago.
+[0:25:07] I mean, that was a really long time ago at that point.
+[0:25:10] I mean, I barely even remember those days.
+[0:25:12] It's also a different Diplo, like a completely,
+[0:25:14] literally different wording of the Diplo.
+[0:25:17] So, okay, so I think those are some things
+[0:25:20] that sort of help guide us on what specifically
+[0:25:23] early game is.
+[0:25:24] What is late game then?
+[0:25:25] Like when does late game maybe start for some people?
+[0:25:28] And what are some things that define late game?
+[0:25:32] I think a key ingredient, a late game,
+[0:25:33] and some people do this game long,
+[0:25:35] but I think a key ingredient of like knowing
+[0:25:37] your firmly in the late game is when everybody cares about speaker control or at the very
+[0:25:41] least cares about their position in speaker order. Like when that matters the most, you
+[0:25:45] know, starting around four, you like super duper care, whereas I feel like you see more
+[0:25:50] shenanigans early on with speaker stuff because it's like, I don't know, this thing's going
+[0:25:53] to end up anywhere. But I think just the knowledge, I mean, maybe maybe a better way to word
+[0:25:57] this is less about speaker control and more about when when you start counting your win
+[0:26:02] in Slay Carousel, right?
+[0:26:04] The win Slay Carousel sort of is also speaker order
+[0:26:07] in some respects, and that's kind of what I'm describing.
+[0:26:11] It's like the late game is when we start focusing
+[0:26:13] on the carousel.
+[0:26:15] I just said, I think speaker control is not a late game thing.
+[0:26:21] Speaker control has already has all game thing.
+[0:26:24] It's always important where the speaker is,
+[0:26:26] except for maybe round two.
+[0:26:27] I don't know.
+[0:26:28] I mean, round two it is important because whoever's first,
+[0:26:32] Whoever has it is probably custodians,
+[0:26:35] although seems like that's not that true.
+[0:26:38] I need to like, one thing I need to do
+[0:26:39] to improve my own game is literally just go through it
+[0:26:42] and write down all the factions that can do custodians
+[0:26:45] around one, because I keep forgetting.
+[0:26:47] Keep playing in games, I'll be like in a game
+[0:26:48] with like SARS or something, and I'll be like,
+[0:26:52] oh yeah, I'll get custodians.
+[0:26:54] And then I forget that like, dude,
+[0:26:55] SARS can just do that.
+[0:26:56] Like I don't really, it's not even that hard.
+[0:26:59] So yeah, I get a little confused about that.
+[0:27:02] But yeah, so my descent is this.
+[0:27:05] Beaker control, for me, late game starts
+[0:27:08] at different times for different players.
+[0:27:10] Yes.
+[0:27:11] Depending on your tempo, you enter the late game
+[0:27:13] when you can envision the 10 points.
+[0:27:17] Right.
+[0:27:18] And you have a very good idea of what those 10 points
+[0:27:20] are gonna be.
+[0:27:21] I think that's when your late game starts.
+[0:27:24] For some players, you know, a player that doesn't have
+[0:27:26] to score a stage two in order to win,
+[0:27:28] that could be really early.
+[0:27:30] Yeah, you know,
+[0:27:31] ones you can just assume that you can score almost all of them. So therefore, you can
+[0:27:37] kind of go ahead and start planning your exit, your way out of this nightmare.
+[0:27:42] Right.
+[0:27:43] But some of the other players, they got away until that stage two flips.
+[0:27:47] And I would say a majority of the players that is. So for me, it's when the first stage
+[0:27:50] two flips, that's the beginning of the late game because generally speaking, everyone knows
+[0:27:56] if they can score the stage two, then they can probably get to 10. If they can't, then
+[0:28:00] they need around six.
+[0:28:01] Right.
+[0:28:02] So that, and you know, I guess they technically haven't entered their late game by my definition,
+[0:28:09] but needing around six may as well be your late game plan.
+[0:28:12] Right.
+[0:28:13] Yeah.
+[0:28:14] The fact that games basically don't go to around seven means like round six is definitively
+[0:28:18] late game for everybody, whether you're relevant or not.
+[0:28:21] You're either in the late game or you're not.
+[0:28:23] That doesn't mean you're still in the mid game.
+[0:28:24] It means you're not in the game anymore.
+[0:28:26] If you're not in the late game in round six, basically.
+[0:28:30] The way I sort of defined it was, you know, and I like the way you put it on her, I've
+[0:28:35] just like, no, if you know your path to 10, if you know exactly what it now looks like,
+[0:28:39] then that's definitively in the late game.
+[0:28:40] I kind of word that as if you know whether or not you are protecting a lead or you need
+[0:28:46] to come from behind, I kind of define needing a stage two as essentially coming from behind,
+[0:28:50] although it doesn't always look like that, I mean, being able to just easily score a
+[0:28:52] stage two can make you be the person with the lead, right?
+[0:28:55] I mean, John are on speaker token
+[0:28:57] with the tech objectives coming out,
+[0:28:59] bam, they're in the lead.
+[0:29:01] But tempo wise, protecting a tempo lead
+[0:29:05] or not even necessarily a lead,
+[0:29:06] but like being in a part of the leading pack, right,
+[0:29:09] feels different than still needing to figure stuff out.
+[0:29:12] But once you know whether or not you are
+[0:29:14] trying to careen yourself forward
+[0:29:16] or maintain some level of stasis to find that 10th point,
+[0:29:21] yeah, I think that's what defines the late game is,
+[0:29:23] is everybody that's in the late game knows
+[0:29:26] what it takes for them to get to 10 points.
+[0:29:28] And if you don't have any clue
+[0:29:30] what it takes for you to get to 10 points,
+[0:29:31] you're probably still in the mid game.
+[0:29:34] Yeah, or as we call it now, the early game.
+[0:29:37] Or now that I'm.
+[0:29:37] Yeah, yeah, yeah.
+[0:29:39] You've exited the pregame, you're in the early game,
+[0:29:41] and the late game has yet to happen for you.
+[0:29:43] It is weird that in Twilight Imperium,
+[0:29:46] all of the players are not always in the same phase
+[0:29:49] of the game.
+[0:29:50] Right.
+[0:29:51] And I do think that's really telling
+[0:29:52] of just like how TI works is that you should not consider
+[0:29:56] your position to be the same.
+[0:29:59] Like the whole way of another player
+[0:30:01] thinking that has the tempo in order to get to 10,
+[0:30:05] like before a stage two, is on a whole nother level
+[0:30:09] than you having to wait to see the flip of this one card
+[0:30:12] in order to plan out their entire ending game.
+[0:30:15] Well, and it drastically changes your actual goals, right?
+[0:30:18] I mean, if we're gonna say that for one player,
+[0:30:21] Round four is the mid game, and another player,
+[0:30:25] it's their end game.
+[0:30:27] The whole goal of that player who is in the mid game still
+[0:30:31] is to turn the late game player's game
+[0:30:34] into their mid game, right?
+[0:30:36] Like you have to make it to where they no longer
+[0:30:38] can win at the end of round four.
+[0:30:39] You need to put everybody in the same boat
+[0:30:41] of round five being what matters.
+[0:30:44] So yeah, but that doesn't mean you're in the late game,
+[0:30:46] that means you're delaying the end of the game
+[0:30:49] ending before you find a path to 10, basically.
+[0:30:53] Yeah, absolutely, absolutely.
+[0:30:55] Now, Matt, I noticed something that you wrote
+[0:30:57] in the script for this.
+[0:30:59] Mm-hmm.
+[0:30:59] It's a line.
+[0:31:00] I'm gonna just read it as written right here.
+[0:31:02] It says, the problem is that the mid game
+[0:31:05] is the bad part of the game.
+[0:31:07] Mm-hmm.
+[0:31:08] What does that mean?
+[0:31:09] You said that.
+[0:31:10] Just to be clear, I typed that as you said it.
+[0:31:13] I did not say that.
+[0:31:14] Yes, you did.
+[0:31:16] Or you made something the worst part of the game.
+[0:31:17] We started this episode right away. I'm like there is no mid game. It does not exist
+[0:31:22] Supposedly saying that the mid game is the bad part of the game. It's the whole game
+[0:31:27] How is it the bad part? It's because it's the part where nobody knows what is going on nobody know you're just sort of
+[0:31:34] spinning plates and hoping things
+[0:31:37] Shape up in a way that like the game is figuring out the 10 point conclusion stuff
+[0:31:42] The reason we at the commentary does complain about round three is because most often a lot of players don't even need to hardly do anything
+[0:31:51] They can just sort of like score the couple points and that's all they need to do
+[0:31:54] And then you see people spend a lot of mental energy
+[0:31:57] Trying to accomplish a lot of goals that we view as superfluous because they're not actually directly related anything and they're all just banking on
+[0:32:05] ideas of stuff that could come up or
+[0:32:08] Making aggressive moves that may or may not pay off in any meaningful sense
+[0:32:12] But defining why players are doing those things is like what I was after in today's thing is deciding
+[0:32:18] Yeah, why do players make these maybe seemingly superfluous decisions?
+[0:32:22] And why are they not always superfluous, right?
+[0:32:24] What are they actually trying to achieve that might not be you know, it's not just obviously getting them the sixth planet outside of home
+[0:32:31] But it doesn't mean it's not for something right? There's there are other goals taking place inside of the midgame
+[0:32:38] Yeah, I don't know. I guess it's like the time where you could most
+[0:32:41] most invest any extra effort or resources you have
+[0:32:47] into something extra that may or may not pay off.
+[0:32:51] And what are the smart things you could invest in?
+[0:32:53] Right.
+[0:32:54] I don't know.
+[0:32:55] It kind of, mostly I feel like this is dictated by
+[0:32:58] action actually.
+[0:33:00] Yeah.
+[0:33:01] From a faction standpoint, it's pretty obvious
+[0:33:03] like what things you could use
+[0:33:07] to kind of extract extra value for yourself.
+[0:33:13] That's kind of what I fall back on.
+[0:33:14] And what I also, what I think makes it
+[0:33:16] so that we do actually cover the mid game,
+[0:33:21] it's just that the mid game is the sum total
+[0:33:25] of all of the faction guide advice that we have
+[0:33:30] that's like in the middle of the episode.
+[0:33:32] Yeah, all the stuff like, yeah,
+[0:33:34] after we've laid out all the things
+[0:33:35] We just like, let's talk about trade for a while.
+[0:33:37] What are we even talking about when we talk about trade or whatever?
+[0:33:40] Right.
+[0:33:41] I agree.
+[0:33:41] Well, let's take a quick little break.
+[0:33:44] And we come back, let's actually lay down some rubrics and maybe answer some
+[0:33:48] questions about the mid game to get a better sense of what this ambiguous time
+[0:33:52] that takes up six hours of our eight hour board game.
+[0:33:55] What that actually is.
+[0:33:56] Yeah, I do have a lot of questions.
+[0:33:58] So that'd be great if we got there.
+[0:34:07] Hi, welcome back.
+[0:34:08] Hi, it's us.
+[0:34:08] What's up?
+[0:34:09] Did you, during your break, I think you should have gone.
+[0:34:11] This is me retroactively telling you this. Did you buy your ticket for the Portland show yet? Go do that real quick before we start the actual thing
+[0:34:17] Here's your reminder go buy your Portland ticket. You should have done that during the break
+[0:34:20] We gave you a perfect little minute to go do it and then you could have been done with that already
+[0:34:24] So go do that. All right. All right. I could have already done that
+[0:34:26] I mean of course, you know if you're going you know don't just well
+[0:34:29] I mean, hey, you know what you know, hey you could do whatever you want
+[0:34:32] I'm not gonna stop you just encourage people to buy tickets to a show that I'm going to why would we even want that scalp
+[0:34:38] I'm like, what's scaps of people?
+[0:34:40] No!
+[0:34:41] What are you doing?
+[0:34:42] What are you doing?
+[0:34:43] I'm doing a show that will not sell out and there will be no reason to buy an overpriced
+[0:34:46] ticket.
+[0:34:47] Yes, go, go.
+[0:34:48] But it might be cool because you could get someone cool's ticket.
+[0:34:50] Yeah, you know what I mean?
+[0:34:52] Yeah.
+[0:34:53] RY's needs to scalp a ticket and then you could have RY's ticket to our show.
+[0:34:56] That's RY's ticket.
+[0:34:57] And then that night we refer to you, we talk to you as if you are RY's and you are not.
+[0:35:03] That would be great, right?
+[0:35:04] Right, great.
+[0:35:05] We have loosely defined the mid game as the time
+[0:35:09] between the custodians is taken
+[0:35:12] and before you know how you're getting to 10 points, right?
+[0:35:16] This is sort of the where the mid game exists.
+[0:35:19] After custodians, before you know how you're getting to 10.
+[0:35:23] So what are the things we are doing
+[0:35:26] to best utilize our time in the mid game?
+[0:35:29] Because we don't know how the game is going to end, right?
+[0:35:32] We don't know how these things are gonna come up.
+[0:35:34] So we're just trying to maintain some level of relevancy
+[0:35:39] within the game, right?
+[0:35:40] So, I mean, obviously we're just like, we are scoring.
+[0:35:43] We need to score a public every single round.
+[0:35:44] That's just true across the board in TI.
+[0:35:46] That's every single phase of the game.
+[0:35:48] You need to score, right?
+[0:35:49] You need to score around one if you can.
+[0:35:50] You need to score around two if you can, et cetera.
+[0:35:52] But I think something that's notable about the mid game
+[0:35:56] is that a lot of things are actually defined
+[0:36:00] by your secret objectives more than anything else in the game.
+[0:36:05] Because especially if we compare that to public objectives,
+[0:36:09] public objectives, let's assume you did score round one, right?
+[0:36:12] And then a third public objective was revealed
+[0:36:15] at the end of round one.
+[0:36:16] Going into round two, custodians was taken.
+[0:36:19] You've scored one.
+[0:36:20] There are two public objectives for you to score.
+[0:36:22] There's an option, right?
+[0:36:24] And that's gonna maintain throughout the entire rest
+[0:36:26] of the round unless you do an imperial swing,
+[0:36:28] which is like, it's all whole other thing.
+[0:36:31] But in general, you're gonna have two points
+[0:36:33] on the table of score.
+[0:36:34] And a lot of people don't even score round one, right?
+[0:36:36] Not a lot, but I don't know.
+[0:36:37] Maybe 20 to 50% of people probably don't score
+[0:36:41] around ones in each game.
+[0:36:43] So you might have three objectives,
+[0:36:45] every single round that are viable for you to score.
+[0:36:47] That is a lot of wiggle room, generally speaking.
+[0:36:51] Obviously it depends on the objectives,
+[0:36:53] but looking at three objectives
+[0:36:55] and knowing you could either raise a fleet,
+[0:36:58] have two tech and two colors, or expand to exactly these types of planets.
+[0:37:02] You need six planets outside or home or something.
+[0:37:05] Figuring out which of those three things to do is a lot of flexibility at your disposal.
+[0:37:09] Now you might be able to instantly write off one of those,
+[0:37:11] like other two tech and two colors isn't happening right away, but it'll happen later for me.
+[0:37:15] But in general, publics are a very flexible thing.
+[0:37:20] But to get to 10 points, we almost always work on the assumption
+[0:37:23] that you probably need to score all three of your secrets in the game.
+[0:37:28] And secrets get doled out even slower than public objectives.
+[0:37:31] You start with one and you maybe don't like Imperial doesn't get taken round one.
+[0:37:36] So it's sometimes you only see three secrets in an entire game, right?
+[0:37:39] Like you might only draw off of Imperial twice.
+[0:37:42] Hopefully that's not what happens, but that that is plenty common that you only see three.
+[0:37:46] So you have to make these things count and your decision on how to sort of map out the game.
+[0:37:53] I think is based around your secrets.
+[0:37:56] There are a lot of status phase secret objectives
+[0:38:00] that take multiple rounds to do.
+[0:38:02] It's really hard to just turn on a dime
+[0:38:05] and have nine ground forces on a planet,
+[0:38:07] not with a unit with production,
+[0:38:09] or not with a space talk or whatever, right?
+[0:38:10] Like that's extraordinarily hard to do in a single round.
+[0:38:13] For PDS, that takes a lot of time.
+[0:38:15] All of the tech objectives that are secret objectives
+[0:38:18] take like substantial time to execute.
+[0:38:21] And even outside of that,
+[0:38:23] of the ones where you look at it and you're like, I'm not even going to do that. I'm not a
+[0:38:26] PDS faction. I didn't do construction around one. And then I drew four PDS in round two.
+[0:38:31] I don't want to do that. But even the time it takes to cycle out that secret objective
+[0:38:37] is something you have to plan for. You know you must draw a fourth secret objective to get
+[0:38:43] potentially get rid of four PDS, right? So secrets have such a longer sort of time of attack to
+[0:38:51] accomplish, a big part of your mid game is specifically setting up your plan. If you're
+[0:38:56] looking for something to do in the mid game, because you can look at the public and you'll
+[0:39:01] be like, I know I can score that. I think that seems settled. I just need to spend five
+[0:39:05] trade goods and I've got five sitting right here in front of me. Easy. Well, the thing
+[0:39:08] you should be spending your time on is looking at your secrets and figuring out how you're
+[0:39:14] going to do those, whether it be scoring it this round right now or doing the steps necessary
+[0:39:19] this round to be able to do it next round or even the round after that, right?
+[0:39:25] Like sometimes you have to think about round two to then score a secret in status phase
+[0:39:30] round four.
+[0:39:31] It can take that long to score a single secret and you have to sort of set up all of the
+[0:39:36] parts of the plan to get you there.
+[0:39:38] Absolutely.
+[0:39:39] Yeah, you got to score points and you got to, like a lot of them are going to take a
+[0:39:44] lot of time and the time that you invest is in the mid game.
+[0:39:48] Yeah.
+[0:39:49] That's when you do the time to invest in the scoring of the point because so many of them the late game
+[0:39:55] It's just like you can't just that's why the idea of like drawing
+### range 2400-3600s
+[0:40:00] A new secret in Round 5 and hoping to score it. I mean, we generally regard that as, like, uh-oh, territory, right? That's not a good position to be in to just suddenly need to draw a new secret. You're literally at that point hoping that RNG saves you. You just need randomness to gift you with a win or whatever. Yeah, yeah. That's never a good place to be. Round 5, you're gonna have to deal with the Imperial player who may win in the action phase.
+[0:40:29] So yeah, of course, you need to score your secrets,
+[0:40:32] you need to plan your score your secrets,
+[0:40:33] secrets take time, this all makes sense.
+[0:40:37] Yeah, so I think the next thing in the pecking order
+[0:40:40] then is actually choosing obviously that sequence
+[0:40:45] of which public objectives you are prioritizing.
+[0:40:49] Now this is like a simple thing we've covered
+[0:40:50] like in an objective episode, we like kind of ranked
+[0:40:53] which ones you're trying to save for last, right?
+[0:40:55] Like you really wanna save tech objectives for dead last
+[0:40:57] because it's an auto score, spendies you want to save for later
+[0:41:01] because it's better to spend money on plastic
+[0:41:03] that you have access to,
+[0:41:04] and then all you have to do is just spend some planets
+[0:41:06] in the final round if that's what it comes down to or whatever.
+[0:41:09] So there are harder control objectives
+[0:41:11] that you need and want to do.
+[0:41:14] The question, and something I saw people really debating
+[0:41:17] in the pre-arata, and it wasn't always specifically worded
+[0:41:19] as being about public objectives,
+[0:41:22] but it is about how much aggression
+[0:41:25] is too much aggression for the mid game.
+[0:41:28] Like how hard should I be pushing myself
+[0:41:32] in the mid game to accomplish various things?
+[0:41:35] And I think we, in the discussions,
+[0:41:37] I saw a lot of talk about like people who are just
+[0:41:41] sitting comfortable, should you stretch a little wide, right?
+[0:41:43] Should you just like expand into equity
+[0:41:45] since almost arbitrarily, should you go around
+[0:41:48] doing some sort of pre-wind slang,
+[0:41:50] slow down other people's games?
+[0:41:52] And I think all of those things are tricky
+[0:41:54] to sort of like suss out.
+[0:41:55] And we'll talk even more about aggression in the big game.
+[0:41:58] But as it relates to points,
+[0:42:00] I think the mental math that you can do
+[0:42:04] about scoring a hard point is generally speaking,
+[0:42:08] it is probably worth it to push yourself a little bit
+[0:42:12] to get some hard control objectives, right?
+[0:42:15] You don't necessarily just wanna sit in your slice.
+[0:42:17] Now this could be acts of aggression
+[0:42:19] or this can be what we refer to as like boat floating matter.
+[0:42:23] trade points for points. What people are actually doing is just avoiding spending plastic arbitrarily.
+[0:42:29] They're turning that plastic into a point of negotiation to say, you help me score this
+[0:42:33] control objective, I'll scratch your back in this other way. But especially in the aggressive manner,
+[0:42:39] the hard points that you want to score, it depends on a few factors, right? How much plastic can
+[0:42:46] you even commit to that attack? What can actually get there? And how open does it leave you to
+[0:42:51] counter attack, whether it be in the new spot you went to, right?
+[0:42:55] If you're only getting there with like, this is why we don't like
+[0:42:57] Cruiser too, generally speaking, right?
+[0:42:58] Is a cruiser too gets somewhere, takes the thing, but then the person just
+[0:43:03] retaliates with more stuff because all their stuff is surrounding that system or
+[0:43:06] whatever.
+[0:43:07] So it can be really hard to just pull off these clever snipes with cruiser
+[0:43:10] twos because it leaves you nothing on the counter attack.
+[0:43:13] Or what are you leaving completely exposed in your own slice for somebody else to
+[0:43:17] come take?
+[0:43:17] And so those two are like obvious factors, right?
+[0:43:21] I'm just like, I don't know how hard is it to score the point, do I?
+[0:43:24] Let's do the battle calculator math.
+[0:43:26] But the other thing to factor into this is how much harder will that same point be
+[0:43:34] that you must score, you probably must score all five stage ones?
+[0:43:39] And yes, it's difficult now, but how much harder is that same public objective
+[0:43:43] going to be in a future round?
+[0:43:45] I think the best example of this is the one where you have to have more planets
+[0:43:49] than neighbors, right?
+[0:43:51] You have to have more planets than two neighbors.
+[0:43:53] That is an objective that I think notably in the mid game,
+[0:43:57] like very often only gets harder and harder to do.
+[0:44:00] If you're trying to score that right out the gate,
+[0:44:02] it can sometimes be quite easy to get just enough planets
+[0:44:05] ahead of two neighbors, right?
+[0:44:07] Because everybody's just sort of done
+[0:44:08] their early game expanding.
+[0:44:10] But later in the game, it can be much more difficult
+[0:44:12] to find positions that are possible to take
+[0:44:15] because people have put more plastic there.
+[0:44:17] So you need even more plastic to combat their plastic and you just have more people with like
+[0:44:23] an insurmountable amount of planets whereas like in round two, you know,
+[0:44:28] everybody's kind of at that like five planet threshold for that objective or whatever. I don't know it depends on what faction you're playing like when
+[0:44:35] you would try and score something like push boundaries. I think in general that's kind of
+[0:44:39] my feeling on a lot of the things that you're saying if I were to just do a mass descent to the whole thing,
+[0:44:45] would be that this is probably not the best way
+[0:44:49] to think about Twilight Imperium in general
+[0:44:52] and that you really gotta stay in the faction mindset
+[0:44:57] because a lot of these kind of more general things,
+[0:45:02] they don't apply to every faction evenly.
+[0:45:05] Those boundaries is best thought about based off
+[0:45:08] what, who am I in the situation?
+[0:45:11] Because what you just said about waiting on it,
+[0:45:15] scoring it later, if I'm larger, obviously I don't care.
+[0:45:18] I'm not.
+[0:45:18] I'll score push boundaries right away.
+[0:45:21] Right.
+[0:45:22] If I have one planet in my home system,
+[0:45:24] well, then I don't have a natural advantage to push boundaries.
+[0:45:27] But then we got a factor in slice.
+[0:45:29] So it's really just about taking these general things
+[0:45:33] and then thinking about how your situation differs.
+[0:45:37] Or is it like taking, it's like,
+[0:45:40] do we wanna teach people how to think?
+[0:45:43] Or do we wanna say general things
+[0:45:44] that just sound correct.
+[0:45:46] Because I think trying to put yourself in the situation
+[0:45:51] and just take stock of it of where you're at
+[0:45:55] by noticing what is exceptional
+[0:45:57] about your situation is more important.
+[0:46:03] Like for example with aggression.
+[0:46:05] Yes, obviously in the mid game, point blocking,
+[0:46:10] taking something away from your opponents
+[0:46:12] is going to possibly help you win.
+[0:46:15] But it also might not.
+[0:46:16] Like the idea of, oh, my neighbor,
+[0:46:20] let's say my neighbor has tempo on me.
+[0:46:23] They got custodians or something.
+[0:46:25] They're set up to win this game.
+[0:46:27] And let's say everybody else doesn't.
+[0:46:28] No one else has any bonus points.
+[0:46:30] There's no shard, there's no obsidian out there.
+[0:46:32] It's just a bunch of people that are at
+[0:46:34] basically the same level.
+[0:46:35] Yeah.
+[0:46:36] And I can in round three, stop them from scoring any point.
+[0:46:41] Okay, well that brings their tempo down
+[0:46:42] to the same tempo as everybody else.
+[0:46:45] Well then we get to round five.
+[0:46:46] Round five now, all of a sudden,
+[0:46:48] like there's really only like maybe the player
+[0:46:51] with Imperial is like suddenly the only one with a shot.
+[0:46:55] That's just one player that needs to be win-slayed.
+[0:46:57] I feel like depending on my position,
+[0:47:00] I might not even want that.
+[0:47:02] Like I might not want there to be one person.
+[0:47:05] I might want there to be several people
+[0:47:07] that needs to be win-slayed depending on
+[0:47:08] what factions are available
+[0:47:10] and where my tempo is at and where speaker is compared
+[0:47:13] to where I am, okay?
+[0:47:16] So like we have a lot of win-slay power
+[0:47:19] then maybe I don't even wanna point blocking round three
+[0:47:22] because I'm like, no, I want this person to be doing good
+[0:47:26] so that we use all our win-slay power
+[0:47:28] on getting rid of that person.
+[0:47:30] And then I'm next to one.
+[0:47:32] Yeah, to take on myself, right.
+[0:47:35] I don't know.
+[0:47:36] It depends so much on factors like especially faction.
+[0:47:41] I think that's one of the reasons that I have trouble in conversations where we are letting
+[0:47:47] faction go out the window.
+[0:47:48] We're not worried about faction and that's what we're just talking about, the mid game.
+[0:47:52] Well, but now all of a sudden I feel like I don't have enough information to think anything
+[0:47:56] about anything.
+[0:47:57] Right.
+[0:47:58] Yeah.
+[0:47:59] I don't know, I think I always lean more generalistic anyways.
+[0:48:05] And to default, because of what happens to me so often
+[0:48:08] in games, is I'm thinking about all these general concepts
+[0:48:10] so much that I literally forget my own faction abilities.
+[0:48:13] And there have been plenty of games where I'm just like,
+[0:48:15] I forgot to use that agent for two rounds,
+[0:48:17] because I just wasn't thinking about my faction enough
+[0:48:20] or whatever.
+[0:48:22] Right, and is it more important for you to play
+[0:48:26] Matt or your faction.
+[0:48:29] And my point of view is it's more important
+[0:48:31] to play your faction, to play into your specific abilities.
+[0:48:34] Now every player has like their own biases
+[0:48:37] and you can't really like get rid of those, right?
+[0:48:39] That's just what makes you better at a faction,
+[0:48:41] I think is kind of how maybe you might like see that
+[0:48:44] in a certain sense, right?
+[0:48:47] I think that if you watched me play a bunch,
+[0:48:50] you would be like, okay, so here's like generally
+[0:48:53] what this player likes and where their biases lay.
+[0:48:58] I think that would still be very evident.
+[0:49:00] But hopefully you also see a lot of adjustment
+[0:49:03] for the situation plus the faction.
+[0:49:06] There's a synthesis of where you're at,
+[0:49:09] what randomness has occurred
+[0:49:12] and what your faction is good or bad at.
+[0:49:15] Hopefully you're kind of synthesizing all of that
+[0:49:18] into a winning strategy.
+[0:49:21] or you just got bad luck and then you lose,
+[0:49:23] and there's nothing you can do about that.
+[0:49:25] You can just lose.
+[0:49:26] Well, man, I tell you, yeah,
+[0:49:28] all of these conversations I think never state enough
+[0:49:30] how much sometimes the game's just not yours, huh?
+[0:49:33] Like, I think we've all sat at that table where it's like,
+[0:49:35] oh, there's actually no way I'm winning this game,
+[0:49:38] and I just know that from round four onward or something.
+[0:49:41] Just something bad enough happens to you
+[0:49:44] that that's just gonna be the end of it.
+[0:49:45] That happened in, I keep referencing this alliance game,
+[0:49:48] but it's because it took me four months, okay?
+[0:49:49] I thought about it a lot.
+[0:49:50] So yeah, give me some, but R-wise and I got off to
+[0:49:54] like a massive lead, but then by the end of,
+[0:49:58] like I think that game went to round seven maybe.
+[0:50:00] By the end of round five,
+[0:50:02] or maybe even the beginning around five,
+[0:50:03] I knew I was toast.
+[0:50:05] Like I knew it was over.
+[0:50:06] There was no way to ever claw back
+[0:50:07] because it was just like,
+[0:50:08] what stage two am I ever gonna be able to score?
+[0:50:11] Basically was the conversation.
+[0:50:12] It would take so much effort to ever climb back from this
+[0:50:16] and the people, my neighbors are only getting further ahead.
+[0:50:19] They're not gonna stop getting ahead.
+[0:50:20] They have my entire slice in their pocket.
+[0:50:22] Like they're sitting on my stuff.
+[0:50:25] So there are times when you know that stuff.
+[0:50:27] I think it is helpful to recognize
+[0:50:32] when you are officially going for stage twos
+[0:50:35] to sort of like try and mark that moment,
+[0:50:38] which it, and it changes and sometimes it gets reversed.
+[0:50:40] Like it can be undone and suddenly you're not just going
+[0:50:43] for stage twos and you're playing a new game.
+[0:50:46] But setting up a moment when you try to think about
+[0:50:49] This is now a stage two game, helps reroute what your priorities are, right?
+[0:50:54] Yeah.
+[0:50:55] The second, you're definitely looking for a stage two and you can look around the table
+[0:50:59] and see that other players aren't.
+[0:51:01] Well, that's a new focus, isn't it?
+[0:51:03] I need them to need the stage two as well or I need them to not be able to score as fast.
+[0:51:07] So kind of sign posting that is probably quite important.
+[0:51:11] So what are some features we can look for to recognize, uh oh, it's stage two time?
+[0:51:16] The most important one, and an obvious one,
+[0:51:18] is just I didn't get the custodians, right?
+[0:51:20] If you get custodians, you don't need a stage two,
+[0:51:24] probably, unless, I mean, what we assume is custodians
+[0:51:28] and support for the throne, right?
+[0:51:30] And then five stage ones, three secrets.
+[0:51:31] That's like the easiest path to 10 points.
+[0:51:33] Not that it's not even the most common path to 10 points,
+[0:51:35] mind you, as we found out with tournament statistics,
+[0:51:38] more people win with stage twos than this other path.
+[0:51:41] But the like, the baseline cheapest way to get there
+[0:51:45] is this other thing, okay?
+[0:51:46] So if you don't have custodians,
+[0:51:48] you're probably already thinking about stage twos.
+[0:51:51] And so then the rest is gonna be about
+[0:51:52] bonus point stuff.
+[0:51:53] And a big factor I wanted to bring up in this is
+[0:51:57] because Hunter and I were sort of prepping this episode.
+[0:51:59] And this almost got waffled on even being a point,
+[0:52:02] but Hunter, you brought up something specifically
+[0:52:04] that like I just hadn't clicked into yet.
+[0:52:06] And I think it's important for people to note is
+[0:52:09] bonus points aren't everything in this conversation.
+[0:52:12] You can't just count, I got my bonus point,
+[0:52:14] I have the path to 10, right?
+[0:52:15] That's not enough.
+[0:52:17] There are many things that factor into needing stage 2s
+[0:52:19] because sometimes I get, I can trick myself and think,
+[0:52:24] mecha-tall's sitting right there at any point,
+[0:52:26] all I would need to do is take Imperial
+[0:52:28] and take mecha-tall and get the bonus point, right?
+[0:52:30] So technically speaking at all points in the game,
+[0:52:32] a bonus point is available to me,
+[0:52:35] just depends on how much plastic I have
+[0:52:37] and my speaker order to get Imperial or whatever.
+[0:52:39] But a key reminder is mechatal bonus points cost you a secret, right?
+[0:52:47] If you do the bonus point, you do not draw the secret.
+[0:52:50] And so the big thing that we always talk about in commentary is that factor.
+[0:52:53] If someone got that bonus point, but it didn't solve their speaker tempo at all,
+[0:52:57] which means they still need imperial to get taken by two other players
+[0:53:01] to get even up to their third secret.
+[0:53:03] And then they need all three of those secrets to have been
+[0:53:05] scoreable from the get-go, which is not always the case, which means you need
+[0:53:08] like an extra round worth of someone taking Imperial,
+[0:53:11] which is a very dangerous thing.
+[0:53:12] So then the big other factor, of course,
+[0:53:14] and the reason we talk about one of the new texts
+[0:53:17] we talk about all the time is,
+[0:53:18] so can I get more secrets somewhere else?
+[0:53:20] And that's why we like dark energy tap so much,
+[0:53:23] is because it makes some other strategies
+[0:53:25] like a mechatol bonus point a more reliable thing.
+[0:53:28] The cycling of secret objectives
+[0:53:30] is not just to get better, easier secret objectives,
+[0:53:32] it's also sometimes too fixed,
+[0:53:34] ruined secret objective tempo, basically.
+[0:53:37] Yeah, think about it like this.
+[0:53:40] Let's paint a specific.
+[0:53:42] Let's say you're playing a game and you draw two secrets
+[0:53:46] at the beginning.
+[0:53:47] Let's say you get, let's say, an easy action phase.
+[0:53:49] Let's say you get, demonstrate your power,
+[0:53:51] which is just have, win a combat with three ships.
+[0:53:55] Let's say you do not kick custodians.
+[0:53:58] Through no fault of your own, you just
+[0:53:59] don't, you weren't in the right spot to get it.
+[0:54:02] It's now round two.
+[0:54:04] You get Imperials left to you.
+[0:54:07] and whoever took custodians went in pretty light.
+[0:54:10] It will be easy.
+[0:54:11] Maybe they'll even negotiate with you.
+[0:54:13] They're like, yeah, whatever, I'll just leave.
+[0:54:15] And then you can take, can I spend it?
+[0:54:17] I wanna spend it first or whatever.
+[0:54:20] And then yeah, fine, you agree to that, you do it.
+[0:54:22] And then you come in and you get your bonus point
+[0:54:26] out of the way.
+[0:54:27] I actually think that's a great scenario.
+[0:54:29] Even if you don't do public, let's say you don't even get
+[0:54:32] the extra public score, although obviously if you can,
+[0:54:34] that would be better.
+[0:54:37] That is a situation where I'm totally down to get behind on Secret Tempo because I already
+[0:54:41] have an easy one and it's an action face secret which means I can score it pretty much any
+[0:54:45] time I want.
+[0:54:46] And you did it very early.
+[0:54:47] We're talking about round two.
+[0:54:48] There's many rounds where Imperial still can get taken, right?
+[0:54:52] Losing out on a secret in round four is very different than losing out on a secret in round
+[0:54:55] two, I think.
+[0:54:56] I think that's quite a different set of circumstances.
+[0:55:00] It's a little bit scary.
+[0:55:01] I'm not going to lie.
+[0:55:03] I mean, in some ways, I, in adding more detail to it,
+[0:55:07] I even think like, oh, I don't know,
+[0:55:08] because you're gonna get the round three draw
+[0:55:11] off Imperial being taken,
+[0:55:12] and then you're gonna get round four draw
+[0:55:14] off Imperial being taken, and then that's three,
+[0:55:16] and you've only, that's all you have,
+[0:55:18] and they all pretty much need to be perfect
+[0:55:20] until you get to round five.
+[0:55:22] But, let's say you're doing this,
+[0:55:25] and you also have kind of an ion speaker.
+[0:55:28] If your speaker tempo is okay,
+[0:55:31] the needing a secret objective in,
+[0:55:35] like let's say you need a secret objective in round five,
+[0:55:38] but you're the one with Imperial.
+[0:55:41] That's okay because you can also sub in
+[0:55:44] another Imperial point.
+[0:55:45] You're also taking Mectal Rex,
+[0:55:47] which does have a value in and of itself.
+[0:55:49] I played a game recently where
+[0:55:52] RYZ was playing a soul, funny enough,
+[0:55:55] and had Mectal Rex for pretty much the entire game
+[0:55:59] and we just let RYZ do that.
+[0:56:01] and that was bad and we all messed up
+[0:56:04] and not doing anything about that
+[0:56:06] because Mechathal Rex is last I checked,
+[0:56:09] worth six influence and last I checked,
+[0:56:11] Soul gets one command counter for free,
+[0:56:14] every status phase anyways,
+[0:56:16] so that's free, extra command counter.
+[0:56:18] Yeah, but I mean I was playing a Sardak
+[0:56:21] so it's not my fault at all,
+[0:56:22] and I can just blame all the other players in that game
+[0:56:25] for not doing anything about it.
+[0:56:27] If I'm playing a Sardak, I have no table responsibility
+[0:56:30] in my opinion.
+[0:56:31] I am just out for myself and I am totally fine to do that.
+[0:56:35] If anybody says, Hunter, blah, blah, you could have done this.
+[0:56:37] No, I couldn't have.
+[0:56:38] Yeah. All right.
+[0:56:39] Playing a Sardak.
+[0:56:41] Playing for myself.
+[0:56:42] Yeah.
+[0:56:42] I do not play Sardak for you.
+[0:56:45] OK?
+[0:56:47] So the last thing to all of this though
+[0:56:50] is to also not get too comfortable,
+[0:56:51] because like I said, your need for a stage two
+[0:56:54] can literally get reversed.
+[0:56:56] I mean, listen, seat of an empire
+[0:56:57] can come out in the round four agenda phase
+[0:57:00] and completely reshape what round five looks like all together.
+[0:57:04] Guac has a way of showing up.
+[0:57:06] Shard of the Throne can show up, and suddenly, all you have to do
+[0:57:09] is take Shard from somebody else if you want to set up for it.
+[0:57:12] And that's a whole thing you could go off on a very long tangent about.
+[0:57:16] It's like, oh, if Shard of the Throne is in the game,
+[0:57:19] everybody technically has a bonus point available to them
+[0:57:22] if they choose to be aggressive enough or whatever.
+[0:57:25] We don't have to go into all the details of how you set up
+[0:57:28] to take another player's home system
+[0:57:29] or legendary planet or whatever.
+[0:57:31] But the idea being, obviously you have to look out
+[0:57:35] for these other bonus points sort of popping up
+[0:57:39] out of nowhere and then being prepared to swivel back into,
+[0:57:43] oh, I don't actually need stage twos to win.
+[0:57:46] But honestly, what's sometimes the most comfortable position
+[0:57:49] is getting set up for that stage two that does come out
+[0:57:53] for round five and not needing it.
+[0:57:56] Like those are the most comfortable wins actually.
+[0:57:58] Like the staunchest, just like they had it locked up
+[0:58:02] through and through is the one where they might score
+[0:58:04] the stage two and if they don't, there's an easy fallback
+[0:58:08] plan because the stage ones and the bonus points
+[0:58:11] have found a way to turn up or whatever.
+[0:58:14] Yeah, the best is having multiple ways to add up
+[0:58:16] to 10 points in total.
+[0:58:17] Right.
+[0:58:18] I mean, how much control you have over that?
+[0:58:20] Not a whole lot.
+[0:58:21] No.
+[0:58:22] But hopefully if you just kind of do even a conservative idea of what is correct, you'll
+[0:58:31] at least have the opportunity in round five to add up to ten.
+[0:58:34] I don't know if you have the speaker order or anything like that.
+[0:58:37] But yeah, I don't know.
+[0:58:39] Also there's a lot to think about with decisions you can make in the midgame that are going
+[0:58:44] to affect how the win-slay phase of the game plays out.
+[0:58:50] There are a lot of people that I think are interested in the idea of trying to win slay
+[0:58:53] someone early.
+[0:58:56] And I am entirely unconvinced that that is actually a good idea without having a specific,
+[0:59:04] like a really specific set of circumstances in front of me.
+[0:59:07] It's really hard for me to sign on that.
+[0:59:10] And I'm coming over time more and more around to this idea that it's not about win slaying
+[0:59:16] someone early.
+[0:59:17] about recognizing the people that need to be win slayed in round three and keeping that
+[0:59:23] in mind and letting that guide how you then eventually will approach round five.
+[0:59:29] I like to Duke Lucham's summary of sort of this concept that you're getting up to which
+[0:59:33] is round three and four is basically just score a point in a secret set up to take your right
+[0:59:38] neighbors home system.
+[0:59:40] If we're talking about the win-slide carousel, it's like the best thing you can do to waste
+[0:59:44] a little bit of time, it's just at least be positioned where their home system is accessible
+[0:59:48] to you.
+[0:59:49] And I think we even say home system, but I mean it more nebulous than that, to stop a
+[0:59:53] potential point of theirs.
+[0:59:54] If there's a control objective you know they're going to need to go for, if you can be ready
+[0:59:59] to get in the way of that.
+### range 3600-4800s
+[1:00:00] At, but not get in the way yet, but be ready to, like that's obviously a helpful step because then when it comes time for Windslay Carousel stuff, you are a part of the conversation. You always want to be a part of the Windslay conversation in that endgame. And the biggest hope is that it actually leads to you getting that sneaky win because you were third in the carousel and they failed to deal with you or whatever. But what was a funny point that you and I were talking about too, we were kind of getting back into this aggression conversation. And there was a debate of,
+[1:00:30] And I saw this in the pre-erotta too,
+[1:00:32] a lot of people talking about positioning,
+[1:00:33] and I was really fixated on like,
+[1:00:35] well, how much focus should I have
+[1:00:37] on getting my forward space dock
+[1:00:40] into a really relevant position?
+[1:00:42] And one of your counterpoints, Hunter, was like,
+[1:00:45] I don't know, man, galvanize the people.
+[1:00:47] I think that's the one, right?
+[1:00:48] The spend six tokens is one of the stage twos
+[1:00:52] that can come up.
+[1:00:52] So there is an argument to be made
+[1:00:55] that every act affects some public objective
+[1:00:59] positively and negatively, right?
+[1:01:01] Doing something to go get some forward position
+[1:01:03] so that maybe you can get six planets
+[1:01:06] of the same trait later costs you a token.
+[1:01:08] And if the token objective comes out,
+[1:01:11] that looks like that was a bad move.
+[1:01:12] You didn't know that.
+[1:01:13] That's why it was a part of the mid game
+[1:01:14] to just like be blindly choosing to do things, right?
+[1:01:18] Yeah, absolutely.
+[1:01:19] Yeah, I mean, just never underestimate the choice
+[1:01:23] of not doing something.
+[1:01:25] Right.
+[1:01:26] is that in Twilight Imperium,
+[1:01:28] there is always the value in just how about
+[1:01:31] we don't do anything and just keep our money and go home.
+[1:01:36] Right, so I don't know.
+[1:01:38] That's really tough.
+[1:01:40] That's really tough in the abstract, I think,
+[1:01:42] without having a particular component to anchor the idea.
+[1:01:49] But yeah, I don't know.
+[1:01:50] I think if we had a scenario,
+[1:01:53] like let's say there was a scenario of like,
+[1:01:55] You have sling, let's say you have sling,
+[1:01:58] and you're like, I want to build a forward space dock
+[1:02:02] on round four, and I'm going to do that
+[1:02:06] by taking so-and-so's planet.
+[1:02:09] I can almost make an argument of like,
+[1:02:11] oh, that sounds kind of good without knowing
+[1:02:13] any of the other stuff.
+[1:02:14] Let's believe all the other stuff.
+[1:02:15] Let's say the other stuff is ambiguously good
+[1:02:17] for this idea.
+[1:02:19] I think that's kind of what I'm talking about,
+[1:02:21] or what I need, is some sort of like,
+[1:02:23] The sling provides a lot of flexibility.
+[1:02:29] We get into round five and we learn
+[1:02:31] that actually this is the flagship thing.
+[1:02:32] Oh, cool, now this all seems genius.
+[1:02:34] If we draw a secret that requires destroyers,
+[1:02:39] we didn't have any before.
+[1:02:40] Oh, now this is great.
+[1:02:41] Right.
+[1:02:45] Being able to almost see the matrix in that way
+[1:02:48] of all of the different little small probabilities
+[1:02:53] that this action might affect is really important.
+[1:02:57] And you kind of always have to factor it
+[1:02:59] against like not doing something.
+[1:03:01] Basically not doing something at all.
+[1:03:03] Well, and you brought up flexibility in that.
+[1:03:05] And I do think that's the crux to all of this
+[1:03:08] and why you know, you Hunter lean on,
+[1:03:11] as you've expressed in this episode today,
+[1:03:13] like you lean on, well, I have some known variables
+[1:03:16] because I know what my faction can do, right?
+[1:03:18] That's my known, that's the known quantities,
+[1:03:20] is my faction can do this.
+[1:03:22] and everything else is trying to set up for flexibility.
+[1:03:25] Because realistically, again, the mid game is sort of defined by,
+[1:03:29] I don't know if I need a stage two or not.
+[1:03:31] I don't know if I can do the stage two or not.
+[1:03:33] We're sort of waiting around to know if I can do stuff,
+[1:03:36] which means what I'm actually setting up for
+[1:03:38] is the most potential to flex into whatever board state
+[1:03:44] the game presents me with, right?
+[1:03:46] Which is why we like things like Blue Tech.
+[1:03:48] Blue Tech is a tech tree defined by positional flexibility.
+[1:03:54] With slower techs, you need to already be
+[1:03:57] next to where you need to go.
+[1:03:59] But with a bunch of Blue Tech,
+[1:04:01] you can get three spaces away from a lot of different
+[1:04:04] positions, which is why it's better.
+[1:04:05] It's because it's not because getting around the whole board
+[1:04:08] all day long was so much better.
+[1:04:10] It's when I needed the flexibility most in round five,
+[1:04:14] I had access to it.
+[1:04:16] And that's what makes things good.
+[1:04:17] It's also like why so many of our opinions have turned on like Nas Rokin.
+[1:04:21] We always thought Nas Rokin was pretty good, but seeing how much players get away with
+[1:04:26] the flexibility of rolling a bunch of dice and spinning a bunch of roulette wheels, like
+[1:04:32] that is an additional layer of flexibility to their point potential that other factions
+[1:04:38] do not possess.
+[1:04:39] And so we look at Nas Rokin nowadays and we go, they're really great because they can
+[1:04:43] and pull off stuff that nobody else can do
+[1:04:45] with more reliability than other factions can.
+[1:04:50] Yeah, how do you figure the odds of Nas Roka winning a game?
+[1:04:54] Like how many little probabilities
+[1:04:56] that you need to factor in?
+[1:04:59] I don't know.
+[1:05:00] I'm not a math person.
+[1:05:03] But it does seem like a lot.
+[1:05:04] That's a lot of coin flips that are happening
+[1:05:06] in one game for Nas Roka.
+[1:05:08] And they can decide to do those coin flips
+[1:05:10] at like late intervals.
+[1:05:11] They can just bank these fragments
+[1:05:13] and either turn them into tokens for actions,
+[1:05:16] or turn them into dice rolls as shard pulls
+[1:05:19] and stuff like that.
+[1:05:19] So yeah, I mean, I think that's what this episode
+[1:05:24] was set out to define is,
+[1:05:28] what is the mid game?
+[1:05:29] And the point of it is to say,
+[1:05:31] it's this open-ended, very tricky thing to navigate,
+[1:05:35] which is why it's understandable that like,
+[1:05:37] we sort of harp on it so much,
+[1:05:39] because it's just like, it's the part of the game
+[1:05:41] where literally anything can happen.
+[1:05:44] And that's what makes it so difficult.
+[1:05:46] And that's why this wasn't a guide today.
+[1:05:47] This isn't a guide because the act of playing
+[1:05:52] Twilight Imperium is the puzzle of solving the mid game.
+[1:05:57] Right?
+[1:05:58] The only known quantities are your faction at startup
+[1:06:01] and the fact that you need 10 points at the end
+[1:06:03] and where like in round five,
+[1:06:05] how you are relative to that scoring order.
+[1:06:08] Who's going to win first or whatever?
+[1:06:11] Those are like absolutes.
+[1:06:12] Everything else is literally just the act of playing TI,
+[1:06:15] and it's different every single game,
+[1:06:17] and it's why this game is so replayable to us is,
+[1:06:20] if we could easily answer this,
+[1:06:21] like how do you play the mid game thing,
+[1:06:23] we would have build orders for the mid game,
+[1:06:25] and it would get boring to play, right?
+[1:06:29] It would become boring if we just like knew
+[1:06:31] every faction does kind of exactly this in the mid game
+[1:06:34] because then there wouldn't be any creativity
+[1:06:36] to the game anymore.
+[1:06:38] Oh yeah, that's interesting.
+[1:06:39] Is there actually,
+[1:06:41] the people talk about whether Twilight Imperium
+[1:06:43] is solvable or not?
+[1:06:44] I don't think it's solvable for like a human,
+[1:06:47] but I wonder if you could have like
+[1:06:49] an artificial intelligence give you like,
+[1:06:52] spit out like spreadsheets
+[1:06:55] that showed you the optimal play for every single moment
+[1:07:00] and how often that would add up the victory.
+[1:07:03] Right.
+[1:07:04] Like if you did the quote unquote right thing,
+[1:07:09] every single time, based on probabilities,
+[1:07:12] how often would you win?
+[1:07:14] I bet you would win about one in six of the game
+[1:07:18] if you did that.
+[1:07:21] So that is my contribution to this conversation.
+[1:07:25] I think if you even did everything right,
+[1:07:28] you have a one in six shot.
+[1:07:29] This sounds awesome.
+[1:07:30] It's one out of six times.
+[1:07:33] You're gonna be the best.
+[1:07:34] Yeah, exactly.
+[1:07:35] Exactly.
+[1:07:36] If anything, that's like the expectation, right?
+[1:07:38] Is to do closely to, you know, what is roughly the most,
+[1:07:42] and there's probably like a few things
+[1:07:43] that are in the most optimal territory.
+[1:07:45] The best players, the players that we somehow see
+[1:07:47] doing well in the invitational,
+[1:07:49] and we see doing well across tournaments, right?
+[1:07:51] We have plenty of people that have lots of repeat wins.
+[1:07:53] Like there are people that are obviously
+[1:07:56] very good at this game.
+[1:07:58] But the playing optimally is almost the baseline.
+[1:08:02] and then it's the really crazy wacky, creative stuff
+[1:08:06] and just the sheer luck of it all
+[1:08:10] that leads to a bunch of extra wins.
+[1:08:12] Is Magic the greatest player in TI history
+[1:08:16] or is he the luckiest TI player in history?
+[1:08:19] I'll let you decide.
+[1:08:21] I think it might come down to heuristics.
+[1:08:23] I think different players have different heuristics
+[1:08:25] that they use that correlate to specific probability windows.
+[1:08:30] Like they're like I I kind of I play like this and when these types of probabilities come up
+[1:08:36] I know how to recognize them and kind of jump in them
+[1:08:38] But I actually don't I don't think there is a player that
+[1:08:41] Can see the whole matrix right so I don't I actually don't think anyone I
+[1:08:46] Don't think there is a player that plays the whole thing optimally right
+[1:08:50] And because I feel like the I don't even know what that would look like right
+[1:08:55] But yeah, let's uh, let's get our official intelligence on it. Those are hot right now
+[1:09:00] Let's get an AI that spits out probabilities and let's consult them for every action and then just see like what it tells us to do.
+[1:09:10] I wonder what it would say.
+[1:09:12] I think we need to get some people.
+[1:09:14] Darryl, can we get Darryl on this one?
+[1:09:17] Darryl not a design Darryl.
+[1:09:19] This is another episode where we say that Darryl should be turned into a robot basically.
+[1:09:24] Yeah, or more of a robot than he already is probably.
+[1:09:27] Hey, guess what?
+[1:09:27] I want to thank our weird bears for joining us on all this big Al Capicino squeamish emu brasbird kabal of soul
+[1:09:33] Kalloo and darrel jadeen Jedi carnal John necrodice twice kindred spirit Alice Lordraddington emlish Fske sun facts
+[1:09:39] Absol Ricky m44 ry's Ryan and spirit thing and want thank our teensy sprouts patience is a virtue
+[1:09:45] Ethan from cardboard crash course baldrick tautology is what it is craken Frank G. Reka general pith
+[1:09:50] My son is also named board uncle baddie savant and Vince
+[1:09:54] Hunter I've got a very
+[1:09:56] abbreviated homebrew review for you today.
+[1:09:59] It's a very, very small one.
+[1:10:00] It's very funny to do it.
+[1:10:01] This one, I've been pulling deeper.
+[1:10:03] Hey, homebrewers guild, keep sending stuff.
+[1:10:06] I will say this much.
+[1:10:07] The big chunky, I designed an entire new action card suite,
+[1:10:12] or I designed a whole new relic deck.
+[1:10:14] Those are cool projects.
+[1:10:16] Those are much harder for me to cover in a homebrew review.
+[1:10:18] Maybe even like present them in sections,
+[1:10:20] in proposed segments, and we could cover them
+[1:10:22] over like a couple weeks or something.
+[1:10:24] I don't know.
+[1:10:25] But I've been gravitating towards like,
+[1:10:26] Here's one thing. Here's a card. Here's a component.
+[1:10:30] And this week's is from Wecker.
+[1:10:32] Wecker gives us this action card.
+[1:10:33] And let's see how this sits with you.
+[1:10:35] It's called facsimile fabrication.
+[1:10:37] At the start of your turn, spend eight influence
+[1:10:41] and choose one relic in another player's area.
+[1:10:45] Until the end of your turn, this card has that relic's
+[1:10:50] ability text at the end of your turn, discard this card.
+[1:10:55] Cool.
+[1:10:56] Just cool.
+[1:10:58] Yeah, no, that's really cool.
+[1:10:59] You could get Shard for a turn.
+[1:11:01] Yeah, for the 10th point, just like the second you need it, you're at nine, you're sitting
+[1:11:05] on nine and then use Action Card for the win with a fake Shard for just a moment.
+[1:11:09] Yeah.
+[1:11:10] You could, you know, here, actually, this is way cooler.
+[1:11:13] You could get Obsidian or one turn and use it to draw a secret objective.
+[1:11:21] And if it's an action phase, you can score, score that point.
+[1:11:25] That's hilarious.
+[1:11:26] Yeah, you'd have to maybe slightly reword it to like,
+[1:11:30] choose a relic as if you just drew it or something, right?
+[1:11:33] Because the obsidian is like when you get it.
+[1:11:35] But anyways, I think we assume that that is part of it,
+[1:11:38] is that like you do the obsidian the second you get it,
+[1:11:40] and then you have four,
+[1:11:41] but then you're gonna discard at the end of your turn.
+[1:11:42] Like you will discard down on your secrets after the turn.
+[1:11:46] You won't have four after that or whatever.
+[1:11:49] Yeah, but there are rules that limit
+[1:11:50] how many secrets you can score.
+[1:11:52] You can only score three secrets.
+[1:11:54] But if you don't keep Obsidian,
+[1:11:55] then you actually can still only score three.
+[1:11:58] But so the situation is an action phase for the win.
+[1:12:01] You draw and needed an action phase for the win.
+[1:12:02] You use this action card.
+[1:12:04] So you just needed it and then you just needed,
+[1:12:06] and you happen to draw the action phase
+[1:12:07] that you can do right now for the win.
+[1:12:09] That's the beautiful moment.
+[1:12:11] I like it too just for like,
+[1:12:13] I mean, I wish Relics were tradable.
+[1:12:15] That's a thing for me just in general.
+[1:12:16] I've so many things in the game are tradable,
+[1:12:18] but you cannot trade a Relic.
+[1:12:20] I think that's a little wacky.
+[1:12:21] I wish, I think Crown of Amphidia is more interesting
+[1:12:25] if you can trade it, maybe that's Confirational.
+[1:12:28] But like if I could give the Crown to the person
+[1:12:30] with a tomb and that could come at a price,
+[1:12:32] like okay, now we're talking.
+[1:12:33] I hate that the Crown is just like,
+[1:12:35] that's mine now and I'm either getting the tomb
+[1:12:37] or I'm not or whatever.
+[1:12:38] Right, right.
+[1:12:39] So I would love for relics to be tradable,
+[1:12:40] but this is like half a half measure of that.
+[1:12:42] I also just think it makes Domino's Orb cool,
+[1:12:46] because other people can do Domino's Orb
+[1:12:47] and I think that's great.
+[1:12:48] I think it makes Domino's Orb better.
+[1:12:50] if other people can potentially do some Dominus Orb stuff.
+[1:12:54] Yeah, I honestly question the spend aid influence part.
+[1:12:58] Right.
+[1:12:58] Why do you have to spend anything at all?
+[1:13:00] Let's just like get this in there.
+[1:13:02] Just let it be a victory point sometimes.
+[1:13:04] Well, just let it, yeah, this is an action card
+[1:13:06] that just goes hog wild and you just, you play it
+[1:13:10] and then you get the use of this relic
+[1:13:12] that you shouldn't have and then you discard it.
+[1:13:14] I would like us to refine the action card deck
+[1:13:17] back down to all hits and make it less of them as well.
+[1:13:21] I would like us to mine the action card deck and get maybe even back into that world where
+[1:13:27] we draw more action cards than there are cards in the deck.
+[1:13:30] I don't know.
+[1:13:31] Did you prefer that time in the world?
+[1:13:33] You didn't.
+[1:13:34] You like it when there's too many and you don't.
+[1:13:35] I like it when there's too many.
+[1:13:36] I really didn't like it.
+[1:13:37] I really didn't like it.
+[1:13:38] In base game, the fact that you could count on every single action card being drawn.
+[1:13:43] I don't know.
+[1:13:44] It was where the real problem was you knew public disgrace.
+[1:13:47] was there. Like you knew for a fact, public disgrace was there and that was going to be
+[1:13:52] a factor and you knew Imperial writer would get played at some point, although that wasn't
+[1:13:55] as big of a thing. But like political stability and public disgrace, those are for a fact getting
+[1:14:00] played. So that I agree, that's annoying. I would like it to maybe stay around 100 cards,
+[1:14:04] but they're just all bangers and then like going for action cards is good for everybody,
+[1:14:08] not just a sorrow or whatever. That would be nice.
+[1:14:12] Honestly of the components that I would like do an overhaul of I actually feel like action cards are maybe not that for me
+[1:14:19] Like I would I would much faster
+[1:14:21] Overhaul the agendas sure then I would the action card deck. I'd be down to just leave the action card deck the way it is
+[1:14:27] Yeah, we need we need we need the agenda phase just a complete overhaul of it
+[1:14:31] It needs to be more fun. Yeah, because it's more impactful
+[1:14:34] We take we take so much time out of a game to do the agenda phase and I feel like you know
+[1:14:39] It just isn't always worth it.
+[1:14:41] Speaking of the agenda phase, welcome to the agenda phase.
+[1:14:45] This is a segment of the show where we have asked
+[1:14:47] galactic counselors to just ask us questions
+[1:14:50] and then we answer them.
+[1:14:51] Whoa, easy, simple.
+[1:14:53] It's like a mailbag segment,
+[1:14:54] except we call it a agenda phase for some reason,
+[1:14:56] even though that doesn't really make sense, does it?
+[1:14:58] First one is from El Blasto.
+[1:15:01] Do you think that there's a strategic advantage
+[1:15:04] to being nice in Twilight Imperium?
+[1:15:07] in parentheses, they've written washing,
+[1:15:10] letting score for little to no cost, et cetera.
+[1:15:13] So like, you know, when I just wash,
+[1:15:15] like, you know, you draw an industrial explorer,
+[1:15:17] you get like one commodity,
+[1:15:19] and I just wash it for free.
+[1:15:20] Is there a strategic advantage to doing stuff like that?
+[1:15:24] What do you think, Matt?
+[1:15:25] I would lean, yes.
+[1:15:29] I think the main advantages of those sorts of things
+[1:15:32] are less strategic and more good for vibes,
+[1:15:36] good for just like the game in general,
+[1:15:37] But if you follow the big owl line of thinking,
+[1:15:43] the best scenario a game can actually end up in
+[1:15:45] is that all six players have a relevant shot
+[1:15:49] at winning in the end.
+[1:15:50] Like what stinks is when one person
+[1:15:53] is just completely cut out
+[1:15:54] and not just from a like, oh, that's sad for them.
+[1:15:56] It's like, no, no, no, no,
+[1:15:57] that person is a foil for somebody.
+[1:15:59] Like that person that's out is a problem for somebody
+[1:16:02] and it's not gonna feel good.
+[1:16:03] And it's a strategic disadvantage
+[1:16:05] to have something like that laying around
+[1:16:07] that can strike you in the back, right?
+[1:16:09] So the idea of nicely making sure everybody's gonna get
+[1:16:13] to that 55 point game, we all get to nine points,
+[1:16:16] and then one person gets to 10,
+[1:16:18] I do think there's some strategic merit to that,
+[1:16:21] of just like it makes the Winslay carousel
+[1:16:25] kind of a more interesting thing.
+[1:16:27] I think it actually upends the Winslay carousel in general.
+[1:16:31] If all six players have a shot to win,
+[1:16:34] those are the games where just like
+[1:16:35] actually somebody wins it, right?
+[1:16:36] because we're not fighting to slay everybody else.
+[1:16:39] The Winslet Carousel happens when like three people
+[1:16:41] have a shot and three don't.
+[1:16:43] That is kind of how I feel.
+[1:16:45] But the games where too many people
+[1:16:47] have a shot in round five,
+[1:16:49] it's generally kind of a long round five,
+[1:16:51] but somebody just comes out ahead of it, right?
+[1:16:53] You don't see the round six in those situations
+[1:16:54] because it's just too many people to stop.
+[1:16:56] So everybody just puts on the blinders and horse races.
+[1:16:59] Goes for the finish line.
+[1:17:01] Yeah, or some of them get stopped
+[1:17:03] and then they just get to a player
+[1:17:04] that they run out of gas again.
+[1:17:05] Can't stop that player or whatever.
+[1:17:08] To answer the question, is there a strategic advantage
+[1:17:10] to being nice?
+[1:17:11] I think I would say that it depends on how nice your group is.
+[1:17:17] If everyone is nice, then yeah, definitely.
+[1:17:21] Everyone is mean, probably not.
+[1:17:23] There's definitely not much of an advantage in being nice
+[1:17:26] to someone who isn't going to be nice back.
+[1:17:30] So read the room.
+[1:17:31] Take the temperature of your friends,
+[1:17:33] of your, you know,
+[1:17:35] continental European, don't be nice to anybody, you know?
+[1:17:38] And if you're American or Canadian,
+[1:17:42] then be probably too nice and get away the game.
+[1:17:44] There we go.
+[1:17:45] We can all play our roles.
+[1:17:46] We can all agree that.
+[1:17:48] Next up is one from Merky.
+[1:17:50] How could the game be changed
+[1:17:52] to have a 6PM game complete in four to five hours,
+[1:17:57] losing the least amount of Twilight Imperium experience?
+[1:17:59] I think this episode is a testament to that idea.
+[1:18:03] The mid game is the most just sort of sitting around,
+[1:18:07] waiting to see how things are gonna turn out.
+[1:18:09] Honestly, my most controversial opinion,
+[1:18:12] if you played this game to maybe seven or eight points,
+[1:18:15] you would cut out all of the mid game chaff,
+[1:18:18] but you would still have round four win slays
+[1:18:21] and round one goofy races for custodians.
+[1:18:24] Everything would be, I think the more the game is a race,
+[1:18:28] is the only way to shorten it, right?
+[1:18:29] The second you need lots of people
+[1:18:32] that could be constantly thinking about stopping each other,
+[1:18:34] that's why the game goes long.
+[1:18:36] So if it's, listen, everybody can easily find their way
+[1:18:39] to those eight points, there's not a lot you can do
+[1:18:41] to get in each other's way,
+[1:18:42] and it's just about how quickly can you accomplish your goals.
+[1:18:46] That is one way.
+[1:18:48] Yeah, it's a shame we don't have anything
+[1:18:50] like simulated early turns,
+[1:18:52] like what we had in Twilight Imperium third edition.
+[1:18:55] And that would maybe be something you could potentially
+[1:18:57] at TI4 in a way to just kind of shorten the early game.
+[1:19:00] But what sucks is the early game does feel kind of critical.
+[1:19:03] It's fun too.
+[1:19:04] I like the early.
+[1:19:05] It's kind of my favorite phase
+[1:19:07] because it's just like you're doing the goofiest.
+[1:19:09] I wish we had more plays of the week
+[1:19:12] that were just clever round one stuff.
+[1:19:14] We always do plays of the week that are like for the win,
+[1:19:16] but it's like we have round ones where it's like,
+[1:19:19] whoa, they found their way to custodians.
+[1:19:21] No one saw that coming.
+[1:19:22] It didn't lead to a win, but holy cow,
+[1:19:24] they pulled this whole crazy slew of events together.
+[1:19:27] Did you see on, there was a post on Reddit,
+[1:19:30] and it's probably on like BGG and other places as well.
+[1:19:32] And I know they're hosting games
+[1:19:35] on tabletop simulator of this.
+[1:19:37] A user, Ren42, came up with Twilight Continuum.
+[1:19:42] This is something I think is worth trying,
+[1:19:44] and I think we should do a stream of some time.
+[1:19:45] But it's a TI4 variant that eliminates rounds
+[1:19:49] by allowing players to pass and score at any time.
+[1:19:53] So essentially there's no status phase.
+[1:19:55] We don't wait for everybody to hit a status phase
+[1:19:56] and then I'll score.
+[1:19:57] You are just sort of always playing an action phase.
+### range 4800-5700s
+[1:20:00] And then doing a scoring step of your thing and then you sort of start into your next thing or whatever. I won't go into the nitty gritty details, but it is an enticing idea for cutting out the like stall-fest stuff. If there's no need to wait till the end of the round to then try stuff to score, if you're just always doing actions that don't have it, like Staling goes out the window, which is like a huge culprit of the game going long, right? It's just people sort of waiting for more meaningful actions.
+[1:20:30] clever element to make the game not feel too wildly different, but probably speeding
+[1:20:34] it up a lot.
+[1:20:35] Yeah.
+[1:20:36] I don't know how I would like to solve this problem.
+[1:20:39] To be honest, I don't mind how long Tiai is if everyone is like, because to me, my games,
+[1:20:47] especially if I'm playing with the people that I play with most of the time, they end
+[1:20:51] up going about five or six hours, which to me is fine.
+[1:20:54] That's a good runtime for a game.
+[1:20:57] I only really start getting antsy once we get to like eight,
+[1:20:59] which I realized is like fairly normal
+[1:21:01] for a lot of people.
+[1:21:02] But I just like I'm a little bit faster.
+[1:21:05] I like the feeling of the pace of the game as it is.
+[1:21:10] But when people are playing with stakes,
+[1:21:14] when people are playing for like tournament reasons
+[1:21:17] and the game has to go really long,
+[1:21:18] it's gonna be like 14 hours.
+[1:21:20] I just, I don't really enjoy that myself.
+[1:21:24] And I realized that it could mean,
+[1:21:27] you know, if a group is consistently playing six-hour games,
+[1:21:30] it could mean that they're not playing super optimally
+[1:21:33] all the time.
+[1:21:34] I think that sacrifice is worth it to me, to be honest,
+[1:21:37] like to play a little worse, but get the game done faster,
+[1:21:42] I think is worthwhile.
+[1:21:44] Yeah, the best groups in my experience
+[1:21:48] of just like having a good time playing TI
+[1:21:50] is when everyone is at that high performance tournament
+[1:21:55] winner quality of player, but it's a game they don't really
+[1:21:59] care about very much.
+[1:22:00] So when you have that, round three is like a 40 minute round.
+[1:22:05] Because everyone's like, well, we know this doesn't matter.
+[1:22:07] We're just sort of making the things happen.
+[1:22:08] We scratch some backs.
+[1:22:09] We do whatever.
+[1:22:10] We just get through it.
+[1:22:10] We get through round three and four super fast,
+[1:22:12] and we get to the meet, which is round five.
+[1:22:14] And then we have extra time to really sort of mess
+[1:22:17] with the stuff in round five.
+[1:22:18] In a tournament game with all expert players,
+[1:22:21] they're taking every instance they can
+[1:22:23] to make every moment matter,
+[1:22:25] which means they care about every action in round two.
+[1:22:27] They care about every action in round three.
+[1:22:29] That's what makes it go so slow.
+[1:22:31] But when it's like, let's not sweat the micro,
+[1:22:35] like the little details,
+[1:22:36] that stuff can fall by the wayside
+[1:22:37] because all we're actually after
+[1:22:40] is a cool good end game scenario.
+[1:22:41] We just want that round five to be juicy and good.
+[1:22:44] Right, absolutely.
+[1:22:45] Okay, let's do our last question.
+[1:22:47] This is from Big Al, cup of chino.
+[1:22:50] What pie do you buy yourself and what qualities
+[1:22:53] do you look for?
+[1:22:55] With a follow up question,
+[1:22:56] what pie would you buy for the other
+[1:22:58] if heading over to their place?
+[1:22:59] What pie would you buy me, Matt?
+[1:23:01] What pie would I buy Hunter?
+[1:23:03] Man, I don't know what flavors you love most.
+[1:23:06] Okay, my wife makes pies.
+[1:23:09] So first off, let me just, let me,
+[1:23:10] let me dissent, here's my dissent for the episode.
+[1:23:12] I will not be buying a pie.
+[1:23:14] Thank you very much.
+[1:23:15] I will be very graciously asking my wife
+[1:23:18] if I can have one of her extra pies
+[1:23:20] to give to one of my friends.
+[1:23:21] Well, yeah, let's, we'll change pie to a choir.
+[1:23:25] A choir a pie.
+[1:23:26] And then that, you know, I was also thinking of a choir.
+[1:23:29] I was thinking of what is the company called a little pie?
+[1:23:33] A little pie.
+[1:23:33] A little pie.
+[1:23:34] Yeah, that's a little per your wife's kind of thing.
+[1:23:36] That is also the preferred size of pie.
+[1:23:38] A little pie, I don't need a pie slice.
+[1:23:40] A little pie.
+[1:23:41] I mean, a little pie.
+[1:23:41] I mean, a little pie.
+[1:23:42] Just give me a whole little pie.
+[1:23:44] I like a pumpkin pie, to be honest.
+[1:23:47] I'm a big pumpkin pie guy.
+[1:23:48] Not really surprised.
+[1:23:49] Pumpkin, actually.
+[1:23:50] Really, why?
+[1:23:51] I don't know.
+[1:23:52] Pumpkin pie is contentious.
+[1:23:53] So it's just, I don't know.
+[1:23:54] I just think of, I don't know exactly
+[1:23:57] what kind of person loves pumpkin pie,
+[1:23:58] but I wouldn't have guessed you were the kind of person
+[1:24:01] that loves a pumpkin pie.
+[1:24:04] Do you like free pies?
+[1:24:05] Do you like Apple cherry blueberry?
+[1:24:07] Yeah, yeah, that's the-
+[1:24:08] I like Apple, I like blueberry.
+[1:24:10] But see, I like all pies.
+[1:24:11] That's the thing is,
+[1:24:12] I'm a man of mini pies.
+[1:24:15] I mean, name a pie I don't like, you know?
+[1:24:18] So the one I would want to give you the most, though,
+[1:24:21] is my wife makes a baklava pie.
+[1:24:25] It's like a pecan pie, but instead of pecans,
+[1:24:27] it's like the stuff that goes in baklava.
+[1:24:29] It's like pistachio and all that kind of business.
+[1:24:32] Yeah, that sounds delicious.
+[1:24:34] Yeah, that's my chosen pie for you.
+[1:24:35] It's also the chosen pie for me.
+[1:24:38] It's a honey baklava, and the only substitution I make
+[1:24:41] when it's for me is I want hot honey on top
+[1:24:43] instead of regular honey.
+[1:24:44] I want little, I want, I want, I want
+[1:24:46] kissed by the spiciness.
+[1:24:47] Just, just a little bit spicy kiss.
+[1:24:50] I was gonna say pecan pie for you.
+[1:24:52] That's what I would have just gonna get you.
+[1:24:53] So, like, is that, is that, is, I just feel like,
+[1:24:56] when I think of you.
+[1:24:57] When I was growing up, I didn't like pecan pie at all.
+[1:24:58] I've come around to it, but that's because I have now
+[1:25:00] had Katie's pies, which are really good.
+[1:25:03] And what I've learned is I'm gonna, I'll drag my dad here.
+[1:25:06] I don't care.
+[1:25:07] My dad doesn't make a very good pie.
+[1:25:08] He makes great cobbler.
+[1:25:09] He makes great cobbler.
+[1:25:11] He don't do pie.
+[1:25:11] He doesn't, he just buys a pie crust.
+[1:25:13] You know what I mean?
+[1:25:13] He's not like, he's not out there making pie dough and turns out that's a critical,
+[1:25:19] critical element to the quality of a pie.
+[1:25:21] This comes as not new information to most pie lovers for the record.
+[1:25:25] I am not on this podcast.
+[1:25:27] Okay.
+[1:25:27] If anybody asks, I was not on the one where we talked bad about Dave.
+[1:25:32] Okay.
+[1:25:33] I am not here.
+[1:25:34] If anybody asks, Hey, do you know that episode where Matt starts talking, uh,
+[1:25:39] smack talk about Dave's pies.
+[1:25:41] I was not there for that one,
+[1:25:43] and I don't know what you're talking about.
+[1:25:44] Is my official answer.
+[1:25:46] That you'll be getting for my lawyer.
+[1:25:47] Mm-hmm.
+[1:25:49] Hey, guess what?
+[1:25:50] We, it's time to do another Galactic Council poll too.
+[1:25:53] We're sort of, we're doing like,
+[1:25:54] have these on Galactic Council stuff these days.
+[1:25:57] You know, we've got this agenda face thing.
+[1:25:58] That's fulfilling some Galactic Faith,
+[1:26:00] Galactic Council poll stuff.
+[1:26:02] We wanna do Galactic Council segments, I think,
+[1:26:05] like a shorter fair.
+[1:26:06] But we would like to also still do a few Galactic Council episodes proper.
+[1:26:12] And we have a new poll for everybody with four options on that poll.
+[1:26:17] Hunter, would you like to reveal the options for that poll?
+[1:26:20] All right.
+[1:26:21] Here are your options.
+[1:26:22] This will be an episode that will be released in March, probably like the third
+[1:26:25] week of March.
+[1:26:26] So you have a little bit of time, but voting is going to be happening from the
+[1:26:29] release of this episode through, I guess, for like a couple of weeks, maybe like two weeks.
+[1:26:34] You have.
+[1:26:35] So please get in there, smash that like button
+[1:26:37] on whichever episode idea you want us to do.
+[1:26:41] First option, Twilight Imperium factions ranked
+[1:26:47] goodest to evilest.
+[1:26:50] This is a disaster.
+[1:26:51] This is a, oh, let's let's let Mat and Hunter
+[1:26:53] discuss morality for an hour.
+[1:26:55] We're gonna, we will sum each faction up
+[1:26:59] based off the morality of their characteristics of their lore.
+[1:27:03] Yeah.
+[1:27:04] And we will do it as a continuum from Goodist to Evilist.
+[1:27:08] So we start with the Goodist.
+[1:27:10] We slowly work through all 25 actions until we arrive
+[1:27:13] at the Evilist, which of course is Joel Narr
+[1:27:16] for some reason.
+[1:27:18] We'll figure it out.
+[1:27:20] It's gonna be a lore-heavy, stupid episode,
+[1:27:23] but it's a ranking episode, so you like that, don't you?
+[1:27:26] I know what you like.
+[1:27:28] Next option.
+[1:27:29] We homebrew a new set of Promissory Notes,
+[1:27:33] We're talking of generic promissory notes.
+[1:27:36] We think maybe they know so good.
+[1:27:38] Say they not good.
+[1:27:39] They may be bad.
+[1:27:40] And so maybe we do an episode where we imagine
+[1:27:43] if they could be good or okay.
+[1:27:45] Things we actually want to see,
+[1:27:46] because the whole problem,
+[1:27:47] how many arguments do we make for promissory notes
+[1:27:48] where it's like, well never give away your ceasefire.
+[1:27:50] You probably shouldn't give away your political secret either.
+[1:27:52] And trade agreements kind of useless
+[1:27:53] because you can just make the deal happen without it.
+[1:27:55] So it's like, let's turn them all into things
+[1:27:58] that actually find some sort of use.
+[1:28:00] It's in a generic faction absent sense.
+[1:28:03] Yeah, yeah.
+[1:28:05] I don't know how we'll figure that out, but it'll be fun to kind of pontificate on those
+[1:28:09] possibilities.
+[1:28:10] Yeah.
+[1:28:11] Okay, third option.
+[1:28:12] This one's real goofy.
+[1:28:13] You ain't going to pick it, but it's fun to pitch you an idea just in case.
+[1:28:18] I'm not even sure how this episode would sound.
+[1:28:20] So just listen to the title.
+[1:28:21] We will explain.
+[1:28:22] Okay.
+[1:28:23] Don't freak out.
+[1:28:24] Okay.
+[1:28:25] a director's commentary or episode six of Space Cat's Peace Turtles,
+[1:28:32] which was, if you don't know, it's our first tier list.
+[1:28:35] Yeah.
+[1:28:36] So I guess the way it would work is you would, we would, we would,
+[1:28:40] I have production. I don't, don't get lost in the weeds.
+[1:28:43] I would make this doable and not audio garbage,
+[1:28:46] but Hunter and I would have a way to see our tier list react to the tier list
+[1:28:51] and also be able to place some clips for the justification for why we said
+[1:28:54] some things were the way they were.
+[1:28:56] Yeah, I think you'd be hearing us from the past
+[1:29:00] and then us from the present commenting on it.
+[1:29:03] Luckily, our audio quality is much better now.
+[1:29:08] So I don't think you will actually be confused
+[1:29:10] as to if you're listening to Hunter and Matt from the past
+[1:29:13] or Hunter and Matt from the present.
+[1:29:16] So hopefully that will not be very confusing
+[1:29:18] because we used to record on a snowball.
+[1:29:21] And when I say a snowball, I mean one snowball.
+[1:29:24] not microphone.
+[1:29:27] Last option, this one's fairly straightforward and interesting and I bet you'll pick it.
+[1:29:32] System tile, tier list.
+[1:29:34] We go through all the system tiles in the game, we make a tier list for them.
+[1:29:38] What do you think?
+[1:29:39] I'm counting home systems and I'm counting the difference between one supernova and another.
+[1:29:46] Yes, that is part of it.
+[1:29:48] We're talking about something like it's like 97 tiles.
+[1:29:52] I don't even know what we got to by the end of P.O.K.
+[1:29:54] But they'll all go on there, Buster.
+[1:29:56] Yeah, we'll go nuts.
+[1:29:58] It'll be a long episode.
+[1:29:59] We'll have E.J. on for some reason.
+[1:30:01] And we'll do a long one.
+[1:30:03] He won't want to be there, but he'll be there anyways.
+[1:30:05] No, E.J. E.J.
+[1:30:06] You're on this one.
+[1:30:08] System tile tier list.
+[1:30:09] Let's go.
+[1:30:11] Hey, you can happen.
+[1:30:12] You can rate this podcast on Apple Podcast Spotify.
+[1:30:14] Wherever you listen to us, give us five stars
+[1:30:16] and tell us how much you like E.J.
+[1:30:17] That's what I want.
+[1:30:18] I just want to have a bunch of compliments for E.J.
+[1:30:19] My friend E.J.
+[1:30:20] Just go compliment my friend EJ.
+[1:30:22] Hey, I haven't said it on the show.
+[1:30:24] EJ and I, if you don't get enough EJ in your life,
+[1:30:28] EJ and I have a new show.
+[1:30:30] So you could go compliment EJ on that show as well.
+[1:30:32] You could go listen to just dads reading books
+[1:30:35] and also give us five stars over there.
+[1:30:37] We never ask for five stars on that show
+[1:30:40] because I don't remember to do it.
+[1:30:41] We just don't think about asking people to review us.
+[1:30:45] You should go listen to our other show and review.
+[1:30:46] We talk about children's books and young adult novels
+[1:30:49] and we judge our children because they read nerdy stuff
+[1:30:52] that were like, that's dumb, that's a dumb kid.
+[1:30:55] So that's the vibe of that show.
+[1:30:57] It's not actually, it's actually much more wholesome than that.
+[1:30:59] They just did an episode recently
+[1:31:00] about Guards Guards, which is one of the Ringworld books.
+[1:31:05] Terry Pratchett.
+[1:31:05] By Terry Pratchett.
+[1:31:06] Very good episode, really liked a lot as a listener
+[1:31:10] and supporter of Matt and E.J.
+[1:31:14] They are the ones to pay attention to.
+[1:31:16] It is the definitive Base Cats, Beast Turtles project is just dad's reading books.
+[1:31:22] Somehow the vibes are just better.
+[1:31:23] I don't know.
+[1:31:24] It's like the dynamic is different in a way where it's like actually good instead of being
+[1:31:29] like really bad like Space Cats, Beast Turtles and Old Gamers Almanac.
+[1:31:33] You can go to our website, spacekitspastertals.com for information about our Patreon or Discord
+[1:31:38] or merch.
+[1:31:39] I happen to like talking with my friend Hunter quite a lot actually.
+[1:31:42] I love talking with you, Matt.
+[1:31:45] It's fantastic.
+[1:31:46] I just wish I didn't drag it down so badly.
+[1:31:49] You can send us plays of the week to spacecatspcertals
+[1:31:53] at gmail.com.
+[1:31:54] And I have two weeks in a row, not giving you
+[1:31:59] any tournament game recaps of the week.
+[1:32:00] And it turns out every week I continue to not do that.
+[1:32:03] The problem is exacerbated by a lot, like a lot a lot.
+[1:32:08] I swear to you, I will solve this problem.
+[1:32:11] But you'll also note that I haven't done a radio lore episode in like months and months and months
+[1:32:16] So it turns out Matt's really bad about promising bonus episodes and then actually delivering those bonus episodes
+[1:32:22] But I am making it a solemn vow that tournament game recap bonus episode will come out. I'm very sorry that it's taking so long
+[1:32:29] Yeah, you better give them what they want Matt. Otherwise, they'll be heck to pay and you know what?
+[1:32:35] I'll say this, Matt, if you don't record the report
+[1:32:41] of all the tournament games, I will,
+[1:32:43] but I will make up the events of the games.
+[1:32:48] Okay, everyone.
+[1:32:48] Okay, when I do get around to releasing this bonus episode,
+[1:32:51] just nobody tell Hunter that I've done it.
+[1:32:55] Everybody play it cool so that Hunter thinks
+[1:32:57] it hasn't happened yet, and then we get both.
+[1:32:59] Okay, we just, we need my bonus recaps,
+[1:33:02] and then we need Hunter's bogus bonus recaps as well.
+[1:33:05] Hi Hunter, sorry, I was just talking to the audience real quick, you didn't hear any of that.
+[1:33:08] Oh, I thought that was a map from the future and I was gonna like not say anything.
+[1:33:12] But yeah, I mean, yeah, I did actually hear that.
+[1:33:15] That was not just for...
+[1:33:17] All right.
+[1:33:18] Oh, I just wanted to say real quick, before we're done.
+[1:33:22] I just wanted to ask, if you listen to this whole episode, did you figure out what the mid-game was?
+[1:33:35] Thank you for listening to Space Cat's Peace Turtles.
+[1:33:38] and thanks to Ben Prunty for the use of his music.
+[1:33:40] You can find more at benpruntymusic.com and benprunty.bandcamp.com.
+[1:33:50] Pax Magnifica, Bellum, L'Orealesum.

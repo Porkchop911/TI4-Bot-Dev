@@ -54,7 +54,6 @@ fn main() {
     let mut per_faction: BTreeMap<String, (f64, f64, usize)> = BTreeMap::new();
     let mut seats = 0usize;
     let mut vp_total = 0.0;
-    let mut zero_vp = 0usize;
     let mut vp_hist: BTreeMap<i64, usize> = BTreeMap::new();
     for game in &games {
         for seat in &game.seats {
@@ -63,7 +62,6 @@ fn main() {
             #[expect(clippy::cast_precision_loss, reason = "VP are tiny")]
             let vp = final_vp as f64;
             vp_total += vp;
-            zero_vp += usize::from(final_vp == 0);
             *vp_hist.entry(final_vp).or_default() += 1;
             let row = per_faction
                 .entry(seat.faction.to_string())
@@ -77,7 +75,6 @@ fn main() {
                 last.insert(step.round_number, step);
             }
             for (round, step) in last {
-                #[expect(clippy::cast_precision_loss, reason = "counts are tiny")]
                 let entry = by_round.entry(round).or_insert((0.0, 0.0, 0.0, 0));
                 entry.0 += step.victory_points as f64;
                 entry.1 += step.scoreable_public as f64;

@@ -1,0 +1,147 @@
+/* Reaction dialog: "What happened" and "You can now" blocks (desktop and phone). */
+/* One column that scrolls: with wrapping a height limit would spill sections into new columns. */
+.reaction-status-bar.reaction-status-bar.reaction-status-bar {
+  align-items: stretch;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+}
+.reaction-status-bar .reaction-status-bar__happened,
+.reaction-status-bar .reaction-status-bar__can-now {
+  position: static;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: rgba(148, 163, 184, 0.08);
+}
+/* The shared header asks for a full-width row (flex-basis 100%); in a column that is full height. */
+.reaction-status-bar.reaction-status-bar .decision-frame__header,
+.reaction-status-bar.reaction-status-bar .reaction-status-bar__happened,
+.reaction-status-bar.reaction-status-bar .reaction-status-bar__can-now,
+.reaction-status-bar.reaction-status-bar .reaction-status-bar__actions {
+  flex: 0 0 auto;
+}
+.reaction-status-bar .reaction-status-bar__trigger-target {
+  font-size: 13px;
+}
+.reaction-status-bar__heading {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.reaction-status-bar__sentence {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: normal;
+}
+.reaction-status-bar__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.reaction-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.reaction-card__name {
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+.reaction-card__text {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.reaction-status-bar .reaction-status-bar__actions {
+  width: 100%;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+@media (max-width: 720px) {
+  .reaction-status-bar.reaction-status-bar.reaction-status-bar {
+    bottom: 0;
+    width: 100%;
+    max-height: 100dvh;
+  }
+
+  .reaction-status-bar .reaction-status-bar__actions {
+    position: sticky;
+    bottom: 0;
+    padding: 8px 0;
+    background: var(--color-surface);
+  }
+}
+.reaction-actor {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.reaction-actor__faction {
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+.reaction-card__window {
+  color: var(--color-text-faint, var(--color-text-muted));
+  font-size: 12px;
+  font-style: italic;
+}
+.reaction-card__toggle {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-accent);
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.reaction-status-bar__note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+.reaction-status-bar__system {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.reaction-status-bar__never {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.reaction-status-bar__effect {
+  margin: 4px 0 0;
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.reaction-status-bar__targets {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
