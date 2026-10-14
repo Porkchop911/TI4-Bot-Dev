@@ -85,6 +85,22 @@ pub fn has(state: &GameState, content: &ContentStore, player: &PlayerId, ability
 }
 
 // -- the hooks -----------------------------------------------------------------------------------
+/// Edict places an opponent's reinforcement token in the winner's fleet pool, once per owner.
+pub fn combat_won(
+    state: &mut GameState,
+    content: &ContentStore,
+    winner: &PlayerId,
+    loser: &PlayerId,
+) {
+    if winner != loser
+        && state.player(loser).is_some()
+        && has(state, content, winner, "edict")
+        && state.tokens_in_reinforcements(loser) > 0
+        && let Some(seat) = state.player_mut(winner)
+    {
+        seat.foreign_fleet_tokens.insert(loser.clone());
+    }
+}
 //
 // Each is a query with a default, so a subsystem calls it unconditionally and a faction with
 // nothing to say changes nothing. Adding a faction means adding an arm here, never a branch at
@@ -815,6 +831,7 @@ pub fn registered() -> Vec<&'static str> {
         "armada",
         "assimilate",
         "brilliant",
+        "edict",
         "fragile",
         "guild_ships",
         "harrow",
@@ -851,6 +868,38 @@ mod tests {
         let mut state = game(&["a", "b"]);
         state.player_mut(&player).unwrap().faction = FactionId::new(faction);
         (state, player)
+    }
+
+    #[test]
+    fn mahact_edict_adds_one_foreign_fleet_token_without_redistribution() {
+        let (mut state, mahact) = seated("mahact");
+        let opponent = PlayerId::new("b");
+        let before = state.tokens_in_reinforcements(&opponent);
+        combat_won(&mut state, ContentStore::embedded(), &mahact, &opponent);
+        combat_won(&mut state, ContentStore::embedded(), &mahact, &opponent);
+        assert_eq!(state.player(&mahact).unwrap().fleet_tokens, 3);
+        assert_eq!(
+            crate::fleet::limit(&state, ContentStore::embedded(), &mahact),
+            4
+        );
+        assert_eq!(state.tokens_in_reinforcements(&opponent), before - 1);
+        assert_eq!(state.player(&mahact).unwrap().foreign_fleet_tokens.len(), 1);
+    }
+
+    #[test]
+    fn mahact_edict_cannot_take_a_token_without_reinforcements() {
+        let (mut state, mahact) = seated("mahact");
+        let opponent = PlayerId::new("b");
+        state.player_mut(&opponent).unwrap().fleet_tokens = 11;
+        assert_eq!(state.tokens_in_reinforcements(&opponent), 0);
+        combat_won(&mut state, ContentStore::embedded(), &mahact, &opponent);
+        assert!(
+            state
+                .player(&mahact)
+                .unwrap()
+                .foreign_fleet_tokens
+                .is_empty()
+        );
     }
 
     /// The faction that prints an ability, if this corpus has one.
@@ -1243,6 +1292,7 @@ mod tests {
         let mut rng = crate::rng::GameRng::new(0);
         let mut sequence = crate::event::EventSequence::new();
         let mut context = crate::timing::TimingContext {
+            action_card_gate: None,
             state,
             content: ContentStore::embedded(),
             sources: POK,

@@ -39,7 +39,9 @@ pub fn is_unlimited(state: &GameState, player: &PlayerId) -> bool {
 /// faction ability that raises it (Letnev's Armada, +2).
 #[must_use]
 pub fn limit(state: &GameState, content: &ContentStore, player: &PlayerId) -> i32 {
-    let base = state.player(player).map_or(0, |seat| seat.fleet_tokens);
+    let base = state.player(player).map_or(0, |seat| {
+        seat.fleet_tokens + i32::try_from(seat.foreign_fleet_tokens.len()).unwrap_or(0)
+    });
     let capped = crate::laws::fleet_pool_cap(state, base);
     // The law caps first and the ability lifts afterwards, which is the order that lets Letnev's
     // Armada mean something under Fleet Regulations rather than being erased by it.

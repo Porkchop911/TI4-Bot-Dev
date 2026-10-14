@@ -3676,6 +3676,9 @@ fn note_combat_feats_at(
         // survivor as the winner would score four cards off a fight nobody won.
         return noted;
     };
+    for loser in &before.sides {
+        crate::faction_abilities::combat_won(state, content, &winner, loser);
+    }
 
     if ti4_content::galaxy::all_systems(content, sources)
         .get(system.as_str())

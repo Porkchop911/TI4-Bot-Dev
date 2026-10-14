@@ -47,9 +47,9 @@
         # means launch.json records the control rather than leaving defaults to be inferred later.
         'objective-weight' = 0
         'secret-weight' = 0
-        'r1-bonus' = 0
-        'r1-shaping' = 0
-        'clearance-weight' = 0
+        'r1-bonus' = 1
+        'r1-shaping' = 1
+        'clearance-weight' = 1
         'fleet-weight' = 0
         'tech-weight' = 0
         'strategy-diversity-weight' = 0

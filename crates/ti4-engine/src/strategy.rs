@@ -17,6 +17,52 @@ pub const FOLLOW_SECONDARY_ID: &str = "follow";
 /// The choice kind for a strategic-action secondary response.
 pub const STRATEGY_KIND: &str = "strategy";
 
+fn mahact_agent_systems(
+    state: &GameState,
+    player: &PlayerId,
+    active: &PlayerId,
+) -> Vec<ti4_model::id::SystemId> {
+    if crate::leaders::status(state, player, &ti4_model::id::LeaderId::new("mahactagent"))
+        != Some(ti4_model::state::LeaderStatus::Readied)
+    {
+        return Vec::new();
+    }
+    state
+        .systems_with_token(active)
+        .into_iter()
+        .cloned()
+        .collect()
+}
+
+fn secondary_choice_with_agent(
+    state: &GameState,
+    content: &ContentStore,
+    card: &StrategyCardId,
+    player: &PlayerId,
+    active: &PlayerId,
+    costs_token: bool,
+) -> Choice {
+    let mut choice = secondary_choice(content, card, player, costs_token);
+    if costs_token {
+        if state
+            .player(player)
+            .is_some_and(|seat| seat.strategic_tokens == 0)
+        {
+            choice
+                .options
+                .retain(|option| option.is_decline() || option.id == "no");
+        }
+        for system in mahact_agent_systems(state, player, active) {
+            choice.options.push(ChoiceOption::labelled(
+                format!("mahactagent|{system}"),
+                STRATEGY_KIND,
+                format!("exhaust Jae Mir Kan and remove {active}'s token from {system} to follow"),
+            ));
+        }
+    }
+    choice
+}
+
 /// A strategic action could not be selected from the state that was presented.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum StrategyActionError {
@@ -160,9 +206,15 @@ pub struct StrategySecondaryWindow {
     followers: Vec<PlayerId>,
     next_follower: usize,
     resolutions: Vec<(PlayerId, SecondaryResolution)>,
+    spent_token_owner: Option<PlayerId>,
 }
 
 impl StrategySecondaryWindow {
+    /// The token just spent, including the active player's token substituted by Jae Mir Kan.
+    #[must_use]
+    pub fn spent_token_owner(&self) -> Option<&PlayerId> {
+        self.spent_token_owner.as_ref()
+    }
     /// The player resolving the primary.
     #[must_use]
     pub const fn primary_player(&self) -> &PlayerId {
@@ -201,11 +253,18 @@ impl StrategySecondaryWindow {
     ) -> Option<Choice> {
         self.followers[self.next_follower..]
             .iter()
-            .find(|player_id| secondary_eligible(state, content, sources, player_id, &self.card))
+            .find(|player_id| self.eligible(state, content, sources, player_id))
             .map(|player_id| {
                 let costs_token = secondary_costs_token(content, &self.card)
                     && !secondary_is_free(state, content, player_id, &self.card);
-                secondary_choice(content, &self.card, player_id, costs_token)
+                secondary_choice_with_agent(
+                    state,
+                    content,
+                    &self.card,
+                    player_id,
+                    &self.primary_player,
+                    costs_token,
+                )
             })
     }
 
@@ -220,13 +279,15 @@ impl StrategySecondaryWindow {
         sources: SourceSet,
     ) -> Option<Choice> {
         while let Some(player_id) = self.followers.get(self.next_follower).cloned() {
-            if secondary_eligible(state, content, sources, &player_id, &self.card) {
+            if self.eligible(state, content, sources, &player_id) {
                 let costs_token = secondary_costs_token(content, &self.card)
                     && !secondary_is_free(state, content, &player_id, &self.card);
-                return Some(secondary_choice(
+                return Some(secondary_choice_with_agent(
+                    state,
                     content,
                     &self.card,
                     &player_id,
+                    &self.primary_player,
                     costs_token,
                 ));
             }
@@ -254,12 +315,25 @@ impl StrategySecondaryWindow {
             .next_choice(state, content, sources)
             .ok_or(StrategySecondaryError::Complete)?;
         let answer = validate(&choice, answer)?;
+        self.spent_token_owner = None;
         let resolution = if answer.is_decline() || answer.id == "no" {
             SecondaryResolution::Declined
         } else {
             let costs_token = secondary_costs_token(content, &self.card)
                 && !secondary_is_free(state, content, &choice.player, &self.card);
-            if costs_token {
+            if let Some(system) = answer.id.strip_prefix("mahactagent|") {
+                self.spent_token_owner = Some(self.primary_player.clone());
+                state
+                    .system_mut(&ti4_model::id::SystemId::new(system))
+                    .command_tokens
+                    .remove(&self.primary_player);
+                crate::leaders::exhaust(
+                    state,
+                    &choice.player,
+                    &ti4_model::id::LeaderId::new("mahactagent"),
+                );
+            } else if costs_token {
+                self.spent_token_owner = Some(choice.player.clone());
                 let player = state.player_mut(&choice.player).ok_or_else(|| {
                     StrategySecondaryError::FollowerMissing(choice.player.clone())
                 })?;
@@ -285,6 +359,20 @@ impl StrategySecondaryWindow {
                 "the primary holder must retain the selected card"
             );
         }
+    }
+
+    fn eligible(
+        &self,
+        state: &GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+        player: &PlayerId,
+    ) -> bool {
+        secondary_eligible(state, content, sources, player, &self.card)
+            || (secondary_costs_token(content, &self.card)
+                && !secondary_is_free(state, content, player, &self.card)
+                && !mahact_agent_systems(state, player, &self.primary_player).is_empty()
+                && secondary_can_do_something(state, content, sources, player, &self.card))
     }
 }
 
@@ -493,6 +581,7 @@ pub fn begin_strategic_action(
             .collect(),
         next_follower: 0,
         resolutions: Vec::new(),
+        spent_token_owner: None,
     })
 }
 
@@ -552,6 +641,67 @@ mod tests {
             .unwrap();
         }
         state
+    }
+
+    #[test]
+    fn mahact_agent_follows_without_strategy_token_and_returns_active_token() {
+        let (mut state, card) = drafted_with_first_pick("Politics");
+        let active = PlayerId::new("a");
+        let mahact = PlayerId::new("b");
+        let system = ti4_model::id::SystemId::new("18");
+        let seat = state.player_mut(&mahact).unwrap();
+        seat.strategic_tokens = 0;
+        seat.leaders.insert(
+            ti4_model::id::LeaderId::new("mahactagent"),
+            ti4_model::state::LeaderStatus::Readied,
+        );
+        state
+            .system_mut(&system)
+            .command_tokens
+            .insert(active.clone());
+        let before = state.tokens_in_reinforcements(&active);
+        let mut window = begin_strategic_action(
+            &mut state,
+            ContentStore::embedded(),
+            &active,
+            ChoiceOption::new(format!("strategic|{card}"), ACTION_KIND),
+        )
+        .unwrap();
+        let choice = window
+            .next_choice(&mut state, ContentStore::embedded(), POK)
+            .unwrap();
+        assert_eq!(choice.player, mahact);
+        assert!(!choice.options.iter().any(|option| option.id == "yes"));
+        let answer = choice
+            .options
+            .iter()
+            .find(|option| option.id == "mahactagent|18")
+            .unwrap()
+            .clone();
+        assert_eq!(
+            window
+                .take_choice(&mut state, ContentStore::embedded(), POK, answer)
+                .unwrap(),
+            SecondaryResolution::Followed
+        );
+        assert!(!state.system_state(&system).command_tokens.contains(&active));
+        assert_eq!(state.tokens_in_reinforcements(&active), before + 1);
+        assert_eq!(state.player(&mahact).unwrap().strategic_tokens, 0);
+        assert!(
+            state
+                .player(&mahact)
+                .unwrap()
+                .foreign_fleet_tokens
+                .is_empty()
+        );
+        assert_eq!(
+            crate::leaders::status(
+                &state,
+                &mahact,
+                &ti4_model::id::LeaderId::new("mahactagent")
+            ),
+            Some(ti4_model::state::LeaderStatus::Exhausted)
+        );
     }
 
     /// The Technology card id in the dealt deck, whichever variant the sources carry.

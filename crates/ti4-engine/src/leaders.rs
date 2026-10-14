@@ -697,6 +697,7 @@ pub fn pays_on_sustain(state: &GameState, content: &ContentStore, player: &Playe
 #[must_use]
 pub fn registered_abilities() -> Vec<&'static str> {
     vec![
+        "mahactagent",
         "hacanagent",
         "hacanhero",
         "jolnaragent",
@@ -725,6 +726,245 @@ pub fn unimplemented(content: &ContentStore, factions: &[&str]) -> Vec<LeaderId>
         .flat_map(|faction| for_faction(content, ti4_model::content_types::POK, faction))
         .filter(|leader| {
             !known.contains(&leader.as_str()) && !standing.contains_key(leader.as_str())
+        })
+        .collect()
+}
+
+/// Agent texts currently supported by this engine, and therefore eligible for Ssruu's copy.
+///
+/// Keep this roster explicit: deriving availability from arbitrary leader ids would make an
+/// unimplemented source appear usable merely because its card is present.
+#[must_use]
+pub const fn borrowable_agents() -> &'static [&'static str] {
+    &[
+        "hacanagent",
+        "jolnaragent",
+        "l1z1xagent",
+        "letnevagent",
+        "solagent",
+        "xxchaagent",
+    ]
+}
+
+/// Exact source agents another player can lend to Ssruu at this trigger.
+///
+/// The roster is dynamic because source leaders can be purged or otherwise removed after the
+/// resolver is armed. Exhaustion does not prevent copying: the printed Ssruu text explicitly
+/// allows it. The source agent is never changed by this lookup or by the copied effect.
+fn borrowable_agent_sources(state: &GameState, borrower: &PlayerId) -> Vec<(PlayerId, LeaderId)> {
+    state
+        .players
+        .iter()
+        .filter(|source| source.id != *borrower)
+        .filter_map(|source| {
+            let faction = source.faction.as_str();
+            let alias = format!("{faction}agent");
+            if !borrowable_agents().contains(&alias.as_str()) {
+                return None;
+            }
+            let id = LeaderId::new(alias);
+            matches!(
+                source.leaders.get(&id),
+                Some(LeaderStatus::Readied | LeaderStatus::Exhausted)
+            )
+            .then(|| (source.id.clone(), id))
+        })
+        .collect()
+}
+
+/// Static Ssruu borrower slots for AFTER SYSTEM_ACTIVATED.
+///
+/// Call once when the resolver is armed. Eligibility and exact source ownership are checked
+/// against the live state on every activation. This bounded listener dispatches I48S only.
+#[must_use]
+pub fn ssruu_l1z1x_activation_copy_abilities(state: &GameState) -> Vec<crate::timing::Ability> {
+    use crate::timing::{Ability, Frequency, Relation};
+    use std::sync::Arc;
+
+    state
+        .players
+        .iter()
+        .filter(|seat| seat.faction.as_str() == "yssaril")
+        .filter(|seat| seat.leaders.contains_key(&LeaderId::new("yssarilagent")))
+        .map(|seat| {
+            let borrower = seat.id.clone();
+            let condition_borrower = borrower.clone();
+            let effect_borrower = borrower.clone();
+            Ability::stateful(
+                "leader:ssruu:copy:l1z1xagent",
+                borrower,
+                "SYSTEM_ACTIVATED",
+                Relation::After,
+                Arc::new(move |event, _, context| {
+                    let Some(beneficiary) = event.text("player").map(PlayerId::new) else {
+                        return Ok(());
+                    };
+                    let Some(system) = event.text("system").map(ti4_model::id::SystemId::new)
+                    else {
+                        return Ok(());
+                    };
+                    if context.state.active.as_ref() != Some(&beneficiary)
+                        || context.state.active_system.as_ref() != Some(&system)
+                        || !borrowable_agent_sources(context.state, &effect_borrower)
+                            .iter()
+                            .any(|(_, source)| source.as_str() == "l1z1xagent")
+                    {
+                        return Ok(());
+                    }
+                    let mech = context
+                        .state
+                        .player(&beneficiary)
+                        .map(|seat| seat.faction.to_string())
+                        .and_then(|faction| {
+                            ti4_content::units::faction_unit(
+                                context.content,
+                                &faction,
+                                "mech",
+                                context.sources,
+                            )
+                        })
+                        .map(|kind| ti4_model::id::UnitTypeId::new(kind.id()));
+                    let Some(mech) = mech else {
+                        return Ok(());
+                    };
+                    if crate::supply::allowed(
+                        context.state,
+                        context.content,
+                        context.sources,
+                        &beneficiary,
+                        &mech,
+                        1,
+                    ) == 0
+                    {
+                        return Ok(());
+                    }
+                    let types = ti4_content::units::catalogue(context.content, context.sources);
+                    let Some(board) = context.state.board.get(&system) else {
+                        return Ok(());
+                    };
+                    let planets: Vec<_> = board
+                        .planet_units
+                        .iter()
+                        .filter(|(_, units)| {
+                            units.iter().any(|unit| {
+                                unit.owner == beneficiary
+                                    && types
+                                        .get(unit.type_id.as_str())
+                                        .is_some_and(|kind| kind.base_type() == "infantry")
+                            })
+                        })
+                        .map(|(planet, _)| planet.clone())
+                        .collect();
+                    let Some(planet) = planets.first().cloned() else {
+                        return Ok(());
+                    };
+                    let planet = if planets.len() == 1 {
+                        planet
+                    } else {
+                        let choice = crate::choice::Choice::new(
+                            beneficiary.clone(),
+                            "I48S: replace which infantry in the active system?",
+                            planets
+                                .iter()
+                                .map(|planet| {
+                                    crate::choice::ChoiceOption::labelled(
+                                        planet.to_string(),
+                                        "leader_l1z1xagent_copy_planet",
+                                        planet.to_string(),
+                                    )
+                                })
+                                .collect(),
+                        );
+                        let Ok(answer) = context.ask_seeing(&choice) else {
+                            return Ok(());
+                        };
+                        let Some(planet) = planets
+                            .into_iter()
+                            .find(|planet| planet.as_str() == answer.id)
+                        else {
+                            return Ok(());
+                        };
+                        planet
+                    };
+                    let Some(units) = context
+                        .state
+                        .system_mut(&system)
+                        .planet_units
+                        .get_mut(&planet)
+                    else {
+                        return Ok(());
+                    };
+                    let Some(index) = units.iter().position(|unit| {
+                        unit.owner == beneficiary
+                            && types
+                                .get(unit.type_id.as_str())
+                                .is_some_and(|kind| kind.base_type() == "infantry")
+                    }) else {
+                        return Ok(());
+                    };
+                    units[index] = ti4_model::units::Unit::new(mech, beneficiary);
+                    // The borrower owns Ssruu; the source agent is read as text only.
+                    exhaust(
+                        context.state,
+                        &effect_borrower,
+                        &LeaderId::new("yssarilagent"),
+                    );
+                    Ok(())
+                }),
+            )
+            .with_optional(true)
+            .with_frequency(Frequency::Unlimited)
+            .with_repeatable_in_window(true)
+            .with_stateful_condition(Arc::new(move |event, _, context| {
+                let Some(beneficiary) = event.text("player").map(PlayerId::new) else {
+                    return false;
+                };
+                let Some(system) = event.text("system").map(ti4_model::id::SystemId::new) else {
+                    return false;
+                };
+                status(
+                    context.state,
+                    &condition_borrower,
+                    &LeaderId::new("yssarilagent"),
+                ) == Some(LeaderStatus::Readied)
+                    && context.state.active.as_ref() == Some(&beneficiary)
+                    && context.state.active_system.as_ref() == Some(&system)
+                    && borrowable_agent_sources(context.state, &condition_borrower)
+                        .iter()
+                        .any(|(_, source)| source.as_str() == "l1z1xagent")
+                    && context.state.board.get(&system).is_some_and(|board| {
+                        let types = ti4_content::units::catalogue(context.content, context.sources);
+                        board.planet_units.values().any(|units| {
+                            units.iter().any(|unit| {
+                                unit.owner == beneficiary
+                                    && types
+                                        .get(unit.type_id.as_str())
+                                        .is_some_and(|kind| kind.base_type() == "infantry")
+                            })
+                        })
+                    })
+                    && context
+                        .state
+                        .player(&beneficiary)
+                        .and_then(|seat| {
+                            ti4_content::units::faction_unit(
+                                context.content,
+                                seat.faction.as_str(),
+                                "mech",
+                                context.sources,
+                            )
+                        })
+                        .is_some_and(|kind| {
+                            crate::supply::allowed(
+                                context.state,
+                                context.content,
+                                context.sources,
+                                &beneficiary,
+                                &ti4_model::id::UnitTypeId::new(kind.id()),
+                                1,
+                            ) > 0
+                        })
+            }))
         })
         .collect()
 }
@@ -1566,6 +1806,7 @@ mod tests {
         let mut rng = crate::rng::GameRng::new(0);
         let mut sequence = crate::event::EventSequence::new();
         let mut context = crate::timing::TimingContext {
+            action_card_gate: None,
             state,
             content: ContentStore::embedded(),
             sources: POK,
@@ -1595,6 +1836,7 @@ mod tests {
         let mut sequence = crate::event::EventSequence::new();
         let done = {
             let mut context = crate::timing::TimingContext {
+                action_card_gate: None,
                 state: &mut state,
                 content: ContentStore::embedded(),
                 sources: POK,
@@ -1744,6 +1986,7 @@ mod tests {
         let mut sequence = crate::event::EventSequence::new();
         {
             let mut context = crate::timing::TimingContext {
+                action_card_gate: None,
                 state: &mut state,
                 content,
                 sources: POK,
@@ -2308,6 +2551,7 @@ mod tests {
         let id = LeaderId::new(leader);
         {
             let mut context = crate::timing::TimingContext {
+                action_card_gate: None,
                 state,
                 content: ContentStore::embedded(),
                 sources: POK,

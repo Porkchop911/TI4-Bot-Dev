@@ -631,21 +631,55 @@ pub fn announce(
     let mut payload = BTreeMap::new();
     payload.insert("player".to_owned(), player.to_string().into());
     payload.insert("card".to_owned(), alias.to_string().into());
-    let announced = context.event_sequence.next("ACTION_CARD_PLAYED", payload)?;
-    let announced = resolver.emit_with_context(context, announced, |_, _| {})?;
-    // The card is still spent when cancelled: 1.15 lets a WHEN ability cancel the event, not
-    // un-spend the card — and a spent card is a discarded one, so the discard is announced on
-    // both exits. Reverse Engineer reads exactly this moment.
-    if announced.cancelled {
-        announce_discard(context, resolver, player, alias)?;
-        return Ok(false);
-    }
-
     // A card with no registered effect is announced unresolved rather than passed off as having
     // done something. This is the registry design used everywhere else here: a gap is visible.
     if let Some(effect) = crate::action_cards::effect_for(alias) {
-        crate::action_cards::with_action_card_source(alias, || effect(context, player));
+        let mut outcome = Ok(true);
+        {
+            let mut gate = |context: &mut TimingContext<'_>| {
+                let mut payload = payload.clone();
+                payload.insert(
+                    "targets".to_owned(),
+                    crate::action_cards::action_card_targets().into(),
+                );
+                outcome = context
+                    .event_sequence
+                    .next("ACTION_CARD_PLAYED", payload)
+                    .map_err(TimingError::from)
+                    .and_then(|event| resolver.emit_with_context(context, event, |_, _| {}))
+                    .map(|event| !event.cancelled);
+                outcome.as_ref().is_ok_and(|played| *played)
+            };
+            let mut card_context = TimingContext {
+                action_card_gate: Some(&mut gate),
+                state: context.state,
+                content: context.content,
+                sources: context.sources,
+                table: context.table,
+                dice: context.dice,
+                rng: context.rng,
+                event_sequence: context.event_sequence,
+                galaxy: context.galaxy,
+            };
+            crate::action_cards::with_action_card_source(alias, || {
+                effect(&mut card_context, player);
+                // Even an effect with no valid targets still announces its spent card.
+                card_context.begin_action_card_effect();
+            });
+        }
+        if !outcome? {
+            announce_discard(context, resolver, player, alias)?;
+            return Ok(false);
+        }
     } else {
+        let announced = context.event_sequence.next("ACTION_CARD_PLAYED", payload)?;
+        if resolver
+            .emit_with_context(context, announced, |_, _| {})?
+            .cancelled
+        {
+            announce_discard(context, resolver, player, alias)?;
+            return Ok(false);
+        }
         let mut payload = BTreeMap::new();
         payload.insert("card".to_owned(), alias.to_string().into());
         let unresolved = context
@@ -811,6 +845,13 @@ fn slot(owner_name: &str, player: &PlayerId, event_type: &str, relation: Relatio
             Ok(())
         }),
     )
+    .with_option_payload(Arc::new(|event, _| {
+        if event.event_type == "ACTION_CARD_PLAYED" {
+            event.payload.clone()
+        } else {
+            BTreeMap::new()
+        }
+    }))
     .with_optional(true)
     // A player may hold two cards for the same window, and 1.19 gives them a fresh
     // opportunity after anything else resolves. Capping the slot would cap the player at one
@@ -1188,6 +1229,70 @@ mod tests {
     }
 
     #[test]
+    fn sabotage_waits_for_the_target_and_prevents_the_effect() {
+        for cancelled in [false, true] {
+            let a = PlayerId::new("a");
+            let b = PlayerId::new("b");
+            let c = PlayerId::new("c");
+            let mut state = crate::fixtures::game(&["a", "b", "c"]);
+            for seat in &mut state.players {
+                seat.action_cards.clear();
+            }
+            state.player_mut(&a).unwrap().action_cards = vec![ActionCardId::new("confusing")];
+            state.player_mut(&b).unwrap().action_cards = vec![ActionCardId::new("sabo1")];
+            let response = if cancelled {
+                "reaction:generic:ACTION_CARD_PLAYED:when"
+            } else {
+                "decline"
+            };
+            let (decider, seen) = Recording::new(&["c", response]);
+            let mut table = crate::choice::Table::with_default(Box::new(decider));
+            let mut resolver = Resolver::new(
+                vec![a.clone(), b.clone(), c.clone()],
+                Some(a.clone()),
+                crate::choice::Table::default(),
+            );
+            resolver.register([slot("generic", &b, "ACTION_CARD_PLAYED", Relation::When)]);
+            let mut dice = crate::dice::Dice::new();
+            let mut rng = crate::rng::GameRng::new(0);
+            let mut event_sequence = crate::event::EventSequence::new();
+            let mut context = TimingContext {
+                action_card_gate: None,
+                state: &mut state,
+                content: ContentStore::embedded(),
+                sources: POK,
+                table: &mut table,
+                dice: &mut dice,
+                rng: &mut rng,
+                event_sequence: &mut event_sequence,
+                galaxy: None,
+            };
+            assert_eq!(
+                play(
+                    &mut context,
+                    &mut resolver,
+                    &a,
+                    &ActionCardId::new("confusing")
+                )
+                .unwrap(),
+                !cancelled
+            );
+            assert_eq!(state.agenda_elected_override, (!cancelled).then_some(c));
+            assert!(state.player(&a).unwrap().action_cards.is_empty());
+            assert_eq!(state.player(&b).unwrap().action_cards.is_empty(), cancelled);
+            let asks = seen.borrow();
+            assert_eq!(asks.len(), 2);
+            assert!(asks[0].0.starts_with("Confusing Legal Text:"));
+            assert_eq!(asks[1].0, "when ACTION_CARD_PLAYED");
+            assert!(
+                state
+                    .discarded_action_cards
+                    .contains(&ActionCardId::new("confusing"))
+            );
+        }
+    }
+
+    #[test]
     fn a_reaction_offer_is_one_option_per_printed_card() {
         // engine/reactions.py:319–324 dedupes by printed name. Flank Speed is printed four times
         // (fs1..fs4), so holding two copies must offer one option, not two — and the kept alias
@@ -1268,6 +1373,7 @@ mod tests {
         let mut rng = crate::rng::GameRng::new(0);
         let mut event_sequence = crate::event::EventSequence::new();
         let mut context = TimingContext {
+            action_card_gate: None,
             state: &mut state,
             content,
             sources: POK,

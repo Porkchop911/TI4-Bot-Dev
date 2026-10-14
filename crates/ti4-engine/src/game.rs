@@ -1052,6 +1052,15 @@ impl<'a> Game<'a> {
         {
             self.strategy_phase_announced = true;
             self.sync_timing_context();
+            if let Err(error) = crate::promissory::strategy_started(
+                &mut self.state,
+                self.content,
+                self.sources,
+                self.galaxy.as_ref(),
+                &mut self.table,
+            ) {
+                return self.result(false, Some(error.into()));
+            }
             if let Err(error) = self.emit_typed("STRATEGY_PHASE_BEGAN", BTreeMap::new()) {
                 return self.result(false, Some(error));
             }
@@ -1816,6 +1825,7 @@ impl<'a> Game<'a> {
                 &mut self.event_sequence,
             );
             let mut context = TimingContext {
+                action_card_gate: None,
                 state,
                 content,
                 sources,
@@ -1854,6 +1864,7 @@ impl<'a> Game<'a> {
                 &mut self.event_sequence,
             );
             let mut context = TimingContext {
+                action_card_gate: None,
                 state,
                 content,
                 sources,
@@ -1882,6 +1893,7 @@ impl<'a> Game<'a> {
         let logged = self.timing.log().len();
         let done = {
             let mut context = crate::timing::TimingContext {
+                action_card_gate: None,
                 state: &mut self.state,
                 content,
                 sources,
@@ -1910,6 +1922,7 @@ impl<'a> Game<'a> {
                 &mut self.event_sequence,
             );
             let mut context = TimingContext {
+                action_card_gate: None,
                 state,
                 content,
                 sources,
@@ -1937,6 +1950,7 @@ impl<'a> Game<'a> {
             &mut self.event_sequence,
         );
         let mut context = TimingContext {
+            action_card_gate: None,
             state,
             content,
             sources,
@@ -1963,6 +1977,7 @@ impl<'a> Game<'a> {
             &mut self.event_sequence,
         );
         let mut context = TimingContext {
+            action_card_gate: None,
             state,
             content,
             sources,
@@ -2825,7 +2840,7 @@ impl<'a> Game<'a> {
                     &card,
                 )
             } else {
-                crate::strategy_cards::secondary(
+                crate::strategy_cards::secondary_with_token_owner(
                     &mut self.state,
                     self.content,
                     self.sources,
@@ -2833,6 +2848,9 @@ impl<'a> Game<'a> {
                     &mut self.table,
                     &follower,
                     &card,
+                    self.secondary
+                        .as_ref()
+                        .and_then(|window| window.spent_token_owner()),
                 )
             };
             if let Err(error) = outcome {
@@ -4007,6 +4025,15 @@ impl<'a> Game<'a> {
                 // phase, each player chooses and exhausts 1 planet for each technology that they
                 // own." Charged here, where the phase actually begins for rounds after the first.
                 crate::laws::revolution_levy(&mut self.state);
+                if let Err(error) = crate::promissory::strategy_started(
+                    &mut self.state,
+                    self.content,
+                    self.sources,
+                    self.galaxy.as_ref(),
+                    &mut self.table,
+                ) {
+                    return self.result(false, Some(error.into()));
+                }
                 if let Err(error) = self.emit_typed("STRATEGY_PHASE_BEGAN", BTreeMap::new()) {
                     return self.result(false, Some(error));
                 }
@@ -4258,6 +4285,7 @@ impl<'a> Game<'a> {
                 &mut self.event_sequence,
             );
             let mut context = TimingContext {
+                action_card_gate: None,
                 state,
                 content,
                 sources,

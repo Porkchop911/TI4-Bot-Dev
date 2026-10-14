@@ -267,6 +267,18 @@ struct Producer {
 
 const PRODUCERS: &[Producer] = &[
     Producer {
+        module: "promissory.rs",
+        function: "strategy_started",
+        count: 1,
+        delivery: Delivery::ObservedHere,
+    },
+    Producer {
+        module: "leaders.rs",
+        function: "ssruu_l1z1x_activation_copy_abilities",
+        count: 1,
+        delivery: Delivery::ObservedHere,
+    },
+    Producer {
         module: "action_cards.rs",
         function: "choose_crashlanding_ground",
         count: 1,
@@ -936,6 +948,8 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("invasion.rs", "dunlain_reaper", 1),
     ("laws.rs", "offer_discard", 1),
     ("leaders.rs", "use_leader", 7),
+    ("leaders.rs", "ssruu_l1z1x_activation_copy_abilities", 1),
+    ("promissory.rs", "strategy_started", 1),
     ("leaders.rs", "offer_production_hero", 1),
     ("legendary.rs", "end_turn", 1),
     ("legendary.rs", "pass", 1),

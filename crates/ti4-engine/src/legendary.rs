@@ -1082,6 +1082,7 @@ mod tests {
         let mut rng = crate::rng::GameRng::new(0);
         let mut sequence = crate::event::EventSequence::new();
         let mut context = crate::timing::TimingContext {
+            action_card_gate: None,
             state,
             content: content(),
             sources: POK,

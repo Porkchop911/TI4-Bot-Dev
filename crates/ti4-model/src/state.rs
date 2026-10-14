@@ -338,6 +338,9 @@ pub struct Player {
     /// Command token pools (LRR 20). Tokens are gained into a pool of choice (52.4).
     pub tactic_tokens: i32,
     pub fleet_tokens: i32,
+    /// Edict tokens retain their owner's identity and cannot be redistributed.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub foreign_fleet_tokens: BTreeSet<PlayerId>,
     pub strategic_tokens: i32,
     pub passed: bool,
     pub victory_points: i32,
@@ -575,6 +578,7 @@ impl PartialEq for Player {
             && self.exhausted_strategy_cards == other.exhausted_strategy_cards
             && self.tactic_tokens == other.tactic_tokens
             && self.fleet_tokens == other.fleet_tokens
+            && self.foreign_fleet_tokens == other.foreign_fleet_tokens
             && self.strategic_tokens == other.strategic_tokens
             && self.passed == other.passed
             && self.victory_points == other.victory_points
@@ -648,6 +652,7 @@ impl Player {
             exhausted_strategy_cards: BTreeSet::new(),
             tactic_tokens: 3,
             fleet_tokens: 3,
+            foreign_fleet_tokens: BTreeSet::new(),
             strategic_tokens: 2,
             passed: false,
             victory_points: 0,
@@ -1751,7 +1756,14 @@ impl GameState {
                 .count(),
         )
         .unwrap_or(i32::MAX);
-        (TOKENS_PER_FACTION - on_sheet - on_board).max(0)
+        let on_other_sheets = i32::try_from(
+            self.players
+                .iter()
+                .filter(|seat| seat.foreign_fleet_tokens.contains(player))
+                .count(),
+        )
+        .unwrap_or(i32::MAX);
+        (TOKENS_PER_FACTION - on_sheet - on_board - on_other_sheets).max(0)
     }
 
     /// Gain command tokens into a pool, capped by what is left in reinforcements (LRR 20.4/20.4a).
@@ -2026,6 +2038,38 @@ impl GameState {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn mahact_foreign_fleet_tokens_round_trip_and_old_players_default_empty() {
+        let mut player = Player::new(PlayerId::new("a"));
+        let original = serde_json::to_value(&player).unwrap();
+        assert!(original.get("foreign_fleet_tokens").is_none());
+        let restored: Player = serde_json::from_value(original).unwrap();
+        assert!(restored.foreign_fleet_tokens.is_empty());
+        player.foreign_fleet_tokens.insert(PlayerId::new("b"));
+        let restored: Player =
+            serde_json::from_str(&serde_json::to_string(&player).unwrap()).unwrap();
+        assert_eq!(restored, player);
+        assert_eq!(
+            crate::view::redact_player(&player).foreign_fleet_tokens,
+            player.foreign_fleet_tokens
+        );
+    }
+
+    #[test]
+    fn mahact_captured_tokens_count_against_the_owners_reinforcements() {
+        let a = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let mut state = GameState::new(&[a.clone(), b.clone()], &[], BTreeMap::new(), None, 0);
+        assert_eq!(state.tokens_in_reinforcements(&b), 8);
+        state
+            .player_mut(&a)
+            .unwrap()
+            .foreign_fleet_tokens
+            .insert(b.clone());
+        assert_eq!(state.tokens_in_reinforcements(&b), 7);
+        assert_eq!(state.tokens_in_reinforcements(&a), 8);
+    }
 
     /// 20.4/20.4a: a faction has sixteen command tokens and cannot gain a seventeenth.
     ///

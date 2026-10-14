@@ -1496,6 +1496,32 @@ pub fn secondary(
     player: &PlayerId,
     card: &str,
 ) -> Result<Ability, IllegalChoice> {
+    secondary_with_token_owner(
+        state,
+        content,
+        sources,
+        galaxy,
+        table,
+        player,
+        card,
+        Some(player),
+    )
+}
+
+/// Resolve a secondary using the owner of the command token that paid for it.
+///
+/// # Errors
+/// Returns an error if a secondary-effect choice is not offered.
+pub fn secondary_with_token_owner(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&Galaxy>,
+    table: &mut Table,
+    player: &PlayerId,
+    card: &str,
+    spent_token_owner: Option<&PlayerId>,
+) -> Result<Ability, IllegalChoice> {
     let Some(name) = card_name(content, card) else {
         return Ok(Ability::Unresolved);
     };
@@ -1509,7 +1535,15 @@ pub fn secondary(
             crate::action_cards::draw(state, content, table, player, 2)?;
         }
         "Construction" => {
-            place_structure(state, content, sources, galaxy, table, player, false)?;
+            if let Some(system) =
+                place_structure(state, content, sources, galaxy, table, player, false)?
+                && let Some(owner) = spent_token_owner
+            {
+                state
+                    .system_mut(&system)
+                    .command_tokens
+                    .insert(owner.clone());
+            }
         }
         "Trade" => replenish(state, content, player),
         "Warfare" => home_production(state, content, sources, galaxy, table, player)?,
@@ -1532,6 +1566,30 @@ pub fn secondary(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn mahact_agent_construction_places_the_active_players_token() {
+        let content = ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let active = PlayerId::new("b");
+        let mut state = game(&["a", "b"]);
+        let (system, planet) = a_placed_planet();
+        state
+            .system_mut(&system)
+            .set_control(planet, player.clone());
+        secondary_with_token_owner(
+            &mut state,
+            content,
+            POK,
+            None,
+            &mut Table::new(),
+            &player,
+            &card("Construction"),
+            Some(&active),
+        )
+        .unwrap();
+        assert!(state.system_state(&system).command_tokens.contains(&active));
+        assert!(!state.system_state(&system).command_tokens.contains(&player));
+    }
 
     /// Warfare's primary redistributes tokens between pools, which is its second sentence.
     ///

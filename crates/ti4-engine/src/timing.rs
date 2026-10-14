@@ -77,6 +77,8 @@ pub type OptionPayload = Arc<dyn Fn(&Event, &Resolver) -> BTreeMap<String, Value
 /// game-owned table, RNG, and dice history as ordinary actions, so a timing ability cannot make a
 /// detached choice or consume a different entropy stream.
 pub struct TimingContext<'a> {
+    /// One-shot cancellation window, called after an action card chooses its targets.
+    pub action_card_gate: Option<&'a mut dyn FnMut(&mut TimingContext<'_>) -> bool>,
     /// Game state the event and its timing abilities may transition.
     pub state: &'a mut GameState,
     /// Immutable content corpus used for rule lookups.
@@ -100,6 +102,11 @@ pub struct TimingContext<'a> {
 }
 
 impl TimingContext<'_> {
+    /// Open the card's cancellation window immediately before its effect starts.
+    pub fn begin_action_card_effect(&mut self) -> bool {
+        self.action_card_gate.take().is_none_or(|gate| gate(self))
+    }
+
     /// Put a nested timing-window choice to a decider with the public game position attached.
     ///
     /// # Errors
@@ -108,10 +115,14 @@ impl TimingContext<'_> {
         &mut self,
         choice: &crate::choice::Choice,
     ) -> Result<crate::choice::ChoiceOption, crate::choice::IllegalChoice> {
-        self.table.ask_seeing(
+        let answer = self.table.ask_seeing(
             choice,
             &crate::choice::Observed::new(self.state, self.content, self.sources, self.galaxy),
-        )
+        )?;
+        if self.action_card_gate.is_some() {
+            crate::action_cards::record_action_card_target(&answer.id);
+        }
+        Ok(answer)
     }
 }
 
@@ -1164,6 +1175,7 @@ mod tests {
         event_sequence: &'a mut EventSequence,
     ) -> TimingContext<'a> {
         TimingContext {
+            action_card_gate: None,
             state,
             content: ContentStore::embedded(),
             sources: POK,

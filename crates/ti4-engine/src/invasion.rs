@@ -2646,6 +2646,7 @@ fn note_ground_combat_win_feats(
     notes_at_tactical_start: &crate::combat::NoteHoldings,
     occurrence: FeatOccurrence,
 ) -> bool {
+    crate::faction_abilities::combat_won(state, content, winner, loser);
     let mut noted = false;
     if ti4_content::galaxy::all_systems(content, sources)
         .get(system.as_str())

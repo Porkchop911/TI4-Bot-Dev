@@ -17,6 +17,17 @@ Read [`HANDOVER_COMPACT.md`](HANDOVER_COMPACT.md) for the full handover summary.
 
 ## Current position
 
+### Operator fixes: Sabotage and Mahact (2026-10-13)
+
+- Implemented target-before-Sabotage checkpoints, Edict foreign fleet tokens, Mahact agent
+  secondary token substitution including Construction, and Scepter's own fleet-token issuer.
+- Evidence and scope: `plans/evidence/BF-SABOTAGE-MAHACT-2026-10-13.md`.
+- Engine/model tests: 1,442 pass with `cargo test -p ti4-engine -p ti4-model --offline -j 1`.
+  Clippy completes with existing warnings; scoped formatting/whitespace checks pass.
+- Cross-agent review findings resolved. Existing branch `codex/diplomacy-v1`, HEAD
+  `bc7a8e17`; changes remain uncommitted and preexisting dirty work is preserved.
+- No training, live bridge, full-workspace, or benchmark campaign run for this rules fix.
+
 ### Structured diplomacy v2 continuation (2026-09-15)
 
 - Claude resume point: `plans/CLAUDE_HANDOVER_2026-09-16.md`.

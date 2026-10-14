@@ -20,6 +20,84 @@ use ti4_model::state::GameState;
 /// Support for the Throne is keyed by its owner rather than by an alias.
 pub const SUPPORT_PREFIX: &str = "support:";
 
+/// Scepter of Dominion resolves before strategy cards are chosen.
+///
+/// # Errors
+/// Returns an error if the holder selects an option that was not offered.
+pub fn strategy_started(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
+    table: &mut crate::choice::Table,
+) -> Result<(), crate::choice::IllegalChoice> {
+    let owners: Vec<_> = state.players.iter().map(|seat| seat.id.clone()).collect();
+    for owner in owners {
+        let Some(holder) = holder_of(state, "scepter", &owner) else {
+            continue;
+        };
+        let home_systems = ti4_content::galaxy::home_systems(content, sources);
+        let candidates: Vec<_> = state
+            .board
+            .iter()
+            .filter(|(id, here)| {
+                here.has_units_of(&holder)
+                    && !home_systems.contains(id.as_str())
+                    && !state
+                        .players
+                        .iter()
+                        .any(|seat| seat.home_system.as_ref() == Some(*id))
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        if candidates.is_empty() {
+            continue;
+        }
+        let choice = crate::choice::Choice::new(
+            holder.clone(),
+            "play Scepter of Dominion in a non-home system",
+            candidates
+                .iter()
+                .map(|id| {
+                    crate::choice::ChoiceOption::labelled(id.to_string(), "system", id.to_string())
+                })
+                .chain(std::iter::once(crate::choice::ChoiceOption::decline()))
+                .collect(),
+        );
+        let answer = table.ask_seeing(
+            &choice,
+            &crate::choice::Observed::new(state, content, sources, galaxy),
+        )?;
+        if answer.is_decline() {
+            continue;
+        }
+        let system = ti4_model::id::SystemId::new(answer.id);
+        place_scepter_tokens(state, &owner, &holder, &system);
+        give_back(state, &note_id("scepter", &faction_name(state, &owner)));
+    }
+    Ok(())
+}
+
+fn place_scepter_tokens(
+    state: &mut GameState,
+    owner: &PlayerId,
+    holder: &PlayerId,
+    system: &ti4_model::id::SystemId,
+) {
+    let Some(seat) = state.player(owner) else {
+        return;
+    };
+    let mut issuers = seat.foreign_fleet_tokens.clone();
+    if seat.fleet_tokens > 0 {
+        issuers.insert(owner.clone());
+    }
+    for issuer in issuers {
+        if &issuer != holder && state.tokens_in_reinforcements(&issuer) > 0 {
+            state.system_mut(system).command_tokens.insert(issuer);
+        }
+    }
+}
+
 /// The notes every player owns a copy of (69.1), by alias.
 ///
 /// Support is handled separately — it is the one whose position scores a point.
@@ -585,6 +663,60 @@ mod tests {
     }
     fn b() -> PlayerId {
         PlayerId::new("b")
+    }
+
+    #[test]
+    fn mahact_scepter_places_own_and_captured_tokens_except_holders() {
+        let mut state = game(&["a", "b", "c"]);
+        let third = PlayerId::new("c");
+        let seat = state.player_mut(&a()).unwrap();
+        seat.foreign_fleet_tokens.extend([b(), third.clone()]);
+        let system = ti4_model::id::SystemId::new("18");
+        place_scepter_tokens(&mut state, &a(), &b(), &system);
+        assert_eq!(
+            state.system_state(&system).command_tokens,
+            [a(), third.clone()].into_iter().collect()
+        );
+        assert!(
+            state
+                .player(&a())
+                .unwrap()
+                .foreign_fleet_tokens
+                .contains(&third)
+        );
+        assert_eq!(state.player(&a()).unwrap().fleet_tokens, 3);
+        state.system_mut(&system).command_tokens.clear();
+        let seat = state.player_mut(&a()).unwrap();
+        seat.fleet_tokens = 0;
+        place_scepter_tokens(&mut state, &a(), &b(), &system);
+        assert!(!state.system_state(&system).command_tokens.contains(&a()));
+    }
+
+    #[test]
+    fn mahact_scepter_strategy_start_chooses_a_system_and_returns_the_note() {
+        let mut state = game(&["a", "b"]);
+        state.player_mut(&a()).unwrap().faction = FactionId::new("mahact");
+        let note = note_id("scepter", "mahact");
+        state.promissory_notes.insert(note.clone(), b());
+        let system = ti4_model::id::SystemId::new("18");
+        state
+            .system_mut(&system)
+            .units
+            .push(ti4_model::units::Unit::new(
+                ti4_model::id::UnitTypeId::new("cruiser"),
+                b(),
+            ));
+        strategy_started(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            None,
+            &mut crate::choice::Table::new(),
+        )
+        .unwrap();
+        assert_eq!(state.promissory_notes.get(&note), Some(&a()));
+        assert!(state.system_state(&system).command_tokens.contains(&a()));
+        assert!(!state.system_state(&system).command_tokens.contains(&b()));
     }
 
     /// Note scaffolding: distinct factions per seat, dealt *after* seating. Two "generic" seats

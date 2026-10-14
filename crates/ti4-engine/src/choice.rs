@@ -302,6 +302,7 @@ impl Resolving<'_> {
         };
         let event = handle.sequence.next(event_type, payload)?;
         let mut context = crate::timing::TimingContext {
+            action_card_gate: None,
             state,
             content: self.content,
             sources: self.sources,
@@ -800,6 +801,7 @@ impl<'a> Observed<'a> {
             commodities: seat.commodities,
             tactic_tokens: seat.tactic_tokens,
             fleet_tokens: seat.fleet_tokens,
+            foreign_fleet_tokens: &seat.foreign_fleet_tokens,
             strategic_tokens: seat.strategic_tokens,
             strategy_cards: &seat.strategy_cards,
             exhausted_strategy_cards: &seat.exhausted_strategy_cards,
@@ -1529,8 +1531,10 @@ pub struct PublicSeat<'a> {
     pub commodities: i32,
     /// Tokens in the tactic pool.
     pub tactic_tokens: i32,
-    /// Tokens in the fleet pool.
+    /// This player's own tokens in the fleet pool.
     pub fleet_tokens: i32,
+    /// Opponents' tokens held in the fleet pool, which cannot be redistributed.
+    pub foreign_fleet_tokens: &'a BTreeSet<PlayerId>,
     /// Tokens in the strategy pool.
     pub strategic_tokens: i32,
     /// Strategy cards held this round. Their identities and initiative are public.
