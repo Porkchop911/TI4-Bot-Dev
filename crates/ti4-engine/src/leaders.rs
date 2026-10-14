@@ -2968,7 +2968,7 @@ mod tests {
                 .into_keys()
                 .collect();
         assert!(
-            !unimplemented(ContentStore::embedded(), SourceSet::all(), &all).is_empty(),
+            !unimplemented(ContentStore::embedded(), POK, &all).is_empty(),
             "a leader this module does not handle is still reported"
         );
         assert!(
