@@ -586,6 +586,13 @@ pub fn players_sheet(ui: &mut egui::Ui, source: &Sheets<'_>, frame: &ReviewFrame
                         }
                     }
                     item_section(ui, "●", "Planets", controlled_planets, color);
+                    item_section(
+                        ui,
+                        "✨",
+                        "Special effects",
+                        crate::novelty::standing(frame, &player.id),
+                        color,
+                    );
                     ui.label(
                         egui::RichText::new(crate::view::negotiation_budget(frame, &player.id))
                             .color(crate::view::PANEL_TEXT),

@@ -87,6 +87,9 @@ pub struct Replayer {
     show_branches: bool,
     /// The Power window: every seat's immediate defence and one-activation projection.
     show_power: bool,
+    /// Out-of-the-ordinary rules effects per frame of the branch on screen, keyed by branch and
+    /// frame count so it is rebuilt only when the branch grows or changes.
+    novelty: Option<(String, usize, Vec<Vec<ti4_review::novelty::Note>>)>,
     /// The last power report, keyed by branch and frame so it is computed once per frame shown.
     power: Option<PowerCached>,
     /// What the map shows on top of the board: nothing, one seat's power view, or every seat's.
@@ -332,6 +335,7 @@ impl Replayer {
             show_decision: settings.decisions_open,
             show_branches: settings.branches_open,
             show_power: false,
+            novelty: None,
             power: None,
             overlay: ti4_review::power::Overlay::Off,
             pending_save: None,
@@ -385,6 +389,12 @@ impl Replayer {
         let session = match load_session(path) {
             Ok(session) => session,
             Err(error) => {
+                // A project file whose name lacks ".r02.json" reads as a session and trips on its
+                // `inputs` field; it is a project, so open it as one.
+                if error.to_string().contains("unknown field `inputs`") {
+                    self.open_project(path);
+                    return;
+                }
                 self.status = format!("Could not load the session: {error}");
                 return;
             }
@@ -1741,9 +1751,35 @@ impl Replayer {
     }
 
     /// The map, with the reviewer's own seat row and legend over it.
-    fn centre(&mut self, root: &mut egui::Ui, session: &ReviewSession, frame: &ReviewFrame) {
+    fn centre(
+        &mut self,
+        root: &mut egui::Ui,
+        session: &ReviewSession,
+        frame: &ReviewFrame,
+        notes: &[ti4_review::novelty::Note],
+    ) {
         egui::CentralPanel::default().show(root, |ui| {
             let content = ContentStore::embedded();
+            if !notes.is_empty() {
+                // Rules effects that are out of the ordinary changed on this frame; ★ = the first
+                // of its kind this session, i.e. a path no earlier frame has exercised.
+                egui::Frame::group(ui.style())
+                    .fill(Color32::from_rgb(70, 52, 10))
+                    .show(ui, |ui| {
+                        ui.colored_label(
+                            Color32::from_rgb(255, 210, 90),
+                            format!("✨ unusual state changed this frame ({})", notes.len()),
+                        );
+                        for note in notes {
+                            let (mark, color) = if note.first {
+                                ("★ NEW ", Color32::from_rgb(255, 150, 80))
+                            } else {
+                                ("", Color32::from_rgb(235, 220, 170))
+                            };
+                            ui.colored_label(color, format!("{mark}{}", note.text));
+                        }
+                    });
+            }
             // R01's board header, word for word. Which colour is whose, and what every stroke on the
             // hexes means: without it the map is a picture rather than a position.
             ui.horizontal_wrapped(|ui| {
@@ -2007,7 +2043,26 @@ impl eframe::App for Replayer {
                     if self.show_power {
                         self.power_window(root, session, frame);
                     }
-                    self.centre(root, session, frame);
+                    let frames = store.frames(branch);
+                    let key = format!("{branch:?}");
+                    if self
+                        .novelty
+                        .as_ref()
+                        .is_none_or(|(b, n, _)| *b != key || *n != frames.len())
+                    {
+                        self.novelty = Some((
+                            key,
+                            frames.len(),
+                            ti4_review::novelty::notes_by_frame(frames),
+                        ));
+                    }
+                    let notes = self
+                        .novelty
+                        .as_ref()
+                        .and_then(|(_, _, all)| all.get(viewed.unwrap_or(0)))
+                        .cloned()
+                        .unwrap_or_default();
+                    self.centre(root, session, frame, &notes);
                 }
             }
             opened.store = store;
