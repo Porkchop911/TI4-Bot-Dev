@@ -81,6 +81,54 @@ const OPPONENT_TEMPERATURE: f64 = 0.001;
 /// stopped progressing and never a long one. See the refusal in `play_one` for why a step limit
 /// alone was not enough.
 const MAX_DECISIONS_PER_SEAT: usize = 4_000;
+
+/// Integer weight of one unit in `--faction-focus` draws (weight 1.0 = this many tickets).
+const FOCUS_SCALE: u32 = 100;
+/// How fast `--faction-focus` follows each faction's per-update mean VP.
+const FOCUS_SMOOTHING: f64 = 0.2;
+
+/// `--faction-focus` weights per wide-roster entry from smoothed per-faction mean VP: an entry's
+/// weight is `1 + focus x (table mean - its mean)`, clamped to [0.25, 4], in [`FOCUS_SCALE`] units.
+/// A faction not yet seen counts as the table mean; the Keleres family takes its variants' mean.
+fn focus_weights(
+    roster: &[&'static str],
+    smoothed: &BTreeMap<String, f64>,
+    focus: f64,
+) -> BTreeMap<&'static str, u32> {
+    #[expect(clippy::cast_precision_loss, reason = "a few dozen factions")]
+    let table = if smoothed.is_empty() {
+        0.0
+    } else {
+        smoothed.values().sum::<f64>() / smoothed.len() as f64
+    };
+    roster
+        .iter()
+        .map(|entry| {
+            let known: Vec<f64> = if *entry == ti4_engine::seating::KELERES_FAMILY {
+                ti4_engine::factions::keleres::VARIANTS
+                    .iter()
+                    .filter_map(|variant| smoothed.get(*variant).copied())
+                    .collect()
+            } else {
+                smoothed.get(*entry).copied().into_iter().collect()
+            };
+            #[expect(clippy::cast_precision_loss, reason = "at most three variants")]
+            let mean = if known.is_empty() {
+                table
+            } else {
+                known.iter().sum::<f64>() / known.len() as f64
+            };
+            let weight = focus.mul_add(table - mean, 1.0).clamp(0.25, 4.0);
+            #[expect(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "clamped to [25, 400]"
+            )]
+            let tickets = (weight * f64::from(FOCUS_SCALE)).round() as u32;
+            (*entry, tickets)
+        })
+        .collect()
+}
 /// Rounds per self-play game, by stage.
 ///
 /// Stage 2 pays for victory points and needs the four-round horizon §6.1 defines. Stage 1 pays for
@@ -168,6 +216,8 @@ const VALUE_FLAGS: &[&str] = &[
     "--self-imitation",
     "--sil-margin",
     "--sil-keep",
+    "--faction-focus",
+    "--gae-lambda",
 ];
 /// Every flag that stands alone.
 const BOOLEAN_FLAGS: &[&str] = &[
@@ -513,11 +563,32 @@ fn play_one(
     diplomacy: bool,
     hash: bool,
     sil_margin: f64,
+    focus: Option<&BTreeMap<&'static str, u32>>,
+    gae_lambda: f64,
 ) -> Result<Played, String> {
     // The six this game draws: FACTIONS itself, or a seeded wide draw shared by every rotation of
-    // the seed (BF-22).
-    let factions =
-        ti4_training::rollout::game_factions(content, roster, &FACTIONS, players, DEFAULT, seed)?;
+    // the seed (BF-22). With --faction-focus the wide draw is weighted toward trailing factions.
+    let factions = match focus {
+        None => ti4_training::rollout::game_factions(
+            content, roster, &FACTIONS, players, DEFAULT, seed,
+        )?,
+        Some(weights) => {
+            let weight = |entry: &str| weights.get(entry).copied().unwrap_or(FOCUS_SCALE);
+            let drawn = ti4_engine::seating::seat_wide_weighted(
+                content, players, DEFAULT, seed, &weight,
+            )
+            .map_err(|error| format!("weighted wide roster for seed {seed}: {error}"))?;
+            players
+                .iter()
+                .map(|player| {
+                    drawn
+                        .get(player)
+                        .cloned()
+                        .ok_or_else(|| format!("weighted roster seated no faction for {player}"))
+                })
+                .collect::<Result<Vec<_>, String>>()?
+        }
+    };
     let seated: BTreeMap<PlayerId, FactionId> = players
         .iter()
         .enumerate()
@@ -802,6 +873,17 @@ fn play_one(
                             * gamma.powi(i32::try_from(steps_away).unwrap_or(i32::MAX));
                     }
                 }
+            }
+        }
+        if gae_lambda < 1.0 {
+            let returns: Vec<f64> = recorded.iter().map(|r| r.step.return_to_go).collect();
+            let values: Vec<f64> = recorded
+                .iter()
+                .map(|r| r.step.behaviour_value.unwrap_or(0.0))
+                .collect();
+            let targets = ti4_mlp::ppo::lambda_returns(&returns, &values, reward.discount, gae_lambda);
+            for (record, target) in recorded.iter_mut().zip(targets) {
+                record.step.return_to_go = target;
             }
         }
         #[expect(clippy::cast_precision_loss, reason = "victory points are tiny")]
@@ -1250,6 +1332,26 @@ fn main() {
     if !sil_margin.is_finite() {
         refuse("--sil-margin must be finite");
     }
+    // How hard the wide draw leans toward factions whose recent mean VP trails the table: a
+    // faction's weight is 1 + focus x (table mean - its mean), clamped to [0.25, 4]. 0 is off.
+    let faction_focus: f64 = argument("--faction-focus").map_or(0.0, |value| {
+        value
+            .parse()
+            .unwrap_or_else(|_| refuse("--faction-focus expects a number"))
+    });
+    if !faction_focus.is_finite() || faction_focus < 0.0 {
+        refuse("--faction-focus must be a finite number >= 0");
+    }
+    // GAE: lambda < 1 replaces each decision's return target with the lambda-return built from the
+    // recorded critic values, so the frozen advantage becomes GAE(lambda). 1 is today's G - V.
+    let gae_lambda: f64 = argument("--gae-lambda").map_or(1.0, |value| {
+        value
+            .parse()
+            .unwrap_or_else(|_| refuse("--gae-lambda expects a number in [0, 1]"))
+    });
+    if !gae_lambda.is_finite() || !(0.0..=1.0).contains(&gae_lambda) {
+        refuse("--gae-lambda must be in [0, 1]");
+    }
     let sil_keep: usize = argument("--sil-keep").map_or(4, |value| {
         value
             .parse()
@@ -1351,6 +1453,12 @@ fn main() {
         && argument("--waste-penalties").is_some()
     {
         refuse("--waste-penalties is per faction of the six; with --roster wide or new use --waste-penalty");
+    }
+    if faction_focus > 0.0 && roster != ti4_engine::seating::FactionRoster::Wide {
+        refuse("--faction-focus reweights the wide draw; it needs --roster wide");
+    }
+    if gae_lambda < 1.0 && critic_mode == ti4_mlp::bundle::CriticMode::BatchMean {
+        refuse("--gae-lambda below 1 needs a critic; this bundle is batch-mean");
     }
     let waste_penalties: Vec<f64> = argument("--waste-penalties").map_or_else(
         || vec![waste_penalty; FACTIONS.len()],
@@ -1582,6 +1690,12 @@ fn main() {
     }
     println!("  seeds       {seed_base}.. ({seeds_per_update} per update)");
     println!("  roster      {roster:?}");
+    if faction_focus > 0.0 {
+        println!("  focus       {faction_focus} (wide draw weighted toward trailing factions)");
+    }
+    if gae_lambda < 1.0 {
+        println!("  gae         lambda {gae_lambda}");
+    }
     println!("  critic mode {critic_mode:?}");
     println!(
         "  trunk       width {} | residual blocks {}",
@@ -1739,8 +1853,14 @@ fn main() {
     let mut window: BTreeMap<String, FactionTally> = BTreeMap::new();
     let mut previous: Option<BTreeMap<String, FactionTally>> = None;
     let mut reported_at = 0usize;
+    // --faction-focus: smoothed per-faction mean VP, and the wide roster it weights.
+    let mut smoothed_vp: BTreeMap<String, f64> = BTreeMap::new();
+    let wide_entries = ti4_engine::seating::wide_roster(content, DEFAULT);
 
     for update in 0..updates {
+        let focus_weights = (faction_focus > 0.0)
+            .then(|| focus_weights(&wide_entries, &smoothed_vp, faction_focus));
+        let mut update_vp: BTreeMap<String, (i64, i64)> = BTreeMap::new();
         // ---- rollout ----
         //
         // The optimiser's leaves never act. Every backend takes a frozen inference copy before
@@ -1882,6 +2002,8 @@ fn main() {
                             diplomacy,
                             hash_games,
                             sil_margin,
+                            focus_weights.as_ref(),
+                            gae_lambda,
                         ),
                     ));
                 }
@@ -1970,7 +2092,20 @@ fn main() {
                     .entry(outcome.faction.clone())
                     .or_default()
                     .add(outcome);
+                let tally = update_vp.entry(outcome.faction.clone()).or_default();
+                tally.0 += outcome.victory_points;
+                tally.1 += 1;
             }
+        }
+        // --faction-focus: fold this update's per-faction mean VP into the smoothed means. Integer
+        // sums in BTreeMap order, so the next update's weights are the same on every run.
+        for (faction, (points, games)) in &update_vp {
+            #[expect(clippy::cast_precision_loss, reason = "victory points and game counts are tiny")]
+            let mean = *points as f64 / *games as f64;
+            smoothed_vp
+                .entry(faction.clone())
+                .and_modify(|value| *value = FOCUS_SMOOTHING.mul_add(mean - *value, *value))
+                .or_insert(mean);
         }
         // Each faction row's picks share one unit of weight, so a strong faction that qualifies
         // more often does not dominate the imitation.
