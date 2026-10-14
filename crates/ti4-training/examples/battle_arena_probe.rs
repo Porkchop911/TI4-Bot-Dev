@@ -5,9 +5,9 @@
 //! fleets in a system drives the real retained `CombatWindow` to an outcome, reproducibly, with a
 //! declared combat policy answering casualties and sustains.
 //!
-//! Deliberately not here yet: the scenario schema, split families, seed panels, upgrades, faction
-//! effects, cards, and any dataset. Those follow once this shape is proven. Nothing is written to
-//! disk.
+//! The wide probe supports faction profiles, upgrades, seed panels and split families.
+//! Cards and generic technology effects remain outside its declared combat policy. It writes
+//! a labelled dataset only when --emit is supplied.
 //!
 //! No second rules implementation: the engine resolves the fight. This only supplies the position
 //! and answers the choices.
@@ -17,11 +17,14 @@
 //! ```
 
 use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
 
 use rayon::prelude::*;
 
 use ti4_content::ContentStore;
-use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice, Table};
+use ti4_engine::choice::{
+    Choice, ChoiceOption, Decider, IllegalChoice, Resolving, Table, TimingHandle, Window,
+};
 use ti4_model::content_types::FULL;
 use ti4_model::id::{PlayerId, SystemId};
 use ti4_model::state::GameState;
@@ -55,10 +58,8 @@ struct DeclaredCombatPolicy {
     /// What the engine actually asked this policy, so a run cannot claim a policy mattered when
     /// no sustain or casualty choice ever reached it.
     ///
-    /// Owned rather than shared: a policy is cloned into each rayon worker, and an `Rc` cannot
-    /// cross that boundary. Per-chunk counts merge into the panel tally like every other figure,
-    /// which also keeps the hot path free of a lock.
-    asked: BTreeMap<String, usize>,
+    /// Seat clones share their worker's counts; each worker starts with a fresh counter.
+    asked: Arc<Mutex<BTreeMap<String, usize>>>,
 }
 
 impl DeclaredCombatPolicy {
@@ -66,7 +67,7 @@ impl DeclaredCombatPolicy {
         Self {
             version: "sustain-always-casualty-damaged-first-v1",
             rule: CasualtyRule::DamagedFirst,
-            asked: BTreeMap::new(),
+            asked: Default::default(),
         }
     }
 
@@ -74,10 +75,20 @@ impl DeclaredCombatPolicy {
         Self {
             version: "sustain-always-casualty-cheapest-fresh-v1",
             rule: CasualtyRule::CheapestFresh,
-            asked: BTreeMap::new(),
+            asked: Default::default(),
         }
     }
 
+    fn fresh(&self) -> Self {
+        Self {
+            asked: Default::default(),
+            ..self.clone()
+        }
+    }
+
+    fn counts(&self) -> BTreeMap<String, usize> {
+        self.asked.lock().expect("choice counts lock").clone()
+    }
     /// Casualty order by base type, so an upgraded ship ranks with its base hull.
     pub(crate) fn hull_rank(unit: &str) -> usize {
         let base = ti4_content::units::unit_type(ContentStore::embedded(), unit, FULL)
@@ -106,13 +117,16 @@ impl DeclaredCombatPolicy {
 impl Decider for DeclaredCombatPolicy {
     fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
         // Record every kind offered, not just the ones this policy has a rule for.
-        for kind in choice
-            .options
-            .iter()
-            .map(|option| option.kind.clone())
-            .collect::<std::collections::BTreeSet<_>>()
         {
-            *self.asked.entry(kind).or_default() += 1;
+            let mut asked = self.asked.lock().expect("choice counts lock");
+            for kind in choice
+                .options
+                .iter()
+                .map(|option| option.kind.clone())
+                .collect::<std::collections::BTreeSet<_>>()
+            {
+                *asked.entry(kind).or_default() += 1;
+            }
         }
         let sustain = choice
             .options
@@ -535,7 +549,7 @@ fn count_units(fleet: &[(String, usize)]) -> BTreeMap<String, usize> {
 mod lean {
     use super::Resolved;
     use ti4_content::ContentStore;
-    pub use ti4_training::battle_arena::{Side, SideContext, fight};
+    pub use ti4_training::battle_arena::{ROUND_CAP, Side, SideContext, fight_outcome};
 
     /// The probe's board as the engine sees it: nobody's command token is in a Mahact fleet pool
     /// (so the Arvicon Rex's +2 applies), and nobody controls a planet outside a home system.
@@ -638,7 +652,7 @@ fn fight(
     // And the fight is in the active system, which flagship abilities read ("in this system").
     state.active_system = Some(system.clone());
 
-    // The declared policy answers for both sides. `combat::resolve` owns the retained window,
+    // The declared policy answers direct and nested timing choices for both sides. The window
     // drives it to completion and consumes the scoring pause the synchronous API cannot service,
     // so the engine resolves the fight and this only supplies the position and the answers.
     // The position as it stands before a die is rolled, and anyone else's ships in it.
@@ -651,8 +665,7 @@ fn fight(
         .filter(|unit| unit.owner != attacker && unit.owner != defender)
         .count();
 
-    // Both seats answer with the same declared policy. Each gets its own copy, and what they
-    // were asked is folded back so the accounting survives the fight.
+    // Both seats answer with the same declared policy and share this worker's choice counts.
     let mut answers = Table::new();
     let attacker_policy = policy.clone();
     let defender_policy = policy.clone();
@@ -662,15 +675,44 @@ fn fight(
     let mut dice = ti4_engine::dice::Dice::new();
     // Only the dice stream varies between repetitions of one scenario.
     let mut rng = ti4_engine::rng::GameRng::new(dice_seed);
-    let resolved = ti4_engine::combat::resolve(
-        &mut state,
-        content,
-        FULL,
-        &mut answers,
-        &mut dice,
-        &mut rng,
-        &system,
-    );
+    let resolved = (|| -> Result<_, ti4_engine::combat::CombatError> {
+        let before = ti4_engine::combat::before_combat(&state, content, FULL, &system);
+        let mut resolver = ti4_engine::fixtures::armed_resolver(&state);
+        resolver.set_active_player(state.active.clone());
+        resolver.set_phase(state.phase);
+        let mut sequence = ti4_engine::event::EventSequence::new();
+        let mut window = ti4_engine::combat::CombatWindow::new(&state, content, FULL, &system);
+        let mut ctx = Resolving {
+            content,
+            sources: FULL,
+            dice: &mut dice,
+            rng: &mut rng,
+            table: &mut answers,
+            timing: Some(TimingHandle {
+                resolver: &mut resolver,
+                sequence: &mut sequence,
+                galaxy: None,
+            }),
+        };
+        window.settle_open(&mut state, &mut ctx)?;
+        while window.outcome().is_none() {
+            window.drive(&mut state, &mut ctx)?;
+            if window.outcome().is_some() {
+                break;
+            }
+            let _ = window.take_scoring_occurrence();
+            window.settle_open(&mut state, &mut ctx)?;
+        }
+        let outcome = window
+            .outcome()
+            .ok_or_else(|| ti4_engine::combat::CombatError::Unresolved(system.clone()))?;
+        if let Some(occurrence) = window.combat_occurrence() {
+            ti4_engine::combat::note_combat_event_feats(
+                &mut state, content, FULL, &system, &before, &outcome, occurrence,
+            );
+        }
+        Ok(outcome)
+    })();
 
     match resolved {
         Ok(outcome) => Fight {
@@ -832,10 +874,28 @@ fn main() {
     println!();
 
     let use_lean = std::env::args().any(|arg| arg == "--lean");
+    let compare_sample = argument("--compare").map(|v| v.parse::<usize>().expect("--compare N"));
+    println!(
+        "  engine timing                  {}",
+        if use_lean && compare_sample.is_none() {
+            "not-used-lean-arena"
+        } else {
+            "armed-faction-windows-v1"
+        }
+    );
     let lean_effects = !std::env::args().any(|arg| arg == "--no-effects");
-    println!("  simulator   {}", if use_lean { "lean" } else { "engine" });
+    println!(
+        "  simulator   {}",
+        if compare_sample.is_some() {
+            "engine vs lean"
+        } else if use_lean {
+            "lean"
+        } else {
+            "engine"
+        }
+    );
 
-    if let Some(sample) = argument("--compare").map(|v| v.parse::<usize>().expect("--compare N")) {
+    if let Some(sample) = compare_sample {
         let reps: u64 = argument("--compare-reps").map_or(2000, |v| v.parse().expect("reps"));
         let compare_effects = std::env::args().any(|arg| arg == "--compare-effects");
         println!("  flagship effects in lean {compare_effects}");
@@ -845,7 +905,7 @@ fn main() {
         let rows: Vec<(String, [f64; 3], [f64; 3])> = picked
             .par_iter()
             .map_init(
-                || (Base::new(), policy.clone()),
+                || (Base::new(), policy.fresh()),
                 |(base, policy), scenario| {
                     let resolved = Resolved::of(content, scenario);
                     // Effects on only with --compare-effects, once the engine implements the flagship
@@ -861,9 +921,18 @@ fn main() {
                     };
                     for seed in 0..reps {
                         let e = fight(content, base, &resolved, seed, policy);
+                        assert!(
+                            e.error.is_none(),
+                            "engine comparison failed at seed {seed}: {:?}",
+                            e.error
+                        );
                         engine[slot(e.winner.as_deref())] += 1.0;
-                        let (w, _) = lean::fight(&a, &d, seed.wrapping_add(1 << 40));
-                        quick[slot(w)] += 1.0;
+                        let outcome = lean::fight_outcome(&a, &d, seed.wrapping_add(1 << 40), true);
+                        assert!(
+                            !outcome.unresolved,
+                            "lean comparison reached the round cap at seed {seed}"
+                        );
+                        quick[slot(outcome.winner)] += 1.0;
                     }
                     #[expect(clippy::cast_precision_loss, reason = "counts are small")]
                     let n = reps as f64;
@@ -923,7 +992,7 @@ fn main() {
         .map(|chunk| {
             let mut tally = Tally::default();
             // One policy per worker: its accounting is per-chunk and merged below.
-            let mut policy = policy.clone();
+            let mut policy = policy.fresh();
             // One constructed game per worker, cloned per fight.
             let base = Base::new();
             for scenario in chunk {
@@ -935,16 +1004,21 @@ fn main() {
                 for seed in 0..seeds {
                     let result = match &lean_sides {
                         Some((a, d)) => {
-                            let (winner, rounds) = lean::fight(a, d, seed);
+                            let outcome = lean::fight_outcome(a, d, seed, true);
                             Fight {
-                                winner: winner.map(ToOwned::to_owned),
-                                rounds,
+                                winner: outcome.winner.map(ToOwned::to_owned),
+                                rounds: outcome.rounds,
                                 attacker_start: Survivors::new(),
                                 defender_start: Survivors::new(),
                                 attacker_left: Survivors::new(),
                                 defender_left: Survivors::new(),
                                 intruders: 0,
-                                error: None,
+                                error: outcome.unresolved.then(|| {
+                                    format!(
+                                        "lean space combat reached its {} round cap",
+                                        lean::ROUND_CAP
+                                    )
+                                }),
                             }
                         }
                         None => fight(content, &base, &resolved, seed, &mut policy),
@@ -1008,7 +1082,7 @@ fn main() {
                     });
                 }
             }
-            tally.asked = policy.asked.clone();
+            tally.asked = policy.counts();
             tally
         })
         .collect();
@@ -1040,6 +1114,11 @@ fn main() {
     let rate = played as f64 / elapsed.as_secs_f64();
     println!("  measured in {elapsed:.2?}  ({rate:.0} fights/s)");
 
+    assert!(
+        failures.is_empty() && contaminated == 0,
+        "refusing incomplete or contaminated arena panel"
+    );
+
     if let Some(path) = emit_path {
         use std::io::Write as _;
         let rows = total.rows;
@@ -1057,6 +1136,8 @@ fn main() {
             "rows": rows.len(),
             "seeds_per_scenario": seeds,
             "casualty_policy": policy.version,
+            "simulator": if use_lean { "lean" } else { "engine" },
+            "engine_timing": if use_lean { "not-used-lean-arena" } else { "armed-faction-windows-v1" },
             "max_ships": max_ships,
             "profiles": profiles.iter().map(|p| p.label()).collect::<Vec<_>>(),
             "upgrades": upgrades,
@@ -1080,5 +1161,135 @@ fn main() {
         println!("  rows written           {}  -> {path}", rows.len());
         println!("  split                  {per_split:?}");
         println!("  manifest               {manifest_path}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn seat_counts_are_shared_with_only_their_own_worker() {
+        let policy = DeclaredCombatPolicy::cheapest_fresh();
+        let first = policy.fresh();
+        let second = policy.fresh();
+        let choice = |player| {
+            Choice::new(
+                PlayerId::new(player),
+                "test",
+                vec![ChoiceOption::new("ok", "probe")],
+            )
+        };
+        first.clone().choose(&choice("a")).unwrap();
+        first.clone().choose(&choice("b")).unwrap();
+        second.clone().choose(&choice("a")).unwrap();
+        assert_eq!(first.counts().get("probe"), Some(&2));
+        assert_eq!(second.counts().get("probe"), Some(&1));
+        assert!(policy.counts().is_empty());
+    }
+    #[test]
+    fn heavens_eye_repair_reaches_the_probe_only_with_a_puppet() {
+        let content = ContentStore::embedded();
+        let mut base = Base::new();
+        let (system, planet) = ti4_engine::fixtures::a_placed_planet();
+        base.system = system;
+        ti4_engine::fixtures::put(
+            &mut base.state,
+            &base.system,
+            "firmament_flagship",
+            &base.attacker,
+            1,
+        );
+        base.state.system_mut(&base.system).units[0].sustained_damage = true;
+        ti4_engine::fixtures::put_on_planet(
+            &mut base.state,
+            &base.system,
+            &planet,
+            "infantry",
+            &base.defender,
+            1,
+        );
+        let resolved = Resolved {
+            attacker: Vec::new(),
+            defender: vec![("fighter".to_owned(), 1)],
+            attacker_faction: "firmament",
+            defender_faction: "hacan",
+        };
+        let mut witnesses = 0;
+        for seed in 0..16 {
+            base.state.player_mut(&base.attacker).unwrap().plots = vec!["d:extract:b".to_owned()];
+            let repaired = fight(
+                content,
+                &base,
+                &resolved,
+                seed,
+                &mut DeclaredCombatPolicy::cheapest_fresh(),
+            );
+            assert!(repaired.error.is_none(), "{:?}", repaired.error);
+            if repaired.winner.as_deref() != Some("a") {
+                continue;
+            }
+            witnesses += 1;
+            assert_eq!(
+                repaired
+                    .attacker_left
+                    .get(&("firmament_flagship".to_owned(), false)),
+                Some(&1)
+            );
+            base.state.player_mut(&base.attacker).unwrap().plots.clear();
+            let control = fight(
+                content,
+                &base,
+                &resolved,
+                seed,
+                &mut DeclaredCombatPolicy::cheapest_fresh(),
+            );
+            assert!(control.error.is_none(), "{:?}", control.error);
+            if control.winner.as_deref() == Some("a") {
+                assert_eq!(
+                    control
+                        .attacker_left
+                        .get(&("firmament_flagship".to_owned(), true)),
+                    Some(&1)
+                );
+            }
+        }
+        assert!(
+            witnesses > 0,
+            "the fixed seed panel must exercise a surviving Heaven's Eye"
+        );
+    }
+    #[test]
+    fn destroyed_van_hauge_clears_both_fleets_through_the_probe() {
+        let content = ContentStore::embedded();
+        let mut base = Base::new();
+        ti4_engine::fixtures::put(
+            &mut base.state,
+            &base.system,
+            "yin_flagship",
+            &base.attacker,
+            1,
+        );
+        base.state.system_mut(&base.system).units[0].sustained_damage = true;
+        let resolved = Resolved {
+            attacker: Vec::new(),
+            defender: vec![("warsun".to_owned(), 4)],
+            attacker_faction: "yin",
+            defender_faction: "hacan",
+        };
+        for _ in 0..2 {
+            let result = fight(
+                content,
+                &base,
+                &resolved,
+                7,
+                &mut DeclaredCombatPolicy::cheapest_fresh(),
+            );
+            assert!(result.error.is_none(), "{:?}", result.error);
+            assert_eq!(result.winner, None);
+            assert_eq!(result.rounds, 1);
+            assert!(result.attacker_left.is_empty());
+            assert!(result.defender_left.is_empty());
+        }
     }
 }

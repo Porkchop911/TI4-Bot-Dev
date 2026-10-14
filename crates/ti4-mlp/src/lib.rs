@@ -2271,6 +2271,83 @@ mod tests {
     }
 
     #[test]
+    fn capacity_growth_and_fallback_copy_preserve_the_separate_critic() {
+        let mut actor = Actor::zeros(Width::W128, 16);
+        let tensor = |shape: &[i64]| Tensor::zeros(shape, (Kind::Float, Device::Cpu));
+        let input = Tensor::arange(16 * 128, (Kind::Float, Device::Cpu)).reshape([16, 128]);
+        let before = input.copy();
+        actor.set_separate_critic(Some(SeparateCritic::new(
+            input,
+            tensor(&[128]),
+            Tensor::eye(128, (Kind::Float, Device::Cpu)),
+            tensor(&[128]),
+            Tensor::ones([128], (Kind::Float, Device::Cpu)),
+            tensor(&[]),
+        )));
+        let growth = ti4_policy::vocabulary::CapacityGrowth {
+            added: 20,
+            old_slot_count: 16,
+            old_capacity: 16,
+            new_capacity: 32,
+        };
+        let value = |actor: &Actor, column| {
+            actor
+                .value(
+                    &CriticInput {
+                        sparse: option(&[column], &[1.0]),
+                    },
+                    row("sol"),
+                )
+                .expect("critic value")
+        };
+        let before_value = value(&actor, 7);
+        assert!(before_value > 0.0);
+        let policy_before = actor.input().copy();
+        // A critic shape refusal must leave the policy table and capacity unchanged too.
+        actor.separate_critic_mut().unwrap().input = before.narrow(0, 0, 15).copy();
+        assert!(actor.grow_input_capacity(growth).is_err());
+        assert_eq!(actor.capacity(), 16);
+        assert!(actor.input().equal(&policy_before));
+        actor.separate_critic_mut().unwrap().input = before.copy();
+        actor.grow_input_capacity(growth).expect("both tables grow");
+        assert_eq!(value(&actor, 7), before_value);
+        let critic = actor.separate_critic().unwrap();
+        assert_eq!(critic.input.size(), vec![32, 128]);
+        assert!(critic.input.narrow(0, 0, 16).equal(&before));
+        assert_eq!(
+            critic
+                .input
+                .narrow(0, 16, 16)
+                .abs()
+                .sum(Kind::Float)
+                .double_value(&[]),
+            0.0
+        );
+        assert!(actor.copy_input_rows(&[(7, 20), (7, 32)]).is_err());
+        assert_eq!(
+            actor
+                .separate_critic()
+                .unwrap()
+                .input
+                .get(20)
+                .abs()
+                .sum(Kind::Float)
+                .double_value(&[]),
+            0.0
+        );
+        actor.copy_input_rows(&[(7, 20)]).expect("fallback copied");
+        assert_eq!(value(&actor, 20), before_value);
+        assert!(
+            actor
+                .separate_critic()
+                .unwrap()
+                .input
+                .get(20)
+                .equal(&before.get(7))
+        );
+    }
+
+    #[test]
     fn faction_rows_masks_open_only_the_named_factions_rows() {
         let actor = actor(Width::W128);
         let rows = [row("sardakk"), row("naalu")];

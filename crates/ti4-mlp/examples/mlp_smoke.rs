@@ -132,7 +132,8 @@ fn main() {
     }
     let text = String::from_utf8(slot_bytes)
         .unwrap_or_else(|e| refuse(&format!("slots.json is not UTF-8: {e}")));
-    let vocabulary = Vocabulary::from_json(&text)
+    // This smoke performs inference; keep the pinned historical columns unchanged.
+    let vocabulary = Vocabulary::from_json_for_inference(&text)
         .unwrap_or_else(|e| refuse(&format!("slots.json does not load: {e}")));
     println!(
         "vocabulary: {} slots, V_cap {}, registry v{}",
@@ -216,7 +217,7 @@ fn main() {
             .expect("every seated faction is in the roster");
         let mut bot = MlpBot::new(
             Actor::zeros(Width::W256, capacity),
-            Vocabulary::from_json(&text).expect("vocabulary"),
+            vocabulary.clone(),
             identity,
             seed.wrapping_mul(1_000_003)
                 .wrapping_add(u64::try_from(index).unwrap_or(0)),
@@ -310,7 +311,7 @@ completed {completed} of {rounds} rounds (round state {start_round} -> {}): {ste
 
         let mut probe = Probe {
             actor: Actor::zeros(Width::W256, capacity),
-            vocabulary: Vocabulary::from_json(&text).expect("vocabulary"),
+            vocabulary: vocabulary.clone(),
             row: FactionRow::of(factions[&players[0]].as_str()).expect("roster"),
             columns: 0,
             names: 0,

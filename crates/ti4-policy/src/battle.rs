@@ -504,7 +504,8 @@ pub fn fleet_query(
             ..BattleSide::default()
         };
         if version >= WIDE_VERSION {
-            wide_context(seen, active, owner, &faction, &mut built)?;
+            let opponent = if owner == player { &enemy } else { player };
+            wide_context(seen, active, owner, opponent, &faction, &mut built)?;
         }
         Ok(built)
     };
@@ -554,17 +555,34 @@ fn wide_context(
     seen: &Observed<'_>,
     system: &SystemId,
     owner: &PlayerId,
+    opponent: &PlayerId,
     faction: &str,
     side: &mut BattleSide,
 ) -> Result<(), Unsupported> {
     let here = seen.system(system);
-    let opponents: BTreeSet<PlayerId> = here
+    let other_unit_owners: BTreeSet<PlayerId> = here
         .units
         .iter()
         .chain(here.planet_units.values().flatten())
         .filter(|unit| &unit.owner != owner)
         .map(|unit| unit.owner.clone())
         .collect();
+    if here
+        .units
+        .iter()
+        .any(|unit| &unit.owner == owner && unit.type_id.as_str() == "naaz_mech")
+    {
+        return Err(Unsupported::Context("naaz mech in space"));
+    }
+    if !side.units.is_empty()
+        && here
+            .planet_units
+            .values()
+            .flatten()
+            .any(|unit| &unit.owner == owner && unit.type_id.as_str() == "naaz_voltron")
+    {
+        return Err(Unsupported::Context("naaz planetary maximum"));
+    }
     let fields = |id: &str| side.units.iter().any(|(unit, n)| unit == id && *n > 0);
     if fields("nekro_flagship")
         && here
@@ -590,10 +608,13 @@ fn wide_context(
     side.raid_formation = faction == "argent";
     side.edict = (fields("mahact_flagship") && {
         let pool = seen.mahact_fleet_pool_owners(owner);
-        !opponents.is_empty() && !opponents.iter().any(|other| pool.contains(other))
+        !pool.contains(opponent)
     }) || (fields("firmament_flagship") && {
         let puppets = seen.firmament_puppets(owner);
-        opponents.iter().any(|other| puppets.contains(other))
+        puppets.contains(opponent)
+            || other_unit_owners
+                .iter()
+                .any(|other| puppets.contains(other))
     });
     if fields("bastion_flagship") {
         side.conquests = i64::try_from(seen.non_home_systems_with_planets(owner)).unwrap_or(0);
@@ -1478,7 +1499,8 @@ pub fn retreat_query(
             ..BattleSide::default()
         };
         if version >= WIDE_VERSION {
-            wide_context(seen, &system, owner, &faction, &mut built).ok()?;
+            let opponent: &PlayerId = if owner == &active { enemy } else { &active };
+            wide_context(seen, &system, owner, opponent, &faction, &mut built).ok()?;
         }
         Some(built)
     };
@@ -2489,6 +2511,137 @@ mod tests {
             "defender's Ambush input"
         );
         assert!(input[flags].abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn wide_context_includes_the_incoming_combat_opponent() {
+        let content = ti4_content::ContentStore::embedded();
+        let (a, b) = (PlayerId::new("a"), PlayerId::new("b"));
+        for (faction, flagship) in [
+            ("mahact", "mahact_flagship"),
+            ("firmament", "firmament_flagship"),
+        ] {
+            for enabled in [true, false] {
+                let (mut state, system) = board("sol", faction);
+                ti4_engine::fixtures::put(&mut state, &system, flagship, &b, 1);
+                if faction == "mahact" && !enabled {
+                    state
+                        .faction_marks
+                        .insert(ti4_engine::factions::mahact::fleet_mark(&b), "a".to_owned());
+                }
+                if faction == "firmament" && enabled {
+                    state.player_mut(&b).unwrap().plots = vec!["d:extract:a".to_owned()];
+                }
+                let seen = Observed::new(&state, content, ti4_model::content_types::FULL, None);
+                let BattleQuery::Supported { defender, .. } =
+                    fleet_query(&seen, &a, &system, &[("carrier", false)], 8)
+                else {
+                    panic!("supported incoming fight for {faction}");
+                };
+                assert_eq!(
+                    defender.edict, enabled,
+                    "{faction}: incoming attacker is not on the board yet"
+                );
+                // The same combat pairing must be used after arrival, on retreat decisions.
+                ti4_engine::fixtures::put(&mut state, &system, "carrier", &a, 1);
+                state.active = Some(a.clone());
+                let choice = Choice::new(
+                    b.clone(),
+                    "announce a retreat",
+                    vec![ChoiceOption::new("stay", "retreat").with("system", system.to_string())],
+                )
+                .contextualized(
+                    ti4_engine::decision_context::DecisionContext::new(
+                        b.clone(),
+                        ti4_engine::decision_context::DecisionSource::Rule("78.9".to_owned()),
+                        "announce_retreat",
+                        ti4_model::state::Phase::Action,
+                        1,
+                    ),
+                );
+                let seen = Observed::new(&state, content, ti4_model::content_types::FULL, None);
+                let (_, defender, _) = retreat_query(&seen, &choice, &b, 8).expect("retreat fight");
+                assert_eq!(
+                    defender.edict, enabled,
+                    "{faction}: retreat uses the same opponent"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn wide_context_distinguishes_combat_opponents_from_puppeted_planet_units() {
+        let content = ti4_content::ContentStore::embedded();
+        let (a, b, c) = (PlayerId::new("a"), PlayerId::new("b"), PlayerId::new("c"));
+        let (system, planet) = ti4_engine::fixtures::a_placed_planet();
+        for (faction, flagship) in [
+            ("mahact", "mahact_flagship"),
+            ("firmament", "firmament_flagship"),
+        ] {
+            let mut state = ti4_engine::fixtures::game(&["a", "b", "c"]);
+            for (player, alias) in [(&a, "sol"), (&b, faction), (&c, "hacan")] {
+                state.player_mut(player).unwrap().faction = ti4_model::id::FactionId::new(alias);
+            }
+            ti4_engine::fixtures::put(&mut state, &system, flagship, &b, 1);
+            ti4_engine::fixtures::put_on_planet(&mut state, &system, &planet, "infantry", &c, 1);
+            state
+                .faction_marks
+                .insert(ti4_engine::factions::mahact::fleet_mark(&b), "c".to_owned());
+            state.player_mut(&b).unwrap().plots = vec!["d:extract:c".to_owned()];
+            let seen = Observed::new(&state, content, ti4_model::content_types::FULL, None);
+            let BattleQuery::Supported { defender, .. } =
+                fleet_query(&seen, &a, &system, &[("carrier", false)], 8)
+            else {
+                panic!("supported incoming fight for {faction}");
+            };
+            assert!(
+                defender.edict,
+                "{faction}: third-party ground forces are not Mahact combatants but do trigger Heaven's Eye"
+            );
+        }
+    }
+
+    #[test]
+    fn wide_query_refuses_naaz_mechs_before_the_space_form_flip() {
+        let content = ti4_content::ContentStore::embedded();
+        let (a, b) = (PlayerId::new("a"), PlayerId::new("b"));
+        for owner in [&a, &b] {
+            let (mut state, system) = board("naaz", "naaz");
+            ti4_engine::fixtures::put(&mut state, &system, "carrier", &b, 1);
+            ti4_engine::fixtures::put(&mut state, &system, "naaz_mech", owner, 1);
+            let seen = Observed::new(&state, content, ti4_model::content_types::FULL, None);
+            assert_eq!(
+                fleet_query(&seen, &a, &system, &[("carrier", false)], 8),
+                BattleQuery::Unsupported(Unsupported::Context("naaz mech in space")),
+            );
+        }
+    }
+    #[test]
+    fn wide_query_refuses_planetary_maximum_but_not_ordinary_ground_mechs() {
+        let content = ti4_content::ContentStore::embedded();
+        let (a, b) = (PlayerId::new("a"), PlayerId::new("b"));
+        let (system, planet) = ti4_engine::fixtures::a_placed_planet();
+        for owner in [&a, &b] {
+            for unit in ["naaz_voltron", "naaz_mech"] {
+                let mut state = ti4_engine::fixtures::game(&["a", "b"]);
+                for player in [&a, &b] {
+                    state.player_mut(player).unwrap().faction =
+                        ti4_model::id::FactionId::new("naaz");
+                }
+                ti4_engine::fixtures::put(&mut state, &system, "carrier", &b, 1);
+                ti4_engine::fixtures::put_on_planet(&mut state, &system, &planet, unit, owner, 1);
+                let seen = Observed::new(&state, content, ti4_model::content_types::FULL, None);
+                let query = fleet_query(&seen, &a, &system, &[("carrier", false)], 8);
+                if unit == "naaz_voltron" {
+                    assert_eq!(
+                        query,
+                        BattleQuery::Unsupported(Unsupported::Context("naaz planetary maximum"))
+                    );
+                } else {
+                    assert!(matches!(query, BattleQuery::Supported { .. }));
+                }
+            }
+        }
     }
 
     #[test]

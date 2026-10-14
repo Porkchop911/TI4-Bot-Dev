@@ -3904,6 +3904,144 @@ mod tests {
     }
 
     #[test]
+    fn production_offer_does_not_credit_influence_for_a_resource_bill() {
+        // A resource production bill may use controlled resource faces only. Keep a distinct
+        // zero-resource influence planet under the Saar player so an implementation that
+        // accidentally folds influence into resource affordability would offer the carrier.
+        let content = ContentStore::embedded();
+        let sources = ti4_model::content_types::DEFAULT;
+        let all = ti4_content::galaxy::all_planets(content, sources);
+        let (resource_planet, system) = all
+            .iter()
+            .find_map(|(id, record)| {
+                let system_id = record.system_id()?;
+                if record.is_placed_during_play() || record.resources() != 1 {
+                    return None;
+                }
+                Some((PlanetId::new(*id), SystemId::new(system_id)))
+            })
+            .expect("the corpus has a one-resource placed planet");
+        let influence_planet = all
+            .iter()
+            .find(|(id, record)| {
+                PlanetId::new(**id) != resource_planet
+                    && !record.is_placed_during_play()
+                    && record.resources() == 0
+                    && record.influence() >= 3
+            })
+            .map(|(id, _)| PlanetId::new(*id))
+            .expect("the corpus has a distinct zero-resource influence planet");
+        let influence_system = all
+            .iter()
+            .find(|(id, _)| PlanetId::new(**id) == influence_planet)
+            .and_then(|(_, record)| record.system_id())
+            .map(SystemId::new)
+            .expect("the selected influence planet has a system");
+
+        let player = player();
+        let mut state = crate::fixtures::seated_game(&[("a", "saar"), ("b", "sol")], sources);
+        for here in state.board.values_mut() {
+            here.units.clear();
+            here.planet_control.clear();
+            here.planet_units.clear();
+            here.coexisting.clear();
+        }
+        state.exhausted_planets.clear();
+        state.influence_pays_for_units.clear();
+        state.production_discount_remaining = 0;
+        for seat in &mut state.players {
+            seat.trade_goods = 0;
+            seat.technologies.clear();
+            seat.exhausted_technologies.clear();
+            seat.free_production_use = None;
+        }
+        state
+            .system_mut(&system)
+            .set_control(resource_planet.clone(), player.clone());
+        state
+            .system_mut(&influence_system)
+            .set_control(influence_planet.clone(), player.clone());
+        put(&mut state, &system, "saar_spacedock", &player, 1);
+        assert_eq!(
+            planet_value(&content, sources, &resource_planet, Spend::Resources),
+            1
+        );
+        assert_eq!(
+            planet_value(&content, sources, &influence_planet, Spend::Resources),
+            0
+        );
+        assert!(
+            planet_value(&content, sources, &influence_planet, Spend::Influence) >= 3
+        );
+        assert_eq!(available(&state, content, sources, &player, Spend::Resources), 1);
+
+        let mut window = ProductionWindow::new(&state, content, sources, &player, &system)
+            .with_only_unit(Some("carrier".to_owned()));
+        assert!(
+            window
+                .pending_choice(&state, content, sources)
+                .is_none(),
+            "a carrier resource bill must not be funded by the other planet's influence"
+        );
+        window.stage = Stage::Paying {
+            id: "carrier".to_owned(),
+            owed: 1,
+            made: 1,
+            cost: 3,
+            paid: 2,
+        };
+        let payment = window
+            .pending_choice(&state, content, sources)
+            .expect("the ordinary production payment prompt");
+        assert!(
+            payment.options.iter().all(|option| {
+                option
+                    .payload
+                    .get("kind")
+                    .and_then(serde_json::Value::as_str)
+                    == Some("resources")
+                    && option.label.ends_with(" resources")
+            }),
+            "ordinary production must expose resource payment labels only"
+        );
+    }
+
+    #[test]
+    fn saar_carrier_without_a_factory_cannot_open_production() {
+        let content = ContentStore::embedded();
+        let sources = ti4_model::content_types::DEFAULT;
+        let player = player();
+        let mut state = crate::fixtures::seated_game(&[("a", "saar"), ("b", "sol")], sources);
+        let system = state
+            .player(&player)
+            .and_then(|seat| seat.home_system.clone())
+            .expect("Saar has a home system");
+        {
+            let here = state.system_mut(&system);
+            here.units.clear();
+            here.planet_control.clear();
+            here.planet_units.clear();
+            here.coexisting.clear();
+        }
+        put(&mut state, &system, "carrier", &player, 1);
+        put(&mut state, &system, "infantry", &player, 1);
+        put(&mut state, &system, "fighter", &player, 1);
+        let before_state = state.clone();
+
+        assert_eq!(capacity(&state, content, sources, &player, &system), 0);
+        let window = ProductionWindow::new(&state, content, sources, &player, &system);
+        assert!(
+            window.pending_choice(&state, content, sources).is_none(),
+            "Saar ships and ground forces do not produce without a factory"
+        );
+
+        assert_eq!(
+            serde_json::to_value(&state).expect("state serializes"),
+            serde_json::to_value(&before_state).expect("saved state serializes")
+        );
+    }
+
+    #[test]
     fn obs008c1_window_payment_context_carries_full_bill_and_prior_credit() {
         let (mut state, system, planet) = seated();
         state.system_mut(&system).set_control(planet, player());

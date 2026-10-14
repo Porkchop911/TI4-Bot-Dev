@@ -1543,8 +1543,8 @@ pub(crate) fn structure_options(
 }
 
 /// The unit Construction places for `kind` (`pds` / `spacedock`): the faction unit or upgrade, as
-/// an action card placement resolves it. Construction puts the structure on a planet, so a
-/// space-only form (Saar's Floating Factory) falls back to the generic planet unit.
+/// an action card placement resolves it. A space-only form (Saar's Floating Factory) is returned
+/// as is; [`place_structure`] puts it in the system's space area rather than on the planet.
 fn construction_unit(
     state: &GameState,
     content: &ContentStore,
@@ -1552,15 +1552,8 @@ fn construction_unit(
     player: &PlayerId,
     kind: &str,
 ) -> UnitTypeId {
-    let generic = || UnitTypeId::new(kind);
-    let Some(unit) = crate::action_cards::placed_unit_id(state, content, sources, player, kind)
-    else {
-        return generic();
-    };
-    let space_only = ti4_content::units::catalogue(content, sources)
-        .get(unit.as_str())
-        .is_some_and(|record| record.is_space_only_structure());
-    if space_only { generic() } else { unit }
+    crate::action_cards::placed_unit_id(state, content, sources, player, kind)
+        .unwrap_or_else(|| UnitTypeId::new(kind))
 }
 
 pub(crate) fn place_structure(
@@ -1644,12 +1637,23 @@ pub(crate) fn place_structure(
         }
     }
     let placed = construction_unit(state, content, sources, player, kind);
-    state
-        .system_mut(&system)
-        .planet_units
-        .entry(planet)
-        .or_default()
-        .push(Unit::new(placed, player.clone()));
+    // Floating Factory: "This unit is placed in the space area instead of on a planet."
+    let space_only = ti4_content::units::catalogue(content, sources)
+        .get(placed.as_str())
+        .is_some_and(|record| record.is_space_only_structure());
+    if space_only {
+        state
+            .system_mut(&system)
+            .units
+            .push(Unit::new(placed, player.clone()));
+    } else {
+        state
+            .system_mut(&system)
+            .planet_units
+            .entry(planet)
+            .or_default()
+            .push(Unit::new(placed, player.clone()));
+    }
 
     // Minister of Industry: "When the owner of this card places a space dock in a system, their
     // units in that system may use their PRODUCTION abilities." A space dock specifically, so a
@@ -2945,7 +2949,7 @@ mod tests {
     }
 
     #[test]
-    fn saar_construction_places_the_generic_dock_on_a_planet_not_the_floating_factory() {
+    fn saar_construction_places_the_floating_factory_in_the_space_area() {
         let content = ContentStore::embedded();
         let sources = ti4_model::content_types::DEFAULT;
         let mut state = seated_game(&[("a", "saar")], sources);
@@ -2961,14 +2965,24 @@ mod tests {
             .find(|option| option.id.starts_with("spacedock|"))
             .expect("a Saar space dock spot is offered")
             .id;
+        let in_space = |state: &GameState| {
+            state
+                .board
+                .values()
+                .flat_map(|system| system.units.iter())
+                .filter(|unit| unit.type_id.as_str() == "saar_spacedock")
+                .count()
+        };
+        let in_space_before = in_space(&state);
         let mut table = Table::with_default(Box::new(crate::choice::Scripted::new([spot])));
         place_structure(
             &mut state, content, sources, None, &mut table, &player, false,
         )
         .unwrap();
-        assert_eq!(count_type(&state, &player, "spacedock"), 1);
-        assert_eq!(count_type(&state, &player, "saar_spacedock"), 0);
-        assert_eq!(count_type(&state, &player, "saar_spacedock2"), 0);
+        assert_eq!(count_type(&state, &player, "spacedock"), 0);
+        assert_eq!(count_type(&state, &player, "saar_spacedock"), 0, "not on a planet");
+        // In the space area, not attached to a planet (it must be able to move).
+        assert_eq!(in_space(&state), in_space_before + 1);
     }
 
     #[test]

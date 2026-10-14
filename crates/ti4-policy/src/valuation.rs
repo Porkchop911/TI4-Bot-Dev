@@ -102,7 +102,7 @@ pub fn planet_multipliers(
     if planet.is_legendary() {
         factors.insert("legendary", 2.0);
     }
-    if planet.id() == "mr" {
+    if ti4_engine::seating::is_mecatol_planet(planet.id()) {
         factors.insert("mecatol", 2.5); // a victory point a round via Imperial
     }
     let own_faction = seen

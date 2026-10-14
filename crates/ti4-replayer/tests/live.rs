@@ -1040,6 +1040,907 @@ fn a_manual_ssruu_l1z1x_copy_preserves_planet_choice_and_replaces_that_planets_i
     );
 }
 
+/// A direct ground-combat callback parks the defender's ground-casualty choice, then resumes
+/// through the submitted damaged-mech option. This does not claim full invasion-window coverage.
+#[test]
+fn a_manual_ground_combat_casualty_submits_the_selected_damaged_mech() {
+    use ti4_content::ContentStore;
+    use ti4_engine::choice::{FirstOption, Scripted, Table};
+    use ti4_engine::dice::Dice;
+    use ti4_engine::fixtures;
+    use ti4_engine::invasion;
+    use ti4_engine::rng::GameRng;
+    use ti4_model::content_types::DEFAULT;
+    use ti4_model::id::{PlanetId, SystemId};
+    use ti4_replayer::decider::ControlledDecider;
+    use ti4_replayer::live::Gate;
+
+    let invader = PlayerId::new("a");
+    let defender = PlayerId::new("b");
+    let content = ContentStore::embedded();
+    let systems = ti4_content::galaxy::all_systems(content, DEFAULT);
+    let (planet_id, system_id) = ti4_content::galaxy::all_planets(content, DEFAULT)
+        .iter()
+        .find_map(|(id, planet)| {
+            let system = planet.system_id()?;
+            (system != ti4_engine::seating::MECATOL && !planet.is_placed_during_play())
+                .then(|| systems.get(system).filter(|record| !record.is_anomaly()))??;
+            Some((PlanetId::new(*id), SystemId::new(system)))
+        })
+        .expect("the corpus has an ordinary non-Mecatol planet");
+
+    let mut state = fixtures::seated_game(&[("a", "sol"), ("b", "hacan")], DEFAULT);
+    let staging = ti4_engine::supply::staging_enabled(&state);
+    state.board.remove(&system_id);
+    fixtures::put_on_planet(&mut state, &system_id, &planet_id, "infantry", &invader, 1);
+    fixtures::put_on_planet(
+        &mut state,
+        &system_id,
+        &planet_id,
+        "hacan_mech",
+        &defender,
+        1,
+    );
+    fixtures::put_on_planet(&mut state, &system_id, &planet_id, "infantry", &defender, 1);
+    state
+        .system_mut(&system_id)
+        .planet_units
+        .get_mut(&planet_id)
+        .expect("defender units were placed")
+        .iter_mut()
+        .find(|unit| unit.type_id.as_str() == "hacan_mech")
+        .expect("defender mech was placed")
+        .sustained_damage = true;
+
+    let mut seat_control = SeatControl::all_auto();
+    seat_control.set_mode(&defender, SeatMode::Manual);
+    let gate = std::sync::Arc::new(Gate::live(seat_control));
+    let _shutdown_on_failure = ShutdownGateOnDrop(gate.clone());
+    let callback_gate = gate.clone();
+    let callback_defender = defender.clone();
+    let callback_system = system_id.clone();
+    let callback_planet = planet_id.clone();
+    let callback_invader = invader.clone();
+    let callback = std::thread::spawn(move || {
+        let mut table = Table::with_default(Box::new(FirstOption));
+        table.seat(
+            callback_defender.clone(),
+            Box::new(ControlledDecider::new(
+                Box::new(Scripted::new(["destroy|1"])),
+                callback_defender,
+                callback_gate,
+            )),
+        );
+        let mut dice = Dice::new();
+        // Seed 43 gives attacker infantry 8, defender mech 1 and infantry 10.
+        let mut rng = GameRng::new(43);
+        let result = invasion::ground_combat(
+            &mut state,
+            ContentStore::embedded(),
+            DEFAULT,
+            &mut table,
+            &mut dice,
+            &mut rng,
+            &callback_system,
+            &callback_planet,
+            &callback_invader,
+        );
+        (state, result)
+    });
+
+    let wait_for = |matches: &dyn Fn(&PendingManualChoice) -> bool| {
+        let deadline = Instant::now() + WAIT;
+        loop {
+            if let Some(pending) = gate.pending().filter(matches) {
+                return pending;
+            }
+            assert!(
+                !callback.is_finished(),
+                "ground-combat worker finished before the expected offer"
+            );
+            assert!(
+                Instant::now() < deadline,
+                "ground combat did not park the expected offer"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    };
+    let casualty = wait_for(&|offer| {
+        offer.actor == defender
+            && offer
+                .context
+                .as_ref()
+                .and_then(|context| context["subtype"].as_str())
+                == Some("assign_ground_casualty")
+            && offer
+                .options
+                .iter()
+                .any(|option| option.label.contains("mech"))
+            && offer
+                .options
+                .iter()
+                .any(|option| option.label.contains("infantry"))
+    });
+    assert_eq!(
+        casualty
+            .context
+            .as_ref()
+            .and_then(|context| context["subtype"].as_str()),
+        Some("assign_ground_casualty")
+    );
+    assert_eq!(
+        casualty
+            .context
+            .as_ref()
+            .and_then(|context| context["target"]["Planet"]["planet"].as_str()),
+        Some(planet_id.as_str())
+    );
+    assert_eq!(
+        casualty
+            .context
+            .as_ref()
+            .and_then(|context| context["target"]["Planet"]["system"].as_str()),
+        Some(system_id.as_str())
+    );
+    assert_eq!(casualty.options.len(), 2);
+    let mech = casualty
+        .options
+        .iter()
+        .find(|option| option.payload["unit"] == "hacan_mech")
+        .expect("the damaged mech has a distinct manual option");
+    let infantry = casualty
+        .options
+        .iter()
+        .find(|option| option.payload["unit"] == "infantry")
+        .expect("the infantry has a distinct manual option");
+    assert_ne!(mech.label, infantry.label);
+    assert_eq!(mech.kind, invasion::GROUND_CASUALTY_KIND);
+    assert_eq!(infantry.kind, invasion::GROUND_CASUALTY_KIND);
+    assert_eq!(mech.payload["damaged"], true);
+    assert_eq!(infantry.payload["damaged"], false);
+    if staging {
+        assert_eq!(mech.label, "destroy hacan_mech (damaged)");
+        assert_eq!(infantry.label, "destroy infantry (undamaged)");
+    }
+    assert!(
+        casualty
+            .options
+            .iter()
+            .any(|option| option.label.contains("infantry"))
+    );
+    let chosen = mech.id.clone();
+    assert!(matches!(
+        gate.submit(&ManualSubmission::to(&casualty, chosen)),
+        SubmitOutcome::Accepted { .. }
+    ));
+    let _ = gate.set_mode(&defender, SeatMode::Auto);
+
+    let (state, result) = callback.join().expect("ground-combat worker completes");
+    assert_eq!(
+        result.expect("ground combat settles the submitted casualty"),
+        None,
+        "the defender's hit removes the sole invading infantry"
+    );
+    let standing = state
+        .system_state(&system_id)
+        .on_planet(&planet_id)
+        .to_vec();
+    assert!(
+        !standing
+            .iter()
+            .any(|unit| unit.owner == invader && unit.type_id.as_str() == "infantry")
+    );
+    assert!(
+        standing
+            .iter()
+            .any(|unit| unit.owner == defender && unit.type_id.as_str() == "infantry")
+    );
+    assert!(
+        !standing
+            .iter()
+            .any(|unit| unit.owner == defender && unit.type_id.as_str() == "hacan_mech")
+    );
+}
+
+/// A real armed resolver routes Ssruu's copied Garv and Gunn callback to the ending player,
+/// who chooses between two controlled planets before the selected planet is explored.
+#[test]
+fn a_manual_ssruu_copied_garv_and_gunn_explores_the_selected_planet() {
+    use ti4_content::ContentStore;
+    use ti4_engine::choice::{AlwaysDecline, Table};
+    use ti4_engine::event::Event;
+    use ti4_engine::fixtures;
+    use ti4_model::content_types::{ContentType, DEFAULT};
+    use ti4_model::id::{LeaderId, PlanetId, SystemId};
+    use ti4_model::state::LeaderStatus;
+    use ti4_replayer::decider::ControlledDecider;
+    use ti4_replayer::live::Gate;
+
+    let borrower = PlayerId::new("a");
+    let source = PlayerId::new("b");
+    let ending_player = PlayerId::new("c");
+    let content = ContentStore::embedded();
+    let systems = ti4_content::galaxy::all_systems(content, DEFAULT);
+    let mut by_deck: BTreeMap<String, Vec<(PlanetId, SystemId, String)>> = BTreeMap::new();
+    for (id, planet) in ti4_content::galaxy::all_planets(content, DEFAULT) {
+        let Some(system) = planet.system_id() else {
+            continue;
+        };
+        let Some(system_record) = systems.get(system) else {
+            continue;
+        };
+        let Some(name) = planet.name() else {
+            continue;
+        };
+        if planet.is_placed_during_play() || system_record.is_anomaly() {
+            continue;
+        }
+        let traits = ti4_engine::exploration::traits_of(content, DEFAULT, &PlanetId::new(id));
+        if traits.len() != 1 {
+            continue;
+        }
+        let deck = traits.into_iter().next().expect("one planet trait");
+        by_deck.entry(deck).or_default().push((
+            PlanetId::new(id),
+            SystemId::new(system),
+            name.to_owned(),
+        ));
+    }
+    let (deck, planets) = by_deck
+        .into_iter()
+        .find_map(|(deck, planets)| {
+            let first = planets.first()?.clone();
+            let second = planets
+                .iter()
+                .find(|candidate| candidate.2 != first.2)?
+                .clone();
+            Some((deck, [first, second]))
+        })
+        .expect("the corpus has two named ordinary planets sharing an exploration deck");
+    let first_planet = planets[0].clone();
+    let second_planet = planets[1].clone();
+    let guaranteed_cards: Vec<String> = content
+        .records(ContentType::Explores)
+        .iter()
+        .filter(|record| record.in_sources(DEFAULT))
+        .filter(|record| record.text("resolution") == Some("Fragment"))
+        .filter(|record| {
+            record
+                .text("type")
+                .unwrap_or(deck.as_str())
+                .eq_ignore_ascii_case(deck.as_str())
+        })
+        .filter_map(|record| record.id().map(ToOwned::to_owned))
+        .take(2)
+        .collect();
+    assert_eq!(
+        guaranteed_cards.len(),
+        2,
+        "the selected exploration deck has two benign fragment cards"
+    );
+
+    let mut state =
+        fixtures::seated_game(&[("a", "yssaril"), ("b", "naaz"), ("c", "sol")], DEFAULT);
+    for board in state.board.values_mut() {
+        board
+            .planet_control
+            .retain(|_, owner| owner != &ending_player);
+    }
+    for (system, planet) in [
+        (&first_planet.1, &first_planet.0),
+        (&second_planet.1, &second_planet.0),
+    ] {
+        state
+            .system_mut(system)
+            .set_control(planet.clone(), ending_player.clone());
+    }
+    let deck_cards = state
+        .exploration_decks
+        .get_mut(&deck)
+        .expect("the selected exploration deck exists");
+    *deck_cards = guaranteed_cards;
+    state
+        .player_mut(&source)
+        .expect("Naaz is seated")
+        .leaders
+        .insert(LeaderId::new("naazagent"), LeaderStatus::Exhausted);
+    state
+        .player_mut(&borrower)
+        .expect("Yssaril is seated")
+        .leaders
+        .insert(LeaderId::new("yssarilagent"), LeaderStatus::Readied);
+    let source_status = state.player(&source).unwrap().leaders[&LeaderId::new("naazagent")];
+    let log_before = state.exploration_log.len();
+    let ability_id = "leader:naaz:b:yssarilagent:naazagent:TURN_PASSED:after";
+
+    let mut payload = BTreeMap::new();
+    payload.insert("player".to_owned(), ending_player.to_string().into());
+    let event = Event::new(1, "TURN_PASSED", payload);
+    let mut seat_control = SeatControl::all_auto();
+    seat_control.set_mode(&borrower, SeatMode::Manual);
+    seat_control.set_mode(&ending_player, SeatMode::Manual);
+    let gate = std::sync::Arc::new(Gate::live(seat_control));
+    let _shutdown_on_failure = ShutdownGateOnDrop(gate.clone());
+    let callback_gate = gate.clone();
+    let callback_borrower = borrower.clone();
+    let callback_ending_player = ending_player.clone();
+    let callback = std::thread::spawn(move || {
+        let mut resolver = fixtures::armed_resolver(&state);
+        let mut table = Table::with_default(Box::new(AlwaysDecline));
+        table.seat(
+            callback_borrower.clone(),
+            Box::new(ControlledDecider::new(
+                Box::new(AlwaysDecline),
+                callback_borrower,
+                callback_gate.clone(),
+            )),
+        );
+        table.seat(
+            callback_ending_player.clone(),
+            Box::new(ControlledDecider::new(
+                Box::new(AlwaysDecline),
+                callback_ending_player,
+                callback_gate,
+            )),
+        );
+        let result = fixtures::with_context(&mut state, DEFAULT, None, &mut table, |context| {
+            resolver.emit_with_context(context, event, |_, _| {})
+        });
+        (state, result)
+    });
+
+    let wait_for = |matches: &dyn Fn(&PendingManualChoice) -> bool| {
+        let deadline = Instant::now() + WAIT;
+        loop {
+            if let Some(pending) = gate.pending().filter(matches) {
+                return pending;
+            }
+            assert!(
+                !callback.is_finished(),
+                "resolver worker finished before the expected offer"
+            );
+            assert!(
+                Instant::now() < deadline,
+                "resolver did not park the expected offer"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    };
+    let ability_offer = wait_for(&|offer| {
+        offer.actor == borrower && offer.options.iter().any(|option| option.id == ability_id)
+    });
+    assert!(matches!(
+        gate.submit(&ManualSubmission::to(&ability_offer, ability_id)),
+        SubmitOutcome::Accepted { .. }
+    ));
+
+    let planet_offer = wait_for(&|offer| {
+        offer.actor == ending_player
+            && offer
+                .context
+                .as_ref()
+                .and_then(|context| context["subtype"].as_str())
+                == Some("borrowed_agent_planet")
+    });
+    assert_eq!(
+        planet_offer
+            .context
+            .as_ref()
+            .and_then(|context| context["source"]["FactionAbility"].as_str()),
+        Some("naazagent")
+    );
+    assert_eq!(planet_offer.options.len(), 2);
+    for planet in [&first_planet, &second_planet] {
+        let option = planet_offer
+            .options
+            .iter()
+            .find(|option| option.id == planet.0.as_str())
+            .expect("each controlled planet has an option");
+        assert_eq!(option.kind, "planet");
+        assert_eq!(option.label, format!("explore {}", planet.2));
+    }
+    assert_ne!(planet_offer.options[0].label, planet_offer.options[1].label);
+    assert!(matches!(
+        gate.submit(&ManualSubmission::to(
+            &planet_offer,
+            second_planet.0.as_str().to_owned()
+        )),
+        SubmitOutcome::Accepted { .. }
+    ));
+    let _ = gate.set_mode(&ending_player, SeatMode::Auto);
+
+    let (state, result) = callback.join().expect("resolver callback worker completes");
+    result.expect("copied Garv and Gunn settles through Table::ask");
+    assert_eq!(state.exploration_log.len(), log_before + 1);
+    let record = state
+        .exploration_log
+        .last()
+        .expect("exploration was logged");
+    assert_eq!(record.player, ending_player);
+    assert_eq!(record.planet.as_ref(), Some(&second_planet.0));
+    assert_eq!(record.deck, deck);
+    assert!(
+        state
+            .exploration_log
+            .iter()
+            .skip(log_before)
+            .all(|record| record.planet.as_ref() != Some(&first_planet.0))
+    );
+    assert_eq!(
+        state.player(&borrower).unwrap().leaders[&LeaderId::new("yssarilagent")],
+        LeaderStatus::Exhausted
+    );
+    assert_eq!(
+        state.player(&source).unwrap().leaders[&LeaderId::new("naazagent")],
+        source_status,
+        "copying leaves the exhausted source agent unchanged"
+    );
+}
+
+/// A real armed resolver parks both Absolute Synergy survivor choices, then retains the selected
+/// damaged plain-form mech as the Eidolon Maximum.
+#[test]
+fn a_manual_naaz_absolute_synergy_keeps_the_selected_damaged_form() {
+    use ti4_engine::choice::{AlwaysDecline, Table};
+    use ti4_engine::event::Event;
+    use ti4_engine::fixtures;
+    use ti4_model::content_types::DEFAULT;
+    use ti4_model::id::{BreakthroughId, LeaderId, PlanetId, SystemId, UnitTypeId};
+    use ti4_model::state::LeaderStatus;
+    use ti4_replayer::decider::ControlledDecider;
+    use ti4_replayer::live::Gate;
+
+    let player = PlayerId::new("a");
+    let system = SystemId::new("18");
+    let planet = PlanetId::new("mr");
+    let mut state = fixtures::seated_game(&[("a", "naaz"), ("b", "sol")], DEFAULT);
+    state.player_mut(&player).unwrap().breakthrough = Some(BreakthroughId::new("naazbt"));
+    for board in state.board.values_mut() {
+        board
+            .units
+            .retain(|unit| !unit.type_id.as_str().starts_with("naaz_mech"));
+        for units in board.planet_units.values_mut() {
+            units.retain(|unit| !unit.type_id.as_str().starts_with("naaz_mech"));
+        }
+    }
+    fixtures::put_on_planet(&mut state, &system, &planet, "naaz_mech_space", &player, 1);
+    fixtures::put(&mut state, &system, "naaz_mech_space", &player, 2);
+    fixtures::put(&mut state, &system, "naaz_mech", &player, 1);
+    state
+        .system_mut(&system)
+        .units
+        .iter_mut()
+        .find(|unit| unit.type_id.as_str() == "naaz_mech")
+        .expect("the plain-form mech was placed")
+        .sustained_damage = true;
+
+    let ability_id = "breakthrough:naaz:naazbt:BREAKTHROUGH_GAINED:after";
+    let mut payload = BTreeMap::new();
+    payload.insert("player".to_owned(), player.to_string().into());
+    payload.insert("breakthrough".to_owned(), "naazbt".into());
+    let event = Event::new(1, "BREAKTHROUGH_GAINED", payload);
+    let mut seat_control = SeatControl::all_auto();
+    seat_control.set_mode(&player, SeatMode::Manual);
+    let gate = std::sync::Arc::new(Gate::live(seat_control));
+    let _shutdown_on_failure = ShutdownGateOnDrop(gate.clone());
+    let callback_gate = gate.clone();
+    let callback_player = player.clone();
+    let callback = std::thread::spawn(move || {
+        let mut resolver = fixtures::armed_resolver(&state);
+        let mut table = Table::with_default(Box::new(AlwaysDecline));
+        table.seat(
+            callback_player.clone(),
+            Box::new(ControlledDecider::new(
+                Box::new(AlwaysDecline),
+                callback_player,
+                callback_gate,
+            )),
+        );
+        let result = fixtures::with_context(&mut state, DEFAULT, None, &mut table, |context| {
+            resolver.emit_with_context(context, event, |_, _| {})
+        });
+        (state, result)
+    });
+
+    let wait_for = |matches: &dyn Fn(&PendingManualChoice) -> bool| {
+        let deadline = Instant::now() + WAIT;
+        loop {
+            if let Some(pending) = gate.pending().filter(matches) {
+                return pending;
+            }
+            assert!(
+                !callback.is_finished(),
+                "resolver worker finished before the expected offer"
+            );
+            assert!(
+                Instant::now() < deadline,
+                "resolver did not park the expected offer"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    };
+    let ability_offer = wait_for(&|offer| {
+        offer.actor == player && offer.options.iter().any(|option| option.id == ability_id)
+    });
+    assert!(matches!(
+        gate.submit(&ManualSubmission::to(&ability_offer, ability_id)),
+        SubmitOutcome::Accepted { .. }
+    ));
+
+    let spot_offer = wait_for(&|offer| {
+        offer.actor == player
+            && offer
+                .context
+                .as_ref()
+                .and_then(|context| context["subtype"].as_str())
+                == Some("synergy_survivor")
+    });
+    assert_eq!(spot_offer.options.len(), 2);
+    let space_spot = spot_offer
+        .options
+        .iter()
+        .find(|option| option.id == "space")
+        .expect("the space spot is offered");
+    assert_eq!(space_spot.kind, "spot");
+    assert_eq!(space_spot.label, "keep the mech in the space area");
+    let planet_spot = spot_offer
+        .options
+        .iter()
+        .find(|option| option.id == planet.as_str())
+        .expect("the planet spot is offered");
+    assert_eq!(planet_spot.kind, "spot");
+    assert_eq!(planet_spot.label, format!("keep the mech on {planet}"));
+    assert!(matches!(
+        gate.submit(&ManualSubmission::to(&spot_offer, "space")),
+        SubmitOutcome::Accepted { .. }
+    ));
+
+    let state_offer = wait_for(&|offer| {
+        offer.actor == player
+            && offer
+                .context
+                .as_ref()
+                .and_then(|context| context["subtype"].as_str())
+                == Some("synergy_survivor_state")
+    });
+    assert_eq!(state_offer.options.len(), 2);
+    let chosen = "survivor|naaz_mech|damaged|plain";
+    let damaged = state_offer
+        .options
+        .iter()
+        .find(|option| option.id == chosen)
+        .expect("the damaged plain-form survivor is offered");
+    assert_eq!(damaged.kind, "survivor");
+    assert_eq!(damaged.label, "keep the damaged ground-form Eidolon");
+    let undamaged = state_offer
+        .options
+        .iter()
+        .find(|option| option.id == "survivor|naaz_mech_space|undamaged|plain")
+        .expect("the undamaged space-form survivor is offered");
+    assert_eq!(undamaged.kind, "survivor");
+    assert_eq!(undamaged.label, "keep the undamaged space-form Eidolon");
+    assert!(matches!(
+        gate.submit(&ManualSubmission::to(&state_offer, chosen)),
+        SubmitOutcome::Accepted { .. }
+    ));
+    let _ = gate.set_mode(&player, SeatMode::Auto);
+
+    let (state, result) = callback.join().expect("resolver callback worker completes");
+    result.expect("Absolute Synergy settles through Table::ask");
+    let maximum = state
+        .system_state(&system)
+        .units
+        .iter()
+        .find(|unit| unit.type_id.as_str() == "naaz_voltron")
+        .cloned()
+        .expect("the selected mech becomes the Eidolon Maximum");
+    assert_eq!(maximum.type_id, UnitTypeId::new("naaz_voltron"));
+    assert!(
+        maximum.sustained_damage,
+        "the selected damage state survives"
+    );
+    assert_eq!(
+        state
+            .system_state(&system)
+            .units
+            .iter()
+            .filter(|unit| unit.owner == player && unit.type_id.as_str() == "naaz_voltron")
+            .count(),
+        1,
+        "exactly one Eidolon Maximum remains"
+    );
+    assert_eq!(
+        state.player(&player).unwrap().leaders[&LeaderId::new("naazagent")],
+        LeaderStatus::Readied,
+        "Absolute Synergy does not spend the Naaz agent"
+    );
+    assert_eq!(
+        state
+            .system_state(&system)
+            .units
+            .iter()
+            .filter(|unit| unit.owner == player && unit.type_id.as_str().starts_with("naaz_mech"))
+            .count(),
+        0,
+        "the other three mechs returned after both selections"
+    );
+    assert_eq!(
+        state
+            .system_state(&system)
+            .planet_units
+            .values()
+            .flatten()
+            .filter(|unit| unit.owner == player && unit.type_id.as_str().starts_with("naaz_mech"))
+            .count(),
+        0,
+        "no Naaz mech remains on a planet after the flip"
+    );
+}
+
+/// A real Game Action-phase Saar Deorbit action stages the event, then lets the selected Naaz
+/// Maximum answer the effect-specific sustain ask. Strategy-phase setup remains out of scope.
+#[test]
+fn a_manual_saar_deorbit_offers_naaz_maximum_ground_effect_sustain() {
+    use ti4_content::ContentStore;
+    use ti4_engine::choice::{AlwaysDecline, Table};
+    use ti4_engine::fixtures;
+    use ti4_engine::game::Game;
+    use ti4_model::content_types::DEFAULT;
+    use ti4_model::id::{BreakthroughId, PlanetId, SystemId, UnitTypeId};
+    use ti4_model::state::Phase;
+    use ti4_model::units::Unit;
+    use ti4_replayer::decider::ControlledDecider;
+    use ti4_replayer::live::Gate;
+
+    let saar = PlayerId::new("a");
+    let naaz = PlayerId::new("b");
+    let content = ContentStore::embedded();
+    let field = ti4_content::galaxy::all_systems(content, ti4_model::content_types::POK)
+        .iter()
+        .find_map(|(id, tile)| tile.is_asteroid_field().then(|| (*id).to_owned()))
+        .expect("the corpus has an asteroid-field system");
+    let hub = fixtures::hub_with_centre(&field);
+    let field = SystemId::new(field);
+    let target_system = SystemId::new(hub.outer[0].clone());
+    let tile = ti4_content::galaxy::system(content, target_system.as_str(), DEFAULT)
+        .expect("the target system exists in the fixture galaxy");
+    let planet = PlanetId::new(tile.planets()[0]);
+    let mut state = fixtures::seated_game(&[("a", "saar"), ("b", "naaz")], DEFAULT);
+    state.phase = Phase::Action;
+    state.active = Some(saar.clone());
+    state.rng_seed = 43;
+    state.player_mut(&saar).unwrap().breakthrough = Some(BreakthroughId::new("saarbt"));
+    state.player_mut(&saar).unwrap().trade_goods = 1;
+    state
+        .system_mut(&field)
+        .units
+        .push(Unit::new(UnitTypeId::new("cruiser"), saar.clone()));
+    fixtures::put_on_planet(
+        &mut state,
+        &target_system,
+        &planet,
+        "naaz_voltron",
+        &naaz,
+        1,
+    );
+
+    let mut seat_control = SeatControl::all_auto();
+    seat_control.set_mode(&saar, SeatMode::Manual);
+    seat_control.set_mode(&naaz, SeatMode::Manual);
+    let gate = std::sync::Arc::new(Gate::live(seat_control));
+    let _shutdown_on_failure = ShutdownGateOnDrop(gate.clone());
+    let callback_gate = gate.clone();
+    let callback_saar = saar.clone();
+    let callback_naaz = naaz.clone();
+    let callback = std::thread::spawn(move || {
+        let mut table = Table::with_default(Box::new(AlwaysDecline));
+        table.seat(
+            callback_saar.clone(),
+            Box::new(ControlledDecider::new(
+                Box::new(AlwaysDecline),
+                callback_saar,
+                callback_gate.clone(),
+            )),
+        );
+        table.seat(
+            callback_naaz.clone(),
+            Box::new(ControlledDecider::new(
+                Box::new(AlwaysDecline),
+                callback_naaz,
+                callback_gate,
+            )),
+        );
+        let mut game = Game::with_table(state, ContentStore::embedded(), table)
+            .with_sources(DEFAULT)
+            .with_galaxy(hub.galaxy);
+        let mut steps = Vec::new();
+        for _ in 0..8 {
+            let step = game.step();
+            assert!(step.error.is_none(), "Game::step failed: {:?}", step.error);
+            let sustained = game
+                .timing
+                .applied_events()
+                .iter()
+                .any(|event| event.event_type == "GROUND_FORCE_SUSTAINED");
+            steps.push(step);
+            if sustained {
+                break;
+            }
+        }
+        (
+            game.state,
+            game.table.log,
+            game.timing.applied_events().to_vec(),
+            steps,
+        )
+    });
+
+    let wait_for = |matches: &dyn Fn(&PendingManualChoice) -> bool| {
+        let deadline = Instant::now() + WAIT;
+        loop {
+            if let Some(pending) = gate.pending().filter(matches) {
+                return pending;
+            }
+            assert!(
+                !callback.is_finished(),
+                "resolver worker finished before the expected offer"
+            );
+            assert!(
+                Instant::now() < deadline,
+                "resolver did not park the expected offer"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    };
+
+    let action_offer = wait_for(&|offer| {
+        offer.actor == saar
+            && offer
+                .options
+                .iter()
+                .any(|option| option.id == "faction|saar|deorbit_barrage")
+    });
+    assert!(matches!(
+        gate.submit(&ManualSubmission::to(
+            &action_offer,
+            "faction|saar|deorbit_barrage"
+        )),
+        SubmitOutcome::Accepted { .. }
+    ));
+    let spend_offer = wait_for(&|offer| {
+        offer.actor == saar
+            && offer.options.iter().any(|option| option.id == "1")
+            && offer
+                .context
+                .as_ref()
+                .and_then(|context| context["subtype"].as_str())
+                == Some("deorbit_spend")
+    });
+    assert!(matches!(
+        gate.submit(&ManualSubmission::to(&spend_offer, "1")),
+        SubmitOutcome::Accepted { .. }
+    ));
+    let target_id = format!("{target_system}|{planet}");
+    let target_offer = wait_for(&|offer| {
+        offer.actor == saar
+            && offer.options.iter().any(|option| option.id == target_id)
+            && offer
+                .context
+                .as_ref()
+                .and_then(|context| context["subtype"].as_str())
+                == Some("deorbit_target")
+    });
+    assert!(matches!(
+        gate.submit(&ManualSubmission::to(&target_offer, target_id.clone())),
+        SubmitOutcome::Accepted { .. }
+    ));
+    let payment_offer = wait_for(&|offer| {
+        offer.actor == saar && offer.options.iter().any(|option| option.id == "trade_good")
+    });
+    assert!(matches!(
+        gate.submit(&ManualSubmission::to(&payment_offer, "trade_good")),
+        SubmitOutcome::Accepted { .. }
+    ));
+
+    let deorbit_offer = wait_for(&|offer| {
+        offer.actor == saar
+            && offer
+                .context
+                .as_ref()
+                .and_then(|context| context["subtype"].as_str())
+                == Some("deorbit_hit")
+    });
+    assert_eq!(deorbit_offer.options.len(), 1);
+    let deorbit = &deorbit_offer.options[0];
+    assert_eq!(deorbit.kind, "deorbit_hit");
+    assert_eq!(deorbit.id, "0");
+    assert_eq!(deorbit.label, "assign hit to b's naaz_voltron");
+    assert!(matches!(
+        gate.submit(&ManualSubmission::to(&deorbit_offer, "0")),
+        SubmitOutcome::Accepted { .. }
+    ));
+    let _ = gate.set_mode(&saar, SeatMode::Auto);
+
+    let sustain_offer = wait_for(&|offer| {
+        offer.actor == naaz
+            && offer
+                .context
+                .as_ref()
+                .and_then(|context| context["subtype"].as_str())
+                == Some("ground_effect_sustain")
+    });
+    assert_eq!(sustain_offer.options.len(), 2);
+    assert_eq!(sustain_offer.options[0].id, "sustain");
+    assert_eq!(sustain_offer.options[0].kind, "ground_effect_sustain");
+    assert_eq!(sustain_offer.options[0].label, "use SUSTAIN DAMAGE");
+    assert_eq!(sustain_offer.options[1].id, "decline");
+    assert_eq!(
+        sustain_offer
+            .context
+            .as_ref()
+            .and_then(|context| context["target"]["Planet"]["system"].as_str()),
+        Some(target_system.as_str())
+    );
+    assert_eq!(
+        sustain_offer
+            .context
+            .as_ref()
+            .and_then(|context| context["target"]["Planet"]["planet"].as_str()),
+        Some(planet.as_str())
+    );
+    assert!(matches!(
+        gate.submit(&ManualSubmission::to(&sustain_offer, "sustain")),
+        SubmitOutcome::Accepted { .. }
+    ));
+    let _ = gate.set_mode(&naaz, SeatMode::Auto);
+
+    let (state, log, events, steps) = callback.join().expect("Game worker completes");
+    assert!(!steps.is_empty(), "Game::step made no progress");
+    assert!(
+        steps.iter().all(|step| step.error.is_none()),
+        "Game::step returned an error: {steps:?}"
+    );
+    assert_eq!(state.player(&saar).unwrap().trade_goods, 0);
+    assert!(
+        state
+            .faction_marks
+            .contains_key("saar:deorbit_barrage:exhausted:a")
+    );
+    assert!(log.records.iter().any(|record| {
+        record.chosen == "sustain"
+            && record
+                .context
+                .as_ref()
+                .is_some_and(|context| context.subtype == "ground_effect_sustain")
+    }));
+    assert!(
+        events
+            .iter()
+            .any(|event| event.event_type == "GROUND_FORCE_SUSTAINED")
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|event| event.event_type == "GROUND_FORCE_DESTROYED")
+    );
+    let maximum = state
+        .system_state(&target_system)
+        .on_planet(&planet)
+        .into_iter()
+        .find(|unit| unit.owner == naaz && unit.type_id.as_str() == "naaz_voltron")
+        .cloned()
+        .expect("the sustained Naaz Maximum remains on the planet");
+    assert!(
+        maximum.sustained_damage,
+        "SUSTAIN DAMAGE marks the Maximum damaged"
+    );
+    assert_eq!(
+        state.system_state(&target_system).on_planet(&planet).len(),
+        1,
+        "the selected effect hit did not destroy the sole ground unit"
+    );
+}
+
 /// A failed assertion must release a callback parked in a manual ask before the test exits.
 struct ShutdownGateOnDrop(std::sync::Arc<ti4_replayer::live::Gate>);
 

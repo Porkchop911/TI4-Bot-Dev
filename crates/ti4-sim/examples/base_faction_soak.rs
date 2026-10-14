@@ -2,10 +2,12 @@
 //!
 //! Always run optimized: `cargo run --release -p ti4-sim --example base_faction_soak`.
 //!
-//! Arguments: `[faction|all] [first_seed] [count] [replay_every]`. Defaults: every faction, seed 0,
-//! 25 seeds (the routine size, operator 2026-10-05), and a determinism replay of every 10th case.
+//! Arguments: `[faction|all|pairs] [first_seed] [count] [replay_every]`. Defaults are every
+//! faction, seed 0, 25 seeds (the routine size, operator 2026-10-05), and a determinism replay of
+//! every 10th case.
 //! The milestone exit gate runs `all 0 200 10`. `replay_every` 1 replays every case.
-//! The target replaces one of six original factions, rotating its seat by seed.
+//! A single faction replaces one of six originals, rotating its seat by seed. `pairs` seats every
+//! unordered pair from the original 18 factions together on the same seed sample (default: 2 seeds).
 //! No production faction-scope list is widened.
 
 use std::io::{self, Write};
@@ -13,6 +15,7 @@ use std::io::{self, Write};
 use ti4_content::ContentStore;
 use ti4_engine::choice::DecisionRecord;
 use ti4_engine::game::Game;
+use ti4_engine::seating::IN_SCOPE_FACTIONS;
 use ti4_engine::setup::start_game_seeded;
 use ti4_model::content_types::DEFAULT;
 use ti4_model::id::{FactionId, PlayerId};
@@ -23,6 +26,10 @@ const FACTIONS: [&str; 27] = [
     "arborec", "argent", "bastion", "cabal", "crimson", "deepwrought", "empyrean", "firmament", "ghost", "keleresa", "keleresm", "keleresx", "mahact",
     "mentak", "muaat", "naalu", "naaz", "nekro", "nomad", "obsidian", "saar", "sardakk", "titans", "winnu", "yin",
     "yssaril", "ralnel",
+];
+const ORIGINAL_18: [&str; 18] = [
+    "sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x", "sardakk", "winnu", "arborec", "yin",
+    "mentak", "saar", "yssaril", "naalu", "muaat", "ghost", "argent", "naaz",
 ];
 const SEATS: [&str; 6] = ["a", "b", "c", "d", "e", "f"];
 const MAX_ROUNDS: u32 = 50;
@@ -35,9 +42,12 @@ struct Replay {
     decisions: Vec<DecisionRecord>,
 }
 
-fn play(content: &ContentStore, faction: &str, seed: u64) -> Result<Replay, String> {
-    let players: Vec<PlayerId> = SEATS.iter().map(|name| PlayerId::new(*name)).collect();
-    let mut assignments = ti4_engine::seating::seat_in_scope(&players);
+fn legacy_assignments(
+    players: &[PlayerId],
+    faction: &str,
+    seed: u64,
+) -> Result<std::collections::BTreeMap<PlayerId, FactionId>, String> {
+    let mut assignments = ti4_engine::seating::seat_in_scope(players);
     let mut target = players[usize::try_from(seed % 6).map_err(|error| error.to_string())?].clone();
     // The Tribuni: a Keleres variant takes the seat of the faction it replaces, when that faction
     // is already at the table, so its base faction is not played twice.
@@ -47,8 +57,46 @@ fn play(content: &ContentStore, faction: &str, seed: u64) -> Result<Replay, Stri
         target = seat.clone();
     }
     assignments.insert(target, FactionId::new(faction));
+    Ok(assignments)
+}
 
-    let mut state = start_game_seeded(content, &players, DEFAULT, None, seed)
+fn pair_assignments(
+    players: &[PlayerId],
+    pair: (&str, &str),
+    seed: u64,
+) -> std::collections::BTreeMap<PlayerId, FactionId> {
+    let first_seat = usize::try_from(seed % 6).expect("seed modulo six fits usize");
+    let second_seat = (first_seat + 1) % 6;
+    let mut assignments = std::collections::BTreeMap::new();
+    assignments.insert(players[first_seat].clone(), FactionId::new(pair.0));
+    assignments.insert(players[second_seat].clone(), FactionId::new(pair.1));
+
+    let mut fillers: Vec<&str> = IN_SCOPE_FACTIONS
+        .iter()
+        .copied()
+        .filter(|faction| *faction != pair.0 && *faction != pair.1)
+        .collect();
+    let rotate =
+        usize::try_from((seed / 6) % u64::try_from(fillers.len()).expect("nonempty fillers"))
+            .expect("filler rotation fits usize");
+    fillers.rotate_left(rotate);
+    let mut next_filler = 0;
+    for (seat, player) in players.iter().enumerate() {
+        if seat != first_seat && seat != second_seat {
+            assignments.insert(player.clone(), FactionId::new(fillers[next_filler]));
+            next_filler += 1;
+        }
+    }
+    assignments
+}
+
+fn play_assignments(
+    content: &ContentStore,
+    players: &[PlayerId],
+    assignments: std::collections::BTreeMap<PlayerId, FactionId>,
+    seed: u64,
+) -> Result<Replay, String> {
+    let mut state = start_game_seeded(content, players, DEFAULT, None, seed)
         .map_err(|error| format!("setup: {error}"))?;
     for (player, assigned) in &assignments {
         state
@@ -109,14 +157,56 @@ fn play(content: &ContentStore, faction: &str, seed: u64) -> Result<Replay, Stri
     })
 }
 
-fn run_case(content: &ContentStore, faction: &str, seed: u64, replay: bool) -> Option<String> {
-    match play(content, faction, seed) {
-        Err(error) => Some(format!("FAIL faction={faction} seed={seed}: {error}")),
+fn play(content: &ContentStore, faction: &str, seed: u64) -> Result<Replay, String> {
+    let players: Vec<PlayerId> = SEATS.iter().map(|name| PlayerId::new(*name)).collect();
+    let assignments = legacy_assignments(&players, faction, seed)?;
+    play_assignments(content, &players, assignments, seed)
+}
+
+#[derive(Clone, Copy)]
+enum SoakCase {
+    Faction(&'static str),
+    Pair(&'static str, &'static str),
+}
+
+impl SoakCase {
+    fn failure_label(self) -> String {
+        match self {
+            Self::Faction(faction) => format!("faction={faction}"),
+            Self::Pair(first, second) => format!("pair={first}+{second}"),
+        }
+    }
+
+    fn play(self, content: &ContentStore, seed: u64) -> Result<Replay, String> {
+        match self {
+            Self::Faction(faction) => play(content, faction, seed),
+            Self::Pair(first, second) => {
+                let players: Vec<PlayerId> =
+                    SEATS.iter().map(|name| PlayerId::new(*name)).collect();
+                let assignments = pair_assignments(&players, (first, second), seed);
+                play_assignments(content, &players, assignments, seed)
+            }
+        }
+    }
+}
+
+fn pair_cases() -> Vec<SoakCase> {
+    let mut cases = Vec::with_capacity(153);
+    for first in 0..ORIGINAL_18.len() {
+        for second in first + 1..ORIGINAL_18.len() {
+            cases.push(SoakCase::Pair(ORIGINAL_18[first], ORIGINAL_18[second]));
+        }
+    }
+    cases
+}
+
+fn run_case(content: &ContentStore, case: SoakCase, seed: u64, replay: bool) -> Option<String> {
+    let label = case.failure_label();
+    match case.play(content, seed) {
+        Err(error) => Some(format!("FAIL {label} seed={seed}: {error}")),
         Ok(_) if !replay => None,
-        Ok(first) => match play(content, faction, seed) {
-            Err(error) => Some(format!(
-                "FAIL faction={faction} seed={seed} replay: {error}"
-            )),
+        Ok(first) => match case.play(content, seed) {
+            Err(error) => Some(format!("FAIL {label} seed={seed} replay: {error}")),
             Ok(second) if first != second => {
                 let divergence = first
                     .decisions
@@ -129,7 +219,7 @@ fn run_case(content: &ContentStore, faction: &str, seed: u64, replay: bool) -> O
                     .and_then(|index| first.decisions.get(index))
                     .map_or_else(|| "<none>".to_owned(), |record| format!("{record:?}"));
                 Some(format!(
-                    "FAIL faction={faction} seed={seed}: replay differs at decision {divergence}; prior={prior}; first={:?}; replay={:?}; events_equal={} state_equal={}",
+                    "FAIL {label} seed={seed}: replay differs at decision {divergence}; prior={prior}; first={:?}; replay={:?}; events_equal={} state_equal={}",
                     first.decisions.get(divergence),
                     second.decisions.get(divergence),
                     first.events == second.events,
@@ -143,30 +233,30 @@ fn run_case(content: &ContentStore, faction: &str, seed: u64, replay: bool) -> O
 
 #[derive(Clone, Copy)]
 struct Job {
-    faction_index: usize,
+    case_index: usize,
     seed: u64,
 }
 
 struct JobCursor {
-    faction_index: usize,
+    case_index: usize,
     offset: u64,
     start: u64,
     count: u64,
 }
 
 impl JobCursor {
-    fn next(&mut self, faction_count: usize) -> Option<Job> {
-        if self.faction_index >= faction_count {
+    fn next(&mut self, case_count: usize) -> Option<Job> {
+        if self.case_index >= case_count {
             return None;
         }
         let job = Job {
-            faction_index: self.faction_index,
+            case_index: self.case_index,
             seed: self.start + self.offset,
         };
         self.offset += 1;
         if self.offset == self.count {
             self.offset = 0;
-            self.faction_index += 1;
+            self.case_index += 1;
         }
         Some(job)
     }
@@ -185,7 +275,7 @@ fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
 }
 
 fn run_parallel(
-    chosen: &[&str],
+    chosen: &[SoakCase],
     start: u64,
     count: u64,
     replay_every: u64,
@@ -199,7 +289,7 @@ fn run_parallel(
         .map_or(1, std::num::NonZeroUsize::get)
         .clamp(1, 16);
     let cursor = Arc::new(Mutex::new(JobCursor {
-        faction_index: 0,
+        case_index: 0,
         offset: 0,
         start,
         count,
@@ -232,7 +322,7 @@ fn run_parallel(
                     let result = catch_unwind(AssertUnwindSafe(|| {
                         run_case(
                             content,
-                            chosen[job.faction_index],
+                            chosen[job.case_index],
                             job.seed,
                             (job.seed - start) % replay_every == 0,
                         )
@@ -240,20 +330,20 @@ fn run_parallel(
                     let failure = match result {
                         Ok(failure) => failure,
                         Err(payload) => Some(format!(
-                            "FAIL faction={} seed={}: worker case panicked: {}",
-                            chosen[job.faction_index],
+                            "FAIL {} seed={}: worker case panicked: {}",
+                            chosen[job.case_index].failure_label(),
                             job.seed,
                             panic_message(payload.as_ref())
                         )),
                     };
                     if let Some(message) = failure {
-                        failed_by_faction[job.faction_index].fetch_add(1, Ordering::Relaxed);
+                        failed_by_faction[job.case_index].fetch_add(1, Ordering::Relaxed);
                         failures
                             .lock()
                             .unwrap_or_else(std::sync::PoisonError::into_inner)
-                            .push((job.faction_index, job.seed, message));
+                            .push((job.case_index, job.seed, message));
                     }
-                    completed_by_faction[job.faction_index].fetch_add(1, Ordering::Relaxed);
+                    completed_by_faction[job.case_index].fetch_add(1, Ordering::Relaxed);
                     let completed = completed_total.fetch_add(1, Ordering::Relaxed) + 1;
                     if completed % 25 == 0 || u128::from(completed) == total_cases {
                         let _guard = progress_lock
@@ -305,8 +395,8 @@ fn run_parallel(
                     index,
                     u64::MAX,
                     format!(
-                        "FAIL faction={} worker pool: completed {actual} of {count} scheduled cases",
-                        chosen[index]
+                        "FAIL {} worker pool: completed {actual} of {count} scheduled cases",
+                        chosen[index].failure_label()
                     ),
                 ));
         }
@@ -321,7 +411,7 @@ fn run_parallel(
             format!("FAIL worker pool: completed {observed} of {total_cases} scheduled cases"),
         ));
     }
-    failures.sort_by_key(|(faction_index, seed, _)| (*faction_index, *seed));
+    failures.sort_by_key(|(case_index, seed, _)| (*case_index, *seed));
     let messages = std::mem::take(&mut *failures)
         .into_iter()
         .map(|(_, _, message)| message)
@@ -335,9 +425,19 @@ fn run_parallel(
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let chosen: Vec<&str> = match args.first() {
-        Some(faction) if faction == "all" => FACTIONS.to_vec(),
-        Some(faction) if FACTIONS.contains(&faction.as_str()) => vec![faction],
+    let pairs = args.first().is_some_and(|mode| mode == "pairs");
+    let chosen: Vec<SoakCase> = match args.first() {
+        Some(mode) if mode == "pairs" => pair_cases(),
+        Some(faction) if faction == "all" => {
+            FACTIONS.iter().copied().map(SoakCase::Faction).collect()
+        }
+        Some(faction) if FACTIONS.contains(&faction.as_str()) => vec![SoakCase::Faction(
+            FACTIONS
+                .iter()
+                .copied()
+                .find(|candidate| *candidate == faction)
+                .expect("matched faction"),
+        )],
         Some(faction) => {
             eprintln!(
                 "unknown faction {faction}; expected one of {}",
@@ -345,7 +445,7 @@ fn main() {
             );
             std::process::exit(2);
         }
-        None => FACTIONS.to_vec(),
+        None => FACTIONS.iter().copied().map(SoakCase::Faction).collect(),
     };
     let parse = |index: usize, default: u64| -> u64 {
         args.get(index).map_or(default, |value| {
@@ -356,36 +456,115 @@ fn main() {
         })
     };
     let start = parse(1, 0);
-    let count = parse(2, 25);
+    let count = parse(2, if pairs { 2 } else { 25 });
     let replay_every = parse(3, 10);
     if count == 0 || replay_every == 0 || start.checked_add(count).is_none() {
         eprintln!("count and replay_every must be positive and the seed range must not overflow");
         std::process::exit(2);
     }
-    let full_campaign = chosen.len() == FACTIONS.len() && start == 0 && count >= 200;
+    let full_campaign = !pairs && chosen.len() == FACTIONS.len() && start == 0 && count >= 200;
     let (completed, failures, messages) = run_parallel(&chosen, start, count, replay_every);
     for message in &messages {
         eprintln!("{message}");
     }
-    for (index, faction) in chosen.iter().enumerate() {
-        println!(
-            "result faction={faction} games={} failures={}",
-            completed[index], failures[index]
-        );
+    for (index, case) in chosen.iter().enumerate() {
+        match case {
+            SoakCase::Faction(faction) => println!(
+                "result faction={faction} games={} failures={}",
+                completed[index], failures[index]
+            ),
+            SoakCase::Pair(first, second) => println!(
+                "result pair={first}+{second} games={} failures={}",
+                completed[index], failures[index]
+            ),
+        }
     }
     let total = messages.len() as u64;
     println!("replay_every={replay_every}");
     println!(
-        "{}: factions={} games={} failures={total}",
-        if full_campaign {
+        "{}: {}={} games={} failures={total}",
+        if pairs {
+            "PAIR SOAK"
+        } else if full_campaign {
             "EXIT-GATE SOAK"
         } else {
             "routine soak (not the exit gate)"
         },
+        if pairs { "pairs" } else { "factions" },
         chosen.len(),
         u128::try_from(chosen.len()).unwrap_or(u128::MAX) * u128::from(count)
     );
     if total != 0 {
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        IN_SCOPE_FACTIONS, ORIGINAL_18, SEATS, SoakCase, legacy_assignments, pair_assignments,
+        pair_cases,
+    };
+    use std::collections::BTreeSet;
+    use ti4_model::id::{FactionId, PlayerId};
+
+    #[test]
+    fn pair_schedule_is_exactly_the_153_unordered_original_18_pairs() {
+        let cases = pair_cases();
+        assert_eq!(cases.len(), 153);
+        let pairs: BTreeSet<_> = cases
+            .iter()
+            .map(|case| match case {
+                SoakCase::Pair(first, second) => (*first, *second),
+                SoakCase::Faction(_) => panic!("pair schedule contained a singleton"),
+            })
+            .collect();
+        assert_eq!(pairs.len(), 153);
+        for first in 0..ORIGINAL_18.len() {
+            for second in first + 1..ORIGINAL_18.len() {
+                assert!(pairs.contains(&(ORIGINAL_18[first], ORIGINAL_18[second])));
+            }
+        }
+    }
+
+    #[test]
+    fn pair_seating_is_deterministic_and_has_six_distinct_factions() {
+        let players: Vec<PlayerId> = SEATS.iter().map(|seat| PlayerId::new(*seat)).collect();
+        for case in pair_cases() {
+            let SoakCase::Pair(first, second) = case else {
+                panic!("pair schedule contained a singleton");
+            };
+            for seed in 0..6 {
+                let assignment = pair_assignments(&players, (first, second), seed);
+                assert_eq!(
+                    assignment,
+                    pair_assignments(&players, (first, second), seed)
+                );
+                assert_eq!(assignment.len(), 6);
+                let seated: BTreeSet<String> = assignment
+                    .values()
+                    .map(|faction| faction.as_str().to_owned())
+                    .collect();
+                assert_eq!(seated.len(), 6);
+                assert!(seated.contains(first) && seated.contains(second));
+                assert!(seated.iter().all(|faction| {
+                    faction == first
+                        || faction == second
+                        || IN_SCOPE_FACTIONS.contains(&faction.as_str())
+                }));
+            }
+        }
+    }
+
+    #[test]
+    fn singleton_assignment_keeps_legacy_rotation_and_tribuni_override() {
+        let players: Vec<PlayerId> = SEATS.iter().map(|seat| PlayerId::new(*seat)).collect();
+        let rotated = legacy_assignments(&players, "yin", 3).expect("valid seed");
+        assert_eq!(rotated.get(&players[3]), Some(&FactionId::new("yin")));
+        assert_eq!(rotated.get(&players[0]), Some(&FactionId::new("sol")));
+
+        let tribuni = legacy_assignments(&players, "keleresx", 4).expect("valid seed");
+        assert_eq!(tribuni.get(&players[3]), Some(&FactionId::new("keleresx")));
+        assert_eq!(tribuni.get(&players[4]), Some(&FactionId::new("jolnar")));
     }
 }

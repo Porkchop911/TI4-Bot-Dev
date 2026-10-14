@@ -24,9 +24,6 @@ pub const FOR: &str = "for";
 /// The other one.
 pub const AGAINST: &str = "against";
 
-/// Mecatol Rex, which "non-home other than Mecatol" elections exclude.
-pub const MECATOL: &str = "18";
-
 /// The choice kind for picking an outcome.
 pub const VOTE_KIND: &str = "vote";
 /// The choice kind for exhausting a planet to cast its influence.

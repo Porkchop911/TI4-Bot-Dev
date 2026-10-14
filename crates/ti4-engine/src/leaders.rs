@@ -848,12 +848,16 @@ pub fn registered_abilities() -> Vec<&'static str> {
 
 /// Leaders of these factions that still do nothing, by any of the three routes.
 #[must_use]
-pub fn unimplemented(content: &ContentStore, factions: &[&str]) -> Vec<LeaderId> {
+pub fn unimplemented(
+    content: &ContentStore,
+    sources: SourceSet,
+    factions: &[&str],
+) -> Vec<LeaderId> {
     let known = registered_abilities();
     let standing = modifiers();
     factions
         .iter()
-        .flat_map(|faction| for_faction(content, ti4_model::content_types::POK, faction))
+        .flat_map(|faction| for_faction(content, sources, faction))
         .filter(|leader| {
             !known.contains(&leader.as_str()) && !standing.contains_key(leader.as_str())
         })
@@ -2885,7 +2889,7 @@ mod tests {
     fn a_standing_modifier_counts_as_implemented() {
         // Naming them keeps coverage honest: a leader whose effect lives where it modifies is
         // not a gap, and reporting it as one trains the reader to ignore the list.
-        let missing = unimplemented(ContentStore::embedded(), &["xxcha"]);
+        let missing = unimplemented(ContentStore::embedded(), POK, &["xxcha"]);
         assert!(
             !missing.contains(&LeaderId::new("xxchacommander")),
             "its effect lives in elder_qanoj"
@@ -2894,12 +2898,18 @@ mod tests {
             !missing.contains(&LeaderId::new("xxchahero")),
             "and the hero's effect lives in combines_planet_values"
         );
-        // The half that keeps this test honest now that every leader of the six trained factions
-        // is implemented: a faction outside that scope still reports its leaders, so the list is
-        // not simply always empty. Any out-of-scope faction does; Naalu is one.
+        // The older PoK Naalu agent is still uncovered; the DEFAULT reprint is implemented.
         assert!(
-            !unimplemented(ContentStore::embedded(), &["naalu"]).is_empty(),
+            !unimplemented(ContentStore::embedded(), POK, &["naalu"]).is_empty(),
             "a leader this module does not handle is still reported"
+        );
+        assert!(
+            unimplemented(
+                ContentStore::embedded(),
+                ti4_model::content_types::DEFAULT,
+                &["naalu"]
+            )
+            .is_empty()
         );
     }
 
