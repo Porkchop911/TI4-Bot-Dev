@@ -77,6 +77,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let registry = Arc::new(registry);
 
+    // The MLP models, before the games that seat them are recovered.
+    match ti4_server::models::load_from_env() {
+        Ok(models) => {
+            for model in &models {
+                println!(
+                    "MLP model: mlp:{} ({}) sha256 {} on {}",
+                    model.name(),
+                    model.label(),
+                    model.digest(),
+                    model.model().backend().name()
+                );
+            }
+        }
+        Err(error) => {
+            eprintln!("MLP models: {error}");
+            return Err(error.into());
+        }
+    }
+
     // Print recovery results even when tracing has no RUST_LOG filter configured.
     let recovery = registry.recover_all_games_report()?;
     for gid in &recovery.recovered {

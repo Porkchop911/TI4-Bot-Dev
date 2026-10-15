@@ -1,6 +1,6 @@
 # MLP bots without libtorch: inference in ti4-host, on the server and in the page (2026-10-15)
 
-Status: planned. Step 1 done (2026-10-15). Step 2 done (2026-10-15). Step 3 done (2026-10-15). Step 4 done (2026-10-15). Step 5 done (2026-10-15).
+Status: planned. Step 1 done (2026-10-15). Step 2 done (2026-10-15). Step 3 done (2026-10-15). Step 4 done (2026-10-15). Step 5 done (2026-10-15). Step 6 done (2026-10-15).
 
 ## Context
 
@@ -239,7 +239,10 @@ lies between them:
   elsewhere (the GPU batch client returns probabilities, not logits);
 - after an activation, `fleet(model, choice, seen, picked) -> Option<Prepared>`: the fleet
   decision, scored and picked the same way; its pick becomes the plan;
-- `decide(scorer, choice, seen, temperature, rng)` runs all of it for a host that only plays.
+- `decide(scorer, choice, seen, temperature, rng)` runs all of it for a host that only plays;
+- `carry()` and `restore(carry)`: what the later decisions of the seat depend on (the plan, the
+  power maps, the table of the activation); `follow(scorer, choice, seen, chosen, temperature,
+  rng)` gives a recorded decision again and changes the pipeline as `decide` did (section E).
 
 `ti4-host` calls `decide`. `MlpBot` calls the steps and records the columns and probabilities for
 PPO in between. Together they cover:
@@ -266,8 +269,8 @@ The model behind it is two traits in `ti4_policy::mlp`:
 - `ti4_infer::Model::forward` takes the same lists, `&[Vec<(u32, f32)>]`, so neither side
   converts, and the two crates share no type. The type is concrete, not generic, so that the
   forward pass is compiled in `ti4-infer` with its own optimization.
-- `ti4-host` implements `Scorer` for a newtype around `Arc<ti4_infer::Model>`
-  (`HeadLayout::of(model.heads())`, the predictor from `model.battle_json()`).
+- `ti4-host` implements `Scorer` for `ti4_host::bots::MlpModel`, around an `Arc` of the
+  `ti4_infer::Model` (`HeadLayout::of(model.heads())`, the predictor from `model.battle_json()`).
 - `ti4-mlp` implements `Scorer` for its `Actor` on tch, `ModelInfo` for the GPU batch client
   (no battle predictor: the service refuses an arena bundle), and `Scorer` for
   `ti4_mlp::infer::InferModel`, a `ti4_infer::Model` built from an actor (step 5). `MlpBot` takes
@@ -335,34 +338,89 @@ evaluation temperature of `plans/MLP_TEMPERATURE_REGIME.md`).
 ### E. Bot kinds in ti4-host
 
 - `ti4_host::setup::bot_kind` keeps `RULE = "smart"` and `RANDOM = "random"`. An MLP kind is
-  `mlp:<name>`.
-- `BotKind { Smart, Random, Mlp(Arc<Model>) }` and one `bots::choose(kind, choice, seen, seed,
-  seat, index)` replace the two call sites of each host:
-  - the server's `RandomBotDecider` with `.smart()` (`session/worker.rs:1141-1175`);
-  - the wasm `pick` (`lib.rs:700-730`) and `Replayed::decide` (`:1148-1161`).
-- `setup_options(models: &[ModelInfo])`: the host lists the kinds from the models that it is given.
-  Each is a `BotKindOption` with the id `mlp:<name>` and the label of the model. The page still
+  `mlp:<name>` (`ti4_host::bots::MLP_PREFIX`); the `mlp` of the bot service (step 7) is not one.
+- `ti4_host::bots`:
+  - `MlpModel`, the `Scorer` of the pipeline: an `Arc` of the `ti4_infer::Model` with its
+    `HeadLayout::of(model.heads())`, its vocabulary (`Vocabulary::from_json_for_inference` of the
+    slots) and its predictor (from `model.battle_json()`), checked at load; a thread-local
+    `Scratch`. It compares by name and digest.
+  - `BotKind { Smart, Random, Mlp(MlpModel) }`, written as its id. `BotKind::parse(id)` finds the
+    model in the registry of the process (`register`, `loaded`, `models`); a model that is not
+    there is the error "the model '<name>' is not loaded". The server loads its directory into it
+    at start, the page loads a model with `ti4_model_load`. A loaded name replaces the model of
+    that name; a seat that plays the old one keeps it.
+  - `Bot`, one seat of a game: `Smart`, `Random`, or `Mlp` with the model and the `Pipeline` of the
+    seat (its faction row, and its baseline taken from the game as it starts; a faction with no row
+    is played by the rule bot). `bots::choose(bot, choice, seen, seed, place, index)` is the one
+    answer of a bot seat on both hosts, in place of the server's `RandomBotDecider` with `.smart()`
+    and of the wasm `pick` and `Replayed::decide`. An MLP seat draws from
+    `ti4_rule_bot::random::decision_rng(seed, place, index)`, as the rule bot does, at the model's
+    temperature; without a seat observation, or when the pipeline or the model refuses, the rule bot
+    answers.
+- **What an MLP seat carries, and recovery.** The rule bot keeps nothing between two decisions; an
+  MLP seat's pipeline does: the fleet plan of the activation it is moving, its power maps
+  (`PowerCache`, which is frozen during an activation and refreshed only where the board changed,
+  so it is not a pure cache), and the table of power of its latest activation. That is the `Carry`
+  of `ti4_policy::mlp::Pipeline` (the memo of columns only caches the vocabulary and is left out).
+  So that a game played again goes on as the game that was not interrupted:
+  - A host that plays a game again from its decisions gives each recorded decision of an MLP seat
+    to `Bot::follow` (`Pipeline::follow`), which changes the pipeline as `decide` changed it: the
+    plan's answer, the power maps and the table, and after an activation the fleet decision drawn
+    with the same generator (one draw for the activation, whatever its distribution, then the fleet:
+    one forward pass). The features of the options and their forward pass are not computed. The
+    server does it in its `ReplayingDecider` (a recovered game, a new worker after an undo or a
+    redo), the page in `saved` (a saved game).
+  - The server never starts a worker from a copy of the game that skips the decisions of an MLP
+    seat: a table with an MLP seat has no step-boundary copy (`SessionConfig::resume`, the tail copy
+    of `replay_boundary`), and its worker replays the whole log.
+  - The page keeps the carry of every seat with each checkpoint and restores it with the
+    checkpoint (an undo); the copy of the game for a draft plays on with copies of the bots
+    (`Bot::detached`) at the carry of its checkpoint; a peek of a seat's answer (the wait of a table
+    before a reaction window) restores the carry after it.
+  - A seat that changes hands in the middle of an activation (a person takes it over, or the page
+    switches its seats) is followed only for the decisions that its bot made, as live.
+- `setup_options(host, delay, models: &[ModelEntry])`: the host lists the kinds from the models
+  that it is given, `ModelEntry { name, label }`. Each is a `BotKindOption` with the id
+  `mlp:<name>` and the label of the model, after the rule bot and the random seat. The page still
   never writes a kind (`web2/docs/agents/lobby.md`).
 - **Wire.**
-  - The kinds of a seat become a string: `"human" | "smart" | "random" | \`mlp:${string}\``via`#[ts(type)]`. This changes `SeatKind`, `Bots`and`BotKindOption`in`web-shared/src/wire/generated/`.
-  - `Local.rule_seats` (a mask) becomes `Local.bots: (string | null)[]`, the kind of each seat.
-  - A save of format 2 with `rule_seats` is read as `smart` on those seats (serde default, a few
-    lines).
+  - The kinds of a seat are strings, ``"human" | "smart" | "random" | `mlp:${string}` `` in
+    TypeScript (`#[ts(type)]` on the newtypes `SeatKind` and `Bots` and on `BotKindOption::id`).
+  - `Local.rule_seats` (a mask) is `Local.bots: (string | null)[]`, the kind of each seat. A save
+    of format 2 with `rule_seats` reads as `smart` on those seats (a field that is read and never
+    written); the format stays 2.
+  - `ti4_setup_options(request_len)` reads `OptionsRequest { players, models }` from the request
+    buffer.
 - **The server**
-  - It loads every `.ti4m` of `TI4_MODEL_DIR` at start, listed by `index.json`, and logs each name
-    and sha. With no directory, no MLP kind is offered.
-  - `SeatController::{BotSmart, BotRandom}` become `SeatController::Bot(BotKind)`. MLP kinds are
-    in-process kinds (`IN_PROCESS_BOT_KINDS`, `add_in_process_bots`, `/lobby/bots`) and are
-    persisted with the table, so a recovered game keeps its MLP seats.
-  - A table whose model is no longer loaded refuses to start, with the name of the model.
+  - It loads every `.ti4m` of `TI4_MODEL_DIR` that `index.json` lists (`ti4_server::models`: an
+    entry has `name`, `sha256` and an optional `file`, default `<name>.ti4m`; the sha and the name
+    of the header must be the index's), before it recovers its games, and prints each name, label,
+    sha and backend. A model that does not load stops the start. With no directory, no MLP kind is
+    offered. `TI4_INFER_FMA=1` loads them on `Backend::fastest()`.
+  - `SeatController::{BotSmart, BotRandom}` are `SeatController::Bot(BotKind)`, written
+    `{"Bot": "<id>"}`; a record of an earlier build with `BotSmart` or `BotRandom` reads as
+    `smart` or `random`. MLP kinds are in-process kinds (`in_process_bot_kinds()`,
+    `add_in_process_bots`, `/lobby/bots`; a seat is named by the label of its model and a number)
+    and are persisted with the table, so a recovered game keeps its MLP seats.
+  - A table whose model is not loaded refuses to start (`LobbyError::ModelMissing`, 409), with the
+    name of the model; a recovered game whose model is not loaded is not recovered, with the name.
 - **The engine of the page**
-  - A new export `ti4_model_load()` takes the bytes of a `.ti4m` through the input buffer of
-    `ti4_host_in(len)` and checks the trailer sha.
-  - It keeps the model in a static registry by name.
-  - `ti4_host_start` refuses a table with a kind whose model is not loaded.
-  - `ti4_setup_options` gets the model list in its request.
-- **ti4-policy in the wasm build.** `ti4-host` and `ti4-wasm` depend on `ti4-policy` (made
-  wasm-clean in step 4) and on `ti4-infer`. The step records the size of `ti4.wasm` before and after.
+  - `ti4_model_load(len)` takes the bytes of a `.ti4m` through the input buffer of
+    `ti4_host_in(len)`, checks the trailer sha, loads the model on `Simd128` and puts it in the
+    registry by name (`ti4_host::bots`). The input buffer is emptied after it.
+  - `ti4_host_start` refuses a game with a kind whose model is not loaded, with its name.
+  - `ti4_setup_options` gets the model list in its request. `ti4_infer_check` stays: the vitest of
+    the bits of the wasm forward uses it.
+- **ti4-policy in the web build.** `ti4-host` and `ti4-wasm` depend on `ti4-policy` and
+  `ti4-infer`, and `ti4-policy` is in the package set of every web alias, so it is built and its
+  unit tests run with `cargo t-web` (its one long test is `slow_`). `ti4.wasm` (`wasm-release`) is
+  7.55 MB raw, 1.91 MB gzip and 1.31 MB brotli, against 6.89, 1.73 and 1.20 MB before.
+- **The model of the tests** (`ti4_host::bots::test_model`, `test_model_bytes`): the synthetic
+  model of `ti4_infer::synthetic` at width 16 with one residual block, a vocabulary of the
+  reserved columns that also places the power facts and the deal value, a battle predictor of fact
+  version 8 (schema 12), temperature 1 (so its seats also pick the fleets of the menu and play
+  their plans), on `Scalar`. It packs in microseconds; the reviewer checkpoint would make the games
+  of the tests slow in a debug build.
 
 ### F. Download and the lobby in web2
 
@@ -494,14 +552,23 @@ evaluation temperature of `plans/MLP_TEMPERATURE_REGIME.md`).
 
 ### Step 6: MLP bot kinds in ti4-host, the server and the engine of the page (section E)
 
-- `BotKind`, `bots::choose`, `setup_options(models)`, the wire changes (`cargo wire-web`), `Local.bots`.
+- `BotKind`, `Bot`, `bots::choose`, `setup_options(models)`, the wire changes (`cargo wire-web`),
+  `Local.bots`; `Pipeline::{carry, restore, follow}` in `ti4-policy`.
 - The server loads `TI4_MODEL_DIR`; in-process MLP seats; persistence.
 - The wasm registry and `ti4_model_load`.
 - Tests:
-  - `both_hosts.rs` plays a table with an MLP seat on both hosts and gets the same game;
-  - a server test recovers a game with an MLP seat;
+  - `both_hosts.rs` plays a table with two MLP seats on both hosts for two rounds and gets the same
+    game; the saved game of the server, cut before the first move of every activation of an MLP
+    seat, plays on in the page to the same game (without `follow` the cut after a planned fleet
+    differs);
+  - `mlp_bots.rs`: a game with two MLP seats recovered from its decisions after each such cut goes
+    on as before (the same check); `SeatController` reads the records of every build;
+    `random_bot_lobby.rs` adds an MLP seat to a lobby, starts it and recovers the running game with
+    it;
   - the kind lists in `random_bot_lobby.rs`, `lobby_settings.rs`, `ti4-wasm/tests/it/host_setup.rs`
-    and `ti4-wasm/src/lib.rs:1850` gain the model of the test.
+    and `ti4-wasm/src/lib.rs` gain the model of the tests; `host_setup.rs` loads a model by its bytes,
+    refuses a changed one and a table with a model that is not loaded, and reads the `rule_seats` of
+    an older save.
 
 ### Step 7: remove the advisor and the bot agent
 

@@ -3,7 +3,7 @@
 
 use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice, SeatObservation};
 
-/// Same picks as a `BotSmart` seat ([`crate::choose`]), no think delay. `seat` is the seat's place
+/// Same picks as a `smart` seat ([`crate::choose`]), no think delay. `seat` is the seat's place
 /// in the game's seat order, from 0. The decision index is this seat's own count rather than the
 /// game's, so it is deterministic per (seed, seat) but not stream-identical to a server game.
 pub struct RuleBotDecider {

@@ -32,6 +32,7 @@ use ti4_engine::choice::{
     Choice, ChoiceOption, Decider, IllegalChoice, SeatObservation, SeededRandom, Table,
 };
 use ti4_engine::game::{Game, RunError};
+use ti4_host::bots::{Bot, Carry};
 use ti4_host::map::{build_board_tiles, create_game_with_template};
 use ti4_host::maps::{TemplateLoader, default_template_for};
 use ti4_host::planning::audit::PlanScope;
@@ -234,10 +235,10 @@ struct Host {
     /// The seats of the game, and which of them the host answers (bit 0 is seat `a`).
     players: usize,
     humans: u32,
-    /// The seed of the game: a rule seat decides from it ([`ti4_rule_bot::choose`]).
+    /// The seed of the game: a bot seat decides from it ([`ti4_host::bots::choose`]).
     seed: u64,
     /// The players in the seat order of the game: a seat decides by its place here, not by its
-    /// id ([`ti4_rule_bot::choose`]).
+    /// id ([`ti4_host::bots::choose`]).
     order: Vec<PlayerId>,
     /// The game is of a table (`host_setup::TableRequest`): a random seat decides as on the
     /// server, from the seed, the seat and the number of the decision, not from the stream of
@@ -407,15 +408,19 @@ pub const UNDO: i32 = -2;
 /// these is taken back by playing the game again from its seed, which the host does itself.
 const CHECKPOINT_LIMIT: usize = 32;
 
-/// The seats that the rule bot plays where the host does not (of the game that is played).
-static RULE_SEATS: AtomicU32 = AtomicU32::new(0);
+/// The bot of each seat where the host does not play it, by the index of the seat in [`SEATS`]
+/// (of the game that is played): the rule bot or an MLP model, or in the game of a table a
+/// random seat. A seat with none draws from [`RANDOM`] (in the game of a table: at random from
+/// the seed, as on the server). An MLP seat keeps its pipeline here between its decisions; a
+/// checkpoint keeps its carry ([`Checkpoint::carries`]).
+static BOTS: Mutex<Vec<Option<Bot>>> = Mutex::new(Vec::new());
 
 /// The stream of the seats that decide at random. It is here, not inside the table, so that a
 /// checkpoint can keep its position.
 static RANDOM: Mutex<Option<SeededRandom>> = Mutex::new(None);
 
-/// Every seat of a played game: the host answers the seats of its mask, the rule bot those of
-/// [`RULE_SEATS`], and the others draw from [`RANDOM`]. The mask can change during the game
+/// Every seat of a played game: the host answers the seats of its mask, the bots of [`BOTS`]
+/// theirs, and the others draw from [`RANDOM`]. The mask can change during the game
 /// ([`switch_seats`]), so the decider of a seat is found at each decision.
 struct Seat {
     /// The host, behind its Never cards: a window that offers only such cards is declined
@@ -445,7 +450,7 @@ impl Seat {
 }
 
 impl Seat {
-    /// With `seen`, the seat can be played by the rule bot.
+    /// With `seen`, the seat can be played by its bot.
     fn decide(
         &mut self,
         choice: &Choice,
@@ -453,7 +458,6 @@ impl Seat {
     ) -> Result<ChoiceOption, IllegalChoice> {
         loop {
             let ours = host().plays(&choice.player);
-            let rule = seen.filter(|_| rule_seat(&choice.player));
             let replayed = {
                 let host = host();
                 host.decided < host.saved
@@ -462,9 +466,9 @@ impl Seat {
                 // A decision of a saved game is given below the Never cards and with no bot, as
                 // a replay on the server is: the game is the same whatever the cards are set to
                 // now, and whoever plays the seat.
-                Some(saved(choice, ours, rule.is_some())?)
+                Some(saved(choice, ours, seen)?)
             } else if !ours {
-                draw(choice, rule)?
+                draw(choice, seen)?
             } else if let Some(option) = given(choice)? {
                 Some(option)
             } else if !declined_for_never(choice)
@@ -519,12 +523,44 @@ fn declined_for_never(choice: &Choice) -> bool {
     )
 }
 
-/// Whether the rule bot plays the seat of `player` when the host does not.
-fn rule_seat(player: &PlayerId) -> bool {
-    SEATS
-        .iter()
-        .position(|seat| *seat == player.as_str())
-        .is_some_and(|index| RULE_SEATS.load(Ordering::Relaxed) & (1 << index) != 0)
+/// The index of the seat of `player` in [`SEATS`].
+fn seat_slot(player: &PlayerId) -> Option<usize> {
+    SEATS.iter().position(|seat| *seat == player.as_str())
+}
+
+/// The answer of the bot of a seat that the host does not play, from `bots` (by the index of the
+/// seat in [`SEATS`]): `None` when the seat draws from the stream of the random seats. A seat
+/// with a bot decides with `seen`; without it, in a game of a table it decides at random from the
+/// seed, else from the stream. With `peek` the bot keeps nothing of the decision.
+#[allow(clippy::too_many_arguments)]
+fn bot_pick(
+    bots: &mut [Option<Bot>],
+    table: bool,
+    choice: &Choice,
+    seen: Option<&SeatObservation<'_>>,
+    seed: u64,
+    place: usize,
+    index: u64,
+    peek: bool,
+) -> Option<usize> {
+    let bot = seat_slot(&choice.player)
+        .and_then(|slot| bots.get_mut(slot))
+        .and_then(Option::as_mut);
+    if choice.options.is_empty() || !(table || (seen.is_some() && bot.is_some())) {
+        return None;
+    }
+    let index = usize::try_from(index).expect("a game has fewer decisions than 2^32");
+    let picked = match bot {
+        Some(bot) if peek => {
+            let carry = bot.carry();
+            let (picked, _) = ti4_host::bots::choose(bot, choice, seen, seed, place, index);
+            bot.restore(carry);
+            picked
+        }
+        Some(bot) => ti4_host::bots::choose(bot, choice, seen, seed, place, index).0,
+        None => ti4_rule_bot::choose(choice, None, seed, place, index).0,
+    };
+    Some(picked)
 }
 
 /// The host itself: every choice that reaches it is handed out.
@@ -626,9 +662,13 @@ fn scripted(choice: &Choice) -> Result<Option<ChoiceOption>, IllegalChoice> {
 
 /// A decision of a saved game (`Resume::log`): it is given again, whoever plays the seat. Nothing
 /// is shown and no seat waits; what the host counts is counted as in a game that is not saved,
-/// so the choices after it have the same numbers. `ours`: the host plays the seat. `rule`: the
-/// rule bot would decide it.
-fn saved(choice: &Choice, ours: bool, rule: bool) -> Result<ChoiceOption, IllegalChoice> {
+/// so the choices after it have the same numbers. `ours`: the host plays the seat. A bot of the
+/// seat is given the decision (`Bot::follow`), so that it keeps what it would have kept.
+fn saved(
+    choice: &Choice,
+    ours: bool,
+    seen: Option<&SeatObservation<'_>>,
+) -> Result<ChoiceOption, IllegalChoice> {
     let failed = |reason: &str| IllegalChoice::DeciderFailed {
         player: choice.player.clone(),
         prompt: choice.prompt.clone(),
@@ -673,22 +713,41 @@ fn saved(choice: &Choice, ours: bool, rule: bool) -> Result<ChoiceOption, Illega
         host.viewer = Some(choice.player.clone());
         let number = host.asked;
         host.recent.push_back((number, option.id.clone(), false));
-    } else if !(rule || host.table) {
-        // The seat would have drawn from the stream of the random seats: it moves as it did.
-        drop(host);
-        if let Some(stream) = RANDOM.lock().expect("random lock").as_mut() {
-            let _ = stream.choose(choice);
+        return Ok(option);
+    }
+    let (seed, table, place) = (
+        host.seed,
+        host.table,
+        seat_place(&host.order, &choice.player),
+    );
+    drop(host);
+    let mut bots = BOTS.lock().expect("bots lock");
+    let bot = seat_slot(&choice.player)
+        .and_then(|slot| bots.get_mut(slot))
+        .and_then(Option::as_mut);
+    match bot {
+        Some(bot) if seen.is_some() => {
+            let index = usize::try_from(index).expect("a game has fewer decisions than 2^32");
+            bot.follow(choice, seen, &option, seed, place, index);
+        }
+        _ if table => {}
+        _ => {
+            // The seat would have drawn from the stream of the random seats: it moves as it did.
+            drop(bots);
+            if let Some(stream) = RANDOM.lock().expect("random lock").as_mut() {
+                let _ = stream.choose(choice);
+            }
         }
     }
     Ok(option)
 }
 
-/// A decision of a seat that the host does not play: of the rule bot with `rule`, else from the
+/// A decision of a seat that the host does not play: of its bot ([`BOTS`]), else from the
 /// stream that all random seats share, in decision order. None
 /// when the host changed its seats while the seat waited for it.
 fn draw(
     choice: &Choice,
-    rule: Option<&SeatObservation<'_>>,
+    seen: Option<&SeatObservation<'_>>,
 ) -> Result<Option<ChoiceOption>, IllegalChoice> {
     let stepping = STEPPING.load(Ordering::Relaxed);
     if stepping != RUN {
@@ -696,19 +755,19 @@ fn draw(
         // table is not taken for a window that is only declined.
         let declines = stepping == PACE
             && ti4_host::projection::is_reaction_window(choice)
-            && pick(choice, rule, true)?.is_decline();
+            && pick(choice, seen, true)?.is_decline();
         if !declines && !wait_for_go(choice)? {
             return Ok(None);
         }
     }
-    pick(choice, rule, false).map(Some)
+    pick(choice, seen, false).map(Some)
 }
 
 /// What a seat that the host does not play answers. With `peek` the stream of the random seats
 /// stays where it is, so the same call gives the same answer again.
 fn pick(
     choice: &Choice,
-    rule: Option<&SeatObservation<'_>>,
+    seen: Option<&SeatObservation<'_>>,
     peek: bool,
 ) -> Result<ChoiceOption, IllegalChoice> {
     #[cfg(not(target_arch = "wasm32"))]
@@ -724,12 +783,20 @@ fn pick(
             seat_place(&host.order, &choice.player),
         )
     };
-    if (rule.is_some() || table) && !choice.options.is_empty() {
-        // The seed, the place of the seat and the number of the decision give the answer, so a
-        // checkpoint keeps nothing for it, and the stream of the random seats does not move. In
-        // the game of a table a random seat decides the same way, as on the server.
-        let index = usize::try_from(index).expect("a game has fewer decisions than 2^32");
-        let (picked, _) = ti4_rule_bot::choose(choice, rule, seed, place, index);
+    // The seed, the place of the seat and the number of the decision give the answer, so the
+    // stream of the random seats does not move (a checkpoint keeps the carry of an MLP seat). In
+    // the game of a table a random seat decides the same way, as on the server.
+    let picked = bot_pick(
+        &mut BOTS.lock().expect("bots lock"),
+        table,
+        choice,
+        seen,
+        seed,
+        place,
+        index,
+        peek,
+    );
+    if let Some(picked) = picked {
         return Ok(choice.options[picked].clone());
     }
     let mut random = RANDOM.lock().expect("random lock");
@@ -813,6 +880,8 @@ thread_local! {
 struct Checkpoint {
     game: Game<'static>,
     random: Option<SeededRandom>,
+    /// What the bot of each seat kept ([`BOTS`], `Bot::carry`).
+    carries: Vec<Option<Carry>>,
     /// How many choices the host had been asked.
     asked: u64,
     /// How many decisions the log had.
@@ -841,6 +910,15 @@ fn host_table() -> Table {
 
 fn host() -> std::sync::MutexGuard<'static, Host> {
     HOST.lock().expect("host lock")
+}
+
+/// What the bot of each seat keeps now ([`BOTS`], `Bot::carry`).
+fn carries() -> Vec<Option<Carry>> {
+    BOTS.lock()
+        .expect("bots lock")
+        .iter()
+        .map(|bot| bot.as_ref().and_then(Bot::carry))
+        .collect()
 }
 
 /// A decision of a seat of the host: the choice is handed out and the game waits for the
@@ -991,7 +1069,27 @@ static DECISIONS: Mutex<Vec<ti4_engine::choice::DecisionRecord>> = Mutex::new(Ve
 /// Play a hosted game ([`host_api`]) to its end, or until the host leaves.
 fn play_hosted(request_len: usize) -> Result<usize, Failure> {
     let prepared = host_api::prepare(request_len).map_err(Failure::Setup)?;
-    RULE_SEATS.store(prepared.rule_seats, Ordering::Relaxed);
+    // The bots of the seats, from the game as it starts. A kind whose model is not loaded
+    // (`ti4_model_load`) refuses the start.
+    let bots = prepared
+        .bots
+        .iter()
+        .enumerate()
+        .map(|(slot, kind)| {
+            kind.as_deref()
+                .map(|kind| {
+                    let kind = ti4_host::bots::BotKind::parse(kind).map_err(failed)?;
+                    Ok(Bot::new(
+                        &kind,
+                        &prepared.game.state,
+                        prepared.game.galaxy(),
+                        &PlayerId::new(SEATS[slot]),
+                    ))
+                })
+                .transpose()
+        })
+        .collect::<Result<Vec<_>, Failure>>()?;
+    *BOTS.lock().expect("bots lock") = bots;
     set_stepping(prepared.stepping);
     *RANDOM.lock().expect("random lock") = Some(SeededRandom::new(prepared.seed));
     {
@@ -1051,6 +1149,7 @@ fn drive(mut game: Game<'static>) -> Result<usize, Failure> {
                 checkpoints.push_back(Checkpoint {
                     game: game.fork(),
                     random: RANDOM.lock().expect("random lock").clone(),
+                    carries: carries(),
                     asked,
                     decisions: game.table.log.records.len(),
                     decided: host().decided,
@@ -1140,6 +1239,16 @@ fn take_back(checkpoints: &mut VecDeque<Checkpoint>, mut left: Game<'static>) ->
         .lock()
         .expect("random lock")
         .clone_from(&checkpoint.random);
+    for (bot, carry) in BOTS
+        .lock()
+        .expect("bots lock")
+        .iter_mut()
+        .zip(&checkpoint.carries)
+    {
+        if let Some(bot) = bot {
+            bot.restore(carry.clone());
+        }
+    }
     host.recent.retain(|(number, ..)| *number < again);
     host.script = host
         .recent
@@ -1157,11 +1266,13 @@ fn take_back(checkpoints: &mut VecDeque<Checkpoint>, mut left: Game<'static>) ->
     game
 }
 
-/// The seats that play on, on a copy of the game that is made again from a checkpoint: the rule
-/// bot where the live game has it ([`RULE_SEATS`]), else the stream of the random seats. It
-/// counts decisions as the live seats do, so a rule seat decides as it did in the live game.
+/// The seats that play on, on a copy of the game that is made again from a checkpoint: a copy of
+/// the bot where the live game has one ([`BOTS`], with the carry of the checkpoint), else the
+/// stream of the random seats. It counts decisions as the live seats do, so a bot decides as it
+/// did in the live game.
 struct Replayed {
     random: SeededRandom,
+    bots: Vec<Option<Bot>>,
     decided: u64,
     seed: u64,
     /// The players in the seat order of the game, as [`Host::order`].
@@ -1176,15 +1287,23 @@ impl Replayed {
         choice: &Choice,
         seen: Option<&SeatObservation<'_>>,
     ) -> Result<ChoiceOption, IllegalChoice> {
-        let index = usize::try_from(self.decided).expect("a game has fewer decisions than 2^32");
+        let index = self.decided;
         self.decided += 1;
-        let rule = seen.filter(|_| rule_seat(&choice.player));
-        if (rule.is_some() || self.table) && !choice.options.is_empty() {
-            let place = seat_place(&self.order, &choice.player);
-            let (picked, _) = ti4_rule_bot::choose(choice, rule, self.seed, place, index);
-            return Ok(choice.options[picked].clone());
+        let place = seat_place(&self.order, &choice.player);
+        let picked = bot_pick(
+            &mut self.bots,
+            self.table,
+            choice,
+            seen,
+            self.seed,
+            place,
+            index,
+            false,
+        );
+        match picked {
+            Some(picked) => Ok(choice.options[picked].clone()),
+            None => self.random.choose(choice),
         }
-        self.random.choose(choice)
     }
 }
 
@@ -1221,8 +1340,16 @@ fn draft_base() -> Result<Game<'static>, Failure> {
             let host = host();
             (host.seed, host.order.clone(), host.table)
         };
+        let bots = BOTS
+            .lock()
+            .expect("bots lock")
+            .iter()
+            .zip(&checkpoint.carries)
+            .map(|(bot, carry)| bot.as_ref().map(|bot| bot.detached(carry.clone())))
+            .collect();
         game.table = Table::with_default(Box::new(Replayed {
             random,
+            bots,
             decided: checkpoint.decided,
             seed,
             order,
@@ -1367,21 +1494,49 @@ struct TableDraw {
     drawn: setup::Drawn,
 }
 
+/// The request of [`ti4_setup_options`].
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+struct OptionsRequest {
+    /// The number of seats whose maps are listed; 0 (or left out): every map.
+    #[serde(default)]
+    players: usize,
+    /// The models that the page can load (from the server): each is the kind `mlp:<name>`.
+    #[serde(default)]
+    models: Vec<ti4_host::bots::ModelEntry>,
+}
+
 /// What a host can choose for a table, as JSON in the response buffer: the options of
 /// `ti4_host::setup` (as `GET /api/setup-options` of the server gives them) and, as `maps`, the
-/// maps that build for `players` seats (0: every map, as `GET /api/maps`).
+/// maps that build for `players` seats (0: every map, as `GET /api/maps`). The request buffer
+/// holds `request_len` bytes of JSON ([`OptionsRequest`]): `players`, and the `models` whose
+/// kinds are listed. A model need not be loaded to be listed; it is loaded before a game that
+/// seats it starts ([`ti4_model_load`]).
 #[unsafe(no_mangle)]
-pub extern "C" fn ti4_setup_options(players: u32) -> i32 {
-    let maps = ti4_host::maps::catalog::catalog((players > 0).then_some(players as usize));
-    status(maps.map_err(failed).and_then(|maps| {
-        respond(
-            "the options of a table",
-            &TableOptions {
-                options: setup::setup_options("The page", 0),
-                maps,
-            },
-        )
-    }))
+pub extern "C" fn ti4_setup_options(request_len: u32) -> i32 {
+    status(
+        read_request::<OptionsRequest>(request_len).and_then(|request| {
+            let players = request.players;
+            let maps = ti4_host::maps::catalog::catalog((players > 0).then_some(players))
+                .map_err(failed)?;
+            respond(
+                "the options of a table",
+                &TableOptions {
+                    options: setup::setup_options("The page", 0, &request.models),
+                    maps,
+                },
+            )
+        }),
+    )
+}
+
+/// The request in the request buffer, `request_len` bytes of JSON.
+fn read_request<T: serde::de::DeserializeOwned>(request_len: u32) -> Result<T, Failure> {
+    request_filled(request_len)?;
+    let request = REQUEST.lock().expect("request lock");
+    serde_json::from_slice(request.as_bytes())
+        .map_err(|error| failed(format_args!("the request is not read: {error}")))
 }
 
 /// The board of the table in the request buffer (`request_len` bytes of JSON: `setup`, and
@@ -1574,6 +1729,16 @@ pub extern "C" fn ti4_host_start(len: u32) -> i32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn ti4_host_command(len: u32) -> i32 {
     host_api::command(len as usize)
+}
+
+/// Load an MLP model: the input (`ti4_host_in(len)`) holds the bytes of a `.ti4m` file. Its
+/// trailer is checked and it is kept by its name, in place of a model of the same name; a game
+/// with a seat of the kind `mlp:<name>` starts only when the model of the name is loaded. The
+/// output is `{"name", "label", "sha256", "backend"}`. A status of 0 or more is its length,
+/// below 0 the negated length of an error text in the output.
+#[unsafe(no_mangle)]
+pub extern "C" fn ti4_model_load(len: u32) -> i32 {
+    host_api::load_model(len as usize)
 }
 
 /// The logits of a synthetic MLP model on the decisions of the input (`host_api::infer_check`),
@@ -1864,10 +2029,27 @@ mod tests {
             let json = |status: i32| -> serde_json::Value {
                 serde_json::from_str(&response(status).unwrap()).unwrap()
             };
-            let options = json(ti4_setup_options(6));
+            let model = ti4_host::bots::test_model();
+            let request = |players: usize| {
+                serde_json::json!({ "players": players, "models": [model.entry()] }).to_string()
+            };
+            let options = json(with_table_native(ti4_setup_options, &request(6)));
             assert_eq!(options["strategy_card_sets"].as_array().unwrap().len(), 3);
             assert_eq!(options["faction_groups"].as_array().unwrap().len(), 2);
-            assert_eq!(options["bot_kinds"][0]["id"], "smart");
+            let kinds: Vec<(&str, &str)> = options["bot_kinds"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|kind| (kind["id"].as_str().unwrap(), kind["name"].as_str().unwrap()))
+                .collect();
+            assert_eq!(
+                kinds,
+                [
+                    ("smart", "Rule bot"),
+                    ("random", "Random"),
+                    ("mlp:test", "Test model")
+                ]
+            );
             let maps = options["maps"].as_array().unwrap();
             assert!(maps.iter().all(|map| map["player_count"] == 6));
             assert_eq!(
@@ -1880,7 +2062,20 @@ mod tests {
                 .and_then(|map| map["alias"].as_str())
                 .unwrap()
                 .to_owned();
-            assert!(json(ti4_setup_options(0))["maps"].as_array().unwrap().len() > maps.len());
+            assert!(
+                json(with_table_native(ti4_setup_options, &request(0)))["maps"]
+                    .as_array()
+                    .unwrap()
+                    .len()
+                    > maps.len()
+            );
+            assert_eq!(
+                json(with_table_native(ti4_setup_options, "{}"))["bot_kinds"]
+                    .as_array()
+                    .unwrap()
+                    .len(),
+                2
+            );
 
             let table = |seed: u64, kind: &str| {
                 serde_json::json!({

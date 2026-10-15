@@ -2,7 +2,7 @@
 //!
 //! # Plan
 //!
-//! A `BotSmart` seat is a `ti4_server::session::random_bot::RandomBotDecider` in smart mode. For
+//! A `smart` seat is played through `ti4_host::bots::choose`, on both hosts. For
 //! every question it first draws the random bot's pick (so the RNG stream matches), then asks
 //! [`pick`] here. `pick` returns `Some(index)` only for the questions it has a simple opinion on,
 //! and `None` for everything else, which keeps the random pick. An index is always one of the

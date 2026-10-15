@@ -22,6 +22,8 @@ import type { Capabilities, Transport } from "./transport";
 import type {
   Catalog,
   ClientMessage,
+  ModelEntry,
+  OptionsRequest,
   ReactionModes,
   SeatStaged,
   SeatSwitch,
@@ -34,7 +36,7 @@ import type {
 interface Exports {
   memory: WebAssembly.Memory;
   // The questions that need no game: the request buffer in, the response buffer out.
-  ti4_setup_options(players: number): number;
+  ti4_setup_options(length: number): number;
   ti4_setup_preview(length: number): number;
   ti4_setup_draw(length: number): number;
   ti4_scenarios(): number;
@@ -155,10 +157,18 @@ export const engineQuery = (module: WebAssembly.Module) => async (request: objec
 
 /**
  * What a host can choose for the table of the page, with the maps that build for `players`
- * seats (0: every map). The same options as `GET /api/setup-options` of the server.
+ * seats (0: every map). The same options as `GET /api/setup-options` of the server; each of
+ * `models` is the kind `mlp:<name>`.
  */
-export const setupOptionsOf = (module: WebAssembly.Module, players: number) =>
-  ask<TableOptions>(module, (exports) => exports.ti4_setup_options(players));
+export const setupOptionsOf = (
+  module: WebAssembly.Module,
+  players: number,
+  models: ModelEntry[] = [],
+) =>
+  ask<TableOptions>(module, (exports, length) => exports.ti4_setup_options(length), {
+    players,
+    models,
+  } satisfies OptionsRequest);
 
 /** The board of a table before it starts, with a place for each seat. */
 export const setupPreviewOf = (module: WebAssembly.Module, table: TableRequest) =>
@@ -288,7 +298,9 @@ export function createWasmTransport(
               players: game.players,
               humans: game.humans,
               ...(game.scenario === undefined ? {} : { scenario: game.scenario }),
-              rule_seats: play.ruleSeats ?? 0,
+              bots: Array.from({ length: game.players }, (_, seat) =>
+                ((play.ruleSeats ?? 0) >> seat) & 1 ? ("smart" as const) : null,
+              ),
             },
           }),
     ...(play.save ? { resume: play.save as unknown as EngineSave } : {}),

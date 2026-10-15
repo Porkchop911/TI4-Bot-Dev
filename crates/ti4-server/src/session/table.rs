@@ -254,11 +254,19 @@ pub fn apply_settings(
 }
 
 /// What a host can choose for a table: `GET /api/setup-options`. The page writes none of these
-/// names. `public`: the public server, which starts no scenario.
+/// names. `public`: the public server, which starts no scenario. The MLP kinds are the models
+/// that the process loaded (`ti4_host::bots::models`).
 #[must_use]
 pub fn setup_options(public: bool) -> SetupOptions {
-    let mut options =
-        ti4_host::setup::setup_options("The server", super::random_bot::random_bot_delay_ms());
+    let models: Vec<ti4_host::bots::ModelEntry> = ti4_host::bots::models()
+        .iter()
+        .map(ti4_host::bots::MlpModel::entry)
+        .collect();
+    let mut options = ti4_host::setup::setup_options(
+        "The server",
+        super::random_bot::random_bot_delay_ms(),
+        &models,
+    );
     if public {
         options.scenarios.clear();
     }

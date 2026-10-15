@@ -28,7 +28,11 @@
 //! - the head ([`crate::learned::decision_head`], folded into the model's [`HeadLayout`]);
 //! - the softmax at a temperature ([`probabilities`]) and the cumulative draw ([`draw`]).
 //!
-//! A pipeline belongs to one seat: it keeps the seat's plan, its memo and its power maps.
+//! A pipeline belongs to one seat: it keeps the seat's plan, its memo and its power maps. What
+//! of that the later decisions depend on is its [`Carry`]: a host that plays a game again from
+//! its recorded decisions gives each decision of the seat to [`Pipeline::follow`], and a host that
+//! goes back to a copy of the game restores the carry of the copy ([`Pipeline::restore`]), so a
+//! game recovered in the middle goes on as the game that was not interrupted.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -386,6 +390,14 @@ struct PlanSlot {
     execution: Execution,
 }
 
+/// What a seat's decisions carry from one to the next ([`Pipeline::carry`]).
+#[derive(Debug, Clone)]
+pub struct Carry {
+    plan: Option<PlanSlot>,
+    power_cache: crate::power_map::PowerCache,
+    last_table: Option<Arc<crate::power_facts::TablePower>>,
+}
+
 /// The pipeline of one seat: its vocabulary, its faction row, and the state its decisions carry
 /// from one to the next (the fleet plan, the memo of resolved columns, the power maps).
 #[derive(Debug)]
@@ -408,7 +420,7 @@ pub struct Pipeline {
     /// The seat's power map, refreshed only where the board changed.
     power_cache: RefCell<crate::power_map::PowerCache>,
     /// Every seat's power map as it stood at the seat's latest activation decision.
-    last_table: Option<crate::power_facts::TablePower>,
+    last_table: Option<Arc<crate::power_facts::TablePower>>,
     trace: Vec<PlanTrace>,
 }
 
@@ -519,24 +531,14 @@ impl Pipeline {
         // projection is computed at the activation decision and reused for the moves of that
         // action, which see the board as it stood when the system was chosen.
         let vectors = if self.power_facts {
-            let summary = self
-                .power_cache
-                .borrow_mut()
-                .summary(seen.observed(), &choice.player);
-            let needs_table = choice.options.iter().any(|option| {
-                option.kind == ti4_engine::tactical::ACTIVATE_KIND
-                    || option.kind == ti4_engine::tactical::MOVE_KIND
-            });
-            if needs_table && (seen.active_system().is_none() || self.last_table.is_none()) {
-                self.last_table = Some(crate::power_facts::TablePower::of(seen.observed()));
-            }
+            let (summary, needs_table) = self.power_state(choice, seen);
             let facts = crate::power_facts::decision_facts(
                 seen.observed(),
                 choice,
                 &choice.player,
                 &summary,
                 if needs_table {
-                    self.last_table.as_ref()
+                    self.last_table.as_deref()
                 } else {
                     None
                 },
@@ -785,6 +787,96 @@ impl Pipeline {
             self.pick(&fleet, &logits, temperature, rng)?;
         }
         Ok(picked.option)
+    }
+
+    /// What the seat carries from one decision to the next that its later decisions depend on:
+    /// the fleet plan, the power maps and the table of the latest activation. The memo of
+    /// resolved columns is left out: it only caches the vocabulary. A host that goes back to an
+    /// earlier position of the game (an undo to a copy of the game) restores the carry of that
+    /// position ([`Self::restore`]).
+    #[must_use]
+    pub fn carry(&self) -> Carry {
+        Carry {
+            plan: self.plan.clone(),
+            power_cache: self.power_cache.borrow().clone(),
+            last_table: self.last_table.clone(),
+        }
+    }
+
+    /// Put back what [`Self::carry`] took.
+    pub fn restore(&mut self, carry: Carry) {
+        self.plan = carry.plan;
+        *self.power_cache.borrow_mut() = carry.power_cache;
+        self.last_table = carry.last_table;
+    }
+
+    /// A decision of the seat that was made before, given again with its recorded answer (the
+    /// replay of a saved or recovered game): the pipeline changes as [`Self::decide`] changed it
+    /// when it chose `chosen` with the same generator, so the decisions after it are those of the
+    /// game that was not interrupted. Only what the carry needs is computed: the plan's answer,
+    /// the power maps, and after an activation the fleet decision (one forward pass); the features
+    /// of the options and their forward pass are not.
+    ///
+    /// # Errors
+    /// [`MlpError::EmptyLegalSet`], or what stopped the fleet decision.
+    pub fn follow<S: Scorer + ?Sized, R: Rng>(
+        &mut self,
+        scorer: &S,
+        choice: &Choice,
+        seen: &SeatObservation<'_>,
+        chosen: &ChoiceOption,
+        temperature: f64,
+        rng: &mut R,
+    ) -> Result<(), MlpError> {
+        if choice.options.is_empty() {
+            return Err(MlpError::EmptyLegalSet);
+        }
+        if self.planned(choice, seen).is_some() {
+            return Ok(());
+        }
+        if self.power_facts {
+            self.power_state(choice, seen);
+        }
+        // The draw of `pick` takes one number of the generator, whatever the distribution.
+        let _: f64 = rng.random_range(0.0..1.0);
+        if chosen.kind == ti4_engine::tactical::ACTIVATE_KIND {
+            self.plan = None;
+        }
+        let picked = Picked {
+            index: 0,
+            option: chosen.clone(),
+            probabilities: Vec::new(),
+            label: chosen.id.clone(),
+            declined: chosen.is_decline(),
+        };
+        if let Some(fleet) = self.fleet(scorer, choice, seen, &picked)? {
+            let logits = scorer.logits(fleet.faction, fleet.head_index, &fleet.options)?;
+            self.pick(&fleet, &logits, temperature, rng)?;
+        }
+        Ok(())
+    }
+
+    /// The seat's power summary for a decision, and whether the decision reads the table of the
+    /// activation; takes that table at an activation decision (or when the seat has none).
+    fn power_state(
+        &mut self,
+        choice: &Choice,
+        seen: &SeatObservation<'_>,
+    ) -> (crate::power_map::Summary, bool) {
+        let summary = self
+            .power_cache
+            .borrow_mut()
+            .summary(seen.observed(), &choice.player);
+        let needs_table = choice.options.iter().any(|option| {
+            option.kind == ti4_engine::tactical::ACTIVATE_KIND
+                || option.kind == ti4_engine::tactical::MOVE_KIND
+        });
+        if needs_table && (seen.active_system().is_none() || self.last_table.is_none()) {
+            self.last_table = Some(Arc::new(crate::power_facts::TablePower::of(
+                seen.observed(),
+            )));
+        }
+        (summary, needs_table)
     }
 
     /// Answer from the current plan when this prompt is the plan's; drop a plan that no longer

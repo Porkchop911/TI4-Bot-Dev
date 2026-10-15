@@ -11,7 +11,8 @@ export type Local = { seed: number, players: number,
  */
 humans: number, scenario?: string, 
 /**
- * The seats that the rule bot plays where the page does not. It decides from the seed, the
- * seat and the number of the decision, as on the server; the other seats decide at random.
+ * The kind of the bot of each seat where the page does not play it (`smart`, `mlp:<name>`):
+ * it decides from the seed, the seat and the number of the decision, as on the server. A
+ * seat with none (or `random`, or past the end) decides at random.
  */
-rule_seats: number, };
+bots: ("smart" | "random" | `mlp:${string}` | null)[], };

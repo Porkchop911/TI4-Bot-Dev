@@ -51,6 +51,7 @@ pub fn files() -> BTreeMap<String, String> {
     collect.visit::<ti4_host::view::components::Catalog>();
     collect.visit::<ti4_host::setup::SetupOptions>();
     collect.visit::<crate::TableOptions>();
+    collect.visit::<crate::OptionsRequest>();
     collect.visit::<ti4_host::maps::MapPreview>();
     collect.visit::<crate::TablePreview>();
     collect.visit::<crate::TableDraw>();

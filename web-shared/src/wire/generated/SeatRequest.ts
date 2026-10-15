@@ -6,7 +6,8 @@ import type { SeatKind } from "./SeatKind.ts";
  */
 export type SeatRequest = { 
 /**
- * `human` is played by the page, `smart` by the rule bot, `random` at random.
+ * `human` is played by the page, `smart` by the rule bot, `random` at random, `mlp:<name>`
+ * by that model.
  */
 kind: SeatKind, 
 /**

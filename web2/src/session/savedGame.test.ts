@@ -36,7 +36,7 @@ const save = (change: Partial<HostSave> = {}): HostSave => ({
   seed: 3,
   players: 8,
   humans: 1,
-  game: { local: { seed: 3, players: 8, humans: 1, rule_seats: 0 } },
+  game: { local: { seed: 3, players: 8, humans: 1, bots: [] } },
   decisions: ["sol", "pass", "18"],
   answers: ["sol"],
   finished: false,

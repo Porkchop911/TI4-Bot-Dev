@@ -125,7 +125,7 @@ fn dev_scenario_space_combat_crash_recovery_preserves_bots_and_play() {
         .collect();
     assert_eq!(bot_seats.len(), 2);
     for controller in bot_seats {
-        assert_eq!(*controller, SeatController::BotSmart);
+        assert_eq!(*controller, SeatController::SMART);
     }
 
     // Simulate server crash / restart: drop registry, session, client
@@ -173,7 +173,7 @@ fn dev_scenario_space_combat_crash_recovery_preserves_bots_and_play() {
         } else {
             assert_eq!(
                 controller,
-                SeatController::BotSmart,
+                SeatController::SMART,
                 "bot {id} must retain its rule bot"
             );
         }
@@ -279,7 +279,7 @@ fn scripted_ongoing_combat_and_four_view_presets_recover_cleanly() {
         if id == p_combat {
             assert_eq!(controller, SeatController::Human);
         } else {
-            assert_eq!(controller, SeatController::BotSmart);
+            assert_eq!(controller, SeatController::SMART);
         }
     }
 

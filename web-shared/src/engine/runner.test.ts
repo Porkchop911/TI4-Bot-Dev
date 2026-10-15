@@ -148,7 +148,7 @@ describe("HostRunner", () => {
     const out: FromWorker[] = [];
     const hosts: FakeHost[] = [];
     const restart = { answers: [], redo: [], generation: 1, version: 7, log: ["a"] };
-    const local = { seed: 3, players: 8, humans: 1, rule_seats: 0 };
+    const local = { seed: 3, players: 8, humans: 1, bots: [] };
     const make = () => {
       const host = new FakeHost(`h${hosts.length}`, (h, request) => {
         if (request.type === "save_state") {

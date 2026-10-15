@@ -88,7 +88,7 @@ fn play(
         .with_galaxy(galaxy, tiles)
         .with_random_bot_delay_ms(0);
     for id in players {
-        config = config.with_seat(id.clone(), SeatController::BotSmart);
+        config = config.with_seat(id.clone(), SeatController::SMART);
     }
     let session = GameSession::start(config);
     let start = Instant::now();

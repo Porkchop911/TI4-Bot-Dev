@@ -1,4 +1,4 @@
-//! Rule bot seats (`SeatController::BotSmart`): whole games without illegal answers or stalls,
+//! Rule bot seats (`SeatController::SMART`): whole games without illegal answers or stalls,
 //! determinism, and a strength comparison against the plain random bot. Delay 0 everywhere.
 
 use std::time::{Duration, Instant};
@@ -104,7 +104,7 @@ fn assert_clean(out: &Outcome) {
 
 #[test]
 fn slow_an_all_smart_table_plays_to_game_over_with_legal_answers() {
-    let out = play("sb_full", 7, "te", &vec![SeatController::BotSmart; 4], 30);
+    let out = play("sb_full", 7, "te", &vec![SeatController::SMART; 4], 30);
     assert_clean(&out);
     eprintln!(
         "smart table: {} decisions, round {}, finished={}",
@@ -118,9 +118,9 @@ fn slow_an_all_smart_table_plays_to_game_over_with_legal_answers() {
 #[test]
 fn slow_a_mixed_pok_table_plays_legally_and_the_same_seed_repeats() {
     let seats = [
-        SeatController::BotSmart,
-        SeatController::BotRandom,
-        SeatController::BotSmart,
+        SeatController::SMART,
+        SeatController::RANDOM,
+        SeatController::SMART,
     ];
     let a = play("sb_det_a", 11, "pok", &seats, 4);
     let b = play("sb_det_b", 11, "pok", &seats, 4);
@@ -155,9 +155,9 @@ fn slow_smart_bots_clearly_outplay_random_bots() {
             let seats: Vec<SeatController> = (0..4)
                 .map(|i| {
                     if (i % 2 == 0) == swap {
-                        SeatController::BotRandom
+                        SeatController::RANDOM
                     } else {
-                        SeatController::BotSmart
+                        SeatController::SMART
                     }
                 })
                 .collect();
@@ -167,7 +167,7 @@ fn slow_smart_bots_clearly_outplay_random_bots() {
             for (i, controller) in seats.iter().enumerate() {
                 let player = PlayerId::new(format!("p{}", i + 1));
                 let (planets, vp) = standing(&out.state, &player);
-                let smart = *controller == SeatController::BotSmart;
+                let smart = *controller == SeatController::SMART;
                 line.push(format!(
                     "{}:{planets}p/{vp}vp",
                     if smart { "S" } else { "R" }
@@ -230,9 +230,9 @@ fn slow_smart_seats_are_saved_and_recovered_as_smart_seats_and_play_on_the_same(
     use ti4_server::storage::FileGameStore;
 
     let seats = [
-        SeatController::BotSmart,
-        SeatController::BotRandom,
-        SeatController::BotSmart,
+        SeatController::SMART,
+        SeatController::RANDOM,
+        SeatController::SMART,
     ];
     let reference = play("sb_rec", 41, "te", &seats, 3);
     assert_clean(&reference);
@@ -258,13 +258,10 @@ fn slow_smart_seats_are_saved_and_recovered_as_smart_seats_and_play_on_the_same(
     registry.recover_all_games().expect("recover");
     let session = registry.get_game("sb_rec").expect("recovered");
     let recovered_seats = session.lobby_details().1;
-    assert_eq!(
-        recovered_seats[&PlayerId::new("p1")],
-        SeatController::BotSmart
-    );
+    assert_eq!(recovered_seats[&PlayerId::new("p1")], SeatController::SMART);
     assert_eq!(
         recovered_seats[&PlayerId::new("p2")],
-        SeatController::BotRandom
+        SeatController::RANDOM
     );
     let out = drive(&session, 3, Duration::from_secs(60));
     assert!(out.error.is_none(), "{:?}", out.error);

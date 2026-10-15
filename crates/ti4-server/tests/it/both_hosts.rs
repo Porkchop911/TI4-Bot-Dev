@@ -9,6 +9,8 @@
 //!
 //! A saved game is the same on both too: the option id of every decision, of every seat, in
 //! order. The wasm host plays the log of the server again (`resume.log` of `ti4_host_start`).
+//! An MLP seat (`ti4_host::bots`) is played by the same model on both, on a deterministic backend,
+//! and a saved game cut anywhere goes on as the game that was not cut.
 //!
 //! One test: the wasm host keeps its game in statics.
 
@@ -84,11 +86,9 @@ fn on_the_server(setup: &TableSetup, seats: &Seats, decisions: usize) -> Vec<Dec
         .with_galaxy(galaxy, tiles)
         .with_random_bot_delay_ms(0);
     for (player, (kind, _)) in joined.iter().cloned().zip(seats) {
-        let controller = match *kind {
-            setup::bot_kind::RULE => SeatController::BotSmart,
-            setup::bot_kind::RANDOM => SeatController::BotRandom,
-            other => panic!("this test has no person: {other}"),
-        };
+        assert_ne!(*kind, setup::HUMAN_KIND, "this test has no person");
+        let controller =
+            SeatController::Bot(ti4_host::bots::BotKind::parse(kind).expect("a kind of the tests"));
         config = config.with_seat(player, controller);
     }
     let session = GameSession::start(config);
@@ -125,9 +125,11 @@ fn on_the_server(setup: &TableSetup, seats: &Seats, decisions: usize) -> Vec<Dec
 #[test]
 fn slow_a_table_of_a_seed_is_the_same_game_in_the_page_and_on_the_server() {
     ti4_wasm::set_round_limit_native(Some(1));
+    // Both hosts play the MLP seats with the model of the tests, on the scalar backend.
+    let _ = ti4_host::bots::test_model();
     let mut pok = TableSetup::new(5, 23);
     pok.strategy_cards = setup::card_set::POK.to_owned();
-    let tables: [(TableSetup, &Seats); 2] = [
+    let tables: [(TableSetup, &Seats); 3] = [
         (
             TableSetup::new(4, 7),
             &[
@@ -148,8 +150,19 @@ fn slow_a_table_of_a_seed_is_the_same_game_in_the_page_and_on_the_server() {
                 ("smart", None),
             ],
         ),
+        // MLP seats: their decision pipelines, the fleet plans of their activations, and a saved
+        // game whose second half they play on from the first (`Bot::follow`).
+        (
+            TableSetup::new(3, 1),
+            &[("mlp:test", None), ("smart", None), ("mlp:test", None)],
+        ),
     ];
     for (setup, seats) in tables {
+        // The MLP seats play two rounds: their fleets of the second round are planned.
+        let mlp = seats
+            .iter()
+            .any(|(kind, _)| kind.starts_with(ti4_host::bots::MLP_PREFIX));
+        ti4_wasm::set_round_limit_native(Some(if mlp { 2 } else { 1 }));
         let page = in_the_page(&setup, seats, &[]);
         assert!(
             page.len() > 100,
@@ -178,6 +191,34 @@ fn slow_a_table_of_a_seed_is_the_same_game_in_the_page_and_on_the_server() {
             "the game of a saved game, {} seats",
             seats.len()
         );
+        // A save cut before a move of an MLP seat: between the activation (and its fleet
+        // decision) and the moves that its plan answers.
+        let mlp_seats: Vec<&str> = seats
+            .iter()
+            .zip(["a", "b", "c", "d", "e", "f", "g", "h"])
+            .filter(|((kind, _), _)| kind.starts_with(ti4_host::bots::MLP_PREFIX))
+            .map(|(_, letter)| letter)
+            .collect();
+        let moving = |record: &DecisionRecord| {
+            record
+                .context
+                .as_ref()
+                .is_some_and(|context| context.subtype == "movement_step")
+        };
+        // The first move of each activation of theirs.
+        let moves: Vec<usize> = (1..page.len())
+            .filter(|&index| {
+                let (before, record) = (&page[index - 1], &page[index]);
+                mlp_seats.contains(&record.player.as_str())
+                    && moving(record)
+                    && !(moving(before) && before.player == record.player)
+            })
+            .collect();
+        assert_eq!(moves.is_empty(), mlp_seats.is_empty(), "the MLP seats move");
+        for cut in moves {
+            let again = in_the_page(&setup, seats, &server[..cut]);
+            assert_eq!(again, page, "a saved game cut after {cut} decisions");
+        }
     }
     ti4_wasm::set_round_limit_native(None);
 }

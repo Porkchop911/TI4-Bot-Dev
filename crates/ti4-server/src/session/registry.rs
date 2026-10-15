@@ -518,8 +518,27 @@ use crate::storage::{
 pub const RANDOM_BOT_KIND: &str = "random";
 /// The in-process bot that plays the board heuristically and the rest at random.
 pub const SMART_BOT_KIND: &str = "smart";
-/// Bot kinds answered inside the game worker, in the order a lobby offers them.
-pub const IN_PROCESS_BOT_KINDS: [&str; 2] = [RANDOM_BOT_KIND, SMART_BOT_KIND];
+/// Bot kinds answered inside the game worker, in the order a lobby offers them: `random`,
+/// `smart`, then `mlp:<name>` for every model the process loaded (`ti4_host::bots::models`).
+#[must_use]
+pub fn in_process_bot_kinds() -> Vec<String> {
+    [RANDOM_BOT_KIND, SMART_BOT_KIND]
+        .into_iter()
+        .map(str::to_owned)
+        .chain(
+            ti4_host::bots::models()
+                .iter()
+                .map(ti4_host::bots::MlpModel::kind_id),
+        )
+        .collect()
+}
+
+/// Whether `kind` is one of [`in_process_bot_kinds`]. The `mlp` of the bot service is not: an MLP
+/// model is always `mlp:<name>`.
+#[must_use]
+pub fn is_in_process_bot_kind(kind: &str) -> bool {
+    ti4_host::bots::BotKind::parse(kind).is_ok()
+}
 
 /// Public projection; deliberately cannot serialize the private persistence record.
 #[derive(Debug, Clone, Serialize)]
@@ -730,10 +749,7 @@ impl PlayerLobbyRecord {
                 .collect(),
             lobby_version: self.lobby_version,
             bot_service_enabled: false,
-            bot_kinds: IN_PROCESS_BOT_KINDS
-                .iter()
-                .map(|kind| (*kind).to_owned())
-                .collect(),
+            bot_kinds: in_process_bot_kinds(),
             map: ti4_host::maps::catalog::describe(
                 &ti4_host::maps::MapChoice::from_stored(self.map_template.as_deref()),
                 self.slots.len(),
@@ -864,6 +880,8 @@ pub enum LobbyError {
     InvalidMap(String),
     Map(String),
     Storage(String),
+    /// A seat of the table is played by a model that the server has not loaded; the text names it.
+    ModelMissing(String),
 }
 
 impl LobbyError {
@@ -887,6 +905,7 @@ impl LobbyError {
             Self::InvalidMap(error) => format!("Invalid map choice: {error}"),
             Self::Map(error) => format!("Failed to start game with map: {error}"),
             Self::Storage(error) => format!("Failed to persist lobby lifecycle: {error}"),
+            Self::ModelMissing(error) => format!("The table cannot start: {error}"),
         }
     }
 }
@@ -3084,7 +3103,7 @@ impl GameRegistry {
     }
 
     /// As [`Self::create_player_lobby_with_speaker`], with every other seat played by a random
-    /// bot ([`SeatController::BotRandom`], as [`Self::add_random_bots`] seats them), and started
+    /// bot ([`SeatController::RANDOM`], as [`Self::add_random_bots`] seats them), and started
     /// at once: the creator is the only person of the game. The seats of the game are kept with
     /// it (`init.json`), so a recovered game has the same random seats.
     #[expect(
@@ -3187,13 +3206,19 @@ impl GameRegistry {
             .iter()
             .map(|p| {
                 let controller = match lobby.players[p].bot.as_deref() {
-                    Some(SMART_BOT_KIND) => SeatController::BotSmart,
-                    Some(_) => SeatController::BotRandom,
+                    // A kind of an earlier build that is no kind now plays at random, as before.
+                    Some(kind) => SeatController::Bot(match ti4_host::bots::BotKind::parse(kind) {
+                        Ok(kind) => kind,
+                        Err(_) if ti4_host::bots::model_name(kind).is_none() => {
+                            ti4_host::bots::BotKind::Random
+                        }
+                        Err(error) => return Err(LobbyError::ModelMissing(error)),
+                    }),
                     None => SeatController::Human,
                 };
-                (p.clone(), controller)
+                Ok((p.clone(), controller))
             })
-            .collect();
+            .collect::<Result<_, LobbyError>>()?;
         config.seat_tokens = lobby
             .players
             .iter()
@@ -3498,8 +3523,9 @@ impl GameRegistry {
         )
     }
 
-    /// [`Self::add_random_bots`] for any in-process bot kind ([`IN_PROCESS_BOT_KINDS`]): `random`
-    /// seats are named "Random bot N", `smart` seats "Rule bot N".
+    /// [`Self::add_random_bots`] for any in-process bot kind ([`in_process_bot_kinds`]): `random`
+    /// seats are named "Random bot N", `smart` seats "Rule bot N", the seats of a model by its
+    /// label and a number.
     ///
     /// # Errors
     /// As [`Self::add_random_bots`]; an unknown `kind` is [`LobbyError::InvalidCapability`]
@@ -3513,13 +3539,11 @@ impl GameRegistry {
         count: Option<usize>,
         faction: Option<&str>,
     ) -> Result<PlayerLobbyView, LobbyError> {
-        if !IN_PROCESS_BOT_KINDS.contains(&kind) {
-            return Err(LobbyError::InvalidCapability);
-        }
-        let name_stem = if kind == SMART_BOT_KIND {
-            "Rule bot"
-        } else {
-            "Random bot"
+        let name_stem = match ti4_host::bots::BotKind::parse(kind) {
+            Ok(ti4_host::bots::BotKind::Smart) => "Rule bot".to_owned(),
+            Ok(ti4_host::bots::BotKind::Random) => "Random bot".to_owned(),
+            Ok(ti4_host::bots::BotKind::Mlp(model)) => model.label().to_owned(),
+            Err(_) => return Err(LobbyError::InvalidCapability),
         };
         if let Some(name) = &nickname {
             check_nickname(name)?;

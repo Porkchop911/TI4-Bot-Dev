@@ -266,13 +266,60 @@ fn input(len: usize) -> Result<String, String> {
 
 /// Put `text` in the input buffer (a native caller's `ti4_host_in` plus the write).
 pub fn put_input(text: &str) -> usize {
+    put_bytes(text.as_bytes())
+}
+
+/// Put `bytes` in the input buffer (a native caller's `ti4_host_in` plus the write): the file of
+/// `ti4_model_load`.
+pub fn put_bytes(bytes: &[u8]) -> usize {
     let mut input = IN.lock().expect("in lock");
     input.clear();
-    input.extend_from_slice(text.as_bytes());
-    text.len()
+    input.extend_from_slice(bytes);
+    bytes.len()
 }
 
 // --- the MLP ---------------------------------------------------------------------------------
+
+/// What [`load_model`] answers: the model that is now in the registry.
+#[derive(Serialize)]
+struct LoadedModel<'a> {
+    name: &'a str,
+    label: &'a str,
+    sha256: &'a str,
+    backend: &'static str,
+}
+
+/// Load the `.ti4m` file of the input (`len` bytes) into the registry of the engine
+/// (`ti4_host::bots::register`), in place of a model of the same name: its trailer is checked,
+/// and it runs on the fastest deterministic backend (`simd128` in the page). The output is
+/// `{"name", "label", "sha256", "backend"}`.
+pub fn load_model(len: usize) -> i32 {
+    let loaded = {
+        let input = IN.lock().expect("in lock");
+        match input.get(..len) {
+            Some(bytes) => ti4_host::bots::MlpModel::from_bytes(bytes, None),
+            None => Err(format!("the input is {} bytes, not {len}", input.len())),
+        }
+    };
+    match loaded {
+        Ok(model) => {
+            ti4_host::bots::register(model.clone());
+            // The file is not kept twice.
+            {
+                let mut input = IN.lock().expect("in lock");
+                input.clear();
+                input.shrink_to_fit();
+            }
+            write_json(&LoadedModel {
+                name: model.name(),
+                label: model.label(),
+                sha256: model.digest(),
+                backend: model.model().backend().name(),
+            })
+        }
+        Err(error) => write_error(format_args!("the model is not loaded: {error}")),
+    }
+}
 
 /// The logits of a synthetic model on some decisions: the input is a request of
 /// `ti4_infer::synthetic::check`, the output its answer. The test of the wasm build compares them
@@ -389,7 +436,8 @@ pub struct Prepared {
     pub seed: u64,
     pub players: usize,
     pub human_mask: u32,
-    pub rule_seats: u32,
+    /// The kind of the bot of each seat (`host_setup::Built::bots`).
+    pub bots: Vec<Option<String>>,
     /// See `Host::table` in `lib.rs`.
     pub table: bool,
     pub stepping: u32,
@@ -500,7 +548,7 @@ pub fn prepare(len: usize) -> Result<Prepared, String> {
         seed: built.seed,
         players: built.players,
         human_mask: built.humans,
-        rule_seats: built.rule_seats,
+        bots: built.bots,
         table: built.table,
         stepping: start.stepping,
         switches: resume.switches.clone(),

@@ -213,15 +213,17 @@ impl SessionShared {
                 .iter()
                 .map(|(player, nickname)| {
                     let kind = match self.seats.get(player) {
-                        Some(SeatController::BotSmart) => bot_kind::RULE,
-                        Some(controller) if controller.is_in_process_bot() => bot_kind::RANDOM,
-                        _ => HUMAN_KIND,
+                        Some(SeatController::Bot(kind)) => kind.id(),
+                        Some(controller) if controller.is_in_process_bot() => {
+                            bot_kind::RANDOM.to_owned()
+                        }
+                        _ => HUMAN_KIND.to_owned(),
                     };
                     (
                         player.clone(),
                         SeatFact {
                             nickname: nickname.clone(),
-                            kind: kind.to_owned(),
+                            kind,
                         },
                     )
                 })
@@ -827,9 +829,18 @@ impl SessionShared {
     }
 }
 
+/// The bot of a seat that the replay gives each recorded decision of the seat to
+/// (`ti4_host::bots::Bot::follow`), with what its decisions are drawn from.
+struct Follow {
+    bot: crate::session::random_bot::SharedBot,
+    game_seed: u64,
+    place: usize,
+}
+
 struct ReplayingDecider {
     prior_queue: Arc<Mutex<VecDeque<DecisionRecord>>>,
     inner: Box<dyn Decider>,
+    follow: Option<Follow>,
     shared: Arc<Mutex<SessionShared>>,
     has_boundary_state: bool,
     /// Forced random positions for the replayed decisions (a timeline made by a turn redo).
@@ -922,7 +933,28 @@ fn selected_for(
 }
 
 impl ReplayingDecider {
-    fn try_replay(&self, choice: &Choice) -> Option<Result<ChoiceOption, IllegalChoice>> {
+    /// [`Self::try_replay`], and the replayed answer given to the seat's bot.
+    fn replay_seen(
+        &self,
+        choice: &Choice,
+        seen: Option<&SeatObservation<'_>>,
+    ) -> Option<Result<ChoiceOption, IllegalChoice>> {
+        let (replayed, index) = self.try_replay(choice)?;
+        if let (Ok(option), Some(follow)) = (&replayed, &self.follow) {
+            follow.bot.lock().expect("bot lock").follow(
+                choice,
+                seen,
+                option,
+                follow.game_seed,
+                follow.place,
+                index,
+            );
+        }
+        Some(replayed)
+    }
+
+    /// The next recorded answer, if any, and the number of its decision in the game.
+    fn try_replay(&self, choice: &Choice) -> Option<(Result<ChoiceOption, IllegalChoice>, usize)> {
         let (next_prior, index) = {
             let mut lock = self.prior_queue.lock().expect("prior queue lock");
             let index = self.total.saturating_sub(lock.len());
@@ -945,7 +977,8 @@ impl ReplayingDecider {
             self.shared.lock().expect("shared lock").replaying = false;
         }
         next_prior.map(|record| {
-            if let Some(opt) = choice.options.iter().find(|o| o.id == record.chosen) {
+            let replayed = if let Some(opt) = choice.options.iter().find(|o| o.id == record.chosen)
+            {
                 Ok(opt.clone())
             } else {
                 Err(IllegalChoice::ScriptDiverged {
@@ -953,14 +986,15 @@ impl ReplayingDecider {
                     wanted: record.chosen,
                     offered: choice.options.iter().map(|o| o.id.clone()).collect(),
                 })
-            }
+            };
+            (replayed, index)
         })
     }
 }
 
 impl Decider for ReplayingDecider {
     fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
-        if let Some(res) = self.try_replay(choice) {
+        if let Some(res) = self.replay_seen(choice, None) {
             return res;
         }
         // A single engine step can consume the last replayed decision and ask the
@@ -983,7 +1017,7 @@ impl Decider for ReplayingDecider {
         choice: &Choice,
         seen: &SeatObservation<'_>,
     ) -> Result<ChoiceOption, IllegalChoice> {
-        if let Some(res) = self.try_replay(choice) {
+        if let Some(res) = self.replay_seen(choice, Some(seen)) {
             return res;
         }
         {
@@ -1010,11 +1044,14 @@ pub fn spawn_session_worker(
     let prior_count = config.prior_decisions.len();
     let prior_records = config.prior_decisions.clone();
     let prior_queue = Arc::new(Mutex::new(VecDeque::from(config.prior_decisions.clone())));
-    // A copy of this same history at an earlier step boundary replaces replaying that part.
+    // A copy of this same history at an earlier step boundary replaces replaying that part. Not
+    // for a table with an MLP seat: its bot is given every recorded decision of its seat
+    // (`ti4_host::bots::Bot::follow`), which a copy would skip.
+    let copies = config.step_snapshots && !config.seats.values().any(SeatController::is_mlp);
     let mut resume = config
         .resume
         .clone()
-        .filter(|copy| config.step_snapshots && copy.is_prefix_of(&prior_records));
+        .filter(|copy| copies && copy.is_prefix_of(&prior_records));
     let boundary_state = if config.replay_boundary_state.is_some() {
         config.replay_boundary_state.clone()
     } else if prior_count > 0 {
@@ -1022,8 +1059,7 @@ pub fn spawn_session_worker(
         // copy it replays only what the copy does not cover; without one it also copies the game
         // at a step boundary near the end of the prefix. Either way the worker forks the copy
         // instead of replaying the whole prefix a second time.
-        let generation =
-            (config.step_snapshots && resume.is_none()).then_some(config.history_generation);
+        let generation = (copies && resume.is_none()).then_some(config.history_generation);
         ti4_host::batch::replay_boundary(
             &config,
             &config.prior_decisions,
@@ -1144,6 +1180,16 @@ pub fn spawn_session_worker(
 
         // Configure table deciders
         for (seat, controller) in config.seats {
+            // A bot of `ti4_host::bots`, shared with the replay below.
+            let bot = match &controller {
+                SeatController::Bot(kind) => Some(Arc::new(Mutex::new(ti4_host::bots::Bot::new(
+                    kind,
+                    &config.state,
+                    config.galaxy.as_ref(),
+                    &seat,
+                )))),
+                _ => None,
+            };
             let inner_human = matches!(controller, SeatController::Human);
             let never_set = worker_shared
                 .lock()
@@ -1169,22 +1215,14 @@ pub fn spawn_session_worker(
                 SeatController::BotFirstOption => Box::new(FirstOption),
                 SeatController::BotAlwaysDecline => Box::new(AlwaysDecline),
                 SeatController::BotScripted(script) => Box::new(Scripted::new(script)),
-                SeatController::BotRandom => {
-                    Box::new(crate::session::random_bot::RandomBotDecider::new(
-                        place_of(&seat),
-                        config.seed.unwrap_or_default(),
-                        decision_counter.clone(),
-                        worker_shared.clone(),
-                    ))
-                }
-                SeatController::BotSmart => Box::new(
+                SeatController::Bot(_) => Box::new(
                     crate::session::random_bot::RandomBotDecider::new(
                         place_of(&seat),
                         config.seed.unwrap_or_default(),
                         decision_counter.clone(),
                         worker_shared.clone(),
                     )
-                    .smart(),
+                    .playing(bot.clone().expect("a bot seat has a bot")),
                 ),
             };
 
@@ -1230,6 +1268,11 @@ pub fn spawn_session_worker(
                 Box::new(ReplayingDecider {
                     prior_queue: prior_queue.clone(),
                     inner,
+                    follow: bot.map(|bot| Follow {
+                        bot,
+                        game_seed: config.seed.unwrap_or_default(),
+                        place: place_of(&seat),
+                    }),
                     shared: worker_shared.clone(),
                     has_boundary_state: boundary_state.is_some(),
                     force: rng_force.clone(),

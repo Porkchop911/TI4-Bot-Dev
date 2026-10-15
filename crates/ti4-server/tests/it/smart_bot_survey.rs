@@ -141,8 +141,8 @@ fn survey_smart_bot_games() {
         .ok()
         .and_then(|r| r.parse().ok())
         .unwrap_or(12);
-    let smart = SeatController::BotSmart;
-    let random = SeatController::BotRandom;
+    let smart = SeatController::SMART;
+    let random = SeatController::RANDOM;
     let mut tables: Vec<(String, u64, Vec<SeatController>)> = Vec::new();
     let seeds: Option<Vec<u64>> = std::env::var("SURVEY_SEEDS").ok().map(|list| {
         list.split(',')
@@ -209,7 +209,7 @@ fn survey_smart_bot_games() {
         eprintln!("RESULT {id} round {} best {best}", state.round);
         for (seat, controller) in state.players.iter().zip(&seats) {
             let won = state.finished && seat.victory_points == best;
-            if *controller == SeatController::BotSmart {
+            if *controller == SeatController::SMART {
                 smart_vp += seat.victory_points;
                 smart_seats += 1;
                 smart_wins += usize::from(won && id.starts_with("mixed"));
@@ -279,7 +279,7 @@ fn opening(seats: usize, seed: u64, roster: bool, rounds: u32) -> Vec<RoundRow> 
         .with_galaxy(galaxy.clone(), tiles)
         .with_random_bot_delay_ms(0);
     for id in &ids {
-        config = config.with_seat(id.clone(), SeatController::BotSmart);
+        config = config.with_seat(id.clone(), SeatController::SMART);
     }
     let session = GameSession::start(config);
     let start = Instant::now();
@@ -631,7 +631,7 @@ fn midgame(seats: usize, seed: u64, rounds: u32) -> (Vec<MidRow>, bool, u32) {
         .with_galaxy(galaxy, tiles)
         .with_random_bot_delay_ms(0);
     for id in &ids {
-        config = config.with_seat(id.clone(), SeatController::BotSmart);
+        config = config.with_seat(id.clone(), SeatController::SMART);
     }
     let session = GameSession::start(config);
     let mut rows = Vec::new();

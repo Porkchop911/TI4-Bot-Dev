@@ -55,8 +55,9 @@ size the map template fixes at creation, so the player-count limits are the lobb
 
 ## How it works
 
-- `SeatController::BotRandom` is stored in the lobby and in the saved game, so a restart brings
-  the bots back. The decider runs inside the game worker (`session/random_bot.rs`), so its
+- `SeatController::Bot(BotKind::Random)` (written `{"Bot": "random"}`; `"BotRandom"` of an older
+  record reads as it) is stored in the lobby and in the saved game, so a restart brings the bots
+  back. The rule bot and the MLP models are kinds of the same controller (`ti4_host::bots`). The decider runs inside the game worker (`session/random_bot.rs`), so its
   decisions are ordinary recorded decisions: history, replay, recovery, undo and redo, turn redo,
   splice and batches see nothing special. On a replay or recovery the recorded answers are used
   and only new decisions are random.

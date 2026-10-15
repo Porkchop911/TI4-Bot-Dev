@@ -47,7 +47,7 @@ pub(crate) fn config(game_id: &str, seed: u64) -> (SessionConfig, PlayerId) {
         let controller = if index == 0 {
             SeatController::Human
         } else {
-            SeatController::BotRandom
+            SeatController::RANDOM
         };
         config = config.with_seat(seat.clone(), controller);
     }

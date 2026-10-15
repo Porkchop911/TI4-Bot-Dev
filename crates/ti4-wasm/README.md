@@ -39,6 +39,9 @@ The size of `ti4_wasm.wasm`; brotli at quality 11.
   (brotli not measured). The table and the numbers above are from before that.
 - With the draft (the planning checks of `ti4_host::planning`, the request and draft buffers) the file is
   4.65 MB raw and 1.17 MB with gzip (2026-10-10; brotli not measured).
+- With the MLP bot (`ti4-infer`, the decision pipeline of `ti4-policy` and `ti4_host::bots`,
+  2026-10-15) the `wasm-release` file is 7.55 MB raw, 1.91 MB with gzip and 1.31 MB with brotli;
+  without it, at the commit before, 6.89 MB, 1.73 MB and 1.20 MB.
 - Speed: 2000 steps take about 7–12 s with `wasm-release` and about 6 s with `--release`, in
   Node. That is 3–6 ms for a step.
 
@@ -155,7 +158,7 @@ a space or a ground combat). The setup of a table and the scenarios are exports 
 | Export | |
 |---|---|
 | `ti4_run_seeded(seed, players, max_steps) -> status` | Random deciders on all seats; the result is the state. |
-| `ti4_setup_options(players) -> status` | What a host can choose for a table, as JSON in the response buffer: the options of the server's `GET /api/setup-options` and, as `maps`, the maps that build for `players` seats (0: every map). |
+| `ti4_setup_options(request_len) -> status` | What a host can choose for a table, as JSON in the response buffer: the options of the server's `GET /api/setup-options` and, as `maps`, the maps that build for `players` seats (0: every map). The request (`OptionsRequest`) is `{"players", "models": [{"name", "label"}]}`: each model is the bot kind `mlp:<name>`, labelled, after the rule bot and the random seat. A model need not be loaded to be listed. |
 | `ti4_setup_preview(request_len) -> status` | The board of the table in the request buffer, with a place for each seat and no faction, and `map`: what the table says of its map. |
 | `ti4_setup_draw(request_len) -> status` | What the start draws for the table in the request buffer: `players` (the ids by seat), `order` and `factions`. |
 | `ti4_scenarios() -> status` | The scenarios, as a JSON list in the response buffer. |
@@ -193,10 +196,21 @@ exports of their own.
   counts, also of the other seats), the page answers the seats of the mask. The decision is
   asked again, of the seat's new decider. An undo does not go back before a switch. The save
   keeps the switches; a game that is played again is given them before it starts.
-- **Rule seats.** `local.rule_seats` names the seats that the rule bot plays where the page
-  does not; the others decide at random from one seeded stream. A table names the kind of each
-  seat. The bot decides as on the server: from the seed, the seat and the number of the
-  decision (`ti4_rule_bot::choose`), so a checkpoint keeps nothing for it.
+- **Bot seats.** `local.bots` names the kind of the bot of each seat where the page does not
+  play it: `smart` (the rule bot), `mlp:<name>` (a model), or `null`/`random`; a seat with none
+  decides at random from one seeded stream. A save before `bots` has the mask `rule_seats`,
+  read as `smart` on those seats. A table names the kind of each seat. A bot decides as on the
+  server, with `ti4_host::bots::choose`: from the seed, the seat and the number of the decision.
+  The rule bot keeps nothing between two decisions; an MLP seat keeps its decision pipeline (the
+  fleet plan of the activation it moves, its power maps, the table of its activation). A
+  checkpoint keeps that carry of every seat and an undo restores it; a copy of the game for a
+  draft plays on with copies of the bots; a saved game that is played again gives each saved
+  decision of an MLP seat to its bot (`Bot::follow`), so the game goes on as the game that was
+  saved (`crates/ti4-server/tests/it/both_hosts.rs` cuts a saved game before the planned moves
+  of an MLP seat).
+- **MLP models.** `ti4_model_load` loads a `.ti4m` into the registry of the engine
+  (`ti4_host::bots::register`), by its name. `ti4_host_start` refuses a game with a seat of the
+  kind `mlp:<name>` whose model is not loaded, with the name.
 - The view is of the seat that was asked last while the page still plays it, else of the first
   seat of the mask. A draft is of that seat.
 
@@ -210,15 +224,16 @@ exports of their own.
   and `seed`, and optional `map` (`{"kind":"template","alias"}` or `{"kind":"random"}`, the
   default), `strategy_cards` (`te` by default, `pok`, `base_game_codex1`), `speaker_order`
   (`random` or `seat`) and `start_from` (the id of a scenario). `seats` are the players in the
-  order of their seats: `kind` (`human`, `smart` for the rule bot, `random`), `faction` (or
+  order of their seats: `kind` (`human`, `smart` for the rule bot, `random`, `mlp:<name>` for a
+  model), `faction` (or
   none, for one drawn from the seed) and `name`. The player of seat i has the id of the i-th
   letter (`a`, `b`, …). The game is started as the server starts the table of a lobby
   (`ti4_host::setup::{draw, create}`), and a seat that the page does not play decides as on the
-  server, the random seats too, by its place, not its id (`ti4_rule_bot::choose`): a table of a
+  server, the random seats too, by its place, not its id (`ti4_host::bots::choose`): a table of a
   seed is the same game on both hosts (`crates/ti4-server/tests/it/both_hosts.rs`). With a name for every
   player, each update says who sits where (`seats`).
 - `local`: a game of a fixed setup, `{ "seed", "players", "humans", "scenario"?,
-  "rule_seats"? }`: web2's `?local=` and `?scenario=`. The game is on the recommended map
+  "bots"? }`: web2's `?local=` and `?scenario=`. The game is on the recommended map
   template for its count, with the factions of the seats in order; a scenario has its own seed,
   count and map (`ti4_host::view::scenario::start`).
 
@@ -709,7 +724,7 @@ content does not have.
   `ti4-host`. `ti4-engine`, `ti4-host`, `ti4-server`, `ti4-bot-agent` and `ti4-wasm` pass their
   tests. `ti4-advisor` imports the moved paths from `ti4-host` (since 2026-10-14) and was not
   built (it needs libtorch).
-- The UI queries are the `tactical` field of the update and the draft. No bots other than random. Undo and resume are replays from the seed; a stored
+- The UI queries are the `tactical` field of the update and the draft. Undo and resume are replays from the seed; a stored
   position that can be resumed would need the engine to stop at step boundaries only.
 
 ## The hosted game (`web/` offline play, `web2/` local play)
@@ -737,6 +752,7 @@ bytes: read both again after every call (the buffer can move).
 | `ti4_host_query(len)` | No game needed: `{"query":"describe"}`, `{"query":"map_preview","choice":{"kind":"random"} or {"kind":"template","alias"},"player_count","variant"?}`, `{"query":"catalog"}` (the printed cards, the JSON of `GET /api/catalog` of the server; about 410 KiB, in the output of `host_api`), `{"query":"space_odds",...SpaceOddsRequest}` (`BattleResponse`: 2000 rollouts of `ti4_calc` from a fixed seed, so the same sides give the same numbers; `in_progress: true` starts at a combat round, with no space cannon or barrage before it), `{"query":"ground_odds",...GroundOddsRequest}` (`GroundOddsResponse` of `ti4_calc::odds::ground_odds`). Reads and changes nothing of a game: ask it with no game, or while the game is parked at a question (the Worker asks the instance of the running game). Both apps ask the odds with `spaceOdds`/`groundOdds` of `web-shared/src/engine/odds.ts`. |
 | `ti4_host_start(len)` | **`WebAssembly.promising`.** Plays a game: `{"setup" \| "table" \| "local": ..., "resume": Save?, "modes"?, "stepping"?, "staged"?}` (with none of the three, the game of the save). Returns when the game ends or is left; the output is an `end` envelope. |
 | `ti4_host_command(len)` | A command while the game is parked (or after it ended). The output is a `command` envelope. |
+| `ti4_model_load(len)` | Load an MLP model: the input holds the bytes of a `.ti4m` file. Its SHA-256 trailer is checked, it runs on the fastest deterministic backend (`simd128` in the page), and it is kept by its name in place of a model of the same name (the file is not kept twice: the input buffer is emptied). The output is `{"name","label","sha256","backend"}`. A game whose seat is of the kind `mlp:<name>` starts only when the model of that name is loaded. |
 | `ti4_infer_check(len)` | A test of the MLP forward of the build: a request of `ti4_infer::synthetic::check` (`{"seed","width","capacity","blocks","cases":[{"seed","options","columns","faction","head"}]}`) gives `{"backend","digest","logits"}`, each logit the `u32` of its bits. `web2/src/session/inferCheck.test.ts` compares them with `fixtures/infer/synthetic_logits.json`, which the native build writes. |
 
 The import is `host.ask() -> i32` (`WebAssembly.Suspending`).
@@ -750,10 +766,10 @@ the run (`leave`) and wait for the `ti4_host_start` promise before starting anot
 `web/` offers 3 to 6), `human_seat?` (0-based; left out: drawn from the seed), `human_faction?`
 (id of `describe().faction_groups`; left out: drawn), `card_set?` (`te` default, `pok`,
 `base_game_codex1`), `map?` (template alias, `"random"`, left out: the recommended template),
-`speaker?` (`seat`, `random`), `bots?` (`smart` default, also `rule`; `random`), `game_id?`
+`speaker?` (`seat`, `random`), `bots?` (`smart` default, also `rule`; `random`; `mlp:<name>`), `game_id?`
 (default `"local"`), `preset?` and `scenario?` (test tables). It becomes a `TableSetup` (seats in
 the order of the join) and the game is `ti4_host::setup::{draw, create}`, as on the server.
-`describe()` is `setup_options` with the maps, presets and engine identity added. Seats are the
+`describe()` is `setup_options` (with the models that the engine loaded) with the maps, presets and engine identity added. Seats are the
 ids `a` to `h`; the person is `ViewerRole::Player(<their seat>)`. The result of `resolved()` is
 stored in the save, so a save is self-contained.
 

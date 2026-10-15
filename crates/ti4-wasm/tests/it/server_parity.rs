@@ -90,7 +90,7 @@ fn server(
         let controller = if 1 << index == built.humans {
             SeatController::BotScripted(answers.clone())
         } else {
-            SeatController::BotSmart
+            SeatController::SMART
         };
         config = config.with_seat(id.clone(), controller);
     }

@@ -30,17 +30,24 @@ fn local_game_id() -> String {
     "local".to_owned()
 }
 
-/// Who plays the seats of the others.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+/// Who plays the seats of the others: `smart` (the rule bot, also `rule`, its name in the form
+/// of `web/`), `random`, or `mlp:<name>` (`ti4_host::bots`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub enum Bots {
-    /// The rule bot ([`setup::bot_kind::RULE`]). `"rule"` is its name in the form of `web/`.
-    #[default]
-    #[serde(rename = "smart", alias = "rule")]
-    Rule,
-    /// [`setup::bot_kind::RANDOM`].
-    #[serde(rename = "random")]
-    Random,
+pub struct Bots(
+    #[cfg_attr(feature = "ts", ts(type = "\"smart\" | \"random\" | `mlp:${string}`"))] pub String,
+);
+
+impl Bots {
+    /// The kind of the seats, as a table names it.
+    fn kind(&self) -> &str {
+        if self.0 == "rule" {
+            bot_kind::RULE
+        } else {
+            &self.0
+        }
+    }
 }
 
 /// The table of a game. Everything the game's opening state is made from; a save carries it.
@@ -206,30 +213,42 @@ impl Start {
     }
 }
 
-/// Who plays a seat of a table ([`TableRequest`]), by the names of a lobby.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+/// Who plays a seat of a table ([`TableRequest`]), by the names of a lobby: `human` (the page),
+/// or a kind of `ti4_host::bots`: `smart`, `random` or `mlp:<name>`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub enum SeatKind {
-    /// The page answers the seat.
-    #[default]
-    #[serde(rename = "human")]
-    Human,
-    /// The rule bot (`bot_kind::RULE`).
-    #[serde(rename = "smart")]
-    Rule,
-    /// A seat that decides at random (`bot_kind::RANDOM`).
-    #[serde(rename = "random")]
-    Random,
+pub struct SeatKind(
+    #[cfg_attr(
+        feature = "ts",
+        ts(type = "\"human\" | \"smart\" | \"random\" | `mlp:${string}`")
+    )]
+    pub String,
+);
+
+impl Default for SeatKind {
+    fn default() -> Self {
+        Self(setup::HUMAN_KIND.to_owned())
+    }
 }
 
 impl SeatKind {
     /// The kind as a fact of the update names it (`ti4_host::setup::SeatFact::kind`).
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::Human => setup::HUMAN_KIND,
-            Self::Rule => bot_kind::RULE,
-            Self::Random => bot_kind::RANDOM,
-        }
+    fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Whether the page answers the seat.
+    fn is_human(&self) -> bool {
+        self.0 == setup::HUMAN_KIND
+    }
+
+    /// Whether this is a kind of seat: `human`, `smart`, `random` or `mlp:<name>`.
+    fn is_known(&self) -> bool {
+        self.is_human()
+            || self.0 == bot_kind::RULE
+            || self.0 == bot_kind::RANDOM
+            || ti4_host::bots::model_name(&self.0).is_some()
     }
 }
 
@@ -238,7 +257,8 @@ impl SeatKind {
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SeatRequest {
-    /// `human` is played by the page, `smart` by the rule bot, `random` at random.
+    /// `human` is played by the page, `smart` by the rule bot, `random` at random, `mlp:<name>`
+    /// by that model.
     #[serde(default)]
     pub kind: SeatKind,
     /// The faction that was chosen for the player. Left out: drawn from the seed.
@@ -281,8 +301,9 @@ impl TableRequest {
             ));
         }
         table.seats.resize_with(count, SeatRequest::default);
-        // The values of a kind are the names of the setup options.
-        debug_assert_eq!((bot_kind::RULE, bot_kind::RANDOM), ("smart", "random"));
+        if let Some(seat) = table.seats.iter().find(|seat| !seat.kind.is_known()) {
+            return Err(format!("no kind of seat '{}'", seat.kind.as_str()));
+        }
         Ok(table)
     }
 
@@ -323,14 +344,23 @@ impl TableRequest {
             .collect()
     }
 
-    /// The players of `kind` as a mask (bit 0 is the player who came first).
+    /// The players that the page plays as a mask (bit 0 is the player who came first).
     #[must_use]
-    pub fn mask(&self, kind: SeatKind) -> u32 {
+    pub fn humans(&self) -> u32 {
         self.seats
             .iter()
             .enumerate()
-            .filter(|(_, seat)| seat.kind == kind)
+            .filter(|(_, seat)| seat.kind.is_human())
             .fold(0, |mask, (place, _)| mask | (1 << place))
+    }
+
+    /// The kind of the bot of each seat; none for a seat of the page.
+    #[must_use]
+    pub fn bots(&self) -> Vec<Option<String>> {
+        self.seats
+            .iter()
+            .map(|seat| (!seat.kind.is_human()).then(|| seat.kind.0.clone()))
+            .collect()
     }
 
     /// The game that the table starts, as the server starts it for the table of a lobby: the
@@ -358,8 +388,8 @@ impl TableRequest {
             galaxy: Some(galaxy),
             seed,
             players: table.setup.player_count,
-            humans: table.mask(SeatKind::Human),
-            rule_seats: table.mask(SeatKind::Rule),
+            humans: table.humans(),
+            bots: table.bots(),
             table: true,
             seats: table.seats(),
             game_id: local_game_id(),
@@ -389,9 +419,19 @@ pub struct Local {
     pub humans: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scenario: Option<String>,
-    /// The seats that the rule bot plays where the page does not. It decides from the seed, the
-    /// seat and the number of the decision, as on the server; the other seats decide at random.
+    /// The kind of the bot of each seat where the page does not play it (`smart`, `mlp:<name>`):
+    /// it decides from the seed, the seat and the number of the decision, as on the server. A
+    /// seat with none (or `random`, or past the end) decides at random.
     #[serde(default)]
+    #[cfg_attr(
+        feature = "ts",
+        ts(type = "(\"smart\" | \"random\" | `mlp:${string}` | null)[]")
+    )]
+    pub bots: Vec<Option<String>>,
+    /// The mask of the rule bot's seats (bit 0 is seat `a`) of a save before `bots`: those seats
+    /// are `smart`.
+    #[serde(default, skip_serializing)]
+    #[cfg_attr(feature = "ts", ts(skip))]
     pub rule_seats: u32,
 }
 
@@ -429,13 +469,25 @@ impl Local {
             ti4_host::view::scenario::opening(scenario, &game.state, galaxy)
         });
         let all = (1_u32 << players) - 1;
+        let bots = (0..players)
+            .map(|seat| {
+                self.bots
+                    .get(seat)
+                    .cloned()
+                    .flatten()
+                    .or_else(|| {
+                        (self.rule_seats >> seat & 1 == 1).then(|| bot_kind::RULE.to_owned())
+                    })
+                    .filter(|kind| kind != bot_kind::RANDOM)
+            })
+            .collect();
         Ok(Built {
             galaxy: game.galaxy().cloned(),
             game,
             seed,
             players,
             humans: self.humans & all,
-            rule_seats: self.rule_seats & all,
+            bots,
             table: false,
             seats: None,
             game_id: local_game_id(),
@@ -466,8 +518,10 @@ pub struct Built {
     pub players: usize,
     /// The seats that the page plays (bit 0 is seat `a`).
     pub humans: u32,
-    /// The seats the rule bot plays where the page does not.
-    pub rule_seats: u32,
+    /// The kind of the bot of each seat where the page does not play it (`ti4_host::bots`); none
+    /// for a seat that decides at random (in a game of a table, as on the server; else from the
+    /// stream of the random seats).
+    pub bots: Vec<Option<String>>,
     /// The game is of a table: a random seat decides from the seed, as on the server.
     pub table: bool,
     /// Who sits in each seat, when the game is of a table whose players have names.
@@ -564,11 +618,14 @@ impl Setup {
         let opening = table
             .scenario()?
             .and_then(|scenario| ti4_host::view::scenario::opening(scenario, &state, &galaxy));
-        let rule_seats = if setup.bots == Some(Bots::Random) {
-            0
-        } else {
-            ((1_u32 << players) - 1) & !(1 << human)
-        };
+        let kind = setup
+            .bots
+            .as_ref()
+            .map_or(bot_kind::RULE, Bots::kind)
+            .to_owned();
+        let bots = (0..players)
+            .map(|seat| (seat != human && kind != bot_kind::RANDOM).then(|| kind.clone()))
+            .collect();
         let game = Game::with_seeded_random(state, content, table.game_seed())
             .with_sources(POK)
             .with_galaxy(galaxy.clone());
@@ -578,7 +635,7 @@ impl Setup {
             seed: setup.seed,
             players,
             humans: 1 << human,
-            rule_seats,
+            bots,
             table: false,
             seats: None,
             game_id: setup.game_id.clone(),
@@ -594,10 +651,16 @@ impl Setup {
 }
 
 /// What the setup form may offer: the options of `ti4_host::setup`, with the maps of every
-/// count, the presets and what identifies the engine.
+/// count, the presets and what identifies the engine. The MLP kinds are those of the models
+/// that the engine has loaded.
 #[must_use]
 pub fn describe() -> serde_json::Value {
-    let mut options = serde_json::to_value(setup::setup_options("The page", 0)).unwrap_or_default();
+    let models: Vec<ti4_host::bots::ModelEntry> = ti4_host::bots::models()
+        .iter()
+        .map(ti4_host::bots::MlpModel::entry)
+        .collect();
+    let mut options =
+        serde_json::to_value(setup::setup_options("The page", 0, &models)).unwrap_or_default();
     let maps: serde_json::Map<String, serde_json::Value> = setup::PLAYER_COUNTS
         .map(|count| {
             (

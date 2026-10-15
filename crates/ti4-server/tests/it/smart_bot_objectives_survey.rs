@@ -12,7 +12,7 @@
 //! objectives and its own secrets. `left` counts objectives still scoreable when the status phase
 //! scoring window opened in a category the seat then did not score: a choice error, never a rule.
 //!
-//! The seats are rule bots exactly as `BotSmart` plays them (random pick drawn first, then
+//! The seats are rule bots exactly as a `smart` seat plays them (random pick drawn first, then
 //! [`ti4_rule_bot::pick`]); the driver is the engine's own `Game::step`.
 //! `SURVEY_OBJ_LAYER=off` switches the objective layer off for a before/after comparison.
 
@@ -28,7 +28,7 @@ use ti4_model::id::{ObjectiveId, PlayerId};
 use ti4_model::state::{GameState, Phase};
 use ti4_server::session::random_bot::{decision_rng, pick_index};
 
-/// A `BotSmart` seat without the session around it.
+/// A `smart` seat without the session around it.
 struct SmartSeat {
     /// The place of the seat in the seat order.
     place: usize,

@@ -89,6 +89,7 @@ pub use transport::MockClient;
 
 /// Configuration for the controller occupying a table seat.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "StoredSeatController")]
 pub enum SeatController {
     /// Remote human seat routed through channels to network/mock clients.
     Human,
@@ -98,23 +99,57 @@ pub enum SeatController {
     BotAlwaysDecline,
     /// Automated bot following a scripted sequence of option IDs.
     BotScripted(Vec<String>),
-    /// In-process bot choosing uniformly among the legal options, reproducibly from
-    /// (game seed, seat, decision index) with a think delay between decisions. See
-    /// [`random_bot`].
+    /// In-process bot of a kind of `ti4_host::bots`: the rule bot, a random seat, or an MLP
+    /// model. It decides reproducibly from (game seed, seat, decision index), with a think delay
+    /// between decisions. See [`random_bot`]. Written as the id of the kind (`{"Bot": "smart"}`);
+    /// reading `mlp:<name>` needs the model loaded (`ti4_host::bots::loaded`).
+    Bot(ti4_host::bots::BotKind),
+}
+
+/// [`SeatController`] as a record of an earlier build may have it: `BotRandom` and `BotSmart`
+/// are the kinds `random` and `smart`.
+#[derive(Deserialize)]
+enum StoredSeatController {
+    Human,
+    BotFirstOption,
+    BotAlwaysDecline,
+    BotScripted(Vec<String>),
     BotRandom,
-    /// In-process bot like [`SeatController::BotRandom`] that answers the board questions it has
-    /// an opinion on with simple heuristics (claim nearby planets, fight battles it expects to
-    /// win, build when short of units, take favourable trades) and the rest at random. See
-    /// [`ti4_rule_bot`].
     BotSmart,
+    Bot(ti4_host::bots::BotKind),
+}
+
+impl From<StoredSeatController> for SeatController {
+    fn from(stored: StoredSeatController) -> Self {
+        match stored {
+            StoredSeatController::Human => Self::Human,
+            StoredSeatController::BotFirstOption => Self::BotFirstOption,
+            StoredSeatController::BotAlwaysDecline => Self::BotAlwaysDecline,
+            StoredSeatController::BotScripted(script) => Self::BotScripted(script),
+            StoredSeatController::BotRandom => Self::Bot(ti4_host::bots::BotKind::Random),
+            StoredSeatController::BotSmart => Self::Bot(ti4_host::bots::BotKind::Smart),
+            StoredSeatController::Bot(kind) => Self::Bot(kind),
+        }
+    }
 }
 
 impl SeatController {
-    /// Whether the seat is answered inside the game worker (a random or rule bot): no
+    /// The rule bot.
+    pub const SMART: Self = Self::Bot(ti4_host::bots::BotKind::Smart);
+    /// The random seat.
+    pub const RANDOM: Self = Self::Bot(ti4_host::bots::BotKind::Random);
+
+    /// Whether the seat is answered inside the game worker (a bot of `ti4_host::bots`): no
     /// credential, no connection, never taken over.
     #[must_use]
     pub const fn is_in_process_bot(&self) -> bool {
-        matches!(self, Self::BotRandom | Self::BotSmart)
+        matches!(self, Self::Bot(_))
+    }
+
+    /// Whether the seat is played by an MLP model.
+    #[must_use]
+    pub const fn is_mlp(&self) -> bool {
+        matches!(self, Self::Bot(ti4_host::bots::BotKind::Mlp(_)))
     }
 }
 
@@ -165,7 +200,7 @@ pub struct SessionConfig {
     /// Whether the worker keeps a step-boundary copy of the game for batch checks (see
     /// `step_snapshot`). Off only in tests that compare against the full-replay path.
     pub step_snapshots: bool,
-    /// Think delay of the `BotRandom` seats in milliseconds; `None` reads
+    /// Think delay of the bot seats in milliseconds; `None` reads
     /// `TI4_RANDOM_BOT_DELAY_MS` (default 600). Tests and soaks set `Some(0)`.
     pub random_bot_delay_ms: Option<u64>,
     /// A copy of the game at an earlier step boundary of this same history: the worker forks it

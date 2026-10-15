@@ -626,12 +626,13 @@ pub async fn add_bots_to_lobby(
     Json(payload): Json<AddBotsRequest>,
 ) -> Result<Json<PlayerLobbyView>, (StatusCode, String)> {
     let token = require_player_session(&headers)?;
-    if !crate::session::registry::IN_PROCESS_BOT_KINDS.contains(&payload.kind.as_str()) {
+    if !crate::session::registry::is_in_process_bot_kind(&payload.kind) {
         return Err((
             StatusCode::BAD_REQUEST,
             format!(
-                "Unknown bot kind '{}': only 'random' or 'smart' can be added here (MLP bots use /lobby/add-bot)",
-                payload.kind
+                "Unknown bot kind '{}': the kinds that can be added here are {}",
+                payload.kind,
+                crate::session::registry::in_process_bot_kinds().join(", ")
             ),
         ));
     }
@@ -776,6 +777,7 @@ fn lobby_error(error: LobbyError) -> (StatusCode, String) {
         | LobbyError::InvalidSetting(_)
         | LobbyError::InvalidMap(_)
         | LobbyError::InvalidNickname => StatusCode::BAD_REQUEST,
+        LobbyError::ModelMissing(_) => StatusCode::CONFLICT,
         LobbyError::Map(_) | LobbyError::Storage(_) => StatusCode::INTERNAL_SERVER_ERROR,
     };
     (status, message)
@@ -1132,7 +1134,7 @@ mod template_request_tests {
             let expected = if *seat == created.player.id {
                 SeatController::Human
             } else {
-                SeatController::BotRandom
+                SeatController::RANDOM
             };
             assert_eq!(*controller, expected, "{seat}");
         }

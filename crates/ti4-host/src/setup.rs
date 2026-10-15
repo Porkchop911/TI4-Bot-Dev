@@ -284,8 +284,12 @@ pub struct FactionOption {
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct BotKindOption {
-    pub id: &'static str,
-    pub name: &'static str,
+    /// The kind as a table names it: `smart`, `random`, or `mlp:<name>` for a model
+    /// (`ti4_host::bots`).
+    #[cfg_attr(feature = "ts", ts(type = "\"smart\" | \"random\" | `mlp:${string}`"))]
+    pub id: String,
+    /// The name of the kind; the label of a model.
+    pub name: String,
     pub description: String,
 }
 
@@ -312,8 +316,13 @@ pub const MAX_BOT_DELAY_MS: u64 = 30_000;
 
 /// See [`SetupOptions`]. `host` is who plays a seat that no person has, as the texts of the
 /// kinds name it ("The server", "The page"); `default_bot_delay_ms` is the wait of that host.
+/// Each of `models` is the kind `mlp:<name>`, after the rule bot and the random seat.
 #[must_use]
-pub fn setup_options(host: &str, default_bot_delay_ms: u64) -> SetupOptions {
+pub fn setup_options(
+    host: &str,
+    default_bot_delay_ms: u64,
+    models: &[crate::bots::ModelEntry],
+) -> SetupOptions {
     let content = ContentStore::embedded();
     let strategy_card_sets = card_set::OFFERED
         .iter()
@@ -365,22 +374,32 @@ pub fn setup_options(host: &str, default_bot_delay_ms: u64) -> SetupOptions {
                 factions: pok.iter().map(option).collect(),
             },
         ],
-        bot_kinds: vec![
+        bot_kinds: [
             BotKindOption {
-                id: bot_kind::RULE,
-                name: "Rule bot",
+                id: bot_kind::RULE.to_owned(),
+                name: "Rule bot".to_owned(),
                 description: format!(
                     "{host} plays this seat by rules: it builds, moves and scores."
                 ),
             },
             BotKindOption {
-                id: bot_kind::RANDOM,
-                name: "Random",
+                id: bot_kind::RANDOM.to_owned(),
+                name: "Random".to_owned(),
                 description: format!(
                     "{host} plays this seat at random, among what the game allows."
                 ),
             },
-        ],
+        ]
+        .into_iter()
+        .chain(models.iter().map(|model| BotKindOption {
+            id: format!("{}{}", crate::bots::MLP_PREFIX, model.name),
+            name: model.label.clone(),
+            description: format!(
+                "{host} plays this seat with the trained model {}.",
+                model.label
+            ),
+        }))
+        .collect(),
         max_bot_delay_ms: MAX_BOT_DELAY_MS,
         default_bot_delay_ms,
         scenarios: scenario::SCENARIOS.to_vec(),
@@ -773,7 +792,25 @@ mod tests {
 
     #[test]
     fn the_setup_options_name_every_set_faction_and_kind() {
-        let options = setup_options("The page", 0);
+        let model = crate::bots::ModelEntry {
+            name: "stage2".to_owned(),
+            label: "Stage 2".to_owned(),
+        };
+        let options = setup_options("The page", 0, std::slice::from_ref(&model));
+        let kinds: Vec<(&str, &str)> = options
+            .bot_kinds
+            .iter()
+            .map(|kind| (kind.id.as_str(), kind.name.as_str()))
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                ("smart", "Rule bot"),
+                ("random", "Random"),
+                ("mlp:stage2", "Stage 2")
+            ]
+        );
+        assert_eq!(setup_options("The page", 0, &[]).bot_kinds.len(), 2);
         assert_eq!(options.strategy_card_sets.len(), 3);
         assert!(
             options

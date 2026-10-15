@@ -35,8 +35,10 @@ fn in_the_page(id: &str, humans: &[usize], players: usize) -> Opened {
         -1
     });
     let mask: u32 = humans.iter().map(|place| 1 << place).sum();
-    let rule = ((1_u32 << players) - 1) & !mask;
-    let request = json!({ "local": { "humans": mask, "rule_seats": rule, "scenario": id } });
+    let bots: Vec<Option<&str>> = (0..players)
+        .map(|place| (!humans.contains(&place)).then_some("smart"))
+        .collect();
+    let request = json!({ "local": { "humans": mask, "bots": bots, "scenario": id } });
     let len = host_api::put_input(&request.to_string());
     let status = ti4_wasm::ti4_host_start(u32::try_from(len).unwrap());
     assert!(status >= 0, "{id}: {}", host_api::out_text());

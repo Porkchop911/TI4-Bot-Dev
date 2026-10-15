@@ -1,4 +1,4 @@
-//! The random seats of a game (`SeatController::BotRandom`): they decide from the seed of the
+//! The random seats of a game (`SeatController::RANDOM`): they decide from the seed of the
 //! game, and a game that is recovered from its decision log goes on as the game that was never
 //! stopped.
 

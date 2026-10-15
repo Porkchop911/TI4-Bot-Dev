@@ -1,4 +1,4 @@
-//! Random bot seats: whole games played by `SeatController::BotRandom`, determinism, recovery,
+//! Random bot seats: whole games played by `SeatController::RANDOM`, determinism, recovery,
 //! undo/redo and the soak. Delay 0 everywhere (`with_random_bot_delay_ms`).
 
 use std::sync::Arc;
@@ -44,9 +44,9 @@ pub fn config_with(
     config
 }
 
-/// An all-bot config (every seat `BotRandom`), delay 0.
+/// An all-bot config (every seat a random bot), delay 0.
 pub fn bot_config(id: &str, n: usize, seed: u64, card_set: &str) -> SessionConfig {
-    config_with(id, seed, card_set, &vec![SeatController::BotRandom; n])
+    config_with(id, seed, card_set, &vec![SeatController::RANDOM; n])
 }
 
 #[derive(Debug)]
@@ -289,8 +289,8 @@ fn host_table_with_delay(id: &str, seed: u64, delay_ms: u64) -> HostTable {
         "te",
         &[
             SeatController::Human,
-            SeatController::BotRandom,
-            SeatController::BotRandom,
+            SeatController::RANDOM,
+            SeatController::RANDOM,
         ],
     )
     .with_random_bot_delay_ms(delay_ms);
