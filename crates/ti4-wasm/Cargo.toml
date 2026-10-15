@@ -17,6 +17,8 @@ ti4-host.workspace = true
 ti4-infer.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+# The SHA-256 of a loaded model file (`ti4_model_load`); `ti4-infer` links it already.
+sha2.workspace = true
 ts-rs = { workspace = true, optional = true }
 
 # The TypeScript types of the wire (`wire_ts`): off in the wasm build and in the server.
@@ -31,7 +33,6 @@ unused_imports = "warn"
 unused_variables = "warn"
 
 [dev-dependencies]
-sha2.workspace = true
 hex.workspace = true
 serde_json.workspace = true
 # The parity test plays the same game through the server's own session.

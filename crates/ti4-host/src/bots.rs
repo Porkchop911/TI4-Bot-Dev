@@ -131,7 +131,8 @@ impl MlpModel {
         self.0.model.label()
     }
 
-    /// The SHA-256 of the file.
+    /// The trailer of the file: the SHA-256 of the bytes before it ([`ti4_infer::Model::digest`]),
+    /// not the SHA-256 of the whole file that a server's index and address name.
     #[must_use]
     pub fn digest(&self) -> &str {
         self.0.model.digest()

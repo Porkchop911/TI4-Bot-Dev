@@ -1,0 +1,15 @@
+{
+  "models": [
+    {
+      "name": "reviewer-473312",
+      "label": "Reviewer 473312",
+      "temperature": 0.25,
+      "source": {
+        "bundle": "examples/reviewer/checkpoint-473312",
+        "manifest_sha256": "a4a95e3365ad833046ad81344666729ffcb66871327f5257554420d1f7a3069b"
+      },
+      "sha256": "647b1ca2ae892e576d98b7df0868ca418c945b8b8e9c87ceead17a8bc11b336a",
+      "offered": true
+    }
+  ]
+}

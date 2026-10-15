@@ -1,6 +1,6 @@
 # MLP bots without libtorch: inference in ti4-host, on the server and in the page (2026-10-15)
 
-Status: planned. Step 1 done (2026-10-15). Step 2 done (2026-10-15). Step 3 done (2026-10-15). Step 4 done (2026-10-15). Step 5 done (2026-10-15). Step 6 done (2026-10-15). Step 7 done (2026-10-15).
+Status: planned. Step 1 done (2026-10-15). Step 2 done (2026-10-15). Step 3 done (2026-10-15). Step 4 done (2026-10-15). Step 5 done (2026-10-15). Step 6 done (2026-10-15). Step 7 done (2026-10-15). Step 8 done (2026-10-15).
 
 ## Context
 
@@ -101,6 +101,11 @@ trailer: SHA-256 of all bytes before it
   `in × 8` f32 (8 KiB at width 256) and fits L1. `width % 8 == 0` is checked at pack time and at load.
 - Loading copies the file once into a 64-byte-aligned buffer. Each section is a slice into it, and
   nothing is converted.
+- **The sha of a model file** is the SHA-256 of the whole file, what `sha256sum` prints: the
+  `sha256` of `models/index.json` and of a server's index, the address
+  `/api/models/<sha256>.ti4m`, the `sha256` that `ti4_model_load` answers, and the `sha256` that
+  `ti4-pack` prints. The trailer (`Model::digest`) is the integrity check of the file at load, and
+  is named the trailer wherever it is shown.
 
 ### C. The kernels: one source, five backends
 
@@ -392,11 +397,15 @@ evaluation temperature of `plans/MLP_TEMPERATURE_REGIME.md`).
   - `ti4_setup_options(request_len)` reads `OptionsRequest { players, models }` from the request
     buffer.
 - **The server**
-  - It loads every `.ti4m` of `TI4_MODEL_DIR` that `index.json` lists (`ti4_server::models`: an
-    entry has `name`, `sha256` and an optional `file`, default `<name>.ti4m`; the sha and the name
-    of the header must be the index's), before it recovers its games, and prints each name, label,
-    sha and backend. A model that does not load stops the start. With no directory, no MLP kind is
-    offered. `TI4_INFER_FMA=1` loads them on `Backend::fastest()`.
+  - It loads every `.ti4m` of `TI4_MODEL_DIR` that `index.json` lists (`ti4_server::models`; the
+    index is `models/index.json` of section G as the pack script copies it, and the server reads of
+    an entry `name`, `sha256` (of the whole file), `offered` and an optional `file`, default
+    `<name>.ti4m`; the sha of the file and the name of the header must be the index's, a name is
+    listed once, at most three are offered), before it recovers its games, and prints each name,
+    label, sha, size, whether it is offered, and backend. A model that does not load stops the
+    start. Every listed model is loaded, so that a game that seats it recovers; only an offered one
+    is a kind of the setup options and of a lobby (`ti4_server::models::is_offered`). With no
+    directory, no MLP kind is offered. `TI4_INFER_FMA=1` loads them on `Backend::fastest()`.
   - `SeatController::{BotSmart, BotRandom}` are `SeatController::Bot(BotKind)`, written
     `{"Bot": "<id>"}`; a record of an earlier build with `BotSmart` or `BotRandom` reads as
     `smart` or `random`. MLP kinds are in-process kinds (`in_process_bot_kinds()`,
@@ -407,7 +416,9 @@ evaluation temperature of `plans/MLP_TEMPERATURE_REGIME.md`).
 - **The engine of the page**
   - `ti4_model_load(len)` takes the bytes of a `.ti4m` through the input buffer of
     `ti4_host_in(len)`, checks the trailer sha, loads the model on `Simd128` and puts it in the
-    registry by name (`ti4_host::bots`). The input buffer is emptied after it.
+    registry by name (`ti4_host::bots`). The input buffer is emptied after it. It answers
+    `{name, label, sha256, backend}`, `sha256` being the sha of the whole file (section B), so the
+    page can check a download against `/api/models`.
   - `ti4_host_start` refuses a game with a kind whose model is not loaded, with its name.
   - `ti4_setup_options` gets the model list in its request. `ti4_infer_check` stays: the vitest of
     the bits of the wasm forward uses it.
@@ -424,12 +435,18 @@ evaluation temperature of `plans/MLP_TEMPERATURE_REGIME.md`).
 
 ### F. Download and the lobby in web2
 
-- **The server's routes**
-  - `GET /api/models` returns `[{ id, label, sha256, bytes }]`.
-  - `GET /api/models/<sha256>.ti4m` serves the file from `TI4_MODEL_DIR` with
-    `Cache-Control: immutable`, and the `.br` that the pack script writes next to it when it is
-    smaller.
-  - The address is the same origin, so the CSP of `deploy/public/Caddyfile` allows it.
+- **The server's routes** (`ti4_server::http::models`)
+  - `GET /api/models` returns `[{ id, label, sha256, bytes }]` of the offered models (`no-cache`):
+    `id` is the `<name>` of the kind `mlp:<name>`, `sha256` the sha of the whole file (section B),
+    `bytes` its size.
+  - `GET /api/models/<sha256>.ti4m` serves the file of an offered model from `TI4_MODEL_DIR` with
+    `Cache-Control: public, max-age=31536000, immutable` and `Content-Type:
+    application/octet-stream`, and the `.br` that the pack script writes next to it when it is
+    smaller to a client that accepts brotli (`Content-Encoding: br`, `Vary: Accept-Encoding`). Any
+    other name is a 404.
+  - The address is the same origin, so the CSP of `deploy/public/Caddyfile` allows it (`connect-src
+    'self'`); Caddy leaves a response with a `Content-Encoding` alone. On the public server both
+    routes are behind the access gate and in the general per-IP rate limit, like every `/api/` route.
 - **Single player** (`localTable.ts`)
   - It asks `/api/models` once and passes the list to `ti4_setup_options`. With no server, or no
     model, there is no MLP kind, as with any kind the options do not name.
@@ -460,11 +477,22 @@ evaluation temperature of `plans/MLP_TEMPERATURE_REGIME.md`).
 
 ### G. The models of a deploy
 
-- `models/index.json` (committed) names each offered model: name, label, temperature, the source
-  bundle and the sha of its manifest, the sha of the packed file, and `offered`.
-- `scripts/pack-models.sh` runs `ti4-pack` for every entry into `out/models/` (gitignored), writes
-  the `.br`, and checks the shas against the index.
-- `deploy/public/deploy.sh` uploads `out/models/` to `/var/lib/ti4-public/models`. `env.example`
+- `models/index.json` (committed) names each model of a deploy: name, label, temperature, `source`
+  (`bundle`, a directory relative to the repository, and `manifest_sha256`, the sha of its
+  `manifest.json`), `sha256` (the sha of the packed file), and `offered`. It is also the index that
+  the server reads: one format. Its model is `reviewer-473312` ("Reviewer 473312", temperature
+  0.25, `examples/reviewer/checkpoint-473312`), offered.
+- `scripts/pack-models.sh` builds `ti4-pack` with `cargo b-pack` (a release build of `ti4-infer`
+  only, `.cargo/config.toml`), runs it for every entry into `out/models/` (gitignored), checks both
+  shas against the index, writes the `.br` with the `brotli` CLI when it is smaller (without the CLI
+  it says so and writes none), removes the files that the index does not list, and copies the index
+  there. A mismatch stops it before the index is copied. `--update-index` writes the packed shas
+  into `models/index.json` (a new model, a new pack format).
+- `deploy/public/deploy.sh` takes `out/models/` of the checkout it runs from (or
+  `TI4_PUBLIC_MODELS`): the pre-flight (`recovery-check.sh --model-dir`) loads them with the saved
+  games, and they replace `TI4_MODEL_DIR` (`/var/lib/ti4-public/models`) while the service is
+  stopped, the old ones kept as `models.previous` for the automatic rollback. Without
+  `out/models/index.json` the live models stay. `backup.sh` leaves the models out. `env.example`
   gets `TI4_MODEL_DIR` and loses `TI4_BOT_PASSWORD`, `TI4_ADVISOR_URL`, `TI4_BOT_AGENT_BIN` and
   `TI4_MAX_ACTIVE_BOTS`.
 - **Tests do not need `out/`.** They pack the committed bundle `examples/reviewer/checkpoint-473312`
@@ -618,8 +646,11 @@ the add-bot request of `public_playtest.rs` and the "+ mlp" cases of `random_bot
 ### Step 8: the routes, the pack script and the deploy (sections F, G)
 
 - `/api/models`, the file route, `models/index.json`, `scripts/pack-models.sh`, and the changes to
-  `deploy.sh` and `env.example`.
-- A server test fetches the list and a file, checks the sha, and checks the cache header.
+  `deploy.sh`, `recovery-check.sh`, `backup.sh` and `env.example`.
+- A server test (`tests/it/model_files.rs`) packs the models of `models/index.json` in memory from
+  their bundles and checks the shas of the index, then on a public server fetches the list and a
+  file, checks the sha, the cache header and the `.br` variant, and that a model that is not offered
+  is neither listed nor served.
 
 ### Step 9: web2
 

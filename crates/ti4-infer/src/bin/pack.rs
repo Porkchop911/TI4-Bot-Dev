@@ -1,12 +1,14 @@
 //! `ti4-pack <bundle dir> <name> <out.ti4m> [--label <text>] [--temperature <t>]`
 //!
 //! Reads and checks a training bundle, packs it into one `.ti4m` file, reads the file back, and
-//! prints its name, SHA-256 trailer and size. The label defaults to the name and the temperature
+//! prints its name, size, the SHA-256 of the whole file (what `sha256sum` prints, the `sha256` of
+//! `models/index.json` and the address of the file on a server) and its trailer. The label defaults to the name and the temperature
 //! to 0.25. The file is written beside its destination and renamed into place.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use sha2::Digest;
 use ti4_infer::format::{self, DEFAULT_TEMPERATURE};
 use ti4_infer::{Meta, bundle};
 
@@ -50,7 +52,7 @@ fn run() -> Result<String, String> {
     std::fs::rename(&staging, &out)
         .map_err(|error| format!("renaming to {}: {error}", out.display()))?;
     Ok(format!(
-        "{} \"{}\" width {} blocks {} schema {} -> {} ({} bytes, sha256 {})",
+        "{} \"{}\" width {} blocks {} schema {} -> {} ({} bytes, sha256 {:x}, trailer {})",
         model.name(),
         model.label(),
         model.width(),
@@ -58,6 +60,7 @@ fn run() -> Result<String, String> {
         model.source().schema,
         out.display(),
         bytes.len(),
+        sha2::Sha256::digest(&bytes),
         model.digest(),
     ))
 }

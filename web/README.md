@@ -56,14 +56,17 @@ The server plays the trained MLP policies itself, inside the game worker, on `ti
 libtorch, no extra process). Point it at a model directory:
 
 ```bash
-TI4_MODEL_DIR=/path/to/models cargo run -p ti4-server --bin server
+scripts/pack-models.sh
+TI4_MODEL_DIR=out/models cargo run -p ti4-server --bin server
 ```
 
-The directory holds an `index.json` (`{"models": [{"name": "...", "sha256": "...", "file": "..."}]}`)
-and the packed `.ti4m` files it lists. Every model becomes a bot kind `mlp:<name>` of the lobby
-(`bot_kinds`, `POST /api/games/{id}/lobby/bots` with `{"kind": "mlp:<name>"}`). Without
-`TI4_MODEL_DIR` no MLP kind is offered. A packed model is made with `ti4-pack` (`ti4-infer`). The
-lobby of this client offers the rule bot only.
+The directory holds an `index.json` and the packed `.ti4m` files it lists:
+`scripts/pack-models.sh` writes both into `out/models/` from `models/index.json` (an entry has
+`name`, `label`, `temperature`, `source`, `sha256`, the SHA-256 of the whole file, and `offered`).
+Every model is loaded; each offered one (at most three) becomes a bot kind `mlp:<name>` of the
+lobby (`bot_kinds`, `POST /api/games/{id}/lobby/bots` with `{"kind": "mlp:<name>"}`), and its file
+is served to the pages (`GET /api/models`, `GET /api/models/<sha256>.ti4m`). Without
+`TI4_MODEL_DIR` no MLP kind is offered. The lobby of this client offers the rule bot only.
 
 ---
 

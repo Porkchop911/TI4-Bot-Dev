@@ -519,7 +519,8 @@ pub const RANDOM_BOT_KIND: &str = "random";
 /// The in-process bot that plays the board heuristically and the rest at random.
 pub const SMART_BOT_KIND: &str = "smart";
 /// Bot kinds answered inside the game worker, in the order a lobby offers them: `random`,
-/// `smart`, then `mlp:<name>` for every model the process loaded (`ti4_host::bots::models`).
+/// `smart`, then `mlp:<name>` for every model the process loaded (`ti4_host::bots::models`) and
+/// offers (`crate::models::is_offered`).
 #[must_use]
 pub fn in_process_bot_kinds() -> Vec<String> {
     [RANDOM_BOT_KIND, SMART_BOT_KIND]
@@ -528,6 +529,7 @@ pub fn in_process_bot_kinds() -> Vec<String> {
         .chain(
             ti4_host::bots::models()
                 .iter()
+                .filter(|model| crate::models::is_offered(model.name()))
                 .map(ti4_host::bots::MlpModel::kind_id),
         )
         .collect()
@@ -956,6 +958,8 @@ pub struct GameRegistry {
     /// One channel for each table that a socket watches (`ws/table.rs`): a counter that goes up
     /// when the lobby record or the presence of a player changes.
     tables: Mutex<BTreeMap<String, tokio::sync::watch::Sender<u64>>>,
+    /// The models of `TI4_MODEL_DIR` with their files, for `GET /api/models` (`crate::models`).
+    models: Vec<crate::models::ServedModel>,
 }
 
 impl Default for GameRegistry {
@@ -971,6 +975,7 @@ impl Default for GameRegistry {
             terminated: Mutex::new(BTreeSet::new()),
             public: Arc::new(crate::public::PublicState::default()),
             tables: Mutex::new(BTreeMap::new()),
+            models: Vec::new(),
         }
     }
 }
@@ -2050,6 +2055,20 @@ impl GameRegistry {
     pub fn with_public(mut self, config: crate::public::PublicConfig) -> Self {
         self.public = Arc::new(crate::public::PublicState::new(config));
         self
+    }
+
+    /// The models whose files `GET /api/models` serves. They are registered in the process
+    /// (`ti4_host::bots::register`) by the caller (`crate::models::load_from_env`).
+    #[must_use]
+    pub fn with_models(mut self, models: Vec<crate::models::ServedModel>) -> Self {
+        self.models = models;
+        self
+    }
+
+    /// The models of the server with their files.
+    #[must_use]
+    pub fn models(&self) -> &[crate::models::ServedModel] {
+        &self.models
     }
 
     /// Public-playtest settings and state.

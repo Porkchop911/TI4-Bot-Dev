@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Checks that a server binary can load every saved game, without touching the live data.
 #
-#   recovery-check.sh preflight --bin SERVER --web-dir DIST --data-dir LIVE_DIR [--allow-failed ID]...
-#       Copies LIVE_DIR (without feedback/) to a temp dir, starts SERVER on a free loopback port
-#       against the copy, waits for the "Durable storage: recovered N game(s); F failed" line, stops
+#   recovery-check.sh preflight --bin SERVER --web-dir DIST --data-dir LIVE_DIR [--model-dir DIR]
+#                               [--allow-failed ID]...
+#       Copies LIVE_DIR (without feedback/ and models/) to a temp dir, starts SERVER on a free
+#       loopback port against the copy (with TI4_MODEL_DIR=DIR: the models that the games with MLP
+#       seats need), waits for the "Durable storage: recovered N game(s); F failed" line, stops
 #       it and compares with the number of game_* directories in LIVE_DIR. Exit 0 only when every
 #       game recovered, except the ids named with --allow-failed. Prints the failed ids, one per
 #       line, as "FAILED_IDS <ids>" for the caller.
@@ -55,12 +57,13 @@ case "$cmd" in
   parse) parse_log <"${1:-/dev/stdin}" ;;
   compare) subset_check "${1:-}" "${2:-}" ;;
   preflight)
-    bin="" web="" live="" allow=""
+    bin="" web="" live="" allow="" models=""
     while [[ $# -gt 0 ]]; do
       case "$1" in
         --bin) bin="$2"; shift 2 ;;
         --web-dir) web="$2"; shift 2 ;;
         --data-dir) live="$2"; shift 2 ;;
+        --model-dir) models="$2"; shift 2 ;;
         --allow-failed) allow="${allow:+$allow,}$2"; shift 2 ;;
         *) echo "unknown option $1" >&2; exit 2 ;;
       esac
@@ -73,16 +76,21 @@ case "$cmd" in
     mkdir "$work/data"
     # Copy as the current user; sudo only when the live dir is not readable.
     if [[ -r "$live" ]] && ! find "$live" -maxdepth 2 ! -readable 2>/dev/null | grep -q .; then
-      (cd "$live" && find . -mindepth 1 -maxdepth 1 ! -name feedback -exec cp -a {} "$work/data/" \;)
+      (cd "$live" && find . -mindepth 1 -maxdepth 1 ! -name feedback ! -name models -exec cp -a {} "$work/data/" \;)
     else
-      (cd "$live" && sudo find . -mindepth 1 -maxdepth 1 ! -name feedback -exec cp -a {} "$work/data/" \;)
+      (cd "$live" && sudo find . -mindepth 1 -maxdepth 1 ! -name feedback ! -name models -exec cp -a {} "$work/data/" \;)
       sudo chown -R "$(id -u):$(id -g)" "$work/data"
     fi
     expected="$(find "$work/data" -mindepth 1 -maxdepth 1 -type d -name 'game_*' | wc -l)"
     port="$(free_port)"
     echo "preflight: $expected saved game(s), copy in $work/data, port $port"
+    model_env=()
+    if [[ -n "$models" ]]; then
+      [[ -f "$models/index.json" ]] || { echo "preflight: $models has no index.json" >&2; exit 2; }
+      model_env=(TI4_MODEL_DIR="$models")
+    fi
     # A throwaway public-mode config: nothing here is the live secret.
-    env -i PATH="$PATH" HOME="$work" HOST=127.0.0.1 PORT="$port" TI4_PUBLIC=1 \
+    env -i PATH="$PATH" HOME="$work" HOST=127.0.0.1 PORT="$port" TI4_PUBLIC=1 "${model_env[@]}" \
       TI4_ACCESS_PASSWORD=preflight TI4_COOKIE_SECRET=preflight-not-a-secret \
       TI4_DATA_DIR="$work/data" TI4_WEB_DIR="$web" TI4_RATE_LIMITS=off \
       "$bin" >"$work/server.log" 2>&1 &
@@ -109,5 +117,5 @@ case "$cmd" in
     fi
     echo "preflight OK: $rec recovered, $fail allowed failure(s)"
     ;;
-  *) sed -n '2,20p' "$0" >&2; exit 2 ;;
+  *) sed -n '2,22p' "$0" >&2; exit 2 ;;
 esac

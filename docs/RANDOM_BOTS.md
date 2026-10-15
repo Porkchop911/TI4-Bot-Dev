@@ -36,7 +36,7 @@ Nothing else is needed: no password, no model, no libtorch, no child process.
 ```
 
 The response is the lobby view. It lists `bot_kinds` (`["random", "smart"]`, then `mlp:<name>` for
-every model that the server loaded from `TI4_MODEL_DIR`; a client that finds no `bot_kinds` must
+every model that the server loaded from `TI4_MODEL_DIR` and offers; a client that finds no `bot_kinds` must
 assume none) and marks bot seats with their kind, `"bot": "random"` (these also report `ready: true`, `connected: true`,
 `can_take_over: false`).
 

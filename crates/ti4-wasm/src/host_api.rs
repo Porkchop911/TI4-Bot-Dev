@@ -27,6 +27,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{LazyLock, Mutex};
 
 use serde::Serialize;
+use sha2::Digest;
 use ti4_engine::choice::{Choice, ChoiceOption};
 use ti4_engine::game::Game;
 use ti4_host::PROTOCOL_VERSION;
@@ -285,24 +286,26 @@ pub fn put_bytes(bytes: &[u8]) -> usize {
 struct LoadedModel<'a> {
     name: &'a str,
     label: &'a str,
-    sha256: &'a str,
+    /// The SHA-256 of the whole file, the address of a server's copy (`/api/models/<sha256>.ti4m`).
+    sha256: String,
     backend: &'static str,
 }
 
 /// Load the `.ti4m` file of the input (`len` bytes) into the registry of the engine
 /// (`ti4_host::bots::register`), in place of a model of the same name: its trailer is checked,
 /// and it runs on the fastest deterministic backend (`simd128` in the page). The output is
-/// `{"name", "label", "sha256", "backend"}`.
+/// `{"name", "label", "sha256", "backend"}`, `sha256` being the SHA-256 of the whole file.
 pub fn load_model(len: usize) -> i32 {
     let loaded = {
         let input = IN.lock().expect("in lock");
         match input.get(..len) {
-            Some(bytes) => ti4_host::bots::MlpModel::from_bytes(bytes, None),
+            Some(bytes) => ti4_host::bots::MlpModel::from_bytes(bytes, None)
+                .map(|model| (model, format!("{:x}", sha2::Sha256::digest(bytes)))),
             None => Err(format!("the input is {} bytes, not {len}", input.len())),
         }
     };
     match loaded {
-        Ok(model) => {
+        Ok((model, sha256)) => {
             ti4_host::bots::register(model.clone());
             // The file is not kept twice.
             {
@@ -313,7 +316,7 @@ pub fn load_model(len: usize) -> i32 {
             write_json(&LoadedModel {
                 name: model.name(),
                 label: model.label(),
-                sha256: model.digest(),
+                sha256,
                 backend: model.model().backend().name(),
             })
         }

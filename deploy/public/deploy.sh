@@ -17,9 +17,15 @@
 # live service is read again; if it shows failures the preflight did not allow, the previous
 # release is restored automatically.
 #
+# The MLP models: when out/models/index.json exists in the checkout this runs from (written by
+# scripts/pack-models.sh; TI4_PUBLIC_MODELS names another directory), the pre-flight loads them and
+# they replace the live ones in TI4_MODEL_DIR of the env file (default /var/lib/ti4-public/models).
+# Without it the live models stay.
+#
 # Layout:  /opt/ti4-public/releases/<UTC timestamp>/{server,dist/,COMMIT}
 #          /opt/ti4-public/current  -> releases/<newest>        (atomic symlink swap)
 #          /opt/ti4-public/previous -> releases/<one before>    (rollback target)
+#          /var/lib/ti4-public/models{,.previous}               (the models of the last two deploys)
 set -euo pipefail
 
 ROOT="${TI4_PUBLIC_ROOT:-/opt/ti4-public}"
@@ -30,6 +36,7 @@ ENV_FILE="${TI4_PUBLIC_ENV_FILE:-/etc/ti4-public/env}"
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 HERE="$REPO/deploy/public"
 BUILD_BASE="${TI4_PUBLIC_BUILD_DIR:-$HOME/.cache/ti4-public-build}"
+MODELS_SRC="$(realpath -m "${TI4_PUBLIC_MODELS:-$REPO/out/models}")"
 # Own target dir so this never fights with agent builds in the shared checkout.
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$HOME/.cache/ti4-public-target}"
 
@@ -43,7 +50,7 @@ while [[ $# -gt 0 ]]; do
     --ref) REF="${2:?--ref needs a git ref}"; shift 2 ;;
     --allow-failed) ALLOW_FAILED+=("${2:?--allow-failed needs a game id}"); shift 2 ;;
     --preflight-only) PREFLIGHT_ONLY=1; shift ;;
-    -h|--help) sed -n '2,24p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    -h|--help) sed -n '2,30p' "${BASH_SOURCE[0]}"; exit 0 ;;
     *) echo "unknown argument: $1 (see --help)" >&2; exit 2 ;;
   esac
 done
@@ -75,7 +82,20 @@ health_check() {
   return 1
 }
 
+MODELS_SWAPPED=0
+LIVE_MODELS=""
+restore_models() { # the models of the deploy before, when this one replaced them
+  if (( MODELS_SWAPPED )) && sudo test -d "$LIVE_MODELS.previous"; then
+    sudo systemctl stop "$SERVICE"
+    sudo rm -rf "$LIVE_MODELS"
+    sudo mv -T "$LIVE_MODELS.previous" "$LIVE_MODELS"
+    MODELS_SWAPPED=0
+    echo "the previous models are back in $LIVE_MODELS"
+  fi
+}
+
 restore_previous() { # $1 = release dir to go back to
+  restore_models
   if [[ -n "$1" ]]; then
     swap_current "$1"
     sudo systemctl restart "$SERVICE"
@@ -177,10 +197,39 @@ done
 say "Building the release server"
 cargo build --release -p ti4-server --bin server
 
+# ---- 3b. The MLP models -----------------------------------------------------------------------
+say "MLP models"
+LIVE_MODELS="$(env_value TI4_MODEL_DIR /var/lib/ti4-public/models)"
+NEW_MODELS=""   # the directory to install; empty: the live models stay
+PRE_MODELS=""   # the directory the pre-flight loads
+if [[ -f "$MODELS_SRC/index.json" ]]; then
+  NEW_MODELS="$MODELS_SRC"
+  PRE_MODELS="$MODELS_SRC"
+  echo "the models of $MODELS_SRC replace the live ones:"
+  ls -l "$MODELS_SRC"
+  if ! cmp -s "$MODELS_SRC/index.json" "$WT/models/index.json"; then
+    echo "WARNING: $MODELS_SRC/index.json is not models/index.json of $COMMIT;" >&2
+    echo "         run scripts/pack-models.sh in a checkout of that commit to deploy its models." >&2
+  fi
+elif sudo test -f "$LIVE_MODELS/index.json"; then
+  echo "no $MODELS_SRC/index.json (scripts/pack-models.sh writes it): the models of $LIVE_MODELS stay"
+  PRE_MODELS="$WT/out/live-models"
+  mkdir -p "$WT/out"
+  sudo cp -a "$LIVE_MODELS" "$PRE_MODELS"
+  sudo chown -R "$(id -u):$(id -g)" "$PRE_MODELS"
+else
+  echo "no models (scripts/pack-models.sh writes out/models): the release offers no MLP bot"
+fi
+if [[ -n "$PRE_MODELS" && -z "$(env_value TI4_MODEL_DIR '')" ]]; then
+  echo "WARNING: $ENV_FILE has no TI4_MODEL_DIR, so the service loads no model." >&2
+  echo "         Add TI4_MODEL_DIR=$LIVE_MODELS (deploy/public/env.example)." >&2
+fi
+
 # ---- 4. Persistence pre-flight on a copy of the live data -------------------------------------
 say "Pre-flight: can the new build load every saved game?"
 DATA_DIR="$(env_value TI4_DATA_DIR /var/lib/ti4-public)"
 pre_args=(--bin "$CARGO_TARGET_DIR/release/server" --web-dir "$WT/web/dist" --data-dir "$DATA_DIR")
+if [[ -n "$PRE_MODELS" ]]; then pre_args+=(--model-dir "$PRE_MODELS"); fi
 for id in "${ALLOW_FAILED[@]}"; do pre_args+=(--allow-failed "$id"); done
 if ! "$HERE/recovery-check.sh" preflight "${pre_args[@]}"; then
   echo "pre-flight FAILED: nothing was installed or restarted. Fix the build, or name a game you accept to lose with --allow-failed <id>." >&2
@@ -221,6 +270,19 @@ previous=""
 
 say "Switching to the new release and restarting"
 SINCE="$(date '+%Y-%m-%d %H:%M:%S')"
+if [[ -n "$NEW_MODELS" ]]; then
+  # The old server serves the files of its models by path: it is stopped before they change, so
+  # that it never sends a new file at the address (and with the immutable cache) of an old one.
+  echo "installing the models to $LIVE_MODELS (the ones before: $LIVE_MODELS.previous)"
+  sudo rm -rf "$LIVE_MODELS.new"
+  sudo install -d -m 750 -o root -g ti4 "$LIVE_MODELS.new"
+  sudo install -m 640 -o root -g ti4 "$NEW_MODELS"/* "$LIVE_MODELS.new"/
+  sudo systemctl stop "$SERVICE"
+  sudo rm -rf "$LIVE_MODELS.previous"
+  if sudo test -d "$LIVE_MODELS"; then sudo mv -T "$LIVE_MODELS" "$LIVE_MODELS.previous"; fi
+  sudo mv -T "$LIVE_MODELS.new" "$LIVE_MODELS"
+  MODELS_SWAPPED=1
+fi
 swap_current "$RELEASE"
 [[ -n "$previous" ]] && sudo ln -sfn "$previous" "$ROOT/previous"
 sudo systemctl restart "$SERVICE"

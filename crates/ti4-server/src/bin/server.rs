@@ -38,26 +38,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Ok(millis) = std::env::var("TI4_DEV_PRESENCE_GRACE_MS") {
         registry = registry.with_presence_grace(Duration::from_millis(millis.parse()?));
     }
-    let registry = Arc::new(registry);
-
     // The MLP models, before the games that seat them are recovered.
-    match ti4_server::models::load_from_env() {
-        Ok(models) => {
-            for model in &models {
-                println!(
-                    "MLP model: mlp:{} ({}) sha256 {} on {}",
-                    model.name(),
-                    model.label(),
-                    model.digest(),
-                    model.model().backend().name()
-                );
-            }
-        }
+    let models = match ti4_server::models::load_from_env() {
+        Ok(models) => models,
         Err(error) => {
             eprintln!("MLP models: {error}");
             return Err(error.into());
         }
+    };
+    for served in &models {
+        println!(
+            "MLP model: mlp:{} ({}) sha256 {} {} bytes{} on {}",
+            served.model.name(),
+            served.model.label(),
+            served.sha256,
+            served.bytes,
+            if served.offered { ", offered" } else { "" },
+            served.model.model().backend().name()
+        );
     }
+    let registry = Arc::new(registry.with_models(models));
 
     // Print recovery results even when tracing has no RUST_LOG filter configured.
     let recovery = registry.recover_all_games_report()?;

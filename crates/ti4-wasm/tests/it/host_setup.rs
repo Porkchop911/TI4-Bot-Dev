@@ -168,9 +168,10 @@ fn a_model_is_loaded_by_its_bytes_and_a_table_needs_its_models() {
     let loaded: Value = serde_json::from_str(&out).unwrap();
     assert_eq!(loaded["name"], "test");
     assert_eq!(loaded["label"], "Test model");
+    // The SHA-256 of the whole file (`sha256sum`), not its trailer.
     assert_eq!(
         loaded["sha256"].as_str().unwrap(),
-        ti4_host::bots::test_model().digest()
+        hex::encode(<sha2::Sha256 as sha2::Digest>::digest(&bytes))
     );
     assert!(ti4_host::bots::loaded("test").is_some());
     // A changed byte is refused by the trailer.

@@ -26,6 +26,7 @@ mod lobby_lifecycle;
 mod lobby_settings;
 mod map_selection;
 mod mlp_bots;
+mod model_files;
 mod never_offer_window;
 mod planning;
 mod player_lobby_admission;

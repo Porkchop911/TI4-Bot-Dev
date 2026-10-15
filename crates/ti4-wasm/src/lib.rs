@@ -1734,8 +1734,8 @@ pub extern "C" fn ti4_host_command(len: u32) -> i32 {
 /// Load an MLP model: the input (`ti4_host_in(len)`) holds the bytes of a `.ti4m` file. Its
 /// trailer is checked and it is kept by its name, in place of a model of the same name; a game
 /// with a seat of the kind `mlp:<name>` starts only when the model of the name is loaded. The
-/// output is `{"name", "label", "sha256", "backend"}`. A status of 0 or more is its length,
-/// below 0 the negated length of an error text in the output.
+/// output is `{"name", "label", "sha256", "backend"}` (`sha256`: of the whole file). A status of
+/// 0 or more is its length, below 0 the negated length of an error text in the output.
 #[unsafe(no_mangle)]
 pub extern "C" fn ti4_model_load(len: u32) -> i32 {
     host_api::load_model(len as usize)

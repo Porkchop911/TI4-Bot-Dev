@@ -86,3 +86,7 @@ wasm-policy = "check -p ti4-policy --lib --target wasm32-unknown-unknown"
 # `target/debug/server` for the e2e and the transport tests of web2. The test target is named only
 # so that the features are those of `t-web` (it is small); without it the engine is built again.
 b-web = "build -p ti4-model -p ti4-content -p ti4-calc -p ti4-engine -p ti4-host -p ti4-rule-bot -p ti4-server -p ti4-wasm -p ti4-infer -p ti4-policy --bin server --test content_ids_resolve"
+# `target/release/ti4-pack` for `scripts/pack-models.sh`, which packs the models of
+# `models/index.json` for a server. Only `ti4-infer` and its two dependencies, in the release
+# profile: it shares nothing with the game aliases and does not build the engine.
+b-pack = "build --release -p ti4-infer --bin ti4-pack"

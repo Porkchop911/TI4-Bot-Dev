@@ -10,7 +10,10 @@
 play.example.org {
 	# Caddy has no built-in brotli. The server itself serves ti4_wasm-*.wasm.br / .wasm.gz when the
 	# release has them (deploy.sh writes both) and the client accepts them; Caddy leaves responses
-	# that already carry a Content-Encoding alone. Everything else is compressed here (zstd, gzip).
+	# that already carry a Content-Encoding alone. The same holds for the MLP models
+	# (/api/models/<sha256>.ti4m and its .br from scripts/pack-models.sh): their address names the
+	# content, the server sends them with "Cache-Control: immutable", and they are same-origin, so
+	# connect-src 'self' covers them. Everything else is compressed here (zstd, gzip).
 	# Caddy 2.6 does not compress application/wasm by default, so .wasm gets its own rule (a wasm
 	# the server has no precompressed file for, e.g. in a dev build); the two rules never overlap.
 	@wasm path *.wasm

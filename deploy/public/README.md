@@ -72,6 +72,7 @@ you can send over chat and change it (then `systemctl restart ti4-public`) to lo
 ## 5. First release
 
 ```
+scripts/pack-models.sh                   # the MLP models into out/models/ (section "The MLP models")
 deploy/public/deploy.sh
 sudo systemctl enable --now ti4-public     # first time only; deploy.sh restarts it afterwards
 ```
@@ -121,6 +122,34 @@ deploy/public/check-headers.sh --bin <server>              # CSP / wasm / cache 
 * Never run it with a dirty idea of "just pull in the shared checkout": the shared checkout is used
   by the nightly sweep; the script no longer touches it.
 * See `docs/OFFLINE.md` for what offline play needs from the server.
+
+### The MLP models
+
+The bots `mlp:<name>` play trained models in the server process, and the page downloads the same
+files to play them in single player. `models/index.json` (committed) lists them: name, label,
+temperature, the source bundle and the sha of its `manifest.json`, the sha of the packed file, and
+`offered` (at most three: new tables and the page see only those; every listed model is loaded,
+so a game that seats a model that is no longer offered still recovers).
+
+```
+scripts/pack-models.sh                  # out/models/: <name>.ti4m, <name>.ti4m.br, index.json
+scripts/pack-models.sh --update-index   # after adding a model: write the packed shas into the index
+deploy/public/deploy.sh --ref <ref>     # uploads out/models/ to TI4_MODEL_DIR
+```
+
+* `pack-models.sh` builds `ti4-pack` (`cargo b-pack`), packs every entry, checks both shas against
+  the index (`sha256sum` of the manifest and of the packed file) and writes the `.br` when the
+  `brotli` CLI is installed and the result is smaller. A mismatch stops it, and `out/models/` then
+  has no `index.json`. Run it in a checkout of the ref you deploy.
+* `deploy.sh` uses `out/models/` of the checkout it runs from (or `TI4_PUBLIC_MODELS=<dir>`): the
+  pre-flight loads them with the saved games, and they replace `/var/lib/ti4-public/models` (the
+  `TI4_MODEL_DIR` of the env file) while the service is stopped; the models before are kept in
+  `models.previous`, and an automatic rollback puts them back. Without `out/models/index.json` the
+  live models stay. `deploy.sh rollback` does not touch the models.
+* The server loads every model at start and prints `MLP model: mlp:<name> (<label>) sha256 ...`.
+  A model that does not load stops the start. `GET /api/models` lists the offered ones and
+  `GET /api/models/<sha256>.ti4m` serves a file (the sha is `sha256sum` of the file) with
+  `Cache-Control: public, max-age=31536000, immutable`, and its `.br` to a client that accepts it.
 
 ## 6. Backups
 
