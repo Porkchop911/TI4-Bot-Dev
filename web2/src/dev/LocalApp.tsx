@@ -16,6 +16,7 @@ import { DEFAULT_NICKNAME, onlineAddress } from "./onlineStart";
 import {
   type LocalGame,
   STEPPING_KEY,
+  gameOfSave,
   clearLeft,
   gameAddress,
   idAddress,
@@ -26,6 +27,13 @@ import {
   storeWait,
 } from "../session/savedGame";
 import { localGameTable } from "../session/localTable";
+import {
+  ModelMissing,
+  type ServedModel,
+  filesOfTable,
+  megabytes,
+  workerFiles,
+} from "../session/models";
 import { keptNickname } from "../session/onlineKeys";
 import {
   type GameMeta,
@@ -67,6 +75,8 @@ type Start =
   | { kind: "failed"; message: string }
   /** The address names a saved game by its id, and this browser has none of that id. */
   | { kind: "missing" }
+  /** A model that the game seats cannot be had: the game cannot go on. */
+  | { kind: "nomodel"; message: string; store: OfflineSaveStore; id: string | null }
   | {
       kind: "ready";
       engine: Engine;
@@ -74,6 +84,8 @@ type Start =
       /** The id of the game in the store: of the saved game, or a new one. */
       id: string;
       record: SavedGameRecord | null;
+      /** The files of the models that the seats of the game play, for its Worker. */
+      files: { model: ServedModel; bytes: Uint8Array }[];
     };
 
 /**
@@ -100,6 +112,8 @@ export function LocalApp({
   other?: { label: string; href: string };
 }) {
   const [start, setStart] = useState<Start>({ kind: "loading" });
+  /** How far the file of a model of the game is, while it loads. */
+  const [loading, setLoading] = useState<string | null>(null);
   /** The saved game was played by another engine, and the player said to play it anyway. */
   const [anyway, setAnyway] = useState(false);
   /** How many decisions of the game are saved, those of every seat, and how many are answers of this page. */
@@ -152,7 +166,27 @@ export function LocalApp({
         if (savedId !== undefined && !record) {
           return { kind: "missing" };
         }
-        return { kind: "ready", engine, store, id: record?.id ?? newSaveId(), record };
+        // The models of the game are loaded before it starts (a saved game too).
+        const table = record ? gameOfSave(record.save as HostSave).table : game.table;
+        let files: { model: ServedModel; bytes: Uint8Array }[];
+        try {
+          files = await filesOfTable(table, (model, done, total) => {
+            if (!stale) {
+              setLoading(`Loading ${model.label} · ${megabytes(done, total)}`);
+            }
+          });
+        } catch (error) {
+          return {
+            kind: "nomodel",
+            store,
+            id: record?.id ?? null,
+            message:
+              error instanceof ModelMissing
+                ? error.message
+                : `A model that this game seats did not load. ${message(error)}`,
+          };
+        }
+        return { kind: "ready", engine, store, id: record?.id ?? newSaveId(), record, files };
       })
       .catch((error: unknown) => ({ kind: "failed" as const, message: message(error) }))
       .then((next) => stale || setStart(next));
@@ -239,6 +273,7 @@ export function LocalApp({
     };
     const made = createWasmTransport(engine, played, {
       save,
+      models: workerFiles(start.files),
       keepFirst: game.table !== undefined,
       stepping: steps.current,
       waitMs: wait.current,
@@ -332,6 +367,17 @@ export function LocalApp({
   const playAs = (seat: string) => transport?.capabilities.switchSeat?.(seat);
   const newGame = async () => {
     setSettingsOpen(false);
+    if (start.kind === "nomodel") {
+      // The game cannot go on without its model: it is dropped, as New game drops a game.
+      if (start.id !== null) {
+        await removeSave(start.store, localStorage, start.id);
+      }
+      if (onNewGame) {
+        return onNewGame();
+      }
+      window.location.search = gameAddress(game);
+      return;
+    }
     if (start.kind !== "ready") {
       return;
     }
@@ -559,6 +605,17 @@ export function LocalApp({
         .
       </Notice>
     );
+  } else if (start.kind === "nomodel") {
+    body = (
+      <Notice tone="error">
+        {start.message}
+        <span className="mt-3 flex gap-2">
+          <Button onClick={newGame}>New game</Button>
+        </span>
+      </Notice>
+    );
+  } else if (start.kind === "loading" && loading) {
+    body = <Notice tone="quiet">{loading}</Notice>;
   } else if (waits) {
     body = (
       <Notice tone="error">

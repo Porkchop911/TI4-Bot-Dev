@@ -720,6 +720,29 @@ test("phone: single player is set up on the panes of the lobby, with the long na
   await fits();
   await page.screenshot({ path: "shots/phone/local/single-players.png", animations: "disabled" });
 
+  // An open seat has the three models of the server after "Random": its row wraps them, and
+  // nothing is cut at the side.
+  await rows.nth(7).getByRole("button", { name: "Remove Rule bot 7" }).tap();
+  const kinds = rows.nth(7).getByRole("button");
+  await expect(kinds).toHaveText([
+    "Rule bot",
+    "Random",
+    "Synthetic model 1",
+    "Synthetic model 2",
+    "Synthetic model 3",
+  ]);
+  await fits();
+  for (const kind of await kinds.all()) {
+    const box = (await kind.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(412);
+  }
+  await expect(main).toBeInViewport();
+  await page.screenshot({ path: "shots/phone/local/single-models.png", animations: "disabled" });
+  await kinds.filter({ hasText: "Synthetic model 3" }).tap();
+  await expect(rows.nth(7)).toContainText("Synthetic model 3 1");
+  await expect(main).toBeEnabled();
+
   await pane("Setup").tap();
   const setup = page.getByRole("region", { name: "Setup" });
   await expect(setup.getByLabel("Players", { exact: true })).toHaveText("8");

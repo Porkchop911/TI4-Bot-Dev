@@ -65,6 +65,9 @@ fixtures/legacy_entropy/*
 # The logits of the synthetic MLP models, which the wasm build must give bit for bit (`cargo wire-web`).
 !fixtures/infer/
 !fixtures/infer/**
+# The models of the servers of web2's tests: the synthetic test model under three names (`cargo wire-web`).
+!fixtures/models/
+!fixtures/models/**
 
 # Local git worktrees. Gitlinks to them are meaningless to a clone.
 .worktrees/

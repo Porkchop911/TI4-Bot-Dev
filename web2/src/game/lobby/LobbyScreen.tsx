@@ -31,6 +31,7 @@ const SIGNS: Record<LobbySignView["kind"], string> = {
   host: "★",
   rule: "⚙",
   random: "⚄",
+  model: "✦",
   away: "◇",
   open: "",
 };
@@ -278,11 +279,11 @@ function PlayerRow({
         <span
           title={row.name}
           className={cx(
-            "w-[300px] flex-none truncate",
-            // An open seat has its buttons in the row: they go under the word when they have no room.
+            "flex-none truncate",
+            // An open seat has its buttons in the row: the word takes no more room than it needs.
             row.sign?.kind === "open"
-              ? "text-muted phone:w-auto"
-              : "font-mid phone:w-auto phone:min-w-0 phone:flex-1 phone:whitespace-normal phone:[overflow-wrap:anywhere]",
+              ? "text-muted"
+              : "w-[300px] font-mid phone:w-auto phone:min-w-0 phone:flex-1 phone:whitespace-normal phone:[overflow-wrap:anywhere]",
           )}
         >
           {row.name}
@@ -337,7 +338,14 @@ function PlayerRow({
             </button>
           </span>
         )}
-        <span className="ml-auto flex flex-none items-center gap-1.5">
+        {/* The kinds of an open seat wrap on a phone: up to three models follow "Random". */}
+        <span
+          className={cx(
+            "ml-auto flex flex-none items-center gap-1.5",
+            row.buttons.length > 0 &&
+              "phone:min-w-0 phone:flex-1 phone:flex-wrap phone:justify-end",
+          )}
+        >
           {row.rename && name === null && (
             <Button
               tone="quiet"

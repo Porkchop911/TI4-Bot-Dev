@@ -1,6 +1,6 @@
 import type { Host } from "./host.ts";
 import type { Envelope, HostRestart, HostSave, StartConfig } from "./host.ts";
-import type { FromWorker, ToWorker } from "./protocol.ts";
+import type { FromWorker, ModelFile, ToWorker } from "./protocol.ts";
 
 /**
  * The logic of the Worker, apart from `self`: one game at a time, started on a wasm instance,
@@ -19,6 +19,8 @@ export class HostRunner {
    * `set_reaction_mode`): a restart starts with them.
    */
   private config: StartConfig | null = null;
+  /** The models that every instance of a game loads before its game (a restart too). */
+  private models: ModelFile[] = [];
 
   constructor(
     private readonly post: (message: FromWorker) => void,
@@ -30,6 +32,9 @@ export class HostRunner {
       case "init":
         this.module = message.module;
         this.post({ t: "ready" });
+        return;
+      case "models":
+        this.models = message.models;
         return;
       case "query":
         return this.query(message.id, message.request);
@@ -72,6 +77,7 @@ export class HostRunner {
     let host: Host;
     try {
       host = await this.instance();
+      this.load(host);
     } catch (error) {
       this.post({ t: "crash", message: text(error) });
       return;
@@ -104,6 +110,18 @@ export class HostRunner {
     } catch (error) {
       if (run === this.run) {
         this.post({ t: "crash", message: text(error) });
+      }
+    }
+  }
+
+  /** Loads the models into the instance of a game; a file that is not the one expected throws. */
+  private load(host: Host): void {
+    for (const model of this.models) {
+      const loaded = host.loadModel(new Uint8Array(model.bytes));
+      if (loaded.sha256 !== model.sha256) {
+        throw new Error(
+          `The file of the model "${loaded.name}" is not the one that the server lists (SHA-256 ${loaded.sha256}, not ${model.sha256})`,
+        );
       }
     }
   }

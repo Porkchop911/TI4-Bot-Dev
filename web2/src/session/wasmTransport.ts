@@ -11,7 +11,7 @@ import { sha256Hex } from "@ti4/shared/engine/identity.ts";
 import { hasJspi } from "@ti4/shared/engine/jspi.ts";
 import { spaceOdds } from "@ti4/shared/engine/odds.ts";
 import { inlinePort, workerPort } from "@ti4/shared/engine/port.ts";
-import type { HostPort } from "@ti4/shared/engine/protocol.ts";
+import type { HostPort, ModelFile } from "@ti4/shared/engine/protocol.ts";
 import { engineLink } from "@ti4/shared/link/engineLink.ts";
 import type { GameLink, HostCommand } from "@ti4/shared/link/link.ts";
 import type { HostSave as StoredSave } from "@ti4/shared/storage/index.ts";
@@ -236,6 +236,11 @@ export interface LocalPlay {
    * every wait, and a game that is played again does not wait for its saved decisions.
    */
   waitMs?: number;
+  /**
+   * The files of the MLP models that the seats of the game play (`mlp:<name>`), loaded into the
+   * engine in the Worker before the game starts (`models.ts`). Their buffers are transferred.
+   */
+  models?: ModelFile[];
 }
 
 /**
@@ -309,6 +314,7 @@ export function createWasmTransport(
     staged: true,
   };
   const link = engineLink(enginePort(engine.module), config, {
+    ...(play.models?.length ? { models: play.models } : {}),
     gate(envelope) {
       // The engine waits for the page from here on: what is sent reaches this question.
       settle();

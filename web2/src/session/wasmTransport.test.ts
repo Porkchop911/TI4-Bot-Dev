@@ -36,6 +36,7 @@ import { selectAgendas } from "./select/agendas";
 import { selectSecrets } from "./select/secrets";
 import { factionSheet } from "./select/factionSheet";
 import { selectPlayers } from "./select/players";
+import type { ModelFile } from "@ti4/shared/engine/protocol.ts";
 import type { TransportEvent } from "./transport";
 import type { LocalGame } from "./savedGame";
 import {
@@ -80,6 +81,7 @@ async function play(
     ruleSeats?: number;
     table?: TableRequest;
     waitMs?: number;
+    models?: ModelFile[];
   } = {},
 ) {
   const engine: Engine = {
@@ -1706,6 +1708,54 @@ it.skipIf(!built)(
     });
     expect((await old.next()).update.seats).toBeUndefined();
     old.transport.close();
+  },
+  120_000,
+);
+
+it.skipIf(!built)(
+  "a model of the table is loaded in the Worker before the game, and a seat of it plays",
+  async () => {
+    const dir = fileURLToPath(new URL("../../../fixtures/models", import.meta.url));
+    const index = JSON.parse(readFileSync(`${dir}/index.json`, "utf8")) as {
+      models: { name: string; label: string; sha256: string }[];
+    };
+    const model = index.models[0];
+    const file = (): ModelFile => ({
+      sha256: model.sha256,
+      bytes: new Uint8Array(readFileSync(`${dir}/${model.name}.ti4m`)).buffer,
+    });
+    const table: TableRequest = {
+      setup: { player_count: 3, seed: 12 },
+      seats: [
+        { kind: "human", name: "Ada" },
+        { kind: `mlp:${model.name}`, name: `${model.label} 1` },
+        { kind: "smart", name: "Rule bot 1" },
+      ],
+    };
+    const game = { seed: 12, players: 3, humans: 1 };
+    const { transport, next } = await play(false, game, { table, models: [file()] });
+    const event = await next();
+    expect(event.update.seats?.b).toEqual({
+      nickname: `${model.label} 1`,
+      kind: `mlp:${model.name}`,
+    });
+    expect(event.update.pending_choice).toBeDefined();
+    transport.close();
+
+    // Without the file the engine refuses the game, with the name of the model.
+    const errors: string[] = [];
+    const bare = createWasmTransport(
+      {
+        module: await WebAssembly.compile(readFileSync(WASM)),
+        hash: "test",
+        scenarios: [],
+        catalog: null,
+      },
+      { ...game, table },
+    );
+    bare.subscribe((each) => each.kind === "error" && errors.push(each.message));
+    await expect.poll(() => errors.join()).toContain(model.name);
+    bare.close();
   },
   120_000,
 );

@@ -210,7 +210,11 @@ exports of their own.
   of an MLP seat).
 - **MLP models.** `ti4_model_load` loads a `.ti4m` into the registry of the engine
   (`ti4_host::bots::register`), by its name. `ti4_host_start` refuses a game with a seat of the
-  kind `mlp:<name>` whose model is not loaded, with the name.
+  kind `mlp:<name>` whose model is not loaded, with the name. The registry is of one instance:
+  the Worker of a page (`web-shared/src/engine/runner.ts`) is given the files once (`{t:
+  "models"}`, transferred buffers) and loads them into each instance of the game before
+  `ti4_host_start`, a restart too, and refuses a file whose SHA-256 is not the one the page
+  expects.
 - The view is of the seat that was asked last while the page still plays it, else of the first
   seat of the mask. A draft is of that seat.
 

@@ -100,6 +100,7 @@ it("a seat has the name of its player, and the sign of a seat that no person pla
         a: { nickname: "Ada", kind: "human" },
         b: { nickname: "Rule bot 1", kind: "smart" },
         c: { nickname: "Random bot 1", kind: "random" },
+        d: { nickname: "Reviewer 473312 2", kind: "mlp:reviewer-473312" },
       },
     },
     local(),
@@ -108,8 +109,13 @@ it("a seat has the name of its player, and the sign of a seat that no person pla
   expect(seats.a.played).toBeUndefined();
   expect(seats.b).toMatchObject({ name: "Rule bot 1", played: { kind: "rule" } });
   expect(seats.c).toMatchObject({ name: "Random bot 1", played: { kind: "random" } });
+  // A model has its sign, with its label on hover.
+  expect(seats.d).toMatchObject({
+    name: "Reviewer 473312 2",
+    played: { kind: "model", word: "Reviewer 473312: no person plays this seat" },
+  });
   // A seat that the table does not name keeps its letter.
-  expect(seats.d.name).toBe("Seat D");
+  expect(seats.e.name).toBe("Seat E");
 });
 
 it("counts what the planets of a seat give, ready and total", () => {

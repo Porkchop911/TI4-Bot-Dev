@@ -1,5 +1,5 @@
 import type { Envelope, StartConfig } from "../engine/host.ts";
-import type { FromWorker, HostPort } from "../engine/protocol.ts";
+import type { FromWorker, HostPort, ModelFile } from "../engine/protocol.ts";
 import type { ClientMessage, ServerMessage } from "../wire/index.ts";
 import { type GameLink, type HostCommand, listeners } from "./link.ts";
 
@@ -11,6 +11,11 @@ export interface EngineLinkOptions {
    * question is told at once. A throw or a rejection is told as `fatal`.
    */
   gate?(envelope: Envelope): void | Promise<void>;
+  /**
+   * The files of the MLP models that the game seats (`mlp:<name>`): the Worker loads them into
+   * each instance of the game before it starts it. Their buffers are transferred: pass copies.
+   */
+  models?: ModelFile[];
 }
 
 /** A link to the engine: its commands have replies, and a page can wait for its next question. */
@@ -191,6 +196,12 @@ export function engineLink(
     post<Envelope>((id) => ({ t: "command", id, request: command }));
 
   port.listen(receive);
+  if (options.models?.length) {
+    port.post(
+      { t: "models", models: options.models },
+      options.models.map((model) => model.bytes),
+    );
+  }
   port.post({ t: "start", config });
 
   return {

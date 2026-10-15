@@ -17,7 +17,7 @@ export function workerPort(worker: Worker, module: WebAssembly.Module): HostPort
   };
   worker.postMessage({ t: "init", module } satisfies ToWorker);
   return {
-    post: (message) => worker.postMessage(message),
+    post: (message, transfer) => worker.postMessage(message, transfer ?? []),
     listen: (next) => {
       listener = next;
     },

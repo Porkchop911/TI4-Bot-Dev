@@ -1,6 +1,6 @@
 # MLP bots without libtorch: inference in ti4-host, on the server and in the page (2026-10-15)
 
-Status: planned. Step 1 done (2026-10-15). Step 2 done (2026-10-15). Step 3 done (2026-10-15). Step 4 done (2026-10-15). Step 5 done (2026-10-15). Step 6 done (2026-10-15). Step 7 done (2026-10-15). Step 8 done (2026-10-15).
+Status: planned. Step 1 done (2026-10-15). Step 2 done (2026-10-15). Step 3 done (2026-10-15). Step 4 done (2026-10-15). Step 5 done (2026-10-15). Step 6 done (2026-10-15). Step 7 done (2026-10-15). Step 8 done (2026-10-15). Step 9 done (2026-10-15).
 
 ## Context
 
@@ -455,9 +455,15 @@ evaluation temperature of `plans/MLP_TEMPERATURE_REGIME.md`).
     `ArrayBuffer`, which calls `ti4_model_load`.
   - "Start game" waits until the files of the table are loaded. The footer says the progress
     ("Loading Stage 2 r5 · 12 / 21 MB"), as it says why a start waits.
+- The file is checked against its sha before it is kept in the cache, and again by the Worker:
+  the page gives the Worker the files with their shas once (`{t: "models"}` of
+  `web-shared/src/engine/protocol.ts`, transferred), and it loads them into each wasm instance
+  of the game before its start (a restart after an undo makes a new instance) and refuses a file
+  whose loaded sha is not the one listed.
+- A file that does not load is a toast, and its seats are open again.
 - **A saved single-player game with MLP seats** loads its models before `ti4_host_start`.
   - When a model cannot be had (no server, a name the server dropped), the page says so in place of
-    the game, as when the engine does not load.
+    the game, with "New game".
   - The saved decisions would replay without it, but the game cannot go on.
   - The game decides with the model the name has now. The save keeps the name, not the sha.
 - **The lobby** (`select/lobby.ts`, `model/lobby.ts`, `select/players.ts`)
@@ -662,6 +668,11 @@ the add-bot request of `public_playtest.rs` and the "+ mlp" cases of `random_bot
   - `tableContract.test.ts`: an MLP kind on both tables;
   - an e2e that starts a single-player game with an MLP seat and plays round 1 to the action phase;
   - the shots of the lobby with three models and 8 seats, desktop and phone.
+- The servers of the e2e and of `tableContract.test.ts` serve `fixtures/models/`: the model of the
+  tests packed under three names (`ti4_host::bots::test_model_bytes_named`), written by `cargo
+  wire-web` and checked by `cargo t-web`. The shots of the lobby are those of the e2e (the demo has
+  no lobby): `shots/online/lobby-eight.png`, `shots/phone/online/lobby-players.png`,
+  `shots/local/single-models.png`, `shots/phone/local/single-models.png`.
 
 ### Step 10: int8 weights with AVX-VNNI, for the rollouts of training (section H)
 

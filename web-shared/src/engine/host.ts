@@ -140,6 +140,15 @@ interface Exports {
   ti4_host_query(length: number): number;
   ti4_host_command(length: number): number;
   ti4_host_start(length: number): number;
+  ti4_model_load(length: number): number;
+}
+
+/** What `ti4_model_load` answers: the model that is loaded, and the SHA-256 of the whole file. */
+export interface LoadedModel {
+  name: string;
+  label: string;
+  sha256: string;
+  backend: string;
 }
 
 const encoder = new TextEncoder();
@@ -211,6 +220,21 @@ export class Host {
       resolve(envelope.resume);
     }
     return envelope;
+  }
+
+  /**
+   * Loads an MLP model (the bytes of a `.ti4m` file) into this instance, by its name: a game of
+   * this instance with a seat of the kind `mlp:<name>` can start. Throws what the engine refuses.
+   */
+  loadModel(bytes: Uint8Array): LoadedModel {
+    const pointer = this.exports.ti4_host_in(bytes.length);
+    new Uint8Array(this.exports.memory.buffer, pointer, bytes.length).set(bytes);
+    const status = this.exports.ti4_model_load(bytes.length);
+    const text = this.out();
+    if (status < 0) {
+      throw new Error(text);
+    }
+    return JSON.parse(text) as LoadedModel;
   }
 
   /** Plays a game; resolves with the `end` envelope when it ends or is left. */

@@ -54,6 +54,11 @@ export interface TableState {
    * else can come to it. It has no address to give away and no name to change.
    */
   local?: true;
+  /**
+   * A file of a model that a seat of a table in the page plays, while it loads: the start waits
+   * for it. The first of the table that is not loaded.
+   */
+  loading?: { label: string; done: number; total: number };
 }
 
 /** A change of the setup of a table. A part that is left out stays as it is. */

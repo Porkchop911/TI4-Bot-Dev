@@ -38,6 +38,13 @@ class FakeHost {
   commands: Record<string, unknown>[] = [];
   private finish!: (e: Envelope) => void;
   started: StartConfig | null = null;
+  /** The models that were loaded, by the length of their bytes, and the sha that each answers. */
+  loaded: number[] = [];
+  sha = "s1";
+  loadModel(bytes: Uint8Array) {
+    this.loaded.push(bytes.length);
+    return { name: "m", label: "M", sha256: this.sha, backend: "simd128" };
+  }
   constructor(
     readonly name: string,
     private readonly onCommand: (host: FakeHost, request: Record<string, unknown>) => Envelope,
@@ -94,6 +101,31 @@ describe("HostRunner", () => {
     );
     await started;
     expect(out.at(-1)).toMatchObject({ t: "end", save: { answers: ["x"] } });
+  });
+
+  it("loads the models into the instance of each game before it starts, and refuses another file", async () => {
+    const out: FromWorker[] = [];
+    const hosts: FakeHost[] = [];
+    const runner = new HostRunner(
+      (m) => out.push(m),
+      async () => {
+        const host = new FakeHost(`h${hosts.length}`, () => envelope("command", {}));
+        hosts.push(host);
+        return host as unknown as Host;
+      },
+    );
+    await runner.handle({ t: "init", module: {} as WebAssembly.Module });
+    await runner.handle({ t: "models", models: [{ sha256: "s1", bytes: new ArrayBuffer(3) }] });
+    void runner.handle({ t: "start", config: { setup: { seed: 7 } } });
+    await tick();
+    expect(hosts[0].loaded).toEqual([3]);
+    expect(hosts[0].started).not.toBeNull();
+    // A file whose SHA-256 is not the one expected does not start the game.
+    await runner.handle({ t: "models", models: [{ sha256: "s2", bytes: new ArrayBuffer(3) }] });
+    void runner.handle({ t: "start", config: { setup: { seed: 7 } } });
+    await tick();
+    expect(hosts[1].started).toBeNull();
+    expect(out.at(-1)).toMatchObject({ t: "crash", message: expect.stringContaining("s2") });
   });
 
   it("runs a restart in a new instance with the save's game and the restart as the save", async () => {

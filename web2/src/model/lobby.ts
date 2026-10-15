@@ -42,7 +42,7 @@ export type LobbyIntent =
 
 /** The one sign of a row, with its word (the tooltip and the accessible name). */
 export interface LobbySignView {
-  kind: "host" | "rule" | "random" | "away" | "open";
+  kind: "host" | "rule" | "random" | "model" | "away" | "open";
   word: string;
 }
 

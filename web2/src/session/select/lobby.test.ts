@@ -185,9 +185,56 @@ it("the names of the kinds of a seat are those of the server: none is offered be
   expect(view.fill).toBeNull();
   expect(view.help).toEqual([]);
   expect(view.rows[2].sign).toEqual({ kind: "rule", word: "Played by the server" });
-  // A kind that the server plays in another process is not offered.
+  // A kind with no sign (a bare "mlp" is no kind) is not offered.
   const mlp = selectLobby(table("ada", { bot_kinds: ["random", "smart", "mlp"] }), local(), null);
   expect(mlp.rows[4].buttons.map((button) => button.label)).toEqual(["Rule bot", "Random"]);
+});
+
+it("every model of the options is a kind of an open seat after the rule bot and Random, with its sign", () => {
+  const models = ["Reviewer 473312", "Stage 2 r5", "Champion 9"].map((label, at) => ({
+    id: `mlp:m${at}` as const,
+    name: label,
+    description: "A trained model plays this seat.",
+  }));
+  const options = { ...OPTIONS, bot_kinds: [...OPTIONS.bot_kinds, ...models] };
+  const state = lobby({
+    bot_kinds: ["smart", "random", "mlp:m0", "mlp:m1", "mlp:m2"],
+    slots: [
+      ...lobby().slots.slice(0, 3),
+      slot(4, { occupant: "bot2", nickname: "Reviewer 473312 1", bot: "mlp:m0" }),
+      slot(5),
+      slot(6),
+    ],
+  });
+  const view = selectLobby(of(state, "ada", options), local(), null);
+  expect(view.rows[5].buttons.map((button) => [button.label, button.intent])).toEqual([
+    ["Rule bot", { type: "addBot", kind: "smart" }],
+    ["Random", { type: "addBot", kind: "random" }],
+    ["Reviewer 473312", { type: "addBot", kind: "mlp:m0" }],
+    ["Stage 2 r5", { type: "addBot", kind: "mlp:m1" }],
+    ["Champion 9", { type: "addBot", kind: "mlp:m2" }],
+  ]);
+  expect(view.rows[3].sign).toEqual({
+    kind: "model",
+    word: "Reviewer 473312: played by the server",
+  });
+  // "Fill with rule bots" stays the usual target.
+  expect(view.fill?.intent).toEqual({ type: "fillBots", kind: "smart" });
+});
+
+it("the start of a table in the page waits for the file of a model, and the footer says how far it is", () => {
+  const full = lobby({ slots: lobby().slots.slice(0, 3) });
+  const view = selectLobby(
+    {
+      ...of(full, "ada"),
+      local: true,
+      loading: { label: "Reviewer 473312", done: 12e6, total: 23e6 },
+    },
+    local(),
+    null,
+  );
+  expect(view.footer.note).toBe("Loading Reviewer 473312 · 12 / 23 MB");
+  expect(view.footer.main?.disabled).toBe(true);
 });
 
 it("a player who is not the host has the same rows, no controls of the table and no main button", () => {

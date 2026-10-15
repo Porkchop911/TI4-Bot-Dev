@@ -1,6 +1,13 @@
 // The table of single player: it is kept in the page, and the engine of the page says what it can
 // be (`ti4_host::setup` through the setup exports), as the server says it for the table of a
 // lobby. The page is its host and its one person; the other seats are played by the page.
+import {
+  type ModelProgress,
+  type ServedModel,
+  modelEntries,
+  modelFile,
+  modelOfKind,
+} from "./models";
 import type { LocalGame } from "./savedGame";
 import type { Table, TableEvent, TableSettings } from "./table";
 import { setupDrawOf, setupOptionsOf, setupPreviewOf } from "./wasmTransport";
@@ -36,6 +43,10 @@ export interface LocalTablePlay {
   seed: number;
   /** The host started the game: what plays it, and plays it again. */
   onStart(game: LocalGame): void;
+  /** The models that the server offers (`GET /api/models`): each is the kind `mlp:<name>`. */
+  models?: readonly ServedModel[];
+  /** Loads the file of a model into the Cache API (`modelFile`); a test gives its own. */
+  loadModel?(model: ServedModel, progress: ModelProgress): Promise<unknown>;
 }
 
 /** Who plays a seat. Null: the seat is open. */
@@ -65,7 +76,7 @@ export function localTable(module: WebAssembly.Module, play: LocalTablePlay): Ta
   const optionsOf = (count: number) => {
     let asked = options.get(count);
     if (!asked) {
-      asked = setupOptionsOf(module, count);
+      asked = setupOptionsOf(module, count, modelEntries(play.models ?? []));
       options.set(count, asked);
     }
     return asked;
@@ -88,10 +99,74 @@ export function localTable(module: WebAssembly.Module, play: LocalTablePlay): Ta
   let closed = false;
   /** The changes apply one after the other: each is checked against the table before it. */
   let queue: Promise<void> = Promise.resolve();
+  /** The models whose files are loaded, by name. */
+  const loaded = new Set<string>();
+  /** The files that load, by the name of their model: how far each is. */
+  const loading = new Map<string, { label: string; done: number; total: number }>();
 
   const say = (event: TableEvent) => {
     for (const listener of listeners) {
       listener(event);
+    }
+  };
+  /** The names of the models that the seats play, in the order of the seats. */
+  const seatedModels = () => [
+    ...new Set(chosen.seats.flatMap((seat) => modelOfKind(seat.kind) ?? [])),
+  ];
+  /** The first file of the table that is not loaded yet. */
+  const waitingFile = () => {
+    for (const name of seatedModels()) {
+      const file = loading.get(name);
+      if (file) {
+        return file;
+      }
+    }
+    return undefined;
+  };
+  /** Tells the table again with how far its files are. */
+  const tellLoading = () => {
+    if (!latest || closed) {
+      return;
+    }
+    const file = waitingFile();
+    const { loading: _, ...rest } = latest;
+    latest = file ? { ...rest, loading: { ...file } } : rest;
+    say(latest);
+  };
+  /** Loads the file of each model that a seat plays and that is not loaded or loading. */
+  const loadFiles = () => {
+    for (const name of seatedModels()) {
+      const model = play.models?.find((item) => item.id === name);
+      if (!model || loaded.has(name) || loading.has(name)) {
+        continue;
+      }
+      loading.set(name, { label: model.label, done: 0, total: model.bytes });
+      const load = play.loadModel ?? modelFile;
+      load(model, (done, total) => {
+        loading.set(name, { label: model.label, done, total });
+        tellLoading();
+      }).then(
+        () => {
+          loading.delete(name);
+          loaded.add(name);
+          tellLoading();
+        },
+        (error: unknown) => {
+          loading.delete(name);
+          // The seats of the model are open again: the host chooses another kind.
+          apply((next) => {
+            for (const seat of next.seats) {
+              if (modelOfKind(seat.kind) === name) {
+                seat.kind = null;
+              }
+            }
+          });
+          say({
+            kind: "rejected",
+            reason: `${model.label} did not load. ${error instanceof Error ? error.message : String(error)}`,
+          });
+        },
+      );
     }
   };
 
@@ -198,6 +273,11 @@ export function localTable(module: WebAssembly.Module, play: LocalTablePlay): Ta
           options: known,
           local: true,
         };
+        loadFiles();
+        const file = waitingFile();
+        if (file) {
+          latest.loading = { ...file };
+        }
         say(latest);
       } catch (error) {
         say({ kind: "rejected", reason: error instanceof Error ? error.message : String(error) });
@@ -355,6 +435,10 @@ export function localTable(module: WebAssembly.Module, play: LocalTablePlay): Ta
         if (chosen.seats.some((seat) => seat.kind === null)) {
           // The words of the server for the same refusal.
           return say({ kind: "rejected", reason: "Every seat must be filled before starting" });
+        }
+        const file = waitingFile();
+        if (file) {
+          return say({ kind: "rejected", reason: `${file.label} is still loading` });
         }
         try {
           // The engine draws the factions as it will for the game: a table that cannot start is

@@ -55,6 +55,7 @@ wire-web = [
     "--lib", "--tests", "--", "--exact", "wire_types::generated_wire_types_are_current",
     "protocol_fixtures::protocol_fixtures_are_current", "fixtures_verification::ensure_and_verify_fixtures",
     "catalog_fixture::catalog_fixture_is_current", "synthetic_logits_fixture_is_current",
+    "model_fixture::model_fixture_is_current",
 ]
 # The policy and training crates: everything that uses `ti4-policy` or `ti4-mlp` outside the game
 # crates (`ti4-server` is in the game set). They link libtorch through `ti4-mlp` and `ti4-tensor`;

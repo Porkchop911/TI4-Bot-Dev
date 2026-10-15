@@ -15,6 +15,7 @@ import type {
   LobbyStepView,
   LobbyView,
 } from "../../model";
+import { MLP_PREFIX, megabytes } from "../models";
 import type { TableState } from "../table";
 import type { Catalog, LobbySlot, LobbyState, SetupOptions } from "../wire";
 import { SEAT_PLACE, selectPreviewBoard } from "./board";
@@ -30,10 +31,13 @@ export interface LobbyLocal {
 }
 
 /**
- * The sign of each kind of seat that the server plays in its own process. A kind with no sign
- * is not offered. The names are those of the setup options of the server.
+ * The sign of each kind of seat that the server plays in its own process: the rule bot, a random
+ * seat, and a model (`mlp:<name>`). A kind with no sign is not offered. The names are those of
+ * the setup options of the server.
  */
 const KIND_SIGNS: Record<string, LobbySignView["kind"]> = { smart: "rule", random: "random" };
+const kindSign = (kind: string): LobbySignView["kind"] | null =>
+  kind.startsWith(MLP_PREFIX) ? "model" : (KIND_SIGNS[kind] ?? null);
 /** The kind of "Fill with …": the usual choice. */
 const USUAL_KIND = "smart";
 /** One step of the wait of the seats that the server plays, in milliseconds. */
@@ -44,7 +48,7 @@ const plural = (count: number, word: string) => `${count} ${word}${count === 1 ?
 /** The kinds that a host can add, as the server names them. Empty until it said the names. */
 const kindsOf = (lobby: LobbyState, options: SetupOptions | null) =>
   (options?.bot_kinds ?? []).filter(
-    (kind) => kind.id in KIND_SIGNS && lobby.bot_kinds.includes(kind.id),
+    (kind) => kindSign(kind.id) !== null && lobby.bot_kinds.includes(kind.id),
   );
 
 /** Who plays the seats that no person has: the server, or for a table in the page, the page. */
@@ -63,7 +67,7 @@ function sign(
   if (slot.bot) {
     const name = options?.bot_kinds.find((kind) => kind.id === slot.bot)?.name;
     return {
-      kind: KIND_SIGNS[slot.bot] ?? "random",
+      kind: kindSign(slot.bot) ?? "random",
       word: name ? `${name}: played by ${playerOf(local)}` : `Played by ${playerOf(local)}`,
     };
   }
@@ -406,7 +410,13 @@ export function selectLobby(
     };
   });
 
-  const blocked = open ? `Waiting for ${plural(open, "open seat")}` : "";
+  // A file of a model that a seat of a table in the page plays: the start waits for it too.
+  const file = table.loading;
+  const blocked = open
+    ? `Waiting for ${plural(open, "open seat")}`
+    : file
+      ? `Loading ${file.label} · ${megabytes(file.done, file.total)}`
+      : "";
   const footer: LobbyFooterView = !before
     ? {
         // A game that runs waits for nobody here. A visitor opens it, with no seat.

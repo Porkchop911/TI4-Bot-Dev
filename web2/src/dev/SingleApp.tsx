@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { LobbyScreen } from "../game/lobby/LobbyScreen";
 import type { LobbyIntent } from "../model";
 import { localTable } from "../session/localTable";
+import { type ServedModel, listModels } from "../session/models";
 import { PLAYER_COUNT_KEY, keptNickname, validNickname } from "../session/onlineKeys";
 import { type LocalGame, SINGLE_SLOT, gameOfSave } from "../session/savedGame";
 import { saveStore } from "../session/saves";
@@ -45,6 +46,8 @@ function SingleSetup({
   onStart: (game: LocalGame) => void;
 }) {
   const [engine, setEngine] = useState<Engine | null>(null);
+  /** The models that the server offers; none with no server. Asked once, with the engine. */
+  const [models, setModels] = useState<ServedModel[] | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [table, setTable] = useState<Table | null>(null);
   const [state, setState] = useState<TableState | null>(null);
@@ -53,8 +56,13 @@ function SingleSetup({
 
   useEffect(() => {
     let stale = false;
-    loadEngine(wasmUrl)
-      .then((loaded) => stale || setEngine(loaded))
+    Promise.all([loadEngine(wasmUrl), listModels()])
+      .then(([loaded, served]) => {
+        if (!stale) {
+          setModels(served ?? []);
+          setEngine(loaded);
+        }
+      })
       .catch((error: unknown) => stale || setFailure(message(error)));
     return () => {
       stale = true;
@@ -75,6 +83,7 @@ function SingleSetup({
         (Number.isInteger(kept) && kept >= 2 && kept <= 8 ? kept : DEFAULT_PLAYERS),
       seed: start.seed ?? crypto.getRandomValues(new Uint32Array(1))[0],
       onStart,
+      models: models ?? [],
     });
     const stop = made.subscribe((event) => {
       switch (event.kind) {
@@ -94,7 +103,7 @@ function SingleSetup({
       made.close();
       setTable(null);
     };
-  }, [engine, start, onStart, say]);
+  }, [engine, models, start, onStart, say]);
 
   const view = useMemo(
     () =>

@@ -1730,3 +1730,95 @@ test("single player: the other seats take the wait of the table, and the page sa
     "500",
   );
 });
+
+test("single player: a model plays a seat, its file is fetched once, and the game is played to the action phase", async ({
+  page,
+}) => {
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("console", (message) => message.type() === "error" && errors.push(message.text()));
+  page.on("pageerror", (error) => errors.push(error.message));
+  /** The files of the models that the page fetched from the server (not from the Cache API). */
+  const fetched: string[] = [];
+  page.on("requestfinished", (request) => {
+    if (/\/api\/models\/[0-9a-f]{64}\.ti4m$/.test(request.url())) {
+      fetched.push(request.url());
+    }
+  });
+  await page.goto("/?single&seed=3&players=8");
+  await expect(lobbyRows(page)).toHaveCount(8);
+  // The e2e server offers three models: each is a kind of an open seat after "Random".
+  await lobbyPlayers(page).getByRole("button", { name: "Remove Rule bot 7" }).click();
+  const open = lobbyRows(page).nth(7);
+  await expect(open.getByRole("button")).toHaveText([
+    "Rule bot",
+    "Random",
+    "Synthetic model 1",
+    "Synthetic model 2",
+    "Synthetic model 3",
+  ]);
+  // The row of the open seat fits the panel, and the page does not scroll.
+  const list = lobbyPlayers(page).getByRole("list");
+  expect(await list.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+  expect(
+    await page.evaluate(() => ({
+      width: document.documentElement.scrollWidth,
+      height: document.documentElement.scrollHeight,
+    })),
+  ).toEqual({ width: 1920, height: 1080 });
+  await page.screenshot({ path: "shots/local/single-models.png", animations: "disabled" });
+
+  // Two seats of models: the sign "✦" says the model on hover, and the start waits for the files.
+  await open.getByRole("button", { name: "Synthetic model 2" }).click();
+  await expect(open).toContainText("Synthetic model 2 1");
+  await expect(open.getByRole("img", { name: "Synthetic model 2: played by the page" })).toHaveText(
+    "✦",
+  );
+  await lobbyPlayers(page).getByRole("button", { name: "Remove Rule bot 6" }).click();
+  await lobbyRows(page).nth(6).getByRole("button", { name: "Synthetic model 1" }).click();
+  await expect(lobbyRows(page).nth(6)).toContainText("Synthetic model 1 1");
+  await page.mouse.move(0, 0);
+  await page.screenshot({ path: "shots/local/single-models-seated.png", animations: "disabled" });
+  await expect(lobbyMain(page)).toBeEnabled();
+  await lobbyMain(page).click();
+
+  // The game: the seats of the models play, and the player table has their sign.
+  await expect(page.getByText("Round 1 · Strategy phase")).toBeVisible();
+  const table = page.getByRole("region", { name: "Players" });
+  await expect(
+    table.getByRole("img", { name: "Synthetic model 1: no person plays this seat" }),
+  ).toHaveText("✦");
+  // Each of eight seats takes one strategy card.
+  await expect(heading(page)).toHaveText("Choose a strategy card");
+  await panel(page).getByRole("button", { pressed: false }).first().click();
+  await send(page).click();
+  await expect(page.getByText("Round 1 · Action phase")).toBeVisible();
+  expect(new Set(fetched).size).toBe(2);
+  expect(fetched).toHaveLength(2);
+
+  // A reload plays the saved game again: the files come from the Cache API, not the server.
+  await page.reload();
+  await expect(page.getByText("Round 1 · Action phase")).toBeVisible();
+  expect(fetched).toHaveLength(2);
+  expect(errors).toEqual([]);
+});
+
+test("single player: a saved game whose model the server no longer offers says so in place of the game", async ({
+  page,
+}) => {
+  await page.goto("/?single&seed=3&players=3");
+  await lobbyPlayers(page).getByRole("button", { name: "Remove Rule bot 2" }).click();
+  await lobbyRows(page).nth(2).getByRole("button", { name: "Synthetic model 1" }).click();
+  await expect(lobbyMain(page)).toBeEnabled();
+  await lobbyMain(page).click();
+  await expect(send(page)).toBeVisible();
+  await written(page, "single");
+  // The server dropped the model: the game cannot go on, and "New game" opens the setup.
+  await page.route("**/api/models", (route) => route.fulfill({ json: [] }));
+  await page.reload();
+  await expect(
+    page.getByText("The server no longer offers the model “synthetic-1” that this game seats."),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "New game" }).click();
+  await expect(lobbyTitle(page)).toHaveText(/^Single player · /);
+});

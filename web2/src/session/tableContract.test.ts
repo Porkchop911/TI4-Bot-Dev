@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -7,6 +7,7 @@ import {
   testServerBinary,
 } from "../../../web-shared/test/server.ts";
 import { localTable } from "./localTable";
+import type { ServedModel } from "./models";
 import type { LocalGame } from "./savedGame";
 import { openSocket } from "@ti4/shared/net/socket.ts";
 import { type Table, type TableState, createTable, serverTable } from "./table";
@@ -20,6 +21,19 @@ import { type Table, type TableState, createTable, serverTable } from "./table";
 // `scripts/build-wasm.sh`, and `cargo b-web`.
 const WASM = fileURLToPath(new URL("./ti4.wasm", import.meta.url));
 const SERVER = testServerBinary();
+/** The models of the servers of the tests: three copies of the synthetic model (`cargo wire-web`). */
+const MODEL_DIR = fileURLToPath(new URL("../../../fixtures/models", import.meta.url));
+const MODELS: ServedModel[] = (
+  JSON.parse(readFileSync(`${MODEL_DIR}/index.json`, "utf8")) as {
+    models: { name: string; label: string; sha256: string }[];
+  }
+).models.map((model) => ({
+  id: model.name,
+  label: model.label,
+  sha256: model.sha256,
+  bytes: statSync(`${MODEL_DIR}/${model.name}.ti4m`).size,
+}));
+const KINDS = ["smart", "random", ...MODELS.map((model) => `mlp:${model.id}`)];
 
 /** One table, as a test uses it. */
 interface Side {
@@ -116,8 +130,12 @@ function contract(make: () => Promise<Side>) {
       "base_game_codex1",
     ]);
     expect(lobby.strategy_card_set).toBe("te");
-    expect(options!.bot_kinds.map((kind) => kind.id)).toEqual(["smart", "random"]);
-    expect(lobby.bot_kinds).toEqual(expect.arrayContaining(["smart", "random"]));
+    // The models of the host are kinds after the rule bot and the random seat, named by their labels.
+    expect(options!.bot_kinds.map((kind) => kind.id)).toEqual(KINDS);
+    expect(options!.bot_kinds.slice(2).map((kind) => kind.name)).toEqual(
+      MODELS.map((model) => model.label),
+    );
+    expect(lobby.bot_kinds).toEqual(expect.arrayContaining(KINDS));
     const factions = options!.faction_groups.flatMap((group) => group.factions);
     expect(factions).toHaveLength(24);
     expect([...lobby.factions].sort()).toEqual(factions.map((faction) => faction.id).sort());
@@ -230,6 +248,26 @@ function contract(make: () => Promise<Side>) {
     at.table.close();
   }, 30_000);
 
+  it("a model plays a seat: the seat is named by its label, and the table starts with it", async () => {
+    const at = await make();
+    await cleared(at);
+    const kind = `mlp:${MODELS[0].id}`;
+    at.table.addBots(kind);
+    const added = await at.until((state) => open(state).length === 2);
+    const seat = added.lobby.slots.find((slot) => slot.bot)!;
+    expect(seat.bot).toBe(kind);
+    expect(seat.nickname).toMatch(new RegExp(`^${MODELS[0].label} \\d+$`));
+    at.table.addBots("smart", true);
+    await at.until((state) => open(state).length === 0 && !state.loading);
+    at.table.start();
+    await at.until((state) => state.lobby.phase === "running");
+    const game = at.game();
+    if (game) {
+      expect(game.table?.seats.map((each) => each.kind)).toContain(kind);
+    }
+    at.table.close();
+  }, 30_000);
+
   it("the start waits for every seat, and then the table says that the game runs", async () => {
     const at = await make();
     await cleared(at);
@@ -258,10 +296,45 @@ describe.skipIf(!existsSync(WASM))("the table in this page", () => {
       onStart: (made) => {
         game = made;
       },
+      models: MODELS,
+      loadModel: async () => undefined,
     });
     return side(table, () => game);
   };
   contract(make);
+
+  it("the start waits for the file of a model, and the table says how far it is", async () => {
+    let finish: () => void = () => undefined;
+    const table = localTable(module, {
+      nickname: "Contract",
+      players: 2,
+      seed: 3,
+      onStart: () => undefined,
+      models: MODELS,
+      loadModel: (model, progress) =>
+        new Promise<void>((resolve) => {
+          progress(1_000, model.bytes);
+          finish = resolve;
+        }),
+    });
+    const at = side(table);
+    await at.until((state) => state.preview !== null);
+    at.table.removeSeat("b");
+    at.table.addBots(`mlp:${MODELS[1].id}`);
+    const waiting = await at.until((state) => state.loading?.done === 1_000);
+    expect(waiting.loading).toEqual({
+      label: MODELS[1].label,
+      done: 1_000,
+      total: MODELS[1].bytes,
+    });
+    at.table.start();
+    expect(await at.refused()).toBe(`${MODELS[1].label} is still loading`);
+    finish();
+    await at.until((state) => !state.loading);
+    at.table.start();
+    await at.until((state) => state.lobby.phase === "running");
+    at.table.close();
+  });
 
   it("begins with a rule bot in every other seat, and has no other person", async () => {
     const at = await make();
@@ -341,7 +414,7 @@ describe.skipIf(!SERVER)("the table of a lobby on a server", () => {
   let server: TestServer;
   const fetcher: typeof fetch = (input, init) => fetch(`${server.url}${input}`, init);
   beforeAll(async () => {
-    server = await spawnTestServer();
+    server = await spawnTestServer({ env: { TI4_MODEL_DIR: MODEL_DIR } });
   }, 60_000);
   afterAll(() => server?.stop());
   contract(async () => {

@@ -46,7 +46,9 @@ src/engine/  host.ts      Host: one wasm instance plays one game (JSPI), Envelop
              jspi.ts      hasJspi(), on its own so that a page checks it without loading the host
              runner.ts    HostRunner: one game at a time in the Worker, a save at each question; a restart
                           starts as the game was started, with the stepping and the modes changed since; a
-                          query goes to the instance of the running game, else to a new one
+                          query goes to the instance of the running game, else to a new one; the files of
+                          the MLP models (`{t: "models"}`) are loaded into each instance of a game before
+                          its start (`Host.loadModel`, `ti4_model_load`), checked against their SHA-256
              worker.ts    the Worker entry; it gets a compiled WebAssembly.Module, not the file
              protocol.ts  ToWorker, FromWorker, HostPort (the Worker or a fake)
              port.ts      workerPort (a HostPort on a Worker that the app made), inlinePort (the engine in
@@ -61,7 +63,8 @@ src/link/    link.ts       GameLink (send, request?, subscribe, close), LinkEven
                            its messages: `ClientMessage` (or a command of the host) in, `ServerMessage` out
              socketLink.ts socketLink: the server over `connect` (subscription on each open, heartbeat, backoff,
                            `again`); web2's `wsTransport` runs on it
-             engineLink.ts engineLink: the engine over a HostPort (start, replies, the next question, a gate, saves);
+             engineLink.ts engineLink: the engine over a HostPort (start, replies, the next question, a gate, saves,
+                           the files of the models of the game: `models`, posted before the start);
                            web's `LocalTransport` and web2's local game (`wasmTransport`) run on it
 src/storage/ types.ts     HostSave (format 2), SavedGameRecord, GameMeta, StoreStatus, StoreError, LIMITS,
                           OfflineSaveStore, FeedbackBackend

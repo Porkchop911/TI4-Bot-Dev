@@ -517,6 +517,16 @@ pub fn choose(
 /// Never for this build: the parts are fixed.
 #[must_use]
 pub fn test_model_bytes() -> Vec<u8> {
+    test_model_bytes_named("test", "Test model")
+}
+
+/// The model of [`test_model_bytes`] under another name and label: the models that the e2e
+/// server of web2 serves (`fixtures/models/`).
+///
+/// # Panics
+/// Never for this build: the parts are fixed.
+#[must_use]
+pub fn test_model_bytes_named(name: &str, label: &str) -> Vec<u8> {
     use ti4_policy::battle::{GROUND_INPUT_WIDTH, GROUND_OUTPUT_WIDTH, input_width, output_width};
     let names = ti4_policy::power_facts::NAMES
         .iter()
@@ -551,8 +561,8 @@ pub fn test_model_bytes() -> Vec<u8> {
     // A model with a battle predictor is of schema 11 or 12.
     parts.source.schema = 12;
     let meta = ti4_infer::Meta {
-        name: "test".to_owned(),
-        label: "Test model".to_owned(),
+        name: name.to_owned(),
+        label: label.to_owned(),
         temperature: 1.0,
     };
     ti4_infer::format::write(&meta, &parts).expect("the test model packs")
