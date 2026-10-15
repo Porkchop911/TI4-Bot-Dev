@@ -89,6 +89,10 @@ The full rules are in `docs/agents/testing.md` ("Tests" and "Rust builds"). Read
 - A change of `web2/` only: `npm run typecheck`, `npm run lint`, `npm run format:check` (oxfmt over web2 and web-shared; `npx oxfmt .` fixes it), `npm test`, then `npm run e2e -- -g "<the screen>"`; the whole `npm run e2e` before the commit. Not for each change: `npm run e2e:slow`, `npm run shots`, `cargo t-web-slow`.
 - With less than 4 GB of memory: one build or one suite at a time.
 
+## Deployment
+
+The dev host serves web2 with Vite from the working tree. To bring it up to date with a branch (the engine of the page, the server, the MLP models, the restarts and the checks): `DEPLOYMENT.md`.
+
 ## Topics
 
 The rules of each feature are in `docs/agents/`. Before you change a feature, read the file of every topic that the change touches. A new rule goes into its topic file; only a rule for every screen goes into this file.
