@@ -264,9 +264,12 @@ test("phone: a movement into a fleet of another seat has the odds of the space c
   await page.locator("#step-panel").getByRole("button", { name: "Take a tactical action" }).click();
   await send.click();
   await pane("Map").click();
-  // Seat C has two cruisers and a destroyer in 32.
+  // Seat C has two cruisers and a destroyer in 32. A click on a system that is not yet a choice
+  // (the engine has not answered) inspects it: wait for the step before each click.
+  await expect(system("32")).toHaveClass(/\btarget\b/);
   await system("32").click();
   await send.click();
+  await expect(send).toHaveText(/Move nothing/);
   await system("24").click();
   const fleet = page.getByRole("group", { name: /^Move from / });
   await fleet.getByRole("button", { name: "Dreadnought 1 of 1" }).click();
@@ -314,6 +317,7 @@ test("phone: the landings are staged in a sheet over the map", async ({ page }) 
   await pane("Map").click();
   await system("38").click();
   await send.click();
+  await expect(send).toHaveText(/Move nothing/);
   await system("63").click();
   const fleet = page.getByRole("group", { name: /^Move from / });
   await fleet.getByRole("button", { name: "Carrier 1 of 1" }).click();
@@ -527,6 +531,7 @@ test("phone: a draft goes on to the landings and the production", async ({ page 
   await expect(page.locator("g.system.target:not(.plain)")).not.toHaveCount(0);
   await system("38").click();
   await send.click();
+  await expect(send).toHaveText(/Move nothing/);
   await system("63").click();
   const fleet = page.getByRole("group", { name: /^Move from / });
   await fleet.getByRole("button", { name: "Carrier 1 of 1" }).click();
