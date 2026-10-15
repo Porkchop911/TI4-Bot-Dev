@@ -55,6 +55,32 @@ wire-web = [
     "protocol_fixtures::protocol_fixtures_are_current", "fixtures_verification::ensure_and_verify_fixtures",
     "catalog_fixture::catalog_fixture_is_current", "synthetic_logits_fixture_is_current",
 ]
+# The policy and training crates: everything that uses `ti4-policy` or `ti4-mlp` outside the game
+# crates (`ti4-server` is in the game set). They link libtorch through `ti4-mlp` and `ti4-tensor`;
+# on Linux point `LIBTORCH` at the pinned Linux build (see `t-mlp-parity`). One fixed package set
+# for `l-mlp` and `t-mlp`, for the reason the game aliases have one. `l-mlp` checks every target,
+# the examples of `ti4-mlp` included; `t-mlp` runs the unit tests of the set.
+l-mlp = "clippy -p ti4-policy -p ti4-mlp -p ti4-sim -p ti4-training -p ti4-review -p ti4-cli -p ti4-advisor -p ti4-replayer --all-targets"
+t-mlp = "test -p ti4-policy -p ti4-mlp -p ti4-sim -p ti4-training -p ti4-review -p ti4-cli -p ti4-advisor -p ti4-replayer --lib"
+# The MLP of training on libtorch against `ti4-infer`, decision by decision, on seeded games of
+# `examples/reviewer/checkpoint-473312` (and of a schema-12 bundle of `out/champions/` when there
+# is one): the logits, the option drawn, the features of `MlpBot`, and the time of a decision.
+# `ti4-infer` is optimized as for its bench (`ti4_infer::bench`), so that the printed times compare
+# like with like (libtorch is a release build), and the output is shown. On Linux the pinned libtorch is `out/libtorch-2.9.1-cpu-linux`
+# (`scripts/install_libtorch_cpu_linux.sh`); an exported `LIBTORCH` overrides the `[env]` above:
+#   LIBTORCH=$PWD/out/libtorch-2.9.1-cpu-linux LIBTORCH_BYPASS_VERSION_CHECK=1 \
+#   LD_LIBRARY_PATH=$PWD/out/libtorch-2.9.1-cpu-linux/lib cargo t-mlp-parity
+t-mlp-parity = [
+    "test",
+    "--config", "profile.dev.package.ti4-infer.opt-level=3",
+    "--config", "profile.dev.package.ti4-infer.debug-assertions=false",
+    "--config", "profile.dev.package.ti4-infer.overflow-checks=false",
+    "-p", "ti4-mlp", "--test", "infer_parity", "--", "--nocapture",
+]
+# `ti4-policy` for the target of the page, which links it from step 6 of the MLP inference plan
+# on: a check that it stays clean for wasm (no `getrandom`, no `tch`). Its own target directory
+# (`target/wasm32-unknown-unknown`), so it shares nothing with the native aliases.
+wasm-policy = "check -p ti4-policy --lib --target wasm32-unknown-unknown"
 # `target/debug/server` for the e2e and the transport tests of web2. The test target is named only
 # so that the features are those of `t-web` (it is small); without it the engine is built again.
 b-web = "build -p ti4-model -p ti4-content -p ti4-calc -p ti4-engine -p ti4-host -p ti4-rule-bot -p ti4-server -p ti4-wasm -p ti4-infer --bin server --test content_ids_resolve"

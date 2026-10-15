@@ -7,8 +7,7 @@ use serde_json::Value;
 use ti4_infer::format::{self, VERSION};
 use ti4_infer::synthetic::Rng;
 use ti4_infer::{
-    EMBED_DIM, InferError, LEGACY_HEADS, Meta, Model, Parts, Scratch, SparseOption, bundle,
-    total_order_key,
+    EMBED_DIM, InferError, LEGACY_HEADS, Meta, Model, Parts, Scratch, bundle, total_order_key,
 };
 
 fn meta() -> Meta {
@@ -25,7 +24,7 @@ fn synthetic(seed: u64, width: usize, capacity: usize, blocks: usize) -> Parts {
 }
 
 /// Options with unsorted and repeated columns, an empty one and an already sorted one.
-fn options(rng: &mut Rng, count: usize, capacity: usize) -> Vec<SparseOption> {
+fn options(rng: &mut Rng, count: usize, capacity: usize) -> Vec<Vec<(u32, f32)>> {
     ti4_infer::synthetic::options(rng.next_u64(), count, capacity, 40)
 }
 
@@ -35,7 +34,7 @@ fn relu(x: f32) -> f32 {
 
 /// The forward pass in plain loops over the unpacked weights, in the order `ti4_infer::model`
 /// fixes for every sum.
-fn reference(parts: &Parts, faction: usize, head: usize, options: &[SparseOption]) -> Vec<f32> {
+fn reference(parts: &Parts, faction: usize, head: usize, options: &[Vec<(u32, f32)>]) -> Vec<f32> {
     let w = parts.width;
     let heads = parts.heads.len();
     let dot = |x: &[f32], matrix: &[f32], out: usize| {
@@ -48,12 +47,7 @@ fn reference(parts: &Parts, faction: usize, head: usize, options: &[SparseOption
     options
         .iter()
         .map(|option| {
-            let mut pairs: Vec<(i64, f32)> = option
-                .columns
-                .iter()
-                .copied()
-                .zip(option.values.iter().copied())
-                .collect();
+            let mut pairs: Vec<(u32, f32)> = option.clone();
             pairs.sort_by(|a, b| {
                 a.0.cmp(&b.0)
                     .then(total_order_key(a.1).cmp(&total_order_key(b.1)))
@@ -205,36 +199,29 @@ fn the_forward_is_the_plain_loops_bit_for_bit() {
 fn a_forward_refuses_what_the_gather_refuses() {
     let parts = synthetic(5, 128, 50, 0);
     let model = Model::from_bytes(&format::write(&meta(), &parts).unwrap()).unwrap();
-    let one = |columns: Vec<i64>, values: Vec<f32>| vec![SparseOption { columns, values }];
+    let one = |column: u32, value: f32| vec![vec![(column, value)]];
     assert!(matches!(
         model.forward(0, 0, &[]),
         Err(InferError::EmptyLegalSet)
     ));
     assert!(matches!(
-        model.forward(33, 0, &one(vec![1], vec![1.0])),
+        model.forward(33, 0, &one(1, 1.0)),
         Err(InferError::Faction(33))
     ));
     assert!(matches!(
-        model.forward(0, 14, &one(vec![1], vec![1.0])),
+        model.forward(0, 14, &one(1, 1.0)),
         Err(InferError::Head(14))
     ));
     assert!(matches!(
-        model.forward(0, 0, &one(vec![50], vec![1.0])),
+        model.forward(0, 0, &one(50, 1.0)),
         Err(InferError::OutOfRange {
             column: 50,
             capacity: 50
         })
     ));
     assert!(matches!(
-        model.forward(0, 0, &one(vec![1], vec![f32::INFINITY])),
+        model.forward(0, 0, &one(1, f32::INFINITY)),
         Err(InferError::NotFinite(_))
-    ));
-    assert!(matches!(
-        model.forward(0, 0, &one(vec![1, 2], vec![1.0])),
-        Err(InferError::Ragged {
-            columns: 2,
-            values: 1
-        })
     ));
 }
 

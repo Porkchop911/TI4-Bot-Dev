@@ -47,7 +47,7 @@ mod lanes_tests;
 pub use error::InferError;
 pub use format::{BlockParts, Meta, Parts, Source};
 pub use kernel::total_order_key;
-pub use model::{Model, Scratch, SparseOption};
+pub use model::{Model, Scratch};
 pub use simd::Backend;
 
 /// The backend a model is loaded on, on this target and this CPU: [`Backend::best`]. A model

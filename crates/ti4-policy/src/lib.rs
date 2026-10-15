@@ -17,6 +17,7 @@ pub mod features;
 pub mod inference;
 pub mod intern;
 pub mod learned;
+pub mod mlp;
 pub mod power_facts;
 pub mod power_map;
 pub mod progress;

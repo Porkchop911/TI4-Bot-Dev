@@ -26,17 +26,6 @@ use crate::kernel::{self, Epilogue};
 use crate::simd::{self, AlignedF32, Backend, Lanes, Run};
 use crate::{EMBED_DIM, FACTION_ROSTER, InferError};
 
-/// One option's active columns and their values: `ti4_mlp::SparseOption`.
-///
-/// A column may be named more than once; its values are summed in a fixed order before the bag.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct SparseOption {
-    /// Rows of the input table.
-    pub columns: Vec<i64>,
-    /// Their values, positionally matched.
-    pub values: Vec<f32>,
-}
-
 /// The ranges of one residual block in the buffer of a model.
 #[derive(Debug, Clone)]
 pub(crate) struct BlockRanges {
@@ -218,14 +207,19 @@ impl Model {
 
     /// One logit per option, for a decision of the faction row `faction` on the head row `head`.
     ///
+    /// Each option is its active `(column, value)` pairs, as the decision pipeline of
+    /// `ti4_policy::mlp` makes them (`Columns`). A column may be named more than once; its values
+    /// are summed in a fixed order before the bag. The type is concrete, not generic, so that the
+    /// forward pass is compiled in this crate with its own optimization.
+    ///
     /// # Errors
     /// [`InferError::EmptyLegalSet`], [`InferError::Faction`], [`InferError::Head`], or a malformed
-    /// option ([`InferError::Ragged`], [`InferError::OutOfRange`], [`InferError::NotFinite`]).
+    /// option ([`InferError::OutOfRange`], [`InferError::NotFinite`]).
     pub fn forward(
         &self,
         faction: usize,
         head: usize,
-        options: &[SparseOption],
+        options: &[Vec<(u32, f32)>],
     ) -> Result<Vec<f32>, InferError> {
         let mut out = Vec::with_capacity(options.len());
         self.forward_with(&mut Scratch::new(), faction, head, options, &mut out)?;
@@ -241,7 +235,7 @@ impl Model {
         scratch: &mut Scratch,
         faction: usize,
         head: usize,
-        options: &[SparseOption],
+        options: &[Vec<(u32, f32)>],
         out: &mut Vec<f32>,
     ) -> Result<(), InferError> {
         self.forward_on(self.backend, scratch, faction, head, options, out)
@@ -254,7 +248,7 @@ impl Model {
         scratch: &mut Scratch,
         faction: usize,
         head: usize,
-        options: &[SparseOption],
+        options: &[Vec<(u32, f32)>],
         out: &mut Vec<f32>,
     ) -> Result<(), InferError> {
         simd::run(
@@ -278,7 +272,7 @@ impl Model {
         scratch: &mut Scratch,
         faction: usize,
         head: usize,
-        options: &[SparseOption],
+        options: &[Vec<(u32, f32)>],
         out: &mut Vec<f32>,
     ) -> Result<(), InferError> {
         out.clear();
@@ -311,13 +305,7 @@ impl Model {
         z.resize(rows * width, 0.0);
         let (w1, b1) = (self.f(&self.w1), self.f(&self.b1));
         for (option, row) in options.iter().zip(z.chunks_exact_mut(width)) {
-            kernel::canonical_bag(
-                &option.columns,
-                &option.values,
-                self.capacity,
-                entries,
-                sort,
-            )?;
+            kernel::canonical_bag(option, self.capacity, entries, sort)?;
             kernel::bag::<L>(w1, width, entries, identity, b1, row);
         }
 
@@ -377,7 +365,7 @@ struct Forward<'a> {
     scratch: &'a mut Scratch,
     faction: usize,
     head: usize,
-    options: &'a [SparseOption],
+    options: &'a [Vec<(u32, f32)>],
     out: &'a mut Vec<f32>,
 }
 

@@ -45,17 +45,10 @@ pub enum InferError {
     Head(usize),
     /// A decision with no option.
     EmptyLegalSet,
-    /// An option whose columns and values differ in length.
-    Ragged {
-        /// The number of columns.
-        columns: usize,
-        /// The number of values.
-        values: usize,
-    },
     /// A column outside the input table.
     OutOfRange {
         /// The column.
-        column: i64,
+        column: u32,
         /// The rows of the input table.
         capacity: usize,
     },
@@ -94,9 +87,6 @@ impl fmt::Display for InferError {
             Self::Faction(row) => write!(f, "faction row {row} is outside the roster"),
             Self::Head(head) => write!(f, "head {head} is not one of the model's heads"),
             Self::EmptyLegalSet => write!(f, "the legal set is empty"),
-            Self::Ragged { columns, values } => {
-                write!(f, "an option has {columns} columns and {values} values")
-            }
             Self::OutOfRange { column, capacity } => {
                 write!(
                     f,

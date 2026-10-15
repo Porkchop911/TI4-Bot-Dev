@@ -40,24 +40,30 @@ use std::hint::black_box;
 use std::time::{Duration, Instant};
 
 use crate::synthetic::{self, Rng};
-use crate::{Backend, Model, Scratch, SparseOption, format};
+use crate::{Backend, Model, Scratch, format};
 
 /// The active columns of an option, as a real decision has them on average.
 const COLUMNS: usize = 85;
 
-fn decision(rng: &mut Rng, count: usize, capacity: usize) -> Vec<SparseOption> {
+fn decision(rng: &mut Rng, count: usize, capacity: usize) -> Vec<Vec<(u32, f32)>> {
     (0..count)
-        .map(|_| SparseOption {
-            columns: (0..COLUMNS)
-                .map(|_| i64::try_from(rng.below(capacity)).unwrap())
-                .collect(),
-            values: (0..COLUMNS).map(|_| 0.5 + rng.unit()).collect(),
+        .map(|_| {
+            let columns: Vec<u32> = (0..COLUMNS)
+                .map(|_| u32::try_from(rng.below(capacity)).unwrap())
+                .collect();
+            let values: Vec<f32> = (0..COLUMNS).map(|_| 0.5 + rng.unit()).collect();
+            columns.into_iter().zip(values).collect()
         })
         .collect()
 }
 
 /// The mean time of one forward over `decisions`, taken in turn for `runs` forwards.
-fn time(model: &Model, backend: Backend, decisions: &[Vec<SparseOption>], runs: usize) -> Duration {
+fn time(
+    model: &Model,
+    backend: Backend,
+    decisions: &[Vec<Vec<(u32, f32)>>],
+    runs: usize,
+) -> Duration {
     let mut scratch = Scratch::new();
     let mut out = Vec::new();
     for options in decisions.iter().take(runs.min(decisions.len())) {

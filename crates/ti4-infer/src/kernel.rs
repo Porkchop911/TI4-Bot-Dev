@@ -36,45 +36,36 @@ const fn from_total_order_key(key: u32) -> f32 {
     })
 }
 
-/// One option's columns and values as the bag reads them: columns strictly increasing, each with
-/// the sum of the values it was named with. Appended to `out`; `scratch` is reused across calls.
+/// One option's `(column, value)` pairs as the bag reads them: columns strictly increasing, each
+/// with the sum of the values it was named with. Written to `out`; `scratch` is reused across calls.
 ///
-/// The order and the fold are those of `ti4_tensor::gather_reduce_batch`: already strictly
-/// increasing columns are taken as they are; otherwise the pairs are sorted by column, then by
+/// A column named more than once is folded in a fixed order: its values sorted by the
 /// [`total_order_key`] of the value, and the values of one column are added in that order.
 ///
 /// # Errors
-/// [`InferError::Ragged`], [`InferError::OutOfRange`] or [`InferError::NotFinite`], as the gather
-/// of `ti4-tensor` refuses them.
+/// [`InferError::OutOfRange`] or [`InferError::NotFinite`], as the gather of `ti4-tensor` refuses
+/// them.
 pub(crate) fn canonical_bag(
-    columns: &[i64],
-    values: &[f32],
+    option: &[(u32, f32)],
     capacity: usize,
     out: &mut Vec<(usize, f32)>,
     scratch: &mut Vec<u64>,
 ) -> Result<(), InferError> {
-    if columns.len() != values.len() {
-        return Err(InferError::Ragged {
-            columns: columns.len(),
-            values: values.len(),
-        });
-    }
-    let in_range = |column: i64| usize::try_from(column).is_ok_and(|c| c < capacity);
-    if let Some(&column) = columns.iter().find(|column| !in_range(**column)) {
+    if let Some(&(column, _)) = option
+        .iter()
+        .find(|(column, _)| *column as usize >= capacity)
+    {
         return Err(InferError::OutOfRange { column, capacity });
     }
-    if let Some(&value) = values.iter().find(|value| !value.is_finite()) {
+    if let Some(&(_, value)) = option.iter().find(|(_, value)| !value.is_finite()) {
         return Err(InferError::NotFinite(value));
     }
-    // In range, so the casts below cannot fail.
-    let index = |column: i64| usize::try_from(column).unwrap_or(0);
     out.clear();
-    if columns.windows(2).all(|pair| pair[0] < pair[1]) {
+    if option.windows(2).all(|pair| pair[0].0 < pair[1].0) {
         out.extend(
-            columns
+            option
                 .iter()
-                .zip(values)
-                .map(|(column, value)| (index(*column), *value)),
+                .map(|(column, value)| (*column as usize, *value)),
         );
         return Ok(());
     }
@@ -82,9 +73,11 @@ pub(crate) fn canonical_bag(
     // order by column, then by value. Two equal keys are the same column and the same bits, so
     // the unstable sort gives the order of a stable one.
     scratch.clear();
-    scratch.extend(columns.iter().zip(values).map(|(column, value)| {
-        ((index(*column) as u64) << 32) | u64::from(total_order_key(*value))
-    }));
+    scratch.extend(
+        option
+            .iter()
+            .map(|(column, value)| (u64::from(*column) << 32) | u64::from(total_order_key(*value))),
+    );
     scratch.sort_unstable();
     for &key in scratch.iter() {
         let column = (key >> 32) as usize;
@@ -396,8 +389,7 @@ mod tests {
         let mut out = Vec::new();
         let mut scratch = Vec::new();
         canonical_bag(
-            &[5, 2, 5, 9, 2],
-            &[1.0, 0.5, -3.0, 2.0, 0.25],
+            &[(5, 1.0), (2, 0.5), (5, -3.0), (9, 2.0), (2, 0.25)],
             10,
             &mut out,
             &mut scratch,
@@ -405,23 +397,15 @@ mod tests {
         .expect("valid");
         // Column 2: 0.25 then 0.5 (by value); column 5: -3.0 then 1.0.
         assert_eq!(out, vec![(2, 0.25 + 0.5), (5, -3.0 + 1.0), (9, 2.0)]);
-        canonical_bag(&[1, 3], &[1.0, 2.0], 10, &mut out, &mut scratch).expect("valid");
+        canonical_bag(&[(1, 1.0), (3, 2.0)], 10, &mut out, &mut scratch).expect("valid");
         assert_eq!(out, vec![(1, 1.0), (3, 2.0)]);
         assert!(matches!(
-            canonical_bag(&[10], &[1.0], 10, &mut out, &mut scratch),
+            canonical_bag(&[(10, 1.0)], 10, &mut out, &mut scratch),
             Err(InferError::OutOfRange { column: 10, .. })
         ));
         assert!(matches!(
-            canonical_bag(&[-1], &[1.0], 10, &mut out, &mut scratch),
-            Err(InferError::OutOfRange { column: -1, .. })
-        ));
-        assert!(matches!(
-            canonical_bag(&[1], &[f32::NAN], 10, &mut out, &mut scratch),
+            canonical_bag(&[(1, f32::NAN)], 10, &mut out, &mut scratch),
             Err(InferError::NotFinite(_))
-        ));
-        assert!(matches!(
-            canonical_bag(&[1, 2], &[1.0], 10, &mut out, &mut scratch),
-            Err(InferError::Ragged { .. })
         ));
     }
 

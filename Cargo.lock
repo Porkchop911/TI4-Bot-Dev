@@ -4319,6 +4319,7 @@ dependencies = [
  "ti4-bridge",
  "ti4-content",
  "ti4-engine",
+ "ti4-infer",
  "ti4-model",
  "ti4-policy",
  "ti4-rule-bot",

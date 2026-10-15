@@ -9,7 +9,9 @@ ti4-model.workspace = true
 ti4-content.workspace = true
 ti4-engine.workspace = true
 serde.workspace = true
-rand.workspace = true
+# No default features, as in `ti4-rule-bot`: the engine of the page links this crate (the MLP
+# decision pipeline, `mlp`), and the default features of `rand` pull in `getrandom`.
+rand = { version = "0.9", default-features = false }
 rand_chacha.workspace = true
 serde_json.workspace = true
 bincode.workspace = true

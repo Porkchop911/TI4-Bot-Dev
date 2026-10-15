@@ -1,6 +1,6 @@
 # MLP bots without libtorch: inference in ti4-host, on the server and in the page (2026-10-15)
 
-Status: planned. Step 1 done (2026-10-15). Step 2 done (2026-10-15). Step 3 done (2026-10-15).
+Status: planned. Step 1 done (2026-10-15). Step 2 done (2026-10-15). Step 3 done (2026-10-15). Step 4 done (2026-10-15).
 
 ## Context
 
@@ -68,7 +68,7 @@ ti4-mlp   → ti4-policy, ti4-infer, tch
 | `bundle`      | The reader of a training bundle directory (`ti4-mlp/src/bundle.rs` layout): the `safetensors` header (u64 length, JSON, raw f32 LE) parsed by hand, and the checks of `manifest.json` (schema 7–12, `projection_abi`, the SHA-256 of each file, f32 only, shapes). It is only used by the pack tool and the tests. |
 | `simd/`       | The `Lanes` trait, the five backends and the dispatch (section C). This is the only module with `#[allow(unsafe_code)]`. The crate restates the workspace lints with `unsafe_code = "deny"`, as `ti4-tensor` does.                                                                                                 |
 | `kernel`      | `bag`, `gemm` (packed panels), `readout`, generic over `Lanes`.                                                                                                                                                                                                                                                    |
-| `model`       | `Model`: the sections of one file and `forward(faction, head, options) -> Vec<f32>` with a reused scratch buffer. It is `Send + Sync` and shared by `Arc` across seats and games.                                                                                                                                  |
+| `model`       | `Model`: the sections of one file and `forward(faction, head, options: &[Vec<(u32, f32)>]) -> Vec<f32>` with a reused scratch buffer. It is `Send + Sync` and shared by `Arc` across seats and games.                                                                                                              |
 | `bin/pack.rs` | `ti4-pack <bundle dir> <name> <out.ti4m>`.                                                                                                                                                                                                                                                                         |
 
 ### B. The model file `.ti4m` (the prepacking)
@@ -224,40 +224,58 @@ decisions.
 
 ### D. One decision pipeline, shared with training
 
-The pipeline is the part of `MlpBot::decide` (`ti4-mlp/src/bot.rs:771-…`) that does not touch tch.
-It moves into `ti4-policy`, as the module `ti4_policy::mlp`, with no dependency on `ti4-infer` or
-tch. It is two calls, so that PPO can keep what lies between them:
+The pipeline is the part of `MlpBot::decide` that does not touch tch. It is the module
+`ti4_policy::mlp`, with no dependency on `ti4-infer` or tch. A `Pipeline` belongs to one seat: it
+holds the vocabulary (`Arc<Vocabulary>`), the faction row, the setup baseline, and the state a
+seat carries from one decision to the next (the fleet plan, the memo of resolved columns, the
+power maps). A decision is two calls with the forward pass between them, so that PPO can keep what
+lies between them:
 
-- `features(scorer_info, choice, seen, baseline) -> Prepared`: the faction row, the head row, the
+- `features(model, choice, seen) -> Features`: `Planned(option)` when the seat's fleet plan
+  answers the choice, else `Score(Prepared)` with the faction row, the head and its row, the
   options as columns, and the options of the choice they stand for;
-- `pick(prepared, logits, temperature, rng) -> (ChoiceOption, probabilities)`.
+- `pick(prepared, logits, temperature, rng) -> Picked`: the option, its index and the
+  probabilities. `pick_with(prepared, probabilities, rng)` draws from a distribution computed
+  elsewhere (the GPU batch client returns probabilities, not logits);
+- after an activation, `fleet(model, choice, seen, picked) -> Option<Prepared>`: the fleet
+  decision, scored and picked the same way; its pick becomes the plan;
+- `decide(scorer, choice, seen, temperature, rng)` runs all of it for a host that only plays.
 
-`ti4-host` calls both in turn. `MlpBot` calls both and records the features and probabilities for
+`ti4-host` calls `decide`. `MlpBot` calls the steps and records the columns and probabilities for
 PPO in between. Together they cover:
 
-- the fleet plan packages (`planned`, `bot.rs:419-603`);
-- `mlp_choice_features`, plus the battle facts when the model has a predictor and the deal facts
-  when the vocabulary assigns `FACT_SCORE`;
-- `sparse_from`, with its memo of resolved keys;
-- `decision_head` and the resolution of the layout head (`resolve_layout_head`, `layout_head_index`,
-  the Legacy (14) and Diplomacy (15) layouts of `ti4-mlp/src/lib.rs:199-214`);
-- `stable_softmax` (`lib.rs:1743-1789`) at the temperature;
-- the draw of `MlpBot::sample` (`bot.rs:605-615`, the cumulative walk).
+- the fleet plan packages (`planned`, the menu of `tactical_plan::packages`) and their trace
+  (`PlanTrace`, drained by `take_trace`);
+- `mlp_choice_features` (with the card-text families when the vocabulary places them), plus the
+  battle facts when the model has a predictor, the deal facts when the vocabulary assigns
+  `FACT_SCORE`, and the power facts when it assigns `power_facts::NAMES`;
+- the columns of the vocabulary, with the memo of resolved keys, as `Columns = Vec<(u32, f32)>`
+  per option;
+- `decision_head` and its resolution in the model's `HeadLayout` (`Legacy`, 14 heads; `Diplomacy`,
+  15), which lives here with `FACTION_ROSTER`; `ti4-mlp` re-exports both;
+- `softmax` at the temperature (`probabilities`: each `f32` logit divided by the temperature
+  rounded to `f32`, as libtorch divides a tensor by a scalar, so the bits are those of
+  `Actor::probabilities`);
+- the draw (`draw`, the cumulative walk of a uniform `[0, 1)`).
 
-The model behind it is a trait in `ti4_policy::mlp`, `Scorer::logits(faction, head, options) ->
-Vec<f32>`, with what the pipeline needs of a model (heads, roster, vocabulary, battle predictor,
-temperature):
+The model behind it is two traits in `ti4_policy::mlp`:
 
-- The options are plain column lists, `&[(u32, f32)]` per option. `ti4_infer::Model::forward` takes
-  the same lists, so neither side converts, and the two crates share no type.
-- `ti4-host` implements `Scorer` for a newtype around `Arc<ti4_infer::Model>`.
-- `ti4-mlp` implements it for its `Actor` on tch, and for `ti4_infer::Model` (step 5). `MlpBot`
-  takes either, so training, evaluation and play run one pipeline.
+- `ModelInfo`: what the features need of a model: `layout() -> HeadLayout`,
+  `battle_predictor()`, and `temperature()` (default 0.25).
+- `Scorer: ModelInfo`: `logits(faction, head, options: &[Columns]) -> Vec<f32>`.
+- `ti4_infer::Model::forward` takes the same lists, `&[Vec<(u32, f32)>]`, so neither side
+  converts, and the two crates share no type. The type is concrete, not generic, so that the
+  forward pass is compiled in `ti4-infer` with its own optimization.
+- `ti4-host` implements `Scorer` for a newtype around `Arc<ti4_infer::Model>`
+  (`HeadLayout::of(model.heads())`, the predictor from `model.battle_json()`).
+- `ti4-mlp` implements `Scorer` for its `Actor` on tch, `ModelInfo` for the GPU batch client
+  (no battle predictor: the service refuses an arena bundle), and `Scorer` for `ti4_infer::Model`
+  (step 5). `MlpBot` takes either, so training, evaluation and play run one pipeline.
 - The tch `Scorer` stays because tch still plays: the GPU batch client, the parity test, and the
   evaluations of a checkpoint during training.
 - The PPO records, the GPU batch client and the critic stay in `ti4-mlp`.
-- `ti4-policy` becomes wasm-clean in this step: `rand` without default features, as `ti4-rule-bot`
-  has it.
+- `ti4-policy` is wasm-clean: `rand` without default features, as `ti4-rule-bot` has it, so
+  nothing pulls in `getrandom`. `cargo wasm-policy` checks it for `wasm32-unknown-unknown`.
 
 ### D2. Rollouts of training on `ti4-infer`
 
@@ -391,19 +409,33 @@ evaluation temperature of `plans/MLP_TEMPERATURE_REGIME.md`).
 
 ### Step 4: one pipeline in `ti4-policy` (section D)
 
-- Move the pipeline into `ti4_policy::mlp` (`features`, `pick`, `Scorer`), with no `ti4-infer` and no
-  tch. `ti4_infer::Model::forward` takes the column lists. `ti4-policy` becomes wasm-clean.
-- `ti4-mlp` implements `Scorer` for its `Actor`, and `MlpBot` calls the pipeline.
-- A parity test in `ti4-mlp` (needs libtorch; a new alias `t-mlp-parity = "test -p ti4-mlp --test
-  infer_parity"`) plays seeded games of the reviewer checkpoint and of one schema-12 bundle when
-  `out/champions/` has it.
+- The pipeline in `ti4_policy::mlp` (`Pipeline`, `features`, `pick`, `fleet`, `decide`,
+  `ModelInfo`, `Scorer`), with no `ti4-infer` and no tch. `ti4_infer::Model::forward` takes the
+  column lists. `ti4-policy` is wasm-clean (`cargo wasm-policy`).
+- `ti4-mlp` implements `Scorer` for its `Actor`, and `MlpBot` calls the pipeline. Seeded games of
+  `MlpBot` before and after the move give the same game, the same PPO records and the same plan
+  trace, bit for bit.
+- Aliases for the policy and training crates (they link libtorch): `l-mlp` (Clippy of
+  `ti4-policy`, `ti4-mlp`, `ti4-sim`, `ti4-training`, `ti4-review`, `ti4-cli`, `ti4-advisor`,
+  `ti4-replayer`, every target) and `t-mlp` (their unit tests).
+- A parity test in `ti4-mlp` (`tests/infer_parity.rs`, alias `t-mlp-parity`, which builds
+  `ti4-infer` optimized as for its bench and shows the output) plays seeded games of the
+  reviewer checkpoint, again with a small synthetic battle predictor of fact version 8 so that
+  the battle facts and the fleet decisions run, and of one schema-12 bundle when `out/champions/`
+  has it (skipped with a message otherwise). Every seat is an `MlpBot` shadowed by a `Pipeline`
+  with its seed:
   - For every decision it checks `|logit_tch − logit_infer| ≤ 1e-4 · max(1, |logit|)` and the same
-    option at temperature 0.001.
-  - It also checks that `MlpBot`'s features equal the pipeline's, and times a decision on tch and
-    on `ti4-infer`.
+    option at temperature 0.001 (two options within that bound of each other are a tie, counted).
+  - It checks that `MlpBot` answers the option the pipeline draws, and that each PPO step it
+    records has the pipeline's features, head, option and behaviour probability, bit for bit.
+  - It prints the time of the forward pass of a decision on tch and on `ti4-infer`, in the game
+    and again at once. Measured on the reference machine (reviewer checkpoint, width 256, 7.5
+    options of about 165 columns): tch 375–400 µs, `ti4-infer` on `Avx2` 165 µs (warm: 320–345
+    against 160 µs); the worst relative logit difference 6.1e-5.
 - On Linux the pinned libtorch is `out/libtorch-2.9.1-cpu-linux` (`scripts/install_libtorch_cpu_linux.sh`):
   `LIBTORCH=$PWD/out/libtorch-2.9.1-cpu-linux LIBTORCH_BYPASS_VERSION_CHECK=1
-  LD_LIBRARY_PATH=$LIBTORCH/lib cargo t-mlp-parity`. The doc of the alias says so.
+  LD_LIBRARY_PATH=$LIBTORCH/lib cargo t-mlp-parity`. An exported `LIBTORCH` overrides the `[env]`
+  of `.cargo/config.toml`. The doc of the alias says so.
 
 ### Step 5: rollouts of training on `ti4-infer` (section D2)
 
@@ -466,7 +498,8 @@ the "+ mlp" cases of `random_bot_lobby.rs`.
 - Step 2: the bench (`ti4_infer::bench`, run with `ti4-infer` optimized: the command is in its
   module) runs. The wasm bit-equality test passes on the release build.
 - Step 3: the bench runs, and meets the targets of section C that it asserts.
-- Steps 4 and 5: `cargo t-mlp-parity` passes with libtorch.
+- Steps 4 and 5: `cargo t-mlp-parity` passes with libtorch, and `cargo l-mlp` and `cargo t-mlp`
+  are clean (`t-mlp` but for tests that need `out/`); step 4 also `cargo wasm-policy`.
 - Step 6: `cargo t-web-slow` (both hosts).
 - Step 9: `npm run typecheck`, `npm run lint`, `npm test`, `npm run e2e`, and `npm run shots` for
   the lobby. Then a manual game: `cargo b-web && TI4_MODEL_DIR=out/models target/debug/server`,

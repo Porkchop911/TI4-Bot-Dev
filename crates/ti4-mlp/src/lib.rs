@@ -103,42 +103,9 @@ pub const EMBED_DIM: i64 = 16;
 ///
 /// Frozen like the OOV registry: a trained row is addressed by index, so reordering this list
 /// silently repoints every faction's residual and embedding. `the_roster_is_the_corpus_selectable_
-/// seats` fails when the corpus and this list disagree.
-pub const FACTION_ROSTER: [&str; 33] = [
-    "arborec",
-    "argent",
-    "bastion",
-    "cabal",
-    "crimson",
-    "deepwrought",
-    "empyrean",
-    "firmament",
-    "ghost",
-    "hacan",
-    "jolnar",
-    "keleresa",
-    "keleresm",
-    "keleresx",
-    "l1z1x",
-    "letnev",
-    "mahact",
-    "mentak",
-    "muaat",
-    "naalu",
-    "naaz",
-    "nekro",
-    "nomad",
-    "obsidian",
-    "ralnel",
-    "saar",
-    "sardakk",
-    "sol",
-    "titans",
-    "winnu",
-    "xxcha",
-    "yin",
-    "yssaril",
-];
+/// seats` fails when the corpus and this list disagree. The list lives with the decision pipeline
+/// (`ti4_policy::mlp`), which every model shares.
+pub use ti4_policy::mlp::FACTION_ROSTER;
 
 /// A validated row in [`FACTION_ROSTER`].
 ///
@@ -164,6 +131,16 @@ impl FactionRow {
     #[must_use]
     pub const fn index(self) -> usize {
         self.0
+    }
+
+    /// The row at an index of [`FACTION_ROSTER`], or `None` past its end.
+    #[must_use]
+    pub const fn at(index: usize) -> Option<Self> {
+        if index < FACTION_ROSTER.len() {
+            Some(Self(index))
+        } else {
+            None
+        }
     }
 }
 
@@ -194,24 +171,10 @@ pub fn capture_head(requested: &str) -> &str {
     }
 }
 
-/// Positional readout layout carried by an actor bundle.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HeadLayout {
-    /// Frozen schemas 7/8: the original fourteen rows.
-    Legacy,
-    /// Schemas 9/10: the same rows plus `diplomacy` at the end.
-    Diplomacy,
-}
-
-impl HeadLayout {
-    #[must_use]
-    pub const fn heads(self) -> &'static [&'static str] {
-        match self {
-            Self::Legacy => &ti4_policy::learned::STAGE1_DECISION_HEADS,
-            Self::Diplomacy => &ti4_policy::learned::DIPLOMACY_DECISION_HEADS,
-        }
-    }
-}
+/// Positional readout layout carried by an actor bundle: `Legacy` (schemas 7/8, the original
+/// fourteen rows) or `Diplomacy` (schemas 9 to 12, `diplomacy` appended). It lives with the
+/// decision pipeline (`ti4_policy::mlp`), which resolves the head of every decision against it.
+pub use ti4_policy::mlp::HeadLayout;
 
 /// Anything that stopped a forward pass.
 #[derive(Debug, Error)]
@@ -247,6 +210,20 @@ pub struct SparseOption {
     pub columns: Vec<i64>,
     /// Their values, positionally matched.
     pub values: Vec<f32>,
+}
+
+impl SparseOption {
+    /// The option of a column list of the decision pipeline (`ti4_policy::mlp::Columns`).
+    #[must_use]
+    pub fn from_columns(columns: &[(u32, f32)]) -> Self {
+        Self {
+            columns: columns
+                .iter()
+                .map(|(column, _)| i64::from(*column))
+                .collect(),
+            values: columns.iter().map(|(_, value)| *value).collect(),
+        }
+    }
 }
 
 /// The only thing [`Actor::value`] accepts.
@@ -1334,19 +1311,14 @@ impl Actor {
 
     /// Resolve a policy head against this actor's versioned layout.
     #[must_use]
-    pub fn resolve_layout_head<'a>(&self, requested: &'a str) -> &'a str {
-        if self.head_names().contains(&requested) {
-            requested
-        } else {
-            "other"
-        }
+    pub fn resolve_layout_head(&self, requested: &str) -> &'static str {
+        self.head_layout.resolve(requested)
     }
 
     /// Locate a head in this actor's versioned layout.
     pub fn layout_head_index(&self, name: &str) -> Result<usize, ActorError> {
-        self.head_names()
-            .iter()
-            .position(|head| *head == name)
+        self.head_layout
+            .index(name)
             .ok_or_else(|| ActorError::UnknownHead(name.to_owned()))
     }
 
@@ -1887,47 +1859,61 @@ pub fn stable_softmax(scores: &Tensor) -> Result<Vec<f64>, ActorError> {
         what: "logits",
         detail: error.to_string(),
     })?;
-    if raw.is_empty() {
-        return Err(ActorError::EmptyLegalSet);
+    ti4_policy::mlp::softmax(&raw).map_err(ActorError::from)
+}
+
+impl From<ti4_policy::mlp::MlpError> for ActorError {
+    fn from(error: ti4_policy::mlp::MlpError) -> Self {
+        use ti4_policy::mlp::MlpError;
+        match error {
+            MlpError::EmptyLegalSet => Self::EmptyLegalSet,
+            MlpError::Temperature(temperature) => Self::Temperature(temperature),
+            MlpError::NotUsable { what, detail } => Self::NotUsable { what, detail },
+            MlpError::Features(detail) | MlpError::Model(detail) => Self::NotUsable {
+                what: "the decision",
+                detail,
+            },
+        }
     }
-    if let Some(bad) = raw.iter().copied().find(|value| !value.is_finite()) {
-        return Err(ActorError::NotUsable {
-            what: "a logit",
-            detail: format!("{bad}"),
-        });
+}
+
+/// The pipeline of `ti4_policy::mlp` reads the layout and the battle predictor of the actor.
+impl ti4_policy::mlp::ModelInfo for Actor {
+    fn layout(&self) -> HeadLayout {
+        self.head_layout
     }
 
-    let highest = raw.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-    let weights: Vec<f64> = raw
-        .iter()
-        .map(|value| f64::from(*value - highest).exp())
-        .collect();
-    let total: f64 = weights.iter().sum();
-    if !total.is_finite() || total <= 0.0 {
-        return Err(ActorError::NotUsable {
-            what: "the softmax normaliser",
-            detail: format!("{total}"),
-        });
+    fn battle_predictor(&self) -> Option<&ti4_policy::battle::BattlePredictor> {
+        self.battle.as_deref()
     }
-    let probabilities: Vec<f64> = weights.into_iter().map(|weight| weight / total).collect();
-    if let Some(bad) = probabilities
-        .iter()
-        .copied()
-        .find(|value| !value.is_finite() || *value < 0.0)
-    {
-        return Err(ActorError::NotUsable {
-            what: "a probability",
-            detail: format!("{bad}"),
-        });
+}
+
+/// The actor on libtorch as the model of the shared decision pipeline: [`Actor::logits`] over the
+/// column lists of the pipeline.
+impl ti4_policy::mlp::Scorer for Actor {
+    fn logits(
+        &self,
+        faction: usize,
+        head: usize,
+        options: &[ti4_policy::mlp::Columns],
+    ) -> Result<Vec<f32>, ti4_policy::mlp::MlpError> {
+        let refuse =
+            |error: &dyn std::fmt::Display| ti4_policy::mlp::MlpError::Model(error.to_string());
+        let row = FactionRow::at(faction)
+            .ok_or_else(|| refuse(&format!("faction row {faction} is outside the roster")))?;
+        let name = self
+            .head_names()
+            .get(head)
+            .ok_or_else(|| refuse(&format!("head row {head} is not in the layout")))?;
+        let sparse: Vec<SparseOption> = options
+            .iter()
+            .map(|option| SparseOption::from_columns(option))
+            .collect();
+        let logits = self
+            .logits(&sparse, name, row)
+            .map_err(|error| refuse(&error))?;
+        ti4_tensor::to_vec(&logits).map_err(|error| refuse(&error))
     }
-    let sum: f64 = probabilities.iter().sum();
-    if (sum - 1.0).abs() > 1e-9 {
-        return Err(ActorError::NotUsable {
-            what: "the distribution total",
-            detail: format!("{sum}"),
-        });
-    }
-    Ok(probabilities)
 }
 
 #[cfg(test)]

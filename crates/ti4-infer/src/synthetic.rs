@@ -8,7 +8,7 @@
 use serde_json::{Value, json};
 
 use crate::format::{self, BlockParts, Meta, Parts, Source};
-use crate::{EMBED_DIM, FACTION_ROSTER, LEGACY_HEADS, Model, Scratch, SparseOption};
+use crate::{EMBED_DIM, FACTION_ROSTER, LEGACY_HEADS, Model, Scratch};
 
 /// SplitMix64: a small generator whose output is defined bit for bit.
 #[derive(Debug, Clone)]
@@ -100,33 +100,28 @@ pub fn parts(seed: u64, width: usize, capacity: usize, blocks: usize) -> Parts {
     }
 }
 
-/// The options of a decision from `seed`, over a table of `capacity > 17` rows. Of every five, one
-/// is empty, one has sorted columns, and three have 1 to `columns` random columns with up to four
-/// of them named twice, so the bag sorts and folds them.
+/// The options of a decision from `seed`, over a table of `capacity > 17` rows, each as its
+/// `(column, value)` pairs. Of every five, one is empty, one has sorted columns, and three have 1
+/// to `columns` random columns with up to four of them named twice, so the bag sorts and folds
+/// them.
 #[must_use]
-pub fn options(seed: u64, count: usize, capacity: usize, columns: usize) -> Vec<SparseOption> {
+pub fn options(seed: u64, count: usize, capacity: usize, columns: usize) -> Vec<Vec<(u32, f32)>> {
     let mut rng = Rng::new(seed);
-    let last = i64::try_from(capacity - 1).expect("a capacity fits i64");
+    let last = u32::try_from(capacity - 1).expect("a capacity fits u32");
     (0..count)
         .map(|index| match index % 5 {
-            1 => SparseOption::default(),
-            3 => SparseOption {
-                columns: vec![0, 3, 17, last],
-                values: vec![1.0, 0.5, -2.0, 1.0],
-            },
+            1 => Vec::new(),
+            3 => vec![(0, 1.0), (3, 0.5), (17, -2.0), (last, 1.0)],
             _ => {
                 let len = 1 + rng.below(columns.max(1));
-                let mut picked: Vec<i64> = (0..len)
-                    .map(|_| i64::try_from(rng.below(capacity)).expect("a row fits i64"))
+                let mut picked: Vec<u32> = (0..len)
+                    .map(|_| u32::try_from(rng.below(capacity)).expect("a row fits u32"))
                     .collect();
                 picked.extend_from_within(..len.min(4));
-                let values = (0..picked.len())
+                let values: Vec<f32> = (0..picked.len())
                     .map(|_| (rng.below(7) as f32 - 3.0) * 0.5 + rng.uniform(0.1))
                     .collect();
-                SparseOption {
-                    columns: picked,
-                    values,
-                }
+                picked.into_iter().zip(values).collect()
             }
         })
         .collect()
