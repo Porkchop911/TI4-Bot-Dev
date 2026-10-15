@@ -69,16 +69,13 @@ t-mlp = "test -p ti4-policy -p ti4-mlp -p ti4-sim -p ti4-training -p ti4-review 
 # Then the rollouts of training on `ti4-infer` (`infer_rollouts`): a short seeded PPO run on each
 # rollout backend, and the bench of a decision and of a game on either. One test at a time, so
 # that the printed times are not those of two tests at once.
-# `ti4-infer` is optimized as for its bench (`ti4_infer::bench`), so that the printed times compare
-# like with like (libtorch is a release build), and the output is shown. On Linux the pinned libtorch is `out/libtorch-2.9.1-cpu-linux`
+# `ti4-infer` is optimized in the dev profile (`Cargo.toml`), so the printed times compare like
+# with like (libtorch is a release build), and the output is shown. On Linux the pinned libtorch is `out/libtorch-2.9.1-cpu-linux`
 # (`scripts/install_libtorch_cpu_linux.sh`); an exported `LIBTORCH` overrides the `[env]` above:
 #   LIBTORCH=$PWD/out/libtorch-2.9.1-cpu-linux LIBTORCH_BYPASS_VERSION_CHECK=1 \
 #   LD_LIBRARY_PATH=$PWD/out/libtorch-2.9.1-cpu-linux/lib cargo t-mlp-parity
 t-mlp-parity = [
     "test",
-    "--config", "profile.dev.package.ti4-infer.opt-level=3",
-    "--config", "profile.dev.package.ti4-infer.debug-assertions=false",
-    "--config", "profile.dev.package.ti4-infer.overflow-checks=false",
     "-p", "ti4-mlp", "--test", "infer_parity", "--test", "infer_rollouts", "--", "--nocapture",
     "--test-threads=1",
 ]

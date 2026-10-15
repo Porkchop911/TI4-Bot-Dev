@@ -471,6 +471,27 @@ evaluation temperature of `plans/MLP_TEMPERATURE_REGIME.md`).
   in memory (`ti4_infer::bundle` + `format`), or a small synthetic model with seeded random weights
   (width 128, 2 residual blocks).
 
+### H. int8 weights with AVX-VNNI (training rollouts only)
+
+The rollouts of training (D2) are the hot path that most needs speed. Their weights are quantized
+to int8 and the dense layers run on AVX-VNNI (`vpdpbusd`: u8 × i8 summed into i32, 4 products a
+lane). No wasm, and the page and the server's games keep f32.
+
+- **Weights.** W2 and the residual matrices: i8, one f32 scale per output (symmetric, max-abs),
+  packed in VNNI panels (for 8 outputs, 4 consecutive `k` side by side). W1: i8 rows with one scale
+  per row, so the bag, bound by memory, reads a quarter of the bytes. Biases, the identity
+  embedding, the readout and the value readout stay f32.
+- **Activations.** After each ReLU they are ≥ 0, so they are quantized to u8 per option row (scale
+  max/255) in the epilogue of the layer that makes them. The kernel sums in i32; its epilogue
+  rescales by the two scales, adds the f32 bias, applies the ReLU (and the residual add in f32),
+  and quantizes again for the next layer.
+- **The file.** A `.ti4m` of `version` 1 with `"quant": "int8"` in the header and the int8
+  sections, written by `ti4-pack --quant int8` and by the in-memory path of D2. The f32 reader
+  refuses it unless the backend is `Avx2Vnni`.
+- **Accuracy.** Not bit-identical: the logits are within a bound measured on the parity games
+  and written here by step 10, and the rate at which the drawn option changes at temperature 0.001
+  is reported. PPO recomputes the probabilities on tch, as with `Avx2Fma`.
+
 ## Plan (one PR per step, in order)
 
 ### Step 1: `ti4-infer` with the scalar backend
@@ -515,7 +536,7 @@ evaluation temperature of `plans/MLP_TEMPERATURE_REGIME.md`).
   `ti4-policy`, `ti4-mlp`, `ti4-sim`, `ti4-training`, `ti4-review`, `ti4-cli`, `ti4-advisor`,
   `ti4-replayer`, every target) and `t-mlp` (their unit tests).
 - A parity test in `ti4-mlp` (`tests/infer_parity.rs`, alias `t-mlp-parity`, which builds
-  `ti4-infer` optimized as for its bench and shows the output) plays seeded games of the
+  `ti4-infer` optimized (dev profile) and shows the output) plays seeded games of the
   reviewer checkpoint, again with a small synthetic battle predictor of fact version 8 so that
   the battle facts and the fleet decisions run, and of one schema-12 bundle when `out/champions/`
   has it (skipped with a message otherwise). Every seat is an `MlpBot` shadowed by a `Pipeline`
@@ -603,13 +624,24 @@ the "+ mlp" cases of `random_bot_lobby.rs`.
   - an e2e that starts a single-player game with an MLP seat and plays round 1 to the action phase;
   - the shots of the lobby with three models and 8 seats, desktop and phone.
 
+### Step 10: int8 weights with AVX-VNNI, for the rollouts of training (section H)
+
+- The int8 sections of section H, `ti4-pack --quant int8`, and the int8 `Model` from an `Actor` in
+  memory (step 5's path).
+- `Backend::Avx2Vnni`, detected at load; no wasm and no `.ti4m` offered by a server.
+- `--rollout-backend infer-int8` in `ppo_update`.
+- Tests: the int8 kernels against a plain integer reference, bit for bit; the int8 logits against
+  f32 within the bound of section H; the parity games report the gap and the rate of changed
+  options; a short seeded PPO run on int8.
+- The bench: a decision and a game on `Avx2Fma`, `Avx2Vnni` and tch, and the speedup, in the PR.
+
 ## Verification
 
 - Each Rust step: `cargo fmt --all -- --check`, `cargo l-web` and `cargo t-web`. When `ti4-host` or
   `ti4-wasm` changed, also `web2/scripts/build-wasm.sh` and `npm test`. When the server changed,
   also `cargo b-web`.
-- Step 2: the bench (`ti4_infer::bench`, run with `ti4-infer` optimized: the command is in its
-  module) runs. The wasm bit-equality test passes on the release build.
+- Step 2: the bench (`cargo t-web bench --ignored --nocapture`; `ti4-infer` is optimized in the
+  dev profile) runs. The wasm bit-equality test passes on the release build.
 - Step 3: the bench runs, and meets the targets of section C that it asserts.
 - Steps 4 and 5: `cargo t-mlp-parity` passes (step 5 adds `infer_rollouts` to it) with libtorch, and `cargo l-mlp` and `cargo t-mlp`
   are clean (`t-mlp` but for tests that need `out/`); step 4 also `cargo wasm-policy`.

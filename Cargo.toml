@@ -176,6 +176,19 @@ split-debuginfo = "packed"
 opt-level = 3
 debug = false
 
+# The kernels of the MLP bots are optimized in every debug build too (the server, the tests, the
+# wasm dev build): unoptimized, a decision takes milliseconds in place of tens of microseconds.
+# Their results do not depend on it; the tests of `ti4-infer` compare against plain references.
+[profile.dev.package.ti4-infer]
+opt-level = 3
+debug-assertions = false
+overflow-checks = false
+
+[profile.wasm-dev.package.ti4-infer]
+opt-level = 3
+debug-assertions = false
+overflow-checks = false
+
 [profile.debugger]
 inherits = "dev"
 debug = "full"

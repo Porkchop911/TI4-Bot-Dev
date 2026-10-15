@@ -14,14 +14,11 @@
 //! them: about 5.1 ms, 39.5 µs and 4.05 ms. It prints every available backend at 0 and 2 residual
 //! blocks, `Scalar` and `Sse` included, for the comparison.
 //!
-//! Ignored. The aliases build without optimization, so run it with `ti4-infer` optimized (the
-//! package set of `t-web`; only `ti4-infer` is built again):
+//! Ignored. `ti4-infer` is optimized in the dev profile (`Cargo.toml`), so the alias gives the
+//! real numbers:
 //!
 //! ```sh
-//! cargo --config 'profile.dev.package.ti4-infer.opt-level=3' \
-//!   --config 'profile.dev.package.ti4-infer.debug-assertions=false' \
-//!   --config 'profile.dev.package.ti4-infer.overflow-checks=false' \
-//!   t-web bench --ignored --nocapture
+//! cargo t-web bench --ignored --nocapture
 //! ```
 //!
 //! - Without FMA an SSE core does at most 8 multiply-adds a cycle, and one dense layer of 6
