@@ -5,13 +5,17 @@ use core::arch::wasm32::{
     f32x4_add, f32x4_extract_lane, f32x4_mul, f32x4_pmax, f32x4_splat, v128, v128_load, v128_store,
 };
 
-use super::Lanes;
+use super::{Lanes, Readout};
 
 /// Four f32 in a `v128`.
 pub(crate) struct Simd128;
 
 impl Lanes for Simd128 {
+    const N: usize = 4;
+    const SPLAT: usize = 4;
+    const MR: usize = 4;
     type V = v128;
+    type Readout = Self;
 
     #[inline(always)]
     fn zero() -> Self::V {
@@ -28,6 +32,11 @@ impl Lanes for Simd128 {
         let src = &src[..4];
         // SAFETY: `src` has four floats (16 bytes); `v128.load` takes any alignment.
         unsafe { v128_load(src.as_ptr().cast::<v128>()) }
+    }
+
+    #[inline(always)]
+    fn load_splat(src: &[f32]) -> Self::V {
+        Self::load(src)
     }
 
     #[inline(always)]
@@ -53,7 +62,9 @@ impl Lanes for Simd128 {
     fn relu(v: Self::V) -> Self::V {
         f32x4_pmax(f32x4_splat(0.0), v)
     }
+}
 
+impl Readout for Simd128 {
     #[inline(always)]
     fn hsum(v: Self::V) -> f32 {
         (f32x4_extract_lane::<0>(v) + f32x4_extract_lane::<1>(v))

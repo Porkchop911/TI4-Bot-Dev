@@ -24,9 +24,10 @@
 //! - [`format`]: the `.ti4m` file, writer and reader.
 //! - [`model`]: [`Model`] and its forward pass.
 //! - `kernel`: the bag, the packed-panel matrix product and the readout, generic over the lanes.
-//! - `simd`: the `Lanes` trait and its backends (`Sse` on x86-64, `Simd128` on wasm with
-//!   `simd128`, `Scalar` elsewhere and as the reference of the tests), with the same bits on each.
-//!   The only module that may use `unsafe`.
+//! - `simd`: the `Lanes` trait, its backends ([`Backend`]: `Scalar` everywhere and as the
+//!   reference of the tests, `Sse` on x86-64, `Simd128` on wasm with `simd128`, `Avx2` and
+//!   `Avx2Fma` on x86-64 CPUs that have them), and the dispatch of a forward pass to one. Every
+//!   backend but `Avx2Fma` gives the same bits. The only module that may use `unsafe`.
 //! - [`synthetic`]: models and decisions from a seed, the same on every target, for the tests, the
 //!   bench and the check of the wasm build ([`synthetic::check`]).
 
@@ -47,11 +48,13 @@ pub use error::InferError;
 pub use format::{BlockParts, Meta, Parts, Source};
 pub use kernel::total_order_key;
 pub use model::{Model, Scratch, SparseOption};
+pub use simd::Backend;
 
-/// The backend the forward pass runs on in this build: `"sse"`, `"simd128"` or `"scalar"`.
+/// The backend a model is loaded on, on this target and this CPU: [`Backend::best`]. A model
+/// names its own ([`Model::backend`]).
 #[must_use]
-pub const fn backend() -> &'static str {
-    simd::NATIVE_NAME
+pub fn backend() -> Backend {
+    Backend::best()
 }
 
 /// The dimension of the faction identity embedding. Its row is zero-padded to the trunk width and

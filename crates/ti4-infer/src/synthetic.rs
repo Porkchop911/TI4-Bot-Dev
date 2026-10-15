@@ -151,7 +151,7 @@ fn size(value: &Value, name: &str) -> Result<usize, String> {
 ///
 /// The model is [`parts`] of `seed`, written and read again as a file; the options of a case are
 /// [`options`] of its `seed`. The answer is
-/// `{"backend": "sse" | "simd128" | "scalar", "digest": <the file's sha>, "logits": [[bits]]}`,
+/// `{"backend": <the name of the model's backend>, "digest": <the file's sha>, "logits": [[bits]]}`,
 /// each logit as the `u32` of its bits, one list per case.
 ///
 /// # Errors
@@ -196,7 +196,7 @@ pub fn check(request: &str) -> Result<String, String> {
         logits.push(out.iter().map(|logit| logit.to_bits()).collect::<Vec<_>>());
     }
     Ok(json!({
-        "backend": crate::backend(),
+        "backend": model.backend().name(),
         "digest": model.digest(),
         "logits": logits,
     })

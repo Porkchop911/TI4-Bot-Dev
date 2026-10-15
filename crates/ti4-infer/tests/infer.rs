@@ -510,7 +510,7 @@ fn synthetic_logits_fixture_is_current() {
             let answer: Value =
                 serde_json::from_str(&ti4_infer::synthetic::check(&request.to_string()).unwrap())
                     .unwrap();
-            assert_eq!(answer["backend"], ti4_infer::backend());
+            assert_eq!(answer["backend"], ti4_infer::backend().name());
             serde_json::json!({
                 "request": request,
                 "digest": answer["digest"],

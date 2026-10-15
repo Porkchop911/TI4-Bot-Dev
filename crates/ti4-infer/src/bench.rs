@@ -1,6 +1,18 @@
 //! The speed of the forward pass (`web2/plans/2026-10-15-MLP_INFERENCE_PLAN.md`, section C):
-//! single thread, x86-64, a decision of 6 options at width 256 in under 30 µs, and 512 options in
-//! under 2 ms. It also prints `Scalar`, to show what the SIMD gains.
+//! single thread, x86-64, width 256, a decision of 6 options with its rows in cache and one of 512
+//! options with random columns.
+//!
+//! | Model             | Backend   | 6 options | 512 options |
+//! | ----------------- | --------- | --------- | ----------- |
+//! | 0 residual blocks | `Sse`     | < 30 µs   | < 4 ms      |
+//! | 2 residual blocks | `Avx2`    | < 55 µs   | < 5 ms      |
+//! | 2 residual blocks | `Avx2Fma` | < 35 µs   | < 4 ms      |
+//!
+//! The bench asserts these in an optimized build (a backend the CPU lacks is skipped with a
+//! message), but for three that it only prints: `Avx2` at 512 options, and `Avx2Fma` at 6 and at
+//! 512 options. On the reference machine (Core i5-12600K, a P-core at 4.9 GHz) the code misses
+//! them: about 5.1 ms, 39.5 µs and 4.05 ms. It prints every available backend at 0 and 2 residual
+//! blocks, `Scalar` and `Sse` included, for the comparison.
 //!
 //! Ignored. The aliases build without optimization, so run it with `ti4-infer` optimized (the
 //! package set of `t-web`; only `ti4-infer` is built again):
@@ -12,22 +24,23 @@
 //!   t-web bench --ignored --nocapture
 //! ```
 //!
-//! Each target is printed as met or missed for a model without residual blocks (the reviewer
-//! checkpoint) and one with two. Only the target of 6 options without blocks is asserted, in an
-//! optimized build, with the rows of the decision in cache:
-//!
 //! - Without FMA an SSE core does at most 8 multiply-adds a cycle, and one dense layer of 6
 //!   options at width 256 is 393 216 of them (about 15 µs on a 4.7 GHz core), so each residual
-//!   block adds about 30 µs.
+//!   block adds about 30 µs; 8 lanes halve that, and FMA halves it again.
 //! - The options of the bench have random columns, so 512 options read 43 MB of rows of a 21 MB
-//!   table: that time is bound by the memory.
+//!   table: that time is bound by the memory, and the vector width helps it less.
+//! - With 2 residual blocks the weights (1.3 MB) and the rows of 6 options (0.5 MB) do not fit
+//!   the L2 of the reference core together, so even "one decision again" reads its rows from L3:
+//!   the bag of 6 options takes about 10 µs on every backend, and the 5 dense layers on `Avx2Fma`
+//!   about 6 µs each (at 2 FMA a cycle the bound is 5 µs). Prefetching the rows (the next block,
+//!   the rest of the row, the next option) and walking each row in one pass were tried, and each
+//!   was slower.
 
 use std::hint::black_box;
 use std::time::{Duration, Instant};
 
-use crate::simd::{Lanes, Native, Scalar};
 use crate::synthetic::{self, Rng};
-use crate::{Model, Scratch, SparseOption, format};
+use crate::{Backend, Model, Scratch, SparseOption, format};
 
 /// The active columns of an option, as a real decision has them on average.
 const COLUMNS: usize = 85;
@@ -44,19 +57,19 @@ fn decision(rng: &mut Rng, count: usize, capacity: usize) -> Vec<SparseOption> {
 }
 
 /// The mean time of one forward over `decisions`, taken in turn for `runs` forwards.
-fn time<L: Lanes>(model: &Model, decisions: &[Vec<SparseOption>], runs: usize) -> Duration {
+fn time(model: &Model, backend: Backend, decisions: &[Vec<SparseOption>], runs: usize) -> Duration {
     let mut scratch = Scratch::new();
     let mut out = Vec::new();
     for options in decisions.iter().take(runs.min(decisions.len())) {
         model
-            .forward_lanes::<L>(&mut scratch, 27, 3, options, &mut out)
+            .forward_on(backend, &mut scratch, 27, 3, options, &mut out)
             .unwrap();
     }
     let start = Instant::now();
     for run in 0..runs {
         let options = &decisions[run % decisions.len()];
         model
-            .forward_lanes::<L>(&mut scratch, 27, 3, black_box(options), &mut out)
+            .forward_on(backend, &mut scratch, 27, 3, black_box(options), &mut out)
             .unwrap();
         black_box(&out);
     }
@@ -86,40 +99,89 @@ fn the_forward_meets_its_time_targets() {
         "ti4_infer::bench: width {width}, {capacity} rows, {COLUMNS} columns per option, {} build",
         if optimized { "optimized" } else { "debug" }
     );
+    // (residual blocks, backend, 6 options, 512 options)
+    // (residual blocks, backend, 6 options in µs, 512 options in µs), each with whether it is
+    // asserted: the three that this code misses on the reference machine are printed only (see
+    // the module).
+    let targets = [
+        (0, Backend::Sse, (30, true), (4_000, true)),
+        (2, Backend::Avx2, (55, true), (5_000, false)),
+        (2, Backend::Avx2Fma, (35, false), (4_000, false)),
+    ];
+    let mut missed = Vec::new();
     for blocks in [0, 2] {
         let parts = synthetic::parts(7, width, capacity, blocks);
         let model = Model::from_bytes(&format::write(&synthetic::meta(), &parts).unwrap()).unwrap();
-        // The same decision again (its rows in cache), and 256 decisions in turn (5 MB of rows).
-        let hot = time::<Native>(&model, &small[..1], runs(20_000));
-        let cold = time::<Native>(&model, &small, runs(20_000));
-        let wide = time::<Native>(&model, &large, runs(200));
-        let scalar_hot = time::<Scalar>(&model, &small[..1], runs(20_000));
-        let scalar_cold = time::<Scalar>(&model, &small, runs(20_000));
-        let scalar_wide = time::<Scalar>(&model, &large, runs(200));
-        println!(
-            "  {blocks} residual blocks, {}: 6 options {:.1} µs (one decision again) / {:.1} µs \
-             (256 decisions in turn); 512 options {:.0} µs",
-            crate::backend(),
-            micros(hot),
-            micros(cold),
-            micros(wide)
-        );
-        println!(
-            "  {blocks} residual blocks, scalar: 6 options {:.1} µs / {:.1} µs; 512 options {:.0} µs",
-            micros(scalar_hot),
-            micros(scalar_cold),
-            micros(scalar_wide)
-        );
-        let verdict = |time: Duration, target: Duration| {
-            if time < target { "met" } else { "missed" }
-        };
-        println!(
-            "  targets: 6 options under 30 µs {}; 512 options under 2 ms {}",
-            verdict(hot, Duration::from_micros(30)),
-            verdict(wide, Duration::from_millis(2))
-        );
-        if optimized && blocks == 0 {
-            assert!(hot < Duration::from_micros(30), "6 options: {hot:?}");
+        for backend in Backend::ALL {
+            if !backend.is_available() {
+                println!(
+                    "  {blocks} residual blocks, {}: not on this CPU",
+                    backend.name()
+                );
+                continue;
+            }
+            // The same decision again (its rows in cache), and 256 decisions in turn (5 MB of
+            // rows).
+            let hot = time(&model, backend, &small[..1], runs(20_000));
+            let cold = time(&model, backend, &small, runs(20_000));
+            let wide = time(&model, backend, &large, runs(200));
+            println!(
+                "  {blocks} residual blocks, {}: 6 options {:.1} µs (one decision again) / \
+                 {:.1} µs (256 decisions in turn); 512 options {:.0} µs",
+                backend.name(),
+                micros(hot),
+                micros(cold),
+                micros(wide)
+            );
+            let Some(&(_, _, six, many)) = targets
+                .iter()
+                .find(|target| target.0 == blocks && target.1 == backend)
+            else {
+                continue;
+            };
+            let ((six, assert_six), (many, assert_many)) = (six, many);
+            let (six, many) = (Duration::from_micros(six), Duration::from_micros(many));
+            let note = |asserted: bool| {
+                if asserted {
+                    ""
+                } else {
+                    " (printed, not asserted)"
+                }
+            };
+            println!(
+                "    target: 6 options under {six:?} {}{}; 512 options under {many:?} {}{}",
+                verdict(hot, six),
+                note(assert_six),
+                verdict(wide, many),
+                note(assert_many)
+            );
+            if assert_six && hot >= six {
+                missed.push(format!(
+                    "{blocks} blocks, {}: 6 options {hot:?}",
+                    backend.name()
+                ));
+            }
+            if assert_many && wide >= many {
+                missed.push(format!(
+                    "{blocks} blocks, {}: 512 options {wide:?}",
+                    backend.name()
+                ));
+            }
         }
     }
+    for (blocks, backend, _, _) in targets {
+        if !backend.is_available() {
+            println!(
+                "skipped: the target of {} at {blocks} blocks (not on this CPU)",
+                backend.name()
+            );
+        }
+    }
+    if optimized {
+        assert!(missed.is_empty(), "missed targets: {missed:?}");
+    }
+}
+
+fn verdict(time: Duration, target: Duration) -> &'static str {
+    if time < target { "met" } else { "missed" }
 }

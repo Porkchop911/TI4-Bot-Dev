@@ -10,13 +10,20 @@
 //! - The readout: four partial sums, lane `l` over the columns `4i + l` in order, combined as
 //!   `(l0 + l1) + (l2 + l3)`, then `+ b`.
 //!
-//! The ReLU is `x > 0 ? x : 0`, and no multiply is fused into an add.
+//! The ReLU is `x > 0 ? x : 0`, and no multiply is fused into an add, on every [`Backend`] but
+//! [`Backend::Avx2Fma`].
+//!
+//! # The backend
+//!
+//! A model is loaded on [`Backend::best`] (the CPU is asked once, then), and
+//! [`Model::with_backend`] picks another. A forward pass matches the backend once and runs the
+//! forward monomorphized for it.
 
 use std::ops::Range;
 
 use crate::format::Source;
 use crate::kernel::{self, Epilogue};
-use crate::simd::{AlignedF32, Lanes, Native};
+use crate::simd::{self, AlignedF32, Backend, Lanes, Run};
 use crate::{EMBED_DIM, FACTION_ROSTER, InferError};
 
 /// One option's active columns and their values: `ti4_mlp::SparseOption`.
@@ -67,18 +74,20 @@ pub struct Model {
     pub(crate) readout_b: Range<usize>,
     pub(crate) slots: String,
     pub(crate) battle: Option<String>,
+    /// Available on this CPU: checked by [`Model::with_backend`].
+    pub(crate) backend: Backend,
 }
 
 /// The working memory of a forward pass. Reuse one per thread to avoid allocating per decision.
 #[derive(Debug, Default)]
 pub struct Scratch {
     entries: Vec<(usize, f32)>,
-    sort: Vec<(i64, f32)>,
+    sort: Vec<u64>,
     identity: Vec<f32>,
     z: Vec<f32>,
     h: Vec<f32>,
     t: Vec<f32>,
-    splats: Vec<f32>,
+    packed: Vec<f32>,
 }
 
 impl Scratch {
@@ -96,6 +105,27 @@ impl Model {
     /// As [`crate::format::read`].
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, InferError> {
         crate::format::read(bytes)
+    }
+
+    /// The model on `backend` in place of [`Backend::best`], on which it was loaded:
+    /// [`Backend::Avx2Fma`] where no other host must reproduce its logits, or [`Backend::Scalar`]
+    /// for a comparison.
+    ///
+    /// # Errors
+    /// [`InferError::Backend`] when this target or this CPU does not have it
+    /// ([`Backend::is_available`]).
+    pub fn with_backend(mut self, backend: Backend) -> Result<Self, InferError> {
+        if !backend.is_available() {
+            return Err(InferError::Backend(backend));
+        }
+        self.backend = backend;
+        Ok(self)
+    }
+
+    /// The backend its forward pass runs on.
+    #[must_use]
+    pub const fn backend(&self) -> Backend {
+        self.backend
     }
 
     /// The name of the model, the `<name>` of the bot kind `mlp:<name>`.
@@ -214,11 +244,36 @@ impl Model {
         options: &[SparseOption],
         out: &mut Vec<f32>,
     ) -> Result<(), InferError> {
-        self.forward_lanes::<Native>(scratch, faction, head, options, out)
+        self.forward_on(self.backend, scratch, faction, head, options, out)
     }
 
-    /// The forward pass on the backend `L`.
-    pub(crate) fn forward_lanes<L: Lanes>(
+    /// [`Self::forward_with`] on `backend`, which must be available.
+    pub(crate) fn forward_on(
+        &self,
+        backend: Backend,
+        scratch: &mut Scratch,
+        faction: usize,
+        head: usize,
+        options: &[SparseOption],
+        out: &mut Vec<f32>,
+    ) -> Result<(), InferError> {
+        simd::run(
+            backend,
+            Forward {
+                model: self,
+                scratch,
+                faction,
+                head,
+                options,
+                out,
+            },
+        )
+    }
+
+    /// The forward pass on the lanes `L`. Inlined, with the kernels, into the function of
+    /// [`simd::run`] that calls it, so that it is compiled with the target features of `L`.
+    #[inline(always)]
+    fn forward_lanes<L: Lanes>(
         &self,
         scratch: &mut Scratch,
         faction: usize,
@@ -245,7 +300,7 @@ impl Model {
             z,
             h,
             t,
-            splats,
+            packed,
         } = scratch;
 
         identity.clear();
@@ -275,7 +330,7 @@ impl Model {
             self.f(&self.w2),
             width,
             Epilogue::BiasRelu(b2),
-            splats,
+            packed,
             h,
         );
         std::mem::swap(z, h);
@@ -290,7 +345,7 @@ impl Model {
                 self.f(&block.w_in),
                 width,
                 Epilogue::BiasRelu(b_in),
-                splats,
+                packed,
                 h,
             );
             let bias = self.f(&block.b_out);
@@ -302,7 +357,7 @@ impl Model {
                 self.f(&block.w_out),
                 width,
                 epilogue,
-                splats,
+                packed,
                 t,
             );
             std::mem::swap(z, t);
@@ -313,6 +368,33 @@ impl Model {
         let b = self.f(&self.readout_b)[at];
         kernel::readout::<L>(&z[..rows * width], width, w, b, out);
         Ok(())
+    }
+}
+
+/// One forward pass, as the work of [`simd::run`].
+struct Forward<'a> {
+    model: &'a Model,
+    scratch: &'a mut Scratch,
+    faction: usize,
+    head: usize,
+    options: &'a [SparseOption],
+    out: &'a mut Vec<f32>,
+}
+
+impl Run for Forward<'_> {
+    type Output = Result<(), InferError>;
+
+    #[inline(always)]
+    fn run<L: Lanes>(self) -> Self::Output {
+        let Self {
+            model,
+            scratch,
+            faction,
+            head,
+            options,
+            out,
+        } = self;
+        model.forward_lanes::<L>(scratch, faction, head, options, out)
     }
 }
 

@@ -1,6 +1,6 @@
 # MLP bots without libtorch: inference in ti4-host, on the server and in the page (2026-10-15)
 
-Status: planned. Step 1 done (2026-10-15). Step 2 done (2026-10-15).
+Status: planned. Step 1 done (2026-10-15). Step 2 done (2026-10-15). Step 3 done (2026-10-15).
 
 ## Context
 
@@ -66,7 +66,7 @@ ti4-mlp   → ti4-policy, ti4-infer, tch
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `format`      | The `.ti4m` file: its reader and its writer (section B).                                                                                                                                                                                                                                                           |
 | `bundle`      | The reader of a training bundle directory (`ti4-mlp/src/bundle.rs` layout): the `safetensors` header (u64 length, JSON, raw f32 LE) parsed by hand, and the checks of `manifest.json` (schema 7–12, `projection_abi`, the SHA-256 of each file, f32 only, shapes). It is only used by the pack tool and the tests. |
-| `simd/`       | The `Lanes` trait and the three backends (section C). This is the only module with `#[allow(unsafe_code)]`. The crate restates the workspace lints with `unsafe_code = "deny"`, as `ti4-tensor` does.                                                                                                              |
+| `simd/`       | The `Lanes` trait, the five backends and the dispatch (section C). This is the only module with `#[allow(unsafe_code)]`. The crate restates the workspace lints with `unsafe_code = "deny"`, as `ti4-tensor` does.                                                                                                 |
 | `kernel`      | `bag`, `gemm` (packed panels), `readout`, generic over `Lanes`.                                                                                                                                                                                                                                                    |
 | `model`       | `Model`: the sections of one file and `forward(faction, head, options) -> Vec<f32>` with a reused scratch buffer. It is `Send + Sync` and shared by `Arc` across seats and games.                                                                                                                                  |
 | `bin/pack.rs` | `ti4-pack <bundle dir> <name> <out.ti4m>`.                                                                                                                                                                                                                                                                         |
@@ -102,17 +102,24 @@ trailer: SHA-256 of all bytes before it
 - Loading copies the file once into a 64-byte-aligned buffer. Each section is a slice into it, and
   nothing is converted.
 
-### C. The kernels: one source, three backends
+### C. The kernels: one source, five backends
 
 ```rust
-pub(crate) trait Lanes {            // 4 × f32 in every backend
-    type V: Copy;
+pub(crate) trait Lanes {            // N × f32: 4, or 8 on AVX2
+    const N: usize;  const SPLAT: usize;  const MR: usize;
+    type V: Copy;  type Readout: Readout;            // the 4 lanes of the readout
     fn zero() -> Self::V;  fn splat(x: f32) -> Self::V;
-    unsafe fn load(p: *const f32) -> Self::V;  unsafe fn store(p: *mut f32, v: Self::V);
+    fn load(src: &[f32]) -> Self::V;  fn load_splat(src: &[f32]) -> Self::V;
+    fn store(dst: &mut [f32], v: Self::V);
     fn add(a: Self::V, b: Self::V) -> Self::V;  fn mul(a: Self::V, b: Self::V) -> Self::V;
-    fn relu(v: Self::V) -> Self::V;  fn hsum(v: Self::V) -> f32;   // (l0 + l1) + (l2 + l3)
+    fn mul_add(acc: Self::V, a: Self::V, b: Self::V) -> Self::V;   // add(acc, mul(a, b)) but on Avx2Fma
+    fn relu(v: Self::V) -> Self::V;
 }
+pub(crate) trait Readout: Lanes { fn hsum(v: Self::V) -> f32; }   // (l0 + l1) + (l2 + l3)
 ```
+
+The trait is safe: a load or a store checks the length of its slice, and the `unsafe` of the
+intrinsics stays in `simd/`.
 
 **The backends**
 
@@ -120,12 +127,22 @@ pub(crate) trait Lanes {            // 4 × f32 in every backend
 | --------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | `Sse`     | `cfg(target_arch = "x86_64")`                                  | `core::arch::x86_64` `_mm_*_ps`. SSE2 is the baseline of x86-64, so there is no runtime detection. |
 | `Simd128` | `cfg(all(target_arch = "wasm32", target_feature = "simd128"))` | `core::arch::wasm32` `f32x4_*`.                                                                    |
-| `Scalar`  | every other target                                             | `[f32; 4]` with the same lane arithmetic. Native tests also call it explicitly.                    |
+| `Scalar`  | the default of every other target; available on every target   | `[f32; 4]` with the same lane arithmetic. The reference of the tests.                              |
 | `Avx2`    | x86-64, `is_x86_feature_detected!("avx2")` once at load        | `_mm256_*_ps`, 8 lanes, a multiply then an add. The default on a native host with AVX2.            |
 | `Avx2Fma` | x86-64, AVX2 and FMA detected, and asked for by the caller     | `_mm256_fmadd_ps`. Not bit-identical to the others; see below.                                     |
 
-A model picks its backend once, when it is loaded (`Model::with_backend`, default the best
-deterministic one), so the kernels have no per-call dispatch. There is no relaxed SIMD in wasm:
+A model picks its backend once, when it is loaded: the public `ti4_infer::Backend` enum,
+`Backend::best()` (the fastest deterministic one available, the default of a loaded model),
+`Backend::fastest()` (`Avx2Fma` where the CPU has it), `Model::with_backend` (refuses one the
+target or CPU lacks), and `Model::backend()`; `ti4_infer::backend()` is `Backend::best()`. A
+forward pass matches the backend once (`simd::run`) and runs the forward monomorphized for it,
+so the kernels have no dispatch. For the AVX2 backends `run` calls a
+`#[target_feature(enable = "avx2")]` (or `"avx2,fma"`) function after `is_x86_feature_detected!`,
+and the forward, the kernels and the lane operations are `#[inline(always)]`, so the whole
+forward is compiled into that function with its features. Nothing on that path may pass an
+intrinsic through a closure to a generic function of `std` (`array::from_fn`, `map`): that
+function is compiled without the features and cannot inline it. The `Avx2` types are private to
+`simd/`, so `run` is the only way to them. There is no relaxed SIMD in wasm:
 its fused multiply-add may or may not fuse, by engine and CPU, and the page keeps `Simd128`.
 
 **`Avx2` keeps the bits.** In `bag` and `gemm` every lane is its own output, and the sum of each
@@ -147,48 +164,63 @@ without it.
   `f32x4_pmax(zero, x)` (not `f32x4_max`, which treats −0 and NaN differently), and on `Scalar` the
   same comparison.
 
-So the three backends give bit-identical logits, and a game is the same game on the server and in
+So the deterministic backends give bit-identical logits, and a game is the same game on the server and in
 the page.
 
 **The kernels**, all with `width` a multiple of 8:
 
 - `bag`: for each option, `acc[width] = Σ v_j · W1[col_j]` over the columns. The columns are sorted
   and duplicates folded first, with the order and tie-break of `ti4-tensor/src/lib.rs:442-534`
-  (`total_order_key`, moved into `ti4-infer`). An empty bag is a zero row. The accumulator walks
-  `width/4` vectors, unrolled by 8. The epilogue is `+ identity`, then `+ b1`, then ReLU: the order
+  (`total_order_key`, moved into `ti4-infer`; the sort is an unstable sort of one `u64` key per
+  pair, the column above the key of the value, which gives the same order). An empty bag is a
+  zero row. The accumulator walks `width/N` vectors in blocks of 8 that stay in registers. The epilogue is `+ identity`, then `+ b1`, then ReLU: the order
   of `trunk`.
-- `gemm`: the micro-kernel is **MR = 4 option rows × NR = 8 outputs**. It keeps 8 vector
-  accumulators, loads 2 vectors of the panel per `k` and broadcasts 4 scalars of A: 11 of the 16
-  XMM registers, and the same shape on wasm, whose engines map v128 onto them.
-  - The panels are the outer loop and the row blocks the inner loop, so a panel stays in L1 while
-    every option of the block streams past it.
-  - The tail of 1–3 rows uses the same kernel with `const MR: usize`.
-  - A (the activations) is broadcast once per block of 32 rows into `[rows][k][4]`, so the
-    micro-kernel loads each broadcast in place of building it at every panel (on SSE a broadcast
-    is a shuffle). The panels are the outer loop inside a block of rows.
+- `gemm`: the micro-kernel is **MR option rows × 2 vectors of outputs** (one panel on 4 lanes,
+  two panels on 8), one accumulator each. MR is 6 on `Sse`, `Avx2` and `Avx2Fma` (12
+  accumulators, 2 weight vectors and a broadcast: 15 of the 16 XMM or YMM registers, and a
+  decision of 6 options is one call) and 4 on `Simd128` and `Scalar` (V8 keeps an XMM register
+  for itself).
+  - The columns are the outer loop and the row blocks the inner loop, so the panels stay in L1
+    while every option of the block streams past them. A width that is an odd multiple of 8 leaves
+    one panel on 8 lanes, done with one vector.
+  - The tail of fewer than MR rows uses the same kernel with `const ROWS: usize`.
+  - A (the activations) is packed once per block of 48 rows, by groups of the rows of one call
+    and in a group `[k][row][SPLAT]`, so the micro-kernel walks A and the panels side by side with
+    no bounds check. On `Sse`, `Simd128` and `Scalar` each element is stored 4 times (`SPLAT = 4`),
+    so the micro-kernel loads each broadcast in place of building it at every panel (on SSE a
+    broadcast is a shuffle); on AVX `vbroadcastss` broadcasts from memory in one load
+    (`SPLAT = 1`).
   - The epilogue is fused: bias and ReLU (layer 2), or the residual add (blocks).
   - K = width is at most 256, so there is no K blocking.
-- `readout`: `z · w[f][h] + b[f][h]` for every option, with 4-lane partial sums and `hsum`.
+- `readout`: `z · w[f][h] + b[f][h]` for every option, with 4-lane partial sums and `hsum`, on
+  the 4-lane `Readout` of the backend (`Sse` for both AVX2 backends, unfused).
 
 **Build.** `.cargo/config.toml` gets `[target.wasm32-unknown-unknown] rustflags = ["-C",
 "target-feature=+simd128"]`. Every browser with JSPI, which the engine already requires, has
 simd128. The native aliases are not affected.
 
 **Performance target**, single thread, release, x86-64 (measured by an ignored test,
-`ti4_infer::bench`):
+`ti4_infer::bench`; the reference machine is a Core i5-12600K, a P-core at 4.9 GHz):
 
-| Model at width 256 | Backend   | 6 options | 512 options |
-| ------------------ | --------- | --------- | ----------- |
-| 0 residual blocks  | `Sse`     | < 30 µs   | < 4 ms      |
-| 2 residual blocks  | `Avx2`    | < 55 µs   | < 5 ms      |
-| 2 residual blocks  | `Avx2Fma` | < 35 µs   | < 4 ms      |
+| Model at width 256 | Backend   | 6 options | 512 options | Measured (6 / 512)        |
+| ------------------ | --------- | --------- | ----------- | ------------------------- |
+| 0 residual blocks  | `Sse`     | < 30 µs   | < 4 ms      | 27 µs / 3.0 ms            |
+| 2 residual blocks  | `Avx2`    | < 55 µs   | < 5 ms      | 49 µs / 5.1–5.2 ms        |
+| 2 residual blocks  | `Avx2Fma` | < 35 µs   | < 4 ms      | 38.5–39.5 µs / 4.0–4.1 ms |
 
-The bench asserts these targets, and prints `Scalar` and `Sse` at 2 residual blocks for the
-comparison. Without FMA, SSE does 8 multiply-adds a cycle, so a residual block costs about 30 µs
-at 6 options; 8 lanes halve that and FMA halves it again. The 512-option case is bound by the
-memory of the bag (about 43 MB of rows read from a 21 MB table with random columns), so the vector
-width helps it less. Decisions are batched within a decision (the options are the rows), not
-across decisions.
+The bench asserts the targets that the code meets (both of `Sse`, and `Avx2` at 6 options) and
+prints the three it misses, marked "printed, not asserted". It also prints `Scalar` and `Sse` at
+2 residual blocks (Sse 90 µs / 8.5 ms) for the comparison. Without FMA, SSE does 8 multiply-adds
+a cycle, so a residual block costs about 30 µs at 6 options; 8 lanes halve that and FMA halves it
+again: on `Avx2Fma` a dense layer of 6 options takes about 6 µs, against a bound of 5 µs at 2 FMA
+a cycle. What keeps `Avx2Fma` above 35 µs is the bag: with 2 residual blocks the weights (1.3
+MB) and the rows of 6 options (0.5 MB) do not fit the L2 together, so the bag reads its rows from
+L3, about 10 µs (2 of them the sort of random columns) on every backend. The 512-option case is
+bound by the memory of the bag (about 43 MB of rows read from a 21 MB table with random columns,
+1.5 ms), so the vector width helps it less. Prefetching the rows (the next block of a row, the
+rest of a row, the rows of the next option) and walking each row in one pass were tried, and each
+was slower. Decisions are batched within a decision (the options are the rows), not across
+decisions.
 
 ### D. One decision pipeline, shared with training
 
@@ -355,7 +387,7 @@ evaluation temperature of `plans/MLP_TEMPERATURE_REGIME.md`).
   `ti4_infer::backend()` naming the backend of a model.
 - Tests: `Avx2` bit-equal to `Scalar` on the shapes of step 2; `Avx2Fma` within
   `1e-4 · max(1, |logit|)` of `Scalar`. A test skips with a message on a CPU without the feature.
-- The bench asserts the targets of section C.
+- The bench asserts the targets of section C that the code meets, and prints the others.
 
 ### Step 4: one pipeline in `ti4-policy` (section D)
 
@@ -433,7 +465,7 @@ the "+ mlp" cases of `random_bot_lobby.rs`.
   also `cargo b-web`.
 - Step 2: the bench (`ti4_infer::bench`, run with `ti4-infer` optimized: the command is in its
   module) runs. The wasm bit-equality test passes on the release build.
-- Step 3: the bench meets the targets of section C.
+- Step 3: the bench runs, and meets the targets of section C that it asserts.
 - Steps 4 and 5: `cargo t-mlp-parity` passes with libtorch.
 - Step 6: `cargo t-web-slow` (both hosts).
 - Step 9: `npm run typecheck`, `npm run lint`, `npm test`, `npm run e2e`, and `npm run shots` for

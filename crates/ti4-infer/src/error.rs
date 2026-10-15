@@ -61,6 +61,8 @@ pub enum InferError {
     },
     /// A feature value that is not finite.
     NotFinite(f32),
+    /// A backend that this target or this CPU does not have.
+    Backend(crate::Backend),
 }
 
 impl fmt::Display for InferError {
@@ -102,6 +104,11 @@ impl fmt::Display for InferError {
                 )
             }
             Self::NotFinite(value) => write!(f, "feature value {value} is not finite"),
+            Self::Backend(backend) => write!(
+                f,
+                "the backend {} is not available on this target or CPU",
+                backend.name()
+            ),
         }
     }
 }
