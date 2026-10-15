@@ -720,10 +720,6 @@ content does not have.
   and the lobby.
 - The view of a seat is as old as the last finished step, apart from the combat and invasion
   boundary, which is current. The server has the same limit.
-- The other workspace crates were not rebuilt after the `rand` change or the move to
-  `ti4-host`. `ti4-engine`, `ti4-host`, `ti4-server`, `ti4-bot-agent` and `ti4-wasm` pass their
-  tests. `ti4-advisor` imports the moved paths from `ti4-host` (since 2026-10-14) and was not
-  built (it needs libtorch).
 - The UI queries are the `tactical` field of the update and the draft. Undo and resume are replays from the seed; a stored
   position that can be resumed would need the engine to stop at step boundaries only.
 

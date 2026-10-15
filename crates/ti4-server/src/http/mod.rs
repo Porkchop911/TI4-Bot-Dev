@@ -99,10 +99,6 @@ pub fn create_app(registry: Arc<GameRegistry>) -> Router {
             axum::routing::post(games::add_bots_to_lobby),
         )
         .route(
-            "/api/games/{game_id}/lobby/add-bot",
-            axum::routing::post(games::add_bot_to_lobby),
-        )
-        .route(
             "/api/games/{game_id}/lobby/seat-faction",
             axum::routing::post(games::set_lobby_seat_faction),
         )

@@ -8,7 +8,6 @@ mod batch_fork_differential;
 mod bluff_intent;
 mod bluff_reaction;
 mod bot_lobby_factions;
-mod bot_lobby_service;
 mod both_hosts;
 mod catalog_http;
 mod crash_recovery;

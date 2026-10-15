@@ -1,6 +1,6 @@
 # MLP bots without libtorch: inference in ti4-host, on the server and in the page (2026-10-15)
 
-Status: planned. Step 1 done (2026-10-15). Step 2 done (2026-10-15). Step 3 done (2026-10-15). Step 4 done (2026-10-15). Step 5 done (2026-10-15). Step 6 done (2026-10-15).
+Status: planned. Step 1 done (2026-10-15). Step 2 done (2026-10-15). Step 3 done (2026-10-15). Step 4 done (2026-10-15). Step 5 done (2026-10-15). Step 6 done (2026-10-15). Step 7 done (2026-10-15).
 
 ## Context
 
@@ -338,7 +338,7 @@ evaluation temperature of `plans/MLP_TEMPERATURE_REGIME.md`).
 ### E. Bot kinds in ti4-host
 
 - `ti4_host::setup::bot_kind` keeps `RULE = "smart"` and `RANDOM = "random"`. An MLP kind is
-  `mlp:<name>` (`ti4_host::bots::MLP_PREFIX`); the `mlp` of the bot service (step 7) is not one.
+  `mlp:<name>` (`ti4_host::bots::MLP_PREFIX`); a bare `mlp` is not a kind.
 - `ti4_host::bots`:
   - `MlpModel`, the `Scorer` of the pipeline: an `Arc` of the `ti4_infer::Model` with its
     `HeadLayout::of(model.heads())`, its vocabulary (`Vocabulary::from_json_for_inference` of the
@@ -595,17 +595,25 @@ lane). No wasm, and the page and the server's games keep f32.
 
 Remove:
 
-- `crates/ti4-advisor`, `crates/ti4-bot-agent` and their workspace entries;
-- `spawn_bot_for_lobby` and `active_bots` in `session/registry.rs`;
-- `POST /lobby/add-bot` and its password check (`http/games.rs:678-705`), and the `"mlp"` kind of
-  the "bot service";
-- the env vars in `bin/server.rs`;
-- in `web/`: `src/services/advisorService.ts`, the `/advisor` proxy of `vite.config.ts`, the add-bot
-  UI of `components/Lobby.tsx` and `useLobbySession.ts`, and `protocol/types.ts:74`.
+- `crates/ti4-advisor`, `crates/ti4-bot-agent`, their workspace entries and their packages in
+  `l-mlp` and `t-mlp`;
+- `BotServiceConfig`, `spawn_bot_for_lobby` and `active_bots` in `session/registry.rs`, and the
+  field `bot_service_enabled` of the lobby view (`bot_kinds` lists every kind that a host can add);
+- `POST /lobby/add-bot` and its password check (`http/games.rs`, its rate limit in `public/`), and
+  the `"mlp"` kind of the "bot service";
+- the env vars in `bin/server.rs` (`TI4_BOT_PASSWORD`, `TI4_ADVISOR_URL`, `TI4_BOT_AGENT_BIN`,
+  `TI4_MAX_ACTIVE_BOTS`), and their lines in `deploy/public/env.example`; the `process` feature of
+  tokio in `ti4-server`;
+- in `web/`: the add-bot UI of `components/Lobby.tsx` and `useLobbySession.ts`, and
+  `bot_service_enabled` of `protocol/types.ts` and `decode.ts` (with the "with MLP" shot of
+  `e2e/screenshots/AV-random-bots`). `advisorService.ts` and the `/advisor` proxy of
+  `vite.config.ts` were gone before.
 
-Update `docs/RANDOM_BOTS.md` and `docs/OFFLINE.md`. The Linux libtorch setup of
-`crates/ti4-advisor/README.md` ("Native runtime") moves to `crates/ti4-mlp/README.md`. The removed tests are the ones of the crates and
-the "+ mlp" cases of `random_bot_lobby.rs`.
+Update `docs/RANDOM_BOTS.md`, `docs/OFFLINE.md` and the MLP section of `web/README.md`
+(`TI4_MODEL_DIR`, the kinds `mlp:<name>`). The Linux libtorch setup of
+`crates/ti4-advisor/README.md` ("Native runtime", with the Windows part) moves to
+`crates/ti4-mlp/README.md`. The removed tests are the ones of the crates, `bot_lobby_service.rs`,
+the add-bot request of `public_playtest.rs` and the "+ mlp" cases of `random_bot_lobby.rs`.
 
 ### Step 8: the routes, the pack script and the deploy (sections F, G)
 

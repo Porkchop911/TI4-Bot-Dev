@@ -69,10 +69,9 @@ export interface LobbyDto {
   lobby_version: number;
   host_player_id: string;
   slots: LobbySlot[];
-  bot_service_enabled?: boolean;
   /**
-   * Bot kinds the host can add: `random` and `smart` (in-process, no password) and `mlp` (needs the bot
-   * password). Absent from servers that predate random bots, which offer neither random bot.
+   * Bot kinds the host can add, all played by the server: `random`, `smart` and `mlp:<name>` for each
+   * model it loaded. Absent from servers that predate random bots, which offer neither random bot.
    */
   bot_kinds?: string[];
   /** Faction ids a bot seat can be given; absent from servers that predate the choice. */

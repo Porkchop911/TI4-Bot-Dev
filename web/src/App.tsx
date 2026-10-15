@@ -273,7 +273,6 @@ const GameRoute: React.FC<{
     chooseMap,
     join,
     leave,
-    addBot,
     removeBot,
     addRandomBots,
     setSeatFaction,
@@ -355,7 +354,6 @@ const GameRoute: React.FC<{
           onTakeover={(id, name) => void enter(name, id)}
           onChooseMap={chooseMap}
           onWatch={() => setWatching(true)}
-          onAddBot={(password, name) => addBot(password, name)}
           onRemoveBot={(targetId) => removeBot(targetId)}
           onAddRandomBots={(options) => addRandomBots(options)}
           onSetSeatFaction={(targetId, faction) => setSeatFaction(targetId, faction)}

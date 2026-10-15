@@ -20,11 +20,10 @@ SUSPICIOUS = re.compile(
     r"panicked|RUST_BACKTRACE|\bERROR\b|Error:|error\[|rejected:|click failed|pageerror|"
     r"console:|did not advance|no actionable control|never reached|game idle|timed out|✘",
 )
-# Vite dev-server proxy chatter: the /advisor/battle odds proxy refuses connections because no
-# advisor runs in the smoke setup, and websocket reconnects reset sockets. Neither affects play.
+# Vite dev-server proxy chatter: websocket reconnects reset sockets. It does not affect play.
 NOISE = re.compile(
     r"\[frontend\].*(ECONNREFUSED|ECONNRESET|socket has been ended|ws proxy error|http proxy error)"
-    r"|\[vite\] (ws |http )?proxy error|/advisor",
+    r"|\[vite\] (ws |http )?proxy error",
 )
 COMBAT = {
     "sustain_damage", "assign_casualty", "announce_retreat", "retreat_to",

@@ -2,7 +2,7 @@
 
 What this sets up: the TI4 server (release build, serving the web client itself) behind Caddy with
 automatic HTTPS, on this Hetzner box, as its own unix user in its own systemd slice. Access is one
-shared password. Feedback lands as JSON files on disk. ML bots and the dev routes are off.
+shared password. Feedback lands as JSON files on disk. The dev routes are off.
 
 Nothing in the repo installs anything. Every command below is run by you.
 
@@ -161,7 +161,7 @@ Nobody is notified; check the list when you play with friends or once a day.
   API bodies 8 KiB (feedback 256 KB).
 * systemd: own user, own slice (`CPUWeight=400`, `MemoryMax=3G`, `TasksMax=512`), read-only
   filesystem except the data dir, no capabilities.
-* `/api/dev/*` routes, ML advisor bots and `start_preset` are refused in public mode.
+* `/api/dev/*` routes and `start_preset` are refused in public mode.
 
 ## 9. Not covered
 

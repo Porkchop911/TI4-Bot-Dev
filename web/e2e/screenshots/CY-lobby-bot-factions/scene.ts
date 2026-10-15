@@ -61,7 +61,6 @@ export async function openFactionLobby(page: Page, options: FactionLobbyOptions 
     map: fixtureMapChoice(`${players}pStandard`, players),
     map_revision: 1,
     slots: slots.map((slot) => ({ ...slot })),
-    bot_service_enabled: false,
     bot_kinds: ["random", "smart"],
     factions: POOL,
   });

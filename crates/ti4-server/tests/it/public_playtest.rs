@@ -444,7 +444,7 @@ async fn game_lobby_and_disk_caps_refuse_creation() {
 }
 
 #[tokio::test]
-async fn public_mode_refuses_ml_bots_presets_and_keeps_the_small_body_cap() {
+async fn public_mode_refuses_presets_and_keeps_the_small_body_cap() {
     let c = reqwest::Client::new();
     let dir = temp_dir("bots");
     let mut cfg = public_config(&dir);
@@ -461,15 +461,7 @@ async fn public_mode_refuses_ml_bots_presets_and_keeps_the_small_body_cap() {
         .unwrap();
     let id = created["game_id"].as_str().unwrap();
     let token = created["player_session"].as_str().unwrap();
-    let r = c
-        .post(format!("http://{base}/api/games/{id}/lobby/add-bot"))
-        .header("x-ti4-player-session", token)
-        .json(&json!({ "password": "x" }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(r.status(), StatusCode::FORBIDDEN);
-    // The in-process rule bot still works.
+    // The in-process rule bot works.
     let r = c
         .post(format!("http://{base}/api/games/{id}/lobby/bots"))
         .header("x-ti4-player-session", token)

@@ -25,7 +25,6 @@ export interface LobbySessionState {
   chooseMap: (choice: MapChoice, startPreset?: string) => Promise<void>;
   join: (nickname: string, playerId?: string) => Promise<string | undefined>;
   leave: () => Promise<boolean>;
-  addBot: (password: string, nickname?: string, temperature?: number) => Promise<boolean>;
   removeBot: (playerId: string) => Promise<boolean>;
   /** Host only, before Start: seat random bots (no password). `fill` takes every open seat. */
   addRandomBots: (options?: {
@@ -221,32 +220,6 @@ export function useLobbySession(gameId: string, playerSession?: string): LobbySe
     );
   }, [gameId, playerSession, run]);
 
-  const addBot = useCallback(
-    async (password: string, nickname?: string, temperature?: number): Promise<boolean> => {
-      if (!playerSession) return false;
-      return run(
-        "add_bot",
-        async () => {
-          const response = await post("add-bot", {
-            password,
-            nickname: nickname || undefined,
-            temperature,
-          });
-          if (!response.ok) {
-            const msg = await response.text();
-            throw new Error(`Add bot failed (${response.status}): ${msg}`);
-          }
-          const updated = decodeLobby(await response.json(), gameId);
-          setLobby(updated);
-          setError(null);
-          return true;
-        },
-        false,
-      );
-    },
-    [gameId, playerSession, run],
-  );
-
   const addRandomBots = useCallback(
     async (
       options: {
@@ -347,7 +320,6 @@ export function useLobbySession(gameId: string, playerSession?: string): LobbySe
       mutate("map", startPreset === undefined ? { map } : { map, start_preset: startPreset }),
     join,
     leave,
-    addBot,
     removeBot,
     addRandomBots,
     setSeatFaction,

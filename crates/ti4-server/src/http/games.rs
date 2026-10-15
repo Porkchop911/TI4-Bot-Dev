@@ -580,14 +580,6 @@ pub async fn start_lobby(
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct AddBotRequest {
-    pub password: String,
-    pub nickname: Option<String>,
-    pub temperature: Option<f64>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct RemoveBotRequest {
     pub player_id: PlayerId,
 }
@@ -657,37 +649,6 @@ pub async fn add_bots_to_lobby(
                 count,
                 payload.faction.as_deref(),
             )
-            .map_err(lobby_error)?,
-    ))
-}
-
-/// Handler for `POST /api/games/{game_id}/lobby/add-bot`.
-pub async fn add_bot_to_lobby(
-    Path(game_id): Path<String>,
-    headers: HeaderMap,
-    State(registry): State<Arc<GameRegistry>>,
-    Json(payload): Json<AddBotRequest>,
-) -> Result<Json<PlayerLobbyView>, (StatusCode, String)> {
-    let token = require_player_session(&headers)?;
-    if registry.public().is_public() {
-        return Err((
-            StatusCode::FORBIDDEN,
-            "ML bots are disabled on the public server; use the smart or random bots".to_owned(),
-        ));
-    }
-    if !registry.bot_service_enabled() {
-        return Err((
-            StatusCode::FORBIDDEN,
-            "Bot service is not enabled on this server".to_owned(),
-        ));
-    }
-    if !registry.verify_bot_password(&payload.password) {
-        return Err((StatusCode::UNAUTHORIZED, "Invalid bot password".to_owned()));
-    }
-    Ok(Json(
-        registry
-            .spawn_bot_for_lobby(&game_id, token, payload.nickname, payload.temperature)
-            .await
             .map_err(lobby_error)?,
     ))
 }

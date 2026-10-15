@@ -18,8 +18,6 @@
     { "file": "before/7-guest.png", "heading": "Before: another player's view", "caption": "Guests see the seats and their state." },
     { "file": "out/after-7-guest.png", "heading": "After: guests see the badges, never the buttons", "caption": "Only the host gets 'Add random bot' and 'Fill'. Everyone sees which seats are random bots." },
     { "file": "before/8-older-server.png", "heading": "Older server (no bot_kinds)", "caption": "A server that predates random bots does not list bot kinds." },
-    { "file": "out/after-8-older-server.png", "heading": "After: older server, same lobby", "caption": "No bot kinds in the lobby response means no random bot buttons: the client never offers what the server cannot do." },
-    { "file": "before/9-with-mlp.png", "heading": "Before: server with the MLP service", "caption": "Per-seat 'Add Bot' with a password dialog, as before." },
-    { "file": "out/after-9-with-mlp.png", "heading": "After: both bot kinds", "caption": "The MLP 'Add Bot' per seat is untouched; the random bot buttons sit above the list." }
+    { "file": "out/after-8-older-server.png", "heading": "After: older server, same lobby", "caption": "No bot kinds in the lobby response means no random bot buttons: the client never offers what the server cannot do." }
   ]
 }

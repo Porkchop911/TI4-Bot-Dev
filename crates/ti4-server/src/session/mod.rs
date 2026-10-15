@@ -84,7 +84,7 @@ use serde::{Deserialize, Serialize};
 
 pub use decider::RemoteHumanDecider;
 pub use random_bot::{RANDOM_BOT_DELAY_ENV, random_bot_delay_ms};
-pub use registry::{BotServiceConfig, GameRegistry};
+pub use registry::GameRegistry;
 pub use transport::MockClient;
 
 /// Configuration for the controller occupying a table seat.

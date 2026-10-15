@@ -50,32 +50,20 @@ npm run dev
    engine state after that entry for everyone in the game. Redo remains available
    until a new choice is made; connected tabs reconnect to the restored timeline.
 
-### 4. Self-Service Bot Play (Optional)
+### 4. MLP Bots (Optional)
 
-To enable self-service MLP bots from the lobby:
+The server plays the trained MLP policies itself, inside the game worker, on `ti4-infer` (no
+libtorch, no extra process). Point it at a model directory:
 
-1. **Build the bot agent binary**:
-   ```bash
-   cargo build -p ti4-bot-agent
-   ```
-2. **Start the advisor service** (port 8081), which the bot agent plays with (the web page does
-   not use it; its combat odds come from the engine, see below):
-   ```bash
-   export LIBTORCH="$PWD/out/libtorch-2.9.1-cpu-linux"
-   export LIBTORCH_BYPASS_VERSION_CHECK=1
-   export LD_LIBRARY_PATH="$LIBTORCH/lib:${LD_LIBRARY_PATH:-}"
-   cargo run -p ti4-advisor -- --port 8081
-   ```
-3. **Start the server with a bot password**:
-   ```bash
-   TI4_BOT_PASSWORD="your-bot-password" cargo run -p ti4-server --bin server
-   ```
-4. **Using Bot Controls in the Web UI**:
-   - In the browser lobby, the **host** will see a **`+ Bot`** button next to each available (unoccupied) seat slot.
-   - _Note_: If `TI4_BOT_PASSWORD` was not set on the server, or if viewing the lobby as a guest/spectator, the `+ Bot` buttons are hidden.
-   - Clicking `+ Bot` opens a modal prompting for the bot's display nickname and the server bot password (with an option to save the password in local storage).
-   - Once submitted, the server spawns a `ti4-bot-agent` process that connects, heartbeats, and readies the seat.
-   - The host can remove a bot by clicking the **`×`** button next to its slot before starting the match.
+```bash
+TI4_MODEL_DIR=/path/to/models cargo run -p ti4-server --bin server
+```
+
+The directory holds an `index.json` (`{"models": [{"name": "...", "sha256": "...", "file": "..."}]}`)
+and the packed `.ti4m` files it lists. Every model becomes a bot kind `mlp:<name>` of the lobby
+(`bot_kinds`, `POST /api/games/{id}/lobby/bots` with `{"kind": "mlp:<name>"}`). Without
+`TI4_MODEL_DIR` no MLP kind is offered. A packed model is made with `ti4-pack` (`ti4-infer`). The
+lobby of this client offers the rule bot only.
 
 ---
 

@@ -4135,45 +4135,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ti4-advisor"
-version = "0.1.0"
-dependencies = [
- "axum",
- "serde",
- "serde_json",
- "ti4-calc",
- "ti4-content",
- "ti4-engine",
- "ti4-host",
- "ti4-mlp",
- "ti4-model",
- "ti4-policy",
- "ti4-tensor",
- "tokio",
-]
-
-[[package]]
-name = "ti4-bot-agent"
-version = "0.1.0"
-dependencies = [
- "axum",
- "futures-util",
- "rand 0.9.5",
- "rand_chacha 0.9.0",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror 2.0.20",
- "ti4-advisor",
- "ti4-host",
- "ti4-model",
- "ti4-server",
- "ti4-tensor",
- "tokio",
- "tokio-tungstenite 0.26.2",
-]
-
-[[package]]
 name = "ti4-bridge"
 version = "0.1.0"
 dependencies = [

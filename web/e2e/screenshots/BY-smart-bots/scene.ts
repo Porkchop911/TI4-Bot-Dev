@@ -15,8 +15,6 @@ export interface BotLobbyOptions {
   initialKind?: "random" | "smart";
   /** Seat a second human (Blair) before the bots. */
   guest?: boolean;
-  /** A server with the MLP bot service configured as well. */
-  mlp?: boolean;
 }
 
 const HUMANS = ["Alex", "Blair"];
@@ -65,7 +63,6 @@ export async function openBotLobby(page: Page, options: BotLobbyOptions = {}) {
     map: fixtureMapChoice(`${players}pStandard`, players),
     map_revision: 1,
     slots: slots.map((slot) => ({ ...slot })),
-    bot_service_enabled: !!options.mlp,
     ...(options.botKinds ? { bot_kinds: options.botKinds } : {}),
   });
 

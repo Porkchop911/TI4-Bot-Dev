@@ -61,8 +61,8 @@ wire-web = [
 # on Linux point `LIBTORCH` at the pinned Linux build (see `t-mlp-parity`). One fixed package set
 # for `l-mlp` and `t-mlp`, for the reason the game aliases have one. `l-mlp` checks every target,
 # the examples of `ti4-mlp` included; `t-mlp` runs the unit tests of the set.
-l-mlp = "clippy -p ti4-policy -p ti4-mlp -p ti4-sim -p ti4-training -p ti4-review -p ti4-cli -p ti4-advisor -p ti4-replayer --all-targets"
-t-mlp = "test -p ti4-policy -p ti4-mlp -p ti4-sim -p ti4-training -p ti4-review -p ti4-cli -p ti4-advisor -p ti4-replayer --lib"
+l-mlp = "clippy -p ti4-policy -p ti4-mlp -p ti4-sim -p ti4-training -p ti4-review -p ti4-cli -p ti4-replayer --all-targets"
+t-mlp = "test -p ti4-policy -p ti4-mlp -p ti4-sim -p ti4-training -p ti4-review -p ti4-cli -p ti4-replayer --lib"
 # The MLP of training on libtorch against `ti4-infer`, decision by decision, on seeded games of
 # `examples/reviewer/checkpoint-473312` (and of a schema-12 bundle of `out/champions/` when there
 # is one): the logits, the option drawn, the features of `MlpBot`, and the time of a decision.

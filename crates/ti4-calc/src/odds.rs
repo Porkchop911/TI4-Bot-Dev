@@ -1,5 +1,5 @@
 //! Battle odds from rollouts of [`arena`]: the request and response shapes, the validation of a
-//! request, and the rollout loops. `ti4-advisor` serves these over HTTP.
+//! request, and the rollout loops. `ti4-host` gives them to the views.
 
 use std::collections::BTreeMap;
 use std::fmt;

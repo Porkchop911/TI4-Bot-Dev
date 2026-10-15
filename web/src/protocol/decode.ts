@@ -69,7 +69,6 @@ export function decodeLobby(value: unknown, expectedGameId: string): LobbyDto {
         ? { faction: entry.faction }
         : {}),
     })),
-    bot_service_enabled: Boolean(value.bot_service_enabled),
     bot_kinds: Array.isArray(value.bot_kinds)
       ? value.bot_kinds.filter((kind: unknown): kind is string => typeof kind === "string")
       : [],
