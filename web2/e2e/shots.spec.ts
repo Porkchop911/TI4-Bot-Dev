@@ -386,11 +386,9 @@ test.describe("flows", () => {
     // The setting of a card is in the Cards sheet; the window links to it.
     await window.getByRole("button", { name: "Offer settings" }).click();
     const sheet = page.getByRole("complementary", { name: "Cards" });
-    await sheet.getByRole("button", { name: "Never offer Sabotage" }).click();
-    await expect(sheet.getByRole("button", { name: "Never offer Sabotage" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    const setting = sheet.getByRole("combobox", { name: "Offer Sabotage" });
+    await setting.selectOption("never");
+    await expect(setting).toHaveValue("never");
     await shot(page, "web2/flow/never-offer");
     await page.keyboard.press("Escape");
     await page.keyboard.press("Enter");
