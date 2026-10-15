@@ -332,8 +332,15 @@ pub(crate) fn readout<L: Lanes>(z: &[f32], width: usize, w: &[f32], b: f32, out:
     readout_quad::<L::Readout>(z, width, w, b, out);
 }
 
+/// [`readout`] on the 4 lanes `Q`.
 #[inline(always)]
-fn readout_quad<Q: Readout>(z: &[f32], width: usize, w: &[f32], b: f32, out: &mut Vec<f32>) {
+pub(crate) fn readout_quad<Q: Readout>(
+    z: &[f32],
+    width: usize,
+    w: &[f32],
+    b: f32,
+    out: &mut Vec<f32>,
+) {
     for row in z.chunks_exact(width) {
         let mut acc = Q::zero();
         for i in (0..width).step_by(4) {

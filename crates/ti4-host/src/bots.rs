@@ -107,9 +107,19 @@ impl MlpModel {
     /// fastest deterministic one, [`ti4_infer::Backend::best`]).
     ///
     /// # Errors
-    /// A message when the file is not read or the model is not one this build can play.
+    /// A message when the file is not read, is an int8 file (`ti4_infer::Quant::Int8`, for the
+    /// rollouts of training only), or the model is not one this build can play.
     pub fn from_bytes(bytes: &[u8], backend: Option<ti4_infer::Backend>) -> Result<Self, String> {
         let model = ti4_infer::Model::from_bytes(bytes).map_err(|error| error.to_string())?;
+        // The int8 file is for the rollouts of training; a game plays the f32 bits that every
+        // host reproduces.
+        if model.quant() != ti4_infer::Quant::F32 {
+            return Err(format!(
+                "the model {} has {} weights, for the rollouts of training: a game plays f32 models",
+                model.name(),
+                model.quant().name()
+            ));
+        }
         let model = match backend {
             Some(backend) => model
                 .with_backend(backend)
@@ -584,6 +594,20 @@ pub fn test_model() -> MlpModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_int8_model_file_is_not_played() {
+        let parts = ti4_infer::synthetic::parts(3, 128, 100, 0);
+        let bytes = ti4_infer::format::write_as(
+            &ti4_infer::synthetic::meta(),
+            &parts,
+            ti4_infer::Quant::Int8,
+        )
+        .expect("packs in int8");
+        for backend in [None, Some(ti4_infer::Backend::Avx2Vnni)] {
+            assert!(MlpModel::from_bytes(&bytes, backend).is_err());
+        }
+    }
 
     #[test]
     fn a_kind_is_written_and_read_as_its_id() {

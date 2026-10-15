@@ -23,11 +23,30 @@
 //!
 //! A dense matrix `W [out][in]` is stored as `out / 8` panels: for each `k` in `0..in`, the eight
 //! weights `W[p·8 .. p·8+8][k]` side by side. The critic and the value head are not in the file.
+//!
+//! # The int8 file
+//!
+//! A file of the rollouts of training (section H of the plan, [`write_as`] with [`Quant::Int8`])
+//! has `"quant": "int8"` in its header, and in place of the f32 `w1`, `w2`, `r{i}_in` and
+//! `r{i}_out`:
+//!
+//! ```text
+//!   w1, w1_scale             i8 [capacity][width] (`rows_i8`), f32 [capacity]
+//!   w2, w2_scale             i8 VNNI panels (`vnni8x4_i8`), f32 [width]
+//!   r{i}_in, r{i}_in_scale   the same; r{i}_out, r{i}_out_scale the same
+//! ```
+//!
+//! in the order `w1, w1_scale, embedding, b1, b2, w2, w2_scale`, then per block `r{i}_in,
+//! r{i}_in_scale, r{i}_b_in, r{i}_out, r{i}_out_scale, r{i}_b_out`, then the rest as above
+//! (`quant`). It loads on [`Backend::Avx2Vnni`](crate::Backend::Avx2Vnni) only, and is refused
+//! where the CPU lacks it. An f32 file has no `quant` key, so its bytes are those of a file
+//! written before int8 existed.
 
 use serde_json::{Value, json};
 
 use crate::kernel::{NR, pack_panels};
 use crate::model::{BlockRanges, Model};
+use crate::quant::{self, Int8Matrix, Int8Weights, Quant};
 use crate::simd::AlignedF32;
 use crate::{
     EMBED_DIM, FACTION_ROSTER, InferError, MAX_CAPACITY, MAX_RESIDUAL_BLOCKS, hex, is_head_layout,
@@ -162,6 +181,8 @@ enum Layout {
     Rows,
     Panels,
     Json,
+    RowsI8,
+    PanelsI8,
 }
 
 impl Layout {
@@ -170,6 +191,8 @@ impl Layout {
             Self::Rows => "rows",
             Self::Panels => "panels8",
             Self::Json => "json",
+            Self::RowsI8 => "rows_i8",
+            Self::PanelsI8 => "vnni8x4_i8",
         }
     }
 }
@@ -182,11 +205,30 @@ fn expected_sections(
     heads: usize,
     blocks: usize,
     battle: bool,
+    quant: Quant,
 ) -> Vec<(String, Layout, Option<usize>)> {
     let f = |count: usize| Some(count * 4);
     let factions = FACTION_ROSTER.len();
-    let mut sections = vec![
-        ("w1".to_owned(), Layout::Rows, f(capacity * width)),
+    let int8 = quant == Quant::Int8;
+    // A dense matrix and, for int8, its scales.
+    let matrix = |sections: &mut Vec<(String, Layout, Option<usize>)>, name: String| {
+        if int8 {
+            let scale = format!("{name}_scale");
+            sections.push((name, Layout::PanelsI8, Some(width * width)));
+            sections.push((scale, Layout::Rows, f(width)));
+        } else {
+            sections.push((name, Layout::Panels, f(width * width)));
+        }
+    };
+    let mut sections = if int8 {
+        vec![
+            ("w1".to_owned(), Layout::RowsI8, Some(capacity * width)),
+            ("w1_scale".to_owned(), Layout::Rows, f(capacity)),
+        ]
+    } else {
+        vec![("w1".to_owned(), Layout::Rows, f(capacity * width))]
+    };
+    sections.extend([
         (
             "embedding".to_owned(),
             Layout::Rows,
@@ -194,12 +236,12 @@ fn expected_sections(
         ),
         ("b1".to_owned(), Layout::Rows, f(width)),
         ("b2".to_owned(), Layout::Rows, f(width)),
-        ("w2".to_owned(), Layout::Panels, f(width * width)),
-    ];
+    ]);
+    matrix(&mut sections, "w2".to_owned());
     for index in 0..blocks {
-        sections.push((format!("r{index}_in"), Layout::Panels, f(width * width)));
+        matrix(&mut sections, format!("r{index}_in"));
         sections.push((format!("r{index}_b_in"), Layout::Rows, f(width)));
-        sections.push((format!("r{index}_out"), Layout::Panels, f(width * width)));
+        matrix(&mut sections, format!("r{index}_out"));
         sections.push((format!("r{index}_b_out"), Layout::Rows, f(width)));
     }
     sections.push((
@@ -313,13 +355,23 @@ fn pad(data: &mut Vec<u8>) {
     data.resize(data.len().next_multiple_of(ALIGN), 0);
 }
 
-/// Packs `parts` into the bytes of a `.ti4m` file.
+/// Packs `parts` into the bytes of a `.ti4m` file of f32 weights: [`write_as`] with
+/// [`Quant::F32`].
 ///
 /// # Errors
 /// [`InferError::Width`] for a width that is not a positive multiple of 8 of at least 16, and
 /// [`InferError::Parts`] for a bad name, label or temperature, shapes that disagree, a head list
 /// that is not a known layout, or a weight that is not finite.
 pub fn write(meta: &Meta, parts: &Parts) -> Result<Vec<u8>, InferError> {
+    write_as(meta, parts, Quant::F32)
+}
+
+/// Packs `parts` into the bytes of a `.ti4m` file with the weights of `quant`: f32, or the int8
+/// file of the rollouts of training (the module).
+///
+/// # Errors
+/// As [`write`].
+pub fn write_as(meta: &Meta, parts: &Parts, quant: Quant) -> Result<Vec<u8>, InferError> {
     check_parts(meta, parts)?;
     let width = parts.width;
     let heads = parts.heads.len();
@@ -338,24 +390,46 @@ pub fn write(meta: &Meta, parts: &Parts) -> Result<Vec<u8>, InferError> {
     }
 
     let mut contents: Vec<Vec<u8>> = Vec::new();
-    let mut f32_section = |values: &[f32]| {
+    let f32_bytes = |values: &[f32]| {
         let mut bytes = Vec::new();
         push_f32(&mut bytes, values);
-        contents.push(bytes);
+        bytes
     };
-    f32_section(&parts.w1);
-    f32_section(&parts.embedding);
-    f32_section(&parts.b1);
-    f32_section(&parts.b2);
-    f32_section(&pack_panels(&parts.w2, width, width));
-    for block in &parts.blocks {
-        f32_section(&pack_panels(&block.w_in, width, width));
-        f32_section(&block.b_in);
-        f32_section(&pack_panels(&block.w_out, width, width));
-        f32_section(&block.b_out);
+    let i8_bytes = |values: &[i8]| {
+        values
+            .iter()
+            .map(|&q| q.to_le_bytes()[0])
+            .collect::<Vec<u8>>()
+    };
+    // A dense matrix: f32 panels, or int8 VNNI panels and their scales.
+    let matrix = |contents: &mut Vec<Vec<u8>>, w: &[f32]| match quant {
+        Quant::F32 => contents.push(f32_bytes(&pack_panels(w, width, width))),
+        Quant::Int8 => {
+            let (q, scales) = quant::quantize_rows(w, width, width);
+            contents.push(i8_bytes(&quant::pack_vnni(&q, width, width)));
+            contents.push(f32_bytes(&scales));
+        }
+    };
+    match quant {
+        Quant::F32 => contents.push(f32_bytes(&parts.w1)),
+        Quant::Int8 => {
+            let (q, scales) = quant::quantize_rows(&parts.w1, parts.capacity, width);
+            contents.push(i8_bytes(&q));
+            contents.push(f32_bytes(&scales));
+        }
     }
-    f32_section(&readout);
-    f32_section(&readout_b);
+    contents.push(f32_bytes(&parts.embedding));
+    contents.push(f32_bytes(&parts.b1));
+    contents.push(f32_bytes(&parts.b2));
+    matrix(&mut contents, &parts.w2);
+    for block in &parts.blocks {
+        matrix(&mut contents, &block.w_in);
+        contents.push(f32_bytes(&block.b_in));
+        matrix(&mut contents, &block.w_out);
+        contents.push(f32_bytes(&block.b_out));
+    }
+    contents.push(f32_bytes(&readout));
+    contents.push(f32_bytes(&readout_b));
     contents.push(parts.slots.as_bytes().to_vec());
     if let Some(battle) = &parts.battle {
         contents.push(battle.as_bytes().to_vec());
@@ -367,6 +441,7 @@ pub fn write(meta: &Meta, parts: &Parts) -> Result<Vec<u8>, InferError> {
         heads,
         parts.blocks.len(),
         parts.battle.is_some(),
+        quant,
     );
     let mut data = Vec::new();
     let mut table = Vec::new();
@@ -381,7 +456,7 @@ pub fn write(meta: &Meta, parts: &Parts) -> Result<Vec<u8>, InferError> {
         pad(&mut data);
     }
 
-    let header = json!({
+    let mut header = json!({
         "name": meta.name,
         "label": meta.label,
         "temperature": meta.temperature,
@@ -399,6 +474,9 @@ pub fn write(meta: &Meta, parts: &Parts) -> Result<Vec<u8>, InferError> {
         "data_bytes": data.len(),
         "sections": table,
     });
+    if quant == Quant::Int8 {
+        header["quant"] = quant.name().into();
+    }
     let header = serde_json::to_vec(&header)
         .map_err(|error| parts_error(format!("the header cannot be encoded: {error}")))?;
     Ok(assemble(&header, &data))
@@ -493,6 +571,8 @@ fn string_list(header: &Value, field: &str) -> Result<Vec<String>, InferError> {
 /// The checks, in order: the magic and the version; the length the header implies
 /// ([`InferError::Truncated`]); the SHA-256 trailer ([`InferError::Digest`]); the width
 /// ([`InferError::Width`]); then every other field and every section ([`InferError::Format`]).
+/// An int8 file loads on [`Backend::Avx2Vnni`](crate::Backend::Avx2Vnni), and is refused
+/// ([`InferError::Backend`]) where the CPU lacks it; an f32 file on [`Backend::best`](crate::Backend::best).
 ///
 /// # Errors
 /// As above.
@@ -535,7 +615,18 @@ pub fn read(bytes: &[u8]) -> Result<Model, InferError> {
     let object = header
         .as_object()
         .ok_or_else(|| format_error("the header is not an object"))?;
-    if object.len() != KEYS.len() || !object.keys().all(|key| KEYS.contains(&key.as_str())) {
+    // `quant` is there only in an int8 file.
+    let quant = match object.get("quant") {
+        None => Quant::F32,
+        Some(value) if value.as_str() == Some(Quant::Int8.name()) => Quant::Int8,
+        Some(value) => return Err(format_error(format!("quant {value} is not \"int8\""))),
+    };
+    let keys = KEYS.len() + usize::from(quant == Quant::Int8);
+    if object.len() != keys
+        || !object
+            .keys()
+            .all(|key| KEYS.contains(&key.as_str()) || key == "quant")
+    {
         return Err(format_error(format!(
             "the header keys {:?} are not those of version {VERSION}",
             object.keys().collect::<Vec<_>>()
@@ -606,7 +697,7 @@ pub fn read(bytes: &[u8]) -> Result<Model, InferError> {
     let battle = is_battle_schema(source.schema);
 
     // The sections: exactly the expected ones, in order, each at the next multiple of 64.
-    let expected = expected_sections(width, capacity, heads.len(), blocks, battle);
+    let expected = expected_sections(width, capacity, heads.len(), blocks, battle, quant);
     let table = header
         .get("sections")
         .and_then(Value::as_array)
@@ -650,33 +741,69 @@ pub fn read(bytes: &[u8]) -> Result<Model, InferError> {
         )));
     }
 
-    let text = |range: &std::ops::Range<usize>, what: &str| {
-        String::from_utf8(data[range.clone()].to_vec())
-            .map_err(|_| format_error(format!("the {what} section is not UTF-8")))
+    // The byte range of a section by its name (every expected section is in `ranges`).
+    let bytes_of = |name: &str| {
+        expected
+            .iter()
+            .position(|(known, _, _)| known == name)
+            .map(|index| ranges[index].clone())
+            .unwrap_or_default()
     };
-    let json_at = 5 + 4 * blocks + 2;
-    let slots = text(&ranges[json_at], "slots")?;
-    let battle = if battle {
-        Some(text(&ranges[json_at + 1], "battle")?)
-    } else {
-        None
+    let text = |name: &str| {
+        String::from_utf8(data[bytes_of(name)].to_vec())
+            .map_err(|_| format_error(format!("the {name} section is not UTF-8")))
     };
+    let slots = text("slots")?;
+    let battle = if battle { Some(text("battle")?) } else { None };
 
     // Every offset is a multiple of 64 bytes from the aligned start, so a float range of a section
-    // starts on a cache line of the buffer too.
-    let floats = |range: &std::ops::Range<usize>| range.start / 4..range.end / 4;
-    let mut next = ranges.iter().map(floats);
-    let mut take = || next.next().unwrap_or_default();
-    let (w1, embedding, b1, b2, w2) = (take(), take(), take(), take(), take());
+    // starts on a cache line of the buffer too. An int8 section is a range of bytes.
+    let floats = |name: &str| {
+        let range = bytes_of(name);
+        range.start / 4..range.end / 4
+    };
+    let buffer = AlignedF32::from_le_bytes(data);
+    let int8 = (quant == Quant::Int8).then(|| {
+        let matrix = |name: &str| {
+            let panels = bytes_of(name);
+            Int8Matrix {
+                sum: quant::panel_sums(buffer.i8s(panels.clone()), width, width),
+                panels,
+                scale: floats(&format!("{name}_scale")),
+            }
+        };
+        Int8Weights {
+            w1: bytes_of("w1"),
+            w1_scale: floats("w1_scale"),
+            w2: matrix("w2"),
+            blocks: (0..blocks)
+                .map(|index| {
+                    (
+                        matrix(&format!("r{index}_in")),
+                        matrix(&format!("r{index}_out")),
+                    )
+                })
+                .collect(),
+        }
+    });
+    // The f32 matrices of an f32 file; empty in an int8 one, whose matrices are in `int8`.
+    let dense = |name: &str| if int8.is_some() { 0..0 } else { floats(name) };
+    let backend = if int8.is_some() {
+        crate::Backend::Avx2Vnni
+    } else {
+        crate::Backend::best()
+    };
+    if !backend.is_available() {
+        return Err(InferError::Backend(backend));
+    }
     let blocks = (0..blocks)
-        .map(|_| BlockRanges {
-            w_in: take(),
-            b_in: take(),
-            w_out: take(),
-            b_out: take(),
+        .map(|index| BlockRanges {
+            w_in: dense(&format!("r{index}_in")),
+            b_in: floats(&format!("r{index}_b_in")),
+            w_out: dense(&format!("r{index}_out")),
+            b_out: floats(&format!("r{index}_b_out")),
         })
         .collect();
-    let (readout, readout_b) = (take(), take());
 
     Ok(Model {
         name,
@@ -687,18 +814,19 @@ pub fn read(bytes: &[u8]) -> Result<Model, InferError> {
         heads,
         source,
         digest: found,
-        buffer: AlignedF32::from_le_bytes(data),
-        w1,
-        embedding,
-        b1,
-        b2,
-        w2,
+        w1: dense("w1"),
+        embedding: floats("embedding"),
+        b1: floats("b1"),
+        b2: floats("b2"),
+        w2: dense("w2"),
         blocks,
-        readout,
-        readout_b,
+        readout: floats("readout"),
+        readout_b: floats("readout_b"),
+        buffer,
+        int8,
         slots,
         battle,
-        backend: crate::Backend::best(),
+        backend,
         value: None,
     })
 }

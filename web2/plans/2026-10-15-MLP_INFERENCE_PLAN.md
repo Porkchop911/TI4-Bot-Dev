@@ -1,6 +1,6 @@
 # MLP bots without libtorch: inference in ti4-host, on the server and in the page (2026-10-15)
 
-Status: planned. Step 1 done (2026-10-15). Step 2 done (2026-10-15). Step 3 done (2026-10-15). Step 4 done (2026-10-15). Step 5 done (2026-10-15). Step 6 done (2026-10-15). Step 7 done (2026-10-15). Step 8 done (2026-10-15). Step 9 done (2026-10-15).
+Status: planned. Step 1 done (2026-10-15). Step 2 done (2026-10-15). Step 3 done (2026-10-15). Step 4 done (2026-10-15). Step 5 done (2026-10-15). Step 6 done (2026-10-15). Step 7 done (2026-10-15). Step 8 done (2026-10-15). Step 9 done (2026-10-15). Step 10 done (2026-10-15).
 
 ## Context
 
@@ -66,10 +66,11 @@ ti4-mlp   → ti4-policy, ti4-infer, tch
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `format`      | The `.ti4m` file: its reader and its writer (section B).                                                                                                                                                                                                                                                           |
 | `bundle`      | The reader of a training bundle directory (`ti4-mlp/src/bundle.rs` layout): the `safetensors` header (u64 length, JSON, raw f32 LE) parsed by hand, and the checks of `manifest.json` (schema 7–12, `projection_abi`, the SHA-256 of each file, f32 only, shapes). It is only used by the pack tool and the tests. |
-| `simd/`       | The `Lanes` trait, the five backends and the dispatch (section C). This is the only module with `#[allow(unsafe_code)]`. The crate restates the workspace lints with `unsafe_code = "deny"`, as `ti4-tensor` does.                                                                                                 |
+| `simd/`       | The `Lanes` trait, the five f32 backends, the int8 kernels of `Avx2Vnni` (section H) and the dispatch (section C). This is the only module with `#[allow(unsafe_code)]`. The crate restates the workspace lints with `unsafe_code = "deny"`, as `ti4-tensor` does.                                                 |
 | `kernel`      | `bag`, `gemm` (packed panels), `readout`, generic over `Lanes`.                                                                                                                                                                                                                                                    |
 | `model`       | `Model`: the sections of one file and `forward(faction, head, options: &[Vec<(u32, f32)>]) -> Vec<f32>` with a reused scratch buffer. It is `Send + Sync` and shared by `Arc` across seats and games.                                                                                                              |
-| `bin/pack.rs` | `ti4-pack <bundle dir> <name> <out.ti4m>`.                                                                                                                                                                                                                                                                         |
+| `quant`       | The int8 weights of the rollouts of training (section H): the quantization, the VNNI panels, and the plain reference of the int8 forward.                                                                                                                                                                          |
+| `bin/pack.rs` | `ti4-pack <bundle dir> <name> <out.ti4m> [--quant int8]`.                                                                                                                                                                                                                                                          |
 
 ### B. The model file `.ti4m` (the prepacking)
 
@@ -96,6 +97,8 @@ trailer: SHA-256 of all bytes before it
   bundle manifest, the schema and `projection_abi`. It also has a table of the sections (offset,
   length, layout).
 - The critic and the value head are left out. No bot reads them.
+- The int8 file of the rollouts of training has `"quant": "int8"` in the header and int8 sections
+  in place of the f32 matrices (section H). An f32 file has no `quant` key.
 - **Panel layout of a dense matrix** (`W[out][in]` in the bundle): `out/8` panels. Each panel holds,
   for each `k` in `0..in`, the 8 weights `W[p*8 .. p*8+8][k]` side by side, so a panel is
   `in × 8` f32 (8 KiB at width 256) and fits L1. `width % 8 == 0` is checked at pack time and at load.
@@ -135,6 +138,8 @@ intrinsics stays in `simd/`.
 | `Scalar`  | the default of every other target; available on every target   | `[f32; 4]` with the same lane arithmetic. The reference of the tests.                              |
 | `Avx2`    | x86-64, `is_x86_feature_detected!("avx2")` once at load        | `_mm256_*_ps`, 8 lanes, a multiply then an add. The default on a native host with AVX2.            |
 | `Avx2Fma` | x86-64, AVX2 and FMA detected, and asked for by the caller     | `_mm256_fmadd_ps`. Not bit-identical to the others; see below.                                     |
+
+A sixth backend, `Avx2Vnni`, runs the int8 models of training and nothing else (section H).
 
 A model picks its backend once, when it is loaded: the public `ti4_infer::Backend` enum,
 `Backend::best()` (the fastest deterministic one available, the default of a loaded model),
@@ -301,14 +306,16 @@ of tch ops. `ti4-mlp` has the module `infer`:
 - `InferModel` implements `ModelInfo` and `Scorer` (a thread-local `Scratch`), and is `Send +
   Sync`: one `Arc<InferModel>` serves every rollout worker, and after each PPO update the workers
   get a fresh one of the updated actor. `MlpBot::on_infer` seats it.
-- The backend of the rollouts of a run: `ppo_update --rollout-backend cpu | infer | gpu-batched`.
-  `cpu` (tch, one actor copy per worker) stays the default. `infer` is `Backend::fastest()`
-  (`Avx2Fma` where the CPU has it); the frozen benchmark of `--opponent` is packed once and plays
-  on it too. The update stays on tch: it computes the probabilities of the current weights on tch
+- The backend of the rollouts of a run: `ppo_update --rollout-backend cpu | infer | infer-int8 |
+  gpu-batched`. `cpu` (tch, one actor copy per worker) stays the default. `infer` is
+  `Backend::fastest()` (`Avx2Fma` where the CPU has it); `infer-int8` is `Avx2Vnni` with the int8
+  weights of section H. The frozen benchmark of `--opponent` is packed once and plays on the same
+  backend. The update stays on tch: it computes the probabilities of the current weights on tch
   in every epoch, as before, against the behaviour probability that the rollout recorded from the
   distribution it drew from (that of `ti4-infer`, within `2 · 1e-4 · max(1, |logit|) / T` of tch's
-  log-probability). `--check-likelihood` rescores on tch with that tolerance on `infer`, and with
-  1e-6 on `cpu`.
+  log-probability; on `infer-int8` the bound of section H in place of `1e-4`). `--check-likelihood`
+  rescores on tch with that tolerance on `infer` and `infer-int8` (`ti4_mlp::infer::logit_bound`),
+  and with 1e-6 on `cpu`.
 
 **The critic.** A recorded decision needs `V(s)` at the moment it is played (the behaviour value of
 the advantage, `CriticMode::Shared` and `Separate`); the update does not recompute it. On tch the
@@ -508,23 +515,82 @@ evaluation temperature of `plans/MLP_TEMPERATURE_REGIME.md`).
 ### H. int8 weights with AVX-VNNI (training rollouts only)
 
 The rollouts of training (D2) are the hot path that most needs speed. Their weights are quantized
-to int8 and the dense layers run on AVX-VNNI (`vpdpbusd`: u8 × i8 summed into i32, 4 products a
-lane). No wasm, and the page and the server's games keep f32.
+to int8 and the dense layers run on AVX-VNNI (`vpdpbusd`, `_mm256_dpbusd_avx_epi32`, stable on the
+pinned 1.94.1: u8 × i8, four products summed into each i32 lane, with no i16 step to saturate, unlike
+`pmaddubsw`). No wasm, and the page and the server's games keep f32.
 
-- **Weights.** W2 and the residual matrices: i8, one f32 scale per output (symmetric, max-abs),
-  packed in VNNI panels (for 8 outputs, 4 consecutive `k` side by side). W1: i8 rows with one scale
-  per row, so the bag, bound by memory, reads a quarter of the bytes. Biases, the identity
-  embedding, the readout and the value readout stay f32.
-- **Activations.** After each ReLU they are ≥ 0, so they are quantized to u8 per option row (scale
-  max/255) in the epilogue of the layer that makes them. The kernel sums in i32; its epilogue
-  rescales by the two scales, adds the f32 bias, applies the ReLU (and the residual add in f32),
-  and quantizes again for the next layer.
-- **The file.** A `.ti4m` of `version` 1 with `"quant": "int8"` in the header and the int8
-  sections, written by `ti4-pack --quant int8` and by the in-memory path of D2. The f32 reader
-  refuses it unless the backend is `Avx2Vnni`.
-- **Accuracy.** Not bit-identical: the logits are within a bound measured on the parity games
-  and written here by step 10, and the rate at which the drawn option changes at temperature 0.001
-  is reported. PPO recomputes the probabilities on tch, as with `Avx2Fma`.
+- **The backend.** `Backend::Avx2Vnni`: x86-64 with AVX2, FMA and AVX-VNNI, detected at load. It
+  runs an int8 model and nothing else, and an int8 model runs on it alone: `format::read` loads an
+  int8 file on it and refuses it (`InferError::Backend`) where the CPU lacks it, and
+  `Model::with_backend` refuses any other pairing (`InferError::Quant`). It is not deterministic in
+  the sense of section C (its logits are not those of `Scalar`), but it gives the same bits on every
+  CPU that has it. `simd::run_int8` calls a `#[target_feature(enable = "avx2,fma,avxvnni")]`
+  function, with the forward and the kernels `#[inline(always)]`, as `simd::run` does.
+- **Weights.** W2 and the residual matrices: i8, one f32 scale per output (symmetric, `max |W[o]| /
+  127`, rounded to the nearest even), packed in VNNI panels (for 8 outputs, each group of 4
+  consecutive `k` holds the 4 weights of each output side by side: 32 bytes, one `vpdpbusd`
+  operand). The sum of each output's weights, for the zero points, is computed at load. W1: i8 rows
+  with one scale per row; the bag computes `Σ v · scale[row] · W1[row]` in f32 with an FMA, the
+  rows widened on the fly, and reads a quarter of the bytes. Biases, the identity embedding, the
+  readout and the value readout stay f32.
+- **Activations.** The input of each dense layer is quantized when the layer reads it, as a base row
+  and the deltas from it: `base[k]` is the midpoint of the least and the greatest `x[r][k]` over the
+  options of the decision, and each of `base` and the deltas is quantized to u8 with one scale and
+  one zero point (`scale = (hi − lo) / 255`, `lo = min(0, min)`, `hi = max(0, max)`; inputs after a
+  ReLU have zero point 0 and scale `max / 255`). The layer multiplies each (i32, exact), corrects
+  the zero point (`− zero · Σ_k W[o][k]`), rescales by the two scales, adds the two products in f32,
+  then adds the f32 bias and applies the ReLU, or the residual add. The options of a decision share
+  most of their features, so their rows are close: the error of the base is the same for every
+  option, a shift that the softmax does not see, and the deltas are small, so their step is fine.
+  Quantized as they are (per row or per decision), the rows differ by a rounding noise of the whole
+  range, and the option drawn at temperature 0.001 changed in 20% of the decisions of the parity
+  games. A decision of one option (and the value) has zero deltas, and the kernel skips their
+  product. The single row of the base runs on four sets of accumulators (i32, so the same sum).
+- **The residual stream and the epilogue.** `z` stays f32: the residual add is `(z + y) + b` in f32,
+  the input of the next block is quantized from the f32 `z` (with a zero point: after a residual add
+  it is no longer ≥ 0), and the readout and the value readout read the f32 rows. Each layer writes
+  f32, and the quantization is a pass over its rows when the next layer reads them (it needs the
+  range of every row of the decision first). The epilogue multiplies, then adds; only the bag fuses.
+- **Bit for bit.** `quant::reference` is the int8 forward in plain loops over the unpacked quantized
+  weights (the integer dot of each output, its correction, the scales, the f32 epilogue); the
+  `Avx2Vnni` forward gives its bits on widths 24, 40, 128 and 256, 0 to 2 blocks, 1 to 50 options.
+- **The file.** A `.ti4m` of `version` 1 with `"quant": "int8"` in the header and the sections `w1`
+  (`rows_i8`) and `w1_scale`, then `embedding`, `b1`, `b2`, `w2` (`vnni8x4_i8`) and `w2_scale`, and
+  per block `r{i}_in`, `r{i}_in_scale`, `r{i}_b_in`, `r{i}_out`, `r{i}_out_scale`, `r{i}_b_out`, then
+  the rest as an f32 file. Written by `format::write_as(meta, parts, Quant::Int8)`, `ti4-pack --quant
+  int8`, and `InferModel::from_actor` on `Avx2Vnni` (the in-memory path of D2). `ti4-host` refuses
+  it (`MlpModel::from_bytes`), so no server offers it and no game plays it. The reviewer checkpoint
+  is 7.5 MB in int8 against 23.3 MB.
+- **Accuracy**, against libtorch, on the parity games (`cargo t-mlp-parity`, reviewer 473312, 4 335
+  decisions): the bound is on the logits of a decision each less their mean (`ti4_mlp::infer::
+  int8_gap`), relative to `max(1, the largest |logit| of the decision)`: `INT8_LOGIT_BOUND = 0.2`.
+  Measured: worst 0.104, 99th percentile 0.027, median 0.0013. A logit itself is off by up to 3.8
+  times `max(1, |logit|)` (the shift of the base). The option drawn at temperature 0.001 differs from
+  libtorch's in 2.8% and 2.4% of the decisions of the two sets of games. Of that, i8 W1 is most
+  (on 1 083 of these decisions, against f32): with i16 rows (twice the bytes) the rate is 0.8%; i8
+  W1 with f32 activations alone 2.2%; i8 W2 alone 0.4%. W1 stays i8 for the bytes of the bag. On
+  the synthetic models (uniform weights) the plain gap is at most 0.031 · max(1, |logit|),
+  asserted under 0.05. The value: within `INT8_VALUE_BOUND = 0.1 · max(1, |V|)`, measured 0.041. In
+  the short PPO run at temperature 1 the worst recorded log-probability is 0.67 from libtorch's (the
+  tolerance of `--check-likelihood` is `2 · 0.2 · largest / T`). PPO recomputes the probabilities on
+  tch, as with `Avx2Fma`.
+- **Speed** (the reference machine). `ti4_infer::bench`, width 256, against `Avx2Fma`: with no
+  residual block 11.6 µs (1.1x) for 6 options again, 13.0 µs (1.6x) for 256 decisions in turn, 1.08
+  ms (1.8x) for 512 options; with 2 blocks 25.6 µs (1.5x), 27.5 µs (1.7x) and 1.96 ms (2.1x). The
+  bag of cached rows is not faster in int8 (a widening, a conversion and an FMA per 8 weights,
+  against one FMA); it gains where the rows come from L3 or memory. The parity games (7.6 options of
+  165 columns): a forward of a decision takes 27.8 µs on `Avx2Vnni` against 168 µs on `Avx2` and 405
+  µs on tch (6x and 15x). The rollouts (`infer_rollouts`, a game of two rounds at temperature 1):
+
+| Rollout backend        | Forward per decision | Critic per recorded decision | Forward + critic per game |
+| ---------------------- | -------------------- | ---------------------------- | ------------------------- |
+| tch                    | 296 µs               | 54 µs                        | 279 ms                    |
+| `ti4-infer` `Avx2Fma`  | 161 µs               | 16.0 µs                      | 142 ms                    |
+| `ti4-infer` `Avx2Vnni` | 32.4 µs              | 8.4 µs                       | 31.5 ms                   |
+
+So the forward and the critic of a game are 4.5x faster than on `Avx2Fma` and 8.9x than on tch.
+In this debug build of the engine and the features the whole game still takes about 4.5 s on
+every backend.
 
 ## Plan (one PR per step, in order)
 
@@ -676,14 +742,19 @@ the add-bot request of `public_playtest.rs` and the "+ mlp" cases of `random_bot
 
 ### Step 10: int8 weights with AVX-VNNI, for the rollouts of training (section H)
 
-- The int8 sections of section H, `ti4-pack --quant int8`, and the int8 `Model` from an `Actor` in
-  memory (step 5's path).
-- `Backend::Avx2Vnni`, detected at load; no wasm and no `.ti4m` offered by a server.
+- The int8 sections of section H (`format::write_as`, `Quant`), `ti4-pack --quant int8`, and the
+  int8 `Model` from an `Actor` in memory (`InferModel::from_actor` on `Avx2Vnni`).
+- `Backend::Avx2Vnni`, detected at load; no wasm (the int8 reader adds 8 KB to `ti4.wasm`: 7.564
+  MB against 7.557 MB) and no `.ti4m` offered by a server (`ti4-host` refuses an int8 file).
 - `--rollout-backend infer-int8` in `ppo_update`.
-- Tests: the int8 kernels against a plain integer reference, bit for bit; the int8 logits against
-  f32 within the bound of section H; the parity games report the gap and the rate of changed
-  options; a short seeded PPO run on int8.
-- The bench: a decision and a game on `Avx2Fma`, `Avx2Vnni` and tch, and the speedup, in the PR.
+- Tests: the int8 forward against `quant::reference`, bit for bit; the int8 logits against f32
+  within 0.05 · max(1, |logit|) on the synthetic models; an int8 model of a random actor within
+  `INT8_LOGIT_BOUND` and `INT8_VALUE_BOUND` (`cargo t-mlp`); the parity games assert the bound and
+  print the gap, the rate of changed options and the time; a short seeded PPO run on int8 checks
+  every recorded probability and value against the actor's; the int8 file, its header and the pack
+  tool (`tests/infer.rs`).
+- The bench: a decision on `Avx2Fma` and `Avx2Vnni` (`ti4_infer::bench`), a decision and a game on
+  tch, `Avx2Fma` and `Avx2Vnni` (`infer_rollouts`); the numbers are in section H.
 
 ## Verification
 
@@ -693,6 +764,8 @@ the add-bot request of `public_playtest.rs` and the "+ mlp" cases of `random_bot
 - Step 2: the bench (`cargo t-web bench --ignored --nocapture`; `ti4-infer` is optimized in the
   dev profile) runs. The wasm bit-equality test passes on the release build.
 - Step 3: the bench runs, and meets the targets of section C that it asserts.
+- Step 10: the bench runs with `Avx2Vnni`; `cargo t-mlp-parity` passes with the int8 games and
+  the int8 PPO run; `scripts/build-wasm.sh` and `npm test` (the wasm bit-equality test).
 - Steps 4 and 5: `cargo t-mlp-parity` passes (step 5 adds `infer_rollouts` to it) with libtorch, and `cargo l-mlp` and `cargo t-mlp`
   are clean (`t-mlp` but for tests that need `out/`); step 4 also `cargo wasm-policy`.
 - Step 6: `cargo t-web-slow` (both hosts).

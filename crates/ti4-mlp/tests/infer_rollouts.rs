@@ -3,11 +3,12 @@
 //!
 //! - the model packed in memory from the actor (`ti4_mlp::infer::InferModel::from_actor`): how long
 //!   it takes, printed;
-//! - a short seeded PPO run on each rollout backend, libtorch and `ti4-infer`: self-play games that
-//!   record PPO steps, the update on libtorch, and a fresh model of the updated actor for the next
-//!   update. On `ti4-infer` every recorded behaviour probability and value is checked against the
-//!   actor's within the bound of the parity test;
-//! - the bench: a decision and a whole game on either backend, printed.
+//! - a short seeded PPO run on each rollout backend, libtorch, `ti4-infer` and, on a CPU with
+//!   AVX-VNNI, `ti4-infer` with int8 weights (`infer-int8`): self-play games that record PPO steps,
+//!   the update on libtorch, and a fresh model of the updated actor for the next update. On
+//!   `ti4-infer` every recorded behaviour probability and value is checked against the actor's
+//!   within the bound of the backend (`ti4_mlp::infer::logit_bound`);
+//! - the bench: a decision and a whole game on each backend, printed.
 //!
 //! Needs libtorch: `cargo t-mlp-parity` (the command is in `.cargo/config.toml`), which builds
 //! `ti4-infer` optimized; the engine, the features and the bot are a debug build.
@@ -166,9 +167,14 @@ fn play(
 }
 
 /// The behaviour probability and value of every step recorded on `ti4-infer`, against the
-/// actor's: the log-probability within twice the logit bound of the largest logit over the
-/// temperature, the value within the logit bound.
-fn check_against_the_actor(actor: &Actor, steps: &[Step]) -> (f64, f64) {
+/// actor's: the log-probability within twice the logit bound `bound` of the largest logit over the
+/// temperature, the value within `value_bound · max(1, |value|)`.
+fn check_against_the_actor(
+    actor: &Actor,
+    steps: &[Step],
+    bound: f64,
+    value_bound: f64,
+) -> (f64, f64) {
     let (mut worst_log_prob, mut worst_value) = (0.0f64, 0.0f64);
     for step in steps {
         let head = actor.head_names()[step.head];
@@ -186,7 +192,7 @@ fn check_against_the_actor(actor: &Actor, steps: &[Step]) -> (f64, f64) {
             .expect("tch probabilities");
         let gap = (p[step.chosen].ln() - step.behaviour_log_prob).abs();
         assert!(
-            gap <= 2.0 * 1e-4 * largest / step.temperature,
+            gap <= 2.0 * bound * largest / step.temperature,
             "head {head}: log p {} on libtorch, {} recorded",
             p[step.chosen].ln(),
             step.behaviour_log_prob
@@ -200,7 +206,7 @@ fn check_against_the_actor(actor: &Actor, steps: &[Step]) -> (f64, f64) {
         let got = step.behaviour_value.expect("a recorded value");
         let error = (want - got).abs();
         assert!(
-            error <= 1e-4 * want.abs().max(1.0),
+            error <= value_bound * want.abs().max(1.0),
             "value: libtorch {want}, recorded {got}"
         );
         worst_value = worst_value.max(error / want.abs().max(1.0));
@@ -219,7 +225,13 @@ fn a_short_ppo_run_completes_on_either_rollout_backend() {
         minibatch: 512,
         ..Settings::default()
     };
-    for infer in [false, true] {
+    let mut backends = vec![None, Some(ti4_infer::Backend::fastest())];
+    if ti4_infer::Backend::Avx2Vnni.is_available() {
+        backends.push(Some(ti4_infer::Backend::Avx2Vnni));
+    } else {
+        println!("no avx2-vnni on this CPU: the int8 run is skipped");
+    }
+    for infer in backends {
         let mut actor = loaded.actor.inference_copy();
         let mut optimizer =
             ti4_mlp::ppo::Adam::new(&mut actor, CriticMode::Shared, settings).expect("Adam");
@@ -227,10 +239,10 @@ fn a_short_ppo_run_completes_on_either_rollout_backend() {
             ti4_mlp::ppo::parameter_fingerprint(&actor, CriticMode::Shared).expect("a fingerprint");
         for update in 0..2u64 {
             // The rollout workers' model of this update: a fresh one from the updated actor.
-            let backend = if infer {
+            let backend = if let Some(backend) = infer {
                 let started = Instant::now();
-                let model = InferModel::from_actor(&actor, &slots, ti4_infer::Backend::fastest())
-                    .expect("the actor packs");
+                let model =
+                    InferModel::from_actor(&actor, &slots, backend).expect("the actor packs");
                 println!(
                     "update {update}: the actor packed for ti4-infer in {:.1} ms",
                     started.elapsed().as_secs_f64() * 1e3
@@ -248,11 +260,19 @@ fn a_short_ppo_run_completes_on_either_rollout_backend() {
                 CriticMode::Shared,
             );
             assert!(!game.steps.is_empty(), "the game recorded no PPO step");
-            if infer {
-                let (log_prob, value) = check_against_the_actor(&actor, &game.steps);
+            if let Some(infer) = infer {
+                let bound = ti4_mlp::infer::logit_bound(infer);
+                let value_bound = if infer.is_int8() {
+                    ti4_mlp::infer::INT8_VALUE_BOUND
+                } else {
+                    bound
+                };
+                let (log_prob, value) =
+                    check_against_the_actor(&actor, &game.steps, bound, value_bound);
                 println!(
-                    "update {update}: {} steps on ti4-infer, worst |log p| gap {log_prob:.2e}, worst relative value gap {value:.2e}",
-                    game.steps.len()
+                    "update {update}: {} steps on ti4-infer ({}), worst |log p| gap {log_prob:.2e}, worst relative value gap {value:.2e}",
+                    game.steps.len(),
+                    infer.name()
                 );
             }
             let batch = Batch::freeze(game.steps, CriticMode::Shared).expect("a batch");
@@ -285,19 +305,22 @@ fn bench_a_decision_and_a_game_on_libtorch_and_on_ti4_infer() {
     ti4_mlp::perf::enable(false);
     let loaded = ti4_mlp::bundle::read(&reviewer()).expect("the reviewer bundle");
     let slots = std::fs::read_to_string(reviewer().join("slots.json")).expect("slots.json");
-    let started = Instant::now();
-    let model = InferModel::from_actor(&loaded.actor, &slots, ti4_infer::Backend::fastest())
-        .expect("the actor packs");
-    let packed = started.elapsed();
-    let backends = [
-        Backend::Tch(Rc::new(loaded.actor.inference_copy())),
-        Backend::Infer(Arc::new(model)),
-    ];
-    println!(
-        "bench: reviewer 473312 (width {}), the actor packed for ti4-infer in {:.1} ms",
-        loaded.actor.width(),
-        packed.as_secs_f64() * 1e3
-    );
+    let mut backends = vec![Backend::Tch(Rc::new(loaded.actor.inference_copy()))];
+    let mut kinds = vec![ti4_infer::Backend::fastest()];
+    if ti4_infer::Backend::Avx2Vnni.is_available() {
+        kinds.push(ti4_infer::Backend::Avx2Vnni);
+    }
+    for kind in kinds {
+        let started = Instant::now();
+        let model = InferModel::from_actor(&loaded.actor, &slots, kind).expect("the actor packs");
+        println!(
+            "bench: reviewer 473312 (width {}), the actor packed for ti4-infer ({}) in {:.1} ms",
+            loaded.actor.width(),
+            kind.name(),
+            started.elapsed().as_secs_f64() * 1e3
+        );
+        backends.push(Backend::Infer(Arc::new(model)));
+    }
     let ms = |duration: Duration| duration.as_secs_f64() * 1e3;
     let stage = |game: &Game, index: usize| {
         Duration::from_nanos(u64::try_from(game.stages.nanos[index]).unwrap_or(u64::MAX))

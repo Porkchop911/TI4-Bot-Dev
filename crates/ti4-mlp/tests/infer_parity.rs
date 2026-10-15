@@ -12,7 +12,12 @@
 //!   features, head, option and behaviour probability of each PPO step the bot records are the
 //!   shadow's, bit for bit;
 //! - the time of the forward pass of a decision on libtorch and on `ti4-infer`, printed: in the
-//!   game (the caches as the game left them), and again at once (warm).
+//!   game (the caches as the game left them), and again at once (warm);
+//! - on a CPU with AVX-VNNI, the int8 model of the same bundle (`Avx2Vnni`, section H of the
+//!   plan) on the same columns: the logits of every decision within
+//!   `ti4_mlp::infer::INT8_LOGIT_BOUND` on `ti4_mlp::infer::int8_gap`; printed, the worst and the
+//!   median of that gap, the worst gap of a logit itself (`/ max(1, |tch|)`), the rate at which
+//!   the option drawn at temperature 0.001 differs from libtorch's, and its time.
 //!
 //! The games are of `examples/reviewer/checkpoint-473312` (schema 7), once as it is and once with
 //! a small synthetic battle predictor of fact version 8, so that the battle facts and the fleet
@@ -171,6 +176,11 @@ struct Stats {
     infer: Duration,
     tch_warm: Duration,
     infer_warm: Duration,
+    int8: Duration,
+    int8_warm: Duration,
+    int8_worst: f64,
+    int8_gaps: Vec<f64>,
+    int8_changed: usize,
 }
 
 /// A PPO step the bot must record for a decision.
@@ -189,6 +199,7 @@ struct Parity {
     rng: ChaCha8Rng,
     actor: Rc<Actor>,
     infer: Rc<Infer>,
+    int8: Option<Rc<Infer>>,
     stats: Rc<RefCell<Stats>>,
     label: String,
 }
@@ -227,6 +238,18 @@ impl Parity {
         let warm_done = Instant::now();
         assert_eq!(again, tch, "libtorch gives the same logits twice");
         assert_eq!(tch.len(), infer.len());
+        // The int8 model: in the game's caches after the f32 one, then again at once.
+        let int8 = self.int8.as_ref().map(|model| {
+            let started = Instant::now();
+            let logits = model
+                .logits(prepared.faction, prepared.head_index, &prepared.options)
+                .expect("int8 logits");
+            let between = Instant::now();
+            let _ = model
+                .logits(prepared.faction, prepared.head_index, &prepared.options)
+                .expect("int8 logits");
+            (logits, between - started, between.elapsed())
+        });
         let mut stats = self.stats.borrow_mut();
         stats.tch += between - started;
         stats.infer += done - between;
@@ -258,6 +281,25 @@ impl Parity {
             ti4_policy::mlp::draw(&p, &mut ChaCha8Rng::seed_from_u64(seed))
         };
         let (a, b) = (cold(&tch), cold(&infer));
+        if let Some((logits, time, warm)) = &int8 {
+            stats.int8 += *time;
+            stats.int8_warm += *warm;
+            let gap = ti4_mlp::infer::int8_gap(&tch, logits);
+            stats.int8_gaps.push(gap);
+            assert!(
+                gap <= ti4_mlp::infer::INT8_LOGIT_BOUND,
+                "{}: head {}: libtorch {tch:?}, int8 {logits:?}",
+                self.label,
+                prepared.head
+            );
+            for (a, b) in tch.iter().zip(logits) {
+                let error = f64::from((a - b).abs()) / f64::from(a.abs()).max(1.0);
+                stats.int8_worst = stats.int8_worst.max(error);
+            }
+            if cold(logits) != a {
+                stats.int8_changed += 1;
+            }
+        }
         if a != b {
             let gap = f64::from((tch[a] - tch[b]).abs());
             assert!(
@@ -403,6 +445,17 @@ fn play(dir: &Path, name: &str, predictor: Option<BattlePredictor>, games: &[(u6
         battle,
         scratch: RefCell::new(ti4_infer::Scratch::new()),
     });
+    // The int8 model of the same weights, where the CPU has AVX-VNNI.
+    let int8 = ti4_infer::Backend::Avx2Vnni.is_available().then(|| {
+        let bytes = ti4_infer::format::write_as(&meta, &parts, ti4_infer::Quant::Int8)
+            .expect("packs in int8");
+        Rc::new(Infer {
+            model: ti4_infer::Model::from_bytes(&bytes).expect("loads on avx2-vnni"),
+            layout,
+            battle: infer.battle.clone(),
+            scratch: RefCell::new(ti4_infer::Scratch::new()),
+        })
+    });
     let actor = Rc::new(actor);
     let vocabulary = Arc::new(loaded.vocabulary);
     let stats = Rc::new(RefCell::new(Stats::default()));
@@ -466,6 +519,7 @@ fn play(dir: &Path, name: &str, predictor: Option<BattlePredictor>, games: &[(u6
                             rng: ChaCha8Rng::seed_from_u64(stream),
                             actor: Rc::clone(&actor),
                             infer: Rc::clone(&infer),
+                            int8: int8.clone(),
                             stats: Rc::clone(&stats),
                             label: format!("{name} seed {seed} {player}"),
                         }),
@@ -480,8 +534,9 @@ fn play(dir: &Path, name: &str, predictor: Option<BattlePredictor>, games: &[(u6
             rollout.error
         );
     }
-    let stats = stats.borrow();
+    let mut stats = stats.borrow_mut();
     let scored = stats.decisions + stats.fleet_decisions;
+    stats.int8_gaps.sort_by(f64::total_cmp);
     assert!(
         stats.decisions > 100,
         "{name}: only {} decisions",
@@ -512,6 +567,32 @@ fn play(dir: &Path, name: &str, predictor: Option<BattlePredictor>, games: &[(u6
         per(stats.infer_warm),
         per(stats.features)
     );
+    if int8.is_some() {
+        println!(
+            "{name}: int8 (avx2-vnni): the gap of the centred logits / max(1, largest |tch|): worst {:.2e}, \
+             99th percentile {:.2e}, median {:.2e}; worst |tch - int8| / max(1, |tch|) of a logit {:.2e}; \
+             the option drawn at temperature 0.001 differs from libtorch's in {} of {scored} decisions \
+             ({:.2}%); forward per decision in the game {:.1} us, again at once {:.1} us",
+            stats.int8_gaps.last().copied().unwrap_or(0.0),
+            stats
+                .int8_gaps
+                .get(stats.int8_gaps.len() * 99 / 100)
+                .copied()
+                .unwrap_or(0.0),
+            stats
+                .int8_gaps
+                .get(stats.int8_gaps.len() / 2)
+                .copied()
+                .unwrap_or(0.0),
+            stats.int8_worst,
+            stats.int8_changed,
+            100.0 * stats.int8_changed as f64 / scored.max(1) as f64,
+            per(stats.int8),
+            per(stats.int8_warm)
+        );
+    } else {
+        println!("{name}: no avx2-vnni on this CPU: the int8 model is skipped");
+    }
 }
 
 #[test]

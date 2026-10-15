@@ -229,3 +229,158 @@ fn a_model_is_loaded_on_the_best_deterministic_backend_and_refuses_one_it_lacks(
         }
     );
 }
+
+/// An int8 model of `parts` on `Avx2Vnni`.
+fn int8_model(parts: &crate::Parts) -> Model {
+    let bytes = format::write_as(&synthetic::meta(), parts, crate::Quant::Int8).unwrap();
+    let model = Model::from_bytes(&bytes).expect("an int8 file reads on avx2-vnni");
+    assert_eq!(model.backend(), Backend::Avx2Vnni);
+    assert_eq!(model.quant(), crate::Quant::Int8);
+    model
+}
+
+/// The int8 forward of `Avx2Vnni` against `quant::reference`, plain loops over the unpacked
+/// quantized weights (the integer dot of each output, its zero-point correction, the scales and
+/// the f32 epilogue): the same bits, on the shapes of `agrees_with_scalar` (every tail of the
+/// micro-kernel, an odd number of panels, the short blocks of the bag and of the quantization).
+#[test]
+fn the_int8_forward_is_the_plain_integer_reference_bit_for_bit() {
+    if skipped(Backend::Avx2Vnni) {
+        return;
+    }
+    let counts = [1, 2, 3, 5, 6, 7, 11, 12, 13, 37, 50];
+    let mut rng = Rng::new(808);
+    let mut scratch = Scratch::new();
+    let mut logits = Vec::new();
+    for width in [24, 40, 128, 256] {
+        for blocks in 0..=2 {
+            let capacity = 64 + rng.below(400);
+            let parts = synthetic::parts((width * 10 + blocks) as u64, width, capacity, blocks);
+            let model = int8_model(&parts);
+            for count in counts {
+                let options = synthetic::options(rng.next_u64(), count, capacity, 60);
+                let (faction, head) = (rng.below(33), rng.below(14));
+                model
+                    .forward_with(&mut scratch, faction, head, &options, &mut logits)
+                    .unwrap();
+                let reference = crate::quant::reference(&parts, faction, head, &options);
+                let shape = format!("width {width}, {blocks} blocks, {count} options");
+                assert!(logits.iter().all(|logit| logit.is_finite()), "{shape}");
+                assert_eq!(bits(&logits), bits(&reference), "{shape}");
+            }
+        }
+    }
+}
+
+/// The int8 model against the f32 one of the same weights (`Scalar`), on the synthetic models at
+/// width 128 and 256 with 0 to 2 residual blocks: every logit within `INT8_BOUND · max(1,
+/// |logit|)` (section H of the plan; the worst measured is printed).
+#[test]
+fn the_int8_forward_is_within_its_bound_of_the_f32_forward() {
+    if skipped(Backend::Avx2Vnni) {
+        return;
+    }
+    let mut rng = Rng::new(1_015);
+    let mut scratch = Scratch::new();
+    let (mut logits, mut f32_logits) = (Vec::new(), Vec::new());
+    let mut worst = 0.0f32;
+    let (mut sum_error, mut sum_logit, mut count_all) = (0.0f64, 0.0f64, 0usize);
+    for width in [128, 256] {
+        for blocks in 0..=2 {
+            let capacity = 500 + rng.below(2_000);
+            let parts = synthetic::parts(rng.next_u64(), width, capacity, blocks);
+            let int8 = int8_model(&parts);
+            let f32_model =
+                Model::from_bytes(&format::write(&synthetic::meta(), &parts).unwrap()).unwrap();
+            for count in [1, 6, 40] {
+                let options = synthetic::options(rng.next_u64(), count, capacity, 85);
+                let (faction, head) = (rng.below(33), rng.below(14));
+                int8.forward_with(&mut scratch, faction, head, &options, &mut logits)
+                    .unwrap();
+                f32_model
+                    .forward_on(
+                        Backend::Scalar,
+                        &mut scratch,
+                        faction,
+                        head,
+                        &options,
+                        &mut f32_logits,
+                    )
+                    .unwrap();
+                for (logit, reference) in logits.iter().zip(&f32_logits) {
+                    let error = (logit - reference).abs() / reference.abs().max(1.0);
+                    sum_error += f64::from((logit - reference).abs());
+                    sum_logit += f64::from(reference.abs());
+                    count_all += 1;
+                    worst = worst.max(error);
+                    assert!(
+                        error <= INT8_BOUND,
+                        "width {width}, {blocks} blocks: int8 {logit}, f32 {reference}"
+                    );
+                }
+            }
+        }
+    }
+    println!(
+        "int8 against f32 on the synthetic models: worst |gap| / max(1, |logit|) {worst:.2e}, \
+         mean |gap| {:.2e}, mean |logit| {:.2e}",
+        sum_error / count_all as f64,
+        sum_logit / count_all as f64
+    );
+}
+
+/// The bound of an int8 logit against the f32 one, relative to `max(1, |logit|)`.
+const INT8_BOUND: f32 = 0.05;
+
+#[test]
+fn an_int8_model_runs_on_avx2_vnni_alone_and_an_f32_model_never_does() {
+    let parts = synthetic::parts(5, 128, 100, 1);
+    let int8 = format::write_as(&synthetic::meta(), &parts, crate::Quant::Int8).unwrap();
+    let f32_bytes = format::write(&synthetic::meta(), &parts).unwrap();
+    let f32_model = Model::from_bytes(&f32_bytes).unwrap();
+    assert_eq!(f32_model.quant(), crate::Quant::F32);
+    assert!(matches!(
+        f32_model.with_backend(Backend::Avx2Vnni),
+        Err(crate::InferError::Quant { .. })
+    ));
+    if !Backend::Avx2Vnni.is_available() {
+        assert!(matches!(
+            Model::from_bytes(&int8),
+            Err(crate::InferError::Backend(Backend::Avx2Vnni))
+        ));
+        return;
+    }
+    let model = Model::from_bytes(&int8).unwrap();
+    let options = synthetic::options(3, 4, 100, 20);
+    let mut scratch = Scratch::new();
+    let mut out = Vec::new();
+    for backend in [Backend::Scalar, Backend::Avx2Fma] {
+        assert!(matches!(
+            model.forward_on(backend, &mut scratch, 0, 0, &options, &mut out),
+            Err(crate::InferError::Quant { .. })
+        ));
+    }
+    assert!(matches!(
+        model.with_backend(Backend::Avx2),
+        Err(crate::InferError::Quant { .. })
+    ));
+    // The value head of training is the f32 readout on the f32 rows of the int8 trunk: the logit
+    // of the position as a decision of one option (a decision of several quantizes its rows as a
+    // base and deltas, so a row's logit depends on the others).
+    let model = Model::from_bytes(&int8).unwrap();
+    let heads = parts.heads.len();
+    let (faction, head) = (4, 2);
+    let at = faction * heads + head;
+    let w: Vec<f32> = (0..128)
+        .map(|i| parts.w_shared[head * 128 + i] + parts.delta[at * 128 + i])
+        .collect();
+    let b = parts.b_shared[head] + parts.b_delta[at];
+    let model = model.with_value(w, b).unwrap();
+    for option in &options {
+        let logit = model
+            .forward(faction, head, std::slice::from_ref(option))
+            .unwrap()[0];
+        let value = model.value_with(&mut scratch, faction, option).unwrap();
+        assert_eq!(value.to_bits(), logit.to_bits());
+    }
+}

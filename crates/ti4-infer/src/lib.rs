@@ -28,6 +28,9 @@
 //!   reference of the tests, `Sse` on x86-64, `Simd128` on wasm with `simd128`, `Avx2` and
 //!   `Avx2Fma` on x86-64 CPUs that have them), and the dispatch of a forward pass to one. Every
 //!   backend but `Avx2Fma` gives the same bits. The only module that may use `unsafe`.
+//! - `quant`: the int8 weights of the rollouts of training ([`Quant::Int8`], on
+//!   [`Backend::Avx2Vnni`] only): the quantization, the VNNI panels, and the plain reference of the
+//!   int8 forward.
 //! - [`synthetic`]: models and decisions from a seed, the same on every target, for the tests, the
 //!   bench and the check of the wasm build ([`synthetic::check`]).
 
@@ -36,6 +39,7 @@ mod error;
 pub mod format;
 mod kernel;
 pub mod model;
+mod quant;
 mod simd;
 pub mod synthetic;
 
@@ -48,6 +52,7 @@ pub use error::InferError;
 pub use format::{BlockParts, Meta, Parts, Source};
 pub use kernel::total_order_key;
 pub use model::{Model, Scratch};
+pub use quant::Quant;
 pub use simd::Backend;
 
 /// The backend a model is loaded on, on this target and this CPU: [`Backend::best`]. A model

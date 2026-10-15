@@ -18,12 +18,18 @@
 //! A model is loaded on [`Backend::best`] (the CPU is asked once, then), and
 //! [`Model::with_backend`] picks another. A forward pass matches the backend once and runs the
 //! forward monomorphized for it.
+//!
+//! An int8 model ([`Quant::Int8`], section H of the plan) is loaded on [`Backend::Avx2Vnni`] and
+//! runs on it alone; an f32 model never runs on it. Its forward is the same pipeline with the
+//! int8 kernels (`simd::Int8`): the bag on the int8 rows, then each dense layer reads its input
+//! as a base row and the deltas from it, each quantized to u8, and writes f32. The residual stream and the readout stay f32.
 
 use std::ops::Range;
 
 use crate::format::Source;
 use crate::kernel::{self, Epilogue};
-use crate::simd::{self, AlignedF32, Backend, Lanes, Run};
+use crate::quant::{self, Int8Epilogue, Int8Matrix, Int8Weights, Layer, Quant};
+use crate::simd::{self, AlignedF32, Backend, Int8, Lanes, Run, RunInt8};
 use crate::{EMBED_DIM, FACTION_ROSTER, InferError};
 
 /// The ranges of one residual block in the buffer of a model.
@@ -46,8 +52,10 @@ pub struct Model {
     pub(crate) heads: Vec<String>,
     pub(crate) source: Source,
     pub(crate) digest: String,
-    /// Every f32 section, one copy of the file.
+    /// Every section, one copy of the file.
     pub(crate) buffer: AlignedF32,
+    /// The int8 matrices of an int8 model (whose f32 `w1`, `w2` and block matrices are empty).
+    pub(crate) int8: Option<Int8Weights>,
     /// `[capacity][width]`.
     pub(crate) w1: Range<usize>,
     /// `[33][16]`.
@@ -96,6 +104,13 @@ pub struct Scratch {
     h: Vec<f32>,
     t: Vec<f32>,
     packed: Vec<f32>,
+    /// The input of an int8 layer as a base row, the deltas from it and the product of the base
+    /// row; the u8 activations, and their packed block.
+    q_base: Vec<f32>,
+    q_deltas: Vec<f32>,
+    q_shift: Vec<f32>,
+    q: Vec<u8>,
+    q_packed: Vec<u8>,
 }
 
 impl Scratch {
@@ -121,13 +136,30 @@ impl Model {
     ///
     /// # Errors
     /// [`InferError::Backend`] when this target or this CPU does not have it
-    /// ([`Backend::is_available`]).
+    /// ([`Backend::is_available`]), and [`InferError::Quant`] for an int8 model on another backend
+    /// than [`Backend::Avx2Vnni`], or an f32 model on that one.
     pub fn with_backend(mut self, backend: Backend) -> Result<Self, InferError> {
+        if backend.is_int8() != self.int8.is_some() {
+            return Err(InferError::Quant {
+                quant: self.quant(),
+                backend,
+            });
+        }
         if !backend.is_available() {
             return Err(InferError::Backend(backend));
         }
         self.backend = backend;
         Ok(self)
+    }
+
+    /// Its weights: f32, or int8 ([`crate::format::write_as`]).
+    #[must_use]
+    pub const fn quant(&self) -> Quant {
+        if self.int8.is_some() {
+            Quant::Int8
+        } else {
+            Quant::F32
+        }
     }
 
     /// The model with the value readout of a shared critic, `V(s) = trunk(s) · w + b`, for the
@@ -279,6 +311,15 @@ impl Model {
         &self.buffer.as_slice()[range.clone()]
     }
 
+    fn layer<'a>(&'a self, matrix: &'a Int8Matrix) -> Layer<'a> {
+        Layer {
+            panels: self.buffer.i8s(matrix.panels.clone()),
+            scale: self.f(&matrix.scale),
+            sum: &matrix.sum,
+            outs: self.width,
+        }
+    }
+
     /// One logit per option, for a decision of the faction row `faction` on the head row `head`.
     ///
     /// Each option is its active `(column, value)` pairs, as the decision pipeline of
@@ -337,25 +378,30 @@ impl Model {
         options: &[Vec<(u32, f32)>],
         out: &mut Vec<f32>,
     ) -> Result<(), InferError> {
-        simd::run(
-            backend,
-            Forward {
-                model: self,
-                scratch,
-                faction,
-                target,
-                options,
-                out,
-            },
-        )
+        if backend.is_int8() != self.int8.is_some() {
+            return Err(InferError::Quant {
+                quant: self.quant(),
+                backend,
+            });
+        }
+        let forward = Forward {
+            model: self,
+            scratch,
+            faction,
+            target,
+            options,
+            out,
+        };
+        if self.int8.is_some() {
+            simd::run_int8(forward)
+        } else {
+            simd::run(backend, forward)
+        }
     }
 
-    /// The forward pass on the lanes `L`. Inlined, with the kernels, into the function of
-    /// [`simd::run`] that calls it, so that it is compiled with the target features of `L`.
-    #[inline(always)]
-    fn forward_lanes<L: Lanes>(
+    /// What every forward checks first; clears `out`.
+    fn check(
         &self,
-        scratch: &mut Scratch,
         faction: usize,
         target: Target,
         options: &[Vec<(u32, f32)>],
@@ -369,10 +415,162 @@ impl Model {
             return Err(InferError::Faction(faction));
         }
         match target {
-            Target::Head(head) if head >= self.heads.len() => return Err(InferError::Head(head)),
-            Target::Value if self.value.is_none() => return Err(InferError::NoValue),
-            _ => {}
+            Target::Head(head) if head >= self.heads.len() => Err(InferError::Head(head)),
+            Target::Value if self.value.is_none() => Err(InferError::NoValue),
+            _ => Ok(()),
         }
+    }
+
+    /// The readout of a forward: the row and the bias of `target`.
+    fn readout_of(&self, faction: usize, target: Target) -> Result<(&[f32], f32), InferError> {
+        let width = self.width;
+        match (target, &self.value) {
+            (Target::Value, Some(value)) => Ok((value.w.as_slice(), value.b)),
+            (Target::Head(head), _) => {
+                let at = faction * self.heads.len() + head;
+                Ok((
+                    &self.f(&self.readout)[at * width..][..width],
+                    self.f(&self.readout_b)[at],
+                ))
+            }
+            (Target::Value, None) => Err(InferError::NoValue),
+        }
+    }
+
+    /// One int8 dense layer: `input [rows][width]` as a base row and the deltas from it
+    /// ([`quant::split_base`]), each quantized and multiplied, then the epilogue into `output`. (A method, not a closure: a closure is compiled without the
+    /// target features of `K` and could not inline its kernels.)
+    #[inline(always)]
+    fn dense<K: Int8>(
+        &self,
+        act: &mut Activations<'_>,
+        input: &[f32],
+        matrix: &Int8Matrix,
+        epilogue: Epilogue<'_>,
+        output: &mut [f32],
+    ) {
+        let width = self.width;
+        let rows = input.len() / width;
+        let layer = self.layer(matrix);
+        act.base.resize(width, 0.0);
+        act.shift.resize(width, 0.0);
+        act.deltas.resize(input.len(), 0.0);
+        act.q.resize(input.len(), 0);
+        quant::split_base(input, width, act.base, act.deltas);
+        let (scale, zero) = K::quantize(act.base, act.q);
+        K::gemm(
+            act.q,
+            1,
+            width,
+            scale,
+            zero,
+            layer,
+            Int8Epilogue::Raw,
+            act.packed,
+            act.shift,
+        );
+        let (scale, zero) = K::quantize(act.deltas, act.q);
+        let epilogue = Int8Epilogue::Shifted {
+            base: act.shift,
+            epilogue,
+        };
+        K::gemm(
+            act.q, rows, width, scale, zero, layer, epilogue, act.packed, output,
+        );
+    }
+
+    /// The forward pass of an int8 model on the kernels `K`, inlined into the function of
+    /// [`simd::run_int8`] as [`Self::forward_lanes`] is into that of [`simd::run`].
+    #[inline(always)]
+    fn forward_int8<K: Int8>(
+        &self,
+        int8: &Int8Weights,
+        scratch: &mut Scratch,
+        faction: usize,
+        target: Target,
+        options: &[Vec<(u32, f32)>],
+        out: &mut Vec<f32>,
+    ) -> Result<(), InferError> {
+        self.check(faction, target, options, out)?;
+        let width = self.width;
+        let rows = options.len();
+        let Scratch {
+            entries,
+            sort,
+            identity,
+            z,
+            h,
+            t,
+            q,
+            q_packed,
+            q_base,
+            q_deltas,
+            q_shift,
+            ..
+        } = scratch;
+
+        identity.clear();
+        identity.resize(width, 0.0);
+        identity[..EMBED_DIM]
+            .copy_from_slice(&self.f(&self.embedding)[faction * EMBED_DIM..][..EMBED_DIM]);
+
+        z.resize(rows * width, 0.0);
+        let (w1, scale, b1) = (
+            self.buffer.i8s(int8.w1.clone()),
+            self.f(&int8.w1_scale),
+            self.f(&self.b1),
+        );
+        for (option, row) in options.iter().zip(z.chunks_exact_mut(width)) {
+            kernel::canonical_bag(option, self.capacity, entries, sort)?;
+            K::bag(w1, scale, width, entries, identity, b1, row);
+        }
+
+        h.resize(rows * width, 0.0);
+        t.resize(rows * width, 0.0);
+        // The rows of the three buffers, swapped as references.
+        let mut z = &mut z[..rows * width];
+        let mut h = &mut h[..rows * width];
+        let mut t = &mut t[..rows * width];
+        let mut act = Activations {
+            base: q_base,
+            deltas: q_deltas,
+            shift: q_shift,
+            q,
+            packed: q_packed,
+        };
+        self.dense::<K>(
+            &mut act,
+            z,
+            &int8.w2,
+            Epilogue::BiasRelu(self.f(&self.b2)),
+            h,
+        );
+        std::mem::swap(&mut z, &mut h);
+        for (block, (w_in, w_out)) in self.blocks.iter().zip(&int8.blocks) {
+            let b_in = Epilogue::BiasRelu(self.f(&block.b_in));
+            self.dense::<K>(&mut act, z, w_in, b_in, h);
+            let bias = self.f(&block.b_out);
+            self.dense::<K>(&mut act, h, w_out, Epilogue::Residual { z, bias }, t);
+            std::mem::swap(&mut z, &mut t);
+        }
+
+        let (w, b) = self.readout_of(faction, target)?;
+        kernel::readout_quad::<K::Readout>(z, width, w, b, out);
+        Ok(())
+    }
+
+    /// The forward pass on the lanes `L`. Inlined, with the kernels, into the function of
+    /// [`simd::run`] that calls it, so that it is compiled with the target features of `L`.
+    #[inline(always)]
+    fn forward_lanes<L: Lanes>(
+        &self,
+        scratch: &mut Scratch,
+        faction: usize,
+        target: Target,
+        options: &[Vec<(u32, f32)>],
+        out: &mut Vec<f32>,
+    ) -> Result<(), InferError> {
+        self.check(faction, target, options, out)?;
         let width = self.width;
         let rows = options.len();
         let Scratch {
@@ -383,6 +581,7 @@ impl Model {
             h,
             t,
             packed,
+            ..
         } = scratch;
 
         identity.clear();
@@ -439,20 +638,19 @@ impl Model {
             std::mem::swap(z, t);
         }
 
-        let (w, b) = match (target, &self.value) {
-            (Target::Value, Some(value)) => (value.w.as_slice(), value.b),
-            (Target::Head(head), _) => {
-                let at = faction * self.heads.len() + head;
-                (
-                    &self.f(&self.readout)[at * width..][..width],
-                    self.f(&self.readout_b)[at],
-                )
-            }
-            (Target::Value, None) => return Err(InferError::NoValue),
-        };
+        let (w, b) = self.readout_of(faction, target)?;
         kernel::readout::<L>(&z[..rows * width], width, w, b, out);
         Ok(())
     }
+}
+
+/// The quantized activations of an int8 forward, in the scratch.
+struct Activations<'a> {
+    base: &'a mut Vec<f32>,
+    deltas: &'a mut Vec<f32>,
+    shift: &'a mut Vec<f32>,
+    q: &'a mut Vec<u8>,
+    packed: &'a mut Vec<u8>,
 }
 
 /// One forward pass, as the work of [`simd::run`].
@@ -479,6 +677,29 @@ impl Run for Forward<'_> {
             out,
         } = self;
         model.forward_lanes::<L>(scratch, faction, target, options, out)
+    }
+}
+
+impl RunInt8 for Forward<'_> {
+    type Output = Result<(), InferError>;
+
+    #[inline(always)]
+    fn run<K: Int8>(self) -> Self::Output {
+        let Self {
+            model,
+            scratch,
+            faction,
+            target,
+            options,
+            out,
+        } = self;
+        let Some(int8) = &model.int8 else {
+            return Err(InferError::Quant {
+                quant: Quant::F32,
+                backend: Backend::Avx2Vnni,
+            });
+        };
+        model.forward_int8::<K>(int8, scratch, faction, target, options, out)
     }
 }
 

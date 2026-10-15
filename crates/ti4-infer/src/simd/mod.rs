@@ -21,6 +21,11 @@
 //! with its features. (A function without them that called an AVX intrinsic could not inline it.)
 //! The `Avx2` and `Avx2Fma` types are private to this module, so no other path reaches them.
 //!
+//! The int8 models of training (section H of the plan) run on [`Backend::Avx2Vnni`] alone, through
+//! [`run_int8`] and the [`Int8`] kernels of `vnni.rs`, compiled with `"avx2,fma,avxvnni"` the same
+//! way. Their f32 arithmetic (the bag on the dequantized rows, the epilogues) fuses as `Avx2Fma`
+//! does, so [`run`] runs other work on `Avx2Vnni` with the lanes of `Avx2Fma`.
+//!
 //! This module also holds [`AlignedF32`], the 64-byte-aligned buffer the sections of a model live
 //! in. It and the intrinsic backends are the only code of the crate allowed `unsafe`.
 
@@ -33,6 +38,8 @@ mod scalar;
 mod simd128;
 #[cfg(target_arch = "x86_64")]
 mod sse;
+#[cfg(target_arch = "x86_64")]
+mod vnni;
 
 pub(crate) use scalar::Scalar;
 #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
@@ -58,19 +65,27 @@ pub enum Backend {
     /// `_mm256_fmadd_ps`: x86-64 with AVX2 and FMA. Each multiply-add rounds once, so its logits
     /// are not the bits of the others (within `1e-4 · max(1, |logit|)` of them).
     Avx2Fma,
+    /// The int8 models of training (`"quant": "int8"`): `vpdpbusd` (AVX-VNNI, u8 × i8 summed into
+    /// i32) in the dense layers, the bag on the int8 rows in f32 with FMA. x86-64 with AVX2, FMA
+    /// and AVX-VNNI, detected at run time. It runs an int8 model and nothing else, and an int8
+    /// model runs on it alone.
+    Avx2Vnni,
 }
 
 impl Backend {
-    /// Every backend, the deterministic ones from the slowest to the fastest, then `Avx2Fma`.
-    pub const ALL: [Self; 5] = [
+    /// Every backend, the deterministic ones from the slowest to the fastest, then `Avx2Fma`, then
+    /// `Avx2Vnni` (int8 models only).
+    pub const ALL: [Self; 6] = [
         Self::Scalar,
         Self::Sse,
         Self::Simd128,
         Self::Avx2,
         Self::Avx2Fma,
+        Self::Avx2Vnni,
     ];
 
-    /// Its name in a report: `"scalar"`, `"sse"`, `"simd128"`, `"avx2"` or `"avx2-fma"`.
+    /// Its name in a report: `"scalar"`, `"sse"`, `"simd128"`, `"avx2"`, `"avx2-fma"` or
+    /// `"avx2-vnni"`.
     #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
@@ -79,13 +94,20 @@ impl Backend {
             Self::Simd128 => "simd128",
             Self::Avx2 => "avx2",
             Self::Avx2Fma => "avx2-fma",
+            Self::Avx2Vnni => "avx2-vnni",
         }
     }
 
-    /// Whether its logits are the bits of [`Backend::Scalar`] (all but `Avx2Fma`).
+    /// Whether its logits are the bits of [`Backend::Scalar`] (all but `Avx2Fma` and `Avx2Vnni`).
     #[must_use]
     pub const fn is_deterministic(self) -> bool {
-        !matches!(self, Self::Avx2Fma)
+        !matches!(self, Self::Avx2Fma | Self::Avx2Vnni)
+    }
+
+    /// Whether it runs the int8 models (`"quant": "int8"`): `Avx2Vnni`, and only it.
+    #[must_use]
+    pub const fn is_int8(self) -> bool {
+        matches!(self, Self::Avx2Vnni)
     }
 
     /// Whether this build and this CPU can run it. The AVX2 backends are detected at run time
@@ -100,8 +122,10 @@ impl Backend {
             Self::Avx2 => avx2::has_avx2(),
             #[cfg(target_arch = "x86_64")]
             Self::Avx2Fma => avx2::has_avx2_fma(),
+            #[cfg(target_arch = "x86_64")]
+            Self::Avx2Vnni => vnni::has_avx2_vnni(),
             #[cfg(not(target_arch = "x86_64"))]
-            Self::Avx2 | Self::Avx2Fma => false,
+            Self::Avx2 | Self::Avx2Fma | Self::Avx2Vnni => false,
         }
     }
 
@@ -116,9 +140,10 @@ impl Backend {
             .unwrap_or(Self::Scalar)
     }
 
-    /// The fastest backend available, deterministic or not: `Avx2Fma` where the CPU has it, else
-    /// [`Backend::best`]. For hosts that no other host must reproduce (the rollouts of training,
-    /// a server with `TI4_INFER_FMA=1`).
+    /// The fastest f32 backend available, deterministic or not: `Avx2Fma` where the CPU has it,
+    /// else [`Backend::best`]. For hosts that no other host must reproduce (the rollouts of
+    /// training, a server with `TI4_INFER_FMA=1`). `Avx2Vnni` runs int8 models only, so it is
+    /// asked for by name.
     #[must_use]
     pub fn fastest() -> Self {
         if Self::Avx2Fma.is_available() {
@@ -160,11 +185,96 @@ pub(crate) fn run<R: Run>(backend: Backend, work: R) -> R::Output {
             // SAFETY: the CPU has AVX2 and FMA, which is all that `run_avx2_fma` is compiled with.
             unsafe { avx2::run_avx2_fma(work) }
         }
+        // The f32 lanes of `Avx2Vnni` are those of `Avx2Fma` (its CPU has AVX2 and FMA).
+        #[cfg(target_arch = "x86_64")]
+        Backend::Avx2Vnni if vnni::has_avx2_vnni() => {
+            // SAFETY: the CPU has AVX2 and FMA, which is all that `run_avx2_fma` is compiled with.
+            unsafe { avx2::run_avx2_fma(work) }
+        }
         _ => panic!(
             "the backend {} is not available on this target or CPU",
             backend.name()
         ),
     }
+}
+
+/// The kernels of an int8 model (section H of the plan), on one backend: `Avx2Vnni`.
+///
+/// The arithmetic, which `quant::reference` repeats in plain loops bit for bit:
+///
+/// - `bag`: per element, from zero, `acc = fma(v · scale[column], W1[column][o], acc)` over the
+///   entries of a canonical bag in order (one rounding per entry); then `+ identity`, `+ b1`, and
+///   the ReLU.
+/// - `quantize`: rows together, with one scale and one zero point: `lo = min(0, min x)`, `hi = max(0, max x)`; rows whose
+///   `255 / (hi − lo)` is not finite (`hi == lo`, or a range too small to matter) are all zero
+///   with scale 0 and zero point 0; else `inv = 255 / (hi − lo)`, `scale = (hi − lo) / 255`,
+///   `zero = round(−lo · inv)` and `q = clamp(round(x · inv) + zero, 0, 255)`, each rounding to the
+///   nearest even. Rows after a ReLU have `lo = 0`, so their zero point is 0 and their scale
+///   `max / 255`.
+/// - `gemm`: per output `o` of a row, the integer dot `Σ_k q[k] · W[o][k]` (i32, exact: `vpdpbusd`
+///   adds four u8 × i8 products into each i32 lane, with no i16 step to saturate), minus
+///   `zero · Σ_k W[o][k]`; that as f32 times `scale · scale_w[o]`; then
+///   ([`Int8Epilogue`](crate::quant::Int8Epilogue)) that alone (the product of the base row), or
+///   plus the product of the base row and then the layer's epilogue in f32
+///   ([`Epilogue`](crate::kernel::Epilogue): `relu(y + b)`, or `(z + y) + b`), no multiply fused.
+///   Rows of scale 0 have the product +0.
+///
+/// A layer quantizes its input as a base row and the deltas from it (`quant::split_base`), and
+/// runs `gemm` on each.
+pub(crate) trait Int8 {
+    /// The 4 lanes of the readout of the final f32 rows.
+    type Readout: Readout;
+    /// The option rows of the matrix micro-kernel.
+    const MR: usize;
+    /// The first layer of one option on the int8 rows `w1 [capacity][width]` with one scale per
+    /// row.
+    fn bag(
+        w1: &[i8],
+        scale: &[f32],
+        width: usize,
+        entries: &[(usize, f32)],
+        identity: &[f32],
+        b1: &[f32],
+        out: &mut [f32],
+    );
+    /// The rows `x` of a decision as u8 `q`; gives their scale and zero point.
+    fn quantize(x: &[f32], q: &mut [u8]) -> (f32, i32);
+    /// `c[rows][outs] = epilogue(dequantized q · Wᵀ)` with `W` in VNNI panels (`quant`). `packed`
+    /// is scratch.
+    fn gemm(
+        q: &[u8],
+        rows: usize,
+        k: usize,
+        scale: f32,
+        zero: i32,
+        layer: crate::quant::Layer<'_>,
+        epilogue: crate::quant::Int8Epilogue<'_>,
+        packed: &mut Vec<u8>,
+        c: &mut [f32],
+    );
+}
+
+/// Work generic over the int8 kernels: the forward pass of an int8 model.
+pub(crate) trait RunInt8 {
+    /// What the work gives.
+    type Output;
+    /// The work on the kernels `K`, `#[inline(always)]` as [`Run::run`] is.
+    fn run<K: Int8>(self) -> Self::Output;
+}
+
+/// `work` on `Avx2Vnni`.
+///
+/// # Panics
+/// If the CPU lacks it ([`Backend::is_available`]); an int8 model holds `Avx2Vnni` only where the
+/// CPU has it.
+pub(crate) fn run_int8<R: RunInt8>(work: R) -> R::Output {
+    #[cfg(target_arch = "x86_64")]
+    if vnni::has_avx2_vnni() {
+        // SAFETY: the CPU has AVX2, FMA and AVX-VNNI, which is all `run_vnni` is compiled with.
+        return unsafe { vnni::run_vnni(work) };
+    }
+    let _ = work;
+    panic!("the backend avx2-vnni is not available on this target or CPU")
 }
 
 /// `N` f32 lanes (4, or 8 on AVX2).
@@ -237,6 +347,17 @@ impl AlignedF32 {
                 f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
         }
         Self { lines, len }
+    }
+
+    /// The bytes `range` as `i8`: an int8 section, which `from_le_bytes` read as floats. On a
+    /// little-endian target (every target with `Avx2Vnni`, the only reader of these sections)
+    /// those are the bytes of the file.
+    pub(crate) fn i8s(&self, range: std::ops::Range<usize>) -> &[i8] {
+        // SAFETY: the floats are `4 * len` initialised bytes, any byte is a valid `i8`, and the
+        // slice borrows `self`.
+        let bytes =
+            unsafe { std::slice::from_raw_parts(self.lines.as_ptr().cast::<i8>(), self.len * 4) };
+        &bytes[range]
     }
 
     /// The floats.

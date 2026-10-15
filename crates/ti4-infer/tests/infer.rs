@@ -7,7 +7,8 @@ use serde_json::Value;
 use ti4_infer::format::{self, VERSION};
 use ti4_infer::synthetic::Rng;
 use ti4_infer::{
-    EMBED_DIM, InferError, LEGACY_HEADS, Meta, Model, Parts, Scratch, bundle, total_order_key,
+    Backend, EMBED_DIM, InferError, LEGACY_HEADS, Meta, Model, Parts, Quant, Scratch, bundle,
+    total_order_key,
 };
 
 fn meta() -> Meta {
@@ -571,4 +572,134 @@ fn the_pack_tool_writes_a_model_file_that_reads() {
     };
     let parts = bundle::read(&reviewer_dir()).unwrap();
     assert!(format::write(&meta, &parts).unwrap() == bytes);
+}
+
+/// An int8 file (section H of the plan): `"quant": "int8"` in its header and its int8 sections in
+/// order; it reads on `Avx2Vnni` where the CPU has it and is refused elsewhere; a header with
+/// another `quant` is refused. An f32 file has no `quant` key.
+#[test]
+fn an_int8_model_file_names_its_quant_and_its_sections() {
+    let parts = synthetic(4, 128, 60, 2);
+    let f32_bytes = format::write(&meta(), &parts).unwrap();
+    assert!(format::write_as(&meta(), &parts, Quant::F32).unwrap() == f32_bytes);
+    let (header, _) = format::split(&f32_bytes).unwrap();
+    let header: Value = serde_json::from_slice(header).unwrap();
+    assert!(header.get("quant").is_none());
+
+    let bytes = format::write_as(&meta(), &parts, Quant::Int8).unwrap();
+    let (header, _) = format::split(&bytes).unwrap();
+    let header: Value = serde_json::from_slice(header).unwrap();
+    assert_eq!(header["quant"], "int8");
+    let sections: Vec<(String, String, u64)> = header["sections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| {
+            (
+                entry["name"].as_str().unwrap().to_owned(),
+                entry["layout"].as_str().unwrap().to_owned(),
+                entry["bytes"].as_u64().unwrap(),
+            )
+        })
+        .collect();
+    let names: Vec<&str> = sections.iter().map(|(name, _, _)| name.as_str()).collect();
+    assert_eq!(
+        names,
+        [
+            "w1",
+            "w1_scale",
+            "embedding",
+            "b1",
+            "b2",
+            "w2",
+            "w2_scale",
+            "r0_in",
+            "r0_in_scale",
+            "r0_b_in",
+            "r0_out",
+            "r0_out_scale",
+            "r0_b_out",
+            "r1_in",
+            "r1_in_scale",
+            "r1_b_in",
+            "r1_out",
+            "r1_out_scale",
+            "r1_b_out",
+            "readout",
+            "readout_b",
+            "slots",
+        ]
+    );
+    assert_eq!(
+        sections[0],
+        ("w1".to_owned(), "rows_i8".to_owned(), 60 * 128)
+    );
+    assert_eq!(
+        sections[1],
+        ("w1_scale".to_owned(), "rows".to_owned(), 60 * 4)
+    );
+    assert_eq!(
+        sections[5],
+        ("w2".to_owned(), "vnni8x4_i8".to_owned(), 128 * 128)
+    );
+
+    for quant in ["f16", "f32"] {
+        let other = rewrite(&bytes, |header| header["quant"] = quant.into());
+        assert!(matches!(
+            Model::from_bytes(&other),
+            Err(InferError::Format(_))
+        ));
+    }
+    let without = rewrite(&bytes, |header| {
+        header.as_object_mut().unwrap().remove("quant");
+    });
+    assert!(matches!(
+        Model::from_bytes(&without),
+        Err(InferError::Format(_))
+    ));
+    match Model::from_bytes(&bytes) {
+        Ok(model) => {
+            assert!(Backend::Avx2Vnni.is_available());
+            assert_eq!(model.backend(), Backend::Avx2Vnni);
+            assert_eq!(model.quant(), Quant::Int8);
+            assert_eq!(model.residual_blocks(), 2);
+            assert_eq!(model.slots_json(), parts.slots);
+        }
+        Err(error) => {
+            assert!(!Backend::Avx2Vnni.is_available(), "{error}");
+            assert!(matches!(error, InferError::Backend(Backend::Avx2Vnni)));
+        }
+    }
+}
+
+/// `ti4-pack --quant int8` writes the int8 file of the reviewer bundle, the bytes of
+/// `format::write_as` with `Quant::Int8`.
+#[test]
+fn the_pack_tool_writes_an_int8_model_file() {
+    let dir = std::env::temp_dir().join(format!("ti4-pack-int8-test-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let out = dir.join("reviewer-int8.ti4m");
+    let run = std::process::Command::new(env!("CARGO_BIN_EXE_ti4-pack"))
+        .arg(reviewer_dir())
+        .args(["reviewer"])
+        .arg(&out)
+        .args(["--quant", "int8"])
+        .output()
+        .expect("ti4-pack runs");
+    let stdout = String::from_utf8_lossy(&run.stdout).into_owned();
+    assert!(
+        run.status.success(),
+        "{stdout}{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert!(stdout.contains(" int8 -> "), "{stdout}");
+    let bytes = std::fs::read(&out).unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+    let meta = Meta {
+        name: "reviewer".to_owned(),
+        label: "reviewer".to_owned(),
+        temperature: 0.25,
+    };
+    let parts = bundle::read(&reviewer_dir()).unwrap();
+    assert!(format::write_as(&meta, &parts, Quant::Int8).unwrap() == bytes);
 }

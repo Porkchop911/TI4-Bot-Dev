@@ -12,6 +12,12 @@
 //! is never in a `.ti4m`: the file is packed from [`ti4_infer::Parts`], which has none. An actor
 //! with a separate critic gets no value head, and [`InferModel::value`] refuses.
 //!
+//! On [`ti4_infer::Backend::Avx2Vnni`] the actor is packed with int8 weights
+//! ([`ti4_infer::Quant::Int8`], section H of the plan): the dense layers on AVX-VNNI, the bag on
+//! int8 rows; the residual stream, the readout and the value readout stay f32. Its logits are not
+//! those of the f32 model (the bound is in the plan), and PPO recomputes the probabilities on
+//! libtorch as for the other backends.
+//!
 //! The model is `Send + Sync`: one `Arc<InferModel>` serves every rollout worker, and the next
 //! update builds a fresh one from the updated actor.
 
@@ -22,6 +28,47 @@ use ti4_policy::battle::BattlePredictor;
 use ti4_policy::mlp::{Columns, HeadLayout, MlpError, ModelInfo, Scorer};
 
 use crate::{Actor, ActorError, CriticInput, FactionRow};
+
+/// The bound of the logits of a model on `backend` against the actor's on libtorch, relative to
+/// the largest: `1e-4` for the f32 backends (each logit within `1e-4 · max(1, |logit|)`, one
+/// rounding per term on `Avx2Fma`), and [`INT8_LOGIT_BOUND`] for `Avx2Vnni`. The tolerance of a
+/// recorded log-probability is twice it times the largest logit, over the temperature.
+#[must_use]
+pub const fn logit_bound(backend: ti4_infer::Backend) -> f64 {
+    if backend.is_int8() {
+        INT8_LOGIT_BOUND
+    } else {
+        1e-4
+    }
+}
+
+/// The bound of the logits of an int8 model (section H of the plan) on [`int8_gap`]: the logits
+/// of a decision, each less the mean of the decision, within this times `max(1, the largest
+/// |logit|)` of libtorch's. The softmax does not see a shift that every option shares, and an
+/// int8 layer puts the error of what the options share into such a shift.
+pub const INT8_LOGIT_BOUND: f64 = 0.2;
+
+/// The bound of an int8 value against libtorch's, relative to `max(1, |value|)` (section H).
+pub const INT8_VALUE_BOUND: f64 = 0.1;
+
+/// The gap of the logits `int8` of a decision against libtorch's `tch` that
+/// [`INT8_LOGIT_BOUND`] bounds: the largest `|(int8_i − mean) − (tch_i − mean)|`, over
+/// `max(1, max_j |tch_j|)`.
+#[must_use]
+pub fn int8_gap(tch: &[f32], int8: &[f32]) -> f64 {
+    let mean = |logits: &[f32]| {
+        logits.iter().map(|&l| f64::from(l)).sum::<f64>() / logits.len().max(1) as f64
+    };
+    let (a, b) = (mean(tch), mean(int8));
+    let scale = tch
+        .iter()
+        .fold(1.0f64, |scale, &l| scale.max(f64::from(l.abs())));
+    tch.iter()
+        .zip(int8)
+        .map(|(&t, &q)| ((f64::from(q) - b) - (f64::from(t) - a)).abs())
+        .fold(0.0, f64::max)
+        / scale
+}
 
 /// The name of a model built from an actor in memory.
 const NAME: &str = "training";
@@ -110,7 +157,8 @@ pub fn parts_of(actor: &Actor, slots: &str) -> Result<ti4_infer::Parts, ActorErr
 impl InferModel {
     /// The weights of `actor` on `backend` ([`ti4_infer::Backend::fastest`] for the rollouts of
     /// training), with the value readout when the actor's critic shares its trunk. `slots` is the
-    /// vocabulary JSON of its bundle.
+    /// vocabulary JSON of its bundle. On [`ti4_infer::Backend::Avx2Vnni`] the weights are packed
+    /// in int8 ([`ti4_infer::Quant::Int8`]), on every other backend in f32.
     ///
     /// # Errors
     /// As [`parts_of`], and [`ActorError::NotUsable`] when the weights do not pack (a weight that is
@@ -126,7 +174,12 @@ impl InferModel {
             label: "Training".to_owned(),
             temperature: ti4_infer::format::DEFAULT_TEMPERATURE,
         };
-        let bytes = ti4_infer::format::write(&meta, &parts).map_err(not_usable)?;
+        let quant = if backend.is_int8() {
+            ti4_infer::Quant::Int8
+        } else {
+            ti4_infer::Quant::F32
+        };
+        let bytes = ti4_infer::format::write_as(&meta, &parts, quant).map_err(not_usable)?;
         drop(parts);
         let mut model = ti4_infer::format::read(&bytes)
             .and_then(|model| model.with_backend(backend))
@@ -312,6 +365,47 @@ mod tests {
                         "{backend:?} value: tch {want}, infer {got}"
                     );
                 }
+            }
+        }
+    }
+
+    /// The int8 model of the actor (on `Avx2Vnni`, where the CPU has it): every head's logits
+    /// within [`INT8_LOGIT_BOUND`] on [`int8_gap`], and the value within [`INT8_VALUE_BOUND`].
+    #[test]
+    fn an_int8_model_built_from_an_actor_is_within_its_bound() {
+        if !ti4_infer::Backend::Avx2Vnni.is_available() {
+            eprintln!("skipped: this CPU has no avx2-vnni");
+            return;
+        }
+        let actor = random_actor();
+        let model = InferModel::from_actor(&actor, "{}", ti4_infer::Backend::Avx2Vnni)
+            .expect("packs in int8");
+        assert_eq!(model.model().quant(), ti4_infer::Quant::Int8);
+        assert!(model.model().has_value());
+        for (seed, faction) in [(1, 0), (2, 7), (3, 27)] {
+            let options = options(seed, 9, 2_048);
+            for head in 0..actor.head_names().len() {
+                let want = Scorer::logits(&actor, faction, head, &options).expect("tch");
+                let got = Scorer::logits(&model, faction, head, &options).expect("int8");
+                let gap = int8_gap(&want, &got);
+                assert!(
+                    gap <= INT8_LOGIT_BOUND,
+                    "head {head}: tch {want:?}, int8 {got:?}"
+                );
+            }
+            let row = FactionRow::at(faction).expect("a roster row");
+            for option in &options {
+                let critic = CriticInput::from_sparse(SparseOption::from_columns(option));
+                #[expect(clippy::cast_possible_truncation, reason = "f32 values")]
+                let (want, got) = (
+                    actor.value(&critic, row).expect("tch value") as f32,
+                    model.value(&critic, row).expect("int8 value") as f32,
+                );
+                assert!(
+                    f64::from((want - got).abs())
+                        <= INT8_VALUE_BOUND * f64::from(want.abs()).max(1.0),
+                    "value: tch {want}, int8 {got}"
+                );
             }
         }
     }

@@ -58,6 +58,13 @@ pub enum InferError {
     Backend(crate::Backend),
     /// A value asked of a model without the value head of training (`Model::with_value`).
     NoValue,
+    /// An int8 model on a backend other than `Avx2Vnni`, or an f32 model on `Avx2Vnni`.
+    Quant {
+        /// The weights of the model.
+        quant: crate::Quant,
+        /// The backend asked for.
+        backend: crate::Backend,
+    },
 }
 
 impl fmt::Display for InferError {
@@ -102,6 +109,13 @@ impl fmt::Display for InferError {
                 backend.name()
             ),
             Self::NoValue => write!(f, "the model has no value head"),
+            Self::Quant { quant, backend } => write!(
+                f,
+                "a model of {} weights does not run on the backend {}: an int8 model runs on \
+                 avx2-vnni only, and avx2-vnni runs int8 models only",
+                quant.name(),
+                backend.name()
+            ),
         }
     }
 }

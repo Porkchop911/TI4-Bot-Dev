@@ -8,6 +8,11 @@
 //! | 2 residual blocks | `Avx2`    | < 55 µs   | < 5 ms      |
 //! | 2 residual blocks | `Avx2Fma` | < 35 µs   | < 4 ms      |
 //!
+//! It also runs the int8 model of the same weights on `Avx2Vnni` (section H of the plan) and
+//! prints its speedup over `Avx2Fma`: on the reference machine 1.1x / 1.6x (one decision again /
+//! 256 in turn) and 1.8x at 512 options with no residual block, 1.5x / 1.7x and 2.1x with two
+//! (25.6 µs, 27.5 µs and 1.96 ms). It asserts nothing of it.
+//!
 //! The bench asserts these in an optimized build (a backend the CPU lacks is skipped with a
 //! message), but for three that it only prints: `Avx2` at 512 options, and `Avx2Fma` at 6 and at
 //! 512 options. On the reference machine (Core i5-12600K, a P-core at 4.9 GHz) the code misses
@@ -115,6 +120,13 @@ fn the_forward_meets_its_time_targets() {
     for blocks in [0, 2] {
         let parts = synthetic::parts(7, width, capacity, blocks);
         let model = Model::from_bytes(&format::write(&synthetic::meta(), &parts).unwrap()).unwrap();
+        // The int8 model of the same weights, for `Avx2Vnni`.
+        let int8 = Backend::Avx2Vnni.is_available().then(|| {
+            let bytes = format::write_as(&synthetic::meta(), &parts, crate::Quant::Int8).unwrap();
+            Model::from_bytes(&bytes).unwrap()
+        });
+        // `Avx2Fma` (6 options again, 6 in turn, 512), for the speedup of `Avx2Vnni`.
+        let mut fma = None;
         for backend in Backend::ALL {
             if !backend.is_available() {
                 println!(
@@ -123,11 +135,15 @@ fn the_forward_meets_its_time_targets() {
                 );
                 continue;
             }
+            let model = match (&int8, backend) {
+                (Some(int8), Backend::Avx2Vnni) => int8,
+                _ => &model,
+            };
             // The same decision again (its rows in cache), and 256 decisions in turn (5 MB of
             // rows).
-            let hot = time(&model, backend, &small[..1], runs(20_000));
-            let cold = time(&model, backend, &small, runs(20_000));
-            let wide = time(&model, backend, &large, runs(200));
+            let hot = time(model, backend, &small[..1], runs(20_000));
+            let cold = time(model, backend, &small, runs(20_000));
+            let wide = time(model, backend, &large, runs(200));
             println!(
                 "  {blocks} residual blocks, {}: 6 options {:.1} µs (one decision again) / \
                  {:.1} µs (256 decisions in turn); 512 options {:.0} µs",
@@ -136,6 +152,18 @@ fn the_forward_meets_its_time_targets() {
                 micros(cold),
                 micros(wide)
             );
+            if backend == Backend::Avx2Fma {
+                fma = Some((hot, cold, wide));
+            }
+            if let (Backend::Avx2Vnni, Some((f_hot, f_cold, f_wide))) = (backend, fma) {
+                let ratio = |f: Duration, v: Duration| f.as_secs_f64() / v.as_secs_f64();
+                println!(
+                    "    int8 speedup over avx2-fma: {:.2}x / {:.2}x; 512 options {:.2}x",
+                    ratio(f_hot, hot),
+                    ratio(f_cold, cold),
+                    ratio(f_wide, wide)
+                );
+            }
             let Some(&(_, _, six, many)) = targets
                 .iter()
                 .find(|target| target.0 == blocks && target.1 == backend)
