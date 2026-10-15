@@ -51,8 +51,16 @@ Decisions (owner, 2026-10-15):
 
 ### A. The crate `ti4-infer`
 
-A new crate with no `tch`, clean for wasm. It depends on `ti4-policy` (features, `Vocabulary`,
-`BattlePredictor`), `ti4-engine`, `ti4-model`, `serde_json`, `sha2`, `rand` and `rand_chacha`.
+A new crate with no `tch`, clean for wasm: the numbers only. It knows nothing of the game and
+depends only on `serde_json` and `sha2`. It does not depend on `ti4-policy`, and `ti4-policy` does
+not depend on it: the decision pipeline is in `ti4-policy` behind a trait (section D).
+
+```
+ti4-infer   format, kernels, Model                        (serde_json, sha2)
+ti4-policy  features, the decision pipeline, Scorer       (no ti4-infer, no tch)
+ti4-host  → ti4-policy, ti4-infer
+ti4-mlp   → ti4-policy, ti4-infer, tch
+```
 
 | Module        | What it holds                                                                                                                                                                                                                                                                                                      |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -61,7 +69,6 @@ A new crate with no `tch`, clean for wasm. It depends on `ti4-policy` (features,
 | `simd/`       | The `Lanes` trait and the three backends (section C). This is the only module with `#[allow(unsafe_code)]`. The crate restates the workspace lints with `unsafe_code = "deny"`, as `ti4-tensor` does.                                                                                                              |
 | `kernel`      | `bag`, `gemm` (packed panels), `readout`, generic over `Lanes`.                                                                                                                                                                                                                                                    |
 | `model`       | `Model`: the sections of one file and `forward(faction, head, options) -> Vec<f32>` with a reused scratch buffer. It is `Send + Sync` and shared by `Arc` across seats and games.                                                                                                                                  |
-| `policy`      | The decision pipeline moved out of `ti4-mlp/src/bot.rs`, section D.                                                                                                                                                                                                                                                |
 | `bin/pack.rs` | `ti4-pack <bundle dir> <name> <out.ti4m>`.                                                                                                                                                                                                                                                                         |
 
 ### B. The model file `.ti4m` (the prepacking)
@@ -114,8 +121,25 @@ pub(crate) trait Lanes {            // 4 × f32 in every backend
 | `Sse`     | `cfg(target_arch = "x86_64")`                                  | `core::arch::x86_64` `_mm_*_ps`. SSE2 is the baseline of x86-64, so there is no runtime detection. |
 | `Simd128` | `cfg(all(target_arch = "wasm32", target_feature = "simd128"))` | `core::arch::wasm32` `f32x4_*`.                                                                    |
 | `Scalar`  | every other target                                             | `[f32; 4]` with the same lane arithmetic. Native tests also call it explicitly.                    |
+| `Avx2`    | x86-64, `is_x86_feature_detected!("avx2")` once at load        | `_mm256_*_ps`, 8 lanes, a multiply then an add. The default on a native host with AVX2.            |
+| `Avx2Fma` | x86-64, AVX2 and FMA detected, and asked for by the caller     | `_mm256_fmadd_ps`. Not bit-identical to the others; see below.                                     |
 
-**The same bits everywhere**
+A model picks its backend once, when it is loaded (`Model::with_backend`, default the best
+deterministic one), so the kernels have no per-call dispatch. There is no relaxed SIMD in wasm:
+its fused multiply-add may or may not fuse, by engine and CPU, and the page keeps `Simd128`.
+
+**`Avx2` keeps the bits.** In `bag` and `gemm` every lane is its own output, and the sum of each
+output runs over `k` in the same order whatever the vector width, so 8 lanes give the bits of 4.
+`readout` keeps its 4-lane partial sums and `hsum` (below) on every backend.
+
+**`Avx2Fma` is fast, not identical.** Each multiply-add rounds once, so its logits differ from the
+others by about one rounding per term. It is used where no other host must reproduce the game: the
+rollouts of training (step 5), and on the server when `TI4_INFER_FMA=1`. Its tests compare it with
+`Scalar` within `1e-4 · max(1, |logit|)`, not bit for bit. A game on the server with FMA is replayed
+from its saved decisions as any game is; only the test that plays one table on both hosts runs
+without it.
+
+**The same bits everywhere** (every backend but `Avx2Fma`)
 
 - There is no FMA: always a multiply, then an add.
 - Every loop has a fixed order of accumulation.
@@ -153,16 +177,31 @@ simd128. The native aliases are not affected.
 **Performance target**, single thread, release, x86-64 (measured by an ignored test,
 `ti4_infer::bench`):
 
-- the forward of a decision of 6 options at width 256 in under 30 µs;
-- 512 options in under 2 ms.
+| Model at width 256 | Backend   | 6 options | 512 options |
+| ------------------ | --------- | --------- | ----------- |
+| 0 residual blocks  | `Sse`     | < 30 µs   | < 4 ms      |
+| 2 residual blocks  | `Avx2`    | < 55 µs   | < 5 ms      |
+| 2 residual blocks  | `Avx2Fma` | < 35 µs   | < 4 ms      |
 
-The bag is bound by memory: about 530 rows of 1 KiB per decision. The test also prints `Scalar`, to
-show what the SIMD gains.
+The bench asserts these targets, and prints `Scalar` and `Sse` at 2 residual blocks for the
+comparison. Without FMA, SSE does 8 multiply-adds a cycle, so a residual block costs about 30 µs
+at 6 options; 8 lanes halve that and FMA halves it again. The 512-option case is bound by the
+memory of the bag (about 43 MB of rows read from a 21 MB table with random columns), so the vector
+width helps it less. Decisions are batched within a decision (the options are the rows), not
+across decisions.
 
 ### D. One decision pipeline, shared with training
 
-`ti4_infer::policy::decide(model, choice, seen, baseline, rng) -> ChoiceOption` is the part of
-`MlpBot::decide` (`ti4-mlp/src/bot.rs:771-…`) that does not touch tch. It covers:
+The pipeline is the part of `MlpBot::decide` (`ti4-mlp/src/bot.rs:771-…`) that does not touch tch.
+It moves into `ti4-policy`, as the module `ti4_policy::mlp`, with no dependency on `ti4-infer` or
+tch. It is two calls, so that PPO can keep what lies between them:
+
+- `features(scorer_info, choice, seen, baseline) -> Prepared`: the faction row, the head row, the
+  options as columns, and the options of the choice they stand for;
+- `pick(prepared, logits, temperature, rng) -> (ChoiceOption, probabilities)`.
+
+`ti4-host` calls both in turn. `MlpBot` calls both and records the features and probabilities for
+PPO in between. Together they cover:
 
 - the fleet plan packages (`planned`, `bot.rs:419-603`);
 - `mlp_choice_features`, plus the battle facts when the model has a predictor and the deal facts
@@ -173,13 +212,33 @@ show what the SIMD gains.
 - `stable_softmax` (`lib.rs:1743-1789`) at the temperature;
 - the draw of `MlpBot::sample` (`bot.rs:605-615`, the cumulative walk).
 
-The model behind it is a trait, `Scorer::logits(faction, head, options)`:
+The model behind it is a trait in `ti4_policy::mlp`, `Scorer::logits(faction, head, options) ->
+Vec<f32>`, with what the pipeline needs of a model (heads, roster, vocabulary, battle predictor,
+temperature):
 
-- `ti4_infer::Model` implements it.
-- `ti4-mlp` implements it for its `Actor` on tch, and `MlpBot` calls the shared functions, so
-  training, evaluation and play run one pipeline.
-- `SparseOption` moves to `ti4-infer`, and `ti4-mlp` re-exports it.
+- The options are plain column lists, `&[(u32, f32)]` per option. `ti4_infer::Model::forward` takes
+  the same lists, so neither side converts, and the two crates share no type.
+- `ti4-host` implements `Scorer` for a newtype around `Arc<ti4_infer::Model>`.
+- `ti4-mlp` implements it for its `Actor` on tch, and for `ti4_infer::Model` (step 5). `MlpBot`
+  takes either, so training, evaluation and play run one pipeline.
+- The tch `Scorer` stays because tch still plays: the GPU batch client, the parity test, and the
+  evaluations of a checkpoint during training.
 - The PPO records, the GPU batch client and the critic stay in `ti4-mlp`.
+- `ti4-policy` becomes wasm-clean in this step: `rand` without default features, as `ti4-rule-bot`
+  has it.
+
+### D2. Rollouts of training on `ti4-infer`
+
+Self-play needs only the forward, and on the CPU a decision of about 6 × 256 is mostly the dispatch
+of tch ops. `ti4-mlp` gets:
+
+- `Parts` built from the tensors of an `Actor` in memory (no bundle on disk), and a `Model` from
+  them. After each PPO update the rollout workers get a fresh `Arc<Model>`.
+- A choice of backend for the rollouts of a run: tch (CPU or the GPU batch client) or `ti4-infer`
+  (`Avx2Fma` where the CPU has it). The update stays on tch, and recomputes the probabilities.
+- The critic is not in a `Model`. Rollouts that need a value call tch for it, or the critic is
+  added to the in-memory `Model` of training, never to a `.ti4m`.
+- A bench of a decision and of a game on tch and on `ti4-infer`, whose numbers go in the PR.
 
 **The draw of a bot.** The RNG is `ChaCha8` from `(game seed, seat, decision index)`, as the rule
 bot's choice is (`ti4_rule_bot::choose`). The temperature is the model's (header, default 0.25, the
@@ -214,8 +273,8 @@ evaluation temperature of `plans/MLP_TEMPERATURE_REGIME.md`).
   - It keeps the model in a static registry by name.
   - `ti4_host_start` refuses a table with a kind whose model is not loaded.
   - `ti4_setup_options` gets the model list in its request.
-- **ti4-policy in the wasm build.** It and `ti4-infer` become wasm-clean: `rand` without default
-  features, as `ti4-rule-bot` has it. The step records the size of `ti4.wasm` before and after.
+- **ti4-policy in the wasm build.** `ti4-host` and `ti4-wasm` depend on `ti4-policy` (made
+  wasm-clean in step 4) and on `ti4-infer`. The step records the size of `ti4.wasm` before and after.
 
 ### F. Download and the lobby in web2
 
@@ -290,18 +349,40 @@ evaluation temperature of `plans/MLP_TEMPERATURE_REGIME.md`).
   other fixtures). This proves simd128 == SSE.
 - The ignored bench, and its numbers in the PR.
 
-### Step 3: one pipeline (section D)
+### Step 3: AVX2 and AVX2 with FMA (section C)
 
-- Move the pipeline and `SparseOption` into `ti4-infer::policy`, and make `MlpBot` call it through
-  `Scorer`.
+- `Avx2` and `Avx2Fma` in `simd/`, the detection at load, `Model::with_backend`, and
+  `ti4_infer::backend()` naming the backend of a model.
+- Tests: `Avx2` bit-equal to `Scalar` on the shapes of step 2; `Avx2Fma` within
+  `1e-4 · max(1, |logit|)` of `Scalar`. A test skips with a message on a CPU without the feature.
+- The bench asserts the targets of section C.
+
+### Step 4: one pipeline in `ti4-policy` (section D)
+
+- Move the pipeline into `ti4_policy::mlp` (`features`, `pick`, `Scorer`), with no `ti4-infer` and no
+  tch. `ti4_infer::Model::forward` takes the column lists. `ti4-policy` becomes wasm-clean.
+- `ti4-mlp` implements `Scorer` for its `Actor`, and `MlpBot` calls the pipeline.
 - A parity test in `ti4-mlp` (needs libtorch; a new alias `t-mlp-parity = "test -p ti4-mlp --test
   infer_parity"`) plays seeded games of the reviewer checkpoint and of one schema-12 bundle when
   `out/champions/` has it.
   - For every decision it checks `|logit_tch − logit_infer| ≤ 1e-4 · max(1, |logit|)` and the same
     option at temperature 0.001.
-  - It also checks that `MlpBot`'s features equal the pipeline's.
+  - It also checks that `MlpBot`'s features equal the pipeline's, and times a decision on tch and
+    on `ti4-infer`.
+- On Linux the pinned libtorch is `out/libtorch-2.9.1-cpu-linux` (`scripts/install_libtorch_cpu_linux.sh`):
+  `LIBTORCH=$PWD/out/libtorch-2.9.1-cpu-linux LIBTORCH_BYPASS_VERSION_CHECK=1
+  LD_LIBRARY_PATH=$LIBTORCH/lib cargo t-mlp-parity`. The doc of the alias says so.
 
-### Step 4: MLP bot kinds in ti4-host, the server and the engine of the page (section E)
+### Step 5: rollouts of training on `ti4-infer` (section D2)
+
+- `Parts` from the tensors of an `Actor`, `Scorer` for `ti4_infer::Model` in `ti4-mlp`, and the
+  choice of backend for the rollouts of a run.
+- The critic: how the rollouts get their values.
+- Tests (libtorch): a `Model` built from an `Actor` gives the logits of the `Actor` within the bound
+  of step 4; a short seeded PPO run on each backend.
+- The bench of a decision and of a game, tch against `ti4-infer`.
+
+### Step 6: MLP bot kinds in ti4-host, the server and the engine of the page (section E)
 
 - `BotKind`, `bots::choose`, `setup_options(models)`, the wire changes (`cargo wire-web`), `Local.bots`.
 - The server loads `TI4_MODEL_DIR`; in-process MLP seats; persistence.
@@ -312,7 +393,7 @@ evaluation temperature of `plans/MLP_TEMPERATURE_REGIME.md`).
   - the kind lists in `random_bot_lobby.rs`, `lobby_settings.rs`, `ti4-wasm/tests/it/host_setup.rs`
     and `ti4-wasm/src/lib.rs:1850` gain the model of the test.
 
-### Step 5: remove the advisor and the bot agent
+### Step 7: remove the advisor and the bot agent
 
 Remove:
 
@@ -324,16 +405,17 @@ Remove:
 - in `web/`: `src/services/advisorService.ts`, the `/advisor` proxy of `vite.config.ts`, the add-bot
   UI of `components/Lobby.tsx` and `useLobbySession.ts`, and `protocol/types.ts:74`.
 
-Update `docs/RANDOM_BOTS.md` and `docs/OFFLINE.md`. The removed tests are the ones of the crates and
+Update `docs/RANDOM_BOTS.md` and `docs/OFFLINE.md`. The Linux libtorch setup of
+`crates/ti4-advisor/README.md` ("Native runtime") moves to `crates/ti4-mlp/README.md`. The removed tests are the ones of the crates and
 the "+ mlp" cases of `random_bot_lobby.rs`.
 
-### Step 6: the routes, the pack script and the deploy (sections F, G)
+### Step 8: the routes, the pack script and the deploy (sections F, G)
 
 - `/api/models`, the file route, `models/index.json`, `scripts/pack-models.sh`, and the changes to
   `deploy.sh` and `env.example`.
 - A server test fetches the list and a file, checks the sha, and checks the cache header.
 
-### Step 7: web2
+### Step 9: web2
 
 - The model list in `localTable.ts`, the Cache API fetch and the Worker load (`wasmTransport.ts`,
   `web-shared/src/engine/worker.ts`).
@@ -350,10 +432,11 @@ the "+ mlp" cases of `random_bot_lobby.rs`.
   `ti4-wasm` changed, also `web2/scripts/build-wasm.sh` and `npm test`. When the server changed,
   also `cargo b-web`.
 - Step 2: the bench (`ti4_infer::bench`, run with `ti4-infer` optimized: the command is in its
-  module) meets the target. The wasm bit-equality test passes on the release build.
-- Step 3: `cargo t-mlp-parity` passes with libtorch.
-- Step 4: `cargo t-web-slow` (both hosts).
-- Step 7: `npm run typecheck`, `npm run lint`, `npm test`, `npm run e2e`, and `npm run shots` for
+  module) runs. The wasm bit-equality test passes on the release build.
+- Step 3: the bench meets the targets of section C.
+- Steps 4 and 5: `cargo t-mlp-parity` passes with libtorch.
+- Step 6: `cargo t-web-slow` (both hosts).
+- Step 9: `npm run typecheck`, `npm run lint`, `npm test`, `npm run e2e`, and `npm run shots` for
   the lobby. Then a manual game: `cargo b-web && TI4_MODEL_DIR=out/models target/debug/server`,
   `?single` with two MLP seats, and the Network tab shows that the model was fetched once and served
   from the cache on a reload.
