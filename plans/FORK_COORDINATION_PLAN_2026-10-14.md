@@ -5,6 +5,25 @@ Status: proposal for the owner (Porkchop911) and the two fork maintainers, Felix
 decided until the owner marks it. Every number below was measured on 2026-10-14 from the three
 repositories' Git history; the commands are in the appendix so the numbers can be refreshed.
 
+## Status update (2026-10-15)
+
+- **Phase 1 is done, as option B1.** PR #6 (`integrate/forks-2026-10-14`) merged
+  `ProbablyPlayable/dev` (which held `Feelx234/main`), `wp/rule-bot` and `wp/base-factions` into
+  `main` (`9bbded7a`, history kept). `cargo test -p ti4-engine --release` on that `main` gives
+  3,015 passed, 0 failed, 2 ignored.
+- **Still open from §3 and §7:**
+  - D6/D7 were resolved by keeping both sides. `technology::gain` and `unit_form_violations` and
+    their two corpus-wide tests are both on `main`, and so are `FactionRoster` and
+    `lobby_faction_draw`.
+  - `main`'s `AGENTS.md` is now the forks' 4-line file. The integration merge `38200ca0` took it
+    over the owner's 155-line file on `wp/rule-bot` (which still has it), and
+    `crates/ti4-engine/AGENTS.md` (§6.2) does not exist yet.
+  - `cargo fmt --check` still fails on 34 files of `main`, so CI never reaches the tests.
+- **New since the merge:** ProbablyPlayable's `dev` is 59 commits ahead of `main`. It folds
+  `ti4-view` into `ti4-host`, adds `web-shared/` (one transport, save store and wasm build for
+  `web/` and `web2/`) and generates wire types with ts-rs; `web/` changes by +3.9k/−17k lines.
+  `Feelx234/main` has not moved since 2026-10-14 12:37 UTC.
+
 ## 1. Where we are
 
 ### 1.1 Three people, two lines of history
@@ -81,7 +100,7 @@ offline wasm mode built on the same `ti4-wasm`).
 6. **CI doesn't protect anything.** Every recent run on `Porkchop911/TI4-Bot-Dev` fails at
    `cargo fmt --check` (48 files on `main` are not formatted), so Clippy and the tests never run.
    The forks' engine suite is healthy: `cargo test -p ti4-engine --release` on
-   `ProbablyPlayable/dev` gives 5,983 passed, 0 failed, 4 ignored.
+   `ProbablyPlayable/dev` (`3f62f650`) gives 2,995 passed, 0 failed, 2 ignored.
 
 ## 2. Goals
 
@@ -306,7 +325,7 @@ exist for both clients so a gap is visible.
 
 | Risk | Mitigation |
 |---|---|
-| Phase 1 lands a large delta nobody fully reviewed | review by area; the engine suite (5,983 tests) and `hash_survey`; a revert plan (keep the old `main` as a tag) |
+| Phase 1 lands a large delta nobody fully reviewed | review by area; the engine suite (about 3,000 tests) and `hash_survey`; a revert plan (keep the old `main` as a tag) |
 | The forks keep committing during phase 1 | announce a 2–3 day window; afterwards rebase what landed in the window (a few dozen commits, not hundreds) |
 | The owner becomes the bottleneck on review | second reviewers in §5.3; class 1 changes need any owner, not the engine owner |
 | History size if B1 (≈550 MB uncompressed) | choose B2 if size or content was the reason for the reset |
