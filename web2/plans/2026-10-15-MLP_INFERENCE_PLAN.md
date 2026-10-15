@@ -1,6 +1,6 @@
 # MLP bots without libtorch: inference in ti4-host, on the server and in the page (2026-10-15)
 
-Status: planned. Step 1 done (2026-10-15). Step 2 done (2026-10-15). Step 3 done (2026-10-15). Step 4 done (2026-10-15).
+Status: planned. Step 1 done (2026-10-15). Step 2 done (2026-10-15). Step 3 done (2026-10-15). Step 4 done (2026-10-15). Step 5 done (2026-10-15).
 
 ## Context
 
@@ -269,8 +269,10 @@ The model behind it is two traits in `ti4_policy::mlp`:
 - `ti4-host` implements `Scorer` for a newtype around `Arc<ti4_infer::Model>`
   (`HeadLayout::of(model.heads())`, the predictor from `model.battle_json()`).
 - `ti4-mlp` implements `Scorer` for its `Actor` on tch, `ModelInfo` for the GPU batch client
-  (no battle predictor: the service refuses an arena bundle), and `Scorer` for `ti4_infer::Model`
-  (step 5). `MlpBot` takes either, so training, evaluation and play run one pipeline.
+  (no battle predictor: the service refuses an arena bundle), and `Scorer` for
+  `ti4_mlp::infer::InferModel`, a `ti4_infer::Model` built from an actor (step 5). `MlpBot` takes
+  any of them (`sharing`, `batched`, `on_infer`), so training, evaluation and play run one
+  pipeline.
 - The tch `Scorer` stays because tch still plays: the GPU batch client, the parity test, and the
   evaluations of a checkpoint during training.
 - The PPO records, the GPU batch client and the critic stay in `ti4-mlp`.
@@ -280,15 +282,51 @@ The model behind it is two traits in `ti4_policy::mlp`:
 ### D2. Rollouts of training on `ti4-infer`
 
 Self-play needs only the forward, and on the CPU a decision of about 6 × 256 is mostly the dispatch
-of tch ops. `ti4-mlp` gets:
+of tch ops. `ti4-mlp` has the module `infer`:
 
-- `Parts` built from the tensors of an `Actor` in memory (no bundle on disk), and a `Model` from
-  them. After each PPO update the rollout workers get a fresh `Arc<Model>`.
-- A choice of backend for the rollouts of a run: tch (CPU or the GPU batch client) or `ti4-infer`
-  (`Avx2Fma` where the CPU has it). The update stays on tch, and recomputes the probabilities.
-- The critic is not in a `Model`. Rollouts that need a value call tch for it, or the critic is
-  added to the in-memory `Model` of training, never to a `.ti4m`.
-- A bench of a decision and of a game on tch and on `ti4-infer`, whose numbers go in the PR.
+- `parts_of(actor, slots)` copies the tensors of an `Actor` into `Parts` in memory (no bundle on
+  disk; the source names no manifest, all zeros, and the schema and ABI that a bundle of the actor
+  would have). `InferModel::from_actor(actor, slots, backend)` packs them with `format::write` and
+  loads them with `format::read`: the code path of a `.ti4m`, so the rollouts play the bits that a
+  host would play with the same weights. It takes 40 ms for the reviewer checkpoint (23 MB), once
+  per update, so there is no separate in-memory constructor.
+- `InferModel` implements `ModelInfo` and `Scorer` (a thread-local `Scratch`), and is `Send +
+  Sync`: one `Arc<InferModel>` serves every rollout worker, and after each PPO update the workers
+  get a fresh one of the updated actor. `MlpBot::on_infer` seats it.
+- The backend of the rollouts of a run: `ppo_update --rollout-backend cpu | infer | gpu-batched`.
+  `cpu` (tch, one actor copy per worker) stays the default. `infer` is `Backend::fastest()`
+  (`Avx2Fma` where the CPU has it); the frozen benchmark of `--opponent` is packed once and plays
+  on it too. The update stays on tch: it computes the probabilities of the current weights on tch
+  in every epoch, as before, against the behaviour probability that the rollout recorded from the
+  distribution it drew from (that of `ti4-infer`, within `2 · 1e-4 · max(1, |logit|) / T` of tch's
+  log-probability). `--check-likelihood` rescores on tch with that tolerance on `infer`, and with
+  1e-6 on `cpu`.
+
+**The critic.** A recorded decision needs `V(s)` at the moment it is played (the behaviour value of
+the advantage, `CriticMode::Shared` and `Separate`); the update does not recompute it. On tch the
+CPU bot calls `Actor::value` after the draw, and the GPU service returns it with the
+probabilities. On `ti4-infer` the shared critic is the trunk of the policy with the readout
+`w_value`, `b_value`, so `Model::with_value(w, b)` adds that readout to the in-memory model of
+training, and `Model::value_with` runs the trunk on the critic columns and ends with it, with the
+order of every sum of a logit. A value head is never in a `.ti4m`: `format::write` packs `Parts`,
+which have none, and `format::read` gives a model without one. A separate critic has its own trunk,
+which a `Model` does not carry: `--rollout-backend infer` refuses it, and `InferModel::value`
+refuses a model without a value head. `BatchMean` records no value. This keeps the whole decision
+off tch; calling tch for the value alone would cost a tch forward per recorded decision (54 µs).
+
+**The bench** (`infer_rollouts`, reviewer checkpoint, width 256, a game of two rounds at
+temperature 1 with a value at every recorded decision, 806 decisions of which 756 recorded; libtorch
+release, `ti4-infer` optimized, the engine, the features and the bot a debug build):
+
+| Rollout backend       | Forward per decision | Critic per recorded decision | Forward + critic per game |
+| --------------------- | -------------------- | ---------------------------- | ------------------------- |
+| tch                   | 297 µs               | 54 µs                        | 281 ms                    |
+| `ti4-infer` `Avx2Fma` | 165 µs               | 16.5 µs                      | 145 ms                    |
+
+The forward stage includes the softmax and the cold caches of a game (the parity test measures the
+forward alone: tch 375–405 µs, `Avx2` 165 µs). The whole game takes 4.8 s on either backend in this
+debug build, where the features (about 4 ms a decision) dominate; in a release build of the
+rollouts the forward and the critic are the part that `ti4-infer` halves.
 
 **The draw of a bot.** The RNG is `ChaCha8` from `(game seed, seat, decision index)`, as the rule
 bot's choice is (`ti4_rule_bot::choose`). The temperature is the model's (header, default 0.25, the
@@ -439,12 +477,20 @@ evaluation temperature of `plans/MLP_TEMPERATURE_REGIME.md`).
 
 ### Step 5: rollouts of training on `ti4-infer` (section D2)
 
-- `Parts` from the tensors of an `Actor`, `Scorer` for `ti4_infer::Model` in `ti4-mlp`, and the
-  choice of backend for the rollouts of a run.
-- The critic: how the rollouts get their values.
-- Tests (libtorch): a `Model` built from an `Actor` gives the logits of the `Actor` within the bound
-  of step 4; a short seeded PPO run on each backend.
-- The bench of a decision and of a game, tch against `ti4-infer`.
+- `ti4_mlp::infer` (`parts_of`, `InferModel`, `Scorer` for it), `MlpBot::on_infer`,
+  `Model::with_value` and `Model::value_with` in `ti4-infer`, and `--rollout-backend infer` in
+  `ppo_update`.
+- The critic: the value readout of a shared critic on the in-memory model (section D2).
+- Tests:
+  - `ti4-infer`: the value head is the readout on the trunk, bit for bit with a head of the same
+    weights; a model without one refuses a value.
+  - `ti4_mlp::infer` (`cargo t-mlp`): a random actor of the diplomacy heads with two residual
+    blocks gives every head's logits and the value within `1e-4 · max(1, |x|)` on `Scalar` and on
+    `Backend::fastest()`; a separate critic gives no value head.
+  - `tests/infer_rollouts.rs` (libtorch, in `cargo t-mlp-parity`, one test at a time): two seeded
+    PPO updates on each rollout backend, a fresh model per update, every behaviour probability and
+    value recorded on `ti4-infer` checked against the actor's (worst log-probability gap 2.3e-5,
+    worst relative value gap 5e-7); and the bench of section D2.
 
 ### Step 6: MLP bot kinds in ti4-host, the server and the engine of the page (section E)
 
@@ -498,7 +544,7 @@ the "+ mlp" cases of `random_bot_lobby.rs`.
 - Step 2: the bench (`ti4_infer::bench`, run with `ti4-infer` optimized: the command is in its
   module) runs. The wasm bit-equality test passes on the release build.
 - Step 3: the bench runs, and meets the targets of section C that it asserts.
-- Steps 4 and 5: `cargo t-mlp-parity` passes with libtorch, and `cargo l-mlp` and `cargo t-mlp`
+- Steps 4 and 5: `cargo t-mlp-parity` passes (step 5 adds `infer_rollouts` to it) with libtorch, and `cargo l-mlp` and `cargo t-mlp`
   are clean (`t-mlp` but for tests that need `out/`); step 4 also `cargo wasm-policy`.
 - Step 6: `cargo t-web-slow` (both hosts).
 - Step 9: `npm run typecheck`, `npm run lint`, `npm test`, `npm run e2e`, and `npm run shots` for

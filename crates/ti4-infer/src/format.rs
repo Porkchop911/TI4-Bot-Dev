@@ -699,5 +699,6 @@ pub fn read(bytes: &[u8]) -> Result<Model, InferError> {
         slots,
         battle,
         backend: crate::Backend::best(),
+        value: None,
     })
 }

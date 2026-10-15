@@ -65,6 +65,9 @@ t-mlp = "test -p ti4-policy -p ti4-mlp -p ti4-sim -p ti4-training -p ti4-review 
 # The MLP of training on libtorch against `ti4-infer`, decision by decision, on seeded games of
 # `examples/reviewer/checkpoint-473312` (and of a schema-12 bundle of `out/champions/` when there
 # is one): the logits, the option drawn, the features of `MlpBot`, and the time of a decision.
+# Then the rollouts of training on `ti4-infer` (`infer_rollouts`): a short seeded PPO run on each
+# rollout backend, and the bench of a decision and of a game on either. One test at a time, so
+# that the printed times are not those of two tests at once.
 # `ti4-infer` is optimized as for its bench (`ti4_infer::bench`), so that the printed times compare
 # like with like (libtorch is a release build), and the output is shown. On Linux the pinned libtorch is `out/libtorch-2.9.1-cpu-linux`
 # (`scripts/install_libtorch_cpu_linux.sh`); an exported `LIBTORCH` overrides the `[env]` above:
@@ -75,7 +78,8 @@ t-mlp-parity = [
     "--config", "profile.dev.package.ti4-infer.opt-level=3",
     "--config", "profile.dev.package.ti4-infer.debug-assertions=false",
     "--config", "profile.dev.package.ti4-infer.overflow-checks=false",
-    "-p", "ti4-mlp", "--test", "infer_parity", "--", "--nocapture",
+    "-p", "ti4-mlp", "--test", "infer_parity", "--test", "infer_rollouts", "--", "--nocapture",
+    "--test-threads=1",
 ]
 # `ti4-policy` for the target of the page, which links it from step 6 of the MLP inference plan
 # on: a check that it stays clean for wasm (no `getrandom`, no `tch`). Its own target directory

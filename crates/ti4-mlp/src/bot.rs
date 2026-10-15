@@ -16,7 +16,9 @@
 //! Everything between the observation and the drawn option but the forward pass is the shared
 //! decision pipeline of `ti4_policy::mlp` (features, columns, head, softmax, draw, fleet plan),
 //! the same that the hosts of the game run on `ti4-infer`. This bot scores its decisions on the
-//! actor (or the GPU batch client) and records the PPO steps between the calls of the pipeline.
+//! actor on libtorch, on the actor packed for `ti4-infer` (`crate::infer`, the rollouts of
+//! training), or on the GPU batch client, and records the PPO steps between the calls of the
+//! pipeline.
 //!
 //! # Hidden information
 //!
@@ -29,7 +31,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rand::SeedableRng;
 use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice, SeatObservation};
-use ti4_policy::mlp::{Features, ModelInfo, Pipeline, Prepared};
+use ti4_policy::mlp::{Features, ModelInfo, Pipeline, Prepared, Scorer};
 use ti4_policy::vocabulary::Vocabulary;
 
 use crate::{Actor, FactionRow, SparseOption};
@@ -93,9 +95,9 @@ pub struct InferenceFailed {
 /// property of the API rather than of each caller remembering (F-M09-026-10): reporting a
 /// successful campaign without consuming the status is not something a caller can express.
 pub struct MlpBot {
-    actor: Option<std::rc::Rc<Actor>>,
-    /// Experimental bounded cross-game scorer. Absent in the ordinary CPU path.
-    gpu: Option<crate::gpu_batch::GpuInferenceClient>,
+    /// What scores the decisions: the actor on libtorch, the actor packed for `ti4-infer`, or the
+    /// GPU batch client.
+    inference: Inference,
     /// The shared decision pipeline (`ti4_policy::mlp`): the features, the columns of the
     /// vocabulary, the head, the softmax and the draw, and the seat's fleet plan and power maps.
     /// Play and the PPO records both go through it, so the features a step is trained on are the
@@ -115,6 +117,46 @@ pub struct MlpBot {
     notes: std::rc::Rc<std::cell::RefCell<Vec<crate::positive_corpus::Note>>>,
     /// What the fleet decisions and plans did, for a reviewer.
     trace: std::rc::Rc<std::cell::RefCell<Vec<PlanTrace>>>,
+}
+
+/// The model behind a bot.
+#[derive(Clone)]
+enum Inference {
+    /// The actor on libtorch, on this thread.
+    Tch(std::rc::Rc<Actor>),
+    /// The actor packed for `ti4-infer` ([`crate::infer::InferModel`]), shared across threads.
+    Infer(Arc<crate::infer::InferModel>),
+    /// Experimental bounded cross-game scorer on a GPU.
+    Gpu(crate::gpu_batch::GpuInferenceClient),
+}
+
+impl Inference {
+    /// The model of the decision pipeline.
+    fn info(&self) -> &dyn ModelInfo {
+        match self {
+            Self::Tch(actor) => &**actor,
+            Self::Infer(model) => &**model,
+            Self::Gpu(client) => client,
+        }
+    }
+
+    /// What scores logits on this thread; the GPU client returns probabilities instead.
+    fn scorer(&self) -> Option<&dyn Scorer> {
+        match self {
+            Self::Tch(actor) => Some(&**actor),
+            Self::Infer(model) => Some(&**model),
+            Self::Gpu(_) => None,
+        }
+    }
+
+    /// `V(s)` of a recorded decision, on the CPU backends.
+    fn value(&self, critic: &crate::CriticInput, row: FactionRow) -> Result<f64, String> {
+        match self {
+            Self::Tch(actor) => actor.value(critic, row).map_err(|error| error.to_string()),
+            Self::Infer(model) => model.value(critic, row).map_err(|error| error.to_string()),
+            Self::Gpu(_) => Err("the GPU client records its own value".to_owned()),
+        }
+    }
 }
 
 /// One PPO decision and the progress snapshot taken at that exact decision.
@@ -178,25 +220,36 @@ impl MlpBot {
         row: FactionRow,
         stream: u64,
     ) -> Self {
-        Self::with_scorer(
-            Some(std::rc::Rc::clone(actor)),
-            None,
+        Self::with_inference(
+            Inference::Tch(std::rc::Rc::clone(actor)),
             vocabulary,
             row,
             stream,
         )
     }
 
-    fn with_scorer(
-        actor: Option<std::rc::Rc<Actor>>,
-        gpu: Option<crate::gpu_batch::GpuInferenceClient>,
+    /// A bot that scores on `ti4-infer`: the actor of a rollout packed in memory
+    /// ([`crate::infer::InferModel::from_actor`]). One model serves every seat on every thread.
+    /// It records the same PPO steps as a bot on the actor; their values come from the value head
+    /// of the model, so a separate critic cannot record (the rollouts refuse that pair up front).
+    #[must_use]
+    pub fn on_infer(
+        model: &Arc<crate::infer::InferModel>,
+        vocabulary: Vocabulary,
+        row: FactionRow,
+        stream: u64,
+    ) -> Self {
+        Self::with_inference(Inference::Infer(Arc::clone(model)), vocabulary, row, stream)
+    }
+
+    fn with_inference(
+        inference: Inference,
         vocabulary: Vocabulary,
         row: FactionRow,
         stream: u64,
     ) -> Self {
         Self {
-            actor,
-            gpu,
+            inference,
             pipeline: Pipeline::new(Arc::new(vocabulary), row.index()),
             row,
             temperature: 1.0,
@@ -221,7 +274,7 @@ impl MlpBot {
         row: FactionRow,
         stream: u64,
     ) -> Self {
-        Self::with_scorer(None, Some(gpu), vocabulary, row, stream)
+        Self::with_inference(Inference::Gpu(gpu), vocabulary, row, stream)
     }
 
     /// Hand the bot to a table and keep the status that must be consumed.
@@ -335,7 +388,7 @@ impl MlpBot {
     /// step of the movement head, with its own options and probability.
     fn choose_package(
         &mut self,
-        actor: &Actor,
+        scorer: &dyn Scorer,
         choice: &Choice,
         seen: &SeatObservation<'_>,
         fleet: Prepared,
@@ -343,10 +396,10 @@ impl MlpBot {
     ) -> Result<(), IllegalChoice> {
         self.count_columns(&fleet);
         let head = fleet.head;
-        let probabilities =
-            ti4_policy::mlp::Scorer::logits(actor, fleet.faction, fleet.head_index, &fleet.options)
-                .and_then(|logits| ti4_policy::mlp::probabilities(&logits, self.temperature))
-                .map_err(|error| self.refuse(choice, format!("package head {head}: {error}")))?;
+        let probabilities = scorer
+            .logits(fleet.faction, fleet.head_index, &fleet.options)
+            .and_then(|logits| ti4_policy::mlp::probabilities(&logits, self.temperature))
+            .map_err(|error| self.refuse(choice, format!("package head {head}: {error}")))?;
         let picked = self
             .pipeline
             .pick_with(&fleet, probabilities, &mut self.rng)
@@ -518,9 +571,7 @@ impl MlpBot {
             let critic = crate::CriticInput::new(&vector, self.pipeline.vocabulary());
             lap.mark(crate::perf::Stage::CriticFeatures);
             let value = self
-                .actor
-                .as_ref()
-                .ok_or_else(|| self.refuse(choice, "CPU MLP bot has no actor".to_owned()))?
+                .inference
                 .value(&critic, self.row)
                 .map_err(|error| self.refuse(choice, format!("critic inference: {error}")))?;
             if !value.is_finite() {
@@ -653,14 +704,14 @@ impl MlpBot {
             });
         }
         let mut lap = crate::perf::Lap::start();
-        let actor = self.actor.clone();
-        let gpu = self.gpu.clone();
-        let model: &dyn ModelInfo = match (&actor, &gpu) {
-            (Some(actor), _) => &**actor,
-            (None, Some(gpu)) => gpu,
-            (None, None) => {
-                return Err(self.refuse(choice, "MLP bot has no inference backend".to_owned()));
-            }
+        // A handle (an `Rc`, an `Arc` or the client), so that the bot can be borrowed mutably
+        // while the model scores.
+        let inference = self.inference.clone();
+        let model = inference.info();
+        let scorer = inference.scorer();
+        let gpu = match &inference {
+            Inference::Gpu(client) => Some(client),
+            Inference::Tch(_) | Inference::Infer(_) => None,
         };
         // The features of the shared pipeline (`ti4_policy::mlp`), or the answer of the seat's
         // fleet plan. The columns are resolved there too, so the vocabulary stage of a profile is
@@ -697,14 +748,10 @@ impl MlpBot {
                 .collect()
         };
         let mut gpu_value = None;
-        let probabilities = if let Some(actor) = &actor {
-            match ti4_policy::mlp::Scorer::logits(
-                &**actor,
-                prepared.faction,
-                head_index,
-                &prepared.options,
-            )
-            .and_then(|logits| ti4_policy::mlp::probabilities(&logits, self.temperature))
+        let probabilities = if let Some(scorer) = scorer {
+            match scorer
+                .logits(prepared.faction, head_index, &prepared.options)
+                .and_then(|logits| ti4_policy::mlp::probabilities(&logits, self.temperature))
             {
                 Ok(probabilities) => probabilities,
                 Err(error) => {
@@ -719,7 +766,7 @@ impl MlpBot {
                     });
                 }
             }
-        } else if let Some(gpu) = &gpu {
+        } else if let Some(gpu) = gpu {
             match gpu.score(
                 sparse(),
                 head_index,
@@ -794,8 +841,8 @@ impl MlpBot {
             .pipeline
             .fleet(model, choice, seen, &picked)
             .map_err(|error| self.refuse(choice, error.to_string()))?;
-        if let (Some(fleet), Some(actor)) = (fleet, &actor) {
-            self.choose_package(actor, choice, seen, fleet, &mut lap)?;
+        if let (Some(fleet), Some(scorer)) = (fleet, scorer) {
+            self.choose_package(scorer, choice, seen, fleet, &mut lap)?;
         }
         Ok(picked.option)
     }

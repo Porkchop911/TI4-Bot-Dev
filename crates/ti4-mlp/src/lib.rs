@@ -41,6 +41,7 @@ pub mod bundle;
 pub mod critic_warmup;
 pub mod distill;
 pub mod gpu_batch;
+pub mod infer;
 pub mod perf;
 pub mod positive_corpus;
 pub mod ppo;

@@ -56,6 +56,8 @@ pub enum InferError {
     NotFinite(f32),
     /// A backend that this target or this CPU does not have.
     Backend(crate::Backend),
+    /// A value asked of a model without the value head of training (`Model::with_value`).
+    NoValue,
 }
 
 impl fmt::Display for InferError {
@@ -99,6 +101,7 @@ impl fmt::Display for InferError {
                 "the backend {} is not available on this target or CPU",
                 backend.name()
             ),
+            Self::NoValue => write!(f, "the model has no value head"),
         }
     }
 }

@@ -65,6 +65,25 @@ pub struct Model {
     pub(crate) battle: Option<String>,
     /// Available on this CPU: checked by [`Model::with_backend`].
     pub(crate) backend: Backend,
+    /// The value head of training ([`Model::with_value`]): never read from or written to a file.
+    pub(crate) value: Option<ValueHead>,
+}
+
+/// The value readout of a shared critic: `V = z · w + b` on the trunk of the policy.
+#[derive(Debug)]
+pub(crate) struct ValueHead {
+    /// `[width]`.
+    w: Vec<f32>,
+    b: f32,
+}
+
+/// Which readout a forward pass ends with.
+#[derive(Debug, Clone, Copy)]
+enum Target {
+    /// A policy head row.
+    Head(usize),
+    /// The value head of training.
+    Value,
 }
 
 /// The working memory of a forward pass. Reuse one per thread to avoid allocating per decision.
@@ -109,6 +128,61 @@ impl Model {
         }
         self.backend = backend;
         Ok(self)
+    }
+
+    /// The model with the value readout of a shared critic, `V(s) = trunk(s) · w + b`, for the
+    /// rollouts of training (`ti4-mlp`), which record a value at every decision. A model file has
+    /// no value head: [`crate::format::write`] packs [`crate::Parts`], which has none, and
+    /// [`crate::format::read`] gives a model without one.
+    ///
+    /// # Errors
+    /// [`InferError::Parts`] when `w` is not `[width]` or a weight is not finite.
+    pub fn with_value(mut self, w: Vec<f32>, b: f32) -> Result<Self, InferError> {
+        if w.len() != self.width {
+            return Err(InferError::Parts(format!(
+                "the value readout has {} floats, the width is {}",
+                w.len(),
+                self.width
+            )));
+        }
+        if let Some(value) = w.iter().chain([&b]).find(|value| !value.is_finite()) {
+            return Err(InferError::Parts(format!(
+                "the value readout holds {value}"
+            )));
+        }
+        self.value = Some(ValueHead { w, b });
+        Ok(self)
+    }
+
+    /// Whether the model has the value head of training ([`Self::with_value`]).
+    #[must_use]
+    pub const fn has_value(&self) -> bool {
+        self.value.is_some()
+    }
+
+    /// `V(s)` of one position of the faction row `faction`: its critic columns through the trunk,
+    /// then the value readout ([`Self::with_value`]), with the order of every sum of a logit.
+    ///
+    /// # Errors
+    /// [`InferError::NoValue`] for a model without the value head, [`InferError::Faction`], or a
+    /// malformed column list.
+    pub fn value_with(
+        &self,
+        scratch: &mut Scratch,
+        faction: usize,
+        columns: &[(u32, f32)],
+    ) -> Result<f32, InferError> {
+        let mut out = Vec::with_capacity(1);
+        let position = [columns.to_vec()];
+        self.run(
+            self.backend,
+            scratch,
+            faction,
+            Target::Value,
+            &position,
+            &mut out,
+        )?;
+        Ok(out[0])
     }
 
     /// The backend its forward pass runs on.
@@ -251,13 +325,25 @@ impl Model {
         options: &[Vec<(u32, f32)>],
         out: &mut Vec<f32>,
     ) -> Result<(), InferError> {
+        self.run(backend, scratch, faction, Target::Head(head), options, out)
+    }
+
+    fn run(
+        &self,
+        backend: Backend,
+        scratch: &mut Scratch,
+        faction: usize,
+        target: Target,
+        options: &[Vec<(u32, f32)>],
+        out: &mut Vec<f32>,
+    ) -> Result<(), InferError> {
         simd::run(
             backend,
             Forward {
                 model: self,
                 scratch,
                 faction,
-                head,
+                target,
                 options,
                 out,
             },
@@ -271,7 +357,7 @@ impl Model {
         &self,
         scratch: &mut Scratch,
         faction: usize,
-        head: usize,
+        target: Target,
         options: &[Vec<(u32, f32)>],
         out: &mut Vec<f32>,
     ) -> Result<(), InferError> {
@@ -282,8 +368,10 @@ impl Model {
         if faction >= FACTION_ROSTER.len() {
             return Err(InferError::Faction(faction));
         }
-        if head >= self.heads.len() {
-            return Err(InferError::Head(head));
+        match target {
+            Target::Head(head) if head >= self.heads.len() => return Err(InferError::Head(head)),
+            Target::Value if self.value.is_none() => return Err(InferError::NoValue),
+            _ => {}
         }
         let width = self.width;
         let rows = options.len();
@@ -351,9 +439,17 @@ impl Model {
             std::mem::swap(z, t);
         }
 
-        let at = faction * self.heads.len() + head;
-        let w = &self.f(&self.readout)[at * width..][..width];
-        let b = self.f(&self.readout_b)[at];
+        let (w, b) = match (target, &self.value) {
+            (Target::Value, Some(value)) => (value.w.as_slice(), value.b),
+            (Target::Head(head), _) => {
+                let at = faction * self.heads.len() + head;
+                (
+                    &self.f(&self.readout)[at * width..][..width],
+                    self.f(&self.readout_b)[at],
+                )
+            }
+            (Target::Value, None) => return Err(InferError::NoValue),
+        };
         kernel::readout::<L>(&z[..rows * width], width, w, b, out);
         Ok(())
     }
@@ -364,7 +460,7 @@ struct Forward<'a> {
     model: &'a Model,
     scratch: &'a mut Scratch,
     faction: usize,
-    head: usize,
+    target: Target,
     options: &'a [Vec<(u32, f32)>],
     out: &'a mut Vec<f32>,
 }
@@ -378,11 +474,11 @@ impl Run for Forward<'_> {
             model,
             scratch,
             faction,
-            head,
+            target,
             options,
             out,
         } = self;
-        model.forward_lanes::<L>(scratch, faction, head, options, out)
+        model.forward_lanes::<L>(scratch, faction, target, options, out)
     }
 }
 
@@ -394,5 +490,43 @@ mod tests {
     fn a_model_is_shared_across_threads() {
         fn shared<T: Send + Sync>() {}
         shared::<Model>();
+    }
+
+    #[test]
+    fn the_value_head_is_a_readout_on_the_trunk_of_the_policy() {
+        let (width, capacity, faction, head) = (128, 300, 5, 3);
+        let mut parts = crate::synthetic::parts(11, width, capacity, 2);
+        // A head whose readout for `faction` is the value readout: no delta, so the packed row is
+        // `w_shared[head]` itself, and the logit of one option is the value of that position.
+        let heads = parts.heads.len();
+        parts.delta[(faction * heads + head) * width..][..width].fill(0.0);
+        parts.b_delta[faction * heads + head] = 0.0;
+        let w = parts.w_shared[head * width..][..width].to_vec();
+        let b = parts.b_shared[head];
+        let bytes = crate::format::write(&crate::synthetic::meta(), &parts).expect("packs");
+        let model = Model::from_bytes(&bytes).expect("loads");
+        assert!(!model.has_value());
+        let mut scratch = Scratch::new();
+        let options = crate::synthetic::options(3, 7, capacity, 40);
+        assert!(matches!(
+            model.value_with(&mut scratch, faction, &options[1]),
+            Err(InferError::NoValue)
+        ));
+        assert!(matches!(
+            model.with_value(vec![0.0; width - 8], 0.0),
+            Err(InferError::Parts(_))
+        ));
+        let model = Model::from_bytes(&bytes)
+            .expect("loads")
+            .with_value(w, b)
+            .expect("a value head");
+        assert!(model.has_value());
+        let logits = model.forward(faction, head, &options).expect("logits");
+        for (option, logit) in options.iter().zip(&logits) {
+            let value = model
+                .value_with(&mut scratch, faction, option)
+                .expect("a value");
+            assert_eq!(value.to_bits(), logit.to_bits());
+        }
     }
 }

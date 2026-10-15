@@ -7,6 +7,8 @@ rust-version.workspace = true
 [dependencies]
 ti4-tensor.workspace = true
 ti4-policy.workspace = true
+# The rollouts of training on the kernels of the page (`infer`).
+ti4-infer.workspace = true
 ti4-engine.workspace = true
 ti4-model.workspace = true
 ti4-content.workspace = true
@@ -32,8 +34,6 @@ ti4-sim.workspace = true
 # Only the `rule_vs_mlp` example seats the rule bot.
 ti4-rule-bot.workspace = true
 ti4-training.workspace = true
-# Only the `infer_parity` test: libtorch against the kernels of the page, decision by decision.
-ti4-infer.workspace = true
 sha2.workspace = true
 serde_json.workspace = true
 
