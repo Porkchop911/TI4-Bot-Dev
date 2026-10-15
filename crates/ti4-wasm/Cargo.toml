@@ -14,6 +14,7 @@ ti4-calc.workspace = true
 ti4-engine.workspace = true
 ti4-rule-bot.workspace = true
 ti4-host.workspace = true
+ti4-infer.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 ts-rs = { workspace = true, optional = true }

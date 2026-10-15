@@ -13,6 +13,7 @@
 //! | `ti4_host_query(len)` | Stateless: `describe`, `map_preview`, `catalog`, `space_odds`, `ground_odds`. |
 //! | `ti4_host_start(len)` | Play a game (JSPI `promising`): returns when it ends or is left. |
 //! | `ti4_host_command(len)` | A command while the game waits for the person. |
+//! | `ti4_infer_check(len)` | The logits of a synthetic MLP model, for the test of the build. |
 //!
 //! The one import is `host.ask() -> i32`. At each call the output buffer holds an [`Envelope`] of
 //! kind `ask` (the page's turn: send its messages to the page, then wait for a command whose
@@ -269,6 +270,23 @@ pub fn put_input(text: &str) -> usize {
     input.clear();
     input.extend_from_slice(text.as_bytes());
     text.len()
+}
+
+// --- the MLP ---------------------------------------------------------------------------------
+
+/// The logits of a synthetic model on some decisions: the input is a request of
+/// `ti4_infer::synthetic::check`, the output its answer. The test of the wasm build compares them
+/// bit for bit with what the native build gives (`fixtures/infer/synthetic_logits.json`).
+pub fn infer_check(len: usize) -> i32 {
+    match input(len).and_then(|request| ti4_infer::synthetic::check(&request)) {
+        Ok(answer) => {
+            let mut out = OUT.lock().expect("out lock");
+            out.clear();
+            out.extend_from_slice(answer.as_bytes());
+            length(out.len())
+        }
+        Err(error) => write_error(error),
+    }
 }
 
 // --- queries -------------------------------------------------------------------------------

@@ -15,11 +15,6 @@ path = "src/bin/pack.rs"
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 
-[dev-dependencies]
-# Without default features, as `ti4-rule-bot` has it, so the web build resolves one set of features.
-rand = { version = "0.9", default-features = false }
-rand_chacha = { workspace = true }
-
 # Cargo requires a crate to restate the workspace lints when it overrides `unsafe_code` from
 # `forbid` to `deny`, so that the `simd` module (the backends and the aligned buffer) can carry
 # `#[allow(unsafe_code)]`. Nothing else in the crate may.

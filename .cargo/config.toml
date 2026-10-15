@@ -6,6 +6,11 @@
 [env]
 LIBTORCH = { value = "out/libtorch-2.9.1-cpu", relative = true }
 
+# The engine of the page runs the MLP on simd128 (`ti4-infer`, `simd/simd128.rs`). Every browser
+# with JSPI, which the engine requires, has it. A `RUSTFLAGS` in the environment replaces this.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "target-feature=+simd128"]
+
 [alias]
 # The crates the browser game is made of, and nothing else: no libtorch, no policy or training
 # crates. One fixed package set, and every alias builds test targets, so all of them resolve the
@@ -39,7 +44,7 @@ t-web-slow = [
     "-p", "ti4-server", "-p", "ti4-wasm", "--lib", "--test", "it", "--", "::slow_",
 ]
 # Writes the TypeScript types of the wire into `web-shared/src/wire/generated/` (`ti4_wasm::wire_ts`),
-# the messages of `fixtures/protocol/` and the catalogue of `fixtures/catalog/`: the tests that check them, with `TI4_WRITE_WIRE=1`. The
+# the messages of `fixtures/protocol/`, the catalogue of `fixtures/catalog/` and the logits of `fixtures/infer/`: the tests that check them, with `TI4_WRITE_WIRE=1`. The
 # package set and the targets of `t-web`, so it builds nothing that `t-web` has not built.
 wire-web = [
     "test",
@@ -48,7 +53,7 @@ wire-web = [
     "-p", "ti4-rule-bot", "-p", "ti4-server", "-p", "ti4-wasm", "-p", "ti4-infer",
     "--lib", "--tests", "--", "--exact", "wire_types::generated_wire_types_are_current",
     "protocol_fixtures::protocol_fixtures_are_current", "fixtures_verification::ensure_and_verify_fixtures",
-    "catalog_fixture::catalog_fixture_is_current",
+    "catalog_fixture::catalog_fixture_is_current", "synthetic_logits_fixture_is_current",
 ]
 # `target/debug/server` for the e2e and the transport tests of web2. The test target is named only
 # so that the features are those of `t-web` (it is small); without it the engine is built again.

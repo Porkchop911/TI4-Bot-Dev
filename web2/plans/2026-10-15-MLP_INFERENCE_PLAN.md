@@ -1,6 +1,6 @@
 # MLP bots without libtorch: inference in ti4-host, on the server and in the page (2026-10-15)
 
-Status: planned. Step 1 done (2026-10-15).
+Status: planned. Step 1 done (2026-10-15). Step 2 done (2026-10-15).
 
 ## Context
 
@@ -137,9 +137,11 @@ the page.
   accumulators, loads 2 vectors of the panel per `k` and broadcasts 4 scalars of A: 11 of the 16
   XMM registers, and the same shape on wasm, whose engines map v128 onto them.
   - The panels are the outer loop and the row blocks the inner loop, so a panel stays in L1 while
-    every option streams past it.
+    every option of the block streams past it.
   - The tail of 1–3 rows uses the same kernel with `const MR: usize`.
-  - A (the activations) is not packed: its rows are contiguous and are read by broadcast.
+  - A (the activations) is broadcast once per block of 32 rows into `[rows][k][4]`, so the
+    micro-kernel loads each broadcast in place of building it at every panel (on SSE a broadcast
+    is a shuffle). The panels are the outer loop inside a block of rows.
   - The epilogue is fused: bias and ReLU (layer 2), or the residual add (blocks).
   - K = width is at most 256, so there is no K blocking.
 - `readout`: `z · w[f][h] + b[f][h]` for every option, with 4-lane partial sums and `hsum`.
@@ -347,8 +349,8 @@ the "+ mlp" cases of `random_bot_lobby.rs`.
 - Each Rust step: `cargo fmt --all -- --check`, `cargo l-web` and `cargo t-web`. When `ti4-host` or
   `ti4-wasm` changed, also `web2/scripts/build-wasm.sh` and `npm test`. When the server changed,
   also `cargo b-web`.
-- Step 2: the bench (`cargo t-web bench -- --ignored`) meets the target. The wasm bit-equality test
-  passes on the release build.
+- Step 2: the bench (`ti4_infer::bench`, run with `ti4-infer` optimized: the command is in its
+  module) meets the target. The wasm bit-equality test passes on the release build.
 - Step 3: `cargo t-mlp-parity` passes with libtorch.
 - Step 4: `cargo t-web-slow` (both hosts).
 - Step 7: `npm run typecheck`, `npm run lint`, `npm test`, `npm run e2e`, and `npm run shots` for

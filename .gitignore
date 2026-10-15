@@ -62,6 +62,9 @@ fixtures/legacy_entropy/*
 # The nicknames that the server and the pages take or refuse (`web-shared/src/identity/nickname.ts`).
 !fixtures/nickname/
 !fixtures/nickname/**
+# The logits of the synthetic MLP models, which the wasm build must give bit for bit (`cargo wire-web`).
+!fixtures/infer/
+!fixtures/infer/**
 
 # Local git worktrees. Gitlinks to them are meaningless to a clone.
 .worktrees/

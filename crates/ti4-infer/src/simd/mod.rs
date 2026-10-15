@@ -14,12 +14,45 @@
 #![allow(unsafe_code)]
 
 mod scalar;
+#[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+mod simd128;
+#[cfg(target_arch = "x86_64")]
+mod sse;
 
+#[cfg(any(
+    test,
+    not(any(
+        target_arch = "x86_64",
+        all(target_arch = "wasm32", target_feature = "simd128")
+    ))
+))]
 pub(crate) use scalar::Scalar;
+#[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+pub(crate) use simd128::Simd128;
+#[cfg(target_arch = "x86_64")]
+pub(crate) use sse::Sse;
 
-/// The backend of this target. `Scalar` everywhere for now; SSE (x86-64) and simd128 (wasm) are
-/// added beside it with the same results.
+/// The backend of this target: `Sse` on x86-64, `Simd128` on wasm with `simd128`, else `Scalar`.
+#[cfg(target_arch = "x86_64")]
+pub(crate) type Native = Sse;
+/// The backend of this target: `Sse` on x86-64, `Simd128` on wasm with `simd128`, else `Scalar`.
+#[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+pub(crate) type Native = Simd128;
+/// The backend of this target: `Sse` on x86-64, `Simd128` on wasm with `simd128`, else `Scalar`.
+#[cfg(not(any(
+    target_arch = "x86_64",
+    all(target_arch = "wasm32", target_feature = "simd128")
+)))]
 pub(crate) type Native = Scalar;
+
+/// The name of [`Native`], for a report (`"sse"`, `"simd128"` or `"scalar"`).
+pub(crate) const NATIVE_NAME: &str = if cfg!(target_arch = "x86_64") {
+    "sse"
+} else if cfg!(all(target_arch = "wasm32", target_feature = "simd128")) {
+    "simd128"
+} else {
+    "scalar"
+};
 
 /// Four f32 lanes.
 pub(crate) trait Lanes {

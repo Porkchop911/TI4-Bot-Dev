@@ -12,6 +12,9 @@ pub(crate) const NR: usize = 8;
 /// The option rows of one micro-kernel call.
 const MR: usize = 4;
 
+/// The option rows that [`gemm`] broadcasts at once.
+const ROW_BLOCK: usize = 32;
+
 /// A key whose unsigned order is the IEEE-754 total order of `value`: −NaN < −∞ < … < −0 < +0 < …
 /// < +∞ < +NaN. Two values with the same bits have the same key.
 ///
@@ -86,11 +89,18 @@ pub(crate) fn canonical_bag(
     Ok(())
 }
 
+/// The vectors of the bag that one pass over the entries keeps in registers.
+const BAG_UNROLL: usize = 8;
+
 /// The first layer of one option: `out = relu(Σ v · W1[column] + identity + b1)`.
 ///
 /// `entries` is a [`canonical_bag`]. Each lane accumulates from zero over the entries in their
 /// order (`acc = acc + v · w`); then the identity is added, then `b1`, then the ReLU. An empty bag
 /// is a zero row.
+///
+/// The row is walked in blocks of `BAG_UNROLL` vectors (then of 2, as `width % 8 == 0`): a block
+/// stays in registers while every entry is added to it. Each element still adds the entries in
+/// their order, so the blocks change nothing of the result.
 pub(crate) fn bag<L: Lanes>(
     w1: &[f32],
     width: usize,
@@ -99,20 +109,41 @@ pub(crate) fn bag<L: Lanes>(
     b1: &[f32],
     out: &mut [f32],
 ) {
-    let out = &mut out[..width];
-    out.fill(0.0);
+    let wide = width - width % (4 * BAG_UNROLL);
+    for start in (0..wide).step_by(4 * BAG_UNROLL) {
+        bag_block::<L, BAG_UNROLL>(w1, width, start, entries, identity, b1, out);
+    }
+    for start in (wide..width).step_by(8) {
+        bag_block::<L, 2>(w1, width, start, entries, identity, b1, out);
+    }
+}
+
+/// The elements `start .. start + 4·VECTORS` of [`bag`].
+#[inline(always)]
+fn bag_block<L: Lanes, const VECTORS: usize>(
+    w1: &[f32],
+    width: usize,
+    start: usize,
+    entries: &[(usize, f32)],
+    identity: &[f32],
+    b1: &[f32],
+    out: &mut [f32],
+) {
+    let mut acc = [L::zero(); VECTORS];
     for &(column, value) in entries {
-        let row = &w1[column * width..(column + 1) * width];
+        let row = &w1[column * width + start..][..4 * VECTORS];
         let v = L::splat(value);
-        for i in (0..width).step_by(4) {
-            let acc = L::load(&out[i..]);
-            L::store(&mut out[i..], L::add(acc, L::mul(v, L::load(&row[i..]))));
+        for (j, acc) in acc.iter_mut().enumerate() {
+            *acc = L::add(*acc, L::mul(v, L::load(&row[4 * j..])));
         }
     }
-    for i in (0..width).step_by(4) {
-        let x = L::add(L::load(&out[i..]), L::load(&identity[i..]));
-        let x = L::add(x, L::load(&b1[i..]));
-        L::store(&mut out[i..], L::relu(x));
+    let identity = &identity[start..][..4 * VECTORS];
+    let b1 = &b1[start..][..4 * VECTORS];
+    let out = &mut out[start..][..4 * VECTORS];
+    for (j, acc) in acc.iter().enumerate() {
+        let x = L::add(*acc, L::load(&identity[4 * j..]));
+        let x = L::add(x, L::load(&b1[4 * j..]));
+        L::store(&mut out[4 * j..], L::relu(x));
     }
 }
 
@@ -125,12 +156,30 @@ pub(crate) enum Epilogue<'a> {
     Residual { z: &'a [f32], bias: &'a [f32] },
 }
 
+impl<'a> Epilogue<'a> {
+    /// The epilogue of the elements `start .. start + len` of the output.
+    fn rows(self, start: usize, len: usize) -> Self {
+        match self {
+            Self::BiasRelu(bias) => Self::BiasRelu(bias),
+            Self::Residual { z, bias } => Self::Residual {
+                z: &z[start..start + len],
+                bias,
+            },
+        }
+    }
+}
+
 /// `c[rows][outs] = epilogue(a[rows][k] · Wᵀ)` with `W [outs][k]` in packed panels.
 ///
 /// A panel holds `NR = 8` outputs: for each `k` in order, the 8 weights `W[p·8 .. p·8+8][k]` side
 /// by side. Each output accumulates from zero over `k = 0, 1, …` in order (`acc = acc + a · w`).
-/// The panels are the outer loop, so a panel stays in cache while every row passes it; the rows go
-/// four at a time, then a tail of 1 to 3.
+///
+/// The rows go in blocks of `ROW_BLOCK`. Each element of a block of `a` is first stored four
+/// times in `splats` (`[rows][k][4]`), once for all the panels, so the micro-kernel loads a
+/// broadcast vector in place of building one at every panel (on SSE a broadcast is a shuffle,
+/// which was the bottleneck). Then the panels are the outer loop, so a panel stays in L1 while the
+/// rows of the block pass it (the block, 128 KiB at width 256, stays in L2); the rows go four at a
+/// time, then a tail of 1 to 3.
 pub(crate) fn gemm<L: Lanes>(
     a: &[f32],
     rows: usize,
@@ -138,20 +187,32 @@ pub(crate) fn gemm<L: Lanes>(
     panels: &[f32],
     outs: usize,
     epilogue: Epilogue<'_>,
+    splats: &mut Vec<f32>,
     c: &mut [f32],
 ) {
-    for p in 0..outs / NR {
-        let panel = &panels[p * k * NR..(p + 1) * k * NR];
-        let mut row = 0;
-        while row + MR <= rows {
-            micro::<L, MR>(a, k, panel, row, p, outs, epilogue, c);
-            row += MR;
+    splats.resize(ROW_BLOCK.min(rows) * k * 4, 0.0);
+    for first in (0..rows).step_by(ROW_BLOCK) {
+        let block = ROW_BLOCK.min(rows - first);
+        let a = &a[first * k..(first + block) * k];
+        for (x, splat) in a.iter().zip(splats.chunks_exact_mut(4)) {
+            L::store(splat, L::splat(*x));
         }
-        match rows - row {
-            3 => micro::<L, 3>(a, k, panel, row, p, outs, epilogue, c),
-            2 => micro::<L, 2>(a, k, panel, row, p, outs, epilogue, c),
-            1 => micro::<L, 1>(a, k, panel, row, p, outs, epilogue, c),
-            _ => {}
+        let splats = &splats[..block * k * 4];
+        let c = &mut c[first * outs..(first + block) * outs];
+        let epilogue = epilogue.rows(first * outs, block * outs);
+        for p in 0..outs / NR {
+            let panel = &panels[p * k * NR..(p + 1) * k * NR];
+            let mut row = 0;
+            while row + MR <= block {
+                micro::<L, MR>(splats, k, panel, row, p, outs, epilogue, c);
+                row += MR;
+            }
+            match block - row {
+                3 => micro::<L, 3>(splats, k, panel, row, p, outs, epilogue, c),
+                2 => micro::<L, 2>(splats, k, panel, row, p, outs, epilogue, c),
+                1 => micro::<L, 1>(splats, k, panel, row, p, outs, epilogue, c),
+                _ => {}
+            }
         }
     }
 }
@@ -159,7 +220,7 @@ pub(crate) fn gemm<L: Lanes>(
 /// `ROWS` rows from `row` against panel `p`: two vector accumulators per row.
 #[inline(always)]
 fn micro<L: Lanes, const ROWS: usize>(
-    a: &[f32],
+    splats: &[f32],
     k: usize,
     panel: &[f32],
     row: usize,
@@ -168,12 +229,13 @@ fn micro<L: Lanes, const ROWS: usize>(
     epilogue: Epilogue<'_>,
     c: &mut [f32],
 ) {
+    let a_rows: [&[f32]; ROWS] = std::array::from_fn(|m| &splats[(row + m) * k * 4..][..k * 4]);
     let mut acc = [[L::zero(); 2]; ROWS];
-    for kk in 0..k {
-        let w0 = L::load(&panel[kk * NR..]);
-        let w1 = L::load(&panel[kk * NR + 4..]);
-        for (m, acc) in acc.iter_mut().enumerate() {
-            let x = L::splat(a[(row + m) * k + kk]);
+    for (kk, w) in panel[..k * NR].chunks_exact(NR).enumerate() {
+        let w0 = L::load(w);
+        let w1 = L::load(&w[4..]);
+        for (a_row, acc) in a_rows.iter().zip(acc.iter_mut()) {
+            let x = L::load(&a_row[kk * 4..]);
             acc[0] = L::add(acc[0], L::mul(x, w0));
             acc[1] = L::add(acc[1], L::mul(x, w1));
         }

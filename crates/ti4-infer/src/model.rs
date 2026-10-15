@@ -78,6 +78,7 @@ pub struct Scratch {
     z: Vec<f32>,
     h: Vec<f32>,
     t: Vec<f32>,
+    splats: Vec<f32>,
 }
 
 impl Scratch {
@@ -244,6 +245,7 @@ impl Model {
             z,
             h,
             t,
+            splats,
         } = scratch;
 
         identity.clear();
@@ -273,6 +275,7 @@ impl Model {
             self.f(&self.w2),
             width,
             Epilogue::BiasRelu(b2),
+            splats,
             h,
         );
         std::mem::swap(z, h);
@@ -287,11 +290,21 @@ impl Model {
                 self.f(&block.w_in),
                 width,
                 Epilogue::BiasRelu(b_in),
+                splats,
                 h,
             );
             let bias = self.f(&block.b_out);
             let epilogue = Epilogue::Residual { z, bias };
-            kernel::gemm::<L>(h, rows, width, self.f(&block.w_out), width, epilogue, t);
+            kernel::gemm::<L>(
+                h,
+                rows,
+                width,
+                self.f(&block.w_out),
+                width,
+                epilogue,
+                splats,
+                t,
+            );
             std::mem::swap(z, t);
         }
 

@@ -1576,6 +1576,14 @@ pub extern "C" fn ti4_host_command(len: u32) -> i32 {
     host_api::command(len as usize)
 }
 
+/// The logits of a synthetic MLP model on the decisions of the input (`host_api::infer_check`),
+/// for the test that the forward of this build gives the bits of the native one. A status of 0 or
+/// more is the length of the answer, below 0 the negated length of an error text in the output.
+#[unsafe(no_mangle)]
+pub extern "C" fn ti4_infer_check(len: u32) -> i32 {
+    host_api::infer_check(len as usize)
+}
+
 fn fill_request(request: &str) -> Result<(), String> {
     let mut buffer = REQUEST.lock().expect("request lock");
     buffer.clear();

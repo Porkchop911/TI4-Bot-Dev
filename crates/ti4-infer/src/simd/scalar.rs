@@ -4,6 +4,16 @@ use super::Lanes;
 
 /// Four f32 in an array. The backend of every target without SIMD kernels, and the reference the
 /// others are tested against.
+#[cfg_attr(
+    any(
+        target_arch = "x86_64",
+        all(target_arch = "wasm32", target_feature = "simd128")
+    ),
+    allow(
+        dead_code,
+        reason = "with a SIMD backend, only the tests and the bench use it"
+    )
+)]
 pub(crate) struct Scalar;
 
 impl Lanes for Scalar {

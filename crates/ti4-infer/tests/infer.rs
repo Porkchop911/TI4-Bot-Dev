@@ -3,13 +3,12 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use rand::{Rng as _, SeedableRng as _};
-use rand_chacha::ChaCha8Rng;
 use serde_json::Value;
 use ti4_infer::format::{self, VERSION};
+use ti4_infer::synthetic::Rng;
 use ti4_infer::{
-    BlockParts, EMBED_DIM, FACTION_ROSTER, InferError, LEGACY_HEADS, Meta, Model, Parts, Scratch,
-    Source, SparseOption, bundle, total_order_key,
+    EMBED_DIM, InferError, LEGACY_HEADS, Meta, Model, Parts, Scratch, SparseOption, bundle,
+    total_order_key,
 };
 
 fn meta() -> Meta {
@@ -20,74 +19,14 @@ fn meta() -> Meta {
     }
 }
 
-fn uniform(rng: &mut ChaCha8Rng, count: usize, bound: f32) -> Vec<f32> {
-    (0..count)
-        .map(|_| rng.random_range(-bound..bound))
-        .collect()
-}
-
 /// A model with seeded random weights, of the legacy residual schema 8.
 fn synthetic(seed: u64, width: usize, capacity: usize, blocks: usize) -> Parts {
-    let mut rng = ChaCha8Rng::seed_from_u64(seed);
-    let heads = LEGACY_HEADS.len();
-    let factions = FACTION_ROSTER.len();
-    let scale = 1.0 / (width as f32).sqrt();
-    Parts {
-        width,
-        capacity,
-        heads: LEGACY_HEADS.iter().map(|head| (*head).to_owned()).collect(),
-        w1: uniform(&mut rng, capacity * width, 0.5),
-        embedding: uniform(&mut rng, factions * EMBED_DIM, 0.5),
-        b1: uniform(&mut rng, width, 0.2),
-        w2: uniform(&mut rng, width * width, 2.0 * scale),
-        b2: uniform(&mut rng, width, 0.2),
-        blocks: (0..blocks)
-            .map(|_| BlockParts {
-                w_in: uniform(&mut rng, width * width, 2.0 * scale),
-                b_in: uniform(&mut rng, width, 0.2),
-                w_out: uniform(&mut rng, width * width, scale),
-                b_out: uniform(&mut rng, width, 0.2),
-            })
-            .collect(),
-        w_shared: uniform(&mut rng, heads * width, scale),
-        b_shared: uniform(&mut rng, heads, 0.5),
-        delta: uniform(&mut rng, factions * heads * width, 0.2 * scale),
-        b_delta: uniform(&mut rng, factions * heads, 0.1),
-        slots: r#"{"slots":[],"capacity":0}"#.to_owned(),
-        battle: None,
-        source: Source {
-            manifest_sha256: "ab".repeat(32),
-            schema: 8,
-            projection_abi: 2,
-        },
-    }
+    ti4_infer::synthetic::parts(seed, width, capacity, blocks)
 }
 
 /// Options with unsorted and repeated columns, an empty one and an already sorted one.
-fn options(rng: &mut ChaCha8Rng, count: usize, capacity: usize) -> Vec<SparseOption> {
-    (0..count)
-        .map(|index| match index % 5 {
-            1 => SparseOption::default(),
-            3 => SparseOption {
-                columns: vec![0, 3, 17, i64::try_from(capacity - 1).unwrap()],
-                values: vec![1.0, 0.5, -2.0, 1.0],
-            },
-            _ => {
-                let len = rng.random_range(1..40);
-                let mut columns: Vec<i64> = (0..len)
-                    .map(|_| rng.random_range(0..i64::try_from(capacity).unwrap()))
-                    .collect();
-                // Repeat a few columns, so duplicates are folded.
-                columns.extend_from_within(..len.min(4));
-                let values = (0..columns.len())
-                    .map(|_| {
-                        f32::from(rng.random_range(-3i8..=3)) * 0.5 + rng.random_range(-0.1..0.1)
-                    })
-                    .collect();
-                SparseOption { columns, values }
-            }
-        })
-        .collect()
+fn options(rng: &mut Rng, count: usize, capacity: usize) -> Vec<SparseOption> {
+    ti4_infer::synthetic::options(rng.next_u64(), count, capacity, 40)
 }
 
 fn relu(x: f32) -> f32 {
@@ -236,7 +175,7 @@ fn a_model_file_round_trips() {
 fn the_forward_is_the_plain_loops_bit_for_bit() {
     let parts = synthetic(11, 128, 500, 2);
     let model = Model::from_bytes(&format::write(&meta(), &parts).unwrap()).unwrap();
-    let mut rng = ChaCha8Rng::seed_from_u64(3);
+    let mut rng = Rng::new(3);
     let mut scratch = Scratch::new();
     let mut out = Vec::new();
     // 1 to 9 options: every tail of the four-row micro-kernel, and more than one block of rows.
@@ -462,7 +401,7 @@ fn the_committed_reviewer_bundle_packs_and_scores() {
     assert_eq!(model.width(), 256);
     assert_eq!(model.slots_json(), parts.slots);
 
-    let mut rng = ChaCha8Rng::seed_from_u64(473_312);
+    let mut rng = Rng::new(473_312);
     let options = options(&mut rng, 7, parts.capacity);
     for (faction, head) in [(27, 3), (9, 12)] {
         let logits = model.forward(faction, head, &options).expect("forward");
@@ -528,4 +467,121 @@ fn safetensors_are_parsed_by_hand() {
     other.extend_from_slice(f16.as_bytes());
     other.extend_from_slice(&file[8 + header.len()..]);
     assert!(bundle::parse_safetensors("t", &other).is_err(), "not f32");
+}
+
+/// The requests of `fixtures/infer/synthetic_logits.json`: two models (widths 128 and 256, 2 and
+/// 1 residual blocks) and decisions of 1 to 37 options.
+fn synthetic_requests() -> Vec<Value> {
+    let cases = |counts: &[usize]| -> Vec<Value> {
+        counts
+            .iter()
+            .enumerate()
+            .map(|(index, &count)| {
+                serde_json::json!({
+                    "seed": 100 + index,
+                    "options": count,
+                    "columns": 60,
+                    "faction": (index * 7) % 33,
+                    "head": (index * 5) % 14,
+                })
+            })
+            .collect()
+    };
+    vec![
+        serde_json::json!({
+            "seed": 11, "width": 128, "capacity": 500, "blocks": 2,
+            "cases": cases(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 13, 37]),
+        }),
+        serde_json::json!({
+            "seed": 12, "width": 256, "capacity": 300, "blocks": 1,
+            "cases": cases(&[1, 3, 6, 11]),
+        }),
+    ]
+}
+
+/// The logits of the synthetic models, which the wasm build must give bit for bit
+/// (`web2/src/session/inferCheck.test.ts`, the forward on simd128). `cargo wire-web` writes the
+/// fixture (this test, with `TI4_WRITE_WIRE`); otherwise the test fails while it differs.
+#[test]
+fn synthetic_logits_fixture_is_current() {
+    let fixture: Vec<Value> = synthetic_requests()
+        .into_iter()
+        .map(|request| {
+            let answer: Value =
+                serde_json::from_str(&ti4_infer::synthetic::check(&request.to_string()).unwrap())
+                    .unwrap();
+            assert_eq!(answer["backend"], ti4_infer::backend());
+            serde_json::json!({
+                "request": request,
+                "digest": answer["digest"],
+                "logits": answer["logits"],
+            })
+        })
+        .collect();
+    let fixture = Value::Array(fixture);
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/infer/synthetic_logits.json");
+    if std::env::var_os("TI4_WRITE_WIRE").is_some_and(|value| value == "1") {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let pretty = serde_json::to_string_pretty(&fixture).unwrap();
+        std::fs::write(&path, format!("{pretty}\n")).unwrap();
+        return;
+    }
+    let kept: Value = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or(Value::Null);
+    assert!(
+        kept == fixture,
+        "fixtures/infer/synthetic_logits.json differs from the logits of the forward; write it \
+         again with `cargo wire-web`"
+    );
+}
+
+#[test]
+fn a_check_request_of_another_shape_is_refused() {
+    use ti4_infer::synthetic::check;
+    assert!(check("not json").is_err());
+    assert!(check(r#"{"seed":1,"width":128,"capacity":500,"blocks":0}"#).is_err());
+    assert!(check(r#"{"seed":1,"width":128,"capacity":10,"blocks":0,"cases":[]}"#).is_err());
+    assert!(check(r#"{"seed":1,"width":130,"capacity":50,"blocks":0,"cases":[]}"#).is_err());
+    let one = r#"{"seed":1,"width":128,"capacity":50,"blocks":0,"cases":[{"seed":1,"options":2,"columns":5,"faction":33,"head":0}]}"#;
+    assert!(check(one).is_err());
+}
+
+/// `ti4-pack` on the committed reviewer bundle writes a file that reads, with the name, the label
+/// and the temperature it was given, and the bytes of an in-memory pack.
+#[test]
+fn the_pack_tool_writes_a_model_file_that_reads() {
+    let dir = std::env::temp_dir().join(format!("ti4-pack-test-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let out = dir.join("reviewer.ti4m");
+    let run = std::process::Command::new(env!("CARGO_BIN_EXE_ti4-pack"))
+        .arg(reviewer_dir())
+        .args(["reviewer"])
+        .arg(&out)
+        .args(["--label", "Reviewer 473312", "--temperature", "0.5"])
+        .output()
+        .expect("ti4-pack runs");
+    let stdout = String::from_utf8_lossy(&run.stdout).into_owned();
+    assert!(
+        run.status.success(),
+        "{stdout}{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let bytes = std::fs::read(&out).unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+    let model = Model::from_bytes(&bytes).expect("the packed file reads");
+    assert_eq!(model.name(), "reviewer");
+    assert_eq!(model.label(), "Reviewer 473312");
+    assert_eq!(model.temperature(), 0.5);
+    assert_eq!(model.width(), 256);
+    assert!(stdout.contains(model.digest()), "{stdout}");
+    let meta = Meta {
+        name: "reviewer".to_owned(),
+        label: "Reviewer 473312".to_owned(),
+        temperature: 0.5,
+    };
+    let parts = bundle::read(&reviewer_dir()).unwrap();
+    assert!(format::write(&meta, &parts).unwrap() == bytes);
 }
