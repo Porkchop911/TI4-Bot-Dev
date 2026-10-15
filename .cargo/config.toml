@@ -17,11 +17,11 @@ LIBTORCH = { value = "out/libtorch-2.9.1-cpu", relative = true }
 # Use `l-web` for every check: Clippy includes the check, and `c-web` builds a second set of
 # metadata of the game crates (it shares nothing with `l-web` or `t-web`). `c-web` stays only so
 # that old references to it still work.
-c-web = "check -p ti4-model -p ti4-content -p ti4-calc -p ti4-engine -p ti4-host -p ti4-rule-bot -p ti4-server -p ti4-wasm --all-targets"
-l-web = "clippy -p ti4-model -p ti4-content -p ti4-calc -p ti4-engine -p ti4-host -p ti4-rule-bot -p ti4-server -p ti4-wasm --all-targets"
+c-web = "check -p ti4-model -p ti4-content -p ti4-calc -p ti4-engine -p ti4-host -p ti4-rule-bot -p ti4-server -p ti4-wasm -p ti4-infer --all-targets"
+l-web = "clippy -p ti4-model -p ti4-content -p ti4-calc -p ti4-engine -p ti4-host -p ti4-rule-bot -p ti4-server -p ti4-wasm -p ti4-infer --all-targets"
 # The fast tier: a test whose name starts with `slow_` is left out (each takes 3 s or more in a
 # debug build; together they are 90% of the test time). A bare `cargo test` still runs them all.
-t-web = "test -p ti4-model -p ti4-content -p ti4-calc -p ti4-engine -p ti4-host -p ti4-rule-bot -p ti4-server -p ti4-wasm --lib --tests -- --skip ::slow_"
+t-web = "test -p ti4-model -p ti4-content -p ti4-calc -p ti4-engine -p ti4-host -p ti4-rule-bot -p ti4-server -p ti4-wasm -p ti4-infer --lib --tests -- --skip ::slow_"
 # The slow tier, and only it: the tests of the server and of the wasm host whose names start with
 # `slow_`. The game crates are optimized a little (opt-level 1): these tests run about 2.5 times
 # faster, and the engine takes several times longer to build, so this is for the gate before a
@@ -45,11 +45,11 @@ wire-web = [
     "test",
     "--config", "env.TI4_WRITE_WIRE=\"1\"",
     "-p", "ti4-model", "-p", "ti4-content", "-p", "ti4-calc", "-p", "ti4-engine", "-p", "ti4-host",
-    "-p", "ti4-rule-bot", "-p", "ti4-server", "-p", "ti4-wasm",
+    "-p", "ti4-rule-bot", "-p", "ti4-server", "-p", "ti4-wasm", "-p", "ti4-infer",
     "--lib", "--tests", "--", "--exact", "wire_types::generated_wire_types_are_current",
     "protocol_fixtures::protocol_fixtures_are_current", "fixtures_verification::ensure_and_verify_fixtures",
     "catalog_fixture::catalog_fixture_is_current",
 ]
 # `target/debug/server` for the e2e and the transport tests of web2. The test target is named only
 # so that the features are those of `t-web` (it is small); without it the engine is built again.
-b-web = "build -p ti4-model -p ti4-content -p ti4-calc -p ti4-engine -p ti4-host -p ti4-rule-bot -p ti4-server -p ti4-wasm --bin server --test content_ids_resolve"
+b-web = "build -p ti4-model -p ti4-content -p ti4-calc -p ti4-engine -p ti4-host -p ti4-rule-bot -p ti4-server -p ti4-wasm -p ti4-infer --bin server --test content_ids_resolve"

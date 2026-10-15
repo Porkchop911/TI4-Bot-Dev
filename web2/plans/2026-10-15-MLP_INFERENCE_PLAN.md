@@ -1,6 +1,6 @@
 # MLP bots without libtorch: inference in ti4-host, on the server and in the page (2026-10-15)
 
-Status: planned.
+Status: planned. Step 1 done (2026-10-15).
 
 ## Context
 

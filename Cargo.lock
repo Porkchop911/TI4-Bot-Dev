@@ -4277,6 +4277,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ti4-infer"
+version = "0.1.0"
+dependencies = [
+ "rand 0.9.5",
+ "rand_chacha 0.9.0",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "ti4-legacy"
 version = "0.1.0"
 dependencies = [
