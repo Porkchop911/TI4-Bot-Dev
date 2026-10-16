@@ -60,3 +60,23 @@ test("phone: the panes are Map, Players and Log, and the open step is a sheet ov
   await fits();
   expect(errors).toEqual([]);
 });
+
+test("phone: with no decision of the viewer open there is no step sheet", async ({ page }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // The other seats wait for a step, so that the page shows the game while another seat decides.
+  await page.addInitScript(() => localStorage.setItem("ti4.local.stepping", "1"));
+  await page.goto("/?local=3&players=8&humans=1");
+  const sheet = page.getByRole("region", { name: "Open step" });
+  await sheet
+    .locator("#step-panel")
+    .getByRole("button", { name: /^8\. Imperial$/ })
+    .click();
+  await page.locator('footer button[aria-keyshortcuts="Enter"]').click();
+  await expect(page.locator("header strong")).toHaveText("Waiting for Hacan");
+  // The board is free; the footer stays under the pane.
+  await expect(sheet).toHaveCount(0);
+  await expect(page.locator("footer").getByRole("button", { name: "Undo" })).toBeInViewport();
+  await page.screenshot({ path: `${SHOTS}/waiting.png`, animations: "disabled" });
+  expect(errors).toEqual([]);
+});

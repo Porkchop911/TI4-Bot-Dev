@@ -236,7 +236,9 @@ export function GameShell({
   // The open step is a sheet over the board. An open fleet, the open landings and the open build
   // of a production have its room; their check mark gives it back.
   const boardSheet = view.board.origin || view.board.landing || view.board.production;
-  const step = !boardSheet && <StepSheet view={view.action} status={view.toolbar.status} />;
+  const step = !boardSheet && (
+    <StepSheet view={view.action} status={view.toolbar.status} asked={view.asked} />
+  );
 
   return (
     <GameProvider seats={view.seats} dispatch={dispatch}>
