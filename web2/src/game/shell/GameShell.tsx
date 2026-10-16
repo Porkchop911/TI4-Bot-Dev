@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { shortcuts, type ExplorationDeck, type GameSession, type Intent } from "../../model";
-import { Badge, Button, Dialog, Drawer, InlineNote, Toast, usePhone } from "../../ui";
-import { ActionFooter, ActionPanel, footerOf } from "../action/ActionPanel";
+import { Badge, Button, Dialog, Drawer, InlineNote, Toast, usePhoneScreen } from "../../ui";
+import { ActionFooter, footerOf } from "../action/ActionPanel";
 import { StepSheet } from "../action/StepSheet";
 import { Board } from "../board/Board";
 import { GameProvider } from "../context";
@@ -49,10 +49,10 @@ const asksTheGame = (intent: Intent): boolean => {
 };
 
 /**
- * The game screen: one toolbar, then the board and the right column (player table, action panel).
- * The right column has one fixed width. The design target is 1920×1080 or larger; see AGENTS.md.
- * A portrait phone shows the map, the players and the log one at a time, with the open step as a
- * sheet over the board and the footer of the action under each of them.
+ * The game screen: one toolbar, then the board with the open step as a sheet over it, and the right
+ * column (player table, log). The right column has one fixed width. The design target is 1920×1080
+ * or larger; see AGENTS.md. A portrait phone shows the map, the players and the log one at a time,
+ * with the footer of the action under each of them.
  * It needs a `GameSession` and nothing else. State that only changes what is in view lives here.
  */
 export function GameShell({
@@ -101,7 +101,7 @@ export function GameShell({
     setDeck(null);
     setDrawer((now) => (now === id ? null : id));
   };
-  const phone = usePhone();
+  const phone = usePhoneScreen();
   // The pane where the open choice is made: a seat is picked in the player table, every other
   // choice is made on the map, where the open step is a sheet over the board.
   const asked: Pane | null = view.players.pick
@@ -233,14 +233,10 @@ export function GameShell({
       onOpenSeat={(seat) => toggleDrawer(`player:${seat}`)}
     />
   );
-  // A phone has the open step as a sheet over the board. An open fleet, the open landings and the
-  // open build of a production have its room; their check mark gives it back.
+  // The open step is a sheet over the board. An open fleet, the open landings and the open build
+  // of a production have its room; their check mark gives it back.
   const boardSheet = view.board.origin || view.board.landing || view.board.production;
-  const board = (
-    <Board view={view.board}>
-      {!boardSheet && <StepSheet view={view.action} status={view.toolbar.status} />}
-    </Board>
-  );
+  const step = !boardSheet && <StepSheet view={view.action} status={view.toolbar.status} />;
 
   return (
     <GameProvider seats={view.seats} dispatch={dispatch}>
@@ -258,15 +254,20 @@ export function GameShell({
               table={!!table}
             />
           }
-          board={<Board view={view.board}>{sheet}</Board>}
+          board={
+            <Board view={view.board}>
+              {step}
+              {sheet}
+            </Board>
+          }
           column={
             <>
               {players}
-              <ActionPanel view={view.action} status={view.toolbar.status} />
+              <LogPanel />
             </>
           }
           panes={[
-            { id: "map", label: "Map", content: board },
+            { id: "map", label: "Map", content: <Board view={view.board}>{step}</Board> },
             { id: "players", label: "Players", content: players, scrolls: true },
             { id: "log", label: "Log", content: <LogPanel />, scrolls: true },
           ]}

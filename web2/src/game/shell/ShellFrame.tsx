@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
-import { cx, usePhone } from "../../ui";
+import { cx, usePhoneScreen } from "../../ui";
 
 /** One part of the shell that a phone shows alone. */
 export interface ShellPane {
@@ -49,7 +49,7 @@ export function ShellFrame({
   /** Dialogs and messages. */
   children?: ReactNode;
 }) {
-  const phone = usePhone();
+  const phone = usePhoneScreen();
   return (
     <main className="flex min-h-0 flex-col" style={{ "--accent": accent } as CSSProperties}>
       {header}

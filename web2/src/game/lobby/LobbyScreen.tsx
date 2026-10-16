@@ -12,7 +12,18 @@ import type {
   LobbyStepView,
   LobbyView,
 } from "../../model";
-import { Button, Drawer, Eyebrow, Hint, Kbd, Peek, Select, Toast, cx, usePhone } from "../../ui";
+import {
+  Button,
+  Drawer,
+  Eyebrow,
+  Hint,
+  Kbd,
+  Peek,
+  Select,
+  Toast,
+  cx,
+  usePhoneScreen,
+} from "../../ui";
 import { Board } from "../board/Board";
 import { GameProvider, SeatSymbol } from "../context";
 import { LinkProvider } from "../link";
@@ -781,7 +792,7 @@ export function LobbyScreen({
   /** The way out: the start screen. A page load. */
   other?: OtherGame;
 }) {
-  const phone = usePhone();
+  const phone = usePhoneScreen();
   const [pane, setPane] = useState<Pane>("players");
   // The row whose choice of the faction is open, by its id. One at a time.
   const [faction, setFaction] = useState<string | null>(null);
