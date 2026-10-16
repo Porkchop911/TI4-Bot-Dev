@@ -1,6 +1,6 @@
 # Review of the shared code of the demo removal, and its cleanup (2026-10-16)
 
-Status: in progress, steps 1–6 done.
+Status: in progress, steps 1–7 done.
 
 ## Context
 
@@ -114,9 +114,11 @@ facts, and asks the engine of the page when it stages something that is not sent
   only in `unresolved_rate`. The client decides what it means: a draw in space, the planet held
   for ground combat. `ti4-calc` documents this on both responses.
 - **The engine says why it offers nothing.**
-  - `ti4-engine/src/movement.rs` gets a function next to the load offers. It returns, for each
-    unit that uses capacity in a system that the movement starts in or passes, why no ship loads
-    it. `MovementFacts.unloadable` maps that function's result. There is no `NotOffered`.
+  - `ti4-engine/src/transit.rs` gets a function next to the load offers (`CargoWindow::for_ship`):
+    `transit::unloadable`. It returns, for each unit that uses capacity in a system that the
+    movement starts in or passes, why no ship loads it (`transit::Unloadable`: a command token,
+    a route of Myru Vos, no capacity), from the same checks as the load offers.
+    `MovementFacts.unloadable` maps that function's result. There is no `NotOffered`.
   - `ProductionWindow` gets a function that returns, for each unit kind that it does not offer,
     the first check that excluded it (technology, supply, blockade, no place, only another, too
     costly, banned, barred). The host maps it to `Unavailable`. `NotOffered` stays only for kinds

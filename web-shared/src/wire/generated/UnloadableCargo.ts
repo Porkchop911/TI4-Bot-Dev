@@ -3,7 +3,8 @@ import type { Unloadable } from "./Unloadable.ts";
 
 /**
  * Units of one kind in one place that use capacity, in a system that a ship of the movement
- * starts in or passes, that no ship can load: they stay where they are.
+ * starts in or passes, that no ship can load: they stay where they are
+ * (`ti4_engine::transit::unloadable`).
  */
 export type UnloadableCargo = { system: string, 
 /**

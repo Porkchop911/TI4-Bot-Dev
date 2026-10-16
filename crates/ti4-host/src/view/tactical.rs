@@ -17,7 +17,8 @@ use ti4_engine::invasion::COMMIT_KIND;
 use ti4_engine::movement::{Board, MovementRules};
 use ti4_engine::production::{PRODUCE_KIND, Spend};
 use ti4_engine::tactical::{ACTIVATE_KIND, Movable, effective_move_value_for_ship, movable_into};
-use ti4_engine::transit::{CargoWindow, LOAD_KIND, rifts_exited};
+pub use ti4_engine::transit::Unloadable;
+use ti4_engine::transit::{CargoSource, CargoWindow, LOAD_KIND, Route, rifts_exited};
 use ti4_model::content_types::SourceSet;
 use ti4_model::id::{PlanetId, PlayerId, SystemId};
 use ti4_model::state::GameState;
@@ -130,21 +131,9 @@ pub struct CargoPool {
     pub count: usize,
 }
 
-/// Why no ship of the movement can load units that use capacity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub enum Unloadable {
-    /// The system has a command token of the seat: nothing is picked up there (95.5).
-    CommandToken,
-    /// No ship with capacity that can move starts in the system or passes it.
-    NoCapacity,
-    /// The game offers them to no ship, for a reason that these facts do not know.
-    NotOffered,
-}
-
 /// Units of one kind in one place that use capacity, in a system that a ship of the movement
-/// starts in or passes, that no ship can load: they stay where they are.
+/// starts in or passes, that no ship can load: they stay where they are
+/// (`ti4_engine::transit::unloadable`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -629,6 +618,7 @@ fn movement(
 
     let mut pools: Vec<PoolKey> = Vec::new();
     let mut ships = Vec::new();
+    let mut routes: Vec<(SystemId, Unit, Vec<String>)> = Vec::new();
     for origin in state.systems_with_units_of(player) {
         if *origin == active {
             continue;
@@ -662,6 +652,7 @@ fn movement(
             });
             let mut loads = Vec::new();
             let r#move = path.map(|(found, path)| {
+                routes.push((origin.clone(), hull.clone(), path.clone()));
                 for key in pools_of(state, content, sources, player, origin, hull, &path) {
                     let place = pools.iter().position(|known| *known == key);
                     loads.push(place.unwrap_or_else(|| {
@@ -720,7 +711,38 @@ fn movement(
         }
     }
 
-    let unloadable = unloadable(state, content, sources, player, &active, &ships, &pools);
+    let routes: Vec<Route<'_>> = routes
+        .iter()
+        .map(|(origin, ship, path)| Route { origin, ship, path })
+        .collect();
+    let mut unloadable: Vec<UnloadableCargo> = Vec::new();
+    for cargo in ti4_engine::transit::unloadable(state, content, sources, player, &active, &routes)
+    {
+        let fact = UnloadableCargo {
+            system: cargo.system.to_string(),
+            source: match cargo.source {
+                CargoSource::Space => None,
+                CargoSource::Planet(planet) => Some(planet.to_string()),
+            },
+            unit: cargo.unit.type_id.to_string(),
+            damaged: cargo.unit.sustained_damage,
+            count: cargo.count,
+            reason: cargo.reason,
+        };
+        // The facts do not tell a galvanized unit from another.
+        match unloadable.iter_mut().find(|known| {
+            known.system == fact.system
+                && known.source == fact.source
+                && known.unit == fact.unit
+                && known.damaged == fact.damaged
+        }) {
+            Some(known) => {
+                known.count += fact.count;
+                known.reason = known.reason.min(fact.reason);
+            }
+            None => unloadable.push(fact),
+        }
+    }
     let standing = ti4_engine::fleet::standing(state, content, sources, player, &active, None);
     let battle = battle(state, content, sources, galaxy, player, &active);
     Some(MovementFacts {
@@ -769,96 +791,6 @@ fn movement(
         })
         .collect(),
     })
-}
-
-/// The units of `player` that use capacity and that no ship can load, in each system that a
-/// ship of the movement starts in or passes, outside `active`, with the reason. A unit that
-/// moves as a ship itself is not cargo.
-fn unloadable(
-    state: &GameState,
-    content: &ContentStore,
-    sources: SourceSet,
-    player: &PlayerId,
-    active: &SystemId,
-    ships: &[ShipFact],
-    pools: &[PoolKey],
-) -> Vec<UnloadableCargo> {
-    let types = catalogue(content, sources);
-    let moving: Vec<(&ShipFact, &MoveFact)> = ships
-        .iter()
-        .filter_map(|ship| ship.r#move.as_ref().map(|route| (ship, route)))
-        .collect();
-    let mut systems: Vec<&String> = Vec::new();
-    for (_, route) in &moving {
-        for system in &route.path {
-            if system != active.as_str() && !systems.contains(&system) {
-                systems.push(system);
-            }
-        }
-    }
-    let mut found: Vec<UnloadableCargo> = Vec::new();
-    for system in systems {
-        let id = SystemId::new(system.clone());
-        let Some(board) = state.board.get(&id) else {
-            continue;
-        };
-        let reason = if board.command_tokens.contains(player) {
-            Unloadable::CommandToken
-        } else if moving
-            .iter()
-            .any(|(ship, route)| ship.capacity > 0 && route.path.contains(system))
-        {
-            Unloadable::NotOffered
-        } else {
-            Unloadable::NoCapacity
-        };
-        let places = std::iter::once((None, board.units.iter().collect::<Vec<_>>())).chain(
-            board
-                .planet_units
-                .iter()
-                .map(|(planet, units)| (Some(planet.to_string()), units.iter().collect())),
-        );
-        for (source, units) in places {
-            for unit in units {
-                let cargo = &unit.owner == player
-                    && types
-                        .get(unit.type_id.as_str())
-                        .is_some_and(|kind| kind.consumes_capacity());
-                // A fighter that moves on its own is a ship of the facts.
-                let sails = source.is_none()
-                    && moving.iter().any(|(ship, _)| {
-                        &ship.origin == system && ship.unit == unit.type_id.as_str()
-                    });
-                let key: PoolKey = (
-                    system.clone(),
-                    source.clone(),
-                    unit.type_id.to_string(),
-                    unit.sustained_damage,
-                    unit.galvanized,
-                );
-                if !cargo || sails || pools.contains(&key) {
-                    continue;
-                }
-                match found.iter_mut().find(|known| {
-                    &known.system == system
-                        && known.source == source
-                        && known.unit == unit.type_id.as_str()
-                        && known.damaged == unit.sustained_damage
-                }) {
-                    Some(known) => known.count += 1,
-                    None => found.push(UnloadableCargo {
-                        system: system.clone(),
-                        source: source.clone(),
-                        unit: unit.type_id.to_string(),
-                        damaged: unit.sustained_damage,
-                        count: 1,
-                        reason,
-                    }),
-                }
-            }
-        }
-    }
-    found
 }
 
 /// The space combat in `active` if `player` moves in: the defender is the seat that the space

@@ -133,8 +133,8 @@ function reasonOf(plan: Plan, ship: ShipFact): string | null {
 /** Why no ship loads units that use capacity. */
 const UNLOADABLE: Record<Unloadable, string> = {
   command_token: "Your command token is here · no pickup",
+  unladen_route: "The ships here pass other players' ships · they carry nothing",
   no_capacity: "No ship with capacity starts or passes here",
-  not_offered: "No ship can load them",
 };
 
 /** "2 Infantry · Planet Jord": units that no ship loads, and where they are. */

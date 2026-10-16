@@ -212,3 +212,22 @@ it("says what no ship can load, and why: in the card of an origin, or under the 
   });
   expect(board.notes["01"]).toBeUndefined();
 });
+
+it("says that the ships of an origin that pass other ships carry nothing", () => {
+  const more: MovementFacts = {
+    ...facts,
+    unloadable: [
+      {
+        system: "01",
+        source: null,
+        unit: "fighter",
+        damaged: false,
+        count: 1,
+        reason: "unladen_route",
+      },
+    ],
+  };
+  expect(selectOrigin(moving, more, {}, "01")!.warning).toBe(
+    "Stay: 1 Fighter (Space area) · The ships here pass other players' ships · they carry nothing",
+  );
+});
