@@ -28,6 +28,7 @@ import { systemLabel } from "./movement";
 import { humanizeId, seatLabel, sentence } from "./names";
 import { printedSource } from "./printed";
 import { interruptOf, reactedAction, selectReaction } from "./reaction";
+import { type PurchaseDraft, selectPurchase } from "./purchase";
 import { selectResearch } from "./research";
 import { type Pools, selectTokens } from "./tokens";
 import { type TurnMenu, isTurnMenu, selectTurn } from "./turn";
@@ -89,6 +90,8 @@ export interface LocalState {
   staged: string | null;
   /** The staged pools of a redistribution of command tokens. Null: the pools of now. */
   pools?: Pools | null;
+  /** The staged gain and purchase of command tokens, with its payment. Null: nothing staged. */
+  purchase?: PurchaseDraft | null;
   /** The nonce of the choice that was answered. Its update is still the latest one. */
   sent: string | null;
   /** Why the game stopped, if it did. */
@@ -236,6 +239,14 @@ function effectOf(choice: Choice, option: ChoiceOption): string | undefined {
 /** A choice of systems or planets is also made on the board. */
 export function boardTask(update: SessionUpdate, local: LocalState): BoardTaskView | null {
   const choice = openChoice(update, local);
+  // Bought command tokens are paid on the map.
+  const buying =
+    choice && !local.draft && !local.follow?.editing
+      ? selectPurchase(update, choice, local.purchase ?? null)
+      : null;
+  if (buying) {
+    return buying.task;
+  }
   const pick = boardPick(update, choice);
   if (!choice || !pick) {
     return null;
@@ -369,6 +380,9 @@ export function selectAction(
   const research = choice && !window ? selectResearch(update, choice, local.staged, printed) : null;
   /** A draft records the answer; the live game sends it. */
   const recording = !!local.draft || !!local.follow?.editing;
+  // A gain or a purchase of command tokens is one screen of the live game, sent as one plan.
+  const purchase =
+    choice && !window && !recording ? selectPurchase(update, choice, local.purchase ?? null) : null;
   const tiles = new Map((update.view.board.map_tiles ?? []).map((tile) => [tile.system_id, tile]));
   const planetOf = (id: string) =>
     (update.view.board.map_tiles ?? [])
@@ -559,16 +573,18 @@ export function selectAction(
         : [{ kind: "note", tone: local.error ? "accent" : "quiet", text: idle }]
       : research
         ? [research.block]
-        : tokens
-          ? [tokens.block]
-          : [
-              // A component action has its card behind "?" of the heading; any other decision has
-              // its source on top.
-              ...(what && !own ? [{ kind: "source" as const, ...what }] : []),
-              ...gauges,
-              ...(chosen ? [chosen] : []),
-              ...(rows.length || !chosen ? [{ kind: "menu" as const, rows }] : []),
-            ];
+        : purchase
+          ? purchase.blocks
+          : tokens
+            ? [tokens.block]
+            : [
+                // A component action has its card behind "?" of the heading; any other decision has
+                // its source on top.
+                ...(what && !own ? [{ kind: "source" as const, ...what }] : []),
+                ...gauges,
+                ...(chosen ? [chosen] : []),
+                ...(rows.length || !chosen ? [{ kind: "menu" as const, rows }] : []),
+              ];
   const viewerName = viewer ? seatLabel(update, viewer, printed) : "";
   return {
     kind: "flow",
@@ -594,7 +610,7 @@ export function selectAction(
           : "",
     badge: local.draft
       ? { tone: "draft", label: "Private draft" }
-      : staged
+      : staged || purchase?.changed
         ? { tone: "draft", label: "Not sent" }
         : null,
     past: null,
@@ -646,18 +662,21 @@ export function selectAction(
           ? turnOf && waitingFor
             ? `Waiting for ${waitingFor}.`
             : ""
-          : tokens
-            ? tokens.note
-            : staged
-              ? `Selected: ${window?.rows.find((row) => row.selected)?.title ?? (research ? research.name(staged.id) : optionText(update, staged, onBoard, seats, printed))}`
-              : window
-                ? ""
-                : research
-                  ? `${research.open} ${research.open === 1 ? "technology can" : "technologies can"} be researched.`
-                  : pickWord
-                    ? `${pickWord} ${onBoard ? "on the map" : "in the player table"}.`
-                    : `Choose one of ${choice.options.length}.`,
+          : purchase
+            ? purchase.note
+            : tokens
+              ? tokens.note
+              : staged
+                ? `Selected: ${window?.rows.find((row) => row.selected)?.title ?? (research ? research.name(staged.id) : optionText(update, staged, onBoard, seats, printed))}`
+                : window
+                  ? ""
+                  : research
+                    ? `${research.open} ${research.open === 1 ? "technology can" : "technologies can"} be researched.`
+                    : pickWord
+                      ? `${pickWord} ${onBoard ? "on the map" : "in the player table"}.`
+                      : `Choose one of ${choice.options.length}.`,
       error: !!local.planNote?.error,
+      ...(purchase?.payment ? { payment: purchase.payment } : {}),
       actions: [
         ...(stepping
           ? [
@@ -673,7 +692,7 @@ export function selectAction(
         ...(choice
           ? [
               // The pools are cleared when the player changed them.
-              ...((tokens ? local.pools : staged)
+              ...((purchase ? purchase.changed : tokens ? local.pools : staged)
                 ? [
                     {
                       label: "Clear",
@@ -698,22 +717,30 @@ export function selectAction(
                       key: "Enter",
                       intent: { type: "reaction" as const, action: "play" as const },
                     }
-                  : research?.pass && !staged
+                  : purchase
                     ? {
-                        // Nothing chosen in the tree is a pass, and the main button says so.
-                        label: recording ? "Record · research nothing" : "Research nothing",
+                        label: purchase.label,
                         tone: "primary" as const,
+                        disabled: !!purchase.problem,
                         key: "Enter",
                         intent: { type: "flow" as const, action: "resolve" as const },
                       }
-                    : {
-                        // A draft sends nothing: the answer is recorded.
-                        label: recording ? "Record" : "Send",
-                        tone: "primary" as const,
-                        disabled: !staged,
-                        key: "Enter",
-                        intent: { type: "flow" as const, action: "resolve" as const },
-                      },
+                    : research?.pass && !staged
+                      ? {
+                          // Nothing chosen in the tree is a pass, and the main button says so.
+                          label: recording ? "Record · research nothing" : "Research nothing",
+                          tone: "primary" as const,
+                          key: "Enter",
+                          intent: { type: "flow" as const, action: "resolve" as const },
+                        }
+                      : {
+                          // A draft sends nothing: the answer is recorded.
+                          label: recording ? "Record" : "Send",
+                          tone: "primary" as const,
+                          disabled: !staged,
+                          key: "Enter",
+                          intent: { type: "flow" as const, action: "resolve" as const },
+                        },
             ]
           : []),
       ],

@@ -1003,6 +1003,119 @@ test("the status phase gains the command tokens in the one redistribution, in th
   expect(errors).toEqual([]);
 });
 
+test("Leadership: the gained and the bought tokens are placed in the pools, paid on the map and sent as one plan", async ({
+  page,
+}) => {
+  // The load of the scenario, the editor, the payment and an undo.
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // Sol holds Leadership with 3 · 3 · 2 on its sheet, 4 trade goods and three ready planets that
+  // pay in influence.
+  await page.goto("/?scenario=strategy_leadership&humans=1");
+  const seat = page.getByRole("region", { name: "Players" }).getByRole("row").filter({
+    hasText: "Seat A",
+  });
+  const planet = (name: string) => page.locator("g.planet").filter({ hasText: name });
+  await expect(heading(page)).toHaveText("Choose an action");
+  await page.keyboard.press("1");
+  await page.keyboard.press("Enter");
+
+  // One screen: the purchase, the pools with the gained tokens, and no question of a pool.
+  await expect(heading(page)).toHaveText("Leadership");
+  await expect(page.getByText(/into which pool/i)).toHaveCount(0);
+  const buy = panel(page).getByRole("heading", { name: "Buy command tokens" }).locator("..");
+  const pools = panel(page).getByRole("heading", { name: "Command pools" }).locator("..");
+  await expect(buy).toContainText("0 bought · 0 influence");
+  await expect(pools).toContainText("3 gained · 0 bought · 0 / 3 placed");
+  await expect(page.locator("footer")).toContainText("Place 3 more tokens.");
+  await expect(send(page)).toBeDisabled();
+  // The printed card is behind the hover of the heading.
+  await panel(page).getByRole("button", { name: "Rules: Leadership" }).hover();
+  await expect(page.getByText(/Gain 3 command tokens/).first()).toBeVisible();
+  await page.mouse.move(0, 0);
+
+  // Two bought tokens: the map is the payment.
+  const more = panel(page).getByRole("button", { name: "Add bought token" });
+  await more.click();
+  await more.click();
+  await expect(buy).toContainText("2 bought · 6 influence");
+  await expect(pools).toContainText("3 gained · 2 bought · 0 / 5 placed");
+  for (const pool of ["tactic", "tactic", "fleet", "strategy", "strategy"]) {
+    await panel(page)
+      .getByRole("button", { name: `Add ${pool} pool token` })
+      .click();
+  }
+  await expect(pools).toContainText("5 / 5 placed");
+  await expect(panel(page).getByRole("button", { name: "Add fleet pool token" })).toBeDisabled();
+  await expect(page.locator("footer")).toContainText("Pay 6 more influence.");
+  const bar = page.getByRole("group", { name: "Payment" });
+  await expect(bar.getByRole("status").first()).toHaveText(/0 \/ 6\s*influence\s*6 more/);
+  await expect(page.locator("g.planet.payable")).toHaveCount(3);
+  await planet("Rarron").click();
+  await bar.getByRole("button", { name: "Pay rest" }).click();
+  await expect(bar.getByRole("status").first()).toHaveText(/6 \/ 6\s*influence\s*✓ Paid/);
+  await expect(page.locator("footer")).toContainText("Tactic 3 → 5 · Fleet 3 → 4 · Strategy 2 → 4");
+  await expect(send(page)).toHaveText(/Buy 2 tokens/);
+  await fitsHeight(page);
+  await page.screenshot({ path: "shots/local/leadership.png", animations: "disabled" });
+
+  // Esc clears the screen; the main button sends all of it, and the game asks nothing more.
+  await page.keyboard.press("Escape");
+  await expect(pools).toContainText("0 / 3 placed");
+  await expect(bar).toHaveCount(0);
+  await more.click();
+  await panel(page).getByRole("button", { name: "Add fleet pool token" }).click();
+  for (const pool of ["tactic", "tactic", "strategy"]) {
+    await panel(page)
+      .getByRole("button", { name: `Add ${pool} pool token` })
+      .click();
+  }
+  await bar.getByRole("button", { name: "Auto-pay" }).click();
+  await expect(bar.getByRole("status").first()).toHaveText(/3 \/ 3\s*influence\s*✓ Paid/);
+  await send(page).click();
+  await expect(heading(page)).toHaveText("End your turn");
+  await expect(seat).toContainText("5 · 4 · 3");
+  expect(errors).toEqual([]);
+});
+
+test("Leadership: the secondary buys tokens on the same screen, with no strategy token", async ({
+  page,
+}) => {
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // Sol and Hacan are played here: Sol plays Leadership and gains its tokens, then Hacan follows.
+  await page.goto("/?scenario=strategy_leadership&humans=3");
+  await expect(heading(page)).toHaveText("Choose an action");
+  await page.keyboard.press("1");
+  await page.keyboard.press("Enter");
+  for (const pool of ["tactic", "fleet", "strategy"]) {
+    await panel(page)
+      .getByRole("button", { name: `Add ${pool} pool token` })
+      .click();
+  }
+  await expect(send(page)).toHaveText(/^Send/);
+  await send(page).click();
+  // Hacan's row opens into the purchase: no pool is gained, and nothing bought is a pass.
+  const hacan = page.getByRole("region", { name: "Players" }).getByRole("row").filter({
+    hasText: "Seat B",
+  });
+  const pools = panel(page).getByRole("heading", { name: "Command pools" }).locator("..");
+  await expect(pools).toContainText("0 bought · 0 / 0 placed");
+  await expect(send(page)).toHaveText(/Buy nothing/);
+  await panel(page).getByRole("button", { name: "Add bought token" }).click();
+  await panel(page).getByRole("button", { name: "Add fleet pool token" }).click();
+  const bar = page.getByRole("group", { name: "Payment" });
+  await bar.getByRole("button", { name: "Auto-pay" }).click();
+  await expect(bar.getByRole("status").first()).toContainText("✓ Paid");
+  await fitsHeight(page);
+  await page.screenshot({ path: "shots/local/leadership-secondary.png", animations: "disabled" });
+  await send(page).click();
+  await expect(hacan).toContainText("3 · 4 · 2");
+  expect(errors).toEqual([]);
+});
+
 test("the Dev sheet leads to a game on the server, on the seed of the page", async ({ page }) => {
   await page.goto("/?local=3&players=8&humans=1");
   await expect(send(page)).toBeDisabled();

@@ -462,44 +462,8 @@ describe("mock engine", () => {
     expect(toasts).toContain("Direct Hit was not offered: it is set to Never offer.");
   });
 
-  it("stages a payment with the least waste, and resets it", () => {
+  it("stages a payment of a production with the least waste", () => {
     const world = createWorld();
-    loadExample(world, "live-strategic");
-    // An open payment is on the board and in the footer, not a block of the panel.
-    const payment = () => {
-      const view = selectShell(world).board.task?.payment;
-      if (!view) {
-        throw new Error("no payment");
-      }
-      return view;
-    };
-    expect(editorBlocks(selectShell(world).action).some((item) => item.kind === "payment")).toBe(
-      false,
-    );
-    expect(payment().actions.map((action) => [action.label, action.disabled])).toEqual([
-      ["Auto-pay", false],
-      ["Clear payment", true],
-    ]);
-    reduce(world, { type: "payment", action: "auto" });
-    expect(payment().paid).toBe(payment().cost);
-    const shown = selectShell(world).action;
-    expect(shown.kind === "flow" && shown.footer.payment).toMatchObject({
-      paid: payment().paid,
-      summary: payment().summary,
-    });
-    expect(payment().goods).toMatchObject({ value: 0, max: 2, rest: null });
-    // Trade goods pay one each. "Pay rest" is the count that makes the payment exact.
-    reduce(world, { type: "payment", action: "reset" });
-    reduce(world, { type: "togglePlanet", planet: "vefut" });
-    expect(payment().goods?.rest).toBe(1);
-    reduce(world, { type: "setPayment", source: "goods", value: 1 });
-    expect(payment().paid).toBe(3);
-    expect(payment().goods).toMatchObject({ value: 1, rest: null });
-    reduce(world, { type: "setPayment", source: "goods", value: 2 });
-    expect(payment().paid).toBe(4);
-    expect(payment().goods?.rest).toBe(1);
-    reduce(world, { type: "payment", action: "reset" });
-    expect(payment().paid).toBe(0);
     loadExample(world, "draft-production");
     reduce(world, { type: "payment", action: "auto" });
     const state = currentState(world);
@@ -715,52 +679,6 @@ describe("mock engine", () => {
       reduce(world, shortcuts(selectShell(world).action).get("3")!);
       reduce(world, { type: "flow", action: "resolve" });
       expect(flow(world).primaryResult).toContain("scored Expand Borders (victory points 6 → 7)");
-    });
-
-    it("one list has every seat; only the row of the viewer is open", () => {
-      const world = open("live-secondary");
-      const rows = () => {
-        const action = selectShell(world).action;
-        if (action.kind !== "flow") {
-          throw new Error("not a flow");
-        }
-        const block = action.blocks[0];
-        if (block.kind !== "seats") {
-          throw new Error("no seat list");
-        }
-        return block.rows;
-      };
-      expect(rows().map((row) => `${row.order} ${row.name} · ${row.status.label}`)).toEqual([
-        "P Alex · Deciding",
-        "1 Blair · Waits for Alex",
-        "2 Casey · Waits for Blair",
-        "3 Bartholomew · Waits for Casey",
-        "4 Erin · Waits for Bartholomew",
-        "5 Maximilian Alexander · Waits for Erin",
-        "6 Gale · Waits for Maximilian Alexander",
-        "7 You · Private draft",
-      ]);
-      expect(
-        rows()
-          .filter((row) => row.open)
-          .map((row) => row.name),
-      ).toEqual(["You"]);
-      expect(selectShell(world).board.task?.kind).toBe("pay");
-      // A resolved seat has what it did on its line. Nothing of a seat that waits.
-      reduce(world, { type: "simulate" });
-      reduce(world, { type: "simulate" });
-      expect(rows()[0]).toMatchObject({ status: { sign: "✓", label: "Resolved" } });
-      expect(rows()[0].text).toContain("Alex gained 3 command tokens");
-      expect(rows()[1].status.label).toBe("Passed");
-      expect(rows()[2].status.label).toBe("Deciding");
-      expect(rows()[2].text).toBeUndefined();
-      // A ready draft closes the row and says what it will do.
-      reduce(world, { type: "payment", action: "auto" });
-      reduce(world, { type: "flow", action: "ready" });
-      expect(rows().some((row) => row.open)).toBe(false);
-      expect(rows()[7].status.label).toBe("Draft ready");
-      expect(rows()[7].text).toContain("Follow: bought 1 token for 3 influence");
-      expect(selectShell(world).board.task).toBeNull();
     });
 
     it("the row of the viewer closes with its result; history has no open row", () => {

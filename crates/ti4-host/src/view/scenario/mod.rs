@@ -135,6 +135,7 @@ pub const SCENARIOS: &[Scenario] = &[
     three_seats::SCORE_STATUS,
     three_seats::SCORE_IMPERIAL,
     three_seats::FULL_GAME,
+    three_seats::STRATEGY_LEADERSHIP,
 ];
 
 /// The scenario with this id.
@@ -1694,6 +1695,31 @@ mod tests {
                 .is_some_and(|unit| unit == "warsun")
         }));
         assert_eq!(find(&facts, "warsun").unavailable, None);
+    }
+
+    #[test]
+    fn the_strategy_scenario_gives_sol_its_card_and_what_the_card_needs() {
+        let content = ContentStore::embedded();
+        let ids: Vec<PlayerId> = ["a", "b", "c"].map(PlayerId::new).to_vec();
+        let (state, _) = start(content, "strategy_leadership", &ids, 42).expect("it starts");
+        let [sol, hacan] = [&ids[0], &ids[1]].map(|id| state.player(id).expect("a seat"));
+        assert_eq!(sol.strategy_cards, [StrategyCardId::new("pok1leadership")]);
+        assert!(
+            hacan
+                .strategy_cards
+                .iter()
+                .all(|card| card.as_str() != "pok1leadership")
+        );
+        assert_eq!((sol.trade_goods, hacan.trade_goods), (4, 3));
+        assert_eq!(state.active.as_ref(), Some(&ids[0]));
+        // Its command token on a system next to its home, and exhausted planets of another.
+        assert_eq!(state.systems_with_token(&ids[0]).len(), 1);
+        assert!(
+            state
+                .controlled_planets(&ids[0])
+                .iter()
+                .any(|(_, planet)| state.exhausted_planets.contains(*planet))
+        );
     }
 
     #[test]

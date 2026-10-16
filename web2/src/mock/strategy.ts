@@ -22,6 +22,7 @@ type State = any;
 
 /** The printed text of each card, shown behind hover. */
 export const STRATEGY_TEXT: Record<number, { primary: string; secondary: string }> = {
+  // Leadership is still in the history of the demo (`h-leadership`).
   1: {
     primary: "Gain 3 command tokens. Then buy any number of tokens for 3 influence each.",
     secondary:
@@ -249,72 +250,6 @@ const base = (): Editor => ({
 
 const followed = (primary: boolean, text: string) =>
   primary ? `Jamie ${text}.` : `Followed · ${text}`;
-
-// ---- 1 Leadership --------------------------------------------------------------------------------
-
-function leadership(state: State, primary: boolean): Editor {
-  const own = state.flow.mine;
-  const free: number = E.flowFree(state);
-  const total = free + own.buy;
-  const placed = own.pools.t + own.pools.f + own.pools.s;
-  const pools: RowView[] = (
-    [
-      ["t", "Tactic pool", 0],
-      ["f", "Fleet pool", 1],
-      ["s", "Strategy pool", 2],
-    ] as const
-  ).map(([key, name, index]) => ({
-    title: [name],
-    tokens: { now: ME.tokens[index], after: ME.tokens[index] + own.pools[key], up: key === "f" },
-    control: {
-      kind: "counter",
-      counter: {
-        id: `pools.${key}`,
-        value: own.pools[key],
-        max: own.pools[key] + Math.max(0, total - placed),
-        label: name.toLowerCase() + " token",
-      },
-    },
-  }));
-  return {
-    ...base(),
-    blocks: [
-      {
-        kind: "card",
-        title: "Buy command tokens",
-        aside: `${own.buy} bought · ${own.buy * 3} influence`,
-        rows: [
-          {
-            icon: "token",
-            title: ["Command tokens"],
-            subtitle: "3 influence each",
-            control: {
-              kind: "counter",
-              counter: { id: "buy", value: own.buy, max: 3, label: "bought token" },
-            },
-          },
-        ],
-      },
-      {
-        kind: "card",
-        title: "Place in your pools",
-        aside: `${free ? `${free} gained + ` : ""}${own.buy} bought · ${placed} / ${total} placed`,
-        bad: placed !== total,
-        rows: pools,
-      },
-    ],
-    problem: E.flowProblem(state),
-    staged: own.buy > 0 || placed > 0,
-    pass: !own.buy,
-    cost: { amount: own.buy * 3, key: "inf" },
-    task: own.buy ? payTask(own.buy * 3, "inf", own.pay) : null,
-    result: primary
-      ? `Jamie gained 3 command tokens${own.buy ? ` and bought ${own.buy} for ${own.buy * 3} influence` : ""}.`
-      : own.buy
-        ? `Followed · bought ${plural(own.buy, "token")} for ${own.buy * 3} influence`
-        : "Passed",
-  };
-}
 
 // ---- 2 Diplomacy ---------------------------------------------------------------------------------
 
@@ -944,7 +879,7 @@ export function strategyEditor(state: State, seats: string[]): Editor {
     case 8:
       return imperial(state, primary);
     default:
-      return leadership(state, primary);
+      return base();
   }
 }
 

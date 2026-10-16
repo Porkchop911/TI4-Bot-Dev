@@ -693,10 +693,11 @@ test("a secondary is drafted in one tab while a rule bot takes its time, and the
   await expect(panel(other).getByRole("heading", { name: "Leadership" })).toBeVisible();
   await expect(panel(other).getByText("✎ Private draft")).toBeVisible();
   await expect(title(other)).toHaveText("Waiting for Ada");
-  for (const answer of ["Tactic pool", "Tactic pool", "Tactic pool", "Spend nothing further"]) {
-    await panel(page).getByRole("button", { name: answer }).click();
-    await send(page).click();
+  // The gained tokens go to the tactic pool, and nothing is bought: one screen, one plan.
+  for (let token = 0; token < 3; token++) {
+    await panel(page).getByRole("button", { name: "Add tactic pool token" }).click();
   }
+  await send(page).click();
   // The first seat after the host is a rule bot. It takes a second for each of its answers, and
   // every tab reads who the game waits for.
   for (const tab of [page, other]) {
@@ -772,10 +773,11 @@ test("a ready secondary of a seat in two tabs is sent once, by the server, with 
   await expect(send(one)).toHaveText(/^Mark draft ready/);
   await send(one).click();
   await expect(panel(two).getByText("✎ Draft ready")).toBeVisible();
-  for (const answer of ["Tactic pool", "Tactic pool", "Tactic pool", "Spend nothing further"]) {
-    await panel(page).getByRole("button", { name: answer }).click();
-    await send(page).click();
+  // The gained tokens go to the tactic pool, and nothing is bought: one screen, one plan.
+  for (let token = 0; token < 3; token++) {
+    await panel(page).getByRole("button", { name: "Add tactic pool token" }).click();
   }
+  await send(page).click();
 
   // The game comes to Blair: the server sends the draft, and the seat is not asked. The
   // strategic action is over with no answer of a tab, and no tab is told that the game went on

@@ -208,6 +208,7 @@ pub fn needless(entries: &[DraftStep]) -> bool {
                     | PlanStep::Pay { .. }
                     | PlanStep::Place { .. }
                     | PlanStep::DoneProducing
+                    | PlanStep::Purchase { buy: false }
             )
         )
     })

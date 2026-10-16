@@ -84,6 +84,14 @@ import type { CardSettings } from "./select/cards";
 import { systemLabel } from "./select/movement";
 import { selectShell } from "./select/shell";
 import { tacticalFacts } from "./select/tactical";
+import {
+  countPurchase,
+  payPurchase,
+  purchasePlan,
+  selectPurchase,
+  setPurchaseGoods,
+  togglePurchasePlanet,
+} from "./select/purchase";
 import { countPools, selectTokens } from "./select/tokens";
 import type { Transport } from "./transport";
 import type { DraftOutcome, DraftStep, PlanScope, ReactionModes, SessionUpdate } from "./wire";
@@ -92,6 +100,7 @@ const NOTHING: LocalState = {
   inspected: null,
   staged: null,
   pools: null,
+  purchase: null,
   sent: null,
   error: null,
   replaying: null,
@@ -585,6 +594,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           inspected,
           staged: null,
           pools: null,
+          purchase: null,
           sent: null,
           error: null,
           offline: false,
@@ -883,6 +893,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         ...now,
         staged: null,
         pools: null,
+        purchase: null,
         inspected: null,
         handled: [],
         step: null,
@@ -916,6 +927,11 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
     const moving = facts?.kind === "movement" ? facts : null;
     const landing = facts?.kind === "invasion" ? facts : null;
     const producing = facts?.kind === "production" ? facts : null;
+    /** A gain or a purchase of command tokens of the live game: one screen, sent as one plan. */
+    const buying =
+      pending && !drafted && !followInfo?.editing && selectPurchase(shown, pending.choice, null)
+        ? pending
+        : null;
     /** The game can be asked for a staged production: it is paid, and within its limits. */
     const paidFor = (staged: ProductionDraft) => {
       const { units, cost, paid } = producing
@@ -1080,6 +1096,15 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         );
         return setLocal((now) => ({ ...now, sent: pending.nonce, planNote: null }));
       }
+      // A gain or a purchase of command tokens is sent as one plan, with its payment.
+      if (buying) {
+        const steps = purchasePlan(buying.choice, local.purchase ?? null);
+        if (steps) {
+          transport.submitPlan(pending.nonce, { destination: "", steps });
+          setLocal((now) => ({ ...now, purchase: null, sent: pending.nonce, planNote: null }));
+        }
+        return;
+      }
       const chosen = pools ? pools.staged : (local.staged ?? pass);
       if (chosen) {
         transport.submitChoice(pending.nonce, chosen);
@@ -1218,6 +1243,11 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
               produce((now) => togglePlanet(producing, now, planet))
             );
           }
+          if (buying) {
+            // A planet pays for the bought command tokens.
+            const paying = togglePurchasePlanet(buying.choice, local.purchase ?? null, planet);
+            return paying && setLocal((now) => ({ ...now, purchase: paying }));
+          }
           if (!landing) {
             // A planet of a choice on the board: its option is staged.
             const option = optionOnBoard(shown, pending?.choice ?? null, planet);
@@ -1234,12 +1264,20 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           );
         }
         case "setPayment":
+          if (buying) {
+            const goods = setPurchaseGoods(buying.choice, local.purchase ?? null, intent.value);
+            return goods && setLocal((now) => ({ ...now, purchase: goods }));
+          }
           return (
             producing &&
             intent.source === GOODS &&
             produce((now) => setGoods(producing, now, intent.value))
           );
         case "payment":
+          if (buying) {
+            const paid = payPurchase(buying.choice, local.purchase ?? null, intent.action);
+            return paid && setLocal((now) => ({ ...now, purchase: paid }));
+          }
           return (
             producing &&
             produce((now) =>
@@ -1268,7 +1306,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           // Esc in the payment of a production goes back to its build.
           return producing && local.productionStage === "pay"
             ? toBuild(producing.system)
-            : setLocal((now) => ({ ...now, staged: null, pools: null }));
+            : setLocal((now) => ({ ...now, staged: null, pools: null, purchase: null }));
         case "undo":
           if (drafted) {
             return redraft(undo);
@@ -1381,6 +1419,15 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           return setLocal((now) => ({ ...now, staged: null, sent: pending.nonce }));
         }
         case "flowCount": {
+          if (buying) {
+            const bought = countPurchase(
+              buying.choice,
+              local.purchase ?? null,
+              intent.key,
+              intent.value,
+            );
+            return bought && setLocal((now) => ({ ...now, purchase: bought }));
+          }
           // A counter of a pool of command tokens: the arrangement is staged when it is offered.
           const counted =
             pending && countPools(pending.choice, state.pools ?? null, intent.key, intent.value);

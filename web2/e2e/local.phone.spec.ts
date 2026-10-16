@@ -680,6 +680,34 @@ test("phone: the command pools of the status phase fit the width, and Send is in
   ).toContainText("3 · 4 · 3");
 });
 
+test("phone: Leadership has the purchase and the pools in the width, and the payment on the map", async ({
+  page,
+}) => {
+  await page.goto("/?scenario=strategy_leadership&humans=1");
+  const panel = page.locator("#step-panel");
+  const panes = page.getByRole("navigation", { name: "Panes" });
+  await panes.getByRole("button", { name: "Action" }).click();
+  await panel.getByRole("button", { name: /^1 Leadership/ }).click();
+  await page.locator('footer button[aria-keyshortcuts="Enter"]').click();
+  await expect(panel.getByRole("heading", { name: "Command pools" })).toBeVisible();
+  await panel.getByRole("button", { name: "Add bought token" }).click();
+  for (const pool of ["tactic", "fleet", "strategy", "strategy"]) {
+    await panel.getByRole("button", { name: `Add ${pool} pool token` }).click();
+  }
+  await expect(page.locator("footer")).toContainText("Pay 3 more influence");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
+    page.viewportSize()!.width,
+  );
+  await page.screenshot({ path: "shots/phone/local/leadership.png", animations: "disabled" });
+  await panes.getByRole("button", { name: "Map" }).click();
+  const bar = page.getByRole("group", { name: "Payment" });
+  await bar.getByRole("button", { name: "Auto-pay" }).click();
+  await expect(bar.getByRole("status").first()).toContainText("✓ Paid");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
+    page.viewportSize()!.width,
+  );
+});
+
 test("phone: the Agendas sheet has the laws and the open groups in its width", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));

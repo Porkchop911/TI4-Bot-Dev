@@ -126,7 +126,7 @@ test.describe("movement", () => {
 
 test.describe("flows", () => {
   test("the three panes", async ({ page }) => {
-    await page.goto("/?example=live-strategic");
+    await page.goto("/?example=live-strategy-2");
     for (const name of ["Map", "Players", "Action"]) {
       await pane(page, name).click();
       await expect(pane(page, name)).toHaveAttribute("aria-pressed", "true");
@@ -135,7 +135,7 @@ test.describe("flows", () => {
   });
 
   test("a tap on a system opens the inspector; two fingers zoom", async ({ page }) => {
-    await page.goto("/?example=live-strategic");
+    await page.goto("/?example=live-strategy-2");
     await pane(page, "Map").click();
     const svg = page.locator(".galaxy svg");
     const before = await svg.getAttribute("viewBox");
@@ -174,16 +174,8 @@ test.describe("flows", () => {
     await shot(page, "flow/inspector");
   });
 
-  test("a payment: the game opens on the map, the main button stays", async ({ page }) => {
-    await page.goto("/?example=live-strategic");
-    await expect(pane(page, "Map")).toHaveAttribute("aria-pressed", "true");
-    await page.getByRole("button", { name: /Exhaust Jord/ }).tap();
-    await expect(page.locator("main > footer")).toContainText("Jord 2");
-    await shot(page, "flow/pay");
-  });
-
   test("reference sheets are in a menu and cover the pane", async ({ page }) => {
-    await page.goto("/?example=live-strategic");
+    await page.goto("/?example=live-strategy-2");
     await page.getByRole("button", { name: "Reference and more" }).tap();
     await page.getByRole("menuitem", { name: "Objectives" }).tap();
     await expect(page.getByRole("complementary", { name: "Objectives" })).toBeVisible();
@@ -191,7 +183,7 @@ test.describe("flows", () => {
   });
 
   test("the other app is in the reference menu", async ({ page }) => {
-    await page.goto("/?example=live-strategic");
+    await page.goto("/?example=live-strategy-2");
     await page.getByRole("button", { name: "Reference and more" }).tap();
     await expect(page.getByRole("menuitem", { name: "Local game" })).toBeVisible();
     await shot(page, "flow/menu-other-app");

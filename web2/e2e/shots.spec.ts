@@ -182,23 +182,15 @@ test.describe("flows", () => {
   });
 
   test("rule text opens on hover and stays on click", async ({ page }) => {
-    await page.goto("/?example=live-strategic");
-    const hint = page.getByRole("button", { name: "Rules: Leadership" });
+    await page.goto("/?example=live-strategy-2");
+    const hint = page.getByRole("button", { name: "Rules: Diplomacy" });
     await expect(page.getByRole("note")).toHaveCount(0);
     await hint.hover();
-    await expect(page.getByRole("note")).toContainText("Gain 3 command tokens");
+    await expect(page.getByRole("note")).toContainText("Choose 1 system");
     await hint.click();
     await page.mouse.move(10, 10);
     await expect(page.getByRole("note")).toBeVisible();
     await shot(page, "web2/flow/rules-hint");
-  });
-
-  test("pay on the board only", async ({ page }) => {
-    await page.goto("/?example=live-strategic");
-    await expect(page.locator("#step-panel").getByRole("checkbox")).toHaveCount(0);
-    await page.getByRole("button", { name: /Exhaust Jord/ }).click();
-    await expect(page.locator("#step-panel")).toContainText("Jord 2");
-    await shot(page, "web2/flow/strategic-pay");
   });
 
   test("apply a draft", async ({ page }) => {
@@ -210,7 +202,7 @@ test.describe("flows", () => {
   });
 
   test("secondary, log and history", async ({ page }) => {
-    await page.goto("/?example=live-secondary");
+    await page.goto("/?example=live-secondary-2");
     await page.getByRole("button", { name: "Simulate Alex (demo)" }).click();
     await shot(page, "web2/flow/secondary");
     await page
@@ -264,22 +256,9 @@ test.describe("flows", () => {
     await expect(window).toHaveCount(0);
   });
 
-  test("auto-pay stages a payment on the map; it can be cleared", async ({ page }) => {
-    await page.goto("/?example=live-strategic");
+  test("auto-pay stages a payment of a production on the map", async ({ page }) => {
     const panel = page.locator("#step-panel");
-    // The controls of a payment are on the board; the footer of the panel has its line.
     const bar = page.getByRole("group", { name: "Payment" });
-    await expect(bar).toContainText("0 / 3");
-    await expect(bar).toContainText("3 more");
-    await bar.getByRole("button", { name: "Auto-pay" }).click();
-    await expect(bar).toContainText("✓ Paid");
-    await expect(panel.locator("footer")).toContainText("3 / 3");
-    await expect(panel.getByRole("button", { name: /Resolve primary/ })).toBeEnabled();
-    await shot(page, "web2/flow/auto-pay");
-    await bar.getByRole("button", { name: "Clear payment" }).click();
-    await expect(bar).toContainText("0 / 3");
-    await bar.getByRole("button", { name: "Add trade good" }).click();
-    await expect(panel.locator("footer")).toContainText("1 trade good");
     await page.goto("/?example=draft-production");
     await bar.getByRole("button", { name: "Auto-pay" }).click();
     await expect(panel.locator("footer")).toContainText("Payment");

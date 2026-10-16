@@ -6,6 +6,7 @@ import type { ActionButtonView, BlockView, FlowActionView, SeatRowView } from ".
 import type { Catalog, ExplorationCatalog, SecondaryFacts, SessionUpdate } from "../wire";
 import { type LocalState, openChoice, selectAction } from "./action";
 import { seatLabel, sentence } from "./names";
+import { selectPurchase } from "./purchase";
 
 /** The seat that the strategic action waits for: the primary, then the first follower to ask. */
 const decidingSeat = (action: SecondaryFacts): string | null =>
@@ -64,17 +65,23 @@ export function selectStrategy(
   // says what it costs (pattern 3).
   const tokens = choice?.details?.kind === "strategy_secondary" ? choice.details : null;
   const left = typeof tokens?.tokens_left === "number" ? tokens.tokens_left : null;
+  // A gain or a purchase of command tokens is one screen of several questions: its blocks say it.
+  const several = !!choice && !follow?.editing && selectPurchase(update, choice, null) !== null;
   const asked: BlockView[] = choice
     ? [
-        {
-          kind: "note",
-          tone: "quiet",
-          strong:
-            tokens?.costs_token === true && left !== null
-              ? `Strategy pool ${left} → ${left - 1}`
-              : undefined,
-          text: sentence(choice.prompt),
-        },
+        ...(several
+          ? []
+          : [
+              {
+                kind: "note" as const,
+                tone: "quiet" as const,
+                strong:
+                  tokens?.costs_token === true && left !== null
+                    ? `Strategy pool ${left} → ${left - 1}`
+                    : undefined,
+                text: sentence(choice.prompt),
+              },
+            ]),
         ...inner.blocks,
       ]
     : [];
@@ -210,8 +217,17 @@ export function selectStrategy(
             ],
           };
   const done = action.open && deciding === null;
+  // The printed text of the card is behind hover: the card of this set, as the catalogue prints it.
+  const card = printed?.records.strategy_cards.find((item) => item.id === action.card);
+  const help = card
+    ? [
+        { title: `${card.name} · Primary`, text: card.primary_text },
+        { title: `${card.name} · Secondary`, text: card.secondary_text },
+      ].filter((item) => item.text)
+    : [];
   return {
     ...inner,
+    help,
     title: "Strategic action",
     subtitle: `${action.name} · ${name(action.primary)}`,
     badge: live ? inner.badge : null,
