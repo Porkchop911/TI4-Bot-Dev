@@ -203,6 +203,10 @@ pub enum GameEventKind {
     DecisionResolved,
     /// A die roll the table would see: gravity rifts, combat, abilities. Carries [`GameEvent::roll`].
     DiceRolled,
+    /// A public change of the state that no decision told (a unit destroyed by the game, the
+    /// end of a combat, a planet taken, a card drawn, an agenda resolved). Carries
+    /// [`GameEvent::fact`] ([`super::state_fact`]).
+    StateChanged,
     PhaseTransition {
         phase: Phase,
         round: u32,

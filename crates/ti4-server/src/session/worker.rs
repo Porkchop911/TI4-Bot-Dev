@@ -135,6 +135,13 @@ pub struct SessionShared {
     pub replay_complete: bool,
     /// How many of the game's rolls the worker has already shown (see `record_rolls`).
     pub rolls_seen: usize,
+    /// The public state that the facts of the state were last taken from, and the end of the
+    /// events that they saw (see `record_state_facts`).
+    pub tally: ti4_host::protocol::state_fact::PublicTally,
+    pub observed_to: usize,
+    /// The facts of the state that the history has after its last decision, at that count of
+    /// decisions: a restart that steps from there tells them once (see `record_state_facts`).
+    pub known_facts: (usize, Vec<ti4_host::protocol::server::PublicFact>),
     pub history_generation: u64,
     pub batches: Vec<ti4_host::batch::BatchRecord>,
     /// Forced random positions of a timeline made by a turn redo, by decision index.
@@ -407,6 +414,9 @@ impl SessionShared {
             history_active: false,
             replaying: false,
             rolls_seen: 0,
+            tally: ti4_host::protocol::state_fact::PublicTally::default(),
+            observed_to: 0,
+            known_facts: (0, Vec::new()),
             redo_events: Vec::new(),
             replay_complete: false,
             history_generation: 0,
@@ -634,6 +644,50 @@ impl SessionShared {
             );
             self.push_event(entry)?;
         }
+        Ok(())
+    }
+
+    /// Publish the facts of the state that the last step changed and no event of it told
+    /// (`ti4_host::protocol::state_fact`). A replay (`live` false) only moves the tally on: the
+    /// players saw those moments.
+    pub fn record_state_facts(
+        &mut self,
+        state: &GameState,
+        version: Option<u64>,
+        live: bool,
+    ) -> Result<(), String> {
+        let start = self.observed_to.min(self.event_log.len());
+        let facts = ti4_host::protocol::state_fact::observe(
+            &mut self.tally,
+            state,
+            &self.event_log[start..],
+        );
+        if live && !facts.is_empty() {
+            let cursor = journal::roll_cursor(&self.event_log);
+            if self.known_facts.0 != cursor {
+                self.known_facts.1.clear();
+            }
+            for observed in facts {
+                if let Some(known) = self.known_facts.1.iter().position(|f| *f == observed.fact) {
+                    self.known_facts.1.remove(known);
+                    continue;
+                }
+                self.event_counter += 1;
+                let entry = journal::build_state_event(
+                    &SystemClock,
+                    &self.game_id,
+                    self.event_counter,
+                    &self.decision_log,
+                    cursor,
+                    state.round,
+                    state.phase,
+                    version,
+                    observed,
+                );
+                self.push_event(entry)?;
+            }
+        }
+        self.observed_to = self.event_log.len();
         Ok(())
     }
 
@@ -1533,6 +1587,22 @@ pub fn spawn_session_worker(
         // How much of the game's roll history is already public: whatever a replay or a resumed
         // copy rolled before this point happened before the players' current view of the game.
         let mut rolls_seen = game.rolls().len();
+        {
+            let mut lock = worker_shared.lock().expect("shared lock");
+            lock.tally = ti4_host::protocol::state_fact::PublicTally::of(&game.state);
+            lock.observed_to = lock.event_log.len();
+            let cursor = journal::roll_cursor(&lock.event_log);
+            let known = lock
+                .event_log
+                .iter()
+                .filter(|event| {
+                    matches!(event.event, GameEventKind::StateChanged)
+                        && event.decision_count == Some(cursor)
+                })
+                .filter_map(|event| event.fact.clone())
+                .collect();
+            lock.known_facts = (cursor, known);
+        }
 
         'worker: loop {
             // Check stop signal
@@ -1763,6 +1833,14 @@ pub fn spawn_session_worker(
                     }
                     rolls_seen = rolled;
                     lock.rolls_seen = rolled;
+                }
+                {
+                    let live = prior_queue.lock().expect("prior queue lock").is_empty();
+                    let version = lock.game_version;
+                    if let Err(error) = lock.record_state_facts(&game.state, Some(version), live) {
+                        lock.error = Some(error);
+                        break 'worker;
+                    }
                 }
                 if !lock.history_active
                     && game.table.log.records.len() - lock.snapshot_decision_count >= 32

@@ -5,4 +5,4 @@ import type { PlayerId } from "./PlayerId.ts";
 /**
  * Typed event payload. Visibility is never inferred from presentation text.
  */
-export type GameEventKind = { "kind": "game_initialized", round: number, phase: Phase, speaker: PlayerId, } | { "kind": "decision_resolved" } | { "kind": "dice_rolled" } | { "kind": "phase_transition", phase: Phase, round: number, } | { "kind": "game_finished", winner: PlayerId | null, };
+export type GameEventKind = { "kind": "game_initialized", round: number, phase: Phase, speaker: PlayerId, } | { "kind": "decision_resolved" } | { "kind": "dice_rolled" } | { "kind": "state_changed" } | { "kind": "phase_transition", phase: Phase, round: number, } | { "kind": "game_finished", winner: PlayerId | null, };

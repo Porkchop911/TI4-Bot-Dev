@@ -71,6 +71,7 @@ use ti4_host::protocol::server::{
     public_roll, verified_event_facts,
 };
 use ti4_host::protocol::staged::StagedSlot;
+use ti4_host::protocol::state_fact::{PublicTally, observe};
 use ti4_host::protocol::status::{RejectionReason, ViewerRole};
 use ti4_host::protocol::view::BoardTileView;
 use ti4_host::setup::TableSeats;
@@ -264,6 +265,8 @@ struct Mark {
     events: usize,
     event_counter: u64,
     rolls_seen: usize,
+    tally: PublicTally,
+    observed_to: usize,
     answers: usize,
     phase: Phase,
     round: u32,
@@ -310,6 +313,10 @@ pub struct HostSession {
     events: Vec<GameEvent>,
     event_counter: u64,
     rolls_seen: usize,
+    /// The public state that the facts of the state were last taken from, and the end of the
+    /// events that they saw ([`ti4_host::protocol::state_fact`]).
+    tally: PublicTally,
+    observed_to: usize,
     prev_phase: Phase,
     prev_round: u32,
     selected: VecDeque<Selected>,
@@ -405,6 +412,8 @@ impl HostSession {
             events: Vec::new(),
             event_counter: 0,
             rolls_seen: 0,
+            tally: PublicTally::of(state),
+            observed_to: 0,
             prev_phase: state.phase,
             prev_round: state.round,
             selected: VecDeque::new(),
@@ -828,6 +837,7 @@ impl HostSession {
             }
             self.rolls_seen = rolled;
         }
+        self.observe_state(&game.state);
         if game.state.phase != self.prev_phase || game.state.round != self.prev_round {
             self.push_event(
                 EventVisibility::Public,
@@ -850,6 +860,31 @@ impl HostSession {
             .scripts
             .after_step(tactical_over, game.state.active.as_ref());
         self.tell_scripts(ended);
+    }
+
+    /// The facts of the state that the step changed and no event of it told.
+    fn observe_state(&mut self, state: &GameState) {
+        let start = self.observed_to.min(self.events.len());
+        let facts = observe(&mut self.tally, state, &self.events[start..]);
+        if !facts.is_empty() {
+            let cursor = journal::roll_cursor(&self.events);
+            for observed in facts {
+                self.event_counter += 1;
+                let entry = journal::build_state_event(
+                    self.clock.as_ref(),
+                    &self.identity.game_id,
+                    self.event_counter,
+                    &self.decision_log,
+                    cursor,
+                    state.round,
+                    state.phase,
+                    Some(self.version),
+                    observed,
+                );
+                self.emit_event(entry);
+            }
+        }
+        self.observed_to = self.events.len();
     }
 
     fn finish(&mut self, state: &GameState) {
@@ -1069,6 +1104,8 @@ impl HostSession {
             events: self.events.len(),
             event_counter: self.event_counter,
             rolls_seen: self.rolls_seen,
+            tally: self.tally.clone(),
+            observed_to: self.observed_to,
             answers: self.answers.len(),
             phase: self.prev_phase,
             round: self.prev_round,
@@ -1108,6 +1145,8 @@ impl HostSession {
         self.events.truncate(mark.events);
         self.event_counter = mark.event_counter;
         self.rolls_seen = mark.rolls_seen;
+        self.tally = mark.tally;
+        self.observed_to = mark.observed_to;
         self.prev_phase = mark.phase;
         self.prev_round = mark.round;
         self.selected.clear();

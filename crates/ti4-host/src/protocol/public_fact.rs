@@ -7,6 +7,8 @@
 //! scored, an action card before it is played (reaction offers, a hand, a discard), the cards or
 //! notes of a transaction, an agenda that was looked at, a hidden roll.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use ti4_engine::choice::{ChoiceOption, DecisionRecord};
 use ti4_engine::decision_context::{DecisionContext, DecisionSource, DecisionTarget};
@@ -135,6 +137,9 @@ pub enum PublicFact {
     },
     PlanetExhaustedForVote {
         planet: String,
+        /// The votes the planet cast, when the option said.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        votes: Option<u32>,
     },
     /// An action card the engine announced as played.
     CardPlayed {
@@ -224,6 +229,80 @@ pub enum PublicFact {
         unit: String,
         system: String,
     },
+    // --- Facts of the state ([`super::state_fact`]): what no decision says. Their event is a
+    // [`super::server::GameEventKind::StateChanged`].
+    /// `count` units of `seat` left the board in `system` (on `planet`, else in space) without
+    /// a decision that chose them: hits the game assigned, anti-fighter barrage, bombardment,
+    /// space cannon, a lost ground combat, the structures of a taken planet. A unit that a
+    /// [`PublicFact::Casualty`] or a [`PublicFact::UnitRemoved`] told is not counted again.
+    Destroyed {
+        seat: PlayerId,
+        unit: String,
+        count: u32,
+        system: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        planet: Option<String>,
+    },
+    /// A space combat in `system`, or a ground combat on `planet`, ended. `winner` is the side
+    /// with units left (`None`: both sides were destroyed, or both stayed); `retreated` is the
+    /// side that retreated.
+    CombatEnded {
+        combat: CombatKind,
+        system: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        planet: Option<String>,
+        attacker: PlayerId,
+        defender: PlayerId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        winner: Option<PlayerId>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        retreated: Option<PlayerId>,
+    },
+    /// `seat` gained control of `planet` in `system`, from `from` when another seat held it.
+    ControlGained {
+        seat: PlayerId,
+        planet: String,
+        system: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        from: Option<PlayerId>,
+    },
+    /// The vote on `agenda` is over: its outcome (`None`: nothing to vote on), the votes cast
+    /// for each outcome, whether the speaker decided it, and whether a law entered play or the
+    /// agenda was discarded.
+    AgendaResolved {
+        agenda: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        outcome: Option<String>,
+        votes: BTreeMap<String, u32>,
+        speaker_decided: bool,
+        law: bool,
+        enacted: bool,
+        discarded: bool,
+    },
+    /// `seat` drew `card` from the exploration deck `deck` for `planet`, or for a frontier
+    /// token in `system`. The card is shown when it is drawn.
+    Explored {
+        seat: PlayerId,
+        card: String,
+        deck: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        planet: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        system: Option<String>,
+    },
+    /// A public objective was revealed.
+    ObjectiveRevealed {
+        objective: String,
+    },
+}
+
+/// The kind of a combat.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub enum CombatKind {
+    Space,
+    Ground,
 }
 
 /// The action a turn took.
@@ -327,6 +406,18 @@ fn count(option: &ChoiceOption) -> Option<u32> {
         .get("count")
         .and_then(serde_json::Value::as_u64)
         .and_then(|count| u32::try_from(count).ok())
+}
+
+/// The votes an option casts: the change of its certain preview of the votes.
+fn cast_votes(option: &ChoiceOption) -> Option<u32> {
+    use ti4_engine::preview::{Outcome, Quantity};
+    let Outcome::Certain { deltas } = &option.preview.as_ref()?.outcome else {
+        return None;
+    };
+    deltas
+        .iter()
+        .find(|delta| delta.quantity == Quantity::Votes)
+        .and_then(|delta| u32::try_from(delta.change()).ok())
 }
 
 /// The system and the planet of a decision about a place.
@@ -734,6 +825,7 @@ fn choice_fact(
         },
         ("vote_exhaust_planet", "vote_planet") => PublicFact::PlanetExhaustedForVote {
             planet: id.strip_suffix("|resources").unwrap_or(id).to_owned(),
+            votes: cast_votes(option),
         },
         ("gain_command_token", "pool") => PublicFact::TokensGained {
             pool: match id {
@@ -1260,10 +1352,17 @@ mod tests {
             ),
             (
                 "vote_exhaust_planet",
-                ChoiceOption::new("jord|resources", "vote_planet"),
+                ChoiceOption::new("jord|resources", "vote_planet").previewed(
+                    ti4_engine::preview::Preview::certain(vec![ti4_engine::preview::Delta::new(
+                        ti4_engine::preview::Quantity::Votes,
+                        2,
+                        5,
+                    )]),
+                ),
                 None,
                 PublicFact::PlanetExhaustedForVote {
                     planet: "jord".into(),
+                    votes: Some(3),
                 },
             ),
             (

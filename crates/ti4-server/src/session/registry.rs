@@ -1318,6 +1318,27 @@ impl GameRegistry {
                 });
             }
         }
+        // What the state of the batch tells that no event of it did, after its last decision.
+        let (mut tally, observed_to) = session.state_tally();
+        let start = observed_to.min(events.len());
+        for observed in
+            ti4_host::protocol::state_fact::observe(&mut tally, &boundary_state, &events[start..])
+        {
+            counter += 1;
+            let mut entry = ti4_host::journal::build_state_event(
+                &ti4_host::clock::SystemClock,
+                game_id,
+                counter,
+                &all_decisions,
+                end_cursor,
+                boundary_state.round,
+                boundary_state.phase,
+                Some(request.expected_version),
+                observed,
+            );
+            entry.timestamp.clone_from(&timestamp);
+            events.push(entry);
+        }
         if let Some(winner) = simulation.winner {
             counter += 1;
             events.push(ti4_host::protocol::server::GameEvent {

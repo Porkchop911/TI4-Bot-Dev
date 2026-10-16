@@ -9,6 +9,7 @@ pub mod reach;
 pub mod server;
 pub mod splice;
 pub mod staged;
+pub mod state_fact;
 pub mod status;
 pub mod turn_redo;
 pub mod view;

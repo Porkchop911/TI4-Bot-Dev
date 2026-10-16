@@ -694,6 +694,14 @@ impl GameSession {
         self.shared.lock().expect("shared lock").rolls_seen
     }
 
+    /// The public state that the worker last took the facts of the state from, and the end of
+    /// the events that they saw.
+    #[must_use]
+    pub fn state_tally(&self) -> (ti4_host::protocol::state_fact::PublicTally, usize) {
+        let lock = self.shared.lock().expect("shared lock");
+        (lock.tally.clone(), lock.observed_to)
+    }
+
     /// Diagnostic: the number of decisions this session did not have to replay because it
     /// started from a copy of the game (`None`: it replayed from the opening state).
     #[must_use]

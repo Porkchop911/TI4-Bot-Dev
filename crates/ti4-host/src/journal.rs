@@ -13,6 +13,7 @@ use crate::protocol::server::{
     DecisionFacts, EventVisibility, GameEvent, GameEventKind, PublicRoll, action_id_for,
     decision_grouping,
 };
+use crate::protocol::state_fact::Observed;
 
 /// What the caller says about an event it records; the journal fills in the rest.
 #[derive(Debug, Clone)]
@@ -245,6 +246,48 @@ pub fn build_roll_event(
         seat_detail: None,
         private_detail: None,
         roll: Some(roll),
+    }
+}
+
+/// The public event of one fact of the state ([`crate::protocol::state_fact`]), grouped as a
+/// roll after `cursor` decisions is.
+#[must_use]
+pub fn build_state_event(
+    clock: &dyn Clock,
+    game_id: &str,
+    counter: u64,
+    decision_log: &[DecisionRecord],
+    cursor: usize,
+    round: u32,
+    phase: Phase,
+    version: Option<u64>,
+    observed: Observed,
+) -> GameEvent {
+    let action = roll_action(decision_log, cursor, phase);
+    GameEvent {
+        id: format!("{game_id}-{counter}"),
+        timestamp: clock.utc_time_string(),
+        version,
+        visibility: EventVisibility::Public,
+        event: GameEventKind::StateChanged,
+        decision_count: Some(cursor),
+        batch_id: None,
+        batch_start_cursor: None,
+        batch_end_cursor: None,
+        action_id: action.action_id,
+        action_start_cursor: action.action_start_cursor,
+        actor: observed.actor,
+        round: Some(round),
+        phase: Some(phase),
+        action_type: action.action_type,
+        action_actor: action.action_actor,
+        stage: None,
+        detail: crate::protocol::state_fact::describe(&observed.fact),
+        movement: None,
+        fact: Some(observed.fact),
+        seat_detail: None,
+        private_detail: None,
+        roll: None,
     }
 }
 

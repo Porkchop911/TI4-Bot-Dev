@@ -35,6 +35,7 @@ export type { ChosenOption } from "./ChosenOption.ts";
 export type { ClientMessage } from "./ClientMessage.ts";
 export type { CombatDieRoll } from "./CombatDieRoll.ts";
 export type { CombatFact } from "./CombatFact.ts";
+export type { CombatKind } from "./CombatKind.ts";
 export type { CombatSide } from "./CombatSide.ts";
 export type { CombatView } from "./CombatView.ts";
 export type { CommandPools } from "./CommandPools.ts";
