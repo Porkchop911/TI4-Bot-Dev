@@ -20,7 +20,9 @@ import {
   InlineNote,
   Kbd,
   ListRow,
+  Press,
   cx,
+  useReadOnly,
 } from "../../ui";
 import { ActionButton, RichText, SeatSymbol, TECH_COLOR, useDispatch } from "../context";
 import { OfferSelect } from "../OfferSelect";
@@ -70,7 +72,9 @@ function Triangle({ up, state }: { up?: boolean; state: TokenState }) {
 function PoolRow({ row }: { row: RowView }) {
   const dispatch = useDispatch();
   const { now, after, up } = row.tokens!;
-  const counter = row.control?.kind === "counter" ? row.control.counter : undefined;
+  // Read-only, the tokens are no control.
+  const readOnly = useReadOnly();
+  const counter = row.control?.kind === "counter" && !readOnly ? row.control.counter : undefined;
   const kept = Math.min(now, after);
   const fewer = !!counter && after > (counter.min ?? 0);
   const more = !!counter && after < counter.max;
@@ -78,9 +82,8 @@ function PoolRow({ row }: { row: RowView }) {
     counter && dispatch({ type: "flowCount", key: counter.id, value });
   const cell = "grid place-items-center rounded-sm px-1 py-1 touch:py-2";
   const button = (key: number, state: TokenState, label: string, value: number) => (
-    <button
+    <Press
       key={key}
-      type="button"
       aria-label={label}
       className={cx(
         cell,
@@ -89,7 +92,7 @@ function PoolRow({ row }: { row: RowView }) {
       onClick={() => step(value)}
     >
       <Triangle up={up} state={state} />
-    </button>
+    </Press>
   );
   const tokens = Array.from({ length: Math.max(now, after) }, (_, index) => {
     const state: TokenState = index < kept ? "kept" : after > now ? "added" : "removed";
@@ -135,15 +138,14 @@ function PoolRow({ row }: { row: RowView }) {
       <span className="flex min-w-0 flex-wrap items-center">
         {tokens}
         {more && after >= now && (
-          <button
-            type="button"
+          <Press
             aria-label={`Add ${counter!.label}`}
             // The size of a token: the border takes a pixel of the padding.
             className="grid place-items-center rounded-sm border border-dashed border-line-strong px-[3px] py-[3px] text-muted hover:bg-raised touch:py-[7px]"
             onClick={() => step(after + 1)}
           >
             <span className="grid h-3.5 w-4 place-items-center text-sm leading-none">+</span>
-          </button>
+          </Press>
         )}
       </span>
     </div>
@@ -225,8 +227,7 @@ function MenuRow({ row, grouped }: { row: MenuRowView; grouped: boolean }) {
       </span>
       {grouped && <span className="text-xs text-muted">{row.group}</span>}
       <span className="flex min-w-0 flex-wrap items-center gap-x-2">
-        <button
-          type="button"
+        <Press
           disabled={row.disabled}
           aria-pressed={row.selected}
           aria-keyshortcuts={row.key}
@@ -234,7 +235,7 @@ function MenuRow({ row, grouped }: { row: MenuRowView; grouped: boolean }) {
           className="truncate text-left text-base font-mid outline-none after:absolute after:inset-0 enabled:cursor-pointer disabled:text-faint phone:whitespace-normal focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-accent"
         >
           {row.title}
-        </button>
+        </Press>
         {row.hint && (
           <span className="relative z-1 inline-flex">
             <Hint label={`Rules: ${row.title}`}>{row.hint}</Hint>
@@ -296,9 +297,8 @@ function Choices({ label, rows }: { label: string; rows: MenuRowView[] }) {
       className="inline-flex flex-none overflow-hidden rounded-md border border-line"
     >
       {rows.map((row) => (
-        <button
+        <Press
           key={row.title}
-          type="button"
           disabled={row.disabled}
           aria-pressed={!!row.selected}
           aria-keyshortcuts={row.key || undefined}
@@ -308,7 +308,7 @@ function Choices({ label, rows }: { label: string; rows: MenuRowView[] }) {
           {row.key && <Kbd>{row.key}</Kbd>}
           {row.selected && <span aria-hidden>✓</span>}
           {row.title}
-        </button>
+        </Press>
       ))}
     </div>
   );
@@ -339,14 +339,13 @@ function DealCard({ item }: { item: DealItemView }) {
       )}
     >
       {item.toggle ? (
-        <button
-          type="button"
+        <Press
           aria-pressed={on}
           onClick={() => dispatch(item.toggle!.intent)}
           className="min-w-0 truncate text-left outline-none after:absolute after:inset-0 enabled:cursor-pointer focus-visible:after:rounded-md focus-visible:after:outline-2 focus-visible:after:outline-accent phone:whitespace-normal"
         >
           {name}
-        </button>
+        </Press>
       ) : (
         <span className="min-w-0 truncate phone:whitespace-normal">{name}</span>
       )}
@@ -503,8 +502,7 @@ function TechCell({ cell }: { cell: TechCellView }) {
             : "border-line/60",
       )}
     >
-      <button
-        type="button"
+      <Press
         disabled={cell.state !== "open"}
         aria-pressed={cell.selected}
         aria-label={`${cell.name}${cell.state === "owned" ? ", researched" : closed ? `, ${missing} prerequisite${missing === 1 ? "" : "s"} missing` : ""}`}
@@ -525,7 +523,7 @@ function TechCell({ cell }: { cell: TechCellView }) {
         )}
         {cell.state === "owned" && <span className="text-green">✓ </span>}
         {cell.name}
-      </button>
+      </Press>
       <span className="flex flex-none gap-[3px]" aria-hidden="true">
         {cell.needs.map((need, index) => (
           <span

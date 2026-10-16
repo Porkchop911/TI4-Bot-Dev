@@ -1,6 +1,13 @@
 import type { OfferMode, OfferView } from "../model";
 import { Select } from "../ui/controls";
+import { useReadOnly } from "../ui/readOnly";
 import { useDispatch } from "./context";
+
+const MODES: Record<OfferMode, string> = {
+  always: "Offered",
+  ownturn: "Only on my turns",
+  never: "Never",
+};
 
 /**
  * When a reaction is offered to the viewer. The same control in the row of a reaction window and
@@ -15,6 +22,10 @@ export function OfferSelect({
   compact?: boolean;
 }) {
   const dispatch = useDispatch();
+  // Read-only, the setting is its word.
+  if (useReadOnly()) {
+    return <span className="text-xs text-muted">{MODES[offer.mode]}</span>;
+  }
   return (
     <Select
       className={

@@ -19,7 +19,8 @@ import { InvasionStep, SpaceCombatStep } from "../steps/BattleSteps";
 import { MovementStep } from "../steps/MovementStep";
 import { ProductionStep } from "../steps/ProductionStep";
 
-function StepContent({ view }: { view: StepContentView }) {
+/** The content of a step of a tactical action. */
+export function StepContent({ view }: { view: StepContentView }) {
   switch (view.kind) {
     case "activation":
       return <ActivationStep view={view} />;
@@ -314,7 +315,7 @@ export function ActionPanel({
 }
 
 /** The entry of a draft that no longer fits: one marked row in its step, with what removes it. */
-function Review({ view }: { view: ReviewView }) {
+export function Review({ view }: { view: ReviewView }) {
   return (
     <Card role="group" aria-label="Needs review">
       <ListRow

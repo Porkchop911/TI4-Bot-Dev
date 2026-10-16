@@ -1,6 +1,6 @@
 import { createContext, useContext, type ReactNode } from "react";
 import type { ActionButtonView, Intent, Rich, SeatId, SeatView, TechColor } from "../model";
-import { Button, Kbd } from "../ui";
+import { Badge, Button, Kbd, ReadOnlyScope, useReadOnly } from "../ui";
 
 const SeatsContext = createContext<Record<SeatId, SeatView>>({});
 const DispatchContext = createContext<(intent: Intent) => void>(() => {});
@@ -18,6 +18,21 @@ export function GameProvider({
     <SeatsContext.Provider value={seats}>
       <DispatchContext.Provider value={dispatch}>{children}</DispatchContext.Provider>
     </SeatsContext.Provider>
+  );
+}
+
+const ignore = () => {};
+
+/**
+ * Content that the viewer reads and does not use: the current action in the Log. Its controls
+ * show their value or state and do nothing (`ReadOnlyScope`), and nothing in it can send an
+ * intent: its dispatch is a no-op.
+ */
+export function ReadOnly({ children }: { children: ReactNode }) {
+  return (
+    <ReadOnlyScope>
+      <DispatchContext.Provider value={ignore}>{children}</DispatchContext.Provider>
+    </ReadOnlyScope>
   );
 }
 
@@ -143,6 +158,11 @@ export function ActionButton({
   describedBy?: string;
 }) {
   const dispatch = useDispatch();
+  const readOnly = useReadOnly();
+  // Read-only, a button is not there; a button that is on is its state.
+  if (readOnly) {
+    return view.pressed ? <Badge tone="done">✓ {view.label}</Badge> : null;
+  }
   return (
     <Button
       tone={view.tone}

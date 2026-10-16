@@ -17,6 +17,10 @@ export function CardHeading({
   bad?: boolean;
   children?: ReactNode;
 }) {
+  // A card whose name is said elsewhere (the heading of a group of the Log) and has no aside.
+  if (!title && children == null) {
+    return null;
+  }
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-2.5 gap-y-1 border-b border-line px-3.5 py-1.5 phone:px-2.5">
       <h3 className="text-base font-semibold">{title}</h3>

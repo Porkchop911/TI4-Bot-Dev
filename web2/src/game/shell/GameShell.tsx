@@ -233,6 +233,8 @@ export function GameShell({
       onOpenSeat={(seat) => toggleDrawer(`player:${seat}`)}
     />
   );
+  // The action that is played now, read-only, under the turns since the viewer's last turn.
+  const log = <LogPanel action={view.action} status={view.toolbar.status} />;
   // The open step is a sheet over the board. An open fleet, the open landings and the open build
   // of a production have its room; their check mark gives it back.
   const boardSheet = view.board.origin || view.board.landing || view.board.production;
@@ -265,13 +267,13 @@ export function GameShell({
           column={
             <>
               {players}
-              <LogPanel />
+              {log}
             </>
           }
           panes={[
             { id: "map", label: "Map", content: <Board view={view.board}>{step}</Board> },
             { id: "players", label: "Players", content: players, scrolls: true },
-            { id: "log", label: "Log", content: <LogPanel />, scrolls: true },
+            { id: "log", label: "Log", content: log, scrolls: true },
           ]}
           pane={pane}
           onPane={(id) => setPane(id as Pane)}

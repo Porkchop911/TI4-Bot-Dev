@@ -1,6 +1,6 @@
 import type { BuildCountView, BuildGroupView, BuildSheetView, BuildUnitView } from "../../../model";
 import { plural } from "../../../model";
-import { Button, Gauge, Icon, Peek, cx } from "../../../ui";
+import { Button, Gauge, Icon, Peek, Press, cx } from "../../../ui";
 import { SystemDetails } from "../../board/SystemDetails";
 import { useDispatch } from "../../context";
 
@@ -296,9 +296,8 @@ export function ProductionSummary({ view }: { view: BuildSheetView }) {
           )}
         </div>
         {view.places.map((place) => (
-          <button
+          <Press
             key={place.id}
-            type="button"
             className={row}
             onClick={() => dispatch({ type: "inspectSystem", system: view.system })}
           >
@@ -310,7 +309,7 @@ export function ProductionSummary({ view }: { view: BuildSheetView }) {
                 "Nothing is produced"
               )}
             </span>
-          </button>
+          </Press>
         ))}
       </div>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-x-4 gap-y-3">

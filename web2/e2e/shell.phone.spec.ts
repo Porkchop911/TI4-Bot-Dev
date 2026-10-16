@@ -1,12 +1,23 @@
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 
 // The shell of a game on a Pixel 9 in portrait. Needs the engine: `scripts/build-wasm.sh`.
 const WASM = fileURLToPath(new URL("../src/session/ti4.wasm", import.meta.url));
 test.skip(!existsSync(WASM), "the engine is not built: run web2/scripts/build-wasm.sh");
 
 const SHOTS = process.env.WEB2_SHOTS ?? "shots/phone/shell";
+
+/**
+ * Nothing in the Log is a control: every button that it has changes what is in view (a group, a
+ * rule text, the rolls of a battle).
+ */
+const readOnly = async (log: Locator) => {
+  await expect(log.locator("input, select, textarea")).toHaveCount(0);
+  await expect(log.locator('button:not([aria-expanded]):not([aria-label="Rolls"] *)')).toHaveCount(
+    0,
+  );
+};
 
 test("phone: the panes are Map, Players and Log, and the open step is a sheet over the board", async ({
   page,
@@ -78,5 +89,58 @@ test("phone: with no decision of the viewer open there is no step sheet", async 
   await expect(sheet).toHaveCount(0);
   await expect(page.locator("footer").getByRole("button", { name: "Undo" })).toBeInViewport();
   await page.screenshot({ path: `${SHOTS}/waiting.png`, animations: "disabled" });
+  expect(errors).toEqual([]);
+});
+
+test("phone: the Log pane has the strategic action that the other seats follow, read-only, its parts in groups", async ({
+  page,
+}) => {
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // The other seats wait for a step: their secondaries wait, and the strategic action stays.
+  await page.addInitScript(() => localStorage.setItem("ti4.local.stepping", "1"));
+  await page.goto("/?local=3&players=8&humans=1");
+  const sheet = page.getByRole("region", { name: "Open step" });
+  const send = page.locator('footer button[aria-keyshortcuts="Enter"]');
+  const row = (name: RegExp) => sheet.locator("#step-panel").getByRole("button", { name });
+  await row(/^1\. Leadership$/).click();
+  await send.click();
+  // The other seats choose their cards; then the viewer has the first turn.
+  const step = page.locator("footer").getByRole("button", { name: "Step" });
+  const leadership = row(/^1 Leadership/);
+  await expect(async () => {
+    if (!(await leadership.isVisible())) {
+      await step.click({ timeout: 500 });
+    }
+    await expect(leadership).toBeVisible({ timeout: 300 });
+  }).toPass({ timeout: 8_000 });
+  await leadership.click();
+  await send.click();
+  // The primary: three command tokens, in the tactic pool.
+  for (let at = 0; at < 3; at++) {
+    await sheet.getByRole("button", { name: /^Add / }).first().click();
+  }
+  await send.click();
+  await expect(page.locator("header strong")).toHaveText(/^Waiting for /);
+
+  await page
+    .getByRole("navigation", { name: "Panes" })
+    .getByRole("button", { name: "Log" })
+    .click();
+  const log = page.getByRole("region", { name: "Log" });
+  const now = log.getByRole("article", { name: "Current action" });
+  await expect(now.getByRole("heading").first()).toHaveText("Leadership");
+  const seats = now.getByRole("button", { name: "Seats" });
+  await expect(seats).toHaveAttribute("aria-expanded", "true");
+  await expect(now).toContainText("✓ Resolved");
+  await readOnly(log);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
+    page.viewportSize()!.width,
+  );
+  await page.screenshot({ path: `${SHOTS}/strategic.png`, animations: "disabled" });
+  await seats.click();
+  await expect(seats).toHaveAttribute("aria-expanded", "false");
+  await expect(now).not.toContainText("✓ Resolved");
   expect(errors).toEqual([]);
 });

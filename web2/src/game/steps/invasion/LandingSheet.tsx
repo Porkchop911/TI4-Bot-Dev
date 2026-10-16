@@ -1,6 +1,6 @@
 import type { GroundOddsView, LandingPlanetView, LandingView } from "../../../model";
 import { GROUND_ODDS_COUNT, forceText, plural } from "../../../model";
-import { Button, Hint, Icon, cx } from "../../../ui";
+import { Button, Hint, Icon, Press, cx } from "../../../ui";
 import { PlanetTraits } from "../../board/PlanetTraits";
 import { BattleTable } from "../../combat/BattleTable";
 import { CombatOdds } from "../../combat/SpaceOdds";
@@ -209,7 +209,7 @@ export function LandingSummary({ view }: { view: LandingView }) {
         Choose a planet on the map to land ground forces.
       </div>
       {view.planets.map((planet) => (
-        <button key={planet.id} type="button" className={row} onClick={open}>
+        <Press key={planet.id} className={row} onClick={open}>
           <strong className="font-mid">{planet.name}</strong>
           <span className="text-xs text-muted">
             {planet.lands ? (
@@ -223,14 +223,14 @@ export function LandingSummary({ view }: { view: LandingView }) {
               Ground combat · {planet.odds.unavailable ? "No odds" : "Win …"}
             </span>
           )}
-        </button>
+        </Press>
       ))}
-      <button type="button" className={row} onClick={open}>
+      <Press className={row} onClick={open}>
         <strong className="font-mid">Space area</strong>
         <span className="text-xs text-muted">
           {view.stays ? `${view.stays} · not landed` : "Every ground force lands"}
         </span>
-      </button>
+      </Press>
     </div>
   );
 }

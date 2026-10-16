@@ -1,6 +1,7 @@
 import type { ButtonHTMLAttributes } from "react";
 import { cx } from "./cx";
 import { Icon, type IconName } from "./Icon";
+import { useReadOnly } from "./readOnly";
 
 export type ButtonTone = "default" | "primary" | "quiet";
 export type ButtonSize = "md" | "sm" | "icon";
@@ -37,6 +38,10 @@ export function Button({
   children,
   ...rest
 }: ButtonProps) {
+  // Read-only content has no actions: what a button does is not there.
+  if (useReadOnly()) {
+    return null;
+  }
   return (
     <button
       type="button"

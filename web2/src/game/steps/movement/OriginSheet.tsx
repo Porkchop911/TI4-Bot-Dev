@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { OriginView } from "../../../model";
 import { plural } from "../../../model";
-import { Button, Icon, cx } from "../../../ui";
+import { Button, Icon, Press, cx } from "../../../ui";
 import { SystemDetails } from "../../board/SystemDetails";
 import { useDispatch } from "../../context";
 import { Stays } from "./parts";
@@ -82,9 +82,8 @@ export function MovementSummary({ origins }: { origins: OriginView[] }) {
         Choose a system on the map to move its ships.
       </div>
       {origins.map((origin) => (
-        <button
+        <Press
           key={origin.system}
-          type="button"
           className="row flex min-h-8 w-full flex-wrap items-baseline gap-x-2.5 px-3.5 py-1 text-left hover:bg-raised [.row+&]:border-t [.row+&]:border-line/50 phone:px-2.5"
           onClick={() => dispatch({ type: "inspectSystem", system: origin.system })}
         >
@@ -106,7 +105,7 @@ export function MovementSummary({ origins }: { origins: OriginView[] }) {
             )}
           </span>
           {origin.warning && <span className="text-xs text-orange">⚠ {origin.warning}</span>}
-        </button>
+        </Press>
       ))}
     </div>
   );
