@@ -442,6 +442,8 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
   const [run, setRun] = useState<DraftRun | null>(null);
   /** Counts the answers of the game to the viewer (`ShellView.reply`). */
   const [reply, setReply] = useState(0);
+  /** Counts the new questions of the viewer (`ShellView.question`). */
+  const [question, setQuestion] = useState(0);
   /** The script that the transport was asked last, and the update of then. An answer for another script is late. */
   const asked = useRef<{ wanted: Wanted; base: SessionUpdate } | null>(null);
   /** The last update, for a change of another tab. */
@@ -546,6 +548,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
       choiceAt = event.update.pending_choice?.nonce;
       if (fresh) {
         replied();
+        setQuestion((now) => now + 1);
       }
       // A new choice starts with nothing staged. The inspector stays where the player left it.
       setLocal((now) => {
@@ -1651,6 +1654,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             (!!followInfo?.waiting && !followOutcome),
           answered: !!shown.pending_choice && state.sent === shown.pending_choice.nonce,
           reply,
+          question,
         },
         dispatch,
         capabilities: {
@@ -1684,6 +1688,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
     cards,
     toast,
     reply,
+    question,
     drafting,
     mine,
     reached,

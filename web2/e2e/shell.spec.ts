@@ -183,3 +183,53 @@ test("desktop: while the other seats follow a strategy card of the viewer, the L
   await expect(now).toContainText("✓ Resolved");
   expect(errors).toEqual([]);
 });
+
+test("desktop: the step sheet minimizes to its heading line, its main button still sends, and a new question opens it again", async ({
+  page,
+}) => {
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/?local=3&players=8&humans=1");
+  const board = page.getByRole("region", { name: "Galaxy board" });
+  const sheet = page.getByRole("region", { name: "Open step" });
+  const send = sheet.locator('footer button[aria-keyshortcuts="Enter"]');
+  const heading = sheet.locator("#step-panel").getByRole("heading").first();
+  const row = (name: RegExp) => sheet.locator("#step-panel").getByRole("button", { name });
+  const minimize = sheet.getByRole("button", { name: "Minimize" });
+  const restore = sheet.getByRole("button", { name: "Restore" });
+
+  // A staged card stays staged while the sheet is minimized: one line and the footer.
+  await row(/^8\. Imperial$/).click();
+  const title = (await heading.textContent())!;
+  await minimize.click();
+  await expect(sheet.locator("#step-panel")).toHaveCount(0);
+  await expect(restore).toContainText(title);
+  const boardBox = (await board.boundingBox())!;
+  const small = (await sheet.boundingBox())!;
+  expect(small.height).toBeLessThan(140);
+  expect(small.height).toBeLessThan(boardBox.height * 0.15);
+  await page.screenshot({ path: `${SHOTS}/minimized.png`, animations: "disabled" });
+  // The line restores it, with what was staged.
+  await restore.click();
+  await expect(row(/^8\. Imperial$/)).toHaveAttribute("aria-pressed", "true");
+  await minimize.click();
+  // The main button sends from the minimized sheet; the next question opens the sheet again.
+  await expect(send).toBeEnabled();
+  await send.click();
+  await expect(row(/^Activate a system$/)).toBeVisible();
+
+  // A choice on the board while minimized keeps it minimized; the next step opens it.
+  await page.keyboard.press("t");
+  await expect(heading).toHaveText("Activation");
+  await minimize.click();
+  await expect(restore).toContainText("Activation");
+  await page.locator("g.system.target:not(.plain)").first().click();
+  await expect(restore).toBeVisible();
+  await expect(send).toBeEnabled();
+  await page.screenshot({ path: `${SHOTS}/minimized-activation.png`, animations: "disabled" });
+  await send.click();
+  await expect(heading).toHaveText("Movement");
+  await expect(minimize).toBeVisible();
+  expect(errors).toEqual([]);
+});

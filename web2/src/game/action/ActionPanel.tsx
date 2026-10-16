@@ -108,6 +108,26 @@ export function ActionFooter({ view: footer }: { view: FooterView }) {
 }
 
 /**
+ * Minimizes the step sheet ("▾", open) or restores it ("▴", minimized): the sheet goes down to its
+ * heading line, and the board is in view.
+ */
+export function SheetToggle({ open, onToggle }: { open: boolean; onToggle?: () => void }) {
+  const label = open ? "Minimize" : "Restore";
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      aria-expanded={open}
+      onClick={onToggle}
+      className="-mx-1 shrink-0 self-center rounded px-1 text-muted hover:text-text touch:min-h-9 touch:min-w-9"
+    >
+      <span aria-hidden="true">{open ? "▾" : "▴"}</span>
+    </button>
+  );
+}
+
+/**
  * The pill of the heading, less what the bar of the game already says: "Your decision" is gone, and
  * "Your decision · Reaction" is "Reaction". A pill that says something else stays as it is.
  */
@@ -144,6 +164,8 @@ interface TaskPanelProps {
   /** Scroll position is kept while this stays the same. */
   contentKey: string;
   labelledBy?: string;
+  /** Minimizes the step sheet to its heading line. Absent where the panel is not a sheet. */
+  onMinimize?: () => void;
   children: ReactNode;
 }
 
@@ -160,6 +182,7 @@ function TaskPanel({
   footer,
   contentKey,
   labelledBy,
+  onMinimize,
   children,
 }: TaskPanelProps) {
   const dispatch = useDispatch();
@@ -174,6 +197,7 @@ function TaskPanel({
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-b border-line px-5 py-[9px] phone:px-3">
         {/* One line: the context gives way with "…" before the pill, "Not sent" or "?" wrap. */}
         <span className="flex min-w-0 max-w-full items-center gap-x-2.5 gap-y-1.5 phone:flex-wrap">
+          {onMinimize && <SheetToggle open onToggle={onMinimize} />}
           <h2
             className="min-w-0 truncate text-lg font-semibold tracking-[-.2px] phone:whitespace-normal"
             title={heading}
@@ -244,12 +268,15 @@ export function ActionPanel({
   view,
   status,
   footer = true,
+  onMinimize,
 }: {
   view: ActionView;
   /** The status in the bar of the game. The pill of the heading does not say it again. */
   status: string;
   /** False when the shell shows `ActionFooter` itself, under every pane. */
   footer?: boolean;
+  /** Minimizes the step sheet to its heading line: "▾" before the heading. */
+  onMinimize?: () => void;
 }) {
   const dispatch = useDispatch();
   const away = view.kind === "tactical" && view.current !== null && view.selected !== view.current;
@@ -289,6 +316,7 @@ export function ActionPanel({
           footer={footer ? view.task.footer : null}
           contentKey={view.contentKey}
           labelledBy={`step-tab-${view.selected}`}
+          onMinimize={onMinimize}
         >
           {view.task.review && <Review view={view.task.review} />}
           <StepContent view={view.task.content} />
@@ -305,6 +333,7 @@ export function ActionPanel({
           help={view.help}
           footer={footer ? view.footer : null}
           contentKey={view.contentKey}
+          onMinimize={onMinimize}
         >
           <Blocks blocks={view.blocks} />
           <Blocks blocks={view.closing} />

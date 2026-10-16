@@ -102,6 +102,10 @@ export function GameShell({
     setDrawer((now) => (now === id ? null : id));
   };
   const phone = usePhoneScreen();
+  // The step sheet is minimized at a question of the viewer; a new question opens it again, and
+  // so does the next step of a tactical action in a draft, as it would in Live.
+  const question = `${view.question ?? 0}:${view.action.kind === "tactical" ? view.action.current : ""}`;
+  const [minimizedAt, setMinimizedAt] = useState<string | null>(null);
   // The pane where the open choice is made: a seat is picked in the player table, every other
   // choice is made on the map, where the open step is a sheet over the board.
   const asked: Pane | null = view.players.pick
@@ -239,7 +243,13 @@ export function GameShell({
   // of a production have its room; their check mark gives it back.
   const boardSheet = view.board.origin || view.board.landing || view.board.production;
   const step = !boardSheet && (
-    <StepSheet view={view.action} status={view.toolbar.status} asked={view.asked} />
+    <StepSheet
+      view={view.action}
+      status={view.toolbar.status}
+      asked={view.asked}
+      minimized={minimizedAt === question}
+      onMinimized={(minimized) => setMinimizedAt(minimized ? question : null)}
+    />
   );
 
   return (

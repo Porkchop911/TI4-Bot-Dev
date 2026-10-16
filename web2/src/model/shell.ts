@@ -339,6 +339,12 @@ export interface ShellView {
    * does not tell.
    */
   reply?: number;
+  /**
+   * Changes with each new question of the viewer: a new open choice of the game (also after an
+   * undo or a plan). An answer to a draft, a refused answer and what is staged do not change it.
+   * Absent: the game does not tell.
+   */
+  question?: number;
 }
 
 /**

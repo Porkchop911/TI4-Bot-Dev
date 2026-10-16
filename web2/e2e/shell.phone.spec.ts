@@ -144,3 +144,40 @@ test("phone: the Log pane has the strategic action that the other seats follow, 
   await expect(now).not.toContainText("✓ Resolved");
   expect(errors).toEqual([]);
 });
+
+test("phone: the step sheet minimizes to its heading line, the main button under the pane still sends, and a new question opens it again", async ({
+  page,
+}) => {
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/?local=3&players=8&humans=1");
+  const board = page.getByRole("region", { name: "Galaxy board" });
+  const sheet = page.getByRole("region", { name: "Open step" });
+  const send = page.locator('footer button[aria-keyshortcuts="Enter"]');
+  const row = (name: RegExp) => sheet.locator("#step-panel").getByRole("button", { name });
+  const minimize = sheet.getByRole("button", { name: "Minimize" });
+  const restore = sheet.getByRole("button", { name: "Restore" });
+
+  await row(/^8\. Imperial$/).click();
+  await minimize.click();
+  // One line at the bottom of the board.
+  await expect(sheet.locator("#step-panel")).toHaveCount(0);
+  const boardBox = (await board.boundingBox())!;
+  const small = (await sheet.boundingBox())!;
+  expect(small.height).toBeLessThan(60);
+  expect(small.y + small.height).toBeCloseTo(boardBox.y + boardBox.height, 0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
+    page.viewportSize()!.width,
+  );
+  await page.screenshot({ path: `${SHOTS}/minimized.png`, animations: "disabled" });
+  await restore.click();
+  await expect(row(/^8\. Imperial$/)).toHaveAttribute("aria-pressed", "true");
+  await minimize.click();
+  // The main button under the pane sends; the next question opens the sheet again.
+  await expect(send).toBeInViewport({ ratio: 1 });
+  await send.click();
+  await expect(row(/^Activate a system$/)).toBeVisible();
+  await expect(minimize).toBeVisible();
+  expect(errors).toEqual([]);
+});
