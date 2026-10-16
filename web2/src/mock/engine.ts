@@ -1496,7 +1496,6 @@ export const flowOpen = (state) => {
     ? flow.stage === "primary"
     : flow.order.includes("sol") && !flow.mine.resolved && flow.stage !== "done";
 };
-export const flowEditing = (state) => flowOpen(state) && !state.flow.mine.ready;
 // The viewer's own action, before its first commit. Nothing is sent yet, so it can be dropped.
 export const flowStaged = (state) =>
   own() &&

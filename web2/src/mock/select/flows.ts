@@ -10,7 +10,7 @@ import type {
 } from "../../model";
 import { ACTION_CARDS, SEATS } from "../data";
 import { E } from "../loose";
-import { STRATEGY_TEXT, strategyEditor } from "../strategy";
+import { STRATEGY_TEXT } from "../strategy";
 import type { State, World } from "../world";
 import { END_TURN, button, closingBlocks, withKeys } from "./shared";
 
@@ -46,7 +46,6 @@ function flowParts(state: State): Parts {
     return publicParts(state, foot);
   }
   const mine: string | null = E.flowOwnRow(state);
-  const myTurn = E.own() && flow.stage === "secondary" && flow.order[flow.turn] === "sol";
   const text = STRATEGY_TEXT[flow.number ?? 1];
   const base = {
     title: [
@@ -80,66 +79,6 @@ function flowParts(state: State): Parts {
     flow.stage === "done"
       ? "Strategic action complete."
       : `Waiting for ${SEATS[wait.seat].name} · ${flow.card} ${flow.stage === "primary" ? "primary" : "secondary"}.`;
-  // The viewer's own row with an open choice: the editor.
-  if (E.flowEditing(state)) {
-    const editor = strategyEditor(state);
-    const error = editor.problem;
-    const clear = editor.staged ? [button({ type: "clearChoice" }, "Clear choice")] : [];
-    const payment = editor.task?.payment;
-    if (mine === "primary") {
-      return {
-        ...base,
-        pill: { tone: "live", label: "Your decision" },
-        blocks: list(editor.blocks),
-        footer: foot(
-          error || "This commits to the live game.",
-          [
-            ...clear,
-            button(
-              { type: "flow", action: "resolve" },
-              editor.main ?? "Resolve primary",
-              "primary",
-              !!error,
-              true,
-            ),
-          ],
-          !!error,
-          payment,
-        ),
-      };
-    }
-    return {
-      ...base,
-      pill: myTurn
-        ? { tone: "live", label: "Your decision" }
-        : { tone: "draft", label: "Private draft" },
-      blocks: list(editor.blocks),
-      footer: foot(
-        error ||
-          (myTurn ? "This commits to the live game." : "Private until your seat is reached."),
-        [
-          ...(myTurn ? [] : sim),
-          ...clear,
-          myTurn
-            ? button(
-                { type: "flow", action: "resolve" },
-                editor.pass ? "Resolve secondary · pass" : "Resolve secondary",
-                "primary",
-                !!error,
-                true,
-              )
-            : button(
-                { type: "flow", action: "ready" },
-                editor.pass ? "Mark draft ready · pass" : "Mark draft ready",
-                "primary",
-                !!error,
-              ),
-        ],
-        !!error,
-        payment,
-      ),
-    };
-  }
   // The viewer's secondary, drafted and ready: it waits for the seat.
   if (E.flowOpen(state) && flow.mine.ready) {
     return {
@@ -241,11 +180,10 @@ function seatLine(state: State, row: string): SeatLine {
       text: `Your seat is after ${before}.`,
     };
   }
-  // A ready draft: what it will do, visible to the viewer only.
-  const editor = strategyEditor(state);
+  // A ready draft, visible to the viewer only.
   return {
     status: { tone: "draft", sign: "✎", label: "Draft ready" },
-    text: `${editor.pass ? "Pass" : `Follow: ${editor.result.replace("Followed · ", "")}`} · not sent, resolves after ${before}`,
+    text: `Not sent, resolves after ${before}`,
   };
 }
 

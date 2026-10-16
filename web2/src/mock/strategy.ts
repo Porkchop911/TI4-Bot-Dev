@@ -1,9 +1,5 @@
 // The strategy cards of the demo: only the history has one (`h-leadership`), read-only. The real
 // game has every card (`src/session/select/`).
-import type { BlockView, BoardTaskView } from "../model";
-
-type State = any;
-
 /** The printed text of each card, shown behind hover. */
 export const STRATEGY_TEXT: Record<number, { primary: string; secondary: string }> = {
   // Leadership is still in the history of the demo (`h-leadership`).
@@ -51,31 +47,3 @@ export const OBJECTIVES: {
     scored: [],
   },
 ];
-export interface Editor {
-  blocks: BlockView[];
-  /** Why the main button cannot send. Empty when it can. */
-  problem: string;
-  /** A secondary with nothing chosen: the viewer passes. */
-  pass: boolean;
-  /** A choice that Esc can clear. */
-  staged: boolean;
-  /** The label of the main button of the primary, when it is not "Resolve primary". */
-  main?: string;
-  cost: { amount: number; key: "res" | "inf" } | null;
-  task: BoardTaskView | null;
-  /** What the sent choice did, in game values. */
-  result: string;
-}
-
-/** The editor of the half of the card that the viewer resolves: the demo has none left. */
-export function strategyEditor(_state: State): Editor {
-  return {
-    blocks: [],
-    problem: "",
-    pass: false,
-    staged: false,
-    cost: null,
-    task: null,
-    result: "",
-  };
-}

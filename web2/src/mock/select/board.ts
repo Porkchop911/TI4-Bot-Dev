@@ -11,7 +11,6 @@ import type {
 import { plural } from "../../model";
 import { ANOMALY, MAP, PAY, RETREATS, SCRIPTED, TECH, U, linesOf } from "../data";
 import { E } from "../loose";
-import { strategyEditor } from "../strategy";
 import { sysLabel, type State, type World } from "../world";
 import { countsForce, isTactical, mapStep, productionPayment, toForce, traitsOf } from "./shared";
 import { movementArrival, movementBoard, movementOrigin } from "./movement";
@@ -78,9 +77,6 @@ function boardTask(world: World, state: State): BoardTaskView | null {
           target: "planet",
         }
       : null;
-  }
-  if (state.kind === "strategic") {
-    return E.flowEditing(state) ? strategyEditor(state).task : null;
   }
   return null;
 }

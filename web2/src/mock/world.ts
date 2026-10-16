@@ -16,7 +16,6 @@ import {
   examples,
 } from "./data";
 import { E } from "./loose";
-import { strategyEditor } from "./strategy";
 
 export type State = any;
 export interface World {
@@ -87,7 +86,6 @@ function openReaction(state: State): { pick: string | null } | null {
 }
 
 /** The strategy cards of the viewer, by number. */
-export const heldCards = (world: World): number[] => world.table.cards?.sol ?? [1];
 
 export function loadExample(world: World, example: string) {
   E.env.viewer = world.viewer;
@@ -627,45 +625,6 @@ export function reduce(world: World, intent: Intent) {
       world.mode = "live";
       toast("Turn ended.");
       break;
-    case "flowCount":
-      E.put(state.flow.mine, intent.key, Math.max(0, intent.value));
-      if (!strategyEditor(state).cost?.amount) {
-        state.flow.mine.pay = {};
-      }
-      announce(strategyEditor(state).problem || "Selection updated.");
-      break;
-    case "flow": {
-      const flow = state.flow;
-      if (intent.action === "play") {
-        break;
-      } else if (intent.action === "ready") {
-        const editor = strategyEditor(state);
-        if (editor.problem) {
-          break;
-        }
-        Object.assign(flow.mine, { ready: true, outcome: editor.result });
-        toast("Draft ready. It resolves when your seat is reached.");
-        E.settle(state);
-      } else if (intent.action === "change") {
-        flow.mine.ready = false;
-      } else {
-        const editor = strategyEditor(state);
-        if (editor.problem) {
-          break;
-        }
-        if (flow.stage === "primary") {
-          Object.assign(flow, { stage: "secondary", primaryResult: editor.result });
-        } else {
-          flow.mine.outcome = editor.result;
-          E.resolveMine(state);
-        }
-        E.settle(state);
-        toast(
-          `${flow.card} ${flow.stage === "secondary" ? "primary resolved. Secondaries follow in seat order." : "secondary resolved."}`,
-        );
-      }
-      break;
-    }
     case "openApply":
       break;
   }
