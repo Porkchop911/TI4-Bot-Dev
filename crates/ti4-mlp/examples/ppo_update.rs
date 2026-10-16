@@ -201,6 +201,7 @@ const VALUE_FLAGS: &[&str] = &[
     "--fleet-weight",
     "--projection-weight",
     "--home-loss-weight",
+    "--phase-lock",
     "--keep-terminal-projection",
     "--projection-rank-weight",
     "--zero-terminal-objectives",
@@ -2044,6 +2045,7 @@ fn main() {
             ),
         };
         let inference_copy_time = update_started.elapsed();
+        let rollout_lock = phase_lock("rollout");
         let rolled = Instant::now();
         let mut steps: Vec<Step> = Vec::new();
         let mut seated_decisions = 0usize;
@@ -2317,6 +2319,7 @@ fn main() {
             sil_buffer.iter().flatten().cloned().collect();
         let merge_time = merge_started.elapsed();
         let rollout_time = rolled.elapsed();
+        drop(rollout_lock);
         if steps.is_empty() {
             refuse("self-play recorded no decisions");
         }
@@ -2484,6 +2487,7 @@ fn main() {
                 batch.steps().len()
             ));
         }
+        let optimise_lock = phase_lock("optimise");
         let optimised = Instant::now();
         // Linear in the update index, so the last update trains at `entropy_final` times the
         // configured bonus. Applied to every head at once: the three coefficients express a
@@ -2553,6 +2557,7 @@ fn main() {
             None
         };
         let optimise_time = optimised.elapsed();
+        drop(optimise_lock);
         let phases = ti4_mlp::perf::take_phases();
 
         let last = stats.last().unwrap_or_else(|| refuse("no epoch ran"));
@@ -2764,4 +2769,21 @@ mod projection_rank_tests {
         assert!(super::projection_rank_bonus(20, table.into_iter()).abs() < 1e-12);
         assert!(super::projection_rank_bonus(5, [5, 5].into_iter()).abs() < 1e-12);
     }
+}
+
+/// With `--phase-lock <dir>`, hold `<dir>/ppo-<phase>.lock` for the phase: trainers sharing the
+/// directory take turns, one rolling out on the CPU while another optimises on the GPU, instead of
+/// fighting over both at the same moments. Waiting happens before the phase timer starts.
+fn phase_lock(phase: &str) -> Option<std::fs::File> {
+    let dir = argument("--phase-lock")?;
+    let path = std::path::Path::new(&dir).join(format!("ppo-{phase}.lock"));
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&path)
+        .unwrap_or_else(|error| refuse(&format!("--phase-lock {}: {error}", path.display())));
+    file.lock()
+        .unwrap_or_else(|error| refuse(&format!("--phase-lock {}: {error}", path.display())));
+    Some(file)
 }
