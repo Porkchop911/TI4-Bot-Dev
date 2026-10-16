@@ -118,7 +118,8 @@ fn into_the_primary(table: &Table) {
     });
 }
 
-/// The primary researches the first technology that needs no faction waiver, which ends its part.
+/// The primary researches the first technology that needs no faction waiver, then the second
+/// one that it pays for, which ends its part.
 fn finish_primary(table: &Table) {
     let options: Vec<String> = table
         .c1
@@ -142,6 +143,25 @@ fn finish_primary(table: &Table) {
             .submit(&nonce, version, &option)
             .expect("p1 researches");
         thread::sleep(Duration::from_millis(150));
+        // The second research is paid one planet or trade good at a time.
+        while let Some(prompt) = pending_prompt(table, &table.p1)
+            && prompt.starts_with("pay ")
+        {
+            let Some((_, nonce, version)) = pending(table) else {
+                return;
+            };
+            let first = table
+                .c1
+                .snapshot()
+                .pending_choice
+                .expect("the payment is asked")
+                .choice
+                .options[0]
+                .id
+                .clone();
+            table.c1.submit(&nonce, version, &first).expect("p1 pays");
+            thread::sleep(Duration::from_millis(150));
+        }
         if pending_prompt(table, &table.p1).as_deref() != Some("research a technology") {
             return;
         }

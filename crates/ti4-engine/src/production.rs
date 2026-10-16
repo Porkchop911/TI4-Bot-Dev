@@ -718,6 +718,40 @@ pub(crate) fn pay_seeing_with_credit(
     )
 }
 
+/// Spend inside a payment window that the caller already offered Xander Alexin Victori III
+/// (Keleres agent) for: a research offers it before its question. The player chooses what to
+/// exhaust, one planet or trade good at a time; a lone way left is taken without asking.
+///
+/// # Errors
+/// Returns [`IllegalChoice`] if the decider selects an option that was not offered.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "payment needs the rules position plus an optional learned-policy observation"
+)]
+pub(crate) fn pay_in_window(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&Galaxy>,
+    table: &mut Table,
+    player: &PlayerId,
+    cost: i64,
+    kind: Spend,
+) -> Result<bool, IllegalChoice> {
+    let mut credit = 0;
+    pay_with_observation_credit(
+        state,
+        content,
+        sources,
+        table,
+        player,
+        cost,
+        kind,
+        &mut credit,
+        galaxy,
+    )
+}
+
 #[allow(
     clippy::too_many_arguments,
     reason = "payment needs the rules position plus an optional learned-policy observation"

@@ -118,6 +118,22 @@ fn base_history() -> (GameState, Galaxy, Vec<DecisionRecord>) {
     (state, galaxy, h)
 }
 
+/// Where Sol declines Orbital Drop at Jord in [`orbital_drop_history`].
+const ORBITAL_DROP: usize = 276;
+
+/// The same table played by another stream of the decider: Sol declines a mech of Orbital Drop
+/// whose payment would be a lone option.
+fn orbital_drop_history() -> (GameState, Galaxy, Vec<DecisionRecord>) {
+    let (state, galaxy) = setup(7);
+    let (mut h, _) = play_with(&state, &galaxy, Box::new(Lcg(2, false)), 400);
+    assert!(
+        h.len() >= 400,
+        "the fixture game should reach 400 decisions"
+    );
+    h.truncate(400);
+    (state, galaxy, h)
+}
+
 fn replace(cursor: usize, option_id: &str) -> SpliceEdit {
     SpliceEdit::Replace {
         cursor,
@@ -131,9 +147,9 @@ fn replace(cursor: usize, option_id: &str) -> SpliceEdit {
 fn slow_the_same_input_twice_gives_an_identical_report() {
     let (state, galaxy, h) = base_history();
     for edit in [
-        SpliceEdit::Remove { cursor: 44 },
-        replace(40, "36"),
-        replace(54, "1|6|1"),
+        SpliceEdit::Remove { cursor: 158 },
+        replace(38, "36"),
+        replace(94, "1|4|1"),
     ] {
         let a = splice_preview(&state, Some(&galaxy), &h, &edit).unwrap();
         let b = splice_preview(&state, Some(&galaxy), &h, &edit).unwrap();
@@ -160,7 +176,7 @@ fn slow_a_no_op_edit_survives_to_the_end_and_is_rng_neutral() {
         h.len(),
         "the baseline replays the whole history"
     );
-    for k in [0, 7, 26, 44, 71, 100, 250, 399] {
+    for k in [0, 7, 26, 63, 100, 158, 250, 399] {
         let p = base.preview(&replace(k, &h[k].chosen)).unwrap();
         assert!(p.survives_to_end, "k={k}: {:?}", p.first_conflict);
         assert_eq!(p.kept_later, p.later_decisions);
@@ -175,10 +191,11 @@ fn slow_a_no_op_edit_survives_to_the_end_and_is_rng_neutral() {
 fn a_replacement_that_changes_nothing_downstream_keeps_every_later_decision() {
     // Which command-token pool a token went to does not change any later question.
     let (state, galaxy, h) = base_history();
-    assert_eq!(h[44].chosen, "tactic_tokens");
-    let p = splice_preview(&state, Some(&galaxy), &h, &replace(44, "fleet_tokens")).unwrap();
+    assert_eq!(h[158].prompt, "gain a command token into which pool");
+    assert_eq!(h[158].chosen, "tactic_tokens");
+    let p = splice_preview(&state, Some(&galaxy), &h, &replace(158, "fleet_tokens")).unwrap();
     assert!(p.survives_to_end);
-    assert_eq!(p.kept_later, 355);
+    assert_eq!(p.kept_later, 241);
     assert_eq!(p.rng.status, RngStatus::Neutral);
     assert!(p.rng.compared > 0);
 }
@@ -280,16 +297,25 @@ fn bad_edits_are_refused_before_any_replay() {
 
 #[test]
 fn a_single_option_question_that_appears_is_reported() {
-    let (state, galaxy, h) = base_history();
+    let (state, galaxy, h) = orbital_drop_history();
     // Deploying the mech adds a one-option payment question that was never asked before.
-    assert_eq!(h[96].prompt, "Orbital Drop: deploy a mech on jord");
-    let p = splice_preview(&state, Some(&galaxy), &h, &replace(96, "deploy|sol_mech|1")).unwrap();
+    assert_eq!(
+        h[ORBITAL_DROP].prompt,
+        "Orbital Drop: deploy a mech on jord"
+    );
+    let p = splice_preview(
+        &state,
+        Some(&galaxy),
+        &h,
+        &replace(ORBITAL_DROP, "deploy|sol_mech|1"),
+    )
+    .unwrap();
     let a = p
         .alignment
         .iter()
         .find(|a| a.change == AlignmentChange::Appeared)
         .expect("an auto-resolved question appears");
-    assert_eq!(a.cursor, 97);
+    assert_eq!(a.cursor, ORBITAL_DROP + 1);
     assert_eq!(a.prompt, "pay 3 more resources");
     assert_eq!(a.option_id, "exhaust|jord");
     // The log never held it, so the later decisions all still fit.
@@ -300,12 +326,18 @@ fn a_single_option_question_that_appears_is_reported() {
 fn a_single_option_question_that_vanishes_is_reported() {
     // The same game recorded WITH the deployment, then edited back to declining: the payment
     // question is in the original run and not in the edited one.
-    let (state, galaxy, h) = base_history();
+    let (state, galaxy, h) = orbital_drop_history();
     let mut script: Vec<String> = h.iter().map(|r| r.chosen.clone()).collect();
-    script[96] = "deploy|sol_mech|1".to_owned();
+    script[ORBITAL_DROP] = "deploy|sol_mech|1".to_owned();
     let (with_mech, _) = play_with(&state, &galaxy, Box::new(Replaying { script, at: 0 }), 400);
-    assert_eq!(with_mech[96].chosen, "deploy|sol_mech|1");
-    let p = splice_preview(&state, Some(&galaxy), &with_mech, &replace(96, "decline")).unwrap();
+    assert_eq!(with_mech[ORBITAL_DROP].chosen, "deploy|sol_mech|1");
+    let p = splice_preview(
+        &state,
+        Some(&galaxy),
+        &with_mech,
+        &replace(ORBITAL_DROP, "decline"),
+    )
+    .unwrap();
     let v = p
         .alignment
         .iter()
@@ -320,25 +352,30 @@ fn a_single_option_question_that_vanishes_is_reported() {
 fn removing_a_decision_that_drew_cards_is_flagged_not_neutral() {
     let (state, galaxy, h) = base_history();
     assert_eq!(
-        h[71].prompt,
+        h[63].prompt,
         "spend a strategy token to draw two action cards"
     );
+    assert_eq!(h[63].chosen, "yes");
     let p = splice_preview(
         &state,
         Some(&galaxy),
         &h,
-        &SpliceEdit::Remove { cursor: 71 },
+        &SpliceEdit::Remove { cursor: 63 },
     )
     .unwrap();
     assert_eq!(p.rng.status, RngStatus::NotNeutral);
     let consumed = p.rng.removed_consumed.unwrap();
     assert_eq!(consumed.decks.get("action_card"), Some(&-2), "{consumed:?}");
     // A secret-objective draw too.
+    assert_eq!(
+        (h[369].prompt.as_str(), h[369].chosen.as_str()),
+        ("spend a strategy token to draw a secret objective", "yes")
+    );
     let p = splice_preview(
         &state,
         Some(&galaxy),
         &h,
-        &SpliceEdit::Remove { cursor: 79 },
+        &SpliceEdit::Remove { cursor: 369 },
     )
     .unwrap();
     assert_eq!(p.rng.status, RngStatus::NotNeutral);
@@ -374,11 +411,12 @@ fn replacing_a_decline_with_a_draw_is_caught_without_a_removal() {
 fn a_neutral_segment_is_reported_neutral() {
     let (state, galaxy, h) = base_history();
     // A token-pool choice draws nothing and rolls nothing.
+    assert_eq!(h[158].prompt, "gain a command token into which pool");
     let p = splice_preview(
         &state,
         Some(&galaxy),
         &h,
-        &SpliceEdit::Remove { cursor: 44 },
+        &SpliceEdit::Remove { cursor: 158 },
     )
     .unwrap();
     let consumed = p.rng.removed_consumed.clone().unwrap();

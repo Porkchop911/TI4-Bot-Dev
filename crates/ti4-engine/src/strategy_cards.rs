@@ -1393,10 +1393,13 @@ fn paid_research(
         // That technology is not offered again (see `offer_research_inner`), so the loop ends.
         let mut declined_waivers: BTreeSet<TechnologyId> = BTreeSet::new();
         loop {
+            // A technology is offered when its price can be paid with the specialty planets
+            // that its prerequisites exhaust left ready.
             let open: Vec<TechnologyId> =
                 crate::technology::researchable(state, content, sources, player)
                     .into_iter()
                     .filter(|id| !declined_waivers.contains(id))
+                    .filter(|id| research_payable(state, content, sources, player, id, cost))
                     .collect();
             if open.is_empty() {
                 return Ok(false);
@@ -1407,15 +1410,21 @@ fn paid_research(
                     .map_or(0, |seat| seat.technologies.len()),
             )
             .unwrap_or(i64::MAX);
-            let choice = Choice::new(
+            let mut choice = Choice::new(
                 player.clone(),
                 "research a technology",
                 open.iter()
                     .map(|id| research_option(content, id, cost, 0, techs_owned))
                     .chain(std::iter::once(ChoiceOption::decline()))
                     .collect(),
-            )
-            .contextualized(DecisionContext::new(
+            );
+            if cost > 0 {
+                choice = choice.detailed(
+                    "payment",
+                    research_payment_details(state, content, sources, player, cost, &open),
+                );
+            }
+            let choice = choice.contextualized(DecisionContext::new(
                 player.clone(),
                 DecisionSource::StrategyCard {
                     card: "Technology".to_owned(),
@@ -1437,15 +1446,34 @@ fn paid_research(
                 player,
                 &technology,
             );
-            let Some(plan) =
-                crate::payment::plans(state, content, sources, player, cost, Spend::Resources)
-                    .into_iter()
-                    .next()
-            else {
-                return Ok(false);
-            };
+            // The player chooses how to pay, one planet or trade good at a time. The specialty
+            // planets that the prerequisites exhaust are not offered: they stay ready for them.
             let before = state.clone();
-            if !crate::payment::apply(state, player, &plan) {
+            let kept = crate::technology::specialties_spent_by_research(
+                state,
+                content,
+                sources,
+                player,
+                &technology,
+            );
+            for planet in &kept {
+                state.exhaust_planet(planet.clone());
+            }
+            let paid = crate::production::pay_in_window(
+                state,
+                content,
+                sources,
+                galaxy,
+                table,
+                player,
+                cost,
+                Spend::Resources,
+            );
+            for planet in &kept {
+                state.ready_planet(planet);
+            }
+            if !paid? {
+                *state = before;
                 return Ok(false);
             }
             if resolve_research(state, content, sources, galaxy, table, player, &technology)? {
@@ -1497,6 +1525,79 @@ fn paid_research(
             Err(error)
         }
     }
+}
+
+/// Whether a research of `technology` at `cost` can be paid with the specialty planets that its
+/// prerequisites exhaust left ready.
+fn research_payable(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    technology: &TechnologyId,
+    cost: i64,
+) -> bool {
+    let kept = crate::technology::specialties_spent_by_research(
+        state, content, sources, player, technology,
+    );
+    if kept.is_empty() {
+        return crate::payment::affordable(state, content, sources, player, cost, Spend::Resources);
+    }
+    let mut trial = state.clone();
+    for planet in kept {
+        trial.exhaust_planet(planet);
+    }
+    crate::payment::affordable(&trial, content, sources, player, cost, Spend::Resources)
+}
+
+/// What a client needs to stage the payment of a paid research with its choice (display only).
+///
+/// `planets` are the ready planets that pay in resources themselves, with their face worth, and
+/// `trade_goods` can be spent one at a time at `trade_good_worth` each; Archon's Gift faces and
+/// The Triad are not listed. `kept` names, for each offered technology whose prerequisites
+/// exhaust specialty planets, those planets: the payment of that research does not offer them.
+/// The payment questions after the research ask which of the rest to spend.
+fn research_payment_details(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    cost: i64,
+    open: &[TechnologyId],
+) -> serde_json::Value {
+    let planets: Vec<serde_json::Value> = crate::production::native_payment_planets(
+        state,
+        content,
+        sources,
+        player,
+        Spend::Resources,
+    )
+    .into_iter()
+    .map(|(planet, worth)| serde_json::json!({ "id": planet.to_string(), "worth": worth }))
+    .collect();
+    let kept: serde_json::Map<String, serde_json::Value> = open
+        .iter()
+        .filter_map(|technology| {
+            let planets = crate::technology::specialties_spent_by_research(
+                state, content, sources, player, technology,
+            );
+            (!planets.is_empty()).then(|| {
+                (
+                    technology.to_string(),
+                    serde_json::Value::from(
+                        planets.iter().map(ToString::to_string).collect::<Vec<_>>(),
+                    ),
+                )
+            })
+        })
+        .collect();
+    serde_json::json!({
+        "cost": cost,
+        "trade_goods": state.player(player).map_or(0, |seat| seat.trade_goods),
+        "trade_good_worth": crate::production::trade_good_worth(state, player),
+        "planets": planets,
+        "kept": kept,
+    })
 }
 
 /// Display only: what a seat weighing Diplomacy's "ready planets" needs in front of it. The
@@ -4895,6 +4996,234 @@ mod tests {
         assert_eq!(
             state.player(&player).unwrap().technologies.len(),
             before + 1
+        );
+    }
+
+    /// A seat controls `planet`, wherever it is on the corpus map.
+    fn hold(state: &mut GameState, content: &ContentStore, planet: &PlanetId, player: &PlayerId) {
+        let system = ti4_content::galaxy::planet(content, planet.as_str(), POK)
+            .and_then(|record| record.system_id().map(SystemId::new))
+            .expect("the planet sits on a tile");
+        state
+            .board
+            .entry(system)
+            .or_default()
+            .set_control(planet.clone(), player.clone());
+    }
+
+    /// The seat's own planets are exhausted, so that only what a test gives it can pay.
+    fn exhaust_everything(state: &mut GameState, player: &PlayerId) {
+        let held: Vec<PlanetId> = state
+            .controlled_planets(player)
+            .into_iter()
+            .map(|(_, planet)| planet.clone())
+            .collect();
+        state.exhausted_planets.extend(held);
+    }
+
+    /// Answers the research with `technology` and each payment with its first option, and keeps
+    /// every question.
+    struct Researching {
+        technology: Option<String>,
+        seen: std::rc::Rc<std::cell::RefCell<Vec<Choice>>>,
+    }
+
+    impl crate::choice::Decider for Researching {
+        fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+            self.seen.borrow_mut().push(choice.clone());
+            let wanted = self
+                .technology
+                .as_ref()
+                .and_then(|id| choice.option(id).cloned());
+            wanted
+                .or_else(|| choice.options.first().cloned())
+                .ok_or_else(|| IllegalChoice::NoOptions {
+                    player: choice.player.clone(),
+                    prompt: choice.prompt.clone(),
+                })
+        }
+    }
+
+    fn subtype(choice: &Choice) -> &str {
+        choice
+            .context
+            .as_ref()
+            .map_or("", |context| context.subtype.as_str())
+    }
+
+    #[test]
+    fn a_paid_research_asks_how_it_is_paid() {
+        let content = ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let mut state = game(&["a"]);
+        exhaust_everything(&mut state, &player);
+        // Two ready planets and trade goods: several ways to pay four resources.
+        let planets: Vec<PlanetId> = ti4_content::galaxy::all_planets(content, POK)
+            .iter()
+            .filter(|(_, record)| record.resources() >= 2 && record.system_id().is_some())
+            .map(|(id, _)| PlanetId::new(*id))
+            .take(2)
+            .collect();
+        for planet in &planets {
+            hold(&mut state, content, planet, &player);
+        }
+        state.player_mut(&player).unwrap().trade_goods = 4;
+        let before = state.player(&player).unwrap().technologies.len();
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut table = Table::with_default(Box::new(Researching {
+            technology: None,
+            seen: seen.clone(),
+        }));
+        paid_research(
+            &mut state,
+            content,
+            POK,
+            None,
+            &mut table,
+            &player,
+            TECHNOLOGY_SECONDARY_COST,
+        )
+        .unwrap();
+
+        let seen = seen.borrow();
+        let research = &seen[0];
+        assert_eq!(subtype(research), "research_technology");
+        let payment = &research.details["payment"];
+        assert_eq!(payment["cost"], TECHNOLOGY_SECONDARY_COST);
+        assert_eq!(payment["trade_goods"], 4);
+        for planet in &planets {
+            assert!(
+                payment["planets"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|item| item["id"] == planet.as_str()),
+                "{planet} pays"
+            );
+        }
+        let paying: Vec<&Choice> = seen[1..]
+            .iter()
+            .filter(|choice| subtype(choice) == "pay_resources")
+            .collect();
+        assert!(!paying.is_empty(), "the payment is asked");
+        assert!(
+            paying[0]
+                .options
+                .iter()
+                .any(|option| option.id == "trade_good")
+                && paying[0]
+                    .options
+                    .iter()
+                    .any(|option| option.id == format!("exhaust|{}", planets[0])),
+            "every way to pay is offered"
+        );
+        // The first option is a planet: it is what was exhausted.
+        assert!(state.exhausted_planets.contains(&planets[0]));
+        assert_eq!(
+            state.player(&player).unwrap().technologies.len(),
+            before + 1
+        );
+    }
+
+    #[test]
+    fn a_lone_way_to_pay_is_taken_without_asking() {
+        let content = ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let mut state = game(&["a"]);
+        exhaust_everything(&mut state, &player);
+        state.player_mut(&player).unwrap().trade_goods = 4;
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut table = Table::with_default(Box::new(Researching {
+            technology: None,
+            seen: seen.clone(),
+        }));
+        paid_research(
+            &mut state,
+            content,
+            POK,
+            None,
+            &mut table,
+            &player,
+            TECHNOLOGY_SECONDARY_COST,
+        )
+        .unwrap();
+        assert!(
+            seen.borrow()
+                .iter()
+                .all(|choice| subtype(choice) != "pay_resources"),
+            "four trade goods are the only way"
+        );
+        assert_eq!(state.player(&player).unwrap().trade_goods, 0);
+    }
+
+    #[test]
+    fn a_specialty_that_a_research_needs_is_not_offered_to_pay_for_it() {
+        let content = ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let mut state = game(&["a"]);
+        exhaust_everything(&mut state, &player);
+        state.player_mut(&player).unwrap().technologies.clear();
+        // A specialty planet worth resources, and a technology that needs one of its colour.
+        let (planet, technology) = ti4_content::galaxy::all_planets(content, POK)
+            .iter()
+            .filter(|(_, record)| record.resources() > 0 && record.system_id().is_some())
+            .find_map(|(id, record)| {
+                let upper = record.tech_specialties().first()?.to_ascii_uppercase();
+                let colour = *crate::technology::COLOURS.iter().find(|c| ***c == *upper)?;
+                let planet = PlanetId::new(*id);
+                let mut trial = state.clone();
+                hold(&mut trial, content, &planet, &player);
+                let technology = crate::technology::researchable(&trial, content, POK, &player)
+                    .into_iter()
+                    .find(|tech| {
+                        let needs = crate::technology::prerequisites(content, tech);
+                        needs.len() == 1 && needs.get(colour) == Some(&1)
+                    })?;
+                Some((planet, technology))
+            })
+            .expect("a specialty and a technology of its colour");
+        hold(&mut state, content, &planet, &player);
+        state.player_mut(&player).unwrap().trade_goods = 6;
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut table = Table::with_default(Box::new(Researching {
+            technology: Some(technology.to_string()),
+            seen: seen.clone(),
+        }));
+        paid_research(
+            &mut state,
+            content,
+            POK,
+            None,
+            &mut table,
+            &player,
+            TECHNOLOGY_SECONDARY_COST,
+        )
+        .unwrap();
+
+        let seen = seen.borrow();
+        assert_eq!(
+            seen[0].details["payment"]["kept"][technology.as_str()],
+            serde_json::json!([planet.as_str()]),
+            "the research says which specialty it keeps"
+        );
+        assert!(
+            seen.iter()
+                .filter(|choice| subtype(choice) == "pay_resources")
+                .all(|choice| choice
+                    .options
+                    .iter()
+                    .all(|option| option.id != format!("exhaust|{planet}"))),
+            "the specialty does not pay"
+        );
+        let seat = state.player(&player).unwrap();
+        assert!(
+            seat.technologies.contains(&technology),
+            "the research lands"
+        );
+        assert_eq!(seat.trade_goods, 2, "the trade goods paid");
+        assert!(
+            state.exhausted_planets.contains(&planet),
+            "the specialty is exhausted for the prerequisite"
         );
     }
 

@@ -143,6 +143,42 @@ fn the_technology_follow_up_is_the_real_one_with_its_payment() {
     assert!(payment.worth >= 4);
 }
 
+/// Technology: after the research the payment is the player's, one planet or trade good per
+/// question, exactly as the real flow asks it; a whole scripted payment completes.
+#[test]
+fn the_technology_payment_questions_are_the_real_ones() {
+    let (state, card) = dealt("Technology");
+    let research = real_follow_up(&state, &card).expect("b is asked to research");
+    let technology = research
+        .options
+        .iter()
+        .find(|option| !option.is_decline())
+        .expect("something to research")
+        .id
+        .clone();
+    let mut answers = vec!["yes".to_owned(), technology];
+    let mut payments = 0;
+    loop {
+        assert!(payments < 10, "the payment ends");
+        let refs: Vec<&str> = answers.iter().map(String::as_str).collect();
+        match (real_after(&state, &answers), preview(&state, &card, &refs)) {
+            (None, SecondaryPreview::Complete { unused_answers, .. }) => {
+                assert_eq!(unused_answers, 0);
+                break;
+            }
+            (Some(real), SecondaryPreview::Question { choice, step, .. }) => {
+                assert_eq!(choice, real, "after {answers:?}");
+                assert_eq!(step, answers.len());
+                assert_eq!(real.context.as_ref().unwrap().subtype, "pay_resources");
+                payments += 1;
+                answers.push(real.options[0].id.clone());
+            }
+            other => panic!("real and preview disagree after {answers:?}: {other:?}"),
+        }
+    }
+    assert!(payments >= 1, "the payment was asked");
+}
+
 #[test]
 fn a_decline_completes_and_a_bad_answer_is_unavailable() {
     let (state, card) = dealt("Technology");
