@@ -4,6 +4,7 @@ use ti4_engine::choice::Choice;
 
 pub mod client;
 pub mod error;
+pub mod public_fact;
 pub mod reach;
 pub mod server;
 pub mod splice;

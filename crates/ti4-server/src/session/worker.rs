@@ -17,8 +17,8 @@ use ti4_host::planning::script::{OnMismatch, ScriptRuns};
 use ti4_host::projection::project_turn_status;
 use ti4_host::protocol::PROTOCOL_VERSION;
 use ti4_host::protocol::server::{
-    EventVisibility, GameEvent, GameEventKind, GameOverMsg, MovementFact, PendingChoiceMsg,
-    ServerMessage, TurnStatusMsg,
+    EventVisibility, GameEvent, GameEventKind, GameOverMsg, PendingChoiceMsg, ServerMessage,
+    TurnStatusMsg,
 };
 use ti4_host::protocol::status::ViewerRole;
 use ti4_host::state_update::{self, StateUpdateInputs, state_update_for};
@@ -534,9 +534,7 @@ impl SessionShared {
         event: GameEventKind,
         version: Option<u64>,
         decision_count: usize,
-        detail: Option<String>,
-        movement: Option<MovementFact>,
-        seat_detail: Option<ti4_host::protocol::server::SeatDecisionDetail>,
+        facts: ti4_host::protocol::server::DecisionFacts,
     ) -> Result<(), String> {
         match journal::reconcile_with_redo(
             self.history_active,
@@ -564,9 +562,7 @@ impl SessionShared {
                 event,
                 version,
                 decision_count,
-                detail,
-                movement,
-                seat_detail,
+                facts,
             },
         );
         self.push_event(entry)
@@ -629,6 +625,7 @@ impl SessionShared {
                 &SystemClock,
                 &self.game_id,
                 self.event_counter,
+                &self.decision_log,
                 cursor,
                 self.latest_state.round,
                 self.latest_state.phase,
@@ -809,9 +806,7 @@ impl SessionShared {
             },
             Some(self.game_version),
             cursor,
-            None,
-            None,
-            None,
+            ti4_host::protocol::server::DecisionFacts::default(),
         )?;
         if !self.history_active {
             self.broadcast_game_over(winner, final_scores);
@@ -1382,13 +1377,12 @@ pub fn spawn_session_worker(
                 );
                 lock.decision_log = records[..start + index + 1].to_vec();
                 let version = lock.game_version;
-                let (detail, movement, seat_detail) =
-                    ti4_host::protocol::server::verified_decision_facts(
-                        record,
-                        selected.as_ref(),
-                        state.active_system.as_ref().map(|id| id.as_str()),
-                        state,
-                    );
+                let facts = ti4_host::protocol::server::verified_event_facts(
+                    record,
+                    selected.as_ref(),
+                    state.active_system.as_ref().map(|id| id.as_str()),
+                    state,
+                );
                 if let Some(store) = &lock.store
                     && !lock.history_active
                 {
@@ -1402,9 +1396,7 @@ pub fn spawn_session_worker(
                     GameEventKind::DecisionResolved,
                     Some(version),
                     start + index + 1,
-                    detail,
-                    movement,
-                    seat_detail,
+                    facts,
                 ) {
                     lock.error = Some(error);
                     return;
@@ -1501,9 +1493,7 @@ pub fn spawn_session_worker(
                 },
                 Some(version),
                 0,
-                None,
-                None,
-                None,
+                ti4_host::protocol::server::DecisionFacts::default(),
             ) {
                 lock.error = Some(error);
                 return;
@@ -1677,25 +1667,22 @@ pub fn spawn_session_worker(
                             true,
                         );
                         let offered = selected.as_ref();
-                        let (detail, movement, seat_detail) =
-                            ti4_host::protocol::server::verified_decision_facts(
-                                record,
-                                offered,
-                                lock.latest_state
-                                    .active_system
-                                    .as_ref()
-                                    .map(|id| id.as_str()),
-                                &lock.latest_state,
-                            );
+                        let facts = ti4_host::protocol::server::verified_event_facts(
+                            record,
+                            offered,
+                            lock.latest_state
+                                .active_system
+                                .as_ref()
+                                .map(|id| id.as_str()),
+                            &lock.latest_state,
+                        );
                         let event_error = lock
                             .record_and_broadcast_event(
                                 EventVisibility::Public,
                                 GameEventKind::DecisionResolved,
                                 Some(version),
                                 prev_decision_count + offset + 1,
-                                detail,
-                                movement,
-                                seat_detail,
+                                facts,
                             )
                             .err();
                         if let Some(error) = event_error {
@@ -1813,9 +1800,7 @@ pub fn spawn_session_worker(
                         },
                         Some(version),
                         cursor,
-                        None,
-                        None,
-                        None,
+                        ti4_host::protocol::server::DecisionFacts::default(),
                     ) {
                         lock.error = Some(error);
                         break 'worker;

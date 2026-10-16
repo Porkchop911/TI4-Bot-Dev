@@ -251,6 +251,7 @@ fn server_event_round_trips() {
             stage: None,
             detail: None,
             movement: None,
+            fact: None,
             seat_detail: None,
             private_detail: None,
             roll: None,

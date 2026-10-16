@@ -1193,14 +1193,18 @@ impl GameRegistry {
                 .and_then(|id| id.strip_prefix("action_"))
                 .and_then(|n| n.parse::<usize>().ok())
                 .and_then(|n| n.checked_sub(1));
-            let (detail, movement, seat_detail) =
-                ti4_host::protocol::server::verified_decision_facts(
-                    decision,
-                    Some(offered),
-                    (request.plan.kind == ti4_host::batch::BatchKind::TacticalMovement)
-                        .then_some(request.plan.destination.as_str()),
-                    &boundary_state,
-                );
+            let ti4_host::protocol::server::DecisionFacts {
+                detail,
+                movement,
+                seat_detail,
+                fact,
+            } = ti4_host::protocol::server::verified_event_facts(
+                decision,
+                Some(offered),
+                (request.plan.kind == ti4_host::batch::BatchKind::TacticalMovement)
+                    .then_some(request.plan.destination.as_str()),
+                &boundary_state,
+            );
             let grouping = ti4_host::protocol::server::decision_grouping(
                 decision,
                 Some(offered),
@@ -1228,6 +1232,7 @@ impl GameRegistry {
                 stage: grouping.5,
                 movement,
                 detail,
+                fact,
                 seat_detail,
                 private_detail: None,
                 roll: None,
@@ -1261,6 +1266,7 @@ impl GameRegistry {
                     stage: None,
                     detail: None,
                     movement: None,
+                    fact: None,
                     seat_detail: None,
                     private_detail: None,
                     roll: None,
@@ -1279,6 +1285,11 @@ impl GameRegistry {
                 else {
                     continue;
                 };
+                let action = ti4_host::journal::roll_action(
+                    &all_decisions,
+                    start_cursor + i + 1,
+                    boundary_state.phase,
+                );
                 counter += 1;
                 events.push(ti4_host::protocol::server::GameEvent {
                     id: format!("{game_id}-{counter}"),
@@ -1290,16 +1301,17 @@ impl GameRegistry {
                     batch_id: None,
                     batch_start_cursor: None,
                     batch_end_cursor: None,
-                    action_id: None,
-                    action_start_cursor: None,
+                    action_id: action.action_id,
+                    action_start_cursor: action.action_start_cursor,
                     actor: public.roller.clone(),
                     round: Some(boundary_state.round),
                     phase: Some(boundary_state.phase),
-                    action_type: None,
-                    action_actor: None,
+                    action_type: action.action_type,
+                    action_actor: action.action_actor,
                     stage: None,
                     detail: Some(public.describe()),
                     movement: None,
+                    fact: None,
                     seat_detail: None,
                     private_detail: None,
                     roll: Some(public),
@@ -1328,6 +1340,7 @@ impl GameRegistry {
                 stage: None,
                 detail: None,
                 movement: None,
+                fact: None,
                 seat_detail: None,
                 private_detail: None,
                 roll: None,

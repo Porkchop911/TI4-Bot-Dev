@@ -6,6 +6,7 @@ use ti4_engine::dice::RollSubject;
 use ti4_model::id::PlayerId;
 
 use super::error::ErrorKind;
+pub use super::public_fact::PublicFact;
 use super::status::{PublicTurnStatus, RejectionReason, ViewerRole};
 use super::view::GameView;
 use crate::map::GalaxyLayout;
@@ -250,6 +251,10 @@ pub struct GameEvent {
     pub detail: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub movement: Option<MovementFact>,
+    /// What the decision did, in public ids ([`super::public_fact`]). Built by the same rule as
+    /// `detail`, so every viewer may see it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fact: Option<PublicFact>,
     /// Stored only in authoritative history; stripped from every projected event.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seat_detail: Option<SeatDecisionDetail>,
@@ -609,6 +614,9 @@ fn public_choice_detail(
         {
             return None;
         }
+        "end_turn" if id == ti4_engine::game::END_TURN_ID => format!("{actor} ended their turn"),
+        // The action of a turn is told by `verified_decision_facts`, from the offered option.
+        "action_menu" | "end_turn" => return None,
         subtype => {
             // The subtype identifies the public question; its selected option may be private.
             format!("{actor} resolved {}", subtype.replace('_', " "))
@@ -971,18 +979,35 @@ pub fn verified_decision_facts(
         private = None;
     }
     if detail.is_none()
-        && record.prompt == "action phase"
-        && let Some(option) = offered.filter(|option| option.id == record.chosen)
+        && (record.prompt == "action phase"
+            || record.context.as_ref().is_some_and(|context| {
+                matches!(context.subtype.as_str(), "action_menu" | "end_turn")
+            }))
     {
-        detail = match option.id.as_str() {
-            "tactical" => Some(format!("{} began a tactical action", record.player)),
-            "pass" => Some(format!("{} passed their turn", record.player)),
-            id if id.starts_with("strategic|") => id
-                .strip_prefix("strategic|")
-                .and_then(strategy_card_name)
-                .map(|name| format!("{} played {name}", record.player)),
-            _ => Some(format!("{} began a component action", record.player)),
-        };
+        use super::public_fact::{PublicFact, TurnAction};
+        let actor = &record.player;
+        detail =
+            super::public_fact::decision_fact(record, offered, destination, state).map(|fact| {
+                match fact {
+                    PublicFact::ActionStarted {
+                        action: TurnAction::Tactical,
+                    } => format!("{actor} began a tactical action"),
+                    PublicFact::ActionStarted {
+                        action: TurnAction::Pass,
+                    } => format!("{actor} passed their turn"),
+                    PublicFact::ActionStarted {
+                        action: TurnAction::Strategic { card },
+                    } => card.as_deref().and_then(strategy_card_name).map_or_else(
+                        || format!("{actor} took a strategic action"),
+                        |name| format!("{actor} played {name}"),
+                    ),
+                    PublicFact::TransactionOpened { with } => {
+                        format!("{actor} opened a transaction with {with}")
+                    }
+                    PublicFact::TurnEnded => format!("{actor} ended their turn"),
+                    _ => format!("{actor} began a component action"),
+                }
+            });
     }
     if let Some(option) = offered
         && let Some(context) = record.context.as_ref()
@@ -1003,6 +1028,33 @@ pub fn verified_decision_facts(
         }
     }
     (detail, movement, private)
+}
+
+/// Everything an event says about the decision it resolves.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DecisionFacts {
+    pub detail: Option<String>,
+    pub movement: Option<MovementFact>,
+    pub seat_detail: Option<SeatDecisionDetail>,
+    pub fact: Option<PublicFact>,
+}
+
+/// [`verified_decision_facts`] and the typed [`PublicFact`] of the same offered option.
+#[must_use]
+pub fn verified_event_facts(
+    record: &ti4_engine::choice::DecisionRecord,
+    offered: Option<&ChoiceOption>,
+    destination: Option<&str>,
+    state: &GameState,
+) -> DecisionFacts {
+    let (detail, movement, seat_detail) =
+        verified_decision_facts(record, offered, destination, state);
+    DecisionFacts {
+        detail,
+        movement,
+        seat_detail,
+        fact: super::public_fact::decision_fact(record, offered, destination, state),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1144,6 +1196,7 @@ mod roll_tests {
             stage: None,
             detail: Some(public.describe()),
             movement: None,
+            fact: None,
             seat_detail: None,
             private_detail: None,
             roll: Some(public),
@@ -1664,6 +1717,7 @@ mod fact_tests {
             stage: None,
             detail: None,
             movement: None,
+            fact: None,
             seat_detail,
             private_detail: None,
             roll: None,

@@ -4,6 +4,7 @@ import type { GameEventKind } from "./GameEventKind.ts";
 import type { MovementFact } from "./MovementFact.ts";
 import type { Phase } from "./Phase.ts";
 import type { PlayerId } from "./PlayerId.ts";
+import type { PublicFact } from "./PublicFact.ts";
 import type { PublicRoll } from "./PublicRoll.ts";
 import type { SeatDecisionDetail } from "./SeatDecisionDetail.ts";
 
@@ -11,6 +12,11 @@ import type { SeatDecisionDetail } from "./SeatDecisionDetail.ts";
  * Authoritative, auditable event log entry recorded during game execution.
  */
 export type GameEvent = { id: string, timestamp: string, version?: number, visibility: EventVisibility, event: GameEventKind, decision_count?: number, batch_id?: string, batch_start_cursor?: number, batch_end_cursor?: number, action_id?: string, action_start_cursor?: number, actor?: PlayerId, round?: number, phase?: Phase, action_type?: string, action_actor?: PlayerId, stage?: string, detail?: string, movement?: MovementFact, 
+/**
+ * What the decision did, in public ids ([`super::public_fact`]). Built by the same rule as
+ * `detail`, so every viewer may see it.
+ */
+fact?: PublicFact, 
 /**
  * Stored only in authoritative history; stripped from every projected event.
  */

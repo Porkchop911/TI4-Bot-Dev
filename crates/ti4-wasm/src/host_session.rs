@@ -65,10 +65,10 @@ use ti4_host::protocol::client::ClientMessage;
 use ti4_host::protocol::error::ErrorKind;
 use ti4_host::protocol::reach::ReachIntoMsg;
 use ti4_host::protocol::server::{
-    ActionAcceptedMsg, ActionRejectedMsg, AutoResolvedNote, DraftAppliedMsg, EventVisibility,
-    GameEvent, GameEventKind, GameEventMsg, GameOverMsg, MovementFact, PongMsg, ProtocolErrorMsg,
-    SeatDecisionDetail, SecondaryPreviewMsg, ServerMessage, StateUpdateMsg, current_log_path,
-    public_roll, verified_decision_facts,
+    ActionAcceptedMsg, ActionRejectedMsg, AutoResolvedNote, DecisionFacts, DraftAppliedMsg,
+    EventVisibility, GameEvent, GameEventKind, GameEventMsg, GameOverMsg, PongMsg,
+    ProtocolErrorMsg, SecondaryPreviewMsg, ServerMessage, StateUpdateMsg, current_log_path,
+    public_roll, verified_event_facts,
 };
 use ti4_host::protocol::staged::StagedSlot;
 use ti4_host::protocol::status::{RejectionReason, ViewerRole};
@@ -469,9 +469,7 @@ impl HostSession {
                 speaker: state.speaker.clone(),
             },
             0,
-            None,
-            None,
-            None,
+            DecisionFacts::default(),
         );
         session
     }
@@ -607,9 +605,7 @@ impl HostSession {
         visibility: EventVisibility,
         event: GameEventKind,
         decision_count: usize,
-        detail: Option<String>,
-        movement: Option<MovementFact>,
-        seat_detail: Option<SeatDecisionDetail>,
+        facts: DecisionFacts,
     ) {
         self.event_counter += 1;
         let entry = journal::build_event(
@@ -622,9 +618,7 @@ impl HostSession {
                 event,
                 version: Some(self.version),
                 decision_count,
-                detail,
-                movement,
-                seat_detail,
+                facts,
             },
         );
         self.emit_event(entry);
@@ -704,7 +698,7 @@ impl HostSession {
             let selected = self.selected_for(record, true);
             self.decision_log.push(record.clone());
             let option = selected.as_ref().map(|selected| &selected.option);
-            let (detail, movement, seat_detail) = verified_decision_facts(
+            let facts = verified_event_facts(
                 record,
                 option,
                 state.active_system.as_ref().map(|id| id.as_str()),
@@ -714,9 +708,7 @@ impl HostSession {
                 EventVisibility::Public,
                 GameEventKind::DecisionResolved,
                 index + 1,
-                detail,
-                movement,
-                seat_detail,
+                facts,
             );
             let own = selected
                 .as_ref()
@@ -825,6 +817,7 @@ impl HostSession {
                     self.clock.as_ref(),
                     &self.identity.game_id,
                     self.event_counter,
+                    &self.decision_log,
                     cursor,
                     game.state.round,
                     game.state.phase,
@@ -843,9 +836,7 @@ impl HostSession {
                     round: game.state.round,
                 },
                 self.decision_log.len(),
-                None,
-                None,
-                None,
+                DecisionFacts::default(),
             );
             self.prev_phase = game.state.phase;
             self.prev_round = game.state.round;
@@ -877,9 +868,7 @@ impl HostSession {
                 winner: winner.clone(),
             },
             self.decision_log.len(),
-            None,
-            None,
-            None,
+            DecisionFacts::default(),
         );
         self.version += 1;
         let update = self.state_update();
