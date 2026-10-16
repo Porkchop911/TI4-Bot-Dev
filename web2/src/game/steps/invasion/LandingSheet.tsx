@@ -1,52 +1,40 @@
 import type { GroundOddsView, LandingPlanetView, LandingView } from "../../../model";
-import { forceText, plural } from "../../../model";
+import { GROUND_ODDS_COUNT, forceText, plural } from "../../../model";
 import { Button, Hint, Icon, cx } from "../../../ui";
 import { PlanetTraits } from "../../board/PlanetTraits";
+import { BattleTable } from "../../combat/BattleTable";
+import { CombatOdds } from "../../combat/SpaceOdds";
 import { OwnerLabel, SeatSymbol, useDispatch, useSeat } from "../../context";
 import { useLink } from "../../link";
 import { SourceChip } from "../movement/Tokens";
 
-/** "Win 74%", "Win …" before the first answer, "No odds" for a defense that the odds cannot count. */
-function winText(odds: GroundOddsView) {
-  return odds.unavailable ? "No odds" : `Win ${odds.win === null ? "…" : `${odds.win}%`}`;
-}
-
 /**
  * The odds of the ground combat that the staged units start on a planet, as `ti4-calc` computes
- * them in the page: the share of the rollouts that the landing seat wins. While the answer for
- * these landings is on its way, the number of the last ones is dimmed.
+ * them in the page. A defense that the odds cannot count has "No odds".
  */
 function GroundOdds({ odds }: { odds: GroundOddsView }) {
   const defender = useSeat(odds.defender);
+  if (!odds.unavailable) {
+    return (
+      <CombatOdds view={odds} label="Ground combat" className="text-xs">
+        Simulated{odds.rollouts > 0 ? ` · ${odds.rollouts} rollouts` : ""}. Win: the ground forces
+        that land take the planet. Draw: both sides are destroyed, and the planet stays with the
+        defender. Survivors: the units that are expected to be left, of the units that fight.{" "}
+        {GROUND_ODDS_COUNT}
+      </CombatOdds>
+    );
+  }
   return (
-    <section
-      aria-label="Ground combat"
-      aria-busy={odds.pending}
-      className="flex min-w-0 items-baseline gap-1.5 text-xs"
-    >
+    <section aria-label="Ground combat" className="flex min-w-0 items-baseline gap-1.5 text-xs">
       <strong className="font-mid whitespace-nowrap">Ground combat</strong>
       <span className="text-muted">·</span>
       <SeatSymbol seat={odds.defender} />
       <span className="min-w-0 truncate text-muted" title={defender?.name}>
         {defender?.faction ?? odds.defender}
       </span>
-      <span className={cx("ml-auto whitespace-nowrap tabular-nums", odds.pending && "opacity-50")}>
-        {odds.unavailable ? (
-          <span className="text-muted">No odds</span>
-        ) : (
-          <>
-            Win{" "}
-            <strong className="text-sm font-strong">
-              {odds.win === null ? "…" : `${odds.win}%`}
-            </strong>
-          </>
-        )}
-      </span>
-      {odds.pending && <span title="Computing">…</span>}
+      <span className="ml-auto whitespace-nowrap text-muted">No odds</span>
       <Hint label="About the odds">
-        {odds.unavailable
-          ? "The planet has a defense that the simulation cannot count, so there are no odds."
-          : `Simulated${odds.rollouts > 0 ? ` · ${odds.rollouts} rollouts` : ""}. Win: the ground forces that land take the planet. Counted: the ground forces of both sides on the planet and those that land, the damaged ones, the SPACE CANNON of the defender against the landing, and the ships that fire during the combat (Harrow). Left out: action cards, promissory notes and leaders.`}
+        The planet has a defense that the simulation cannot count, so there are no odds.
       </Hint>
     </section>
   );
@@ -230,14 +218,9 @@ export function LandingSummary({ view }: { view: LandingView }) {
               (planet.reason ?? "Nothing lands")
             )}
           </span>
-          {planet.odds && (
-            <span
-              className={cx(
-                "ml-auto text-xs whitespace-nowrap tabular-nums",
-                planet.odds.pending && "opacity-50",
-              )}
-            >
-              Ground combat · {winText(planet.odds)}
+          {planet.odds && !planet.odds.preview && (
+            <span className="ml-auto text-xs whitespace-nowrap text-muted">
+              Ground combat · {planet.odds.unavailable ? "No odds" : "Win …"}
             </span>
           )}
         </button>
@@ -249,5 +232,30 @@ export function LandingSummary({ view }: { view: LandingView }) {
         </span>
       </button>
     </div>
+  );
+}
+
+/**
+ * In the panel: the first round of each ground combat that the landings start, with the odds in
+ * the headers of the sides. While the answer for new landings is on its way, the table of the
+ * last one is dimmed.
+ */
+export function GroundPreviews({ view }: { view: LandingView }) {
+  return (
+    <>
+      {view.planets.map(
+        ({ id, odds }) =>
+          odds?.preview && (
+            <section
+              key={id}
+              aria-label={odds.preview.table.label}
+              aria-busy={odds.pending}
+              className={cx(odds.pending && "opacity-50")}
+            >
+              <BattleTable view={odds.preview.table} odds={odds.preview.odds} />
+            </section>
+          ),
+      )}
+    </>
   );
 }

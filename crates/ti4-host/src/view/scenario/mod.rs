@@ -132,6 +132,7 @@ pub const SCENARIOS: &[Scenario] = &[
     three_seats::INVASION_FOUR_VIEWS,
     three_seats::INVASION_COEXISTENCE,
     three_seats::INVASION_PARLEY,
+    three_seats::INVASION_DRAFT,
     three_seats::ENDGAME,
     three_seats::SCORE_STATUS,
     three_seats::SCORE_IMPERIAL,

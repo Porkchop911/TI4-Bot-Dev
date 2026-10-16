@@ -107,6 +107,7 @@ opens_at! {
         ["0:tactical", "0:29", "0:done_moving", "0:destroy|0", "0:destroy|0"];
     parley_opens_at_the_invasion: "ongoing_invasion_parley" => "reaction_after_INVASION_BEGAN",
         ["0:tactical", "0:21", "0:done_moving", "0:destroy|0"];
+    invasion_draft_opens_at_the_action: "invasion_draft" => "action_menu", [];
     endgame_opens_at_the_action: "endgame" => "action_menu", [];
     status_score_opens_at_the_score: "score_objective_status" => "score_objective", [];
     imperial_score_opens_at_the_score: "score_objective_imperial" => "imperial_score_objective",

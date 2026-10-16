@@ -8,7 +8,6 @@ export const EXAMPLE_GROUPS: [string, [string, string][]][] = [
       ["draft-movement", "Draft · Choose movement"],
       ["draft-movement-cases", "Draft · Movement, every edge case"],
       ["draft-rift", "Draft · Gravity rift boundary"],
-      ["draft-invasion", "Draft · Choose landings"],
       ["draft-production", "Draft · Choose production"],
       ["draft-review", "Draft · Changed selection"],
       ["draft-cannon", "Draft · Space cannon boundary"],

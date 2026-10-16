@@ -787,14 +787,6 @@ export const examples: Record<string, any> = {
     },
     tip: "Two ships leave the gravity rift, so the draft stops at the rift roll. The game chooses the path of a ship: the destroyer leaves the rift too.",
   },
-  "draft-invasion": {
-    mode: "draft",
-    route: "ground",
-    until: 3,
-    movement: { "j-dreadnought": 0, "j-fighter": 1, "j-infantry": 2, "j-mech": 1 },
-    invasion: { "starpoint:infantry": 1, "newalbion:infantry": 1, "newalbion:mech": 1 },
-    tip: "Distribute forces and watch the projected odds. The draft stops at ground combat.",
-  },
   "draft-production": {
     mode: "draft",
     route: "friendly",

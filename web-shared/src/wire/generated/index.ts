@@ -74,6 +74,7 @@ export type { GameView } from "./GameView.ts";
 export type { GroundOddsRequest } from "./GroundOddsRequest.ts";
 export type { GroundOddsResponse } from "./GroundOddsResponse.ts";
 export type { GroundOddsSide } from "./GroundOddsSide.ts";
+export type { GroundRoll } from "./GroundRoll.ts";
 export type { HistoryStatus } from "./HistoryStatus.ts";
 export type { HitCause } from "./HitCause.ts";
 export type { HitDetail } from "./HitDetail.ts";

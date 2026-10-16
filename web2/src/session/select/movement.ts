@@ -34,6 +34,7 @@ import type {
   ShipFact,
 } from "../wire";
 import { cannonTable, riftRows } from "./movementRolls";
+import { combatOdds } from "./odds";
 import { UNIT_ORDER, isShip, unitType } from "./names";
 
 const RIFT_RULE = "Each ship that leaves a gravity rift rolls: destroyed on 1–3, with its cargo";
@@ -287,39 +288,6 @@ function arriving(plan: Plan): Map<UnitType, number> {
 }
 
 /**
- * Whole percentages of `rates` (fractions that sum to 1) that sum to 100: the rates that rounding
- * down cuts most get the points that are left.
- */
-export function percentages(rates: number[]): number[] {
-  const exact = rates.map((rate) => Math.max(0, rate) * 100);
-  const whole = exact.map(Math.floor);
-  const order = exact
-    .map((value, index) => ({ index, cut: value - whole[index] }))
-    .sort((a, b) => b.cut - a.cut || a.index - b.index);
-  let left = 100 - whole.reduce((sum, value) => sum + value, 0);
-  for (const { index } of order) {
-    if (left <= 0) {
-      break;
-    }
-    whole[index] += 1;
-    left -= 1;
-  }
-  return whole;
-}
-
-/** Counts by unit id, as counts by kind of ship. */
-function byKind(counts: Record<string, number> | undefined): Map<UnitType, number> {
-  const kinds = new Map<UnitType, number>();
-  for (const [unit, count] of Object.entries(counts ?? {})) {
-    const kind = unitType(unit);
-    if (kind && isShip(kind) && count > 0) {
-      kinds.set(kind, (kinds.get(kind) ?? 0) + count);
-    }
-  }
-  return kinds;
-}
-
-/**
  * The odds of the space combat that the staged movement starts. `kept` is the last answer of the
  * engine: of another movement it is shown as pending, with the ships that fight now.
  */
@@ -335,57 +303,17 @@ function oddsOf(plan: Plan, kept: KeptOdds | null): SpaceOddsView | null {
     return null;
   }
   const response = kept?.response ?? null;
-  const [win, draw, loss] = response
-    ? percentages([
-        response.attacker_win_rate,
-        response.mutual_destruction_rate + response.unresolved_rate,
-        response.defender_win_rate,
-      ])
-    : [null, null, null];
-  const side = (
-    seat: string,
-    fielded: Record<string, number> | undefined,
-    expected: Record<string, number> | undefined,
-  ) => {
-    const fights = byKind(fielded);
-    const survives = new Map<UnitType, number>();
-    for (const [unit, count] of Object.entries(expected ?? {})) {
-      const kind = unitType(unit);
-      if (kind) {
-        survives.set(kind, (survives.get(kind) ?? 0) + count);
-      }
-    }
-    return {
-      seat,
-      ships: UNIT_ORDER.filter((unit) => fights.has(unit)).map((unit) => ({
-        unit,
-        expected: response ? (survives.get(unit) ?? 0).toFixed(1) : null,
-        fielded: fights.get(unit) ?? 0,
-      })),
-    };
-  };
   // The ships that fight are those of this movement; the survivors are of the answer.
   const { attacker, defender } = asked.request;
-  return {
+  return combatOdds({
+    attacker: plan.viewer,
     defender: battle.defender,
-    win,
-    draw,
-    loss,
-    rollouts: response?.simulations ?? 0,
+    response,
+    draw: response ? response.mutual_destruction_rate + response.unresolved_rate : 0,
     pending,
-    sides: [
-      side(
-        plan.viewer,
-        pending ? attacker.units : response?.attacker_fielded,
-        response?.attacker_expected_survivors,
-      ),
-      side(
-        battle.defender,
-        pending ? defender.units : response?.defender_fielded,
-        response?.defender_expected_survivors,
-      ),
-    ],
-  };
+    fielded: { attacker: attacker.units, defender: defender.units },
+    keep: isShip,
+  });
 }
 
 const stagedShips = (plan: Plan) => plan.facts.ships.filter((ship) => shipId(ship) in plan.draft);

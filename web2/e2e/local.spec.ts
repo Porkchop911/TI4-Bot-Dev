@@ -2620,14 +2620,23 @@ test("the landings on a defended planet have the odds of the ground combat", asy
   await expect(regions).toHaveCount(1);
   await expect(odds).toHaveAttribute("aria-busy", "false");
   await expect(odds).toContainText(/Ground combat\s*·\s*Letnev/);
-  await expect(odds).toContainText(/Win \d+%/);
+  await expect(odds).toContainText(/Win \d+% · Draw \d+% · Loss \d+%/);
+  // The survivors of each side by kind, of the units that fight.
+  await expect(odds.getByRole("group", { name: "Survivors of Sol" })).toHaveText(
+    /^\s*\d\.\d \/ 1\s*$/,
+  );
+  await expect(odds.getByRole("group", { name: "Survivors of Letnev" })).toHaveText(
+    /^\s*\d\.\d \/ 2\s*$/,
+  );
   const one = Number(/Win (\d+)%/.exec((await odds.textContent()) ?? "")![1]);
-  // The panel row of the planet has the same number.
-  await expect(
-    panel(page).getByRole("button", {
-      name: new RegExp(`^Qucen'n 1 Infantry Ground combat · Win ${one}%$`),
-    }),
-  ).toBeVisible();
+  // The panel has the first round of the combat, with the same number in the header of Sol.
+  const table = panel(page).getByRole("region", { name: "Qucen'n · Ground combat · Round 1" });
+  await expect(table).toHaveAttribute("aria-busy", "false");
+  await expect(table.getByRole("region", { name: "Attacker" })).toContainText(
+    new RegExp(`${one}% win · ~\\d\\.\\d of 1 survive`),
+  );
+  await expect(table.getByRole("region", { name: "Defender" })).toContainText(/Infantry×28\+/);
+  await expect(table).toContainText(/Avg \d\.\d rounds/);
   // More units that land: new odds, better than with one.
   await sheet.getByRole("button", { name: /^Land Infantry on Qucen/ }).click();
   await sheet.getByRole("button", { name: /^Land Infantry on Qucen/ }).click();
@@ -2649,6 +2658,51 @@ test("the landings on a defended planet have the odds of the ground combat", asy
   // A unit taken back: the odds follow.
   await sheet.getByRole("button", { name: "Take back Infantry from Rarron" }).click();
   await expect(regions).toHaveCount(1);
+  expect(errors).toEqual([]);
+});
+
+test("a draft reaches the landings on a defended planet, with the first round of the ground combat", async ({
+  page,
+}) => {
+  // Longer than a test of this suite should be: see "Tests" in AGENTS.md.
+  test.setTimeout(10_000);
+  const errors = pageErrors(page, { console: true });
+  // Sol's carriers wait in a system of two planets of Letnev, each with two infantry; no PDS.
+  await page.goto("/?scenario=invasion_draft&humans=1");
+  const tab = (name: string) => page.getByRole("tab", { name: new RegExp(`^\\S* ?${name}`) });
+  await expect(panel(page).getByRole("button", { name: /^Activate a system$/ })).toBeVisible();
+  await page
+    .getByRole("navigation", { name: "Workspace" })
+    .getByRole("button", { name: "Draft" })
+    .click();
+  await expect(page.locator("g.system.target:not(.plain)")).not.toHaveCount(0);
+  await page.locator("g.system").filter({ hasText: "#29" }).click();
+  await page.keyboard.press("Enter");
+  await expect(heading(page)).toHaveText("Movement");
+  // The fleet is already there: nothing moves, and the game comes to the landings.
+  await expect(send(page)).toHaveText(/Move nothing/);
+  await send(page).click();
+  await expect(heading(page)).toHaveText("Invasion");
+  await expect(page.getByText("Private draft").first()).toBeVisible();
+  const sheet = page.getByRole("group", { name: /^Land in / });
+  await sheet.getByRole("button", { name: /^Land Infantry on Qucen/ }).click();
+  await sheet.getByRole("button", { name: /^Land Infantry on Qucen/ }).click();
+  const odds = sheet.getByRole("region", { name: "Ground combat" });
+  await expect(odds).toHaveAttribute("aria-busy", "false");
+  await expect(odds).toContainText(/Win \d+% · Draw \d+% · Loss \d+%/);
+  // The panel has the first round of the combat, with the odds in the headers.
+  const table = panel(page).getByRole("region", { name: "Qucen'n · Ground combat · Round 1" });
+  await expect(table).toHaveAttribute("aria-busy", "false");
+  await expect(table.getByRole("region", { name: "Attacker" })).toContainText(/Infantry×28\+/);
+  await expect(table.getByRole("region", { name: "Attacker" })).toContainText(
+    /\d+% win · ~\d\.\d of 2 survive/,
+  );
+  await expect(tab("Invasion")).toBeVisible();
+  const overflow = await page
+    .locator("#step-panel > div.overflow-y-auto")
+    .evaluate((element) => element.scrollHeight - element.clientHeight);
+  expect(overflow, "the step content needs vertical scroll").toBeLessThanOrEqual(0);
+  await page.screenshot({ path: "shots/local/draft-invasion-odds.png", animations: "disabled" });
   expect(errors).toEqual([]);
 });
 

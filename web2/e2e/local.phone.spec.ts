@@ -414,15 +414,15 @@ test("phone: the landings on a defended planet have the odds of the ground comba
   await expect(odds.first()).toContainText(/Win \d+%/);
   await fits();
   await page.screenshot({ path: "shots/phone/local/invasion-odds.png", animations: "disabled" });
-  // The panel says the odds in the row of each planet.
+  // The panel has the first round of each combat, with the odds in the headers.
   await sheet.getByRole("button", { name: "Done with the landings" }).click();
   await pane("Action").click();
-  await expect(
-    page
-      .locator("#step-panel")
-      .getByRole("button", { name: /^Qucen'n 1 Infantry Ground combat · Win \d+%$/ }),
-  ).toBeVisible();
+  const table = page
+    .locator("#step-panel")
+    .getByRole("region", { name: "Qucen'n · Ground combat · Round 1" });
+  await expect(table.getByRole("region", { name: "Attacker" })).toContainText(/\d+% win/);
   await fits();
+  await page.screenshot({ path: "shots/phone/local/invasion-preview.png", animations: "disabled" });
 });
 
 test("phone: the landings are staged in a sheet over the map", async ({ page }) => {

@@ -122,10 +122,10 @@ export interface OddsView {
 }
 
 /**
- * The odds of the space combat that a staged movement starts, as `ti4-calc` computes them in the
- * page. The attacker is the seat that moves.
+ * The odds of a combat that the staged units start, as `ti4-calc` computes them in the page. The
+ * attacker is the seat that moves or lands.
  */
-export interface SpaceOddsView {
+export interface CombatOddsView {
   defender: SeatId;
   /** Whole percentages of the attacker, which sum to 100. Null before the first answer. */
   win: number | null;
@@ -134,20 +134,23 @@ export interface SpaceOddsView {
   loss: number | null;
   /** How many rollouts the numbers are of. 0 before the first answer. */
   rollouts: number;
-  /** The numbers are of another movement: the answer for this one is on its way. */
+  /** The numbers are of other staged units: the answer for these is on its way. */
   pending: boolean;
-  /** The attacker, then the defender: the ships by kind, in the order of the units. */
+  /** The attacker, then the defender: the units by kind, in the order of the units. */
   sides: {
     seat: SeatId;
-    ships: {
+    units: {
       unit: UnitType;
-      /** The ships that are expected to survive, with one decimal ("1.8"). Null before the first answer. */
+      /** The units that are expected to survive, with one decimal ("1.8"). Null before the first answer. */
       expected: string | null;
-      /** The ships that fight. */
+      /** The units that fight. */
       fielded: number;
     }[];
   }[];
 }
+
+/** The odds of the space combat that a staged movement starts. */
+export type SpaceOddsView = CombatOddsView;
 
 export interface OutcomeView {
   title: string;
@@ -375,20 +378,19 @@ export interface InvasionPlanetView {
 }
 
 /**
- * The odds of the ground combat that the staged landings start on a planet, as `ti4-calc`
- * computes them in the page. The attacker is the seat that lands.
+ * The odds of the ground combat that the staged landings start on a planet. The numbers are of
+ * the last answer; `preview` is what the first round rolls with the units of that answer.
  */
-export interface GroundOddsView {
-  defender: SeatId;
-  /** The whole percentage that the attacker wins. Null before the first answer. */
-  win: number | null;
-  /** How many rollouts the number is of. 0 before the first answer. */
-  rollouts: number;
-  /** The number is of other landings: the answer for these is on its way. */
-  pending: boolean;
+export interface GroundOddsView extends CombatOddsView {
   /** The planet has a defense that the odds cannot count: there is no number. */
   unavailable: boolean;
+  /** The table of the first round, with the odds in its headers. Null before the first answer. */
+  preview: { table: BattleTableView; odds: OddsView } | null;
 }
+
+/** What the ground odds count and leave out: the end of the hint of the odds. */
+export const GROUND_ODDS_COUNT =
+  "Counted: the ground forces of both sides on the planet and those that land, the damaged ones, the SPACE CANNON of the defender against the landing, and the ships that fire during the combat (Harrow). Left out: action cards, promissory notes and leaders.";
 
 /** One planet of the active system while the landings are staged. */
 export interface LandingPlanetView {

@@ -6,7 +6,8 @@ import battleUpdate from "../../../fixtures/protocol/update-battle.json";
 import movementUpdate from "../../../fixtures/protocol/update-movement.json";
 import { type MovementDraft, setLoad, setShip } from "./movementDraft";
 import { type KeptOdds, oddsRequest } from "./movementOdds";
-import { percentages, selectArrival, selectMovement } from "./select/movement";
+import { selectArrival, selectMovement } from "./select/movement";
+import { percentages } from "./select/odds";
 import type { BattleResponse, MovementFacts, SessionUpdate } from "./wire";
 
 // An update of a real game, written by the engine: in the late game, seat a (Sol) moves into
@@ -114,14 +115,14 @@ describe("the odds in the movement", () => {
       sides: [
         {
           seat: "a",
-          ships: [
+          units: [
             { unit: "warsun", expected: null, fielded: 1 },
             { unit: "fighter", expected: null, fielded: 2 },
           ],
         },
         {
           seat: "c",
-          ships: [
+          units: [
             { unit: "cruiser", expected: null, fielded: 2 },
             { unit: "destroyer", expected: null, fielded: 1 },
           ],
@@ -134,7 +135,7 @@ describe("the odds in the movement", () => {
   it("has Win, Draw and Loss and the survivors by kind of the answer", () => {
     const odds = view({ key: asked.key, response: RESPONSE });
     expect(odds).toMatchObject({ win: 72, draw: 3, loss: 25, rollouts: 2000, pending: false });
-    expect(odds?.sides.map((side) => side.ships)).toEqual([
+    expect(odds?.sides.map((side) => side.units)).toEqual([
       [
         { unit: "warsun", expected: "0.9", fielded: 1 },
         { unit: "fighter", expected: "1.8", fielded: 2 },
@@ -154,7 +155,7 @@ describe("the odds in the movement", () => {
   it("keeps the numbers of another movement as pending, with the ships of this one", () => {
     const odds = view({ key: "another movement", response: RESPONSE });
     expect(odds).toMatchObject({ win: 72, draw: 3, loss: 25, pending: true });
-    expect(odds?.sides[0].ships).toEqual([
+    expect(odds?.sides[0].units).toEqual([
       { unit: "warsun", expected: "0.9", fielded: 1 },
       { unit: "fighter", expected: "1.8", fielded: 2 },
     ]);

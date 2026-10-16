@@ -1,16 +1,21 @@
 // The landings of an invasion from the facts of the engine and what is staged: the ground
 // forces that can land, each planet of the active system, and the marks of this on the board.
 import type {
+  BattleRowView,
+  BattleSideView,
+  BattleTableView,
   BoardTaskView,
   CargoSourceView,
+  CombatOddsView,
   GroundOddsView,
+  OddsView,
   InvasionView,
   LandingPlanetView,
   LandingView,
   TileView,
   UnitType,
 } from "../../model";
-import { unitName } from "../../model";
+import { GROUND_ODDS_COUNT, unitName } from "../../model";
 import {
   type LandingDraft,
   chosenForce,
@@ -20,10 +25,18 @@ import {
   landed,
 } from "../landingDraft";
 import { type GroundAsk, type KeptGroundOdds, groundAsks } from "../groundOdds";
-import type { ExplorationCatalog, InvasionFacts, LandingPool, SessionUpdate } from "../wire";
+import type {
+  ExplorationCatalog,
+  GroundOddsResponse,
+  GroundRoll,
+  InvasionFacts,
+  LandingPool,
+  SessionUpdate,
+} from "../wire";
 import { NO_TRAITS, planetTraits } from "./exploration";
 import { systemLabel, tilesOf } from "./movement";
-import { forceOf, unitType } from "./names";
+import { UNIT_ORDER, forceOf, unitType } from "./names";
+import { combatOdds } from "./odds";
 
 /** The icon of a unit. A unit that the table of names does not have is shown as infantry. */
 const typeOf = (unit: string): UnitType => unitType(unit) ?? "infantry";
@@ -42,19 +55,115 @@ const unitsText = (facts: InvasionFacts, taken: (force: number) => number) =>
 /** The last answers of the engine for the odds of the ground combats, by planet. */
 export type GroundOddsKept = Record<string, KeptGroundOdds>;
 
+/** The share of the rollouts that a die hits: a die of 10 that needs `target` or more. */
+const hitChance = (target: number) => Math.min(1, Math.max(0, (11 - target) / 10));
+
+/**
+ * The first round of the ground combat of an answer: what each kind of ground force of a side
+ * rolls, with the hits that it is expected to score, and the odds in the headers.
+ */
+function previewOf(
+  name: string,
+  invader: string,
+  viewer: string | null,
+  defender: string,
+  response: GroundOddsResponse,
+  view: CombatOddsView,
+): { table: BattleTableView; odds: OddsView } {
+  const side = (
+    seat: string,
+    role: "Attacker" | "Defender",
+    fielded: Record<string, number>,
+    rolls: Record<string, GroundRoll>,
+  ): BattleSideView => ({
+    seat,
+    role,
+    isViewer: seat === viewer,
+    hits: null,
+    meta: [],
+    cards: "",
+    rows: Object.entries(fielded)
+      .filter(([, count]) => count > 0)
+      .map(([id, count]) => ({ id, count, unit: typeOf(id), roll: rolls[id] }))
+      .sort((a, b) => UNIT_ORDER.indexOf(a.unit) - UNIT_ORDER.indexOf(b.unit))
+      .map(({ count, unit, roll }): BattleRowView => {
+        const rolls = roll && roll.dice > 0;
+        const target = rolls ? roll.hits_on - roll.modifier : null;
+        const dice = rolls ? roll.dice * count : 0;
+        return {
+          unit,
+          count,
+          target,
+          targetTitle:
+            rolls && roll.modifier !== 0
+              ? `Printed ${roll.hits_on}+, ${roll.modifier > 0 ? "+" : "−"}${Math.abs(roll.modifier)} to each die`
+              : "",
+          modified: !!rolls && roll.modifier !== 0,
+          dice,
+          hits: target === null ? "" : `≈${(dice * hitChance(target)).toFixed(1)}`,
+          scored: false,
+          pills: [],
+          gone: false,
+          assign: [],
+        };
+      }),
+  });
+  const total = (counts: Record<string, number>) =>
+    Object.values(counts).reduce((sum, count) => sum + count, 0);
+  const left = (expected: Record<string, number>, fielded: Record<string, number>) =>
+    `${total(expected).toFixed(1)} of ${total(fielded)}`;
+  return {
+    table: {
+      label: `${name} · Ground combat · Round 1`,
+      score: "Before the roll · expected hits",
+      owed: null,
+      sides: [
+        side(invader, "Attacker", response.attacker_fielded, response.attacker_rolls),
+        side(defender, "Defender", response.defender_fielded, response.defender_rolls),
+      ],
+      notes: [],
+    },
+    odds: {
+      kind: "ground",
+      attacker: invader,
+      defender,
+      attackerWins: view.win ?? 0,
+      defenderWins: view.loss ?? 0,
+      rollouts: response.simulations,
+      rounds: response.average_rounds.toFixed(1),
+      attackerLeft: left(response.attacker_expected_survivors, response.attacker_fielded),
+      defenderLeft: left(response.defender_expected_survivors, response.defender_fielded),
+      caveat: GROUND_ODDS_COUNT,
+    },
+  };
+}
+
 /**
  * The odds of the ground combat on a planet. `kept` is the last answer of the engine for that
- * planet: of other landings it is shown as pending.
+ * planet: of other landings it is shown as pending, with the units that fight now.
  */
 function oddsOf(
+  name: string,
+  invader: string | undefined,
+  viewer: string | null,
   ask: GroundAsk | undefined,
   kept: KeptGroundOdds | undefined,
 ): GroundOddsView | null {
-  if (!ask) {
+  if (!ask || !invader) {
     return null;
   }
   if (ask.kind === "unavailable") {
-    return { defender: ask.defender, win: null, rollouts: 0, pending: false, unavailable: true };
+    return {
+      defender: ask.defender,
+      win: null,
+      draw: null,
+      loss: null,
+      rollouts: 0,
+      pending: false,
+      sides: [],
+      unavailable: true,
+      preview: null,
+    };
   }
   const pending = kept?.key !== ask.ask.key;
   // The engine had no odds for these sides.
@@ -62,12 +171,20 @@ function oddsOf(
     return null;
   }
   const response = kept?.response ?? null;
-  return {
+  const { attacker, defender } = ask.ask.request;
+  const view = combatOdds({
+    attacker: invader,
     defender: ask.ask.defender,
-    win: response ? Math.round(response.attacker_win_rate * 100) : null,
-    rollouts: response?.simulations ?? 0,
+    response,
+    draw: response?.mutual_destruction_rate ?? 0,
     pending,
+    fielded: { attacker: attacker.units, defender: defender.units },
+  });
+  // The table is of the answer: of its units, also while the answer for new landings is on its way.
+  return {
+    ...view,
     unavailable: false,
+    preview: response && previewOf(name, invader, viewer, ask.ask.defender, response, view),
   };
 }
 
@@ -135,7 +252,13 @@ export function selectLanding(
       ),
       lands: unitsText(facts, (force) => staged[force] ?? 0),
       reason: lands.length ? null : "Ground forces cannot land here",
-      odds: oddsOf(asks.get(planet), odds[planet]),
+      odds: oddsOf(
+        info?.label ?? planet,
+        update.view.board.invasion?.invader,
+        update.viewer.role === "player" ? update.viewer.seat : null,
+        asks.get(planet),
+        odds[planet],
+      ),
     };
   });
   return {

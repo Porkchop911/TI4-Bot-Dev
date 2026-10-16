@@ -140,12 +140,41 @@ pub struct GroundOddsRequest {
     pub simulations: Option<usize>,
 }
 
-/// Outcome of the rollouts of a ground combat: the share that the attacker wins.
+/// Outcome of the rollouts of a ground combat. The rates are fractions of the rollouts and sum
+/// to 1: the attacker takes the planet, the defender holds it with ground forces left, or both
+/// sides are destroyed (the defender keeps the planet, LRR 49.5d). The survivors and the fielded
+/// ground forces are by unit id.
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct GroundOddsResponse {
     pub simulations: usize,
     pub attacker_win_rate: f64,
+    /// Includes the rollouts that did not end ([`GroundOddsResponse::unresolved_rate`]).
+    pub defender_win_rate: f64,
+    pub mutual_destruction_rate: f64,
+    /// The rollouts that did not end: the invasion fails.
+    pub unresolved_rate: f64,
+    /// Rounds of ground combat, 0 when no round is fought.
+    pub average_rounds: f64,
+    pub attacker_expected_survivors: BTreeMap<String, f64>,
+    pub defender_expected_survivors: BTreeMap<String, f64>,
+    pub attacker_fielded: BTreeMap<String, usize>,
+    pub defender_fielded: BTreeMap<String, usize>,
+    /// What the fielded ground forces of each side roll in a combat round, by unit id.
+    pub attacker_rolls: BTreeMap<String, GroundRoll>,
+    pub defender_rolls: BTreeMap<String, GroundRoll>,
+}
+
+/// The combat roll of a kind of ground force in the rollouts: each unit rolls `dice` dice, and a
+/// die hits when its result plus `modifier` is at least `hits_on`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct GroundRoll {
+    /// The printed combat value of the unit.
+    pub hits_on: i64,
+    pub dice: u32,
+    /// Added to each die: -1 for Fragile, +1 for Unrelenting, else 0.
+    pub modifier: i64,
 }
 
 /// One side of a space combat: the ships and guns of `participant`, read from `state` at
@@ -563,12 +592,76 @@ pub fn ground_odds(
         .collect();
     let attacker = resolve(&request.attacker)?.with_bombardment(content, &harrow, false, true);
     let defender = resolve(&request.defender)?;
-    let wins = (0..n)
-        .filter(|seed| arena::ground_fight(&attacker, &defender, *seed as u64).winner == Some("a"))
-        .count();
+    let mut wins = 0usize;
+    let mut holds = 0usize;
+    let mut mutual = 0usize;
+    let mut unresolved = 0usize;
+    let mut total_rounds = 0u64;
+    let mut attacker_left = vec![0u64; attacker.names().len()];
+    let mut defender_left = vec![0u64; defender.names().len()];
+    for seed in 0..n {
+        let outcome = arena::ground_fight(&attacker, &defender, seed as u64);
+        let defender_stands = outcome.defender_left.iter().any(|count| *count > 0);
+        if outcome.winner == Some("a") {
+            wins += 1;
+        } else if defender_stands {
+            holds += 1;
+        } else {
+            mutual += 1;
+        }
+        if outcome.unresolved {
+            unresolved += 1;
+        }
+        total_rounds += u64::from(outcome.rounds);
+        for (sum, count) in attacker_left.iter_mut().zip(&outcome.attacker_left) {
+            *sum += *count as u64;
+        }
+        for (sum, count) in defender_left.iter_mut().zip(&outcome.defender_left) {
+            *sum += *count as u64;
+        }
+    }
+    let rate = |count: usize| count as f64 / n as f64;
+    let expected = |side: &GroundSide, sums: &[u64]| -> BTreeMap<String, f64> {
+        side.names()
+            .iter()
+            .zip(sums)
+            .map(|(name, sum)| (name.clone(), *sum as f64 / n as f64))
+            .collect()
+    };
+    let fielded = |side: &GroundSide| -> BTreeMap<String, usize> {
+        side.names().iter().cloned().zip(side.fielded()).collect()
+    };
+    let rolls = |side: &GroundSide| -> BTreeMap<String, GroundRoll> {
+        side.names()
+            .iter()
+            .zip(side.rolls())
+            .filter_map(|(name, roll)| {
+                roll.map(|(hits_on, dice, modifier)| {
+                    (
+                        name.clone(),
+                        GroundRoll {
+                            hits_on,
+                            dice,
+                            modifier,
+                        },
+                    )
+                })
+            })
+            .collect()
+    };
     Ok(GroundOddsResponse {
         simulations: n,
-        attacker_win_rate: wins as f64 / n as f64,
+        attacker_win_rate: rate(wins),
+        defender_win_rate: rate(holds),
+        mutual_destruction_rate: rate(mutual),
+        unresolved_rate: rate(unresolved),
+        average_rounds: total_rounds as f64 / n as f64,
+        attacker_expected_survivors: expected(&attacker, &attacker_left),
+        defender_expected_survivors: expected(&defender, &defender_left),
+        attacker_fielded: fielded(&attacker),
+        defender_fielded: fielded(&defender),
+        attacker_rolls: rolls(&attacker),
+        defender_rolls: rolls(&defender),
     })
 }
 
@@ -860,5 +953,143 @@ mod tests {
 
         request.simulations = Some(0);
         assert!(ground_odds(content, &request).is_err());
+    }
+
+    #[test]
+    fn ground_odds_split_every_rollout_and_count_what_is_left() {
+        let content = ContentStore::embedded();
+        let side = |faction: &str, units: &[(&str, usize)]| GroundOddsSide {
+            faction: faction.to_owned(),
+            units: units
+                .iter()
+                .map(|(id, count)| ((*id).to_owned(), *count))
+                .collect(),
+            damaged: BTreeMap::new(),
+            guns: BTreeMap::new(),
+        };
+        let request = GroundOddsRequest {
+            attacker: side("sol", &[("infantry", 2), ("sol_mech", 1)]),
+            defender: side("letnev", &[("infantry", 2)]),
+            harrow: BTreeMap::new(),
+            simulations: Some(500),
+        };
+        let response = ground_odds(content, &request).expect("ground odds");
+
+        // The attacker's rate is the share of `ground_fight` that it wins, seed by seed.
+        let attacker = GroundSide::of(
+            content,
+            &[("infantry".to_owned(), 2), ("sol_mech".to_owned(), 1)],
+            &[],
+            "sol",
+        )
+        .with_bombardment(content, &[], false, true);
+        let defender = GroundSide::of(content, &[("infantry".to_owned(), 2)], &[], "letnev");
+        let wins = (0..500u64)
+            .filter(|seed| arena::ground_fight(&attacker, &defender, *seed).winner == Some("a"))
+            .count();
+        #[expect(clippy::cast_precision_loss, reason = "small counts")]
+        let expected_rate = wins as f64 / 500.0;
+        assert!((response.attacker_win_rate - expected_rate).abs() < f64::EPSILON);
+
+        let total = response.attacker_win_rate
+            + response.defender_win_rate
+            + response.mutual_destruction_rate;
+        assert!((total - 1.0).abs() < 1e-9);
+        assert!(response.mutual_destruction_rate > 0.0);
+        assert!(response.defender_win_rate > 0.0);
+        assert!(response.unresolved_rate <= response.defender_win_rate);
+        assert!(response.average_rounds >= 1.0);
+
+        assert_eq!(
+            response.attacker_fielded,
+            [("infantry".to_owned(), 2), ("sol_mech".to_owned(), 1)]
+                .into_iter()
+                .collect()
+        );
+        assert_eq!(
+            response.defender_fielded,
+            [("infantry".to_owned(), 2)].into_iter().collect()
+        );
+        for (fielded, survivors) in [
+            (
+                &response.attacker_fielded,
+                &response.attacker_expected_survivors,
+            ),
+            (
+                &response.defender_fielded,
+                &response.defender_expected_survivors,
+            ),
+        ] {
+            assert_eq!(
+                fielded.keys().collect::<Vec<_>>(),
+                survivors.keys().collect::<Vec<_>>()
+            );
+            for (id, left) in survivors {
+                #[expect(clippy::cast_precision_loss, reason = "small counts")]
+                let most = fielded[id] as f64;
+                assert!((0.0..=most).contains(left), "{id}: {left}");
+            }
+        }
+        assert!(response.attacker_expected_survivors["infantry"] > 0.0);
+        assert_eq!(
+            response.attacker_rolls["infantry"],
+            GroundRoll {
+                hits_on: 8,
+                dice: 1,
+                modifier: 0
+            }
+        );
+        assert_eq!(response.attacker_rolls["sol_mech"].dice, 1);
+    }
+
+    #[test]
+    fn ground_odds_say_what_a_fragile_side_rolls() {
+        let content = ContentStore::embedded();
+        let side = |faction: &str, units: &[(&str, usize)]| GroundOddsSide {
+            faction: faction.to_owned(),
+            units: units
+                .iter()
+                .map(|(id, count)| ((*id).to_owned(), *count))
+                .collect(),
+            damaged: BTreeMap::new(),
+            guns: BTreeMap::new(),
+        };
+        let request = GroundOddsRequest {
+            attacker: side("jolnar", &[("infantry", 2), ("jolnar_mech", 1)]),
+            defender: side("sardakk", &[("infantry", 1)]),
+            harrow: BTreeMap::new(),
+            simulations: Some(20),
+        };
+        let response = ground_odds(content, &request).expect("ground odds");
+        // Shield Paling: the infantry of Jol-Nar ignore Fragile while the mech is on the planet.
+        assert_eq!(response.attacker_rolls["infantry"].modifier, 0);
+        assert_eq!(response.attacker_rolls["jolnar_mech"].modifier, -1);
+        assert_eq!(response.defender_rolls["infantry"].modifier, 1);
+    }
+
+    #[test]
+    fn a_ground_combat_with_no_defender_is_won_in_no_round() {
+        let content = ContentStore::embedded();
+        let request = GroundOddsRequest {
+            attacker: GroundOddsSide {
+                faction: "sol".to_owned(),
+                units: [("infantry".to_owned(), 1)].into_iter().collect(),
+                damaged: BTreeMap::new(),
+                guns: BTreeMap::new(),
+            },
+            defender: GroundOddsSide {
+                faction: "letnev".to_owned(),
+                units: BTreeMap::new(),
+                damaged: BTreeMap::new(),
+                guns: BTreeMap::new(),
+            },
+            harrow: BTreeMap::new(),
+            simulations: Some(10),
+        };
+        let response = ground_odds(content, &request).expect("ground odds");
+        assert!((response.attacker_win_rate - 1.0).abs() < f64::EPSILON);
+        assert!(response.average_rounds.abs() < f64::EPSILON);
+        assert!((response.attacker_expected_survivors["infantry"] - 1.0).abs() < f64::EPSILON);
+        assert!(response.defender_expected_survivors.is_empty());
     }
 }

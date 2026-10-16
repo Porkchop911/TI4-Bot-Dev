@@ -30,6 +30,7 @@ pub const ONGOING_COMBAT_FOUR_VIEWS_ID: &str = "ongoing_combat_four_views";
 pub const INVASION_FOUR_VIEWS_ID: &str = "ongoing_invasion_four_views";
 pub const INVASION_COEXISTENCE_ID: &str = "ongoing_invasion_coexistence";
 pub const INVASION_PARLEY_ID: &str = "ongoing_invasion_parley";
+pub const INVASION_DRAFT_ID: &str = "invasion_draft";
 pub const ENDGAME_ID: &str = "endgame";
 pub const SCORE_STATUS_ID: &str = "score_objective_status";
 pub const SCORE_IMPERIAL_ID: &str = "score_objective_imperial";
@@ -165,6 +166,17 @@ pub const INVASION_PARLEY: Scenario = Scenario {
     title: "Interrupted Invasion Landing",
     description: "Single-planet invasion with a human defender holding Parley to interrupt \
         sequential landings.",
+    ..INVASION_FOUR_VIEWS
+};
+
+pub const INVASION_DRAFT: Scenario = Scenario {
+    id: INVASION_DRAFT_ID,
+    title: "Invasion in a Draft",
+    description: "Sol has the turn, with carriers, infantry and a mech already in a system of two \
+        planets of Letnev, each with two infantry, and an infantry of Hacan on the first. No \
+        PDS fires, so a draft of the tactical action reaches the landings on defended planets.",
+    humans: SOL,
+    opening: None,
     ..INVASION_FOUR_VIEWS
 };
 
@@ -363,9 +375,10 @@ pub(super) fn apply(
             four_view_battle(state, &sol, &letnev);
             Ok(())
         }
-        INVASION_FOUR_VIEWS_ID | INVASION_COEXISTENCE_ID | INVASION_PARLEY_ID => {
-            invasion(state, galaxy, content, [&sol, &hacan, &letnev], id)
-        }
+        INVASION_FOUR_VIEWS_ID
+        | INVASION_COEXISTENCE_ID
+        | INVASION_PARLEY_ID
+        | INVASION_DRAFT_ID => invasion(state, galaxy, content, [&sol, &hacan, &letnev], id),
         ENDGAME_ID => endgame(state, [&sol, &hacan, &letnev]),
         SCORE_STATUS_ID => {
             score_status(state, &sol);
@@ -855,7 +868,10 @@ fn invasion(
     [invader, third, defender]: [&PlayerId; 3],
     id: &str,
 ) -> Result<(), String> {
-    let coexistence = id == INVASION_COEXISTENCE_ID;
+    // The draft has no PDS and no card at the start of the invasion: nothing stops a draft
+    // before the landings.
+    let draft = id == INVASION_DRAFT_ID;
+    let coexistence = id == INVASION_COEXISTENCE_ID || draft;
     let system = invasion_system(galaxy, content, coexistence)?;
     let planets: Vec<PlanetId> = ti4_content::galaxy::system(content, system, POK)
         .ok_or("the system of the invasion is not in the content")?
@@ -889,14 +905,14 @@ fn invasion(
         .push(Unit::new(UnitTypeId::new("mech"), invader.clone()));
     for planet in &planets {
         board.set_control(planet.clone(), defender.clone());
-        board.planet_units.insert(
-            planet.clone(),
-            vec![
-                Unit::new(UnitTypeId::new("infantry"), defender.clone()),
-                Unit::new(UnitTypeId::new("infantry"), defender.clone()),
-                Unit::new(UnitTypeId::new("pds"), defender.clone()),
-            ],
-        );
+        let mut units = vec![
+            Unit::new(UnitTypeId::new("infantry"), defender.clone()),
+            Unit::new(UnitTypeId::new("infantry"), defender.clone()),
+        ];
+        if !draft {
+            units.push(Unit::new(UnitTypeId::new("pds"), defender.clone()));
+        }
+        board.planet_units.insert(planet.clone(), units);
     }
     if coexistence {
         board
@@ -909,6 +925,9 @@ fn invasion(
             .entry(planets[0].clone())
             .or_default()
             .insert(third.clone());
+    }
+    if draft {
+        return Ok(());
     }
     // A card of the start of an invasion holds the game at the first public boundary.
     state

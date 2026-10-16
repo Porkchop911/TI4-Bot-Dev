@@ -4,7 +4,7 @@ import { unitName } from "../../model";
 import { Card, CardBody, CardHeading, Counter, Gauge, Gauges, InlineNote, ListRow } from "../../ui";
 import { BattleOffers, BattleRecords, BattleTable, OutcomeCard } from "../combat/BattleTable";
 import { OwnerLabel, useDispatch } from "../context";
-import { LandingSummary } from "./invasion/LandingSheet";
+import { GroundPreviews, LandingSummary } from "./invasion/LandingSheet";
 
 /** Which roll is in view. It goes back to the latest roll when the battle moves on. */
 function useRecordTab(revision: string) {
@@ -124,7 +124,12 @@ export function InvasionStep({ view }: { view: InvasionView }) {
     return <Skipped step="Invasion" reason={view.skipped} />;
   }
   if (view.landing) {
-    return <LandingSummary view={view.landing} />;
+    return (
+      <>
+        <LandingSummary view={view.landing} />
+        <GroundPreviews view={view.landing} />
+      </>
+    );
   }
   return (
     <>
