@@ -12,6 +12,7 @@ Part of `web2/AGENTS.md`: the Patterns and the rules of Screen size and Text the
 - **A click on a system shows what is in it** (owner, 2026-10-14), on every screen: the inspector, or the sheet of the task at that system (the fleet of a movement, the build of a production, the landings), which has the same details (`SystemDetails`: the facts, the ships in space by seat, and each planet with `res/inf`, `PlanetTraits`, the owner and the forces). In the activation the click also chooses the system; closing the inspector does not take the choice back, and the inspector closes when the activation is sent or recorded, so the movement has the whole map.
 - A system can have up to three planets. The tile layout must support this.
 - A planet that can pay shows resources and influence (`res/inf`). The value that pays is large. The player must see what the payment gives up.
+- The system that an open window is about (a reaction window, an ability that asks in the middle of an action) has a wide ring in the colour of the window while it is open (`BoardView.marked`; which system: `docs/agents/decisions.md`, "Reaction windows"). Its tooltip and accessible name say it.
 - The inner ring of a system shows who has ships there, in the colour of that seat. A red dashed ring shows that two or more players have ships there.
 - Seat symbols are drawn shapes of one size (`SeatShape` in `src/game/context.tsx`). Do not use font glyphs for them: their sizes are not equal.
 

@@ -164,6 +164,11 @@ export interface BoardView {
   wormholes: [SystemId, SystemId][];
   routes: RouteView[];
   activeSystem: SystemId | null;
+  /**
+   * The system that the open window is about: the system of its trigger, else the active system.
+   * The board marks it while the window is open. Absent: no window is open.
+   */
+  marked?: SystemId | null;
   inspected: SystemId | null;
   /** A click on a system chooses the activation target. */
   targeting: boolean;

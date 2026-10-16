@@ -10,18 +10,7 @@ import type {
   StepContentView,
   TaskView,
 } from "../../model";
-import {
-  Badge,
-  Button,
-  Card,
-  Eyebrow,
-  Hint,
-  ListRow,
-  StepTabs,
-  Trail,
-  cx,
-  type TrailItem,
-} from "../../ui";
+import { Badge, Button, Card, Hint, ListRow, StepTabs, Trail, cx, type TrailItem } from "../../ui";
 import { ActionButton, useDispatch } from "../context";
 import { Blocks } from "../flows/Blocks";
 import { useLink } from "../link";
@@ -45,27 +34,36 @@ function StepContent({ view }: { view: StepContentView }) {
   }
 }
 
-/** A reaction window on top of the open action: the trigger, and the cards that can be played now. */
-function Interrupt({ view }: { view: InterruptView }) {
+/**
+ * A window on top of the open action: a reaction window with the cards that can be played now, or
+ * an ability that asks in the middle of the action, its card in one line with the text behind "?".
+ * What opened it is its name; the heading and its context say it on the screen.
+ */
+export function Interrupt({ view, className }: { view: InterruptView; className?: string }) {
   const { linked, props } = useLink(view.link);
   return (
     <div
       role="group"
-      aria-label={view.eyebrow}
+      aria-label={view.label}
       className={cx(
-        "border-b border-cyan/30 bg-cyan/[.05] px-5 py-2.5 phone:px-3",
+        "space-y-1.5 border-b border-cyan/30 bg-cyan/[.05] px-5 py-2 phone:px-3",
         linked && "bg-cyan/[.09]",
+        className,
       )}
       {...props}
     >
-      <div className="mb-1.5 flex items-center justify-between gap-3">
-        <Eyebrow className="text-cyan">{view.eyebrow}</Eyebrow>
-        <span className="flex gap-1.5">
-          {view.actions.map((action) => (
-            <ActionButton key={action.label} view={action} size="sm" />
-          ))}
-        </span>
-      </div>
+      {view.source && (
+        <p className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+          <strong className="text-base font-semibold">{view.source.name}</strong>
+          <span className="text-xs text-muted">{view.source.type}</span>
+          {view.source.text && (
+            <span className="self-center">
+              <Hint label={`Text: ${view.source.name}`}>{view.source.text}</Hint>
+            </span>
+          )}
+        </p>
+      )}
+      {view.question && <p className="text-sm">{view.question}</p>}
       <Blocks blocks={view.blocks} />
     </div>
   );

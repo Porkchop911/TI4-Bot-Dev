@@ -33,6 +33,27 @@ export function showsStrategy(update: SessionUpdate, local: LocalState): boolean
   );
 }
 
+/**
+ * The seats under a band: the seats that did something or decide, then the seats that wait, in
+ * their order, as one line.
+ */
+function waitingInShort(primary: SeatRowView, followers: SeatRowView[]): BlockView[] {
+  const waits = (row: SeatRowView) => row.status.sign === "·";
+  const waiting = followers.filter(waits);
+  return [
+    { kind: "seats", rows: [primary, ...followers.filter((row) => !waits(row))] },
+    ...(waiting.length
+      ? [
+          {
+            kind: "note" as const,
+            tone: "quiet" as const,
+            text: `Then: ${waiting.map((row) => row.name).join(", ")}`,
+          },
+        ]
+      : []),
+  ];
+}
+
 const button = (
   label: string,
   intent: ActionButtonView["intent"],
@@ -68,24 +89,29 @@ export function selectStrategy(
   const secondary = choice?.details?.kind === "strategy_secondary" ? choice.details : null;
   // An editor is one screen of several questions: its blocks say what it asks and costs.
   const several = openEditor(update, local) !== null;
-  const asked: BlockView[] = choice
-    ? [
-        ...(several
-          ? []
-          : [
-              {
-                kind: "note" as const,
-                tone: "quiet" as const,
-                strong:
-                  secondary?.costs_token === true
-                    ? (secondaryCost(secondary) ?? undefined)
-                    : undefined,
-                text: promptWords(choice, update, printed).text,
-              },
-            ]),
-        ...inner.blocks,
-      ]
-    : [];
+  // An ability that asks in the middle of the action is the band on top of it (`interrupt`): the
+  // row of the seat has nothing open, and the seats that wait are one line.
+  const band = !!inner.interrupt;
+  const asked: BlockView[] = band
+    ? []
+    : choice
+      ? [
+          ...(several
+            ? []
+            : [
+                {
+                  kind: "note" as const,
+                  tone: "quiet" as const,
+                  strong:
+                    secondary?.costs_token === true
+                      ? (secondaryCost(secondary) ?? undefined)
+                      : undefined,
+                  text: promptWords(choice, update, printed).text,
+                },
+              ]),
+          ...inner.blocks,
+        ]
+      : [];
   const summary = (follow?.answers ?? []).map(sentence).join(" · ");
   const editor = (): BlockView[] =>
     choice
@@ -110,7 +136,7 @@ export function selectStrategy(
           sign: "▶",
           label: action.primary === seat && live ? "Your decision" : "Deciding",
         },
-    open: !action.open && action.primary === seat && live ? asked : undefined,
+    open: !action.open && action.primary === seat && live && !band ? asked : undefined,
   };
   const followers = action.followers.map((follower, index): SeatRowView => {
     const you = follower.seat === seat;
@@ -133,7 +159,7 @@ export function selectStrategy(
       return {
         ...row,
         status: { tone: "live", sign: "▶", label: "Your decision" },
-        open: asked,
+        ...(band ? {} : { open: asked }),
       };
     }
     if (you && follow?.ready) {
@@ -234,7 +260,9 @@ export function selectStrategy(
           ? { tone: "done", label: "Resolved" }
           : null,
     contentKey: `strategy:${action.primary}:${action.card}`,
-    blocks: [{ kind: "seats", rows: [primary, ...followers] }],
+    blocks: band
+      ? waitingInShort(primary, followers)
+      : [{ kind: "seats", rows: [primary, ...followers] }],
     footer,
   };
 }

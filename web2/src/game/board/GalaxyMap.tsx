@@ -210,6 +210,8 @@ function Planet({
 interface TileProps {
   tile: TileView;
   active: boolean;
+  /** The open window is about this system. */
+  marked: boolean;
   inspected: boolean;
   targeting: boolean;
   view: MapViewId;
@@ -223,13 +225,13 @@ const BODY_Y = -5;
  * One system. It shows what matters for play: planets, wormhole, anomaly, command token and fleets.
  * The name is flavor: it is in the tooltip and in the inspector, not on the tile.
  */
-function Tile({ tile, active, inspected, targeting, view, task }: TileProps) {
+function Tile({ tile, active, marked, inspected, targeting, view, task }: TileProps) {
   const dispatch = useDispatch();
   const seats = useSeats();
   const { linked, props } = useLink([`sys:${tile.id}`]);
   const { x, y } = hexCenter(tile);
   const strength = view === "space";
-  const label = `${tile.name}, system ${tile.id}${tile.home ? `, ${seats[tile.home].faction} home system` : ""}${tile.anomaly ? ", " + ANOMALY_LABEL[tile.anomaly] : ""}${tile.wormhole ? `, ${tile.wormhole} wormhole` : ""}${tile.commandToken ? ", your command token is here" : ""}${tile.handled ? ", handled" : ""}${tile.fleets.map((fleet) => `, ${plural(fleet.ships, seats[fleet.seat].faction + " ship")}`).join("")}`;
+  const label = `${tile.name}, system ${tile.id}${tile.home ? `, ${seats[tile.home].faction} home system` : ""}${tile.anomaly ? ", " + ANOMALY_LABEL[tile.anomaly] : ""}${tile.wormhole ? `, ${tile.wormhole} wormhole` : ""}${tile.commandToken ? ", your command token is here" : ""}${tile.handled ? ", handled" : ""}${marked ? ", the open window is about this system" : ""}${tile.fleets.map((fleet) => `, ${plural(fleet.ships, seats[fleet.seat].faction + " ship")}`).join("")}`;
   // Planets and the wormhole are in one row. A system has at most three planets.
   const slots = tile.planets.length + (tile.wormhole ? 1 : 0);
   const gap = slots > 3 ? 19 : 25;
@@ -250,6 +252,7 @@ function Tile({ tile, active, inspected, targeting, view, task }: TileProps) {
         tile.home && "home",
         inspected && "inspected",
         active && "active",
+        marked && "marked",
         (tile.anomaly === "asteroid" || tile.anomaly === "supernova") && "blocked",
         linked && "linked",
         target && "target",
@@ -276,6 +279,10 @@ function Tile({ tile, active, inspected, targeting, view, task }: TileProps) {
         {tile.name} · #{tile.id}
       </title>
       <polygon className="hex" points={hexPoints({ x, y }, HEX_R - 2)} />
+      {marked && (
+        // The system of the open window: a wide ring, which no other state of a tile has.
+        <polygon className="mark" points={hexPoints({ x, y }, HEX_R - 2)} />
+      )}
       {tile.control && (
         // Inner ring: the player with ships here. Red and dashed when two or more players have ships.
         <polygon
@@ -440,6 +447,7 @@ export function GalaxyMap({
           key={tile.id}
           tile={tile}
           active={tile.id === view.activeSystem}
+          marked={tile.id === view.marked}
           inspected={tile.id === view.inspected}
           targeting={view.targeting}
           view={mapView}

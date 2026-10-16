@@ -13,7 +13,7 @@ import type {
 } from "../wire";
 import { plain, timing } from "./components";
 import { systemLabel, tilesOf } from "./movement";
-import { factionName, humanizeId, phaseName, seatLabel, strategyCard } from "./names";
+import { humanizeId, phaseName, seatLabel, sentence, strategyCard } from "./names";
 import { printedSource } from "./printed";
 
 const KEYS = "123456789";
@@ -48,8 +48,8 @@ export function triggerText(
     return "Reaction";
   }
   const viewer = update.viewer.role === "player" ? update.viewer.seat : null;
-  const faction = (seat: string) =>
-    factionName(update.view.players.find((player) => player.id === seat)?.faction ?? seat, catalog);
+  // The seat as the page names it everywhere: its player, else its faction.
+  const faction = (seat: string) => seatLabel(update, seat, catalog);
   const { actor, system } = trigger;
   const mine = !!actor && actor === viewer;
   // "Hacan activates", "you activate"; "Hacan’s", "your".
@@ -84,8 +84,12 @@ export function triggerText(
       case "MOVEMENT_FINISHED":
       case "SHIP_MOVED":
         return whose && `${whose} movement${system ? ` to system ${system}` : ""}`;
-      case "AGENDA_REVEALED":
-        return "an agenda is revealed";
+      case "AGENDA_REVEALED": {
+        const agenda = trigger.agenda
+          ? catalog?.components.agendas.find((item) => item.id === trigger.agenda)?.name
+          : undefined;
+        return agenda ? `${agenda} is revealed` : "an agenda is revealed";
+      }
       default:
         return null;
     }
@@ -170,16 +174,42 @@ export function selectReaction(
 }
 
 /**
- * The window on top of the action panel: the trigger and the rows. A window of any question has
- * this shape (a window in a space combat too); the main button of the footer is Pass or Use.
+ * The window on top of the action panel: its rows. A window of any question has this shape (a
+ * window in a space combat too); the main button of the footer is Pass or Use. What opened it is
+ * the name of the band: the heading and its context say it on the screen.
  */
-export function interruptOf(window: ReactionWindow, system?: string): InterruptView {
+export function interruptOf(window: ReactionWindow, system?: string | null): InterruptView {
   return {
-    eyebrow: `Reaction · ${window.heading}`,
+    label: `Reaction · ${window.heading}`,
+    source: null,
+    question: null,
     link: system ? [`sys:${system}`] : [],
     blocks: [{ kind: "menu", rows: window.rows }],
-    actions: [],
   };
+}
+
+/**
+ * The system that the open window is about, as the engine says it: the system or the planet of
+ * its trigger, the target of the question, else the active system of the tactical action.
+ */
+export function windowSystem(update: SessionUpdate, choice: Choice | null): string | null {
+  const trigger = update.reaction?.trigger ?? choice?.context?.trigger;
+  const target = choice?.context?.target;
+  const planet = trigger?.planet;
+  const onMap = planet
+    ? (update.view.board.map_tiles ?? []).find((tile) =>
+        (tile.planets ?? []).some((item) => item.id === planet),
+      )?.system_id
+    : undefined;
+  const aimed =
+    target && "System" in target
+      ? target.System
+      : target && "Planet" in target
+        ? target.Planet.system
+        : target && "Unit" in target
+          ? target.Unit.system
+          : undefined;
+  return trigger?.system ?? onMap ?? aimed ?? update.view.board.active_system ?? null;
 }
 
 /** The action that a window is over, as the panel shows it under the window. */
@@ -260,18 +290,49 @@ export function reactedAction(
   const tactical =
     !!trigger && (TACTICAL.has(trigger.kind) || TACTICAL_EVENTS.has(trigger.event_type));
   if (actor && system && (tactical || update.view.board.active_system)) {
-    const tiles = tilesOf(update);
-    const label = systemLabel(tiles, system);
+    // The system is marked on the map; the context names it.
     return {
-      context: label,
+      context: systemLabel(tilesOf(update), system),
       heading: mine ? "Your tactical action" : `${who}’s tactical action`,
-      blocks: [
-        {
-          kind: "card",
-          title: "Active system",
-          rows: [{ icon: "token", title: [label], link: [`sys:${system}`] }],
-        },
-      ],
+      blocks: [],
+    };
+  }
+  // The turn of the seat, or the phase: the trigger says what happened in it.
+  const phase = phaseName(update.view.phase);
+  const said = trigger ? sentence(triggerText(trigger, update, catalog)) : null;
+  return {
+    context: said ?? (actor ? phase : null),
+    heading: actor ? (mine ? "Your turn" : `${who}’s turn`) : phase,
+    blocks: [],
+  };
+}
+
+/**
+ * The action that an ability interrupts, said in short under its band: the strategic action of
+ * its card, the tactical action of the active player in its system, the turn of that player, or
+ * the phase.
+ */
+export function interruptedAction(update: SessionUpdate, catalog: Catalog | null): ReactedAction {
+  const viewer = update.viewer.role === "player" ? update.viewer.seat : null;
+  const actor = update.view.phase === "action" ? (update.view.active_player ?? null) : null;
+  const mine = !!actor && actor === viewer;
+  const who = actor ? (mine ? "You" : seatLabel(update, actor, catalog)) : "";
+  const strategic = update.secondary;
+  if (strategic) {
+    const primary =
+      strategic.primary === viewer ? "You" : seatLabel(update, strategic.primary, catalog);
+    return {
+      context: `Strategic action · ${primary}`,
+      heading: strategic.name,
+      blocks: [],
+    };
+  }
+  const system = update.view.board.active_system;
+  if (actor && system) {
+    return {
+      context: systemLabel(tilesOf(update), system),
+      heading: mine ? "Your tactical action" : `${who}’s tactical action`,
+      blocks: [],
     };
   }
   const phase = phaseName(update.view.phase);

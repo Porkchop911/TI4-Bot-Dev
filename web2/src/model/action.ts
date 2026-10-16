@@ -691,15 +691,26 @@ export type BlockView =
     };
 
 /**
- * A reaction window: the viewer may play a card now, or pass. It sits on top of the open action,
- * which shows what happened. The main button of the footer is Pass, or Play for a staged card.
+ * A window on top of the open action: a reaction window (the viewer may play a card now, or pass)
+ * or an ability that asks the viewer in the middle of another action (Scheming in a Politics).
+ * The action under it shows what happened. The main button of the footer is Pass or Play, or
+ * the answer of the ability. On a phone it is a sheet on the map too, where its system is marked.
  */
 export interface InterruptView {
-  /** The trigger, in game values: "Reaction · After Blair plays Mining Initiative". */
-  eyebrow: string;
+  /**
+   * What opened it, in game values: "Reaction · After Blair plays Mining Initiative". The name
+   * of the band; the heading and its context say it on the screen.
+   */
+  label: string;
+  /**
+   * The ability that asks, as printed, in one line: its name, its kind, its text behind "?".
+   * Null for a reaction window, whose rows are its cards.
+   */
+  source: { name: string; type: string; text: string } | null;
+  /** What the ability asks, without its name: "Choose and discard 1 action card from your hand." */
+  question: string | null;
   link: LinkToken[];
   blocks: BlockView[];
-  actions: ActionButtonView[];
 }
 
 // ---- The panel ----------------------------------------------------------------------------------

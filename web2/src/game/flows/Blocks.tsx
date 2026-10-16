@@ -196,20 +196,19 @@ function Row({ row }: { row: RowView }) {
 
 /**
  * One choice: key, group, name, and its state at the right edge. The whole row is the control,
- * so every row has the same shape and a row that is not allowed is only dimmed.
+ * so every row has the same shape and a row that is not allowed is only dimmed. The printed text
+ * of a card is a second line in the whole width of the row, under the name and the state.
  */
 function MenuRow({ row, grouped }: { row: MenuRowView; grouped: boolean }) {
   const dispatch = useDispatch();
   return (
     <div
       className={cx(
-        "relative grid min-h-9 items-center gap-x-3 px-3.5 py-1.5 touch:min-h-12 [&+&]:border-t [&+&]:border-line/50",
+        "relative grid min-h-9 items-center gap-x-3 gap-y-0.5 px-3.5 py-1.5 touch:min-h-12 [&+&]:border-t [&+&]:border-line/50",
         // A phone has no keys: the column of the key is not there.
         grouped
           ? "grid-cols-[30px_104px_minmax(0,1fr)_auto] phone:grid-cols-[68px_minmax(0,1fr)_auto]"
           : "grid-cols-[30px_minmax(0,1fr)_auto] phone:grid-cols-[minmax(0,1fr)_auto]",
-        // On a phone the setting of a reaction is under the text of its card, which has the width.
-        row.offer && "phone:grid-cols-1 phone:gap-y-1.5",
         !row.disabled && "focus-within:bg-white/5 hover:bg-white/5",
         row.selected && "shadow-[inset_2px_0_0_var(--color-gold)]",
       )}
@@ -251,11 +250,6 @@ function MenuRow({ row, grouped }: { row: MenuRowView; grouped: boolean }) {
             </Hint>
           </span>
         )}
-        {row.text && (
-          <span className={cx("w-full text-xs", row.disabled ? "text-faint" : "text-muted")}>
-            {row.text}
-          </span>
-        )}
       </span>
       <span className="flex items-center gap-2.5">
         <span className={cx("text-xs tabular-nums", row.disabled ? "text-faint" : "text-muted")}>
@@ -265,10 +259,24 @@ function MenuRow({ row, grouped }: { row: MenuRowView; grouped: boolean }) {
         {row.offer && (
           // Above the button of the row, which covers the row.
           <span className="relative z-1 inline-flex">
-            <OfferSelect offer={row.offer} />
+            <OfferSelect offer={row.offer} compact />
           </span>
         )}
       </span>
+      {row.text && (
+        // From the column of the name to the right edge; a phone has no column of the key.
+        <span
+          className={cx(
+            "text-xs",
+            grouped
+              ? "[grid-column:3/-1] phone:[grid-column:2/-1]"
+              : "[grid-column:2/-1] phone:[grid-column:1/-1]",
+            row.disabled ? "text-faint" : "text-muted",
+          )}
+        >
+          {row.text}
+        </span>
+      )}
     </div>
   );
 }

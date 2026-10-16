@@ -21,6 +21,7 @@ import { selectAgendas } from "./agendas";
 import { selectSecrets } from "./secrets";
 import { selectStrategy, showsStrategy } from "./strategy";
 import { selectTactical, tacticalFacts } from "./tactical";
+import { windowSystem } from "./reaction";
 
 function status(update: SessionUpdate, local: LocalState, printed: Catalog | null): string {
   const turn = update.turn_status;
@@ -159,6 +160,8 @@ export function selectShell(
   const asked = openChoice(update, local);
   const pools = asked ? selectTokens(asked, local.pools ?? null) : null;
   const onMap = editing?.onMap ? editing.blocks : pools ? [pools.block] : null;
+  // The system that an open window is about is marked on the board.
+  const marked = action.interrupt ? windowSystem(update, openChoice(update, local)) : null;
   return {
     seats: selectSeats(update, printed),
     accent:
@@ -199,6 +202,7 @@ export function selectShell(
       ),
       // A decision of the map, or of the pools: a phone has its blocks on the map too.
       ...(onMap ? { blocks: onMap } : {}),
+      ...(marked ? { marked } : {}),
     },
     action: withBack(
       local.draft?.waiting || local.follow?.waiting ? waitingFor(action) : action,

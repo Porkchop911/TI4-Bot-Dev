@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { shortcuts, type ExplorationDeck, type GameSession, type Intent } from "../../model";
 import { Badge, Button, Dialog, Drawer, InlineNote, Toast, usePhone } from "../../ui";
-import { ActionFooter, ActionPanel, footerOf } from "../action/ActionPanel";
+import { ActionFooter, ActionPanel, Interrupt, footerOf } from "../action/ActionPanel";
 import { Board } from "../board/Board";
 import { GameProvider } from "../context";
 import { LinkProvider } from "../link";
@@ -103,7 +103,12 @@ export function GameShell({
   // The pane where the open choice is made: the board, the player table, or the action.
   const asked: Pane | null = view.players.pick
     ? "players"
-    : view.board.task?.interactive || view.board.targeting || view.board.blocks
+    : view.board.task?.interactive ||
+        view.board.targeting ||
+        view.board.blocks ||
+        // A window (a reaction, an ability in the middle of an action) is about the board: a
+        // phone has it on the map, where its system is marked.
+        (view.asked && view.action.interrupt)
       ? "map"
       : view.asked
         ? "action"
@@ -232,7 +237,26 @@ export function GameShell({
       onOpenSeat={(seat) => toggleDrawer(`player:${seat}`)}
     />
   );
-  const board = <Board view={view.board} />;
+  // The window of the open action is a sheet on the map of a phone, under the heading of the
+  // action that it is on top of.
+  const interrupt = view.asked ? view.action.interrupt : null;
+  const board = (
+    <Board view={view.board}>
+      {interrupt && (
+        <div className="absolute inset-x-0 bottom-0 z-2 max-h-[50%] overflow-auto border-t border-line bg-surface">
+          <p className="flex min-w-0 items-baseline gap-x-2 px-3 pt-2">
+            <strong className="truncate text-base font-semibold">
+              {view.action.kind === "tactical" ? view.action.task.title : view.action.heading}
+            </strong>
+            {view.action.context && (
+              <span className="min-w-0 truncate text-sm text-muted">{view.action.context}</span>
+            )}
+          </p>
+          <Interrupt view={interrupt} className="border-b-0 bg-transparent" />
+        </div>
+      )}
+    </Board>
+  );
 
   return (
     <GameProvider seats={view.seats} dispatch={dispatch}>

@@ -59,6 +59,27 @@ function actionCard(key: string, catalog: Catalog | null): Printed | null {
   return card ? { name: card.name, type: "Action card", text: plain(card.text) } : null;
 }
 
+/**
+ * The action card that an option of a question stands for, as printed: the engine names it by its
+ * id (the alias of a copy, "sabotage2") or by its printed name, which is the label of a card of a
+ * hand ("Sabotage", "play Sabotage"). Null for an option that is no action card.
+ */
+export function printedActionCard(
+  option: Pick<ChoiceOption, "id" | "label">,
+  catalog: Catalog | null,
+): Printed | null {
+  if (!catalog) {
+    return null;
+  }
+  const label = option.label.replace(/^play /, "");
+  const byName = catalog.components.action_cards.find((item) => item.name === label);
+  const card =
+    byName ??
+    catalog.components.action_cards.find((item) => item.id === option.id) ??
+    catalog.records.action_cards.find((item) => item.automation_id === option.id);
+  return card ? { name: card.name, type: "Action card", text: plain(card.text) } : null;
+}
+
 function leader(id: string, catalog: Catalog | null): Printed | null {
   const card = catalog?.components.leaders.find((item) => item.id === id);
   return card

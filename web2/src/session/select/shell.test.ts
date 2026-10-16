@@ -4,6 +4,7 @@ import systemsUpdate from "../../../../fixtures/protocol/update-load.json";
 import type {
   Choice,
   ComponentCatalog,
+  Catalog,
   ContentRecords,
   SessionUpdate,
   TradeReplenishHints,
@@ -624,7 +625,7 @@ it("puts a reaction window on top of the action of another seat: Pass, or play t
     { kind: "note", tone: "quiet", text: "Not resolved yet." },
   ]);
   // The window is on top: the trigger, and a row for each card, with its setting.
-  expect(view.interrupt?.eyebrow).toBe("Reaction · When Hacan plays Mining Initiative");
+  expect(view.interrupt?.label).toBe("Reaction · When Hacan plays Mining Initiative");
   const [menuBlock] = view.interrupt!.blocks;
   expect(menuBlock.kind === "menu" && menuBlock.rows.map((row) => [row.key, row.title])).toEqual([
     ["1", "Sabotage"],
@@ -643,7 +644,7 @@ it("puts a reaction window on top of the action of another seat: Pass, or play t
     ["Play Sabotage", "Enter", { type: "reaction", action: "play" }],
   ]);
   // A window in a tactical action is over the active system of the seat.
-  const tactical = selectShell(
+  const tacticalShell = selectShell(
     {
       ...window,
       reaction: {
@@ -660,10 +661,72 @@ it("puts a reaction window on top of the action of another seat: Pass, or play t
     },
     local(),
     printed,
-  ).action;
+  );
+  expect(tacticalShell.board.marked).toBe("01");
+  const tactical = tacticalShell.action;
   expect(tactical).toMatchObject({
     context: "Jord - Sol · #01",
     heading: "Hacan’s tactical action",
+    // The system is marked on the map, not repeated in the panel.
+    blocks: [],
     interrupt: { link: ["sys:01"] },
   });
+  // The board marks the system of the window; a window with no system marks none.
+  expect(selectShell(window, local(), printed).board.marked).toBeUndefined();
+});
+
+it("puts an ability that asks in the middle of an action on top of it, with the printed text of each action card", () => {
+  const printed = {
+    content: "",
+    exploration: { cards: [], decks: {}, attachments: [] },
+    components: {
+      ...NO_COMPONENTS,
+      abilities: [{ id: "scheming", name: "Scheming", text: "Draw 1 additional action card." }],
+      action_cards: [
+        {
+          id: "sabotage",
+          name: "Sabotage",
+          phase: "action",
+          window: "",
+          group: "",
+          text: "Cancel that action card.",
+        },
+      ],
+    },
+    records: NO_RECORDS,
+  } as unknown as Catalog;
+  // The status phase: the draw of each seat.
+  const update = asking(
+    {
+      prompt: "Scheming: choose and discard 1 action card from your hand",
+      options: [{ id: "sabotage2", kind: "own_hand_card", label: "Sabotage", payload: {} }],
+      context: {
+        version: 1,
+        actor: "a",
+        source: { FactionAbility: "scheming" },
+        subtype: "scheming_discard",
+        phase: "status",
+        round: 1,
+        optional: false,
+        target: null,
+        outstanding: [],
+      },
+    },
+    { phase: "status" },
+  );
+  const view = selectShell(update, local(), printed).action;
+  if (view.kind !== "flow") {
+    throw new Error("an ability is a flow");
+  }
+  // The ability is the head of the band, and its question is not said twice.
+  expect(view.interrupt).toMatchObject({
+    label: "Faction ability · Scheming",
+    source: { name: "Scheming", type: "Faction ability", text: "Draw 1 additional action card." },
+    question: "Choose and discard 1 action card from your hand",
+  });
+  const [menu] = view.interrupt!.blocks;
+  expect(menu.kind === "menu" && menu.rows.map((row) => [row.title, row.text])).toEqual([
+    ["Sabotage", "Cancel that action card."],
+  ]);
+  expect(view.blocks).toEqual([]);
 });

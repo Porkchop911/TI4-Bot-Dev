@@ -33,8 +33,14 @@ import { exploringCard } from "./exploration";
 import { systemLabel, tilesOf } from "./movement";
 import { humanizeId, seatLabel, sentence } from "./names";
 import { optionWords, promptWords } from "./notes";
-import { printedSource, strategyCardHelp } from "./printed";
-import { interruptOf, reactedAction, selectReaction } from "./reaction";
+import { printedActionCard, printedSource, strategyCardHelp } from "./printed";
+import {
+  interruptOf,
+  interruptedAction,
+  reactedAction,
+  selectReaction,
+  windowSystem,
+} from "./reaction";
 import { type EditorSlot, hintFieldsOf } from "./editor";
 import { type OpenEditor, editorOf } from "./editors";
 import { selectResearch } from "./research";
@@ -422,9 +428,10 @@ export function selectAction(
   // The source is on top: an exploration card that asks, or the card or the ability of the
   // question, as printed. A strategy card is the heading of its own screen.
   const asker = choice?.context?.source;
+  const exploring = choice ? exploringCard(update, catalog) : null;
   const source = !choice
     ? null
-    : (exploringCard(update, catalog) ??
+    : (exploring ??
       (window || !asker || "StrategyCard" in asker ? null : printedSource(asker, printed)));
   // The window is on top of the action that it reacts to, which stays in view under it.
   const reacted = window ? reactedAction(update, update.reaction?.trigger, printed) : null;
@@ -464,7 +471,8 @@ export function selectAction(
   );
   const rows: MenuRowView[] = listed.map((option, index) => {
     // A deal, a note and a faction are named as the page names them, a card with its printed
-    // text behind "?".
+    // text behind "?". An action card has its printed text in the row: the player chooses by it.
+    const card = printedActionCard(option, printed);
     const named = optionWords(choice, option, update, printed);
     const help =
       option.kind === "strategy_card"
@@ -473,7 +481,8 @@ export function selectAction(
         : named.help;
     return {
       key: KEYS[index] ?? "",
-      title: named.text,
+      title: card?.name ?? named.text,
+      ...(card?.text ? { text: card.text } : {}),
       ...(help.length ? { help } : {}),
       selected: option.id === staged?.id,
       disabled: false,
@@ -659,47 +668,71 @@ export function selectAction(
         ]
       : [];
   const looks = after?.looks ?? 0;
-  const blocks: BlockView[] = reacted
-    ? reacted.blocks
-    : !choice
-      ? turnOf
-        ? [
-            {
-              kind: "note",
-              tone: "quiet",
-              strong: passed ? "You passed." : `${faction(turnOf)} has the turn.`,
-              text: passed
-                ? "No more actions for you in this round."
-                : stepping
-                  ? `${faction(stepping)} decides next.`
-                  : local.draftLocked
-                    ? "Your next tactical action can be drafted later."
-                    : "You can prepare your next tactical action in Draft.",
-            },
-          ]
-        : [{ kind: "note", tone: local.error ? "accent" : "quiet", text: idle }]
-      : research
-        ? [research.block]
-        : several
-          ? several.blocks
-          : tokens
-            ? [tokens.block]
-            : [
-                // A component action has its card behind "?" of the heading; any other decision has
-                // its source on top.
-                ...(what && !own ? [{ kind: "source" as const, ...what }] : []),
-                ...gauges,
-                ...(chosen ? [chosen] : []),
-                ...drawn,
-                ...(rows.length || !chosen ? [{ kind: "menu" as const, rows }] : []),
-              ];
+  // An ability that asks the viewer in the middle of another action (Scheming in a Politics, an
+  // agent in the strategic action of another seat, a card that was played in a window): a band
+  // on top of that action, as a reaction window is. Its card is the head of the band; the action
+  // under it is said in short. An agenda is the flow of its phase, an exploration card that is
+  // drawn is the step that drew it, and the viewer's own component action is its own screen.
+  const triggered =
+    choice && source && !exploring && !own && !research && !several && !tokens && asker
+      ? "Agenda" in asker
+        ? null
+        : source
+      : null;
+  const interrupted = triggered ? interruptedAction(update, printed) : null;
+  /** The decision: the card that asks, the limit, the choice on the board, the list. */
+  const decision = (head: boolean): BlockView[] => [
+    // A component action has its card behind "?" of the heading; any other decision has its
+    // source on top.
+    ...(head && what && !own ? [{ kind: "source" as const, ...what }] : []),
+    ...gauges,
+    ...(chosen ? [chosen] : []),
+    ...drawn,
+    ...(rows.length || !chosen ? [{ kind: "menu" as const, rows }] : []),
+  ];
+  // The question of the ability without its name, which is the head of the band.
+  const question = triggered
+    ? sentence(
+        prompt.text.toLowerCase().startsWith(`${triggered.name.toLowerCase()}: `)
+          ? prompt.text.slice(triggered.name.length + 2)
+          : prompt.text,
+      )
+    : null;
+  const blocks: BlockView[] = interrupted
+    ? interrupted.blocks
+    : reacted
+      ? reacted.blocks
+      : !choice
+        ? turnOf
+          ? [
+              {
+                kind: "note",
+                tone: "quiet",
+                strong: passed ? "You passed." : `${faction(turnOf)} has the turn.`,
+                text: passed
+                  ? "No more actions for you in this round."
+                  : stepping
+                    ? `${faction(stepping)} decides next.`
+                    : local.draftLocked
+                      ? "Your next tactical action can be drafted later."
+                      : "You can prepare your next tactical action in Draft.",
+              },
+            ]
+          : [{ kind: "note", tone: local.error ? "accent" : "quiet", text: idle }]
+        : research
+          ? [research.block]
+          : several
+            ? several.blocks
+            : tokens
+              ? [tokens.block]
+              : decision(true);
   return {
     kind: "flow",
     // The heading says the rest. A private draft is said by the bar of the game.
     context: local.draft
       ? "Tactical action"
-      : reacted
-        ? reacted.context
+      : (interrupted ?? reacted)
+        ? (interrupted ?? reacted)!.context
         : own && what
           ? "Component action"
           : turnOf
@@ -713,12 +746,22 @@ export function selectAction(
     selected: 0,
     current: null,
     contentKey: update.pending_choice?.nonce ?? "idle",
-    interrupt: window ? interruptOf(window, update.reaction?.trigger?.system) : null,
+    interrupt: window
+      ? interruptOf(window, windowSystem(update, choice))
+      : triggered
+        ? {
+            label: `${triggered.type} · ${triggered.name}`,
+            source: triggered,
+            question: question !== triggered.name ? question : null,
+            link: ((system) => (system ? [`sys:${system}`] : []))(windowSystem(update, choice)),
+            blocks: decision(false),
+          }
+        : null,
     closing: [],
     heading: local.draft
       ? "Draft"
-      : reacted
-        ? reacted.heading
+      : (interrupted ?? reacted)
+        ? (interrupted ?? reacted)!.heading
         : own && what
           ? what.name
           : choice
@@ -747,7 +790,11 @@ export function selectAction(
           ]
         : [],
     help:
-      own && what?.text ? [{ title: `${what.type} · ${what.name}`, text: what.text }] : prompt.help,
+      own && what?.text
+        ? [{ title: `${what.type} · ${what.name}`, text: what.text }]
+        : triggered
+          ? []
+          : prompt.help,
     blocks,
     footer: {
       note: local.planNote
