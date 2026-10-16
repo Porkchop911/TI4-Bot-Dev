@@ -2,7 +2,7 @@
 import json, os, random, statistics, sys
 from collections import Counter, defaultdict
 
-COMPARE = [("tech-gd", "tech-elsewhere"), ("tech-elsewhere", "control"), ("trade", "control"), ("military-support", "control")]
+COMPARE = [("tech-gd", "tech-elsewhere"), ("tech-elsewhere", "control"), ("trade", "control"), ("military-support", "control"), ("carrier-doctrine", "control"), ("spend-down", "control"), ("no-early-pass", "control")]
 EFFECT = 0.3  # VP difference the full-run size estimate is for
 
 

@@ -110,3 +110,92 @@ The first part alone (results-03) still left 61 loops, because the looping seat 
 | military-support | 640 | +0.06 | [−0.19, +0.33] | 200/190/250 |
 
 These match results-02 (−0.87 / +0.01), so excluding guard-failure games had not biased the earlier read-out.
+
+## Fleet census and carrier-doctrine arm (control vs carrier-doctrine, 40 origins × 16 dice)
+
+The census now records each seat's units, breakthrough and leader status at every snapshot, plus Sol's production choices (`tools/audit_fleet_doctrine.py`).
+
+**What control Sol does:**
+- It builds 0.34 fighters per game over 4 rounds, and none in rounds 1–2.
+- It buys a dreadnought in round 1 in 62% of games, and 0.86 destroyers per game.
+- It ends round 4 with 1.6 fighters, down from 3 at the start.
+- Its hero is usable within 4 rounds in 54 of 640 games, and the MLP fired it in 21 of those.
+
+**The carrier-doctrine arm** replaces any Sol dreadnought or destroyer build with a fighter that fits (else infantry, else a carrier). If Sol stops producing while a fighter still fits, it buys another fighter.
+- The swaps fire 1.56 times per game, and fighters built rise to 2.6 per game.
+- The fill-on-stop rule never fired: Sol's carriers are rarely at the dock when it produces.
+- 1280/1280 games complete; determinism checks pass.
+
+| Arm vs control | Pairs | ΔVP | 95% CI | Sign + / − / 0 |
+|---|---|---|---|---|
+| carrier-doctrine | 640 | −0.14 | [−0.38, +0.10] | 144/192/304 |
+
+**Reading:** swapping composition at the production prompt does not move VP. The MLP plays the same movement and combat around the different units. Carrier doctrine as the operator describes it needs delivery: carriers at the dock, or Bellum Gloriosum + Sling Relay to produce a carrier with its load, or a forward dock. Unit choice alone does not deliver it.
+
+## Spend-before-pass arm (control vs spend-down, 40 origins × 16 dice)
+
+**Rule:** when Sol would pass while it still has at least 2 ready planet resources, it instead takes a tactical action.
+- It activates a system containing its space dock, moves nothing and builds fighters (if they fit) or infantry with the spare.
+- The spare is ready planet resources minus what a satisfied resource-spend public objective will cost at the status phase.
+
+**Run:** 1280/1280 complete; determinism checks pass. Sol is forced into a spend-down 1.52 times per game (0.18 per game aborted because no dock system was activatable). Sol builds 16.6 units per game instead of 9.5.
+
+**Waste:** ready planet resources left at the end of the action phase (control → spend-down). Every MLP seat wastes, and the waste grows each round.
+
+| Faction | R1 | R2 | R3 | R4 |
+|---|---|---|---|---|
+| sol | 1.7 → 0.9 | 1.3 → 1.1 | 2.2 → 0.9 | 6.2 → 3.4 |
+| letnev | 0.2 | 3.1 | 5.3 | 9.8 |
+| l1z1x | 1.9 | 2.1 | 5.1 | 8.1 |
+| xxcha | 2.6 | 2.2 | 4.4 | 6.0 |
+| jolnar | 0.7 | 2.0 | 3.7 | 5.6 |
+| hacan | 1.8 | 1.0 | 2.3 | 4.9 |
+
+| Arm vs control | Pairs | ΔVP | 95% CI | Sign + / − / 0 |
+|---|---|---|---|---|
+| spend-down | 640 | −0.11 | [−0.29, +0.06] | 95/141/404 |
+
+**Reading:**
+- Wasting ready resources is a general MLP flaw across all six factions.
+- Forcing Sol to convert them into units nearly doubles Sol's unit count but does not raise cutoff VP. The extra units appear at the dock late in a round, and the MLP does not turn them into scoring moves before the cutoff.
+- Unit volume, like unit type earlier, is not the binding constraint on its own.
+
+## Scoring windows and no-early-pass arm (control vs no-early-pass, 40 origins × 16 dice)
+
+**Instrumentation:**
+- Each end-action snapshot now records the progress of Sol's revealed public objectives and held secrets.
+- `tools/classify_scoring_windows.py` classifies each status phase:
+  - **scored**
+  - **satisfied-missed**
+  - **near-miss:** one count short, or at least 75% of a cost objective
+  - **out-of-reach**
+
+**Control Sol, share of games:**
+
+| Status | Scored | Satisfied but missed | Near-miss | Out of reach |
+|---|---|---|---|---|
+| 1 | 0.12 | 0.00 | 0.29 | 0.58 |
+| 2 | 0.53 | 0.00 | 0.35 | 0.12 |
+| 3 | 0.66 | 0.00 | 0.30 | 0.04 |
+| 4 | 0.71 | 0.01 | 0.22 | 0.06 |
+
+- **Satisfied-missed is about zero:** the MLP always scores what it can.
+- **Near-misses are 22–35% of windows.** The most common near-miss families are mixed:
+  - tech: colours_2, tech_specialties, unit_upgrades
+  - board: notable_systems, same_trait, attached_planets, on_the_rim, ships_adjacent_to_mecatol
+  - structures: structures_away
+  - capital ships: capital_ship_systems
+- **Status 1** is mostly out of reach (58%).
+
+**No-early-pass arm:** when Sol would pass while a revealed, unscored public in a movement family is one step short, it takes one more tactical action instead. It is limited to one per objective per round, and the MLP chooses the system and moves.
+- Forced 1.05 times per game. Only 123 of 674 forced actions (18%) advanced their objective (make_history 71/184, expand_borders 22/54, corner 13/171).
+- So most forced actions were not worth the command token, as the operator warned.
+
+| Arm vs control | Pairs | ΔVP | 95% CI | Sign + / − / 0 |
+|---|---|---|---|---|
+| no-early-pass | 640 | +0.07 | [−0.04, +0.19] | 84/61/495 |
+
+**Reading:**
+- This is the first arm with a positive point estimate, but the CI includes zero. The pair SD is 0.67.
+- Losses are near-misses, not missed scoring. Many near-misses need a research or a structure rather than a move.
+- Movement near-misses convert only when the action is aimed at the objective. An untargeted extra action wastes the token about 80% of the time.

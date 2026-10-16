@@ -49,6 +49,13 @@ enum Arm {
     TechGd,
     Trade,
     MilitarySupport,
+    /// Sol builds fighters and infantry to fill capacity; no dreadnoughts or destroyers.
+    CarrierDoctrine,
+    /// Instead of passing with ready planets, Sol activates a dock system and builds with them.
+    SpendDown,
+    /// Instead of passing while a revealed planet/system objective is one step short, Sol takes
+    /// one more tactical action (the MLP picks where). At most once per objective per round.
+    NoEarlyPass,
 }
 const ARMS: [Arm; 5] = [
     Arm::Control,
@@ -68,6 +75,166 @@ fn tech_seat(origin: u64) -> usize {
     z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
     z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
     1 + usize::try_from((z ^ (z >> 31)) % 5).expect("small")
+}
+
+fn unit_of(o: &ChoiceOption) -> &str {
+    o.payload.get("unit").and_then(Value::as_str).unwrap_or("")
+}
+
+/// Carrier doctrine at Sol's production: a dreadnought or destroyer becomes a fighter that fits
+/// the carriers (else infantry, else a carrier), and stopping with room left buys another fighter.
+fn doctrine(c: &Choice, sub: &str, proposed: &ChoiceOption) -> Option<String> {
+    let produce = |o: &&ChoiceOption| o.kind == "produce";
+    let banned = |o: &ChoiceOption| {
+        o.kind == "produce" && ["dreadnought", "destroyer"].iter().any(|b| unit_of(o).starts_with(b))
+    };
+    let fits = |o: &&ChoiceOption| {
+        o.payload
+            .get("capacity_excess_after")
+            .and_then(Value::as_i64)
+            .is_none_or(|x| x <= 0)
+    };
+    let find = |want: &str| {
+        c.options
+            .iter()
+            .filter(produce)
+            .find(|o| unit_of(o).contains(want) && (want != "fighter" || fits(o)))
+    };
+    let stops = |o: &ChoiceOption| o.is_decline() || o.kind == "decline";
+    let pick = match sub {
+        "produce_unit" if banned(proposed) => find("fighter")
+            .or_else(|| find("infantry"))
+            .or_else(|| find("carrier"))
+            .or_else(|| c.options.iter().find(|o| stops(o))),
+        "produce_unit" if stops(proposed) => find("fighter"),
+        "produce_one_unit" if banned(proposed) => find("carrier").or_else(|| find("fighter")),
+        _ => None,
+    };
+    pick.map(|o| o.id.clone())
+}
+
+/// Ready planet resources a seat can still spend this round, after holding back what a
+/// satisfied "spend" public objective will cost at the status phase.
+fn spare_planet_resources(seen: &SeatObservation<'_>) -> i64 {
+    let me = seen.bound_seat();
+    let tg = seen.seat(me).map_or(0, |s| i64::from(s.trade_goods));
+    let ready = seen.available_spend(me, Spend::Resources) - tg;
+    let hold = seen
+        .revealed_objective_progress(me)
+        .iter()
+        .filter(|p| p.satisfied && ["cost_spend_resources", "cost_all_three"].contains(&p.family_token.as_str()))
+        .map(|p| p.threshold as i64)
+        .max()
+        .unwrap_or(0);
+    ready - hold
+}
+
+/// Never pass with ready planets: take a tactical action at a system with Sol's space dock,
+/// move nothing and build fighters (if they fit) or infantry with the spare planet resources.
+fn spend_down(s: &mut Shared, c: &Choice, seen: &SeatObservation<'_>, proposed: &ChoiceOption) -> Option<String> {
+    let sub = subtype(c);
+    let menu = c.details.get("kind").and_then(Value::as_str) == Some("turn_menu");
+    if menu || sub == "end_turn" {
+        s.spend = None;
+    }
+    if menu && proposed.id == "pass" && c.option("tactical").is_some() {
+        let spare = spare_planet_resources(seen);
+        if spare >= 2 {
+            s.spend = Some(SpendStage::Activating);
+            s.spend_log.push(json!({"round":seen.round(),"spare":spare}));
+            return Some("tactical".into());
+        }
+        return None;
+    }
+    let me = seen.bound_seat();
+    match (s.spend?, sub) {
+        (SpendStage::Activating, "activate_system") => {
+            let dock = |id: &str| {
+                seen.board().iter().any(|(system, st)| {
+                    system.as_str() == id
+                        && st.planet_units.values().flatten().chain(&st.units).any(|u| {
+                            u.owner == *me && u.type_id.as_str().contains("spacedock")
+                        })
+                })
+            };
+            let pick = c.options.iter().find(|o| dock(&o.id)).map(|o| o.id.clone());
+            s.spend = pick.as_ref().map(|_| SpendStage::Moving);
+            if pick.is_none() {
+                s.spend_log.push(json!({"round":seen.round(),"aborted":"no dock system activatable"}));
+            }
+            pick
+        }
+        (SpendStage::Moving, "movement_step") => {
+            s.spend = Some(SpendStage::Producing);
+            c.option("done_moving").map(|o| o.id.clone())
+        }
+        (SpendStage::Producing, "produce_unit") if proposed.kind == "decline" => {
+            let spare = spare_planet_resources(seen);
+            let affordable = |o: &&ChoiceOption| {
+                o.kind == "produce"
+                    && o.payload.get("owed").and_then(Value::as_i64).unwrap_or(99) <= spare
+            };
+            let fits = |o: &&ChoiceOption| {
+                o.payload.get("capacity_excess_after").and_then(Value::as_i64).is_none_or(|x| x <= 0)
+            };
+            let pick = c
+                .options
+                .iter()
+                .filter(affordable)
+                .find(|o| unit_of(o).starts_with("fighter") && fits(o))
+                .or_else(|| c.options.iter().filter(affordable).find(|o| unit_of(o).contains("infantry")));
+            pick.map(|o| o.id.clone())
+        }
+        _ => None,
+    }
+}
+
+/// Objective families one more move or landing can advance by one.
+const MOVE_FAMILIES: [&str; 16] = [
+    "non_home",
+    "on_the_rim",
+    "same_trait",
+    "legendary_planets",
+    "attached_planets",
+    "planetless_systems",
+    "ships_in_systems",
+    "neighbours",
+    "ship_systems_beside_anomaly",
+    "ship_systems_beside_rival_home",
+    "ships_adjacent_to_mecatol",
+    "shared_planet_systems",
+    "notable_systems",
+    "fleet_in_one_system",
+    "ground_forces_on_one_planet",
+    "mecatol_ships_while_controlling",
+];
+
+fn no_early_pass(s: &mut Shared, c: &Choice, seen: &SeatObservation<'_>, proposed: &ChoiceOption) -> Option<String> {
+    let me = seen.bound_seat();
+    let menu = c.details.get("kind").and_then(Value::as_str) == Some("turn_menu");
+    let progress = seen.revealed_objective_progress(me);
+    // Settle the last forced action: did it move its objective?
+    if menu || subtype(c) == "end_turn" {
+        if let Some((alias, before)) = s.push_pending.take() {
+            let after = progress.iter().find(|p| p.alias == alias).map_or(before, |p| p.have);
+            s.push_log.push(json!({"round":seen.round(),"alias":alias,"before":before,"after":after,"gained":after > before}));
+        }
+    }
+    if !(menu && proposed.id == "pass" && c.option("tactical").is_some()) {
+        return None;
+    }
+    let scored = seen.scored_by(me);
+    let round = seen.round();
+    let target = progress.iter().find(|p| {
+        !p.satisfied
+            && p.threshold - p.have <= 1.0
+            && MOVE_FAMILIES.contains(&p.family_token.as_str())
+            && !scored.iter().any(|o| o.as_str() == p.alias)
+            && !s.push_tried.contains(&(round, p.alias.clone()))
+    })?;
+    s.push_tried.push((round, target.alias.clone()));
+    s.push_pending = Some((target.alias.clone(), target.have));
+    Some("tactical".into())
 }
 
 fn card_named(id: &str, name: &str) -> bool {
@@ -97,6 +264,19 @@ struct Shared {
     ms: Option<MsDeal>,
     ms_awaiting: bool,
     ms_log: Vec<Value>,
+    sol_built: Vec<Value>,
+    spend: Option<SpendStage>,
+    spend_log: Vec<Value>,
+    push_tried: Vec<(u32, String)>,
+    push_pending: Option<(String, f64)>,
+    push_log: Vec<Value>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SpendStage {
+    Activating,
+    Moving,
+    Producing,
 }
 
 struct Force {
@@ -136,6 +316,15 @@ impl Force {
                     .push(json!({"round":round,"seat":self.seat,"response":proposed.id}));
             }
             return None;
+        }
+        if self.arm == Arm::CarrierDoctrine {
+            return doctrine(c, sub, proposed);
+        }
+        if self.arm == Arm::SpendDown {
+            return spend_down(s, c, seen, proposed);
+        }
+        if self.arm == Arm::NoEarlyPass {
+            return no_early_pass(s, c, seen, proposed);
         }
         let me = seen.bound_seat();
         let sol = seen.seat(me)?;
@@ -282,17 +471,22 @@ impl Decider for Force {
         // Asked first and always, so the seat's own stream advances exactly as when unforced.
         let proposed = self.inner.choose_seeing(c, seen)?;
         let mut s = self.shared.borrow_mut();
-        let Some(id) = self.steer(&mut s, c, seen, &proposed) else {
-            return Ok(proposed);
+        let executed = match self.steer(&mut s, c, seen, &proposed) {
+            None => proposed.clone(),
+            Some(id) => c
+                .option(&id)
+                .cloned()
+                .ok_or_else(|| IllegalChoice::DeciderFailed {
+                    player: c.player.clone(),
+                    prompt: c.prompt.clone(),
+                    reason: format!("forced {id} not offered"),
+                })?,
         };
-        let executed = c
-            .option(&id)
-            .cloned()
-            .ok_or_else(|| IllegalChoice::DeciderFailed {
-                player: c.player.clone(),
-                prompt: c.prompt.clone(),
-                reason: format!("forced {id} not offered"),
-            })?;
+        if self.seat == 0 && executed.kind == "produce" {
+            let field = |k: &str| executed.payload.get(k).cloned().unwrap_or(Value::Null);
+            s.sol_built.push(json!({"round":seen.round(),"subtype":subtype(c),"unit":field("unit"),
+                "count":field("count"),"placed":field("placed"),"cost":field("cost")}));
+        }
         if executed.id != proposed.id {
             s.overrides.push(json!({"seat":self.seat,"round":seen.round(),"subtype":subtype(c),
                 "proposed":proposed.id,"executed":executed.id}));
@@ -304,6 +498,33 @@ impl Decider for Force {
     }
 }
 
+/// One seat's forces: unit counts by type in space and on planets, how spread its ships are,
+/// its biggest stack and how many of its command tokens are on the board.
+fn census(state: &ti4_model::state::GameState, p: &PlayerId) -> Value {
+    let mut space: BTreeMap<String, u32> = BTreeMap::new();
+    let mut ground: BTreeMap<String, u32> = BTreeMap::new();
+    let (mut systems, mut largest, mut tokens) = (0, 0, 0);
+    for s in state.board.values() {
+        let ships = s.units.iter().filter(|u| u.owner == *p).count();
+        if ships > 0 {
+            systems += 1;
+            largest = largest.max(ships);
+        }
+        tokens += usize::from(s.command_tokens.contains(p));
+        for u in s.units.iter().filter(|u| u.owner == *p) {
+            *space.entry(u.type_id.to_string()).or_default() += 1;
+        }
+        for u in s.planet_units.values().flatten().filter(|u| u.owner == *p) {
+            *ground.entry(u.type_id.to_string()).or_default() += 1;
+        }
+    }
+    json!({"space":space,"ground":ground,"ship_systems":systems,"largest_stack":largest,"board_tokens":tokens})
+}
+
+fn card_progress(cards: Vec<ti4_engine::objectives::CardProgress>) -> Value {
+    json!(cards.into_iter().map(|p| json!({"alias":p.alias,"family":p.family_token,"have":p.have,"threshold":p.threshold,"satisfied":p.satisfied})).collect::<Vec<_>>())
+}
+
 fn checkpoint(game: &Game<'_>, baseline: progress::Baseline, label: &str) -> Value {
     let p = PlayerId::new("seat0");
     let seen = Observed::new(&game.state, ContentStore::embedded(), SCOPE, game.galaxy());
@@ -312,13 +533,20 @@ fn checkpoint(game: &Game<'_>, baseline: progress::Baseline, label: &str) -> Val
         .state
         .players
         .iter()
-        .map(|s| json!({"id":s.id,"vp":s.victory_points,"tg":s.trade_goods,"cards":s.strategy_cards}))
+        .map(|s| {
+            json!({"id":s.id,"faction":s.faction,"vp":s.victory_points,"tg":s.trade_goods,"cards":s.strategy_cards,
+                "technologies":s.technologies,"breakthrough":s.breakthrough,"leaders":s.leaders,
+                "fleet_tokens":s.fleet_tokens,"tactic_tokens":s.tactic_tokens,"fleet":census(&game.state,&s.id),
+                "ready_resources":seen.available_spend(&s.id,Spend::Resources)-i64::from(s.trade_goods)})
+        })
         .collect();
     json!({"label":label,"round":game.state.round,"phase":format!("{:?}",game.state.phase),
         "vp":seat.victory_points,"tg":seat.trade_goods,"strategic_tokens":seat.strategic_tokens,
         "resources":seen.available_spend(&p,Spend::Resources),"planets":seen.controlled_planets(&p).len(),
         "has_gd":seat.technologies.iter().any(|t|t.as_str()=="gd"),"technologies":seat.technologies,
-        "scored_public":game.state.scored_by(&p),"progress":progress::measure(&seen,&p,baseline),"seats":seats})
+        "scored_public":game.state.scored_by(&p),"progress":progress::measure(&seen,&p,baseline),"seats":seats,
+        "objectives":card_progress(seen.revealed_objective_progress(&p)),
+        "secrets":card_progress(ti4_engine::choice::held_secret_progress(&game.state,ContentStore::embedded(),SCOPE,game.galaxy(),&p))})
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -443,7 +671,7 @@ fn play(
     let state_hash = hash(serde_json::to_vec(&game.state).expect("state serializes"));
     json!({"job":head,"error":error,"unavailable":s.unavailable,"steps":steps,"state_hash":state_hash,
         "followed_tech":s.followed_tech,"gd_forced":s.gd_forced,"overrides":s.overrides,"leaks":s.leaks,
-        "ms_log":s.ms_log,"snapshots":snapshots})
+        "ms_log":s.ms_log,"sol_built":s.sol_built,"spend_log":s.spend_log,"push_log":s.push_log,"snapshots":snapshots})
 }
 
 fn execute() -> Result<(), String> {
@@ -626,6 +854,31 @@ mod tests {
     fn card_names_resolve() {
         assert!(card_named("pok7technology", "Technology"));
         assert!(!card_named("pok1leadership", "Technology"));
+    }
+
+    #[test]
+    fn doctrine_swaps_dreadnoughts_for_fitting_fighters_and_fills_on_stop() {
+        let build = |unit: &str, excess: i64| {
+            ChoiceOption::new(format!("build|{unit}|1"), "produce")
+                .with("unit", unit)
+                .with("capacity_excess_after", excess)
+        };
+        let c = Choice::new(
+            PlayerId::new("seat0"),
+            "produce",
+            vec![build("dreadnought", 0), build("fighter", 0), build("sol_infantry", 0), ChoiceOption::new("done_producing", "decline")],
+        );
+        let dread = c.options[0].clone();
+        let stop = c.options[3].clone();
+        assert_eq!(doctrine(&c, "produce_unit", &dread).as_deref(), Some("build|fighter|1"));
+        assert_eq!(doctrine(&c, "produce_unit", &stop).as_deref(), Some("build|fighter|1"));
+        let full = Choice::new(
+            PlayerId::new("seat0"),
+            "produce",
+            vec![build("dreadnought", 0), build("fighter", 1), build("sol_infantry", 0), ChoiceOption::decline()],
+        );
+        assert_eq!(doctrine(&full, "produce_unit", &dread).as_deref(), Some("build|sol_infantry|1"));
+        assert_eq!(doctrine(&full, "produce_unit", &stop), None);
     }
 
     #[test]
