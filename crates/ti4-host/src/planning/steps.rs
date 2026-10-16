@@ -169,8 +169,17 @@ impl PlanStep {
                 option.kind == ti4_engine::production::PAY_KIND && option.id == *source
             }
             Self::DoneProducing => option.id == "done_producing",
-            Self::Pool { pool } => option.kind == "pool" && option.id == *pool,
-            Self::Purchase { buy } => option.id == if *buy { "yes" } else { "no" },
+            Self::Pool { pool } => {
+                option.kind == ti4_engine::tokens::POOL_KIND && option.id == *pool
+            }
+            Self::Purchase { buy } => {
+                option.id
+                    == if *buy {
+                        ti4_engine::strategy_cards::BUY_TOKEN
+                    } else {
+                        ti4_engine::strategy_cards::STOP_BUYING
+                    }
+            }
         }
     }
 

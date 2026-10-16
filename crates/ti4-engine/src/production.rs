@@ -29,7 +29,9 @@ pub enum Spend {
     Influence,
 }
 
-const fn spend_name(kind: Spend) -> &'static str {
+/// The name of a kind of value, as a payment option names its source (`"influence"`).
+#[must_use]
+pub const fn spend_name(kind: Spend) -> &'static str {
     match kind {
         Spend::Resources => "resources",
         Spend::Influence => "influence",
@@ -605,13 +607,6 @@ pub fn best_payment_faces(
         .collect()
 }
 
-/// The commodities that `player` may spend as trade goods in a payment now (the Keleres agent,
-/// Xander Alexin Victori III, for this payment). Display only.
-#[must_use]
-pub fn spendable_commodities(state: &GameState, player: &PlayerId) -> i64 {
-    crate::factions::keleres::spendable_commodities(state, player)
-}
-
 /// An ability of `player` bars this unit from a production by an ability (a blanket ban of a
 /// faction). Display only: the production window checks it itself.
 #[must_use]
@@ -628,12 +623,6 @@ pub fn banned_from_ability_production(
         kind.base_type(),
         "ability",
     )
-}
-
-/// The name of a kind of value, as a payment option names its source (`"influence"`).
-#[must_use]
-pub const fn spend_label(kind: Spend) -> &'static str {
-    spend_name(kind)
 }
 
 /// Apply the chosen payment option; returns its value against the bill.

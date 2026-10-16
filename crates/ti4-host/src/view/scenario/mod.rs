@@ -1888,7 +1888,8 @@ mod tests {
             .collect();
         assert!(!faced.is_empty(), "{:?}", facts.planets);
         // The board has the values of a planet with its attachments, where they differ.
-        let board = crate::projection::project_board_view_with_map(&state, &[]);
+        let board =
+            crate::projection::project_board_view_full(&state, content, POK, &[], None, &[], None);
         let attached: Vec<_> = board
             .systems
             .values()

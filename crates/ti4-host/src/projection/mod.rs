@@ -210,41 +210,25 @@ pub fn project_combat_view_for(
     })
 }
 
-/// Projects the board systems, planets, and units without map tiles.
-#[must_use]
-pub fn project_board_view(state: &GameState) -> BoardView {
-    project_board_view_with_map(state, &[])
-}
-
-/// Projects the board systems, planets, and units.
-#[must_use]
-pub fn project_board_view_with_map(state: &GameState, map_tiles: &[BoardTileView]) -> BoardView {
-    project_board_view_full(state, map_tiles, None, &[], None)
-}
-
 /// A value of a planet now, when it differs from the printed one.
-fn value_now(state: &GameState, planet: &PlanetId, kind: Spend) -> Option<i64> {
-    let content = ContentStore::embedded();
-    let now = ti4_engine::production::planet_value_now(
-        state,
-        content,
-        ti4_model::content_types::FULL,
-        planet,
-        kind,
-    );
-    (now != ti4_engine::production::planet_value(
-        content,
-        ti4_model::content_types::FULL,
-        planet,
-        kind,
-    ))
-    .then_some(now)
+fn value_now(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    planet: &PlanetId,
+    kind: Spend,
+) -> Option<i64> {
+    let now = ti4_engine::production::planet_value_now(state, content, sources, planet, kind);
+    (now != ti4_engine::production::planet_value(content, sources, planet, kind)).then_some(now)
 }
 
-/// Projects the full board view with combat and dice information.
+/// Projects the full board view with combat and dice information, with the content and the
+/// sources of the game.
 #[must_use]
 pub fn project_board_view_full(
     state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
     map_tiles: &[BoardTileView],
     pending_choice: Option<&Choice>,
     dice_rolls: &[crate::protocol::view::CombatDieRoll],
@@ -270,8 +254,8 @@ pub fn project_board_view_full(
                         .get(&planet_id)
                         .cloned()
                         .unwrap_or_default(),
-                    resources: value_now(state, &planet_id, Spend::Resources),
-                    influence: value_now(state, &planet_id, Spend::Influence),
+                    resources: value_now(state, content, sources, &planet_id, Spend::Resources),
+                    influence: value_now(state, content, sources, &planet_id, Spend::Influence),
                 },
             );
         }
@@ -671,20 +655,13 @@ pub fn project_table_view(state: &GameState) -> TableView {
     project_table_view_with_map(state, &[])
 }
 
-/// Projects the entire game state for a specific viewer role with static map tiles.
-#[must_use]
-pub fn project_game_view_with_map(
-    state: &GameState,
-    viewer: &ViewerRole,
-    map_tiles: &[BoardTileView],
-) -> GameView {
-    project_game_view_full(state, viewer, map_tiles, None, &[])
-}
-
-/// Projects the entire game state for a specific viewer role with pending choice and combat dice.
+/// Projects the entire game state for a specific viewer role with pending choice and combat dice,
+/// with the content and the sources of the game.
 #[must_use]
 pub fn project_game_view_full(
     state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
     viewer: &ViewerRole,
     map_tiles: &[BoardTileView],
     pending_choice: Option<&Choice>,
@@ -724,6 +701,8 @@ pub fn project_game_view_full(
         players,
         board: project_board_view_full(
             &redacted,
+            content,
+            sources,
             map_tiles,
             pending_choice,
             dice_rolls,
@@ -748,10 +727,14 @@ pub fn redacted_state(state: &GameState, viewer: &ViewerRole) -> GameState {
     }
 }
 
-/// Projects the entire game state for a specific viewer role.
+/// Projects the entire game state for a specific viewer role, without map tiles, with the content
+/// and the sources of [`facts_context`].
 #[must_use]
 pub fn project_game_view(state: &GameState, viewer: &ViewerRole) -> GameView {
-    project_game_view_with_map(state, viewer, &[])
+    let FactsContext {
+        content, sources, ..
+    } = facts_context(None);
+    project_game_view_full(state, content, sources, viewer, &[], None, &[])
 }
 
 /// Whether `choice` is a reaction window: a seat is asked whether to play an action card (or a
@@ -944,7 +927,15 @@ pub fn project_session_update(
     let choice = pending_choice.map(|(choice, _)| choice);
     let mut update = SessionUpdate {
         viewer: viewer.clone(),
-        view: project_game_view_full(state, viewer, map_tiles, choice, &[]),
+        view: project_game_view_full(
+            state,
+            facts.content,
+            facts.sources,
+            viewer,
+            map_tiles,
+            choice,
+            &[],
+        ),
         pending_choice: project_pending_choice(viewer, pending_choice),
         turn_status: project_turn_status_for(state, choice, viewer),
         tactical: None,

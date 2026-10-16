@@ -463,11 +463,18 @@ impl MovementStep {
             Self::VotePlanet { planet } => option.kind == "vote_planet" && option.id == *planet,
             Self::DoneVoting => option.id == "decline",
             Self::DoneProducing => option.id == "done_producing",
-            Self::Pool { pool } => option.kind == "pool" && option.id == *pool,
+            Self::Pool { pool } => {
+                option.kind == ti4_engine::tokens::POOL_KIND && option.id == *pool
+            }
             Self::ReadyPlanet { planet } => option.kind == "ready" && option.id == *planet,
             Self::Purchase { buy } => {
                 option.kind == ti4_engine::strategy::STRATEGY_KIND
-                    && option.id == if *buy { "yes" } else { "no" }
+                    && option.id
+                        == if *buy {
+                            ti4_engine::strategy_cards::BUY_TOKEN
+                        } else {
+                            ti4_engine::strategy_cards::STOP_BUYING
+                        }
             }
             Self::Sustain { unit } => {
                 option.kind == ti4_engine::combat::SUSTAIN_KIND

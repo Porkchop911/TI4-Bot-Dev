@@ -2249,31 +2249,30 @@ pub fn space_cannon_offense(
                 target: shot.target.as_ref().map(ToString::to_string),
             },
         );
-        let entry = match (&shot.unit, &shot.planet) {
-            (Some(unit), _) => RerollEntry {
-                unit: unit.type_id.to_string(),
-                planet: None,
-                hits_on: Some(shot.hits_on),
-                faces: roll.faces,
-                rerolled: std::collections::BTreeSet::new(),
-                deltas: std::collections::BTreeMap::new(),
-                unit_types: std::iter::once((unit.type_id.to_string(), 1)).collect(),
-            },
-            (None, planet) => RerollEntry {
-                unit: format!(
+        // A unit's dice can take a casualty; an attachment's own dice cannot.
+        let (unit, unit_types) = match (&shot.unit, &shot.planet) {
+            (Some(unit), _) => (
+                unit.type_id.to_string(),
+                std::iter::once((unit.type_id.to_string(), 1)).collect(),
+            ),
+            (None, planet) => (
+                format!(
                     "planet cannon {}",
                     planet
                         .as_ref()
                         .map_or_else(String::new, ToString::to_string)
                 ),
-                planet: None,
-                hits_on: Some(shot.hits_on),
-                faces: roll.faces,
-                rerolled: std::collections::BTreeSet::new(),
-                deltas: std::collections::BTreeMap::new(),
-                // An attachment's own dice, not a unit's: nothing here can be a casualty.
-                unit_types: std::collections::BTreeMap::new(),
-            },
+                std::collections::BTreeMap::new(),
+            ),
+        };
+        let entry = RerollEntry {
+            unit,
+            planet: None,
+            hits_on: Some(shot.hits_on),
+            faces: roll.faces,
+            rerolled: std::collections::BTreeSet::new(),
+            deltas: std::collections::BTreeMap::new(),
+            unit_types,
         };
         let slot = by_player
             .entry(shot.owner.clone())

@@ -18,9 +18,14 @@ use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Table};
 use crate::decision_context::{DecisionContext, DecisionSource};
 use crate::preview::{Delta, Preview, Quantity};
 use crate::production::Spend;
+use crate::tokens::{FLEET_POOL, POOL_KIND, STRATEGIC_POOL, TACTIC_POOL};
 
 pub const LEADERSHIP_TOKENS: u32 = 3;
 pub const INFLUENCE_PER_TOKEN: i64 = 3;
+/// The option id of "spend 3 influence for a command token": buy one.
+pub const BUY_TOKEN: &str = "yes";
+/// The option id of "spend 3 influence for a command token": buy no more.
+pub const STOP_BUYING: &str = "no";
 pub const TECHNOLOGY_PRIMARY_SECOND_COST: i64 = 6;
 pub const TECHNOLOGY_SECONDARY_COST: i64 = 4;
 /// How many action cards Politics' primary and secondary draw.
@@ -151,21 +156,21 @@ fn gain_tokens_offering(
             player.clone(),
             "gain a command token into which pool",
             vec![
-                ChoiceOption::labelled("tactic_tokens", "pool", "tactic pool").previewed(
+                ChoiceOption::labelled(TACTIC_POOL, POOL_KIND, "tactic pool").previewed(
                     Preview::certain(vec![Delta::new(
                         Quantity::TacticTokens,
                         i64::from(tactic),
                         i64::from(tactic + 1),
                     )]),
                 ),
-                ChoiceOption::labelled("fleet_tokens", "pool", "fleet pool").previewed(
+                ChoiceOption::labelled(FLEET_POOL, POOL_KIND, "fleet pool").previewed(
                     Preview::certain(vec![Delta::new(
                         Quantity::FleetTokens,
                         i64::from(fleet),
                         i64::from(fleet + 1),
                     )]),
                 ),
-                ChoiceOption::labelled("strategic_tokens", "pool", "strategy pool").previewed(
+                ChoiceOption::labelled(STRATEGIC_POOL, POOL_KIND, "strategy pool").previewed(
                     Preview::certain(vec![Delta::new(
                         Quantity::StrategicTokens,
                         i64::from(strategic),
@@ -194,8 +199,8 @@ fn gain_tokens_offering(
         }
         let answer = ask(state, content, sources, galaxy, table, &choice)?;
         let pool = match answer.id.as_str() {
-            "tactic_tokens" => TokenPool::Tactic,
-            "fleet_tokens" => TokenPool::Fleet,
+            TACTIC_POOL => TokenPool::Tactic,
+            FLEET_POOL => TokenPool::Fleet,
             _ => TokenPool::Strategic,
         };
         state.gain_token(player, pool, 1);
@@ -232,7 +237,7 @@ pub(crate) fn purchase_details(
         "max": available / INFLUENCE_PER_TOKEN,
         "trade_goods": goods,
         "trade_good_worth": crate::production::trade_good_worth(state, player),
-        "commodities": crate::production::spendable_commodities(state, player),
+        "commodities": crate::factions::keleres::spendable_commodities(state, player),
         "planets": planets,
     }))
 }
@@ -321,7 +326,7 @@ fn buy_tokens_loop(
             table,
             &influence_purchase_choice(state, content, sources, player, credit),
         )?;
-        if answer.id != "yes" {
+        if answer.id != BUY_TOKEN {
             return Ok(());
         }
         if !pay_influence_and_gain_one(state, content, sources, galaxy, table, player, &mut credit)?
@@ -373,7 +378,7 @@ fn buy_tokens_first_yes_loop(
             table,
             &influence_purchase_choice(state, content, sources, player, credit),
         )?;
-        if answer.id != "yes" {
+        if answer.id != BUY_TOKEN {
             return Ok(());
         }
         if !pay_influence_and_gain_one(state, content, sources, galaxy, table, player, &mut credit)?
@@ -419,11 +424,11 @@ fn influence_purchase_choice(
         prompt,
         vec![
             ChoiceOption::labelled(
-                "no",
+                STOP_BUYING,
                 crate::strategy::STRATEGY_KIND,
                 "spend nothing further",
             ),
-            ChoiceOption::labelled("yes", crate::strategy::STRATEGY_KIND, yes),
+            ChoiceOption::labelled(BUY_TOKEN, crate::strategy::STRATEGY_KIND, yes),
         ],
     )
     .contextualized(DecisionContext::new(
@@ -1557,7 +1562,7 @@ fn payment_planets(
         .map(|(planet, worth, face)| {
             let mut entry = serde_json::json!({ "id": planet.to_string(), "worth": worth });
             if face != kind {
-                entry["face"] = serde_json::Value::from(crate::production::spend_label(face));
+                entry["face"] = serde_json::Value::from(crate::production::spend_name(face));
             }
             entry
         })
@@ -1600,7 +1605,7 @@ fn research_payment_details(
         "cost": cost,
         "trade_goods": state.player(player).map_or(0, |seat| seat.trade_goods),
         "trade_good_worth": crate::production::trade_good_worth(state, player),
-        "commodities": crate::production::spendable_commodities(state, player),
+        "commodities": crate::factions::keleres::spendable_commodities(state, player),
         "planets": planets,
         "kept": kept,
     })
@@ -2224,7 +2229,7 @@ pub(crate) fn structure_hints(
     let mut offered: Vec<ChoiceOption> = Vec::new();
     let mut placements = Vec::new();
     let mut before: Option<Vec<ChoiceOption>> = None;
-    for step in steps.iter().take(2) {
+    for step in steps {
         let options = structure_options(state, content, sources, player, step.only_pds);
         let mut without = serde_json::Map::new();
         for earlier in before.iter().flatten() {

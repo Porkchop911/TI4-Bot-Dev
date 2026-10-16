@@ -176,8 +176,16 @@ fn secondary_question(
             player.clone(),
             format!("spend {n} influence for a command token"),
             vec![
-                ChoiceOption::labelled("no", STRATEGY_KIND, "spend nothing further"),
-                ChoiceOption::labelled("yes", STRATEGY_KIND, format!("spend {n} influence")),
+                ChoiceOption::labelled(
+                    crate::strategy_cards::STOP_BUYING,
+                    STRATEGY_KIND,
+                    "spend nothing further",
+                ),
+                ChoiceOption::labelled(
+                    crate::strategy_cards::BUY_TOKEN,
+                    STRATEGY_KIND,
+                    format!("spend {n} influence"),
+                ),
             ],
         );
     }

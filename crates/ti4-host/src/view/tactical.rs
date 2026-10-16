@@ -1286,10 +1286,10 @@ fn production(
             planet: planet.to_string(),
             worth,
             face: (face != Spend::Resources)
-                .then(|| ti4_engine::production::spend_label(face).to_owned()),
+                .then(|| ti4_engine::production::spend_name(face).to_owned()),
         })
         .collect(),
-        commodities: ti4_engine::production::spendable_commodities(state, player),
+        commodities: ti4_engine::factions::keleres::spendable_commodities(state, player),
         trade_goods: state
             .player(player)
             .map_or(0, |seat| i64::from(seat.trade_goods)),

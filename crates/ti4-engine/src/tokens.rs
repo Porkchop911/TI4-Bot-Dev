@@ -14,6 +14,13 @@ use crate::choice::{Choice, ChoiceOption, IllegalChoice, validate};
 /// The choice kind for placing a gained command token.
 pub const POOL_KIND: &str = "pool";
 
+/// The option id of a gained command token that goes into the tactic pool.
+pub const TACTIC_POOL: &str = "tactic_tokens";
+/// The option id of a gained command token that goes into the fleet pool.
+pub const FLEET_POOL: &str = "fleet_tokens";
+/// The option id of a gained command token that goes into the strategy pool.
+pub const STRATEGIC_POOL: &str = "strategic_tokens";
+
 /// Tokens each player gains at status step 81.5, before any modifier.
 ///
 /// Sol's Versatile, Cybernetic Enhancements and the L1Z1X promissory note all change this in
@@ -142,7 +149,7 @@ pub fn redistribution_after_gain(
         "pools": { "tactic": tactic, "fleet": fleet, "strategic": strategic },
         "gained": gained,
         "total": total,
-        "gain": { "tactic": "tactic_tokens", "fleet": "fleet_tokens", "strategic": "strategic_tokens" },
+        "gain": { "tactic": TACTIC_POOL, "fleet": FLEET_POOL, "strategic": STRATEGIC_POOL },
         "arrangements": distribution_options(total)
             .into_iter()
             .map(|option| option.id)
