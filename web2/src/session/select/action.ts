@@ -61,6 +61,8 @@ export interface DraftInfo {
   ends: string | null;
   /** The live game is at the turn menu of the seat: the draft goes back to it. */
   fromMenu?: boolean;
+  /** The recorded activation is open to choose another system: the system that it has. */
+  editing?: string | null;
 }
 
 /**

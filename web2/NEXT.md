@@ -2,9 +2,10 @@ Also look for UX ideas on how to integrate this: in web/, and in the demo of web
 
 - the draft goes on to the landings and the production (2026-10-11), wherever nothing random lies between. Still open:
   - a landing on a planet that nobody explored draws a card, and the draft ends there: a production after it is not drafted. The same for a planet with ground forces of another seat (the combat), a gravity rift on the way, and the player's own space cannon
+  - the demo keeps `draft-movement` for what the movement of the real game does not show yet: the cargo that no ship can carry ("No ship with capacity passes here", a flag that the engine does not send), the result of space cannon offense in the heading of the step, and the free Gravity Drive toggle (local play locks it). No scenario has a damaged ship before a movement, and the path text of a ship does not name a wormhole that it passes
   - the tab "Preview ends here" of the demo is not built: the footer says where the draft ends, and the later tabs are locked
   - a step of the draft that the game skipped (no landings possible) has a check mark in the tabs, as in Live
-  - the draft menu still has no way to change the system but Undo and Start over
+  - the recorded activation opens for an edit ("Edit activation" in the heading of the step): another system replaces it, and the later steps stay for the game to check. While it is open the game is asked for the choice of a system only, so the tabs of the later steps are those that the draft recorded, not those that the game reaches with the new system
   - what the draft holds after a roll is staged again in Live when its step opens (`remaining` in `useLiveSession.ts`). Unit tests cover the parts; no test plays it in the browser, because a draft cannot record a step after a roll by its screens (only when an earlier step is changed later)
   - a question of an ability before a step (AI Development Algorithm) is a list in the draft, with "Record". A question in the middle of a step has no place in the script (`answers` in `draft.ts`)
   - the server's batch (`session/batch.rs`) does not use `PlanStep` of `ti4-host`
@@ -76,7 +77,6 @@ Also look for UX ideas on how to integrate this: in web/, and in the demo of web
 - a plan is answered in one place (2026-10-11): `script_answer` in `ti4-host` (`planning/draft.rs`), for a draft and for a plan that is sent (`apply_draft`, on both hosts). The server's batch has no step for the landings yet
 - on a phone a row of the panel summary (movement, landings) opens the sheet but does not open the Map pane
 - a question of the seat before its turn menu (a start-of-turn ability) stops the draft at its first step; the server's runner shows such a question
-- the draft has no way to change the system but Undo and Start over: the activation step of a draft should open for an edit, as in the demo
 - the action picker and the decisions of the game are real (2026-10-16): the turn menu of the engine is the picker with its lists, a staged action, "End your turn" and the screen of another seat's turn; a system or a planet of a question is chosen on the map, a seat of `details.seats` in the player table. Still open, because the engine does not say it:
   - the trail of a component action has the card and the choice in view, not the steps after it: the question does not say what the card asks next
   - a unit over the fleet supply or the capacity is removed one at a time, as the engine asks: the counters of the demo are not built. A rule that asks (the fleet supply, LRR) has no printed text in the catalogue, so its question has no source block

@@ -10,9 +10,11 @@ import {
   setLoad,
   setShip,
   loadKey,
+  shipId,
   shipKey,
 } from "./movementDraft";
 import { type MovementStep, draftOf, stepOf, stepsOf } from "./movementPlan";
+import { selectOrigin } from "./select/movement";
 import type { MovementFacts, SessionUpdate } from "./wire";
 
 // Updates of a real game, written by the engine (seat a is Sol; it activated the system next
@@ -151,4 +153,14 @@ it("reads the step back from the option that answered it", () => {
     expect(new Set(steps).size).toBe(steps.length);
   }
   expect(stepOf({ id: "tactical", kind: "action", payload: {} })).toBeNull();
+});
+
+it("ties the row of each ship to its system and its own path on the map", () => {
+  const origin = selectOrigin(moving, facts, staged(ship(CARRIER)), "01")!;
+  const units = origin.ships.flatMap((row) => row.units);
+  for (const unit of units) {
+    const fact = facts.ships.find((item) => shipKey(shipId(item)) === unit.key);
+    expect(unit.link).toEqual([`rt:${fact!.move!.path.join(">")}`, "sys:01"]);
+  }
+  expect(units).toHaveLength(3);
 });

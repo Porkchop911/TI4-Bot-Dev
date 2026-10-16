@@ -12,6 +12,7 @@ import {
   newDraft,
   problemOf,
   parseDraft,
+  reactivate,
   redo,
   scriptOf,
   setLandings,
@@ -216,4 +217,13 @@ it("shows the step where the run is open, or the last one that it reached", () =
   expect(frontier(done)).toBe("production");
   expect(stageAfter(done, "movement")).toBe("production");
   expect(isBoundary(done)).toBe(false);
+});
+
+it("replaces a recorded activation and keeps the later steps for the game to check", () => {
+  const draft = setMovement(activate(newDraft(), "23"), MOVE);
+  const moved = reactivate(draft, "24");
+  expect(entryOf(moved)).toEqual({ system: "24", steps: MOVE });
+  expect(entryOf(undo(moved))).toEqual({ system: "23", steps: MOVE });
+  // The same system changes nothing, and is no step of undo.
+  expect(reactivate(draft, "23")).toBe(draft);
 });

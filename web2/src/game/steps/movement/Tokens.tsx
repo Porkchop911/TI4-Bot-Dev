@@ -302,8 +302,10 @@ function UnitRow({
     const place = slot.site ? `${slot.site}, ${slot.place}` : slot.place;
     from.set(place, (from.get(place) ?? 0) + 1);
   }
+  // The row of a ship lights its own path, which Gravity Drive can make another than its kind's.
+  const { props } = useLink(unit.link);
   return (
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5" {...props}>
       <Token ship={ship} unit={unit} editing={editing} />
       {unit.hold && <Slots unit={unit} source={source} editing={editing} />}
       {from.size > 0 && (

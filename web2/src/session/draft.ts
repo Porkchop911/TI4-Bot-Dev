@@ -46,6 +46,13 @@ const record = (draft: Draft, entry: DraftEntry): Draft => {
 export const activate = (draft: Draft, system: string): Draft =>
   record(draft, { system, steps: null });
 
+/**
+ * Another system for the recorded activation. The steps after it stay, and the game checks them
+ * again: what no longer fits is marked where it is.
+ */
+export const reactivate = (draft: Draft, system: string): Draft =>
+  entryOf(draft).system === system ? draft : record(draft, { ...entryOf(draft), system });
+
 // A change of a step keeps the steps after it: the game checks them again.
 export const setMovement = (draft: Draft, steps: MovementStep[]): Draft =>
   record(draft, { ...entryOf(draft), steps });

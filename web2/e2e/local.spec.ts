@@ -684,6 +684,87 @@ test("a draft of a tactical action is private, is kept, and is applied as one re
   expect(errors).toEqual([]);
 });
 
+test("a recorded activation of a draft is edited: the movement follows what still fits", async ({
+  page,
+}) => {
+  // Longer than a test of this suite should be: see "Tests" in AGENTS.md.
+  test.setTimeout(10_000);
+  const errors = pageErrors(page, { console: true });
+  await page.goto("/?local=3&players=8&humans=1");
+  const row = (name: string | RegExp) => panel(page).getByRole("button", { name });
+  const system = (id: string) => page.locator("g.system").filter({ hasText: `#${id}` });
+  const tab = (name: string) => page.getByRole("tab", { name: new RegExp(name) });
+  const edit = panel(page).getByRole("button", { name: "Edit activation" });
+  const apply = page.getByRole("button", { name: "Apply to Live" });
+  await row("8. Imperial").click();
+  await send(page).click();
+  await row(/^Activate a system$/).click();
+  await expect(page.locator("g.system.target:not(.plain)")).not.toHaveCount(0);
+  await system("23").click();
+  await page.keyboard.press("Enter");
+  await expect(heading(page)).toHaveText("Movement");
+  await system("01").click();
+  const sheet = page.getByRole("group", { name: /^Move from Jord/ });
+  await sheet.getByRole("button", { name: "Carrier 1 of 2" }).click();
+  await sheet.getByRole("button", { name: "Destroyer 1 of 1" }).click();
+  await expect(sheet.getByText(/· 2 ships$/)).toBeVisible();
+  // The row of a ship lights its path on the map.
+  await page.mouse.move(0, 0);
+  await expect(page.locator(".galaxy .route.linked")).toHaveCount(0);
+  await sheet.getByRole("button", { name: "Destroyer 1 of 1" }).hover();
+  await expect(page.locator(".galaxy .route.linked")).toHaveCount(1);
+  await page.mouse.move(0, 0);
+
+  // The recorded activation opens with its system chosen. Nothing changes until another
+  // system is activated.
+  await tab("Activation").click();
+  await expect(heading(page)).toHaveText("Activation");
+  await edit.click();
+  await expect(panel(page).getByText("Editing")).toBeVisible();
+  await expect(page.locator("g.system.chosen")).toHaveCount(1);
+  await expect(apply).toBeDisabled();
+  await page.screenshot({ path: "shots/local/draft-edit-activation.png", animations: "disabled" });
+  await expect(page.locator("#step-panel > div.overflow-y-auto")).toHaveJSProperty("scrollTop", 0);
+  const overflow = await page
+    .locator("#step-panel > div.overflow-y-auto")
+    .evaluate((element) => element.scrollHeight - element.clientHeight);
+  expect(overflow, "the step needs vertical scroll").toBeLessThanOrEqual(0);
+  // "Cancel edits" keeps the recorded system.
+  await panel(page).getByRole("button", { name: "Cancel edits" }).click();
+  await expect(edit).toBeVisible();
+  await expect(panel(page).getByText("#23 Saudor")).toBeVisible();
+  // The tab of a later step ends the edit too: the recorded steps are still there.
+  await edit.click();
+  await tab("Movement").click();
+  await expect(heading(page)).toHaveText("Movement");
+  await expect(system("23")).toHaveAttribute("aria-label", /2 Sol ships/);
+  await tab("Activation").click();
+
+  // Another system that the ships reach: the movement stays as it was.
+  await edit.click();
+  await system("71").click();
+  await page.keyboard.press("Enter");
+  await expect(heading(page)).toHaveText("Movement");
+  await expect(system("71")).toHaveAttribute("aria-label", /2 Sol ships/);
+  await expect(system("23")).not.toHaveAttribute("aria-label", /Sol ship/);
+  await expect(apply).toBeEnabled();
+
+  // A system that only the destroyer reaches: the carrier no longer fits, and Apply waits.
+  await tab("Activation").click();
+  await edit.click();
+  await system("27").click();
+  await page.keyboard.press("Enter");
+  await expect(heading(page)).toHaveText("Movement");
+  await expect(page.locator("footer").getByText(/no longer fits/)).toBeVisible();
+  await expect(apply).toBeDisabled();
+  await page.screenshot({ path: "shots/local/draft-edit-unfit.png", animations: "disabled" });
+  // One undo brings the activation of 71 back, with its movement.
+  await undo(page).click();
+  await expect(system("71")).toHaveAttribute("aria-label", /2 Sol ships/);
+  await expect(apply).toBeEnabled();
+  expect(errors).toEqual([]);
+});
+
 test("a draft goes on to the landings and the production, and ends at a draw", async ({ page }) => {
   // Longer than a test of this suite should be: see "Tests" in AGENTS.md.
   test.setTimeout(10_000);

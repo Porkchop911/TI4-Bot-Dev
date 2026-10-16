@@ -97,6 +97,8 @@ function activation(
   const reach = facts.systems.find((item) => item.system === local.staged);
   const tile = reach && tiles.get(reach.system);
   const label = reach ? systemLabel(tiles, reach.system) : null;
+  // The recorded activation of a draft is open: another system replaces it.
+  const editing = local.draft?.editing ?? null;
   return {
     target: label,
     content: {
@@ -131,10 +133,22 @@ function activation(
         : null,
     },
     footer: {
-      note: label ? `Selected: ${label}` : "Choose a system on the map.",
+      note:
+        (editing && reach?.system === editing
+          ? "Recorded. Choose another system on the map."
+          : label && `Selected: ${label}`) || "Choose a system on the map.",
       error: false,
       actions: [
         ...(local.canUndo ? [UNDO] : []),
+        ...(editing
+          ? [
+              {
+                label: "Cancel edits",
+                tone: "quiet" as const,
+                intent: { type: "cancelEdit" as const },
+              },
+            ]
+          : []),
         ...(reach
           ? [
               {
@@ -183,9 +197,7 @@ function movement(
         costsToken: true,
       },
       footer: {
-        note: local.draft
-          ? "Viewing activation. Undo takes it back."
-          : "Viewing activation. The action is at movement.",
+        note: "Viewing activation. The action is at movement.",
         error: false,
         actions: [
           {
@@ -463,9 +475,11 @@ export function selectTactical(
       step: selected,
       title: strategic?.name ?? STEPS[selected],
       pill: local.draft
-        ? selected !== current
-          ? { tone: "done", label: "Drafted" }
-          : { tone: "draft", label: "Preparing" }
+        ? local.draft.editing
+          ? { tone: "draft", label: "Editing" }
+          : selected !== current
+            ? { tone: "done", label: "Drafted" }
+            : { tone: "draft", label: "Preparing" }
         : selected !== current
           ? { tone: "done", label: "Resolved" }
           : local.remaining === null && local.planNote && !local.planNote.error
@@ -475,7 +489,16 @@ export function selectTactical(
               }
             : { tone: "live", label: "Your decision" },
       trail: [],
-      edit: null,
+      // The recorded activation of a draft can be changed; the game checks the later steps again.
+      edit:
+        local.draft && facts.kind === "movement" && selected === 0
+          ? {
+              label: "Edit activation",
+              step: 0,
+              disabled: local.draft.waiting,
+              hint: local.draft.waiting ? "The game checks the draft" : undefined,
+            }
+          : null,
       help: card
         ? [
             update.secondary?.primary === seat && !update.secondary.open

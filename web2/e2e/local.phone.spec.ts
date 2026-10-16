@@ -176,6 +176,53 @@ test("phone: a draft is staged on the map and applied from the toolbar", async (
   await fits();
 });
 
+test("phone: the recorded activation of a draft is edited in the width", async ({ page }) => {
+  // Longer than a test of this suite should be: see "Tests" in AGENTS.md.
+  test.setTimeout(10_000);
+  await page.goto("/?local=3&players=8&humans=1");
+  const send = page.locator('footer button[aria-keyshortcuts="Enter"]');
+  const pane = (name: string) =>
+    page.getByRole("navigation", { name: "Panes" }).getByRole("button", { name });
+  const row = (name: string | RegExp) => page.locator("#step-panel").getByRole("button", { name });
+  const system = (id: string) => page.locator("g.system").filter({ hasText: `#${id}` });
+  const width = page.viewportSize()!.width;
+  const fits = async () =>
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+  await expect(send).toBeDisabled();
+  await pane("Action").click();
+  await row("8. Imperial").click();
+  await send.click();
+  await row(/^Activate a system$/).click();
+  await pane("Map").click();
+  await expect(page.locator("g.system.target:not(.plain)")).not.toHaveCount(0);
+  await system("23").click();
+  await send.click();
+  await system("01").click();
+  const sheet = page.getByRole("group", { name: /^Move from / });
+  await sheet.getByRole("button", { name: /^Carrier 1 of / }).click();
+  await sheet.getByRole("button", { name: "Done with this system" }).click();
+  await expect(system("23")).toHaveAttribute("aria-label", /1 Sol ship/);
+
+  // The activation opens from its tab, with "Edit activation" in its heading.
+  await pane("Action").click();
+  await page.getByRole("tab", { name: /Activation/ }).click();
+  await row("Edit activation").click();
+  const cancel = page.locator("footer").getByRole("button", { name: "Cancel edits" });
+  await expect(cancel).toBeInViewport({ ratio: 1 });
+  await expect(send).toBeInViewport({ ratio: 1 });
+  await fits();
+  await page.screenshot({
+    path: "shots/phone/local/draft-edit-activation.png",
+    animations: "disabled",
+  });
+  // Another system on the map replaces the activation; the movement stays.
+  await pane("Map").click();
+  await system("71").click();
+  await send.click();
+  await expect(system("71")).toHaveAttribute("aria-label", /1 Sol ship/);
+  await fits();
+});
+
 test("phone: the Objectives sheet has the eight seats in its width, and a filter by seat", async ({
   page,
 }) => {

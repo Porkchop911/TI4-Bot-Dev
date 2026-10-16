@@ -181,7 +181,8 @@ function shipRows(plan: Plan, ships: ShipFact[], onlyMoving = false): MoveShipVi
         // The game uses Gravity Drive only for a ship that cannot arrive without it.
         boost: moves && ship.move?.gravity_drive ? { on: true, locked: true, reason: null } : null,
         hold: holdOf(plan, ship),
-        link: [],
+        // The row of a ship lights its own path: with Gravity Drive it is not that of its kind.
+        link: ship.move ? [`rt:${routeId(ship)}`, `sys:${ship.origin}`] : [`sys:${ship.origin}`],
       };
     });
     const moving = units.filter((unit) => unit.moves);

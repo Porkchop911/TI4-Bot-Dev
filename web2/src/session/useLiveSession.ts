@@ -15,6 +15,7 @@ import {
   newDraft,
   parseDraft as parsePlan,
   problemOf,
+  reactivate,
   redo,
   scriptOf,
   setLandings,
@@ -155,6 +156,8 @@ interface Plan {
   open: boolean;
   /** The step of the draft that the player chose to see. Null: where the draft is open. */
   stage: Stage | null;
+  /** The recorded activation is open to choose another system. */
+  editing?: boolean;
 }
 
 const readPlanOf = (store: SeatStore | undefined): Plan => ({
@@ -267,8 +270,11 @@ function draftView(
   chosen: Stage | null,
   /** The outcome is of an older script, or of the game before its last update. */
   waiting: boolean,
+  /** The recorded activation is open: the run is of the action only, at the choice of a system. */
+  editing = false,
 ): { update: SessionUpdate; local: LocalState; stage: Stage | null; sent: PlanStep[] } {
-  const entry = entryOf(draft);
+  const recordedSystem = entryOf(draft).system;
+  const entry = editing ? { ...entryOf(draft), system: null } : entryOf(draft);
   const problem = problemOf(entry, outcome);
   // The step in view: the one that the player chose, while the game still asks for it.
   const stage =
@@ -292,8 +298,9 @@ function draftView(
     canUndo: canUndo(draft),
     canRedo: canRedo(draft),
     canApply,
-    applyHint:
-      entry.system === null
+    applyHint: editing
+      ? "Activate a system to end the edit"
+      : entry.system === null
         ? "Choose a system first"
         : waiting
           ? "The game checks the draft"
@@ -313,7 +320,10 @@ function draftView(
     problem,
     waiting,
     stage,
-    reached: STAGES.filter((item) => outcome[item] !== undefined),
+    // While the activation is open the run is of the action only: the tabs keep the recorded steps.
+    reached: editing
+      ? STAGES.filter((item) => stepsOfStage(entryOf(draft), item) !== null)
+      : STAGES.filter((item) => outcome[item] !== undefined),
     recorded,
     next,
     ends:
@@ -321,6 +331,7 @@ function draftView(
         ? "The action ends here. Every step is drafted."
         : null,
     fromMenu: atMenu,
+    editing: editing ? recordedSystem : null,
   };
   const steps = (of: Stage) => stepsOfStage(entry, of) ?? [];
   return {
@@ -772,7 +783,11 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
   // transport is asked, and answers later (`draft` of its events).
   const entry = plan.draft ? entryOf(plan.draft) : null;
   const locked = update ? draftLock(update, local) : "The game has not started";
-  const script = useMemo(() => (entry ? scriptOf(entry) : null), [entry]);
+  // While the recorded activation is open, the game is asked for the choice of a system.
+  const script = useMemo(
+    () => (entry ? scriptOf(plan.editing ? { ...entry, system: null } : entry) : null),
+    [entry, plan.editing],
+  );
   const wanted = useMemo(
     (): Wanted | null =>
       plan.open && !locked
@@ -872,7 +887,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
     };
     const drafted =
       plan.draft && outcome
-        ? draftView(update, live, plan.draft, outcome, plan.stage, waiting)
+        ? draftView(update, live, plan.draft, outcome, plan.stage, waiting, !!plan.editing)
         : null;
     // The editor of the secondary asks the question of the draft, on the game as it is.
     const shown =
@@ -903,9 +918,14 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         step: null,
       }));
     };
-    /** A change of the draft: one step of its undo. */
+    /** A change of the draft: one step of its undo. It ends an edit of the activation. */
     const redraft = (change: (now: Draft) => Draft) =>
-      setPlan((now) => (now.draft ? { ...now, draft: change(now.draft) } : now));
+      setPlan((now) => (now.draft ? { ...now, draft: change(now.draft), editing: false } : now));
+    /** Ends the edit of the recorded activation; `step` is the step in view after it. */
+    const endEdit = (step: 0 | null) => {
+      setPlan((now) => ({ ...now, editing: false }));
+      setLocal((now) => ({ ...now, staged: null, inspected: null, step }));
+    };
     /**
      * A change of the step in view: one step of undo. The step stays in view, also when the
      * game comes to a later step with it.
@@ -1065,7 +1085,11 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         // Nothing of a draft is sent. Its activation is recorded, and a step with nothing
         // staged is recorded as that ("Move nothing"), so that the draft goes on.
         const system = facts?.kind === "activation" ? state.staged : null;
-        if (system) {
+        if (system && plan.editing) {
+          // Another system replaces the activation; the game checks the later steps again.
+          redraft((now) => reactivate(now, system));
+          setLocal((now) => ({ ...now, staged: null, inspected: null, step: null }));
+        } else if (system) {
           redraft((now) => activate(now, system));
           setLocal((now) => ({ ...now, staged: null, inspected: null }));
         } else if (moving) {
@@ -1422,7 +1446,19 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         // The steps of a tactical action.
         case "commitEdit":
           return facts ? send() : undefined;
+        case "editStep":
+          // The recorded activation of a draft opens, with its system chosen.
+          if (drafted && intent.step === 0 && plan.draft && entryOf(plan.draft).system) {
+            const system = entryOf(plan.draft).system;
+            setPlan((now) => ({ ...now, editing: true }));
+            return setLocal((now) => ({ ...now, staged: system, inspected: null, step: 0 }));
+          }
+          return;
         case "selectStep": {
+          // Another step ends an edit of the activation; nothing of it was recorded.
+          if (plan.editing && intent.step !== 0) {
+            setPlan((now) => ({ ...now, editing: false }));
+          }
           // A step of a draft that the game came to is opened to change it.
           const stage = ([null, "movement", null, "invasion", "production"] as const)[intent.step];
           if (drafted && stage) {
@@ -1479,6 +1515,9 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             }))
           );
         case "cancelEdit":
+          if (plan.editing) {
+            return endEdit(0);
+          }
           if (producing) {
             produce(() => NO_PRODUCTION);
             return setLocal((now) => ({ ...now, productionStage: "build" }));
