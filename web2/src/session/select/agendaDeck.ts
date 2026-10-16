@@ -1,9 +1,9 @@
 // The placement of agenda cards on the top or the bottom of the deck (`details.agendas`, the
 // engine's `AgendaPlacementHints`, with the options `top` and `bottom`): the game asks one agenda
 // at a time, and the first question already names every agenda to place, in the order that they
-// are asked. Here they are one screen: each agenda as printed with "Top of the deck" and "Bottom
-// of the deck", and the deck after it as the game builds it. The main button answers every agenda
-// at once, by the ids of their options.
+// are asked. Here they are one screen: each agenda as printed, with "Top" and "Bottom" on the line
+// of its name, and when every agenda is placed the deck after it as the game builds it. The main
+// button answers every agenda at once, by the ids of their options.
 import type { BlockView, MenuRowView, RowView } from "../../model";
 import type { AgendaPlacementHints, Catalog, Choice } from "../wire";
 import { plain } from "./components";
@@ -96,19 +96,19 @@ export function selectAgendaDeck(
     return null;
   }
   const places = placesOf(agendas, draft);
-  const blocks: BlockView[] = agendas.flatMap((agenda, index): BlockView[] => [
-    { kind: "source", name: agenda.name, type: agenda.type, text: agenda.text },
-    {
-      kind: "menu",
-      rows: (["top", "bottom"] as const).map((place, at): MenuRowView => ({
-        key: KEYS[index * 2 + at] ?? "",
-        title: place === "top" ? "Top of the deck" : "Bottom of the deck",
-        selected: places.get(agenda.id) === place,
-        disabled: false,
-        intent: { type: "chooseOption", option: place, group: `agenda:${agenda.id}` },
-      })),
-    },
-  ]);
+  const blocks: BlockView[] = agendas.map((agenda, index): BlockView => ({
+    kind: "source",
+    name: agenda.name,
+    type: agenda.type,
+    text: agenda.text,
+    choices: (["top", "bottom"] as const).map((place, at): MenuRowView => ({
+      key: KEYS[index * 2 + at] ?? "",
+      title: place === "top" ? "Top" : "Bottom",
+      selected: places.get(agenda.id) === place,
+      disabled: false,
+      intent: { type: "chooseOption", option: place, group: `agenda:${agenda.id}` },
+    })),
+  }));
   // The deck as the game builds it: an agenda on top goes over the ones placed on top before it,
   // an agenda on the bottom under the ones placed on the bottom before it.
   const tops: Agenda[] = [];
@@ -133,13 +133,11 @@ export function selectAgendaDeck(
       subtitle: agenda.name,
     })),
   ];
-  blocks.push({
-    kind: "card",
-    title: "Agenda deck after",
-    aside: `${places.size} / ${agendas.length} placed`,
-    rows: deck.length ? deck : [{ icon: "card", title: ["No card placed"] }],
-  });
   const left = agendas.length - places.size;
+  // The deck is the confirmation: it is shown when every agenda is placed.
+  if (!left) {
+    blocks.push({ kind: "card", title: "Agenda deck after", rows: deck });
+  }
   const problem = left
     ? left === agendas.length
       ? `Place ${agendas.length === 1 ? "the agenda card" : `the ${agendas.length} agenda cards`}.`

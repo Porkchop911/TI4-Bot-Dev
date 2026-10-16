@@ -1580,16 +1580,18 @@ test("Politics: the speaker is chosen in the player table, then the agenda deck 
   await fitsHeight(page);
   await send(page).click();
 
-  // The agenda cards as printed, each on top or on the bottom, and the deck as the game builds it.
-  const deck = panel(page).getByRole("heading", { name: "Agenda deck after" }).locator("../..");
-  await expect(deck).toContainText("0 / 2 placed");
+  // The agenda cards as printed, each with Top and Bottom on its line; when both are placed, the
+  // deck as the game builds it.
+  const deckHeading = panel(page).getByRole("heading", { name: "Agenda deck after" });
+  const deck = deckHeading.locator("../..");
+  await expect(deckHeading).toHaveCount(0);
   await expect(row("Seat C")).toContainText("Speaker");
   await expect(panel(page).getByText(/^Agenda · /)).toHaveCount(2);
   await expect(send(page)).toHaveText(/Place 2 agenda cards/);
   await expect(send(page)).toBeDisabled();
   await page.keyboard.press("1");
   await page.keyboard.press("3");
-  await expect(deck).toContainText("2 / 2 placed");
+  await expect(deckHeading).toBeVisible();
   // Two agendas on top: the one asked second is the next agenda.
   const note = (await page.locator("footer").textContent()) ?? "";
   const [first, second] = [...note.matchAll(/(?:^|· )([^·]+?) on top/g)].map((found) => found[1]);
@@ -1597,7 +1599,7 @@ test("Politics: the speaker is chosen in the player table, then the agenda deck 
     `Top of the deck · the next agenda${second}Second from the top${first}`,
   );
   await page.keyboard.press("Escape");
-  await expect(deck).toContainText("1 / 2 placed");
+  await expect(deckHeading).toHaveCount(0);
   await page.keyboard.press("4");
   await expect(deck).toContainText("Bottom of the deck");
   await expect(page.locator("footer")).toContainText(/on top · .* on the bottom/);
@@ -1627,9 +1629,10 @@ test("Politics: another seat follows as the game asks it, and does not see the a
     .click();
   await send(page).click();
   const deck = panel(page).getByRole("heading", { name: "Agenda deck after" });
-  await expect(deck).toBeVisible();
+  await expect(panel(page).getByRole("button", { name: "Bottom", exact: true })).toHaveCount(2);
   await page.keyboard.press("2");
   await page.keyboard.press("4");
+  await expect(deck).toBeVisible();
   const note = (await page.locator("footer").textContent()) ?? "";
   const agendas = [...note.matchAll(/(?:^|· )([^·]+?) on the bottom/g)].map((found) => found[1]);
   expect(agendas).toHaveLength(2);

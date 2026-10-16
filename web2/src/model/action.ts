@@ -651,8 +651,12 @@ export interface DealSideView {
 export type BlockView =
   | { kind: "note"; tone: "accent" | "success" | "quiet"; strong?: string; text: string }
   | { kind: "menu"; title?: string; rows: MenuRowView[] }
-  /** The card or ability that asks for the decision, as printed. It is on top of the decision. */
-  | { kind: "source"; name: string; type: string; text: string }
+  /**
+   * The card or ability that asks for the decision, as printed. It is on top of the decision.
+   * `choices` are a choice of one about this card, a segmented toggle on the line of its name
+   * (the agenda deck of Politics: "Top", "Bottom"); they have keys as the rows of a menu do.
+   */
+  | { kind: "source"; name: string; type: string; text: string; choices?: MenuRowView[] }
   | { kind: "gauges"; gauges: GaugeView[] }
   /** The technology tree: one column for each colour, and a band for the unit upgrades. */
   | {

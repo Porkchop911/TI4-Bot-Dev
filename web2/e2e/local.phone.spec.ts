@@ -1162,17 +1162,11 @@ test("phone: Politics has the speaker in the player table and the agenda deck in
   await panes.getByRole("button", { name: "Action" }).click();
   await expect(panel).toContainText("Speaker: Sol → Hacan");
   await send.click();
-  const deck = panel.getByRole("heading", { name: "Agenda deck after" }).locator("../..");
-  await expect(deck).toContainText("0 / 2 placed");
-  await panel
-    .getByRole("button", { name: /Top of the deck/ })
-    .first()
-    .tap();
-  await panel
-    .getByRole("button", { name: /Bottom of the deck/ })
-    .last()
-    .tap();
-  await expect(deck).toContainText("2 / 2 placed");
+  const deck = panel.getByRole("heading", { name: "Agenda deck after" });
+  await expect(deck).toHaveCount(0);
+  await panel.getByRole("button", { name: "Top", exact: true }).first().tap();
+  await panel.getByRole("button", { name: "Bottom", exact: true }).last().tap();
+  await expect(deck).toBeVisible();
   expect(await width()).toBe(page.viewportSize()!.width);
   await expect(send).toBeInViewport();
   await page.screenshot({ path: "shots/phone/local/politics.png", animations: "disabled" });

@@ -283,6 +283,37 @@ function DealCard({ item }: { item: DealItemView }) {
       {on && <span className="text-gold">✓ </span>}
       <span className="font-mid">{item.name}</span>
     </>
+/**
+ * A choice of one about a card, on the line of its name: a segmented toggle. The chosen part has
+ * "✓" and the tint; a choice made again takes it back, as the row of a menu does.
+ */
+function Choices({ label, rows }: { label: string; rows: MenuRowView[] }) {
+  const dispatch = useDispatch();
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      className="inline-flex flex-none overflow-hidden rounded-md border border-line"
+    >
+      {rows.map((row) => (
+        <button
+          key={row.title}
+          type="button"
+          disabled={row.disabled}
+          aria-pressed={!!row.selected}
+          aria-keyshortcuts={row.key || undefined}
+          onClick={() => dispatch(row.intent)}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-sm whitespace-nowrap text-muted enabled:cursor-pointer enabled:hover:bg-white/5 disabled:text-faint aria-pressed:bg-raised aria-pressed:text-accent touch:min-h-10 touch:px-3.5 [&+&]:border-l [&+&]:border-line"
+        >
+          {row.key && <Kbd>{row.key}</Kbd>}
+          {row.selected && <span aria-hidden>✓</span>}
+          {row.title}
+        </button>
+      ))}
+    </div>
+  );
+}
+
   );
   return (
     <span
@@ -522,9 +553,13 @@ export function Blocks({ blocks }: { blocks: BlockView[] }) {
             // The card that asks, as printed: the player decides by this text.
             return (
               <div key={index} className="border-l-2 border-line-strong py-0.5 pl-3">
-                <div className="flex items-baseline gap-2">
-                  <strong className="text-base font-semibold">{block.name}</strong>
-                  <span className="text-xs text-muted">{block.type}</span>
+                <div className="flex items-center gap-2">
+                  {/* The kind takes a second line before the choices do. */}
+                  <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2">
+                    <strong className="text-base font-semibold">{block.name}</strong>
+                    <span className="text-xs text-muted">{block.type}</span>
+                  </div>
+                  {block.choices && <Choices label={block.name} rows={block.choices} />}
                 </div>
                 <p className="text-sm text-muted">{block.text}</p>
               </div>

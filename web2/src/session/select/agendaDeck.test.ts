@@ -52,7 +52,7 @@ const place = (draft: ReturnType<typeof placeAgenda>, agenda: string, where: str
 describe("the placement of agenda cards", () => {
   it("is every agenda as printed, with top and bottom, and nothing to send yet", () => {
     const view = selectAgendaDeck(first, null, printed)!;
-    expect(view.blocks.filter((block) => block.kind === "source")).toEqual([
+    expect(view.blocks).toMatchObject([
       {
         kind: "source",
         name: "Minister of Industry",
@@ -66,15 +66,11 @@ describe("the placement of agenda cards", () => {
         text: "The elected player gains this card.",
       },
     ]);
+    // Top and bottom are on the line of each agenda, with the keys 1 to 4.
     const keys = view.blocks.flatMap((block) =>
-      block.kind === "menu" ? block.rows.map((row) => `${row.key} ${row.title}`) : [],
+      block.kind === "source" ? (block.choices ?? []).map((row) => `${row.key} ${row.title}`) : [],
     );
-    expect(keys).toEqual([
-      "1 Top of the deck",
-      "2 Bottom of the deck",
-      "3 Top of the deck",
-      "4 Bottom of the deck",
-    ]);
+    expect(keys).toEqual(["1 Top", "2 Bottom", "3 Top", "4 Bottom"]);
     expect(view.problem).toBe("Place the 2 agenda cards.");
     expect(view.answers).toBeNull();
     expect(view.label).toBe("Place 2 agenda cards");
@@ -82,7 +78,10 @@ describe("the placement of agenda cards", () => {
 
   it("shows the deck as the game builds it and answers in the order that the game asks", () => {
     let draft = place(null, "imperial_arbiter", "top");
-    expect(selectAgendaDeck(first, draft, printed)!.problem).toBe("Place 1 more agenda card.");
+    const half = selectAgendaDeck(first, draft, printed)!;
+    expect(half.problem).toBe("Place 1 more agenda card.");
+    // The deck is the confirmation: it is not shown before every agenda is placed.
+    expect(half.blocks.some((block) => block.kind === "card")).toBe(false);
     draft = place(draft, "minister_industry", "top");
     const view = selectAgendaDeck(first, draft, printed)!;
     const deck = view.blocks.find((block) => block.kind === "card");
@@ -91,7 +90,6 @@ describe("the placement of agenda cards", () => {
       "Imperial Arbiter",
       "Minister of Industry",
     ]);
-    expect(deck?.kind === "card" && deck.aside).toBe("2 / 2 placed");
     expect(view.answers).toEqual(["top", "top"]);
     draft = place(draft, "minister_industry", "bottom");
     expect(selectAgendaDeck(first, draft, printed)!.answers).toEqual(["bottom", "top"]);
@@ -118,7 +116,7 @@ describe("the placement of agenda cards", () => {
     };
     expect(selectAgendaDeck(yesNo, null, printed)).toBeNull();
     const view = selectAgendaDeck(first, null, null)!;
-    expect(view.blocks[0]).toEqual({
+    expect(view.blocks[0]).toMatchObject({
       kind: "source",
       name: "Minister of Industry",
       type: "Agenda · Law",
