@@ -45,8 +45,10 @@ pub struct Roll {
     pub subject: Option<RollSubject>,
 }
 
-/// The unit behind a roll, for the public roll feed. Presentation only.
+/// The unit behind a roll, for the public roll feed: the ship of a gravity rift roll, the gun of a
+/// space cannon roll. Its owner is the roller. Presentation only.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct RollSubject {
     /// The content id of the unit's type (`carrier`, `pds2`). `None` for dice that are no unit's
     /// own (the SPACE CANNON of an attachment).
@@ -63,7 +65,7 @@ pub struct RollSubject {
     pub cargo: Vec<String>,
     /// The seat whose ships the dice fire at.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target: Option<String>,
+    pub target: Option<ti4_model::id::PlayerId>,
 }
 
 impl Roll {

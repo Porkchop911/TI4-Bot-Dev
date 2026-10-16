@@ -83,12 +83,14 @@ describe("the dice of a movement", () => {
   it("give a row for each ship that leaves a rift, with where it came from and its cargo", () => {
     const rows = riftRows(
       [
-        rift(0, 5, { unit: "cruiser2", origin: "41" }),
+        rift(0, 5, { subject: { unit: "cruiser2", origin: "41" } }),
         rift(1, 2, {
-          unit: "carrier",
-          damaged: true,
-          origin: "26",
-          cargo: ["infantry", "fighter", "infantry2", "infantry"],
+          subject: {
+            unit: "carrier",
+            damaged: true,
+            origin: "26",
+            cargo: ["infantry", "fighter", "infantry2", "infantry"],
+          },
         }),
         {
           index: 2,
@@ -119,17 +121,17 @@ describe("the dice of a movement", () => {
     ]);
     expect(riftRows([], label)).toBeNull();
     // Without the catalogue a unit is named by its base unit.
-    expect(riftRows([rift(0, 5, { unit: "cruiser2", origin: "41" })], label)?.[0].name).toBe(
-      "Cruiser",
-    );
+    expect(
+      riftRows([rift(0, 5, { subject: { unit: "cruiser2", origin: "41" } })], label)?.[0].name,
+    ).toBe("Cruiser");
   });
 
   it("say what a rift removed: the ship and its cargo", () => {
     expect(
       removedUnits(
         [
-          rift(0, 5, { unit: "cruiser" }),
-          rift(1, 2, { unit: "carrier", cargo: ["infantry", "infantry2"] }),
+          rift(0, 5, { subject: { unit: "cruiser" } }),
+          rift(1, 2, { subject: { unit: "carrier", cargo: ["infantry", "infantry2"] } }),
         ],
         printed,
       ),
@@ -153,8 +155,7 @@ describe("the dice of a movement", () => {
           faces: [8, 5],
           hits_on: 6,
           hits: 1,
-          unit: "pds2",
-          target: "a",
+          subject: { unit: "pds2", target: "a" },
         },
         {
           index: 1,
@@ -164,8 +165,7 @@ describe("the dice of a movement", () => {
           faces: [3],
           hits_on: 6,
           hits: 0,
-          unit: "pds",
-          target: "b",
+          subject: { unit: "pds", target: "b" },
         },
         {
           index: 2,

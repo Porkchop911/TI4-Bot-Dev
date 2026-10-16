@@ -156,6 +156,7 @@ export type { RelicRecord } from "./RelicRecord.ts";
 export type { ResearchFacts } from "./ResearchFacts.ts";
 export type { ResearchSpecialty } from "./ResearchSpecialty.ts";
 export type { ResearchTechnology } from "./ResearchTechnology.ts";
+export type { RollSubject } from "./RollSubject.ts";
 export type { Scenario } from "./Scenario.ts";
 export type { ScenarioMap } from "./ScenarioMap.ts";
 export type { ScoreFacts } from "./ScoreFacts.ts";

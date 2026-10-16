@@ -1,7 +1,7 @@
 // What the dice of a movement did: the gravity rifts that ships left, and the space cannon offense
 // after the movement. Read from the public rolls of the action (`GameEvent.roll`), which say who
-// rolled, where, the faces, what a die needs, and the unit that rolled: the ship of a rift roll
-// with its cargo, the gun of a space cannon roll and the seat that it fires at. Before the roll the
+// rolled, where, the faces, what a die needs, and the unit that rolled (`PublicRoll.subject`): the
+// ship of a rift roll with its cargo, the gun of a space cannon roll and the seat that it fires at. Before the roll the
 // space cannon offense is the guns of the movement facts (`MovementFacts.cannon`).
 import type {
   BattleRowView,
@@ -51,14 +51,14 @@ export function riftRows(
   printed: Catalog | null = null,
 ): RiftRowView[] | null {
   const rows = riftRolls(rolls).map((roll): RiftRowView => {
-    const type = roll.unit ? unitType(roll.unit) : null;
+    const ship = roll.subject;
     return {
-      unit: type,
-      name: roll.unit ? nameOf(roll.unit, printed, roll.damaged) : roll.label,
+      unit: ship?.unit ? unitType(ship.unit) : null,
+      name: ship?.unit ? nameOf(ship.unit, printed, ship.damaged) : roll.label,
       text: [
         roll.system ? `Leaves ${label(roll.system)}` : null,
-        roll.origin && roll.origin !== roll.system ? `from ${label(roll.origin)}` : null,
-        roll.cargo?.length ? `carries ${unitsText(roll.cargo, printed)}` : null,
+        ship?.origin && ship.origin !== roll.system ? `from ${label(ship.origin)}` : null,
+        ship?.cargo?.length ? `carries ${unitsText(ship.cargo, printed)}` : null,
         roll.hits_on ? `survives on ${roll.hits_on}+` : null,
       ]
         .filter((part) => part !== null)
@@ -76,7 +76,7 @@ export function removedUnits(
 ): string[] {
   return riftRolls(rolls)
     .filter((roll) => hits(roll) === 0)
-    .flatMap((roll) => [roll.unit ?? "", ...(roll.cargo ?? [])])
+    .flatMap((roll) => [roll.subject?.unit ?? "", ...(roll.subject?.cargo ?? [])])
     .filter((unit) => unitType(unit) !== null)
     .map((unit) => unitLabel(unit, printed));
 }
@@ -112,7 +112,7 @@ const gunName = (
 function rolledRow(roll: PublicRoll, printed: Catalog | null): BattleRowView {
   const target = roll.hits_on ?? null;
   return row({
-    ...gunName(roll.unit, null, printed),
+    ...gunName(roll.subject?.unit, null, printed),
     target,
     targetTitle: target ? `Hits on ${target}+` : "",
     dice: roll.faces.map((face) => ({ roll: face, hit: target !== null && face >= target })),
@@ -185,7 +185,7 @@ export function cannonTable(
   return table(
     fired.map((roll) => ({
       seat: roll.roller!,
-      target: targetOf(roll.roller!, roll.target, active),
+      target: targetOf(roll.roller!, roll.subject?.target, active),
       rows: [rolledRow(roll, printed)],
       hits: hits(roll),
     })),

@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use ti4_engine::dice::RollSubject;
 use ti4_model::id::PlayerId;
 
 use super::error::ErrorKind;
@@ -294,22 +295,10 @@ pub struct PublicRoll {
     /// What it did ("ship destroyed", "2 hits").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outcome: Option<String>,
-    /// The unit that rolled, by type id, when the engine said: the ship of a gravity rift roll,
-    /// the gun of a space cannon roll. Its owner is `roller`.
+    /// The unit that rolled, when the engine said: the ship of a gravity rift roll (with where it
+    /// started and what it carried), the gun of a space cannon roll (with the seat it fires at).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub unit: Option<String>,
-    /// The unit had sustained damage.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub damaged: bool,
-    /// The system the ship of a gravity rift roll started from.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub origin: Option<String>,
-    /// What the ship of a gravity rift roll carried, by type id: it is lost with the ship.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub cargo: Vec<String>,
-    /// The seat whose ships a space cannon roll fires at.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target: Option<PlayerId>,
+    pub subject: Option<RollSubject>,
 }
 
 /// Rolls whose face decides a hidden draw. Showing the die would show which card was taken.
@@ -349,7 +338,6 @@ pub fn public_roll(
             n => format!("{n} hits"),
         })
     });
-    let subject = roll.subject.as_ref();
     Some(PublicRoll {
         index,
         roller: roll.by.as_deref().map(PlayerId::new),
@@ -361,15 +349,7 @@ pub fn public_roll(
         rerolled: roll.rerolled.iter().copied().collect(),
         system: roll.system.clone().or_else(|| active.map(str::to_owned)),
         outcome,
-        unit: subject.and_then(|subject| subject.unit.clone()),
-        damaged: subject.is_some_and(|subject| subject.damaged),
-        origin: subject.and_then(|subject| subject.origin.clone()),
-        cargo: subject
-            .map(|subject| subject.cargo.clone())
-            .unwrap_or_default(),
-        target: subject
-            .and_then(|subject| subject.target.as_deref())
-            .map(PlayerId::new),
+        subject: roll.subject.clone(),
     })
 }
 
@@ -1078,31 +1058,34 @@ mod roll_tests {
     #[test]
     fn a_roll_names_its_unit_its_cargo_and_its_target_when_the_engine_said() {
         let mut rift = roll("gravity rift", &[2], Some(4));
-        rift.subject = Some(ti4_engine::dice::RollSubject {
+        let carrier = RollSubject {
             unit: Some("carrier".to_owned()),
             damaged: true,
             origin: Some("41".to_owned()),
             cargo: vec!["infantry".to_owned(), "infantry".to_owned()],
             target: None,
-        });
+        };
+        rift.subject = Some(carrier.clone());
         let public = public_roll(0, &rift, None).unwrap();
-        assert_eq!(public.unit.as_deref(), Some("carrier"));
-        assert!(public.damaged);
-        assert_eq!(public.origin.as_deref(), Some("41"));
-        assert_eq!(public.cargo, vec!["infantry", "infantry"]);
+        assert_eq!(public.subject, Some(carrier));
         let mut gun = roll("space cannon", &[7], Some(6));
-        gun.subject = Some(ti4_engine::dice::RollSubject {
+        let pds = RollSubject {
             unit: Some("pds".to_owned()),
-            target: Some("p2".to_owned()),
-            ..ti4_engine::dice::RollSubject::default()
-        });
+            target: Some(PlayerId::new("p2")),
+            ..RollSubject::default()
+        };
+        gun.subject = Some(pds.clone());
         let public = public_roll(1, &gun, None).unwrap();
-        assert_eq!(public.unit.as_deref(), Some("pds"));
-        assert_eq!(public.target, Some(PlayerId::new("p2")));
-        assert!(public.cargo.is_empty());
-        // A roll without a subject has none of these.
+        assert_eq!(public.subject, Some(pds));
+        let wire = serde_json::to_value(&public).unwrap();
+        assert_eq!(
+            wire["subject"],
+            serde_json::json!({"unit": "pds", "target": "p2"}),
+            "the subject leaves out what it does not have"
+        );
+        // A roll without a subject has none.
         let bare = public_roll(2, &roll("space combat", &[3], Some(7)), None).unwrap();
-        assert_eq!((bare.unit, bare.origin, bare.target), (None, None, None));
+        assert_eq!(bare.subject, None);
     }
 
     #[test]

@@ -2246,7 +2246,7 @@ pub fn space_cannon_offense(
                 damaged: shot.unit.as_ref().is_some_and(|unit| unit.sustained_damage),
                 origin: None,
                 cargo: Vec::new(),
-                target: shot.target.as_ref().map(ToString::to_string),
+                target: shot.target.clone(),
             },
         );
         // A unit's dice can take a casualty; an attachment's own dice cannot.
@@ -7643,7 +7643,7 @@ mod tests {
         // The public feed names the gun and the seat it fires at.
         let subject = dice.history()[0].subject.clone().expect("a named gun");
         assert_eq!(subject.unit, Some(a_cannon_unit()));
-        assert_eq!(subject.target, Some(attacker().to_string()));
+        assert_eq!(subject.target, Some(attacker()));
     }
 
     #[test]
