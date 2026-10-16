@@ -1,13 +1,14 @@
-// The placement of agenda cards on the top or the bottom of the deck (`details.agendas` with the
-// options `top` and `bottom`): the game asks one agenda at a time, and the first question already
-// names every agenda to place, in the order that they are asked. Here they are one screen: each
-// agenda as printed with "Top of the deck" and "Bottom of the deck", and the deck after it as the
-// game builds it. The main button answers every agenda at once, by the ids of their options.
+// The placement of agenda cards on the top or the bottom of the deck (`details.agendas`, the
+// engine's `AgendaPlacementHints`, with the options `top` and `bottom`): the game asks one agenda
+// at a time, and the first question already names every agenda to place, in the order that they
+// are asked. Here they are one screen: each agenda as printed with "Top of the deck" and "Bottom
+// of the deck", and the deck after it as the game builds it. The main button answers every agenda
+// at once, by the ids of their options.
 import type { BlockView, MenuRowView, RowView } from "../../model";
-import type { Catalog, Choice } from "../wire";
+import type { AgendaPlacementHints, Catalog, Choice } from "../wire";
 import { plain } from "./components";
 import { humanizeId } from "./names";
-import { type Editor, answered } from "./editor";
+import { type Editor, answered, hintFieldsOf } from "./editor";
 
 export type AgendaPlace = "top" | "bottom";
 
@@ -31,11 +32,9 @@ function agendasOf(choice: Choice, printed: Catalog | null): Agenda[] | null {
     return null;
   }
   const one = details.agenda as Record<string, unknown> | undefined;
-  const listed = Array.isArray(details.agendas)
-    ? details.agendas.filter((id): id is string => typeof id === "string")
-    : typeof one?.id === "string"
-      ? [one.id]
-      : [];
+  const listed =
+    hintFieldsOf<AgendaPlacementHints>(choice, "agendas")?.agendas ??
+    (typeof one?.id === "string" ? [one.id] : []);
   if (!listed.length) {
     return null;
   }

@@ -1904,6 +1904,30 @@ fn diplomacy_primary(
     )
 }
 
+/// The look-ahead of Politics' speaker question, what the primary does after the speaker: its
+/// fields are top-level keys of the details, `details.draws` and `details.looks`, written with
+/// [`Choice::hinted_fields`], so that a client can say it (display only).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct PoliticsHints {
+    /// How many action cards the primary draws ([`POLITICS_DRAWS`]).
+    pub draws: usize,
+    /// How many agenda cards the primary looks at: [`POLITICS_LOOKS`], or fewer when the deck
+    /// has fewer.
+    pub looks: usize,
+}
+
+/// The look-ahead of each agenda placement of Politics' primary: its field is a top-level key
+/// of the details, `details.agendas`, written with [`Choice::hinted_fields`], so that a client
+/// can stage the whole placement at once (display only).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct AgendaPlacementHints {
+    /// The agenda of this question and the ones placed after it, in the order that they are
+    /// asked.
+    pub agendas: Vec<String>,
+}
+
 fn politics_primary(
     state: &mut GameState,
     content: &ContentStore,
@@ -1945,9 +1969,10 @@ fn politics_primary(
                 .collect(),
         )
         .detailed("seats", seat_map(&named))
-        // Display only: what the primary does after the speaker, so that a client can say it.
-        .detailed("draws", POLITICS_DRAWS)
-        .detailed("looks", state.agenda_deck.len().min(POLITICS_LOOKS))
+        .hinted_fields(&PoliticsHints {
+            draws: POLITICS_DRAWS,
+            looks: state.agenda_deck.len().min(POLITICS_LOOKS),
+        })
         .contextualized(DecisionContext::new(
             player.clone(),
             DecisionSource::StrategyCard {
@@ -1990,9 +2015,9 @@ fn politics_primary(
             ],
         )
         .detailed("agenda", agenda_details(content, &agenda))
-        // Display only: this agenda and the ones placed after it, in the order that they are
-        // asked, so that a client can stage the whole placement at once.
-        .detailed("agendas", looked[placed..].to_vec())
+        .hinted_fields(&AgendaPlacementHints {
+            agendas: looked[placed..].to_vec(),
+        })
         .contextualized(DecisionContext::new(
             player.clone(),
             DecisionSource::StrategyCard {
@@ -3745,6 +3770,29 @@ mod tests {
         let [speaker, first, second] = &asked[..] else {
             panic!("a speaker and two agendas: {asked:?}");
         };
+        let told: PoliticsHints = speaker.hint_fields().unwrap();
+        assert_eq!(
+            told,
+            PoliticsHints {
+                draws: POLITICS_DRAWS,
+                looks: POLITICS_LOOKS,
+            }
+        );
+        let placing: AgendaPlacementHints = first.hint_fields().unwrap();
+        assert_eq!(placing.agendas, ["first", "second"]);
+        // The first question names the agendas that the later ones ask, in their order.
+        let later: Vec<String> = asked[1..]
+            .iter()
+            .map(|choice| {
+                choice.prompt["place ".len()..]
+                    .trim_end_matches(" where")
+                    .to_owned()
+            })
+            .collect();
+        assert_eq!(placing.agendas, later);
+        let placing: AgendaPlacementHints = second.hint_fields().unwrap();
+        assert_eq!(placing.agendas, ["second"]);
+        // The JSON keys that the clients read.
         assert_eq!(speaker.details["draws"], 2);
         assert_eq!(speaker.details["looks"], 2);
         assert_eq!(

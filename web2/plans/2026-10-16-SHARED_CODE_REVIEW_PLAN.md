@@ -1,6 +1,6 @@
 # Review of the shared code of the demo removal, and its cleanup (2026-10-16)
 
-Status: in progress, steps 1–5 and Technology/Leadership, Construction, Warfare and Diplomacy of step 6 done.
+Status: in progress, steps 1–5 and Technology/Leadership, Construction, Warfare, Diplomacy and Politics of step 6 done.
 
 ## Context
 
@@ -97,7 +97,9 @@ facts, and asks the engine of the page when it stages something that is not sent
     visits the shared part as a root too.
   - A look-ahead whose keys are top-level keys of the details (Diplomacy's `ready_hints` and
     `ready_count`, Politics' `draws`, `looks` and `agendas`, Imperial's `secrets_held` and
-    `secrets_max`) is one struct whose fields are those keys (`ReadyHints`). The engine writes it
+    `secrets_max`) is one struct of each question whose fields are those keys (`ReadyHints`;
+    Politics' `PoliticsHints` of the speaker question, `draws` and `looks`, and
+    `AgendaPlacementHints` of each agenda placement, `agendas`). The engine writes it
     with `Choice::hinted_fields(&hints)`, which puts each field into the details, and its test
     reads it back with `Choice::hint_fields::<T>()`.
   - web2 reads a look-ahead with `hintOf<T>(choice, key)` of `select/editor.ts`, or one of

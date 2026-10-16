@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Catalog, Choice } from "../wire";
+import type { AgendaPlacementHints, Catalog, Choice } from "../wire";
 import { clearLastAgenda, placeAgenda, selectAgendaDeck } from "./agendaDeck";
 
 // The first question of Politics' placement as the engine asks it (the scenario
@@ -20,7 +20,7 @@ const first: Choice = {
       text1: "The elected player gains this card.",
       text2: "",
     },
-    agendas: ["minister_industry", "imperial_arbiter"],
+    ...({ agendas: ["minister_industry", "imperial_arbiter"] } satisfies AgendaPlacementHints),
   },
 };
 const printed = {

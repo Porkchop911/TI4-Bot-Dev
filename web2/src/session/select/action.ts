@@ -24,6 +24,7 @@ import type {
   Choice,
   ChoiceOption,
   ExplorationCatalog,
+  PoliticsHints,
   PublicRoll,
   ReactionModes,
   SessionUpdate,
@@ -33,7 +34,7 @@ import { systemLabel, tilesOf } from "./movement";
 import { humanizeId, seatLabel, sentence } from "./names";
 import { printedSource } from "./printed";
 import { interruptOf, reactedAction, selectReaction } from "./reaction";
-import type { EditorSlot } from "./editor";
+import { type EditorSlot, hintFieldsOf } from "./editor";
 import { type OpenEditor, editorOf } from "./editors";
 import { selectResearch } from "./research";
 import type { Paying } from "./payment";
@@ -627,10 +628,13 @@ export function selectAction(
           ? "Choose a player"
           : null;
   const chosen = chosenBlock();
-  // What a question says comes after it, with no choice: action cards that are drawn.
+  // What a question says comes after it, with no choice (Politics' speaker question): action
+  // cards that are drawn, and agenda cards that the game shows.
+  const after = choice ? hintFieldsOf<PoliticsHints>(choice, "draws", "looks") : null;
+  const draws = after?.draws ?? 0;
   const hand = update.view.players.find((player) => player.id === viewer)?.action_cards_count;
   const drawn: BlockView[] =
-    typeof details.draws === "number" && details.draws > 0 && typeof hand === "number"
+    draws > 0 && typeof hand === "number"
       ? [
           {
             kind: "card",
@@ -638,15 +642,14 @@ export function selectAction(
             rows: [
               {
                 icon: "card",
-                title: [`Draw ${plural(details.draws, "action card")}`],
-                subtitle: `Action cards ${hand} → ${hand + details.draws}`,
+                title: [`Draw ${plural(draws, "action card")}`],
+                subtitle: `Action cards ${hand} → ${hand + draws}`,
               },
             ],
           },
         ]
       : [];
-  // The agenda cards that the game shows after this question.
-  const looks = typeof details.looks === "number" ? details.looks : 0;
+  const looks = after?.looks ?? 0;
   const blocks: BlockView[] = reacted
     ? reacted.blocks
     : !choice
