@@ -482,7 +482,10 @@ export const SpaceCombatOverlay: React.FC<SpaceCombatOverlayProps> = ({
     if (simulatedOdds) {
       const attWinPct = Math.round(simulatedOdds.attacker_win_rate * 100);
       const defWinPct = Math.round(simulatedOdds.defender_win_rate * 100);
-      const mutWinPct = Math.round(simulatedOdds.mutual_destruction_rate * 100);
+      // The rates are exclusive: a rollout that did not end is shown with the mutual wipes.
+      const mutWinPct = Math.round(
+        (simulatedOdds.mutual_destruction_rate + simulatedOdds.unresolved_rate) * 100,
+      );
       const attExpSurvivors = Object.values(
         simulatedOdds.attacker_expected_survivors,
       )

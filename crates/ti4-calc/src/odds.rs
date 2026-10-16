@@ -85,16 +85,21 @@ pub struct SideInput {
     pub guns: Option<UnitCounts>,
 }
 
-/// Outcome statistics from [`arena`] rollouts. The rates are fractions of the rollouts, the
-/// survivors and the fielded units are by unit id.
+/// Outcome statistics from [`arena`] rollouts. The four rates are fractions of the rollouts,
+/// exclusive, and sum to 1: the attacker destroys every ship of the defender, the defender
+/// destroys every ship of the attacker, both fleets are destroyed, or the rollout did not end
+/// (both fleets still had ships at [`arena::ROUND_CAP`]). A rollout that did not end is only in
+/// `unresolved_rate`; what it means is the client's. The survivors and the fielded units are by
+/// unit id.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct BattleResponse {
     pub simulations: usize,
     pub attacker_win_rate: f64,
     pub defender_win_rate: f64,
+    /// Both fleets are destroyed. Leaves out the rollouts that did not end.
     pub mutual_destruction_rate: f64,
-    /// The rollouts that did not end.
+    /// The rollouts that did not end: both fleets still had ships at the round cap.
     pub unresolved_rate: f64,
     pub average_rounds: f64,
     pub attacker_expected_survivors: BTreeMap<String, f64>,
@@ -140,19 +145,23 @@ pub struct GroundOddsRequest {
     pub simulations: Option<usize>,
 }
 
-/// Outcome of the rollouts of a ground combat. The rates are fractions of the rollouts and sum
-/// to 1: the attacker takes the planet, the defender holds it with ground forces left, or both
-/// sides are destroyed (the defender keeps the planet, LRR 49.5d). The survivors and the fielded
-/// ground forces are by unit id.
+/// Outcome of the rollouts of a ground combat. The four rates are fractions of the rollouts,
+/// exclusive, and sum to 1: the attacker takes the planet, the defender holds it with ground
+/// forces left, both sides are destroyed (the defender keeps the planet, LRR 49.5d), or the
+/// rollout did not end (both sides still had ground forces at [`arena::ROUND_CAP`]). A rollout
+/// that did not end is only in `unresolved_rate`; what it means is the client's (the planet stays
+/// with the defender). The survivors and the fielded ground forces are by unit id.
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct GroundOddsResponse {
     pub simulations: usize,
     pub attacker_win_rate: f64,
-    /// Includes the rollouts that did not end ([`GroundOddsResponse::unresolved_rate`]).
+    /// The defender holds the planet with ground forces left. Leaves out the rollouts that did not
+    /// end.
     pub defender_win_rate: f64,
+    /// Both sides are destroyed.
     pub mutual_destruction_rate: f64,
-    /// The rollouts that did not end: the invasion fails.
+    /// The rollouts that did not end: both sides still had ground forces at the round cap.
     pub unresolved_rate: f64,
     /// Rounds of ground combat, 0 when no round is fought.
     pub average_rounds: f64,
@@ -434,10 +443,8 @@ pub fn space_odds(
             arena::fight_outcome(&attacker_side, &defender_side, seed, attacker_cannon)
         };
 
-        if outcome.unresolved {
-            unresolved += 1;
-        }
         match outcome.winner {
+            _ if outcome.unresolved => unresolved += 1,
             Some("a") => attacker_wins += 1,
             Some("b") => defender_wins += 1,
             _ => mutual_destruction += 1,
@@ -602,15 +609,14 @@ pub fn ground_odds(
     for seed in 0..n {
         let outcome = arena::ground_fight(&attacker, &defender, seed as u64);
         let defender_stands = outcome.defender_left.iter().any(|count| *count > 0);
-        if outcome.winner == Some("a") {
+        if outcome.unresolved {
+            unresolved += 1;
+        } else if outcome.winner == Some("a") {
             wins += 1;
         } else if defender_stands {
             holds += 1;
         } else {
             mutual += 1;
-        }
-        if outcome.unresolved {
-            unresolved += 1;
         }
         total_rounds += u64::from(outcome.rounds);
         for (sum, count) in attacker_left.iter_mut().zip(&outcome.attacker_left) {
@@ -691,6 +697,29 @@ mod tests {
     }
 
     #[test]
+    fn a_space_fight_that_does_not_end_is_only_unresolved() {
+        // Space docks roll no combat dice, so neither side can ever score a hit.
+        let docks = || UnitCounts::Map([("spacedock".to_owned(), 1)].into_iter().collect());
+        let options = SpaceOptions {
+            simulations: Some(20),
+            seed: Some(1),
+            ..Default::default()
+        };
+        let response = odds(
+            None,
+            None,
+            &side("hacan", docks()),
+            &side("sol", docks()),
+            options,
+        )
+        .expect("battle succeeds");
+        assert!((response.unresolved_rate - 1.0).abs() < f64::EPSILON);
+        assert!(response.mutual_destruction_rate.abs() < f64::EPSILON);
+        assert!(response.attacker_win_rate.abs() < f64::EPSILON);
+        assert!(response.defender_win_rate.abs() < f64::EPSILON);
+    }
+
+    #[test]
     fn direct_fleet_battle_simulation_computes_odds() {
         let attacker = side(
             "sol",
@@ -710,7 +739,8 @@ mod tests {
         assert_eq!(response.simulations, 100);
         let total_rate = response.attacker_win_rate
             + response.defender_win_rate
-            + response.mutual_destruction_rate;
+            + response.mutual_destruction_rate
+            + response.unresolved_rate;
         assert!((total_rate - 1.0).abs() < 1e-6);
         assert_eq!(response.attacker_fielded.get("carrier"), Some(&1));
         assert_eq!(response.attacker_fielded.get("fighter"), Some(&4));
@@ -993,11 +1023,11 @@ mod tests {
 
         let total = response.attacker_win_rate
             + response.defender_win_rate
-            + response.mutual_destruction_rate;
+            + response.mutual_destruction_rate
+            + response.unresolved_rate;
         assert!((total - 1.0).abs() < 1e-9);
         assert!(response.mutual_destruction_rate > 0.0);
         assert!(response.defender_win_rate > 0.0);
-        assert!(response.unresolved_rate <= response.defender_win_rate);
         assert!(response.average_rounds >= 1.0);
 
         assert_eq!(

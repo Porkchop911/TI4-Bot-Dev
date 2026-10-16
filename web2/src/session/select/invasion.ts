@@ -185,7 +185,7 @@ function oddsOf(
     attacker: invader,
     defender: ask.ask.defender,
     response,
-    draw: response?.mutual_destruction_rate ?? 0,
+    unresolved: "loss",
     pending,
     fielded: { attacker: attacker.units, defender: defender.units },
     printed,

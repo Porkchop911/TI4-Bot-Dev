@@ -11,6 +11,7 @@ export interface CombatAnswer {
   attacker_win_rate: number;
   defender_win_rate: number;
   mutual_destruction_rate: number;
+  unresolved_rate: number;
   attacker_expected_survivors: Record<string, number>;
   defender_expected_survivors: Record<string, number>;
   attacker_fielded: Record<string, number>;
@@ -60,14 +61,14 @@ export function byUnit(
 
 /**
  * The odds of a combat. `response` is the last answer (null before the first); while it is of
- * other sides (`pending`), `fielded` gives the units that fight now. `draw` is the share of the
- * rollouts that is neither a win nor a loss.
+ * other sides (`pending`), `fielded` gives the units that fight now. The four rates of `ti4-calc`
+ * are exclusive; `unresolved` says what a rollout that did not end is for the attacker.
  */
 export function combatOdds({
   attacker,
   defender,
   response,
-  draw,
+  unresolved,
   pending,
   fielded,
   keep,
@@ -76,7 +77,8 @@ export function combatOdds({
   attacker: string;
   defender: string;
   response: CombatAnswer | null;
-  draw: number;
+  /** A rollout that did not end: a draw in space, a loss on the ground (the planet is held). */
+  unresolved: "draw" | "loss";
   pending: boolean;
   /** The units of each side by unit id, of the staged units. */
   fielded: {
@@ -89,7 +91,11 @@ export function combatOdds({
   printed?: Catalog | null;
 }): CombatOddsView {
   const [win, even, loss] = response
-    ? percentages([response.attacker_win_rate, draw, response.defender_win_rate])
+    ? percentages([
+        response.attacker_win_rate,
+        response.mutual_destruction_rate + (unresolved === "draw" ? response.unresolved_rate : 0),
+        response.defender_win_rate + (unresolved === "loss" ? response.unresolved_rate : 0),
+      ])
     : [null, null, null];
   const side = (
     seat: string,

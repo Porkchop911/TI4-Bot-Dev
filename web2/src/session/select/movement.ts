@@ -382,7 +382,7 @@ function oddsOf(plan: Plan, kept: KeptOdds | null): SpaceOddsView | null {
     attacker: plan.viewer,
     defender: battle.defender,
     response,
-    draw: response ? response.mutual_destruction_rate + response.unresolved_rate : 0,
+    unresolved: "draw",
     pending,
     fielded: { attacker: attacker.units, defender: defender.units },
     keep: isShip,

@@ -2,18 +2,25 @@
 import type { GroundRoll } from "./GroundRoll.ts";
 
 /**
- * Outcome of the rollouts of a ground combat. The rates are fractions of the rollouts and sum
- * to 1: the attacker takes the planet, the defender holds it with ground forces left, or both
- * sides are destroyed (the defender keeps the planet, LRR 49.5d). The survivors and the fielded
- * ground forces are by unit id.
+ * Outcome of the rollouts of a ground combat. The four rates are fractions of the rollouts,
+ * exclusive, and sum to 1: the attacker takes the planet, the defender holds it with ground
+ * forces left, both sides are destroyed (the defender keeps the planet, LRR 49.5d), or the
+ * rollout did not end (both sides still had ground forces at [`arena::ROUND_CAP`]). A rollout
+ * that did not end is only in `unresolved_rate`; what it means is the client's (the planet stays
+ * with the defender). The survivors and the fielded ground forces are by unit id.
  */
 export type GroundOddsResponse = { simulations: number, attacker_win_rate: number, 
 /**
- * Includes the rollouts that did not end ([`GroundOddsResponse::unresolved_rate`]).
+ * The defender holds the planet with ground forces left. Leaves out the rollouts that did not
+ * end.
  */
-defender_win_rate: number, mutual_destruction_rate: number, 
+defender_win_rate: number, 
 /**
- * The rollouts that did not end: the invasion fails.
+ * Both sides are destroyed.
+ */
+mutual_destruction_rate: number, 
+/**
+ * The rollouts that did not end: both sides still had ground forces at the round cap.
  */
 unresolved_rate: number, 
 /**

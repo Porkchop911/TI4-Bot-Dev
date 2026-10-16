@@ -82,9 +82,10 @@ function answer(attacker: number): GroundOddsResponse {
   return {
     simulations: 2000,
     attacker_win_rate: 0.346,
-    defender_win_rate: 0.6,
+    // The rates are exclusive: a rollout that did not end is a planet held, in the loss.
+    defender_win_rate: 0.58,
     mutual_destruction_rate: 0.054,
-    unresolved_rate: 0,
+    unresolved_rate: 0.02,
     average_rounds: 2.44,
     attacker_expected_survivors: { sol_infantry: 0.42 },
     defender_expected_survivors: { letnev_infantry: 0.9, letnev_mech: 0.75 },

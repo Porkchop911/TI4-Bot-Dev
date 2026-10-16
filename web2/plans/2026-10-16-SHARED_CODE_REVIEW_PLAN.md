@@ -1,6 +1,6 @@
 # Review of the shared code of the demo removal, and its cleanup (2026-10-16)
 
-Status: not started.
+Status: in progress, step 1 done.
 
 ## Context
 
