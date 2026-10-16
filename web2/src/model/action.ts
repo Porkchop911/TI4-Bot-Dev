@@ -369,6 +369,22 @@ export interface InvasionPlanetView {
   preview: BattleTableView | null;
 }
 
+/**
+ * The odds of the ground combat that the staged landings start on a planet, as `ti4-calc`
+ * computes them in the page. The attacker is the seat that lands.
+ */
+export interface GroundOddsView {
+  defender: SeatId;
+  /** The whole percentage that the attacker wins. Null before the first answer. */
+  win: number | null;
+  /** How many rollouts the number is of. 0 before the first answer. */
+  rollouts: number;
+  /** The number is of other landings: the answer for these is on its way. */
+  pending: boolean;
+  /** The planet has a defense that the odds cannot count: there is no number. */
+  unavailable: boolean;
+}
+
 /** One planet of the active system while the landings are staged. */
 export interface LandingPlanetView {
   id: PlanetId;
@@ -387,6 +403,8 @@ export interface LandingPlanetView {
   lands: string;
   /** Why nothing can land here. */
   reason: string | null;
+  /** The odds of the ground combat that the staged units start here. Null: no ground combat. */
+  odds: GroundOddsView | null;
 }
 
 /**

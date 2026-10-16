@@ -1,11 +1,16 @@
 // The game on the server: `crates/ti4-server`, behind a websocket at the address of the page.
-import { pageQuery, spaceOdds } from "@ti4/shared/engine/odds.ts";
+import { groundOdds, pageQuery, spaceOdds } from "@ti4/shared/engine/odds.ts";
 import { socketLink } from "@ti4/shared/link/socketLink.ts";
 import { type Socket, backoff, pageSocket } from "@ti4/shared/net/socket.ts";
 import { type MessageCore, messageTransport } from "./messageTransport";
 import type { LegacyStaged } from "./seatStore";
 import type { Transport } from "./transport";
-import { type Catalog, PROTOCOL_VERSION, type SpaceOddsRequest } from "./wire";
+import {
+  type Catalog,
+  type GroundOddsRequest,
+  PROTOCOL_VERSION,
+  type SpaceOddsRequest,
+} from "./wire";
 
 /** Which game of the server, and as whom. */
 export interface OnlineGame {
@@ -104,6 +109,10 @@ export function createWsTransport(
     odds: (request: SpaceOddsRequest) =>
       engine.module
         ? spaceOdds(pageQuery(engine.module), request)
+        : Promise.reject(new Error("This page has no engine for the odds.")),
+    groundOdds: (request: GroundOddsRequest) =>
+      engine.module
+        ? groundOdds(pageQuery(engine.module), request)
         : Promise.reject(new Error("This page has no engine for the odds.")),
     // The tools of a local game are not on the server.
     capabilities: {},

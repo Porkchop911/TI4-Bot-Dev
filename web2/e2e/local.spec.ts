@@ -2528,6 +2528,61 @@ test("an invasion: the landings are staged on the map and sent as one plan", asy
   expect(errors).toEqual([]);
 });
 
+test("the landings on a defended planet have the odds of the ground combat", async ({ page }) => {
+  // Longer than a test of this suite should be: see "Tests" in AGENTS.md.
+  test.setTimeout(10_000);
+  const errors = pageErrors(page, { console: true });
+  // Sol's carriers are in a system of two planets of Letnev, each with two infantry and a PDS.
+  await page.goto("/?scenario=ongoing_invasion_coexistence&humans=1");
+  // Blitz is offered at the start of the invasion: passed.
+  await expect(panel(page).getByText("Blitz", { exact: true })).toBeVisible();
+  await send(page).click();
+  await expect(heading(page)).toHaveText("Invasion");
+  const sheet = page.getByRole("group", { name: /^Land in / });
+  await expect(sheet).toBeVisible();
+  await expect(send(page)).toHaveText(/Land nothing/);
+  // Nothing lands: no odds.
+  const regions = sheet.getByRole("region", { name: "Ground combat" });
+  // The odds of Qucen'n, the first planet.
+  const odds = regions.first();
+  await expect(regions).toHaveCount(0);
+
+  await sheet.getByRole("button", { name: /^Land Infantry on Qucen/ }).click();
+  await expect(regions).toHaveCount(1);
+  await expect(odds).toHaveAttribute("aria-busy", "false");
+  await expect(odds).toContainText(/Ground combat\s*·\s*Letnev/);
+  await expect(odds).toContainText(/Win \d+%/);
+  const one = Number(/Win (\d+)%/.exec((await odds.textContent()) ?? "")![1]);
+  // The panel row of the planet has the same number.
+  await expect(
+    panel(page).getByRole("button", {
+      name: new RegExp(`^Qucen'n 1 Infantry Ground combat · Win ${one}%$`),
+    }),
+  ).toBeVisible();
+  // More units that land: new odds, better than with one.
+  await sheet.getByRole("button", { name: /^Land Infantry on Qucen/ }).click();
+  await sheet.getByRole("button", { name: /^Land Infantry on Qucen/ }).click();
+  await expect(odds).toHaveAttribute("aria-busy", "false");
+  await expect
+    .poll(async () => Number(/Win (\d+)%/.exec((await odds.textContent()) ?? "")?.[1] ?? 0))
+    .toBeGreaterThan(one);
+  // The other planet gets its own odds.
+  await sheet.getByRole("button", { name: /^Land Infantry on Rarron/ }).click();
+  await expect(regions).toHaveCount(2);
+  await odds.getByRole("button", { name: "About the odds" }).click();
+  await expect(page.getByText(/^Simulated · 2000 rollouts/)).toBeVisible();
+  await page.keyboard.press("Escape");
+  const overflow = await page
+    .locator("#step-panel > div.overflow-y-auto")
+    .evaluate((element) => element.scrollHeight - element.clientHeight);
+  expect(overflow, "the step content needs vertical scroll").toBeLessThanOrEqual(0);
+  await page.screenshot({ path: "shots/local/invasion-odds.png", animations: "disabled" });
+  // A unit taken back: the odds follow.
+  await sheet.getByRole("button", { name: "Take back Infantry from Rarron" }).click();
+  await expect(regions).toHaveCount(1);
+  expect(errors).toEqual([]);
+});
+
 test("a production: the build is staged on the map, then paid on the map, and sent as one plan", async ({
   page,
 }) => {

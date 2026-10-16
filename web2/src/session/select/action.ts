@@ -15,6 +15,7 @@ import { plural } from "../../model";
 import type { LandingDraft } from "../landingDraft";
 import type { MovementDraft } from "../movementDraft";
 import type { KeptOdds } from "../movementOdds";
+import type { GroundOddsKept } from "./invasion";
 import type { MovementPlan } from "../movementPlan";
 import type { ProductionDraft } from "../productionDraft";
 import type {
@@ -148,6 +149,11 @@ export interface LocalState {
    * starts. Of another movement while the answer for this one is on its way.
    */
   odds?: KeptOdds | null;
+  /**
+   * The last answers of the engine for the odds of the ground combats that the staged landings
+   * start, by planet. Of other landings while the answer for these is on its way.
+   */
+  groundOdds?: GroundOddsKept;
   /** The list of the turn menu that the player opened. Null: the picker. */
   menu?: TurnMenu | null;
   /** The private draft of a tactical action that the seat keeps, while it is not in view. */

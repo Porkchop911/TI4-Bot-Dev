@@ -12,6 +12,8 @@ import {
   type Catalog,
   type ClientRequest,
   type DraftStep,
+  type GroundOddsRequest,
+  type GroundOddsResponse,
   type PlanScope,
   PROTOCOL_VERSION,
   type ReactionModes,
@@ -29,6 +31,7 @@ export interface MessagePlay {
   /** The printed cards of the engine of this page. A snapshot of other cards is refused. */
   catalog: Catalog | null;
   odds(request: SpaceOddsRequest): Promise<BattleResponse>;
+  groundOdds(request: GroundOddsRequest): Promise<GroundOddsResponse>;
   capabilities?: Capabilities;
   /** The side plays a seat, and has staged work. A spectator has none. */
   player: boolean;
@@ -396,6 +399,7 @@ export function messageTransport(link: GameLink, play: MessagePlay): MessageCore
   const transport: Transport = {
     catalog: play.catalog,
     odds: play.odds,
+    groundOdds: play.groundOdds,
     capabilities: play.capabilities ?? {},
     ...(play.player ? { staged: staged.store } : {}),
     subscribe(listener) {

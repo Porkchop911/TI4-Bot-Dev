@@ -38,6 +38,7 @@ import {
 } from "./landingDraft";
 import { type MovementDraft, fill, poolOfSource, resetOrigin, setCount } from "./movementDraft";
 import { type KeptOdds, type OddsRequest, oddsRequest } from "./movementOdds";
+import { type GroundOddsAsk, type KeptGroundOdds, groundAsks } from "./groundOdds";
 import { type MovementPlan, type PlanStep, draftOf, stageOf, stepsOf } from "./movementPlan";
 import {
   GOODS,
@@ -625,6 +626,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           planNote,
           stepping: event.stepping?.seat ?? null,
           odds: null,
+          groundOdds: {},
           menu: null,
         };
       });
@@ -855,7 +857,11 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
     setLocal((now) => ({ ...now, inspected: system, productionStage: "build" }));
   }, [draftSheet]);
 
-  const built = useMemo((): { session: GameSession; odds: OddsRequest | null } | null => {
+  const built = useMemo((): {
+    session: GameSession;
+    odds: OddsRequest | null;
+    ground: GroundOddsAsk[];
+  } | null => {
     if (!update || !transport) {
       return null;
     }
@@ -1592,6 +1598,12 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
       },
       // The odds of the space combat that the movement in view starts, Live or in a draft.
       odds: moving && local.step === null ? oddsRequest(moving, state.movement) : null,
+      // The odds of the ground combats that the landings in view start, Live or in a draft.
+      ground: landing
+        ? groundAsks(shown, landing, state.landing).flatMap((item) =>
+            item.kind === "ask" ? [item.ask] : [],
+          )
+        : [],
     };
   }, [
     update,
@@ -1625,6 +1637,35 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
       current = false;
     };
   }, [transport, oddsKey]);
+
+  // The same for the ground combat on each planet where units land: a question for each planet
+  // whose landings changed. The answer for landings that changed since is not kept.
+  const keptGround = useRef(local.groundOdds);
+  keptGround.current = local.groundOdds;
+  const groundKey = JSON.stringify(built?.ground.map(({ planet, key }) => [planet, key]) ?? []);
+  useEffect(() => {
+    const asks = JSON.parse(groundKey) as [string, string][];
+    if (!transport || !asks.length) {
+      return;
+    }
+    let current = true;
+    for (const [planet, key] of asks) {
+      // The answer for these landings is there already.
+      if (keptGround.current?.[planet]?.key === key) {
+        continue;
+      }
+      const keep = (response: KeptGroundOdds["response"]) =>
+        current &&
+        setLocal((now) => ({
+          ...now,
+          groundOdds: { ...now.groundOdds, [planet]: { key, response } },
+        }));
+      transport.groundOdds(JSON.parse(key)).then(keep, () => keep(null));
+    }
+    return () => {
+      current = false;
+    };
+  }, [transport, groundKey]);
 
   return { session: built?.session ?? null, error: local.error, replaying: local.replaying };
 }

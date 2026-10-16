@@ -353,6 +353,42 @@ test("phone: a movement into a fleet of another seat has the odds of the space c
   await page.screenshot({ path: "shots/phone/local/movement-odds.png", animations: "disabled" });
 });
 
+test("phone: the landings on a defended planet have the odds of the ground combat", async ({
+  page,
+}) => {
+  // Longer than a test of this suite should be: see "Tests" in AGENTS.md.
+  test.setTimeout(10_000);
+  await page.goto("/?scenario=ongoing_invasion_coexistence&humans=1");
+  const send = page.locator('footer button[aria-keyshortcuts="Enter"]');
+  const pane = (name: string) =>
+    page.getByRole("navigation", { name: "Panes" }).getByRole("button", { name });
+  const width = page.viewportSize()!.width;
+  const fits = async () =>
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+  // Blitz is offered at the start of the invasion: passed.
+  await expect(page.locator("#step-panel").getByText("Blitz", { exact: true })).toBeVisible();
+  await send.click();
+  await pane("Map").click();
+  const sheet = page.getByRole("group", { name: /^Land in / });
+  await sheet.getByRole("button", { name: /^Land Infantry on Qucen/ }).click();
+  await sheet.getByRole("button", { name: /^Land Infantry on Rarron/ }).click();
+  const odds = sheet.getByRole("region", { name: "Ground combat" });
+  await expect(odds).toHaveCount(2);
+  await expect(odds.first()).toHaveAttribute("aria-busy", "false");
+  await expect(odds.first()).toContainText(/Win \d+%/);
+  await fits();
+  await page.screenshot({ path: "shots/phone/local/invasion-odds.png", animations: "disabled" });
+  // The panel says the odds in the row of each planet.
+  await sheet.getByRole("button", { name: "Done with the landings" }).click();
+  await pane("Action").click();
+  await expect(
+    page
+      .locator("#step-panel")
+      .getByRole("button", { name: /^Qucen'n 1 Infantry Ground combat · Win \d+%$/ }),
+  ).toBeVisible();
+  await fits();
+});
+
 test("phone: the landings are staged in a sheet over the map", async ({ page }) => {
   // Longer than a test of this suite should be: see "Tests" in AGENTS.md.
   test.setTimeout(10_000);

@@ -3,6 +3,7 @@
 import type {
   BoardTaskView,
   CargoSourceView,
+  GroundOddsView,
   InvasionView,
   LandingPlanetView,
   LandingView,
@@ -18,6 +19,7 @@ import {
   landKey,
   landed,
 } from "../landingDraft";
+import { type GroundAsk, type KeptGroundOdds, groundAsks } from "../groundOdds";
 import type { ExplorationCatalog, InvasionFacts, LandingPool, SessionUpdate } from "../wire";
 import { NO_TRAITS, planetTraits } from "./exploration";
 import { systemLabel, tilesOf } from "./movement";
@@ -37,6 +39,38 @@ const unitsText = (facts: InvasionFacts, taken: (force: number) => number) =>
     })
     .join(", ");
 
+/** The last answers of the engine for the odds of the ground combats, by planet. */
+export type GroundOddsKept = Record<string, KeptGroundOdds>;
+
+/**
+ * The odds of the ground combat on a planet. `kept` is the last answer of the engine for that
+ * planet: of other landings it is shown as pending.
+ */
+function oddsOf(
+  ask: GroundAsk | undefined,
+  kept: KeptGroundOdds | undefined,
+): GroundOddsView | null {
+  if (!ask) {
+    return null;
+  }
+  if (ask.kind === "unavailable") {
+    return { defender: ask.defender, win: null, rollouts: 0, pending: false, unavailable: true };
+  }
+  const pending = kept?.key !== ask.ask.key;
+  // The engine had no odds for these sides.
+  if (!pending && !kept?.response) {
+    return null;
+  }
+  const response = kept?.response ?? null;
+  return {
+    defender: ask.ask.defender,
+    win: response ? Math.round(response.attacker_win_rate * 100) : null,
+    rollouts: response?.simulations ?? 0,
+    pending,
+    unavailable: false,
+  };
+}
+
 /** The landings of the active system: what the sheet on the board and the panel show. */
 export function selectLanding(
   update: SessionUpdate,
@@ -44,7 +78,10 @@ export function selectLanding(
   draft: LandingDraft,
   chosen: number | null,
   catalog: ExplorationCatalog | null = null,
+  /** The last answers of the engine for the odds of the ground combats. */
+  odds: GroundOddsKept = {},
 ): LandingView {
+  const asks = new Map(groundAsks(update, facts, draft).map((ask) => [ask.planet, ask]));
   const traits = planetTraits(update, catalog);
   const tiles = tilesOf(update);
   const planetName = (system: string, planet: string) =>
@@ -98,6 +135,7 @@ export function selectLanding(
       ),
       lands: unitsText(facts, (force) => staged[force] ?? 0),
       reason: lands.length ? null : "Ground forces cannot land here",
+      odds: oddsOf(asks.get(planet), odds[planet]),
     };
   });
   return {
@@ -118,9 +156,10 @@ export const selectInvasion = (
   draft: LandingDraft,
   chosen: number | null,
   catalog: ExplorationCatalog | null = null,
+  odds: GroundOddsKept = {},
 ): InvasionView => ({
   kind: "invasion",
-  landing: selectLanding(update, facts, draft, chosen, catalog),
+  landing: selectLanding(update, facts, draft, chosen, catalog, odds),
   skipped: null,
   planets: [],
   gauges: [],

@@ -108,7 +108,14 @@ export function selectShell(
       ? { facts, draft: local.movement, handled: local.handled, odds: local.odds ?? null }
       : null;
   const landing =
-    facts?.kind === "invasion" ? { facts, draft: local.landing, chosen: local.landingKind } : null;
+    facts?.kind === "invasion"
+      ? {
+          facts,
+          draft: local.landing,
+          chosen: local.landingKind,
+          odds: local.groundOdds ?? {},
+        }
+      : null;
   const production =
     facts?.kind === "production"
       ? {

@@ -252,7 +252,14 @@ function invasion(
   catalog: ExplorationCatalog | null,
 ): { content: StepContentView; footer: FooterView; target: string } {
   const nothing = landed(local.landing) === 0;
-  const content = selectInvasion(update, facts, local.landing, local.landingKind, catalog);
+  const content = selectInvasion(
+    update,
+    facts,
+    local.landing,
+    local.landingKind,
+    catalog,
+    local.groundOdds ?? {},
+  );
   if (local.draft) {
     return {
       target: systemLabel(tilesOf(update), facts.active),

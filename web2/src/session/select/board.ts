@@ -23,7 +23,7 @@ import type {
   SystemView,
 } from "../wire";
 import { planetTraits, printedTraits } from "./exploration";
-import { landingTask, selectLanding, withLandings } from "./invasion";
+import { type GroundOddsKept, landingTask, selectLanding, withLandings } from "./invasion";
 import { selectArrival, selectMovementBoard, selectOrigin, withMovement } from "./movement";
 import {
   type Stage,
@@ -208,7 +208,13 @@ export function selectBoard(
     odds?: KeptOdds | null;
   } | null = null,
   /** The open landings: the planets of the active system are the choice, and it opens them. */
-  landing: { facts: InvasionFacts; draft: LandingDraft; chosen: number | null } | null = null,
+  landing: {
+    facts: InvasionFacts;
+    draft: LandingDraft;
+    chosen: number | null;
+    /** The last answers of the engine for the odds of the ground combats. */
+    odds?: GroundOddsKept;
+  } | null = null,
   /** The printed names and texts of the attachments. */
   catalog: ExplorationCatalog | null = null,
   /** The open production: the active system opens the build, then the planets pay. */
@@ -250,7 +256,14 @@ export function selectBoard(
   // The landings with their controls take the place of the inspector of the active system.
   const sheet =
     landing && open?.system_id === landing.facts.active
-      ? selectLanding(update, landing.facts, landing.draft, landing.chosen, catalog)
+      ? selectLanding(
+          update,
+          landing.facts,
+          landing.draft,
+          landing.chosen,
+          catalog,
+          landing.odds ?? {},
+        )
       : null;
   // The build with its controls takes the place of the inspector too, while it is chosen.
   const build =

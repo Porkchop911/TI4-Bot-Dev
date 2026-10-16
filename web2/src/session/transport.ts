@@ -5,6 +5,8 @@ import type {
   Catalog,
   DraftOutcome,
   DraftStep,
+  GroundOddsRequest,
+  GroundOddsResponse,
   PlanScope,
   PublicTurnStatus,
   ReactionMode,
@@ -163,6 +165,8 @@ export interface Transport {
    * same sides give the same numbers. Nothing of the game is read or changed.
    */
   odds(request: SpaceOddsRequest): Promise<BattleResponse>;
+  /** The odds of a ground combat, from the engine of this page as `odds` is. */
+  groundOdds(request: GroundOddsRequest): Promise<GroundOddsResponse>;
   /** Ends the game on this side. */
   close(): void;
 }
