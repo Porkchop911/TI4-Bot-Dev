@@ -272,18 +272,6 @@ function MenuRow({ row, grouped }: { row: MenuRowView; grouped: boolean }) {
 }
 
 /**
- * A card of a deal. Staged with a tap: a staged card has "✓" and the gold frame. Its printed text
- * is behind "?".
- */
-function DealCard({ item }: { item: DealItemView }) {
-  const dispatch = useDispatch();
-  const on = !!item.toggle?.on;
-  const name = (
-    <>
-      {on && <span className="text-gold">✓ </span>}
-      <span className="font-mid">{item.name}</span>
-    </>
-/**
  * A choice of one about a card, on the line of its name: a segmented toggle. The chosen part has
  * "✓" and the tint; a choice made again takes it back, as the row of a menu does.
  */
@@ -314,6 +302,18 @@ function Choices({ label, rows }: { label: string; rows: MenuRowView[] }) {
   );
 }
 
+/**
+ * A card of a deal. Staged with a tap: a staged card has "✓" and the gold frame. Its printed text
+ * is behind "?".
+ */
+function DealCard({ item }: { item: DealItemView }) {
+  const dispatch = useDispatch();
+  const on = !!item.toggle?.on;
+  const name = (
+    <>
+      {on && <span className="text-gold">✓ </span>}
+      <span className="font-mid">{item.name}</span>
+    </>
   );
   return (
     <span
