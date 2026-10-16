@@ -2,7 +2,7 @@
 // for undo and redo. A draft is a script. The engine plays it on a copy of the game each time it
 // changes (`Transport.draft`), so nothing here decides a rule.
 import type { LandingStep, MovementStep, PlanStep, ProductionStep } from "./movementPlan";
-import type { DraftOutcome, DraftStep, SessionUpdate } from "./wire";
+import type { DraftOutcome, DraftStep, RefusalCode, SessionUpdate } from "./wire";
 
 /** The steps of a tactical action that a draft stages, in their order. */
 export type Stage = "movement" | "invasion" | "production";
@@ -109,6 +109,19 @@ export function scriptOf(entry: DraftEntry): DraftStep[] {
   ];
 }
 
+/** Where the steps of `stage` start in the script of `entry`, after the answers before them. */
+function stageStart(entry: DraftEntry, stage: Stage): number {
+  let at = BEFORE_MOVEMENT;
+  for (const item of STAGES) {
+    at += entry.answers?.[item]?.length ?? 0;
+    if (item === stage) {
+      return at;
+    }
+    at += item === "production" && entry.unpaid ? 0 : (stepsOfStage(entry, item)?.length ?? 0);
+  }
+  return at;
+}
+
 /** The stage that entry `index` of the script of `entry` belongs to. Null for the action and its system. */
 export function stageAt(entry: DraftEntry, index: number): Stage | null {
   let at = BEFORE_MOVEMENT;
@@ -174,6 +187,78 @@ const STOPPED: Record<string, string> = {
 export const stopText = (reason: string): string =>
   STOPPED[reason] ?? "The draft ends at a decision that it cannot show yet.";
 
+/** The entry of a draft that the game refused: the row that is marked, and what fixes it. */
+export interface Review {
+  /** The stage of the entry. Null: the activation. */
+  stage: Stage | null;
+  /** The entry as the game refused it. Null: the activation, or no entry was named. */
+  entry: DraftStep | null;
+  code: RefusalCode;
+  /** The place of the entry among the recorded steps of its stage. -1: no step of the stage. */
+  index: number;
+}
+
+/** The entry that the game refused in the run of `entry`. Null when it refused none. */
+export function reviewOf(entry: DraftEntry, outcome: DraftOutcome): Review | null {
+  const { stop } = outcome;
+  if (stop.kind !== "refused" || stop.step === 0) {
+    return null;
+  }
+  const stage = stageAt(entry, stop.step);
+  if (stage === null) {
+    return { stage, entry: null, code: stop.code, index: -1 };
+  }
+  const steps = stepsOfStage(entry, stage) ?? [];
+  const named = stop.entry ?? null;
+  // The game names the entry: a payment may have moved, so its place can differ from the draft's.
+  const found = named ? steps.findIndex((item) => same(item, named)) : -1;
+  const placed = stop.step - stageStart(entry, stage);
+  const index = found >= 0 ? found : placed >= 0 && placed < steps.length ? placed : -1;
+  return { stage, entry: named ?? steps[index] ?? null, code: stop.code, index };
+}
+
+const same = (a: DraftStep, b: DraftStep) => JSON.stringify(a) === JSON.stringify(b);
+
+/** What a step brings with it: a ship its hold, a purchase its place and its payment. */
+const PARTS_OF: Partial<Record<DraftStep["kind"], DraftStep["kind"][]>> = {
+  move: ["load", "done_loading"],
+  produce: ["place", "pay"],
+};
+
+/** The entries that Remove takes out: what the game refused, or the stage that it never came to. */
+export const removable = (review: Review | null): boolean =>
+  !!review &&
+  review.stage !== null &&
+  (review.code === "over" ||
+    (review.index >= 0 &&
+      review.code !== "unpaid" &&
+      ["move", "load", "land", "produce"].includes(review.entry?.kind ?? "")));
+
+/**
+ * The draft without the entry that the game refused, with what it brings: a ship with its hold, a
+ * purchase with its place and payment. A stage that the action ends before goes whole. One step
+ * of undo; the game checks the draft again.
+ */
+export function removeEntry(draft: Draft, review: Review): Draft {
+  const entry = entryOf(draft);
+  if (!removable(review) || review.stage === null) {
+    return draft;
+  }
+  const stage = review.stage;
+  let steps: PlanStep[] | null = null;
+  if (review.code !== "over") {
+    const all = stepsOfStage(entry, stage) ?? [];
+    const parts = PARTS_OF[all[review.index].kind] ?? [];
+    let end = review.index + 1;
+    while (end < all.length && parts.includes(all[end].kind)) {
+      end += 1;
+    }
+    steps = [...all.slice(0, review.index), ...all.slice(end)];
+  }
+  const field = stage === "movement" ? "steps" : stage === "invasion" ? "landings" : "production";
+  return record(draft, { ...entry, [field]: steps });
+}
+
 const PARTS: Record<Stage, string> = {
   movement: "movement",
   invasion: "landings",
@@ -185,20 +270,36 @@ export const isBoundary = (outcome: DraftOutcome): boolean =>
   outcome.stop.kind === "stopped" &&
   (outcome.stop.reason === "Uncertainty" || outcome.stop.reason === "UnsupportedSegment");
 
-/** Why the game did not play the whole script, in words. Null when it did. */
-export function problemOf(entry: DraftEntry, outcome: DraftOutcome): string | null {
+/**
+ * Why the game did not play the whole script, and what to do, in words. Null when it did.
+ * `systemName` names a system by the board.
+ */
+export function problemOf(
+  entry: DraftEntry,
+  outcome: DraftOutcome,
+  systemName: (id: string) => string = (id) => `#${id}`,
+): string | null {
   const { stop } = outcome;
   switch (stop.kind) {
     case "open":
     case "complete":
       return null;
     case "refused": {
-      const stage = stageAt(entry, stop.step);
-      return stop.step === 0
-        ? "A tactical action cannot be drafted from here: the game asks something else first."
-        : stage === null
-          ? `System ${entry.system} cannot be activated now.`
-          : `A part of the ${PARTS[stage]} no longer fits. ${stop.reason}`;
+      const review = reviewOf(entry, outcome);
+      if (!review) {
+        return "A tactical action cannot be drafted from here: the game asks something else first.";
+      }
+      if (review.stage === null) {
+        return `${systemName(entry.system ?? "")} cannot be activated now: edit the activation.`;
+      }
+      const part = PARTS[review.stage];
+      return review.code === "over"
+        ? `The action ends before the ${part}: remove it, or change an earlier step.`
+        : review.code === "unpaid"
+          ? "The payment no longer covers the production: change the payment."
+          : removable(review)
+            ? `A part of the ${part} no longer fits: remove it, or change the ${part}.`
+            : `A part of the ${part} no longer fits: change the ${part}.`;
     }
     case "stopped":
       return stopText(stop.reason);

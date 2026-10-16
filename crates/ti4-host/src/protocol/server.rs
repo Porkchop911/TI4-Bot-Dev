@@ -2097,6 +2097,10 @@ pub struct ScriptStopped {
     /// it refused an entry and nothing was sent.
     pub interrupted: bool,
     pub reason: String,
+    /// The entry that the game refused, and why. `None` when it refused none: the game asked
+    /// something else first.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refusal: Option<crate::planning::draft::EntryRefusal>,
 }
 
 /// What became of `ClientMessage::ApplyDraft`, for the seat that sent it.

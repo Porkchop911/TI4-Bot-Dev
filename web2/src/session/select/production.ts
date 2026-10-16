@@ -31,7 +31,7 @@ export type Stage = "build" | "pay";
 const typeOf = (unit: string): UnitType => unitType(unit) ?? "infantry";
 
 /** The name of a planet, wherever it is on the map. */
-const planetNames = (update: SessionUpdate) =>
+export const planetNames = (update: SessionUpdate) =>
   new Map(
     (update.view.board.map_tiles ?? []).flatMap((tile) =>
       (tile.planets ?? []).map((planet) => [planet.id, planet.label] as const),

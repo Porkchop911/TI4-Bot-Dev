@@ -14,6 +14,9 @@ import {
   parseDraft,
   reactivate,
   redo,
+  removable,
+  removeEntry,
+  reviewOf,
   scriptOf,
   setLandings,
   setMovement,
@@ -89,12 +92,18 @@ it("says whether the game played the whole script, and why not", () => {
   expect(problemOf(entry, outcome({ kind: "complete" }, 4))).toBeNull();
   expect(fits(entry, outcome({ kind: "open" }, 3))).toBe(false);
   const refused = (step: number) =>
-    outcome({ kind: "refused", step, reason: "The game does not offer this." }, step);
+    outcome(
+      { kind: "refused", step, reason: "The game does not offer this.", code: "not_offered" },
+      step,
+    );
   expect(fits(entry, refused(2))).toBe(false);
   expect(problemOf(entry, refused(0))).toContain("cannot be drafted from here");
-  expect(problemOf(entry, refused(1))).toBe("System 23 cannot be activated now.");
+  // A system is named by the board, and the footer says what to do.
+  expect(problemOf(entry, refused(1), (id) => `Saudor · #${id}`)).toBe(
+    "Saudor · #23 cannot be activated now: edit the activation.",
+  );
   expect(problemOf(entry, refused(2))).toBe(
-    "A part of the movement no longer fits. The game does not offer this.",
+    "A part of the movement no longer fits: remove it, or change the movement.",
   );
   expect(problemOf(entry, outcome({ kind: "stopped", reason: "Uncertainty" }, 3))).toContain(
     "a roll or a draw",
@@ -166,9 +175,12 @@ it("goes on to the landings and the production, with what the game asks before t
     "production",
     "production",
   ]);
-  expect(problemOf(entry, outcome({ kind: "refused", step: 4, reason: "Gone." }, 4))).toBe(
-    "A part of the landings no longer fits. Gone.",
-  );
+  expect(
+    problemOf(
+      entry,
+      outcome({ kind: "refused", step: 4, reason: "Gone.", code: "not_offered" }, 4),
+    ),
+  ).toBe("A part of the landings no longer fits: remove it, or change the landings.");
   // A change of the movement keeps what comes after it; another system does not.
   expect(entryOf(setMovement(draft, [{ kind: "done_moving" }])).landings).toEqual(LAND);
   expect(entryOf(activate(draft, "24"))).toEqual({ system: "24", steps: null });
@@ -226,4 +238,76 @@ it("replaces a recorded activation and keeps the later steps for the game to che
   expect(entryOf(undo(moved))).toEqual({ system: "23", steps: MOVE });
   // The same system changes nothing, and is no step of undo.
   expect(reactivate(draft, "23")).toBe(draft);
+});
+
+it("names the entry that no longer fits, and takes it out with what it brings", () => {
+  const ship = (unit: string): MovementStep => ({
+    kind: "move",
+    origin: "01",
+    unit,
+    damaged: false,
+    gravity_drive: false,
+    ionian: false,
+  });
+  const steps: MovementStep[] = [
+    ship("carrier"),
+    {
+      kind: "load",
+      origin: "01",
+      pickup_system: "01",
+      unit: "infantry",
+      source: "jord",
+      damaged: false,
+      galvanized: false,
+    },
+    { kind: "done_loading" },
+    ship("destroyer"),
+    { kind: "done_moving" },
+  ];
+  let draft = setLandings(setMovement(activate(newDraft(), "23"), steps), LAND);
+  const entry = entryOf(draft);
+  // The game names the carrier: its row is marked, and Remove takes it out with its hold.
+  const stop: DraftStop = {
+    kind: "refused",
+    step: 2,
+    reason: "The game does not offer to move sol_carrier from 01.",
+    code: "not_offered",
+    entry: ship("carrier"),
+  };
+  const review = reviewOf(entry, outcome(stop, 2))!;
+  expect(review).toEqual({
+    stage: "movement",
+    entry: ship("carrier"),
+    code: "not_offered",
+    index: 0,
+  });
+  expect(removable(review)).toBe(true);
+  draft = removeEntry(draft, review);
+  expect(entryOf(draft).steps).toEqual([ship("destroyer"), { kind: "done_moving" }]);
+  expect(entryOf(draft).landings).toEqual(LAND);
+  expect(entryOf(undo(draft)).steps).toEqual(steps);
+
+  // The action ends before the landings: Remove takes them out whole.
+  const over = reviewOf(
+    entryOf(draft),
+    outcome(
+      {
+        kind: "refused",
+        step: 4,
+        reason: "The action is over before this.",
+        code: "over",
+        entry: LAND[0],
+      },
+      4,
+    ),
+  )!;
+  expect(over.stage).toBe("invasion");
+  expect(entryOf(removeEntry(draft, over)).landings).toBeNull();
+
+  // The activation, and a payment that no longer covers the cost, are changed, not removed.
+  const activation = reviewOf(entry, outcome({ ...stop, step: 1, entry: undefined }, 1))!;
+  expect(activation).toMatchObject({ stage: null, index: -1 });
+  expect(removable(activation)).toBe(false);
+  expect(removable({ stage: "production", entry: BUILD[1], code: "unpaid", index: 1 })).toBe(false);
+  expect(reviewOf(entry, outcome({ kind: "complete" }, 9))).toBeNull();
 });

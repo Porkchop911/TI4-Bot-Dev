@@ -6,10 +6,22 @@ import type {
   HelpView,
   InterruptView,
   PillView,
+  ReviewView,
   StepContentView,
   TaskView,
 } from "../../model";
-import { Badge, Button, Eyebrow, Hint, StepTabs, Trail, cx, type TrailItem } from "../../ui";
+import {
+  Badge,
+  Button,
+  Card,
+  Eyebrow,
+  Hint,
+  ListRow,
+  StepTabs,
+  Trail,
+  cx,
+  type TrailItem,
+} from "../../ui";
 import { ActionButton, useDispatch } from "../context";
 import { Blocks } from "../flows/Blocks";
 import { useLink } from "../link";
@@ -271,6 +283,7 @@ export function ActionPanel({
           labelledBy={`step-tab-${view.selected}`}
           reveal={reveal}
         >
+          {view.task.review && <Review view={view.task.review} />}
           <StepContent view={view.task.content} />
           <Blocks blocks={view.closing} />
         </TaskPanel>
@@ -290,5 +303,21 @@ export function ActionPanel({
         </TaskPanel>
       )}
     </aside>
+  );
+}
+
+/** The entry of a draft that no longer fits: one marked row in its step, with what removes it. */
+function Review({ view }: { view: ReviewView }) {
+  return (
+    <Card role="group" aria-label="Needs review">
+      <ListRow
+        invalid
+        icon={view.icon ?? "alert"}
+        // A sign, not only the colour: this entry no longer fits.
+        title={`✗ ${view.title}`}
+        subtitle={view.reason}
+        controls={view.remove && <ActionButton view={view.remove} size="sm" />}
+      />
+    </Card>
   );
 }

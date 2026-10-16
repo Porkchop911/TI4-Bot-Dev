@@ -1073,18 +1073,18 @@ impl GameSession {
             Ok(_) => match copy.zip(tail) {
                 Some((game, tail)) => {
                     match check_script(game, tail, &choice, script, player, never) {
-                        Check::Refused { reason, .. } => Some(reason),
+                        Check::Refused { refusal } => Some(refusal),
                         Check::Plays | Check::Unknown => None,
                     }
                 }
                 None => None,
             },
-            Err(reason) => Some(reason.clone()),
+            Err(refusal) => Some(refusal.clone()),
         };
         let mut lock = self.shared.lock().expect("shared lock");
-        if let Some(reason) = refusal {
+        if let Some(refusal) = refusal {
             release(&mut lock);
-            return Ok(Some(refused(script, reason)));
+            return Ok(Some(refused(script, refusal)));
         }
         let Ok(First {
             option,

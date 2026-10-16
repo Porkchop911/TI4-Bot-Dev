@@ -734,12 +734,6 @@ export const examples: Record<string, any> = {
     movement: { "j-cruiser": 0 },
     tip: "Build a cart, pay, and place. Pay on the map: click the bright planets.",
   },
-  "draft-review": {
-    mode: "draft",
-    route: "friendly",
-    stale: true,
-    tip: "A recorded cruiser has left Jord. The affected row is marked with its fix.",
-  },
   "live-combat": {
     mode: "live",
     route: "hostile",

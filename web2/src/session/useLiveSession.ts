@@ -16,6 +16,8 @@ import {
   parseDraft as parsePlan,
   problemOf,
   reactivate,
+  removeEntry,
+  reviewOf,
   redo,
   scriptOf,
   setLandings,
@@ -276,7 +278,8 @@ function draftView(
 ): { update: SessionUpdate; local: LocalState; stage: Stage | null; sent: PlanStep[] } {
   const recordedSystem = entryOf(draft).system;
   const entry = editing ? { ...entryOf(draft), system: null } : entryOf(draft);
-  const problem = problemOf(entry, outcome);
+  const problem = problemOf(entry, outcome, (id) => systemLabel(tilesOf(live), id));
+  const refused = editing ? null : reviewOf(entry, outcome);
   // The step in view: the one that the player chose, while the game still asks for it.
   const stage =
     entry.system === null ? null : chosen && outcome[chosen] ? chosen : frontier(outcome);
@@ -334,6 +337,13 @@ function draftView(
         : null,
     fromMenu: atMenu,
     editing: editing ? recordedSystem : null,
+    // The row of the refused entry is in its step, or where the game stopped before it.
+    review: refused && {
+      entry: refused,
+      at:
+        refused.stage === null ? null : outcome[refused.stage] ? refused.stage : frontier(outcome),
+      system: recordedSystem,
+    },
   };
   const steps = (of: Stage) => stepsOfStage(entry, of) ?? [];
   return {
@@ -1456,6 +1466,10 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         // The steps of a tactical action.
         case "commitEdit":
           return facts ? send() : undefined;
+        case "removeEntry": {
+          const review = drafted?.local.draft?.review?.entry;
+          return review && restage((now) => removeEntry(now, review));
+        }
         case "editStep":
           // The recorded activation of a draft opens, with its system chosen.
           if (drafted && intent.step === 0 && plan.draft && entryOf(plan.draft).system) {

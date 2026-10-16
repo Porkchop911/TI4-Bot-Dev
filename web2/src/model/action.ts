@@ -572,12 +572,26 @@ export type StepContentView =
 /** The parts of a step, in its heading. */
 export type TrailView = { label: string; status: TrailStatus; reason?: string }[];
 
+/** An entry of a draft that no longer fits: the row that marks it in its step. */
+export interface ReviewView {
+  /** The unit that the entry names. */
+  icon: UnitType | null;
+  /** What the entry is: "Carrier from Jord · #01". */
+  title: string;
+  /** Why it no longer fits. */
+  reason: string;
+  /** Takes the entry out. Null when only a change of the step fixes it. */
+  remove: ActionButtonView | null;
+}
+
 export interface TaskView {
   step: number;
   title: string;
   pill: PillView;
   trail: TrailView;
   edit: { label: string; step: number; disabled: boolean; hint?: string } | null;
+  /** The entry of a draft that no longer fits, when it is of this step. */
+  review?: ReviewView | null;
   /** Rules and explanations of this step. */
   help: HelpView[];
   content: StepContentView;

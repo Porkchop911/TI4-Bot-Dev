@@ -21,6 +21,8 @@ export type Intent =
   | { type: "returnToCurrent" }
   | { type: "returnToEdit" }
   | { type: "editStep"; step: number }
+  /** Takes the entry of a draft that no longer fits out of the draft. */
+  | { type: "removeEntry" }
   | { type: "cancelEdit" }
   | { type: "commitEdit" }
   // Staged values of the open step

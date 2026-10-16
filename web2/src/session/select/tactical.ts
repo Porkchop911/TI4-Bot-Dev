@@ -33,6 +33,7 @@ import {
   tilesOf,
 } from "./movement";
 import { ANOMALIES, WORMHOLES, factionName } from "./names";
+import { reviewRow } from "./review";
 
 const STEPS = ["Activation", "Movement", "Space combat", "Invasion", "Production"];
 
@@ -482,30 +483,40 @@ export function selectTactical(
   const ships = Object.keys(local.movement).length;
   // A draft opens every step that the game came to with it, also the steps after the one in view.
   const reached = (local.draft?.reached ?? []).map((stage) => TAB[stage]);
+  // The step whose row marks the entry of the draft that no longer fits.
+  const review = local.draft?.review ?? null;
+  const reviewTab = review ? (review.at === null ? 0 : TAB[review.at]) : null;
   const tabs = STEPS.map((name, step): StepTabView => {
-    const status =
-      step < current
-        ? step === 2 && local.draft
-          ? "skipped"
-          : "done"
-        : step === current
-          ? "decision"
-          : reached.includes(step)
-            ? "draft"
-            : "future";
+    const status: StepTabView["status"] =
+      step === reviewTab
+        ? "needs-review"
+        : step < current
+          ? step === 2 && local.draft
+            ? "skipped"
+            : "done"
+          : step === current
+            ? "decision"
+            : reached.includes(step)
+              ? "draft"
+              : "future";
     return {
       name,
       status,
       caption:
-        step === 0 && facts.kind !== "activation"
-          ? `#${active}`
-          : step === 1 && current === 1 && ships
-            ? plural(ships, "ship")
-            : step === 3 && current === 3 && units
-              ? plural(units, "unit")
-              : step === 4 && current === 4 && built
-                ? plural(built, "unit")
-                : "",
+        step === reviewTab
+          ? // The pill of the step says it while the step is in view.
+            step === selected
+            ? ""
+            : "Needs review"
+          : step === 0 && facts.kind !== "activation"
+            ? `#${active}`
+            : step === 1 && current === 1 && ships
+              ? plural(ships, "ship")
+              : step === 3 && current === 3 && units
+                ? plural(units, "unit")
+                : step === 4 && current === 4 && built
+                  ? plural(built, "unit")
+                  : "",
     };
   });
   return {
@@ -531,11 +542,13 @@ export function selectTactical(
       pill: local.draft
         ? local.draft.editing
           ? { tone: "draft", label: "Editing" }
-          : selected !== current
-            ? { tone: "done", label: "Drafted" }
-            : local.draft.boundary
-              ? { tone: "draft", label: "Preview ends here" }
-              : { tone: "draft", label: "Preparing" }
+          : selected === reviewTab
+            ? { tone: "alert", label: "Needs review" }
+            : selected !== current
+              ? { tone: "done", label: "Drafted" }
+              : local.draft.boundary
+                ? { tone: "draft", label: "Preview ends here" }
+                : { tone: "draft", label: "Preparing" }
         : selected !== current
           ? { tone: "done", label: "Resolved" }
           : local.remaining === null && local.planNote && !local.planNote.error
@@ -561,6 +574,10 @@ export function selectTactical(
               disabled: local.draft.waiting,
               hint: local.draft.waiting ? "The game checks the draft" : undefined,
             }
+          : null,
+      review:
+        review && selected === reviewTab && !local.draft?.editing
+          ? reviewRow(update, facts, review.entry, review.system)
           : null,
       help: card
         ? [

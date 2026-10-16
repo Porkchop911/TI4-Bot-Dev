@@ -884,10 +884,30 @@ test("a recorded activation of a draft is edited: the movement follows what stil
   await system("27").click();
   await page.keyboard.press("Enter");
   await expect(heading(page)).toHaveText("Movement");
-  await expect(page.locator("footer").getByText(/no longer fits/)).toBeVisible();
+  await expect(page.locator("footer").getByText(/no longer fits: remove it/)).toBeVisible();
   await expect(apply).toBeDisabled();
+  // The step of the carrier needs review, and its row is marked with why, named by the board.
+  await expect(tab("Movement")).toHaveAttribute("data-state", "needs-review");
+  await expect(panel(page).getByText("Needs review", { exact: true })).toHaveCount(1);
+  const review = panel(page).getByRole("group", { name: "Needs review" });
+  await expect(review.getByText(/^✗ Carrier from .+ · #01$/)).toBeVisible();
+  await expect(review.getByText(/^Cannot reach .+ · #27$/)).toBeVisible();
+  await expect(review).not.toContainText("sol_");
   await page.screenshot({ path: "shots/local/draft-edit-unfit.png", animations: "disabled" });
-  // One undo brings the activation of 71 back, with its movement.
+  const scroller = page.locator("#step-panel > div.overflow-y-auto");
+  expect(
+    await scroller.evaluate((element) => element.scrollHeight - element.clientHeight),
+    "the step needs vertical scroll",
+  ).toBeLessThanOrEqual(0);
+  // Remove takes the carrier out: the destroyer still goes, and the draft fits again.
+  await review.getByRole("button", { name: "Remove" }).click();
+  await expect(review).toHaveCount(0);
+  await expect(tab("Movement")).not.toHaveAttribute("data-state", "needs-review");
+  await expect(system("27")).toHaveAttribute("aria-label", /1 Sol ship/);
+  await expect(apply).toBeEnabled();
+  // One undo brings the carrier back, and one more the activation of 71, with its movement.
+  await undo(page).click();
+  await expect(review).toBeVisible();
   await undo(page).click();
   await expect(system("71")).toHaveAttribute("aria-label", /2 Sol ships/);
   await expect(apply).toBeEnabled();

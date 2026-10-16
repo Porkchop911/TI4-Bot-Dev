@@ -6,7 +6,7 @@ Part of `web2/AGENTS.md`: the Patterns and the rules of Screen size and Text the
 
 - The activation is the choice of a system on the map, with the facts of the system in the panel. An activation that places no command token (Thunder's Edge's Warfare, `costs_token: false` of `ActivationFacts`) is the same step: its card says "No command token" in place of "Costs 1 tactic token", the title of the frame names the card, and every system that the game offers is a target, also one with the seat's token.
 
-- In a draft the recorded activation is read-only with "Edit activation" in the heading of the step. The edit opens the same choice on the map, with the recorded system chosen; the pill says "Editing", and "Cancel edits" or the tab of another step leaves it as it was. "Activate system" with another system replaces the activation and keeps the later steps: the game plays them again, and a part that no longer fits is said in the footer of its step, with Apply disabled. Undo takes the change back.
+- In a draft the recorded activation is read-only with "Edit activation" in the heading of the step. The edit opens the same choice on the map, with the recorded system chosen; the pill says "Editing", and "Cancel edits" or the tab of another step leaves it as it was. "Activate system" with another system replaces the activation and keeps the later steps: the game plays them again, and a part that no longer fits is a marked row of its step with Remove, its tab says "Needs review", and Apply is disabled (the drafts section of `local-play.md`). Undo takes the change back.
 
 ## Movement
 

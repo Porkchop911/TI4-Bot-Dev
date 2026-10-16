@@ -500,9 +500,6 @@ export function hops(state, origin) {
   return count;
 }
 export function whyNot(state, line, base) {
-  if (state.stale && line.id === "j-cruiser") {
-    return `No longer at ${MAP[line.origin].name}`;
-  }
   if (MAP[line.origin].token) {
     return "Your command token is here";
   }
@@ -529,14 +526,11 @@ export function reach(state, id) {
 // gravity rift on the way adds one. `boost` is the path with Gravity Drive, with the fewest rifts.
 // `gd`: the ships cannot move without Gravity Drive. `helps`: Gravity Drive spares them a rift.
 export function moveInfo(state, line) {
-  const key = [activeId(state), state.route, !!size(state.enemyFleet), state.stale, line.id].join(
-    "|",
-  );
+  const key = [activeId(state), state.route, !!size(state.enemyFleet), line.id].join("|");
   if (!moveCache.has(key)) {
-    const base = line.move || U[line.type].move,
-      gone = state.stale && line.id === "j-cruiser";
-    const found = gone ? [] : routes(state, line.origin, base);
-    const further = gone ? [] : routes(state, line.origin, base + 1);
+    const base = line.move || U[line.type].move;
+    const found = routes(state, line.origin, base);
+    const further = routes(state, line.origin, base + 1);
     const load = (path) =>
       U[line.type].capacity
         ? path
@@ -1213,7 +1207,6 @@ export function blankState(example, workspace, route, data) {
     mode: workspace,
     route,
     data: { ...clone(data), movement: expandMovement(clone(data.movement)) },
-    stale: false,
     frontier: 0,
     blocker: "decision",
     kind: "tactical",
@@ -1255,7 +1248,6 @@ export function makeState(example) {
     state.data.invasion = { ...config.invasion };
   }
   Object.assign(state, {
-    stale: !!config.stale,
     present: config.present,
     tip: config.tip,
     auto: true,

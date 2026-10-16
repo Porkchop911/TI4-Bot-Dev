@@ -12,6 +12,7 @@ import type {
   RowView,
 } from "../../model";
 import { plural } from "../../model";
+import type { Review } from "../draft";
 import type { LandingDraft } from "../landingDraft";
 import type { MovementDraft } from "../movementDraft";
 import type { KeptOdds } from "../movementOdds";
@@ -70,6 +71,16 @@ export interface DraftInfo {
   fromMenu?: boolean;
   /** The recorded activation is open to choose another system: the system that it has. */
   editing?: string | null;
+  /**
+   * The entry that the game refused, and the step whose row marks it: its own step, or the last
+   * step that the game came to when the action ends before it. Null: the activation.
+   */
+  review?: {
+    entry: Review;
+    at: "movement" | "invasion" | "production" | null;
+    /** The recorded system of the activation. */
+    system: string | null;
+  } | null;
 }
 
 /**

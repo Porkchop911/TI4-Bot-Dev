@@ -113,6 +113,9 @@ export function StepTabs({
               >
                 {tab.status === "future" ? (
                   <Icon name="lock" className="size-3" />
+                ) : review ? (
+                  // A sign, not only the colour: a phone does not show the caption.
+                  "!"
                 ) : tab.status === "skipped" ? (
                   <Icon name="minus" className="size-3" />
                 ) : tab.status === "done" ? (

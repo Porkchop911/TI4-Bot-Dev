@@ -346,7 +346,6 @@ export function reduce(world: World, intent: Intent) {
       }
       const live = E.blankState("applied", "live", draft.route, draft.data);
       Object.assign(live, {
-        stale: draft.stale,
         present: draft.present,
         tip: "Your draft is now the live action. Recorded steps are read-only; the rest needs live decisions.",
       });

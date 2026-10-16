@@ -1376,7 +1376,7 @@ impl HostSession {
         let (choice, _) = self.pending.clone()?;
         let first = first_answer(&script, &choice, &choice.player).and_then(|first| {
             match self.precheck(&choice, &script) {
-                Check::Refused { reason, .. } => Err(reason),
+                Check::Refused { refusal } => Err(refusal),
                 Check::Plays | Check::Unknown => Ok(first),
             }
         });
@@ -1386,12 +1386,12 @@ impl HostSession {
             script: ordered,
         } = match first {
             Ok(first) => first,
-            Err(reason) => {
+            Err(refusal) => {
                 self.out.push(ServerMessage::DraftApplied(DraftAppliedMsg {
                     protocol_version: PROTOCOL_VERSION,
                     game_id: self.identity.game_id.clone(),
                     nonce: nonce.to_owned(),
-                    stopped: Some(refused(&script, reason)),
+                    stopped: Some(refused(&script, refusal)),
                 }));
                 return None;
             }

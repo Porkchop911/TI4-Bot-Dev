@@ -6,7 +6,6 @@ export const EXAMPLE_GROUPS: [string, [string, string][]][] = [
     [
       ["draft-combat", "Draft · Space combat boundary"],
       ["draft-production", "Draft · Choose production"],
-      ["draft-review", "Draft · Changed selection"],
     ],
   ],
   [

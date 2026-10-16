@@ -462,7 +462,13 @@ it.skipIf(!built)(
       },
       { kind: "done_moving" },
     ]))!;
-    expect(bad.stop).toMatchObject({ kind: "refused", step: 2 });
+    // The refusal names the entry and what it names, not only its place.
+    expect(bad.stop).toMatchObject({
+      kind: "refused",
+      step: 2,
+      code: "not_offered",
+      entry: { kind: "move", origin: "01", unit: "dreadnought" },
+    });
     expect(bad.consumed).toBe(2);
 
     // Nothing of this is in the game.
@@ -703,9 +709,10 @@ it.skipIf(!built)(
     expect((await run(draft)).stop).toEqual({ kind: "open" });
     // Played unpaid, it is refused at its payment.
     const unpaid = (await ask([...scriptOf(entryOf(draft)), ...productionSteps(facts, build)]))!;
-    expect(unpaid.stop).toMatchObject({ kind: "refused" });
-    expect(problemOf({ ...entryOf(draft), unpaid: false }, unpaid)).toMatch(
-      /^A part of the production no longer fits/,
+    // The refusal names the purchase that the payment does not cover.
+    expect(unpaid.stop).toMatchObject({ kind: "refused", code: "unpaid" });
+    expect(problemOf({ ...entryOf(draft), unpaid: false }, unpaid)).toBe(
+      "The payment no longer covers the production: change the payment.",
     );
 
     // Lisis pays: the action is over, and the draft is the whole of it.

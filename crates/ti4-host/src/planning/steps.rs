@@ -258,6 +258,23 @@ impl PlanStep {
     }
 }
 
+/// Why the game does not take an entry of a plan or a script: what the page says of the entry
+/// that it marks. The text of the refusal stays for a person.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub enum RefusalCode {
+    /// The game offers nothing that the entry asks for: the unit is not there, cannot reach,
+    /// or cannot do it now.
+    NotOffered,
+    /// More than one offered option is what the entry asks for.
+    Ambiguous,
+    /// The staged payment does not cover the cost of the purchase before it.
+    Unpaid,
+    /// The action or the secondary is over before the entry.
+    Over,
+}
+
 /// What a plan answers to a question of the game.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PlanAnswer {
@@ -273,7 +290,11 @@ pub enum PlanAnswer {
     /// The game asks something else first (a reaction window, another seat).
     Interrupted { reason: String },
     /// The game does not offer what step `step` asks for.
-    Mismatch { step: usize, reason: String },
+    Mismatch {
+        step: usize,
+        reason: String,
+        code: RefusalCode,
+    },
 }
 
 pub const INTERRUPTED: &str = "The game asks for another decision first.";
@@ -314,6 +335,11 @@ pub fn plan_answer(
             },
             (first, _) => PlanAnswer::Mismatch {
                 step: index,
+                code: if first.is_some() {
+                    RefusalCode::Ambiguous
+                } else {
+                    RefusalCode::NotOffered
+                },
                 reason: format!(
                     "The game does not offer to {}{}.",
                     step.describe(),
@@ -375,6 +401,7 @@ pub fn plan_answer(
             return PlanAnswer::Mismatch {
                 step: next,
                 reason: "The staged payment does not cover the cost.".to_owned(),
+                code: RefusalCode::Unpaid,
             };
         };
         return match pick(&steps[at], at, next + 1) {
