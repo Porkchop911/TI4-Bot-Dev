@@ -1610,6 +1610,130 @@ test("Trade: the secondary replenishes or passes in the row of the seat", async 
   expect(errors).toEqual([]);
 });
 
+test("Imperial: an objective from the list, then the secret objective, sent at once", async ({
+  page,
+}) => {
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // Sol holds Imperial with 2 victory points, can score Lead From the Front and Negotiate Trade
+  // Routes, and does not control Mecatol Rex.
+  await page.goto("/?scenario=strategy_imperial&humans=1");
+  const sol = page.getByRole("region", { name: "Players" }).getByRole("row").filter({
+    hasText: "Seat A",
+  });
+  await expect(heading(page)).toHaveText("Choose an action");
+  await panel(page)
+    .getByRole("button", { name: /^8 Imperial/ })
+    .click();
+  await page.keyboard.press("Enter");
+
+  // One screen: the objectives that can be scored, as printed, and what follows.
+  await expect(heading(page)).toHaveText("Imperial");
+  const objectives = panel(page)
+    .getByRole("heading", { name: "Public objectives" })
+    .locator("../..");
+  const then = panel(page).getByRole("heading", { name: "Then" }).locator("../..");
+  await expect(objectives).toContainText("Lead From the Front");
+  await expect(objectives).toContainText("Spend 5 trade goods.");
+  await expect(objectives).toContainText("Victory points 2 → 3");
+  await expect(objectives).not.toContainText("Corner the Market");
+  await expect(then).toContainText(
+    "Draw 1 secret objectiveYou do not control Mecatol Rex · Secret objectives 1 → 2 of 3",
+  );
+  await expect(send(page)).toHaveText(/Resolve primary · score nothing/);
+  await panel(page).getByRole("button", { name: "Rules: Imperial" }).hover();
+  await expect(page.getByText(/Immediately score 1 public objective/).first()).toBeVisible();
+  await page.mouse.move(0, 0);
+
+  // A key chooses an objective; the same key again, or Esc, takes it back.
+  await page.keyboard.press("2");
+  await expect(page.locator("footer")).toContainText(
+    "Score Negotiate Trade Routes, then draw 1 secret objective",
+  );
+  await page.keyboard.press("2");
+  await expect(send(page)).toHaveText(/score nothing/);
+  await page.keyboard.press("1");
+  await page.keyboard.press("Escape");
+  await expect(send(page)).toHaveText(/score nothing/);
+  await page.keyboard.press("1");
+  await expect(send(page)).toHaveText(/^Resolve primary↵?$/);
+  await fitsHeight(page);
+  await page.screenshot({ path: "shots/local/imperial.png", animations: "disabled" });
+
+  // Lead From the Front is scored and a secret objective drawn.
+  await send(page).click();
+  await expect(heading(page)).toHaveText("End your turn");
+  await expect(sol.getByRole("cell").nth(1)).toHaveText("3");
+  await expect(sol).toContainText("0/2");
+  expect(errors).toEqual([]);
+});
+
+test("Imperial with Mecatol Rex: the victory point follows the objective", async ({ page }) => {
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // Sol controls Mecatol Rex and has 3 victory points.
+  await page.goto("/?scenario=strategy_imperial_mecatol&humans=1");
+  await expect(heading(page)).toHaveText("Choose an action");
+  await panel(page)
+    .getByRole("button", { name: /^8 Imperial/ })
+    .click();
+  await page.keyboard.press("Enter");
+  const then = panel(page).getByRole("heading", { name: "Then" }).locator("../..");
+  await expect(then).toContainText(
+    "Gain 1 victory pointYou control Mecatol Rex · Victory points 3 → 4",
+  );
+  await page.keyboard.press("1");
+  await expect(then).toContainText("Victory points 4 → 5");
+  await expect(page.locator("footer")).toContainText(
+    "Score Lead From the Front, then gain 1 victory point",
+  );
+  await fitsHeight(page);
+  await page.screenshot({ path: "shots/local/imperial-mecatol.png", animations: "disabled" });
+  await send(page).click();
+  await expect(heading(page)).toHaveText("End your turn");
+  const sol = page.getByRole("region", { name: "Players" }).getByRole("row").filter({
+    hasText: "Seat A",
+  });
+  await expect(sol.getByRole("cell").nth(1)).toHaveText("5");
+  expect(errors).toEqual([]);
+});
+
+test("Imperial: the secondary draws a secret objective or passes in the row of the seat", async ({
+  page,
+}) => {
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // Sol and Hacan are played here.
+  await page.goto("/?scenario=strategy_imperial&humans=3");
+  await expect(heading(page)).toHaveText("Choose an action");
+  await panel(page)
+    .getByRole("button", { name: /^8 Imperial/ })
+    .click();
+  await page.keyboard.press("Enter");
+  await send(page).click();
+
+  // Hacan's row opens into Follow and Pass, with the secret objectives and what it costs.
+  const hacan = page.getByRole("region", { name: "Players" }).getByRole("row").filter({
+    hasText: "Seat B",
+  });
+  await expect(panel(page).getByRole("button", { name: /Draw 1 secret objective/ })).toBeVisible();
+  await expect(panel(page)).toContainText("Secret objectives 1 → 2 of 3 · Strategy pool 2 → 1");
+  await expect(send(page)).toBeDisabled();
+  await page.keyboard.press("2");
+  await expect(send(page)).toHaveText(/^Pass/);
+  await page.keyboard.press("1");
+  await expect(send(page)).toHaveText(/Follow · draw 1 secret objective/);
+  await fitsHeight(page);
+  await page.screenshot({ path: "shots/local/imperial-secondary.png", animations: "disabled" });
+  await send(page).click();
+  await expect(hacan).toContainText("0/2");
+  await expect(hacan).toContainText("3 · 3 · 1");
+  expect(errors).toEqual([]);
+});
+
 test("the Dev sheet leads to a game on the server, on the seed of the page", async ({ page }) => {
   await page.goto("/?local=3&players=8&humans=1");
   await expect(send(page)).toBeDisabled();

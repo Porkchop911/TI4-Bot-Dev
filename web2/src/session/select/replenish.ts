@@ -4,9 +4,10 @@
 // time, and every question after the first offers the seats that are left; here it is one screen:
 // the seats are chosen in the player table, and the main button answers every question at once,
 // by the ids of their options.
-import type { BlockView, MenuRowView, PlayerPickView, RowView } from "../../model";
+import type { BlockView, PlayerPickView, RowView } from "../../model";
 import { plural } from "../../model";
 import type { Catalog, Choice, SessionUpdate } from "../wire";
+import { chooseFollow, followWindow, isFollowWindow } from "./follow";
 import { seatLabel } from "./names";
 
 /** What the player staged: the seats that replenish (by option id), or the answer of a window. */
@@ -57,8 +58,7 @@ function questionOf(choice: Choice): Question | null {
   if (!commodities || typeof commodities !== "object") {
     return null;
   }
-  const ids = new Set(choice.options.map((option) => option.id));
-  if (details.kind === "strategy_secondary" && ids.has("yes") && ids.has("no") && ids.size === 2) {
+  if (isFollowWindow(choice)) {
     const have = num(commodities.have);
     const max = num(commodities.max);
     return have !== null && max !== null
@@ -127,46 +127,15 @@ export function selectReplenish(
   const commodities = (have: number, max: number) => `Commodities ${have} → ${max}`;
   if (question.mode === "follow") {
     const { have, max } = question.standing!;
-    const details = choice.details ?? {};
-    const left = num(details.tokens_left);
-    // What the secondary costs; the game does not say who or what makes it free.
-    const cost =
-      details.costs_token === false
-        ? "no strategy token"
-        : details.costs_token === true && left !== null
-          ? `Strategy pool ${left} → ${left - 1}`
-          : null;
-    const follow = draft?.follow ?? null;
-    const row = (key: string, option: string, title: string, state?: string): MenuRowView => ({
-      key,
-      title,
-      state,
-      selected: follow === (option === "yes"),
-      disabled: false,
-      intent: { type: "chooseOption", option, group: "follow" },
-    });
-    const problem = follow === null ? "Replenish commodities, or pass." : null;
     return {
-      blocks: [
-        {
-          kind: "menu",
-          rows: [
-            row(
-              "1",
-              "yes",
-              "Replenish commodities",
-              [commodities(have, max), ...(cost ? [cost] : [])].join(" · "),
-            ),
-            row("2", "no", "Pass"),
-          ],
-        },
-      ],
+      ...followWindow(
+        choice,
+        draft?.follow ?? null,
+        "Replenish commodities",
+        commodities(have, max),
+        "replenish commodities",
+      ),
       pick: null,
-      note: problem ?? (follow ? commodities(have, max) : "You pass."),
-      problem,
-      label: follow === null ? "Send" : follow ? "Follow · replenish commodities" : "Pass",
-      changed: follow !== null,
-      answers: follow === null ? null : [follow ? "yes" : "no"],
     };
   }
 
@@ -266,15 +235,10 @@ export function chooseReplenish(
   group: string | undefined,
   option: string,
 ): ReplenishDraft | null {
-  if (questionOf(choice)?.mode !== "follow" || group !== "follow") {
-    return null;
-  }
-  if (option !== "yes" && option !== "no") {
-    return null;
-  }
   const staging = draft ?? NO_REPLENISH;
-  const follow = option === "yes";
-  return { ...staging, follow: staging.follow === follow ? null : follow };
+  const chosen =
+    questionOf(choice)?.mode === "follow" ? chooseFollow(staging.follow, group, option) : null;
+  return chosen ? { ...staging, ...chosen } : null;
 }
 
 /** "Change" of a chosen seat (`seat:<option>`): it is given back. */

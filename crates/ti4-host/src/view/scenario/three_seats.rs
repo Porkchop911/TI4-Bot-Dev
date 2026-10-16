@@ -34,6 +34,7 @@ pub const ENDGAME_ID: &str = "endgame";
 pub const SCORE_STATUS_ID: &str = "score_objective_status";
 pub const SCORE_IMPERIAL_ID: &str = "score_objective_imperial";
 pub const FULL_GAME_ID: &str = "full_game";
+pub const STRATEGY_IMPERIAL_MECATOL_ID: &str = "strategy_imperial_mecatol";
 
 /// The scenarios of one strategy card each: the id of the scenario and the card that Sol plays.
 pub const STRATEGY_CARDS: &[(&str, &str)] = &[
@@ -47,6 +48,7 @@ pub const STRATEGY_CARDS: &[(&str, &str)] = &[
     ("strategy_trade", "pok5trade"),
     ("strategy_warfare", "pok6warfare"),
     ("strategy_warfare_te", "te6warfare"),
+    ("strategy_imperial", "pok8imperial"),
 ];
 
 /// Sol is played by a person, Hacan and Letnev by the rule bot.
@@ -295,6 +297,25 @@ pub const STRATEGY_WARFARE_TE: Scenario = Scenario {
     ..STRATEGY
 };
 
+pub const STRATEGY_IMPERIAL: Scenario = Scenario {
+    id: "strategy_imperial",
+    title: "Strategy card: Imperial",
+    description: "Sol has the turn and holds Imperial. Lead From the Front, Negotiate Trade \
+        Routes and Corner the Market are revealed; Sol can score the first two. Sol does not \
+        control Mecatol Rex, so Imperial draws a secret objective. With Sol and Hacan played \
+        here, Hacan resolves the secondary.",
+    ..STRATEGY
+};
+
+pub const STRATEGY_IMPERIAL_MECATOL: Scenario = Scenario {
+    id: STRATEGY_IMPERIAL_MECATOL_ID,
+    title: "Strategy card: Imperial (Mecatol Rex)",
+    description: "The scenario \"Strategy card: Imperial\" where Sol controls Mecatol Rex, with \
+        its infantry there and the custodians token taken: Imperial gains a victory point in place \
+        of the secret objective.",
+    ..STRATEGY
+};
+
 pub const FULL_GAME: Scenario = Scenario {
     id: FULL_GAME_ID,
     title: "Full Game Match",
@@ -347,6 +368,16 @@ pub(super) fn apply(
             Ok(())
         }
         FULL_GAME_ID => Ok(()),
+        STRATEGY_IMPERIAL_MECATOL_ID => {
+            strategy_card(
+                state,
+                galaxy,
+                content,
+                [&sol, &hacan, &letnev],
+                "pok8imperial",
+            )?;
+            hold_mecatol(state, galaxy, content, &sol)
+        }
         other => match STRATEGY_CARDS.iter().find(|(id, _)| *id == other) {
             Some((_, card)) => strategy_card(state, galaxy, content, [&sol, &hacan, &letnev], card),
             None => Err(format!("no scenario '{other}' of three seats")),
@@ -458,6 +489,10 @@ fn strategy_card(
             .entry(planet)
             .or_default()
             .push(Unit::new(UnitTypeId::new("pds"), sol.clone()));
+    }
+    if name(card).as_deref() == Some("Imperial") {
+        // Two public objectives that Sol fulfils, and one that it does not.
+        revealed_objectives(state, sol);
     }
     if name(card).as_deref() == Some("Trade") {
         // Below its limit, so that the replenish of Sol shows a change.
@@ -899,6 +934,34 @@ fn revealed_objectives(state: &mut GameState, sol: &PlayerId) {
         seat.trade_goods = 6;
         seat.victory_points = 2;
     }
+}
+
+/// Sol controls Mecatol Rex with an infantry, and took the custodians token for its point.
+fn hold_mecatol(
+    state: &mut GameState,
+    galaxy: &Galaxy,
+    content: &ContentStore,
+    sol: &PlayerId,
+) -> Result<(), String> {
+    let system = galaxy
+        .system_ids()
+        .into_iter()
+        .find(|id| ti4_engine::seating::is_mecatol(id))
+        .ok_or("the board has no Mecatol Rex")?
+        .to_owned();
+    let planet = ti4_content::galaxy::system(content, &system, POK)
+        .and_then(|tile| tile.planets().first().map(|planet| PlanetId::new(*planet)))
+        .ok_or("Mecatol Rex has no planet")?;
+    let board = state.system_mut(&SystemId::new(&system));
+    board.planet_units.remove(&planet);
+    board.land(
+        &planet,
+        &[Unit::new(UnitTypeId::new("infantry"), sol.clone())],
+    );
+    board.set_control(planet, sol.clone());
+    state.custodians_removed = true;
+    ti4_engine::objectives::adjust_victory_points(state, sol, 1, "custodians");
+    Ok(())
 }
 
 fn score_status(state: &mut GameState, sol: &PlayerId) {

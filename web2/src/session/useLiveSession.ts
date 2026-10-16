@@ -121,6 +121,7 @@ import {
   countRecallPools,
   selectRecall,
 } from "./select/recall";
+import { chooseScoring, clearLastScoring, selectScoring } from "./select/scoring";
 import { countPools, selectTokens } from "./select/tokens";
 import type { Transport } from "./transport";
 import type { DraftOutcome, DraftStep, PlanScope, ReactionModes, SessionUpdate } from "./wire";
@@ -135,6 +136,7 @@ const NOTHING: LocalState = {
   structures: null,
   replenish: null,
   recall: null,
+  scoring: null,
   sent: null,
   error: null,
   replaying: null,
@@ -634,6 +636,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           structures: null,
           replenish: null,
           recall: null,
+          scoring: null,
           sent: null,
           error: null,
           offline: false,
@@ -938,6 +941,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         structures: null,
         replenish: null,
         recall: null,
+        scoring: null,
         inspected: null,
         handled: [],
         step: null,
@@ -994,6 +998,11 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
     /** A replenish of commodities of the live game: the seats or the window, answered at once. */
     const replenishing =
       pending && !drafted && !followInfo?.editing && selectReplenish(shown, pending.choice, null)
+        ? pending
+        : null;
+    /** A score of a public objective of the live game, or its window: answered at once. */
+    const scoring =
+      pending && !drafted && !followInfo?.editing && selectScoring(shown, pending.choice, null)
         ? pending
         : null;
     /** A recall of a command token of the live game, with its gain and its pools: at once. */
@@ -1214,6 +1223,15 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         }
         return;
       }
+      // A score of a public objective answers the objective, or nothing, or the window.
+      if (scoring) {
+        const answers = selectScoring(shown, scoring.choice, local.scoring ?? null)?.answers;
+        if (answers) {
+          transport.applyDraft(pending.nonce, { choices: answers, plan: null });
+          setLocal((now) => ({ ...now, scoring: null, sent: pending.nonce, planNote: null }));
+        }
+        return;
+      }
       // A recall of a command token answers its system, the gain and the arrangement of the pools.
       if (recalling) {
         const answers = selectRecall(shown, recalling.choice, local.recall ?? null)?.answers;
@@ -1381,6 +1399,13 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           if (answer) {
             return setLocal((now) => ({ ...now, replenish: answer }));
           }
+          // The objective of a score with Imperial, or the answer of its window.
+          const scored =
+            scoring &&
+            chooseScoring(scoring.choice, local.scoring ?? null, intent.group, intent.option);
+          if (scored) {
+            return setLocal((now) => ({ ...now, scoring: scored }));
+          }
           const force = intent.group === "landing" ? forceOfId(intent.option) : null;
           return landing && force !== null
             ? setLocal((now) => ({ ...now, landingKind: force }))
@@ -1523,6 +1548,11 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           if (unpicked) {
             return setLocal((now) => ({ ...now, replenish: unpicked }));
           }
+          // Esc in a score of a public objective clears the objective, or the answer of the window.
+          const unscored = scoring && clearLastScoring(scoring.choice, local.scoring ?? null);
+          if (unscored) {
+            return setLocal((now) => ({ ...now, scoring: unscored }));
+          }
           // Esc in a recall of a command token puts the pools back, then the system.
           const unrecalled = recalling && clearLastRecall(recalling.choice, local.recall ?? null);
           if (unrecalled) {
@@ -1538,6 +1568,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             structures: null,
             replenish: null,
             recall: null,
+            scoring: null,
           }));
         }
         case "undo":

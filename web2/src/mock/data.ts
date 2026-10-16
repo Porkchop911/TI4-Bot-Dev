@@ -733,22 +733,16 @@ export const baseData = {
 /** What the viewer has staged in a strategy card. Each card uses the fields of its parts. */
 export const blankMine = () => ({
   pay: {},
-  follow: null,
   techs: [],
-  objective: null,
 });
 /** What the other players do with each card in the demo: the primary, and a followed secondary. */
 export const STRATEGY_SIM: Record<number, { primary: string; follow: string }> = {
   7: { primary: "researched Gravity Drive.", follow: "researched 1 technology for 4 resources" },
-  8: {
-    primary: "scored Corner the Market and drew 1 secret objective.",
-    follow: "drew 1 secret objective",
-  },
 };
 const STRATEGY_EXAMPLES: Record<string, any> = {
   // The viewer's primary of each card.
   ...Object.fromEntries(
-    [7, 8].map((number) => [
+    [7].map((number) => [
       `live-strategy-${number}`,
       {
         mode: "live",
@@ -769,7 +763,7 @@ const STRATEGY_EXAMPLES: Record<string, any> = {
   ),
   // The viewer's secondary on another player's card, drafted before the seat is reached.
   ...Object.fromEntries(
-    [7, 8].map((number) => [
+    [7].map((number) => [
       `live-secondary-${number}`,
       {
         mode: "live",

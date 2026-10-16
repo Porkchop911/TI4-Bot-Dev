@@ -2559,6 +2559,12 @@ pub(crate) fn redistribute_tokens(
     Ok(Ability::Resolved)
 }
 
+/// How many secret objectives `player` may hold, scored ones included (45.4, and the relic that
+/// raises it).
+pub(crate) fn secret_limit(state: &GameState, player: &PlayerId) -> usize {
+    crate::secrets::HAND_LIMIT + crate::relics::secret_objective_bonus(state, player)
+}
+
 fn imperial_primary(
     state: &mut GameState,
     content: &ContentStore,
@@ -2594,10 +2600,7 @@ fn imperial_primary(
             "secrets_held",
             crate::secrets::held_count(state, content, player),
         )
-        .detailed(
-            "secrets_max",
-            crate::secrets::HAND_LIMIT + crate::relics::secret_objective_bonus(state, player),
-        )
+        .detailed("secrets_max", secret_limit(state, player))
         .contextualized(DecisionContext::new(
             player.clone(),
             DecisionSource::StrategyCard {

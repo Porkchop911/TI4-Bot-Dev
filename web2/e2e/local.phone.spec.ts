@@ -952,6 +952,27 @@ test("phone: Trade has the other players in the player table, and its screen in 
   await expect(panel.getByRole("heading", { name: "Other players" })).toHaveCount(0);
 });
 
+test("phone: Imperial has the objectives and what follows in the width", async ({ page }) => {
+  await page.goto("/?scenario=strategy_imperial&humans=1");
+  const panel = page.locator("#step-panel");
+  const panes = page.getByRole("navigation", { name: "Panes" });
+  const send = page.locator('footer button[aria-keyshortcuts="Enter"]');
+  const width = () => page.evaluate(() => document.documentElement.scrollWidth);
+  await panes.getByRole("button", { name: "Action" }).click();
+  await panel.getByRole("button", { name: /^8 Imperial/ }).click();
+  await send.click();
+  await expect(panel.getByRole("heading", { name: "Public objectives" })).toBeVisible();
+  await expect(panel).toContainText("Secret objectives 1 → 2 of 3");
+  expect(await width()).toBe(page.viewportSize()!.width);
+  await panel.getByRole("button", { name: /Negotiate Trade Routes/ }).tap();
+  await expect(send).toHaveText(/^Resolve primary↵?$/);
+  expect(await width()).toBe(page.viewportSize()!.width);
+  await expect(send).toBeInViewport();
+  await page.screenshot({ path: "shots/phone/local/imperial.png", animations: "disabled" });
+  await send.click();
+  await expect(panel.getByRole("heading", { name: "Public objectives" })).toHaveCount(0);
+});
+
 test("phone: the Agendas sheet has the laws and the open groups in its width", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));

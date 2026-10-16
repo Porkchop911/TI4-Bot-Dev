@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { examples } from "./data";
 import { EXAMPLE_IDS } from "./exampleList";
 import { selectShell } from "./select/shell";
-import { shortcuts } from "../model";
 import { E } from "./loose";
 import { createWorld, currentState, loadExample, reduce, setViewer } from "./world";
 
@@ -545,19 +544,9 @@ describe("mock engine", () => {
       expect(flow(world).primaryResult).toBe("Jamie researched Sarween Tools.");
     });
 
-    it("Imperial: a fulfilled objective in a list, and the outcome that always happens", () => {
-      const world = open("live-strategy-8");
-      expect(main(world).label).toBe("Resolve primary · score nothing");
-      expect(shortcuts(selectShell(world).action).has("1")).toBe(false);
-      reduce(world, { type: "chooseOption", option: "Corner the Market", group: "objective" });
-      expect(flow(world).mine.objective).toBeNull();
-      reduce(world, shortcuts(selectShell(world).action).get("3")!);
-      reduce(world, { type: "flow", action: "resolve" });
-      expect(flow(world).primaryResult).toContain("scored Expand Borders (victory points 6 → 7)");
-    });
-
     it("the row of the viewer closes with its result; history has no open row", () => {
-      const world = open("live-strategy-8");
+      const world = open("live-strategy-7");
+      reduce(world, { type: "pickTech", tech: "sarween-tools" });
       reduce(world, { type: "flow", action: "resolve" });
       const seats = () => {
         const action = selectShell(world).action;
@@ -568,27 +557,11 @@ describe("mock engine", () => {
         return block.rows;
       };
       expect(seats()[0].open).toBeUndefined();
-      expect(seats()[0].text).toContain("Jamie scored no objective");
+      expect(seats()[0].text).toContain("Jamie researched Sarween Tools");
       reduce(world, { type: "inspectLogEntry", id: "h2" });
       expect(selectShell(world).toolbar.workspace).toBe("history");
       expect(seats().some((row) => row.open)).toBe(false);
       expect(seats().map((row) => row.status.label)).not.toContain("Deciding");
-    });
-
-    it("a secondary without a choice is Follow or Pass, with what it costs", () => {
-      const world = open("live-secondary-8");
-      expect(main(world).disabled).toBe(true);
-      const action = selectShell(world).action;
-      const menu = editorBlocks(action)[0];
-      expect(menu && menu.kind === "menu" && menu.rows[0].state).toContain("Strategy pool");
-      reduce(world, shortcuts(action).get("2")!);
-      expect(main(world).label).toBe("Mark draft ready · pass");
-      reduce(world, shortcuts(selectShell(world).action).get("1")!);
-      reduce(world, { type: "flow", action: "ready" });
-      for (let turn = 0; turn < 4; turn++) {
-        reduce(world, { type: "simulate" });
-      }
-      expect(flow(world).results.sol).toBe("Followed · drew 1 secret objective");
     });
   });
 });

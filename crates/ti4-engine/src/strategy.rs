@@ -138,6 +138,19 @@ fn secondary_choice(
             crate::strategy_cards::commodity_standing(state, content, player),
         );
     }
+    if crate::strategy_cards::card_name(content, card.as_str()).as_deref() == Some("Imperial") {
+        // Display only: the secret objectives that the follower holds now, scored ones included,
+        // against the limit, as the primary's question says them.
+        question = question
+            .detailed(
+                "secrets_held",
+                crate::secrets::held_count(state, content, player),
+            )
+            .detailed(
+                "secrets_max",
+                crate::strategy_cards::secret_limit(state, player),
+            );
+    }
     question
         .detailed("kind", "strategy_secondary")
         .detailed("card", card.as_str())
@@ -1157,6 +1170,29 @@ mod tests {
         assert_eq!(choice.details["commodities"]["have"], 1);
         assert_eq!(choice.details["commodities"]["max"], limit);
         assert_eq!(choice.details["commodities"]["trade_goods"], 2);
+    }
+
+    #[test]
+    fn the_imperial_secondary_states_the_followers_secret_objectives() {
+        let (mut state, card) = drafted_with_first_pick("Imperial");
+        if let Some(seat) = state.player_mut(&PlayerId::new("b")) {
+            seat.strategic_tokens = 2;
+            seat.secret_objectives = vec![ti4_model::id::SecretObjectiveId::new("dhw")];
+        }
+        let window = StrategySecondaryWindow {
+            primary_player: PlayerId::new("a"),
+            card,
+            followers: vec![PlayerId::new("b")],
+            next_follower: 0,
+            resolutions: Vec::new(),
+            exhausts_card: false,
+            preview: false,
+        };
+        let choice = window
+            .pending_choice(&state, ContentStore::embedded(), POK)
+            .expect("the follower is offered the secondary");
+        assert_eq!(choice.details["secrets_held"], 1);
+        assert_eq!(choice.details["secrets_max"], crate::secrets::HAND_LIMIT);
     }
 
     #[test]

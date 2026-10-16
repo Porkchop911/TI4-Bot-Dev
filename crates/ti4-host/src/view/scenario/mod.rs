@@ -145,6 +145,8 @@ pub const SCENARIOS: &[Scenario] = &[
     three_seats::STRATEGY_TRADE,
     three_seats::STRATEGY_WARFARE,
     three_seats::STRATEGY_WARFARE_TE,
+    three_seats::STRATEGY_IMPERIAL,
+    three_seats::STRATEGY_IMPERIAL_MECATOL,
 ];
 
 /// The scenario with this id.
@@ -1781,6 +1783,27 @@ mod tests {
                 .filter(|unit| unit.owner == ids[0] && unit.type_id.as_str() == "pds")
                 .count();
             assert_eq!(pds, 1, "{scenario}");
+        }
+    }
+
+    #[test]
+    fn the_imperial_scenarios_reveal_objectives_and_one_holds_mecatol_rex() {
+        let content = ContentStore::embedded();
+        let ids: Vec<PlayerId> = ["a", "b", "c"].map(PlayerId::new).to_vec();
+        for (scenario, mecatol) in [
+            ("strategy_imperial", false),
+            ("strategy_imperial_mecatol", true),
+        ] {
+            let (state, _) = start(content, scenario, &ids, 42).expect("it starts");
+            let sol = state.player(&ids[0]).expect("a seat");
+            assert_eq!(sol.strategy_cards, [StrategyCardId::new("pok8imperial")]);
+            assert_eq!(state.revealed_objectives.len(), 3, "{scenario}");
+            let holds = state
+                .controlled_planets(&ids[0])
+                .into_iter()
+                .any(|(system, _)| ti4_engine::seating::is_mecatol(system.as_str()));
+            assert_eq!(holds, mecatol, "{scenario}");
+            assert_eq!(sol.victory_points, 2 + i32::from(mecatol), "{scenario}");
         }
     }
 

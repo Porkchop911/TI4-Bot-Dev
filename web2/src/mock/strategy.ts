@@ -1,14 +1,7 @@
 // The eight strategy cards. Every card uses one frame: the parts of the card are blocks of one
 // screen, the board and the player table serve the first part that is not complete, and nothing
 // is sent before the main button. A secondary is the same editor as its part of the primary.
-import type {
-  BlockView,
-  BoardTaskView,
-  Intent,
-  MenuRowView,
-  TechCellView,
-  TechColor,
-} from "../model";
+import type { BlockView, BoardTaskView, Intent, TechCellView, TechColor } from "../model";
 import { plural } from "../model";
 import { PAY, SEATS, TECH } from "./data";
 import { E } from "./loose";
@@ -28,11 +21,6 @@ export const STRATEGY_TEXT: Record<number, { primary: string; secondary: string 
   7: {
     primary: "Research 1 technology. Spend 6 resources to research 1 technology.",
     secondary: "Spend 1 token from your strategy pool and 4 resources to research 1 technology.",
-  },
-  8: {
-    primary:
-      "Immediately score 1 public objective if you fulfill its requirements. Gain 1 victory point if you control Mecatol Rex; otherwise, draw 1 secret objective.",
-    secondary: "Spend 1 token from your strategy pool to draw 1 secret objective.",
   },
 };
 
@@ -104,27 +92,6 @@ const payTask = (
 
 /** What a secondary costs: a token of the strategy pool. */
 const tokenCost = () => `Strategy pool ${ME.tokens[2]} → ${ME.tokens[2] - 1}`;
-
-/** A secondary with no choice: follow or pass, as a list. */
-function followMenu(flow: any, title: string, effect: string): BlockView {
-  const mine = flow.mine;
-  const blocked = !ME.tokens[2];
-  const row = (key: string, option: string, name: string, state?: string): MenuRowView => ({
-    key,
-    title: name,
-    state,
-    selected: mine.follow === (option === "follow"),
-    disabled: option === "follow" && blocked,
-    intent: { type: "chooseOption", option, group: "follow" },
-  });
-  return {
-    kind: "menu",
-    rows: [
-      row("1", "follow", title, blocked ? "No strategy token" : `${effect} · ${tokenCost()}`),
-      row("2", "pass", "Pass"),
-    ],
-  };
-}
 
 export interface Editor {
   blocks: BlockView[];
@@ -250,58 +217,6 @@ function technology(state: State, primary: boolean): Editor {
   };
 }
 
-// ---- 8 Imperial ----------------------------------------------------------------------------------
-
-function imperial(state: State, primary: boolean): Editor {
-  const flow = state.flow;
-  const mine = flow.mine;
-  const secrets = `Secret objectives ${ME.so[1]} → ${ME.so[1] + 1}`;
-  if (!primary) {
-    return {
-      ...base(),
-      blocks: [followMenu(flow, "Draw 1 secret objective", secrets)],
-      problem: mine.follow === null ? "Choose Follow or Pass." : "",
-      pass: mine.follow === false,
-      staged: mine.follow !== null,
-      result: mine.follow ? "Followed · drew 1 secret objective" : "Passed",
-    };
-  }
-  const scored = mine.objective ? 1 : 0;
-  return {
-    ...base(),
-    blocks: [
-      {
-        kind: "menu",
-        title: "Public objectives",
-        rows: OBJECTIVES.map((item, index) => ({
-          key: `${index + 1}`,
-          title: item.name,
-          text: item.text,
-          state: item.state === "open" ? `Fulfilled · ${item.reason} · +1 VP` : item.reason,
-          selected: mine.objective === item.name,
-          disabled: item.state !== "open",
-          intent: { type: "chooseOption", option: item.name, group: "objective" },
-        })),
-      },
-      {
-        kind: "card",
-        title: "Then",
-        aside: `Victory points ${ME.vp} → ${ME.vp + scored}`,
-        rows: [
-          {
-            icon: "card",
-            title: ["Draw 1 secret objective"],
-            subtitle: `You do not control Mecatol Rex · ${secrets}`,
-          },
-        ],
-      },
-    ],
-    staged: !!mine.objective,
-    main: mine.objective ? undefined : "Resolve primary · score nothing",
-    result: `Jamie ${mine.objective ? `scored ${mine.objective} (victory points ${ME.vp} → ${ME.vp + 1}) and drew` : "scored no objective and drew"} 1 secret objective.`,
-  };
-}
-
 // ---- The frame -----------------------------------------------------------------------------------
 
 /** The editor of the half of the card that the viewer resolves: the primary, or their secondary. */
@@ -310,8 +225,6 @@ export function strategyEditor(state: State): Editor {
   switch (state.flow.number ?? 1) {
     case 7:
       return technology(state, primary);
-    case 8:
-      return imperial(state, primary);
     default:
       return base();
   }
@@ -323,10 +236,6 @@ function clearLast(mine: any): boolean {
     mine.pay = {};
   } else if (mine.techs.length) {
     mine.techs.pop();
-  } else if (mine.objective) {
-    mine.objective = null;
-  } else if (mine.follow !== null) {
-    mine.follow = null;
   } else {
     return false;
   }
@@ -351,19 +260,9 @@ export function strategyIntent(state: State, intent: Intent): boolean {
       }
       state.reveal = `pl:${intent.planet}`;
       return true;
-    case "chooseOption": {
-      const [group] = (intent.group ?? "").split(":");
-      if (group === "follow") {
-        const follow = intent.option === "follow";
-        mine.follow = mine.follow === follow ? null : follow;
-      } else if (
-        group === "objective" &&
-        OBJECTIVES.find((item) => item.name === intent.option)?.state === "open"
-      ) {
-        mine.objective = mine.objective === intent.option ? null : intent.option;
-      }
+    case "chooseOption":
+      // The Technology tree has no list: an option is not for this card.
       return true;
-    }
     case "pickTech": {
       const at = mine.techs.indexOf(intent.tech);
       // A later technology may need the one that is removed, so it goes too.

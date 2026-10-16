@@ -302,20 +302,11 @@ test.describe("flows", () => {
       await expect(panel(page)).toContainText("Follow: researched Sling Relay for 4 resources");
     });
 
-    test("Imperial: objective by key, the outcome below", async ({ page }) => {
-      await start(page, "live-strategy-8");
-      await expect(panel(page)).toContainText("Victory points 6 → 6");
-      await page.keyboard.press("3");
-      await expect(panel(page)).toContainText("Victory points 6 → 7");
-      await shot(page, "web2/flow/strategy-imperial");
-      await page.keyboard.press("Enter");
-      await expect(panel(page)).toContainText("scored Expand Borders");
-    });
-
     test("one list shows what every player did", async ({ page }) => {
-      await start(page, "live-strategy-8");
+      await start(page, "live-strategy-7");
+      await panel(page).getByRole("button", { name: "Sarween Tools", exact: true }).click();
       await page.keyboard.press("Enter");
-      await expect(panel(page)).toContainText("Jamie scored no objective");
+      await expect(panel(page)).toContainText("Jamie researched Sarween Tools");
       for (let seat = 0; seat < 3; seat++) {
         await page.getByRole("button", { name: /Simulate/ }).click();
       }

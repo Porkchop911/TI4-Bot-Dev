@@ -12,6 +12,7 @@ import { selectAgendaDeck } from "./agendaDeck";
 import { selectStructures } from "./structures";
 import { selectReplenish } from "./replenish";
 import { selectRecall } from "./recall";
+import { selectScoring } from "./scoring";
 
 /** The seat that the strategic action waits for: the primary, then the first follower to ask. */
 const decidingSeat = (action: SecondaryFacts): string | null =>
@@ -71,8 +72,8 @@ export function selectStrategy(
   const tokens = choice?.details?.kind === "strategy_secondary" ? choice.details : null;
   const left = typeof tokens?.tokens_left === "number" ? tokens.tokens_left : null;
   // A gain or a purchase of command tokens, a readying of planets, a placement of agenda cards, a
-  // placement of structures, a replenish of commodities and a recall of a command token are one
-  // screen of several questions: its blocks say it.
+  // placement of structures, a replenish of commodities, a recall of a command token and a score
+  // of a public objective are one screen of several questions: its blocks say it.
   const several =
     !!choice &&
     !follow?.editing &&
@@ -81,7 +82,8 @@ export function selectStrategy(
       selectAgendaDeck(choice, null) !== null ||
       selectStructures(update, choice, null) !== null ||
       selectReplenish(update, choice, null) !== null ||
-      selectRecall(update, choice, null) !== null);
+      selectRecall(update, choice, null) !== null ||
+      selectScoring(update, choice, null) !== null);
   const asked: BlockView[] = choice
     ? [
         ...(several

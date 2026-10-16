@@ -35,6 +35,7 @@ import { type AgendaDraft, selectAgendaDeck } from "./agendaDeck";
 import { type StructureDraft, selectStructures } from "./structures";
 import { type ReplenishDraft, selectReplenish } from "./replenish";
 import { type RecallDraft, selectRecall } from "./recall";
+import { type ScoringDraft, selectScoring } from "./scoring";
 import { selectResearch } from "./research";
 import { type Pools, selectTokens } from "./tokens";
 import { type TurnMenu, isTurnMenu, selectTurn } from "./turn";
@@ -108,6 +109,8 @@ export interface LocalState {
   replenish?: ReplenishDraft | null;
   /** The staged system and pools of a recall of a command token. Null: nothing staged. */
   recall?: RecallDraft | null;
+  /** The staged objective of a score with Imperial, or the answer of its window. Null: nothing staged. */
+  scoring?: ScoringDraft | null;
   /** The nonce of the choice that was answered. Its update is still the latest one. */
   sent: string | null;
   /** Why the game stopped, if it did. */
@@ -435,8 +438,13 @@ export function selectAction(
   // A recall of a command token, with the gain and the redistribution after it: one screen.
   const recall =
     choice && !window && !recording ? selectRecall(update, choice, local.recall ?? null) : null;
+  // A score of a public objective with what follows it, or its window: one screen.
+  const scoring =
+    choice && !window && !recording
+      ? selectScoring(update, choice, local.scoring ?? null, printed)
+      : null;
   /** A screen of several questions that is sent at once. */
-  const several = purchase ?? ready ?? deck ?? structures ?? replenish ?? recall;
+  const several = purchase ?? ready ?? deck ?? structures ?? replenish ?? recall ?? scoring;
   const tiles = new Map((update.view.board.map_tiles ?? []).map((tile) => [tile.system_id, tile]));
   const planetOf = (id: string) =>
     (update.view.board.map_tiles ?? [])
