@@ -16,6 +16,11 @@
       "seat_b",
       "seat_c"
     ],
+    "initiative_order": [
+      "seat_a",
+      "seat_b",
+      "seat_c"
+    ],
     "active_player": "seat_a",
     "finished": false,
     "players": [

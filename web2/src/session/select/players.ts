@@ -138,7 +138,7 @@ export function selectPlayers(
   };
   return {
     pick: null,
-    rows: ranked(view.phase, seated(update).map(row)),
+    rows: ranked(view, seated(update).map(row)),
     freeCards: view.table.unclaimed_strategy_cards
       .map((id) => ({
         ...strategyCard(id, catalog),
@@ -149,14 +149,18 @@ export function selectPlayers(
 }
 
 /**
- * The rows of the table: in the action phase in the order of the turns, by the lowest initiative
- * that a seat holds (a seat with no card last); in every other phase by victory points, the most
- * first. A tie keeps the seat order.
+ * The rows of the table: in the action phase in the order of the turns that the engine sends (an
+ * initiative override such as the Naalu "0" token counted), a seat that is not in it last; in
+ * every other phase by victory points, the most first. A tie keeps the seat order.
  */
-function ranked(phase: GameView["phase"], rows: PlayerRowView[]): PlayerRowView[] {
+function ranked(view: GameView, rows: PlayerRowView[]): PlayerRowView[] {
+  const order = view.initiative_order ?? [];
   const key =
-    phase === "action"
-      ? (row: PlayerRowView) => row.strategyCards[0]?.number ?? 99
+    view.phase === "action"
+      ? (row: PlayerRowView) => {
+          const index = order.indexOf(row.seat);
+          return index < 0 ? order.length : index;
+        }
       : (row: PlayerRowView) => -row.victoryPoints;
   return [...rows].sort((a, b) => key(a) - key(b));
 }

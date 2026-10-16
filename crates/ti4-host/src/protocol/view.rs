@@ -318,6 +318,11 @@ pub struct GameView {
     pub phase: Phase,
     pub speaker: PlayerId,
     pub seating_order: Vec<PlayerId>,
+    /// The order of the turns of the action phase (LRR 3, 47): by the lowest initiative of each
+    /// seat, an override such as the Naalu "0" token counted in its place, ties and seats with no
+    /// card by seating. Empty, and absent, outside the action phase.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub initiative_order: Vec<PlayerId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_player: Option<PlayerId>,
     pub finished: bool,

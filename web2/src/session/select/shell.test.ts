@@ -85,9 +85,8 @@ const rows = (update: SessionUpdate, state: LocalState) =>
 it("shows eight seats with different marks, in the order of the turns in the action phase", () => {
   const view = selectShell(menu, local());
   expect(menu.view.phase).toBe("action");
-  // The rows are ranked by the lowest initiative of each seat.
-  const initiative = view.players.rows.map((row) => row.strategyCards[0]?.number ?? 99);
-  expect(initiative).toEqual([...initiative].sort((a, b) => a - b));
+  // The rows are in the order of the turns that the engine sends.
+  expect(view.players.rows.map((row) => row.seat)).toEqual(menu.view.initiative_order);
   expect(new Set(view.players.rows.map((row) => row.seat))).toEqual(
     new Set(menu.view.seating_order),
   );
@@ -99,6 +98,19 @@ it("shows eight seats with different marks, in the order of the turns in the act
   expect(view.players.rows.filter((row) => row.turn === "now").map((row) => row.seat)).toEqual([
     "a",
   ]);
+});
+
+it("ranks the seats by the engine's order of the turns, a seat that is not in it last", () => {
+  // An override of the initiative (the Naalu "0" token) is the engine's: the order is not the
+  // order of the printed numbers.
+  const [first, ...rest] = menu.view.initiative_order ?? [];
+  const order = [...rest.slice(1), rest[0]];
+  const overridden: SessionUpdate = {
+    ...menu,
+    view: { ...menu.view, initiative_order: order },
+  };
+  const seats = selectShell(overridden, local()).players.rows.map((row) => row.seat);
+  expect(seats).toEqual([...order, first]);
 });
 
 it("ranks the seats by victory points out of the action phase, a tie in the seat order", () => {

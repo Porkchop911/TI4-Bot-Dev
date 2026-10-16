@@ -696,6 +696,11 @@ pub fn project_game_view_full(
         phase: redacted.phase,
         speaker: redacted.speaker.clone(),
         seating_order: redacted.seating_order.clone(),
+        initiative_order: if redacted.phase == ti4_model::state::Phase::Action {
+            redacted.initiative_order()
+        } else {
+            Vec::new()
+        },
         active_player: redacted.active.clone(),
         finished: redacted.finished,
         players,
@@ -1184,6 +1189,46 @@ mod tests {
             assert_eq!(seen.active_player, None);
             assert_eq!(seen.stage, None);
         }
+    }
+
+    #[test]
+    fn the_view_has_the_initiative_order_of_the_action_phase_with_its_overrides() {
+        let mut state = ti4_engine::fixtures::seated_game(
+            &[("a", "sol"), ("b", "hacan"), ("c", "naalu")],
+            ti4_model::content_types::DEFAULT,
+        );
+        for (seat, card, initiative) in [("a", "early", 1), ("b", "late", 8), ("c", "mid", 4)] {
+            let card = ti4_model::id::StrategyCardId::new(card);
+            state.card_initiative.insert(card.clone(), initiative);
+            state
+                .player_mut(&PlayerId::new(seat))
+                .unwrap()
+                .strategy_cards
+                .push(card);
+        }
+        let ids = |order: &[&str]| {
+            order
+                .iter()
+                .map(|id| PlayerId::new(*id))
+                .collect::<Vec<_>>()
+        };
+        state.phase = ti4_model::state::Phase::Action;
+        let view = project_game_view(&state, &ViewerRole::Spectator);
+        assert_eq!(view.initiative_order, ids(&["a", "c", "b"]));
+        // The Naalu "0" token puts its holder first, ahead of the printed 1.
+        assert!(ti4_engine::strategy::set_initiative_override(
+            &mut state,
+            &PlayerId::new("c"),
+            0
+        ));
+        let view = project_game_view(&state, &ViewerRole::Player(PlayerId::new("b")));
+        assert_eq!(view.initiative_order, ids(&["c", "a", "b"]));
+        // Outside the action phase there is no order of turns, and the field is absent.
+        state.phase = ti4_model::state::Phase::Status;
+        let view = project_game_view(&state, &ViewerRole::Spectator);
+        assert!(view.initiative_order.is_empty());
+        let json = serde_json::to_value(view).unwrap();
+        assert!(json.get("initiative_order").is_none());
     }
 
     #[test]
