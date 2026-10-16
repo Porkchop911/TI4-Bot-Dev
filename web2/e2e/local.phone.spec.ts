@@ -1010,7 +1010,7 @@ test("phone: the reference sheets and the other app are one menu, and a sheet co
   await page.screenshot({ path: "shots/phone/local/reference.png", animations: "disabled" });
 });
 
-test("phone: Diplomacy has the system and the planets in the width, chosen on the map", async ({
+test("phone: Diplomacy has the system and the planets on the map, where they are chosen", async ({
   page,
 }) => {
   await page.goto("/?scenario=strategy_diplomacy&humans=1");
@@ -1020,20 +1020,17 @@ test("phone: Diplomacy has the system and the planets in the width, chosen on th
   await panes.getByRole("button", { name: "Action" }).click();
   await panel.getByRole("button", { name: /^2 Diplomacy/ }).click();
   await page.locator('footer button[aria-keyshortcuts="Enter"]').click();
-  // The choice is in the map: the choice of the player opens it.
+  // The choice is in the map, with its blocks under it: the choice of the player opens it.
   await expect(panes.getByRole("button", { name: "Map" })).toHaveAttribute("aria-pressed", "true");
-  await panes.getByRole("button", { name: "Action" }).click();
-  await expect(panel.getByRole("heading", { name: "Ready planets" })).toBeVisible();
+  const choice = page.getByRole("group", { name: "Choice with the payment" });
+  await expect(choice.getByRole("heading", { name: "Ready planets" })).toBeVisible();
   expect(await width()).toBe(page.viewportSize()!.width);
-  await panes.getByRole("button", { name: "Map" }).click();
   await page.locator("g.system.target").filter({ hasText: "#37" }).tap();
   await page.getByRole("button", { name: "Close system details" }).tap();
   await mapPlanet(page, "Jord").tap();
   await mapPlanet(page, "Arinam").tap();
   await expect(page.locator("footer")).toContainText("Ready Jord, Arinam");
-  expect(await width()).toBe(page.viewportSize()!.width);
-  await panes.getByRole("button", { name: "Action" }).click();
-  await expect(panel.getByRole("heading", { name: "Ready planets" }).locator("..")).toContainText(
+  await expect(choice.getByRole("heading", { name: "Ready planets" }).locator("..")).toContainText(
     "2 / 2",
   );
   expect(await width()).toBe(page.viewportSize()!.width);

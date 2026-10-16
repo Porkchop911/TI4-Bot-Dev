@@ -91,6 +91,8 @@ export interface ReadyView {
   changed: boolean;
   /** The answers, by the ids of their options, in the order that the game asks. Null: not yet. */
   answers: string[] | null;
+  /** The system or the planets are chosen on the map: a phone shows the blocks there (`BoardView.blocks`). */
+  onMap: boolean;
 }
 
 /** "A, B and 2 more" */
@@ -264,6 +266,7 @@ export function selectReady(
           : `Ready ${plural(planets.length, "planet")}`,
     changed: !!system || planets.length > 0,
     answers,
+    onMap: choosing || question.planets.length > 0,
   };
 }
 

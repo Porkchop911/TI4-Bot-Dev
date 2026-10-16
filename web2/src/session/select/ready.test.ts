@@ -84,6 +84,8 @@ describe("selectReady", () => {
     expect(empty.task).toMatchObject({ target: "system", values: { "01": 0, "29": 0, "37": 0 } });
     expect(empty.problem).toBe("Choose a system on the map.");
     expect(empty.label).toBe("Resolve primary");
+    // A phone has the blocks on the map, where the system and the planets are chosen.
+    expect(empty.onMap).toBe(true);
     expect(toggleReadyPlanet(system, null, "jord")).toBeNull();
 
     let draft = chooseReadySystem(system, null, "37")!;
