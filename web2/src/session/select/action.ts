@@ -1,5 +1,6 @@
-// The action panel: every decision as one list. A dedicated screen later takes one kind of
-// decision out of this list; the list stays for every kind that has none.
+// The action panel of a decision: the turn menu (`turn.ts`), a reaction window (`reaction.ts`), an
+// editor of several questions (`editors.ts`), a research (`research.ts`), a choice on the map or
+// in the player table, and the list of the game for every question that has none of these.
 import type {
   ActionButtonView,
   ApplyView,
