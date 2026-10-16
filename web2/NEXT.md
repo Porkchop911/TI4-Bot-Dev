@@ -1,3 +1,5 @@
+The rest of the removal of the demo (the combat, the Technology sheet, the removal itself and the full regression) is planned in `plans/2026-10-16-DEMO_REMOVAL_PLAN.md`.
+
 Also look for UX ideas on how to integrate this: in web/, and in the demo of web2 (`?example=…`, the code in `web2/src/mock/`), which shows screens that are not wired to the engine yet.
 
 - the draft goes on to the landings and the production (2026-10-11), wherever nothing random lies between. Still open:
