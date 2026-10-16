@@ -101,7 +101,8 @@ function Card({
     <li
       onClick={act}
       className={cx(
-        "group relative min-w-0 rounded-md border px-2 py-2 focus-within:bg-white/5",
+        // Desktop: the strategy cards are the left column. A phone has them as the top row.
+        "group relative grid min-w-0 grid-cols-[96px_minmax(0,1fr)] gap-x-2.5 gap-y-1.5 rounded-md border px-2 py-1.5 [grid-template-areas:'sc_id'_'sc_val'] focus-within:bg-white/5 phone:grid-cols-1 phone:gap-y-1 phone:[grid-template-areas:'sc'_'id'_'val']",
         // The card of the active player stands out: ▶ and a frame in the accent.
         row.turn === "now" ? "border-accent outline outline-accent" : "border-line",
         (!pick || allowed) && "cursor-pointer hover:bg-white/5",
@@ -112,8 +113,50 @@ function Card({
         row.passed ? "text-faint" : row.isMe ? "text-text" : "text-muted",
       )}
     >
+      {/*
+        The strategy cards are in the same place on every card: the number large, the name with it.
+        Two cards (four players or fewer) share the place; a seat with none has an empty place.
+      */}
+      <div
+        role="group"
+        aria-label="Strategy cards"
+        className={cx(
+          "flex min-h-12 min-w-0 flex-col justify-center gap-1 rounded-md border px-2 py-1 [grid-area:sc] phone:min-h-[30px] phone:flex-row phone:items-center phone:justify-start phone:gap-3 phone:py-0.5",
+          row.strategyCards.length ? "border-line bg-white/[.03]" : "border-dashed border-line",
+        )}
+      >
+        {row.strategyCards.length === 0 && (
+          <span className="text-center text-faint phone:text-left" title="No strategy card">
+            –
+          </span>
+        )}
+        {row.strategyCards.map((card) => (
+          <span
+            key={card.number}
+            className={cx(
+              "flex min-w-0 phone:flex-row phone:items-baseline phone:gap-1.5",
+              row.strategyCards.length > 1 ? "items-baseline gap-1.5" : "flex-col",
+              card.used && "opacity-50",
+            )}
+            title={`Strategy card ${card.number} ${card.name}${card.used ? " · used" : ""}`}
+          >
+            <span
+              className={cx(
+                "leading-none font-strong text-gold tabular-nums phone:text-xl",
+                row.strategyCards.length > 1 ? "text-lg" : "text-[26px]",
+              )}
+            >
+              {card.number}
+            </span>{" "}
+            <span className="truncate text-xs text-text">
+              {card.name}
+              {card.used ? " ✓" : ""}
+            </span>
+          </span>
+        ))}
+      </div>
       {/* Desktop: one line. A phone breaks it after the victory points. */}
-      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 self-start text-sm [grid-area:id]">
         <span className="w-3.5 flex-none text-center text-muted">
           {row.turn === "now" ? (
             <span className="text-accent" title="Active player">
@@ -162,7 +205,7 @@ function Card({
           <span>{row.victoryPoints}</span>
         </span>
         <span className="hidden h-0 basis-full phone:block" />
-        <span className="hidden min-w-0 truncate text-xs text-muted phone:block phone:basis-full">
+        <span className="hidden min-w-0 flex-1 truncate text-xs text-muted phone:block">
           {seat.faction}
         </span>
         {row.isMe && <span className={cx(BADGE, "bg-cyan/15 text-cyan")}>You</span>}
@@ -181,29 +224,9 @@ function Card({
           </span>
         )}
         {chosen && <span className="flex-none text-xs font-bold text-gold">Selected</span>}
-        {row.strategyCards.length > 0 && (
-          <span
-            role="group"
-            aria-label="Strategy cards"
-            className="flex flex-wrap items-center gap-x-2 gap-y-1"
-          >
-            {row.strategyCards.map((card) => (
-              <span
-                key={card.number}
-                className={cx("inline-flex items-center gap-1", card.used && "opacity-60")}
-                title={`Strategy card ${card.number} ${card.name}${card.used ? " · used" : ""}`}
-              >
-                <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-sm border border-line-strong text-xs font-strong text-text tabular-nums">
-                  {card.number}
-                </span>{" "}
-                {card.name}
-                {card.used ? " ✓" : ""}
-              </span>
-            ))}
-          </span>
-        )}
       </div>
-      <div className="mt-1.5 flex flex-wrap items-center gap-x-3.5 gap-y-1 pl-5 text-sm whitespace-nowrap tabular-nums phone:gap-x-2.5 phone:pl-0">
+      {/* A fixed grid: every card has each value in the same place. */}
+      <div className="grid grid-cols-4 items-center gap-x-3 gap-y-1 self-start text-sm whitespace-nowrap tabular-nums [grid-area:val] phone:grid-cols-3 phone:gap-x-1.5 phone:text-xs">
         <Stat icon="resources" label="Resources" title="Resources: ready / total">
           {row.resources.join("/")}
         </Stat>
@@ -221,7 +244,7 @@ function Card({
         </Stat>
         <span
           title="Command tokens: tactic · fleet · strategy"
-          className="inline-flex flex-none items-center gap-1"
+          className="inline-flex flex-none items-center gap-1 phone:order-last phone:col-span-2"
         >
           {/* The dots keep the order of the command sheet in the text: "3 · 3 · 2". */}
           <Pool label="Tactic pool" count={tactic} />
