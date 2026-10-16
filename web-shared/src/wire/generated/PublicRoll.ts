@@ -41,4 +41,25 @@ system?: string,
 /**
  * What it did ("ship destroyed", "2 hits").
  */
-outcome?: string, };
+outcome?: string, 
+/**
+ * The unit that rolled, by type id, when the engine said: the ship of a gravity rift roll,
+ * the gun of a space cannon roll. Its owner is `roller`.
+ */
+unit?: string, 
+/**
+ * The unit had sustained damage.
+ */
+damaged?: boolean, 
+/**
+ * The system the ship of a gravity rift roll started from.
+ */
+origin?: string, 
+/**
+ * What the ship of a gravity rift roll carried, by type id: it is lost with the ship.
+ */
+cargo?: Array<string>, 
+/**
+ * The seat whose ships a space cannon roll fires at.
+ */
+target?: PlayerId, };

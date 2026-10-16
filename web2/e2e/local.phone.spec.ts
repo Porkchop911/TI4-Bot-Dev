@@ -384,7 +384,7 @@ test("phone: the rolls of the gravity rift and the space cannon offense are in t
   await expect(panel.getByRole("heading").first()).toHaveText("Invasion");
   await page.getByRole("tab", { name: /^\S* ?Movement/ }).click();
   await expect(panel.getByRole("heading", { name: "Gravity rift" })).toBeVisible();
-  await expect(panel.getByRole("region", { name: "Defender" })).toContainText("Space cannon");
+  await expect(panel.getByRole("region", { name: "Defender" })).toContainText("PDS");
   await fits();
   await page.screenshot({ path: "shots/phone/local/movement-dice.png", animations: "disabled" });
 });

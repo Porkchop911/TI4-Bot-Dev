@@ -4433,6 +4433,20 @@ impl<'a> Game<'a> {
         let rolled_before = self.dice.count();
         let survives = survives_gravity_rifts(&mut self.dice, &mut self.rng, &rules, path);
         self.dice.attribute_since(rolled_before, &ship.owner);
+        // For the public roll feed: which ship rolled, from where, and what it carried.
+        self.dice.name_subject_since(
+            rolled_before,
+            &crate::dice::RollSubject {
+                unit: Some(ship.type_id.to_string()),
+                damaged: ship.sustained_damage,
+                origin: Some(origin.to_string()),
+                cargo: cargo
+                    .iter()
+                    .map(|carried| carried.unit.type_id.to_string())
+                    .collect(),
+                target: None,
+            },
+        );
         apply_move(&mut self.state, origin, &active, ship, cargo, survives)
     }
 

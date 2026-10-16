@@ -5,10 +5,8 @@ export const EXAMPLE_GROUPS: [string, [string, string][]][] = [
     "Private draft",
     [
       ["draft-combat", "Draft · Space combat boundary"],
-      ["draft-rift", "Draft · Gravity rift boundary"],
       ["draft-production", "Draft · Choose production"],
       ["draft-review", "Draft · Changed selection"],
-      ["draft-cannon", "Draft · Space cannon boundary"],
     ],
   ],
   [

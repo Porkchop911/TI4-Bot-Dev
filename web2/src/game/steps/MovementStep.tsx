@@ -95,11 +95,6 @@ export function MovementStep({ view }: { view: MovementView }) {
           <BattleTable view={view.cannon} />
         </>
       )}
-      {view.cannonSkipped && (
-        <InlineNote tone="quiet" strong="Space cannon offense skipped.">
-          No enemy PDS can reach the active system.
-        </InlineNote>
-      )}
     </>
   );
 }

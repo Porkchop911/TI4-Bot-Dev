@@ -1,6 +1,7 @@
 // The movement step from the facts of the engine and the staged movement: what can leave each
 // system, what the ships load, what arrives, and the marks of all this on the board.
 import type {
+  BattleTableView,
   CargoSourceView,
   MoveShipView,
   MovementView,
@@ -10,6 +11,7 @@ import type {
   ShipUnitView,
   SpaceOddsView,
   TileView,
+  TrailView,
   UnitType,
 } from "../../model";
 import { plural, unitName } from "../../model";
@@ -27,6 +29,7 @@ import {
 import { type KeptOdds, oddsRequest } from "../movementOdds";
 import type {
   BoardTileView,
+  CannonFact,
   CargoPool,
   MovementFacts,
   PublicRoll,
@@ -35,9 +38,9 @@ import type {
   Unloadable,
   UnloadableCargo,
 } from "../wire";
-import { cannonTable, riftRows } from "./movementRolls";
+import { type ShipsOf, cannonPreview, cannonTable, removedUnits, riftRows } from "./movementRolls";
 import { combatOdds } from "./odds";
-import { UNIT_ORDER, WORMHOLES, isShip, unitType } from "./names";
+import { UNIT_ORDER, WORMHOLES, forceOf, isShip, unitType } from "./names";
 
 const RIFT_RULE = "Each ship that leaves a gravity rift rolls: destroyed on 1–3, with its cargo";
 
@@ -416,11 +419,84 @@ export function selectMovement(
     excessShips: Math.max(0, used - facts.fleet_supply.limit),
     riftRolls: moving.reduce((sum, ship) => sum + (ship.move?.rifts.length ?? 0), 0),
     rift: riftRows(rolls, (id) => systemLabel(plan.tiles, id)),
-    removed: [],
-    cannon: cannonTable(rolls, plan.viewer, plan.viewer),
-    cannonSkipped: false,
+    removed: removedUnits(rolls),
+    // The guns before the roll, unless a space combat follows: its odds count them. The ships of
+    // the viewer that the guns fire at are those that are there after the movement.
+    cannon: cannonOf(
+      update,
+      facts.active,
+      plan.viewer,
+      rolls,
+      facts.battle ? [] : (facts.cannon ?? []),
+      (seat) =>
+        seat === plan.viewer
+          ? UNIT_ORDER.filter((unit) => isShip(unit) && now(unit) + (more.get(unit) ?? 0) > 0).map(
+              (unit) => ({ unit, count: now(unit) + (more.get(unit) ?? 0) }),
+            )
+          : null,
+    ),
     odds: oddsOf(plan, odds),
   };
+}
+
+/** The ships of each seat in the space area of `active` now, by kind. */
+function shipsThere(update: SessionUpdate, active: string): ShipsOf {
+  return (seat) =>
+    forceOf(
+      (update.view.board.systems[active]?.units ?? []).filter(
+        (unit) => unit.owner === seat && unit.planet === null,
+      ),
+    )
+      .filter((item) => isShip(item.unit))
+      .map((item) => ({ unit: item.unit, count: item.count }));
+}
+
+/**
+ * The space cannon offense of the movement: what it rolled, else the guns that will roll (the
+ * facts, before the movement is sent). `ships` overrides the ships of a seat in the system.
+ */
+function cannonOf(
+  update: SessionUpdate,
+  active: string,
+  viewer: string,
+  rolls: readonly PublicRoll[],
+  guns: readonly CannonFact[],
+  ships: (seat: string) => ReturnType<ShipsOf> | null = () => null,
+): BattleTableView | null {
+  const there = shipsThere(update, active);
+  const fired = (seat: string) => ships(seat) ?? there(seat);
+  return cannonTable(rolls, viewer, viewer, fired) ?? cannonPreview(guns, viewer, viewer, fired);
+}
+
+/**
+ * The parts of the movement step, for its heading: the move, a gravity rift when a ship rolls for
+ * one, and the space cannon offense. `guns` are the guns of the facts while the movement is open;
+ * without them (after the movement) only a roll says that the offense was there. It is skipped
+ * only when the facts have no gun.
+ */
+export function movementTrail(
+  rolls: readonly PublicRoll[],
+  open: boolean,
+  riftRolls: number,
+  guns: readonly CannonFact[] | null,
+): TrailView {
+  const rifts = riftRows(rolls, (id) => id) !== null;
+  const fired = cannonTable(rolls, "", "") !== null;
+  return [
+    { label: "Move ships", status: open ? "active" : "complete" },
+    ...(riftRolls > 0
+      ? [{ label: "Gravity rift", status: "todo" as const }]
+      : rifts
+        ? [{ label: "Gravity rift", status: "complete" as const }]
+        : []),
+    ...(fired
+      ? [{ label: "Space cannon offense", status: "complete" as const }]
+      : guns?.length
+        ? [{ label: "Space cannon offense", status: "todo" as const }]
+        : guns
+          ? [{ label: "Space cannon offense", status: "skipped" as const, reason: "no guns" }]
+          : []),
+  ];
 }
 
 /**
@@ -455,9 +531,8 @@ export function selectMovementResult(
     excessShips: 0,
     riftRolls: 0,
     rift: riftRows(rolls, (id) => systemLabel(tiles, id)),
-    removed: [],
-    cannon: cannonTable(rolls, viewer, viewer),
-    cannonSkipped: false,
+    removed: removedUnits(rolls),
+    cannon: cannonOf(update, active, viewer, rolls, []),
     odds: null,
   };
 }

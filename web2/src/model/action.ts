@@ -344,8 +344,8 @@ export interface MovementView {
   riftRolls: number;
   rift: RiftRowView[] | null;
   removed: UnitType[];
+  /** What the space cannon offense rolled, else the guns that will roll, without dice. */
   cannon: BattleTableView | null;
-  cannonSkipped: boolean;
   /** The space combat that the staged ships start. Null when no other seat has ships there, or no ship moves. */
   odds: SpaceOddsView | null;
 }
@@ -569,11 +569,14 @@ export type StepContentView =
   | InvasionView
   | ProductionView;
 
+/** The parts of a step, in its heading. */
+export type TrailView = { label: string; status: TrailStatus; reason?: string }[];
+
 export interface TaskView {
   step: number;
   title: string;
   pill: PillView;
-  trail: { label: string; status: TrailStatus; reason?: string }[];
+  trail: TrailView;
   edit: { label: string; step: number; disabled: boolean; hint?: string } | null;
   /** Rules and explanations of this step. */
   help: HelpView[];

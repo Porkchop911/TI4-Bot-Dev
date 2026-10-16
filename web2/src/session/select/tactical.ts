@@ -25,7 +25,13 @@ import type {
 import { type LocalState, openChoice } from "./action";
 import { selectInvasion } from "./invasion";
 import { selectProduction } from "./production";
-import { selectMovement, selectMovementResult, systemLabel, tilesOf } from "./movement";
+import {
+  movementTrail,
+  selectMovement,
+  selectMovementResult,
+  systemLabel,
+  tilesOf,
+} from "./movement";
 import { ANOMALIES, WORMHOLES, factionName } from "./names";
 
 const STEPS = ["Activation", "Movement", "Space combat", "Invasion", "Production"];
@@ -538,7 +544,14 @@ export function selectTactical(
                 label: `Your decision · ${facts.kind === "invasion" ? "landings go" : facts.kind === "production" ? "production goes" : "movement goes"} on`,
               }
             : { tone: "live", label: "Your decision" },
-      trail: [],
+      trail:
+        selected !== 1
+          ? []
+          : reading
+            ? movementTrail(local.rolls ?? [], false, 0, null)
+            : facts.kind === "movement" && view.content.kind === "movement"
+              ? movementTrail(local.rolls ?? [], true, view.content.riftRolls, facts.cannon ?? [])
+              : [],
       // The recorded activation of a draft can be changed; the game checks the later steps again.
       edit:
         local.draft && facts.kind === "movement" && selected === 0

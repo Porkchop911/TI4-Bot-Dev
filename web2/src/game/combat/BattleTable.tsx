@@ -87,7 +87,7 @@ function Side({
       )}
       {side.rows.map((row, index) => (
         <div
-          key={row.unit ?? `row-${index}`}
+          key={`${row.unit ?? "row"}-${index}`}
           className={cx(
             "grid min-h-[34px] grid-cols-subgrid items-center gap-y-1.5 border-t border-line/50 py-[3px] text-sm",
             row.gone && "text-faint",

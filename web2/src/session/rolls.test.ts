@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { NO_ROLLS, actionRolls, logOf, withEvent } from "./rolls";
-import { cannonTable, riftRows } from "./select/movementRolls";
+import {
+  type ShipsOf,
+  cannonPreview,
+  cannonTable,
+  removedUnits,
+  riftRows,
+} from "./select/movementRolls";
 import type { GameEvent, PublicRoll } from "./wire";
 
 const event = (id: number, change: Partial<GameEvent>): GameEvent => ({
@@ -46,28 +52,28 @@ describe("the rolls of the action", () => {
 
 describe("the dice of a movement", () => {
   const label = (system: string) => `Gravity Rift · #${system}`;
+  const rift = (index: number, face: number, change: Partial<PublicRoll> = {}): PublicRoll => ({
+    index,
+    roller: "a",
+    reason: "gravity rift",
+    label: "Gravity rift",
+    faces: [face],
+    hits_on: 4,
+    hits: face >= 4 ? 1 : 0,
+    system: "41",
+    ...change,
+  });
 
-  it("give a row for each rift roll, with what the roll says", () => {
+  it("give a row for each ship that leaves a rift, with where it came from and its cargo", () => {
     const rows = riftRows(
       [
-        {
-          index: 0,
-          reason: "gravity rift",
-          label: "Gravity rift",
-          faces: [5],
-          hits_on: 4,
-          hits: 1,
-          system: "41",
-        },
-        {
-          index: 1,
-          reason: "gravity rift",
-          label: "Gravity rift",
-          faces: [2],
-          hits_on: 4,
-          hits: 0,
-          system: "41",
-        },
+        rift(0, 5, { unit: "cruiser2", origin: "41" }),
+        rift(1, 2, {
+          unit: "carrier",
+          damaged: true,
+          origin: "26",
+          cargo: ["infantry", "fighter", "infantry"],
+        }),
         {
           index: 2,
           reason: "space cannon",
@@ -81,22 +87,37 @@ describe("the dice of a movement", () => {
     );
     expect(rows).toEqual([
       {
-        unit: null,
-        name: "Gravity Rift · #41",
-        text: "Survives on 4+",
+        unit: "cruiser",
+        name: "Cruiser",
+        text: "Leaves Gravity Rift · #41 · survives on 4+",
         roll: { face: 5, lost: false },
       },
       {
-        unit: null,
-        name: "Gravity Rift · #41",
-        text: "Survives on 4+",
+        unit: "carrier",
+        name: "Carrier (damaged)",
+        text: "Leaves Gravity Rift · #41 · from Gravity Rift · #26 · carries 1 Fighter, 2 Infantry · survives on 4+",
         roll: { face: 2, lost: true },
       },
     ]);
     expect(riftRows([], label)).toBeNull();
   });
 
-  it("give the space cannon offense a side for each seat that fired, the seat of the action first", () => {
+  it("say what a rift removed: the ship and its cargo", () => {
+    expect(
+      removedUnits([
+        rift(0, 5, { unit: "cruiser" }),
+        rift(1, 2, { unit: "carrier", cargo: ["infantry", "infantry"] }),
+      ]),
+    ).toEqual(["carrier", "infantry", "infantry"]);
+  });
+
+  it("give the space cannon offense a side for each seat that fired and for the ships fired at", () => {
+    const ships: ShipsOf = (seat) =>
+      seat === "a"
+        ? [{ unit: "carrier", count: 1 }]
+        : seat === "b"
+          ? [{ unit: "destroyer", count: 2 }]
+          : [];
     const table = cannonTable(
       [
         {
@@ -107,6 +128,8 @@ describe("the dice of a movement", () => {
           faces: [8, 5],
           hits_on: 6,
           hits: 1,
+          unit: "pds2",
+          target: "a",
         },
         {
           index: 1,
@@ -116,6 +139,8 @@ describe("the dice of a movement", () => {
           faces: [3],
           hits_on: 6,
           hits: 0,
+          unit: "pds",
+          target: "b",
         },
         {
           index: 2,
@@ -129,15 +154,22 @@ describe("the dice of a movement", () => {
       ],
       "a",
       "a",
+      ships,
     );
     expect(table?.score).toBe("1 hit");
     expect(table?.sides.map((side) => [side.seat, side.role, side.isViewer, side.hits])).toEqual([
       ["a", "Attacker", true, 0],
       ["c", "Defender", false, 1],
+      ["b", "Defender", false, null],
+    ]);
+    // The guns of a seat, then the ships of the seat that are fired at.
+    expect(table?.sides[0].rows.map((row) => [row.unit, row.count, row.target])).toEqual([
+      ["pds", null, 6],
+      ["carrier", 1, null],
     ]);
     expect(table?.sides[1].rows[0]).toMatchObject({
-      unit: null,
-      label: "Space cannon",
+      unit: "pds",
+      label: "PDS",
       count: null,
       target: 6,
       dice: [
@@ -147,6 +179,39 @@ describe("the dice of a movement", () => {
       hits: "1 hit",
       scored: true,
     });
+    expect(table?.sides[2].rows).toMatchObject([{ unit: "destroyer", count: 2, dice: [] }]);
     expect(cannonTable([], "a", "a")).toBeNull();
+  });
+
+  it("preview the space cannon offense from the guns of the facts", () => {
+    const table = cannonPreview(
+      [
+        { seat: "c", unit: "pds", dice: 1, hits_on: 6, target: "a" },
+        { seat: "c", unit: "pds", dice: 1, hits_on: 6, target: "a" },
+        { seat: "d", planet: "lisis", dice: 2, hits_on: 5, target: "a" },
+      ],
+      "a",
+      "a",
+      (seat) => (seat === "a" ? [{ unit: "cruiser", count: 2 }] : []),
+    );
+    expect(table?.score).toBe("4 dice");
+    expect(table?.sides.map((side) => [side.seat, side.hits, side.rows.length])).toEqual([
+      ["a", null, 1],
+      ["c", null, 1],
+      ["d", null, 1],
+    ]);
+    expect(table?.sides[1].rows[0]).toMatchObject({
+      unit: "pds",
+      count: 2,
+      target: 6,
+      dice: 2,
+      hits: "≈1.0",
+    });
+    expect(table?.sides[2].rows[0]).toMatchObject({
+      unit: null,
+      label: "Space cannon · Lisis",
+      dice: 2,
+    });
+    expect(cannonPreview([], "a", "a", () => [])).toBeNull();
   });
 });

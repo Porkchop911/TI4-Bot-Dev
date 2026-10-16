@@ -39,6 +39,31 @@ pub struct Roll {
     /// only: nothing reads it back.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outcome: Option<String>,
+    /// The unit that rolled, when the roller said: the ship of a gravity rift roll, the gun of a
+    /// space cannon roll. Presentation only: nothing reads it back.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subject: Option<RollSubject>,
+}
+
+/// The unit behind a roll, for the public roll feed. Presentation only.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RollSubject {
+    /// The content id of the unit's type (`carrier`, `pds2`). `None` for dice that are no unit's
+    /// own (the SPACE CANNON of an attachment).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit: Option<String>,
+    /// The unit had sustained damage.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub damaged: bool,
+    /// The system the unit started from, when it moved (a ship that left a gravity rift).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<String>,
+    /// The units the ship carried, by type id: they share its fate.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cargo: Vec<String>,
+    /// The seat whose ships the dice fire at.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
 }
 
 impl Roll {
@@ -154,6 +179,7 @@ impl Dice {
             by: None,
             system: self.scene.clone(),
             outcome: None,
+            subject: None,
         };
         self.history.push(record.clone());
         record
@@ -242,6 +268,7 @@ impl Dice {
             by: roll.by.clone(),
             system: roll.system.clone(),
             outcome: None,
+            subject: roll.subject.clone(),
         };
         self.history.push(record.clone());
         record
@@ -253,6 +280,14 @@ impl Dice {
         if let Some(last) = self.history.last_mut() {
             last.system = system.map(str::to_owned);
             last.outcome = outcome.map(str::to_owned);
+        }
+    }
+
+    /// Name the unit behind every roll recorded since `start` (a [`Dice::count`] taken before the
+    /// call). Presentation only: the draws are already made.
+    pub fn name_subject_since(&mut self, start: usize, subject: &RollSubject) {
+        for roll in self.history.iter_mut().skip(start) {
+            roll.subject = Some(subject.clone());
         }
     }
 
@@ -350,6 +385,7 @@ mod tests {
             by: None,
             system: None,
             outcome: None,
+            subject: None,
         };
         assert_eq!(roll.hits(), 2, "7 and 10");
         assert_eq!(roll.missed(None), vec![0, 1]);
@@ -366,6 +402,7 @@ mod tests {
             by: None,
             system: None,
             outcome: None,
+            subject: None,
         };
         assert_eq!(roll.hits(), 0);
         assert!(roll.missed(None).is_empty());
@@ -381,6 +418,7 @@ mod tests {
             by: None,
             system: None,
             outcome: None,
+            subject: None,
         };
         assert_eq!(roll.missed(Some(&BTreeSet::from([0, 1]))), vec![0]);
     }

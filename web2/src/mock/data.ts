@@ -727,19 +727,6 @@ export const examples: Record<string, any> = {
     until: 0,
     tip: "Click any system on the board, or use Find system. The demo scripts Starpoint and Wellon. Wellon is reached through the gravity rift or the α wormhole.",
   },
-  "draft-rift": {
-    mode: "draft",
-    route: "hostile",
-    movement: {
-      "j-dreadnought": 0,
-      "j-cruiser": 0,
-      "j-infantry": 2,
-      "v-dreadnought": 1,
-      "v-destroyer": 1,
-      "v-infantry": 1,
-    },
-    tip: "Two ships leave the gravity rift, so the draft stops at the rift roll. The game chooses the path of a ship: the destroyer leaves the rift too.",
-  },
   "draft-production": {
     mode: "draft",
     route: "friendly",
@@ -752,11 +739,6 @@ export const examples: Record<string, any> = {
     route: "friendly",
     stale: true,
     tip: "A recorded cruiser has left Jord. The affected row is marked with its fix.",
-  },
-  "draft-cannon": {
-    mode: "draft",
-    route: "cannon",
-    tip: "Space cannon offense belongs to Movement, so the draft stops there. Apply to see the roll.",
   },
   "live-combat": {
     mode: "live",

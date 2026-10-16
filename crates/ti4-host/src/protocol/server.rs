@@ -294,6 +294,22 @@ pub struct PublicRoll {
     /// What it did ("ship destroyed", "2 hits").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outcome: Option<String>,
+    /// The unit that rolled, by type id, when the engine said: the ship of a gravity rift roll,
+    /// the gun of a space cannon roll. Its owner is `roller`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit: Option<String>,
+    /// The unit had sustained damage.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub damaged: bool,
+    /// The system the ship of a gravity rift roll started from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<String>,
+    /// What the ship of a gravity rift roll carried, by type id: it is lost with the ship.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cargo: Vec<String>,
+    /// The seat whose ships a space cannon roll fires at.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<PlayerId>,
 }
 
 /// Rolls whose face decides a hidden draw. Showing the die would show which card was taken.
@@ -333,6 +349,7 @@ pub fn public_roll(
             n => format!("{n} hits"),
         })
     });
+    let subject = roll.subject.as_ref();
     Some(PublicRoll {
         index,
         roller: roll.by.as_deref().map(PlayerId::new),
@@ -344,6 +361,15 @@ pub fn public_roll(
         rerolled: roll.rerolled.iter().copied().collect(),
         system: roll.system.clone().or_else(|| active.map(str::to_owned)),
         outcome,
+        unit: subject.and_then(|subject| subject.unit.clone()),
+        damaged: subject.is_some_and(|subject| subject.damaged),
+        origin: subject.and_then(|subject| subject.origin.clone()),
+        cargo: subject
+            .map(|subject| subject.cargo.clone())
+            .unwrap_or_default(),
+        target: subject
+            .and_then(|subject| subject.target.as_deref())
+            .map(PlayerId::new),
     })
 }
 
@@ -1024,6 +1050,7 @@ mod roll_tests {
             by: Some("p1".to_owned()),
             system: None,
             outcome: None,
+            subject: None,
         }
     }
 
@@ -1046,6 +1073,36 @@ mod roll_tests {
             public.describe(),
             "p1 rolled Gravity rift in system 67: 2 (ship destroyed)"
         );
+    }
+
+    #[test]
+    fn a_roll_names_its_unit_its_cargo_and_its_target_when_the_engine_said() {
+        let mut rift = roll("gravity rift", &[2], Some(4));
+        rift.subject = Some(ti4_engine::dice::RollSubject {
+            unit: Some("carrier".to_owned()),
+            damaged: true,
+            origin: Some("41".to_owned()),
+            cargo: vec!["infantry".to_owned(), "infantry".to_owned()],
+            target: None,
+        });
+        let public = public_roll(0, &rift, None).unwrap();
+        assert_eq!(public.unit.as_deref(), Some("carrier"));
+        assert!(public.damaged);
+        assert_eq!(public.origin.as_deref(), Some("41"));
+        assert_eq!(public.cargo, vec!["infantry", "infantry"]);
+        let mut gun = roll("space cannon", &[7], Some(6));
+        gun.subject = Some(ti4_engine::dice::RollSubject {
+            unit: Some("pds".to_owned()),
+            target: Some("p2".to_owned()),
+            ..ti4_engine::dice::RollSubject::default()
+        });
+        let public = public_roll(1, &gun, None).unwrap();
+        assert_eq!(public.unit.as_deref(), Some("pds"));
+        assert_eq!(public.target, Some(PlayerId::new("p2")));
+        assert!(public.cargo.is_empty());
+        // A roll without a subject has none of these.
+        let bare = public_roll(2, &roll("space combat", &[3], Some(7)), None).unwrap();
+        assert_eq!((bare.unit, bare.origin, bare.target), (None, None, None));
     }
 
     #[test]

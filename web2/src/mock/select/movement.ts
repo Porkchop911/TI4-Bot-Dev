@@ -313,7 +313,6 @@ export function movement(state: State): MovementView {
   const it = plan(state);
   const { editing } = it;
   const exits: any[] = E.riftExits(state, it.data);
-  const pds = state.planets.find((planet: any) => E.hostile(planet) && E.shielded(planet));
   const riftName = (ship: any) => lineById[ship.line].label || E.unitName(ship.type);
   /** " · carries 2 Infantry, 1 Fighter": what is destroyed with the ship. */
   const carries = (ship: any) => {
@@ -381,7 +380,6 @@ export function movement(state: State): MovementView {
     rift,
     removed: editing ? [] : state.removed,
     cannon,
-    cannonSkipped: !editing && !pds && !!state.done[1],
     odds: null,
   };
 }

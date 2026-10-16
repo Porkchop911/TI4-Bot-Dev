@@ -23,6 +23,7 @@ export type { BotKindOption } from "./BotKindOption.ts";
 export type { Bots } from "./Bots.ts";
 export type { BreakthroughRecord } from "./BreakthroughRecord.ts";
 export type { BuildFact } from "./BuildFact.ts";
+export type { CannonFact } from "./CannonFact.ts";
 export type { CardOption } from "./CardOption.ts";
 export type { CardSetOption } from "./CardSetOption.ts";
 export type { CargoPool } from "./CargoPool.ts";

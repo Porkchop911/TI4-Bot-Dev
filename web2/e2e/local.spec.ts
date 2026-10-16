@@ -457,6 +457,10 @@ test("the movement says what no ship can load, a path through a wormhole, and a 
   const system = (id: string) => page.locator("g.system").filter({ hasText: `#${id}` });
   await activateInLive(page, system("42"));
   await expect(heading(page)).toHaveText("Movement");
+  // No gun of any seat reaches #42: the facts prove that the space cannon offense is skipped.
+  await expect(panel(page).getByRole("group", { name: "Substeps" })).toContainText(
+    "Space cannon offense · no guns",
+  );
 
   // The fighters of the depot move on their own, and no ship with capacity passes there: its
   // ground forces stay, and the movement is allowed.
@@ -514,6 +518,15 @@ test("a draft stops at the rift roll; Live keeps what the rift and the space can
   await expect(panel(page).getByText("Preview ends here")).toBeVisible();
   await expect(page.locator("footer")).toContainText("The draft ends at a roll");
   await expect(panel(page).getByText("2 rift rolls")).toBeVisible();
+  // The heading has the parts of the movement; the guns that will fire are in the panel.
+  await expect(panel(page).getByRole("group", { name: "Substeps" })).toHaveText(
+    /Move ships\s*Gravity rift\s*Space cannon offense/,
+  );
+  const guns = panel(page).getByRole("region", { name: "Defender" });
+  await expect(guns).toContainText(/Seat C\s*Letnev/);
+  await expect(guns).toContainText("PDS");
+  await expect(guns).toContainText("6+");
+  await expect(panel(page).getByRole("region", { name: "Attacker" })).toContainText("Carrier");
   await fitsHeight(page);
   await page.screenshot({ path: "shots/local/draft-rift.png", animations: "disabled" });
 
@@ -526,7 +539,8 @@ test("a draft stops at the rift roll; Live keeps what the rift and the space can
     .getByRole("heading", { name: "Gravity rift" })
     .locator("xpath=following-sibling::*[1]");
   await expect(rift.getByText("Gravity Rift · #41")).toHaveCount(1);
-  await expect(rift).toContainText("Survives on 4+");
+  await expect(rift).toContainText("Carrier");
+  await expect(rift).toContainText("carries 2 Infantry · survives on 4+");
   await expect(panel(page).getByText("1 rift roll")).toBeVisible();
   await send(page).click();
 
@@ -543,11 +557,17 @@ test("a draft stops at the rift roll; Live keeps what the rift and the space can
   await expect(heading(page)).toHaveText("Movement");
   await expect(panel(page).getByText("Resolved")).toBeVisible();
   await expect(rift.getByText("Gravity Rift · #41")).toHaveCount(2);
+  await expect(rift).toContainText("Cruiser");
   const cannon = panel(page).getByRole("region", { name: "Defender" });
   await expect(cannon).toContainText(/Seat C\s*Letnev/);
-  await expect(cannon).toContainText("Space cannon");
+  await expect(cannon).toContainText("PDS");
   await expect(cannon).toContainText("6+");
   await expect(cannon).toContainText("1 hit");
+  // The side of the ships that the PDS fired at.
+  await expect(panel(page).getByRole("region", { name: "Attacker" })).toContainText("Carrier");
+  await expect(panel(page).getByRole("group", { name: "Substeps" })).toHaveText(
+    /✓ Move ships\s*✓ Gravity rift\s*✓ Space cannon offense/,
+  );
   await fitsHeight(page);
   await page.screenshot({ path: "shots/local/movement-dice.png", animations: "disabled" });
   await expect(send(page)).toHaveText(/Continue to invasion/);

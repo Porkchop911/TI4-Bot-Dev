@@ -200,6 +200,30 @@ pub struct MovementFacts {
     /// the active system.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub battle: Option<BattleFacts>,
+    /// The guns that roll in the space cannon offense after the movement, of every seat, in the
+    /// order in which they roll, as the state is before a ship moves. Empty: no gun fires.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cannon: Vec<CannonFact>,
+}
+
+/// One gun of the space cannon offense of the active system: a unit in the system or one whose
+/// SPACE CANNON reaches it, or the SPACE CANNON of an attachment.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct CannonFact {
+    pub seat: String,
+    /// The unit, by type id; `None` for an attachment, which names its `planet`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub planet: Option<String>,
+    pub dice: usize,
+    pub hits_on: u32,
+    /// The seat whose ships the gun fires at: the seat that moves, or for its own guns the seat
+    /// with ships in the system.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
 }
 
 /// One side of a space combat in the active system as the state has it, before a ship moves
@@ -703,6 +727,24 @@ fn movement(
             .unwrap_or(0),
         unloadable,
         battle,
+        cannon: ti4_engine::combat::space_cannon_shots(
+            state,
+            content,
+            sources,
+            &active,
+            player,
+            Some(galaxy),
+        )
+        .into_iter()
+        .map(|shot| CannonFact {
+            seat: shot.owner.to_string(),
+            unit: shot.unit.map(|unit| unit.type_id.to_string()),
+            planet: shot.planet.map(|planet| planet.to_string()),
+            dice: shot.dice,
+            hits_on: shot.hits_on,
+            target: shot.target.map(|seat| seat.to_string()),
+        })
+        .collect(),
     })
 }
 
@@ -1387,6 +1429,69 @@ mod tests {
         put(&mut state, &next, "pds2", "a");
         assert_eq!(guns(&state, &home), near + 1);
         assert_eq!(guns(&state, &next), 2);
+    }
+
+    #[test]
+    fn the_movement_names_the_guns_of_another_seat_in_a_system_with_only_planets() {
+        let (mut state, galaxy) = game();
+        let content = ContentStore::embedded();
+        let home = home(&state);
+        let (next, planet) = galaxy
+            .adjacent(home.as_str())
+            .into_iter()
+            .filter(|id| !ti4_content::galaxy::is_home_system(content, id, POK))
+            .find_map(|id| {
+                ti4_content::galaxy::planets_in(content, id, POK)
+                    .first()
+                    .map(|planet| (SystemId::new(id), PlanetId::new(planet.id())))
+            })
+            .expect("a system with a planet next to home");
+        assert!(
+            facts_into(&mut state, &galaxy, next.as_str())
+                .cannon
+                .is_empty()
+        );
+
+        // A PDS of another seat on a planet, with no ships of that seat: it fires at the fleet.
+        state
+            .system_mut(&next)
+            .planet_units
+            .entry(planet)
+            .or_default()
+            .push(Unit::new(UnitTypeId::new("pds"), PlayerId::new("b")));
+        let facts = facts_into(&mut state, &galaxy, next.as_str());
+        assert!(facts.battle.is_none(), "no ships to fight");
+        assert_eq!(
+            facts.cannon,
+            vec![CannonFact {
+                seat: "b".to_owned(),
+                unit: Some("pds".to_owned()),
+                planet: None,
+                dice: 1,
+                hits_on: 6,
+                target: Some("a".to_owned()),
+            }]
+        );
+
+        // A PDS II next door reaches the active system; a PDS does not.
+        let far = galaxy
+            .adjacent(next.as_str())
+            .into_iter()
+            .find(|id| *id != home.as_str())
+            .map(SystemId::new)
+            .expect("a neighbour");
+        for kind in ["pds", "pds2"] {
+            state
+                .system_mut(&far)
+                .units
+                .push(Unit::new(UnitTypeId::new(kind), PlayerId::new("c")));
+        }
+        let guns = facts_into(&mut state, &galaxy, next.as_str()).cannon;
+        let units: Vec<(&str, Option<&str>)> = guns
+            .iter()
+            .map(|gun| (gun.seat.as_str(), gun.unit.as_deref()))
+            .collect();
+        assert_eq!(units, vec![("b", Some("pds")), ("c", Some("pds2"))]);
     }
 
     #[test]
