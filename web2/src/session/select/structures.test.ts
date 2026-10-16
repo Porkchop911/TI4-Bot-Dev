@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Choice, SessionUpdate } from "../wire";
+import type { Choice, SessionUpdate, StructureHints, StructureSpot } from "../wire";
 import {
   chooseStructure,
   clearLastStructure,
@@ -10,7 +10,7 @@ import {
 
 // The questions of Construction as the engine asks them (the scenarios "strategy_construction"
 // and "strategy_construction_te"): Qucen'n has a PDS, so a first PDS there fills it.
-const spot = (unit: string, planet: string, system: string) => ({
+const spot = (unit: string, planet: string, system: string): StructureSpot => ({
   id: `${unit}|${system}|${planet}`,
   unit,
   planet,
@@ -24,13 +24,19 @@ const FIRST = [
   spot("spacedock", "rarron", "29"),
 ];
 const PDS = FIRST.filter((item) => item.unit === "pds");
-const PLANETS = {
+const PLANETS: StructureHints["planets"] = {
   jord: { pds: 0, spacedock: 1 },
   qucenn: { pds: 1, spacedock: 0 },
   rarron: { pds: 0, spacedock: 0 },
 };
-const SUPPLY = { pds: { placed: 1, limit: 6 }, spacedock: { placed: 1, limit: 3 } };
-const hints = (second: { only_pds: boolean; options: typeof FIRST } | null, step = true) => ({
+const SUPPLY: StructureHints["supply"] = {
+  pds: { placed: 1, limit: 6 },
+  spacedock: { placed: 1, limit: 3 },
+};
+const hints = (
+  second: { only_pds: boolean; options: StructureSpot[] } | null,
+  step = true,
+): StructureHints => ({
   placements: [
     {
       step: step ? 1 : null,

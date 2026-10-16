@@ -2127,9 +2127,9 @@ pub(crate) fn place_structure_step(
     if only_pds {
         choice = choice.detailed("only_pds", true);
     }
-    choice = choice.detailed(
+    choice = choice.hinted(
         "structures",
-        structure_hints(state, content, sources, player, steps),
+        &structure_hints(state, content, sources, player, steps),
     );
     let answer = ask(state, content, sources, galaxy, table, &choice)?;
     if answer.is_decline() {
@@ -2232,19 +2232,61 @@ fn put_structure(
         .push(Unit::new(placed, player.clone()));
 }
 
-/// Display only: every placement of `steps` as the game will offer it, so that a client can
-/// stage them all at once. Each placement has its options (`id`, `unit`, `planet`, `system`);
-/// a later placement says which of its options a chosen option of the placement before it takes
-/// away (`without`: a second PDS where the planet then has two, the last one of the box). With
-/// them, the player's structures on each planet of an option, and the PDS and space docks on the
-/// board against the box.
+/// The look-ahead of a placement of structures (`details.structures`): every placement of the
+/// card from this question on as the game will offer it, so that a client can stage them all at
+/// once (display only).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct StructureHints {
+    pub placements: Vec<StructurePlacement>,
+    /// The player's structures on each planet of an option, by kind (`pds`, `spacedock`).
+    pub planets: BTreeMap<PlanetId, BTreeMap<String, usize>>,
+    /// The PDS and the space docks on the board, against the box, by kind.
+    pub supply: BTreeMap<String, StructureSupply>,
+}
+
+/// One placement of [`StructureHints`], as its question will offer it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct StructurePlacement {
+    /// Which placement of the card's sequence it is (`step` of `of`); none for a lone one.
+    pub step: Option<u32>,
+    pub of: Option<u32>,
+    pub only_pds: bool,
+    pub options: Vec<StructureSpot>,
+    /// For each option of the placement before, the options of this one that choosing it takes
+    /// away (a second PDS where the planet then has two, the last one of the box). An option
+    /// that takes nothing away is not listed.
+    pub without: BTreeMap<String, Vec<String>>,
+}
+
+/// An option of a [`StructurePlacement`]: its id, the kind it places, and where.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct StructureSpot {
+    pub id: String,
+    /// `pds` or `spacedock`.
+    pub unit: String,
+    pub planet: PlanetId,
+    pub system: SystemId,
+}
+
+/// The structures of one kind on the board, and the box.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct StructureSupply {
+    pub placed: i64,
+    pub limit: i64,
+}
+
+/// Display only: every placement of `steps` as the game will offer it; see [`StructureHints`].
 pub(crate) fn structure_hints(
     state: &GameState,
     content: &ContentStore,
     sources: SourceSet,
     player: &PlayerId,
     steps: &[StructureStep],
-) -> serde_json::Value {
+) -> StructureHints {
     let text = |option: &ChoiceOption, key: &str| {
         option
             .payload
@@ -2253,25 +2295,21 @@ pub(crate) fn structure_hints(
             .unwrap_or_default()
             .to_owned()
     };
-    let listed = |options: &[ChoiceOption]| -> Vec<serde_json::Value> {
-        options
-            .iter()
-            .map(|option| {
-                serde_json::json!({
-                    "id": option.id,
-                    "unit": text(option, "unit"),
-                    "planet": text(option, "planet"),
-                    "system": text(option, "system"),
-                })
-            })
-            .collect()
+    let spot = |option: &ChoiceOption| StructureSpot {
+        id: option.id.clone(),
+        unit: text(option, "unit"),
+        planet: PlanetId::new(text(option, "planet")),
+        system: SystemId::new(text(option, "system")),
     };
-    let mut offered: Vec<ChoiceOption> = Vec::new();
     let mut placements = Vec::new();
-    let mut before: Option<Vec<ChoiceOption>> = None;
+    let mut before: Option<Vec<StructureSpot>> = None;
     for step in steps {
-        let options = structure_options(state, content, sources, player, step.only_pds);
-        let mut without = serde_json::Map::new();
+        let options: Vec<StructureSpot> =
+            structure_options(state, content, sources, player, step.only_pds)
+                .iter()
+                .map(spot)
+                .collect();
+        let mut without = BTreeMap::new();
         for earlier in before.iter().flatten() {
             let mut after = state.clone();
             put_structure(
@@ -2279,63 +2317,65 @@ pub(crate) fn structure_hints(
                 content,
                 sources,
                 player,
-                &text(earlier, "unit"),
-                &SystemId::new(text(earlier, "system")),
-                PlanetId::new(text(earlier, "planet")),
+                &earlier.unit,
+                &earlier.system,
+                earlier.planet.clone(),
             );
             let left: BTreeSet<String> =
                 structure_options(&after, content, sources, player, step.only_pds)
                     .into_iter()
                     .map(|option| option.id)
                     .collect();
-            let gone: Vec<&str> = options
+            let gone: Vec<String> = options
                 .iter()
                 .filter(|option| !left.contains(&option.id))
-                .map(|option| option.id.as_str())
+                .map(|option| option.id.clone())
                 .collect();
             if !gone.is_empty() {
-                without.insert(earlier.id.clone(), serde_json::json!(gone));
+                without.insert(earlier.id.clone(), gone);
             }
         }
-        placements.push(serde_json::json!({
-            "step": step.step.map(|(step, _)| step),
-            "of": step.step.map(|(_, of)| of),
-            "only_pds": step.only_pds,
-            "options": listed(&options),
-            "without": without,
-        }));
-        offered.extend(options.iter().cloned());
+        placements.push(StructurePlacement {
+            step: step.step.map(|(step, _)| step),
+            of: step.step.map(|(_, of)| of),
+            only_pds: step.only_pds,
+            options: options.clone(),
+            without,
+        });
         before = Some(options);
     }
-    let mut planets = serde_json::Map::new();
-    for option in &offered {
-        let planet = PlanetId::new(text(option, "planet"));
-        planets
-            .entry(planet.as_str().to_owned())
-            .or_insert_with(|| {
-                let on = |kind: &str| {
-                    crate::production::structures_on(state, content, sources, player, &planet, kind)
-                };
-                serde_json::json!({ "pds": on("pds"), "spacedock": on("spacedock") })
-            });
+    let mut planets = BTreeMap::new();
+    for option in placements.iter().flat_map(|placement| &placement.options) {
+        planets.entry(option.planet.clone()).or_insert_with(|| {
+            ["pds", "spacedock"]
+                .into_iter()
+                .map(|kind| {
+                    let on = crate::production::structures_on(
+                        state,
+                        content,
+                        sources,
+                        player,
+                        &option.planet,
+                        kind,
+                    );
+                    (kind.to_owned(), on)
+                })
+                .collect()
+        });
     }
-    let supply: serde_json::Map<String, serde_json::Value> = ["pds", "spacedock"]
+    let supply = ["pds", "spacedock"]
         .into_iter()
-        .map(|kind| {
-            (
-                kind.to_owned(),
-                serde_json::json!({
-                    "placed": crate::supply::held(state, content, sources, player, kind),
-                    "limit": crate::supply::plastic(kind),
-                }),
-            )
+        .filter_map(|kind| {
+            let limit = crate::supply::plastic(kind)?;
+            let placed = crate::supply::held(state, content, sources, player, kind);
+            Some((kind.to_owned(), StructureSupply { placed, limit }))
         })
         .collect();
-    serde_json::json!({
-        "placements": placements,
-        "planets": planets,
-        "supply": supply,
-    })
+    StructureHints {
+        placements,
+        planets,
+        supply,
+    }
 }
 
 /// Use every PRODUCTION ability in a system, until the player stops buying.
@@ -2888,9 +2928,9 @@ pub fn primary(
         )
         // Display only: the two structures that "structure" places, so that a client can stage
         // the ability with them.
-        .detailed(
+        .hinted(
             "structures",
-            structure_hints(state, content, sources, player, &TE_CONSTRUCTION_STEPS),
+            &structure_hints(state, content, sources, player, &TE_CONSTRUCTION_STEPS),
         )
         .contextualized(DecisionContext::new(
             player.clone(),
@@ -5336,6 +5376,12 @@ mod tests {
         assert_eq!(placements[1].details["step"], 2);
         assert_eq!(placements[1].details["of"], 2);
         assert_eq!(placements[1].details["only_pds"], true);
+        // The first placement tells both, as the engine's look-ahead reads them back.
+        let hints = placements[0]
+            .hint::<StructureHints>("structures")
+            .expect("the look-ahead of the placements");
+        assert_eq!(hints.placements.len(), 2);
+        assert!(hints.placements[1].only_pds);
     }
 
     /// The first placement tells both: its own options and the PDS of the second, with the
@@ -5356,28 +5402,43 @@ mod tests {
             .or_default()
             .push(Unit::new(UnitTypeId::new("pds"), player.clone()));
         let hints = structure_hints(&state, content, POK, &player, &CONSTRUCTION_STEPS);
-        let [first, second] = hints["placements"].as_array().unwrap().as_slice() else {
-            panic!("two placements: {hints}");
+        let [first, second] = hints.placements.as_slice() else {
+            panic!("two placements: {hints:?}");
         };
-        assert_eq!(first["step"], 1);
-        assert_eq!(second["only_pds"], true);
+        assert_eq!((first.step, first.of), (Some(1), Some(2)));
+        assert!(second.only_pds);
         let pds = format!("pds|{system}|{planet}");
         let dock = format!("spacedock|{system}|{planet}");
-        let ids = |placement: &serde_json::Value| -> Vec<String> {
-            placement["options"]
-                .as_array()
-                .unwrap()
+        let ids = |placement: &StructurePlacement| -> Vec<String> {
+            placement
+                .options
                 .iter()
-                .map(|option| option["id"].as_str().unwrap().to_owned())
+                .map(|option| option.id.clone())
                 .collect()
         };
         assert!(ids(first).contains(&pds) && ids(first).contains(&dock));
         assert_eq!(ids(second), std::slice::from_ref(&pds));
-        assert_eq!(second["without"][&pds], serde_json::json!([pds.clone()]));
-        assert!(second["without"].get(&dock).is_none());
-        assert_eq!(hints["planets"][planet.as_str()]["pds"], 1);
-        assert_eq!(hints["supply"]["pds"]["placed"], 1);
-        assert_eq!(hints["supply"]["pds"]["limit"], 6);
+        assert_eq!(second.without.get(&pds), Some(&vec![pds.clone()]));
+        assert!(!second.without.contains_key(&dock));
+        assert_eq!(hints.planets[&planet]["pds"], 1);
+        assert_eq!(
+            hints.supply["pds"],
+            StructureSupply {
+                placed: 1,
+                limit: 6
+            }
+        );
+        // Written as JSON with the keys that the clients read.
+        let json = serde_json::to_value(&hints).unwrap();
+        assert_eq!(
+            json["placements"][1]["without"][&pds],
+            serde_json::json!([pds])
+        );
+        assert_eq!(
+            json["placements"][0]["options"][0]["system"],
+            system.as_str()
+        );
+        assert_eq!(json["supply"]["spacedock"]["limit"], 3);
     }
 
     #[test]

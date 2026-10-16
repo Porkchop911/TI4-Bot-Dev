@@ -120,9 +120,9 @@ fn secondary_choice(
     if crate::strategy_cards::card_name(content, card.as_str()).as_deref() == Some("Construction") {
         // Display only: the structure that "yes" places, so that a client can stage it with the
         // window.
-        question = question.detailed(
+        question = question.hinted(
             "structures",
-            crate::strategy_cards::structure_hints(
+            &crate::strategy_cards::structure_hints(
                 state,
                 content,
                 sources,

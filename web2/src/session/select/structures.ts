@@ -8,11 +8,17 @@
 // answers every question at once, by the ids of their options.
 import type { BlockView, BoardTaskView, MenuRowView, RowView } from "../../model";
 import { plural } from "../../model";
-import type { Choice, SessionUpdate } from "../wire";
+import type {
+  Choice,
+  SessionUpdate,
+  StructureHints,
+  StructurePlacement,
+  StructureSpot,
+} from "../wire";
 import { isFollowWindow, secondaryCost } from "./follow";
 import { systemLabel, tilesOf } from "./movement";
 import { planetNames } from "./payment";
-import { type Editor, answered, changeControl, num } from "./editor";
+import { type Editor, answered, changeControl, hintOf } from "./editor";
 
 /** What the player staged: the ability, and the kind and the option of each placement. */
 export interface StructureDraft {
@@ -23,30 +29,15 @@ export interface StructureDraft {
 
 export const NO_STRUCTURES: StructureDraft = { ability: null, units: [], spots: [] };
 
-interface Spot {
-  id: string;
-  unit: string;
-  planet: string;
-  system: string;
-}
-
-interface Placement {
-  step: number | null;
-  of: number | null;
-  onlyPds: boolean;
-  options: Spot[];
-  /** The options of this placement that an option of the placement before it takes away. */
-  without: Record<string, string[]>;
-}
-
 interface Question {
   /** A placement first, the window of a secondary first, or the choice of an ability first. */
   mode: "place" | "follow" | "ability";
-  placements: Placement[];
+  /** Every placement from this question on, as the game will offer it. */
+  placements: StructurePlacement[];
   /** The player's structures on each planet of an option, by kind. */
-  planets: Record<string, Record<string, number>>;
+  planets: StructureHints["planets"];
   /** The structures of each kind on the board, and the box. */
-  supply: Record<string, { placed: number; limit: number }>;
+  supply: StructureHints["supply"];
   /** The abilities of the question: `structure`, then a production in a system. */
   abilities: { id: string; system: string | null }[];
 }
@@ -57,44 +48,12 @@ const NAME: Record<string, string> = { spacedock: "Space dock", pds: "PDS" };
 const nameOf = (unit: string) => NAME[unit] ?? unit;
 const lower = (unit: string) => (unit === "pds" ? "PDS" : nameOf(unit).toLowerCase());
 
-const str = (value: unknown): string => (typeof value === "string" ? value : "");
-
-function spotsOf(value: unknown): Spot[] {
-  return (Array.isArray(value) ? value : []).flatMap((item: Record<string, unknown>): Spot[] =>
-    typeof item?.id === "string" && typeof item.unit === "string"
-      ? [{ id: item.id, unit: item.unit, planet: str(item.planet), system: str(item.system) }]
-      : [],
-  );
-}
-
 function questionOf(choice: Choice): Question | null {
-  const details = choice.details ?? {};
-  const hints = details.structures as Record<string, unknown> | undefined;
-  if (!hints || !Array.isArray(hints.placements) || !hints.placements.length) {
+  const hints = hintOf<StructureHints>(choice, "structures");
+  if (!hints?.placements.length) {
     return null;
   }
-  const placements = (hints.placements as Record<string, unknown>[]).map((item): Placement => ({
-    step: num(item?.step),
-    of: num(item?.of),
-    onlyPds: item?.only_pds === true,
-    options: spotsOf(item?.options),
-    without: Object.fromEntries(
-      Object.entries((item?.without ?? {}) as Record<string, unknown>).map(([id, gone]) => [
-        id,
-        Array.isArray(gone) ? gone.filter((one): one is string => typeof one === "string") : [],
-      ]),
-    ),
-  }));
-  const planets = (hints.planets ?? {}) as Record<string, Record<string, number>>;
-  const supply = Object.fromEntries(
-    Object.entries((hints.supply ?? {}) as Record<string, Record<string, unknown>>).flatMap(
-      ([unit, item]) => {
-        const placed = num(item?.placed);
-        const limit = num(item?.limit);
-        return placed !== null && limit !== null ? [[unit, { placed, limit }]] : [];
-      },
-    ),
-  );
+  const { placements, planets, supply } = hints;
   const ids = new Set(choice.options.map((option) => option.id));
   const base = { placements, planets, supply, abilities: [] };
   if (isFollowWindow(choice)) {
@@ -123,9 +82,9 @@ const activeOf = (question: Question, draft: StructureDraft) =>
 
 interface Staged {
   /** The options of each placement, after what the placement before it staged. */
-  options: Spot[][];
+  options: StructureSpot[][];
   units: (string | null)[];
-  spots: (Spot | null)[];
+  spots: (StructureSpot | null)[];
   /** The first placement that is still open, with options. -1: none. */
   open: number;
 }
@@ -134,9 +93,9 @@ interface Staged {
 function stagedOf(question: Question, draft: StructureDraft | null): Staged {
   const staging = draft ?? NO_STRUCTURES;
   const placements = activeOf(question, staging);
-  const options: Spot[][] = [];
+  const options: StructureSpot[][] = [];
   const units: (string | null)[] = [];
-  const spots: (Spot | null)[] = [];
+  const spots: (StructureSpot | null)[] = [];
   placements.forEach((placement, index) => {
     const earlier = index ? spots[index - 1] : null;
     const gone = new Set(earlier ? (placement.without[earlier.id] ?? []) : []);
@@ -253,7 +212,7 @@ export function selectStructures(
   const labelOf = (index: number) => {
     const placement = placements[index];
     const kinds = KINDS.filter((unit) => placement.options.some((spot) => spot.unit === unit));
-    const what = placement.onlyPds
+    const what = placement.only_pds
       ? "PDS only"
       : kinds.length > 1 || !kinds.length
         ? "space dock or PDS"
