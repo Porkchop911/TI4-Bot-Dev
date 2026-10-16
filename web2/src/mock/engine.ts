@@ -310,16 +310,13 @@ export function battleContinue(state, battle) {
       sustained &&
       battle.kind === "space" &&
       controls(state, foe) &&
-      state.hands[SEAT[foe]].includes("Direct Hit")
+      state.hands[SEAT[foe]].includes("Direct Hit") &&
+      // The viewer set this card to "Never offer": the window does not open.
+      !env.neverOffer.includes("Direct Hit")
     ) {
-      // The viewer set this card to "Never offer": the window does not open, and they are told.
-      if (env.neverOffer.includes("Direct Hit")) {
-        env.toasts.push("Direct Hit was not offered: it is set to Never offer.");
-      } else {
-        battle.stage = "reaction";
-        battle.reaction = { side: foe, target: side, type: sustained.type, pick: null };
-        return;
-      }
+      battle.stage = "reaction";
+      battle.reaction = { side: foe, target: side, type: sustained.type, pick: null };
+      return;
     }
   }
   endRound(state, battle);

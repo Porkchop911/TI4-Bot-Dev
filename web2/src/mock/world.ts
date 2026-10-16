@@ -127,15 +127,6 @@ const battleActions: Record<string, (state: State, battle: any, data: any) => vo
     if (E.startWindow(state, battle)) {
       return;
     }
-    const side = SIDES.find((name) => E.controls(state, name));
-    if (
-      side &&
-      battle.kind === "space" &&
-      battle.start.asked !== battle.round &&
-      state.hands[SEAT[side]].includes("Morale Boost")
-    ) {
-      E.env.toasts.push("Morale Boost was not offered: it is set to Never offer.");
-    }
     E.battleRoll(state, battle);
   },
   announceRetreat: (state, battle) => {
@@ -556,7 +547,7 @@ export function reduce(world: World, intent: Intent) {
       }
       toast(
         intent.mode !== "always"
-          ? `${intent.name}: never offered. Its windows are skipped and you are told.`
+          ? `${intent.name}: never offered. Its windows are skipped.`
           : `${intent.name}: offered again.`,
       );
       break;

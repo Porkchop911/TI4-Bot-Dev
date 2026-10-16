@@ -170,28 +170,17 @@ describe("mock engine", () => {
     expect(currentState(world).hands.sol).not.toContain("Direct Hit");
   });
 
-  it("skips the window of a card that is set to Never offer, and says so", () => {
+  it("skips the window of a card that is set to Never offer", () => {
     const world = createWorld();
     reduce(world, { type: "setOffer", key: "Direct Hit", name: "Direct Hit", mode: "never" });
     expect(
       selectShell(world).reference.actionCards?.hand.find((item) => item.name === "Direct Hit"),
     ).toMatchObject({ offer: { mode: "never" } });
-    world.toast = null;
-    const toasts: string[] = [];
     loadExample(world, "draft-combat");
     reduce(world, { type: "confirmApply" });
-    const collect = () => {
-      const shown = world.toast as { text: string } | null;
-      if (shown) {
-        toasts.push(shown.text);
-      }
-    };
     playBattle(world, (stage) => {
-      collect();
       expect(stage).not.toBe("reaction");
       return false;
     });
-    collect();
-    expect(toasts).toContain("Direct Hit was not offered: it is set to Never offer.");
   });
 });

@@ -499,12 +499,9 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
       if (event.kind === "modes") {
         return setModes(event.modes);
       }
+      // A window that was passed for a muted reaction is not shown: the viewer was not asked.
       if (event.kind === "passed") {
-        const { cards: passed } = event;
-        return setToast((now) => ({
-          id: (now?.id ?? 0) + 1,
-          text: `${passed.join(", ")}: not offered now. The window was passed.`,
-        }));
+        return;
       }
       if (event.kind === "status") {
         const { status } = event;
@@ -1577,9 +1574,9 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             id: (now?.id ?? 0) + 1,
             text:
               mode === "never"
-                ? `${name}: never offered. Its windows are passed and you are told.`
+                ? `${name}: never offered. Its windows are passed.`
                 : mode === "ownturn"
-                  ? `${name}: offered on your turns only. Its other windows are passed and you are told.`
+                  ? `${name}: offered on your turns only. Its other windows are passed.`
                   : `${name}: offered again.`,
           }));
         }
