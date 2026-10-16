@@ -863,20 +863,20 @@ test("phone: the command pools of the status phase fit the width, and Send is in
   await pane("Action").click();
   await panel.getByRole("button", { name: "Decline" }).click();
   await send.click();
-  await expect(panel.getByRole("heading").first()).toHaveText("Redistribute your command tokens");
+  // A decision of the pools is under the map: the choice of the player opens the map.
+  await expect(pane("Map")).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByText(/into which pool/i)).toHaveCount(0);
-  const pools = panel.getByRole("heading", { name: "Command pools" }).locator("..");
+  const choice = page.getByRole("group", { name: "Choice with the payment" });
+  const pools = choice.getByRole("heading", { name: "Command pools" }).locator("..");
   await expect(pools).toContainText("7 / 10 placed");
+  // Each row is one line in the width: the slot that adds a token is in view.
   for (const pool of ["tactic", "fleet", "strategy"]) {
-    await panel.getByRole("button", { name: `Add ${pool} pool token` }).click();
-  }
-  await expect(pools).toContainText("10 / 10 placed");
-  // The three rows are in the width: the counter at the right edge of each is in view.
-  for (const pool of ["tactic", "fleet", "strategy"]) {
-    await expect(panel.getByRole("button", { name: `Add ${pool} pool token` })).toBeInViewport({
+    await expect(choice.getByRole("button", { name: `Add ${pool} pool token` })).toBeInViewport({
       ratio: 1,
     });
+    await choice.getByRole("button", { name: `Add ${pool} pool token` }).click();
   }
+  await expect(pools).toContainText("10 / 10 placed");
   await expect(send).toBeEnabled();
   await expect(send).toBeInViewport({ ratio: 1 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
@@ -1037,7 +1037,7 @@ test("phone: Diplomacy has the system and the planets on the map, where they are
   await page.screenshot({ path: "shots/phone/local/diplomacy.png", animations: "disabled" });
 });
 
-test("phone: Warfare has the token on the map and the pools in the width", async ({ page }) => {
+test("phone: Warfare has the token and the pools on the map, in the width", async ({ page }) => {
   await page.goto("/?scenario=strategy_warfare&humans=1");
   const panel = page.locator("#step-panel");
   const panes = page.getByRole("navigation", { name: "Panes" });
@@ -1046,26 +1046,24 @@ test("phone: Warfare has the token on the map and the pools in the width", async
   await panes.getByRole("button", { name: "Action" }).click();
   await panel.getByRole("button", { name: /^6 Warfare/ }).click();
   await send.click();
-  // The choice is in the map: the choice of the player opens it.
+  // The token and the pools are on the map: the choice of the player opens it.
   await expect(panes.getByRole("button", { name: "Map" })).toHaveAttribute("aria-pressed", "true");
-  await panes.getByRole("button", { name: "Action" }).click();
-  await expect(panel.getByRole("heading", { name: "Command pools" })).toBeVisible();
+  const choice = page.getByRole("group", { name: "Choice with the payment" });
+  await expect(choice.getByRole("heading", { name: "Command pools" })).toBeVisible();
   expect(await width()).toBe(page.viewportSize()!.width);
-  await panes.getByRole("button", { name: "Map" }).click();
   await page.locator("g.system.target").filter({ hasText: "#29" }).tap();
   await page.getByRole("button", { name: "Close system details" }).tap();
   expect(await width()).toBe(page.viewportSize()!.width);
-  await panes.getByRole("button", { name: "Action" }).click();
-  await panel.getByRole("button", { name: "Add fleet pool token" }).tap();
+  await choice.getByRole("button", { name: "Add fleet pool token" }).tap();
   await expect(
-    panel.getByRole("heading", { name: "Command token" }).locator("../.."),
+    choice.getByRole("heading", { name: "Command token" }).locator("../.."),
   ).toContainText("#29");
   await expect(page.locator("footer")).toContainText("Fleet 3 → 4");
   expect(await width()).toBe(page.viewportSize()!.width);
   await expect(send).toBeInViewport();
   await page.screenshot({ path: "shots/phone/local/warfare.png", animations: "disabled" });
   await send.click();
-  await expect(panel.getByRole("heading", { name: "Command pools" })).toHaveCount(0);
+  await expect(choice).toHaveCount(0);
 });
 
 test("phone: Warfare's secondary is the production of the home system, in the width", async ({
@@ -1080,12 +1078,14 @@ test("phone: Warfare's secondary is the production of the home system, in the wi
   await panes.getByRole("button", { name: "Action" }).click();
   await panel.getByRole("button", { name: /^6 Warfare/ }).click();
   await send.click();
-  await panes.getByRole("button", { name: "Map" }).click();
   await page.locator("g.system.target").filter({ hasText: "#29" }).tap();
   await page.getByRole("button", { name: "Close system details" }).tap();
-  await panes.getByRole("button", { name: "Action" }).click();
-  await panel.getByRole("button", { name: "Add fleet pool token" }).tap();
+  await page
+    .getByRole("group", { name: "Choice with the payment" })
+    .getByRole("button", { name: "Add fleet pool token" })
+    .tap();
   await send.click();
+  await panes.getByRole("button", { name: "Action" }).click();
   await panel.getByRole("button", { name: "Produce" }).tap();
   expect(await width()).toBe(page.viewportSize()!.width);
   await send.click();
@@ -1118,9 +1118,15 @@ test("phone: Warfare of Thunder's Edge has the pools and the activation in the w
   await panes.getByRole("button", { name: "Action" }).click();
   await panel.getByRole("button", { name: /^6 Warfare/ }).click();
   await send.click();
-  await expect(panel.getByRole("heading", { name: "Command pools" })).toBeVisible();
+  // The redistribution is under the map: the choice of the player opens it.
+  await expect(
+    page
+      .getByRole("group", { name: "Choice with the payment" })
+      .getByRole("heading", { name: "Command pools" }),
+  ).toBeVisible();
   expect(await width()).toBe(page.viewportSize()!.width);
   await send.click();
+  await panes.getByRole("button", { name: "Action" }).click();
   await expect(panel).toContainText("No command token · Choose on the map");
   await panes.getByRole("button", { name: "Map" }).click();
   await page.locator("g.system.target").filter({ hasText: "#29" }).tap();

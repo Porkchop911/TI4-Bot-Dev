@@ -49,6 +49,8 @@ export interface RecallView {
   label: string;
   /** Something is staged: Esc clears it. */
   changed: boolean;
+  /** A decision of the pools: on a phone it is on the map, with the system that is chosen there. */
+  onMap: boolean;
   /** The answers, by the ids of their options, in the order that the game asks. Null: not yet. */
   answers: string[] | null;
 }
@@ -120,6 +122,7 @@ export function selectRecall(
     problem,
     label: "Resolve primary",
     changed: !!system || !!staging.pools,
+    onMap: true,
     answers: problem
       ? null
       : [system!, ...(pools && gainOption ? [gainOption, pools.staged!] : [])],

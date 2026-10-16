@@ -10,6 +10,7 @@ import {
   selectAction,
 } from "./action";
 import { selectBoard } from "./board";
+import { selectTokens } from "./tokens";
 import { type CardSettings, NO_CARD_SETTINGS, selectActionCards } from "./cards";
 import { selectExploration } from "./exploration";
 import { phaseName, seatLabel } from "./names";
@@ -154,7 +155,10 @@ export function selectShell(
         ? selectStrategy(update, local, catalog, printed)
         : selectAction(update, local, catalog, printed, cards.modes);
   const editing = openEditor(update, local, printed)?.view;
-  const onMap = editing?.onMap ? editing.blocks : null;
+  // A redistribution of command tokens is a decision of the pools too: a phone has it on the map.
+  const asked = openChoice(update, local);
+  const pools = asked ? selectTokens(asked, local.pools ?? null) : null;
+  const onMap = editing?.onMap ? editing.blocks : pools ? [pools.block] : null;
   return {
     seats: selectSeats(update, printed),
     accent:
@@ -193,7 +197,7 @@ export function selectShell(
           !!openChoice(update, local)?.options.some((option) => option.id === "tactical"),
         printed,
       ),
-      // An editor whose payment is on the map: a phone has its blocks there too.
+      // A decision of the map, or of the pools: a phone has its blocks on the map too.
       ...(onMap ? { blocks: onMap } : {}),
     },
     action: withBack(

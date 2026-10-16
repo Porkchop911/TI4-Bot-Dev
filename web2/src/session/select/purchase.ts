@@ -113,7 +113,10 @@ export interface PurchaseView {
   label: string;
   /** Something is staged: Esc clears it. */
   changed: boolean;
-  /** The tokens can be bought: the screen goes with its payment on the map. */
+  /**
+   * A decision of the pools is on the map of a phone, with the payment of the bought tokens:
+   * always, so that a gain and a purchase open in the same pane.
+   */
   onMap: boolean;
 }
 
@@ -184,7 +187,7 @@ export function selectPurchase(
   const change = poolChange(now, after);
   return {
     blocks,
-    onMap: !!offer,
+    onMap: true,
     task,
     payment,
     note: problem ?? change,
