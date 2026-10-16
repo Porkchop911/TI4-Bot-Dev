@@ -179,6 +179,16 @@ pub struct Reward {
     /// (so Styx also earns `styx_bonus` on top). Credited at the final slot. Off by default.
     #[serde(default)]
     pub fracture_planet_bonus: f64,
+    /// Zero the scoreable public/secret counts in the final snapshot, as projection is, so
+    /// `objective_weight`/`secret_weight` become pure shaping: a game can no longer bank reward for
+    /// standing next to a point at the horizon. Off keeps the reference reward exactly.
+    #[serde(default)]
+    pub zero_terminal_objectives: bool,
+    /// Potential charged per home planet this seat does not control ([`Progress::home_planets_lost`]).
+    /// Losing home bars public scoring (61.16), and the guides treat home defence as basic. Taken
+    /// back when the planet is retaken; still charged at the horizon. Off by default.
+    #[serde(default)]
+    pub home_loss_weight: f64,
     /// How much a decision is credited for what happens later (gamma).
     ///
     /// One (the default) is the undiscounted suffix sum this trainer has always used: every
@@ -238,6 +248,8 @@ impl Default for Reward {
             styx_bonus: 0.0,
             fracture_entry_bonus: 0.0,
             fracture_planet_bonus: 0.0,
+            zero_terminal_objectives: false,
+            home_loss_weight: 0.0,
         }
     }
 }
@@ -292,7 +304,9 @@ impl Reward {
             reason = "permille opportunity stays small"
         )]
         let projection = progress.projection_permille as f64 / 1000.0;
-        self.projection_weight * projection
+        #[expect(clippy::cast_precision_loss, reason = "home planet counts are single digits")]
+        let home_lost = progress.home_planets_lost as f64;
+        self.projection_weight * projection - self.home_loss_weight * home_lost
             + self.vp_weight * points
             + self.objective_weight * public
             + self.secret_weight * secret
@@ -397,6 +411,10 @@ pub fn returns(episode: &Episode, reward: &Reward) -> Vec<f64> {
     let mut last = episode.final_progress;
     // Projection is pure shaping: no potential is left standing at the end of the game.
     last.projection_permille = 0;
+    if reward.zero_terminal_objectives {
+        last.scoreable_public = 0;
+        last.scoreable_secret = 0;
+    }
     snapshots.push(last);
     let mut rewards = step_rewards(&snapshots, reward);
     if rewards.is_empty() {
@@ -735,6 +753,39 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn terminal_zeroed_objectives_are_pure_shaping_and_home_loss_is_charged() {
+        let mut shaped = Reward::for_stage(Stage::Two);
+        shaped.r1_bonus = 0.0;
+        shaped.r1_shaping = 0.0;
+        shaped.objective_weight = 0.3;
+        shaped.secret_weight = 0.2;
+        shaped.zero_terminal_objectives = true;
+        shaped.home_loss_weight = 0.5;
+        let at = |scoreable_public: i64, scoreable_secret: i64, home_planets_lost: i64| Progress {
+            scoreable_public,
+            scoreable_secret,
+            home_planets_lost,
+            round_number: 2,
+            ..Progress::default()
+        };
+        let episode = Episode {
+            steps: vec![at(1, 1, 0), at(2, 1, 1)],
+            final_progress: at(2, 1, 1),
+            cleared: false,
+            shortfall: 0.0,
+            traded_goods: 0.0,
+            strategy_card_plays: std::collections::BTreeMap::new(),
+        };
+        let credited = returns(&episode, &shaped);
+        // Whole game: minus the opening objective potential (0.3 + 0.2), minus one lost home planet.
+        assert!((credited[0] - (-0.5 - 0.5)).abs() < 1e-9, "{credited:?}");
+        // Off, the horizon keeps the standing potential (the reference behaviour).
+        shaped.zero_terminal_objectives = false;
+        let credited = returns(&episode, &shaped);
+        assert!((credited[0] - (0.3 - 0.5)).abs() < 1e-9, "{credited:?}");
     }
 
     #[test]

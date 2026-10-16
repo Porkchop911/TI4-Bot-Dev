@@ -1284,6 +1284,19 @@ impl<'a> Observed<'a> {
             && crate::fracture::is_fracture_system(self.content, self.sources, system)
     }
 
+    /// How many of this seat's home planets it does not control (61.16 bars public scoring while
+    /// any is lost). Used only by training progress; it does not add a policy observation feature.
+    #[must_use]
+    pub fn home_planets_lost(&self, player: &PlayerId) -> usize {
+        crate::objectives::home_planets_not_controlled(&crate::objectives::Position::new(
+            self.state,
+            self.content,
+            self.sources,
+            player,
+        ))
+        .len()
+    }
+
     /// Whether this seat currently has a ship, infantry or mech in a Fracture system.
     /// Used only by training progress; it does not add a policy observation feature.
     #[must_use]

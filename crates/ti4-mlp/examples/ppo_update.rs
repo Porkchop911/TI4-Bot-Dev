@@ -177,6 +177,8 @@ const VALUE_FLAGS: &[&str] = &[
     "--fleet-hoard-penalty",
     "--fleet-weight",
     "--projection-weight",
+    "--home-loss-weight",
+    "--zero-terminal-objectives",
     "--status-income-tg",
     "--fracture-entry-bonus",
     "--fracture-planet-bonus",
@@ -1622,6 +1624,9 @@ fn main() {
         ti4_policy::progress::MEASURE_PROJECTION.store(true, std::sync::atomic::Ordering::Relaxed);
     }
     reward.tech_weight = weight("--tech-weight", reward.tech_weight);
+    reward.home_loss_weight = weight("--home-loss-weight", reward.home_loss_weight);
+    // Nonzero turns it on, so the PowerShell launcher's name/value pairs can carry it.
+    reward.zero_terminal_objectives = weight("--zero-terminal-objectives", 0.0) != 0.0;
     reward.strategy_diversity_weight = weight(
         "--strategy-diversity-weight",
         reward.strategy_diversity_weight,
@@ -1714,8 +1719,12 @@ fn main() {
             reward.r1_bonus, reward.r1_shaping, reward.clearance_weight, reward.high_vp_bonus
         );
         println!(
-            "  points      vp {} | objective {} | secret {}",
-            reward.vp_weight, reward.objective_weight, reward.secret_weight
+            "  points      vp {} | objective {} | secret {} | zero at horizon {} | home lost {}",
+            reward.vp_weight,
+            reward.objective_weight,
+            reward.secret_weight,
+            reward.zero_terminal_objectives,
+            reward.home_loss_weight
         );
         println!(
             "  shaping     fleet {} | projection {} | tech {} | strategy diversity {}",
