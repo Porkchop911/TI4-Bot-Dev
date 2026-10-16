@@ -32,10 +32,12 @@ import type {
   PublicRoll,
   SessionUpdate,
   ShipFact,
+  Unloadable,
+  UnloadableCargo,
 } from "../wire";
 import { cannonTable, riftRows } from "./movementRolls";
 import { combatOdds } from "./odds";
-import { UNIT_ORDER, isShip, unitType } from "./names";
+import { UNIT_ORDER, WORMHOLES, isShip, unitType } from "./names";
 
 const RIFT_RULE = "Each ship that leaves a gravity rift rolls: destroyed on 1–3, with its cargo";
 
@@ -76,12 +78,13 @@ export const tilesOf = (update: SessionUpdate): Map<string, BoardTileView> =>
 export const systemLabel = (tiles: Map<string, BoardTileView>, id: string) =>
   `${tiles.get(id)?.label ?? "System"} · #${id}`;
 
-/** "via Tar’Mann · #23": the systems between the start and the active system. */
+/** "via Tar’Mann · #23 · β wormhole": the systems between the start and the active system. */
 function viaText(plan: Plan, ship: ShipFact) {
   const move = ship.move!;
   const inner = move.path.slice(1, -1);
   return [
     inner.length ? `via ${inner.map((id) => systemLabel(plan.tiles, id)).join(", ")}` : "Direct",
+    ...(move.wormholes ?? []).map((kind) => `${WORMHOLES[kind] ?? kind} wormhole`),
     ...(move.ionian ? ["Ionian Fuel Refinery"] : []),
   ].join(" · ");
 }
@@ -107,8 +110,38 @@ function reasonOf(plan: Plan, ship: ShipFact): string | null {
     : `Needs ${name} · already used`;
 }
 
+/** Why no ship loads units that use capacity. */
+const UNLOADABLE: Record<Unloadable, string> = {
+  command_token: "Your command token is here · no pickup",
+  no_capacity: "No ship with capacity starts or passes here",
+  not_offered: "No ship can load them",
+};
+
+/** "2 Infantry · Planet Jord": units that no ship loads, and where they are. */
+const unloadableText = (plan: Plan, cargo: UnloadableCargo) =>
+  `${cargo.count} ${nameOf(cargo.unit, cargo.damaged, cargo.count)} · ${placeOf(plan, cargo)}`;
+
+/**
+ * "Stay: 2 Infantry (Planet Jord), 1 Mech (Planet Jord) · No ship with capacity starts or passes
+ * here": the units of a system that no ship loads, by reason. Null when there are none.
+ */
+function stayText(plan: Plan, system: string): string | null {
+  const reasons = new Map<Unloadable, string[]>();
+  for (const cargo of plan.facts.unloadable ?? []) {
+    if (cargo.system === system) {
+      const units = `${cargo.count} ${nameOf(cargo.unit, cargo.damaged, cargo.count)} (${placeOf(plan, cargo)})`;
+      reasons.set(cargo.reason, [...(reasons.get(cargo.reason) ?? []), units]);
+    }
+  }
+  return (
+    [...reasons]
+      .map(([reason, units]) => `Stay: ${units.join(", ")} · ${UNLOADABLE[reason]}`)
+      .join(" · ") || null
+  );
+}
+
 /** Where the units of a pool are in their system: "Planet Jord", "Space area". */
-function placeOf(plan: Plan, pool: CargoPool) {
+function placeOf(plan: Plan, pool: Pick<CargoPool, "system" | "source">) {
   const planet = plan.tiles
     .get(pool.system)
     ?.planets?.find((item) => item.id === pool.source)?.label;
@@ -183,6 +216,7 @@ function shipRows(plan: Plan, ships: ShipFact[], onlyMoving = false): MoveShipVi
         moves,
         canMove: !reason && !!ship.move,
         reason,
+        // A ship is staged only when it can move (`canMove`), so a staged ship is never invalid.
         invalid: false,
         move: (moves && boostedText(ship)) || (shared ? null : moveText(ship)),
         route: ship.move ? viaText(plan, ship) : "",
@@ -259,8 +293,8 @@ function originOf(plan: Plan, origin: string, onlyMoving = false): OriginView {
     loaded,
     capacity: moving.reduce((sum, ship) => sum + ship.capacity, 0),
     stays: stays.join(" · ") || "Nothing",
-    // Units that are left with no ship to carry them: the update does not say this yet.
-    warning: null,
+    // Units that no ship can load stay; the engine says which and why.
+    warning: stayText(plan, origin),
     handled: moving.length > 0 || plan.handled.includes(origin),
   };
 }
@@ -334,6 +368,8 @@ export function selectMovement(
   const plan = planOf(update, facts, draft, handled);
   const origins = originsOf(facts);
   const stuck = facts.ships.filter((ship) => ship.blocked && !origins.includes(ship.origin));
+  // Units that no ship loads in a system that no ship leaves: an origin says it in its card.
+  const left = (facts.unloadable ?? []).filter((cargo) => !origins.includes(cargo.system));
   const there = (update.view.board.systems[facts.active]?.units ?? []).filter(
     (unit) => unit.owner === plan.viewer && unit.planet === null,
   );
@@ -348,17 +384,26 @@ export function selectMovement(
     editing: true,
     target: { system: facts.active, label: systemLabel(plan.tiles, facts.active) },
     origins: origins.map((origin) => originOf(plan, origin)),
-    unreachable: stuck.length
-      ? {
-          target: facts.active,
-          rows: shipRows(plan, stuck).map((row) => ({
-            unit: row.unit,
-            name: row.total > 1 ? `${row.total} ${unitName(row.unit, row.total)}` : row.name,
-            text: `${systemLabel(plan.tiles, row.key.split(":")[0])} · ${row.reason}`,
-            system: row.key.split(":")[0],
-          })),
-        }
-      : null,
+    unreachable:
+      stuck.length || left.length
+        ? {
+            target: facts.active,
+            rows: [
+              ...shipRows(plan, stuck).map((row) => ({
+                unit: row.unit,
+                name: row.total > 1 ? `${row.total} ${unitName(row.unit, row.total)}` : row.name,
+                text: `${systemLabel(plan.tiles, row.key.split(":")[0])} · ${row.reason}`,
+                system: row.key.split(":")[0],
+              })),
+              ...left.map((cargo) => ({
+                unit: typeOf(cargo.unit),
+                name: unloadableText(plan, cargo),
+                text: `${systemLabel(plan.tiles, cargo.system)} · ${UNLOADABLE[cargo.reason]}`,
+                system: cargo.system,
+              })),
+            ],
+          }
+        : null,
     arrival: UNIT_ORDER.filter((unit) => more.has(unit)).map((unit) => ({
       unit,
       now: now(unit),
@@ -491,6 +536,16 @@ export function selectMovementBoard(
   for (const ship of facts.ships) {
     if (ship.blocked && !origins.includes(ship.origin)) {
       notes[ship.origin] = { sign: "stay", text: `Your ships stay · ${BLOCKED[ship.blocked]}` };
+    }
+  }
+  for (const cargo of facts.unloadable ?? []) {
+    if (!origins.includes(cargo.system)) {
+      const text = `${unloadableText(plan, cargo)} cannot be loaded · ${UNLOADABLE[cargo.reason]}`;
+      const note = notes[cargo.system];
+      notes[cargo.system] =
+        note?.sign === "cargo"
+          ? { ...note, text: `${note.text}\n${text}` }
+          : (note ?? { sign: "cargo", text });
     }
   }
   /** For each system: the ships and the ground forces that the staged movement takes from it. */

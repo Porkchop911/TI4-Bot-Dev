@@ -1429,3 +1429,39 @@ test("phone: a component action chooses its planet on the Map pane, then the tur
   await fits();
   await page.screenshot({ path: "shots/phone/local/turn-closing.png", animations: "disabled" });
 });
+
+test("phone: the movement says what no ship can load, a wormhole and a damaged ship", async ({
+  page,
+}) => {
+  // Longer than a test of this suite should be: see "Tests" in AGENTS.md.
+  test.setTimeout(10_000);
+  const errors = pageErrors(page, { console: true });
+  await page.goto("/?scenario=late-game&humans=1");
+  const pane = (name: string) =>
+    page.getByRole("navigation", { name: "Panes" }).getByRole("button", { name });
+  const system = (id: string) => page.locator("g.system").filter({ hasText: `#${id}` });
+  const width = page.viewportSize()!.width;
+  const fits = async () =>
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+  await activateInLive(page, system("42"));
+  await pane("Action").click();
+  await expect(
+    page.locator("#step-panel").getByText(/^⚠ Stay: 2 Infantry \(Planet Vega Major\)/),
+  ).toBeVisible();
+  await fits();
+  await page.screenshot({ path: "shots/phone/local/movement-cases.png", animations: "disabled" });
+
+  await pane("Map").click();
+  await system("25").click();
+  const fleet = page.getByRole("group", { name: /^Move from / });
+  await fleet.getByRole("button", { name: "Cruiser 1 of 1" }).tap();
+  await expect(fleet.getByText(/β wormhole/).first()).toBeVisible();
+  await fits();
+  await fleet.getByRole("button", { name: "Done with this system" }).tap();
+  await system("63").click();
+  await expect(
+    fleet.getByRole("button", { name: "Dreadnought (damaged) 1 of 1", exact: true }),
+  ).toBeVisible();
+  await fits();
+  expect(errors).toEqual([]);
+});

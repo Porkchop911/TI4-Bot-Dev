@@ -208,6 +208,8 @@ export type { UndoBarrier } from "./UndoBarrier.ts";
 export type { UnitCounts } from "./UnitCounts.ts";
 export type { UnitRecord } from "./UnitRecord.ts";
 export type { UnitTypeId } from "./UnitTypeId.ts";
+export type { Unloadable } from "./Unloadable.ts";
+export type { UnloadableCargo } from "./UnloadableCargo.ts";
 export type { ViewerRole } from "./ViewerRole.ts";
 
 /** `ti4_host::protocol::PROTOCOL_VERSION`: the version of the messages of this build. */

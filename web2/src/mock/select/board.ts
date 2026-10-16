@@ -9,7 +9,7 @@ import type {
   UnitType,
 } from "../../model";
 import { plural } from "../../model";
-import { ANOMALY, MAP, PAY, RETREATS, SCRIPTED, TECH, U, linesOf } from "../data";
+import { ANOMALY, MAP, PAY, RETREATS, SCRIPTED, TECH, U, LINES } from "../data";
 import { E } from "../loose";
 import { sysLabel, type State, type World } from "../world";
 import { countsForce, isTactical, mapStep, productionPayment, toForce, traitsOf } from "./shared";
@@ -124,8 +124,7 @@ function inspector(
       E.stagedEntries(moved)
         .filter((entry: any) => entry.line === line)
         .reduce((sum: number, entry: any) => sum + entry.count, 0);
-    const left = linesOf(state)
-      .filter((line) => line.origin === id)
+    const left = LINES.filter((line) => line.origin === id)
       .map((line) => [line, line.n - taken(line)] as const)
       .filter(([, count]) => count > 0);
     const fleets = E.others(state, id);
@@ -232,7 +231,6 @@ export function selectBoard(world: World, state: State): BoardView {
       0,
     );
 
-  const LINES = linesOf(state);
   // The active system while the movement is staged: what is there, and what arrives. Every map
   // view shows the board after the move, so the player sees what the move leaves and what it brings.
   const arrived: Record<string, number> = { ...state.present };

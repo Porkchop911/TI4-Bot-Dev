@@ -447,6 +447,46 @@ test("a movement into a fleet of another seat has the odds of the space combat",
   expect(errors).toEqual([]);
 });
 
+test("the movement says what no ship can load, a path through a wormhole, and a damaged ship", async ({
+  page,
+}) => {
+  // Longer than a test of this suite should be: see "Tests" in AGENTS.md.
+  test.setTimeout(10_000);
+  const errors = pageErrors(page, { console: true });
+  await page.goto("/?scenario=late-game&humans=1");
+  const system = (id: string) => page.locator("g.system").filter({ hasText: `#${id}` });
+  await activateInLive(page, system("42"));
+  await expect(heading(page)).toHaveText("Movement");
+
+  // The fighters of the depot move on their own, and no ship with capacity passes there: its
+  // ground forces stay, and the movement is allowed.
+  const depot = panel(page).getByRole("button", { name: /^Vega Major\/Vega Minor · #74/ });
+  await expect(depot).toContainText(
+    "⚠ Stay: 2 Infantry (Planet Vega Major), 1 Mech (Planet Vega Minor) · No ship with capacity starts or passes here",
+  );
+  await expect(send(page)).toBeEnabled();
+
+  // The far fleet comes through the β wormhole.
+  await system("25").click();
+  const fleet = page.getByRole("group", { name: /^Move from / });
+  await fleet.getByRole("button", { name: "Cruiser 1 of 1" }).click();
+  await expect(fleet.getByText(/β wormhole/).first()).toBeVisible();
+  await fleet.getByRole("button", { name: "Done with this system" }).click();
+
+  // The dreadnought of the north took a hit.
+  await system("63").click();
+  const north = page.getByRole("group", { name: /^Move from / });
+  await north.getByRole("button", { name: "Dreadnought (damaged) 1 of 1", exact: true }).click();
+  await north.getByRole("button", { name: "Done with this system" }).click();
+  // The open step does not scroll at 1920×1080.
+  const overflow = await page
+    .locator("#step-panel > div.overflow-y-auto")
+    .evaluate((element) => element.scrollHeight - element.clientHeight);
+  expect(overflow, "the step content needs vertical scroll").toBeLessThanOrEqual(0);
+  await page.screenshot({ path: "shots/local/movement-cases.png", animations: "disabled" });
+  expect(errors).toEqual([]);
+});
+
 test("a draft stops at the rift roll; Live keeps what the rift and the space cannon offense rolled", async ({
   page,
 }) => {

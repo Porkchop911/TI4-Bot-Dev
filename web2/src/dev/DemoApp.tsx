@@ -5,7 +5,7 @@ import { createMockStore, useMockSession } from "../mock/store";
 import { LOCAL_GAME } from "./defaultGame";
 
 /**
- * The game shell on the mock session. `?example=draft-movement&viewer=hacan` opens one state directly.
+ * The game shell on the mock session. `?example=draft-production&viewer=hacan` opens one state directly.
  * `notice` says why the page is the demo and not the local game (the engine did not load).
  */
 export function DemoApp({ notice }: { notice?: string }) {

@@ -3,6 +3,7 @@ import type { BattleFacts } from "./BattleFacts.ts";
 import type { CargoPool } from "./CargoPool.ts";
 import type { FleetSupplyFact } from "./FleetSupplyFact.ts";
 import type { ShipFact } from "./ShipFact.ts";
+import type { UnloadableCargo } from "./UnloadableCargo.ts";
 
 export type MovementFacts = { active: string, ships: Array<ShipFact>, cargo: Array<CargoPool>, 
 /**
@@ -17,6 +18,11 @@ ionian: boolean, fleet_supply: FleetSupplyFact,
  * How many ships already moved in this activation.
  */
 moved: number, 
+/**
+ * The units that use capacity that no ship can load, in the systems that the movement
+ * starts in or passes, outside the active system.
+ */
+unloadable?: Array<UnloadableCargo>, 
 /**
  * The space combat that ships moving in start: set only when another seat has ships in
  * the active system.

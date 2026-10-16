@@ -309,7 +309,7 @@ export interface OriginView {
   capacity: number;
   /** What stays in the system after the staged ships left. */
   stays: string;
-  /** Units that stay with no ship to carry them. They are removed. */
+  /** Units that use capacity and that no ship can load: they stay, with the reason. */
   warning: string | null;
   /** The player is done with this system: something leaves it, or the player marked it. */
   handled: boolean;

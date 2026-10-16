@@ -19,4 +19,9 @@ path: Array<string>,
 /**
  * The gravity rifts that the ship leaves on this path. It rolls once for each.
  */
-rifts: Array<string>, };
+rifts: Array<string>, 
+/**
+ * The wormholes that the path goes through, by kind ("ALPHA", "BETA"): a step between two
+ * systems that are not neighbours.
+ */
+wormholes?: Array<string>, };

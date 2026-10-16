@@ -14,7 +14,7 @@ import {
   shipKey,
 } from "./movementDraft";
 import { type MovementStep, draftOf, stepOf, stepsOf } from "./movementPlan";
-import { selectOrigin } from "./select/movement";
+import { selectMovement, selectMovementBoard, selectOrigin } from "./select/movement";
 import type { MovementFacts, SessionUpdate } from "./wire";
 
 // Updates of a real game, written by the engine (seat a is Sol; it activated the system next
@@ -163,4 +163,52 @@ it("ties the row of each ship to its system and its own path on the map", () => 
     expect(unit.link).toEqual([`rt:${fact!.move!.path.join(">")}`, "sys:01"]);
   }
   expect(units).toHaveLength(3);
+});
+
+it("says what no ship can load, and why: in the card of an origin, or under the movement", () => {
+  // The facts as the engine writes them for a wormhole on the path and cargo that stays.
+  const more: MovementFacts = {
+    ...facts,
+    ships: facts.ships.map((item, index) =>
+      index === 0 ? { ...item, move: { ...item.move!, wormholes: ["BETA"] } } : item,
+    ),
+    unloadable: [
+      {
+        system: "01",
+        source: null,
+        unit: "fighter",
+        damaged: false,
+        count: 2,
+        reason: "no_capacity",
+      },
+      {
+        system: "70",
+        source: "kraag",
+        unit: "sol_infantry",
+        damaged: false,
+        count: 1,
+        reason: "command_token",
+      },
+    ],
+  };
+  const origin = selectOrigin(moving, more, {}, "01")!;
+  expect(origin.warning).toBe(
+    "Stay: 2 Fighters (Space area) · No ship with capacity starts or passes here",
+  );
+  expect(origin.ships[0].units[0].route).toContain("β wormhole");
+  const view = selectMovement(moving, more, {});
+  expect(view.unreachable?.rows).toEqual([
+    {
+      unit: "infantry",
+      name: "1 Infantry · Planet Kraag",
+      text: expect.stringContaining("· Your command token is here · no pickup"),
+      system: "70",
+    },
+  ]);
+  const board = selectMovementBoard(moving, more, {}, null);
+  expect(board.notes["70"]).toEqual({
+    sign: "cargo",
+    text: "1 Infantry · Planet Kraag cannot be loaded · Your command token is here · no pickup",
+  });
+  expect(board.notes["01"]).toBeUndefined();
 });

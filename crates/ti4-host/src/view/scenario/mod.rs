@@ -489,6 +489,14 @@ fn late_game(
     for fleet in &fleets_of_a {
         place(state, content, sources, a, fleet)?;
     }
+    // The dreadnought of the north took a hit in an earlier round.
+    state
+        .system_mut(&SystemId::new(at::NORTH))
+        .units
+        .iter_mut()
+        .find(|unit| unit.owner == *a && unit.type_id.as_str().starts_with("dreadnought"))
+        .ok_or("no dreadnought of seat A in the north")?
+        .sustained_damage = true;
     state
         .system_mut(&SystemId::new(at::TOKEN))
         .place_token(a.clone());
@@ -915,7 +923,7 @@ mod tests {
     use crate::view::tactical::{
         ACTIVATION_SUBTYPE, Blocked, CombatFact, FREE_ACTIVATION_SUBTYPE, INVASION_SUBTYPE,
         MOVEMENT_SUBTYPE, MovementFacts, ProductionFacts, ShipFact, TacticalFacts, Unavailable,
-        project_tactical_facts,
+        Unloadable, project_tactical_facts,
     };
     use ti4_engine::choice::Window;
     use ti4_engine::choice::{Choice, ChoiceOption};
@@ -1473,10 +1481,55 @@ mod tests {
     #[test]
     fn a_wormhole_brings_the_far_fleet_to_the_north() {
         let (state, galaxy) = game(LATE_GAME);
-        let facts = facts(&state, &galaxy, at::NORTH);
-        for ship in ships(&facts, at::FAR) {
+        let into_north = facts(&state, &galaxy, at::NORTH);
+        for ship in ships(&into_north, at::FAR) {
             let route = ship.r#move.as_ref().expect("the far fleet arrives");
             assert_eq!(route.path.len(), 3, "{ship:?}");
+            assert_eq!(route.wormholes, ["BETA"], "{ship:?}");
+        }
+        // The dreadnought of the north is damaged; a path between neighbours has no wormhole.
+        let into_nebula = facts(&state, &galaxy, at::NEBULA);
+        let dreadnought = ship(&into_nebula, at::NORTH, "dreadnought2");
+        assert!(dreadnought.damaged);
+        let route = dreadnought
+            .r#move
+            .as_ref()
+            .expect("the dreadnought arrives");
+        assert!(route.wormholes.is_empty(), "{route:?}");
+    }
+
+    #[test]
+    fn cargo_that_no_ship_can_load_says_why() {
+        let (state, galaxy) = game(LATE_GAME);
+        let reasons = |active: &str| -> Vec<(String, Option<String>, Unloadable)> {
+            facts(&state, &galaxy, active)
+                .unloadable
+                .into_iter()
+                .map(|cargo| (cargo.system, cargo.source, cargo.reason))
+                .collect()
+        };
+        let place = |system: &str, planet: &str, reason| {
+            (system.to_owned(), Some(planet.to_owned()), reason)
+        };
+        // Into the dock: a ship passes the system of the token and the depot, and none with
+        // capacity passes the depot.
+        let into_dock = reasons(at::DOCK);
+        assert!(
+            into_dock.contains(&place(at::TOKEN, "kraag", Unloadable::CommandToken)),
+            "{into_dock:?}"
+        );
+        assert!(
+            into_dock.contains(&place(at::DEPOT, "vegamajor", Unloadable::NoCapacity)),
+            "{into_dock:?}"
+        );
+        // A unit that a ship loads is not listed, nor one in the active system.
+        let facts = facts(&state, &galaxy, at::DOCK);
+        for cargo in &facts.unloadable {
+            assert_ne!(cargo.system, at::DOCK);
+            assert!(cargo.count > 0);
+            assert!(!facts.cargo.iter().any(|pool| pool.system == cargo.system
+                && pool.source == cargo.source
+                && pool.unit == cargo.unit));
         }
     }
 

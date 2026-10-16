@@ -29,7 +29,6 @@ import {
   examples,
   LINES,
   lineById,
-  linesOf,
   other,
   plural,
 } from "./data";
@@ -451,8 +450,7 @@ export const sysLabel = (id) => `${MAP[id].name} · #${id}`;
 export const adjacent = (id) => ADJ[id];
 export const neighbours = (id) => NEAR[id];
 export const rifts = (path) => path.slice(0, -1).filter((id) => MAP[id].anomaly === "rift");
-export const cargoAt = (state, id) =>
-  linesOf(state).filter((line) => line.origin === id && !U[line.type].ship);
+export const cargoAt = (id) => LINES.filter((line) => line.origin === id && !U[line.type].ship);
 export function blocker(state, id) {
   const anomaly = MAP[id].anomaly;
   if (anomaly === "asteroid" || anomaly === "supernova") {
@@ -521,9 +519,7 @@ export const moveCache = new Map();
 // How many of the player's ships can move to a system, before it is activated.
 export function reach(state, id) {
   const probe = { ...state, data: { ...state.data, activation: { system: id } } };
-  const lines = linesOf(state).filter(
-    (line) => U[line.type].ship && moveInfo(probe, line).routes.length,
-  );
+  const lines = LINES.filter((line) => U[line.type].ship && moveInfo(probe, line).routes.length);
   return {
     ships: lines.reduce((sum, line) => sum + line.n, 0),
     systems: new Set(lines.map((line) => line.origin)).size,
@@ -533,14 +529,9 @@ export function reach(state, id) {
 // gravity rift on the way adds one. `boost` is the path with Gravity Drive, with the fewest rifts.
 // `gd`: the ships cannot move without Gravity Drive. `helps`: Gravity Drive spares them a rift.
 export function moveInfo(state, line) {
-  const key = [
-    activeId(state),
-    state.route,
-    !!size(state.enemyFleet),
-    state.stale,
-    state.scene,
-    line.id,
-  ].join("|");
+  const key = [activeId(state), state.route, !!size(state.enemyFleet), state.stale, line.id].join(
+    "|",
+  );
   if (!moveCache.has(key)) {
     const base = line.move || U[line.type].move,
       gone = state.stale && line.id === "j-cruiser";
@@ -551,7 +542,7 @@ export function moveInfo(state, line) {
         ? path
             .slice(1, -1)
             .filter((id) => !MAP[id].token)
-            .reduce((sum, id) => sum + cargoAt(state, id).length, 0)
+            .reduce((sum, id) => sum + cargoAt(id).length, 0)
         : 0;
     // The game chooses the path of a ship. There is one, and the player cannot change it.
     const via = (path) => (line.via && path.includes(line.via) ? 0 : 1);
@@ -651,7 +642,7 @@ export function shipPath(state, data, shipKey) {
 // The systems between the start and the active system where a ship can load.
 export function pickupSites(state, data, shipKey) {
   const path = U[shipLine(shipKey).type].capacity ? shipPath(state, data, shipKey) : null;
-  return (path || []).slice(1, -1).filter((id) => cargoAt(state, id).length);
+  return (path || []).slice(1, -1).filter((id) => cargoAt(id).length);
 }
 // What is in the hold of one ship, and the room it has.
 export const holdEntries = (data, shipKey) =>
@@ -668,7 +659,7 @@ export function loadable(state, data, shipKey) {
     return [];
   }
   return [ship.origin, ...pickupSites(state, data, shipKey)].flatMap((site) =>
-    cargoAt(state, site).map((line) => ({
+    cargoAt(site).map((line) => ({
       line,
       key: `${shipKey}>${line.id}`,
       pickup: site !== ship.origin,
@@ -1259,14 +1250,12 @@ export function makeState(example) {
     movement: { ...baseData.movement, ...config.movement },
   });
   const until = config.until ?? 5;
-  state.scene = config.scene;
   autoBoost(state, state.data.movement);
   if (config.invasion) {
     state.data.invasion = { ...config.invasion };
   }
   Object.assign(state, {
     stale: !!config.stale,
-    scene: config.scene,
     present: config.present,
     tip: config.tip,
     auto: true,

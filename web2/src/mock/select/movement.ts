@@ -13,7 +13,7 @@ import type {
   UnitType,
 } from "../../model";
 import { plural } from "../../model";
-import { MAP, SPECS, SUPPLY, U, lineById, linesOf, type Line } from "../data";
+import { MAP, SPECS, SUPPLY, U, lineById, LINES, type Line } from "../data";
 import { E } from "../loose";
 import { sysLabel, type State } from "../world";
 import { battleTable } from "./battle";
@@ -42,7 +42,7 @@ const countsText = (counts: [Line, number][]) =>
 function plan(state: State) {
   const editing = state.edit?.step === 1;
   const data: Record<string, number> = E.editedData(state, 1);
-  const lines = linesOf(state);
+  const lines = LINES;
   const active: string = E.activeId(state);
   const info = (line: Line) => E.moveInfo(state, line);
   const keys = (line: Line): string[] => E.shipKeys(line);

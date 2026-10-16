@@ -3,7 +3,7 @@ import { EXAMPLE_IDS as EXAMPLES } from "../src/mock/exampleList";
 
 // Screenshots of every example.
 // Run all: `npm run shots` (the projects "shots" and "shots-phone"; not part of `npm run e2e`).
-// Run some: `npm run shots -- -g draft-movement`.
+// Run some: `npm run shots -- -g draft-production`.
 // One size: the design target is 1920×1080 or larger. Narrower screens are a non-goal (AGENTS.md).
 const SIZE = { width: 1920, height: 1080 };
 
@@ -55,100 +55,6 @@ test.describe("flows", () => {
     await page.setViewportSize({ width: 1920, height: 1500 });
     await page.goto("/?gallery");
     await shot(page, "web2/gallery");
-  });
-
-  // The movement is staged on the map: a system opens its fleet there, with a token for each
-  // ship and a slot for each unit in a hold. A draft records every change; nothing is sent.
-  for (const example of ["draft-movement", "draft-movement-cases"]) {
-    test(`movement on the map · ${example}`, async ({ page }) => {
-      await page.goto(`/?example=${example}`);
-      const panel = page.locator("#step-panel");
-      await panel.waitFor();
-      // The map is quiet: a check mark on a system with a staged move, and no path until one opens.
-      await expect(page.locator(".galaxy .t-staged").first()).toBeAttached();
-      await expect(page.locator(".galaxy .t-mark", { hasText: "→" }).first()).toBeAttached();
-      await expect(page.locator(".galaxy .route")).toHaveCount(0);
-      await expect(page.locator("#step-panel footer button")).toHaveCount(0);
-      await shot(page, `web2/movement/${example}`);
-      // The damaged dreadnought at Tar’Mann stays in both examples: it is moved and taken back.
-      await page.getByRole("button", { name: /^Move from Tar’Mann, system 23/ }).click();
-      const sheet = page.getByRole("group", { name: "Move from Tar’Mann · #23" });
-      const token = sheet.getByRole("button", {
-        name: "Dreadnought (damaged) 1 of 1",
-        exact: true,
-      });
-      await expect(token).toHaveAttribute("aria-pressed", "false");
-      await token.click();
-      await expect(token).toHaveAttribute("aria-pressed", "true");
-      await expect(page.locator(".galaxy .route.staged").first()).toBeAttached();
-      await shot(page, `web2/movement/${example}-sheet`);
-      // The reset of the sheet takes back the ships that leave this system.
-      await sheet.getByRole("button", { name: "Reset" }).click();
-      await expect(sheet.getByRole("button", { name: "Reset" })).toBeDisabled();
-      await expect(token).toHaveAttribute("aria-pressed", "false");
-    });
-  }
-
-  test("movement with Gravity Drive in place of the gravity rift", async ({ page }) => {
-    await page.goto("/?example=draft-movement-cases");
-    await page.getByRole("button", { name: /^Move from Vefut, system 31/ }).click();
-    const sheet = page.getByRole("group", { name: "Move from Vefut · #31" });
-    const drive = sheet.getByRole("button", { name: "Gravity Drive on Carrier 1 of 1" });
-    // The carrier of Lodor has Gravity Drive. It gives it back when it stays.
-    await expect(drive).toBeDisabled();
-    await expect(sheet.getByText("⚄ Rift roll")).toHaveCount(2);
-    await page.getByRole("button", { name: /^Move from Lodor, system 26/ }).click();
-    await page
-      .getByRole("group", { name: "Move from Lodor · #26" })
-      .getByRole("button", { name: "Carrier 1 of 1", exact: true })
-      .click();
-    await page.getByRole("button", { name: /^Move from Vefut, system 31/ }).click();
-    await shot(page, "web2/movement/rift");
-    await drive.click();
-    await expect(drive).toHaveAttribute("aria-pressed", "true");
-    // The carrier goes round the rift: its hold is safe, and the destroyer still rolls.
-    await expect(sheet.getByText("⚄ Rift roll")).toHaveCount(1);
-    await expect(sheet).toContainText("via #19 Wellon");
-    await shot(page, "web2/movement/gravity-drive");
-  });
-
-  test("the active system lists what is committed to it", async ({ page }) => {
-    await page.goto("/?example=draft-movement-cases");
-    await page.getByRole("button", { name: /^Inspect Starpoint .*system 27/ }).click();
-    await expect(page.getByRole("region", { name: "From Jord · #1" })).toBeVisible();
-    await shot(page, "web2/movement/committed");
-    // A system in the list opens its fleet, where the controls are.
-    await page.getByRole("button", { name: /^From Lodor/ }).click();
-    await expect(page.getByRole("group", { name: "Move from Lodor · #26" })).toBeVisible();
-  });
-
-  test("movement of four carriers and four dreadnoughts", async ({ page }) => {
-    await page.goto("/?example=draft-movement-cases");
-    await page.getByRole("button", { name: /^Move from Everra, system 58/ }).click();
-    const sheet = page.getByRole("group", { name: "Move from Everra · #58" });
-    for (const index of [1, 2, 3, 4]) {
-      await sheet.getByRole("button", { name: `Carrier ${index} of 4`, exact: true }).click();
-    }
-    await sheet.getByRole("button", { name: "Dreadnought 1 of 4", exact: true }).click();
-    // The chosen kind of unit goes into the slot that is tapped: every ship has its own hold.
-    await sheet.getByRole("button", { name: /^Load Fighter, Space area/ }).click();
-    await sheet.getByRole("button", { name: "Load Fighter on Carrier 2 of 4" }).first().click();
-    await expect(sheet).toContainText("5 ships · 1 cargo");
-    await shot(page, "web2/movement/many-ships-one-loaded");
-    // "Fill" loads the chosen kind on every ship that has room: 8 fighters, then the infantry.
-    await sheet.getByRole("button", { name: "Fill with Fighter" }).click();
-    await expect(sheet).toContainText("5 ships · 8 cargo");
-    await sheet.getByRole("button", { name: /^Load Infantry, Planet Everra/ }).click();
-    await sheet.getByRole("button", { name: "Fill with Infantry" }).click();
-    await expect(sheet).toContainText("5 ships · 16 cargo");
-    await shot(page, "web2/movement/many-ships");
-    for (const view of ["Space combat", "Ground combat"]) {
-      await page
-        .getByRole("group", { name: "Map view" })
-        .getByRole("button", { name: view })
-        .click();
-      await shot(page, `web2/movement/many-ships-${view.split(" ")[0].toLowerCase()}`);
-    }
   });
 
   test("assign hits in space combat", async ({ page }) => {
