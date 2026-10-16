@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import menuUpdate from "../../../../fixtures/protocol/update-menu.json";
 import systemsUpdate from "../../../../fixtures/protocol/update-load.json";
-import type { ComponentCatalog, ContentRecords, SessionUpdate } from "../wire";
+import type { Choice, ComponentCatalog, ContentRecords, SessionUpdate } from "../wire";
 import type { LocalState } from "./action";
 import { selectShell } from "./shell";
 
@@ -150,23 +150,50 @@ it("puts every system of the map on the board, and none from outside it", () => 
   expect(home.fleets[0].ships).toBe(ships.length);
 });
 
-it("shows a choice as one list, and stages a row without sending", () => {
-  const choice = menu.pending_choice!.choice;
-  expect(rows(menu, local()).map((row) => row.intent)).toEqual(
-    choice.options.map((option) => ({ type: "chooseOption", option: option.id })),
-  );
-  expect(flow(menu, local()).footer.actions.at(-1)).toMatchObject({
-    label: "Send",
-    disabled: true,
-  });
-  const staged = local({ staged: choice.options[1].id });
-  expect(rows(menu, staged).map((row) => row.selected)).toEqual(
-    choice.options.map((_, index) => index === 1),
-  );
-  expect(flow(menu, staged).badge).toEqual({ tone: "draft", label: "Not sent" });
-  expect(flow(menu, staged).footer.actions.at(-1)).toMatchObject({
-    label: "Send",
-    disabled: false,
+it("shows the turn menu as the picker: the fixed groups, with what the engine offers", () => {
+  const picker = rows(menu, local());
+  expect(picker.map((row) => [row.key, row.title, row.disabled])).toEqual([
+    ["t", "Activate a system", false],
+    ["2", "2 Diplomacy", false],
+    ["a", "Play an action card", true],
+    ["c", "Use another component", true],
+    ["r", "Transaction", false],
+    ["p", "Take no more actions in this round", true],
+  ]);
+  expect(picker.map((row) => row.state)).toEqual([
+    "5 tactic tokens",
+    undefined,
+    "None is playable",
+    "None is ready",
+    "2 of 7 players",
+    "Use 2 Diplomacy first",
+  ]);
+  // A choice in the picker sends nothing: there is no main button until something is staged.
+  expect(flow(menu, local()).footer.actions).toEqual([]);
+  expect(picker[0].intent).toEqual({ type: "pickAction", action: "tactical" });
+  expect(picker[1].intent).toEqual({ type: "pickAction", action: "strategic", card: "strategic" });
+});
+
+it("stages an action of the turn menu, and its main button sends it", () => {
+  const staged = flow(menu, local({ staged: "strategic" }));
+  expect(staged.badge).toEqual({ tone: "draft", label: "Not sent" });
+  expect(staged.heading).toBe("2 Diplomacy");
+  expect(staged.footer.actions.map((item) => [item.label, item.key])).toEqual([
+    ["Back to actions", "Escape"],
+    ["Use Diplomacy", "Enter"],
+  ]);
+});
+
+it("lists the partners of a transaction, and says why one cannot trade", () => {
+  const trade = rows(menu, local({ menu: "trade" }));
+  expect(trade).toHaveLength(7);
+  expect(trade.filter((row) => !row.disabled).map((row) => row.intent)).toEqual([
+    { type: "chooseOption", option: "component|trade|hacan" },
+    { type: "chooseOption", option: "component|trade|l1z1x" },
+  ]);
+  expect(trade.find((row) => row.disabled)?.state).toBe("No contact: not neighbours");
+  expect(flow(menu, local({ menu: "trade" })).footer.actions[0].intent).toEqual({
+    type: "backToPicker",
   });
 });
 
@@ -303,8 +330,8 @@ it("says why the game stopped", () => {
 
 it("offers undo once there is an answer to take back", () => {
   const labels = (state: LocalState) => flow(menu, state).footer.actions.map((item) => item.label);
-  expect(labels(local())).toEqual(["Send"]);
-  expect(labels(local({ canUndo: true }))).toEqual(["Undo", "Send"]);
+  expect(labels(local())).toEqual([]);
+  expect(labels(local({ canUndo: true }))).toEqual(["Undo"]);
   expect(flow(menu, local({ canUndo: true })).footer.actions[0].intent).toEqual({ type: "undo" });
 });
 
@@ -313,4 +340,134 @@ it("has no choice while a saved game is played again: the update is out of date"
   expect(rows(menu, replaying)).toEqual([]);
   expect(flow(menu, replaying).footer.actions).toEqual([]);
   expect(selectShell(menu, replaying).toolbar.status).toBe("Replaying 12 of 40");
+});
+
+/** The menu fixture with another question of seat a. */
+const asking = (
+  choice: Partial<Choice>,
+  view: Partial<SessionUpdate["view"]> = {},
+): SessionUpdate => ({
+  ...menu,
+  view: { ...menu.view, ...view },
+  pending_choice: {
+    ...menu.pending_choice!,
+    choice: { player: "a", prompt: "choose", options: [], ...choice },
+  },
+});
+
+it("says whose turn it is after the turn of the viewer, and that the viewer passed", () => {
+  const theirs: SessionUpdate = {
+    ...menu,
+    pending_choice: undefined,
+    view: { ...menu.view, active_player: "b" },
+    turn_status: { kind: "waiting_for_decision", seat: "b", phase: "action", round: 2, stage: "" },
+  };
+  const waiting = flow(theirs, local());
+  expect([waiting.title, waiting.subtitle, waiting.heading]).toEqual([
+    "Turn ended",
+    "Hacan is next",
+    "Hacan’s turn",
+  ]);
+  expect(waiting.pill).toEqual({ tone: "quiet", label: "Waiting for Hacan" });
+  expect(waiting.footer.note).toBe("Waiting for Hacan.");
+  const passed: SessionUpdate = {
+    ...theirs,
+    view: {
+      ...theirs.view,
+      players: theirs.view.players.map((player) =>
+        player.id === "a" ? { ...player, passed: true } : player,
+      ),
+    },
+  };
+  expect(flow(passed, local()).title).toBe("You passed");
+});
+
+it("closes the turn: what uses no action, and End turn", () => {
+  const choice = menu.pending_choice!.choice;
+  const closing = asking({
+    ...choice,
+    prompt: "end your turn",
+    options: [
+      { id: "end_turn", kind: "end_turn", label: "end your turn", payload: {} },
+      ...choice.options.filter((option) => option.kind === "open_transaction"),
+    ],
+    details: { ...choice.details, closing: true },
+  });
+  const view = flow(closing, local());
+  expect(view.heading).toBe("End your turn");
+  expect(view.closing).toEqual([
+    expect.objectContaining({ kind: "menu", title: "Before you end your turn" }),
+  ]);
+  expect(view.footer.actions.at(-1)).toMatchObject({
+    label: "End turn",
+    intent: { type: "endTurn" },
+  });
+});
+
+it("chooses a planet of a component action on the board, with the ability behind the heading", () => {
+  const drop = asking({
+    prompt: "Orbital Drop: onto which planet",
+    options: [
+      { id: "jord", kind: "planet", label: "jord", payload: { planet: "jord", system: "01" } },
+      {
+        id: "saudor",
+        kind: "planet",
+        label: "saudor",
+        payload: { planet: "saudor", system: "23" },
+      },
+    ],
+    context: {
+      ...menu.pending_choice!.choice.context!,
+      source: { FactionAbility: "orbital_drop" },
+    },
+  });
+  const shell = selectShell(drop, local());
+  expect(shell.board.task).toMatchObject({ target: "planet", kind: "pick" });
+  expect(Object.keys(shell.board.task!.values)).toEqual(["jord", "saudor"]);
+  expect(shell.board.taskSystems).toEqual(expect.arrayContaining(["01", "23"]));
+  const view = flow(drop, local());
+  expect(view.title).toBe("Component action");
+  expect(view.pill?.label).toBe("Your decision · Choose a planet");
+  expect(view.blocks).toEqual([
+    expect.objectContaining({
+      kind: "card",
+      title: "Planet",
+      rows: [expect.objectContaining({ title: ["No planet chosen"] })],
+    }),
+  ]);
+  const staged = flow(drop, local({ staged: "saudor" }));
+  expect(staged.blocks[0]).toMatchObject({ rows: [{ title: ["Saudor · #23"] }] });
+  expect(staged.footer.note).toBe("Selected: Saudor");
+});
+
+it("chooses a player of a decision in the player table, with what it gives each seat", () => {
+  const trade = asking({
+    prompt: "let another player replenish commodities",
+    options: [
+      { id: "hacan", kind: "replenish", label: "hacan replenishes commodities", payload: {} },
+      { id: "done", kind: "decline", label: "nobody else replenishes", payload: {} },
+    ],
+    details: { seats: { hacan: "b" }, commodities: { hacan: { have: 0, max: 6 } } },
+  });
+  const shell = selectShell(trade, local());
+  expect(shell.players.pick).toEqual({
+    verb: "Choose",
+    seats: { b: { reason: null, note: "Commodities 0 → 6" } },
+    chosen: [],
+  });
+  // The answer that names no seat stays a row of the list.
+  expect(rows(trade, local()).map((row) => row.title)).toEqual(["Nobody else replenishes"]);
+  expect(selectShell(trade, local({ staged: "hacan" })).players.pick?.chosen).toEqual(["b"]);
+});
+
+it("shows the fleet supply that a unit is removed for, as the engine counts it", () => {
+  const over = asking({
+    prompt: "remove a unit: over fleet supply in 01",
+    options: [{ id: "remove|0", kind: "remove", label: "remove destroyer", payload: {} }],
+    details: { reason: "fleet supply", system: "01", fleet_charged: 3, fleet_limit: 2 },
+  });
+  expect(flow(over, local()).blocks[0]).toEqual({
+    kind: "gauges",
+    gauges: [{ label: "Fleet supply in Jord - Sol · #01", used: 3, total: 2 }],
+  });
 });

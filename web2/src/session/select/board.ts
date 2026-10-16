@@ -217,6 +217,8 @@ export function selectBoard(
     draft: ProductionDraft;
     stage: Stage;
   } | null = null,
+  /** The viewer can start a tactical action now: a system in the inspector can be activated. */
+  activates = false,
 ): BoardView {
   const traits = planetTraits(update, catalog);
   const viewer = viewerSeat(update);
@@ -297,6 +299,12 @@ export function selectBoard(
       open && !origin && !sheet && !build
         ? {
             ...inspector(open, board.systems[open.system_id], viewer, traits),
+            // The command token of the viewer is here: the inspector says it, with no button.
+            activate: !activates
+              ? null
+              : viewer !== null && board.systems[open.system_id]?.command_tokens.includes(viewer)
+                ? "token"
+                : "allowed",
             ...(movement && open.system_id === movement.facts.active
               ? {
                   arriving: selectArrival(
@@ -320,9 +328,13 @@ export function selectBoard(
           ? production.stage === "build"
             ? [production.facts.system]
             : paymentSystems(update, production.facts)
-          : task
-            ? (task.highlight ?? Object.keys(task.values))
-            : [],
+          : task?.target === "planet"
+            ? map
+                .filter((tile) => (tile.planets ?? []).some((planet) => planet.id in task.values))
+                .map((tile) => tile.system_id)
+            : task
+              ? (task.highlight ?? Object.keys(task.values))
+              : [],
     // The board is framed again for each movement: its systems are the task. The landings are
     // in the active system, which the movement had in view: the board stays as it is.
     fitKey: movement

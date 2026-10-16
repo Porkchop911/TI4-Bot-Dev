@@ -15,7 +15,7 @@ it("the local game of the demo is seed 42, eight seats, and the first seat is pl
 });
 
 it("the demo and the gallery keep their own addresses", () => {
-  expect(localGame(new URLSearchParams("example=live-picker"))).toBeNull();
+  expect(localGame(new URLSearchParams("example=live-strategic"))).toBeNull();
   expect(localGame(new URLSearchParams("gallery"))).toBeNull();
 });
 
@@ -25,7 +25,7 @@ it("an explicit game is read as before", () => {
     players: 8,
     humans: 1,
   });
-  expect(localGame(new URLSearchParams("example=live-picker&local=5"))).toEqual({
+  expect(localGame(new URLSearchParams("example=live-strategic&local=5"))).toEqual({
     seed: 5,
     players: 8,
     humans: 1,

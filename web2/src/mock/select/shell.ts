@@ -31,14 +31,7 @@ import {
 } from "../data";
 import { E } from "../loose";
 import { OBJECTIVES, strategyEditor } from "../strategy";
-import {
-  currentState,
-  decisionShape,
-  pastState,
-  seatReason,
-  type State,
-  type World,
-} from "../world";
+import { currentState, pastState, type State, type World } from "../world";
 import { selectBoard } from "./board";
 import { selectFlow } from "./flows";
 import { isTactical, seatViews, stagesOf, statusText, summaryOf } from "./shared";
@@ -271,20 +264,11 @@ function players(world: World, state: State): PlayerTableView {
     .sort((a, b) => card(a) - card(b));
   const next = now && queue.length > 1 ? queue[(queue.indexOf(now) + 1) % queue.length] : null;
   const me = world.viewer === "observer" ? "sol" : world.viewer;
-  const picking = world.mode === "live" && decisionShape(state) === "seat";
   return {
     pick:
       world.mode === "live" && state.kind === "strategic" && E.flowEditing(state)
         ? strategyEditor(state, seats).pick
-        : picking
-          ? {
-              verb: "Choose",
-              seats: Object.fromEntries(
-                seats.map((seat) => [seat, { reason: seatReason(world, seat) }]),
-              ),
-              chosen: state.flow.chosen ? [state.flow.chosen] : [],
-            }
-          : null,
+        : null,
     rows: seats.map((seat) => {
       const player = SEATS[seat];
       const tokens =
@@ -395,19 +379,16 @@ function reference(world: World, state: State): ReferenceView {
       current: false,
     };
   };
-  const current: LogEntryView[] =
-    live.kind !== "picker" && live.kind !== "waiting"
-      ? [
-          {
-            id: "current",
-            seat: actor(live),
-            type: `${isTactical(live) ? "Tactical" : live.kind === "strategic" ? "Strategic" : "Component"} · in progress`,
-            summary: summaryOf(live) || "Not started",
-            stages: [],
-            current: true,
-          },
-        ]
-      : [];
+  const current: LogEntryView[] = [
+    {
+      id: "current",
+      seat: actor(live),
+      type: `${isTactical(live) ? "Tactical" : live.kind === "strategic" ? "Strategic" : "Component"} · in progress`,
+      summary: summaryOf(live) || "Not started",
+      stages: [],
+      current: true,
+    },
+  ];
   return {
     objectives: score(seats, world.viewer),
     technology: seats.map((id) =>
@@ -549,10 +530,7 @@ export function selectShell(world: World): ShellView {
   return {
     seats: seatViews,
     accent:
-      state.mode === "draft" ||
-      E.flowStaged(state) ||
-      E.decisionStaged(state) ||
-      E.reactionPick(state)
+      state.mode === "draft" || E.flowStaged(state) || E.reactionPick(state)
         ? "draft"
         : state.frontier === null
           ? "done"

@@ -951,37 +951,6 @@ export const examples: Record<string, any> = {
     show: 3,
     tip: "Ground combat waits for Alex. Earlier results stay one click away in the stepper.",
   },
-  "live-picker": {
-    mode: "live",
-    kind: "picker",
-    flow: {},
-    tip: "Your turn, no action open. Press the key on a row, or click it. A choice opens a draft: nothing is sent until the main button of the footer. Esc goes back.",
-  },
-  // A game of four players: two strategy cards for each player, and a hand with more action cards.
-  "live-picker-4p": {
-    mode: "live",
-    kind: "picker",
-    flow: {},
-    table: {
-      seats: ["sol", "hacan", "xxcha", "letnev"],
-      cards: { sol: [1, 5], hacan: [2, 6], xxcha: [3, 7], letnev: [4, 8] },
-      used: [5, 2, 3, 7],
-      actionCards: ["Mining Initiative", "Unexpected Action", "Spy", "Ghost Ship"],
-    },
-    tip: "Four players, two strategy cards each. A strategy card has its number as key. Press A for the list of action cards, then the number of the card.",
-  },
-  "live-decision-offer": {
-    mode: "live",
-    kind: "decision",
-    flow: { owner: "sol", decision: "Merchant Station", stage: "choose", chosen: null, counts: {} },
-    tip: "A decision with answers. The card is on top as printed. Press 1 or 2, then Enter. Esc clears the choice.",
-  },
-  "live-decision-units": {
-    mode: "live",
-    kind: "decision",
-    flow: { owner: "sol", decision: "Fleet supply", stage: "choose", chosen: null, counts: {} },
-    tip: "More ships than the fleet pool allows. Remove ships with the counters until the gauge holds.",
-  },
   "live-reaction": {
     mode: "live",
     kind: "component",
@@ -993,12 +962,6 @@ export const examples: Record<string, any> = {
       reaction: { cards: ["Sabotage"], pick: null },
     },
     tip: "Blair plays an action card and you hold Sabotage. Enter passes. Press 1 to stage Sabotage; Enter then plays it.",
-  },
-  "live-waiting": {
-    mode: "live",
-    kind: "waiting",
-    flow: { owner: "xxcha" },
-    tip: "Your turn has ended. Simulate the other players to get the next turn.",
   },
   "live-strategic": {
     mode: "live",
@@ -1027,12 +990,6 @@ export const examples: Record<string, any> = {
       mine: { buy: 1, pools: { t: 1, f: 0, s: 0 }, pay: {} },
     },
     tip: "Alex resolves the primary. You draft your secondary at the same time. Your seat is last of seven, so it resolves after Gale. Mark it ready, then simulate.",
-  },
-  "live-component": {
-    mode: "live",
-    kind: "component",
-    flow: { card: "Mining Initiative", owner: "sol", stage: "target", target: null },
-    tip: "A one-step action has no stepper. Choose the planet in the list or on the board.",
   },
   "h-mining": {
     mode: "live",
@@ -1066,40 +1023,6 @@ export const examples: Record<string, any> = {
     tip: "Every step keeps its result. Step through barrage and rounds; dice are grouped per unit type.",
   },
 };
-/**
- * Decisions that use one of the shared shapes: a system on the board, a player in the player
- * table, a list of answers, or counters with a limit.
- */
-export const DECISIONS: Record<
-  string,
-  { type: string; text: string; shape: "system" | "seat" | "list" | "units"; ask: string }
-> = {
-  "Unexpected Action": {
-    type: "Action card",
-    text: "Remove 1 of your command tokens from the game board and return it to your reinforcements.",
-    shape: "system",
-    ask: "Choose a system",
-  },
-  Spy: {
-    type: "Action card",
-    text: "Choose 1 player. That player gives you 1 random action card from their hand.",
-    shape: "seat",
-    ask: "Choose a player",
-  },
-  "Merchant Station": {
-    type: "Frontier exploration",
-    text: "You may replenish your commodities, or convert your commodities to trade goods.",
-    shape: "list",
-    ask: "Choose 1 answer",
-  },
-  "Fleet supply": {
-    type: "Rule",
-    text: "The number of your non-fighter ships in a system cannot exceed the number of tokens in your fleet pool.",
-    shape: "units",
-    ask: "Remove ships",
-  },
-};
-
 /** Action cards that are played in a reaction window, with their text. */
 export const REACTION_CARDS: Record<string, string> = {
   "Direct Hit":
@@ -1113,8 +1036,9 @@ export const REACTION_CARDS: Record<string, string> = {
 /** Action cards that are played as a component action, with their text. */
 export const ACTION_CARDS: Record<string, string> = {
   "Mining Initiative": "Gain trade goods equal to the resource value of 1 planet you control.",
-  "Unexpected Action": DECISIONS["Unexpected Action"].text,
-  Spy: DECISIONS.Spy.text,
+  "Unexpected Action":
+    "Remove 1 of your command tokens from the game board and return it to your reinforcements.",
+  Spy: "Choose 1 player. That player gives you 1 random action card from their hand.",
   "Ghost Ship":
     "Place 1 destroyer from your reinforcements in a non-home system that contains a wormhole and no ships of other players.",
   "Focused Research": "Spend 4 trade goods to research 1 technology.",

@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
+import { activateInLive } from "./actions";
 
 // A game on a real server (`crates/ti4-server`, started by playwright.config.ts), through the
 // proxy of vite: the page has the first seat of eight, the other seats decide at random. The
@@ -12,7 +13,7 @@ test.use({ viewport: { width: 1920, height: 1080 } });
 const panel = (page: Page) => page.locator("#step-panel");
 const send = (page: Page) => page.locator('footer button[aria-keyshortcuts="Enter"]');
 const heading = (page: Page) => panel(page).getByRole("heading").first();
-const row = (page: Page, name: string) => panel(page).getByRole("button", { name });
+const row = (page: Page, name: string | RegExp) => panel(page).getByRole("button", { name });
 const system = (page: Page, id: string) => page.locator("g.system").filter({ hasText: `#${id}` });
 const workspace = (page: Page, name: string) =>
   page.getByRole("navigation", { name: "Workspace" }).getByRole("button", { name });
@@ -73,7 +74,7 @@ test("a seeded game on the server: the first turn, with a draft, the sheets and 
   for (let count = 0; ; count++) {
     expect(count).toBeLessThan(20);
     await expect(status(page)).toHaveText("Your decision");
-    if (await row(page, "Take a tactical action").count()) {
+    if (await row(page, /^Activate a system$/).count()) {
       break;
     }
     await panel(page).getByRole("button", { pressed: false }).first().click();
@@ -114,7 +115,7 @@ test("a seeded game on the server: the first turn, with a draft, the sheets and 
 
   // A reload resumes the game as the same player, and the draft is kept for this game.
   await page.reload();
-  await expect(row(page, "Take a tactical action")).toBeVisible();
+  await expect(row(page, /^Open your draft$/)).toBeVisible();
   await expect(system(page, target)).not.toHaveAttribute("aria-label", / ships?$/);
   await workspace(page, "Draft").click();
   await expect(heading(page)).toHaveText("Movement");
@@ -193,7 +194,7 @@ test("the same seat in two tabs: what one tab stages, the other shows", async ({
   for (let count = 0; ; count++) {
     expect(count).toBeLessThan(20);
     await expect(status(page)).toHaveText("Your decision");
-    if (await row(page, "Take a tactical action").count()) {
+    if (await row(page, /^Activate a system$/).count()) {
       break;
     }
     await panel(page).getByRole("button", { pressed: false }).first().click();
@@ -203,7 +204,7 @@ test("the same seat in two tabs: what one tab stages, the other shows", async ({
   const other = await context.newPage();
   const otherErrors = errorsOf(other);
   await other.goto(address);
-  await expect(row(other, "Take a tactical action")).toBeVisible();
+  await expect(row(other, /^Activate a system$/)).toBeVisible();
 
   // Tab A drafts the action; the draft of tab B follows. What is open is of each tab.
   await workspace(page, "Draft").click();
@@ -239,13 +240,12 @@ test("the same seat in two tabs: what one tab stages, the other shows", async ({
   await expect(system(other, target)).toHaveAttribute("aria-label", /, 1 [^,]+ ship$/);
 
   // Tab A plays the action live, and stages the movement: tab B shows the same tokens and marks.
+  // The draft starts over, so that only the system is applied.
+  await page.getByRole("button", { name: "More draft actions" }).click();
+  await page.getByRole("menuitem", { name: "Start over" }).click();
   await workspace(page, "Live").click();
   await workspace(other, "Live").click();
-  await row(page, "Take a tactical action").click();
-  await send(page).click();
-  await expect(heading(page)).toHaveText("Activation");
-  await system(page, target).click();
-  await page.keyboard.press("Enter");
+  await activateInLive(page, system(page, target));
   await expect(heading(page)).toHaveText("Movement");
   await expect(heading(other)).toHaveText("Movement");
   await panel(page)

@@ -135,7 +135,7 @@ test.describe("flows", () => {
   });
 
   test("a tap on a system opens the inspector; two fingers zoom", async ({ page }) => {
-    await page.goto("/?example=live-picker");
+    await page.goto("/?example=live-strategic");
     await pane(page, "Map").click();
     const svg = page.locator(".galaxy svg");
     const before = await svg.getAttribute("viewBox");
@@ -180,22 +180,6 @@ test.describe("flows", () => {
     await page.getByRole("button", { name: /Exhaust Jord/ }).tap();
     await expect(page.locator("main > footer")).toContainText("Jord 2");
     await shot(page, "flow/pay");
-  });
-
-  test("a choice of a player marks the tab of the player table", async ({ page }) => {
-    await page.goto("/?example=live-picker-4p");
-    await page
-      .locator("#step-panel")
-      .getByRole("button", { name: /Play an action card/ })
-      .tap();
-    await page.locator("#step-panel").getByRole("button", { name: /Spy/ }).tap();
-    // The pane stays: the tab of the player table is marked.
-    await expect(pane(page, "Action")).toHaveAttribute("aria-pressed", "true");
-    await expect(pane(page, "Players")).toHaveAccessibleName(/choice open/);
-    await shot(page, "flow/pick-player-marked");
-    await pane(page, "Players").tap();
-    await expect(pane(page, "Players")).not.toHaveAccessibleName(/choice open/);
-    await shot(page, "flow/pick-player");
   });
 
   test("reference sheets are in a menu and cover the pane", async ({ page }) => {

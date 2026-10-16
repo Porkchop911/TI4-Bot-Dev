@@ -206,7 +206,7 @@ export function withKeys(footer: FooterView): FooterView {
   if (main) {
     main.key = "Enter";
   }
-  const back = ["cancelEdit", "clearChoice", "backToPicker"]
+  const back = ["cancelEdit", "clearChoice"]
     .map((type) => footer.actions.find((action) => action.intent.type === type))
     .find(Boolean);
   if (back) {
@@ -311,15 +311,7 @@ export function statusText(world: World, state: State): string {
   }
   const wait = E.flowNeed(state);
   if (!wait) {
-    return state.kind === "decision" && !state.flow.card
-      ? "Decision resolved"
-      : `${state.kind === "strategic" ? "Strategic" : "Component"} action complete`;
-  }
-  if (state.kind === "picker") {
-    return "Your turn · Choose an action";
-  }
-  if (state.kind === "waiting") {
-    return `${state.flow.passed ? "You passed" : "Turn ended"} · ${SEATS[wait.seat].name} is next`;
+    return `${state.kind === "strategic" ? "Strategic" : "Component"} action complete`;
   }
   return wait.mine
     ? `Your decision · ${wait.text}`
@@ -337,9 +329,6 @@ export function stagesOf(state: State): [string, string][] {
   const flow = state.flow;
   if (state.kind === "component") {
     return [[flow.card, flow.result || "In progress"]];
-  }
-  if (state.kind === "decision") {
-    return [[flow.decision, flow.result || "In progress"]];
   }
   return [
     ["Primary", flow.primaryResult || "In progress"],

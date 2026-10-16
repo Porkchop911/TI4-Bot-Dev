@@ -1,7 +1,7 @@
 // The whole screen from one update of the game and what the player staged in this page.
 import type { ActionView, FooterView, ShellView } from "../../model";
 import type { Catalog, SessionUpdate } from "../wire";
-import { type LocalState, boardTask, openChoice, selectAction } from "./action";
+import { type LocalState, boardTask, openChoice, seatTask, selectAction } from "./action";
 import { selectBoard } from "./board";
 import { type CardSettings, NO_CARD_SETTINGS, selectActionCards } from "./cards";
 import { selectExploration } from "./exploration";
@@ -64,6 +64,34 @@ const waitingFor = (action: ActionView): ActionView =>
     ? { ...action, footer: held(action.footer) }
     : { ...action, task: { ...action.task, footer: held(action.task.footer) } };
 
+/**
+ * A draft that the player opened from the turn menu goes back to it: Esc, when the footer has
+ * nothing else for it.
+ */
+function withBack(action: ActionView, local: LocalState): ActionView {
+  if (!local.draft?.fromMenu) {
+    return action;
+  }
+  const add = (footer: FooterView): FooterView => {
+    const taken = footer.actions.some((button) => button.key === "Escape");
+    return {
+      ...footer,
+      actions: [
+        {
+          label: "Back to actions",
+          tone: "quiet",
+          ...(taken ? {} : { key: "Escape" }),
+          intent: { type: "backToPicker" },
+        },
+        ...footer.actions,
+      ],
+    };
+  };
+  return action.kind === "flow"
+    ? { ...action, footer: add(action.footer) }
+    : { ...action, task: { ...action.task, footer: add(action.task.footer) } };
+}
+
 export function selectShell(
   update: SessionUpdate,
   local: LocalState,
@@ -119,7 +147,7 @@ export function selectShell(
         applyHint: local.draft.applyHint,
       },
     },
-    players: selectPlayers(update, printed, cards.modes),
+    players: { ...selectPlayers(update, printed, cards.modes), pick: seatTask(update, local) },
     board: selectBoard(
       update,
       local.inspected,
@@ -128,8 +156,13 @@ export function selectShell(
       landing,
       catalog,
       production,
+      !local.draft &&
+        !!openChoice(update, local)?.options.some((option) => option.id === "tactical"),
     ),
-    action: local.draft?.waiting || local.follow?.waiting ? waitingFor(action) : action,
+    action: withBack(
+      local.draft?.waiting || local.follow?.waiting ? waitingFor(action) : action,
+      local,
+    ),
     reference: {
       objectives: selectScore(update, printed),
       technology: [],

@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
+import { activateInLive } from "./actions";
 
 // Local play on a Pixel 9 in portrait. Needs the engine: `scripts/build-wasm.sh`.
 const WASM = fileURLToPath(new URL("../src/session/ti4.wasm", import.meta.url));
@@ -29,22 +30,34 @@ test("phone: a game of eight is played through the decision list @slow", async (
   for (let count = 0; count < 12; count++) {
     const before = await savedLine();
     const system = page.locator("g.system.target");
-    const moving = /Move/.test((await send.textContent()) ?? "");
-    if (!moving && (await system.count())) {
-      await pane("Map").click();
-      // The system next to the home of this seat, so that the movement has ships in range.
-      const near = system.filter({ hasText: "#23" });
-      await ((await near.count()) ? near : system).first().click();
+    // The picker of the turn menu has no main button until an action is staged.
+    const picker = (await send.count()) === 0;
+    const moving = !picker && /Move/.test((await send.textContent()) ?? "");
+    if (picker && !moved) {
+      // A tactical action, so that the run has a choice on the map: the picker opens it as the
+      // draft, and its system is applied. The movement is then open in Live, on the map.
+      await activateInLive(page, page.locator("g.system").filter({ hasText: "#23" }));
       await page.screenshot({
         path: "shots/phone/local/system-choice.png",
         animations: "disabled",
       });
+      continue;
+    } else if (picker) {
+      // The strategy card, then pass.
+      await pane("Action").click();
+      await page
+        .locator("#step-panel")
+        .getByRole("button", { name: /^(\d \S.*|Take no more actions in this round)$/ })
+        .and(page.locator(":enabled"))
+        .first()
+        .click();
+    } else if (!moving && (await system.count())) {
+      await pane("Map").click();
+      const near = system.filter({ hasText: "#23" });
+      await ((await near.count()) ? near : system).first().click();
     } else if (!moving && (await send.isDisabled())) {
       await pane("Action").click();
-      const rows = page.locator("#step-panel").getByRole("button", { pressed: false });
-      // A tactical action when there is one, so that the run has a choice on the map.
-      const tactical = rows.and(page.getByRole("button", { name: "Take a tactical action" }));
-      await ((await tactical.count()) ? tactical : rows).first().click();
+      await page.locator("#step-panel").getByRole("button", { pressed: false }).first().click();
     } else if (moving && !moved) {
       // The first movement: the map stays open, and the fleet of a system opens in a sheet over
       // it. The sheet has the room of the footer.
@@ -80,13 +93,13 @@ test("phone: a game of eight is played through the decision list @slow", async (
       await pane("Map").click();
       await system.filter({ hasText: "#23" }).first().click();
       await send.click();
-      await expect(send).toHaveText(/Move nothing/);
+      // The movement opens again, with what is kept staged for it.
+      await expect(send).toHaveText(/^Move (nothing|fleet)/);
     }
     // The main button is under every pane, in view.
     await expect(send).toBeInViewport({ ratio: 1 });
     await send.click();
     await expect.poll(savedLine).not.toBe(before);
-    await expect(send).toBeVisible();
     // Nothing is cut at the side.
     const width = page.viewportSize()!.width;
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
@@ -106,7 +119,7 @@ test("phone: a draft is staged on the map and applied from the toolbar", async (
   const send = page.locator('footer button[aria-keyshortcuts="Enter"]');
   const pane = (name: string) =>
     page.getByRole("navigation", { name: "Panes" }).getByRole("button", { name });
-  const row = (name: string) => page.locator("#step-panel").getByRole("button", { name });
+  const row = (name: string | RegExp) => page.locator("#step-panel").getByRole("button", { name });
   const system = (id: string) => page.locator("g.system").filter({ hasText: `#${id}` });
   const width = page.viewportSize()!.width;
   const fits = async () =>
@@ -115,7 +128,7 @@ test("phone: a draft is staged on the map and applied from the toolbar", async (
   await pane("Action").click();
   await row("8. Imperial").click();
   await send.click();
-  await expect(row("Take a tactical action")).toBeVisible();
+  await expect(row(/^Activate a system$/)).toBeVisible();
 
   await page
     .getByRole("navigation", { name: "Workspace" })
@@ -167,7 +180,7 @@ test("phone: the Objectives sheet has the eight seats in its width, and a filter
   page,
 }) => {
   await page.goto("/?scenario=late-game&humans=1");
-  await expect(page.locator('footer button[aria-keyshortcuts="Enter"]')).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Choose an action" })).toBeVisible();
   await page.getByRole("button", { name: "Reference and more" }).click();
   await page.getByRole("menuitem", { name: "Objectives" }).click();
   const sheet = page.getByRole("complementary", { name: "Objectives" });
@@ -261,14 +274,8 @@ test("phone: a movement into a fleet of another seat has the odds of the space c
   const width = page.viewportSize()!.width;
   const fits = async () =>
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
-  await page.locator("#step-panel").getByRole("button", { name: "Take a tactical action" }).click();
-  await send.click();
-  await pane("Map").click();
-  // Seat C has two cruisers and a destroyer in 32. A click on a system that is not yet a choice
-  // (the engine has not answered) inspects it: wait for the step before each click.
-  await expect(system("32")).toHaveClass(/\btarget\b/);
-  await system("32").click();
-  await send.click();
+  // Seat C has two cruisers and a destroyer in 32.
+  await activateInLive(page, system("32"));
   await expect(send).toHaveText(/Move nothing/);
   await system("24").click();
   const fleet = page.getByRole("group", { name: /^Move from / });
@@ -310,13 +317,7 @@ test("phone: the landings are staged in a sheet over the map", async ({ page }) 
   const width = page.viewportSize()!.width;
   const fits = async () =>
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
-  await page.locator("#step-panel").getByRole("button", { name: "Take a tactical action" }).click();
-  await send.click();
-  // The choice is on the map: its tab is marked, and the pane stays until the tab is tapped.
-  await expect(pane("Map")).toHaveAccessibleName(/choice open/);
-  await pane("Map").click();
-  await system("38").click();
-  await send.click();
+  await activateInLive(page, system("38"));
   await expect(send).toHaveText(/Move nothing/);
   await system("63").click();
   const fleet = page.getByRole("group", { name: /^Move from / });
@@ -386,13 +387,7 @@ test("phone: a production is a sheet on the map, then the map is the payment", a
   const fits = async () =>
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
   const row = (name: string | RegExp) => page.locator("#step-panel").getByRole("button", { name });
-  await row("Take a tactical action").click();
-  await send.click();
-  // The choice is on the map: its tab is marked, and the pane stays until the tab is tapped.
-  await expect(pane("Map")).toHaveAccessibleName(/choice open/);
-  await pane("Map").click();
-  await system("72").click();
-  await send.click();
+  await activateInLive(page, system("72"));
   // Nothing moves, and AI Development Algorithm is kept: a question of the list.
   await send.click();
   await expect(pane("Action")).toHaveAccessibleName(/choice open/);
@@ -483,7 +478,7 @@ test("phone: a draft goes on to the landings and the production", async ({ page 
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
   const draft = () =>
     page.getByRole("navigation", { name: "Workspace" }).getByRole("button", { name: "Draft" });
-  await expect(row("Take a tactical action")).toBeVisible();
+  await expect(row(/^Activate a system$/)).toBeVisible();
   await draft().click();
   await pane("Map").click();
   // The systems are the choice once the engine answered the draft.
@@ -823,4 +818,98 @@ test("phone: single player is set up on the panes of the lobby, with the long na
   await expect(pane("Action")).toBeVisible();
   await expect(page.locator('footer button[aria-keyshortcuts="Enter"]')).toBeVisible();
   await fits();
+});
+
+test("phone: the turn menu and its lists fit the width; a choice of a player marks its tab", async ({
+  page,
+}) => {
+  await page.goto("/?scenario=late-game&humans=16");
+  const send = page.locator('footer button[aria-keyshortcuts="Enter"]');
+  const pane = (name: string) =>
+    page.getByRole("navigation", { name: "Panes" }).getByRole("button", { name });
+  const row = (name: string | RegExp) => page.locator("#step-panel").getByRole("button", { name });
+  const heading = page.locator("#step-panel").getByRole("heading").first();
+  const width = page.viewportSize()!.width;
+  // Nothing is cut at the side: not the page, and not the open step.
+  const fits = async () => {
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+    const content = page.locator("#step-panel > div.overflow-y-auto");
+    expect(
+      await content.evaluate((element) => element.scrollWidth - element.clientWidth),
+    ).toBeLessThanOrEqual(0);
+  };
+  await expect(pane("Action")).toHaveAttribute("aria-pressed", "true");
+  await expect(row(/^Activate a system$/)).toBeVisible();
+  await fits();
+  await page.screenshot({ path: "shots/phone/local/picker.png", animations: "disabled" });
+  // A phone has no keys: a row is tapped, and "Back to actions" goes back.
+  await row(/^Play an action card$/).tap();
+  await expect(heading).toHaveText("Play an action card");
+  await fits();
+  await page.screenshot({ path: "shots/phone/local/picker-cards.png", animations: "disabled" });
+  await page.getByRole("button", { name: "Back to actions" }).tap();
+  await row(/^5 Trade$/).tap();
+  await expect(send).toHaveText(/Use Trade/);
+  await fits();
+  await send.tap();
+  // The choice of a player is made in the player table: its tab is marked, and the pane stays.
+  await expect(pane("Players")).toHaveAccessibleName(/choice open/);
+  await expect(pane("Action")).toHaveAttribute("aria-pressed", "true");
+  await fits();
+  await page.screenshot({
+    path: "shots/phone/local/pick-player-marked.png",
+    animations: "disabled",
+  });
+  await pane("Players").tap();
+  await expect(pane("Players")).not.toHaveAccessibleName(/choice open/);
+  await page
+    .getByRole("region", { name: "Players" })
+    .getByRole("button", { name: /^Choose Seat B/ })
+    .tap();
+  await expect(send).toBeEnabled();
+  await expect(send).toBeInViewport({ ratio: 1 });
+  await fits();
+  await page.screenshot({ path: "shots/phone/local/pick-player.png", animations: "disabled" });
+});
+
+test("phone: a component action chooses its planet on the Map pane, then the turn ends", async ({
+  page,
+}) => {
+  // Longer than a test of this suite should be: see "Tests" in AGENTS.md.
+  test.setTimeout(10_000);
+  await page.goto("/?scenario=late-game&humans=1");
+  const send = page.locator('footer button[aria-keyshortcuts="Enter"]');
+  const pane = (name: string) =>
+    page.getByRole("navigation", { name: "Panes" }).getByRole("button", { name });
+  const row = (name: string | RegExp) => page.locator("#step-panel").getByRole("button", { name });
+  const heading = page.locator("#step-panel").getByRole("heading").first();
+  const width = page.viewportSize()!.width;
+  const fits = async () => {
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+    const content = page.locator("#step-panel > div.overflow-y-auto");
+    expect(
+      await content.evaluate((element) => element.scrollWidth - element.clientWidth),
+    ).toBeLessThanOrEqual(0);
+  };
+  await row(/^Use another component$/).tap();
+  await row(/^Orbital Drop$/).tap();
+  await fits();
+  await send.tap();
+  // The planet is chosen on the map: its tab is marked.
+  await expect(heading).toHaveText("Orbital Drop");
+  await expect(pane("Map")).toHaveAccessibleName(/choice open/);
+  await fits();
+  await page.screenshot({ path: "shots/phone/local/component.png", animations: "disabled" });
+  await pane("Map").tap();
+  await page.getByRole("button", { name: /^Choose Jord,/ }).tap();
+  await expect(send).toBeEnabled();
+  await expect(send).toBeInViewport({ ratio: 1 });
+  await fits();
+  await page.screenshot({ path: "shots/phone/local/component-planet.png", animations: "disabled" });
+  await send.tap();
+  await pane("Action").tap();
+  await expect(heading).toHaveText("End your turn");
+  await expect(send).toHaveText(/End turn/);
+  await fits();
+  await page.screenshot({ path: "shots/phone/local/turn-closing.png", animations: "disabled" });
 });

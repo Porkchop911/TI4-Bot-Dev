@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
+import { activateInLive } from "./actions";
 
 // A real game of the wasm engine in the shell: `?local=<seed>&players=8&humans=<mask>`.
 // Needs the engine: `scripts/build-wasm.sh`. Screenshots go to shots/local/.
@@ -15,6 +16,13 @@ const send = (page: Page) => page.locator('footer button[aria-keyshortcuts="Ente
 const heading = (page: Page) => panel(page).getByRole("heading").first();
 const settings = (page: Page) => page.getByRole("complementary", { name: "Dev" });
 const undo = (page: Page) => page.getByRole("button", { name: "Undo" });
+/** A question of the game is open: its main button, or the picker of the turn menu, which has none. */
+const questionOpen = (page: Page) =>
+  expect(
+    send(page)
+      .or(heading(page).filter({ hasText: "Choose an action" }))
+      .first(),
+  ).toBeVisible();
 
 /** Opens the Dev sheet from the header. */
 async function openSettings(page: Page) {
@@ -115,6 +123,14 @@ const putRecord = async (page: Page, record: object) => {
   );
 };
 
+/** The open step does not need vertical scroll at 1920×1080 (AGENTS.md, Text). */
+async function fitsHeight(page: Page) {
+  const overflow = await page
+    .locator("#step-panel > div.overflow-y-auto")
+    .evaluate((element) => element.scrollHeight - element.clientHeight);
+  expect(overflow, "the step content needs vertical scroll").toBeLessThanOrEqual(0);
+}
+
 /**
  * Answers the open choice: with the first system when it is on the board, with nothing when the
  * main button already has something to send (a movement of no ship), or else with its first row.
@@ -122,7 +138,18 @@ const putRecord = async (page: Page, record: object) => {
 async function answer(page: Page) {
   const saved = await savedLine(page);
   const system = page.locator("g.system.target");
-  if (await system.count()) {
+  if ((await heading(page).textContent()) === "Choose an action") {
+    // The turn menu: the strategy card, then pass. A tactical action would open the draft.
+    await panel(page)
+      .getByRole("button", { name: /^(\d \S.*|Take no more actions in this round)$/ })
+      .and(page.locator(":enabled"))
+      .first()
+      .click();
+  } else if ((await heading(page).textContent()) === "End your turn") {
+    await send(page).click();
+    await expect.poll(() => savedLine(page)).not.toBe(saved);
+    return;
+  } else if (await system.count()) {
     await system.first().click();
   } else if (await send(page).isDisabled()) {
     await panel(page).getByRole("button", { pressed: false }).first().click();
@@ -131,7 +158,7 @@ async function answer(page: Page) {
   await send(page).click();
   // The answer is saved, and the next choice is open.
   await expect.poll(() => savedLine(page)).not.toBe(saved);
-  await expect(send(page)).toBeVisible();
+  await questionOpen(page);
 }
 
 test("a game of eight is played through the decision list @slow", async ({ page }) => {
@@ -154,7 +181,8 @@ test("a game of eight is played through the decision list @slow", async ({ page 
   await expect(panel(page).getByRole("button", { pressed: true })).toHaveCount(0);
   await page.keyboard.press("2");
   await page.keyboard.press("Enter");
-  await expect(send(page)).toBeDisabled();
+  await expect.poll(() => savedLine(page)).toContain("1 answers saved");
+  await questionOpen(page);
 
   for (let count = 1; count < 30; count++) {
     await answer(page);
@@ -212,14 +240,15 @@ test("a tactical action: the system and the movement are staged on the map", asy
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/?local=3&players=8&humans=1");
   await expect(send(page)).toBeDisabled();
-  const row = (name: string) => panel(page).getByRole("button", { name });
+  const row = (name: string | RegExp) => panel(page).getByRole("button", { name });
   await row("8. Imperial").click();
   await send(page).click();
-  await row("Take a tactical action").click();
-  await send(page).click();
+  // The picker opens the tactical action as the private draft, at its activation.
+  await row(/^Activate a system$/).click();
 
   // Activation: the board is the picker, and the panel has the choice, not a list of systems.
   await expect(heading(page)).toHaveText("Activation");
+  await expect(page.getByText("Private draft").first()).toBeVisible();
   await expect(send(page)).toHaveText(/Activate system/);
   await expect(send(page)).toBeDisabled();
   await expect(panel(page).getByRole("button", { name: /^Activate \d/ })).toHaveCount(0);
@@ -255,8 +284,13 @@ test("a tactical action: the system and the movement are staged on the map", asy
   await expect(page.locator("g.system.chosen")).toHaveCount(1);
   await expect(send(page)).toBeEnabled();
   await page.keyboard.press("Enter");
+  // The draft records the system; "Apply to Live" sends the action and the system.
+  await expect(heading(page)).toHaveText("Movement");
+  await page.getByRole("button", { name: "Apply to Live" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Apply to Live" }).click();
 
   // Movement: nothing is staged, and moving nothing is what the main button says.
+  await expect(page.getByText("Private draft")).toHaveCount(0);
   await expect(heading(page)).toHaveText("Movement");
   await expect(send(page)).toHaveText(/Move nothing/);
   await expect.poll(() => savedLine(page)).toContain("3 answers saved");
@@ -359,12 +393,8 @@ test("a movement into a fleet of another seat has the odds of the space combat",
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/?scenario=late-game&humans=1");
   const system = (id: string) => page.locator("g.system").filter({ hasText: `#${id}` });
-  await panel(page).getByRole("button", { name: "Take a tactical action" }).click();
-  await send(page).click();
   // Seat C has two cruisers and a destroyer in 32, and a PDS on its planet.
-  await expect(heading(page)).toHaveText("Activation");
-  await system("32").click();
-  await page.keyboard.press("Enter");
+  await activateInLive(page, system("32"));
   await expect(heading(page)).toHaveText("Movement");
   const odds = panel(page).getByRole("region", { name: "Space combat" });
   await expect(odds).toHaveCount(0);
@@ -509,7 +539,7 @@ test("a saved game of another engine build is not replayed without a word", asyn
   await page.goto("/?local=3&players=8&humans=1");
   await expect(page.getByText("was played by another build of the engine")).toBeVisible();
   await page.getByRole("button", { name: "Replay anyway" }).click();
-  await expect(send(page)).toBeDisabled();
+  await questionOpen(page);
   await expect.poll(() => savedLine(page)).toContain("1 answers saved");
   // The next answer is saved with this engine.
   await answer(page);
@@ -574,7 +604,7 @@ test("a draft of a tactical action is private, is kept, and is applied as one re
   await page.goto("/?local=3&players=8&humans=1");
   const workspace = (name: string) =>
     page.getByRole("navigation", { name: "Workspace" }).getByRole("button", { name });
-  const row = (name: string) => panel(page).getByRole("button", { name });
+  const row = (name: string | RegExp) => panel(page).getByRole("button", { name });
   const system = (id: string) => page.locator("g.system").filter({ hasText: `#${id}` });
   const apply = page.getByRole("button", { name: "Apply to Live" });
   // The draft opens in the strategy phase too. It is sent at the turn menu only.
@@ -584,7 +614,7 @@ test("a draft of a tactical action is private, is kept, and is applied as one re
   await workspace("Live").click();
   await row("8. Imperial").click();
   await send(page).click();
-  await expect(row("Take a tactical action")).toBeVisible();
+  await expect(row(/^Activate a system$/)).toBeVisible();
 
   // The draft opens at the choice of a system. The game is not asked anything.
   await workspace("Draft").click();
@@ -619,7 +649,7 @@ test("a draft of a tactical action is private, is kept, and is applied as one re
 
   // Live is as it was, and the draft is still there after a reload.
   await page.reload();
-  await expect(row("Take a tactical action")).toBeVisible();
+  await expect(row(/^Open your draft$/)).toBeVisible();
   await expect(system("23")).not.toHaveAttribute("aria-label", /Sol ship/);
   await workspace("Draft").click();
   await expect(heading(page)).toHaveText("Movement");
@@ -654,7 +684,7 @@ test("a draft goes on to the landings and the production, and ends at a draw", a
   const tab = (name: string) => page.getByRole("tab", { name: new RegExp(`^\\S* ?${name}`) });
   const footer = page.locator("footer");
   const apply = page.getByRole("button", { name: "Apply to Live" });
-  await expect(row("Take a tactical action")).toBeVisible();
+  await expect(row(/^Activate a system$/)).toBeVisible();
   const saved = await savedLine(page);
   await workspace("Draft").click();
   // The systems are the choice once the engine answered the draft.
@@ -751,7 +781,7 @@ test("a draft goes on to the landings and the production, and ends at a draw", a
   // Nothing of it is in the game, and a reload keeps it.
   expect(await savedLine(page)).toBe(saved);
   await page.reload();
-  await expect(row("Take a tactical action")).toBeVisible();
+  await expect(row(/^Open your draft$/)).toBeVisible();
   await workspace("Draft").click();
   await expect(heading(page)).toHaveText("Production");
   await expect(build.getByRole("status").first()).toHaveText("1 unit · 1 resource · discount 1");
@@ -798,7 +828,7 @@ test("the other seats wait for a step when the Dev sheet says so", async ({ page
   await expect(seats.getByRole("button", { name: "Step" })).toHaveAttribute("aria-pressed", "true");
   await seats.getByRole("button", { name: "Run" }).click();
   await page.keyboard.press("Escape");
-  await expect(send(page)).toHaveText(/^Send/);
+  await expect(page.locator("header strong")).toHaveText("Your decision");
 });
 
 test("a secondary is drafted while the primary is resolved, and sent when the seat is reached", async ({
@@ -995,6 +1025,240 @@ test("the Dev sheet leads to a game on the server, on the seed of the page", asy
   await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
 });
 
+test("the turn menu is the action picker: a key for each group, the lists of cards, and Esc back", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("console", (message) => message.type() === "error" && errors.push(message.text()));
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/?scenario=late-game&humans=1");
+  const row = (name: string | RegExp) => panel(page).getByRole("button", { name });
+  // The fixed groups in their fixed order; a row that cannot be used says why.
+  await expect(heading(page)).toHaveText("Choose an action");
+  await expect(
+    panel(page)
+      .locator("button[aria-keyshortcuts]")
+      .evaluateAll((all) => all.map((button) => button.getAttribute("aria-keyshortcuts"))),
+  ).resolves.toEqual(["t", "1", "a", "c", "r", "p"]);
+  await expect(panel(page).getByText("7 tactic tokens")).toBeVisible();
+  await expect(row(/^Take no more actions in this round$/)).toBeDisabled();
+  await expect(panel(page).getByText("Use 1 Leadership first")).toBeVisible();
+  // The printed primary of the strategy card is behind "?".
+  await row("Rules: 1 Leadership").hover();
+  await expect(page.getByRole("note")).toContainText("command tokens");
+  await page.mouse.move(10, 10);
+  await fitsHeight(page);
+  await page.screenshot({ path: "shots/local/picker.png", animations: "disabled" });
+
+  // A: the action cards that can be played now, each with its printed text.
+  await page.keyboard.press("a");
+  await expect(heading(page)).toHaveText("Play an action card");
+  await expect(
+    panel(page).getByText("Choose 1 planet. Destroy each PDS on that planet."),
+  ).toBeVisible();
+  await fitsHeight(page);
+  await page.screenshot({ path: "shots/local/picker-cards.png", animations: "disabled" });
+  await page.keyboard.press("Escape");
+  await expect(heading(page)).toHaveText("Choose an action");
+
+  // C: the other components. A key stages one, as printed; nothing is sent.
+  await page.keyboard.press("c");
+  await expect(heading(page)).toHaveText("Use a component");
+  await page.keyboard.press("3");
+  await expect(heading(page)).toHaveText("Orbital Drop");
+  await expect(page.getByText("Not sent")).toBeVisible();
+  await expect(panel(page).getByText(/^Spend 1 token from your strategy pool/)).toBeVisible();
+  await expect(send(page)).toHaveText(/Use Orbital Drop/);
+  await page.screenshot({ path: "shots/local/picker-staged.png", animations: "disabled" });
+  // Esc goes one level back at a time: the list, then the picker.
+  await page.keyboard.press("Escape");
+  await expect(heading(page)).toHaveText("Use a component");
+  await page.keyboard.press("Escape");
+  await expect(heading(page)).toHaveText("Choose an action");
+
+  // R: who can trade now, and why another seat cannot.
+  await page.keyboard.press("r");
+  await expect(heading(page)).toHaveText("Transaction");
+  await expect(row(/^Hacan$/)).toBeEnabled();
+  await expect(row(/^Xxcha$/)).toBeDisabled();
+  await expect(panel(page).getByText("No contact: not neighbours").first()).toBeVisible();
+  await fitsHeight(page);
+  await page.keyboard.press("Escape");
+
+  // A strategy card has its number as key. Its action is staged, and the main button sends it.
+  await page.keyboard.press("1");
+  await expect(heading(page)).toHaveText("1 Leadership");
+  await expect(send(page)).toHaveText(/Use Leadership/);
+  await page.keyboard.press("Escape");
+  await expect(heading(page)).toHaveText("Choose an action");
+  await expect.poll(() => savedLine(page)).toContain("0 answers saved");
+  expect(errors).toEqual([]);
+});
+
+test("a shortcut does nothing in a text field or under an open rule text or menu, and a row that is not allowed has none", async ({
+  page,
+}) => {
+  await page.goto("/?scenario=late-game&humans=1");
+  const picker = panel(page).getByRole("heading", { name: "Choose an action" });
+  const activation = panel(page).getByRole("heading", { name: "Activation", exact: true });
+  await expect(picker).toBeVisible();
+  // A row that is not allowed has no key.
+  await page.keyboard.press("p");
+  await expect(picker).toBeVisible();
+  // A pinned rule text takes the keys. Esc closes it and nothing else.
+  await panel(page)
+    .getByRole("button", { name: /^Rules: / })
+    .first()
+    .click();
+  await expect(page.getByRole("note")).toBeVisible();
+  await page.keyboard.press("t");
+  await expect(picker).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("note")).toHaveCount(0);
+  await expect(picker).toBeVisible();
+  await page.keyboard.press("t");
+  await expect(activation).toBeVisible();
+  // A text field keeps its keys.
+  await page.getByPlaceholder("Name or number").focus();
+  await page.keyboard.press("Escape");
+  await expect(activation).toBeVisible();
+  // An open menu takes Esc.
+  await page.getByRole("button", { name: "More draft actions" }).click();
+  await expect(page.getByRole("menu")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  await expect(activation).toBeVisible();
+  // With nothing open, Esc goes one level back.
+  await page.keyboard.press("Escape");
+  await expect(picker).toBeVisible();
+});
+
+test("the inspector activates a system: the tactical action opens as the draft", async ({
+  page,
+}) => {
+  await page.goto("/?scenario=late-game&humans=1");
+  const system = (id: string) => page.locator("g.system").filter({ hasText: `#${id}` });
+  const workspace = (name: string) =>
+    page.getByRole("navigation", { name: "Workspace" }).getByRole("button", { name });
+  await expect(heading(page)).toHaveText("Choose an action");
+  // A system with the command token of the seat says so, with no button.
+  await system("70").click();
+  await expect(page.getByText("You cannot activate this system again.")).toBeVisible();
+  await system("72").click();
+  await page.getByRole("button", { name: "Activate this system" }).click();
+  await expect(workspace("Draft")).toHaveAttribute("aria-pressed", "true");
+  await expect(heading(page)).toHaveText("Activation");
+  await expect(panel(page).getByText("Production 13")).toBeVisible();
+  await expect(send(page)).toHaveText(/Activate system/);
+  // Esc clears the system, then goes back to the actions. The draft stays.
+  await page.keyboard.press("Escape");
+  await expect(panel(page).getByText("Production 13")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(workspace("Live")).toHaveAttribute("aria-pressed", "true");
+  await expect(heading(page)).toHaveText("Choose an action");
+});
+
+test("a component action: the planet of Orbital Drop is chosen on the map, then the turn ends", async ({
+  page,
+}) => {
+  // Longer than a test of this suite should be: see "Tests" in AGENTS.md.
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("console", (message) => message.type() === "error" && errors.push(message.text()));
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/?scenario=late-game&humans=1");
+  await expect(heading(page)).toHaveText("Choose an action");
+  await page.keyboard.press("c");
+  await page.keyboard.press("3");
+  await page.keyboard.press("Enter");
+
+  // The ability asks for a planet: the map is the choice, the panel has what is chosen.
+  await expect(heading(page)).toHaveText("Orbital Drop");
+  await expect(panel(page).getByText("Your decision · Choose a planet")).toBeVisible();
+  await expect(panel(page).getByText("No planet chosen")).toBeVisible();
+  expect(await page.locator("g.planet.payable").count()).toBeGreaterThan(3);
+  // The printed ability is behind "?" of the heading.
+  await panel(page).getByRole("button", { name: "Rules: Orbital Drop" }).hover();
+  await expect(page.getByRole("note")).toContainText("place 2 infantry");
+  await page.mouse.move(10, 10);
+  const jord = page.getByRole("button", { name: /^Choose Jord,/ });
+  await jord.click();
+  await expect(panel(page).getByText("Jord · #01")).toBeVisible();
+  await expect(panel(page).getByText("Selected", { exact: true })).toBeVisible();
+  await fitsHeight(page);
+  await page.screenshot({ path: "shots/local/component-planet.png", animations: "disabled" });
+  // Esc clears the choice.
+  await page.keyboard.press("Escape");
+  await expect(panel(page).getByText("No planet chosen")).toBeVisible();
+  await jord.click();
+  await page.keyboard.press("Enter");
+
+  // After the action: what uses no action, and End turn.
+  await expect(heading(page)).toHaveText("End your turn");
+  await expect(panel(page).getByText("Before you end your turn")).toBeVisible();
+  await expect(send(page)).toHaveText(/End turn/);
+  await fitsHeight(page);
+  await page.screenshot({ path: "shots/local/turn-closing.png", animations: "disabled" });
+  await page.keyboard.press("Enter");
+  await expect(heading(page)).not.toHaveText("End your turn");
+  await expect.poll(() => savedLine(page)).toContain("3 answers saved");
+  expect(errors).toEqual([]);
+});
+
+test("a player is chosen in the player table: Trade lets another seat replenish", async ({
+  page,
+}) => {
+  await page.goto("/?scenario=late-game&humans=16");
+  const players = page.getByRole("region", { name: "Players" });
+  await expect(heading(page)).toHaveText("Choose an action");
+  await page.keyboard.press("5");
+  await page.keyboard.press("Enter");
+  // The engine names the seat of each answer: the player table is the choice.
+  await expect(panel(page).getByText("Choose in the player table")).toBeVisible();
+  await expect(panel(page).getByText("No player chosen")).toBeVisible();
+  await expect(players.getByRole("button", { name: /^Choose Seat B, Hacan/ })).toBeEnabled();
+  await expect(players.getByRole("button", { name: /^Choose Seat E,/ })).toBeDisabled();
+  // A row says what the choice gives that seat.
+  await expect(players.getByText("Commodities 0 → 6")).toBeVisible();
+  // The answer that names no seat stays a row of the list.
+  await expect(
+    panel(page).getByRole("button", { name: /^Nobody else replenishes$/ }),
+  ).toBeVisible();
+  await players.getByRole("button", { name: /^Choose Seat B, Hacan/ }).click();
+  await expect(panel(page).getByText("Selected", { exact: true })).toBeVisible();
+  await expect(page.locator("footer")).toContainText("Selected: Hacan");
+  await fitsHeight(page);
+  await page.screenshot({ path: "shots/local/pick-player.png", animations: "disabled" });
+  await page.keyboard.press("Enter");
+  await expect(players.getByRole("button", { name: /^Choose Seat B, Hacan/ })).toBeDisabled();
+  await expect(players.getByRole("button", { name: /^Choose Seat C,/ })).toBeEnabled();
+});
+
+test("a system is chosen on the map: Warfare recalls a command token", async ({ page }) => {
+  await page.goto("/?scenario=late-game&humans=32");
+  const system = (id: string) => page.locator("g.system").filter({ hasText: `#${id}` });
+  // Seat F is asked other questions before its turn: each is answered with its first row.
+  for (let count = 0; count < 8; count++) {
+    await expect(send(page).or(panel(page).getByText("Choose an action"))).toBeVisible();
+    if ((await heading(page).textContent()) === "Choose an action") {
+      break;
+    }
+    const saved = await savedLine(page);
+    await page.keyboard.press("1");
+    await send(page).click();
+    await expect.poll(() => savedLine(page)).not.toBe(saved);
+  }
+  await expect(heading(page)).toHaveText("Choose an action");
+  await page.keyboard.press("6");
+  await page.keyboard.press("Enter");
+  await expect(panel(page).getByText("No system chosen")).toBeVisible();
+  await expect(system("60")).toHaveClass(/\btarget\b/);
+  await system("60").click();
+  await expect(panel(page).getByText("Selected", { exact: true })).toBeVisible();
+  await fitsHeight(page);
+  await page.screenshot({ path: "shots/local/pick-system.png", animations: "disabled" });
+});
+
 test("a scenario is chosen in the Dev sheet and starts at the turn menu of its board", async ({
   page,
 }) => {
@@ -1013,8 +1277,8 @@ test("a scenario is chosen in the Dev sheet and starts at the turn menu of its b
   await expect(page).toHaveURL(/\?scenario=late-game&humans=1$/);
 
   // Round 4, and seat A has the turn: no strategy phase is played first.
-  const row = (name: string) => panel(page).getByRole("button", { name });
-  await expect(row("Take a tactical action")).toBeVisible();
+  const row = (name: string | RegExp) => panel(page).getByRole("button", { name });
+  await expect(row(/^Activate a system$/)).toBeVisible();
   await openSettings(page);
   await expect(
     settings(page).getByText(
@@ -1050,7 +1314,7 @@ test("a scenario is chosen in the Dev sheet and starts at the turn menu of its b
 
   // A reload goes on in the scenario, with the draft.
   await page.reload();
-  await expect(row("Take a tactical action")).toBeVisible();
+  await expect(row(/^Open your draft$/)).toBeVisible();
   await page
     .getByRole("navigation", { name: "Workspace" })
     .getByRole("button", { name: "Draft" })
@@ -1114,10 +1378,10 @@ test("the Dev sheet plays another seat, several times, and undo stays with the s
   // On to seat E, and a reload plays the game again with both changes.
   await playAs("E");
   await expect.poll(playing).toMatch(/^Seat E/);
-  await expect(send(page)).toBeVisible();
+  await questionOpen(page);
   const open = await heading(page).textContent();
   await page.reload();
-  await expect(send(page)).toBeVisible();
+  await questionOpen(page);
   await expect(heading(page)).toHaveText(open ?? "");
   expect(await playing()).toMatch(/^Seat E/);
   expect(await savedLine(page)).toContain("1 answers saved");
@@ -1137,7 +1401,6 @@ test("an invasion: the landings are staged on the map and sent as one plan", asy
   page.on("console", (message) => message.type() === "error" && errors.push(message.text()));
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/?scenario=late-game&humans=1");
-  const row = (name: string) => panel(page).getByRole("button", { name });
   const system = (id: string) => page.locator("g.system").filter({ hasText: `#${id}` });
   const board = page.locator("section[aria-label='Galaxy board']");
   const decks = page.getByRole("complementary", { name: "Exploration" });
@@ -1154,12 +1417,8 @@ test("an invasion: the landings are staged on the map and sent as one plan", asy
   await expect(depot.getByRole("button", { name: /^Cultural planet Vega Major/ })).toBeVisible();
   await page.screenshot({ path: "shots/local/inspector-attachment.png", animations: "disabled" });
   await page.getByRole("button", { name: "Close system details" }).click();
-  await row("Take a tactical action").click();
-  await send(page).click();
   // The carrier of the north takes two infantry and a mech to a system with two free planets.
-  await expect(heading(page)).toHaveText("Activation");
-  await system("38").click();
-  await page.keyboard.press("Enter");
+  await activateInLive(page, system("38"));
   await expect(heading(page)).toHaveText("Movement");
   await system("63").click();
   const fleet = page.getByRole("group", { name: /^Move from / });
@@ -1297,13 +1556,8 @@ test("a production: the build is staged on the map, then paid on the map, and se
   const row = (name: string | RegExp) => panel(page).getByRole("button", { name });
   const system = (id: string) => page.locator("g.system").filter({ hasText: `#${id}` });
   const planet = (name: string) => page.locator("g.planet").filter({ hasText: name });
-  await row("Take a tactical action").click();
-  await send(page).click();
   // The system with two space docks. The destroyer of the nebula moves there.
-  await expect(heading(page)).toHaveText("Activation");
-  await system("72").click();
-  await expect(panel(page).getByText("Production 13")).toBeVisible();
-  await page.keyboard.press("Enter");
+  await activateInLive(page, system("72"));
   await expect(heading(page)).toHaveText("Movement");
   await system("42").click();
   await page

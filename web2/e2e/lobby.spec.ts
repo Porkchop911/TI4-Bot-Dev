@@ -686,7 +686,7 @@ test("a secondary is drafted in one tab while a rule bot takes its time, and the
 
   // The host has the turn, as the first seat of the scenario, and plays Leadership.
   await panel(page)
-    .getByRole("button", { name: /Take your strategic action/ })
+    .getByRole("button", { name: /^1 Leadership$/ })
     .click();
   await send(page).click();
   // The other tab drafts its secondary from the moment the card is played.
@@ -762,7 +762,7 @@ test("a ready secondary of a seat in two tabs is sent once, by the server, with 
   // The host plays Leadership. One tab drafts the secondary and marks it ready while the host
   // resolves the primary; the other tab has the same draft.
   await panel(page)
-    .getByRole("button", { name: /Take your strategic action/ })
+    .getByRole("button", { name: /^1 Leadership$/ })
     .click();
   await send(page).click();
   await expect(panel(one).getByText("✎ Private draft")).toBeVisible();
@@ -780,7 +780,9 @@ test("a ready secondary of a seat in two tabs is sent once, by the server, with 
   // The game comes to Blair: the server sends the draft, and the seat is not asked. The
   // strategic action is over with no answer of a tab, and no tab is told that the game went on
   // before its answer.
-  await expect(panel(page).getByRole("heading", { name: "End your turn" })).toBeVisible();
+  await expect(
+    panel(page).getByRole("heading", { name: "End your turn", exact: true }),
+  ).toBeVisible();
   for (const tab of tabs) {
     await expect(panel(tab).getByText("✎ Draft ready")).toHaveCount(0);
     await expect(tab.getByText("Your draft no longer fits the game. It is not ready.")).toHaveCount(

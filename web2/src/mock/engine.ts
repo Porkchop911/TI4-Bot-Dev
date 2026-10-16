@@ -4,7 +4,6 @@
 // (selectors, the reducer) reads its state and calls its functions.
 import {
   ANOMALY,
-  DECISIONS,
   FACES,
   KEYS,
   LOSS_ORDER,
@@ -1468,27 +1467,13 @@ export const own = () => env.viewer === "sol";
 export function flowNeed(state) {
   const flow = state.flow;
   if (!own() && state.kind !== "strategic") {
-    const open = state.kind === "picker" || state.kind === "waiting" || flow.stage !== "done";
-    return open
-      ? { mine: false, seat: state.kind === "waiting" ? flow.owner : "sol", text: "their turn" }
-      : null;
-  }
-  if (state.kind === "picker") {
-    return { mine: true, text: "Choose an action" };
-  }
-  if (state.kind === "waiting") {
-    return { mine: false, seat: flow.owner, text: "their turn" };
-  }
-  if (state.kind === "decision") {
-    return flow.stage === "done" ? null : { mine: true, text: DECISIONS[flow.decision].ask };
+    return flow.stage !== "done" ? { mine: false, seat: "sol", text: "their turn" } : null;
   }
   if (state.kind === "component" && flow.stage === "reaction") {
     return { mine: true, text: `Reaction to ${flow.card}` };
   }
   if (state.kind === "component") {
-    return flow.stage === "done"
-      ? null
-      : { mine: true, text: flow.stage === "ready" ? `Play ${flow.card}` : "Choose a planet" };
+    return null;
   }
   if (flow.stage === "done") {
     return null;
@@ -1524,40 +1509,16 @@ export const flowEditing = (state) => flowOpen(state) && !state.flow.mine.ready;
 export const flowStaged = (state) =>
   own() &&
   state.flow?.owner === "sol" &&
-  ((state.kind === "strategic" && state.flow.stage === "primary" && !state.flow.sent) ||
-    (state.kind === "component" && state.flow.stage !== "done") ||
-    (state.kind === "decision" && state.flow.card && state.flow.stage !== "done"));
-// A decision: the ships of the viewer in the system that is over the limit, and the limit.
-export function unitsOver(state) {
-  const system = "1";
-  const lines = linesOf(state).filter(
-    (line) => line.origin === system && U[line.type].ship && line.type !== "fighter",
-  );
-  const total = lines.reduce((sum, line) => sum + line.n, 0);
-  const removed = lines.reduce((sum, line) => sum + (state.flow.counts[line.id] || 0), 0);
-  return { system, lines, limit: total - 1, left: total - removed, removed };
-}
-// The staged choice of a decision is complete: the main button can send it.
-export function decisionReady(state) {
-  const flow = state.flow;
-  if (DECISIONS[flow.decision].shape !== "units") {
-    return flow.chosen !== null;
-  }
-  const units = unitsOver(state);
-  return units.left <= units.limit;
-}
-export const decisionStaged = (state) =>
-  state.kind === "decision" &&
-  state.flow.stage !== "done" &&
-  (state.flow.chosen !== null || Object.values(state.flow.counts).some(Boolean));
+  state.kind === "strategic" &&
+  state.flow.stage === "primary" &&
+  !state.flow.sent;
 // The viewer's action is complete and the turn is still theirs.
 export const turnClosing = (state) =>
   !state.past &&
   env.viewer === "sol" &&
   (state.kind === "tactical"
     ? state.mode === "live" && state.frontier === null
-    : (["strategic", "component"].includes(state.kind) ||
-        (state.kind === "decision" && state.flow.card)) &&
+    : ["strategic", "component"].includes(state.kind) &&
       state.flow.owner === "sol" &&
       state.flow.stage === "done");
 // The card that the viewer staged in an open reaction window.

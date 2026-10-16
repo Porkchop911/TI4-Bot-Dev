@@ -137,7 +137,11 @@ for (const [index, table] of TABLES.entries()) {
     for (let count = 0; ; count++) {
       expect(count).toBeLessThan(40);
       await expect(status(page)).toHaveText("Your decision");
-      if (await panel(page).getByRole("button", { name: "Take a tactical action" }).count()) {
+      if (
+        await panel(page)
+          .getByRole("button", { name: /^Activate a system$/ })
+          .count()
+      ) {
         break;
       }
       await panel(page).getByRole("button", { pressed: false }).first().click();

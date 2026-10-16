@@ -12,7 +12,7 @@ import { plural } from "../../model";
 import { ANOMALY, MAP, PAY, RETREATS, SCRIPTED, TECH, U, linesOf } from "../data";
 import { E } from "../loose";
 import { strategyEditor } from "../strategy";
-import { decisionShape, sysLabel, type State, type World } from "../world";
+import { sysLabel, type State, type World } from "../world";
 import { countsForce, isTactical, mapStep, productionPayment, toForce, traitsOf } from "./shared";
 import { movementArrival, movementBoard, movementOrigin } from "./movement";
 
@@ -22,21 +22,6 @@ const onMap = (world: World, state: State) => world.mode !== "history" && mapSte
 function boardTask(world: World, state: State): BoardTaskView | null {
   if (world.mode === "history") {
     return null;
-  }
-  if (decisionShape(state) === "system") {
-    return {
-      target: "system",
-      kind: "pick",
-      interactive: true,
-      values: Object.fromEntries(
-        Object.keys(MAP)
-          .filter((id) => MAP[id].token)
-          .map((id) => [id, 0]),
-      ),
-      chosen: state.flow.chosen ? { [state.flow.chosen]: true } : {},
-      verb: "Choose",
-      unit: "system",
-    };
   }
   const values = (key: "res" | "inf") =>
     Object.fromEntries(
@@ -94,26 +79,13 @@ function boardTask(world: World, state: State): BoardTaskView | null {
         }
       : null;
   }
-  const flow = state.flow;
   if (state.kind === "strategic") {
     return E.flowEditing(state) ? strategyEditor(state, world.table.seats).task : null;
-  }
-  if (E.own() && state.kind === "component" && flow.stage === "target") {
-    return {
-      values: values("res"),
-      chosen: flow.target ? { [flow.target]: true } : {},
-      interactive: true,
-      verb: "Choose",
-      unit: "resource",
-      kind: "pick",
-      target: "planet",
-    };
   }
   return null;
 }
 
 function inspector(
-  world: World,
   state: State,
   moveNote?: string,
   arriving?: InspectorView["arriving"],
@@ -128,12 +100,6 @@ function inspector(
     system.wormhole &&
     Object.keys(MAP).find((other) => other !== id && MAP[other].wormhole === system.wormhole);
   const here = isTactical(state) && state.done[0] && id === E.activeId(state);
-  const activate =
-    state.kind === "picker" && world.mode === "live" && world.viewer === "sol"
-      ? system.token
-        ? "token"
-        : "allowed"
-      : null;
   const facts = [
     here ? `Active system · ${draft ? "latest preview" : "live board"}` : system.note,
     system.anomaly && ANOMALY[system.anomaly].label,
@@ -192,7 +158,7 @@ function inspector(
         ],
       })),
     ];
-    return { ...base, rows, activate };
+    return { ...base, rows, activate: null };
   }
   const carrying = [
     state.ground.infantry && `${state.ground.infantry} Infantry`,
@@ -399,7 +365,6 @@ export function selectBoard(world: World, state: State): BoardView {
   const seats = world.table.seats;
   const plays = (seat: string | null | undefined) => !seat || seats.includes(seat);
   const inspected = inspector(
-    world,
     state,
     move?.notes[state.inspect]?.text,
     tactical && onMap(world, state) && state.inspect === E.activeId(state)

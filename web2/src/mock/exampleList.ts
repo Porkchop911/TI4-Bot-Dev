@@ -15,18 +15,7 @@ export const EXAMPLE_GROUPS: [string, [string, string][]][] = [
       ["draft-cannon", "Draft · Space cannon boundary"],
     ],
   ],
-  [
-    "Game shell",
-    [
-      ["live-picker", "Live · Choose an action"],
-      ["live-picker-4p", "Live · Choose an action (4 players)"],
-      ["live-component", "Live · Component action"],
-      ["live-waiting", "Live · Turn ended"],
-      ["live-reaction", "Live · Reaction to another player's card"],
-      ["live-decision-offer", "Live · Decision with answers"],
-      ["live-decision-units", "Live · Decision: remove ships"],
-    ],
-  ],
+  ["Game shell", [["live-reaction", "Live · Reaction to another player's card"]]],
   [
     "Strategy cards",
     [

@@ -5,10 +5,12 @@ Part of `web2/AGENTS.md`: the Patterns and the rules of Screen size and Text the
 ## Action picker and shortcuts
 
 - There is no separate turn bar. The action picker is the content of the action panel when the viewer has the turn and no action is open.
-- The picker has fixed groups in a fixed order: Tactical, Strategic, Component, Trade, Pass. A row that cannot be used stays in its place and shows the reason.
+- The picker is the turn menu of the engine (`kind: "turn_menu"` in the details of its question, `session/select/turn.ts`). It has fixed groups in a fixed order: Tactical (`t`), Strategic (one row for each strategy card, its number as key), Component (`a` for the action cards, `c` for every other component), Trade (`r`), Pass (`p`). A row that cannot be used stays in its place and shows the reason, from the facts of the menu (the strategy card that is not used yet, the reason of a partner that cannot trade). An option that is none of the fixed rows is in the list of `c`.
 - The picker is one list. The whole row is the control: key, group, name, and the state at the right edge. Rows have no buttons of their own.
-- A choice in the picker sends nothing. A tactical action opens as the private draft. A strategic or component action is staged. The main button of the footer sends it.
-- After the viewer's action, the panel shows what uses no action, and the footer has "End turn".
+- A choice in the picker sends nothing. A tactical action opens as the private draft, at its activation; "Activate this system" in the inspector of a system does the same with that system staged. A strategic or component action, a transaction and Pass are staged: the screen shows the staged action as printed, and the main button of the footer sends it ("Use Leadership", "Play War Effort", "Open transaction"). "Back to actions" (Esc) goes one level back: from the draft to the picker, from a staged action to its list, from a list to the picker.
+- The rows of the action cards and of the components open a list with the keys 1, 2, 3: each card with its printed name and text from the catalogue (an action card by the hand of the viewer, a leader, a technology, a relic, a faction ability, a legendary planet, an exploration card), and what its play changes when the engine says it (`action_card_effects`). The row of Trade opens the list of the other seats: their trade goods, commodities and promissory notes, or why they cannot trade now.
+- After the viewer's action (the engine's question "end your turn", `closing` in its details), the panel is "End your turn": the block "Before you end your turn" has the rows of the picker that the engine still offers (a transaction; with Fleet Logistics a second action), and the footer has "End turn".
+- While another seat has the turn in the action phase, the panel says it: "Turn ended" (or "You passed"), whose turn it is, and whom the game waits for. A local game shows it only with "Other seats: Step"; online it shows whenever the seat waits.
 - A shortcut key is data: `ActionButtonView.key`. The button shows the key. Enter is the main button of the footer. Esc goes one level back.
 - The picker is static: it has the same rows in every turn of a game. Only the number of strategy cards changes it, with the player count. Action cards have one row ("Play an action card"), other components have one row. A second list asks which one, with the keys 1, 2, 3.
 - A strategy card has its number as key.
@@ -20,12 +22,13 @@ Part of `web2/AGENTS.md`: the Patterns and the rules of Screen size and Text the
 A decision is any choice that a card, an ability or a rule asks for. Every decision uses the same parts.
 
 - A decision appears where its cause is: as blocks in the open action. The panel does not switch to another screen, and there is no dialog.
-- The source is on top: the card, ability or rule that asks, as printed (the `source` block). The heading says what the player must do.
+- The source is on top: the card, ability or rule that asks, as printed (the `source` block): an exploration card that is drawn, or the action card, faction ability or component of `DecisionContext.source`, from the catalogue. A strategy card is the heading of its own screen and has no source block; a rule has none, because the catalogue does not print the rules. The heading says what the player must do.
+- The question of the viewer's own component action (its card, ability or component asks a target in the action phase) is "Component action": the heading is the card, its printed text is behind "?" of the heading, and the trail says that the card is played and what is chosen now.
 - There are three shapes of choice. The thing that is chosen decides the shape:
-  - on the board, when it is on the board (a system, a planet, a place). The panel shows the choice and the limits, not a list of candidates;
-  - in the player table, when it is a player. The table already shows the values of each player;
-  - in a list, for everything else (answers, rewards, cards). Rows are the controls, with the keys 1, 2, 3 and the effect in game values at the right edge.
-- An amount is a counter row. A limit is a gauge above the rows.
+  - on the board, when it is on the board: every option (but a decline) is a system (an activation, a system of a card, a system to recall from) or names a planet in its payload. The panel shows the choice in a block ("System" or "Planet", "Choose on the map"), not a list of candidates; a decline stays a row of a list;
+  - in the player table, when it is a player: the engine names the seat of each option (`details.seats`). The table already shows the values of each player, and a row has what the choice gives that seat when the engine says it ("Commodities 0 → 6");
+  - in a list, for everything else (answers, rewards, cards). Rows are the controls, with the keys 1, 2, 3 and the effect in game values at the right edge when the engine gives it.
+- An amount is a counter row. A limit is a gauge above the rows: a unit that is removed over the fleet supply or the capacity has the gauge of that limit as the engine counts it; the engine asks for one unit at a time, so the rows are the units and not counters.
 - A choice is staged, then sent. A staged choice shows "Selected" and "Not sent". The main button of the footer sends it. Esc clears the choice first, then leaves the action.
 - A thing that cannot be chosen stays in view and shows the reason.
 - Draft and History use the same blocks.

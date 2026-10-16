@@ -279,7 +279,7 @@ export function ActionPanel({
           heading={view.heading}
           interrupt={view.interrupt}
           pill={view.pill}
-          trail={[]}
+          trail={view.trail}
           help={view.help}
           footer={footer ? view.footer : null}
           contentKey={view.contentKey}

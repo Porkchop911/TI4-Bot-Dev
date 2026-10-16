@@ -796,10 +796,6 @@ export function selectTactical(world: World, state: State): TacticalActionView {
     state.edit?.step === 0 ? state.edit.value.system : E.activeId(state);
   const dirtyElsewhere = state.edit?.dirty && state.selected !== state.edit.step;
   const view = task(state);
-  // The draft was opened from the action picker: the player can go back; the draft stays.
-  if (world.mode === "draft" && world.viewer === "sol" && world.workspaces.live.kind === "picker") {
-    view.footer.actions.unshift(button({ type: "backToPicker" }, "Back to actions"));
-  }
   const closing = world.mode === "live" ? closingBlocks(state) : [];
   if (closing.length) {
     view.footer.actions.push(END_TURN);

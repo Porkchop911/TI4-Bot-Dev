@@ -66,7 +66,13 @@ Also look for UX ideas on how to integrate this: in web/, and in the demo of web
 - on a phone a row of the panel summary (movement, landings) opens the sheet but does not open the Map pane
 - a question of the seat before its turn menu (a start-of-turn ability) stops the draft at its first step; the server's runner shows such a question
 - the draft has no way to change the system but Undo and Start over: the activation step of a draft should open for an edit, as in the demo
-- the action picker of the demo, so that a tactical action opens as the draft
+- the action picker and the decisions of the game are real (2026-10-16): the turn menu of the engine is the picker with its lists, a staged action, "End your turn" and the screen of another seat's turn; a system or a planet of a question is chosen on the map, a seat of `details.seats` in the player table. Still open, because the engine does not say it:
+  - the trail of a component action has the card and the choice in view, not the steps after it: the question does not say what the card asks next
+  - a unit over the fleet supply or the capacity is removed one at a time, as the engine asks: the counters of the demo are not built. A rule that asks (the fleet supply, LRR) has no printed text in the catalogue, so its question has no source block
+  - the effect of a row in game values is shown where the details have it (`commodities` of Trade, `action_card_effects`); most questions have no effect in their details
+  - a player chosen by an option that names a faction without `details.seats` (Spy, the transactions) stays a list
+  - the trade desk is the engine's questions of a transaction as lists, after the partner is chosen in the picker
+  - the screen of another seat's turn is seen in a local game only with "Other seats: Step"; it does not say what that seat did
 - state should be inspectable and wired up next (exhausted planets with dotted ring instead of solid, objectives, technology, cards, ...)
 - payment is also painful and should be done via the map (like the demo of web2, `?example=draft-production`)
 - map space combat view should be similar to web/

@@ -73,7 +73,13 @@ import {
   scopeOf,
   scriptOf as followScriptOf,
 } from "./secondaryDraft";
-import type { DraftInfo, FollowInfo, LocalState } from "./select/action";
+import {
+  type DraftInfo,
+  type FollowInfo,
+  type LocalState,
+  optionOfSeat,
+  optionOnBoard,
+} from "./select/action";
 import type { CardSettings } from "./select/cards";
 import { systemLabel } from "./select/movement";
 import { selectShell } from "./select/shell";
@@ -103,6 +109,7 @@ const NOTHING: LocalState = {
   draftLocked: null,
   draft: null,
   odds: null,
+  menu: null,
 };
 
 /** The label of a system as the activation step lists it, for the search field. */
@@ -302,6 +309,7 @@ function draftView(
       recorded && !next && outcome.stop.kind === "complete"
         ? "The action ends here. Every step is drafted."
         : null,
+    fromMenu: atMenu,
   };
   const steps = (of: Stage) => stepsOfStage(entry, of) ?? [];
   return {
@@ -593,6 +601,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           planNote,
           stepping: event.stepping?.seat ?? null,
           odds: null,
+          menu: null,
         };
       });
     });
@@ -841,7 +850,13 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             canSend: reached !== null && !drafted0.ready && over && drafted0.answers.length > 0,
           }
         : null;
-    const live: LocalState = { ...local, draftLocked: locked, draft: null, follow: followInfo };
+    const live: LocalState = {
+      ...local,
+      draftLocked: locked,
+      draft: null,
+      follow: followInfo,
+      drafted: plan.draft ? { system: entryOf(plan.draft).system } : null,
+    };
     const drafted =
       plan.draft && outcome
         ? draftView(update, live, plan.draft, outcome, plan.stage, waiting)
@@ -1139,6 +1154,53 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             : setLocal((now) => ({ ...now, inspected: intent.system }));
         case "closeInspector":
           return setLocal((now) => ({ ...now, inspected: null }));
+        case "pickAction": {
+          if (intent.action !== "tactical") {
+            return intent.card ? stage(intent.card) : undefined;
+          }
+          // A tactical action opens as the private draft: the one that the seat prepared, or a
+          // new one. A system of the map is staged in it; a draft of another system starts over,
+          // which is one step of its undo.
+          if (locked || !pending?.choice.options.some((option) => option.id === "tactical")) {
+            return;
+          }
+          const kept = plan.draft ?? newDraft();
+          const system = intent.system ?? null;
+          const other = system !== null && entryOf(kept).system !== null;
+          const same = other && entryOf(kept).system === system;
+          workspace(true, other && !same ? startOver(kept) : kept);
+          if (system !== null && !same) {
+            setLocal((now) => ({ ...now, staged: system, inspected: system }));
+          }
+          return;
+        }
+        case "pickGroup":
+          return setLocal((now) => ({ ...now, menu: intent.group, staged: null }));
+        case "backToPicker":
+          // One level back: from the draft to the turn menu, from a staged action to its list,
+          // from a list to the picker.
+          if (plan.open) {
+            return workspace(false, plan.draft);
+          }
+          return setLocal((now) =>
+            now.staged ? { ...now, staged: null } : { ...now, menu: null },
+          );
+        case "pass":
+          return stage("pass");
+        case "endTurn": {
+          const end = pending?.choice.options.find(
+            (option) => option.kind === "end_turn" || option.id === "end_turn",
+          );
+          if (!pending || !end || drafted) {
+            return;
+          }
+          transport.submitChoice(pending.nonce, end.id);
+          return setLocal((now) => ({ ...now, staged: null, sent: pending.nonce }));
+        }
+        case "pickSeat": {
+          const option = optionOfSeat(pending?.choice ?? null, intent.seat);
+          return option ? stage(option) : undefined;
+        }
         case "chooseOption": {
           // The kind of ground force that a tap lands is a choice of the hand.
           const force = intent.group === "landing" ? forceOfId(intent.option) : null;
@@ -1155,6 +1217,11 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
               local.productionStage === "pay" &&
               produce((now) => togglePlanet(producing, now, planet))
             );
+          }
+          if (!landing) {
+            // A planet of a choice on the board: its option is staged.
+            const option = optionOnBoard(shown, pending?.choice ?? null, planet);
+            return option ? stage(option) : undefined;
           }
           return (
             landing &&
@@ -1187,7 +1254,9 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
                 ...now,
                 inspected: now.inspected === intent.system ? null : intent.system,
               }))
-            : inspectAndStage(intent.system);
+            : inspectAndStage(
+                optionOnBoard(shown, pending?.choice ?? null, intent.system) ?? intent.system,
+              );
         case "findSystem": {
           const found = pending?.choice.options.find((item) => sameSystem(intent.query, item.id));
           if (found && facts?.kind === "activation") {

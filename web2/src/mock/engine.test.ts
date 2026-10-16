@@ -351,82 +351,6 @@ describe("mock engine", () => {
     });
   });
 
-  it("runs the other actions", () => {
-    const world = createWorld();
-    loadExample(world, "live-picker");
-    reduce(world, { type: "pickAction", action: "component" });
-    reduce(world, { type: "togglePlanet", planet: "jord" });
-    reduce(world, { type: "flow", action: "play" });
-    expect(selectShell(world).toolbar.status).toBe("Component action complete");
-    loadExample(world, "live-secondary");
-    reduce(world, { type: "flowCount", key: "buy", value: 0 });
-    reduce(world, { type: "flowCount", key: "pools.t", value: 0 });
-    reduce(world, { type: "flow", action: "ready" });
-    for (let seat = 0; seat < 9; seat++) {
-      reduce(world, { type: "simulate" });
-    }
-    expect(selectShell(world).toolbar.status).toBe("Strategic action complete");
-    reduce(world, { type: "inspectLogEntry", id: "h3" });
-    expect(selectShell(world).toolbar.workspace).toBe("history");
-  });
-
-  it("opens a picked tactical action as a draft and goes back without a change", () => {
-    const world = createWorld();
-    loadExample(world, "live-picker");
-    reduce(world, { type: "pickAction", action: "tactical" });
-    expect(world.mode).toBe("draft");
-    expect(world.workspaces.live.kind).toBe("picker");
-    const footer = selectShell(world).action;
-    if (footer.kind !== "tactical") {
-      throw new Error("not tactical");
-    }
-    expect(footer.task.footer.actions.map((action) => action.key)).toContain("Escape");
-    reduce(world, { type: "backToPicker" });
-    expect(world.mode).toBe("live");
-    expect(selectShell(world).action.title).toBe("Your turn");
-  });
-
-  it("continues a prepared draft from the picker", () => {
-    const world = createWorld();
-    loadExample(world, "live-picker");
-    world.workspaces.draft = createWorld().workspaces.draft;
-    reduce(world, { type: "pickAction", action: "tactical" });
-    expect(currentState(world).done[0]).toBe(true);
-  });
-
-  it("drops a staged strategic action, then plays a component action and ends the turn", () => {
-    const world = createWorld();
-    loadExample(world, "live-picker");
-    reduce(world, { type: "pickAction", action: "strategic" });
-    expect(selectShell(world).accent).toBe("draft");
-    reduce(world, { type: "backToPicker" });
-    expect(currentState(world).kind).toBe("picker");
-    reduce(world, { type: "endTurn" });
-    expect(currentState(world).kind).toBe("picker");
-    reduce(world, { type: "pickAction", action: "component" });
-    reduce(world, { type: "togglePlanet", planet: "jord" });
-    reduce(world, { type: "flow", action: "play" });
-    const done = selectShell(world).action;
-    expect(done.closing).toHaveLength(1);
-    expect(shortcuts(done).get("enter")).toEqual({ type: "endTurn" });
-    reduce(world, { type: "endTurn" });
-    expect(currentState(world).kind).toBe("waiting");
-    reduce(world, { type: "simulate" });
-    expect(currentState(world).kind).toBe("picker");
-  });
-
-  it("offers Pass only after the strategy card is used", () => {
-    const world = createWorld();
-    loadExample(world, "live-picker");
-    expect(shortcuts(selectShell(world).action).has("p")).toBe(false);
-    reduce(world, { type: "pass" });
-    expect(currentState(world).kind).toBe("picker");
-    world.usedCards.push(1);
-    expect(shortcuts(selectShell(world).action).get("p")).toEqual({ type: "pass" });
-    reduce(world, { type: "pass" });
-    expect(currentState(world).flow.passed).toBe(true);
-  });
-
   it("shows no closing state in history or to another seat", () => {
     const world = createWorld();
     loadExample(world, "summary");
@@ -435,40 +359,6 @@ describe("mock engine", () => {
     expect(selectShell(world).action.closing).toHaveLength(0);
   });
 
-  it("shows two strategy cards and several action cards for four players", () => {
-    const world = createWorld();
-    loadExample(world, "live-picker-4p");
-    const view = selectShell(world);
-    expect(view.players.rows).toHaveLength(4);
-    expect(view.players.rows[0].strategyCards.map((card) => card.number)).toEqual([1, 5]);
-    expect(
-      view.board.tiles.flatMap((tile) => tile.fleets).map((fleet) => fleet.seat),
-    ).not.toContain("naalu");
-    const keys = shortcuts(view.action);
-    expect(keys.has("1")).toBe(true);
-    expect(keys.has("5")).toBe(false);
-    expect(keys.has("p")).toBe(false);
-    expect(keys.get("a")).toEqual({ type: "pickGroup", group: "actionCards" });
-    reduce(world, keys.get("a")!);
-    const cards = shortcuts(selectShell(world).action);
-    expect(cards.get("4")).toEqual({ type: "pickAction", action: "component", card: "Ghost Ship" });
-    reduce(world, cards.get("4")!);
-    // Esc goes one level back: to the list of action cards, then to the actions.
-    reduce(world, { type: "backToPicker" });
-    expect(shortcuts(selectShell(world).action).has("4")).toBe(true);
-    reduce(world, { type: "backToPicker" });
-    expect(shortcuts(selectShell(world).action).has("t")).toBe(true);
-    reduce(world, { type: "pickAction", action: "component", card: "Ghost Ship" });
-    reduce(world, { type: "flow", action: "play" });
-    reduce(world, { type: "endTurn" });
-    reduce(world, { type: "simulate" });
-    // The picker has the same rows; the list of action cards is shorter.
-    expect(shortcuts(selectShell(world).action).has("a")).toBe(true);
-    reduce(world, { type: "pickGroup", group: "actionCards" });
-    expect(shortcuts(selectShell(world).action).has("4")).toBe(false);
-  });
-
-  // Decisions: one frame, three shapes. A choice is staged; the main button sends it.
   const footerOf = (world: ReturnType<typeof createWorld>) => {
     const action = selectShell(world).action;
     if (action.kind !== "flow") {
@@ -478,81 +368,6 @@ describe("mock engine", () => {
   };
   const main = (world: ReturnType<typeof createWorld>) =>
     footerOf(world).find((action) => action.tone === "primary")!;
-  const openCard = (card: string) => {
-    const world = createWorld();
-    loadExample(world, "live-picker-4p");
-    reduce(world, { type: "pickAction", action: "component", card });
-    return world;
-  };
-
-  it("chooses a system on the board for Unexpected Action", () => {
-    const world = openCard("Unexpected Action");
-    const task = selectShell(world).board.task!;
-    expect(task.target).toBe("system");
-    expect(Object.keys(task.values).sort()).toEqual(["33", "38"]);
-    expect(main(world).disabled).toBe(true);
-    reduce(world, { type: "toggleSystem", system: "27" });
-    expect(currentState(world).flow.chosen).toBe(null);
-    reduce(world, { type: "toggleSystem", system: "38" });
-    expect(selectShell(world).board.task!.chosen).toEqual({ "38": true });
-    expect(selectShell(world).accent).toBe("draft");
-    // Esc clears the choice first, then goes back to the list of action cards.
-    expect(shortcuts(selectShell(world).action).get("escape")).toEqual({ type: "clearChoice" });
-    reduce(world, { type: "clearChoice" });
-    expect(shortcuts(selectShell(world).action).get("escape")).toEqual({ type: "backToPicker" });
-    reduce(world, { type: "toggleSystem", system: "38" });
-    reduce(world, main(world).intent);
-    expect(currentState(world).flow.stage).toBe("done");
-    expect(selectShell(world).board.task).toBe(null);
-    expect(world.table.actionCards).not.toContain("Unexpected Action");
-    expect(shortcuts(selectShell(world).action).get("enter")).toEqual({ type: "endTurn" });
-  });
-
-  it("chooses a player in the player table for Spy", () => {
-    const world = openCard("Spy");
-    const pick = selectShell(world).players.pick!;
-    expect(pick.seats).toEqual({
-      sol: { reason: "You" },
-      hacan: { reason: null },
-      xxcha: { reason: null },
-      letnev: { reason: "No action cards" },
-    });
-    reduce(world, { type: "pickSeat", seat: "letnev" });
-    expect(currentState(world).flow.chosen).toBe(null);
-    reduce(world, { type: "pickSeat", seat: "xxcha" });
-    expect(selectShell(world).players.pick!.chosen).toEqual(["xxcha"]);
-    reduce(world, main(world).intent);
-    expect(selectShell(world).players.pick).toBe(null);
-    expect(currentState(world).flow.result).toContain("Blair");
-  });
-
-  it("chooses one answer of an offer by key", () => {
-    const world = createWorld();
-    loadExample(world, "live-decision-offer");
-    const view = selectShell(world).action;
-    if (view.kind !== "flow") {
-      throw new Error("not a flow");
-    }
-    expect(view.blocks[0]).toMatchObject({ kind: "source", name: "Merchant Station" });
-    expect(main(world).disabled).toBe(true);
-    reduce(world, shortcuts(view).get("2")!);
-    expect(currentState(world).flow.chosen).toBe("convert");
-    reduce(world, main(world).intent);
-    expect(currentState(world).flow.result).toContain("Trade goods 2 → 3");
-    // A decision that is not the viewer's action does not end in the closing state.
-    expect(selectShell(world).action.closing).toHaveLength(0);
-  });
-
-  it("removes ships until the fleet supply holds", () => {
-    const world = createWorld();
-    loadExample(world, "live-decision-units");
-    expect(main(world).disabled).toBe(true);
-    reduce(world, { type: "flowCount", key: "j-cruiser", value: 1 });
-    expect(main(world)).toMatchObject({ disabled: false, label: "Remove 1 ship" });
-    reduce(world, main(world).intent);
-    expect(currentState(world).flow.result).toContain("Fleet supply 2 / 2");
-  });
-
   // Reaction windows: the same block and the same footer inside and outside a battle.
   it("answers a reaction to another player's card: Pass is the main button", () => {
     const world = createWorld();
@@ -738,18 +553,6 @@ describe("mock engine", () => {
     const main = (world: ReturnType<typeof createWorld>) =>
       footer(world).actions.find((action) => action.tone === "primary")!;
 
-    it.each([2, 3, 4, 5, 6, 7, 8])("opens card %i from the picker by its number", (number) => {
-      const world = open("live-picker");
-      world.table.cards = { sol: [number] };
-      const key = shortcuts(selectShell(world).action).get(`${number}`)!;
-      reduce(world, key);
-      expect(flow(world).number).toBe(number);
-      expect(selectShell(world).accent).toBe("draft");
-      // Nothing is sent: Esc goes back to the actions.
-      reduce(world, shortcuts(selectShell(world).action).get("escape")!);
-      expect(currentState(world).kind).toBe("picker");
-    });
-
     it("Diplomacy: a system on the board, then up to 2 planets; Esc clears the last choice", () => {
       const world = open("live-strategy-2");
       expect(selectShell(world).board.task?.target).toBe("system");
@@ -894,13 +697,6 @@ describe("mock engine", () => {
       expect(view.board.task).toBe(null);
       reduce(world, { type: "flowCount", key: "counts.cruiser", value: 1 });
       expect(flow(world).mine.counts).toEqual({});
-      // A staged action card of Jamie is not sent yet, so it is not visible.
-      loadExample(world, "live-decision-offer");
-      setViewer(world, "hacan");
-      const decision = selectShell(world);
-      expect(decision.players.pick).toBe(null);
-      expect(decision.action.kind === "flow" && decision.action.blocks).toEqual([]);
-      expect(decision.action.kind === "flow" && decision.action.footer.actions).toEqual([]);
     });
 
     it("Technology: the tree, a second technology for 6 resources that counts the first", () => {

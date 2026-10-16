@@ -2,11 +2,9 @@
 // turns intents into engine calls. This is the body of the click handlers of the HTML dummy.
 import type { Intent } from "../model";
 import {
-  DECISIONS,
   HISTORY,
   KEYS,
   MAP,
-  PAY,
   RETREATS,
   SEAT,
   SEATS,
@@ -16,7 +14,6 @@ import {
   P,
   clone,
   examples,
-  plural,
 } from "./data";
 import { E } from "./loose";
 import { strategyEditor, strategyIntent } from "./strategy";
@@ -89,47 +86,8 @@ function openReaction(state: State): { pick: string | null } | null {
   return state.flow?.stage === "reaction" ? state.flow.reaction : null;
 }
 
-/** The shape of the open decision, or null when no decision is open for a choice. */
-export const decisionShape = (state: State) =>
-  E.own() && state.kind === "decision" && state.flow.stage !== "done"
-    ? DECISIONS[state.flow.decision].shape
-    : null;
-
-/** Why a seat cannot be chosen for Spy, or null when it can. */
-export const seatReason = (world: World, seat: string): string | null =>
-  !world.table.seats.includes(seat)
-    ? "Not a choice"
-    : seat === "sol"
-      ? "You"
-      : SEATS[seat].ac
-        ? null
-        : "No action cards";
-
-/** What a sent decision did, in game values. */
-function decisionResult(_world: World, state: State): string {
-  const flow = state.flow;
-  const me = SEATS.sol;
-  switch (flow.decision) {
-    case "Unexpected Action":
-      return `Jamie removed the command token from ${sysLabel(flow.chosen)}. The demo board does not change.`;
-    case "Spy":
-      return `Jamie took 1 action card from ${SEATS[flow.chosen].name}. Action cards ${me.ac} → ${me.ac + 1}.`;
-    case "Merchant Station":
-      return flow.chosen === "replenish"
-        ? `Jamie replenished commodities. Commodities ${me.comm[0]} → ${me.comm[1]}.`
-        : `Jamie converted commodities. Trade goods ${me.tg} → ${me.tg + me.comm[0]}, commodities ${me.comm[0]} → 0.`;
-    default: {
-      const units = E.unitsOver(state);
-      return `Jamie removed ${plural(units.removed, "ship")} from ${sysLabel(units.system)}. Fleet supply ${units.left} / ${units.limit}.`;
-    }
-  }
-}
-
 /** The strategy cards of the viewer, by number. */
 export const heldCards = (world: World): number[] => world.table.cards?.sol ?? [1];
-
-/** The viewer's turn with no action open. */
-const picker = (): State => E.makeState("live-picker");
 
 export function loadExample(world: World, example: string) {
   E.env.viewer = world.viewer;
@@ -139,10 +97,6 @@ export function loadExample(world: World, example: string) {
   world.usedCards = [...(examples[example]?.table?.used ?? [])];
   world.mode = state.mode;
   world.workspaces[state.mode as "draft" | "live"] = state;
-  // The picker example starts with no draft, so "Activate a system" starts one.
-  if (state.kind === "picker") {
-    world.workspaces.draft = E.makeState("draft-start");
-  }
   if (world.mode === "draft") {
     world.viewer = E.env.viewer = "sol";
   }
@@ -269,10 +223,6 @@ const PRIVATE = new Set<Intent["type"]>([
   "reaction",
   "payment",
   "setPayment",
-  "pickAction",
-  "pickGroup",
-  "backToPicker",
-  "pass",
   "endTurn",
   "flowCount",
   "flow",
@@ -439,11 +389,7 @@ export function reduce(world: World, intent: Intent) {
       }
       break;
     case "simulate":
-      if (state.kind === "waiting") {
-        if (!state.flow.passed) {
-          world.workspaces.live = picker();
-        }
-      } else if (state.kind === "tactical") {
+      if (state.kind === "tactical") {
         state.rev = (state.rev || 0) + 1;
         E.simulate(state);
       } else {
@@ -572,9 +518,6 @@ export function reduce(world: World, intent: Intent) {
         state.edit.dirty = true;
         state.reveal = `pl:${intent.planet}`;
         announce(E.validation(state) || "Payment staged.");
-      } else if (state.kind === "component") {
-        state.flow.target = intent.planet;
-        state.reveal = `pl:${intent.planet}`;
       }
       break;
     case "toggleSystem":
@@ -587,31 +530,14 @@ export function reduce(world: World, intent: Intent) {
         battle("pickRetreat", intent);
         break;
       }
-      if (decisionShape(state) !== "system" || !MAP[intent.system]?.token) {
-        break;
-      }
-      state.flow.chosen = state.flow.chosen === intent.system ? null : intent.system;
-      state.reveal = `sys:${intent.system}`;
       break;
     case "pickSeat":
-      if (decisionShape(state) !== "seat" || seatReason(world, intent.seat) !== null) {
-        break;
-      }
-      state.flow.chosen = state.flow.chosen === intent.seat ? null : intent.seat;
-      break;
     case "chooseOption":
-      if (decisionShape(state) !== "list") {
-        break;
-      }
-      state.flow.chosen = state.flow.chosen === intent.option ? null : intent.option;
-      break;
     case "pickTech":
     case "clearPart":
       break;
     case "clearChoice":
-      if (state.kind === "decision" && state.flow.stage !== "done") {
-        Object.assign(state.flow, { chosen: null, counts: {} });
-      } else {
+      {
         const open =
           openReaction(state) ??
           (state.kind === "tactical" && E.activeBattle(state)?.stage === "retreat"
@@ -716,76 +642,6 @@ export function reduce(world: World, intent: Intent) {
       delete world.workspaces.history;
       world.mode = "live";
       break;
-    case "pickAction":
-      if (state.kind !== "picker" || world.viewer !== "sol") {
-        break;
-      }
-      if (intent.action === "tactical") {
-        // A tactical action opens as the private draft: the one the player prepared before the
-        // turn, or a new one. Nothing is sent until "Apply to Live".
-        const prepared = world.workspaces.draft;
-        const draft = !intent.system && prepared.done[0] ? prepared : E.makeState("draft-start");
-        if (intent.system) {
-          Object.assign(draft.edit, { value: { system: intent.system }, dirty: true });
-          draft.inspect = intent.system;
-        }
-        draft.tip =
-          "The tactical action is a private draft. Nothing is spent until you apply. Esc goes back to the actions; the draft stays.";
-        world.workspaces.draft = draft;
-        world.mode = "draft";
-      } else if (intent.action === "strategic") {
-        const number = +(intent.card ?? 1);
-        const live = E.makeState(number > 1 ? `live-strategy-${number}` : "live-strategic");
-        live.example = state.example;
-        // The secondaries go to the other players of this table, in seat order.
-        live.flow.order = world.table.seats.filter((seat) => seat !== "sol");
-        world.workspaces.live = live;
-      } else if (intent.card && DECISIONS[intent.card]) {
-        // An action card that asks for a choice: the decision is the action.
-        const live = E.makeState("live-decision-offer");
-        Object.assign(live.flow, { decision: intent.card, card: true });
-        live.example = state.example;
-        live.tip =
-          "The card is staged. Choose, then Enter sends it. Esc clears the choice, then goes back.";
-        world.workspaces.live = live;
-      } else {
-        const live = E.makeState("live-component");
-        const card = intent.card ?? "Mining Initiative";
-        // Only Mining Initiative has a target in the demo. Any other card is played in one step.
-        Object.assign(live.flow, {
-          card,
-          stage: card === "Mining Initiative" ? "target" : "ready",
-        });
-        world.workspaces.live = live;
-      }
-      break;
-    case "pickGroup":
-      if (state.kind === "picker" && world.table.actionCards.length) {
-        state.flow.menu = intent.group;
-      }
-      break;
-    case "backToPicker":
-      // One level back. A tactical draft stays in its workspace. A staged strategic or component
-      // action is dropped; an action card goes back to the list of action cards.
-      if (world.mode === "draft") {
-        world.mode = "live";
-      } else if (E.flowStaged(state)) {
-        world.workspaces.live = picker();
-        if (state.kind !== "strategic") {
-          world.workspaces.live.flow.menu = "actionCards";
-        }
-      } else if (state.kind === "picker") {
-        state.flow.menu = null;
-      }
-      break;
-    case "pass":
-      if (state.kind !== "picker" || !heldCards(world).every((n) => world.usedCards.includes(n))) {
-        break;
-      }
-      world.workspaces.live = E.makeState("live-waiting");
-      world.workspaces.live.flow.passed = true;
-      toast("You passed. You take no more actions in this round.");
-      break;
     case "endTurn":
       if (!E.turnClosing(state)) {
         break;
@@ -793,15 +649,12 @@ export function reduce(world: World, intent: Intent) {
       if (state.kind === "strategic" && !world.usedCards.includes(state.flow.number ?? 1)) {
         world.usedCards.push(state.flow.number ?? 1);
       }
-      world.workspaces.live = E.makeState("live-waiting");
+      // The demo has no next turn: the example starts again.
+      world.workspaces.live = E.makeState(state.example);
       world.mode = "live";
       toast("Turn ended.");
       break;
     case "flowCount":
-      if (state.kind === "decision") {
-        state.flow.counts[intent.key] = Math.max(0, intent.value);
-        break;
-      }
       E.put(state.flow.mine, intent.key, Math.max(0, intent.value));
       if (!strategyEditor(state, world.table.seats).cost?.amount) {
         state.flow.mine.pay = {};
@@ -810,30 +663,8 @@ export function reduce(world: World, intent: Intent) {
       break;
     case "flow": {
       const flow = state.flow;
-      if (intent.action === "play" && state.kind === "decision") {
-        if (flow.stage === "done" || !E.decisionReady(state)) {
-          break;
-        }
-        Object.assign(flow, { stage: "done", result: decisionResult(world, state) });
-        if (flow.card) {
-          world.table.actionCards = world.table.actionCards.filter(
-            (card) => card !== flow.decision,
-          );
-        }
-        toast(`${flow.decision} resolved.`);
-      } else if (intent.action === "play") {
-        const source = PAY.find((item) => item.id === flow.target);
-        if (flow.stage === "target" && !source) {
-          break;
-        }
-        Object.assign(flow, {
-          stage: "done",
-          result: source
-            ? `Jamie gained ${plural(source.res, "trade good")} for ${source.label.replace("Exhaust ", "")}. Trade goods ${SEATS.sol.tg} → ${SEATS.sol.tg + source.res}.`
-            : `Jamie played ${flow.card}. The demo does not script its effect.`,
-        });
-        world.table.actionCards = world.table.actionCards.filter((card) => card !== flow.card);
-        toast(`${flow.card} resolved.`);
+      if (intent.action === "play") {
+        break;
       } else if (intent.action === "ready") {
         const editor = strategyEditor(state, world.table.seats);
         if (editor.problem) {

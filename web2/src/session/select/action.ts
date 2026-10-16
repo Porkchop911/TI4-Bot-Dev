@@ -1,17 +1,36 @@
 // The action panel: every decision as one list. A dedicated screen later takes one kind of
 // decision out of this list; the list stays for every kind that has none.
-import type { ApplyView, BoardTaskView, FlowActionView, MenuRowView } from "../../model";
+import type {
+  ActionButtonView,
+  ApplyView,
+  BlockView,
+  BoardTaskView,
+  FlowActionView,
+  MenuRowView,
+  PlayerPickView,
+  RowView,
+} from "../../model";
 import type { LandingDraft } from "../landingDraft";
 import type { MovementDraft } from "../movementDraft";
 import type { KeptOdds } from "../movementOdds";
 import type { MovementPlan } from "../movementPlan";
 import type { ProductionDraft } from "../productionDraft";
-import type { Catalog, Choice, ExplorationCatalog, ReactionModes, SessionUpdate } from "../wire";
+import type {
+  Catalog,
+  Choice,
+  ChoiceOption,
+  ExplorationCatalog,
+  ReactionModes,
+  SessionUpdate,
+} from "../wire";
 import { exploringCard } from "./exploration";
-import { seatLabel, sentence } from "./names";
+import { systemLabel } from "./movement";
+import { humanizeId, seatLabel, sentence } from "./names";
+import { printedSource } from "./printed";
 import { selectReaction } from "./reaction";
 import { selectResearch } from "./research";
 import { type Pools, selectTokens } from "./tokens";
+import { type TurnMenu, isTurnMenu, selectTurn } from "./turn";
 
 /** The private draft that is in view: what its toolbar and its screens say. */
 export interface DraftInfo {
@@ -35,6 +54,8 @@ export interface DraftInfo {
   next: "movement" | "invasion" | "production" | null;
   /** What the draft comes to after the step in view, when no step follows. */
   ends: string | null;
+  /** The live game is at the turn menu of the seat: the draft goes back to it. */
+  fromMenu?: boolean;
 }
 
 /**
@@ -116,6 +137,10 @@ export interface LocalState {
    * starts. Of another movement while the answer for this one is on its way.
    */
   odds?: KeptOdds | null;
+  /** The list of the turn menu that the player opened. Null: the picker. */
+  menu?: TurnMenu | null;
+  /** The private draft of a tactical action that the seat keeps, while it is not in view. */
+  drafted?: { system: string | null } | null;
 }
 
 /** The choice that the viewer can answer now. */
@@ -128,34 +153,177 @@ export const openChoice = (update: SessionUpdate, local: LocalState): Choice | n
     ? update.pending_choice.choice
     : null;
 
-/** A choice of systems is also made on the board: every option is a system. */
-export function boardTask(update: SessionUpdate, local: LocalState): BoardTaskView | null {
-  const choice = openChoice(update, local);
-  if (!choice?.options.length || !choice.options.every((option) => option.kind === "activate")) {
+/** An option that declines what the question asks: it stays a row of the list. */
+const isDecline = (option: ChoiceOption) => option.kind === "decline";
+
+/**
+ * The thing on the board that each option of a choice stands for, when every option but a
+ * decline is a system (an activation, a system of a card, a system to recall from) or a planet
+ * (the option names it). Null when the choice is not made on the board.
+ */
+export function boardPick(
+  update: SessionUpdate,
+  choice: Choice | null,
+): { target: "system" | "planet"; of: Record<string, string> } | null {
+  const options = (choice?.options ?? []).filter((option) => !isDecline(option));
+  if (!options.length) {
     return null;
   }
+  const tiles = update.view.board.map_tiles ?? [];
+  const systems = new Set(tiles.map((tile) => tile.system_id));
+  const planets = new Set(tiles.flatMap((tile) => (tile.planets ?? []).map((item) => item.id)));
+  // An activation names its systems by their ids; a card or a strategy card does too, and
+  // only a system of the map is chosen on the board.
+  if (
+    options.every(
+      (option) =>
+        option.kind === "activate" ||
+        ((option.kind === "system" || option.kind === "recall") && systems.has(option.id)),
+    )
+  ) {
+    return {
+      target: "system",
+      of: Object.fromEntries(options.map((option) => [option.id, option.id])),
+    };
+  }
+  const planetOf = (option: ChoiceOption) => {
+    const planet = option.payload?.planet;
+    return typeof planet === "string" && planets.has(planet) ? planet : null;
+  };
+  if (options.every((option) => planetOf(option) !== null)) {
+    return {
+      target: "planet",
+      of: Object.fromEntries(options.map((option) => [option.id, planetOf(option)!])),
+    };
+  }
+  return null;
+}
+
+/** The option of a choice that a thing on the board stands for. */
+export function optionOnBoard(
+  update: SessionUpdate,
+  choice: Choice | null,
+  thing: string,
+): string | null {
+  const pick = boardPick(update, choice);
+  return Object.entries(pick?.of ?? {}).find(([, id]) => id === thing)?.[0] ?? null;
+}
+
+/** The seat that each option of a choice stands for, as the engine names it (`details.seats`). */
+export function seatsOf(choice: Choice | null): Record<string, string> | null {
+  const seats = choice?.details?.seats;
+  if (!seats || typeof seats !== "object") {
+    return null;
+  }
+  const named = Object.entries(seats as Record<string, unknown>).filter(
+    (entry): entry is [string, string] =>
+      typeof entry[1] === "string" && !!choice?.options.some((option) => option.id === entry[0]),
+  );
+  return named.length ? Object.fromEntries(named) : null;
+}
+
+/** What an option changes, in game values, when the engine says it. */
+function effectOf(choice: Choice, option: ChoiceOption): string | undefined {
+  const commodities = choice.details?.commodities as
+    | Record<string, { have: number; max: number }>
+    | undefined;
+  const mine = commodities?.[option.id];
+  return mine && typeof mine.have === "number" && typeof mine.max === "number"
+    ? `Commodities ${mine.have} → ${mine.max}`
+    : undefined;
+}
+
+/** A choice of systems or planets is also made on the board. */
+export function boardTask(update: SessionUpdate, local: LocalState): BoardTaskView | null {
+  const choice = openChoice(update, local);
+  const pick = boardPick(update, choice);
+  if (!choice || !pick) {
+    return null;
+  }
+  const staged = local.staged ? pick.of[local.staged] : undefined;
+  if (pick.target === "planet") {
+    const values = new Map(
+      (update.view.board.map_tiles ?? []).flatMap((tile) =>
+        (tile.planets ?? []).map((planet) => [planet.id, planet.resources] as const),
+      ),
+    );
+    return {
+      target: "planet",
+      kind: "pick",
+      interactive: true,
+      values: Object.fromEntries(
+        Object.values(pick.of).map((planet) => [planet, values.get(planet) ?? 0]),
+      ),
+      chosen: staged ? { [staged]: true } : {},
+      verb: "Choose",
+      unit: "resources",
+    };
+  }
   const facts = update.tactical?.kind === "activation" ? update.tactical : null;
+  const activation = choice.options.every((option) => option.kind === "activate");
   return {
     target: "system",
     kind: "pick",
     interactive: true,
-    values: Object.fromEntries(choice.options.map((option) => [option.id, 0])),
+    values: Object.fromEntries(Object.values(pick.of).map((system) => [system, 0])),
     // Every system of the choice can be activated. The action does something in these: ships
     // can move there, the seat produces there, or its guns fire at the ships of another player.
-    ...(facts
+    ...(facts && activation
       ? {
           highlight: facts.systems
             .filter((reach) => reach.ships > 0 || !!reach.production || !!reach.cannon)
             .map((reach) => reach.system),
         }
       : {}),
-    chosen: local.staged ? { [local.staged]: true } : {},
-    verb: "Activate",
+    chosen: staged ? { [staged]: true } : {},
+    verb: activation ? "Activate" : "Choose",
     unit: "system",
   };
 }
 
+/** The player table is the choice: every option but a decline is a seat. */
+export function seatTask(update: SessionUpdate, local: LocalState): PlayerPickView | null {
+  const choice = openChoice(update, local);
+  const seats = seatsOf(choice);
+  if (!choice || !seats) {
+    return null;
+  }
+  const chosen = local.staged ? seats[local.staged] : undefined;
+  return {
+    verb: "Choose",
+    seats: Object.fromEntries(
+      Object.entries(seats).map(([option, seat]) => {
+        const effect = effectOf(
+          choice,
+          choice.options.find((item) => item.id === option)!,
+        );
+        return [seat, { reason: null, ...(effect ? { note: effect } : {}) }];
+      }),
+    ),
+    chosen: chosen ? [chosen] : [],
+  };
+}
+
+/** The option that a seat of the player table stands for. */
+export const optionOfSeat = (choice: Choice | null, seat: string): string | null =>
+  Object.entries(seatsOf(choice) ?? {}).find(([, item]) => item === seat)?.[0] ?? null;
+
 const KEYS = "123456789";
+
+/** The viewer's own component action: a card, an ability or a component that asks its target. */
+function componentAction(update: SessionUpdate, choice: Choice): boolean {
+  const source = choice.context?.source;
+  const viewer = update.viewer.role === "player" ? update.viewer.seat : null;
+  return (
+    !!source &&
+    ("ActionCard" in source || "FactionAbility" in source || "Content" in source) &&
+    update.view.phase === "action" &&
+    !!viewer &&
+    update.view.active_player === viewer &&
+    !update.secondary &&
+    !update.view.board.active_system
+  );
+}
 
 export function selectAction(
   update: SessionUpdate,
@@ -167,15 +335,30 @@ export function selectAction(
   modes: ReactionModes = {},
 ): FlowActionView {
   const choice = openChoice(update, local);
+  const undo: ActionButtonView[] =
+    local.canUndo && !local.replaying
+      ? [{ label: "Undo", tone: "quiet", intent: { type: "undo" } }]
+      : [];
+  // The turn menu is the action picker. A draft and the draft of a secondary have their own.
+  if (isTurnMenu(choice) && !local.draft && !local.follow?.editing) {
+    return selectTurn(update, local, choice, printed, undo);
+  }
   // A reaction window has its trigger and its cards as printed. A draft has none: a window is
   // of the game as it runs.
   const window =
     choice && !local.draft && !local.follow?.editing
       ? selectReaction(update, choice, local.staged, printed, modes)
       : null;
-  // The source is on top: an exploration card that asks is shown as printed.
-  const card = choice ? exploringCard(update, catalog) : null;
-  const onBoard = boardTask(update, local) !== null;
+  // The source is on top: an exploration card that asks, or the card or the ability of the
+  // question, as printed. A strategy card is the heading of its own screen.
+  const asker = choice?.context?.source;
+  const source = !choice
+    ? null
+    : (exploringCard(update, catalog) ??
+      (window || !asker || "StrategyCard" in asker ? null : printedSource(asker, printed)));
+  const own = !!choice && !window && !local.draft && componentAction(update, choice);
+  const onBoard = choice ? boardPick(update, choice) : null;
+  const seats = seatsOf(choice);
   // A redistribution of command tokens is staged in the pools of the command sheet.
   const tokens = choice && !window ? selectTokens(choice, local.pools ?? null) : null;
   const stagedId = tokens ? tokens.staged : local.staged;
@@ -184,16 +367,149 @@ export function selectAction(
   const research = choice && !window ? selectResearch(update, choice, local.staged, printed) : null;
   /** A draft records the answer; the live game sends it. */
   const recording = !!local.draft || !!local.follow?.editing;
-  const rows: MenuRowView[] = (choice?.options ?? []).map((option, index) => ({
+  const tiles = new Map((update.view.board.map_tiles ?? []).map((tile) => [tile.system_id, tile]));
+  const planetOf = (id: string) =>
+    (update.view.board.map_tiles ?? [])
+      .flatMap((tile) => (tile.planets ?? []).map((planet) => ({ planet, tile })))
+      .find((item) => item.planet.id === id);
+  /** The options that stay rows of the list: all of them, or those that the board or the table does not have. */
+  const listed = (choice?.options ?? []).filter(
+    (option) => !(onBoard?.of[option.id] ?? seats?.[option.id]),
+  );
+  const rows: MenuRowView[] = listed.map((option, index) => ({
     key: KEYS[index] ?? "",
     title: sentence(option.label || option.id),
+    state: choice ? effectOf(choice, option) : undefined,
     selected: option.id === staged?.id,
     disabled: false,
     intent: { type: "chooseOption", option: option.id },
   }));
+  const selected: RowView["control"] = {
+    kind: "badge",
+    pill: { tone: "draft", label: "Selected" },
+  };
+  // The choice of a thing on the board, or of a player: the panel has the choice, not the
+  // candidates, which are on the board or in the player table.
+  const chosenBlock = (): BlockView | null => {
+    if (onBoard?.target === "planet") {
+      const found = staged && onBoard.of[staged.id] ? planetOf(onBoard.of[staged.id]) : null;
+      return {
+        kind: "card",
+        title: "Planet",
+        aside: "Choose on the map",
+        rows: found
+          ? [
+              {
+                icon: "planet",
+                title: [`${found.planet.label} · #${found.tile.system_id}`],
+                subtitle: `${found.planet.resources} / ${found.planet.influence}`,
+                link: [`pl:${found.planet.id}`, `sys:${found.tile.system_id}`],
+                control: selected,
+              },
+            ]
+          : [{ icon: "planet", title: ["No planet chosen"] }],
+      };
+    }
+    if (
+      onBoard?.target === "system" &&
+      !choice?.options.every((item) => item.kind === "activate")
+    ) {
+      const system = staged ? onBoard.of[staged.id] : undefined;
+      return {
+        kind: "card",
+        title: "System",
+        aside: "Choose on the map",
+        rows: system
+          ? [
+              {
+                icon: "token",
+                title: [systemLabel(tiles, system)],
+                link: [`sys:${system}`],
+                control: selected,
+              },
+            ]
+          : [{ icon: "token", title: ["No system chosen"] }],
+      };
+    }
+    if (seats && choice) {
+      const seat = staged ? seats[staged.id] : undefined;
+      return {
+        kind: "card",
+        title: "Player",
+        aside: "Choose in the player table",
+        rows: seat
+          ? [
+              {
+                icon: "card",
+                title: [{ seat }, ` ${seatLabel(update, seat, printed)}`],
+                subtitle: effectOf(choice, staged!),
+                control: selected,
+              },
+            ]
+          : [{ icon: "card", title: ["No player chosen"] }],
+      };
+    }
+    return null;
+  };
+  // The limit that a unit is removed for, as the engine counts it.
+  const details = choice?.details ?? {};
+  const where =
+    typeof details.system === "string" ? systemLabel(tiles, details.system) : "the system";
+  const gauges: BlockView[] =
+    typeof details.fleet_charged === "number" &&
+    typeof details.fleet_limit === "number" &&
+    details.reason !== "capacity"
+      ? [
+          {
+            kind: "gauges",
+            gauges: [
+              {
+                label: `Fleet supply in ${where}`,
+                used: details.fleet_charged,
+                total: details.fleet_limit,
+              },
+            ],
+          },
+        ]
+      : typeof details.capacity_consumed === "number" &&
+          typeof details.capacity_transport === "number"
+        ? [
+            {
+              kind: "gauges",
+              gauges: [
+                {
+                  label: `Capacity in ${where}`,
+                  used: details.capacity_consumed,
+                  total: details.capacity_transport,
+                },
+              ],
+            },
+          ]
+        : [];
   const status = update.turn_status;
   const faction = (seat: string) => seatLabel(update, seat, printed);
   const stepping = !choice && !local.error && !local.replaying ? local.stepping : null;
+  const viewer = update.viewer.role === "player" ? update.viewer.seat : null;
+  const passed = !!update.view.players.find((player) => player.id === viewer)?.passed;
+  // In the action phase another seat has the turn: who, and whom the game waits for.
+  const turnOf =
+    !choice &&
+    !local.draft &&
+    !local.error &&
+    !local.offline &&
+    !local.replaying &&
+    update.view.phase === "action" &&
+    viewer !== null &&
+    update.view.active_player &&
+    update.view.active_player !== viewer
+      ? update.view.active_player
+      : null;
+  const waitingFor =
+    status.kind === "waiting_for_decision"
+      ? faction(status.seat)
+      : status.kind === "active_turn"
+        ? faction(status.player)
+        : null;
   const idle = local.draft
     ? (local.draft.problem ??
       (local.draft.waiting
@@ -210,10 +526,65 @@ export function selectAction(
             : stepping
               ? `${faction(stepping)} decides next.`
               : "The other seats are playing.";
+  const what = source ?? null;
+  const pickWord =
+    onBoard?.target === "planet"
+      ? "Choose a planet"
+      : onBoard?.target === "system"
+        ? "Choose a system"
+        : seats
+          ? "Choose a player"
+          : null;
+  const chosen = chosenBlock();
+  const blocks: BlockView[] = !choice
+    ? turnOf
+      ? [
+          {
+            kind: "note",
+            tone: "quiet",
+            strong: passed ? "You passed." : `${faction(turnOf)} has the turn.`,
+            text: passed
+              ? "No more actions for you in this round."
+              : stepping
+                ? `${faction(stepping)} decides next.`
+                : local.draftLocked
+                  ? "Your next tactical action can be drafted later."
+                  : "You can prepare your next tactical action in Draft.",
+          },
+        ]
+      : [{ kind: "note", tone: local.error ? "accent" : "quiet", text: idle }]
+    : research
+      ? [research.block]
+      : tokens
+        ? [tokens.block]
+        : [
+            // A component action has its card behind "?" of the heading; any other decision has
+            // its source on top.
+            ...(what && !own ? [{ kind: "source" as const, ...what }] : []),
+            ...gauges,
+            ...(chosen ? [chosen] : []),
+            ...(window?.rows.length || rows.length || !chosen
+              ? [{ kind: "menu" as const, rows: window?.rows ?? rows }]
+              : []),
+          ];
+  const viewerName = viewer ? seatLabel(update, viewer, printed) : "";
   return {
     kind: "flow",
-    title: local.draft ? "Tactical action" : window ? "Reaction" : choice ? "Decision" : "Waiting",
-    subtitle: "",
+    title: local.draft
+      ? "Tactical action"
+      : window
+        ? "Reaction"
+        : own
+          ? "Component action"
+          : choice
+            ? "Decision"
+            : turnOf
+              ? passed
+                ? "You passed"
+                : "Turn ended"
+              : "Waiting",
+    subtitle:
+      own && what ? `${what.name} · ${viewerName}` : turnOf ? `${faction(turnOf)} is next` : "",
     badge: local.draft
       ? { tone: "draft", label: "Private draft" }
       : staged
@@ -230,48 +601,48 @@ export function selectAction(
       ? "Draft"
       : window
         ? window.heading
-        : choice
-          ? sentence(choice.prompt)
-          : "Waiting",
-    pill: choice ? { tone: "live", label: "Your decision" } : null,
-    trail: [],
-    help: [],
-    blocks: !choice
-      ? [{ kind: "note", tone: local.error ? "accent" : "quiet", text: idle }]
-      : onBoard
-        ? // The board is where a system is chosen. The panel has the choice, not the candidates.
-          [
+        : own && what
+          ? what.name
+          : choice
+            ? sentence(choice.prompt)
+            : turnOf
+              ? `${faction(turnOf)}’s turn`
+              : "Waiting",
+    pill: choice
+      ? { tone: "live", label: own && pickWord ? `Your decision · ${pickWord}` : "Your decision" }
+      : turnOf && waitingFor
+        ? { tone: "quiet", label: `Waiting for ${waitingFor}` }
+        : null,
+    trail:
+      own && what
+        ? [
+            { label: `Play ${what.name}`, status: "complete" as const },
             {
-              kind: "note",
-              tone: staged ? "accent" : "quiet",
-              strong: staged ? `System ${staged.id}` : undefined,
-              text: staged
-                ? "Selected on the board."
-                : `${choice.options.length} systems can be chosen on the board.`,
+              label: sentence(pickWord?.replace("Choose a ", "") ?? "decision"),
+              status: "active" as const,
             },
           ]
-        : research
-          ? [research.block]
-          : tokens
-            ? [tokens.block]
-            : [
-                ...(card ? [{ kind: "source" as const, ...card }] : []),
-                { kind: "menu", rows: window?.rows ?? rows },
-              ],
+        : [],
+    help: own && what?.text ? [{ title: `${what.type} · ${what.name}`, text: what.text }] : [],
+    blocks,
     footer: {
       note: local.planNote
         ? local.planNote.text
         : !choice
-          ? ""
+          ? turnOf && waitingFor
+            ? `Waiting for ${waitingFor}.`
+            : ""
           : tokens
             ? tokens.note
             : staged
-              ? `Selected: ${window?.rows.find((row) => row.selected)?.title ?? (research ? research.name(staged.id) : sentence(staged.label || staged.id))}`
+              ? `Selected: ${window?.rows.find((row) => row.selected)?.title ?? (research ? research.name(staged.id) : optionText(update, staged, onBoard, seats, printed))}`
               : window
                 ? ""
                 : research
                   ? `${research.open} ${research.open === 1 ? "technology can" : "technologies can"} be researched.`
-                  : `Choose one of ${choice.options.length}.`,
+                  : pickWord
+                    ? `${pickWord} ${onBoard ? "on the map" : "in the player table"}.`
+                    : `Choose one of ${choice.options.length}.`,
       error: !!local.planNote?.error,
       actions: [
         ...(stepping
@@ -284,15 +655,7 @@ export function selectAction(
               },
             ]
           : []),
-        ...(local.canUndo && !local.replaying
-          ? [
-              {
-                label: "Undo",
-                tone: "quiet" as const,
-                intent: { type: "undo" as const },
-              },
-            ]
-          : []),
+        ...undo,
         ...(choice
           ? [
               // The pools are cleared when the player changed them.
@@ -335,4 +698,29 @@ export function selectAction(
       ],
     },
   };
+}
+
+/** What a staged option is, in words: the thing on the board or the player that it stands for. */
+function optionText(
+  update: SessionUpdate,
+  option: ChoiceOption,
+  onBoard: ReturnType<typeof boardPick>,
+  seats: Record<string, string> | null,
+  printed: Catalog | null,
+): string {
+  const thing = onBoard?.of[option.id];
+  if (thing && onBoard?.target === "system") {
+    const tiles = new Map(
+      (update.view.board.map_tiles ?? []).map((tile) => [tile.system_id, tile]),
+    );
+    return systemLabel(tiles, thing);
+  }
+  if (thing) {
+    const planet = (update.view.board.map_tiles ?? [])
+      .flatMap((tile) => tile.planets ?? [])
+      .find((item) => item.id === thing);
+    return planet?.label ?? humanizeId(thing);
+  }
+  const seat = seats?.[option.id];
+  return seat ? seatLabel(update, seat, printed) : sentence(option.label || option.id);
 }
