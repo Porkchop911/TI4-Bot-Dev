@@ -2261,6 +2261,7 @@ fn warfare_primary(
         },
         "warfare_redistribute_tokens",
         "Warfare: redistribute your command tokens",
+        0,
     )?;
     Ok(())
 }
@@ -2295,10 +2296,12 @@ pub(crate) fn redistribute_around_te_warfare(
         } else {
             "Warfare: redistribute your command tokens after the tactical action"
         },
+        0,
     )
 }
 
-/// Move command tokens between a player's own pools under the caller's named rule/effect.
+/// Move command tokens between a player's own pools under the caller's named rule/effect, with
+/// `gained` more tokens from reinforcements placed by the same answer (0 but for the status phase).
 ///
 /// Offered as one choice over every legal final distribution, so the policy scores the complete
 /// command sheet it is choosing rather than a sequence of isolated one-token moves.
@@ -2312,8 +2315,9 @@ pub(crate) fn redistribute_tokens(
     source: &DecisionSource,
     subtype: &str,
     prompt: &str,
+    gained: i32,
 ) -> Result<Ability, IllegalChoice> {
-    let mut window = crate::tokens::TokenRedistribution::new(player.clone());
+    let mut window = crate::tokens::TokenRedistribution::with_gain(player.clone(), gained);
     let Some(choice) = window.pending_choice(state) else {
         return Ok(Ability::Resolved);
     };
@@ -2325,7 +2329,12 @@ pub(crate) fn redistribute_tokens(
             state.phase,
             state.round,
         ));
-    let choice = crate::tokens::with_pool_details(choice, state, "redistribute", None);
+    let choice = crate::tokens::with_pool_details(
+        choice,
+        state,
+        "redistribute",
+        usize::try_from(gained).ok().filter(|count| *count > 0),
+    );
     let answer = ask(state, content, sources, galaxy, table, &choice)?;
     window.resolve(state, answer).map_err(|error| match error {
         crate::tokens::RedistributeError::IllegalChoice(error) => error,
@@ -2724,6 +2733,7 @@ mod tests {
             },
             "warfare_redistribute_tokens",
             "Warfare: redistribute your command tokens",
+            0,
         )
         .expect("redistribution resolves");
 
@@ -2760,6 +2770,7 @@ mod tests {
             &DecisionSource::Rule("81.5".to_owned()),
             "status_redistribute_tokens",
             "redistribute your command tokens",
+            0,
         )
         .expect("status redistribution resolves");
 

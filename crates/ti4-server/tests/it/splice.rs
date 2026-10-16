@@ -351,10 +351,19 @@ fn removing_a_decision_that_drew_cards_is_flagged_not_neutral() {
 #[test]
 fn replacing_a_decline_with_a_draw_is_caught_without_a_removal() {
     let (state, galaxy, h) = base_history();
-    assert_eq!(h[206].chosen, "no");
-    let p = splice_preview(&state, Some(&galaxy), &h, &replace(206, "yes")).unwrap();
+    // Politics' secondary, declined: the history is found by what it asks, not by its index.
+    let k = h
+        .iter()
+        .position(|r| {
+            r.prompt
+                .starts_with("spend a strategy token to draw two action cards")
+                && r.chosen == "no"
+                && r.offered.iter().any(|o| o == "yes")
+        })
+        .expect("the fixture game declines Politics' secondary draw");
+    let p = splice_preview(&state, Some(&galaxy), &h, &replace(k, "yes")).unwrap();
     assert_eq!(p.rng.status, RngStatus::NotNeutral);
-    assert_eq!(p.rng.first_divergence_cursor, Some(206));
+    assert_eq!(p.rng.first_divergence_cursor, Some(k));
     assert_eq!(
         p.rng.first_divergence.unwrap().decks.get("action_card"),
         Some(&-2)

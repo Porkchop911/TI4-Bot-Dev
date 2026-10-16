@@ -139,6 +139,6 @@ pub use timing::{
     Ability, AbilityCondition, AbilityEffect, AbilityRegistry, Frequency, OptionPayload, Relation,
     Resolver, TimingError,
 };
-pub use tokens::{POOL_KIND, STATUS_TOKENS, TokenGain, TokenGainError, TokenPlacement};
+pub use tokens::{POOL_KIND, STATUS_TOKENS, TokenGain};
 pub use transit::{Cargo, CargoSource, CargoWindow, MoveOutcome, apply_move};
 pub use vote::{AGAINST, Ballot, FOR, VoteError, VoteWindow, outcomes, votable_planets};

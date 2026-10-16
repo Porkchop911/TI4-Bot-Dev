@@ -29,15 +29,47 @@ const UPDATE: [&str; 13] = [
     "seats",
 ];
 
-/// One recorded update: the game, the question that is recorded (counted from 1), and the
-/// answers to the first questions, so that the game reaches it. A question without an answer
-/// here is answered by a fixed rule.
+/// One recorded update: the game, the question that is recorded, and the answers to the first
+/// questions, so that the game reaches it. A question without an answer here is answered by a
+/// fixed rule.
 struct Recording {
     name: &'static str,
     /// `{"seed", "players", "humans"}` or `{"scenario", "humans"}`.
     game: Value,
-    question: usize,
+    question: At,
     answers: &'static [&'static str],
+}
+
+/// Which question a recording keeps.
+#[derive(Clone, Copy)]
+enum At {
+    /// The question of this number, counted from 1: a short script that leads to it.
+    Question(usize),
+    /// The first turn menu of the human seat in this round that still offers its strategic
+    /// action. Found by what it shows, not by its number, so that a change of how many questions
+    /// come before it (a rule asked in fewer steps) keeps the same kind of position.
+    TurnMenu { round: u64 },
+}
+
+impl At {
+    fn is(self, asked: usize, update: &Value) -> bool {
+        match self {
+            Self::Question(wanted) => asked == wanted,
+            Self::TurnMenu { round } => {
+                let choice = &update["pending_choice"]["choice"];
+                let offers = |id: &str| {
+                    choice["options"]
+                        .as_array()
+                        .is_some_and(|options| options.iter().any(|o| o["id"] == id))
+                };
+                update["view"]["round"] == round
+                    && update["view"]["phase"] == "action"
+                    && choice["player"] == update["viewer"]["seat"]
+                    && offers("strategic")
+                    && offers("tactical")
+            }
+        }
+    }
 }
 
 fn recordings() -> Vec<Recording> {
@@ -47,25 +79,25 @@ fn recordings() -> Vec<Recording> {
         Recording {
             name: "update-activation",
             game: seed(3),
-            question: 3,
+            question: At::Question(3),
             answers: &["pok8imperial", "tactical"],
         },
         Recording {
             name: "update-movement",
             game: seed(3),
-            question: 4,
+            question: At::Question(4),
             answers: &["pok8imperial", "tactical", "23"],
         },
         Recording {
             name: "update-load",
             game: seed(3),
-            question: 5,
+            question: At::Question(5),
             answers: &["pok8imperial", "tactical", "23", "move|01|0"],
         },
         Recording {
             name: "update-landing",
             game: seed(3),
-            question: 9,
+            question: At::Question(9),
             answers: &[
                 "pok8imperial",
                 "tactical",
@@ -80,19 +112,19 @@ fn recordings() -> Vec<Recording> {
         Recording {
             name: "update-menu",
             game: seed(3),
-            question: 53,
+            question: At::TurnMenu { round: 2 },
             answers: &[],
         },
         Recording {
             name: "update-battle",
             game: late.clone(),
-            question: 3,
+            question: At::Question(3),
             answers: &["tactical", "32"],
         },
         Recording {
             name: "update-production",
             game: late,
-            question: 5,
+            question: At::Question(5),
             answers: &["tactical", "72", "done_moving", "decline"],
         },
     ]
@@ -165,7 +197,7 @@ fn record(recording: &Recording) -> Result<Value, String> {
             return -1;
         };
         run.asked.push(line);
-        if asked == wanted {
+        if wanted.is(asked, &update) {
             run.update = Some(update);
             return -1;
         }
@@ -220,7 +252,7 @@ fn record(recording: &Recording) -> Result<Value, String> {
         (failure, _) => Err(format!(
             "{}: {}\nthe questions:\n{}",
             recording.name,
-            failure.unwrap_or_else(|| format!("the game ended before question {wanted}")),
+            failure.unwrap_or_else(|| "the game ended before its question".to_owned()),
             run.asked.join("\n")
         )),
     }

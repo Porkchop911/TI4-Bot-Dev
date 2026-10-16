@@ -1,12 +1,13 @@
-//! Gaining command tokens into a pool of the player's choosing (LRR 52.4).
+//! Command tokens on the command sheet: the status phase's gain (81.5), the redistribution of a
+//! sheet in one decision, and tokens placed on the board from reinforcements.
 //!
-//! Ported from the oracle's `Game.gain_tokens`. The oracle is explicit that this is one rule
-//! with two callers — the status phase's gain step (81.5) and Leadership — and that having the
-//! status phase quietly drop every token into the tactic pool "was an inconsistency, not a
-//! simplification". So the window lives here rather than inside either caller.
+//! The status phase's gain is not asked token by token: the redistribution that follows it
+//! decides where every token ends up, so [`TokenGain`] only counts what each seat gains and
+//! [`TokenRedistribution::with_gain`] asks once over the larger sheet. Leadership's gain, which no
+//! redistribution follows, asks a pool for each token in `strategy_cards::gain_tokens`.
 
 use ti4_model::id::{PlayerId, SystemId};
-use ti4_model::state::{GameState, TokenPool};
+use ti4_model::state::GameState;
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, validate};
 
@@ -20,57 +21,18 @@ pub const POOL_KIND: &str = "pool";
 /// they modify the count handed to [`TokenGain::for_status`], not this constant.
 pub const STATUS_TOKENS: u32 = 2;
 
-/// A pool could not be selected from the state that was presented.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum TokenGainError {
-    #[error("the token-gain window is complete")]
-    Complete,
-    #[error("player {0} is no longer seated")]
-    PlayerMissing(PlayerId),
-    #[error("option id {0:?} does not name a command-token pool")]
-    UnknownPool(String),
-    #[error(transparent)]
-    IllegalChoice(#[from] IllegalChoice),
-}
-
-/// One placed token, for the caller's report.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TokenPlacement {
-    pub player: PlayerId,
-    pub pool: TokenPool,
-}
-
-/// An ordered window granting tokens one at a time, each into a chosen pool.
+/// What each seat gains at status step 81.5, in initiative order.
 ///
-/// One choice per token rather than one per player: LRR 52.4 places tokens individually, and a
-/// player gaining two may legitimately split them across pools. Asking once for a count would
-/// make that unrepresentable.
+/// The gained tokens are placed by the redistribution that follows (see
+/// [`TokenRedistribution::with_gain`]), so this holds counts, not a decision.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TokenGain {
-    /// Remaining grants, one entry per token still to be placed, in resolution order.
+    /// One entry per token owed, in resolution order.
     pending: Vec<PlayerId>,
-    placed: Vec<TokenPlacement>,
-}
-
-/// The pools a gained token may enter, in the oracle's option order.
-const POOLS: [(&str, TokenPool, &str); 3] = [
-    ("tactic_tokens", TokenPool::Tactic, "tactic pool"),
-    ("fleet_tokens", TokenPool::Fleet, "fleet pool"),
-    ("strategic_tokens", TokenPool::Strategic, "strategy pool"),
-];
-
-fn pool_for(option_id: &str) -> Option<TokenPool> {
-    POOLS
-        .iter()
-        .find(|(id, _, _)| *id == option_id)
-        .map(|(_, pool, _)| *pool)
 }
 
 impl TokenGain {
-    /// A window granting `count` tokens to each player, in the given order.
-    ///
-    /// The order is the caller's: status step 81.5 grants in initiative order, which the oracle
-    /// takes care to capture before strategy cards return at 81.8.
+    /// A grant of `count` tokens to each player, in the given order.
     #[must_use]
     pub fn new(players: &[PlayerId], count: u32) -> Self {
         let mut pending = Vec::new();
@@ -79,12 +41,7 @@ impl TokenGain {
                 pending.push(player.clone());
             }
         }
-        // Reversed once so that `pop` takes from the front without shifting the vector.
-        pending.reverse();
-        Self {
-            pending,
-            placed: Vec::new(),
-        }
+        Self { pending }
     }
 
     /// The status phase's grant to each player in initiative order, including faction modifiers.
@@ -111,92 +68,13 @@ impl TokenGain {
                 pending.push(player.clone());
             }
         }
-        pending.reverse();
-        Self {
-            pending,
-            placed: Vec::new(),
-        }
+        Self { pending }
     }
 
+    /// How many tokens `player` gains, before the reinforcements cap it (20.4a).
     #[must_use]
-    pub const fn is_complete(&self) -> bool {
-        self.pending.is_empty()
-    }
-
-    /// The player whose token is next to place.
-    #[must_use]
-    pub fn next_player(&self) -> Option<&PlayerId> {
-        self.pending.last()
-    }
-
-    /// How many tokens the next player still has to place in this window, this one included.
-    #[must_use]
-    pub fn remaining_for_next_player(&self) -> usize {
-        self.next_player().map_or(0, |next| {
-            self.pending
-                .iter()
-                .rev()
-                .take_while(|player| *player == next)
-                .count()
-        })
-    }
-
-    /// Every token placed so far, in resolution order.
-    #[must_use]
-    pub fn placed(&self) -> &[TokenPlacement] {
-        &self.placed
-    }
-
-    /// The choice for the next token, or `None` once the window is complete.
-    #[must_use]
-    pub fn pending_choice(&self) -> Option<Choice> {
-        let player = self.next_player()?;
-        Some(Choice::new(
-            player.clone(),
-            "gain a command token into which pool",
-            POOLS
-                .iter()
-                .map(|(id, _, label)| ChoiceOption::labelled(*id, POOL_KIND, *label))
-                .collect(),
-        ))
-    }
-
-    /// Place the next token into the chosen pool.
-    ///
-    /// Validates against the generated choice before mutating, so a decider that answers with
-    /// anything not offered cannot move a token.
-    ///
-    /// # Errors
-    /// [`TokenGainError::Complete`] when no token remains, [`TokenGainError::IllegalChoice`]
-    /// when the answer was not offered, [`TokenGainError::UnknownPool`] when it does not name a
-    /// pool, and [`TokenGainError::PlayerMissing`] when the player has left the table.
-    pub fn resolve(
-        &mut self,
-        state: &mut GameState,
-        answer: ChoiceOption,
-    ) -> Result<TokenPool, TokenGainError> {
-        let choice = self.pending_choice().ok_or(TokenGainError::Complete)?;
-        let option = validate(&choice, answer)?;
-        let Some(pool) = pool_for(&option.id) else {
-            return Err(TokenGainError::UnknownPool(option.id));
-        };
-
-        let player_id = choice.player;
-        let player = state
-            .player(&player_id)
-            .ok_or_else(|| TokenGainError::PlayerMissing(player_id.clone()))?;
-        let _ = player;
-        // 20.4a: "if a player would gain a command token but has none available in their
-        // reinforcements, that player cannot gain that command token." The offer still happens --
-        // it is the same decision either way -- and the gain is what comes up empty.
-        state.gain_token(&player_id, pool, 1);
-
-        self.pending.pop();
-        self.placed.push(TokenPlacement {
-            player: player_id,
-            pool,
-        });
-        Ok(pool)
+    pub fn remaining_for(&self, player: &PlayerId) -> usize {
+        self.pending.iter().filter(|next| *next == player).count()
     }
 }
 
@@ -205,7 +83,8 @@ impl TokenGain {
 ///
 /// `mode` is `"buy"` (nothing free to place; the decision is Leadership's influence purchase),
 /// `"gain"` (with `tokens_to_place` tokens still to place, this one included) or
-/// `"redistribute"` (with the total held).
+/// `"redistribute"` (with the total held, plus `tokens_to_place` tokens gained in the same
+/// decision when it is given: see [`TokenRedistribution::with_gain`]).
 #[must_use]
 pub fn with_pool_details(
     choice: Choice,
@@ -223,12 +102,25 @@ pub fn with_pool_details(
         .detailed(
             "pools",
             serde_json::json!({ "tactic": tactic, "fleet": fleet, "strategic": strategic }),
-        )
-        .detailed("reinforcements", reinforcements);
+        );
     match (mode, tokens_to_place) {
-        ("gain" | "buy", Some(count)) => choice.detailed("tokens_to_place", count),
-        ("redistribute" | "restack", _) => choice.detailed("total", tactic + fleet + strategic),
-        _ => choice,
+        ("gain" | "buy", Some(count)) => choice
+            .detailed("reinforcements", reinforcements)
+            .detailed("tokens_to_place", count),
+        ("redistribute", Some(gained)) if gained > 0 => {
+            // A redistribution that also gains (the status phase): `pools` is the sheet before
+            // the gain, `total` the arrangement to choose, and the gained tokens are already out
+            // of the reinforcements it reports.
+            let gained = i32::try_from(gained).unwrap_or(i32::MAX);
+            choice
+                .detailed("reinforcements", (reinforcements - gained).max(0))
+                .detailed("total", tactic + fleet + strategic + gained)
+                .detailed("gained", gained)
+        }
+        ("redistribute" | "restack", _) => choice
+            .detailed("reinforcements", reinforcements)
+            .detailed("total", tactic + fleet + strategic),
+        _ => choice.detailed("reinforcements", reinforcements),
     }
 }
 
@@ -308,6 +200,8 @@ fn parse_distribution(option_id: &str) -> Option<(i32, i32, i32)> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TokenRedistribution {
     player: PlayerId,
+    /// Tokens gained from reinforcements in the same decision (the status phase's 81.5 gain).
+    gained: i32,
     resolved: bool,
 }
 
@@ -315,8 +209,22 @@ impl TokenRedistribution {
     /// Open the window for whatever `player` currently holds.
     #[must_use]
     pub const fn new(player: PlayerId) -> Self {
+        Self::with_gain(player, 0)
+    }
+
+    /// Open the window for what `player` holds plus `gained` tokens from reinforcements.
+    ///
+    /// LRR 81.5 gains two tokens and then lets the player redistribute every token held, so
+    /// asking where each gained token goes first is a choice with no consequence: the
+    /// redistribution decides the final sheet either way. The status phase asks once, over the
+    /// arrangements of the larger total. The caller caps `gained` by the reinforcements (20.4a);
+    /// `resolve` sets the pools absolutely, so the gained tokens leave the (computed)
+    /// reinforcements by being on the sheet.
+    #[must_use]
+    pub const fn with_gain(player: PlayerId, gained: i32) -> Self {
         Self {
             player,
+            gained,
             resolved: false,
         }
     }
@@ -341,7 +249,7 @@ impl TokenRedistribution {
         if self.resolved {
             return None;
         }
-        let total = self.held_total(state);
+        let total = self.held_total(state) + self.gained;
         (total > 0).then(|| {
             Choice::new(
                 self.player.clone(),
@@ -557,6 +465,7 @@ pub fn wormhole_generator_destinations(
 mod tests {
     use ti4_content::ContentStore;
     use ti4_model::content_types::POK;
+    use ti4_model::state::TokenPool;
 
     use super::*;
     use crate::setup::start_game;
@@ -565,37 +474,6 @@ mod tests {
         let players = [PlayerId::new("a"), PlayerId::new("b")];
         let state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
         (state, players)
-    }
-
-    fn pick(window: &TokenGain, id: &str) -> ChoiceOption {
-        window.pending_choice().unwrap().option(id).unwrap().clone()
-    }
-
-    #[test]
-    fn each_token_is_offered_separately_in_the_given_order() {
-        let (state, players) = game();
-        let window = TokenGain::for_status(&state, ContentStore::embedded(), &players);
-
-        // Two tokens each, player a first: a, a, b, b.
-        assert_eq!(window.next_player(), Some(&PlayerId::new("a")));
-        assert_eq!(window.pending.len(), 4);
-    }
-
-    #[test]
-    fn the_window_says_how_many_tokens_the_next_player_still_places() {
-        let (mut state, players) = game();
-        let mut window = TokenGain::new(&players, 2);
-        // a, a, b, b: two for a, then two for b.
-        assert_eq!(window.remaining_for_next_player(), 2);
-        window
-            .resolve(&mut state, pick(&window, "tactic_tokens"))
-            .unwrap();
-        assert_eq!(window.remaining_for_next_player(), 1);
-        window
-            .resolve(&mut state, pick(&window, "tactic_tokens"))
-            .unwrap();
-        assert_eq!(window.next_player(), Some(&players[1]));
-        assert_eq!(window.remaining_for_next_player(), 2);
     }
 
     #[test]
@@ -607,8 +485,12 @@ mod tests {
             seat.fleet_tokens = 4;
             seat.strategic_tokens = 2;
         }
-        let window = TokenGain::new(&players[..1], 2);
-        let choice = with_pool_details(window.pending_choice().unwrap(), &state, "gain", Some(2));
+        let ask = Choice::new(
+            players[0].clone(),
+            "gain a command token into which pool",
+            vec![ChoiceOption::new("tactic_tokens", POOL_KIND)],
+        );
+        let choice = with_pool_details(ask, &state, "gain", Some(2));
         assert_eq!(choice.details["kind"], "command_tokens");
         assert_eq!(choice.details["mode"], "gain");
         assert_eq!(choice.details["tokens_to_place"], 2);
@@ -674,140 +556,11 @@ mod tests {
     }
 
     #[test]
-    fn a_player_may_split_their_tokens_across_pools() {
-        // The reason there is one choice per token rather than one per player.
-        let (mut state, players) = game();
-        let mut window = TokenGain::new(&players[..1], 2);
-        let before = state.player(&players[0]).unwrap().clone();
-
-        window
-            .resolve(&mut state, pick(&window, "tactic_tokens"))
-            .unwrap();
-        window
-            .resolve(&mut state, pick(&window, "fleet_tokens"))
-            .unwrap();
-
-        let after = state.player(&players[0]).unwrap();
-        assert_eq!(after.tactic_tokens, before.tactic_tokens + 1);
-        assert_eq!(after.fleet_tokens, before.fleet_tokens + 1);
-        assert_eq!(after.strategic_tokens, before.strategic_tokens);
-        assert!(window.is_complete());
-    }
-
-    #[test]
-    fn every_pool_can_be_chosen() {
-        let (mut state, players) = game();
-        let mut window = TokenGain::new(&players[..1], 3);
-        let before = state.player(&players[0]).unwrap().clone();
-
-        for id in ["tactic_tokens", "fleet_tokens", "strategic_tokens"] {
-            window.resolve(&mut state, pick(&window, id)).unwrap();
-        }
-
-        let after = state.player(&players[0]).unwrap();
-        assert_eq!(after.tactic_tokens, before.tactic_tokens + 1);
-        assert_eq!(after.fleet_tokens, before.fleet_tokens + 1);
-        assert_eq!(after.strategic_tokens, before.strategic_tokens + 1);
-    }
-
-    #[test]
-    fn the_window_grants_in_the_order_it_was_given() {
-        let (mut state, players) = game();
-        let mut window = TokenGain::for_status(&state, ContentStore::embedded(), &players);
-
-        let mut order = Vec::new();
-        while !window.is_complete() {
-            order.push(window.next_player().unwrap().clone());
-            window
-                .resolve(&mut state, pick(&window, "tactic_tokens"))
-                .unwrap();
-        }
-
-        assert_eq!(
-            order,
-            vec![
-                PlayerId::new("a"),
-                PlayerId::new("a"),
-                PlayerId::new("b"),
-                PlayerId::new("b"),
-            ]
-        );
-    }
-
-    #[test]
-    fn an_answer_that_was_not_offered_moves_no_token() {
-        let (mut state, players) = game();
-        let mut window = TokenGain::new(&players[..1], 1);
-        let before = state.clone();
-
-        let error = window
-            .resolve(&mut state, ChoiceOption::new("trade_goods", POOL_KIND))
-            .unwrap_err();
-
-        assert!(matches!(error, TokenGainError::IllegalChoice(_)));
-        assert!(state.identical(&before), "state must not have moved");
-        assert!(!window.is_complete(), "the token is still owed");
-    }
-
-    #[test]
-    fn resolving_a_complete_window_is_refused() {
-        let (mut state, players) = game();
-        let mut window = TokenGain::new(&players[..1], 1);
-        let option = pick(&window, "tactic_tokens");
-        window.resolve(&mut state, option.clone()).unwrap();
-
-        assert_eq!(
-            window.resolve(&mut state, option),
-            Err(TokenGainError::Complete)
-        );
-    }
-
-    #[test]
-    fn a_complete_window_offers_no_choice() {
-        let (mut state, players) = game();
-        let mut window = TokenGain::new(&players[..1], 1);
-        window
-            .resolve(&mut state, pick(&window, "fleet_tokens"))
-            .unwrap();
-
-        assert!(window.pending_choice().is_none());
-        assert!(window.next_player().is_none());
-    }
-
-    #[test]
-    fn placements_are_recorded_for_the_caller() {
-        let (mut state, players) = game();
-        let mut window = TokenGain::new(&players[..1], 2);
-        window
-            .resolve(&mut state, pick(&window, "strategic_tokens"))
-            .unwrap();
-        window
-            .resolve(&mut state, pick(&window, "tactic_tokens"))
-            .unwrap();
-
-        assert_eq!(
-            window.placed(),
-            &[
-                TokenPlacement {
-                    player: PlayerId::new("a"),
-                    pool: TokenPool::Strategic,
-                },
-                TokenPlacement {
-                    player: PlayerId::new("a"),
-                    pool: TokenPool::Tactic,
-                },
-            ]
-        );
-    }
-
-    #[test]
-    fn a_zero_token_grant_is_already_complete() {
-        // Nothing in the base game grants zero, but an ability that reduces the count must
-        // not leave an open window nobody can answer.
+    fn a_zero_token_grant_owes_nothing() {
+        // Nothing in the base game grants zero, but an ability may reduce the count.
         let (_, players) = game();
         let window = TokenGain::new(&players, 0);
-        assert!(window.is_complete());
-        assert!(window.pending_choice().is_none());
+        assert_eq!(window.remaining_for(&players[0]), 0);
     }
 
     // ─── TokenRedistribution: one decision over every legal final arrangement ─────────────
