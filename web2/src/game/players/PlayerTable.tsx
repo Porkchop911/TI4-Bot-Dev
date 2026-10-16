@@ -1,11 +1,12 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import type {
   ComponentCardView,
   PlayerPickView,
   PlayerRowView,
+  PlayerSort,
   PlayerTableView,
 } from "../../model";
-import { Icon, cx, type IconName } from "../../ui";
+import { Hint, Icon, cx, type IconName } from "../../ui";
 import { SeatSymbol, useDispatch, useSeat, useSeats } from "../context";
 
 /** "Agent exhausted · Commander locked": the cards by name, with the state of one that is not ready. */
@@ -14,43 +15,47 @@ const cardLine = (cards: ComponentCardView[], name: (card: ComponentCardView) =>
     .map((card) => `${name(card)}${card.state && card.state !== "ready" ? ` ${card.state}` : ""}`)
     .join(" · ");
 
-/** The sign of a seat that no person plays, as the lobby has it. */
-const PLAYED = { rule: "⚙", random: "⚄", model: "✦" };
+/** The icons of a card, in the order of the card: the legend of the header lists them. */
+const LEGEND: [IconName, string][] = [
+  ["star", "Victory points"],
+  ["speaker", "Speaker"],
+  ["resources", "Resources: ready / total"],
+  ["influence", "Influence: ready / total"],
+  ["planet", "Planets"],
+  ["coin", "Trade goods"],
+  ["commodity", "Commodities / limit"],
+  ["tokenDown", "Tactic pool · strategy pool"],
+  ["token", "Fleet pool"],
+  ["card", "Action cards in hand"],
+  ["secret", "Secret objectives: scored / held"],
+];
 
 /** A symbol that stands for a word: the word is its accessible name and its tooltip. */
 function Sign({ name, label, className }: { name: IconName; label: string; className?: string }) {
   return (
     <span role="img" aria-label={label} title={label} className="inline-flex flex-none">
-      <Icon name={name} className={cx("size-3.5", className)} />
+      <Icon name={name} className={cx("size-4", className)} />
     </span>
   );
 }
 
-/**
- * One value of a seat: its icon and its value. The full name is the tooltip and the accessible
- * name of the icon. A fixed width keeps the values of the cards under each other.
- */
+/** One value of a seat: its icon and its value. The full name is the tooltip and the accessible name of the icon. */
 function Stat({
   icon,
   label,
   title = label,
-  width,
   children,
 }: {
   icon: IconName;
   label: string;
   /** The tooltip, when it says more than the name: the format of the value. */
   title?: string;
-  width: string;
   children: ReactNode;
 }) {
   return (
-    <span
-      title={title}
-      className={cx("inline-flex flex-none items-center gap-1 phone:w-auto", width)}
-    >
+    <span title={title} className="inline-flex flex-none items-center gap-1">
       <span role="img" aria-label={label} className="inline-flex">
-        <Icon name={icon} className="size-3.5 text-faint" />
+        <Icon name={icon} className="size-4 text-faint" />
       </span>
       <span>{children}</span>
     </span>
@@ -62,26 +67,25 @@ function Pool({ label, count, up }: { label: string; count: number; up?: boolean
   return (
     <span title={label} className="inline-flex items-center gap-0.5">
       <span role="img" aria-label={label} className="inline-flex">
-        <Icon name={up ? "token" : "tokenDown"} className="size-3 text-faint" />
+        <Icon name={up ? "token" : "tokenDown"} className="size-3.5 text-faint" />
       </span>
       {count}
     </span>
   );
 }
 
+const BADGE = "flex-none rounded-sm px-1 text-2xs leading-4 font-strong";
+
 function Card({
   row,
   column,
   pick,
-  signs,
   onOpen,
 }: {
   row: PlayerRowView;
   /** The column of the grid: the hover sheet goes left of the cards, over the board. */
   column: number;
   pick: PlayerPickView | null;
-  /** A seat of the table has a sign: every card has its place. */
-  signs: boolean;
   onOpen: () => void;
 }) {
   const seat = useSeat(row.seat);
@@ -91,24 +95,26 @@ function Card({
   const allowed = !!option && option.reason === null;
   const chosen = !!pick?.chosen.includes(row.seat);
   const act = pick ? () => allowed && dispatch({ type: "pickSeat", seat: row.seat }) : onOpen;
-  const quiet = row.passed ? "text-faint" : undefined;
   const [tactic, fleet, strategy] = row.tokens;
   return (
     // biome-ignore lint/a11y/useKeyWithClickEvents: a click anywhere on the card is a larger target; the name button is the control for the keyboard
     <li
       onClick={act}
       className={cx(
-        "group relative rounded-md border border-line px-1.5 py-1 focus-within:bg-white/5",
+        "group relative min-w-0 rounded-md border px-2 py-2 focus-within:bg-white/5",
+        // The card of the active player stands out: ▶ and a frame in the accent.
+        row.turn === "now" ? "border-accent outline outline-accent" : "border-line",
         (!pick || allowed) && "cursor-pointer hover:bg-white/5",
         pick && !allowed && "opacity-45",
-        allowed && !chosen && "shadow-[inset_2px_0_0_var(--color-text)]",
-        chosen && "shadow-[inset_2px_0_0_var(--color-gold)]",
+        allowed && !chosen && "shadow-[inset_3px_0_0_var(--color-text)]",
+        chosen && "shadow-[inset_3px_0_0_var(--color-gold)]",
         row.isMe && !pick && "bg-cyan/[.07]",
         row.passed ? "text-faint" : row.isMe ? "text-text" : "text-muted",
       )}
     >
-      <div className="flex h-5 min-w-0 items-center gap-[5px]">
-        <span className="w-3 flex-none text-center text-xs text-muted">
+      {/* Desktop: one line. A phone breaks it after the victory points. */}
+      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-sm">
+        <span className="w-3.5 flex-none text-center text-muted">
           {row.turn === "now" ? (
             <span className="text-accent" title="Active player">
               ▶
@@ -128,55 +134,58 @@ function Card({
           aria-label={
             pick
               ? `${pick.verb} ${seat.name}, ${seat.faction}${option?.reason ? `. ${option.reason}` : ""}`
-              : `${seat.name}, ${seat.faction}${row.turn === "now" ? ", active player" : ""}${row.speaker ? ", speaker" : ""}${row.passed ? ", passed" : ""}. Open player sheet.`
+              : `${seat.name}, ${seat.faction}${row.isMe ? ", you" : ""}${row.turn === "now" ? ", active player" : ""}${row.speaker ? ", speaker" : ""}${row.passed ? ", passed" : ""}. Open player sheet.`
           }
-          className="flex min-w-0 flex-1 items-center gap-[5px] overflow-hidden text-left text-xs focus-visible:outline-offset-1"
+          className="flex min-w-[120px] flex-[1_1_0] items-center gap-1.5 overflow-hidden text-left focus-visible:outline-offset-1 phone:min-w-[72px]"
         >
           <SeatSymbol seat={row.seat} />
-          {signs &&
-            (seat.played ? (
-              <span
-                className="w-3 flex-none text-center text-muted"
-                role="img"
-                aria-label={seat.played.word}
-                title={seat.played.word}
-              >
-                {PLAYED[seat.played.kind]}
-              </span>
-            ) : (
-              <span className="w-3 flex-none" />
-            ))}
           <span
-            className={cx("max-w-[120px] flex-none truncate font-strong", quiet ?? "text-text")}
+            className={cx(
+              "max-w-[150px] flex-none truncate font-strong phone:max-w-full phone:flex-initial",
+              row.passed ? "text-faint" : "text-text",
+            )}
             title={seat.name}
           >
             {seat.name}
           </span>
-          {/* While the cards are the picker, a card has what the choice gives in this place. */}
-          {!pick && (
-            <span className={cx("min-w-0 truncate", quiet ?? "text-muted")} title={seat.faction}>
-              {seat.faction}
-            </span>
-          )}
-          {option?.reason && (
-            <span className="min-w-0 truncate text-2xs text-red" title={option.reason}>
-              {option.reason}
-            </span>
-          )}
-          {option?.note && !option.reason && (
-            <span className="flex-none text-2xs whitespace-nowrap text-text tabular-nums">
-              {option.note}
-            </span>
-          )}
-          {chosen && <span className="flex-none text-2xs font-bold text-gold">Selected</span>}
+          <span className="min-w-0 truncate text-muted phone:hidden" title={seat.faction}>
+            {seat.faction}
+          </span>
         </button>
+        <span
+          title="Victory points of 10"
+          className="order-last inline-flex flex-none items-center gap-1 rounded-full bg-raised px-2 font-strong text-text tabular-nums phone:order-none"
+        >
+          <span role="img" aria-label="Victory points" className="inline-flex">
+            <Icon name="star" className="size-3.5 text-gold" />
+          </span>
+          <span>{row.victoryPoints}</span>
+        </span>
+        <span className="hidden h-0 basis-full phone:block" />
+        <span className="hidden min-w-0 truncate text-xs text-muted phone:block phone:basis-full">
+          {seat.faction}
+        </span>
+        {row.isMe && <span className={cx(BADGE, "bg-cyan/15 text-cyan")}>You</span>}
+        {row.passed && (
+          <span className={cx(BADGE, "border border-line-strong text-muted")}>Passed</span>
+        )}
         {row.speaker && <Sign name="speaker" label="Speaker" className="text-gold" />}
-        {row.passed && <Sign name="passed" label="Passed" className="text-faint" />}
+        {option?.reason && (
+          <span className="min-w-0 truncate text-xs text-red" title={option.reason}>
+            {option.reason}
+          </span>
+        )}
+        {option?.note && !option.reason && (
+          <span className="flex-none text-xs whitespace-nowrap text-text tabular-nums">
+            {option.note}
+          </span>
+        )}
+        {chosen && <span className="flex-none text-xs font-bold text-gold">Selected</span>}
         {row.strategyCards.length > 0 && (
           <span
             role="group"
             aria-label="Strategy cards"
-            className="flex flex-none items-center gap-1.5 text-xs"
+            className="flex flex-wrap items-center gap-x-2 gap-y-1"
           >
             {row.strategyCards.map((card) => (
               <span
@@ -184,7 +193,7 @@ function Card({
                 className={cx("inline-flex items-center gap-1", card.used && "opacity-60")}
                 title={`Strategy card ${card.number} ${card.name}${card.used ? " · used" : ""}`}
               >
-                <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-sm border border-line-strong text-2xs font-strong text-text tabular-nums">
+                <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-sm border border-line-strong text-xs font-strong text-text tabular-nums">
                   {card.number}
                 </span>{" "}
                 {card.name}
@@ -193,35 +202,26 @@ function Card({
             ))}
           </span>
         )}
-        <span
-          title="Victory points of 10"
-          className="inline-flex flex-none items-center gap-1 rounded-full bg-raised px-1.5 text-xs font-strong text-text tabular-nums"
-        >
-          <span role="img" aria-label="Victory points" className="inline-flex">
-            <Icon name="star" className="size-3 text-gold" />
-          </span>
-          <span>{row.victoryPoints}</span>
-        </span>
       </div>
-      <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 pl-[17px] phone:gap-x-2.5 phone:pl-0 text-xs whitespace-nowrap tabular-nums">
-        <Stat icon="resources" label="Resources" title="Resources: ready / total" width="w-[56px]">
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-3.5 gap-y-1 pl-5 text-sm whitespace-nowrap tabular-nums phone:gap-x-2.5 phone:pl-0">
+        <Stat icon="resources" label="Resources" title="Resources: ready / total">
           {row.resources.join("/")}
         </Stat>
-        <Stat icon="influence" label="Influence" title="Influence: ready / total" width="w-[56px]">
+        <Stat icon="influence" label="Influence" title="Influence: ready / total">
           {row.influence.join("/")}
         </Stat>
-        <Stat icon="planet" label="Planets" width="w-[34px]">
+        <Stat icon="planet" label="Planets">
           {row.planets}
         </Stat>
-        <Stat icon="coin" label="Trade goods" width="w-[34px]">
+        <Stat icon="coin" label="Trade goods">
           {row.tradeGoods}
         </Stat>
-        <Stat icon="commodity" label="Commodities" title="Commodities / limit" width="w-[44px]">
+        <Stat icon="commodity" label="Commodities" title="Commodities / limit">
           {row.commodities.join("/")}
         </Stat>
         <span
           title="Command tokens: tactic · fleet · strategy"
-          className="inline-flex w-[92px] flex-none items-center gap-1 phone:w-auto"
+          className="inline-flex flex-none items-center gap-1"
         >
           {/* The dots keep the order of the command sheet in the text: "3 · 3 · 2". */}
           <Pool label="Tactic pool" count={tactic} />
@@ -230,15 +230,10 @@ function Card({
           <span className="text-faint">{" · "}</span>
           <Pool label="Strategy pool" count={strategy} />
         </span>
-        <Stat icon="card" label="Action cards" title="Action cards in hand" width="w-[34px]">
+        <Stat icon="card" label="Action cards" title="Action cards in hand">
           {row.actionCards}
         </Stat>
-        <Stat
-          icon="secret"
-          label="Secret objectives"
-          title="Secret objectives: scored / held"
-          width="w-[40px]"
-        >
+        <Stat icon="secret" label="Secret objectives" title="Secret objectives: scored / held">
           {row.secrets.join("/")}
         </Stat>
       </div>
@@ -246,7 +241,7 @@ function Card({
         className={cx(
           "absolute top-0 z-20 hidden w-[min(340px,90vw)] cursor-default rounded-lg border border-line bg-raised px-3 py-2.5 text-xs leading-[1.45] font-normal whitespace-normal text-text shadow-[0_10px_30px_#0008]",
           // Left of the cards: over the board, never over another card.
-          column === 0 ? "right-[calc(100%+10px)]" : "right-[calc(200%+14px)]",
+          column === 0 ? "right-[calc(100%+12px)]" : "right-[calc(200%+18px)]",
           // While the cards are the picker, the sheet of a player does not cover the board.
           // A phone opens the sheet of the player with a tap; it has the same text.
           !pick && "group-focus-within:block group-hover:block phone:hidden!",
@@ -258,7 +253,11 @@ function Card({
         {/* The names only. The sheet of the player has the printed texts. */}
         <p className="mt-[5px]">{cardLine(row.abilities, (card) => card.name)}</p>
         <p className="mt-[5px] text-muted">
-          <Sign name="tech" label="Technologies" className="mr-1 align-[-2px] text-faint" />
+          <Sign
+            name="tech"
+            label="Technologies"
+            className="mr-1 size-3.5 align-[-2px] text-faint"
+          />
           {row.technologies.join(" · ")}
         </p>
         <p className="mt-[5px] text-muted">
@@ -272,9 +271,48 @@ function Card({
   );
 }
 
+const SORTS: [PlayerSort, string, string][] = [
+  ["initiative", "Initiative", "By initiative, the lowest first"],
+  ["vp", "VP", "By victory points, the most first"],
+];
+
+/** The order that the viewer chose is kept in the browser, for each seat. */
+const sortKey = (seat: string) => `ti4.players.sort.${seat}`;
+function readSort(seat: string): PlayerSort | null {
+  try {
+    const value = localStorage.getItem(sortKey(seat));
+    return value === "initiative" || value === "vp" ? value : null;
+  } catch {
+    return null;
+  }
+}
+function writeSort(seat: string, sort: PlayerSort) {
+  try {
+    localStorage.setItem(sortKey(seat), sort);
+  } catch {
+    // Without storage the choice holds until the page is left.
+  }
+}
+
 /**
- * One card for each player, two columns on desktop, in the order of the selector. ▶ shows the
- * turn. Each value is an icon and a number; the name of the value is its tooltip.
+ * The rows in an order: by initiative (a seat with no strategy card last) or by victory points,
+ * the most first. A tie keeps the seat order.
+ */
+function sorted(rows: PlayerRowView[], sort: PlayerSort, initiative: string[], seats: string[]) {
+  const key =
+    sort === "initiative"
+      ? (row: PlayerRowView) => {
+          const index = initiative.indexOf(row.seat);
+          return index < 0 ? initiative.length : index;
+        }
+      : (row: PlayerRowView) => -row.victoryPoints;
+  return [...rows].sort((a, b) => key(a) - key(b) || seats.indexOf(a.seat) - seats.indexOf(b.seat));
+}
+
+/**
+ * One card for each player, two columns, in the order of the phase or the one that the viewer
+ * chose. ▶ and the frame show the turn. Each value is an icon and a number; the name of the value
+ * is its tooltip, and the legend of the header lists the icons.
  */
 export function PlayerTable({
   view,
@@ -287,17 +325,25 @@ export function PlayerTable({
   onToggle: () => void;
   onOpenSeat: (seat: string) => void;
 }) {
+  const seats = Object.keys(useSeats());
+  const viewer = view.rows.find((row) => row.isMe)?.seat ?? "spectator";
+  const [chosen, setChosen] = useState<{ seat: string; sort: PlayerSort | null }>(() => ({
+    seat: viewer,
+    sort: readSort(viewer),
+  }));
+  // Another seat in the same page (a hotseat game) has its own choice.
+  const choice = chosen.seat === viewer ? chosen.sort : readSort(viewer);
+  const sort = choice ?? view.sort;
+  const rows = choice ? sorted(view.rows, sort, view.initiative, seats) : view.rows;
   // While the task asks for a player, every card is in view.
-  const shown =
-    open || view.pick ? view.rows : view.rows.filter((row) => row.isMe || row.turn === "now");
+  const shown = open || view.pick ? rows : rows.filter((row) => row.isMe || row.turn === "now");
   const hint = open ? "Show only you and the active player" : "Show all players";
-  const signs = Object.values(useSeats()).some((seat) => seat.played);
   return (
     <section aria-label="Players" className="relative flex-none border-b border-line bg-board">
-      <div className="flex items-center gap-1 px-1.5 pt-[3px] text-2xs font-semibold text-faint">
+      <div className="flex items-center gap-1.5 px-2 pt-1 text-xs text-faint">
         <button
           type="button"
-          className="w-3 text-xs text-muted phone:hidden"
+          className="w-3 text-muted phone:hidden"
           aria-expanded={open}
           aria-label={hint}
           title={hint}
@@ -305,22 +351,58 @@ export function PlayerTable({
         >
           {open ? "▾" : "▸"}
         </button>
-        {open ? "Players" : `Players · ${shown.length} of ${view.rows.length}`}
+        <strong className="font-semibold text-muted">Players</strong>
+        {view.turn > 0 && <span className="font-strong text-text">Turn {view.turn}</span>}
+        {!open && !view.pick && (
+          <span>
+            {shown.length} of {view.rows.length}
+          </span>
+        )}
+        <span className="ml-auto">Sort</span>
+        <span role="group" aria-label="Sort players" className="flex rounded-sm border border-line">
+          {SORTS.map(([id, label, title]) => (
+            <button
+              key={id}
+              type="button"
+              title={title}
+              aria-pressed={sort === id}
+              onClick={() => {
+                writeSort(viewer, id);
+                setChosen({ seat: viewer, sort: id });
+              }}
+              className={cx(
+                "px-1.5 leading-5",
+                sort === id ? "bg-raised font-strong text-text" : "text-muted hover:text-text",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </span>
+        <Hint label="Icons of the player cards" width={260}>
+          <ul className="grid gap-1">
+            {LEGEND.map(([icon, label]) => (
+              <li key={icon} className="flex items-center gap-2">
+                <Icon name={icon} className="size-4 text-icon" />
+                {label}
+              </li>
+            ))}
+          </ul>
+        </Hint>
       </div>
-      <ul className="grid grid-cols-2 gap-1 p-1 leading-[1.3] phone:grid-cols-1">
+      <ul className="grid grid-cols-2 gap-1.5 p-1.5 leading-[1.35]">
         {shown.map((row, index) => (
           <Card
             key={row.seat}
             row={row}
             column={index % 2}
             pick={view.pick}
-            signs={signs}
             onOpen={() => onOpenSeat(row.seat)}
           />
         ))}
       </ul>
       {view.freeCards.length > 0 && (
-        <div className="border-t border-line px-2 py-[3px] text-xs text-muted">
+        <div className="border-t border-line px-2 py-1 text-xs text-muted">
           Free strategy cards:{" "}
           {view.freeCards
             .map((card) => `${card.number} ${card.name} +${card.tradeGoods} TG`)

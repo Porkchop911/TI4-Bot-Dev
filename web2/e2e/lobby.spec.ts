@@ -195,14 +195,11 @@ test("three tabs of one browser make a table from the start screen, fill it and 
       "aria-label",
       new RegExp(`^${["Ada", "Ada 2", "Ada 3"][index]}, `),
     );
-    // The names of the three tabs are in the player table of each, and the seat that the
-    // server plays has its sign.
+    // The names of the three tabs and of the seat that the server plays are in the player table
+    // of each.
     for (const name of ["Ada", "Ada 2", "Ada 3", "Rule bot 1"]) {
       await expect(seatRows(tab).getByText(name, { exact: true })).toBeVisible();
     }
-    await expect(seatRows(tab).getByRole("img", { name: "No person plays this seat" })).toHaveCount(
-      1,
-    );
     expect(new URL(tab.url()).searchParams.get("online")).toBe(game);
     expect(new URL(tab.url()).searchParams.get("seat")).toBe(seats[index]);
   }
@@ -890,9 +887,6 @@ test("the table of a running game: every tab has the names, and the host sets th
     for (const name of ["Ada", LONG[0], "Rule bot 1", "Random bot 1"]) {
       await expect(seatRows(tab).getByTitle(name, { exact: true })).toBeVisible();
     }
-    await expect(seatRows(tab).getByRole("img", { name: "No person plays this seat" })).toHaveCount(
-      2,
-    );
   }
   await expect(ownSeat(page)).toHaveAttribute("aria-label", /^Ada, /);
   await expect(ownSeat(other)).toHaveAttribute("aria-label", new RegExp(`^${LONG[0]}, `));

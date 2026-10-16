@@ -78,9 +78,21 @@ export interface PlayerPickView {
   chosen: SeatId[];
 }
 
+export type PlayerSort = "initiative" | "vp";
+
 export interface PlayerTableView {
   pick: PlayerPickView | null;
+  /** In the order of the phase: by initiative in the action phase, by victory points otherwise. */
   rows: PlayerRowView[];
+  /** The order of the rows when the viewer has not chosen one. */
+  sort: PlayerSort;
+  /**
+   * The seats by initiative: the engine's order of the turns in the action phase, otherwise by the
+   * lowest strategy card that a seat holds. A seat with no card is not in it.
+   */
+  initiative: SeatId[];
+  /** The turn of the action phase, from 1; 0 outside the action phase. */
+  turn: number;
   freeCards: { number: number; name: string; tradeGoods: number }[];
 }
 

@@ -136,9 +136,18 @@ export function selectPlayers(
       }),
     };
   };
+  const rows = seated(update).map(row);
   return {
     pick: null,
-    rows: ranked(view, seated(update).map(row)),
+    rows: ranked(view, rows),
+    sort: view.phase === "action" ? "initiative" : "vp",
+    initiative: view.initiative_order?.length
+      ? view.initiative_order
+      : rows
+          .filter((row) => row.strategyCards.length > 0)
+          .sort((a, b) => a.strategyCards[0]!.number - b.strategyCards[0]!.number)
+          .map((row) => row.seat),
+    turn: view.phase === "action" ? view.turn : 0,
     freeCards: view.table.unclaimed_strategy_cards
       .map((id) => ({
         ...strategyCard(id, catalog),
