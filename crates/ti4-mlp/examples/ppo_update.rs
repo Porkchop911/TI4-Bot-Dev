@@ -201,6 +201,8 @@ const VALUE_FLAGS: &[&str] = &[
     "--fleet-weight",
     "--projection-weight",
     "--home-loss-weight",
+    "--keep-terminal-projection",
+    "--projection-rank-weight",
     "--zero-terminal-objectives",
     "--status-income-tg",
     "--fracture-entry-bonus",
@@ -518,9 +520,31 @@ struct Watching {
     inner: Box<dyn Decider>,
     /// With `--hash-games`, a running hash of every choice this seat made.
     all: Option<Rc<RefCell<sha2::Sha256>>>,
+    /// Every question this seat was asked, forced ones included.
+    asked: usize,
 }
 
+/// A seat asked this often in one game is in a loop that slips under the engine's per-step guard
+/// (each step progresses, the game never ends); healthy games ask a seat a few hundred times.
+const MAX_ASKS_PER_SEAT: usize = 6_000;
+
 impl Watching {
+    /// Refuse a runaway game before it eats memory; the trainer drops it like a no-progress stall.
+    fn count(&mut self, choice: &Choice) -> Result<(), ti4_engine::choice::IllegalChoice> {
+        self.asked += 1;
+        if self.asked > MAX_ASKS_PER_SEAT {
+            return Err(ti4_engine::choice::IllegalChoice::DeciderFailed {
+                player: choice.player.clone(),
+                prompt: choice.prompt.clone(),
+                reason: format!(
+                    "asked {} times in one game without progress to its end",
+                    self.asked
+                ),
+            });
+        }
+        Ok(())
+    }
+
     fn record(&self, choice: &Choice, chosen: &ti4_engine::choice::ChoiceOption) {
         // Every choice, forced ones included, in order: who chose, from what, and which.
         if let Some(all) = &self.all {
@@ -543,6 +567,7 @@ impl Decider for Watching {
         &mut self,
         choice: &Choice,
     ) -> Result<ti4_engine::choice::ChoiceOption, ti4_engine::choice::IllegalChoice> {
+        self.count(choice)?;
         let chosen = self.inner.choose(choice)?;
         self.record(choice, &chosen);
         Ok(chosen)
@@ -552,6 +577,7 @@ impl Decider for Watching {
         choice: &Choice,
         seen: &ti4_engine::choice::SeatObservation<'_>,
     ) -> Result<ti4_engine::choice::ChoiceOption, ti4_engine::choice::IllegalChoice> {
+        self.count(choice)?;
         let chosen = self.inner.choose_seeing(choice, seen)?;
         self.record(choice, &chosen);
         Ok(chosen)
@@ -743,6 +769,7 @@ fn play_one(
                         Box::new(Watching {
                             inner: decider,
                             all,
+                            asked: 0,
                         }),
                     );
                 }
@@ -781,6 +808,21 @@ fn play_one(
         .map(|seat| seat.episode.final_progress.victory_points as f64)
         .sum::<f64>()
         / rollout.seats.len().max(1) as f64;
+    // Projection rank per round: each seat's projection at its last recorded decision of the round.
+    // shortcut: seats are measured at their own last decision, not one shared state; measure every
+    // seat at the round boundary if rank timing turns out to matter.
+    let mut round_projection: BTreeMap<u32, Vec<(PlayerId, i64)>> = BTreeMap::new();
+    if reward.projection_rank_weight != 0.0 {
+        for (player, handle) in &handles {
+            let mut last: BTreeMap<u32, i64> = BTreeMap::new();
+            for record in handle.borrow().iter() {
+                last.insert(record.progress.round_number, record.progress.projection_permille);
+            }
+            for (round, projection) in last {
+                round_projection.entry(round).or_default().push((player.clone(), projection));
+            }
+        }
+    }
     for (seat_number, seat) in rollout.seats.iter().enumerate() {
         // A frozen seat is not this policy: reporting its clearance and points as the learner's
         // would read the benchmark's play as progress.
@@ -846,6 +888,22 @@ fn play_one(
         }
         for (record, value) in recorded.iter_mut().zip(&per_decision) {
             record.step.return_to_go = *value;
+        }
+        // The projection rank bonus, injected at the seat's last decision of each round like the
+        // waste charge below: every return up to that decision carries it, discounted.
+        for (round, table) in &round_projection {
+            let Some(mine) = table.iter().find(|(player, _)| *player == seat.player) else {
+                continue;
+            };
+            let Some(end) = recorded.iter().rposition(|r| r.progress.round_number == *round) else {
+                continue;
+            };
+            let bonus = projection_rank_bonus(mine.1, table.iter().map(|(_, p)| *p))
+                * reward.projection_rank_weight;
+            for (index, record) in recorded.iter_mut().enumerate().take(end + 1) {
+                let steps_away = i32::try_from(end - index).unwrap_or(i32::MAX);
+                record.step.return_to_go += bonus * reward.discount.powi(steps_away);
+            }
         }
 
         // Charge each wasted tactical action as a reward at the point the segment closes.
@@ -1677,6 +1735,12 @@ fn main() {
     }
     reward.tech_weight = weight("--tech-weight", reward.tech_weight);
     reward.home_loss_weight = weight("--home-loss-weight", reward.home_loss_weight);
+    reward.keep_terminal_projection = weight("--keep-terminal-projection", 0.0) != 0.0;
+    reward.projection_rank_weight =
+        weight("--projection-rank-weight", reward.projection_rank_weight);
+    if reward.projection_rank_weight != 0.0 {
+        ti4_policy::progress::MEASURE_PROJECTION.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
     // Nonzero turns it on, so the PowerShell launcher's name/value pairs can carry it.
     reward.zero_terminal_objectives = weight("--zero-terminal-objectives", 0.0) != 0.0;
     reward.strategy_diversity_weight = weight(
@@ -1790,9 +1854,11 @@ fn main() {
             reward.home_loss_weight
         );
         println!(
-            "  shaping     fleet {} | projection {} | tech {} | strategy diversity {}",
+            "  shaping     fleet {} | projection {} (kept at horizon {}, rank per round {}) | tech {} | strategy diversity {}",
             reward.fleet_weight,
             reward.projection_weight,
+            reward.keep_terminal_projection,
+            reward.projection_rank_weight,
             reward.tech_weight,
             reward.strategy_diversity_weight
         );
@@ -2164,9 +2230,9 @@ fn main() {
         for (job, result) in by_job.into_iter().enumerate() {
             let played = result.unwrap_or_else(|| refuse("a rollout job was never played"));
             // An engine no-progress guard (a rare decision loop) drops that one game, logged, so a
-            // long run survives it; anything else, or more than two in one update, still refuses.
+            // long run survives it; anything else, or more than a tenth of the update, still refuses.
             let (game, outcomes, wasted, tactical, record, qualifying) = match played {
-                Err(error) if error.contains("without progress") && stalled_games < 2 => {
+                Err(error) if error.contains("without progress") && stalled_games < jobs.len() / 10 => {
                     stalled_games += 1;
                     eprintln!("SKIPPED (no-progress guard, update {update}): {error}");
                     continue;
@@ -2342,6 +2408,7 @@ fn main() {
             // the plan on infer-int8): the log-probability within twice that of the largest logit,
             // over the temperature. On libtorch they are the same arithmetic.
             let mut worst_excess = 0.0f64;
+            let mut worst_value = 0.0f64;
             let mut by_head: BTreeMap<&str, (usize, f64)> = BTreeMap::new();
             for step in &steps {
                 let name = ti4_mlp::all_heads()
@@ -2368,7 +2435,14 @@ fn main() {
                 let entry = by_head.entry(name).or_default();
                 entry.0 += 1;
                 entry.1 = entry.1.max(gap);
+                if let (Some(critic), Some(recorded)) = (&step.critic, step.behaviour_value) {
+                    let value = scorer
+                        .value(critic, step.row)
+                        .unwrap_or_else(|error| refuse(&format!("rescoring value: {error}")));
+                    worst_value = worst_value.max((value - recorded).abs() / value.abs().max(1.0));
+                }
             }
+            println!("  value check: max |V - recorded| / max(1, |V|) {worst_value:.3e}");
             println!(
                 "  likelihood check: {} steps, max |log p - recorded| {worst:.3e}",
                 steps.len()
@@ -2663,4 +2737,31 @@ fn main() {
     println!(
         "\n  done. Rollouts are CPU inference across rayon workers; the optimiser honoured --device."
     );
+}
+
+/// `(seats below - seats above) / (seats - 1)`: +1 alone at the top, -1 alone at the bottom, 0 for
+/// a lone seat or a full tie. `table` includes the seat itself.
+fn projection_rank_bonus(mine: i64, table: impl Iterator<Item = i64>) -> f64 {
+    let (mut below, mut above, mut seats) = (0i32, 0i32, 0i32);
+    for other in table {
+        seats += 1;
+        below += i32::from(other < mine);
+        above += i32::from(other > mine);
+    }
+    if seats < 2 {
+        return 0.0;
+    }
+    f64::from(below - above) / f64::from(seats - 1)
+}
+
+#[cfg(test)]
+mod projection_rank_tests {
+    #[test]
+    fn rank_bonus_spans_minus_one_to_one() {
+        let table = [10, 20, 30];
+        assert!((super::projection_rank_bonus(30, table.into_iter()) - 1.0).abs() < 1e-12);
+        assert!((super::projection_rank_bonus(10, table.into_iter()) + 1.0).abs() < 1e-12);
+        assert!(super::projection_rank_bonus(20, table.into_iter()).abs() < 1e-12);
+        assert!(super::projection_rank_bonus(5, [5, 5].into_iter()).abs() < 1e-12);
+    }
 }

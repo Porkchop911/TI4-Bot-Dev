@@ -56,7 +56,7 @@ $allowed = @(
     'waste-penalties',
     'waste-penalty', 'zero-fleet-penalty', 'diag', 'capture-batch', 'seeds-per-update', 'rotations',
     'roster', 'self-imitation', 'sil-margin', 'sil-keep', 'faction-focus', 'gae-lambda',
-    'home-loss-weight', 'zero-terminal-objectives'
+    'home-loss-weight', 'zero-terminal-objectives', 'rollout-backend', 'keep-terminal-projection', 'projection-rank-weight'
 )
 
 $unknown = @($flags.Keys | Where-Object { $_ -notin $allowed })

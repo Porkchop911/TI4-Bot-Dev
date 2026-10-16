@@ -189,6 +189,15 @@ pub struct Reward {
     /// back when the planet is retaken; still charged at the horizon. Off by default.
     #[serde(default)]
     pub home_loss_weight: f64,
+    /// Keep projection standing at the horizon (the seat's last measured projection), so
+    /// `projection_weight` becomes an objective instead of pure shaping. Off keeps the reference.
+    #[serde(default)]
+    pub keep_terminal_projection: bool,
+    /// Per-round bonus on the seat's projection rank at the table: `weight * (below - above) /
+    /// (seats - 1)`, credited at the seat's last decision of the round. Applied by the trainer,
+    /// which sees every seat. Off by default.
+    #[serde(default)]
+    pub projection_rank_weight: f64,
     /// How much a decision is credited for what happens later (gamma).
     ///
     /// One (the default) is the undiscounted suffix sum this trainer has always used: every
@@ -250,6 +259,8 @@ impl Default for Reward {
             fracture_planet_bonus: 0.0,
             zero_terminal_objectives: false,
             home_loss_weight: 0.0,
+            keep_terminal_projection: false,
+            projection_rank_weight: 0.0,
         }
     }
 }
@@ -409,8 +420,13 @@ pub fn returns(episode: &Episode, reward: &Reward) -> Vec<f64> {
     }
     let mut snapshots = episode.steps.clone();
     let mut last = episode.final_progress;
-    // Projection is pure shaping: no potential is left standing at the end of the game.
-    last.projection_permille = 0;
+    // Projection is pure shaping unless kept: then the final snapshot (which never measures it)
+    // stands at the last measured value.
+    last.projection_permille = if reward.keep_terminal_projection {
+        episode.steps.last().map_or(0, |step| step.projection_permille)
+    } else {
+        0
+    };
     if reward.zero_terminal_objectives {
         last.scoreable_public = 0;
         last.scoreable_secret = 0;

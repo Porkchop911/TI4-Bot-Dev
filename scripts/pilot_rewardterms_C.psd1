@@ -4,7 +4,7 @@
 
     Bundle   = 'D:\Projects\ti4-engine-rs\out\ppo-focusgae-FG-wide-long1000-20261010\checkpoints\checkpoint-16448'
     Pool     = 'D:\Projects\ti4-engine-rs\out\pools\full_np8_12_train.json'
-    Run      = 'D:\Projects\ti4-engine-rs\out\ppo-rewardterms-C-pilot50b-20261016'
+    Run      = 'D:\Projects\ti4-engine-rs\out\ppo-rewardterms-C-pilot50c-20261016'
     LibTorch = 'D:\Projects\ti4-engine-rs\out\libtorch-2.9.1-cu128'
 
     Diplomacy       = $true
@@ -27,6 +27,7 @@
         'seeds-per-update' = 30
         'rotations'        = 1
         'device'           = 'cuda'
+        'rollout-backend'  = 'infer'
 
         'vp-weight'        = 1
         'waste-penalty'    = 1
