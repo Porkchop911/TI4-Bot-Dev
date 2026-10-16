@@ -134,9 +134,9 @@ fn secondary_choice(
     }
     if crate::strategy_cards::card_name(content, card.as_str()).as_deref() == Some("Trade") {
         // Display only: the follower's commodities now and at the limit the replenish fills to.
-        question = question.detailed(
+        question = question.hinted(
             "commodities",
-            crate::strategy_cards::commodity_standing(state, content, player),
+            &crate::strategy_cards::commodity_standing(state, content, player),
         );
     }
     if crate::strategy_cards::card_name(content, card.as_str()).as_deref() == Some("Imperial") {
@@ -1176,6 +1176,15 @@ mod tests {
         let choice = window
             .pending_choice(&state, ContentStore::embedded(), POK)
             .expect("the follower is offered the secondary");
+        assert_eq!(
+            choice.hint::<crate::strategy_cards::CommodityStanding>("commodities"),
+            Some(crate::strategy_cards::CommodityStanding {
+                have: 1,
+                max: limit,
+                trade_goods: 2,
+            })
+        );
+        // The JSON keys that the clients read.
         assert_eq!(choice.details["commodities"]["have"], 1);
         assert_eq!(choice.details["commodities"]["max"], limit);
         assert_eq!(choice.details["commodities"]["trade_goods"], 2);

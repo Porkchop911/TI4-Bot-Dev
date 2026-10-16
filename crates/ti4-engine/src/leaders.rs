@@ -1477,9 +1477,9 @@ fn dispatch_leader(
                 context.state.round,
             ))
             // Display only: the seat's own commodities, which the "gain 2" branch adds to.
-            .detailed(
+            .hinted(
                 "commodities",
-                crate::strategy_cards::commodity_standing(context.state, context.content, player),
+                &crate::strategy_cards::commodity_standing(context.state, context.content, player),
             );
             let Ok(answer) = context.ask_seeing(&choice) else {
                 return false;

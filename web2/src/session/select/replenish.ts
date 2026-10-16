@@ -6,10 +6,17 @@
 // by the ids of their options.
 import type { BlockView, PlayerPickView, RowView } from "../../model";
 import { plural } from "../../model";
-import type { Catalog, Choice, SessionUpdate } from "../wire";
+import type {
+  Catalog,
+  Choice,
+  CommodityStanding,
+  SessionUpdate,
+  TradeOwnGain,
+  TradeReplenishHints,
+} from "../wire";
 import { chooseFollow, followWindow, isFollowWindow } from "./follow";
 import { seatLabel } from "./names";
-import { type Editor, answered, changeControl, num } from "./editor";
+import { type Editor, answered, changeControl, hintFieldsOf, hintOf } from "./editor";
 
 /** What the player staged: the seats that replenish (by option id), or the answer of a window. */
 export interface ReplenishDraft {
@@ -18,11 +25,6 @@ export interface ReplenishDraft {
 }
 
 export const NO_REPLENISH: ReplenishDraft = { seats: [], follow: null };
-
-interface Range {
-  before: number;
-  after: number;
-}
 
 interface Offered {
   option: string;
@@ -39,53 +41,37 @@ interface Question {
   /** The option that chooses nobody more. */
   decline: string | null;
   /** What the card already gave the seat of the question (`details.own`). */
-  own: { tradeGoods: Range; commodities: Range } | null;
+  own: TradeOwnGain | null;
   /** The follower's commodities now and at its limit. */
-  standing: { have: number; max: number } | null;
-}
-
-function rangeOf(value: unknown): Range | null {
-  const item = value as Record<string, unknown> | undefined;
-  const before = num(item?.before);
-  const after = num(item?.after);
-  return before !== null && after !== null ? { before, after } : null;
+  standing: CommodityStanding | null;
 }
 
 function questionOf(choice: Choice): Question | null {
-  const details = choice.details ?? {};
-  const commodities = details.commodities as Record<string, unknown> | undefined;
-  if (!commodities || typeof commodities !== "object") {
+  if (isFollowWindow(choice)) {
+    const standing = hintOf<CommodityStanding>(choice, "commodities");
+    return standing ? { mode: "follow", offered: [], decline: null, own: null, standing } : null;
+  }
+  const told = hintFieldsOf<TradeReplenishHints>(choice, "commodities", "own");
+  if (!told) {
     return null;
   }
-  if (isFollowWindow(choice)) {
-    const have = num(commodities.have);
-    const max = num(commodities.max);
-    return have !== null && max !== null
-      ? { mode: "follow", offered: [], decline: null, own: null, standing: { have, max } }
-      : null;
-  }
-  const seats = (details.seats ?? {}) as Record<string, unknown>;
+  const seats = (choice.details?.seats ?? {}) as Record<string, unknown>;
   const choosing = choice.options.filter((option) => option.kind !== "decline");
   const offered = choosing.flatMap((option): Offered[] => {
     const seat = seats[option.id];
-    const standing = commodities[option.id] as Record<string, unknown> | undefined;
-    const have = num(standing?.have);
-    const max = num(standing?.max);
-    return typeof seat === "string" && have !== null && max !== null
-      ? [{ option: option.id, seat, have, max }]
+    const standing = told.commodities[option.id];
+    return typeof seat === "string" && standing
+      ? [{ option: option.id, seat, have: standing.have, max: standing.max }]
       : [];
   });
   if (!offered.length || offered.length !== choosing.length) {
     return null;
   }
-  const own = details.own as Record<string, unknown> | undefined;
-  const tradeGoods = rangeOf(own?.trade_goods);
-  const mine = rangeOf(own?.commodities);
   return {
     mode: "choose",
     offered,
     decline: choice.options.find((option) => option.kind === "decline")?.id ?? null,
-    own: tradeGoods && mine ? { tradeGoods, commodities: mine } : null,
+    own: told.own,
     standing: null,
   };
 }
@@ -143,7 +129,7 @@ export function selectReplenish(
   const blocks: BlockView[] = [];
   const own = question.own;
   if (own) {
-    const gained = own.tradeGoods.after - own.tradeGoods.before;
+    const gained = own.trade_goods.after - own.trade_goods.before;
     blocks.push({
       kind: "card",
       title: "Your seat",
@@ -151,7 +137,7 @@ export function selectReplenish(
         {
           icon: "card",
           title: [`Gain ${plural(gained, "trade good")}`],
-          subtitle: `Trade goods ${own.tradeGoods.before} → ${own.tradeGoods.after}`,
+          subtitle: `Trade goods ${own.trade_goods.before} → ${own.trade_goods.after}`,
         },
         {
           icon: "card",

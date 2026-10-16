@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Choice, SessionUpdate } from "../wire";
+import type { Choice, CommodityStanding, SessionUpdate, TradeReplenishHints } from "../wire";
 import {
   chooseReplenish,
   clearLastReplenish,
@@ -20,11 +20,13 @@ const primary: Choice = {
   ],
   details: {
     seats: { Hacan: "b", Letnev: "c" },
-    commodities: { Hacan: { have: 0, max: 6 }, Letnev: { have: 1, max: 2 } },
-    own: {
-      trade_goods: { before: 4, after: 7 },
-      commodities: { before: 1, after: 4 },
-    },
+    ...({
+      commodities: { Hacan: { have: 0, max: 6 }, Letnev: { have: 1, max: 2 } },
+      own: {
+        trade_goods: { before: 4, after: 7 },
+        commodities: { before: 1, after: 4 },
+      },
+    } satisfies TradeReplenishHints),
   },
 };
 const window: Choice = {
@@ -36,7 +38,7 @@ const window: Choice = {
   ],
   details: {
     kind: "strategy_secondary",
-    commodities: { have: 0, max: 6, trade_goods: 3 },
+    commodities: { have: 0, max: 6, trade_goods: 3 } satisfies CommodityStanding,
     tokens_left: 2,
     costs_token: true,
   },

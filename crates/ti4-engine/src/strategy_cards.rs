@@ -2047,41 +2047,61 @@ fn seat_map(named: &[(String, PlayerId)]) -> serde_json::Value {
     )
 }
 
-/// Display only: each named seat's commodities now and at its printed limit.
+/// Each named seat's commodities now and at its printed limit, by the id of its option
+/// (`details.commodities` of Trade's question of the other seats).
 fn commodity_map(
     state: &GameState,
     content: &ContentStore,
     named: &[(String, PlayerId)],
-) -> serde_json::Value {
-    serde_json::Value::Object(
-        named
-            .iter()
-            .map(|(name, seat)| {
-                let have = state.player(seat).map_or(0, |p| p.commodities);
-                (
-                    name.clone(),
-                    serde_json::json!({ "have": have, "max": commodity_limit(state, content, seat) }),
-                )
-            })
-            .collect(),
-    )
+) -> BTreeMap<String, CommodityLimit> {
+    named
+        .iter()
+        .map(|(name, seat)| {
+            let have = state.player(seat).map_or(0, |p| p.commodities);
+            (
+                name.clone(),
+                CommodityLimit {
+                    have,
+                    max: commodity_limit(state, content, seat),
+                },
+            )
+        })
+        .collect()
 }
 
-/// Display only: one seat's own commodities now, its printed limit and its trade goods, for a
-/// question that offers to gain, replenish, spend or convert commodities (`details.commodities`).
+/// A seat's commodities now and at its printed limit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct CommodityLimit {
+    pub have: i32,
+    pub max: i32,
+}
+
+/// One seat's own commodities now, its printed limit and its trade goods, for a question that
+/// offers to gain, replenish, spend or convert commodities (`details.commodities`, written with
+/// [`Choice::hinted`]; display only): the window of Trade's secondary, and the gains of
+/// commodities of an exploration, a leader and a Mahact unit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct CommodityStanding {
+    pub have: i32,
+    pub max: i32,
+    pub trade_goods: i32,
+}
+
 pub(crate) fn commodity_standing(
     state: &GameState,
     content: &ContentStore,
     player: &PlayerId,
-) -> serde_json::Value {
-    let (have, goods) = state
+) -> CommodityStanding {
+    let (have, trade_goods) = state
         .player(player)
         .map_or((0, 0), |seat| (seat.commodities, seat.trade_goods));
-    serde_json::json!({
-        "have": have,
-        "max": commodity_limit(state, content, player),
-        "trade_goods": goods,
-    })
+    CommodityStanding {
+        have,
+        max: commodity_limit(state, content, player),
+        trade_goods,
+    }
 }
 
 /// Display only: the agenda card being placed, as printed.
@@ -2579,6 +2599,36 @@ pub(crate) fn replenish(state: &mut GameState, content: &ContentStore, player: &
     crate::promissory::trade_agreement_on_replenish(state, player);
 }
 
+/// The look-ahead of Trade's question of the other seats: its fields are top-level keys of the
+/// details, `details.commodities` and `details.own`, written with [`Choice::hinted_fields`], so
+/// that a client can stage the whole primary at once (display only). Every later question says
+/// it again, for the seats that are left.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct TradeReplenishHints {
+    /// The commodities of each seat that the question offers, by the id of its option (the
+    /// faction name of `details.seats`), now and at the limit that its replenish fills to.
+    pub commodities: BTreeMap<String, CommodityLimit>,
+    /// What the primary already gave its own seat, before it chooses the others.
+    pub own: TradeOwnGain,
+}
+
+/// What Trade's primary gave its own seat: 3 trade goods, and its commodities replenished.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct TradeOwnGain {
+    pub trade_goods: CountChange,
+    pub commodities: CountChange,
+}
+
+/// An amount of a seat before a change and after it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct CountChange {
+    pub before: i32,
+    pub after: i32,
+}
+
 fn trade_primary(
     state: &mut GameState,
     content: &ContentStore,
@@ -2596,11 +2646,16 @@ fn trade_primary(
     let after = state
         .player(player)
         .map_or((0, 0), |seat| (seat.trade_goods, seat.commodities));
-    // Display only: what the primary already gave its own seat, before it chooses the others.
-    let own = serde_json::json!({
-        "trade_goods": { "before": before.0, "after": after.0 },
-        "commodities": { "before": before.1, "after": after.1 },
-    });
+    let own = TradeOwnGain {
+        trade_goods: CountChange {
+            before: before.0,
+            after: after.0,
+        },
+        commodities: CountChange {
+            before: before.1,
+            after: after.1,
+        },
+    };
     let mut remaining: Vec<PlayerId> = state
         .seating_order
         .iter()
@@ -2646,8 +2701,10 @@ fn trade_primary(
                 .collect(),
         )
         .detailed("seats", seat_map(&named))
-        .detailed("commodities", commodity_map(state, content, &named))
-        .detailed("own", own.clone())
+        .hinted_fields(&TradeReplenishHints {
+            commodities: commodity_map(state, content, &named),
+            own,
+        })
         .contextualized(DecisionContext::new(
             player.clone(),
             DecisionSource::StrategyCard {
@@ -3898,6 +3955,52 @@ mod tests {
         let limit = commodity_limit(&state, content, &player);
         let asked = seen.borrow();
         assert_eq!(asked.len(), 2, "b, then c: {asked:?}");
+        let own = TradeOwnGain {
+            trade_goods: CountChange {
+                before: 2,
+                after: 5,
+            },
+            commodities: CountChange {
+                before: 1,
+                after: limit,
+            },
+        };
+        let [first, second] = &asked[..] else {
+            unreachable!("two questions")
+        };
+        let told: TradeReplenishHints = first.hint_fields().unwrap();
+        assert_eq!(told.own, own);
+        // The first question offers b and c, with their commodities now and at their limits;
+        // the second, only c.
+        let offered = |choice: &Choice| -> BTreeSet<String> {
+            choice
+                .options
+                .iter()
+                .filter(|option| !option.is_decline())
+                .map(|option| option.id.clone())
+                .collect()
+        };
+        assert_eq!(
+            told.commodities.keys().cloned().collect::<BTreeSet<_>>(),
+            offered(first)
+        );
+        for (name, standing) in &told.commodities {
+            let seat = PlayerId::new(first.details["seats"][name].as_str().unwrap());
+            assert_eq!(
+                *standing,
+                CommodityLimit {
+                    have: 0,
+                    max: commodity_limit(&state, content, &seat),
+                }
+            );
+        }
+        let later: TradeReplenishHints = second.hint_fields().unwrap();
+        assert_eq!(later.own, own);
+        assert_eq!(
+            later.commodities.keys().cloned().collect::<BTreeSet<_>>(),
+            offered(second)
+        );
+        // The JSON keys that the clients read.
         for question in asked.iter() {
             assert_eq!(
                 question.details["own"],
