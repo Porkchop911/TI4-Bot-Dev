@@ -1,37 +1,82 @@
-import { useState, type ReactNode } from "react";
-import type { ActionView, BlockView, HelpView, PillView, StepTabView } from "../../model";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import type { ActionView, BlockView, HelpView, LogView, PillView, StepTabView } from "../../model";
 import { Badge, GroupHeading, Hint, Trail, cx } from "../../ui";
 import { Interrupt, Review, StepContent, pillBeyond } from "../action/ActionPanel";
 import { ReadOnly } from "../context";
 import { Blocks } from "../flows/Blocks";
+import { LogHistory } from "./LogHistory";
+
+/** How near the end the Log counts as at its end, in pixels: it follows what is new. */
+const AT_END = 24;
 
 /**
  * The log: what the others are doing and what they did, so that the viewer can decide. The
- * turns since the viewer's last turn come first (not there yet), then the action that is played
- * now, last and open: what the action panel shows, read-only, its parts in groups that open and
- * close. The decision of the viewer is the step sheet on the map; the Log only reads it.
- * Desktop has it under the player table, where it fills the column and scrolls inside itself;
- * a phone has it as the pane Log.
+ * turns since the viewer's last turn come first, one row each, which opens to its details; then
+ * the action that is played now, last and open: what the action panel shows, read-only, its
+ * parts in groups that open and close. The decision of the viewer is the step sheet on the map;
+ * the Log only reads it. Desktop has it under the player table, where it fills the column and
+ * scrolls inside itself; a phone has it as the pane Log, which scrolls the same way. The newest
+ * is at the end: the Log starts there, and follows what is new while it is at its end; else it
+ * stays where the viewer scrolled.
  */
 export function LogPanel({
+  log,
   action,
   status,
 }: {
+  log: LogView;
   action: ActionView;
   /** The status in the bar of the game. The pill of the heading does not say it again. */
   status: string;
 }) {
+  const scroller = useRef<HTMLElement>(null);
+  const atEnd = useRef(true);
+  // The rows that the viewer opened. An entry that left the Log takes its row with it.
+  const [opened, setOpened] = useState<ReadonlySet<string>>(new Set());
+  const ids = new Set(log.entries.map((entry) => entry.id));
+  const open = new Set([...opened].filter((id) => ids.has(id)));
+  // biome-ignore lint/correctness/useExhaustiveDependencies: what is new is the trigger; a row that the viewer opens is not
+  useLayoutEffect(() => {
+    const element = scroller.current;
+    if (element && atEnd.current) {
+      element.scrollTop = element.scrollHeight;
+    }
+  }, [log, action]);
   return (
-    <section aria-label="Log" className="min-h-0 flex-1 overflow-y-auto px-3 py-2.5">
-      <p className="text-sm text-muted">No turns since your last turn</p>
-      <ReadOnly>
-        <CurrentAction
-          // Another action starts with its own groups open.
-          key={action.kind === "tactical" ? action.context : `${action.heading}·${action.context}`}
-          view={action}
-          status={status}
-        />
-      </ReadOnly>
+    <section
+      ref={scroller}
+      aria-label="Log"
+      className="min-h-0 flex-1 overflow-y-auto py-2.5 phone:bg-board"
+      onScroll={(event) => {
+        const element = event.currentTarget;
+        atEnd.current = element.scrollHeight - element.scrollTop - element.clientHeight <= AT_END;
+      }}
+    >
+      <LogHistory
+        view={log}
+        open={open}
+        onToggle={(id) =>
+          setOpened(() => {
+            const next = new Set(open);
+            if (!next.delete(id)) {
+              next.add(id);
+            }
+            return next;
+          })
+        }
+      />
+      <div className="px-3">
+        <ReadOnly>
+          <CurrentAction
+            // Another action starts with its own groups open.
+            key={
+              action.kind === "tactical" ? action.context : `${action.heading}·${action.context}`
+            }
+            view={action}
+            status={status}
+          />
+        </ReadOnly>
+      </div>
     </section>
   );
 }

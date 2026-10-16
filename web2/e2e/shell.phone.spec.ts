@@ -61,11 +61,22 @@ test("phone: the panes are Map, Players and Log, and the open step is a sheet ov
   await fits();
   await page.screenshot({ path: `${SHOTS}/staged.png`, animations: "disabled" });
 
+  // The Log has a row for each turn of the other seats, before the first turn of the viewer.
   await pane("Log").click();
-  await expect(page.getByRole("region", { name: "Log" })).toContainText(
-    "No turns since your last turn",
-  );
+  const log = page.getByRole("region", { name: "Log" });
+  const rows = log.getByRole("list", { name: "Turns" }).getByRole("article");
+  await expect(rows).toHaveCount(7);
+  // A row opens to its details in groups.
+  const strategic = rows.filter({ hasText: "Strategic · Trade" });
+  await strategic.getByRole("button").click();
+  await expect(strategic.getByRole("region", { name: "Secondaries" })).toContainText("Followed");
+  const tactical = rows.filter({ hasText: "Tactical · " }).first();
+  await tactical.getByRole("button").click();
+  await expect(tactical.getByRole("region", { name: "Activation" })).toBeVisible();
+  expect(await log.innerText()).not.toMatch(/\b[a-z]+_[a-z0-9_]+\b/);
+  await readOnly(log);
   await fits();
+  await page.screenshot({ path: `${SHOTS}/log.png`, animations: "disabled" });
   await pane("Players").click();
   await expect(page.getByRole("region", { name: "Players" })).toBeVisible();
   await fits();

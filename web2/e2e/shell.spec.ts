@@ -40,7 +40,8 @@ test("desktop: the right column is the players and the log, and the open step is
   const players = page.getByRole("region", { name: "Players" });
   await expect(players.getByRole("listitem")).toHaveCount(8);
   const log = page.getByRole("region", { name: "Log" });
-  await expect(log).toContainText("No turns since your last turn");
+  // Before the first turn of the viewer the Log is the round in play, where nobody played yet.
+  await expect(log).toContainText("No turns in this round yet");
   const playersBox = (await players.boundingBox())!;
   const logBox = (await log.boundingBox())!;
   expect(logBox.x).toBeCloseTo(playersBox.x, 0);
@@ -231,5 +232,59 @@ test("desktop: the step sheet minimizes to its heading line, its main button sti
   await send.click();
   await expect(heading).toHaveText("Movement");
   await expect(minimize).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("desktop: the Log has a row for each turn of the other seats, which opens to its details", async ({
+  page,
+}) => {
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/?local=3&players=8&humans=1");
+  const sheet = page.getByRole("region", { name: "Open step" });
+  const row = (name: RegExp) => sheet.locator("#step-panel").getByRole("button", { name });
+  // The viewer has the last card: the seven other seats play their first turn before it.
+  await row(/^8\. Imperial$/).click();
+  await sheet.locator('footer button[aria-keyshortcuts="Enter"]').click();
+  await expect(row(/^Activate a system$/)).toBeVisible();
+
+  const log = page.getByRole("region", { name: "Log" });
+  const turns = log.getByRole("list", { name: "Turns" });
+  await expect(turns).toContainText("Strategy phase · Round 1");
+  await expect(turns).toContainText("Action phase · Round 1");
+  // One row for each turn: its number, the seat and the action, closed.
+  const rows = turns.getByRole("article");
+  await expect(rows).toHaveCount(7);
+  for (const turn of await rows.all()) {
+    await expect(turn).toHaveAttribute(
+      "aria-label",
+      /^Turn \d+ · Seat [B-H] · (Tactical|Strategic|Component|Pass|Transaction)/,
+    );
+  }
+  const toggles = turns.locator("button[aria-expanded]");
+  await expect(toggles.first()).toHaveAttribute("aria-expanded", "false");
+  // A row opens to its details in groups, and closes again.
+  const strategic = rows.filter({ hasText: "Strategic · Trade" });
+  const open = strategic.getByRole("button");
+  await open.click();
+  await expect(open).toHaveAttribute("aria-expanded", "true");
+  await expect(strategic.getByRole("region", { name: "Secondaries" })).toContainText("Followed");
+  for (const toggle of await toggles.all()) {
+    if ((await toggle.getAttribute("aria-expanded")) === "false") {
+      await toggle.click();
+    }
+  }
+  // Every id is named as the page names it, and nothing is cut at the side.
+  const text = await log.innerText();
+  expect(text).not.toMatch(/\b[a-z]+_[a-z0-9_]+\b/);
+  expect(text).not.toMatch(/\bSeat [a-h]\b/);
+  expect(await log.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1920);
+  await readOnly(log);
+  await page.screenshot({ path: `${SHOTS}/log.png`, animations: "disabled" });
+  await open.click();
+  await expect(open).toHaveAttribute("aria-expanded", "false");
+  await expect(strategic.getByRole("region", { name: "Secondaries" })).toHaveCount(0);
   expect(errors).toEqual([]);
 });

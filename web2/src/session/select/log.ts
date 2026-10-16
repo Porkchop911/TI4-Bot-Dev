@@ -23,6 +23,7 @@ import type {
   PublicRoll,
   SessionUpdate,
   TokenPool,
+  TurnAction,
 } from "../wire";
 import { systemLabel, tilesOf } from "./movement";
 import {
@@ -148,6 +149,7 @@ const GROUPS = [
   "Picks",
   "Scored",
   "Command tokens",
+  "Agenda",
   "Effects",
   "Cards played",
   "Transactions",
@@ -336,7 +338,13 @@ function sourceName(source: ComponentSource, names: Names, played: string | null
 function detailsOf(
   events: readonly GameEvent[],
   names: Names,
-  scope: { actor: string | null; strategic: boolean; phase: Phase | null },
+  scope: {
+    actor: string | null;
+    strategic: boolean;
+    phase: Phase | null;
+    /** The action of the turn (`actionOf`): another action in it is a line. */
+    action?: TurnAction | null;
+  },
 ): { groups: LogGroupView[]; facts: { seat: string | null; fact: PublicFact }[] } {
   const groups = new Groups(names);
   const facts: { seat: string | null; fact: PublicFact }[] = [];
@@ -359,7 +367,6 @@ function detailsOf(
   let agenda = { number: 0, voted: new Set<string>() };
   /** The vote line of each seat in the agenda, for the planets that it exhausts. */
   const votes = new Map<string, ListLine>();
-  let started = false;
 
   for (const entry of events) {
     const roll = entry.event.kind === "dice_rolled" ? entry.roll : undefined;
@@ -404,15 +411,14 @@ function detailsOf(
     const own = (step: string) => (scope.strategic ? effects(seat) : step);
     switch (fact.kind) {
       case "action_started":
-        // The first is the action of the turn; another is an action within it (an agent).
-        if (started && fact.action.type === "component") {
+        // One is the action of the turn; another is an action within it (an agent).
+        if (fact.action !== scope.action && fact.action.type === "component") {
           groups.text(
             effects(seat),
             seat,
             `Component action · ${sourceName(fact.action.source, names, null)}`,
           );
         }
-        started = true;
         break;
       case "turn_ended":
         break;
@@ -524,7 +530,8 @@ function detailsOf(
         groups.text(effects(seat), seat, `Researched ${names.tech(fact.tech)}`);
         break;
       case "strategy_picked":
-        groups.text("Picks", seat, `Picked ${names.strategy(fact.card)}`);
+        // The group says what the line is: "Picks", "Scored".
+        groups.text("Picks", seat, names.strategy(fact.card));
         break;
       case "voted": {
         if (seat === null) {
@@ -571,7 +578,7 @@ function detailsOf(
         groups.text(
           scope.phase === "status" ? "Scored" : effects(seat),
           seat,
-          `Scored ${names.objective(fact.objective)}${fact.secret ? " · secret objective" : ""}`,
+          `${scope.phase === "status" ? "" : "Scored "}${names.objective(fact.objective)}${fact.secret ? " · secret objective" : ""}`,
         );
         break;
       case "tokens_gained":
@@ -600,11 +607,15 @@ function detailsOf(
         groups.item(effects(seat), seat, "Readied ", names.planet(fact.planet));
         break;
       case "tokens_redistributed":
-        groups.text(
-          scope.phase === "status" ? "Command tokens" : effects(seat),
-          seat,
-          `Redistributed command tokens: ${fact.tactic} tactic · ${fact.fleet} fleet · ${fact.strategy} strategy`,
-        );
+        {
+          const sheet = `${fact.tactic} tactic · ${fact.fleet} fleet · ${fact.strategy} strategy`;
+          // The group of the status phase says what the line is.
+          if (scope.phase === "status") {
+            groups.text("Command tokens", seat, sheet);
+          } else {
+            groups.text(effects(seat), seat, `Redistributed command tokens: ${sheet}`);
+          }
+        }
         break;
       case "token_recalled":
         groups.text(
@@ -675,6 +686,8 @@ interface RawTurn {
   round: number | null;
   events: GameEvent[];
   ended: boolean;
+  /** The seat ended it: a fact of the end of the turn, or a pass. */
+  finished: boolean;
 }
 
 interface RawPhase {
@@ -686,13 +699,19 @@ interface RawPhase {
 
 type Raw = RawTurn | RawPhase;
 
-const actionOf = (turn: RawTurn) => {
-  for (const entry of turn.events) {
-    if (entry.fact?.kind === "action_started") {
-      return entry.fact.action;
-    }
-  }
-  return null;
+/** The actions that a turn started. */
+const actionsOf = (turn: RawTurn): TurnAction[] =>
+  turn.events.flatMap((entry) =>
+    entry.fact?.kind === "action_started" ? [entry.fact.action] : [],
+  );
+
+/**
+ * The action of a turn: its tactical or strategic action or its pass, else its first component
+ * action. A component action before it (an agent at the turn menu) is a part of the turn.
+ */
+const actionOf = (turn: RawTurn): TurnAction | null => {
+  const actions = actionsOf(turn);
+  return actions.findLast((action) => action.type !== "component") ?? actions[0] ?? null;
 };
 
 /** The entries of the game: its turns and its phases, in order. */
@@ -745,7 +764,15 @@ function entriesOf(events: EventLog): { raw: Raw[]; finished: boolean } {
         if (!seat) {
           continue;
         }
-        turn = { kind: "turn", id: entry.action_id, seat, round, events: [], ended: false };
+        turn = {
+          kind: "turn",
+          id: entry.action_id,
+          seat,
+          round,
+          events: [],
+          ended: false,
+          finished: false,
+        };
         turns.set(entry.action_id, turn);
         raw.push(turn);
       }
@@ -755,6 +782,7 @@ function entriesOf(events: EventLog): { raw: Raw[]; finished: boolean } {
         (entry.fact?.kind === "action_started" && entry.fact.action.type === "pass")
       ) {
         turn.ended = true;
+        turn.finished = true;
       }
       continue;
     }
@@ -766,23 +794,26 @@ function entriesOf(events: EventLog): { raw: Raw[]; finished: boolean } {
 }
 
 /**
- * What a seat did at its turn menu before it chose its action (a transaction) is a part of that
- * turn: the game counts it as an action of its own.
+ * What a seat did at its turn menu before it chose its action (a transaction, a component action
+ * that does not end the turn, such as an agent) is a part of that turn: the game counts it as an
+ * action of its own. A part that the seat ended (a fact of the end of the turn) is a turn.
  */
 function mergePreludes(raw: Raw[]): Raw[] {
   const out: Raw[] = [];
-  for (let at = 0; at < raw.length; at += 1) {
-    const item = raw[at];
-    const next = raw[at + 1];
+  for (const item of raw) {
+    const before = out.at(-1);
     if (
       item.kind === "turn" &&
-      !actionOf(item) &&
-      next?.kind === "turn" &&
-      next.seat === item.seat &&
-      actionOf(next)
+      before?.kind === "turn" &&
+      before.seat === item.seat &&
+      !before.finished &&
+      actionsOf(before).every((action) => action.type === "component")
     ) {
-      next.events = [...item.events, ...next.events];
-      next.round ??= item.round;
+      // The turn keeps the id of its first part, so that it is the same row while it grows.
+      before.events = [...before.events, ...item.events];
+      before.round ??= item.round;
+      before.ended = item.ended;
+      before.finished = item.finished;
       continue;
     }
     out.push(item);
@@ -804,6 +835,7 @@ function turnView(
     actor: turn.seat,
     strategic: kind === "strategic",
     phase: "action",
+    action,
   });
   const mine = facts.filter((item) => item.seat === turn.seat).map((item) => item.fact);
   const activated = mine.find((fact) => fact.kind === "activated");
@@ -1020,7 +1052,9 @@ export function selectLog(
       raw.at(-1) === item &&
       !item.ended &&
       !finished &&
-      update.view.phase === "action";
+      update.view.phase === "action" &&
+      // A turn that ended with no fact of its end: another seat has the turn now.
+      (update.view.active_player ?? item.seat) === item.seat;
     return turnView(item, number, live, viewer, names, update.view.round);
   });
   const last =

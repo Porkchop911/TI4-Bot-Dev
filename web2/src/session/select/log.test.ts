@@ -7,7 +7,7 @@ import { selectLog } from "./log";
 // A game of three seats: Sol (a, the viewer), Hacan (b) and Jol-Nar (c), as the events of the
 // host tell it. The names come from the board and the catalogue.
 const update = (
-  change: { viewer?: string | null; round?: number; phase?: Phase } = {},
+  change: { viewer?: string | null; round?: number; phase?: Phase; active?: string } = {},
 ): SessionUpdate =>
   ({
     viewer:
@@ -18,6 +18,7 @@ const update = (
     view: {
       round: change.round ?? 3,
       phase: change.phase ?? "action",
+      ...(change.active ? { active_player: change.active } : {}),
       players: [
         { id: "a", faction: "sol" },
         { id: "b", faction: "hacan" },
@@ -336,6 +337,41 @@ describe("the turns of the Log", () => {
     expect(turn.turn).toBe(1);
   });
 
+  it("counts a component action at the turn menu that does not end the turn as a part of it", () => {
+    const log = selectLog(
+      update({ viewer: null }),
+      eventsOf([
+        decided("action_1", "b", "b", { kind: "transaction_opened", with: "c" }),
+        decided("action_2", "b", "b", {
+          kind: "action_started",
+          action: { type: "component", source: { type: "leader", leader: "carth" } },
+        }),
+        decided("action_3", "b", "b", started("tactical")),
+        decided("action_3", "b", "b", { kind: "activated", system: "38" }),
+        // The turn ends with no fact of its end; a component action that ends its turn is one.
+        decided("action_4", "c", "c", {
+          kind: "action_started",
+          action: { type: "component", source: { type: "action_card" } },
+        }),
+        decided("action_4", "c", "c", ENDED),
+        decided("action_5", "c", "c", started("tactical")),
+      ]),
+      printed,
+    );
+    const all = turns(log.entries);
+    expect(all.map((turn) => [turn.id, turn.label, turn.turn])).toEqual([
+      ["action_1", "Tactical · Abyz, Fria · #38", 1],
+      ["action_4", "Component · Action card", 2],
+      ["action_5", "Tactical", 3],
+    ]);
+    expect(all[0].groups.map((group) => group.title)).toEqual([
+      "Activation",
+      "Effects",
+      "Transactions",
+    ]);
+    expect(all[0].groups[1].lines).toEqual([{ seat: "b", text: "Component action · Carth" }]);
+  });
+
   it("marks the turn that is played now", () => {
     const events = [
       ...tactical("action_1", "b", "c"),
@@ -345,6 +381,11 @@ describe("the turns of the Log", () => {
     const live = turns(selectLog(update({ viewer: null }), eventsOf(events), printed).entries);
     expect(live.map((turn) => turn.live)).toEqual([false, true]);
     expect(live[1].label).toBe("Tactical · Abyz, Fria · #38");
+    // A turn that ended with no fact of its end is not played now: another seat has the turn.
+    const next = turns(
+      selectLog(update({ viewer: null, active: "a" }), eventsOf(events), printed).entries,
+    );
+    expect(next.map((turn) => turn.live)).toEqual([false, false]);
     // A phase that follows ends it.
     const over = turns(
       selectLog(
@@ -392,7 +433,7 @@ describe("the scope of the Log", () => {
     const status = log.entries[3];
     expect(status).toMatchObject({
       summary: "1 objective scored",
-      groups: [{ title: "Scored", lines: [{ seat: "c", text: "Scored Corner the Market" }] }],
+      groups: [{ title: "Scored", lines: [{ seat: "c", text: "Corner the Market" }] }],
     });
     expect(log.entries[5]).toMatchObject({
       summary: "2 strategy cards picked",
@@ -400,8 +441,8 @@ describe("the scope of the Log", () => {
         {
           title: "Picks",
           lines: [
-            { seat: "a", text: "Picked Warfare" },
-            { seat: "b", text: "Picked Technology" },
+            { seat: "a", text: "Warfare" },
+            { seat: "b", text: "Technology" },
           ],
         },
       ],
@@ -685,9 +726,7 @@ describe("the parts of a strategic action", () => {
     expect(status.groups).toEqual([
       {
         title: "Command tokens",
-        lines: [
-          { seat: "b", text: "Redistributed command tokens: 3 tactic · 3 fleet · 2 strategy" },
-        ],
+        lines: [{ seat: "b", text: "3 tactic · 3 fleet · 2 strategy" }],
       },
     ]);
   });
