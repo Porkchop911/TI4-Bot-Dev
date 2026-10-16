@@ -177,6 +177,8 @@ function Row({ row }: { row: RowView }) {
       subtitle={row.subtitle}
       linked={linked}
       {...props}
+      // A button of a row ("Change") stays at its end on a phone, so that a summary is one line.
+      inline={control?.kind === "button"}
       controls={
         control &&
         (control.kind === "button" ? (
