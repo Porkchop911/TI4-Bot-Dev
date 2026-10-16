@@ -358,6 +358,12 @@ export interface CombatView {
   skipped: string | null;
   outcome: OutcomeView | null;
   offers: BattleOfferView[];
+  /**
+   * The open question of the viewer that has no shape on the rows yet, as the list of a
+   * decision: its prompt and its blocks. Null when the viewer is not asked, or when the question
+   * is a reaction window (the band on top of the panel).
+   */
+  decision?: { prompt: string; blocks: BlockView[] } | null;
   records: BattleRecordView[];
   /** Changes when the battle moves on; the view then shows the latest record again. */
   revision: string;

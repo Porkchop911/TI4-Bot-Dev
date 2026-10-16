@@ -40,6 +40,15 @@ The owner chose this design on 2026-10-10, from three that were compared.
 - **The space cannon offense before the roll** comes from the engine (`MovementFacts.cannon`, from `space_cannon_shots` of the engine): every gun of every seat that fires in the active system after the movement, also a gun on a planet of a system with no ships and one that reaches it from a neighbour (PDS II), with its dice and what it hits on. The open movement shows them as the same table with empty dice and the expected hits ("≈1.0"), the ships of the viewer after the staged movement as the side that is fired at. When another seat has ships there the table is left out: the odds of the space combat count the guns.
 - The heading of the movement has its parts (the trail): "Move ships", "Gravity rift" when a ship rolls for one, and "Space cannon offense": to come when the facts have guns, "Space cannon offense · no guns" (skipped) when they have none, a check mark when it was rolled. After the movement no facts are left: the part is there only when it rolled.
 
+## Space combat
+
+- A space combat is the step "Space combat" of its tactical action (`BoardView.combat`, `session/select/combat.ts`). Every seat has this screen: the seats that fight, and a seat that does not fight, which watches it read-only (pattern 11). A draft has no combat: it ends before it.
+- The tab of the step says the round ("Round 2"). The other steps are as in the action: the Movement tab is read while the combat is open, with "Continue to space combat".
+- The step has one battle table, of the round as the engine started it (`CombatView.round_start`): the attacker and the defender, each printed unit with its count, what it hits on, and "1 damaged" for the damaged ones. The header of the table has the round and its stage ("Before the roll", "Anti-fighter barrage", "Hits to assign", "Retreat"), and once someone owes hits, "3 hits for … to assign".
+- Before the roll a row has the dice that the units roll and the hits that they score on average ("≈0.6"), and the value is the printed one. After the roll the value is what the dice of the engine needed, in the accent colour with the printed value on hover when it differs, and the hits of each side are in its header. The engine rolls the ships of one value together, so the dice are not shown on the rows yet.
+- Whom the game waits for is the pill of the step ("Waiting for Letnev") and the note of the footer. The open question of the viewer is the pill "Your decision".
+- The question of the viewer that has no place on the rows is the list of a decision, with its prompt, above the table; the footer sends it. A reaction window is the band on top of the panel, as on every screen.
+
 ## Invasion
 
 The owner chose this design on 2026-10-10, from three that were compared.
@@ -83,5 +92,6 @@ The owner chose this design on 2026-10-11: the build first, then the payment, bo
 ## Battle table
 
 - The headers of the attacker and the defender have the same lines, so the unit rows start at the same height.
+- The name of a seat in a header is cut with "…", with the full name on hover; a phone wraps it.
 - The simulated odds are in these headers (win % and survivors). They have no card of their own.
 - A player can have more than one strategy card (a game of four or fewer players). The player table shows all of them.

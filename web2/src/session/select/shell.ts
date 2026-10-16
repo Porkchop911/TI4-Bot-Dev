@@ -125,11 +125,27 @@ export function selectShell(
           standing: local.standing?.response ?? null,
         }
       : null;
+  // A space combat is the step of its tactical action, at every seat: a seat that does not fight
+  // watches it. A draft is not the game as it runs, so it has none.
+  const combat = !facts && !local.draft ? (update.view.board.combat ?? null) : null;
   const action = facts
     ? selectTactical(update, local, facts, catalog, printed)
-    : showsStrategy(update, local)
-      ? selectStrategy(update, local, catalog, printed)
-      : selectAction(update, local, catalog, printed, cards.modes);
+    : combat
+      ? selectTactical(
+          update,
+          local,
+          {
+            kind: "combat",
+            combat,
+            flow: selectAction(update, local, catalog, printed, cards.modes),
+            asked: !!openChoice(update, local) && !local.follow?.editing,
+          },
+          catalog,
+          printed,
+        )
+      : showsStrategy(update, local)
+        ? selectStrategy(update, local, catalog, printed)
+        : selectAction(update, local, catalog, printed, cards.modes);
   return {
     seats: selectSeats(update, printed),
     accent:

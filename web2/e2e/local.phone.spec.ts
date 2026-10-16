@@ -448,6 +448,32 @@ test("phone: the rolls of the gravity rift and the space cannon offense are in t
   await page.screenshot({ path: "shots/phone/local/movement-dice.png", animations: "disabled" });
 });
 
+test("phone: a space combat is the step of its tactical action, in the width", async ({ page }) => {
+  // Longer than a test of this suite should be: see "Tests" in AGENTS.md.
+  test.setTimeout(10_000);
+  const errors = pageErrors(page);
+  await page.goto("/?scenario=ongoing_combat&humans=1");
+  const send = page.locator('footer button[aria-keyshortcuts="Enter"]');
+  const panel = page.locator("#step-panel");
+  const width = page.viewportSize()!.width;
+  const fits = async () =>
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+  await page
+    .getByRole("navigation", { name: "Panes" })
+    .getByRole("button", { name: "Action" })
+    .click();
+  await expect(panel.getByRole("heading").first()).toHaveText("Space combat");
+  const attacker = panel.getByRole("region", { name: "Attacker" });
+  // A long printed name takes a second line: it is in view, not only on hover.
+  await expect(attacker.getByText("Advanced Carrier I", { exact: true })).toBeVisible();
+  await expect(panel.getByRole("region", { name: "Defender" })).toContainText("Cruiser I");
+  await expect(panel.getByRole("button", { name: /Stay and fight/ })).toBeVisible();
+  await expect(send).toBeVisible();
+  await fits();
+  await page.screenshot({ path: "shots/phone/local/space-combat.png", animations: "disabled" });
+  expect(errors).toEqual([]);
+});
+
 test("phone: the landings on a defended planet have the odds of the ground combat", async ({
   page,
 }) => {

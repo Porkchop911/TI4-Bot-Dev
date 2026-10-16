@@ -1502,8 +1502,9 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             setPlan((now) => ({ ...now, stage: "movement" }));
             return setLocal((now) => ({ ...now, step: 0 }));
           }
-          // In Live the movement of the action is read while the landings or the production are open.
-          const reading = !drafted && intent.step === 1 && (landing || producing);
+          // In Live the movement of the action is read while a later step is open.
+          const reading =
+            !drafted && intent.step === 1 && (landing || producing || !!shown.view.board.combat);
           return setLocal((now) => ({
             ...now,
             step: moving && intent.step === 0 ? 0 : reading ? 1 : null,

@@ -4,7 +4,9 @@
 import type {
   ActionButtonView,
   ActivationView,
+  FlowActionView,
   FooterView,
+  PillView,
   StepContentView,
   StepTabView,
   TacticalActionView,
@@ -15,6 +17,7 @@ import { isEmpty, overrun, totals } from "../productionDraft";
 import type {
   ActivationFacts,
   Catalog,
+  CombatView as CombatState,
   ExplorationCatalog,
   InvasionFacts,
   MovementFacts,
@@ -23,6 +26,7 @@ import type {
   TacticalFacts,
 } from "../wire";
 import { type LocalState, openChoice } from "./action";
+import { selectCombat } from "./combat";
 import { selectInvasion } from "./invasion";
 import { selectProduction } from "./production";
 import {
@@ -36,6 +40,22 @@ import { ANOMALIES, WORMHOLES, factionName } from "./names";
 import { reviewRow } from "./review";
 
 const STEPS = ["Activation", "Movement", "Space combat", "Invasion", "Production"];
+
+/**
+ * The space combat of the action (`BoardView.combat`). It has no facts of a step: the state of
+ * the combat, which every seat sees, and the open question of the viewer as the decision of
+ * `selectAction` (a list, or the band of a reaction window).
+ */
+export interface CombatStep {
+  kind: "combat";
+  combat: CombatState;
+  flow: FlowActionView;
+  /** The viewer is asked a question of the game now. */
+  asked: boolean;
+}
+
+/** What the screen of a tactical action is made of: the facts of a step, or the space combat. */
+export type TacticalStep = TacticalFacts | CombatStep;
 
 /**
  * The facts of the open choice, when it is the activation, the movement, the landings or the
@@ -416,7 +436,7 @@ function production(
   };
 }
 
-const CURRENT = { activation: 0, movement: 1, invasion: 3, production: 4 };
+const CURRENT = { activation: 0, movement: 1, combat: 2, invasion: 3, production: 4 };
 
 /**
  * The movement of the action in Live, read-only, while a later step is open: what the dice of
@@ -452,7 +472,7 @@ function movementResult(
 export function selectTactical(
   update: SessionUpdate,
   local: LocalState,
-  facts: TacticalFacts,
+  facts: TacticalStep,
   catalog: ExplorationCatalog | null = null,
   /** The printed names. Without it a faction is shown by its id and a unit by its base unit. */
   printed: Catalog | null = null,
@@ -462,19 +482,37 @@ export function selectTactical(
   const reading =
     !local.draft && local.step === 1 && current > 1 && !!update.view.board.active_system;
   const selected = facts.kind === "movement" && local.step === 0 ? 0 : reading ? 1 : current;
-  const view = reading
+  const view: {
+    content: StepContentView;
+    footer: FooterView;
+    target: string | null;
+    pill?: PillView;
+  } = reading
     ? movementResult(update, local, update.view.board.active_system!, current, printed)
-    : facts.kind === "activation"
-      ? activation(update, local, facts)
-      : facts.kind === "movement"
-        ? movement(update, local, facts, printed)
-        : facts.kind === "invasion"
-          ? invasion(update, local, facts, catalog, printed)
-          : production(update, local, facts, printed);
+    : facts.kind === "combat"
+      ? selectCombat(update, facts.combat, facts.flow, facts.asked, printed)
+      : facts.kind === "activation"
+        ? activation(update, local, facts)
+        : facts.kind === "movement"
+          ? movement(update, local, facts, printed)
+          : facts.kind === "invasion"
+            ? invasion(update, local, facts, catalog, printed)
+            : production(update, local, facts, printed);
   const units = landed(local.landing);
   const built = facts.kind === "production" ? totals(facts, local.production).units : 0;
-  const active = facts.kind === "production" ? facts.system : "active" in facts ? facts.active : "";
-  const seat = update.pending_choice?.choice.player ?? "";
+  const active =
+    facts.kind === "production"
+      ? facts.system
+      : facts.kind === "combat"
+        ? facts.combat.system_id
+        : "active" in facts
+          ? facts.active
+          : "";
+  // The seat of the action. In a space combat the viewer may be another seat, or none.
+  const seat =
+    facts.kind === "combat"
+      ? (update.view.active_player ?? facts.combat.attacker)
+      : (update.pending_choice?.choice.player ?? "");
   const faction = factionName(
     update.view.players.find((player) => player.id === seat)?.faction ?? seat,
     printed,
@@ -508,7 +546,9 @@ export function selectTactical(
             ? "skipped"
             : "done"
           : step === current
-            ? "decision"
+            ? facts.kind === "combat"
+              ? "battle"
+              : "decision"
             : reached.includes(step)
               ? "draft"
               : "future";
@@ -525,11 +565,13 @@ export function selectTactical(
             ? `#${active}`
             : step === 1 && current === 1 && ships
               ? plural(ships, "ship")
-              : step === 3 && current === 3 && units
-                ? plural(units, "unit")
-                : step === 4 && current === 4 && built
-                  ? plural(built, "unit")
-                  : "",
+              : step === 2 && facts.kind === "combat"
+                ? `Round ${facts.combat.round}`
+                : step === 3 && current === 3 && units
+                  ? plural(units, "unit")
+                  : step === 4 && current === 4 && built
+                    ? plural(built, "unit")
+                    : "",
     };
   });
   return {
@@ -547,7 +589,8 @@ export function selectTactical(
     current,
     contentKey: `tactical:${selected}`,
     uncommitted: null,
-    interrupt: null,
+    // A reaction window during the combat is the band on top of the step.
+    interrupt: facts.kind === "combat" ? facts.flow.interrupt : null,
     closing: [],
     task: {
       step: selected,
@@ -564,12 +607,14 @@ export function selectTactical(
                 : { tone: "draft", label: "Preparing" }
         : selected !== current
           ? { tone: "done", label: "Resolved" }
-          : local.remaining === null && local.planNote && !local.planNote.error
-            ? {
-                tone: "live",
-                label: `Your decision · ${facts.kind === "invasion" ? "landings go" : facts.kind === "production" ? "production goes" : "movement goes"} on`,
-              }
-            : { tone: "live", label: "Your decision" },
+          : view.pill
+            ? view.pill
+            : local.remaining === null && local.planNote && !local.planNote.error
+              ? {
+                  tone: "live",
+                  label: `Your decision · ${facts.kind === "invasion" ? "landings go" : facts.kind === "production" ? "production goes" : "movement goes"} on`,
+                }
+              : { tone: "live", label: "Your decision" },
       trail:
         selected !== 1
           ? []
@@ -590,7 +635,13 @@ export function selectTactical(
           : null,
       review:
         review && selected === reviewTab && !local.draft?.editing
-          ? reviewRow(update, facts, review.entry, review.system, printed)
+          ? reviewRow(
+              update,
+              facts.kind === "combat" ? null : facts,
+              review.entry,
+              review.system,
+              printed,
+            )
           : null,
       help: card
         ? [

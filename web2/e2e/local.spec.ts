@@ -592,6 +592,69 @@ test("a draft stops at the rift roll; Live keeps what the rift and the space can
   expect(errors).toEqual([]);
 });
 
+test("a space combat is the step of its tactical action, and a seat that does not fight watches it", async ({
+  page,
+}) => {
+  // Longer than a test of this suite should be: see "Tests" in AGENTS.md.
+  test.setTimeout(10_000);
+  const errors = pageErrors(page, { console: true });
+  // The other seats wait for a step, so that the page is shown the combat between their decisions.
+  await page.addInitScript(() => localStorage.setItem("ti4.local.stepping", "1"));
+  // The opening moves Sol's fleet into Letnev's; the first question of Sol is the retreat.
+  await page.goto("/?scenario=ongoing_combat&humans=1");
+  await expect(heading(page)).toHaveText("Space combat");
+  const tab = page.getByRole("tab", { name: /Space combat/ });
+  await expect(tab).toHaveAttribute("data-state", "battle");
+  await expect(tab).toContainText("Round 1");
+  const attacker = panel(page).getByRole("region", { name: "Attacker" });
+  const defender = panel(page).getByRole("region", { name: "Defender" });
+  await expect(attacker).toContainText(/Seat A\s*Sol · You/);
+  await expect(attacker).toContainText(/Dreadnought I\s*×1\s*5\+/);
+  await expect(attacker).toContainText("Advanced Carrier I");
+  await expect(defender).toContainText(/Seat C\s*Letnev/);
+  await expect(defender).toContainText(/Cruiser I\s*×1\s*7\+/);
+  await expect(panel(page).getByText("Before the roll")).toBeVisible();
+  // The question stays a list, above the table, and the footer sends it.
+  const question = panel(page).getByRole("region", { name: /^Announce a retreat/ });
+  await expect(question.getByRole("button", { name: /Stay and fight/ })).toBeVisible();
+  await expect(send(page)).toHaveText(/^Send/);
+  await fitsHeight(page);
+  await page.screenshot({ path: "shots/local/space-combat.png", animations: "disabled" });
+
+  // The movement of the action is read while the combat is open.
+  await page.getByRole("tab", { name: /Movement/ }).click();
+  await expect(heading(page)).toHaveText("Movement");
+  await expect(send(page)).toHaveText(/Continue to space combat/);
+  await send(page).click();
+  await expect(heading(page)).toHaveText("Space combat");
+
+  // Hacan, which does not fight, watches: the same table, no question, and whom the game waits for.
+  await openSettings(page);
+  await settings(page)
+    .getByRole("region", { name: "Play as" })
+    .getByRole("button", { name: "Seat B" })
+    .click();
+  await expect(settings(page)).toBeHidden();
+  await expect(heading(page)).toHaveText("Space combat");
+  await expect(panel(page).getByText("Waiting for Sol", { exact: true })).toBeVisible();
+  await expect(page.locator("footer")).toContainText("Waiting for Sol.");
+  await expect(attacker).toContainText(/Seat A\s*Sol/);
+  await expect(attacker).not.toContainText("You");
+  await expect(panel(page).getByRole("button", { name: /Stay and fight/ })).toHaveCount(0);
+  await fitsHeight(page);
+  await page.screenshot({ path: "shots/local/space-combat-watch.png", animations: "disabled" });
+  // The seats roll: the hits of each side, and who assigns them.
+  await expect(send(page)).toHaveText(/^Step/);
+  await send(page).click();
+  await expect(send(page)).toHaveText(/^Step/);
+  await send(page).click();
+  await expect(panel(page).getByText("Hits to assign")).toBeVisible();
+  await expect(panel(page).getByText(/\d+ hits? for Seat [AC] to assign/)).toBeVisible();
+  await expect(attacker).toContainText(/\d+ hits?/);
+  await fitsHeight(page);
+  expect(errors).toEqual([]);
+});
+
 test("a reload goes on where the game was, and undo takes back one answer @slow", async ({
   page,
 }) => {

@@ -197,7 +197,7 @@ export function cannonTable(
 }
 
 /** "≈0.5": the hits that `dice` dice that hit on `target` score on average. */
-const expected = (dice: number, target: number) =>
+export const expected = (dice: number, target: number) =>
   `≈${((dice * (11 - Math.min(Math.max(target, 1), 11))) / 10).toFixed(1)}`;
 
 /**

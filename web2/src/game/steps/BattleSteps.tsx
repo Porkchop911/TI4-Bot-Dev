@@ -4,6 +4,7 @@ import { unitName } from "../../model";
 import { Card, CardBody, CardHeading, Counter, Gauge, Gauges, InlineNote, ListRow } from "../../ui";
 import { BattleOffers, BattleRecords, BattleTable, OutcomeCard } from "../combat/BattleTable";
 import { OwnerLabel, useDispatch } from "../context";
+import { Blocks } from "../flows/Blocks";
 import { GroundPreviews, LandingSummary } from "./invasion/LandingSheet";
 
 /** Which roll is in view. It goes back to the latest roll when the battle moves on. */
@@ -34,6 +35,13 @@ export function SpaceCombatStep({ view }: { view: CombatView }) {
   return (
     <>
       {view.outcome && <OutcomeCard view={view.outcome} />}
+      {view.decision && (
+        // The question of the viewer that has no place on the rows: its prompt and its list.
+        <section aria-label={view.decision.prompt} className="space-y-2">
+          <h3 className="text-base font-semibold">{view.decision.prompt}</h3>
+          <Blocks blocks={view.decision.blocks} />
+        </section>
+      )}
       <BattleRecords
         label="Rolls"
         records={view.records}

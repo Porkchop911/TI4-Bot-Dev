@@ -44,8 +44,11 @@ function Side({
         <Eyebrow className={side.role === "Attacker" ? "text-cyan" : "text-orange"}>
           {side.role}
         </Eyebrow>
-        <strong>{seat.name}</strong>
-        <span className="text-muted">
+        {/* A long name is cut, with the full name on hover; a phone wraps it. */}
+        <strong className="min-w-0 truncate phone:whitespace-normal" title={seat.name}>
+          {seat.name}
+        </strong>
+        <span className="shrink-0 text-muted">
           {seat.faction}
           {side.isViewer ? " · You" : ""}
         </span>
