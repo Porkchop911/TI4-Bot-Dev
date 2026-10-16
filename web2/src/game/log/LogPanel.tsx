@@ -38,7 +38,7 @@ export function LogPanel({
 }: {
   log: LogView;
   action: ActionView;
-  /** The status in the bar of the game. The pill of the heading does not say it again. */
+  /** The status in the toolbar. The pill of the heading does not say it again. */
   status: string;
   /** The viewer has a decision open: the step sheet has it, and the Log what only informs. */
   asked: boolean;

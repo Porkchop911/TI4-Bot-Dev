@@ -744,7 +744,7 @@ export function selectAction(
               : decision(true);
   return {
     kind: "flow",
-    // The heading says the rest. A private draft is said by the bar of the game.
+    // The heading says the rest. A private draft is said by the toolbar.
     context: local.draft
       ? "Tactical action"
       : (interrupted ?? reacted)

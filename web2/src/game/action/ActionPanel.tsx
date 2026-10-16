@@ -129,7 +129,7 @@ export function SheetToggle({ open, onToggle }: { open: boolean; onToggle?: () =
 }
 
 /**
- * The pill of the heading, less what the bar of the game already says: "Your decision" is gone, and
+ * The pill of the heading, less what the toolbar already says: "Your decision" is gone, and
  * "Your decision · Reaction" is "Reaction". A pill that says something else stays as it is.
  */
 export function pillBeyond(pill: PillView | null, status: string): PillView | null {
@@ -273,7 +273,7 @@ export function ActionPanel({
   onMinimize,
 }: {
   view: ActionView;
-  /** The status in the bar of the game. The pill of the heading does not say it again. */
+  /** The status in the toolbar. The pill of the heading does not say it again. */
   status: string;
   /** False when the shell shows `ActionFooter` itself, under every pane. */
   footer?: boolean;

@@ -190,7 +190,7 @@ export function selectTurn(
     interrupt: null,
     closing: parts.closing ?? [],
     heading: parts.heading,
-    // The turn is the viewer's: the pill says so, and the bar of the game says that it is a decision.
+    // The turn is the viewer's: the pill says so, and the toolbar says that it is a decision.
     pill: { tone: "live", label: "Your turn" },
     trail: [],
     help: parts.help ?? [],
