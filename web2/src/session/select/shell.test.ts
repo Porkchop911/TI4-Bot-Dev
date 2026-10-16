@@ -154,19 +154,19 @@ it("shows the turn menu as the picker: the fixed groups, with what the engine of
   const picker = rows(menu, local());
   expect(picker.map((row) => [row.key, row.title, row.disabled])).toEqual([
     ["t", "Activate a system", false],
-    ["2", "2 Diplomacy", false],
+    ["1", "1 Leadership", false],
     ["a", "Play an action card", true],
     ["c", "Use another component", true],
     ["r", "Transaction", false],
     ["p", "Take no more actions in this round", true],
   ]);
   expect(picker.map((row) => row.state)).toEqual([
-    "5 tactic tokens",
+    "1 tactic token",
     undefined,
     "None is playable",
     "None is ready",
     "2 of 7 players",
-    "Use 2 Diplomacy first",
+    "Use 1 Leadership first",
   ]);
   // A choice in the picker sends nothing: there is no main button until something is staged.
   expect(flow(menu, local()).footer.actions).toEqual([]);
@@ -177,10 +177,10 @@ it("shows the turn menu as the picker: the fixed groups, with what the engine of
 it("stages an action of the turn menu, and its main button sends it", () => {
   const staged = flow(menu, local({ staged: "strategic" }));
   expect(staged.badge).toEqual({ tone: "draft", label: "Not sent" });
-  expect(staged.heading).toBe("2 Diplomacy");
+  expect(staged.heading).toBe("1 Leadership");
   expect(staged.footer.actions.map((item) => [item.label, item.key])).toEqual([
     ["Back to actions", "Escape"],
-    ["Use Diplomacy", "Enter"],
+    ["Use Leadership", "Enter"],
   ]);
 });
 
