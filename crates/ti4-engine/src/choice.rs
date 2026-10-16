@@ -305,6 +305,30 @@ impl Choice {
         serde_json::from_value(self.details.get(key)?.clone()).ok()
     }
 
+    /// Attach a typed display-only look-ahead whose fields are top-level keys of the details,
+    /// for a card whose look-ahead was never one nested object (Diplomacy's `ready_hints` and
+    /// `ready_count`): each field of `hints` is written as [`Choice::detailed`] does, in the
+    /// order of the struct. [`Choice::hint_fields`] reads it back.
+    ///
+    /// # Panics
+    /// When `hints` does not serialize to a JSON object.
+    #[must_use]
+    pub fn hinted_fields(mut self, hints: &impl Serialize) -> Self {
+        let Ok(Value::Object(fields)) = serde_json::to_value(hints) else {
+            panic!("look-ahead fields serialize to a JSON object");
+        };
+        self.details.extend(fields);
+        self
+    }
+
+    /// The typed look-ahead that [`Choice::hinted_fields`] attached, read from the whole
+    /// details (other keys are ignored). None when one of its fields is absent or has another
+    /// shape.
+    #[must_use]
+    pub fn hint_fields<T: serde::de::DeserializeOwned>(&self) -> Option<T> {
+        serde_json::from_value(Value::Object(self.details.clone())).ok()
+    }
+
     /// Present the question as an offer card for clients (display only, like [`Choice::detailed`]):
     /// `card` names what is asked (see [`offer_card`]), `facts` is a list of [`offer_fact`]s and
     /// `captions` maps option ids to [`offer_caption`]s that say what each answer does. Option ids,

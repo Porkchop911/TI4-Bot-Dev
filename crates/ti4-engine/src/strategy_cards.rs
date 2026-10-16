@@ -1651,10 +1651,65 @@ fn research_payment_hints(
     }
 }
 
-/// Display only: what a seat weighing Diplomacy's "ready planets" needs in front of it. The
-/// exhausted planets it could ready (with their values), and, for the other strategy cards that
-/// spend resources or influence (Leadership, Technology, Warfare), whether each has been played
-/// this round, is still held unplayed by some seat, or is not in this game's round at all. Only
+/// The look-ahead of a readying of exhausted planets (Diplomacy's system question, the window of
+/// its secondary, and each planet to ready): its fields are top-level keys of the details,
+/// `details.ready_hints` and `details.ready_count`, written with [`Choice::hinted_fields`], so
+/// that a client can stage the whole readying at once (display only).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ReadyHints {
+    pub ready_hints: ReadyDetails,
+    /// How many planets the game readies at most, with this question and the ones after it.
+    pub ready_count: usize,
+}
+
+/// What a seat weighing "ready planets" needs in front of it (`details.ready_hints`).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ReadyDetails {
+    /// The exhausted planets that the seat controls, which it could ready.
+    pub planets: Vec<ReadyPlanet>,
+    /// The other strategy cards that spend resources or influence (Leadership, Technology,
+    /// Warfare), in that order.
+    pub spenders: Vec<ReadySpender>,
+}
+
+/// An exhausted planet that can be readied, with its values. The values are null when the
+/// content has no record of the planet.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ReadyPlanet {
+    pub id: PlanetId,
+    pub name: String,
+    pub resources: Option<i64>,
+    pub influence: Option<i64>,
+}
+
+/// A strategy card that spends what a ready planet gives, and where it is in this round.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ReadySpender {
+    /// The printed name of the card.
+    pub card: String,
+    /// What it spends: "resources" or "influence".
+    pub spends: String,
+    pub status: SpenderStatus,
+}
+
+/// Where a strategy card is in this round: exhausted by a seat that played it, still held
+/// unplayed by some seat, or held by no seat.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub enum SpenderStatus {
+    Played,
+    ToCome,
+    NotInPlay,
+}
+
+/// Display only: the look-ahead of a readying of at most `count` planets ([`ReadyHints`]): the
+/// exhausted planets the seat could ready (with their values), and, for the other strategy
+/// cards that spend resources or influence, whether each has been played this round. Only
 /// public facts: strategy-card holdings and their exhausted state are on the table for everyone.
 /// Never read by the engine.
 #[must_use]
@@ -1663,26 +1718,31 @@ pub fn ready_hints(
     content: &ContentStore,
     sources: SourceSet,
     player: &PlayerId,
-) -> serde_json::Value {
-    let planets: Vec<serde_json::Value> = state
+    count: usize,
+) -> ReadyHints {
+    let planets = state
         .controlled_planets(player)
         .into_iter()
         .map(|(_, planet)| planet)
         .filter(|planet| state.exhausted_planets.contains(*planet))
         .map(|planet| {
             let record = ti4_content::galaxy::planet(content, planet.as_str(), sources);
-            serde_json::json!({
-                "id": planet.as_str(),
-                "name": record.as_ref().and_then(|r| r.name()).unwrap_or(planet.as_str()),
-                "resources": record.as_ref().map(|r| r.resources()),
-                "influence": record.as_ref().map(|r| r.influence()),
-            })
+            ReadyPlanet {
+                id: planet.clone(),
+                name: record
+                    .as_ref()
+                    .and_then(|r| r.name())
+                    .unwrap_or(planet.as_str())
+                    .to_owned(),
+                resources: record.as_ref().map(|r| r.resources()),
+                influence: record.as_ref().map(|r| r.influence()),
+            }
         })
         .collect();
-    let spenders: Vec<serde_json::Value> = [
-        ("Leadership", "influence"),
-        ("Technology", "resources"),
-        ("Warfare", "resources"),
+    let spenders = [
+        ("Leadership", Spend::Influence),
+        ("Technology", Spend::Resources),
+        ("Warfare", Spend::Resources),
     ]
     .iter()
     .map(|(name, spends)| {
@@ -1697,16 +1757,23 @@ pub fn ready_hints(
             }
         }
         let status = if !held {
-            "not_in_play"
+            SpenderStatus::NotInPlay
         } else if played {
-            "played"
+            SpenderStatus::Played
         } else {
-            "to_come"
+            SpenderStatus::ToCome
         };
-        serde_json::json!({ "card": name, "spends": spends, "status": status })
+        ReadySpender {
+            card: (*name).to_owned(),
+            spends: crate::production::spend_name(*spends).to_owned(),
+            status,
+        }
     })
     .collect();
-    serde_json::json!({ "planets": planets, "spenders": spenders })
+    ReadyHints {
+        ready_hints: ReadyDetails { planets, spenders },
+        ready_count: count,
+    }
 }
 
 fn ready_planets(
@@ -1749,9 +1816,13 @@ fn ready_planets(
             state.phase,
             state.round,
         ))
-        .detailed("ready_hints", ready_hints(state, content, sources, player))
-        // Display only: how many planets this question and the ones after it ready at most.
-        .detailed("ready_count", maximum - readied);
+        .hinted_fields(&ready_hints(
+            state,
+            content,
+            sources,
+            player,
+            maximum - readied,
+        ));
         let answer = ask(state, content, sources, galaxy, table, &choice)?;
         state.ready_planet(&PlanetId::new(answer.id));
     }
@@ -1797,8 +1868,13 @@ fn diplomacy_primary(
         ))
         // Display only: the planets that are readied after the system, so that a client can
         // stage the whole primary at once.
-        .detailed("ready_hints", ready_hints(state, content, sources, player))
-        .detailed("ready_count", DIPLOMACY_READIES);
+        .hinted_fields(&ready_hints(
+            state,
+            content,
+            sources,
+            player,
+            DIPLOMACY_READIES,
+        ));
         let chosen = SystemId::new(ask(state, content, sources, galaxy, table, &choice)?.id);
         for other in state.seating_order.clone() {
             if &other != player {
@@ -3917,12 +3993,30 @@ mod tests {
         let [system_question, ready] = &seen[..] else {
             panic!("a system and one planet to ready: {seen:?}");
         };
+        let told: ReadyHints = system_question.hint_fields().unwrap();
+        assert_eq!(told.ready_count, DIPLOMACY_READIES);
+        assert_eq!(told.ready_hints.planets[0].id, planet);
+        // The readying that follows offers the planets of the hints, and readies as many.
+        let readying: ReadyHints = ready.hint_fields().unwrap();
+        assert_eq!(readying.ready_count, 2);
+        assert_eq!(
+            ready
+                .options
+                .iter()
+                .map(|option| option.id.as_str())
+                .collect::<Vec<_>>(),
+            told.ready_hints
+                .planets
+                .iter()
+                .map(|planet| planet.id.as_str())
+                .collect::<Vec<_>>()
+        );
+        // The keys that the clients read.
         assert_eq!(system_question.details["ready_count"], 2);
         assert_eq!(
             system_question.details["ready_hints"]["planets"][0]["id"],
             planet.as_str()
         );
-        assert_eq!(ready.details["ready_count"], 2);
     }
 
     #[test]
@@ -5896,14 +5990,20 @@ mod tests {
             Some("Leadership")
         );
         state.players[1].strategy_cards = vec![leadership.clone()];
-        let hints = ready_hints(&state, store, POK, &player);
-        assert_eq!(hints["spenders"][0]["card"], "Leadership");
-        assert_eq!(hints["spenders"][0]["status"], "to_come");
-        assert_eq!(hints["spenders"][1]["status"], "not_in_play");
+        let hints = ready_hints(&state, store, POK, &player, DIPLOMACY_READIES).ready_hints;
+        assert_eq!(hints.spenders[0].card, "Leadership");
+        assert_eq!(hints.spenders[0].spends, "influence");
+        assert_eq!(hints.spenders[0].status, SpenderStatus::ToCome);
+        assert_eq!(hints.spenders[1].status, SpenderStatus::NotInPlay);
         state.players[1].exhausted_strategy_cards.insert(leadership);
-        let hints = ready_hints(&state, store, POK, &player);
-        assert_eq!(hints["spenders"][0]["status"], "played");
-        assert!(hints["planets"].as_array().unwrap().is_empty());
+        let hints = ready_hints(&state, store, POK, &player, DIPLOMACY_READIES);
+        assert_eq!(hints.ready_hints.spenders[0].status, SpenderStatus::Played);
+        assert!(hints.ready_hints.planets.is_empty());
+        let json = serde_json::to_value(&hints).unwrap();
+        assert_eq!(json["ready_hints"]["spenders"][0]["status"], "played");
+        assert_eq!(json["ready_hints"]["spenders"][0]["spends"], "influence");
+        assert_eq!(json["ready_hints"]["spenders"][1]["status"], "not_in_play");
+        assert_eq!(json["ready_count"], DIPLOMACY_READIES);
     }
 
     /// The PoK card is unchanged: it still recalls a token and redistributes once, and never asks

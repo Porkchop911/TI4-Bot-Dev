@@ -84,6 +84,17 @@ export const num = (value: unknown): number | null => (typeof value === "number"
 export const hintOf = <T>(choice: Choice, key: string): T | null =>
   (choice.details?.[key] as T | undefined) ?? null;
 
+/**
+ * The look-ahead whose fields are top-level keys of the details of a question, as the engine
+ * writes it (`Choice::hinted_fields`): `T` is its generated wire type (`ReadyHints`), and `keys`
+ * are all of its fields. Null when one of them is absent.
+ */
+export const hintFieldsOf = <T extends object>(
+  choice: Choice,
+  ...keys: [keyof T & string, ...(keyof T & string)[]]
+): T | null =>
+  keys.every((key) => choice.details?.[key] !== undefined) ? (choice.details as T) : null;
+
 /** "Change" of a chosen part of an editor: the part is open again (`Editor.part`). */
 export const changeControl = (part: string): RowView["control"] => ({
   kind: "button",

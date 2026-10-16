@@ -6,11 +6,18 @@
 // by the ids of their options.
 import type { BlockView, BoardTaskView } from "../../model";
 import { plural } from "../../model";
-import type { Catalog, Choice, SessionUpdate } from "../wire";
+import type {
+  Catalog,
+  Choice,
+  ReadyHints,
+  ReadyPlanet,
+  ReadySpender,
+  SessionUpdate,
+} from "../wire";
 import { systemLabel, tilesOf } from "./movement";
 import { isFollowWindow, secondaryCost } from "./follow";
 import { seatLabel } from "./names";
-import { type Editor, answered, changeControl, num } from "./editor";
+import { type Editor, answered, changeControl, hintFieldsOf } from "./editor";
 
 /** What the player staged: the system, and the planets in the order that they were chosen. */
 export interface ReadyDraft {
@@ -20,55 +27,25 @@ export interface ReadyDraft {
 
 export const NO_READY: ReadyDraft = { system: null, planets: [] };
 
-interface Planet {
-  id: string;
-  name: string;
-  resources: number | null;
-  influence: number | null;
-}
-
-interface Spender {
-  card: string;
-  spends: string;
-  status: string;
-}
-
 interface Question {
   /** A system first, the window of a secondary first, or only planets. */
   mode: "system" | "follow" | "ready";
   systems: string[];
   /** The exhausted planets that can be readied. */
-  planets: Planet[];
+  planets: ReadyPlanet[];
   /** How many planets the game readies at most, with this question and the ones after it. */
   count: number;
-  spenders: Spender[];
+  spenders: ReadySpender[];
 }
 
 function questionOf(choice: Choice): Question | null {
-  const details = choice.details ?? {};
-  const hints = details.ready_hints as { planets?: unknown; spenders?: unknown } | undefined;
-  const count = num(details.ready_count);
-  if (!hints || !Array.isArray(hints.planets) || count === null) {
+  const told = hintFieldsOf<ReadyHints>(choice, "ready_hints", "ready_count");
+  if (!told) {
     return null;
   }
-  const hinted = (hints.planets as Record<string, unknown>[]).flatMap((item): Planet[] =>
-    typeof item?.id === "string"
-      ? [
-          {
-            id: item.id,
-            name: typeof item.name === "string" ? item.name : item.id,
-            resources: num(item.resources),
-            influence: num(item.influence),
-          },
-        ]
-      : [],
-  );
-  const spenders = (Array.isArray(hints.spenders) ? hints.spenders : []).flatMap(
-    (item: Record<string, unknown>): Spender[] =>
-      typeof item?.card === "string" && typeof item.status === "string"
-        ? [{ card: item.card, spends: String(item.spends ?? ""), status: item.status }]
-        : [],
-  );
+  const hinted = told.ready_hints.planets;
+  const spenders = told.ready_hints.spenders;
+  const count = told.ready_count;
   const options = choice.options.filter((option) => option.kind !== "decline");
   if (options.length && options.every((option) => option.kind === "system")) {
     return {
@@ -185,7 +162,7 @@ export function selectReady(
         : [{ icon: "token", title: ["No system chosen"] }],
     });
   }
-  const worth = (planet: Planet) =>
+  const worth = (planet: ReadyPlanet) =>
     planet.resources !== null && planet.influence !== null
       ? ` · ${plural(planet.resources, "resource")} / ${planet.influence} influence`
       : "";

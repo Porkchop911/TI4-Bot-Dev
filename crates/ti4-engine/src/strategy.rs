@@ -110,12 +110,13 @@ fn secondary_choice(
         }
     }
     if crate::strategy_cards::card_name(content, card.as_str()).as_deref() == Some("Diplomacy") {
-        question = question
-            .detailed(
-                "ready_hints",
-                crate::strategy_cards::ready_hints(state, content, sources, player),
-            )
-            .detailed("ready_count", crate::strategy_cards::DIPLOMACY_READIES);
+        question = question.hinted_fields(&crate::strategy_cards::ready_hints(
+            state,
+            content,
+            sources,
+            player,
+            crate::strategy_cards::DIPLOMACY_READIES,
+        ));
     }
     if crate::strategy_cards::card_name(content, card.as_str()).as_deref() == Some("Construction") {
         // Display only: the structure that "yes" places, so that a client can stage it with the

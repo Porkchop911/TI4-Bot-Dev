@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Choice, SessionUpdate } from "../wire";
+import type { Choice, ReadyDetails, ReadyHints, SessionUpdate } from "../wire";
 import {
   chooseReadySystem,
   clearLastReady,
@@ -9,7 +9,7 @@ import {
 } from "./ready";
 
 // The questions of Diplomacy as the engine asks them (the scenario "strategy_diplomacy").
-const HINTS = {
+const HINTS: ReadyDetails = {
   planets: [
     { id: "jord", name: "Jord", resources: 4, influence: 2 },
     { id: "arinam", name: "Arinam", resources: 1, influence: 2 },
@@ -25,7 +25,7 @@ const system: Choice = {
   player: "a",
   prompt: "choose a system for Diplomacy",
   options: ["01", "29", "37"].map((id) => ({ id, kind: "system", label: id, payload: {} })),
-  details: { ready_hints: HINTS, ready_count: 2 },
+  details: { ready_hints: HINTS, ready_count: 2 } satisfies ReadyHints,
 };
 const window: Choice = {
   player: "b",
@@ -36,8 +36,7 @@ const window: Choice = {
   ],
   details: {
     kind: "strategy_secondary",
-    ready_hints: HINTS,
-    ready_count: 2,
+    ...({ ready_hints: HINTS, ready_count: 2 } satisfies ReadyHints),
     tokens_left: 2,
     costs_token: true,
   },
@@ -51,7 +50,7 @@ const ready: Choice = {
     label: `ready ${id}`,
     payload: { planet: id },
   })),
-  details: { ready_hints: HINTS, ready_count: 1 },
+  details: { ready_hints: HINTS, ready_count: 1 } satisfies ReadyHints,
 };
 const update = {
   viewer: { role: "player", seat: "a" },

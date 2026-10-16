@@ -1,6 +1,6 @@
 # Review of the shared code of the demo removal, and its cleanup (2026-10-16)
 
-Status: in progress, steps 1–5 and Technology/Leadership, Construction and Warfare of step 6 done.
+Status: in progress, steps 1–5 and Technology/Leadership, Construction, Warfare and Diplomacy of step 6 done.
 
 ## Context
 
@@ -95,8 +95,14 @@ facts, and asks the engine of the page when it stages something that is not sent
     cards share is a struct of its own, `#[serde(flatten)]` into each (`PaymentHints` in
     `ResearchPaymentHints` and `PurchaseHints`); ts-rs inlines a flattened struct, so `wire_ts`
     visits the shared part as a root too.
-  - web2 reads a look-ahead with `hintOf<T>(choice, key)` of `select/editor.ts`, `T` the
-    generated type, and the fixtures of its unit tests are typed with it.
+  - A look-ahead whose keys are top-level keys of the details (Diplomacy's `ready_hints` and
+    `ready_count`, Politics' `draws`, `looks` and `agendas`, Imperial's `secrets_held` and
+    `secrets_max`) is one struct whose fields are those keys (`ReadyHints`). The engine writes it
+    with `Choice::hinted_fields(&hints)`, which puts each field into the details, and its test
+    reads it back with `Choice::hint_fields::<T>()`.
+  - web2 reads a look-ahead with `hintOf<T>(choice, key)` of `select/editor.ts`, or one of
+    top-level keys with `hintFieldsOf<T>(choice, ...keys)`, which names every field of `T`;
+    `T` is the generated type, and the fixtures of its unit tests are typed with it.
   - `ProductionFacts` keeps `PayingPlanet` (`planet`, not `id`) and leaves out `commodities` at
     0: reusing `PaymentHints` there would change the wire of a production, so it does not.
 - **The four rates of both odds are exclusive and sum to 1**: `attacker_win_rate`,
