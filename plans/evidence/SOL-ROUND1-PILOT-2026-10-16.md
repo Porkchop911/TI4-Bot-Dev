@@ -199,3 +199,73 @@ The census now records each seat's units, breakthrough and leader status at ever
 - This is the first arm with a positive point estimate, but the CI includes zero. The pair SD is 0.67.
 - Losses are near-misses, not missed scoring. Many near-misses need a research or a structure rather than a move.
 - Movement near-misses convert only when the action is aimed at the objective. An untargeted extra action wastes the token about 80% of the time.
+
+## Rule-bot hybrid arms for Sol (40 origins × 16 dice, paired vs control)
+
+**Setup:**
+- Sol's MLP is still asked at every choice. Within each arm's scope, `ti4_server::session::smart_bot::pick` decides instead, falling back to the MLP when it has no rule.
+- The other five seats are unchanged MLPs.
+- 3880/3880 games complete; determinism checks pass. The run took 20m17s on 30 workers.
+
+| Arm (rule bot decides…) | ΔVP | 95% CI | Sign + / − / 0 | Sol planets at cutoff | Sol units | Sol TG |
+|---|---|---|---|---|---|---|
+| control | — | — | — | 6.47 | 22.1 | 6.2 |
+| tactical: menu, activation, movement, landing | −0.40 | [−0.81, +0.01] | 206/300/134 | 6.09 | 25.2 | 4.3 |
+| production and placement | −0.21 | [−0.44, +0.01] | 168/258/214 | 6.18 | 21.0 | 5.6 |
+| research | **+0.09** | [+0.01, +0.17] | 73/22/545 | 6.41 | 22.3 | 6.4 |
+| strategy-card draft | +0.10 | [−0.13, +0.33] | 200/169/271 | 6.78 | 23.3 | 5.8 |
+| **everything (rule-bot Sol)** | **+0.89** | **[+0.54, +1.24]** | 389/119/132 | 9.08 | 34.1 | 2.6 |
+
+**Rule-bot Sol's scoring windows:** status 3 near-misses fall from 0.30 to 0.16, and status 3 scoring rises from 0.66 to 0.77. Other seats' VP: 3.42 (rule-all) against 3.62 (control).
+
+**Reading:**
+- The whole rule policy beats MLP Sol by about 0.9 VP in the MLP's own six-player, diplomacy-ON table. Rule-bot Sol holds 40% more planets, has 55% more units and spends its trade goods.
+- Split into parts, tactical and production each hurt, because they assume the rule bot's own transport and production plan. Only research gives a small, significant gain.
+- The rule bot's edge is a coherent whole: transport-first production feeding objective-valued activations. Its parts are not separable fixes.
+
+## Rule-table and distilled-Sol checks
+
+**Rule table with MLP fallback:** all six seats rule bot; diplomacy ON; train pool; 640 games.
+- 3.569 VP/seat, against MLP self-play 3.578 on the same games.
+- Historical rule self-play with random fallback scored 2.79 (holdout). MLP fallback is therefore worth about +0.8 VP/seat to the rule bot.
+- **Without Support for the Throne points:** rule-table 2.74, MLP 2.58 VP/seat. SftT supplies 0.83 and 0.99 VP/seat respectively.
+
+**Distilled Sol (behaviour cloning):**
+- **Data:** the rule bot's own Sol decisions (only where it had a rule) from rule-all games on origins 610170101–140 × 4 dice. That gives 25,956 train and 3,105 validation decisions, split by origin.
+- **Training:** one-hot targets, `distill::train` with `preserve_untrained_rows`, 3 epochs (21 steps), starting from checkpoint-16448.
+- **Benchmark:** the student plays Sol against the base MLP on eval origins 610170011–050 × 16 dice; determinism checks pass.
+
+| Student | Validation NLL (ep 1 → 3) | ΔVP vs MLP Sol | 95% CI | Sign + / − / 0 |
+|---|---|---|---|---|
+| lr 3e-5 | 26.9 → 21.9 | −0.03 | [−0.33, +0.28] | 220/239/181 |
+| lr 3e-4 | 12.2 → 2.4 | −0.61 | [−0.97, −0.26] | 157/351/132 |
+
+**Reading:** imitating the rule bot's covered decisions alone does not reproduce rule-all's +0.89.
+- The closer fit (lr 3e-4) is clearly worse. It imitates the rule bot's choices in only part of Sol's decisions, the part the rule bot covers. The MLP's own policy for the rest no longer fits them: the same incoherence as the single-scope hybrids.
+- It is also trained only on states the rule bot visited, not on the states the student reaches itself.
+
+## DAgger distillation of rule-bot Sol
+
+**Method:**
+- Each round, the current student plays Sol for 160 games on new origins (40 × 4 dice; rounds use origins 610170101–140, 141–180, 181–220).
+- The rule bot labels each Sol decision it has a rule for (one-hot). Every other decision keeps checkpoint-16448's own distribution (soft target).
+- A fresh fine-tune of 16448 on all rounds' data (lr 3e-4, 3 epochs, `preserve_untrained_rows`) becomes the next student.
+- 37 minutes in total, including benchmarks.
+
+| Round | Sol played by (collection games) | Sol VP | Decisions (rule-labelled) | Validation loss |
+|---|---|---|---|---|
+| 1 | base | 3.40 | 88.7k (25.8k) | 0.27 |
+| 2 | student r1 | 3.39 | 91.3k (26.7k) | 0.24 |
+| 3 | student r2 | 3.03 | 99.1k (28.0k) | 0.23 |
+
+**Benchmark** on eval origins 610170011–050 × 16 dice against the base MLP; determinism checks pass:
+
+| Student | ΔVP | 95% CI | Sign + / − / 0 | ΔPlanets R2 | ΔResources R2 |
+|---|---|---|---|---|---|
+| r1 | −0.18 | [−0.60, +0.22] | 235/254/151 | +0.26 | −0.68 |
+| r3 | −0.03 | [−0.48, +0.42] | 258/250/132 | +0.62 | −2.06 |
+
+**Reading:**
+- DAgger moves the student toward the rule bot's behaviour: more planets by round 2, and resources spent instead of hoarded.
+- Cutoff VP does not improve, and paired variance rises (SD 1.87).
+- None of the distilled students reproduces the hybrid's +0.89 within these budgets.
