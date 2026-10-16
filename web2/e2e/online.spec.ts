@@ -50,7 +50,7 @@ test("a seeded game on the server: the first turn, with a draft, the sheets and 
   );
   await page.goto(`/?online=${made.game_id}`);
   await expect(page.getByText("Round 1 · Strategy phase")).toBeVisible();
-  await expect(page.getByRole("region", { name: "Players" }).locator("tbody tr")).toHaveCount(8);
+  await expect(page.getByRole("region", { name: "Players" }).locator("li")).toHaveCount(8);
   await expect(heading(page)).toHaveText("Choose a strategy card");
   // The tools of a local game are not there, and the header leads to the start screen. The seat has
   // no decision of its own to take back yet.
@@ -277,7 +277,7 @@ test("the quick start is a game on the server, at its address", async ({ page })
   await expect(page).toHaveURL(/\?online=[^&]+&seat=[^&]+$/);
   // The page asks the table first, then loads the engine and opens the game.
   await expect(page.getByText(round1)).toBeVisible();
-  await expect(page.getByRole("region", { name: "Players" }).locator("tbody tr")).toHaveCount(8);
+  await expect(page.getByRole("region", { name: "Players" }).locator("li")).toHaveCount(8);
   // The page plays a seat: it is asked, or it waits for a seat before it.
   await expect(status(page)).toHaveText(/^(Your decision|Waiting for .+|Turn of .+)$/);
   // The player of this browser is kept for the game, and the address says which it is: a
@@ -348,7 +348,7 @@ test("a lost connection is said in the toolbar, and the game comes back by itsel
   await Promise.all(open.map((socket) => socket.close()));
   // One signal, and no error: the game stays in view, and nothing can be sent.
   await expect(status(page)).toHaveText("Offline · reconnecting");
-  await expect(page.getByRole("region", { name: "Players" }).locator("tbody tr")).toHaveCount(8);
+  await expect(page.getByRole("region", { name: "Players" }).locator("li")).toHaveCount(8);
   await expect(send(page)).toHaveCount(0);
   // The note is in the panel of a waiting seat. The secondary of a strategic action keeps the
   // overview of the card, which has no note: the toolbar alone says it there.

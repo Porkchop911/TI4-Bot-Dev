@@ -12,9 +12,9 @@ export function pageErrors(page: Page, { console = false } = {}): string[] {
   return errors;
 }
 
-/** The row of a seat in the player table ("Seat A"). */
+/** The card of a seat in the player table ("Seat A"). */
 export const seatRow = (page: Page, seat: string) =>
-  page.getByRole("region", { name: "Players" }).getByRole("row").filter({ hasText: seat });
+  page.getByRole("region", { name: "Players" }).getByRole("listitem").filter({ hasText: seat });
 
 /** A planet of the map, by its name. */
 export const mapPlanet = (page: Page, name: string) =>

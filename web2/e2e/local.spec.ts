@@ -186,7 +186,7 @@ test("a game of eight is played through the decision list @slow", async ({ page 
   await page.goto("/?local=3&players=8&humans=1");
   await expect(send(page)).toBeDisabled();
   await expect(page.locator("g.system")).toHaveCount(55);
-  await expect(page.getByRole("region", { name: "Players" }).locator("tbody tr")).toHaveCount(8);
+  await expect(page.getByRole("region", { name: "Players" }).locator("li")).toHaveCount(8);
   await expect(page.getByText("Round 1 · Strategy phase")).toBeVisible();
   await expect(heading(page)).toHaveText("Choose a strategy card");
   await page.screenshot({ path: "shots/local/first-choice.png", animations: "disabled" });
@@ -386,7 +386,7 @@ test("hotseat: the viewer is the seat that is asked", async ({ page }) => {
   await expect(send(page)).toBeDisabled();
   const me = page
     .getByRole("region", { name: "Players" })
-    .locator('tbody tr:has([title="Active player"]) th');
+    .locator('li:has([title="Active player"]) button');
   const seen = new Set<string>();
   for (let count = 0; count < 16; count++) {
     seen.add((await me.first().textContent()) ?? "");
@@ -1556,9 +1556,9 @@ test("Politics: the speaker is chosen in the player table, then the agenda deck 
   // Sol holds Politics and is the speaker; it has no action cards.
   await page.goto("/?scenario=strategy_politics&humans=1");
   const row = (name: string) =>
-    page.getByRole("region", { name: "Players" }).getByRole("row").filter({ hasText: name });
+    page.getByRole("region", { name: "Players" }).getByRole("listitem").filter({ hasText: name });
   await expect(heading(page)).toHaveText("Choose an action");
-  await expect(row("Seat A")).toContainText("Speaker");
+  await expect(row("Seat A").getByRole("img", { name: "Speaker" })).toBeVisible();
   await panel(page)
     .getByRole("button", { name: /^3 Politics/ })
     .click();
@@ -1619,7 +1619,7 @@ test("Politics: another seat follows as the game asks it, and does not see the a
   await playStrategyCard(page, "3 Politics");
   await page
     .getByRole("region", { name: "Players" })
-    .getByRole("row")
+    .getByRole("listitem")
     .filter({
       hasText: "Seat B",
     })
@@ -1821,7 +1821,7 @@ test("Trade: the own gain is a value, the other players are chosen in the player
   // Sol holds Trade with 4 trade goods and 1 commodity; Hacan and Letnev have no commodities.
   await page.goto("/?scenario=strategy_trade&humans=1");
   const row = (name: string) =>
-    page.getByRole("region", { name: "Players" }).getByRole("row").filter({ hasText: name });
+    page.getByRole("region", { name: "Players" }).getByRole("listitem").filter({ hasText: name });
   await playStrategyCard(page, "5 Trade");
 
   // One screen: what Sol gained, and the other players.
@@ -1937,7 +1937,7 @@ test("Imperial: an objective from the list, then the secret objective, sent at o
   // Lead From the Front is scored and a secret objective drawn.
   await send(page).click();
   await expect(heading(page)).toHaveText("End your turn");
-  await expect(sol.getByRole("cell").nth(1)).toHaveText("3");
+  await expect(sol.getByTitle("Victory points")).toHaveText("3");
   await expect(sol).toContainText("0/2");
   expect(errors).toEqual([]);
 });
@@ -1962,7 +1962,7 @@ test("Imperial with Mecatol Rex: the victory point follows the objective", async
   await send(page).click();
   await expect(heading(page)).toHaveText("End your turn");
   const sol = seatRow(page, "Seat A");
-  await expect(sol.getByRole("cell").nth(1)).toHaveText("5");
+  await expect(sol.getByTitle("Victory points")).toHaveText("5");
   expect(errors).toEqual([]);
 });
 
@@ -2582,7 +2582,7 @@ test("the Dev sheet plays another seat, several times, and undo stays with the s
   /** The seat that the page is asked as: in the strategy phase it is the active player. */
   const asked = page
     .getByRole("region", { name: "Players" })
-    .locator('tbody tr:has([title="Active player"]) th');
+    .locator('li:has([title="Active player"]) button');
   const playAs = async (letter: string) => {
     await openSettings(page);
     await seat(letter).click();
@@ -3130,7 +3130,7 @@ test("the Secrets sheet of the late game has scored and unscored objectives of e
   await expect(deck.getByText("✓ Scored by you")).toHaveCount(1);
   await expect(deck.getByText(/^✓ Scored by(?! you)/)).toHaveCount(11);
   // The player table counts the same: scored / held.
-  const row = page.getByRole("region", { name: "Players" }).locator("tbody tr");
+  const row = page.getByRole("region", { name: "Players" }).locator("li");
   await expect(row.nth(0)).toContainText("1/2");
   await expect(row.nth(1)).toContainText("2/1");
   await page.screenshot({ path: "shots/local/secrets-late-game.png", animations: "disabled" });
@@ -3403,9 +3403,9 @@ test("single player: a table is set up in the page, started, kept and set up aga
   await expect(lobbyMain(page)).toHaveText(/^Start game/);
   await page.keyboard.press("Enter");
   await expect(send(page)).toBeVisible();
-  await expect(page.getByRole("region", { name: "Players" }).locator("tbody tr")).toHaveCount(4);
+  await expect(page.getByRole("region", { name: "Players" }).locator("li")).toHaveCount(4);
   await expect(
-    page.getByRole("region", { name: "Players" }).locator('tbody tr[class*="bg-cyan"]'),
+    page.getByRole("region", { name: "Players" }).locator('li[class*="bg-cyan"]'),
   ).toContainText("Hacan");
   await expect(page.getByRole("button", { name: "Start", exact: true })).toBeVisible();
   const line = () => settings(page).getByText(/^Single player · /);
@@ -3440,7 +3440,7 @@ test("single player: a table is set up in the page, started, kept and set up aga
   await expect(page).toHaveURL("/?single");
   await expect(send(page)).toBeVisible();
   await expect(
-    page.getByRole("region", { name: "Players" }).locator('tbody tr[class*="bg-cyan"]'),
+    page.getByRole("region", { name: "Players" }).locator('li[class*="bg-cyan"]'),
   ).toContainText("Hacan");
 
   // "New game" of the Dev sheet drops the game and opens the setup.

@@ -42,11 +42,11 @@ const toast = (page: Page, text: string) => page.getByRole("status").filter({ ha
 /** The action panel of the running game, and its main button. */
 const panel = (page: Page) => page.locator("#step-panel");
 const send = (page: Page) => page.locator('footer button[aria-keyshortcuts="Enter"]');
-/** The seat of the page in the running game: the row of the player table that is marked as its own. */
+/** The seat of the page in the running game: the card of the player table that is marked as its own. */
 const ownSeat = (page: Page) =>
-  page.getByRole("region", { name: "Players" }).locator('tbody tr[class*="bg-cyan"] th button');
-/** The player table of the running game: one row for each seat. */
-const seatRows = (page: Page) => page.getByRole("region", { name: "Players" }).locator("tbody tr");
+  page.getByRole("region", { name: "Players" }).locator('li[class*="bg-cyan"] button');
+/** The player table of the running game: one card for each seat. */
+const seatRows = (page: Page) => page.getByRole("region", { name: "Players" }).locator("li");
 /** The sheet "Table" of the running game. */
 const sheet = (page: Page) => page.getByRole("complementary", { name: "Table" });
 
@@ -189,7 +189,7 @@ test("three tabs of one browser make a table from the start screen, fill it and 
   await page.keyboard.press("Enter");
   for (const [index, tab] of [page, second, third].entries()) {
     await expect(tab.getByText("Round 1 · Strategy phase")).toBeVisible();
-    await expect(tab.getByRole("region", { name: "Players" }).locator("tbody tr")).toHaveCount(4);
+    await expect(tab.getByRole("region", { name: "Players" }).locator("li")).toHaveCount(4);
     // Each tab is another seat of the same game: the seat of its address, by its name.
     await expect(ownSeat(tab)).toHaveAttribute(
       "aria-label",
@@ -504,7 +504,7 @@ test("two tabs choose their factions, a taken faction is refused, and each plays
   }
   await expect(ownSeat(page)).toHaveAttribute("aria-label", /Jol-Nar/);
   await expect(ownSeat(other)).toHaveAttribute("aria-label", /Sol/);
-  const seats = page.getByRole("region", { name: "Players" }).locator("tbody tr th button");
+  const seats = page.getByRole("region", { name: "Players" }).locator("li button");
   await expect(seats).toHaveCount(4);
   const factions = (await seats.evaluateAll((nodes) => nodes.map((node) => node.ariaLabel!))).map(
     // The label is the name of the player, then the faction.
@@ -833,7 +833,7 @@ test("a table starts from the late game, and each tab has the seat of its join",
   await page.keyboard.press("Enter");
   for (const tab of [page, other]) {
     await expect(tab.getByText("Round 4 · Action phase")).toBeVisible();
-    await expect(tab.getByRole("region", { name: "Players" }).locator("tbody tr")).toHaveCount(8);
+    await expect(tab.getByRole("region", { name: "Players" }).locator("li")).toHaveCount(8);
   }
   // The seats are not drawn: the host is the first seat, the second person the second.
   await expect(ownSeat(page)).toHaveAttribute("aria-label", /Sol/);

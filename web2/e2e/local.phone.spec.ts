@@ -1158,7 +1158,7 @@ test("phone: Politics has the speaker in the player table and the agenda deck in
   await panes.getByRole("button", { name: "Players" }).click();
   await page
     .getByRole("region", { name: "Players" })
-    .getByRole("row")
+    .getByRole("listitem")
     .filter({
       hasText: "Seat B",
     })
@@ -1267,7 +1267,7 @@ test("phone: Trade has the other players in the player table, and its screen in 
   const send = page.locator('footer button[aria-keyshortcuts="Enter"]');
   const width = () => page.evaluate(() => document.documentElement.scrollWidth);
   const row = (name: string) =>
-    page.getByRole("region", { name: "Players" }).getByRole("row").filter({ hasText: name });
+    page.getByRole("region", { name: "Players" }).getByRole("listitem").filter({ hasText: name });
   await panes.getByRole("button", { name: "Action" }).click();
   await panel.getByRole("button", { name: /^5 Trade/ }).click();
   await send.click();

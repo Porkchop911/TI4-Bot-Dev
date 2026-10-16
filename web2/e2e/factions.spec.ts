@@ -107,7 +107,7 @@ for (const [index, table] of TABLES.entries()) {
     await expect(page.getByText("Round 1 · Strategy phase")).toBeVisible();
 
     // Every seat has the name of its faction, and the seat of the page is found by its player.
-    const rows = players(page).locator("tbody tr");
+    const rows = players(page).locator("li");
     await expect(rows).toHaveCount(8);
     const names = table.factions.map(([, name]) => name);
     for (const name of names) {
@@ -155,14 +155,12 @@ for (const [index, table] of TABLES.entries()) {
     await expect(page.getByText("Round 1 · Action phase")).toBeVisible();
 
     // The eight cards of the set are with the seats, each with its number and its printed name.
-    const column = await players(page)
-      .locator("thead tr > *")
-      .evaluateAll((cells) => cells.findIndex((cell) => cell.textContent === "Strategy cards"));
     // A seat that had its turn before this one may have played its card: the card has "✓" then.
     const held = (
-      await rows.evaluateAll(
-        (all, at) => all.map((row) => row.children[at]?.textContent?.trim() ?? ""),
-        column,
+      await rows.evaluateAll((all) =>
+        all.map(
+          (row) => row.querySelector('[aria-label="Strategy cards"]')?.textContent?.trim() ?? "",
+        ),
       )
     )
       .map((card) => card.replace(/ ✓$/, ""))

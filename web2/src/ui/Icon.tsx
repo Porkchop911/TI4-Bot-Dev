@@ -38,6 +38,19 @@ const PATHS = {
   industrial:
     '<circle cx="12" cy="12" r="3"/><path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.2 2.2m8.4 8.4 2.2 2.2m0-12.8-2.2 2.2m-8.4 8.4-2.2 2.2"/><circle cx="12" cy="12" r="6.5"/>',
   frame: '<path d="M4 9V4h5m6 0h5v5m0 6v5h-5m-6 0H4v-5"/>',
+  // The values of a seat in the player table.
+  star: '<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z"/>',
+  // Resources and influence, after the planet value icons of web/ (a gem and a crown).
+  resources: '<path d="M12 2.5 20 10.5 12 21.5 4 10.5Z"/><path d="M4 10.5h16"/>',
+  influence: '<path d="M3 20h18M5 16.5 7.5 7.5l4.5 4.5 4.5-4.5 2.5 9Z"/>',
+  commodity: '<path d="M4 8 12 4l8 4v8l-8 4-8-4V8Z"/><path d="m4 8 8 4 8-4M12 12v8"/>',
+  secret:
+    '<rect x="5" y="3" width="14" height="18" rx="2"/><circle cx="12" cy="10.5" r="2"/><path d="M12 12.5V16"/>',
+  speaker:
+    '<path d="M9.7 7.2 13.2 3.7l7.1 7.1-3.5 3.5Z"/><path d="M13.2 10.8 4.5 19.5"/><path d="M13 21h8"/>',
+  passed: '<circle cx="12" cy="12" r="8"/><path d="M10 9v6m4-6v6"/>',
+  // A command token of the tactic or the strategy pool; `token` is the fleet pool.
+  tokenDown: '<path d="M12 20 3 5h18Z"/>',
 } as const;
 
 export type IconName = keyof typeof PATHS;

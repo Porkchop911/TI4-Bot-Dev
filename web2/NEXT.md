@@ -81,7 +81,7 @@ Every screen of web2 is built from the engine. For UX ideas of a screen that is 
   - there is one game of single player; a list of saved games is later (decision 13)
 - the table in the game (2026-10-14, phase 7 of `plans/2026-10-12-LOBBY_PLAN.md`): a game says who sits in each seat (`seats` of the snapshot and the update, on both hosts), the page names a seat by its player, the sheet "Table" is the lobby with nothing open and has the wait for the host (`POST /api/games/{id}/settings`), and a visitor of a running game is shown the table first ("Watch", "Rejoin"). Still open:
   - the texts that state the game keep the faction ("After Hacan’s tactical action", the event of an exploration, the tags of the Objectives sheet): the status of the toolbar, the list of a strategic action and the player table have the name of the player. The owner decides whether the rest follows
-  - the name column of the player table has 84px: "Random bot 1" fits, a longer name is cut with the full name on hover
+  - the name on a card of the player table has at most 120px: a longer name is cut with the full name on hover
   - "Rejoin" is not played in the browser against the grace time of a server: it is half a minute, and a shorter one would show every player as away between two pings (10 s). The e2e tells the page that a seat is free and reads the refusal of the server; the take-over itself is tested on the server (`tests/it/table_in_game.rs`) and on the seam (`table.test.ts`)
   - a seat that is taken over has its new name with the next update of the game, not at once; a sheet "Table" that is open has it at once
   - a change of the wait by the host is not told to the other players of a running game (in the lobby it is a toast): they read it in the sheet
