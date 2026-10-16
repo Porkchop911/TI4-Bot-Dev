@@ -50,7 +50,7 @@ const noteRecord = (card: string, catalog: Catalog | null) =>
   catalog?.records.promissory_notes.find((item) => item.id === card) ?? null;
 
 /** A part of a deal, as the page names it, with its printed text for "?" when it is a card. */
-interface Named {
+export interface Named {
   text: string;
   help: HelpView | null;
 }
@@ -62,7 +62,7 @@ function card(cards: { id: string; name: string; text: string }[] | undefined, i
     : { text: humanizeId(id), help: null };
 }
 
-function itemOf(item: TradeItem, update: SessionUpdate, catalog: Catalog | null): Named {
+export function itemOf(item: TradeItem, update: SessionUpdate, catalog: Catalog | null): Named {
   switch (item.kind) {
     case "trade_goods":
       return { text: plural(item.count, "trade good"), help: null };
@@ -102,7 +102,8 @@ function side(items: TradeItem[], update: SessionUpdate, catalog: Catalog | null
   };
 }
 
-function worded(
+/** A deal in words: "<lead> <given> for <received>", with the printed text of its cards. */
+export function worded(
   lead: string,
   deal: TradeDeal,
   update: SessionUpdate,
@@ -138,23 +139,18 @@ export function transactionOption(
 }
 
 /**
- * The question of a negotiation: "Transaction with Jol-Nar" for the proposer, and the deal on the
- * table for the partner ("Hacan gives Ceasefire (Hacan) for 2 trade goods").
+ * The question of a negotiation: "Transaction with Jol-Nar" for the proposer, and "Answer Hacan’s
+ * offer" for the partner. The deal itself is the block of the screen (`transaction.ts`), with the
+ * printed text of its cards.
  */
 export function transactionPrompt(
   hints: TransactionHints,
   update: SessionUpdate,
   catalog: Catalog | null,
 ): Worded {
-  if (hints.offer) {
-    return worded(
-      `${seatLabel(update, hints.proposer, catalog)} gives`,
-      hints.offer,
-      update,
-      catalog,
-    );
-  }
-  return { text: `Transaction with ${seatLabel(update, hints.partner, catalog)}`, help: [] };
+  return hints.offer
+    ? { text: `Answer ${seatLabel(update, hints.proposer, catalog)}’s offer`, help: [] }
+    : { text: `Transaction with ${seatLabel(update, hints.partner, catalog)}`, help: [] };
 }
 
 // ---- The fallback: a text of the engine that names notes and factions by id --------------------

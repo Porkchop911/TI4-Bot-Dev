@@ -12,6 +12,7 @@ import { recallEditor } from "./recall";
 import { replenishEditor } from "./replenish";
 import { scoringEditor } from "./scoring";
 import { structuresEditor } from "./structures";
+import { transactionEditor } from "./transaction";
 
 /** The editor of the open question, its screen, and the slot after each change. Null: no change. */
 export interface OpenEditor {
@@ -69,6 +70,7 @@ const EDITORS: Opener[] = [
   opener("replenish", replenishEditor),
   opener("recall", recallEditor),
   opener("scoring", scoringEditor),
+  opener("transaction", transactionEditor),
 ];
 
 /**

@@ -688,6 +688,33 @@ export interface TechColumnView {
   cells: TechCellView[];
 }
 
+/** One thing that a side of a deal hands over: an amount, or a card. */
+export interface DealItemView {
+  /** "Trade goods", "Ceasefire (Hacan)". */
+  name: string;
+  /** The group of a card, named once for its cards: "Promissory notes", "Action cards". */
+  group?: string;
+  /** The printed text of a card, shown on hover or click. */
+  help?: HelpView;
+  /** An amount that is staged. */
+  counter?: CounterView;
+  /** An amount of a deal that is read-only. */
+  count?: number;
+  /** A card that is staged with a tap. Absent in a deal that is read-only. */
+  toggle?: { on: boolean; intent: Intent };
+}
+
+/** One side of a deal: the seat, what it holds now, and what it hands over. */
+export interface DealSideView {
+  /** "You give", "You get". */
+  title: string;
+  seat: SeatId;
+  name: string;
+  /** "Trade goods 3 · Commodities 2". */
+  holds: string;
+  items: DealItemView[];
+}
+
 export type BlockView =
   | { kind: "note"; tone: "accent" | "success" | "quiet"; strong?: string; text: string }
   | { kind: "menu"; title?: string; rows: MenuRowView[] }
@@ -715,6 +742,8 @@ export type BlockView =
       rows: RowView[];
     }
   | { kind: "payment"; payment: PaymentView }
+  /** A transaction: what the viewer gives, and what the viewer gets, side by side. */
+  | { kind: "deal"; sides: DealSideView[] }
   | {
       kind: "draft";
       title: string;

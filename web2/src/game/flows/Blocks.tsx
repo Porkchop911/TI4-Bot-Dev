@@ -1,5 +1,7 @@
 import type {
   BlockView,
+  DealItemView,
+  DealSideView,
   MenuRowView,
   RowView,
   SeatRowView,
@@ -208,6 +210,118 @@ function MenuRow({ row, grouped }: { row: MenuRowView; grouped: boolean }) {
           </span>
         )}
       </span>
+    </div>
+  );
+}
+
+/**
+ * A card of a deal. Staged with a tap: a staged card has "✓" and the gold frame. Its printed text
+ * is behind "?".
+ */
+function DealCard({ item }: { item: DealItemView }) {
+  const dispatch = useDispatch();
+  const on = !!item.toggle?.on;
+  const name = (
+    <>
+      {on && <span className="text-gold">✓ </span>}
+      <span className="font-mid">{item.name}</span>
+    </>
+  );
+  return (
+    <span
+      className={cx(
+        "relative inline-flex max-w-full min-h-7 items-center gap-1.5 rounded-md border px-2 py-0.5 text-sm touch:min-h-10",
+        on
+          ? "border-gold bg-gold/[.12]"
+          : item.toggle
+            ? "border-line-strong bg-white/[.03] focus-within:bg-white/[.07] hover:bg-white/[.07]"
+            : "border-line",
+      )}
+    >
+      {item.toggle ? (
+        <button
+          type="button"
+          aria-pressed={on}
+          onClick={() => dispatch(item.toggle!.intent)}
+          className="min-w-0 truncate text-left outline-none after:absolute after:inset-0 enabled:cursor-pointer focus-visible:after:rounded-md focus-visible:after:outline-2 focus-visible:after:outline-accent phone:whitespace-normal"
+        >
+          {name}
+        </button>
+      ) : (
+        <span className="min-w-0 truncate phone:whitespace-normal">{name}</span>
+      )}
+      {item.help && (
+        <span className="relative z-1 inline-flex flex-none">
+          <Hint label={`Text: ${item.name}`}>{item.help.text}</Hint>
+        </span>
+      )}
+    </span>
+  );
+}
+
+/**
+ * A transaction: one card for each side, the seat and what it holds now in the heading. An amount
+ * is a counter (or its count, read-only); the cards are chips under the amounts.
+ */
+function Deal({ sides }: { sides: DealSideView[] }) {
+  const dispatch = useDispatch();
+  return (
+    <div className="grid grid-cols-2 gap-2.5 phone:grid-cols-1">
+      {sides.map((side) => {
+        const amounts = side.items.filter((item) => item.counter || item.count !== undefined);
+        const cards = side.items.filter((item) => !item.counter && item.count === undefined);
+        const groups = [...new Set(cards.map((item) => item.group ?? ""))];
+        return (
+          <Card key={side.title} className="min-w-0">
+            <CardHeading title={side.title}>
+              <span className="inline-flex min-w-0 items-center gap-1.5">
+                <SeatSymbol seat={side.seat} />
+                <span className="max-w-[150px] truncate font-mid text-text" title={side.name}>
+                  {side.name}
+                </span>
+                <span className="tabular-nums">· {side.holds}</span>
+              </span>
+            </CardHeading>
+            {amounts.map((item) => (
+              <div
+                key={item.name}
+                className="flex min-h-9 items-center justify-between gap-3 px-3.5 py-1 [&+&]:border-t [&+&]:border-line/50 phone:px-2.5"
+              >
+                <span className="text-sm font-mid">{item.name}</span>
+                {item.counter ? (
+                  <Counter
+                    {...item.counter}
+                    onChange={(value) =>
+                      dispatch({ type: "flowCount", key: item.counter!.id, value })
+                    }
+                  />
+                ) : (
+                  <strong className="text-base font-semibold tabular-nums">{item.count}</strong>
+                )}
+              </div>
+            ))}
+            {groups.map((group, at) => (
+              <div
+                key={group}
+                className={cx(
+                  "grid grid-cols-[112px_minmax(0,1fr)] items-baseline gap-x-2.5 px-3.5 py-1.5 phone:grid-cols-1 phone:gap-y-1 phone:px-2.5",
+                  (at > 0 || amounts.length > 0) && "border-t border-line/50",
+                )}
+              >
+                <span className="text-xs text-muted">{group}</span>
+                <span className="flex flex-wrap gap-1.5">
+                  {cards
+                    .filter((item) => (item.group ?? "") === group)
+                    .map((item) => (
+                      <DealCard key={item.name} item={item} />
+                    ))}
+                </span>
+              </div>
+            ))}
+            {!side.items.length && <div className="px-3.5 py-2 text-xs text-muted">Nothing</div>}
+          </Card>
+        );
+      })}
     </div>
   );
 }
@@ -458,6 +572,8 @@ export function Blocks({ blocks }: { blocks: BlockView[] }) {
             );
           case "payment":
             return <PaymentList key={index} view={block.payment} />;
+          case "deal":
+            return <Deal key={index} sides={block.sides} />;
           case "draft":
             // A choice that is prepared before the player's seat is reached. The badge states it.
             return (
