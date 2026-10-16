@@ -12,7 +12,7 @@ export const REFERENCES = [
   ["log", "Log"],
 ] as const;
 
-/** The other app of the same address space: the demo, or the local game. A page load, not a game choice. */
+/** The way out of the game ("Start", to the start screen). A page load, not a game choice. */
 export interface OtherGame {
   label: string;
   href: string;

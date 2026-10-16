@@ -4,7 +4,7 @@ Status: in progress, steps 1–8 done.
 
 ## Context
 
-The demo removal of 2026-10-16 (`plans/2026-10-16-DEMO_REMOVAL_PLAN.md`) changed `ti4-engine`,
+The demo removal of 2026-10-16 changed `ti4-engine`,
 `ti4-calc`, `ti4-host`, `ti4-wasm` and `web-shared` in 18 commits, from `aece5a34` to `6afaefb5`.
 Every field that they added is read by web2. This plan says which of these changes to keep as they
 are, which to fix, and how to fix them.

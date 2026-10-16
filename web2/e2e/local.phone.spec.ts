@@ -1004,7 +1004,7 @@ test("phone: the reference sheets and the other app are one menu, and a sheet co
 }) => {
   await page.goto("/?scenario=strategy_technology&humans=1");
   await page.getByRole("button", { name: "Reference and more" }).tap();
-  await expect(page.getByRole("menuitem", { name: "Demo" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Start" })).toBeVisible();
   await page.getByRole("menuitem", { name: "Objectives" }).tap();
   await expect(page.getByRole("complementary", { name: "Objectives" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Panes" })).toBeHidden();

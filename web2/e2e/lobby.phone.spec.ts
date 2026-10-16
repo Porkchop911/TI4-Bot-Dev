@@ -206,3 +206,14 @@ test("phone: a visitor of a running game has its table on the panes, and the gam
   await fits(page);
   await page.screenshot({ path: "shots/online/phone-table-sheet.png", animations: "disabled" });
 });
+
+test("phone: the app can be installed", async ({ page, request }) => {
+  await page.goto("/");
+  const href = await page.locator('link[rel="manifest"]').getAttribute("href");
+  const manifest = await (await request.get(href!)).json();
+  expect(manifest.display).toBe("fullscreen");
+  expect(manifest.orientation).toBe("portrait");
+  for (const icon of manifest.icons) {
+    expect((await request.get(icon.src)).ok(), icon.src).toBe(true);
+  }
+});

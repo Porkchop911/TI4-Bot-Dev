@@ -3,16 +3,15 @@ import { join, relative, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 
-// The layers of web2. A layer may import only the layers listed for it, so that the real
-// components (`game`) never see the dummy (`mock`).
+// The layers of web2. A layer may import only the layers listed for it, so that the components
+// (`game`) never see the transport (`session`).
 const ALLOWED: Record<string, string[]> = {
   ui: [],
   model: [],
   game: ["ui", "model"],
-  mock: ["model", "ui"],
   // The game from a transport (the wasm engine, or the server), as the view models.
   session: ["model"],
-  dev: ["ui", "model", "game", "mock", "session"],
+  dev: ["ui", "model", "game", "session"],
 };
 
 const root = dirname(fileURLToPath(import.meta.url));

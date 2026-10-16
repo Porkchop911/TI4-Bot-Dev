@@ -25,7 +25,7 @@ These rules hold on every screen. The feature sections below give the specifics 
 10. **Live, Draft, History and the event log use the same screen.** Read-only is the same screen with nothing open, not another view.
 11. **Hidden information.** A choice of another player is visible when it is resolved, never before. A row of another player is not a control.
 12. **Symbols follow the physical game** where the game has a convention. Case: command tokens are triangles, and the fleet pool points up.
-13. **Names and long texts.** A name is in a column of fixed width and is cut with "…"; the full name is on hover. The demo data keeps two long player names, 8 players, and the rows that only some factions have (faction technologies). Check every screen against them.
+13. **Names and long texts.** A name is in a column of fixed width and is cut with "…"; the full name is on hover. Check every screen with 8 players, two long player names (the table of eight of `e2e/lobby.spec.ts` and `e2e/lobby.phone.spec.ts`), and the rows that only some factions have (faction technologies).
 
 Checklist for a new screen or a changed screen:
 
@@ -45,7 +45,7 @@ There are two layouts, and no others.
 - Tablets, landscape phones and narrow desktop windows are a **non-goal**. They get whichever of the two layouts their width selects.
 - There is one breakpoint: `phone:` in `src/styles/theme.css`, and `usePhone()` in `src/ui/usePhone.ts` with the same width. Do not add another breakpoint or a container query.
 - `touch:` (a coarse pointer) is only for the size of a control under a finger. It does not change the layout.
-- Desktop screenshots and layout tests use 1920×1080. Phone tests use a Pixel 9 in portrait. The projects are in `playwright.config.ts`: `desktop` and `phone` for the real game, `slow` and `slow-phone` for its long tests, `shots` and `shots-phone` for the demo (see "Tests" in `docs/agents/testing.md`).
+- Desktop screenshots and layout tests use 1920×1080. Phone tests use a Pixel 9 in portrait. The projects are in `playwright.config.ts`: `desktop` and `phone` for the real game, and `slow` and `slow-phone` for its long tests (see "Tests" in `docs/agents/testing.md`).
 
 ### Phone
 
@@ -53,7 +53,7 @@ There are two layouts, and no others.
 - The footer of the action (note, payment line, main button) is under every pane, so the main button is always in reach. This is how pattern 2 holds on a phone: the choice and the button that sends it are on one screen, the rest is one tap away.
 - Exception (owner, 2026-10-10): while the fleet of a system is open on the map, the footer is not shown. The sheet has its room. The "✓" of the sheet closes it, and the footer is back. The landings of an invasion are such a sheet too.
 - The pane changes with a tap on its tab, and when a choice of the viewer opens the viewer's next step in another pane (owner, 2026-10-16): "Tactical" in the action opens the map, because the activation is on the board, and an undo that takes the viewer back to a step on the map opens the map. What does not follow from a choice of the viewer never switches the pane: another player, a bot, a window that the game opens, or a decision that comes after the viewer waited for the game. Then the tab of the pane where the open decision of the viewer is made has a blinking dot while another pane is in view: a choice on the board is Map, a choice of a player is Players, every other decision is Action. A game opens on the pane of its choice. A choice is any intent of the viewer while a decision is open, except those that only change what is in view (inspect a system, find a system, a reference sheet, an entry of the log); it switches the pane at the next change of the pane of the decision, unless the game moves on first with the decision in the same pane (`GameShell`).
-- A pane may scroll down. Pattern 9 and "the open step must not need vertical scroll" are desktop rules. Nothing may be cut at the side: `e2e/phone.spec.ts` checks every example for this (`npm run shots`).
+- A pane may scroll down. Pattern 9 and "the open step must not need vertical scroll" are desktop rules. Nothing may be cut at the side: the test of each screen in `e2e/local.phone.spec.ts` checks this.
 - The player table keeps the names in view and scrolls the values sideways. A tap on a row opens the sheet of the player; there is no hover sheet.
 - A phone has no hover and no keys. A shortcut key is not shown. A name that desktop cuts with "…" takes a second line where the full name is only on hover (the technology tree, the action picker).
 - The map zooms with two fingers; the "+" and "−" buttons are not shown under a finger. "Fit task" and "Fit board" stay, in the row of the map views.
@@ -77,7 +77,7 @@ There are two layouts, and no others.
 - Exception: a list where the player chooses one card (the list of action cards) shows the printed text of each card. The list has the room, and the text is what the player chooses by.
 - The action picker itself keeps its rule text behind hover/click. Inline text on every row was tried (2026-10-07) and was too much.
 - Visible text states the game state: costs, counts, errors, and who the game waits for.
-- The open step must not need vertical scroll at 1920×1080. `e2e/shots.spec.ts` checks this for every example (`npm run shots`).
+- The open step must not need vertical scroll at 1920×1080. The test of each screen in `e2e/local.spec.ts` checks this.
 - Do not abbreviate labels when there is room. The player table uses full column names.
 - **Rules that a player may need to look up are in the UI, behind hover or click** (owner, 2026-10-11). These are: every text that is printed only on a component and is not in the rule book (a unit, a card, a technology, a leader, a faction ability), and special abilities that are not used often. General rules are not in the UI: the flow of the game, and the rules of every game such as combat dice or the unit keywords (SUSTAIN DAMAGE, BOMBARDMENT). A keyword is shown with its values and no explanation. These are examples, not a list: decide by "would an expert look this up?".
 - Rule text is never written in web2. It comes from `ti4-content` through the engine (a fact of the update, or the catalogue).
@@ -87,7 +87,7 @@ There are two layouts, and no others.
 The full rules are in `docs/agents/testing.md` ("Tests" and "Rust builds"). Read it before you run a build or a suite.
 
 - Rust: only the aliases `cargo l-web`, `cargo t-web`, `cargo b-web`, and `cargo wire-web` to write the generated wire types of `web-shared` after a change of a Rust wire type (never `-p`, `--workspace` or `cargo c-web`). Before a commit of Rust: `cargo fmt --all -- --check`, `cargo l-web`, `cargo t-web`; when `ti4-host` or `ti4-wasm` changed, also `scripts/build-wasm.sh` (the shared build of both apps, `web-shared/scripts/build-wasm.mjs`) and `npm test`; when the server changed, also `cargo b-web` and `npm test`.
-- A change of `web2/` only: `npm run typecheck`, `npm run lint`, `npm run format:check` (oxfmt over web2 and web-shared; `npx oxfmt .` fixes it), `npm test`, then `npm run e2e -- -g "<the screen>"`; the whole `npm run e2e` before the commit. Not for each change: `npm run e2e:slow`, `npm run shots`, `cargo t-web-slow`.
+- A change of `web2/` only: `npm run typecheck`, `npm run lint`, `npm run format:check` (oxfmt over web2 and web-shared; `npx oxfmt .` fixes it), `npm test`, then `npm run e2e -- -g "<the screen>"`; the whole `npm run e2e` before the commit. Not for each change: `npm run e2e:slow`, `cargo t-web-slow`.
 - With less than 4 GB of memory: one build or one suite at a time.
 
 ## Deployment

@@ -9,7 +9,6 @@ import { saveStore } from "../session/saves";
 import { selectLobby } from "../session/select/lobby";
 import type { Table, TableState } from "../session/table";
 import { type Engine, type HostSave, loadEngine } from "../session/wasmTransport";
-import { DemoApp } from "./DemoApp";
 import { LocalApp, Notice, wasmUrl } from "./LocalApp";
 import { DEFAULT_NICKNAME } from "./onlineStart";
 
@@ -111,9 +110,9 @@ function SingleSetup({
     [state, inspected, engine],
   );
 
-  // The engine did not load: the demo is shown with the reason, as for a local game.
+  // The engine did not load.
   if (failure) {
-    return <DemoApp notice={`Single player unavailable. ${failure}`} />;
+    return <Notice tone="error">Single player unavailable. {failure}</Notice>;
   }
   if (!view) {
     return <Notice tone="quiet">Setting up the table…</Notice>;

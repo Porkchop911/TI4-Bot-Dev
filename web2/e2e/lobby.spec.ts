@@ -15,7 +15,7 @@ const WASM = fileURLToPath(new URL("../src/session/ti4.wasm", import.meta.url));
 test.skip(!existsSync(WASM), "the engine is not built: run web2/scripts/build-wasm.sh");
 test.use({ viewport: { width: 1920, height: 1080 } });
 
-/** The two long names of the demo data: a name is cut, never the row. */
+/** Two long names: a name is cut, never the row. */
 const LONG = [
   "Bartholomew Featherstonehaugh the Third of Mecatol",
   "Wilhelmina Vanderbilt-Montgomery",
