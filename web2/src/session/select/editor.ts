@@ -77,6 +77,13 @@ export const answered = <V extends { answers: string[] | null }>(view: V | null)
 /** A number of the details of a question, which the engine sends as JSON. Null: not a number. */
 export const num = (value: unknown): number | null => (typeof value === "number" ? value : null);
 
+/**
+ * The look-ahead `details[key]` of a question, as the engine writes it (`Choice::hinted`): `T` is
+ * its generated wire type (`PurchaseHints`, `ResearchPaymentHints`). Null when the question has none.
+ */
+export const hintOf = <T>(choice: Choice, key: string): T | null =>
+  (choice.details?.[key] as T | undefined) ?? null;
+
 /** "Change" of a chosen part of an editor: the part is open again (`Editor.part`). */
 export const changeControl = (part: string): RowView["control"] => ({
   kind: "button",

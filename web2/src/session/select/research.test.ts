@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import type { Choice, SessionUpdate } from "../wire";
+import type { Choice, ResearchPaymentHints, SessionUpdate } from "../wire";
 import {
   payResearch,
   researchPlan,
@@ -10,7 +10,7 @@ import {
 
 // A paid research as the engine asks it: the price on each option, and what can pay it in
 // `details.payment`, with the specialty planet that Sarween Tools keeps for its prerequisite.
-const research = (payment: object | null): Choice => ({
+const research = (payment: ResearchPaymentHints | null): Choice => ({
   player: "a",
   prompt: "research a technology",
   options: [
@@ -20,7 +20,7 @@ const research = (payment: object | null): Choice => ({
   ],
   details: payment ? { payment } : {},
 });
-const PAYMENT = {
+const PAYMENT: ResearchPaymentHints = {
   cost: 6,
   planets: [
     { id: "jord", worth: 4 },
@@ -30,6 +30,7 @@ const PAYMENT = {
   ],
   trade_goods: 4,
   trade_good_worth: 1,
+  commodities: 0,
   kept: { st: ["wellon"] },
 };
 const update = {

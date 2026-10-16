@@ -285,6 +285,26 @@ impl Choice {
         self
     }
 
+    /// Attach one typed display-only fact for clients under `key`, as [`Choice::detailed`]
+    /// does: the look-ahead of a strategy card is a struct of the engine with the wire traits,
+    /// written into the details as JSON, so the details stay a map and records are unaffected.
+    /// [`Choice::hint`] reads it back.
+    ///
+    /// # Panics
+    /// When `hints` does not serialize to JSON (a map with keys that are not strings).
+    #[must_use]
+    pub fn hinted(self, key: &str, hints: &impl Serialize) -> Self {
+        let value = serde_json::to_value(hints).expect("look-ahead details serialize to JSON");
+        self.detailed(key, value)
+    }
+
+    /// The typed fact that [`Choice::hinted`] attached under `key`. None when it is absent or
+    /// has another shape.
+    #[must_use]
+    pub fn hint<T: serde::de::DeserializeOwned>(&self, key: &str) -> Option<T> {
+        serde_json::from_value(self.details.get(key)?.clone()).ok()
+    }
+
     /// Present the question as an offer card for clients (display only, like [`Choice::detailed`]):
     /// `card` names what is asked (see [`offer_card`]), `facts` is a list of [`offer_fact`]s and
     /// `captions` maps option ids to [`offer_caption`]s that say what each answer does. Option ids,

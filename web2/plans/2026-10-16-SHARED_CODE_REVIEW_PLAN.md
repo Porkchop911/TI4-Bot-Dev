@@ -1,6 +1,6 @@
 # Review of the shared code of the demo removal, and its cleanup (2026-10-16)
 
-Status: in progress, steps 1–5 done.
+Status: in progress, steps 1–5 and Technology/Leadership of step 6 done.
 
 ## Context
 
@@ -90,6 +90,15 @@ facts, and asks the engine of the page when it stages something that is not sent
   recorded hashes do not change. `ti4_wasm::wire_ts` visits every one, and web2 reads them through
   the generated types. A research and a purchase share one `PaymentHints` struct, with the same
   fields as the payment part of `ProductionFacts`.
+  - The engine writes a look-ahead with `Choice::hinted(key, &hints)`, and its test reads it back
+    with `Choice::hint::<T>(key)`. The struct of a card is named `<What>Hints`. A part that two
+    cards share is a struct of its own, `#[serde(flatten)]` into each (`PaymentHints` in
+    `ResearchPaymentHints` and `PurchaseHints`); ts-rs inlines a flattened struct, so `wire_ts`
+    visits the shared part as a root too.
+  - web2 reads a look-ahead with `hintOf<T>(choice, key)` of `select/editor.ts`, `T` the
+    generated type, and the fixtures of its unit tests are typed with it.
+  - `ProductionFacts` keeps `PayingPlanet` (`planet`, not `id`) and leaves out `commodities` at
+    0: reusing `PaymentHints` there would change the wire of a production, so it does not.
 - **The four rates of both odds are exclusive and sum to 1**: `attacker_win_rate`,
   `defender_win_rate`, `mutual_destruction_rate` and `unresolved_rate`. An unfinished rollout is
   only in `unresolved_rate`. The client decides what it means: a draw in space, the planet held

@@ -6,25 +6,16 @@
 import type { ActionButtonView, BoardTaskView, PaymentView } from "../../model";
 import { plural } from "../../model";
 import type { PlanStep } from "../movementPlan";
-import type { SessionUpdate } from "../wire";
-import { num } from "./editor";
+import type { PaymentHints, PaymentPlanet, SessionUpdate } from "../wire";
 
 /** The id of the trade goods of the payment (the option of the game). */
 export const GOODS = "trade_good";
 /** The id of a commodity spent as a trade good (the option of the game, the Keleres agent). */
 export const COMMODITY = "commodity";
 
-/** A planet that pays, with the worth of its best face as the engine gives it. */
-export interface PayingPlanet {
-  id: string;
-  worth: number;
-  /** The kind of value that the planet pays with, when it is not that of the bill (Archon's Gift). */
-  face?: string;
-}
-
-/** What can pay, as the engine lists it in the details of the question. */
+/** What can pay, as the engine lists it in the details of the question (`PaymentHints`). */
 export interface PayOffer {
-  planets: PayingPlanet[];
+  planets: PaymentPlanet[];
   goods: number;
   goodWorth: number;
   /** Commodities that pay as trade goods (the Keleres agent). */
@@ -103,30 +94,13 @@ export function leastWaste(
   return { planets: pick.planets, goods: pick.tokens - spent, commodities: spent };
 }
 
-/** The planets and trade goods of a payment of the engine (`planets`, `trade_goods`, `trade_good_worth`). */
-export function payOfferOf(value: unknown): PayOffer | null {
-  const offer = value as Record<string, unknown> | null;
-  if (!offer || !Array.isArray(offer.planets)) {
-    return null;
-  }
-  return {
-    planets: (offer.planets as { id?: unknown; worth?: unknown; face?: unknown }[]).flatMap(
-      (planet) =>
-        typeof planet.id === "string" && typeof planet.worth === "number"
-          ? [
-              {
-                id: planet.id,
-                worth: planet.worth,
-                ...(typeof planet.face === "string" ? { face: planet.face } : {}),
-              },
-            ]
-          : [],
-    ),
-    goods: num(offer.trade_goods) ?? 0,
-    goodWorth: num(offer.trade_good_worth) ?? 1,
-    commodities: num(offer.commodities) ?? 0,
-  };
-}
+/** The planets, trade goods and commodities of the look-ahead of a payment of the engine. */
+export const payOfferOf = (hints: PaymentHints): PayOffer => ({
+  planets: hints.planets,
+  goods: hints.trade_goods,
+  goodWorth: hints.trade_good_worth,
+  commodities: hints.commodities,
+});
 
 /** What the staged payment is worth. */
 export const paidBy = (offer: PayOffer, paying: Paying) =>

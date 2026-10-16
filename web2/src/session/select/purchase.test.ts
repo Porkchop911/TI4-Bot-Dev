@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Choice, SessionUpdate } from "../wire";
+import type { Choice, PurchaseHints, SessionUpdate } from "../wire";
 import {
   countPurchase,
   payPurchase,
@@ -10,7 +10,7 @@ import {
 } from "./purchase";
 
 // The questions of Leadership as the engine asks them (the scenario "strategy_leadership").
-const PURCHASE = {
+const PURCHASE: PurchaseHints = {
   cost: 3,
   influence_available: 11,
   max: 3,
@@ -21,9 +21,10 @@ const PURCHASE = {
   ],
   trade_good_worth: 1,
   trade_goods: 4,
+  commodities: 0,
 };
 const pools = { tactic: 3, fleet: 3, strategic: 2 };
-const gain = (left: number, purchase: object | null = PURCHASE): Choice => ({
+const gain = (left: number, purchase: PurchaseHints | null = PURCHASE): Choice => ({
   player: "a",
   prompt: "gain a command token into which pool",
   options: ["tactic_tokens", "fleet_tokens", "strategic_tokens"].map((id) => ({

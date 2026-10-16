@@ -5,7 +5,14 @@
 // technology (`details.payment` of the question), and sent with it at once.
 import type { BlockView, BoardTaskView, PaymentView, TechCellView, TechColor } from "../../model";
 import type { PlanStep } from "../movementPlan";
-import type { Catalog, Choice, ResearchTechnology, SessionUpdate } from "../wire";
+import type {
+  Catalog,
+  Choice,
+  ResearchPaymentHints,
+  ResearchTechnology,
+  SessionUpdate,
+} from "../wire";
+import { hintOf } from "./editor";
 import { factionName, humanizeId } from "./names";
 import {
   NO_PAYMENT,
@@ -57,23 +64,10 @@ interface Bill {
 
 /** The payment of a paid research, as the question lists it. Null for a free research. */
 function billOf(choice: Choice): Bill | null {
-  const details = choice.details?.payment as Record<string, unknown> | undefined;
-  const offer = payOfferOf(details);
-  const cost = details?.cost;
-  if (!offer || typeof cost !== "number" || cost <= 0) {
-    return null;
-  }
-  const kept = (details?.kept ?? {}) as Record<string, unknown>;
-  return {
-    cost,
-    offer,
-    kept: Object.fromEntries(
-      Object.entries(kept).map(([id, planets]) => [
-        id,
-        Array.isArray(planets) ? planets.filter((planet) => typeof planet === "string") : [],
-      ]),
-    ),
-  };
+  const hints = hintOf<ResearchPaymentHints>(choice, "payment");
+  return hints && hints.cost > 0
+    ? { cost: hints.cost, offer: payOfferOf(hints), kept: hints.kept }
+    : null;
 }
 
 /** What can pay for `technology`: every planet of the bill but those that it keeps ready. */

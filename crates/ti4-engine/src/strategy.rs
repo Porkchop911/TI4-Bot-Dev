@@ -103,10 +103,10 @@ fn secondary_choice(
             state.round,
         ));
         if let Some(purchase) =
-            crate::strategy_cards::purchase_details(state, content, sources, player)
+            crate::strategy_cards::purchase_hints(state, content, sources, player)
         {
             question = crate::tokens::with_pool_details(question, state, "buy", Some(0))
-                .detailed("purchase", purchase);
+                .hinted("purchase", &purchase);
         }
     }
     if crate::strategy_cards::card_name(content, card.as_str()).as_deref() == Some("Diplomacy") {
@@ -1556,8 +1556,11 @@ mod tests {
         assert_eq!(choice.details["kind"], "strategy_secondary");
         assert_eq!(choice.details["mode"], "buy");
         assert_eq!(choice.details["tokens_to_place"], 0);
-        assert_eq!(choice.details["purchase"]["influence_available"], 3);
-        assert_eq!(choice.details["purchase"]["max"], 1);
+        let purchase: crate::strategy_cards::PurchaseHints =
+            choice.hint("purchase").expect("typed purchase");
+        assert_eq!(purchase.influence_available, 3);
+        assert_eq!(purchase.max, 1);
+        assert_eq!(purchase.payment.cost, 3);
 
         let resolution = window
             .take_choice(

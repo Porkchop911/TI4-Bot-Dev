@@ -6,7 +6,7 @@
 import type { BlockView, BoardTaskView, PaymentView } from "../../model";
 import { plural } from "../../model";
 import type { PlanStep } from "../movementPlan";
-import type { Choice, SessionUpdate } from "../wire";
+import type { Choice, PurchaseHints, SessionUpdate } from "../wire";
 import {
   type PayOffer,
   autoPaying,
@@ -18,7 +18,7 @@ import {
   togglePaying,
 } from "./payment";
 import { type Pools, placeProblem, poolChange, poolRows, poolsOf } from "./tokens";
-import { type Editor, num } from "./editor";
+import { type Editor, hintOf, num } from "./editor";
 
 /** What the player staged: tokens bought, and what pays for them. */
 export interface PurchaseDraft {
@@ -60,13 +60,8 @@ const POOLS: [keyof Pools, string][] = [
   ["strategic", "strategic_tokens"],
 ];
 
-function offerOf(value: unknown): Offer | null {
-  const offer = value as Record<string, unknown> | null;
-  const cost = num(offer?.cost);
-  const max = num(offer?.max);
-  const paying = payOfferOf(value);
-  return paying && cost !== null && max !== null ? { ...paying, cost, max } : null;
-}
+const offerOf = (hints: PurchaseHints | null): Offer | null =>
+  hints && { ...payOfferOf(hints), cost: hints.cost, max: hints.max };
 
 /**
  * A question that gains command tokens into a pool, or that offers a purchase for influence.
@@ -91,10 +86,10 @@ function questionOf(choice: Choice): Question | null {
       mode: "gain",
       now,
       gain: Math.max(1, num(details.tokens_to_place) ?? 1),
-      offer: offerOf(details.purchase),
+      offer: offerOf(hintOf<PurchaseHints>(choice, "purchase")),
     };
   }
-  const offer = offerOf(details.purchase);
+  const offer = offerOf(hintOf<PurchaseHints>(choice, "purchase"));
   if (details.mode === "buy" && offer && ids.has("yes") && ids.has("no") && ids.size === 2) {
     return { mode: "buy", now, gain: 0, offer };
   }

@@ -14,6 +14,7 @@ import {
 // The details of a payment of the engine: Archon's Gift pays Mecatol Rex with its other value,
 // and the Keleres agent lets two commodities pay as trade goods.
 const offer = payOfferOf({
+  cost: 3,
   planets: [
     { id: "jord", worth: 4 },
     { id: "mr", worth: 6, face: "influence" },
@@ -21,7 +22,7 @@ const offer = payOfferOf({
   trade_goods: 1,
   trade_good_worth: 1,
   commodities: 2,
-})!;
+});
 
 const update = {
   view: {

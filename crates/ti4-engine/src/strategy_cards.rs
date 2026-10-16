@@ -5,7 +5,7 @@
 //! receives for tactical choices.  Thunder's Edge Construction and Warfare are dispatched by
 //! card id because they share printed names with materially different cards.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use ti4_content::ContentStore;
 use ti4_content::galaxy::Galaxy;
@@ -192,10 +192,9 @@ fn gain_tokens_offering(
             "gain",
             Some(usize::try_from(count - placed).unwrap_or(0)),
         );
-        if announce_purchase
-            && let Some(purchase) = purchase_details(state, content, sources, player)
+        if announce_purchase && let Some(purchase) = purchase_hints(state, content, sources, player)
         {
-            choice = choice.detailed("purchase", purchase);
+            choice = choice.hinted("purchase", &purchase);
         }
         let answer = ask(state, content, sources, galaxy, table, &choice)?;
         let pool = match answer.id.as_str() {
@@ -208,38 +207,31 @@ fn gain_tokens_offering(
     Ok(())
 }
 
-/// What a client needs to plan Leadership's influence purchases as one screen (display only).
-///
-/// `max` is how many tokens the seat's influence can pay for in total (`floor(available / 3)`;
-/// the loop asks again exactly while `available >= 3 * (bought + 1)`). `planets` are the ready
-/// planets that pay in influence themselves, with their face worth, and `trade_goods` can be
-/// spent one at a time at `trade_good_worth` each; Archon's Gift faces and The Triad are not
-/// listed. The engine's payment loop asks which of them to spend; it has no automatic rule, so
-/// the plan a client sends names each exhaust or trade good explicitly. `None` when the seat
-/// cannot afford even one token.
-pub(crate) fn purchase_details(
+/// What a client needs to plan Leadership's influence purchases as one screen (display only);
+/// see [`PurchaseHints`]. Archon's Gift faces are not listed. `None` when the seat cannot afford
+/// even one token.
+pub(crate) fn purchase_hints(
     state: &GameState,
     content: &ContentStore,
     sources: SourceSet,
     player: &PlayerId,
-) -> Option<serde_json::Value> {
+) -> Option<PurchaseHints> {
     let available = crate::production::available(state, content, sources, player, Spend::Influence);
     if available < INFLUENCE_PER_TOKEN {
         return None;
     }
-    let planets = payment_planets(state, content, sources, player, Spend::Influence);
-    let goods = state
-        .player(player)
-        .map_or(0, |seat| i64::from(seat.trade_goods));
-    Some(serde_json::json!({
-        "cost": INFLUENCE_PER_TOKEN,
-        "influence_available": available,
-        "max": available / INFLUENCE_PER_TOKEN,
-        "trade_goods": goods,
-        "trade_good_worth": crate::production::trade_good_worth(state, player),
-        "commodities": crate::factions::keleres::spendable_commodities(state, player),
-        "planets": planets,
-    }))
+    Some(PurchaseHints {
+        payment: payment_hints(
+            state,
+            content,
+            sources,
+            player,
+            Spend::Influence,
+            INFLUENCE_PER_TOKEN,
+        ),
+        influence_available: available,
+        max: available / INFLUENCE_PER_TOKEN,
+    })
 }
 
 /// Whether a follower may buy command tokens with influence in the Leadership window.
@@ -439,9 +431,9 @@ fn influence_purchase_choice(
         state.round,
     ));
     // Only a fresh purchase (no carried credit) can be planned as a whole.
-    match purchase_details(state, content, sources, player).filter(|_| credit == 0) {
+    match purchase_hints(state, content, sources, player).filter(|_| credit == 0) {
         Some(purchase) => crate::tokens::with_pool_details(choice, state, "buy", Some(0))
-            .detailed("purchase", purchase),
+            .hinted("purchase", &purchase),
         None => choice,
     }
 }
@@ -1416,9 +1408,9 @@ fn paid_research(
                     .collect(),
             );
             if cost > 0 {
-                choice = choice.detailed(
+                choice = choice.hinted(
                     "payment",
-                    research_payment_details(state, content, sources, player, cost, &open),
+                    &research_payment_hints(state, content, sources, player, cost, &open),
                 );
             }
             let choice = choice.contextualized(DecisionContext::new(
@@ -1547,68 +1539,116 @@ fn research_payable(
     crate::payment::affordable(&trial, content, sources, player, cost, Spend::Resources)
 }
 
-/// The ready planets that pay a bill of `kind`, for the details of a payment (display only): each
-/// with the worth of its best face, and `face` when that face spends the other kind (Archon's
-/// Gift); its payment option is then `exhaust|<planet>|<face>`.
-fn payment_planets(
+/// A planet that pays a bill, as the look-ahead of a payment lists it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct PaymentPlanet {
+    pub id: PlanetId,
+    /// What the planet pays with its best face.
+    pub worth: i64,
+    /// The kind of value that the best face spends, when it is not the kind of the bill:
+    /// "influence" for resources (Archon's Gift). The payment option of the planet is then
+    /// `exhaust|<planet>|<face>`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub face: Option<String>,
+}
+
+/// What can pay a bill that a question opens before the engine asks for the payment (display
+/// only): a paid research ([`ResearchPaymentHints`]) and a purchase of command tokens
+/// ([`PurchaseHints`]). The payment questions that follow ask which of them to spend, one planet
+/// or trade good at a time; the engine has no automatic rule, so a client that stages the
+/// payment names each of them. The same fields as the payment of a production's facts.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct PaymentHints {
+    /// The price of one thing that is bought: the research, or one command token.
+    pub cost: i64,
+    /// The ready planets that pay, each with the worth of its best face. The Triad is not
+    /// listed.
+    pub planets: Vec<PaymentPlanet>,
+    /// Trade goods, spent one at a time at `trade_good_worth` each.
+    pub trade_goods: i64,
+    pub trade_good_worth: i64,
+    /// Commodities that the seat may spend as trade goods (the Keleres agent).
+    pub commodities: i64,
+}
+
+/// The look-ahead of a paid research (`details.payment` of the research question).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ResearchPaymentHints {
+    #[serde(flatten)]
+    pub payment: PaymentHints,
+    /// For each offered technology whose prerequisites exhaust specialty planets, those
+    /// planets: the payment of that research does not offer them.
+    pub kept: BTreeMap<TechnologyId, Vec<PlanetId>>,
+}
+
+/// The look-ahead of Leadership's purchase of command tokens for influence (`details.purchase`).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct PurchaseHints {
+    /// `cost` is the influence of one token.
+    #[serde(flatten)]
+    pub payment: PaymentHints,
+    /// All the influence that the seat can spend, its trade goods included.
+    pub influence_available: i64,
+    /// How many tokens that influence pays for in total (`floor(available / cost)`; the loop
+    /// asks again exactly while `available >= cost * (bought + 1)`).
+    pub max: i64,
+}
+
+/// What can pay a bill of `cost` in `kind` (display only); see [`PaymentHints`].
+fn payment_hints(
     state: &GameState,
     content: &ContentStore,
     sources: SourceSet,
     player: &PlayerId,
     kind: Spend,
-) -> Vec<serde_json::Value> {
-    crate::production::best_payment_faces(state, content, sources, player, kind)
+    cost: i64,
+) -> PaymentHints {
+    let planets = crate::production::best_payment_faces(state, content, sources, player, kind)
         .into_iter()
-        .map(|(planet, worth, face)| {
-            let mut entry = serde_json::json!({ "id": planet.to_string(), "worth": worth });
-            if face != kind {
-                entry["face"] = serde_json::Value::from(crate::production::spend_name(face));
-            }
-            entry
+        .map(|(planet, worth, face)| PaymentPlanet {
+            id: planet,
+            worth,
+            face: (face != kind).then(|| crate::production::spend_name(face).to_owned()),
         })
-        .collect()
+        .collect();
+    PaymentHints {
+        cost,
+        planets,
+        trade_goods: state
+            .player(player)
+            .map_or(0, |seat| i64::from(seat.trade_goods)),
+        trade_good_worth: crate::production::trade_good_worth(state, player),
+        commodities: crate::factions::keleres::spendable_commodities(state, player),
+    }
 }
 
 /// What a client needs to stage the payment of a paid research with its choice (display only).
-///
-/// `planets` are the ready planets that pay, with the worth of their best face (`face` names an
-/// Archon's Gift face), `trade_goods` can be spent one at a time at `trade_good_worth` each, and
-/// so can `commodities` (the Keleres agent); The Triad is not listed. `kept` names, for each offered technology whose prerequisites
-/// exhaust specialty planets, those planets: the payment of that research does not offer them.
-/// The payment questions after the research ask which of the rest to spend.
-fn research_payment_details(
+fn research_payment_hints(
     state: &GameState,
     content: &ContentStore,
     sources: SourceSet,
     player: &PlayerId,
     cost: i64,
     open: &[TechnologyId],
-) -> serde_json::Value {
-    let planets = payment_planets(state, content, sources, player, Spend::Resources);
-    let kept: serde_json::Map<String, serde_json::Value> = open
+) -> ResearchPaymentHints {
+    let kept = open
         .iter()
         .filter_map(|technology| {
             let planets = crate::technology::specialties_spent_by_research(
                 state, content, sources, player, technology,
             );
-            (!planets.is_empty()).then(|| {
-                (
-                    technology.to_string(),
-                    serde_json::Value::from(
-                        planets.iter().map(ToString::to_string).collect::<Vec<_>>(),
-                    ),
-                )
-            })
+            (!planets.is_empty()).then(|| (technology.clone(), planets))
         })
         .collect();
-    serde_json::json!({
-        "cost": cost,
-        "trade_goods": state.player(player).map_or(0, |seat| seat.trade_goods),
-        "trade_good_worth": crate::production::trade_good_worth(state, player),
-        "commodities": crate::factions::keleres::spendable_commodities(state, player),
-        "planets": planets,
-        "kept": kept,
-    })
+    ResearchPaymentHints {
+        payment: payment_hints(state, content, sources, player, Spend::Resources, cost),
+        kept,
+    }
 }
 
 /// Display only: what a seat weighing Diplomacy's "ready planets" needs in front of it. The
@@ -5099,16 +5139,14 @@ mod tests {
         let seen = seen.borrow();
         let research = &seen[0];
         assert_eq!(subtype(research), "research_technology");
-        let payment = &research.details["payment"];
-        assert_eq!(payment["cost"], TECHNOLOGY_SECONDARY_COST);
-        assert_eq!(payment["trade_goods"], 4);
+        let hints: ResearchPaymentHints = research.hint("payment").expect("typed payment");
+        assert_eq!(hints.payment.cost, TECHNOLOGY_SECONDARY_COST);
+        assert_eq!(hints.payment.trade_goods, 4);
+        assert_eq!(hints.payment.trade_good_worth, 1);
+        assert_eq!(hints.payment.commodities, 0);
         for planet in &planets {
             assert!(
-                payment["planets"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .any(|item| item["id"] == planet.as_str()),
+                hints.payment.planets.iter().any(|item| item.id == *planet),
                 "{planet} pays"
             );
         }
@@ -5217,6 +5255,8 @@ mod tests {
             serde_json::json!([planet.as_str()]),
             "the research says which specialty it keeps"
         );
+        let hints: ResearchPaymentHints = seen[0].hint("payment").expect("typed payment");
+        assert_eq!(hints.kept.get(&technology), Some(&vec![planet.clone()]));
         assert!(
             seen.iter()
                 .filter(|choice| subtype(choice) == "pay_resources")
@@ -6116,6 +6156,15 @@ mod tests {
                 purchase["planets"],
                 serde_json::json!([{ "id": "arcturus", "worth": 4 }])
             );
+            let hints: PurchaseHints =
+                serde_json::from_value(purchase.clone()).expect("typed purchase");
+            assert_eq!(
+                (hints.payment.cost, hints.max, hints.influence_available),
+                (3, 3, 11),
+                "{prompt}"
+            );
+            assert_eq!(hints.payment.planets[0].id, PlanetId::new("arcturus"));
+            assert_eq!(hints.payment.commodities, 0);
             assert_eq!(details["kind"], "command_tokens");
             if index < 3 {
                 assert_eq!(details["mode"], "gain");
@@ -6134,9 +6183,9 @@ mod tests {
         let mut state = game(&["a", "b"]);
         let actor = PlayerId::new("a");
         state.player_mut(&actor).unwrap().trade_goods = 2;
-        assert!(purchase_details(&state, content, POK, &actor).is_none());
+        assert!(purchase_hints(&state, content, POK, &actor).is_none());
         state.player_mut(&actor).unwrap().trade_goods = 6;
-        assert!(purchase_details(&state, content, POK, &actor).is_some());
+        assert!(purchase_hints(&state, content, POK, &actor).is_some());
         let fresh = influence_purchase_choice(&state, content, POK, &actor, 0);
         assert!(fresh.details.contains_key("purchase"));
         let carried = influence_purchase_choice(&state, content, POK, &actor, 1);
