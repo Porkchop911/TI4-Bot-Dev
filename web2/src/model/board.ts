@@ -113,6 +113,11 @@ export interface BoardTaskView {
   highlight?: SystemId[];
   /** Systems that cannot be chosen and belong to the choice: they are not dimmed. */
   context?: SystemId[];
+  /**
+   * A task on planets that chooses systems too (the system of Construction): a click on one of
+   * these systems chooses it (`toggleSystem`), as in a task on systems; `chosen` marks it.
+   */
+  systems?: SystemId[];
   /** A payment that is open: the board has its state and its controls, where the player chooses. */
   payment?: PaymentView;
   /** The planets that pay with their other value (Archon's Gift): the kind that they pay with. */

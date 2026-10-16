@@ -4,8 +4,10 @@
 // a structure), with what a chosen option of a placement takes away from the next one. So the
 // question that comes first is one screen with all of them: the window of a secondary (`yes` and
 // `no`), the choice of an ability (`structure` and `produce|<system>`), or a placement itself.
-// The system is chosen on the map; the panel then lists its planets, each with the structures
-// that the open placement offers there, and the main button answers every question at once, by
+// The whole choice is on the map: a system or a planet of the map chooses the system, whose
+// planets the panel then lists (on a phone on the map, under it), each with the structures that
+// the open placement offers there; a planet of the map with one structure offered places it, and
+// one with a staged structure takes it back. The main button answers every question at once, by
 // the ids of their options.
 import type { BlockView, BoardTaskView, MenuRowView, RowView } from "../../model";
 import { plural } from "../../model";
@@ -144,6 +146,8 @@ export interface StructuresView {
   changed: boolean;
   /** The answers, by the ids of their options, in the order that the game asks. Null: not yet. */
   answers: string[] | null;
+  /** The planets of a system are listed: a phone shows the blocks on the map (`BoardView.blocks`). */
+  onMap: boolean;
 }
 
 /** The placement of structures, with its window or its ability. Null for any other question. */
@@ -352,40 +356,39 @@ export function selectStructures(
     });
   }
 
-  const chosen = spots.flatMap((spot) => (spot ? [spot.system] : []));
-  const picking = open >= 0 && !system;
-  const task: BoardTaskView | null = !placements.length
-    ? null
-    : picking
-      ? {
-          // The systems where the open placement offers a structure: the count of their planets.
-          target: "system",
+  // The map stays the choice while there is something to choose or to take back: the planets
+  // where the open placement offers a structure (the count of the kinds) and the planets with a
+  // staged structure, and the systems where it offers one, which choose the system.
+  const offered = open >= 0 ? options[open] : [];
+  const staged = spots.flatMap((spot) => (spot ? [spot] : []));
+  const onMap = [...new Set([...offered, ...staged].map((spot) => spot.planet))];
+  const task: BoardTaskView | null =
+    !placements.length || !onMap.length
+      ? null
+      : {
+          target: "planet",
           kind: "pick",
           interactive: true,
           values: Object.fromEntries(
-            [...new Set(options[open].map((spot) => spot.system))].map((id) => [
-              id,
-              new Set(options[open].filter((spot) => spot.system === id).map((spot) => spot.planet))
-                .size,
+            onMap.map((planet) => [
+              planet,
+              offered.filter((spot) => spot.planet === planet).length ||
+                staged.filter((spot) => spot.planet === planet).length,
             ]),
           ),
-          chosen: Object.fromEntries(chosen.map((id) => [id, true])),
-          verb: "Place a structure in",
-          unit: "planets",
-        }
-      : {
-          // The system is chosen: its planets are in the panel.
-          target: "system",
-          kind: "pick",
-          interactive: false,
-          values: Object.fromEntries([...chosen, ...(system ? [system] : [])].map((id) => [id, 0])),
-          chosen: Object.fromEntries(chosen.map((id) => [id, true])),
-          verb: "Placed in",
-          unit: "planets",
-          context: [...new Set([...chosen, ...(system ? [system] : [])])],
+          chosen: Object.fromEntries([
+            ...staged.map((spot) => [spot.planet, true]),
+            ...(system ? [[system, true]] : []),
+          ]),
+          systems: [...new Set(offered.map((spot) => spot.system))],
+          verb: "Place a structure on",
+          unit: "structures",
+          context: [
+            ...new Set([...staged.map((spot) => spot.system), ...(system ? [system] : [])]),
+          ],
         };
 
-  const placed = spots.flatMap((spot) => (spot ? [spot] : []));
+  const placed = staged;
   const summary = placed
     .map((spot) => `${nameOf(spot.unit)} on ${planetName(spot.planet)}`)
     .join(" · ");
@@ -442,6 +445,7 @@ export function selectStructures(
     label,
     changed: !!ability || placed.length > 0 || !!system,
     answers,
+    onMap: placements.length > 0 && !!system,
   };
 }
 
@@ -507,7 +511,11 @@ export function chooseStructureSystem(
   return { ...staging, system };
 }
 
-/** A planet of the map is chosen: its system, as a click on the system. */
+/**
+ * A planet of the map: a staged structure on it is taken back (the last one); else the open
+ * placement places the one structure that it offers there; with two offered, the planet chooses
+ * its system, and the panel lists both.
+ */
 export function chooseStructurePlanet(
   choice: Choice,
   draft: StructureDraft | null,
@@ -517,9 +525,19 @@ export function chooseStructurePlanet(
   if (!question) {
     return null;
   }
-  const { options, open } = stagedOf(question, draft);
-  const spot = open >= 0 ? options[open].find((item) => item.planet === planet) : undefined;
-  return spot ? chooseStructureSystem(choice, draft, spot.system) : null;
+  const staging = draft ?? NO_STRUCTURES;
+  const { options, spots, open } = stagedOf(question, staging);
+  const last = spots.findLastIndex((spot) => spot?.planet === planet);
+  if (last >= 0) {
+    const kept = [...staging.spots];
+    kept[last] = null;
+    return { ...staging, spots: kept, system: spots[last]!.system };
+  }
+  const offers = open >= 0 ? options[open].filter((spot) => spot.planet === planet) : [];
+  if (offers.length === 1) {
+    return chooseStructure(choice, staging, "place", offers[0].id);
+  }
+  return offers.length ? { ...staging, system: offers[0].system } : null;
 }
 
 /**

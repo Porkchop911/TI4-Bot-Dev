@@ -1784,14 +1784,11 @@ test("Construction of Thunder's Edge: the ability first, then two structures of 
   await expect(
     panel(page).getByRole("heading", { name: "Structure 2 of 2 · space dock or PDS" }),
   ).toBeVisible();
-  // The second goes to another system: "Change" of the system, then Jord on the map.
+  // The second goes to another system: Jord on the map, where the PDS is the one structure
+  // offered (Jord has a space dock), so the click places it and chooses #01.
   const system = panel(page).getByRole("heading", { name: "System" }).locator("../..");
-  await system.getByRole("button", { name: "Change" }).click();
-  // The details of #29 cover Jord at the corner of the map.
-  await page.getByRole("button", { name: "Close system details" }).click();
   await mapPlanet(page, "Jord").click();
   await expect(system).toContainText("#01");
-  await page.keyboard.press("4");
   await expect(page.locator("footer")).toContainText("Space dock on Rarron · PDS on Jord");
   await fitsHeight(page);
   await page.screenshot({ path: "shots/local/construction-te.png", animations: "disabled" });

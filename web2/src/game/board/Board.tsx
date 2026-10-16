@@ -192,7 +192,11 @@ export function Board({ view, children }: { view: BoardView; children?: ReactNod
       >
         <GalaxyMap view={view} mapView={mapView} svgRef={svg} />
       </div>
-      {view.inspector && <SystemInspector view={view.inspector} />}
+      {/* On a phone the choice under the map is the sheet of the task at its chosen system (the
+          planets of Construction): the inspector of that system would cover it. */}
+      {view.inspector && !(phone && view.blocks && view.task?.chosen[view.inspector.system]) && (
+        <SystemInspector view={view.inspector} />
+      )}
       {view.origin && <OriginSheet key={view.origin.system} view={view.origin} />}
       {view.landing && <LandingSheet view={view.landing} />}
       {view.production && <ProductionSheet view={view.production} />}

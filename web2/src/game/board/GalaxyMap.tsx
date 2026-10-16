@@ -235,8 +235,11 @@ function Tile({ tile, active, inspected, targeting, view, task }: TileProps) {
   const gap = slots > 3 ? 19 : 25;
   const slotX = (index: number) => x + (index - (slots - 1) / 2) * gap;
   const planetR = slots > 2 ? 10 : 11.5;
-  // A task that asks for a system: a click on a system that can be chosen chooses it.
-  const target = task?.target === "system" && task.interactive && tile.id in task.values;
+  // A task that asks for a system: a click on a system that can be chosen chooses it. So does a
+  // system of a task on planets that chooses systems too.
+  const target =
+    !!task?.interactive &&
+    (task.target === "system" ? tile.id in task.values : !!task.systems?.includes(tile.id));
   const chosen = target && !!task.chosen[tile.id];
   // It can be chosen, and the task has nothing to do there: it does not stand out.
   const plain = target && !!task.highlight && !task.highlight.includes(tile.id);

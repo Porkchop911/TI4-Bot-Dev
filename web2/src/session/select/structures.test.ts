@@ -149,7 +149,7 @@ describe("selectStructures", () => {
     ).toBeNull();
   });
 
-  it("chooses the system on the map, then a planet and a structure in the panel", () => {
+  it("chooses the system on the map, then a planet and a structure in the panel or on the map", () => {
     const empty = selectStructures(update, primary, null)!;
     expect(empty.blocks[0]).toMatchObject({
       kind: "gauges",
@@ -172,24 +172,43 @@ describe("selectStructures", () => {
       aside: "Choose on the map",
       rows: [{ title: ["No system chosen"] }],
     });
-    // The systems where the first placement has an option, with the count of their planets.
+    // The planets where the first placement has an option, with the count of their kinds, and
+    // the systems where it has one.
     expect(empty.task).toMatchObject({
-      target: "system",
+      target: "planet",
       interactive: true,
-      values: { "01": 1, "29": 2 },
+      values: { jord: 1, qucenn: 2, rarron: 2 },
       chosen: {},
+      systems: ["01", "29"],
     });
+    expect(empty.onMap).toBe(false);
     expect(empty.note).toBe("Choose a system on the map.");
     expect(empty.label).toBe("Resolve primary · no structure");
     expect(empty.answers).toEqual(["decline", "decline"]);
     expect(chooseStructureSystem(primary, null, "03")).toBeNull();
-    // A planet of the map chooses its system.
-    expect(chooseStructurePlanet(primary, null, "rarron")?.system).toBe("29");
+    // A planet of the map with two structures offered chooses its system; with one, it places it.
+    expect(chooseStructurePlanet(primary, null, "rarron")).toEqual({
+      ability: null,
+      system: "29",
+      spots: [],
+    });
+    const jord = chooseStructurePlanet(primary, null, "jord")!;
+    expect(jord.spots).toEqual(["pds|01|jord"]);
+    expect(jord.system).toBe("01");
+    // Again, it takes it back.
+    expect(chooseStructurePlanet(primary, jord, "jord")?.spots).toEqual([null]);
 
     let draft = chooseStructureSystem(primary, null, "29")!;
     const system = selectStructures(update, primary, draft)!;
-    // The system is chosen: the choice is in the panel, the map only shows it.
-    expect(system.task).toMatchObject({ interactive: false, context: ["29"] });
+    // The system is chosen: its planets are in the panel (on a phone on the map), and the map
+    // stays the choice: another system, or a planet.
+    expect(system.task).toMatchObject({
+      interactive: true,
+      chosen: { "29": true },
+      systems: ["01", "29"],
+      context: ["29"],
+    });
+    expect(system.onMap).toBe(true);
     expect(system.note).toBe("Choose a planet and a structure.");
     expect(system.blocks[2]).toMatchObject({
       rows: [{ title: ["Qucen'n · #29"], control: { kind: "button" } }],
@@ -225,7 +244,15 @@ describe("selectStructures", () => {
         { title: "PDS", state: "0 → 1", selected: false, disabled: false },
       ],
     });
-    expect(first.task?.chosen).toEqual({ "29": true });
+    expect(first.task).toMatchObject({
+      chosen: { qucenn: true, "29": true },
+      values: { jord: 1, qucenn: 1, rarron: 1 },
+    });
+    // The PDS of the second placement on Rarron, from the map: the one structure offered there.
+    expect(chooseStructurePlanet(primary, draft, "rarron")?.spots).toEqual([
+      "pds|29|qucenn",
+      "pds|29|rarron",
+    ]);
     // The staged row takes it back.
     const taken = chooseStructure(primary, draft, "place", "pds|29|qucenn")!;
     expect(selectStructures(update, primary, taken)!.answers).toEqual(["decline", "decline"]);
@@ -306,9 +333,11 @@ describe("selectStructures", () => {
     expect(draft.system).toBeNull();
     const next = selectStructures(update, narrow, draft)!;
     expect(next.task).toMatchObject({
+      target: "planet",
       interactive: true,
-      values: { "01": 1 },
-      chosen: { "29": true },
+      values: { jord: 1, qucenn: 1 },
+      chosen: { qucenn: true },
+      systems: ["01"],
     });
   });
 

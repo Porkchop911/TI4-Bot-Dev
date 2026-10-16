@@ -1172,7 +1172,7 @@ test("phone: Politics has the speaker in the player table and the agenda deck in
   await page.screenshot({ path: "shots/phone/local/politics.png", animations: "disabled" });
 });
 
-test("phone: Construction has the structures in the width, the systems chosen on the map", async ({
+test("phone: Construction is chosen on the map, with the planets of the system under it", async ({
   page,
 }) => {
   await page.goto("/?scenario=strategy_construction&humans=1");
@@ -1183,38 +1183,32 @@ test("phone: Construction has the structures in the width, the systems chosen on
   await panel.getByRole("button", { name: /^4 Construction/ }).click();
   await page.locator('footer button[aria-keyshortcuts="Enter"]').click();
   const pane = (name: string) => panes.getByRole("button", { name });
-  const open = (name: string) => panel.getByRole("heading", { name, exact: true }).locator("../..");
-  const system = open("System");
-  // The system is chosen on the map, which opens; its planets and structures are in the panel,
-  // which opens then.
+  const choice = page.getByRole("group", { name: "Choice with the payment" });
+  const open = (name: string) =>
+    choice.getByRole("heading", { name, exact: true }).locator("../..");
+  // The whole choice is on the map. A planet with two structures offered chooses its system:
+  // its planets are under the map, and the Map pane stays.
   await expect(pane("Map")).toHaveAttribute("aria-pressed", "true");
   await mapPlanet(page, "Rarron").tap();
-  await expect(pane("Action")).toHaveAttribute("aria-pressed", "true");
-  await expect(panel.getByRole("heading", { name: "Structures" })).toBeVisible();
+  await expect(open("Structure 1 of 2 · space dock or PDS")).toBeVisible();
+  await expect(pane("Map")).toHaveAttribute("aria-pressed", "true");
   expect(await width()).toBe(page.viewportSize()!.width);
   // #29: Qucen'n, then Rarron, each with a space dock and a PDS.
   await open("Structure 1 of 2 · space dock or PDS")
     .getByRole("button", { name: "PDS", exact: true })
     .nth(1)
     .tap();
-  // "Change" of the system: the map opens for the second.
-  await system.getByRole("button", { name: "Change" }).tap();
-  await expect(pane("Map")).toHaveAttribute("aria-pressed", "true");
-  // The details of #29 are a sheet over the map.
-  await page.getByRole("button", { name: "Close system details" }).tap();
+  // The second PDS: Jord has a space dock, so the PDS is the one structure offered there, and a
+  // tap on the planet places it, also in another system.
   await mapPlanet(page, "Jord").tap();
-  await expect(pane("Action")).toHaveAttribute("aria-pressed", "true");
-  await open("Structure 2 of 2 · PDS only").getByRole("button", { name: "PDS", exact: true }).tap();
   await expect(page.locator("footer")).toContainText("PDS on Rarron · PDS on Jord");
-  expect(await width()).toBe(page.viewportSize()!.width);
-  await expect(panel.getByRole("heading", { name: "Structures" }).locator("../..")).toContainText(
-    "Jord · #01PDS 0 → 1",
-  );
+  await expect(open("Structures")).toContainText("Jord · #01PDS 0 → 1");
+  await expect(pane("Map")).toHaveAttribute("aria-pressed", "true");
   expect(await width()).toBe(page.viewportSize()!.width);
   await page.screenshot({ path: "shots/phone/local/construction.png", animations: "disabled" });
 });
 
-test("phone: Construction of Thunder's Edge has the ability and the structures in the width", async ({
+test("phone: Construction of Thunder's Edge has the ability and the structures on the map", async ({
   page,
 }) => {
   await page.goto("/?scenario=strategy_construction_te&humans=1");
@@ -1225,23 +1219,21 @@ test("phone: Construction of Thunder's Edge has the ability and the structures i
   await panel.getByRole("button", { name: /^4 Construction/ }).click();
   await page.locator('footer button[aria-keyshortcuts="Enter"]').click();
   expect(await width()).toBe(page.viewportSize()!.width);
-  // A structure: the system on the map, which opens, then the structure of a planet in the
-  // panel, which opens then.
+  // A structure: the choice is on the map then. A staged ability is no answer to the game, so the
+  // tab of the map is marked, and a tap opens it, with the planets of the system under the map.
   await panel.getByRole("button", { name: /Place a structure/ }).tap();
-  await expect(panes.getByRole("button", { name: "Map" })).toHaveAttribute("aria-pressed", "true");
+  await panes.getByRole("button", { name: "Map" }).tap();
   await mapPlanet(page, "Rarron").tap();
-  await expect(panes.getByRole("button", { name: "Action" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  await expect(panel.getByRole("heading", { name: "Structures" })).toBeVisible();
-  const open = (name: string) => panel.getByRole("heading", { name, exact: true }).locator("../..");
+  const choice = page.getByRole("group", { name: "Choice with the payment" });
+  const open = (name: string) =>
+    choice.getByRole("heading", { name, exact: true }).locator("../..");
   // #29: Qucen'n, then Rarron, each with a space dock and a PDS.
   await open("Structure 1 of 2 · space dock or PDS")
     .getByRole("button", { name: "Space dock", exact: true })
     .nth(1)
     .tap();
   await expect(page.locator("footer")).toContainText("Space dock on Rarron");
+  await expect(panes.getByRole("button", { name: "Map" })).toHaveAttribute("aria-pressed", "true");
   expect(await width()).toBe(page.viewportSize()!.width);
   await expect(open("Structure 2 of 2 · space dock or PDS")).toBeVisible();
   expect(await width()).toBe(page.viewportSize()!.width);
