@@ -27,7 +27,7 @@ import { exploringCard } from "./exploration";
 import { systemLabel } from "./movement";
 import { humanizeId, seatLabel, sentence } from "./names";
 import { printedSource } from "./printed";
-import { selectReaction } from "./reaction";
+import { interruptOf, reactedAction, selectReaction } from "./reaction";
 import { selectResearch } from "./research";
 import { type Pools, selectTokens } from "./tokens";
 import { type TurnMenu, isTurnMenu, selectTurn } from "./turn";
@@ -356,6 +356,8 @@ export function selectAction(
     ? null
     : (exploringCard(update, catalog) ??
       (window || !asker || "StrategyCard" in asker ? null : printedSource(asker, printed)));
+  // The window is on top of the action that it reacts to, which stays in view under it.
+  const reacted = window ? reactedAction(update, update.reaction?.trigger, printed) : null;
   const own = !!choice && !window && !local.draft && componentAction(update, choice);
   const onBoard = choice ? boardPick(update, choice) : null;
   const seats = seatsOf(choice);
@@ -536,44 +538,44 @@ export function selectAction(
           ? "Choose a player"
           : null;
   const chosen = chosenBlock();
-  const blocks: BlockView[] = !choice
-    ? turnOf
-      ? [
-          {
-            kind: "note",
-            tone: "quiet",
-            strong: passed ? "You passed." : `${faction(turnOf)} has the turn.`,
-            text: passed
-              ? "No more actions for you in this round."
-              : stepping
-                ? `${faction(stepping)} decides next.`
-                : local.draftLocked
-                  ? "Your next tactical action can be drafted later."
-                  : "You can prepare your next tactical action in Draft.",
-          },
-        ]
-      : [{ kind: "note", tone: local.error ? "accent" : "quiet", text: idle }]
-    : research
-      ? [research.block]
-      : tokens
-        ? [tokens.block]
-        : [
-            // A component action has its card behind "?" of the heading; any other decision has
-            // its source on top.
-            ...(what && !own ? [{ kind: "source" as const, ...what }] : []),
-            ...gauges,
-            ...(chosen ? [chosen] : []),
-            ...(window?.rows.length || rows.length || !chosen
-              ? [{ kind: "menu" as const, rows: window?.rows ?? rows }]
-              : []),
-          ];
+  const blocks: BlockView[] = reacted
+    ? reacted.blocks
+    : !choice
+      ? turnOf
+        ? [
+            {
+              kind: "note",
+              tone: "quiet",
+              strong: passed ? "You passed." : `${faction(turnOf)} has the turn.`,
+              text: passed
+                ? "No more actions for you in this round."
+                : stepping
+                  ? `${faction(stepping)} decides next.`
+                  : local.draftLocked
+                    ? "Your next tactical action can be drafted later."
+                    : "You can prepare your next tactical action in Draft.",
+            },
+          ]
+        : [{ kind: "note", tone: local.error ? "accent" : "quiet", text: idle }]
+      : research
+        ? [research.block]
+        : tokens
+          ? [tokens.block]
+          : [
+              // A component action has its card behind "?" of the heading; any other decision has
+              // its source on top.
+              ...(what && !own ? [{ kind: "source" as const, ...what }] : []),
+              ...gauges,
+              ...(chosen ? [chosen] : []),
+              ...(rows.length || !chosen ? [{ kind: "menu" as const, rows }] : []),
+            ];
   const viewerName = viewer ? seatLabel(update, viewer, printed) : "";
   return {
     kind: "flow",
     title: local.draft
       ? "Tactical action"
-      : window
-        ? "Reaction"
+      : reacted
+        ? reacted.title
         : own
           ? "Component action"
           : choice
@@ -583,8 +585,13 @@ export function selectAction(
                 ? "You passed"
                 : "Turn ended"
               : "Waiting",
-    subtitle:
-      own && what ? `${what.name} · ${viewerName}` : turnOf ? `${faction(turnOf)} is next` : "",
+    subtitle: reacted
+      ? reacted.subtitle
+      : own && what
+        ? `${what.name} · ${viewerName}`
+        : turnOf
+          ? `${faction(turnOf)} is next`
+          : "",
     badge: local.draft
       ? { tone: "draft", label: "Private draft" }
       : staged
@@ -595,12 +602,12 @@ export function selectAction(
     selected: 0,
     current: null,
     contentKey: update.pending_choice?.nonce ?? "idle",
-    interrupt: null,
+    interrupt: window ? interruptOf(window, update.reaction?.trigger?.system) : null,
     closing: [],
     heading: local.draft
       ? "Draft"
-      : window
-        ? window.heading
+      : reacted
+        ? reacted.heading
         : own && what
           ? what.name
           : choice
@@ -609,7 +616,14 @@ export function selectAction(
               ? `${faction(turnOf)}’s turn`
               : "Waiting",
     pill: choice
-      ? { tone: "live", label: own && pickWord ? `Your decision · ${pickWord}` : "Your decision" }
+      ? {
+          tone: "live",
+          label: window
+            ? "Your decision · Reaction"
+            : own && pickWord
+              ? `Your decision · ${pickWord}`
+              : "Your decision",
+        }
       : turnOf && waitingFor
         ? { tone: "quiet", label: `Waiting for ${waitingFor}` }
         : null,
@@ -677,22 +691,29 @@ export function selectAction(
                     key: "Enter",
                     intent: { type: "reaction" as const, action: "pass" as const },
                   }
-                : research?.pass && !staged
+                : window?.use
                   ? {
-                      // Nothing chosen in the tree is a pass, and the main button says so.
-                      label: recording ? "Record · research nothing" : "Research nothing",
+                      label: window.use,
                       tone: "primary" as const,
                       key: "Enter",
-                      intent: { type: "flow" as const, action: "resolve" as const },
+                      intent: { type: "reaction" as const, action: "play" as const },
                     }
-                  : {
-                      // A draft sends nothing: the answer is recorded.
-                      label: recording ? "Record" : window ? "Use" : "Send",
-                      tone: "primary" as const,
-                      disabled: !staged,
-                      key: "Enter",
-                      intent: { type: "flow" as const, action: "resolve" as const },
-                    },
+                  : research?.pass && !staged
+                    ? {
+                        // Nothing chosen in the tree is a pass, and the main button says so.
+                        label: recording ? "Record · research nothing" : "Research nothing",
+                        tone: "primary" as const,
+                        key: "Enter",
+                        intent: { type: "flow" as const, action: "resolve" as const },
+                      }
+                    : {
+                        // A draft sends nothing: the answer is recorded.
+                        label: recording ? "Record" : "Send",
+                        tone: "primary" as const,
+                        disabled: !staged,
+                        key: "Enter",
+                        intent: { type: "flow" as const, action: "resolve" as const },
+                      },
             ]
           : []),
       ],

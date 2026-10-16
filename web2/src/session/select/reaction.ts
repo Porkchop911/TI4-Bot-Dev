@@ -1,7 +1,7 @@
 // A reaction window: what opened it, in game values, and what the viewer can use now, as printed.
 // The engine says both (`reaction` of the update); this file words the trigger and the rows.
 // No rule is decided here, and no rule text is written here.
-import type { MenuRowView, OfferMode, OfferView } from "../../model";
+import type { BlockView, InterruptView, MenuRowView, OfferMode, OfferView } from "../../model";
 import type {
   Catalog,
   Choice,
@@ -11,7 +11,9 @@ import type {
   SessionUpdate,
 } from "../wire";
 import { plain, timing } from "./components";
-import { factionName, strategyCard, humanizeId } from "./names";
+import { systemLabel } from "./movement";
+import { factionName, humanizeId, phaseName, seatLabel, strategyCard } from "./names";
+import { printedSource } from "./printed";
 
 const KEYS = "123456789";
 
@@ -103,6 +105,8 @@ export interface ReactionWindow {
   rows: MenuRowView[];
   /** The option that passes. Null: the window must be answered. */
   pass: string | null;
+  /** What the main button says for the staged row: "Play Sabotage", "Use T'ro". Null: none is staged. */
+  use: string | null;
 }
 
 /**
@@ -147,9 +151,134 @@ export function selectReaction(
         intent: { type: "chooseOption" as const, option: option.id },
       })),
   ];
+  // A slot of several action cards is one option: the game asks which card after it.
+  const using = facts.offers.filter((item) => item.option === staged);
+  const use = !staged
+    ? null
+    : using.length === 1
+      ? `${using[0].kind === "action_card" ? "Play" : "Use"} ${using[0].name}`
+      : using.length
+        ? "Play an action card"
+        : "Use";
   return {
     heading: triggerText(facts.trigger, update, catalog),
     rows: rows.map((row, index) => ({ key: KEYS[index] ?? "", ...row })),
     pass: choice.options.find((option) => option.kind === "decline")?.id ?? null,
+    use,
+  };
+}
+
+/**
+ * The window on top of the action panel: the trigger and the rows. A window of any question has
+ * this shape (a window in a space combat too); the main button of the footer is Pass or Use.
+ */
+export function interruptOf(window: ReactionWindow, system?: string): InterruptView {
+  return {
+    eyebrow: `Reaction · ${window.heading}`,
+    link: system ? [`sys:${system}`] : [],
+    blocks: [{ kind: "menu", rows: window.rows }],
+    actions: [],
+  };
+}
+
+/** The action that a window is over, as the panel shows it under the window. */
+export interface ReactedAction {
+  title: string;
+  subtitle: string;
+  heading: string;
+  /** What stays in view: the card that was played, the active system. */
+  blocks: BlockView[];
+}
+
+/** The events of a tactical action: the window is over the action of the seat in its system. */
+const TACTICAL = new Set(["system_activated", "ship_moved", "action_completed"]);
+const TACTICAL_EVENTS = new Set([
+  "SYSTEM_ACTIVATED",
+  "TACTICAL_ACTION_ENDED",
+  "MOVEMENT_FINISHED",
+  "SHIP_MOVED",
+]);
+
+/**
+ * The action that opened the window, from what the engine says of its trigger: a played card
+ * as printed, a strategic action with its card, a tactical action with its system. Anything else
+ * is the turn of the seat, or the phase.
+ */
+export function reactedAction(
+  update: SessionUpdate,
+  trigger: DecisionTrigger | undefined,
+  catalog: Catalog | null,
+): ReactedAction {
+  const viewer = update.viewer.role === "player" ? update.viewer.seat : null;
+  const actor = trigger?.actor ?? null;
+  const mine = !!actor && actor === viewer;
+  const who = actor ? (mine ? "You" : seatLabel(update, actor, catalog)) : "";
+  const card = trigger?.card;
+  const kind = trigger?.kind;
+  if (
+    card &&
+    (kind === "action_card_played" ||
+      kind === "action_card_discarded" ||
+      trigger.event_type === "ACTION_CARD_PLAYED" ||
+      trigger.event_type === "ACTION_CARD_DISCARDED")
+  ) {
+    const printed = printedSource({ ActionCard: card }, catalog) ?? {
+      name: humanizeId(card),
+      type: "Action card",
+      text: "",
+    };
+    return {
+      title: "Action card",
+      subtitle: who ? `${printed.name} · ${who}` : printed.name,
+      heading: printed.name,
+      blocks: [
+        { kind: "source", ...printed },
+        // A window "when" a card is played is before the card does anything.
+        ...(trigger.relation === "when"
+          ? [{ kind: "note" as const, tone: "quiet" as const, text: "Not resolved yet." }]
+          : []),
+      ],
+    };
+  }
+  if (
+    card &&
+    (kind === "strategic_action_began" || trigger.event_type === "STRATEGIC_ACTION_BEGAN")
+  ) {
+    const printed = printedSource({ StrategyCard: { card, secondary: false } }, catalog);
+    const name = printed?.name ?? strategyCard(card, catalog).name;
+    return {
+      title: "Strategic action",
+      subtitle: who ? `${name} · ${who}` : name,
+      heading: name,
+      blocks: printed?.text ? [{ kind: "source", ...printed }] : [],
+    };
+  }
+  const system = trigger?.system ?? update.view.board.active_system ?? undefined;
+  const tactical =
+    !!trigger && (TACTICAL.has(trigger.kind) || TACTICAL_EVENTS.has(trigger.event_type));
+  if (actor && system && (tactical || update.view.board.active_system)) {
+    const tiles = new Map(
+      (update.view.board.map_tiles ?? []).map((tile) => [tile.system_id, tile]),
+    );
+    const label = systemLabel(tiles, system);
+    return {
+      title: "Tactical action",
+      subtitle: `${label} · ${who}`,
+      heading: mine ? "Your tactical action" : `${who}’s tactical action`,
+      blocks: [
+        {
+          kind: "card",
+          title: "Active system",
+          rows: [{ icon: "token", title: [label], link: [`sys:${system}`] }],
+        },
+      ],
+    };
+  }
+  const phase = phaseName(update.view.phase);
+  return {
+    title: phase,
+    subtitle: "",
+    heading: actor ? (mine ? "Your turn" : `${who}’s turn`) : phase,
+    blocks: [],
   };
 }

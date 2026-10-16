@@ -1855,32 +1855,48 @@ test("the sheet of a player has its abilities, leaders and used cards as printed
   await expect(other.getByRole("region", { name: "Leaders" }).getByRole("article")).toHaveCount(3);
 });
 
-test("a reaction window has its trigger and its cards as printed, and each has its setting", async ({
+test("a reaction window is on top of the action of another seat, has its cards as printed, and each has its setting", async ({
   page,
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   // Seat G is Sardakk: it holds Reverse Engineer, and the first seat of the round discards a card.
   await page.goto("/?scenario=late-game&humans=64");
-  await expect(heading(page)).toHaveText(/^After .+ discards .+$/);
+  const window = panel(page).getByRole("group", { name: /^Reaction · After .+ discards .+$/ });
+  await expect(window).toBeVisible();
+  // The action of the other seat stays under the window: the card that it played, as printed.
+  const played = /^Reaction · After .+ discards (.+)$/.exec(
+    (await window.getAttribute("aria-label")) ?? "",
+  )![1];
+  await expect(heading(page)).toHaveText(played);
+  await expect(panel(page).getByText("Action card", { exact: true }).first()).toBeVisible();
   // No id of the engine is on the screen.
   await expect(panel(page)).not.toContainText("ACTION_CARD_DISCARDED");
-  const row = panel(page).getByRole("button", { name: "Reverse Engineer" });
+  const row = window.getByRole("button", { name: "Reverse Engineer" });
   await expect(row).toBeVisible();
-  await expect(panel(page)).toContainText("Take that action card from the discard pile");
+  await expect(window).toContainText("Take that action card from the discard pile");
   // The decline is the main button, and no row.
   await expect(send(page)).toHaveText(/Pass/);
   await expect(panel(page).getByRole("button", { name: "Decline" })).toHaveCount(0);
-  const setting = panel(page).getByRole("combobox", { name: "Offer Reverse Engineer" });
+  const setting = window.getByRole("combobox", { name: "Offer Reverse Engineer" });
   await expect(setting.getByRole("option")).toHaveText(["Offered", "Only on my turns", "Never"]);
+  await fitsHeight(page);
   await page.screenshot({ path: "shots/local/reaction-window.png", animations: "disabled" });
+  // A row stages its card: the main button plays it, Esc clears it.
+  await page.keyboard.press("1");
+  await expect(send(page)).toHaveText(/Play Reverse Engineer/);
+  await expect(page.getByText("Not sent", { exact: true })).toBeVisible();
+  await fitsHeight(page);
+  await page.screenshot({ path: "shots/local/reaction-staged.png", animations: "disabled" });
+  await page.keyboard.press("Escape");
+  await expect(send(page)).toHaveText(/Pass/);
 
   // The setting is of the windows after this one: the window stays open, with what is set.
   await setting.selectOption("ownturn");
   await expect(page.getByRole("status").filter({ hasText: "Reverse Engineer" })).toContainText(
     "offered on your turns only",
   );
-  await expect(heading(page)).toHaveText(/^After .+ discards .+$/);
+  await expect(window).toBeVisible();
   await expect(setting).toHaveValue("ownturn");
   await expect(send(page)).toHaveText(/Pass/);
 

@@ -471,3 +471,114 @@ it("shows the fleet supply that a unit is removed for, as the engine counts it",
     gauges: [{ label: "Fleet supply in Jord - Sol · #01", used: 3, total: 2 }],
   });
 });
+
+it("puts a reaction window on top of the action of another seat: Pass, or play the staged card", () => {
+  const printed = {
+    content: "",
+    exploration: { cards: [], decks: {}, attachments: [] },
+    components: {
+      ...NO_COMPONENTS,
+      action_cards: [
+        {
+          id: "mining_initiative",
+          name: "Mining Initiative",
+          phase: "action",
+          window: "",
+          group: "",
+          text: "Gain trade goods equal to the resource value of 1 planet you control.",
+        },
+      ],
+    },
+    records: NO_RECORDS,
+  };
+  const window: SessionUpdate = {
+    ...asking({
+      prompt: "reaction",
+      options: [
+        { id: "reaction:sabotage", kind: "action_card", label: "play sabotage", payload: {} },
+        { id: "decline", kind: "decline", label: "decline", payload: {} },
+      ],
+    }),
+    reaction: {
+      trigger: {
+        kind: "action_card_played",
+        event_type: "ACTION_CARD_PLAYED",
+        event_id: 7,
+        relation: "when",
+        actor: "b",
+        card: "mining_initiative",
+      },
+      own_turn_applies: true,
+      offers: [
+        {
+          option: "reaction:sabotage",
+          key: "Sabotage",
+          kind: "action_card",
+          name: "Sabotage",
+          text: "Cancel that action card.",
+        },
+      ],
+    },
+  };
+  const view = selectShell(window, local(), printed).action;
+  if (view.kind !== "flow") {
+    throw new Error("a window is a flow");
+  }
+  // The action of the other seat stays in view: its card as printed, not resolved yet.
+  expect(view.title).toBe("Action card");
+  expect(view.subtitle).toBe("Mining Initiative · Hacan");
+  expect(view.heading).toBe("Mining Initiative");
+  expect(view.pill?.label).toBe("Your decision · Reaction");
+  expect(view.blocks).toEqual([
+    {
+      kind: "source",
+      name: "Mining Initiative",
+      type: "Action card",
+      text: "Gain trade goods equal to the resource value of 1 planet you control.",
+    },
+    { kind: "note", tone: "quiet", text: "Not resolved yet." },
+  ]);
+  // The window is on top: the trigger, and a row for each card, with its setting.
+  expect(view.interrupt?.eyebrow).toBe("Reaction · When Hacan plays Mining Initiative");
+  const [menuBlock] = view.interrupt!.blocks;
+  expect(menuBlock.kind === "menu" && menuBlock.rows.map((row) => [row.key, row.title])).toEqual([
+    ["1", "Sabotage"],
+  ]);
+  expect(view.footer.actions.map((item) => [item.label, item.key, item.intent])).toEqual([
+    ["Pass", "Enter", { type: "reaction", action: "pass" }],
+  ]);
+  const staged = selectShell(window, local({ staged: "reaction:sabotage" }), printed).action;
+  if (staged.kind !== "flow") {
+    throw new Error("a window is a flow");
+  }
+  expect(staged.badge).toEqual({ tone: "draft", label: "Not sent" });
+  expect(staged.footer.note).toBe("Selected: Sabotage");
+  expect(staged.footer.actions.map((item) => [item.label, item.key, item.intent])).toEqual([
+    ["Clear", "Escape", { type: "clearChoice" }],
+    ["Play Sabotage", "Enter", { type: "reaction", action: "play" }],
+  ]);
+  // A window in a tactical action is over the active system of the seat.
+  const tactical = selectShell(
+    {
+      ...window,
+      reaction: {
+        ...window.reaction!,
+        trigger: {
+          kind: "action_completed",
+          event_type: "TACTICAL_ACTION_ENDED",
+          event_id: 9,
+          relation: "after",
+          actor: "b",
+          system: "01",
+        },
+      },
+    },
+    local(),
+    printed,
+  ).action;
+  expect(tactical).toMatchObject({
+    title: "Tactical action",
+    heading: "Hacan’s tactical action",
+    interrupt: { link: ["sys:01"] },
+  });
+});

@@ -579,7 +579,7 @@ test("phone: the sheet of a player has its cards, and nothing is cut at the side
   await page.screenshot({ path: "shots/local/phone-player-sheet.png", animations: "disabled" });
 });
 
-test("phone: a reaction window has its card, its setting and Pass, and nothing is cut at the side", async ({
+test("phone: a reaction window is on top of the action of another seat, with its card, its setting and Pass, and nothing is cut at the side", async ({
   page,
 }) => {
   // Seat G is Sardakk: it holds Reverse Engineer, and the first seat of the round discards a card.
@@ -589,16 +589,34 @@ test("phone: a reaction window has its card, its setting and Pass, and nothing i
     .getByRole("navigation", { name: "Panes" })
     .getByRole("button", { name: "Action" })
     .click();
-  await expect(panel.getByRole("heading").first()).toHaveText(/^After .+ discards .+$/);
-  await expect(panel.getByRole("button", { name: "Reverse Engineer" })).toBeVisible();
+  const window = panel.getByRole("group", { name: /^Reaction · After .+ discards .+$/ });
+  await expect(window).toBeVisible();
+  await expect(window.getByRole("button", { name: "Reverse Engineer" })).toBeVisible();
   await expect(panel.getByRole("combobox", { name: "Offer Reverse Engineer" })).toBeInViewport({
     ratio: 1,
   });
   await expect(page.locator('footer button[aria-keyshortcuts="Enter"]')).toHaveText(/Pass/);
+  // Nothing is cut at the side, and the main button is in view.
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
     page.viewportSize()!.width,
   );
+  expect(
+    await panel
+      .locator("> div.overflow-y-auto")
+      .evaluate((element) => element.scrollWidth - element.clientWidth),
+  ).toBeLessThanOrEqual(0);
   await page.screenshot({ path: "shots/phone/local/reaction-window.png", animations: "disabled" });
+  // A tap on the row stages the card: the main button plays it.
+  await window.getByRole("button", { name: "Reverse Engineer" }).click();
+  await expect(page.locator('footer button[aria-keyshortcuts="Enter"]')).toHaveText(
+    /Play Reverse Engineer/,
+  );
+  for (const button of await page.locator("main > footer button").all()) {
+    await expect(button).toBeInViewport({ ratio: 1 });
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
+    page.viewportSize()!.width,
+  );
 });
 
 test("phone: the technology tree has its columns in the width, and a cell stages a research", async ({
