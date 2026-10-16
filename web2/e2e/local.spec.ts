@@ -140,9 +140,14 @@ async function fitsHeight(page: Page) {
   expect(overflow, "the step content needs vertical scroll").toBeLessThanOrEqual(0);
 }
 
+/** The button that places a gained command token, while the pools of Leadership wait for one. */
+const tokensToPlace = (page: Page) =>
+  panel(page).getByRole("button", { name: "Add tactic pool token" }).and(page.locator(":enabled"));
+
 /**
- * Answers the open choice: with the first system when it is on the board, with nothing when the
- * main button already has something to send (a movement of no ship), or else with its first row.
+ * Answers the open choice: with the first system when it is on the board, with the gained tokens
+ * in the tactic pool for the pools of Leadership, with nothing when the main button already has
+ * something to send (a movement of no ship), or else with its first row.
  */
 async function answer(page: Page) {
   const saved = await savedLine(page);
@@ -160,8 +165,14 @@ async function answer(page: Page) {
     return;
   } else if (await system.count()) {
     await system.first().click();
+  } else if (await tokensToPlace(page).count()) {
+    // The command pools of Leadership: each gained token goes into the tactic pool.
+    while (await send(page).isDisabled()) {
+      await tokensToPlace(page).click();
+    }
   } else if (await send(page).isDisabled()) {
-    await panel(page).getByRole("button", { pressed: false }).first().click();
+    // A row of the choice: a button that can be pressed (not the rules behind the heading).
+    await panel(page).locator('button[aria-pressed="false"]:enabled').first().click();
   }
   await expect(send(page)).toBeEnabled();
   await send(page).click();
@@ -492,6 +503,9 @@ test("an exported game is imported in another browser and opens at the same choi
     await answer(page);
   }
   const open = await heading(page).textContent();
+  // A plan (the pools of Leadership) is sent as several answers, so the count is read.
+  const answers = Number(/(\d+) answers saved/.exec(await savedLine(page))?.[1]);
+  expect(answers).toBeGreaterThanOrEqual(6);
   await openSettings(page);
   const [download] = await Promise.all([
     page.waitForEvent("download"),
@@ -507,7 +521,7 @@ test("an exported game is imported in another browser and opens at the same choi
   await other.getByLabel("Saved game file").setInputFiles(path);
   await other.waitForURL((url) => url.searchParams.has("save"));
   await expect.poll(() => savedLine(other)).toContain("seed 5");
-  await expect.poll(() => savedLine(other)).toContain("6 answers saved");
+  await expect.poll(() => savedLine(other)).toContain(`${answers} answers saved`);
   await expect(heading(other)).toHaveText(open ?? "");
 
   // A file that is no saved game is refused, and says why.
@@ -521,7 +535,7 @@ test("an exported game is imported in another browser and opens at the same choi
   const imported = other
     .getByRole("region", { name: "Saved games" })
     .getByRole("link", { name: /^Imported game/ });
-  await expect(imported).toContainText("6 answers");
+  await expect(imported).toContainText(`${answers} answers`);
   await imported.click();
   await expect(heading(other)).toHaveText(open ?? "");
   await other.context().close();
