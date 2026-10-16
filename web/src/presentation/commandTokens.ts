@@ -76,8 +76,13 @@ export interface CommandTokenView {
   current: Pools;
   /** Tokens left in reinforcements. */
   reinforcements: number | null;
-  /** Gain: tokens to place in this window. Redistribute: every token held. */
+  /** Gain: tokens to place in this window. Redistribute: every token held, gained ones included. */
   total: number;
+  /**
+   * Redistribute: tokens gained in this window (the status phase) and not yet in `current`, so
+   * `total` is the held tokens plus these. 0 otherwise.
+   */
+  gained: number;
   /** Redistribute: the arrangement option ids the engine offers. Restack: the move ids offered now. */
   arrangements: ReadonlySet<string>;
   /** Gain: the influence purchase that follows (or is asked first), planned on the same screen. */
@@ -120,7 +125,7 @@ export function describeCommandTokens(
     // The yes/no purchase question itself: nothing free to place, only what can be bought.
     const ids = new Set(choice.options.map((option) => option.id));
     if (!canBatch || !purchase || !ids.has("yes") || !ids.has("no")) return null;
-    return { mode: "gain", current: held, reinforcements, total: 0, arrangements: new Set(), purchase };
+    return { mode: "gain", current: held, reinforcements, total: 0, gained: 0, arrangements: new Set(), purchase };
   }
   if (details.mode === "gain") {
     const total = asCount(details.tokens_to_place);
@@ -128,7 +133,7 @@ export function describeCommandTokens(
     if (!canBatch || !total || !TOKEN_POOLS.every((pool) => ids.has(gainOptionId(pool)))) {
       return null;
     }
-    return { mode: "gain", current: held, reinforcements, total, arrangements: new Set(), purchase };
+    return { mode: "gain", current: held, reinforcements, total, gained: 0, arrangements: new Set(), purchase };
   }
   if (details.mode === "restack") {
     const total = asCount(details.total);
@@ -136,7 +141,15 @@ export function describeCommandTokens(
       choice.options.filter((option) => option.kind === "redistribute").map((option) => option.id),
     );
     if (!total || moves.size === 0) return null;
-    return { mode: "restack", current: held, reinforcements, total, arrangements: moves, purchase: null };
+    return {
+      mode: "restack",
+      current: held,
+      reinforcements,
+      total,
+      gained: 0,
+      arrangements: moves,
+      purchase: null,
+    };
   }
   if (details.mode === "redistribute") {
     const total = asCount(details.total);
@@ -149,6 +162,7 @@ export function describeCommandTokens(
       current: held,
       reinforcements,
       total,
+      gained: asCount(details.gained) ?? 0,
       arrangements,
       purchase: null,
     };

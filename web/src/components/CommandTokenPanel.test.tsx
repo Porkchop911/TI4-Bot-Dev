@@ -136,6 +136,58 @@ describe("command token panel (redistribute)", () => {
     expect(screen.getByTestId("token-confirm")).toBeDisabled();
     expect(screen.getByTestId("token-blocker")).toBeInTheDocument();
   });
+
+  it("has no gained split without a gain", () => {
+    render(<PendingChoiceModal choice={redistributeChoice()} onSubmit={vi.fn()} />);
+    expect(screen.queryByTestId("token-gained-split")).not.toBeInTheDocument();
+  });
+});
+
+// The status phase: 6 held (2|3|1) and 2 gained, one redistribution of 8.
+const statusChoice = (): PendingChoiceDto => ({
+  actor: "seat_1",
+  nonce: "status-1",
+  prompt: "redistribute your command tokens",
+  options: ["4|3|1", "2|5|1", "2|3|3", "3|4|1"].map((id) => ({
+    id,
+    kind: "redistribute",
+    label: id,
+    payload: {},
+  })),
+  context: { subtype: "status_redistribute_tokens" } as PendingChoiceDto["context"],
+  details: {
+    kind: "command_tokens",
+    mode: "redistribute",
+    pools: { tactic: 2, fleet: 3, strategic: 1 },
+    total: 8,
+    gained: 2,
+    reinforcements: 6,
+  },
+});
+
+describe("command token panel (status phase redistribution with gained tokens)", () => {
+  it("shows the held and gained split next to the total", () => {
+    render(<PendingChoiceModal choice={statusChoice()} onSubmit={vi.fn()} />);
+    expect(screen.getByTestId("token-total")).toHaveTextContent("8");
+    expect(screen.getByTestId("token-gained-split")).toHaveTextContent("(6 held + 2 gained)");
+    expect(screen.getByTestId("token-remaining")).toHaveTextContent("2");
+  });
+
+  it("cannot confirm until the gained tokens are placed, then sends the matching option id", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<PendingChoiceModal choice={statusChoice()} onSubmit={onSubmit} />);
+    expect(screen.getByTestId("token-count-tactic")).toHaveTextContent("2");
+    expect(screen.getByTestId("token-confirm")).toBeDisabled();
+    await click("token-plus-tactic");
+    expect(screen.getByTestId("token-remaining")).toHaveTextContent("1");
+    expect(screen.getByTestId("token-confirm")).toBeDisabled();
+    await click("token-plus-fleet");
+    expect(screen.getByTestId("token-remaining")).toHaveTextContent("0");
+    expect(screen.getByTestId("token-plus-strategic")).toBeDisabled();
+    expect(screen.getByTestId("token-confirm")).toBeEnabled();
+    await click("token-confirm");
+    expect(onSubmit).toHaveBeenCalledWith("3|4|1");
+  });
 });
 
 const purchase = {

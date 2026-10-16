@@ -167,6 +167,48 @@ describe("redistribution staging", () => {
   });
 });
 
+describe("redistribution with gained tokens (status phase)", () => {
+  // Held 3|4|2 = 9, gained 2: the engine offers arrangements of 11.
+  const statusChoice = (details: Record<string, unknown> = { gained: 2 }) => ({
+    options: ["5|4|2", "3|6|2", "3|4|4"].map((id) => ({ id, kind: "redistribute", label: id, payload: {} })),
+    details: {
+      kind: "command_tokens",
+      mode: "redistribute",
+      pools: { tactic: 3, fleet: 4, strategic: 2 },
+      reinforcements: 5,
+      total: 11,
+      ...details,
+    },
+  });
+  const view = describeCommandTokens(statusChoice(), false)!;
+
+  it("reads the gained count, and 0 when the details leave it out", () => {
+    expect(view.gained).toBe(2);
+    expect(view.total).toBe(11);
+    expect(describeCommandTokens(statusChoice({}), false)!.gained).toBe(0);
+    expect(describeCommandTokens(redistribute(), false)!.gained).toBe(0);
+    expect(describeCommandTokens(gain(), true)!.gained).toBe(0);
+  });
+
+  it("starts at the held pools with the gained tokens still to place", () => {
+    const staging = initialStaging(view);
+    expect(staging).toEqual({ tactic: 3, fleet: 4, strategic: 2 });
+    expect(tokensRemaining(view, staging)).toBe(2);
+    expect(canConfirmTokens(view, staging)).toBe(false);
+    expect(confirmBlocker(view, staging)).toContain("2 more tokens");
+  });
+
+  it("confirms the matching arrangement once the gained tokens are placed", () => {
+    let staging = addToken(view, initialStaging(view), "fleet");
+    expect(tokensRemaining(view, staging)).toBe(1);
+    staging = addToken(view, staging, "fleet");
+    expect(tokensRemaining(view, staging)).toBe(0);
+    expect(addToken(view, staging, "tactic")).toEqual(staging);
+    expect(canConfirmTokens(view, staging)).toBe(true);
+    expect(tokenOutcome(view, staging)).toEqual({ kind: "option", optionId: "3|6|2" });
+  });
+});
+
 const purchaseDetails = (over: Record<string, unknown> = {}) => ({
   cost: 3,
   influence_available: 9,
@@ -329,6 +371,7 @@ describe("payment override", () => {
     current: { tactic: 3, fleet: 4, strategic: 2 },
     reinforcements: 20,
     total: 0,
+    gained: 0,
     arrangements: new Set(),
     purchase: {
       cost: 3,
