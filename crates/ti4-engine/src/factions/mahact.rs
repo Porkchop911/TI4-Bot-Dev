@@ -463,12 +463,17 @@ fn secondary_waivers(
     }
     tokens_on_board(state, primary)
         .into_iter()
-        .map(|system| SecondaryWaiver {
-            id: format!("{AGENT_WAIVER_PREFIX}{system}"),
-            label: format!(
-                "exhaust Jae Mir Kan: use {primary}'s command token from {} instead of a token",
+        .map(|system| {
+            let worded = crate::phrases::Phrase::of(&format!(
+                "exhaust Jae Mir Kan: use {{primary}}'s command token from {} instead of a token",
                 system_name(&system)
-            ),
+            ))
+            .with("primary", primary, crate::phrases::Subject::seat(primary));
+            SecondaryWaiver {
+                id: format!("{AGENT_WAIVER_PREFIX}{system}"),
+                label: worded.label(),
+                worded: Some(worded),
+            }
         })
         .collect()
 }
@@ -1229,6 +1234,13 @@ mod tests {
         assert!(
             waivers[0].label.contains("(system 27)") && !waivers[0].label.contains("from 27"),
             "the system is named by its planets: {}",
+            waivers[0].label
+        );
+        // The label names the active player by id; the waiver says which seat it is.
+        let phrase = waivers[0].worded.as_ref().expect("named").phrase();
+        assert_eq!(phrase.refs["primary"], crate::phrases::Subject::seat(&b()));
+        assert_eq!(
+            crate::phrases::rendered(&phrase, &[("primary", b().as_str())]),
             waivers[0].label
         );
         assert!(secondary_waivers(&state, content(), &c(), &b(), "Trade").is_empty());

@@ -1954,21 +1954,17 @@ fn politics_primary(
                 )
             })
             .collect();
+        let worded = seat_phrases(&named, "{seat} becomes speaker");
         let choice = Choice::new(
             player.clone(),
             "who becomes speaker",
-            named
+            worded
                 .iter()
-                .map(|(name, _)| {
-                    ChoiceOption::labelled(
-                        name.clone(),
-                        "speaker",
-                        format!("{name} becomes speaker"),
-                    )
-                })
+                .map(|(name, worded)| ChoiceOption::labelled(name, "speaker", worded.label()))
                 .collect(),
         )
         .detailed("seats", seat_map(&named))
+        .phrased_options(&worded)
         .hinted_fields(&PoliticsHints {
             draws: POLITICS_DRAWS,
             looks: state.agenda_deck.len().min(POLITICS_LOOKS),
@@ -2038,6 +2034,27 @@ fn politics_primary(
 }
 
 /// Display only: which seat each named option stands for, so a client can show its standing.
+/// An option for each named seat, by its id (the faction name), whose label is `template` with
+/// `{seat}` the faction name and whose phrase names the seat.
+fn seat_phrases(
+    named: &[(String, PlayerId)],
+    template: &str,
+) -> Vec<(String, crate::phrases::Worded)> {
+    named
+        .iter()
+        .map(|(name, seat)| {
+            (
+                name.clone(),
+                crate::phrases::Phrase::of(template).with(
+                    "seat",
+                    name,
+                    crate::phrases::Subject::seat(seat),
+                ),
+            )
+        })
+        .collect()
+}
+
 fn seat_map(named: &[(String, PlayerId)]) -> serde_json::Value {
     serde_json::Value::Object(
         named
@@ -2766,18 +2783,13 @@ fn trade_primary(
             .iter()
             .map(|other| (crate::promissory::faction_name(state, other), other.clone()))
             .collect();
+        let worded = seat_phrases(&named, "{seat} replenishes commodities");
         let choice = Choice::new(
             player.clone(),
             "let another player replenish commodities",
-            named
+            worded
                 .iter()
-                .map(|(name, _)| {
-                    ChoiceOption::labelled(
-                        name.clone(),
-                        "replenish",
-                        format!("{name} replenishes commodities"),
-                    )
-                })
+                .map(|(name, worded)| ChoiceOption::labelled(name, "replenish", worded.label()))
                 .chain(std::iter::once(ChoiceOption::labelled(
                     "done",
                     crate::choice::DECLINE_KIND,
@@ -2786,6 +2798,7 @@ fn trade_primary(
                 .collect(),
         )
         .detailed("seats", seat_map(&named))
+        .phrased_options(&worded)
         .hinted_fields(&TradeReplenishHints {
             commodities: commodity_map(state, content, &named),
             own,
@@ -4397,6 +4410,52 @@ mod tests {
         );
         // The chosen name maps back to the seat that plays it.
         assert_eq!(state.speaker, other);
+    }
+
+    /// The speaker's and the replenish's options name their seat (`details.phrases`), where the
+    /// label says the faction.
+    #[test]
+    fn the_speaker_and_the_replenish_options_name_their_seat() {
+        let content = ContentStore::embedded();
+        let mut state = game(&["a", "b"]);
+        let player = PlayerId::new("a");
+        let other = PlayerId::new("b");
+        state.player_mut(&player).unwrap().faction = ti4_model::id::FactionId::new("sol");
+        state.player_mut(&other).unwrap().faction = ti4_model::id::FactionId::new("hacan");
+        state.player_mut(&other).unwrap().commodities = 0;
+        let seat = crate::phrases::Subject::seat(&other);
+
+        let (mut table, seen) = crate::phrases::capturing(&["hacan", "top", "bottom"]);
+        primary(
+            &mut state,
+            content,
+            POK,
+            None,
+            &mut table,
+            &player,
+            &card("Politics"),
+        )
+        .unwrap();
+        let (mut trade, traded) = crate::phrases::capturing(&["hacan"]);
+        trade_primary(&mut state, content, POK, None, &mut trade, &player).unwrap();
+
+        for (asked, prompt, text) in [
+            (&seen, "who becomes speaker", "{seat} becomes speaker"),
+            (
+                &traded,
+                "let another player replenish commodities",
+                "{seat} replenishes commodities",
+            ),
+        ] {
+            let asked = asked.borrow();
+            let choice = asked
+                .iter()
+                .find(|choice| choice.prompt == prompt)
+                .unwrap_or_else(|| panic!("{prompt} asked"));
+            let hints = crate::phrases::phrased(choice);
+            assert_eq!(hints.options["hacan"].text, text);
+            assert_eq!(hints.options["hacan"].refs["seat"], seat);
+        }
     }
 
     #[test]

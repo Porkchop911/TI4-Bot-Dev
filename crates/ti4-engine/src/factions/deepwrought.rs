@@ -161,6 +161,26 @@ pub(crate) fn ask(
         .map_err(TimingError::IllegalChoice)
 }
 
+/// [`ask`] for a question whose texts name seats or notes by id: `prompt` and `worded` say what
+/// they name (`details.phrases`).
+pub(crate) fn ask_phrased(
+    context: &mut TimingContext<'_>,
+    who: &PlayerId,
+    prompt: &crate::phrases::Worded,
+    card: &str,
+    subtype: &str,
+    options: Vec<ChoiceOption>,
+    worded: &[(String, crate::phrases::Worded)],
+) -> Result<ChoiceOption, TimingError> {
+    let choice = Choice::new(who.clone(), prompt.label(), options)
+        .phrased_prompt(prompt)
+        .phrased_options(worded)
+        .contextualized(decision(context.state, who, card, subtype));
+    context
+        .ask_seeing(&choice)
+        .map_err(TimingError::IllegalChoice)
+}
+
 /// A question about one planet, so a viewer can point at it.
 pub(crate) fn ask_about(
     context: &mut TimingContext<'_>,

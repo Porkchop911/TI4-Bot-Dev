@@ -65,6 +65,7 @@ pub mod observation;
 pub mod opening;
 pub mod payment;
 pub mod phase;
+pub mod phrases;
 pub mod planets;
 pub mod preview;
 pub mod production;

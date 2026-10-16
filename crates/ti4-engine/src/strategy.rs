@@ -300,27 +300,37 @@ fn with_waivers(
     if tokenless {
         choice.options.retain(|option| option.id != "yes");
     }
-    choice.options.extend(waivers);
+    let phrased: Vec<(String, crate::phrases::Worded)> = waivers
+        .iter()
+        .filter_map(|(option, worded)| Some((option.id.clone(), worded.clone()?)))
+        .collect();
     choice
+        .options
+        .extend(waivers.into_iter().map(|(option, _)| option));
+    choice.phrased_options(&phrased)
 }
 
-/// Token-free ways for `follower` to follow `card` (faction waivers), as offered options.
+/// Token-free ways for `follower` to follow `card` (faction waivers), as offered options, with
+/// what each label names by id.
 fn waiver_options(
     state: &GameState,
     content: &ContentStore,
     follower: &PlayerId,
     primary: &PlayerId,
     card: &StrategyCardId,
-) -> Vec<ChoiceOption> {
+) -> Vec<(ChoiceOption, Option<crate::phrases::Worded>)> {
     let name = crate::strategy_cards::card_name(content, card.as_str())
         .unwrap_or_else(|| card.to_string());
     crate::factions::hooks_strategy::secondary_waivers(state, content, follower, primary, &name)
         .into_iter()
         .map(|(index, waiver)| {
-            ChoiceOption::labelled(
-                format!("{WAIVED_SECONDARY_PREFIX}{index}|{}", waiver.id),
-                STRATEGY_KIND,
-                waiver.label,
+            (
+                ChoiceOption::labelled(
+                    format!("{WAIVED_SECONDARY_PREFIX}{index}|{}", waiver.id),
+                    STRATEGY_KIND,
+                    waiver.label,
+                ),
+                waiver.worded,
             )
         })
         .collect()
@@ -1896,9 +1906,12 @@ mod bf00d_tests {
         let hooks = StrategyHooks {
             secondary_waivers: Some(|_, _, follower, primary, card| {
                 if follower.as_str() == "b" && primary.as_str() == "a" && card == "Imperial" {
+                    let worded = crate::phrases::Phrase::of("follow {primary} using Acquiescence")
+                        .with("primary", primary, crate::phrases::Subject::seat(primary));
                     vec![SecondaryWaiver {
                         id: "acq".to_owned(),
-                        label: "follow using Acquiescence".to_owned(),
+                        label: worded.label(),
+                        worded: Some(worded),
                     }]
                 } else {
                     Vec::new()
@@ -1930,6 +1943,16 @@ mod bf00d_tests {
                 .find(|id| id.starts_with(WAIVED_SECONDARY_PREFIX) && id.ends_with("|acq"))
                 .map(|id| (*id).to_owned())
                 .expect("the waiver is offered");
+            // What its label names rides with the question (`details.phrases`).
+            let phrase = &pending.phrases().options[&waived];
+            assert_eq!(
+                pending.option(&waived).map(|option| option.label.as_str()),
+                Some("follow a using Acquiescence")
+            );
+            assert_eq!(
+                phrase.refs["primary"],
+                crate::phrases::Subject::seat(&pid("a"))
+            );
             let resolved = window
                 .take_choice(
                     &mut state,
