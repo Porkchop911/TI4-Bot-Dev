@@ -90,6 +90,7 @@ export type { HitDetail } from "./HitDetail.ts";
 export type { HitRestriction } from "./HitRestriction.ts";
 export type { HomePlanet } from "./HomePlanet.ts";
 export type { HostSave } from "./HostSave.ts";
+export type { ImperialHints } from "./ImperialHints.ts";
 export type { InitialSnapshotMsg } from "./InitialSnapshotMsg.ts";
 export type { InvasionDie } from "./InvasionDie.ts";
 export type { InvasionFacts } from "./InvasionFacts.ts";

@@ -142,15 +142,9 @@ fn secondary_choice(
     if crate::strategy_cards::card_name(content, card.as_str()).as_deref() == Some("Imperial") {
         // Display only: the secret objectives that the follower holds now, scored ones included,
         // against the limit, as the primary's question says them.
-        question = question
-            .detailed(
-                "secrets_held",
-                crate::secrets::held_count(state, content, player),
-            )
-            .detailed(
-                "secrets_max",
-                crate::strategy_cards::secret_limit(state, player),
-            );
+        question = question.hinted_fields(&crate::strategy_cards::imperial_hints(
+            state, content, player,
+        ));
     }
     question
         .detailed("kind", "strategy_secondary")
@@ -1209,6 +1203,14 @@ mod tests {
         let choice = window
             .pending_choice(&state, ContentStore::embedded(), POK)
             .expect("the follower is offered the secondary");
+        assert_eq!(
+            choice.hint_fields::<crate::strategy_cards::ImperialHints>(),
+            Some(crate::strategy_cards::ImperialHints {
+                secrets_held: 1,
+                secrets_max: crate::secrets::HAND_LIMIT,
+            })
+        );
+        // The JSON keys that the clients read.
         assert_eq!(choice.details["secrets_held"], 1);
         assert_eq!(choice.details["secrets_max"], crate::secrets::HAND_LIMIT);
     }

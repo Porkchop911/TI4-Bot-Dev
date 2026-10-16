@@ -2915,6 +2915,31 @@ pub(crate) fn secret_limit(state: &GameState, player: &PlayerId) -> usize {
     crate::secrets::HAND_LIMIT + crate::relics::secret_objective_bonus(state, player)
 }
 
+/// The look-ahead of Imperial's questions, the question of the primary's public objective and
+/// the window of its secondary: its fields are top-level keys of the details,
+/// `details.secrets_held` and `details.secrets_max`, written with [`Choice::hinted_fields`], so
+/// that a client can say what drawing a secret objective after it does (display only).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ImperialHints {
+    /// The secret objectives that the seat holds now, scored ones included.
+    pub secrets_held: usize,
+    /// How many it may hold ([`secret_limit`]).
+    pub secrets_max: usize,
+}
+
+/// The secret objectives that `player` holds now against its limit.
+pub(crate) fn imperial_hints(
+    state: &GameState,
+    content: &ContentStore,
+    player: &PlayerId,
+) -> ImperialHints {
+    ImperialHints {
+        secrets_held: crate::secrets::held_count(state, content, player),
+        secrets_max: secret_limit(state, player),
+    }
+}
+
 fn imperial_primary(
     state: &mut GameState,
     content: &ContentStore,
@@ -2946,11 +2971,7 @@ fn imperial_primary(
         )
         .detailed("kind", "imperial")
         .detailed("controls_mecatol", controls_mecatol)
-        .detailed(
-            "secrets_held",
-            crate::secrets::held_count(state, content, player),
-        )
-        .detailed("secrets_max", secret_limit(state, player))
+        .hinted_fields(&imperial_hints(state, content, player))
         .contextualized(DecisionContext::new(
             player.clone(),
             DecisionSource::StrategyCard {
@@ -5764,18 +5785,26 @@ mod tests {
                 .iter()
                 .find(|choice| choice.prompt == "score a public objective with Imperial")
                 .expect("the objective question")
-                .details
                 .clone()
         };
 
         let without = imperial(false);
-        assert_eq!(without["kind"], "imperial");
-        assert_eq!(without["controls_mecatol"], false);
-        assert_eq!(without["secrets_max"], 3);
-        assert!(without["secrets_held"].is_u64());
+        // The setup deals the seat one secret objective.
+        assert_eq!(
+            without.hint_fields::<ImperialHints>(),
+            Some(ImperialHints {
+                secrets_held: 1,
+                secrets_max: 3,
+            })
+        );
+        assert_eq!(without.details["kind"], "imperial");
+        assert_eq!(without.details["controls_mecatol"], false);
+        // The JSON keys that the clients read.
+        assert_eq!(without.details["secrets_max"], 3);
+        assert_eq!(without.details["secrets_held"], 1);
 
         let with = imperial(true);
-        assert_eq!(with["controls_mecatol"], true);
+        assert_eq!(with.details["controls_mecatol"], true);
     }
 
     /// Game 8261fb3f (round 5): the Xxcha played Imperial with Push Boundaries and Unify the

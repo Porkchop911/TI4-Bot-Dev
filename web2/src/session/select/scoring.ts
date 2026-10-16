@@ -1,15 +1,15 @@
 // The score of a public objective with what follows it (`details.secrets_held` and
-// `details.secrets_max`): the question of Imperial's primary (options of kind `objective`, a
+// `details.secrets_max`, the engine's `ImperialHints`): the question of Imperial's primary (options of kind `objective`, a
 // decline and `details.controls_mecatol`), and the window of its secondary (`yes` and `no`). The
 // primary is one screen: the objectives that the game lets the seat score, as printed, and "Then",
 // what the card does after it: a victory point with Mecatol Rex, else a secret objective. The
 // main button answers the question by the id of its option (`Transport.applyDraft`).
 import type { BlockView, MenuRowView } from "../../model";
-import type { Catalog, Choice, SessionUpdate } from "../wire";
+import type { Catalog, Choice, ImperialHints, SessionUpdate } from "../wire";
 import { chooseFollow, followWindow, isFollowWindow } from "./follow";
 import { plain } from "./components";
 import { humanizeId } from "./names";
-import { type Editor, answered, num } from "./editor";
+import { type Editor, answered, hintFieldsOf } from "./editor";
 
 /** What the player staged: the objective to score (by option id), or the answer of a window. */
 export interface ScoringDraft {
@@ -33,12 +33,12 @@ interface Question {
 }
 
 function questionOf(choice: Choice): Question | null {
-  const details = choice.details ?? {};
-  const held = num(details.secrets_held);
-  const max = num(details.secrets_max);
-  if (held === null || max === null) {
+  const told = hintFieldsOf<ImperialHints>(choice, "secrets_held", "secrets_max");
+  if (!told) {
     return null;
   }
+  const { secrets_held: held, secrets_max: max } = told;
+  const details = choice.details ?? {};
   if (isFollowWindow(choice)) {
     return { mode: "follow", objectives: [], decline: null, mecatol: null, held, max };
   }

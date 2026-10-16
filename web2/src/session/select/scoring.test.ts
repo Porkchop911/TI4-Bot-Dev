@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Catalog, Choice, SessionUpdate } from "../wire";
+import type { Catalog, Choice, ImperialHints, SessionUpdate } from "../wire";
 import { chooseScoring, clearLastScoring, selectScoring } from "./scoring";
 
 // The questions of Imperial as the engine asks them (the scenario "strategy_imperial").
@@ -11,7 +11,11 @@ const primary: Choice = {
     { id: "trade_routes", kind: "objective", label: "trade_routes", payload: {} },
     { id: "decline", kind: "decline", label: "decline", payload: {} },
   ],
-  details: { kind: "imperial", controls_mecatol: false, secrets_held: 1, secrets_max: 3 },
+  details: {
+    kind: "imperial",
+    controls_mecatol: false,
+    ...({ secrets_held: 1, secrets_max: 3 } satisfies ImperialHints),
+  },
 };
 const window: Choice = {
   player: "b",
@@ -22,8 +26,7 @@ const window: Choice = {
   ],
   details: {
     kind: "strategy_secondary",
-    secrets_held: 1,
-    secrets_max: 3,
+    ...({ secrets_held: 1, secrets_max: 3 } satisfies ImperialHints),
     tokens_left: 2,
     costs_token: true,
   },
