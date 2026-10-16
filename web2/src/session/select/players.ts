@@ -1,7 +1,7 @@
 // The seats and the player table.
 import type { PlayerRowView, PlayerTableView, SeatId, SeatView } from "../../model";
 import { MLP_PREFIX } from "../models";
-import type { Catalog, PlayerView, ReactionModes, SessionUpdate } from "../wire";
+import type { Catalog, GameView, PlayerView, ReactionModes, SessionUpdate } from "../wire";
 import { componentCards } from "./components";
 import { DECKS } from "./exploration";
 import { commodityValue, factionName, seatMark, strategyCard } from "./names";
@@ -138,7 +138,7 @@ export function selectPlayers(
   };
   return {
     pick: null,
-    rows: seated(update).map(row),
+    rows: ranked(view.phase, seated(update).map(row)),
     freeCards: view.table.unclaimed_strategy_cards
       .map((id) => ({
         ...strategyCard(id, catalog),
@@ -146,4 +146,17 @@ export function selectPlayers(
       }))
       .sort((a, b) => a.number - b.number),
   };
+}
+
+/**
+ * The rows of the table: in the action phase in the order of the turns, by the lowest initiative
+ * that a seat holds (a seat with no card last); in every other phase by victory points, the most
+ * first. A tie keeps the seat order.
+ */
+function ranked(phase: GameView["phase"], rows: PlayerRowView[]): PlayerRowView[] {
+  const key =
+    phase === "action"
+      ? (row: PlayerRowView) => row.strategyCards[0]?.number ?? 99
+      : (row: PlayerRowView) => -row.victoryPoints;
+  return [...rows].sort((a, b) => key(a) - key(b));
 }
