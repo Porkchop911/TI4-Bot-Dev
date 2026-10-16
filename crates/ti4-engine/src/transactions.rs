@@ -9,7 +9,7 @@ use serde_json::Value;
 use ti4_content::ContentStore;
 use ti4_content::galaxy::Galaxy;
 use ti4_model::content_types::DEFAULT;
-use ti4_model::id::{ActionCardId, PlayerId, SecretObjectiveId, SystemId};
+use ti4_model::id::{ActionCardId, FactionId, PlayerId, SecretObjectiveId, SystemId};
 use ti4_model::state::{GameState, TransientFlags};
 
 use crate::decision_context::{DecisionContext, DecisionSource, DecisionTarget};
@@ -138,6 +138,120 @@ impl Offer {
             self.received.describe()
         )
     }
+}
+
+/// One thing that a side of a deal hands over, as a client names it (display only): the cards by
+/// the ids of their records in the catalogue, so that a client shows their printed names and
+/// texts without reading the ids of the engine. [`TradeDeal`] lists them.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub enum TradeItem {
+    TradeGoods {
+        count: i32,
+    },
+    Commodities {
+        count: i32,
+    },
+    /// Relic fragments of one trait ("cultural", "hazardous", "industrial", "frontier").
+    RelicFragments {
+        #[serde(rename = "trait")]
+        fragment: String,
+        count: i32,
+    },
+    /// A promissory note: `card` is its record ([`crate::promissory::record_id`]), `owner` the
+    /// faction whose copy it is (the one that "<color>" means in its text).
+    Note {
+        card: String,
+        owner: FactionId,
+    },
+    ActionCard {
+        card: ActionCardId,
+    },
+    SecretObjective {
+        card: SecretObjectiveId,
+    },
+}
+
+impl Terms {
+    /// These terms as [`TradeItem`]s, in the order of [`Terms::describe`]. Empty for nothing.
+    #[must_use]
+    pub fn items(&self, content: &ContentStore) -> Vec<TradeItem> {
+        let mut items = Vec::new();
+        if self.trade_goods > 0 {
+            items.push(TradeItem::TradeGoods {
+                count: self.trade_goods,
+            });
+        }
+        if self.commodities > 0 {
+            items.push(TradeItem::Commodities {
+                count: self.commodities,
+            });
+        }
+        let mut fragments: BTreeMap<String, i32> = BTreeMap::new();
+        for fragment in &self.fragments {
+            *fragments
+                .entry(fragment_key(fragment).to_ascii_lowercase())
+                .or_insert(0) += 1;
+        }
+        items.extend(
+            fragments
+                .into_iter()
+                .map(|(fragment, count)| TradeItem::RelicFragments { fragment, count }),
+        );
+        if let Some(note) = &self.promissory {
+            items.push(TradeItem::Note {
+                card: crate::promissory::record_id(content, note),
+                owner: FactionId::new(crate::promissory::owner_of(note).unwrap_or_default()),
+            });
+        }
+        if let Some(card) = &self.action_card {
+            items.push(TradeItem::ActionCard { card: card.clone() });
+        }
+        if let Some(secret) = &self.secret {
+            items.push(TradeItem::SecretObjective {
+                card: secret.clone(),
+            });
+        }
+        items
+    }
+}
+
+/// The contents of one deal (display only): what the proposer hands to the partner, and what the
+/// proposer receives from the partner. The seats are those of [`TransactionHints`].
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct TradeDeal {
+    pub given: Vec<TradeItem>,
+    pub received: Vec<TradeItem>,
+}
+
+impl TradeDeal {
+    #[must_use]
+    pub fn of(offer: &Offer, content: &ContentStore) -> Self {
+        Self {
+            given: offer.given.items(content),
+            received: offer.received.items(content),
+        }
+    }
+}
+
+/// The look-ahead of a negotiation's questions, `details.transaction`, written with
+/// [`Choice::hinted`](crate::choice::Choice::hinted) (display only; labels, ids and payloads are
+/// unchanged). The question of the proposer has `offers`, the deal of each offer option by its id
+/// (the decline has none), and no `offer`; the question of the partner has `offer`, the deal on
+/// the table that it accepts, refuses or counters, and `offers` is empty.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct TransactionHints {
+    /// The seat that proposes: it gives `given` and receives `received`.
+    pub proposer: PlayerId,
+    /// The seat that the proposal is made to.
+    pub partner: PlayerId,
+    #[serde(default)]
+    pub offers: BTreeMap<String, TradeDeal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offer: Option<TradeDeal>,
 }
 
 /// Why an offer cannot be resolved.
@@ -1612,6 +1726,19 @@ impl TradeWindow {
                 if options.is_empty() {
                     return None;
                 }
+                let offers = options
+                    .iter()
+                    .filter_map(|option| {
+                        let offer = offer_from(state, &option.id, &self.proposer, &self.partner)?;
+                        Some((option.id.clone(), TradeDeal::of(&offer, content)))
+                    })
+                    .collect();
+                let hints = TransactionHints {
+                    proposer: self.proposer.clone(),
+                    partner: self.partner.clone(),
+                    offers,
+                    offer: None,
+                };
                 options.push(crate::choice::ChoiceOption::decline());
                 Some(
                     crate::choice::Choice::new(
@@ -1620,6 +1747,7 @@ impl TradeWindow {
                         options,
                     )
                     .accepting_free_form(FREE_FORM_PREFIX)
+                    .hinted("transaction", &hints)
                     .contextualized(
                         DecisionContext::new(
                             self.proposer.clone(),
@@ -1659,6 +1787,15 @@ impl TradeWindow {
                                 "counter-offer",
                             ),
                         ],
+                    )
+                    .hinted(
+                        "transaction",
+                        &TransactionHints {
+                            proposer: offer.proposer.clone(),
+                            partner: offer.partner.clone(),
+                            offers: BTreeMap::new(),
+                            offer: Some(TradeDeal::of(offer, content)),
+                        },
                     )
                     .contextualized(
                         DecisionContext::new(
@@ -3167,5 +3304,223 @@ mod tests {
         // The sale prices at one trade good: the seller (a) receives it, the buyer (b) pays it.
         assert_eq!(state.player(&a()).unwrap().trade_goods, 3);
         assert_eq!(state.player(&b()).unwrap().trade_goods, 1);
+    }
+
+    // -- the contents of a deal, for clients ------------------------------------------------
+
+    /// What `offer_from` makes of an option of the window, as items.
+    fn deal_of(state: &GameState, id: &str, proposer: &PlayerId, partner: &PlayerId) -> TradeDeal {
+        let offer =
+            offer_from(state, id, proposer, partner).unwrap_or_else(|| panic!("{id} parses"));
+        TradeDeal::of(&offer, ContentStore::embedded())
+    }
+
+    fn note(card: &str, owner: &str) -> TradeItem {
+        TradeItem::Note {
+            card: card.to_owned(),
+            owner: FactionId::new(owner),
+        }
+    }
+
+    #[test]
+    fn a_note_names_its_record_in_the_catalogue() {
+        let content = ContentStore::embedded();
+        assert_eq!(
+            crate::promissory::record_id(content, "support:hacan"),
+            "<color>_sftt"
+        );
+        assert_eq!(
+            crate::promissory::record_id(content, "cf:sol"),
+            "<color>_cf"
+        );
+        assert_eq!(
+            crate::promissory::record_id(content, "ta:nomad"),
+            "<color>_ta"
+        );
+        assert_eq!(crate::promissory::record_id(content, "ra:jolnar"), "ra");
+        for record in ["<color>_sftt", "<color>_cf", "<color>_ta", "ra"] {
+            assert!(
+                content
+                    .get(
+                        ti4_model::content_types::ContentType::PromissoryNotes,
+                        record
+                    )
+                    .is_some(),
+                "{record} is a record of the catalogue"
+            );
+        }
+    }
+
+    /// Every offer of the proposer's question carries what it moves, as `details.transaction`:
+    /// the deal that its id stands for, item by item, and nothing for the decline.
+    #[test]
+    fn every_offer_option_carries_its_contents_in_the_details() {
+        let (_hub, mut state) = trading_partners();
+        let content = ContentStore::embedded();
+        // Black Market Dealings puts a secret objective and a relic fragment on the table, and
+        // Hacan's Arbiters an action card.
+        state.transient_flags.set(TransientFlags::BLACK_MARKET);
+        let seat = state.player_mut(&a()).unwrap();
+        seat.trade_goods = 4;
+        seat.action_cards.push(ActionCardId::new("shutdown"));
+        seat.secret_objectives.push(SecretObjectiveId::new("ans"));
+        seat.relic_fragments.insert("CULTURAL".to_owned(), 1);
+        let window = TradeWindow::open(&mut state, &a(), &b());
+        let choice = window
+            .pending_choice(&state, content)
+            .expect("deals to propose");
+
+        let hints: TransactionHints = choice.hint("transaction").expect("typed contents");
+        assert_eq!((&hints.proposer, &hints.partner), (&a(), &b()));
+        assert_eq!(hints.offer, None, "nothing is on the table yet");
+        for option in &choice.options {
+            if option.is_decline() {
+                assert!(!hints.offers.contains_key(&option.id));
+            } else {
+                assert_eq!(
+                    hints.offers.get(&option.id),
+                    Some(&deal_of(&state, &option.id, &a(), &b())),
+                    "{}",
+                    option.id
+                );
+            }
+        }
+        assert_eq!(
+            hints.offers.len(),
+            choice.options.len() - 1,
+            "a deal for each offer and for nothing else"
+        );
+
+        let offered = |id: &str| {
+            hints
+                .offers
+                .get(id)
+                .unwrap_or_else(|| panic!("{id} is offered"))
+                .clone()
+        };
+        let deal = |given: Vec<TradeItem>, received: Vec<TradeItem>| TradeDeal { given, received };
+        assert_eq!(
+            offered("cc3"),
+            deal(
+                vec![TradeItem::Commodities { count: 3 }],
+                vec![TradeItem::Commodities { count: 3 }]
+            )
+        );
+        assert_eq!(
+            offered("1:0"),
+            deal(vec![TradeItem::TradeGoods { count: 1 }], vec![])
+        );
+        assert_eq!(
+            offered("ss"),
+            deal(
+                vec![note("<color>_sftt", "hacan")],
+                vec![note("<color>_sftt", "jolnar")]
+            )
+        );
+        assert_eq!(
+            offered("pncf:hacan:2"),
+            deal(
+                vec![note("<color>_cf", "hacan")],
+                vec![TradeItem::TradeGoods { count: 2 }]
+            )
+        );
+        assert_eq!(
+            offered("npra:jolnar:4"),
+            deal(
+                vec![TradeItem::TradeGoods { count: 4 }],
+                vec![note("ra", "jolnar")]
+            )
+        );
+        assert_eq!(
+            offered("acshutdown:1"),
+            deal(
+                vec![TradeItem::ActionCard {
+                    card: ActionCardId::new("shutdown")
+                }],
+                vec![TradeItem::TradeGoods { count: 1 }]
+            )
+        );
+        assert_eq!(
+            offered("soans:1"),
+            deal(
+                vec![TradeItem::SecretObjective {
+                    card: SecretObjectiveId::new("ans")
+                }],
+                vec![TradeItem::TradeGoods { count: 1 }]
+            )
+        );
+        assert_eq!(
+            offered("frCULTURAL:1"),
+            deal(
+                vec![TradeItem::RelicFragments {
+                    fragment: "cultural".to_owned(),
+                    count: 1
+                }],
+                vec![TradeItem::TradeGoods { count: 1 }]
+            )
+        );
+
+        // The JSON that the clients read.
+        let wire = &choice.details["transaction"];
+        assert_eq!(wire["proposer"], "a");
+        assert_eq!(wire["partner"], "b");
+        assert_eq!(wire["offers"]["cc3"]["given"][0]["kind"], "commodities");
+        assert_eq!(wire["offers"]["cc3"]["given"][0]["count"], 3);
+        assert_eq!(wire["offers"]["ss"]["received"][0]["kind"], "note");
+        assert_eq!(wire["offers"]["ss"]["received"][0]["card"], "<color>_sftt");
+        assert_eq!(wire["offers"]["ss"]["received"][0]["owner"], "jolnar");
+        assert_eq!(
+            wire["offers"]["frCULTURAL:1"]["given"][0]["trait"],
+            "cultural"
+        );
+        assert!(wire.get("offer").is_none());
+    }
+
+    /// The partner's question carries the deal on the table, and a counter is asked of the other
+    /// chair with its seats swapped.
+    #[test]
+    fn the_answer_carries_the_deal_on_the_table() {
+        let (hub, mut state) = trading_partners();
+        let content = ContentStore::embedded();
+        let mut window = TradeWindow::open(&mut state, &a(), &b());
+        let proposing = window.pending_choice(&state, content).unwrap();
+        let sale = proposing
+            .option("pncf:hacan:2")
+            .cloned()
+            .expect("hacan's Ceasefire is for sale");
+        assert_eq!(
+            window.resolve(&mut state, content, &hub.galaxy, &sale),
+            Traded::Offered
+        );
+
+        let answering = window.pending_choice(&state, content).unwrap();
+        assert_eq!(answering.player, b());
+        assert_eq!(
+            answering.hint::<TransactionHints>("transaction"),
+            Some(TransactionHints {
+                proposer: a(),
+                partner: b(),
+                offers: BTreeMap::new(),
+                offer: Some(TradeDeal {
+                    given: vec![note("<color>_cf", "hacan")],
+                    received: vec![TradeItem::TradeGoods { count: 2 }],
+                }),
+            })
+        );
+
+        let counter = answering.option("counter").cloned().unwrap();
+        assert_eq!(
+            window.resolve(&mut state, content, &hub.galaxy, &counter),
+            Traded::Countered
+        );
+        let countering = window.pending_choice(&state, content).unwrap();
+        let hints: TransactionHints = countering.hint("transaction").unwrap();
+        assert_eq!((&hints.proposer, &hints.partner), (&b(), &a()));
+        assert!(
+            hints
+                .offers
+                .keys()
+                .all(|id| countering.option(id).is_some())
+        );
     }
 }

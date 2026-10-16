@@ -9,7 +9,7 @@
 //! `ti4_host::protocol`, the catalogue, the setup of a table (its options and preview as the
 //! server and the engine give them, its draw, and the game request of a start), the odds of a
 //! space and of a ground combat, the standing of a fleet, the save of a game, and the look-ahead
-//! details of the strategy-card questions (`Choice.details` is untyped JSON, so each struct that
+//! details of the strategy-card questions and of a transaction (`Choice.details` is untyped JSON, so each struct that
 //! the engine writes there with `Choice::hinted` is a root). Every type that they name is written
 //! with them.
 
@@ -75,6 +75,7 @@ pub fn files() -> BTreeMap<String, String> {
     collect.visit::<ti4_engine::strategy_cards::TradeReplenishHints>();
     collect.visit::<ti4_engine::strategy_cards::CommodityStanding>();
     collect.visit::<ti4_engine::strategy_cards::ImperialHints>();
+    collect.visit::<ti4_engine::transactions::TransactionHints>();
     collect.visit::<crate::host_session::HostSave>();
     let mut index = format!("{NOTE}\n");
     for name in collect.names.keys() {
