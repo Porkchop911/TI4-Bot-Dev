@@ -19,15 +19,32 @@ const ACCENT = {
 
 type Pane = "map" | "players" | "action";
 
-/** Intents that only change what is in view: they are no choice of the viewer. */
-const VIEW_ONLY = new Set<Intent["type"]>([
-  "inspectSystem",
-  "closeInspector",
-  "findSystem",
-  "inspectLogEntry",
-  "openReference",
-  "openApply",
-]);
+/**
+ * The intents that ask the game what follows from a choice of the viewer: an answer is sent, a
+ * draft starts or changes, a step is taken back. What is only staged on the screen (a count, a
+ * toggle, an option before its button) does not ask the game.
+ */
+const asksTheGame = (intent: Intent): boolean => {
+  switch (intent.type) {
+    case "confirmApply":
+    case "commitEdit":
+    case "endTurn":
+    case "reaction":
+    case "undo":
+    case "redo":
+    case "startOver":
+    case "removeEntry":
+      return true;
+    case "flow":
+      return intent.action === "resolve" || intent.action === "play";
+    case "workspace":
+      return intent.mode === "draft";
+    case "pickAction":
+      return intent.action === "tactical";
+    default:
+      return false;
+  }
+};
 
 /**
  * The game screen: one toolbar, then the board and the right column (player table, action panel).
@@ -59,7 +76,10 @@ export function GameShell({
   settingsOpen?: boolean;
 }) {
   const { view: latest } = session;
-  /** The viewer chose something while a decision was open, and its next step is not yet in view. */
+  /**
+   * The viewer sent a choice that the game answers (`asksTheGame`), and the game has not answered
+   * it yet: the next change of the pane of the decision follows from it.
+   */
   const acted = useRef(false);
   // While the game has not yet answered what follows from the viewer's choice, the screen stays
   // as it was: the pane of the next step is not known, and no pane shows a step with nothing in it.
@@ -95,28 +115,27 @@ export function GameShell({
   // when a choice of the viewer opens the next step of the viewer in another pane. Anything else
   // (another player, a bot, a window that opens) only marks the tab of the choice.
   const [pane, setPane] = useState<Pane>(() => choiceOn ?? "action");
-  // The game moved on: an entry of the log for each event.
-  const events = view.reference.log.reduce((sum, round) => sum + round.entries.length, 0);
-  const lastEvents = useRef(events);
+  const lastReply = useRef(view.reply);
   // Before the paint: the next step is never shown in the pane that the viewer leaves.
   useLayoutEffect(() => {
-    const moved = events !== lastEvents.current;
-    lastEvents.current = events;
-    if (choiceOn === lastChoice.current) {
-      // The next step is in the same pane: a later change does not follow from the choice.
-      if (moved) {
-        acted.current = false;
+    const replied = view.reply !== lastReply.current;
+    lastReply.current = view.reply;
+    if (choiceOn !== lastChoice.current) {
+      lastChoice.current = choiceOn;
+      // The first change of the pane after the viewer's choice is its next step. With no
+      // decision open the viewer waits for the game, and what opens next does not follow from
+      // the choice.
+      if (choiceOn && acted.current) {
+        setPane(choiceOn);
       }
-      return;
+      acted.current = false;
     }
-    lastChoice.current = choiceOn;
-    // The first change of the pane after the viewer's choice is its next step. With no decision
-    // open the viewer waits for the game, and what opens next does not follow from the choice.
-    if (choiceOn && acted.current) {
-      setPane(choiceOn);
+    // The game answered the choice: what changes later does not follow from it, also when the
+    // next step is in the same pane.
+    if (replied) {
+      acted.current = false;
     }
-    acted.current = false;
-  }, [choiceOn, events]);
+  }, [choiceOn, view.reply]);
 
   const dispatch = useCallback(
     (intent: Intent) => {
@@ -130,7 +149,8 @@ export function GameShell({
       if (intent.type === "inspectLogEntry") {
         setDrawer(null);
       }
-      if (lastChoice.current && !VIEW_ONLY.has(intent.type)) {
+      // An undo takes the viewer back also while the viewer waits for the game.
+      if ((lastChoice.current || intent.type === "undo") && asksTheGame(intent)) {
         acted.current = true;
       }
       session.dispatch(intent);

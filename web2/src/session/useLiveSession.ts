@@ -440,6 +440,8 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
   /** What the game made of the draft, as the transport told it last. */
   const [run, setRun] = useState<DraftRun | null>(null);
+  /** Counts the answers of the game to the viewer (`ShellView.reply`). */
+  const [reply, setReply] = useState(0);
   /** The script that the transport was asked last, and the update of then. An answer for another script is late. */
   const asked = useRef<{ wanted: Wanted; base: SessionUpdate } | null>(null);
   /** The last update, for a change of another tab. */
@@ -468,8 +470,10 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
     let inspectedBefore: string | null = null;
     /** The question of the viewer at the last update. Undefined: the game asked the viewer nothing. */
     let choiceAt: string | undefined;
+    const replied = () => setReply((now) => now + 1);
     return transport?.subscribe((event) => {
       if (event.kind === "error") {
+        replied();
         setLocal((now) => ({ ...now, staged: null, replaying: null, error: event.message }));
         return;
       }
@@ -493,6 +497,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           same(event.scope ?? null, last.wanted.scope ?? null)
         ) {
           setRun({ ...last, outcome: event.outcome });
+          replied();
         }
         return;
       }
@@ -510,10 +515,12 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
       // An answer that was lost or refused is not sent: the next update has the same question,
       // and it can be answered again.
       if (event.kind === "offline") {
+        replied();
         return setLocal((now) => ({ ...now, offline: true, sent: null }));
       }
       if (event.kind === "rejected") {
         const { reason } = event;
+        replied();
         setLocal((now) => ({ ...now, sent: null }));
         return setToast((now) => ({ id: (now?.id ?? 0) + 1, text: reason }));
       }
@@ -537,6 +544,9 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
       const fresh =
         event.update.pending_choice?.nonce !== choiceAt || !!event.plan || !!event.undone;
       choiceAt = event.update.pending_choice?.nonce;
+      if (fresh) {
+        replied();
+      }
       // A new choice starts with nothing staged. The inspector stays where the player left it.
       setLocal((now) => {
         if (opens) {
@@ -1631,6 +1641,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             (!!drafted && waiting && (outcome === unanswered || shrunk)) ||
             (!!followInfo?.waiting && !followOutcome),
           answered: !!shown.pending_choice && state.sent === shown.pending_choice.nonce,
+          reply,
         },
         dispatch,
         capabilities: {
@@ -1663,6 +1674,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
     locked,
     cards,
     toast,
+    reply,
     drafting,
     mine,
     reached,

@@ -321,6 +321,12 @@ export interface ShellView {
    * question on the screen is no longer open, and the next step of the viewer is not known.
    */
   answered?: boolean;
+  /**
+   * Changes each time the game answers the viewer: a new question of the viewer (also after an
+   * undo), the game's answer to the draft, an answer that was refused or lost. Absent: the game
+   * does not tell.
+   */
+  reply?: number;
 }
 
 /**
