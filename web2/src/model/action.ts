@@ -316,7 +316,6 @@ export interface RiftRowView {
 
 export interface MovementView {
   kind: "movement";
-  editing: boolean;
   /** The active system. */
   target: { system: SystemId; label: string };
   origins: OriginView[];

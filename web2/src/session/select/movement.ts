@@ -428,7 +428,6 @@ export function selectMovement(
   const used = supplyUsed(plan);
   return {
     kind: "movement",
-    editing: true,
     target: { system: facts.active, label: systemLabel(plan.tiles, facts.active) },
     origins: origins.map((origin) => originOf(plan, origin)),
     unreachable:

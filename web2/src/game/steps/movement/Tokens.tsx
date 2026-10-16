@@ -409,30 +409,3 @@ export function OriginTokens({
     </div>
   );
 }
-
-/** A recorded movement, read-only: one band for each system that ships left. */
-export function MovementTokens({ origins }: { origins: OriginView[] }) {
-  return (
-    <div className="rounded-lg border border-line">
-      {origins.map((origin) => (
-        <section
-          key={origin.system}
-          aria-label={origin.label}
-          className="grid grid-cols-[190px_minmax(0,1fr)] border-line not-first:border-t phone:grid-cols-1"
-        >
-          <header className="border-r border-line px-3 py-1.5 phone:border-r-0 phone:border-b phone:border-line/50 phone:px-2.5">
-            <h3 className="truncate text-base font-semibold" title={origin.label}>
-              {origin.label}
-            </h3>
-            <div className="text-xs text-muted">
-              {plural(origin.away, "system")} away
-              {origin.leaves && <strong className="font-mid text-text"> · {origin.leaves}</strong>}
-            </div>
-            {origin.warning && <div className="text-xs text-orange">⚠ {origin.warning}</div>}
-          </header>
-          <OriginTokens origin={origin} />
-        </section>
-      ))}
-    </div>
-  );
-}

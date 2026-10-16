@@ -5,7 +5,6 @@ import { BattleTable } from "../combat/BattleTable";
 import { useLink } from "../link";
 import { MovementSummary } from "./movement/OriginSheet";
 import { Arrival } from "./movement/parts";
-import { MovementTokens } from "./movement/Tokens";
 
 function Unreachable({ row }: { row: NonNullable<MovementView["unreachable"]>["rows"][number] }) {
   const { linked, props } = useLink([`sys:${row.system}`]);
@@ -26,11 +25,10 @@ function Unreachable({ row }: { row: NonNullable<MovementView["unreachable"]>["r
  * of a ship. The controls are on the board, at each system; the panel says what leaves.
  */
 export function MovementStep({ view }: { view: MovementView }) {
-  const Origins = view.editing ? MovementSummary : MovementTokens;
   return (
     <>
       <Arrival view={view} />
-      {view.origins.length > 0 && <Origins origins={view.origins} />}
+      {view.origins.length > 0 && <MovementSummary origins={view.origins} />}
       {view.unreachable && (
         // Dense: the board marks these systems, and the inspector of a system says the same.
         <div className="flex flex-wrap gap-x-4 gap-y-0.5 px-1 text-xs text-faint">

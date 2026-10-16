@@ -140,7 +140,6 @@ it("opens the movement step with the fleet of each system that ships can leave",
   if (content.kind !== "movement") {
     throw new Error("not the movement step");
   }
-  expect(content.editing).toBe(true);
   expect(content.target.system).toBe("23");
   expect(content.origins.map((origin) => [origin.system, origin.away, origin.leaves])).toEqual([
     ["01", 1, ""],
@@ -256,7 +255,7 @@ it("opens no resolved step in Live: its tab is locked, and the staged movement d
   expect(view.current).toBe(1);
   expect(view.tabs.map((tab) => !!tab.locked)).toEqual([true, false, false, false, false]);
   expect(view.task.role).toBe("decide");
-  expect(view.task.content).toMatchObject({ kind: "movement", editing: true });
+  expect(view.task.content).toMatchObject({ kind: "movement" });
   expect(labels(movement, local({ step: 0, movement: fleet }))).toContain("Move fleet");
 });
 
