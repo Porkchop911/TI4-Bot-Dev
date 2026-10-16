@@ -215,6 +215,7 @@ export type { StructureHints } from "./StructureHints.ts";
 export type { StructurePlacement } from "./StructurePlacement.ts";
 export type { StructureSpot } from "./StructureSpot.ts";
 export type { StructureSupply } from "./StructureSupply.ts";
+export type { StructureWithheld } from "./StructureWithheld.ts";
 export type { SystemId } from "./SystemId.ts";
 export type { SystemView } from "./SystemView.ts";
 export type { TableDraw } from "./TableDraw.ts";
@@ -244,6 +245,7 @@ export type { UnitTypeId } from "./UnitTypeId.ts";
 export type { Unloadable } from "./Unloadable.ts";
 export type { UnloadableCargo } from "./UnloadableCargo.ts";
 export type { ViewerRole } from "./ViewerRole.ts";
+export type { WithheldStructure } from "./WithheldStructure.ts";
 
 /** `ti4_host::protocol::PROTOCOL_VERSION`: the version of the messages of this build. */
 export const PROTOCOL_VERSION = 4;

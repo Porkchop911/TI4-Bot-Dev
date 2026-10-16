@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { Choice, SessionUpdate, StructureHints, StructureSpot } from "../wire";
+import type {
+  Choice,
+  SessionUpdate,
+  StructureHints,
+  StructureSpot,
+  StructureWithheld,
+  WithheldStructure,
+} from "../wire";
 import {
   chooseStructure,
   chooseStructurePlanet,
@@ -25,6 +32,19 @@ const FIRST = [
   spot("spacedock", "rarron", "29"),
 ];
 const PDS = FIRST.filter((item) => item.unit === "pds");
+const held = (
+  unit: string,
+  planet: string,
+  system: string,
+  reason: StructureWithheld,
+): WithheldStructure => ({ unit, planet, system, reason });
+// Jord has a space dock.
+const FIRST_WITHHELD = [held("spacedock", "jord", "01", "limit")];
+const PDS_ONLY = [
+  held("spacedock", "jord", "01", "pds_only"),
+  held("spacedock", "qucenn", "29", "pds_only"),
+  held("spacedock", "rarron", "29", "pds_only"),
+];
 const PLANETS: StructureHints["planets"] = {
   jord: { pds: 0, spacedock: 1 },
   qucenn: { pds: 1, spacedock: 0 },
@@ -44,6 +64,7 @@ const hints = (
       of: step ? 2 : null,
       only_pds: false,
       options: FIRST,
+      withheld: FIRST_WITHHELD,
       without: {},
     },
     ...(second
@@ -53,6 +74,7 @@ const hints = (
             of: 2,
             only_pds: second.only_pds,
             options: second.options,
+            withheld: second.only_pds ? PDS_ONLY : FIRST_WITHHELD,
             without: { "pds|29|qucenn": ["pds|29|qucenn"] },
           },
         ]
@@ -250,12 +272,20 @@ describe("selectStructures", () => {
       structures: {
         ...hints(null),
         placements: [
-          { step: 1, of: 2, only_pds: false, options: FIRST, without: {} },
+          {
+            step: 1,
+            of: 2,
+            only_pds: false,
+            options: FIRST,
+            withheld: FIRST_WITHHELD,
+            without: {},
+          },
           {
             step: 2,
             of: 2,
             only_pds: true,
             options: [spot("pds", "jord", "01"), spot("pds", "qucenn", "29")],
+            withheld: [...PDS_ONLY, held("pds", "rarron", "29", "limit")],
             without: { "spacedock|29|qucenn": ["pds|29|qucenn"] },
           },
         ],
@@ -269,7 +299,7 @@ describe("selectStructures", () => {
         { title: "Space dock", selected: true },
         { title: "PDS", state: "Not after the space dock on Qucen'n", disabled: true },
         { title: "Space dock", state: "PDS only", disabled: true },
-        { title: "PDS", state: "Not offered", disabled: true },
+        { title: "PDS", state: "Has 2 PDS", disabled: true },
       ],
     });
     // Nothing of the second placement is left in #29: its system is chosen on the map.

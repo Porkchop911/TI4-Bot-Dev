@@ -10,7 +10,8 @@ import type { StructureSupply } from "./StructureSupply.ts";
  */
 export type StructureHints = { placements: Array<StructurePlacement>, 
 /**
- * The player's structures on each planet of an option, by kind (`pds`, `spacedock`).
+ * The player's structures on each planet of an option or of a withheld structure, by kind
+ * (`pds`, `spacedock`).
  */
 planets: { [key in PlanetId]: { [key in string]: number } }, 
 /**

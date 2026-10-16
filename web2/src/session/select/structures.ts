@@ -15,6 +15,7 @@ import type {
   StructureHints,
   StructurePlacement,
   StructureSpot,
+  WithheldStructure,
 } from "../wire";
 import { isFollowWindow, secondaryCost } from "./follow";
 import { systemLabel, tilesOf } from "./movement";
@@ -49,6 +50,24 @@ const KINDS = ["spacedock", "pds"];
 const NAME: Record<string, string> = { spacedock: "Space dock", pds: "PDS" };
 const nameOf = (unit: string) => NAME[unit] ?? unit;
 const lower = (unit: string) => (unit === "pds" ? "PDS" : nameOf(unit).toLowerCase());
+
+/** Why the engine does not offer a structure, in the row of the structure. */
+const withheldWord = ({ reason, unit }: WithheldStructure): string => {
+  switch (reason) {
+    case "space_station":
+      return "Space station";
+    case "pds_only":
+      return "PDS only";
+    case "demilitarized":
+      return "Demilitarized Zone";
+    case "limit":
+      return unit === "pds" ? "Has 2 PDS" : "Has a space dock";
+    case "banned":
+      return "Barred";
+    case "supply":
+      return "None left";
+  }
+};
 
 function questionOf(choice: Choice): Question | null {
   const hints = hintOf<StructureHints>(choice, "structures");
@@ -261,10 +280,13 @@ export function selectStructures(
     });
   }
   if (placements.length && system) {
-    // Every planet of the system that a placement offers, in the order of the tile.
+    // Every planet of the system that the player controls (a placement offers a structure there
+    // or the engine says why not), in the order of the tile.
     const offering = new Set(
       placements.flatMap((placement) =>
-        placement.options.filter((spot) => spot.system === system).map((spot) => spot.planet),
+        [...placement.options, ...placement.withheld]
+          .filter((spot) => spot.system === system)
+          .map((spot) => spot.planet),
       ),
     );
     const order = (tiles.get(system)?.planets ?? []).map((planet) => planet.id);
@@ -273,21 +295,22 @@ export function selectStructures(
       ...[...offering].filter((id) => !order.includes(id)),
     ];
     const earlier = open > 0 ? spots[open - 1] : null;
-    /** Why the open placement does not offer a kind on a planet. */
+    /**
+     * Why the open placement does not offer a kind on a planet: what is staged, or the engine's
+     * reason.
+     */
     const reason = (planet: string, unit: string) => {
       if (open < 0) {
         return "Every structure is placed";
       }
       const placement = placements[open];
-      if (placement.only_pds && unit !== "pds") {
-        return "PDS only";
+      const at = (spot: { planet: string; unit: string }) =>
+        spot.planet === planet && spot.unit === unit;
+      if (earlier && placement.options.some(at)) {
+        return `Not after the ${lower(earlier.unit)} on ${planetName(earlier.planet)}`;
       }
-      const printed = placement.options.some(
-        (spot) => spot.planet === planet && spot.unit === unit,
-      );
-      return printed && earlier
-        ? `Not after the ${lower(earlier.unit)} on ${planetName(earlier.planet)}`
-        : "Not offered";
+      const withheld = placement.withheld.find(at);
+      return withheld ? withheldWord(withheld) : undefined;
     };
     const menu: MenuRowView[] = listed.flatMap((planet) =>
       KINDS.map((unit, index): MenuRowView => {

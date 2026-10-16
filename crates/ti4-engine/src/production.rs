@@ -1828,16 +1828,32 @@ pub fn structure_allowed(
     planet: &PlanetId,
     base_type: &str,
 ) -> bool {
+    structure_refused(state, content, sources, player, planet, base_type).is_none()
+}
+
+/// Why another of this structure may not be built on that planet (79.2), or `None` when it may:
+/// the checks of [`structure_allowed`], in its order.
+#[must_use]
+pub fn structure_refused(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    planet: &PlanetId,
+    base_type: &str,
+) -> Option<crate::strategy_cards::StructureWithheld> {
+    use crate::strategy_cards::StructureWithheld;
     // Homeland Defense Act removes the PDS cap outright rather than raising it.
     if crate::laws::structure_cap_lifted(state, base_type) {
-        return true;
+        return None;
     }
     // Demilitarized Zone: nothing may be placed on the elected planet at all.
     if crate::laws::planet_is_demilitarized(state, planet) {
-        return false;
+        return Some(StructureWithheld::Demilitarized);
     }
     structure_limit(base_type)
-        .is_none_or(|cap| structures_on(state, content, sources, player, planet, base_type) < cap)
+        .is_some_and(|cap| structures_on(state, content, sources, player, planet, base_type) >= cap)
+        .then_some(StructureWithheld::Limit)
 }
 
 /// 68.10: ships of another player are in `system`, so `player` produces no ships there.

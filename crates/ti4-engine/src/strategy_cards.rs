@@ -2134,36 +2134,84 @@ pub(crate) fn structure_options(
     player: &PlayerId,
     only_pds: bool,
 ) -> Vec<ChoiceOption> {
-    state
-        .controlled_planets(player)
-        // Space stations rule 5: no structures on a space station either.
-        .into_iter()
-        .filter(|(_, planet)| {
-            !ti4_content::galaxy::is_space_station(content, planet.as_str(), sources)
-        })
-        .flat_map(|(system, planet)| {
-            ["pds", "spacedock"]
-                .into_iter()
-                .filter(move |kind| !only_pds || *kind == "pds")
-                .filter(move |kind| {
-                    // The unit this player actually places: faction unit or upgrade, as an action
-                    // card placement resolves it (Titans Hel-Titan, PDS II).
-                    let unit = construction_unit(state, content, sources, player, kind);
-                    crate::production::structure_allowed(
-                        state, content, sources, player, planet, kind,
-                    ) && crate::supply::allowed(state, content, sources, player, &unit, 1) == 1
-                })
-                .map(move |kind| {
+    structure_offers(state, content, sources, player, only_pds).0
+}
+
+/// The kinds of structure, in the order of the options of a placement.
+const STRUCTURE_KINDS: [&str; 2] = ["pds", "spacedock"];
+
+/// Whether a placement offers a structure of `kind` on `planet`, or the first check that
+/// excludes it, in the order of the rules (see [`StructureWithheld`]).
+fn structure_screen(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    planet: &PlanetId,
+    kind: &str,
+    only_pds: bool,
+) -> Result<(), StructureWithheld> {
+    // Space stations rule 5: no structures on a space station either.
+    if ti4_content::galaxy::is_space_station(content, planet.as_str(), sources) {
+        return Err(StructureWithheld::SpaceStation);
+    }
+    if only_pds && kind != "pds" {
+        return Err(StructureWithheld::PdsOnly);
+    }
+    if let Some(reason) =
+        crate::production::structure_refused(state, content, sources, player, planet, kind)
+    {
+        return Err(reason);
+    }
+    // The unit this player actually places: faction unit or upgrade, as an action card
+    // placement resolves it (Titans Hel-Titan, PDS II). 31.4 through `supply::allowed`: an
+    // ability that bars the placement first, then the box.
+    let unit = construction_unit(state, content, sources, player, kind);
+    if crate::factions::hooks_economy::effect_placement_forbidden(
+        state, content, sources, player, &unit,
+    ) {
+        return Err(StructureWithheld::Banned);
+    }
+    if crate::supply::allowed(state, content, sources, player, &unit, 1) != 1 {
+        return Err(StructureWithheld::Supply);
+    }
+    Ok(())
+}
+
+/// The options of a placement, and every structure of every planet that `player` controls that
+/// it does not offer, with why: one pass of [`structure_screen`], so a kind on a planet is
+/// offered or withheld, never both and never neither.
+pub(crate) fn structure_offers(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    only_pds: bool,
+) -> (Vec<ChoiceOption>, Vec<WithheldStructure>) {
+    let mut options = Vec::new();
+    let mut withheld = Vec::new();
+    for (system, planet) in state.controlled_planets(player) {
+        for kind in STRUCTURE_KINDS {
+            match structure_screen(state, content, sources, player, planet, kind, only_pds) {
+                Ok(()) => options.push(
                     ChoiceOption::labelled(
                         format!("{kind}|{system}|{planet}"),
                         "build",
                         format!("place {kind} on {planet}"),
                     )
                     .with_planet(planet.as_str(), Some(system.as_str()))
-                    .with("unit", kind)
-                })
-        })
-        .collect()
+                    .with("unit", kind),
+                ),
+                Err(reason) => withheld.push(WithheldStructure {
+                    unit: kind.to_owned(),
+                    planet: planet.clone(),
+                    system: system.clone(),
+                    reason,
+                }),
+            }
+        }
+    }
+    (options, withheld)
 }
 
 /// The unit Construction places for `kind` (`pds` / `spacedock`): the faction unit or upgrade, as
@@ -2360,7 +2408,8 @@ fn put_structure(
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct StructureHints {
     pub placements: Vec<StructurePlacement>,
-    /// The player's structures on each planet of an option, by kind (`pds`, `spacedock`).
+    /// The player's structures on each planet of an option or of a withheld structure, by kind
+    /// (`pds`, `spacedock`).
     pub planets: BTreeMap<PlanetId, BTreeMap<String, usize>>,
     /// The PDS and the space docks on the board, against the box, by kind.
     pub supply: BTreeMap<String, StructureSupply>,
@@ -2375,6 +2424,9 @@ pub struct StructurePlacement {
     pub of: Option<u32>,
     pub only_pds: bool,
     pub options: Vec<StructureSpot>,
+    /// Every structure of every planet that the player controls that this placement does not
+    /// offer now, with why. A kind on a planet is in `options` or here, never both.
+    pub withheld: Vec<WithheldStructure>,
     /// For each option of the placement before, the options of this one that choosing it takes
     /// away (a second PDS where the planet then has two, the last one of the box). An option
     /// that takes nothing away is not listed.
@@ -2390,6 +2442,39 @@ pub struct StructureSpot {
     pub unit: String,
     pub planet: PlanetId,
     pub system: SystemId,
+}
+
+/// Why a placement of structures does not offer a kind on a planet that the player controls:
+/// the first of its checks that excluded it ([`StructurePlacement::withheld`]).
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum StructureWithheld {
+    /// The planet is a space station (space stations rule 5).
+    SpaceStation,
+    /// This placement places a PDS only (Construction's second structure).
+    PdsOnly,
+    /// Demilitarized Zone is elected for the planet.
+    Demilitarized,
+    /// The planet has the most of the kind that it may have: a space dock, or 2 PDS (79.2).
+    Limit,
+    /// An ability of the player bars the placement of the unit.
+    Banned,
+    /// None is left in the reinforcements (31.4).
+    Supply,
+}
+
+/// A structure of [`StructurePlacement::withheld`]: the kind, where, and why.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct WithheldStructure {
+    /// `pds` or `spacedock`.
+    pub unit: String,
+    pub planet: PlanetId,
+    pub system: SystemId,
+    pub reason: StructureWithheld,
 }
 
 /// The structures of one kind on the board, and the box.
@@ -2425,11 +2510,8 @@ pub(crate) fn structure_hints(
     let mut placements = Vec::new();
     let mut before: Option<Vec<StructureSpot>> = None;
     for step in steps {
-        let options: Vec<StructureSpot> =
-            structure_options(state, content, sources, player, step.only_pds)
-                .iter()
-                .map(spot)
-                .collect();
+        let (offered, withheld) = structure_offers(state, content, sources, player, step.only_pds);
+        let options: Vec<StructureSpot> = offered.iter().map(spot).collect();
         let mut without = BTreeMap::new();
         for earlier in before.iter().flatten() {
             let mut after = state.clone();
@@ -2461,23 +2543,26 @@ pub(crate) fn structure_hints(
             of: step.step.map(|(_, of)| of),
             only_pds: step.only_pds,
             options: options.clone(),
+            withheld,
             without,
         });
         before = Some(options);
     }
     let mut planets = BTreeMap::new();
-    for option in placements.iter().flat_map(|placement| &placement.options) {
-        planets.entry(option.planet.clone()).or_insert_with(|| {
-            ["pds", "spacedock"]
+    let listed = placements.iter().flat_map(|placement| {
+        placement
+            .options
+            .iter()
+            .map(|option| &option.planet)
+            .chain(placement.withheld.iter().map(|withheld| &withheld.planet))
+    });
+    for planet in listed {
+        planets.entry(planet.clone()).or_insert_with(|| {
+            STRUCTURE_KINDS
                 .into_iter()
                 .map(|kind| {
                     let on = crate::production::structures_on(
-                        state,
-                        content,
-                        sources,
-                        player,
-                        &option.planet,
-                        kind,
+                        state, content, sources, player, planet, kind,
                     );
                     (kind.to_owned(), on)
                 })
@@ -6706,5 +6791,241 @@ mod bf_f3_tests {
             .and_then(|record| record.text("id"))
             .map(ToOwned::to_owned)
             .expect("a Trade card")
+    }
+}
+
+#[cfg(test)]
+mod structure_withheld_tests {
+    use super::*;
+    use crate::factions::hooks_economy::{EconomyHooks, with_test_hooks};
+    use crate::fixtures::{a_placed_planet, game, put, put_on_planet};
+    use ti4_model::content_types::{FULL, POK};
+
+    fn seat() -> PlayerId {
+        PlayerId::new("a")
+    }
+
+    /// Seat A controls a planet with nothing on it.
+    fn planet_game() -> (GameState, SystemId, PlanetId) {
+        let mut state = game(&["a", "b"]);
+        let (system, planet) = a_placed_planet();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), seat());
+        (state, system, planet)
+    }
+
+    fn reason(
+        withheld: &[WithheldStructure],
+        planet: &PlanetId,
+        unit: &str,
+    ) -> Option<StructureWithheld> {
+        withheld
+            .iter()
+            .find(|known| &known.planet == planet && known.unit == unit)
+            .map(|known| known.reason)
+    }
+
+    /// Every controlled planet and kind is offered or withheld, never both and never neither,
+    /// and the hints of the placements carry the same.
+    fn consistent(
+        state: &GameState,
+        sources: SourceSet,
+        steps: &[StructureStep],
+    ) -> Vec<Vec<WithheldStructure>> {
+        let content = ContentStore::embedded();
+        let hints = structure_hints(state, content, sources, &seat(), steps);
+        steps
+            .iter()
+            .zip(&hints.placements)
+            .map(|(step, placement)| {
+                let (options, withheld) =
+                    structure_offers(state, content, sources, &seat(), step.only_pds);
+                for (system, planet) in state.controlled_planets(&seat()) {
+                    for kind in STRUCTURE_KINDS {
+                        let offered = options
+                            .iter()
+                            .filter(|option| option.id == format!("{kind}|{system}|{planet}"))
+                            .count();
+                        let held = withheld
+                            .iter()
+                            .filter(|known| {
+                                &known.planet == planet
+                                    && &known.system == system
+                                    && known.unit == kind
+                            })
+                            .count();
+                        assert_eq!(offered + held, 1, "{kind} on {planet}: {withheld:?}");
+                    }
+                }
+                assert_eq!(placement.withheld, withheld);
+                assert_eq!(
+                    placement.options.len(),
+                    options.len(),
+                    "the hints offer what the question offers"
+                );
+                for known in &withheld {
+                    assert!(hints.planets.contains_key(&known.planet));
+                }
+                withheld
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_full_planet_reaches_its_limit_and_the_second_construction_placement_is_a_pds() {
+        let (mut state, system, planet) = planet_game();
+        let all = consistent(&state, POK, &CONSTRUCTION_STEPS);
+        assert_eq!(reason(&all[0], &planet, "pds"), None);
+        assert_eq!(reason(&all[0], &planet, "spacedock"), None);
+        assert_eq!(
+            reason(&all[1], &planet, "spacedock"),
+            Some(StructureWithheld::PdsOnly)
+        );
+
+        put_on_planet(&mut state, &system, &planet, "spacedock", &seat(), 1);
+        put_on_planet(&mut state, &system, &planet, "pds", &seat(), 2);
+        let all = consistent(&state, POK, &CONSTRUCTION_STEPS);
+        assert_eq!(
+            reason(&all[0], &planet, "spacedock"),
+            Some(StructureWithheld::Limit)
+        );
+        assert_eq!(
+            reason(&all[0], &planet, "pds"),
+            Some(StructureWithheld::Limit)
+        );
+        // PDS only comes before the limit.
+        assert_eq!(
+            reason(&all[1], &planet, "spacedock"),
+            Some(StructureWithheld::PdsOnly)
+        );
+        // The JSON that a client reads.
+        let json = serde_json::to_value(structure_hints(
+            &state,
+            ContentStore::embedded(),
+            POK,
+            &seat(),
+            &CONSTRUCTION_STEPS,
+        ))
+        .unwrap();
+        assert!(
+            json["placements"][0]["withheld"]
+                .as_array()
+                .is_some_and(|all| all.iter().any(|known| known["reason"] == "limit"
+                    && known["planet"] == planet.as_str()
+                    && known["system"] == system.as_str()))
+        );
+    }
+
+    #[test]
+    fn demilitarized_zone_comes_before_the_limit_and_homeland_defense_lifts_the_pds_limit() {
+        let (mut state, system, planet) = planet_game();
+        put_on_planet(&mut state, &system, &planet, "spacedock", &seat(), 1);
+        state
+            .laws
+            .insert("demilitarized_zone".to_owned(), planet.to_string());
+        let all = consistent(&state, POK, &ONE_STRUCTURE);
+        assert_eq!(
+            reason(&all[0], &planet, "spacedock"),
+            Some(StructureWithheld::Demilitarized)
+        );
+        assert_eq!(
+            reason(&all[0], &planet, "pds"),
+            Some(StructureWithheld::Demilitarized)
+        );
+
+        let (mut state, system, planet) = planet_game();
+        put_on_planet(&mut state, &system, &planet, "pds", &seat(), 2);
+        state.laws.insert("defense_act".to_owned(), String::new());
+        let all = consistent(&state, POK, &ONE_STRUCTURE);
+        assert_eq!(reason(&all[0], &planet, "pds"), None);
+    }
+
+    #[test]
+    fn an_empty_box_is_the_supply_and_an_ability_ban_comes_before_it() {
+        let (mut state, system, planet) = planet_game();
+        put(&mut state, &system, "pds", &seat(), 6);
+        let all = consistent(&state, POK, &ONE_STRUCTURE);
+        assert_eq!(
+            reason(&all[0], &planet, "pds"),
+            Some(StructureWithheld::Supply)
+        );
+        assert_eq!(reason(&all[0], &planet, "spacedock"), None);
+
+        fn no_pds(
+            _: &GameState,
+            _: &ContentStore,
+            _: SourceSet,
+            _: &PlayerId,
+            unit: &UnitTypeId,
+        ) -> bool {
+            unit.as_str() == "pds"
+        }
+        let hooks = EconomyHooks {
+            effect_placement_forbidden: Some(no_pds),
+            ..EconomyHooks::NONE
+        };
+        with_test_hooks(hooks, || {
+            let all = consistent(&state, POK, &ONE_STRUCTURE);
+            assert_eq!(
+                reason(&all[0], &planet, "pds"),
+                Some(StructureWithheld::Banned)
+            );
+            assert_eq!(reason(&all[0], &planet, "spacedock"), None);
+        });
+    }
+
+    #[test]
+    fn a_space_station_comes_first() {
+        let mut state = game(&["a", "b"]);
+        let system = SystemId::new("117");
+        let station = PlanetId::new("thewatchtower");
+        assert!(ti4_content::galaxy::is_space_station(
+            ContentStore::embedded(),
+            station.as_str(),
+            FULL
+        ));
+        state
+            .system_mut(&system)
+            .set_control(station.clone(), seat());
+        let all = consistent(&state, FULL, &CONSTRUCTION_STEPS);
+        for placement in &all {
+            for kind in STRUCTURE_KINDS {
+                assert_eq!(
+                    reason(placement, &station, kind),
+                    Some(StructureWithheld::SpaceStation)
+                );
+            }
+        }
+    }
+
+    /// The question of a placement carries the reasons.
+    #[test]
+    fn the_question_carries_the_withheld_structures() {
+        let (mut state, system, planet) = planet_game();
+        put_on_planet(&mut state, &system, &planet, "spacedock", &seat(), 1);
+        let (capturing, seen) =
+            crate::choice::Capturing::new(Box::new(crate::choice::AlwaysDecline));
+        let mut table = Table::with_default(Box::new(capturing));
+        place_structure(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            None,
+            &mut table,
+            &seat(),
+            false,
+        )
+        .unwrap();
+        let seen = seen.borrow();
+        let ask = seen
+            .iter()
+            .find(|choice| choice.prompt == "place a structure")
+            .expect("the placement");
+        let hints = ask.hint::<StructureHints>("structures").expect("hints");
+        assert_eq!(
+            reason(&hints.placements[0].withheld, &planet, "spacedock"),
+            Some(StructureWithheld::Limit)
+        );
     }
 }
