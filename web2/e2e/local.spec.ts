@@ -2067,10 +2067,11 @@ test("Technology: the secondary researches in the row of the seat and pays on th
   await expect(send(page)).toHaveText(/Research nothing/);
   await page.keyboard.press("Enter");
 
-  // One list shows what every seat did: Sol's primary is resolved, Hacan decides, Letnev waits.
+  // One list shows what every seat did: Sol's primary is resolved, Hacan decides, Letnev waits
+  // in the line "Then: …".
   await expect(panel(page)).toContainText("✓ Resolved");
   await expect(panel(page)).toContainText("▶ Your decision");
-  await expect(panel(page)).toContainText("· Waits for you");
+  await expect(panel(page)).toContainText("Then: ");
   // Hacan's window is a list; following opens the tree in its row.
   await expect(panel(page)).toContainText("Strategy pool 2 → 1");
   await panel(page).getByRole("button", { name: "Spend", exact: true }).click();

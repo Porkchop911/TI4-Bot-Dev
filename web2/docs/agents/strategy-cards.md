@@ -6,8 +6,9 @@ Part of `web2/AGENTS.md`: the Patterns and the rules of Screen size and Text the
 
 All eight cards use one frame: one list of seats. There are no tabs, no seat column and no trail.
 
-- The list has the primary ("P") and then the secondaries in seat order. Each seat is one full-width line: order, symbol, name, state, and what the seat did. All decisions made so far are on one screen, with no click.
-- A state has a sign: "▶ Deciding", "· Waits for Blair", "✎ Private draft", "✎ Draft ready", "✓ Resolved", "✓ Followed", "– Passed".
+- The list has the primary ("P") and then the secondaries in seat order. Each seat that did something or decides, and the seat of the viewer, is one full-width line: order, symbol, name, state, and what the seat did. All decisions made so far are on one screen, with no click.
+- The other seats that wait are one line under the list, "Then: Blair, Cora", in their order (`waitingInShort` in `select/strategy.ts`); the same under the band of an ability that asks in the middle of the action.
+- A state has a sign: "▶ Deciding", "✎ Private draft", "✎ Draft ready", "✓ Resolved", "✓ Followed", "– Passed"; the row of the viewer while it waits, "· Waits for Blair".
 - Only the row of the viewer opens: into the editor, in place, while the viewer has a choice or an open draft there. After it resolves the row closes and shows its result like any other row. A ready draft is closed and says what it will do.
 - Other rows are not controls. A choice of another player is visible when it is resolved, never before.
 - The same list, with no open row, is the read-only view of a strategy card in the event log.

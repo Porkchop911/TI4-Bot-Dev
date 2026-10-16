@@ -34,11 +34,11 @@ export function showsStrategy(update: SessionUpdate, local: LocalState): boolean
 }
 
 /**
- * The seats under a band: the seats that did something or decide, then the seats that wait, in
- * their order, as one line.
+ * The seats of the action: the seats that did something or decide, and the viewer, as rows; the
+ * other seats that wait, in their order, as one line.
  */
 function waitingInShort(primary: SeatRowView, followers: SeatRowView[]): BlockView[] {
-  const waits = (row: SeatRowView) => row.status.sign === "·";
+  const waits = (row: SeatRowView) => row.status.sign === "·" && !row.you;
   const waiting = followers.filter(waits);
   return [
     { kind: "seats", rows: [primary, ...followers.filter((row) => !waits(row))] },
@@ -90,7 +90,7 @@ export function selectStrategy(
   // An editor is one screen of several questions: its blocks say what it asks and costs.
   const several = openEditor(update, local) !== null;
   // An ability that asks in the middle of the action is the band on top of it (`interrupt`): the
-  // row of the seat has nothing open, and the seats that wait are one line.
+  // row of the seat has nothing open.
   const band = !!inner.interrupt;
   const asked: BlockView[] = band
     ? []
@@ -260,9 +260,7 @@ export function selectStrategy(
           ? { tone: "done", label: "Resolved" }
           : null,
     contentKey: `strategy:${action.primary}:${action.card}`,
-    blocks: band
-      ? waitingInShort(primary, followers)
-      : [{ kind: "seats", rows: [primary, ...followers] }],
+    blocks: waitingInShort(primary, followers),
     footer,
   };
 }
