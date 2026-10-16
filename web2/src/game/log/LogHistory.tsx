@@ -148,7 +148,11 @@ function PhaseRow({
     <>
       {details && <Toggle open={open} />}
       <span className="shrink-0 font-strong">{view.label}</span>
-      {view.summary && <span className="min-w-0 truncate text-muted">{view.summary}</span>}
+      {view.summary && (
+        <span className="min-w-0 truncate text-muted phone:whitespace-normal" title={view.summary}>
+          {view.summary}
+        </span>
+      )}
     </>
   );
   return (
@@ -174,8 +178,8 @@ function PhaseRow({
 function Groups({ groups }: { groups: LogGroupView[] }) {
   return (
     <div className="space-y-1.5 border-b border-line bg-well/40 py-1.5 pr-3 pl-8 phone:pl-6">
-      {groups.map((group) => (
-        <section key={group.title} aria-label={group.title}>
+      {groups.map((group, index) => (
+        <section key={index} aria-label={group.title}>
           <h4 className="text-xs font-strong text-muted">{group.title}</h4>
           <ul>
             {group.lines.map((line, index) => {

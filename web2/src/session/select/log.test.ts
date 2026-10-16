@@ -79,6 +79,10 @@ const printed = {
     ],
     public_objectives: [],
     secret_objectives: [],
+    agendas: [
+      { id: "mutiny", name: "Mutiny", kind: "Directive", text: "", group: "" },
+      { id: "shared_research", name: "Shared Research", kind: "Law", text: "", group: "" },
+    ],
   },
   records: {
     units: [
@@ -86,6 +90,9 @@ const printed = {
       { id: "cruiser", base_type: "cruiser", name: "Cruiser I" },
       { id: "dreadnought", base_type: "dreadnought", name: "Dreadnought I" },
       { id: "infantry", base_type: "infantry", name: "Infantry I" },
+      { id: "fighter", base_type: "fighter", name: "Fighter I" },
+      { id: "destroyer", base_type: "destroyer", name: "Destroyer I" },
+      { id: "pds", base_type: "pds", name: "PDS I" },
     ],
     planets: [],
     technologies: [],
@@ -100,7 +107,7 @@ const printed = {
     ],
     secret_objectives: [],
   },
-  exploration: { cards: [] },
+  exploration: { cards: [{ id: "vfs2", name: "Volatile Fuel Source" }] },
 } as unknown as Catalog;
 
 let counter = 0;
@@ -134,6 +141,26 @@ const rolled = (action: string, actor: string, roll: Partial<PublicRoll>): GameE
   round: 3,
   phase: "action",
   roll: { index: counter, reason: "space combat", label: "Space combat", faces: [5], ...roll },
+});
+/** A change of the state that no decision told, in the action of `actor`; `seat` is its seat. */
+const changed = (
+  action: string | null,
+  actor: string | null,
+  seat: string | null,
+  fact: PublicFact,
+  change: Partial<GameEvent> = {},
+): GameEvent => ({
+  id: `g-${++counter}`,
+  timestamp: "",
+  visibility: { visibility: "public" },
+  event: { kind: "state_changed" },
+  ...(action ? { action_id: action } : {}),
+  ...(actor ? { action_actor: actor } : {}),
+  ...(seat ? { actor: seat } : {}),
+  round: 3,
+  phase: "action",
+  fact,
+  ...change,
 });
 const transition = (phase: Phase, round: number): GameEvent => ({
   id: `g-${++counter}`,
@@ -266,7 +293,7 @@ describe("the turns of the Log", () => {
     expect(turn.groups.map((group) => group.title)).toEqual([
       "Activation",
       "Movement",
-      "Space combat",
+      "Space combat · Mecatol Rex · #18 · Hacan vs Jol-Nar",
       "Invasion",
     ]);
     expect(turn.groups[1].lines).toEqual([
@@ -276,12 +303,12 @@ describe("the turns of the Log", () => {
     // The rolls of one round are together; a seat that rolls again starts the next round.
     const combat = turn.groups[2].lines;
     expect(combat.map((line) => [line.seat, line.text, line.dice?.hits])).toEqual([
-      ["b", "Space combat · round 1", 1],
-      ["b", "Space combat · round 1", 0],
-      ["c", "Space combat · round 1", 1],
+      ["b", "Round 1", 1],
+      ["b", "Round 1", 0],
+      ["c", "Round 1", 1],
       ["b", "Lost: Carrier I", undefined],
-      ["b", "Space combat · round 2", 1],
-      ["c", "Space combat · round 2", 0],
+      ["b", "Round 2", 1],
+      ["c", "Round 2", 0],
       ["c", "Lost: Cruiser I", undefined],
     ]);
     expect(combat[1].dice).toEqual({ faces: [2, 3], hitsOn: 9, hits: 0 });
@@ -563,17 +590,17 @@ describe("what the Log reads", () => {
         summary: "2 agendas voted",
         groups: [
           {
-            title: "Agenda 1 · Votes",
+            title: "Agenda 1",
             lines: [
-              { seat: "b", text: "For · Abyz, Fria" },
+              { seat: "b", text: "Voted For: Abyz, Fria" },
               { seat: "c", text: "Abstained" },
             ],
           },
           {
-            title: "Agenda 2 · Votes",
+            title: "Agenda 2",
             lines: [
-              { seat: "b", text: "Jol-Nar" },
-              { seat: "c", text: "Mecatol Rex" },
+              { seat: "b", text: "Voted Jol-Nar" },
+              { seat: "c", text: "Voted Mecatol Rex" },
             ],
           },
         ],
@@ -781,18 +808,440 @@ describe("the invasion of a tactical action", () => {
       ).entries,
     );
     expect(turn.summary).toBe("landed on Mecatol Rex · removed the custodians");
-    const invasion = turn.groups.find((group) => group.title === "Invasion");
-    expect(invasion?.lines.map((line) => [line.seat, line.text, line.dice?.faces])).toEqual([
+    const lines = (group: {
+      lines: { seat: string | null; text: string; dice?: { faces: number[] } }[];
+    }) => group.lines.map((line) => [line.seat, line.text, line.dice?.faces]);
+    expect(turn.groups.map((group) => group.title)).toEqual([
+      "Activation",
+      "Invasion",
+      "Ground combat · Mecatol Rex · Hacan vs Jol-Nar",
+      "Ground combat · Mecatol Rex",
+    ]);
+    expect(lines(turn.groups[1])).toEqual([
       ["b", "Removed the custodians from Mecatol Rex · #18", undefined],
       ["b", "Bombarded Jol-Nar on Mecatol Rex", undefined],
       ["b", "Landed on Mecatol Rex: Infantry I", undefined],
-      ["b", "Ground combat · Mecatol Rex · round 1", [8, 2]],
-      ["b", "Ground combat · Mecatol Rex · round 1", [3]],
-      ["c", "Ground combat · Mecatol Rex · round 1", [9]],
+    ]);
+    expect(lines(turn.groups[2])).toEqual([
+      ["b", "Round 1", [8, 2]],
+      ["b", "Round 1", [3]],
+      ["c", "Round 1", [9]],
       ["c", "Did not sustain damage", undefined],
-      ["b", "Ground combat · Mecatol Rex · round 2", [1]],
-      ["c", "Ground combat · Mecatol Rex · round 2", [10]],
-      ["c", "Started a ground combat on Mecatol Rex", undefined],
+      ["b", "Round 2", [1]],
+      ["c", "Round 2", [10]],
+    ]);
+    // A further ground combat on the planet is a combat of its own.
+    expect(lines(turn.groups[3])).toEqual([["c", "Started a further ground combat", undefined]]);
+  });
+});
+
+describe("what the state tells of a turn", () => {
+  // Jol-Nar (c) attacks Hacan (b) in Mecatol Rex: an anti-fighter barrage, a retreat that Hacan
+  // announces and does not make, a loss that the game assigned, the end of the space combat; then
+  // two landings, two rounds of ground combat with a loss on each side, the end of the ground
+  // combat and the planet that changes hands.
+  const story = (action: string) => [
+    decided(action, "c", "c", started("tactical"), { stage: "action selection" }),
+    decided(action, "c", "c", { kind: "activated", system: "18" }),
+    decided(action, "c", "c", { kind: "moved", unit: "destroyer", from: "38", to: "18" }),
+    decided(action, "c", "c", { kind: "moved", unit: "carrier", from: "38", to: "18" }),
+    decided(action, "c", "c", { kind: "loaded", unit: "infantry", system: "38", planet: "abyz" }),
+    decided(action, "c", "c", { kind: "loaded", unit: "infantry", system: "38", planet: "abyz" }),
+    rolled(action, "c", {
+      roller: "c",
+      reason: "anti-fighter barrage",
+      label: "Anti-fighter barrage",
+      faces: [9, 7],
+      hits_on: 9,
+      hits: 1,
+      system: "18",
+    }),
+    changed(action, "c", "b", {
+      kind: "destroyed",
+      seat: "b",
+      unit: "fighter",
+      count: 1,
+      system: "18",
+    }),
+    decided(action, "c", "b", {
+      kind: "retreat_announced",
+      seat: "b",
+      system: "18",
+      retreat: true,
+    }),
+    rolled(action, "c", { roller: "c", faces: [10, 4], hits_on: 9, hits: 1, system: "18" }),
+    rolled(action, "c", { roller: "b", faces: [5], hits_on: 9, hits: 0, system: "18" }),
+    changed(action, "c", "b", {
+      kind: "destroyed",
+      seat: "b",
+      unit: "carrier",
+      count: 1,
+      system: "18",
+    }),
+    changed(action, "c", "c", {
+      kind: "combat_ended",
+      combat: "space",
+      system: "18",
+      attacker: "c",
+      defender: "b",
+      winner: "c",
+    }),
+    decided(action, "c", "c", { kind: "landed", unit: "infantry", planet: "mr", damaged: false }),
+    decided(action, "c", "c", { kind: "landed", unit: "infantry", planet: "mr", damaged: false }),
+    decided(action, "c", "c", { kind: "ground_combat_round", seat: "c", planet: "mr" }),
+    rolled(action, "c", {
+      roller: "c",
+      reason: "ground combat",
+      label: "Ground combat",
+      faces: [2, 7],
+      hits_on: 8,
+      hits: 0,
+    }),
+    rolled(action, "c", {
+      roller: "b",
+      reason: "ground combat",
+      label: "Ground combat",
+      faces: [8],
+      hits_on: 8,
+      hits: 1,
+    }),
+    changed(action, "c", "c", {
+      kind: "destroyed",
+      seat: "c",
+      unit: "infantry",
+      count: 1,
+      system: "18",
+      planet: "mr",
+    }),
+    decided(action, "c", "c", { kind: "ground_combat_round", seat: "c", planet: "mr" }),
+    rolled(action, "c", {
+      roller: "c",
+      reason: "ground combat",
+      label: "Ground combat",
+      faces: [8],
+      hits_on: 8,
+      hits: 1,
+    }),
+    rolled(action, "c", {
+      roller: "b",
+      reason: "ground combat",
+      label: "Ground combat",
+      faces: [1],
+      hits_on: 8,
+      hits: 0,
+    }),
+    changed(action, "c", "b", {
+      kind: "destroyed",
+      seat: "b",
+      unit: "infantry",
+      count: 1,
+      system: "18",
+      planet: "mr",
+    }),
+    // A structure of a taken planet is destroyed with it.
+    changed(action, "c", "b", {
+      kind: "destroyed",
+      seat: "b",
+      unit: "pds",
+      count: 1,
+      system: "18",
+      planet: "mr",
+    }),
+    changed(action, "c", "c", {
+      kind: "combat_ended",
+      combat: "ground",
+      system: "18",
+      planet: "mr",
+      attacker: "c",
+      defender: "b",
+      winner: "c",
+    }),
+    changed(action, "c", "c", {
+      kind: "control_gained",
+      seat: "c",
+      planet: "mr",
+      system: "18",
+      from: "b",
+    }),
+    changed(action, "c", "c", {
+      kind: "explored",
+      seat: "c",
+      card: "vfs2",
+      deck: "HAZARDOUS",
+      planet: "mr",
+    }),
+    decided(action, "c", "c", ENDED),
+  ];
+  const lines = (group: LogTurnView["groups"][number] | undefined) =>
+    group?.lines.map((line) => [line.seat, line.text, line.dice?.faces]);
+
+  it("has a block for each combat: its sides, its rounds and losses, and how it ended", () => {
+    const [turn] = turns(
+      selectLog(update({ viewer: null }), eventsOf(story("action_419")), printed).entries,
+    );
+    expect(turn.summary).toBe("moved 2 ships · won the space combat · took Mecatol Rex from Hacan");
+    expect(turn.groups.map((group) => group.title)).toEqual([
+      "Activation",
+      "Movement",
+      "Space combat · Mecatol Rex · #18 · Jol-Nar vs Hacan",
+      "Invasion",
+      "Ground combat · Mecatol Rex · Jol-Nar vs Hacan",
+      "Exploration",
+    ]);
+    expect(lines(turn.groups[2])).toEqual([
+      ["c", "Anti-fighter barrage", [9, 7]],
+      ["b", "Lost: Fighter I", undefined],
+      ["b", "Announced a retreat", undefined],
+      ["c", "Round 1", [10, 4]],
+      ["b", "Round 1", [5]],
+      ["b", "Lost: Carrier I", undefined],
+      ["c", "Won by Jol-Nar", undefined],
+    ]);
+    expect(lines(turn.groups[3])).toEqual([
+      ["c", "Landed on Mecatol Rex: 2 Infantry I", undefined],
+    ]);
+    expect(lines(turn.groups[4])).toEqual([
+      ["c", "Round 1", [2, 7]],
+      ["b", "Round 1", [8]],
+      ["c", "Lost: Infantry I", undefined],
+      ["c", "Round 2", [8]],
+      ["b", "Round 2", [1]],
+      ["b", "Lost: Infantry I, PDS I", undefined],
+      ["c", "Won by Jol-Nar", undefined],
+      ["c", "Took Mecatol Rex from Hacan", undefined],
+    ]);
+    expect(lines(turn.groups[5])).toEqual([
+      ["c", "Explored Mecatol Rex: Volatile Fuel Source", undefined],
+    ]);
+  });
+
+  it("counts a loss that a seat chose and one that the game took in the same line", () => {
+    const [turn] = turns(
+      selectLog(
+        update({ viewer: null }),
+        eventsOf([
+          decided("action_1", "c", "c", started("tactical")),
+          decided("action_1", "c", "c", { kind: "activated", system: "18" }),
+          rolled("action_1", "c", { roller: "c", faces: [10, 10], hits_on: 9, hits: 2 }),
+          rolled("action_1", "c", { roller: "b", faces: [1], hits_on: 9, hits: 0 }),
+          decided("action_1", "c", "b", {
+            kind: "casualty",
+            seat: "b",
+            unit: "cruiser",
+            system: "18",
+            damaged: false,
+          }),
+          changed("action_1", "c", "b", {
+            kind: "destroyed",
+            seat: "b",
+            unit: "fighter",
+            count: 2,
+            system: "18",
+          }),
+        ]),
+        printed,
+      ).entries,
+    );
+    // The combat is under way: its title has the sides of the rolls.
+    expect(turn.groups[1].title).toBe("Space combat · Mecatol Rex · #18 · Jol-Nar vs Hacan");
+    expect(lines(turn.groups[1])).toEqual([
+      ["c", "Round 1", [10, 10]],
+      ["b", "Round 1", [1]],
+      ["b", "Lost: Cruiser I, 2 Fighter I", undefined],
+    ]);
+    expect(turn.summary).toBe("combat (destroyed 3)");
+  });
+
+  it("tells a retreat that no decision told, and a combat that left no side", () => {
+    const end = (fact: Partial<Extract<PublicFact, { kind: "combat_ended" }>>) => [
+      decided("action_1", "c", "c", started("tactical")),
+      decided("action_1", "c", "c", { kind: "activated", system: "18" }),
+      rolled("action_1", "c", { roller: "c", faces: [3], hits_on: 9, hits: 0 }),
+      changed("action_1", "c", "c", {
+        kind: "combat_ended",
+        combat: "space",
+        system: "18",
+        attacker: "c",
+        defender: "b",
+        ...fact,
+      }),
+    ];
+    const combatOf = (fact: Partial<Extract<PublicFact, { kind: "combat_ended" }>>) =>
+      turns(selectLog(update({ viewer: null }), eventsOf(end(fact)), printed).entries)[0];
+    const retreat = combatOf({ winner: "b", retreated: "c" });
+    expect(lines(retreat.groups[1])?.slice(1)).toEqual([
+      ["c", "Retreated", undefined],
+      ["b", "Won by Hacan", undefined],
+    ]);
+    expect(retreat.summary).toBe("retreated from the space combat");
+    const none = combatOf({});
+    expect(lines(none.groups[1])?.slice(1)).toEqual([[null, "Both sides destroyed", undefined]]);
+    expect(none.summary).toBe("space combat: both sides destroyed");
+    expect(combatOf({ winner: "b" }).summary).toBe("lost the space combat");
+  });
+
+  it("keeps a loss to space cannon in the step of the shot", () => {
+    const [turn] = turns(
+      selectLog(
+        update({ viewer: null }),
+        eventsOf([
+          decided("action_1", "c", "c", started("tactical")),
+          decided("action_1", "c", "c", { kind: "activated", system: "18" }),
+          rolled("action_1", "c", {
+            roller: "b",
+            reason: "space cannon",
+            label: "Space cannon",
+            faces: [9],
+            hits_on: 6,
+            hits: 1,
+          }),
+          changed("action_1", "c", "c", {
+            kind: "destroyed",
+            seat: "c",
+            unit: "fighter",
+            count: 1,
+            system: "18",
+          }),
+        ]),
+        printed,
+      ).entries,
+    );
+    expect(turn.groups.map((group) => [group.title, lines(group)])).toEqual([
+      ["Activation", [["c", "Activated Mecatol Rex · #18", undefined]]],
+      [
+        "Space cannon",
+        [
+          ["b", "Space cannon", [9]],
+          ["c", "Lost: Fighter I", undefined],
+        ],
+      ],
+    ]);
+    // No combat: the summary says the loss.
+    expect(turn.summary).toBe("lost 1 ship");
+  });
+
+  it("names the action card of a component action from the card that the state tells", () => {
+    const [turn] = turns(
+      selectLog(
+        update({ viewer: null }),
+        eventsOf([
+          decided("action_1", "c", "c", {
+            kind: "action_started",
+            action: { type: "component", source: { type: "action_card" } },
+          } as PublicFact),
+          changed("action_1", "c", "c", { kind: "card_played", card: "sabo1" }),
+          decided("action_1", "c", "c", ENDED),
+        ]),
+        printed,
+      ).entries,
+    );
+    expect(turn.label).toBe("Component · Sabotage");
+    expect(lines(turn.groups[0])).toEqual([["c", "Played Sabotage", undefined]]);
+  });
+});
+
+describe("what the state tells of a phase", () => {
+  it("has a group for each agenda: its outcome and the votes, each seat's vote and its count", () => {
+    const vote = (seat: string, fact: PublicFact) => inPhase("agenda", 3, seat, fact);
+    const log = selectLog(
+      update({ viewer: null, phase: "agenda" }),
+      eventsOf([
+        transition("agenda", 3),
+        vote("a", { kind: "card_played", card: "sabo1" }),
+        vote("b", { kind: "voted", outcome: "for" }),
+        vote("b", { kind: "planet_exhausted_for_vote", planet: "abyz", votes: 3 }),
+        vote("b", { kind: "planet_exhausted_for_vote", planet: "fria", votes: 2 }),
+        vote("c", { kind: "voted", outcome: "against" }),
+        vote("c", { kind: "planet_exhausted_for_vote", planet: "jord", votes: 2 }),
+        vote("a", { kind: "voted" }),
+        changed(
+          null,
+          null,
+          null,
+          {
+            kind: "agenda_resolved",
+            agenda: "mutiny",
+            outcome: "for",
+            votes: { for: 5, against: 2 },
+            speaker_decided: false,
+            law: false,
+            enacted: false,
+            discarded: false,
+          },
+          { phase: "agenda" },
+        ),
+        // The second agenda: the same seats vote again, and the speaker breaks a tie.
+        vote("b", { kind: "voted", outcome: "against" }),
+        vote("b", { kind: "planet_exhausted_for_vote", planet: "abyz", votes: 3 }),
+        vote("c", { kind: "voted", outcome: "for" }),
+        vote("c", { kind: "planet_exhausted_for_vote", planet: "mr", votes: 3 }),
+        vote("a", { kind: "tie_broken", outcome: "for" }),
+        changed(
+          null,
+          null,
+          null,
+          {
+            kind: "agenda_resolved",
+            agenda: "shared_research",
+            outcome: "for",
+            votes: { for: 3, against: 3 },
+            speaker_decided: true,
+            law: true,
+            enacted: true,
+            discarded: false,
+          },
+          { phase: "agenda" },
+        ),
+      ]),
+      printed,
+    );
+    const [phase] = log.entries;
+    expect(phase.summary).toBe("Mutiny: For · Shared Research: For");
+    expect(phase.groups).toEqual([
+      {
+        title: "Mutiny · For (For 5 · Against 2)",
+        lines: [
+          { seat: "a", text: "Played Sabotage" },
+          { seat: "b", text: "Voted For · 5 votes: Abyz, Fria" },
+          { seat: "c", text: "Voted Against · 2 votes: Jord" },
+          { seat: "a", text: "Abstained" },
+        ],
+      },
+      {
+        title: "Shared Research · For (For 3 · Against 3)",
+        lines: [
+          { seat: "b", text: "Voted Against · 3 votes: Abyz" },
+          { seat: "c", text: "Voted For · 3 votes: Mecatol Rex" },
+          { seat: "a", text: "Broke the tie: For" },
+          { seat: null, text: "Enacted as a law" },
+        ],
+      },
+    ]);
+  });
+
+  it("has the objectives that the status phase revealed", () => {
+    const log = selectLog(
+      update({ viewer: null, phase: "status" }),
+      eventsOf([
+        transition("status", 3),
+        inPhase("status", 3, "b", { kind: "objective_scored", objective: "corner", secret: false }),
+        changed(
+          null,
+          null,
+          null,
+          { kind: "objective_revealed", objective: "corner" },
+          {
+            phase: "status",
+          },
+        ),
+      ]),
+      printed,
+    );
+    const [phase] = log.entries;
+    expect(phase.summary).toBe("1 objective scored · revealed Corner the Market");
+    expect(phase.groups).toEqual([
+      { title: "Scored", lines: [{ seat: "b", text: "Corner the Market" }] },
+      { title: "Revealed", lines: [{ seat: null, text: "Corner the Market" }] },
     ]);
   });
 });

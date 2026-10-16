@@ -59,6 +59,7 @@ interface Names {
   ability(id: string): string;
   /** A vote: "For", "Against", or what is elected. */
   outcome(id: string): string;
+  agenda(id: string): string;
 }
 
 const byId = (
@@ -107,6 +108,7 @@ function namesOf(update: SessionUpdate, printed: Catalog | null): Names {
     relic: (id) => byId(id, components?.relics, records?.relics) ?? humanizeId(id),
     explore: (id) => byId(id, printed?.exploration.cards, records?.explores) ?? humanizeId(id),
     ability: (id) => byId(id, components?.abilities, records?.abilities) ?? humanizeId(id),
+    agenda: (id) => byId(id, components?.agendas) ?? humanizeId(id),
     outcome: (id) =>
       id === "for"
         ? "For"
@@ -127,27 +129,42 @@ type Line =
   | { kind: "text"; seat: string | null; text: string; dice?: LogLineView["dice"] }
   | { kind: "units"; seat: string | null; head: string; units: Map<string, number> }
   | { kind: "list"; seat: string | null; head: string; items: string[]; goods: number }
-  | { kind: "tokens"; seat: string | null; pools: Map<TokenPool, number> };
+  | { kind: "tokens"; seat: string | null; pools: Map<TokenPool, number> }
+  | {
+      kind: "vote";
+      seat: string | null;
+      /** The outcome in words; null: abstained. */
+      outcome: string | null;
+      planets: string[];
+      votes: number;
+    };
 
 type UnitsLine = Extract<Line, { kind: "units" }>;
 type ListLine = Extract<Line, { kind: "list" }>;
 type TokensLine = Extract<Line, { kind: "tokens" }>;
+type VoteLine = Extract<Line, { kind: "vote" }>;
 
 /** The pools of the command sheet, in the order of the sheet. */
 const POOLS: readonly TokenPool[] = ["tactic", "fleet", "strategy"];
 
-/** The groups in the order that an entry shows them. A group of another title comes last. */
+/**
+ * The groups in the order that an entry shows them, by the start of their key. A group of
+ * another key comes last.
+ */
 const GROUPS = [
   "Activation",
   "Movement",
   "Space cannon",
   "Space combat",
   "Invasion",
+  "Ground combat",
+  "Exploration",
   "Production",
   "Primary",
   "Secondaries",
   "Picks",
   "Scored",
+  "Revealed",
   "Command tokens",
   "Agenda",
   "Effects",
@@ -156,19 +173,30 @@ const GROUPS = [
   "Rolls",
 ];
 
+/** The groups of an entry by key; the title of a group is its key unless it is given one. */
 class Groups {
-  private readonly groups = new Map<string, Map<string, Line>>();
+  private readonly groups = new Map<string, { title: string; lines: Map<string, Line> }>();
   private count = 0;
 
   constructor(private readonly names: Names) {}
 
+  private group(key: string) {
+    let found = this.groups.get(key);
+    if (!found) {
+      found = { title: key, lines: new Map() };
+      this.groups.set(key, found);
+    }
+    return found;
+  }
+
+  /** The title of a group whose key is no title: a combat, an agenda. */
+  title(key: string, title: string) {
+    this.group(key).title = title;
+  }
+
   /** The line of `key` in `group`, made when there is none. A null key is always a new line. */
   line<T extends Line>(group: string, key: string | null, make: () => T): T {
-    let lines = this.groups.get(group);
-    if (!lines) {
-      lines = new Map();
-      this.groups.set(group, lines);
-    }
+    const lines = this.group(group).lines;
     const at = key ?? `#${this.count++}`;
     const found = lines.get(at);
     if (found) {
@@ -183,9 +211,12 @@ class Groups {
     this.line(group, null, () => ({ kind: "text", seat, text, ...(dice ? { dice } : {}) }));
   }
 
-  /** Adds units to the line of `key`: "Lost 2 Fighter I, Carrier I". */
-  units(group: string, seat: string | null, head: string, unit: string, count = 1) {
-    const line = this.line<UnitsLine>(group, `${seat}|${head}`, () => ({
+  /**
+   * Adds units to the line of the seat and `head` ("Lost: 2 Fighter I, Carrier I"), or of `key`
+   * when it is given (the losses of one round).
+   */
+  units(group: string, seat: string | null, head: string, unit: string, count = 1, key?: string) {
+    const line = this.line<UnitsLine>(group, key ?? `${seat}|${head}`, () => ({
       kind: "units",
       seat,
       head,
@@ -221,16 +252,16 @@ class Groups {
   }
 
   view(): LogGroupView[] {
-    const rank = (title: string) => {
-      const at = GROUPS.findIndex((item) => title.startsWith(item));
+    const rank = (key: string) => {
+      const at = GROUPS.findIndex((item) => key.startsWith(item));
       return at < 0 ? GROUPS.length : at;
     };
     return [...this.groups]
-      .filter(([, lines]) => lines.size > 0)
+      .filter(([, group]) => group.lines.size > 0)
       .sort(([a], [b]) => rank(a) - rank(b))
-      .map(([title, lines]) => {
-        const views = [...lines.values()].map((line) => this.lineView(line));
-        return { title, lines: title === "Secondaries" ? bySeat(views) : views };
+      .map(([key, group]) => {
+        const views = [...group.lines.values()].map((line) => this.lineView(line));
+        return { title: group.title, lines: key === "Secondaries" ? bySeat(views) : views };
       });
   }
 
@@ -253,6 +284,16 @@ class Groups {
           plural(line.pools.get(pool) ?? 0, `${pool} token`),
         );
         return { seat: line.seat, text: `Gained ${pools.join(", ")}` };
+      }
+      case "vote": {
+        if (line.outcome === null) {
+          return { seat: line.seat, text: "Abstained" };
+        }
+        const votes = line.votes ? ` · ${plural(line.votes, "vote")}` : "";
+        const planets = line.planets.length ? `: ${line.planets.join(", ")}` : "";
+        // "Voted" tells a vote from a card played in the same agenda, and an elected planet
+        // from the planets that voted.
+        return { seat: line.seat, text: `Voted ${line.outcome}${votes}${planets}` };
       }
     }
   }
@@ -286,7 +327,7 @@ function bySeat(lines: LogLineView[]): LogLineView[] {
     .map(({ line }) => line);
 }
 
-/** The group of a roll, by its reason. */
+/** The step of a roll, by its reason. */
 function rollGroup(roll: PublicRoll): string {
   switch (roll.reason.split(":")[0]) {
     case "gravity rift":
@@ -297,16 +338,14 @@ function rollGroup(roll: PublicRoll): string {
     case "anti-fighter barrage":
       return "Space combat";
     case "bombardment":
-    case "ground combat":
     case "space cannon defense":
       return "Invasion";
+    case "ground combat":
+      return "Ground combat";
     default:
       return "Rolls";
   }
 }
-
-/** The reasons of the rolls of a combat, which has rounds. */
-const COMBAT = new Set(["space combat", "ground combat"]);
 
 /** What a component action uses, by name. */
 function sourceName(source: ComponentSource, names: Names, played: string | null): string {
@@ -334,6 +373,39 @@ function sourceName(source: ComponentSource, names: Names, played: string | null
   }
 }
 
+/**
+ * A combat of an entry: a group of its own, from its first roll or loss to the fact of its end
+ * (`combat_ended`). A space combat is in a system, a ground combat on a planet.
+ */
+interface Combat {
+  key: string;
+  kind: "space" | "ground";
+  /** The system of a space combat, the planet of a ground combat. */
+  place: string;
+  attacker: string | null;
+  defender: string | null;
+  /** The round so far; 0 before the first (the anti-fighter barrage). */
+  round: number;
+  /** The seats and values that rolled in the round: a second roll of one starts the next round. */
+  rolled: Set<string>;
+  /** No decision since the last roll: the round goes on. */
+  open: boolean;
+  /** The host told its end. */
+  ended: boolean;
+  /** A decision told the retreat ("Retreated to …"). */
+  retreatTold: boolean;
+}
+
+/** An agenda of the agenda phase: its group, who voted in it, and whether the host resolved it. */
+interface Agenda {
+  key: string;
+  number: number;
+  voted: Set<string>;
+  resolved: boolean;
+  /** The speaker broke a tie: the end of the agenda need not say that the speaker decided. */
+  tieBroken: boolean;
+}
+
 /** The details of the events of one entry. `actor` is the seat of a turn; `strategic` sorts by seat. */
 function detailsOf(
   events: readonly GameEvent[],
@@ -351,44 +423,145 @@ function detailsOf(
   /** The group of what a seat did that has no group of its own. */
   const effects = (seat: string | null) =>
     scope.strategic ? (seat === scope.actor ? "Primary" : "Secondaries") : "Effects";
+  // In a strategic action what a seat did is in the part of its seat; else in its step.
+  const own = (step: string, seat: string | null) => (scope.strategic ? effects(seat) : step);
+
+  // The combats, each a group. The rounds of a space combat are not told by the host: the
+  // engine rolls the units of one seat and one value together, so a second roll of the same seat
+  // and value, or a roll after a decision, is the next round. A round of ground combat is a fact.
+  const combats: Combat[] = [];
+  let activated: string | null = null;
+  const combat = (kind: Combat["kind"], place: string, make = true): Combat | null => {
+    const found = combats.findLast((item) => item.kind === kind && item.place === place);
+    if (found && !found.ended) {
+      return found;
+    }
+    if (!make) {
+      return found ?? null;
+    }
+    const made: Combat = {
+      key: `${kind === "space" ? "Space combat" : "Ground combat"}|${place}|${combats.length}`,
+      kind,
+      place,
+      attacker: null,
+      defender: null,
+      round: 0,
+      rolled: new Set(),
+      open: false,
+      ended: false,
+      retreatTold: false,
+    };
+    combats.push(made);
+    return made;
+  };
+  /** The space combat that is under way, else the last one, else a new one in `system`. */
+  const space = (system?: string | null): Combat => {
+    const place = system ?? activated ?? "";
+    const open = combats.findLast((item) => item.kind === "space" && !item.ended);
+    return open ?? (combat("space", place) as Combat);
+  };
+  /** A seat that fights: the attacker is the seat of the turn, the other is the defender. */
+  const fights = (fight: Combat, seat: string | null) => {
+    if (!seat) {
+      return;
+    }
+    fight.attacker ??= scope.actor ?? seat;
+    if (seat !== fight.attacker) {
+      fight.defender ??= seat;
+    }
+  };
+  /** The planet of the round of ground combat that is under way: its rolls need no guess. */
+  let groundPlanet: string | null = null;
+  /** The group of the last roll: a loss that no decision chose is of the fire before it. */
+  let fire: string | null = null;
   /**
-   * The combat round so far, by group. The engine rolls the units of one seat and one value
-   * together: a second roll of the same seat and value, or a roll after a decision, is the next
-   * round.
+   * The group and the line of a loss: in its combat, by round; else in the step of the fire
+   * before it (space cannon, bombardment); else in the step of the place.
    */
-  const rounds = new Map<string, { number: number; rolled: Set<string>; open: boolean }>();
-  /**
-   * The round of ground combat that a fact started (`ground_combat_round`), and the rounds so far
-   * on each planet. With it the rolls of ground combat need no guess.
-   */
-  let ground: { planet: string; number: number } | null = null;
-  const groundRounds = new Map<string, number>();
-  /** The agenda of the votes so far: who voted in it, and its number. */
-  let agenda = { number: 0, voted: new Set<string>() };
+  const lossAt = (seat: string, system?: string, planet?: string): [string, string] => {
+    if (planet) {
+      const fight = combat("ground", planet, false);
+      if (fight) {
+        return [fight.key, `${fight.round}`];
+      }
+      return [own("Invasion", seat), ""];
+    }
+    const fight = combats.findLast((item) => item.kind === "space");
+    if (fight && (!fight.ended || fire === fight.key)) {
+      return [fight.key, `${fight.round}`];
+    }
+    if (fire === "Space cannon") {
+      return [own("Space cannon", seat), ""];
+    }
+    if (fight) {
+      return [fight.key, `${fight.round}`];
+    }
+    const made = space(system);
+    fights(made, seat);
+    return [made.key, `${made.round}`];
+  };
+
+  // The agendas of the agenda phase, each a group: a vote of a seat that voted, or after the
+  // host resolved the agenda, is of the next agenda.
+  const agendas: Agenda[] = [];
+  const agenda = (next: boolean): Agenda => {
+    const last = agendas.at(-1);
+    if (last && !last.resolved && !next) {
+      return last;
+    }
+    const number = agendas.length + 1;
+    const made: Agenda = {
+      key: `Agenda|${number}`,
+      number,
+      voted: new Set(),
+      resolved: false,
+      tieBroken: false,
+    };
+    groups.title(made.key, `Agenda ${number}`);
+    agendas.push(made);
+    return made;
+  };
   /** The vote line of each seat in the agenda, for the planets that it exhausts. */
-  const votes = new Map<string, ListLine>();
+  const votes = new Map<string, VoteLine>();
 
   for (const entry of events) {
     const roll = entry.event.kind === "dice_rolled" ? entry.roll : undefined;
     if (roll) {
-      const group = rollGroup(roll);
-      const seat = roll.roller ?? null;
       const reason = roll.reason.split(":")[0];
+      const seat = roll.roller ?? null;
+      const step = rollGroup(roll);
+      let group = step;
       let text = roll.label;
-      if (reason === "ground combat" && ground) {
-        text = `${roll.label} · ${names.planet(ground.planet)} · round ${ground.number}`;
-      } else if (COMBAT.has(reason)) {
-        const round = rounds.get(group) ?? { number: 0, rolled: new Set(), open: false };
+      if (reason === "space combat") {
+        const fight = space(roll.system);
+        fights(fight, seat);
         const key = `${seat}|${roll.hits_on}`;
-        if (!round.open || round.rolled.has(key)) {
-          round.number += 1;
-          round.rolled = new Set();
-          round.open = true;
+        if (!fight.open || fight.rolled.has(key)) {
+          fight.round += 1;
+          fight.rolled = new Set();
+          fight.open = true;
         }
-        round.rolled.add(key);
-        rounds.set(group, round);
-        text = `${roll.label} · round ${round.number}`;
+        fight.rolled.add(key);
+        group = fight.key;
+        text = `Round ${fight.round}`;
+      } else if (reason === "anti-fighter barrage") {
+        const fight = space(roll.system);
+        fights(fight, seat);
+        group = fight.key;
+      } else if (step === "Rolls" && combats.some((item) => item.kind === "space" && !item.ended)) {
+        // A roll in the middle of a space combat (an ability, a card) is a part of it.
+        group = space(roll.system).key;
+      } else if (reason === "ground combat") {
+        const fight = groundPlanet ? combat("ground", groundPlanet, false) : null;
+        if (fight) {
+          fights(fight, seat);
+          group = fight.key;
+          text = `Round ${fight.round}`;
+        } else {
+          group = "Invasion";
+        }
       }
+      fire = group;
       const unit = roll.subject?.unit;
       groups.text(group, seat, unit ? `${text} · ${names.units(unit, 1)}` : text, {
         faces: roll.faces,
@@ -397,18 +570,19 @@ function detailsOf(
       });
       continue;
     }
-    // A decision between the rolls ends a round of combat.
-    for (const round of rounds.values()) {
-      round.open = false;
+    // A decision, or a change of the state, between the rolls ends a round of space combat.
+    for (const fight of combats) {
+      fight.open = false;
     }
     const fact = entry.fact;
-    if (entry.event.kind !== "decision_resolved" || !fact) {
+    if (
+      (entry.event.kind !== "decision_resolved" && entry.event.kind !== "state_changed") ||
+      !fact
+    ) {
       continue;
     }
     const seat = entry.actor ?? null;
     facts.push({ seat, fact });
-    // In a strategic action what a seat did is in the part of its seat; else in its step.
-    const own = (step: string) => (scope.strategic ? effects(seat) : step);
     switch (fact.kind) {
       case "action_started":
         // One is the action of the turn; another is an action within it (an agent).
@@ -442,11 +616,12 @@ function detailsOf(
         break;
       }
       case "activated":
-        groups.text(own("Activation"), seat, `Activated ${names.system(fact.system)}`);
+        activated = fact.system;
+        groups.text(own("Activation", seat), seat, `Activated ${names.system(fact.system)}`);
         break;
       case "moved":
         groups.units(
-          own("Movement"),
+          own("Movement", seat),
           seat,
           `${names.system(fact.from)} → ${names.system(fact.to)}: `,
           fact.unit,
@@ -458,7 +633,12 @@ function detailsOf(
           : fact.system
             ? names.system(fact.system)
             : null;
-        groups.units(own("Movement"), seat, place ? `Loaded on ${place}: ` : "Loaded: ", fact.unit);
+        groups.units(
+          own("Movement", seat),
+          seat,
+          place ? `Loaded on ${place}: ` : "Loaded: ",
+          fact.unit,
+        );
         break;
       }
       case "produced":
@@ -470,7 +650,7 @@ function detailsOf(
             : null;
         const group =
           fact.kind === "produced" && entry.stage === "production"
-            ? own("Production")
+            ? own("Production", seat)
             : effects(seat);
         const verb = fact.kind === "produced" ? "Produced" : "Placed";
         groups.units(
@@ -483,7 +663,7 @@ function detailsOf(
         break;
       }
       case "paid": {
-        const group = entry.stage === "production" ? own("Production") : effects(seat);
+        const group = entry.stage === "production" ? own("Production", seat) : effects(seat);
         groups.item(
           group,
           seat,
@@ -500,31 +680,108 @@ function detailsOf(
         );
         break;
       case "casualty":
+      case "destroyed": {
+        // A loss that a seat chose, or that the game took: the host tells each once.
+        const [group, round] = lossAt(fact.seat, fact.system, fact.planet);
         groups.units(
-          fact.planet ? own("Invasion") : own("Space combat"),
+          group,
           fact.seat,
-          fact.planet ? `Lost on ${names.planet(fact.planet)}: ` : "Lost: ",
+          "Lost: ",
           fact.unit,
+          fact.kind === "destroyed" ? fact.count : 1,
+          `${fact.seat}|lost|${round}`,
         );
         break;
-      case "sustained":
+      }
+      case "sustained": {
+        const [group, round] = lossAt(fact.seat, fact.system, fact.planet);
         groups.units(
-          fact.planet ? own("Invasion") : own("Space combat"),
+          group,
           fact.seat,
           "Sustained damage: ",
           fact.unit,
+          1,
+          `${fact.seat}|sustained|${round}`,
         );
         break;
+      }
+      case "sustain_declined": {
+        const [group, round] = lossAt(fact.seat, fact.system, fact.planet);
+        groups.line(group, `${fact.seat}|no sustain|${round}`, () => ({
+          kind: "text",
+          seat: fact.seat,
+          text: "Did not sustain damage",
+        }));
+        break;
+      }
       case "retreat_announced":
         if (fact.retreat) {
-          groups.text(own("Space combat"), fact.seat, "Announced a retreat");
+          const fight = space(fact.system);
+          fights(fight, fact.seat);
+          groups.text(fight.key, fact.seat, "Announced a retreat");
         }
         break;
-      case "retreated":
-        groups.text(own("Space combat"), fact.seat, `Retreated to ${names.system(fact.to)}`);
+      case "retreated": {
+        const fight = space(fact.from);
+        fights(fight, fact.seat);
+        fight.retreatTold = true;
+        groups.text(fight.key, fact.seat, `Retreated to ${names.system(fact.to)}`);
         break;
+      }
+      case "combat_ended": {
+        const fight =
+          fact.combat === "space"
+            ? space(fact.system)
+            : (combat("ground", fact.planet ?? "") as Combat);
+        fight.attacker = fact.attacker;
+        fight.defender = fact.defender;
+        if (fact.retreated && !fight.retreatTold) {
+          groups.text(fight.key, fact.retreated, "Retreated");
+        }
+        if (fact.winner) {
+          groups.text(fight.key, fact.winner, `Won by ${names.seat(fact.winner)}`);
+        } else if (!fact.retreated) {
+          groups.text(fight.key, null, "Both sides destroyed");
+        }
+        fight.ended = true;
+        break;
+      }
+      case "control_gained": {
+        const fight = combat("ground", fact.planet, false);
+        const group = fight
+          ? fight.key
+          : scope.phase === "action"
+            ? own("Invasion", fact.seat)
+            : effects(fact.seat);
+        groups.text(
+          group,
+          fact.seat,
+          fact.from
+            ? `Took ${names.planet(fact.planet)} from ${names.seat(fact.from)}`
+            : `Took ${names.planet(fact.planet)}`,
+        );
+        break;
+      }
+      case "explored": {
+        const place = fact.planet
+          ? names.planet(fact.planet)
+          : fact.system
+            ? names.system(fact.system)
+            : null;
+        groups.text(
+          own("Exploration", fact.seat),
+          fact.seat,
+          `Explored${place ? ` ${place}` : ""}: ${names.explore(fact.card)}`,
+        );
+        break;
+      }
       case "landed":
-        groups.units(own("Invasion"), seat, `Landed on ${names.planet(fact.planet)}: `, fact.unit);
+        groups.units(
+          own("Invasion", seat),
+          seat,
+          `Landed on ${names.planet(fact.planet)}: `,
+          fact.unit,
+        );
         break;
       case "researched":
         groups.text(effects(seat), seat, `Researched ${names.tech(fact.tech)}`);
@@ -537,49 +794,80 @@ function detailsOf(
         if (seat === null) {
           break;
         }
-        if (agenda.voted.has(seat) || agenda.number === 0) {
-          agenda = { number: agenda.number + 1, voted: new Set() };
+        const last = agendas.at(-1);
+        const at = agenda(!last || last.resolved || last.voted.has(seat));
+        if (at !== last) {
           votes.clear();
         }
-        agenda.voted.add(seat);
-        const line = groups.line<ListLine>(
-          `Agenda ${agenda.number} · Votes`,
-          `vote|${seat}`,
-          () => ({
-            kind: "list",
-            seat,
-            head: fact.outcome ? `${names.outcome(fact.outcome)}` : "Abstained",
-            items: [],
-            goods: 0,
-          }),
-        );
+        at.voted.add(seat);
+        const line = groups.line<VoteLine>(at.key, `vote|${seat}`, () => ({
+          kind: "vote",
+          seat,
+          outcome: fact.outcome ? names.outcome(fact.outcome) : null,
+          planets: [],
+          votes: 0,
+        }));
         votes.set(seat, line);
         break;
       }
       case "planet_exhausted_for_vote": {
         const line = seat === null ? undefined : votes.get(seat);
         if (line) {
-          line.head = line.items.length ? line.head : `${line.head} · `;
-          line.items.push(names.planet(fact.planet));
+          line.planets.push(names.planet(fact.planet));
+          line.votes += fact.votes ?? 0;
         }
         break;
       }
-      case "tie_broken":
-        groups.text(
-          `Agenda ${Math.max(agenda.number, 1)} · Votes`,
-          seat,
-          `Broke the tie: ${names.outcome(fact.outcome)}`,
+      case "tie_broken": {
+        const at = agenda(false);
+        at.tieBroken = true;
+        groups.text(at.key, seat, `Broke the tie: ${names.outcome(fact.outcome)}`);
+        break;
+      }
+      case "agenda_resolved": {
+        const at = agenda(false);
+        at.resolved = true;
+        const tally = Object.entries(fact.votes)
+          .filter(([, count]) => count > 0)
+          .sort(([, a], [, b]) => b - a)
+          .map(([outcome, count]) => `${names.outcome(outcome)} ${count}`);
+        groups.title(
+          at.key,
+          `${names.agenda(fact.agenda)} · ${fact.outcome ? names.outcome(fact.outcome) : "no outcome"}${tally.length ? ` (${tally.join(" · ")})` : ""}`,
         );
+        if (fact.speaker_decided && !at.tieBroken) {
+          groups.text(at.key, null, "Decided by the speaker");
+        }
+        if (fact.discarded) {
+          groups.text(at.key, null, "Discarded with no effect");
+        } else if (fact.law) {
+          groups.text(at.key, null, fact.enacted ? "Enacted as a law" : "Not enacted");
+        }
         break;
-      case "card_played":
-        groups.text("Cards played", seat, `Played ${names.card(fact.card)}`);
+      }
+      case "card_played": {
+        // In the agenda phase a card is of the agenda that it was played for.
+        const last = agendas.at(-1);
+        const group =
+          scope.phase === "agenda" && (!last?.resolved || agendas.length < 2)
+            ? agenda(!!last?.resolved).key
+            : "Cards played";
+        groups.text(group, seat, `Played ${names.card(fact.card)}`);
         break;
+      }
       case "objective_scored":
         groups.text(
           scope.phase === "status" ? "Scored" : effects(seat),
           seat,
           `${scope.phase === "status" ? "" : "Scored "}${names.objective(fact.objective)}${fact.secret ? " · secret objective" : ""}`,
         );
+        break;
+      case "objective_revealed":
+        if (scope.phase === "status") {
+          groups.text("Revealed", null, names.objective(fact.objective));
+        } else {
+          groups.text(effects(seat), seat, `Revealed ${names.objective(fact.objective)}`);
+        }
         break;
       case "tokens_gained":
         groups.tokens(effects(seat), seat, fact.pool, fact.count);
@@ -631,37 +919,35 @@ function detailsOf(
           `Activated ${names.system(fact.system)} without a command token`,
         );
         break;
-      case "ground_combat_started":
-        groundRounds.set(fact.planet, 0);
-        groups.text(
-          own("Invasion"),
-          fact.seat,
-          `Started a ground combat on ${names.planet(fact.planet)}`,
-        );
-        break;
-      case "ground_combat_round": {
-        const number = (groundRounds.get(fact.planet) ?? 0) + 1;
-        groundRounds.set(fact.planet, number);
-        ground = { planet: fact.planet, number };
+      case "ground_combat_started": {
+        // A further ground combat on the planet (coexistence): a combat of its own.
+        const before = combat("ground", fact.planet, false);
+        if (before) {
+          before.ended = true;
+        }
+        const fight = combat("ground", fact.planet) as Combat;
+        fight.attacker = fact.seat;
+        groups.text(fight.key, fact.seat, "Started a further ground combat");
+        groundPlanet = fact.planet;
         break;
       }
-      case "sustain_declined":
-        groups.line(
-          fact.planet ? own("Invasion") : own("Space combat"),
-          `${fact.seat}|no sustain|${fact.planet ?? ""}`,
-          () => ({ kind: "text", seat: fact.seat, text: "Did not sustain damage" }),
-        );
+      case "ground_combat_round": {
+        const fight = combat("ground", fact.planet) as Combat;
+        fight.attacker ??= fact.seat;
+        fight.round += 1;
+        groundPlanet = fact.planet;
         break;
+      }
       case "bombardment_targeted":
         groups.text(
-          own("Invasion"),
+          own("Invasion", seat),
           seat,
           `Bombarded ${names.seat(fact.target)} on ${names.planet(fact.planet)}`,
         );
         break;
       case "custodians_removed":
         groups.text(
-          own("Invasion"),
+          own("Invasion", seat),
           seat,
           `Removed the custodians from ${names.system(fact.system)}`,
         );
@@ -673,6 +959,26 @@ function detailsOf(
         // A fact of a newer host: not shown until the Log knows it.
         break;
     }
+  }
+
+  // The title of a combat: its kind, its place and its sides.
+  for (const fight of combats) {
+    const place =
+      fight.kind === "space"
+        ? fight.place
+          ? names.system(fight.place)
+          : ""
+        : names.planet(fight.place);
+    const sides =
+      fight.attacker && fight.defender
+        ? `${names.seat(fight.attacker)} vs ${names.seat(fight.defender)}`
+        : "";
+    groups.title(
+      fight.key,
+      [fight.kind === "space" ? "Space combat" : "Ground combat", place, sides]
+        .filter(Boolean)
+        .join(" · "),
+    );
   }
   return { groups: groups.view(), facts };
 }
@@ -886,6 +1192,11 @@ function summaryOf(
   let destroyed = 0;
   let combat = false;
   let retreated = false;
+  /** What the host told of the end of each space combat, from the seat of the turn. */
+  const space: string[] = [];
+  /** The planets of the seat: taken, or a ground combat that it lost. */
+  const planets: string[] = [];
+  const told = new Set<string>();
   let answered = 0;
   let followed = 0;
   let replenished = 0;
@@ -912,16 +1223,45 @@ function summaryOf(
         tokens += own ? fact.count : 0;
         break;
       case "casualty":
-        combat = true;
+      case "destroyed": {
+        const count = fact.kind === "destroyed" ? fact.count : 1;
+        if (fact.planet) {
+          break;
+        }
         if (fact.seat === turn.seat) {
-          lost += 1;
+          lost += count;
         } else {
-          destroyed += 1;
+          destroyed += count;
         }
         break;
+      }
       case "retreated":
         combat = true;
         retreated ||= fact.seat === turn.seat;
+        break;
+      case "combat_ended":
+        if (fact.combat === "space") {
+          space.push(
+            fact.retreated === turn.seat
+              ? "retreated from the space combat"
+              : fact.winner === turn.seat
+                ? "won the space combat"
+                : fact.winner && (fact.attacker === turn.seat || fact.defender === turn.seat)
+                  ? "lost the space combat"
+                  : fact.winner
+                    ? `${names.seat(fact.winner)} won the space combat`
+                    : "space combat: both sides destroyed",
+          );
+        } else if (fact.planet && fact.attacker === turn.seat && fact.winner !== turn.seat) {
+          told.add(fact.planet);
+          planets.push(`lost the ground combat on ${names.planet(fact.planet)}`);
+        }
+        break;
+      case "control_gained":
+        if (fact.seat === turn.seat && fact.from) {
+          told.add(fact.planet);
+          planets.push(`took ${names.planet(fact.planet)} from ${names.seat(fact.from)}`);
+        }
         break;
       case "researched":
         if (own) {
@@ -968,15 +1308,31 @@ function summaryOf(
   if (ships) {
     parts.push(`moved ${plural(ships, "ship")}`);
   }
-  if (combat) {
+  if (space.length) {
+    // The host told the end: the outcome says it all, the losses are in the details.
+    parts.push(...new Set(space));
+  } else if (combat) {
     const losses = [lost && `lost ${lost}`, destroyed && `destroyed ${destroyed}`].filter(Boolean);
     parts.push(
       `${retreated ? "retreated from combat" : "combat"}${losses.length ? ` (${losses.join(", ")})` : ""}`,
     );
-  }
-  if (landed.length) {
+  } else if (lost || destroyed) {
+    // Ships lost with no combat: to space cannon, to a mine.
     parts.push(
-      `landed on ${landed.slice(0, 2).join(", ")}${landed.length > 2 ? ` +${landed.length - 2}` : ""}`,
+      [
+        lost && `lost ${plural(lost, "ship")}`,
+        destroyed && `destroyed ${plural(destroyed, "ship")}`,
+      ]
+        .filter(Boolean)
+        .join(", "),
+    );
+  }
+  parts.push(...planets);
+  // A planet that the seat took, or lost the fight for, is said once.
+  const rest = landed.filter((planet) => ![...told].some((id) => names.planet(id) === planet));
+  if (rest.length) {
+    parts.push(
+      `landed on ${rest.slice(0, 2).join(", ")}${rest.length > 2 ? ` +${rest.length - 2}` : ""}`,
     );
   }
   parts.push(...new Set(other));
@@ -1002,16 +1358,34 @@ function phaseView(phase: RawPhase, names: Names): LogPhaseView {
     strategic: false,
     phase: phase.phase,
   });
-  const count = (kind: PublicFact["kind"]) =>
-    facts.filter((item) => item.fact.kind === kind).length;
-  const agendas = groups.filter((group) => group.title.startsWith("Agenda")).length;
+  const of = <K extends PublicFact["kind"]>(kind: K) =>
+    facts.flatMap((item) =>
+      item.fact.kind === kind ? [item.fact as Extract<PublicFact, { kind: K }>] : [],
+    );
+  const picked = of("strategy_picked").length;
+  const scored = of("objective_scored").length;
+  const revealed = of("objective_revealed").map(
+    (fact) => `revealed ${names.objective(fact.objective)}`,
+  );
+  const resolved = of("agenda_resolved").map(
+    (fact) =>
+      `${names.agenda(fact.agenda)}: ${fact.outcome ? names.outcome(fact.outcome) : "no outcome"}`,
+  );
+  const voted = new Set(facts.filter((item) => item.fact.kind === "voted").map((item) => item.seat))
+    .size;
   const summary =
-    phase.phase === "strategy" && count("strategy_picked")
-      ? `${plural(count("strategy_picked"), "strategy card")} picked`
-      : phase.phase === "status" && count("objective_scored")
-        ? `${plural(count("objective_scored"), "objective")} scored`
-        : phase.phase === "agenda" && agendas
-          ? `${plural(agendas, "agenda")} voted`
+    phase.phase === "strategy" && picked
+      ? `${plural(picked, "strategy card")} picked`
+      : phase.phase === "status"
+        ? [scored && `${plural(scored, "objective")} scored`, ...revealed]
+            .filter(Boolean)
+            .join(" · ")
+        : phase.phase === "agenda"
+          ? resolved.length
+            ? resolved.join(" · ")
+            : voted
+              ? `${plural(groups.filter((group) => group.title.startsWith("Agenda")).length, "agenda")} voted`
+              : ""
           : "";
   return {
     kind: "phase",
