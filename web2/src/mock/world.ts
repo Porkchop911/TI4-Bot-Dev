@@ -664,12 +664,6 @@ export function reduce(world: World, intent: Intent) {
         if (editor.problem) {
           break;
         }
-        if (flow.stage === "primary" && flow.number === 3 && !flow.sent) {
-          // Politics: the first part is sent, because the agenda cards are revealed after it.
-          Object.assign(flow, { sent: true, speaker: flow.mine.seat });
-          toast("Speaker chosen. You drew 2 action cards and look at 2 agenda cards.");
-          break;
-        }
         if (flow.stage === "primary") {
           Object.assign(flow, { stage: "secondary", primaryResult: editor.result });
         } else {

@@ -18,13 +18,11 @@ export const EXAMPLE_GROUPS: [string, [string, string][]][] = [
   [
     "Strategy cards",
     [
-      ["live-strategy-3", "Live · 3 Politics (your primary)"],
       ["live-strategy-4", "Live · 4 Construction (your primary)"],
       ["live-strategy-5", "Live · 5 Trade (your primary)"],
       ["live-strategy-6", "Live · 6 Warfare (your primary)"],
       ["live-strategy-7", "Live · 7 Technology (your primary)"],
       ["live-strategy-8", "Live · 8 Imperial (your primary)"],
-      ["live-secondary-3", "Live · 3 Politics (your secondary)"],
       ["live-secondary-4", "Live · 4 Construction (your secondary)"],
       ["live-secondary-5", "Live · 5 Trade (your secondary)"],
       ["live-secondary-6", "Live · 6 Warfare (your secondary)"],

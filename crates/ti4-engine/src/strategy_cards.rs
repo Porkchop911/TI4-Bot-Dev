@@ -23,6 +23,10 @@ pub const LEADERSHIP_TOKENS: u32 = 3;
 pub const INFLUENCE_PER_TOKEN: i64 = 3;
 pub const TECHNOLOGY_PRIMARY_SECOND_COST: i64 = 6;
 pub const TECHNOLOGY_SECONDARY_COST: i64 = 4;
+/// How many action cards Politics' primary and secondary draw.
+pub const POLITICS_DRAWS: usize = 2;
+/// How many agenda cards Politics' primary looks at.
+pub const POLITICS_LOOKS: usize = 2;
 /// How many exhausted planets Diplomacy's primary and secondary ready.
 pub const DIPLOMACY_READIES: usize = 2;
 pub const RESEARCH_KIND: &str = "research";
@@ -1676,6 +1680,9 @@ fn politics_primary(
                 .collect(),
         )
         .detailed("seats", seat_map(&named))
+        // Display only: what the primary does after the speaker, so that a client can say it.
+        .detailed("draws", POLITICS_DRAWS)
+        .detailed("looks", state.agenda_deck.len().min(POLITICS_LOOKS))
         .contextualized(DecisionContext::new(
             player.clone(),
             DecisionSource::StrategyCard {
@@ -1697,8 +1704,8 @@ fn politics_primary(
                 chosen,
             })?;
     }
-    crate::action_cards::draw(state, content, table, player, 2)?;
-    let looked: Vec<String> = (0..state.agenda_deck.len().min(2))
+    crate::action_cards::draw(state, content, table, player, POLITICS_DRAWS)?;
+    let looked: Vec<String> = (0..state.agenda_deck.len().min(POLITICS_LOOKS))
         .map_while(|_| {
             ti4_model::deck_reserve::take_top(
                 &mut state.deck_reserve,
@@ -1708,7 +1715,7 @@ fn politics_primary(
             )
         })
         .collect();
-    for agenda in looked {
+    for (placed, agenda) in looked.iter().cloned().enumerate() {
         let choice = Choice::new(
             player.clone(),
             format!("place {agenda} where"),
@@ -1718,6 +1725,9 @@ fn politics_primary(
             ],
         )
         .detailed("agenda", agenda_details(content, &agenda))
+        // Display only: this agenda and the ones placed after it, in the order that they are
+        // asked, so that a client can stage the whole placement at once.
+        .detailed("agendas", looked[placed..].to_vec())
         .contextualized(DecisionContext::new(
             player.clone(),
             DecisionSource::StrategyCard {
@@ -3255,6 +3265,36 @@ mod tests {
             .unwrap();
         assert!(placement.details["agenda"]["id"].is_string());
         assert!(placement.details["agenda"]["name"].is_string());
+    }
+
+    /// The speaker question says what comes after it, and the first agenda question has both
+    /// agendas to place, in the order that they are asked. Two agendas placed on top end with the
+    /// second one asked on top.
+    #[test]
+    fn politics_tells_every_agenda_to_place_with_the_first() {
+        let content = ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let mut state = game(&["a", "b"]);
+        state.speaker = player.clone();
+        state.agenda_deck = ["first", "second", "third"].map(str::to_owned).to_vec();
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut table = Table::with_default(Box::new(FirstOptionCapturing { seen: seen.clone() }));
+
+        politics_primary(&mut state, content, POK, None, &mut table, &player).unwrap();
+
+        let asked = seen.borrow();
+        let [speaker, first, second] = &asked[..] else {
+            panic!("a speaker and two agendas: {asked:?}");
+        };
+        assert_eq!(speaker.details["draws"], 2);
+        assert_eq!(speaker.details["looks"], 2);
+        assert_eq!(
+            first.details["agendas"],
+            serde_json::json!(["first", "second"])
+        );
+        assert_eq!(second.details["agendas"], serde_json::json!(["second"]));
+        // "top" is the first option of both.
+        assert_eq!(state.agenda_deck, ["second", "first", "third"]);
     }
 
     fn card(name: &str) -> String {

@@ -40,6 +40,7 @@ pub const STRATEGY_CARDS: &[(&str, &str)] = &[
     ("strategy_leadership", "pok1leadership"),
     ("strategy_diplomacy", "pok2diplomacy"),
     ("strategy_diplomacy_base", "base2"),
+    ("strategy_politics", "pok3politics"),
 ];
 
 /// Sol is played by a person, Hacan and Letnev by the rule bot.
@@ -223,6 +224,12 @@ pub const STRATEGY_DIPLOMACY_BASE: Scenario = Scenario {
     description: "The scenario \"Strategy card: Diplomacy\" with the Diplomacy of the base game \
         (base2). The engine resolves it as the Codex I card: it readies up to 2 exhausted planets \
         anywhere, not each exhausted planet in the chosen system.",
+    ..STRATEGY
+};
+
+pub const STRATEGY_POLITICS: Scenario = Scenario {
+    id: "strategy_politics",
+    title: "Strategy card: Politics",
     ..STRATEGY
 };
 

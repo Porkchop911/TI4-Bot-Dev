@@ -1246,6 +1246,115 @@ test("Diplomacy of the base game has its own printed text and the same screen", 
   expect(errors).toEqual([]);
 });
 
+test("Politics: the speaker is chosen in the player table, then the agenda deck is placed on one screen", async ({
+  page,
+}) => {
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // Sol holds Politics and is the speaker; it has no action cards.
+  await page.goto("/?scenario=strategy_politics&humans=1");
+  const row = (name: string) =>
+    page.getByRole("region", { name: "Players" }).getByRole("row").filter({ hasText: name });
+  await expect(heading(page)).toHaveText("Choose an action");
+  await expect(row("Seat A")).toContainText("Speaker");
+  await panel(page)
+    .getByRole("button", { name: /^3 Politics/ })
+    .click();
+  await page.keyboard.press("Enter");
+
+  // The speaker in the player table, and the action cards that are drawn after it.
+  await expect(heading(page)).toHaveText("Politics");
+  const speaker = panel(page).getByRole("heading", { name: "Speaker" }).locator("../..");
+  await expect(speaker).toContainText("No player chosen");
+  await expect(panel(page)).toContainText("Action cards 0 → 2");
+  await expect(send(page)).toHaveText(/Send · look at the agenda deck/);
+  await expect(send(page)).toBeDisabled();
+  await panel(page).getByRole("button", { name: "Rules: Politics" }).hover();
+  await expect(page.getByText(/Choose a player other than the speaker/).first()).toBeVisible();
+  await page.mouse.move(0, 0);
+  await row("Seat C").click();
+  await expect(speaker).toContainText("Speaker: Sol → Letnev");
+  await fitsHeight(page);
+  await send(page).click();
+
+  // The agenda cards as printed, each on top or on the bottom, and the deck as the game builds it.
+  const deck = panel(page).getByRole("heading", { name: "Agenda deck after" }).locator("../..");
+  await expect(deck).toContainText("0 / 2 placed");
+  await expect(row("Seat C")).toContainText("Speaker");
+  await expect(panel(page).getByText(/^Agenda · /)).toHaveCount(2);
+  await expect(send(page)).toHaveText(/Place 2 agenda cards/);
+  await expect(send(page)).toBeDisabled();
+  await page.keyboard.press("1");
+  await page.keyboard.press("3");
+  await expect(deck).toContainText("2 / 2 placed");
+  // Two agendas on top: the one asked second is the next agenda.
+  const note = (await page.locator("footer").textContent()) ?? "";
+  const [first, second] = [...note.matchAll(/(?:^|· )([^·]+?) on top/g)].map((found) => found[1]);
+  await expect(deck).toContainText(
+    `Top of the deck · the next agenda${second}Second from the top${first}`,
+  );
+  await page.keyboard.press("Escape");
+  await expect(deck).toContainText("1 / 2 placed");
+  await page.keyboard.press("4");
+  await expect(deck).toContainText("Bottom of the deck");
+  await expect(page.locator("footer")).toContainText(/on top · .* on the bottom/);
+  await fitsHeight(page);
+  await page.screenshot({ path: "shots/local/politics.png", animations: "disabled" });
+
+  // The main button answers both agendas; the game asks nothing more of the primary.
+  await send(page).click();
+  await expect(heading(page)).toHaveText("End your turn");
+  expect(errors).toEqual([]);
+});
+
+test("Politics: another seat follows as the game asks it, and does not see the agenda cards", async ({
+  page,
+}) => {
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // Sol and Hacan are played here: Sol plays Politics, then Hacan follows.
+  await page.goto("/?scenario=strategy_politics&humans=3");
+  await expect(heading(page)).toHaveText("Choose an action");
+  await panel(page)
+    .getByRole("button", { name: /^3 Politics/ })
+    .click();
+  await page.keyboard.press("Enter");
+  await page
+    .getByRole("region", { name: "Players" })
+    .getByRole("row")
+    .filter({
+      hasText: "Seat B",
+    })
+    .click();
+  await send(page).click();
+  const deck = panel(page).getByRole("heading", { name: "Agenda deck after" });
+  await expect(deck).toBeVisible();
+  await page.keyboard.press("2");
+  await page.keyboard.press("4");
+  const note = (await page.locator("footer").textContent()) ?? "";
+  const agendas = [...note.matchAll(/(?:^|· )([^·]+?) on the bottom/g)].map((found) => found[1]);
+  expect(agendas).toHaveLength(2);
+  await send(page).click();
+
+  // Hacan's row opens into the question of the game, with what it costs.
+  await expect(panel(page).getByText("Strategy pool 2 → 1")).toBeVisible();
+  await expect(deck).toHaveCount(0);
+  for (const agenda of agendas) {
+    await expect(page.locator("body")).not.toContainText(agenda);
+  }
+  await expect(panel(page).getByRole("button", { name: /Draw/ })).toBeVisible();
+  await fitsHeight(page);
+  await page.keyboard.press("2");
+  await send(page).click();
+  const hacan = page.getByRole("region", { name: "Players" }).getByRole("row").filter({
+    hasText: "Seat B",
+  });
+  await expect(hacan).toContainText("3 · 3 · 1");
+  expect(errors).toEqual([]);
+});
+
 test("the Dev sheet leads to a game on the server, on the seed of the page", async ({ page }) => {
   await page.goto("/?local=3&players=8&humans=1");
   await expect(send(page)).toBeDisabled();

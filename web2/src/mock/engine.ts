@@ -1507,8 +1507,7 @@ export const flowStaged = (state) =>
   own() &&
   state.flow?.owner === "sol" &&
   state.kind === "strategic" &&
-  state.flow.stage === "primary" &&
-  !state.flow.sent;
+  state.flow.stage === "primary";
 // The viewer's action is complete and the turn is still theirs.
 export const turnClosing = (state) =>
   !state.past &&

@@ -488,29 +488,6 @@ describe("mock engine", () => {
     const main = (world: ReturnType<typeof createWorld>) =>
       footer(world).actions.find((action) => action.tone === "primary")!;
 
-    it("Politics: the speaker in the player table is sent first, then the agenda cards", () => {
-      const world = open("live-strategy-3");
-      const pick = selectShell(world).players.pick!;
-      expect(pick.seats.hacan.reason).toBe("Is the speaker");
-      reduce(world, { type: "pickSeat", seat: "hacan" });
-      expect(flow(world).mine.seat).toBeNull();
-      reduce(world, { type: "pickSeat", seat: "xxcha" });
-      reduce(world, { type: "flow", action: "resolve" });
-      expect(flow(world).stage).toBe("primary");
-      expect(selectShell(world).players.pick).toBeNull();
-      // The first part is sent, so the action cannot be dropped.
-      expect(footer(world).actions.some((action) => action.intent.type === "backToPicker")).toBe(
-        false,
-      );
-      expect(main(world).disabled).toBe(true);
-      reduce(world, shortcuts(selectShell(world).action).get("1")!);
-      reduce(world, shortcuts(selectShell(world).action).get("3")!);
-      expect(flow(world).mine.agenda).toEqual(["top", "top"]);
-      reduce(world, { type: "chooseOption", option: "swap", group: "agenda" });
-      reduce(world, { type: "flow", action: "resolve" });
-      expect(flow(world).primaryResult).toContain("made Blair the speaker");
-    });
-
     it("Construction: the structure in a list, the planet on the board; the second is a PDS", () => {
       const world = open("live-strategy-4");
       expect(selectShell(world).board.task).toBeNull();

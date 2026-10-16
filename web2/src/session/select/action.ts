@@ -10,6 +10,7 @@ import type {
   PlayerPickView,
   RowView,
 } from "../../model";
+import { plural } from "../../model";
 import type { LandingDraft } from "../landingDraft";
 import type { MovementDraft } from "../movementDraft";
 import type { KeptOdds } from "../movementOdds";
@@ -30,6 +31,7 @@ import { printedSource } from "./printed";
 import { interruptOf, reactedAction, selectReaction } from "./reaction";
 import { type PurchaseDraft, selectPurchase } from "./purchase";
 import { type ReadyDraft, selectReady } from "./ready";
+import { type AgendaDraft, selectAgendaDeck } from "./agendaDeck";
 import { selectResearch } from "./research";
 import { type Pools, selectTokens } from "./tokens";
 import { type TurnMenu, isTurnMenu, selectTurn } from "./turn";
@@ -95,6 +97,8 @@ export interface LocalState {
   purchase?: PurchaseDraft | null;
   /** The staged system and planets of a readying of planets. Null: nothing staged. */
   ready?: ReadyDraft | null;
+  /** The staged places of agenda cards on the deck. Null: nothing staged. */
+  agendas?: AgendaDraft | null;
   /** The nonce of the choice that was answered. Its update is still the latest one. */
   sent: string | null;
   /** Why the game stopped, if it did. */
@@ -399,8 +403,13 @@ export function selectAction(
     choice && !window && !recording
       ? selectReady(update, choice, local.ready ?? null, printed)
       : null;
+  // A placement of agenda cards: every agenda on one screen, answered at once.
+  const deck =
+    choice && !window && !recording
+      ? selectAgendaDeck(choice, local.agendas ?? null, printed)
+      : null;
   /** A screen of several questions that is sent at once. */
-  const several = purchase ?? ready;
+  const several = purchase ?? ready ?? deck;
   const tiles = new Map((update.view.board.map_tiles ?? []).map((tile) => [tile.system_id, tile]));
   const planetOf = (id: string) =>
     (update.view.board.map_tiles ?? [])
@@ -422,6 +431,12 @@ export function selectAction(
     kind: "badge",
     pill: { tone: "draft", label: "Selected" },
   };
+  // A new speaker is chosen in the player table.
+  const speaker =
+    !!seats &&
+    !!choice &&
+    choice.options.some((option) => option.kind === "speaker") &&
+    choice.options.every((option) => option.kind === "speaker" || option.kind === "decline");
   // The choice of a thing on the board, or of a player: the panel has the choice, not the
   // candidates, which are on the board or in the player table.
   const chosenBlock = (): BlockView | null => {
@@ -469,14 +484,16 @@ export function selectAction(
       const seat = staged ? seats[staged.id] : undefined;
       return {
         kind: "card",
-        title: "Player",
+        title: speaker ? "Speaker" : "Player",
         aside: "Choose in the player table",
         rows: seat
           ? [
               {
                 icon: "card",
                 title: [{ seat }, ` ${seatLabel(update, seat, printed)}`],
-                subtitle: effectOf(choice, staged!),
+                subtitle: speaker
+                  ? `Speaker: ${seatLabel(update, update.view.speaker, printed)} → ${seatLabel(update, seat, printed)}`
+                  : effectOf(choice, staged!),
                 control: selected,
               },
             ]
@@ -570,6 +587,26 @@ export function selectAction(
           ? "Choose a player"
           : null;
   const chosen = chosenBlock();
+  // What a question says comes after it, with no choice: action cards that are drawn.
+  const hand = update.view.players.find((player) => player.id === viewer)?.action_cards_count;
+  const drawn: BlockView[] =
+    typeof details.draws === "number" && details.draws > 0 && typeof hand === "number"
+      ? [
+          {
+            kind: "card",
+            title: "Action cards",
+            rows: [
+              {
+                icon: "card",
+                title: [`Draw ${plural(details.draws, "action card")}`],
+                subtitle: `Action cards ${hand} → ${hand + details.draws}`,
+              },
+            ],
+          },
+        ]
+      : [];
+  // The agenda cards that the game shows after this question.
+  const looks = typeof details.looks === "number" ? details.looks : 0;
   const blocks: BlockView[] = reacted
     ? reacted.blocks
     : !choice
@@ -601,6 +638,7 @@ export function selectAction(
                 ...(what && !own ? [{ kind: "source" as const, ...what }] : []),
                 ...gauges,
                 ...(chosen ? [chosen] : []),
+                ...drawn,
                 ...(rows.length || !chosen ? [{ kind: "menu" as const, rows }] : []),
               ];
   const viewerName = viewer ? seatLabel(update, viewer, printed) : "";
@@ -753,7 +791,11 @@ export function selectAction(
                         }
                       : {
                           // A draft sends nothing: the answer is recorded.
-                          label: recording ? "Record" : "Send",
+                          label: recording
+                            ? "Record"
+                            : looks > 0
+                              ? "Send · look at the agenda deck"
+                              : "Send",
                           tone: "primary" as const,
                           disabled: !staged,
                           key: "Enter",

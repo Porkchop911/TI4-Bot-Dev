@@ -182,11 +182,11 @@ test.describe("flows", () => {
   });
 
   test("rule text opens on hover and stays on click", async ({ page }) => {
-    await page.goto("/?example=live-strategy-3");
-    const hint = page.getByRole("button", { name: "Rules: Politics" });
+    await page.goto("/?example=live-strategy-4");
+    const hint = page.getByRole("button", { name: "Rules: Construction" });
     await expect(page.getByRole("note")).toHaveCount(0);
     await hint.hover();
-    await expect(page.getByRole("note")).toContainText("Choose a player other than the speaker");
+    await expect(page.getByRole("note")).toContainText("Place 1 PDS or 1 space dock");
     await hint.click();
     await page.mouse.move(10, 10);
     await expect(page.getByRole("note")).toBeVisible();
@@ -202,7 +202,7 @@ test.describe("flows", () => {
   });
 
   test("secondary, log and history", async ({ page }) => {
-    await page.goto("/?example=live-secondary-3");
+    await page.goto("/?example=live-secondary-4");
     await page.getByRole("button", { name: "Simulate Alex (demo)" }).click();
     await shot(page, "web2/flow/secondary");
     await page
@@ -277,26 +277,6 @@ test.describe("flows", () => {
         .evaluate((element) => element.scrollHeight - element.clientHeight);
       expect(overflow, "the step content needs vertical scroll").toBeLessThanOrEqual(0);
     };
-
-    test("Politics: speaker in the player table, then the agenda cards", async ({ page }) => {
-      await start(page, "live-strategy-3");
-      await expect(
-        page.getByRole("button", { name: /^Choose Alex.*Is the speaker/ }),
-      ).toBeDisabled();
-      await page.getByRole("button", { name: /^Choose Blair/ }).click();
-      await expect(panel(page)).toContainText("Speaker: Alex → Blair");
-      await shot(page, "web2/flow/strategy-politics-speaker");
-      await page.keyboard.press("Enter");
-      await expect(panel(page)).toContainText("Fleet Regulations");
-      await page.keyboard.press("1");
-      await page.keyboard.press("3");
-      await expect(panel(page)).toContainText("2 / 2 placed");
-      await panel(page).getByRole("button", { name: "Swap" }).click();
-      await shot(page, "web2/flow/strategy-politics-agenda");
-      await fits(page);
-      await page.keyboard.press("Enter");
-      await expect(panel(page)).toContainText("made Blair the speaker");
-    });
 
     test("Construction: structure by key, planets on the board", async ({ page }) => {
       await start(page, "live-strategy-4");

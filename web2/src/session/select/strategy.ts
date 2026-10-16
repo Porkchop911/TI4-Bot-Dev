@@ -8,6 +8,7 @@ import { type LocalState, openChoice, selectAction } from "./action";
 import { seatLabel, sentence } from "./names";
 import { selectPurchase } from "./purchase";
 import { selectReady } from "./ready";
+import { selectAgendaDeck } from "./agendaDeck";
 
 /** The seat that the strategic action waits for: the primary, then the first follower to ask. */
 const decidingSeat = (action: SecondaryFacts): string | null =>
@@ -66,12 +67,14 @@ export function selectStrategy(
   // says what it costs (pattern 3).
   const tokens = choice?.details?.kind === "strategy_secondary" ? choice.details : null;
   const left = typeof tokens?.tokens_left === "number" ? tokens.tokens_left : null;
-  // A gain or a purchase of command tokens, and a readying of planets, are one screen of several
-  // questions: its blocks say it.
+  // A gain or a purchase of command tokens, a readying of planets and a placement of agenda cards
+  // are one screen of several questions: its blocks say it.
   const several =
     !!choice &&
     !follow?.editing &&
-    (selectPurchase(update, choice, null) !== null || selectReady(update, choice, null) !== null);
+    (selectPurchase(update, choice, null) !== null ||
+      selectReady(update, choice, null) !== null ||
+      selectAgendaDeck(choice, null) !== null);
   const asked: BlockView[] = choice
     ? [
         ...(several

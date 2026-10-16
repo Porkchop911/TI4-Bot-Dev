@@ -735,6 +735,46 @@ test("phone: Diplomacy has the system and the planets in the width, chosen on th
   await page.screenshot({ path: "shots/phone/local/diplomacy.png", animations: "disabled" });
 });
 
+test("phone: Politics has the speaker in the player table and the agenda deck in the width", async ({
+  page,
+}) => {
+  await page.goto("/?scenario=strategy_politics&humans=1");
+  const panel = page.locator("#step-panel");
+  const panes = page.getByRole("navigation", { name: "Panes" });
+  const send = page.locator('footer button[aria-keyshortcuts="Enter"]');
+  const width = () => page.evaluate(() => document.documentElement.scrollWidth);
+  await panes.getByRole("button", { name: "Action" }).click();
+  await panel.getByRole("button", { name: /^3 Politics/ }).click();
+  await send.click();
+  await expect(panel.getByRole("heading", { name: "Speaker" })).toBeVisible();
+  expect(await width()).toBe(page.viewportSize()!.width);
+  await panes.getByRole("button", { name: "Players" }).click();
+  await page
+    .getByRole("region", { name: "Players" })
+    .getByRole("row")
+    .filter({
+      hasText: "Seat B",
+    })
+    .tap();
+  await panes.getByRole("button", { name: "Action" }).click();
+  await expect(panel).toContainText("Speaker: Sol → Hacan");
+  await send.click();
+  const deck = panel.getByRole("heading", { name: "Agenda deck after" }).locator("../..");
+  await expect(deck).toContainText("0 / 2 placed");
+  await panel
+    .getByRole("button", { name: /Top of the deck/ })
+    .first()
+    .tap();
+  await panel
+    .getByRole("button", { name: /Bottom of the deck/ })
+    .last()
+    .tap();
+  await expect(deck).toContainText("2 / 2 placed");
+  expect(await width()).toBe(page.viewportSize()!.width);
+  await expect(send).toBeInViewport();
+  await page.screenshot({ path: "shots/phone/local/politics.png", animations: "disabled" });
+});
+
 test("phone: the Agendas sheet has the laws and the open groups in its width", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));

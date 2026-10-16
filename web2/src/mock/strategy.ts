@@ -28,11 +28,6 @@ export const STRATEGY_TEXT: Record<number, { primary: string; secondary: string 
     secondary:
       "Buy command tokens. Each other player may buy tokens for 3 influence each. No strategy token is spent.",
   },
-  3: {
-    primary:
-      "Choose a player other than the speaker. That player gains the speaker token. Draw 2 action cards. Look at the top 2 cards of the agenda deck. Place each card on the top or bottom of the deck in any order.",
-    secondary: "Spend 1 token from your strategy pool to draw 2 action cards.",
-  },
   4: {
     primary:
       "Place 1 PDS or 1 space dock on a planet you control. Place 1 PDS on a planet you control.",
@@ -78,18 +73,6 @@ const STRUCTURES: Record<string, { dock: number; pds: number }> = {
   arnor: { dock: 1, pds: 0 },
 };
 const STRUCTURE = { dock: ["Space dock", 3], pds: ["PDS", 6] } as const;
-const AGENDAS = [
-  {
-    name: "Fleet Regulations",
-    type: "Agenda · Law",
-    text: "For: each player cannot have more than 4 tokens in their fleet pool. Against: each player places 1 command token from their reinforcements in their fleet pool.",
-  },
-  {
-    name: "Economic Equality",
-    type: "Agenda · Directive",
-    text: "For: each player returns all of their trade goods to the supply. Then, each player gains 5 trade goods. Against: each player returns all of their trade goods to the supply.",
-  },
-];
 /** The public objectives, and whether the viewer fulfills each. The Objectives sheet shows the same. */
 export const OBJECTIVES: {
   name: string;
@@ -242,116 +225,6 @@ const base = (): Editor => ({
 
 const followed = (primary: boolean, text: string) =>
   primary ? `Jamie ${text}.` : `Followed · ${text}`;
-
-// ---- 3 Politics ----------------------------------------------------------------------------------
-
-function politics(state: State, primary: boolean, seats: string[]): Editor {
-  const flow = state.flow;
-  const mine = flow.mine;
-  const draw = `Action cards ${ME.ac} → ${ME.ac + 2}`;
-  if (!primary) {
-    return {
-      ...base(),
-      blocks: [followMenu(flow, "Draw 2 action cards", draw)],
-      problem: mine.follow === null ? "Choose Follow or Pass." : "",
-      pass: mine.follow === false,
-      staged: mine.follow !== null,
-      result: mine.follow ? "Followed · drew 2 action cards" : "Passed",
-    };
-  }
-  const speaker = seats.find((seat) => SEATS[seat].speaker) ?? seats[0];
-  if (!flow.sent) {
-    return {
-      ...base(),
-      blocks: [
-        {
-          kind: "card",
-          title: "Speaker",
-          aside: "Choose in the player table",
-          rows: mine.seat
-            ? [
-                {
-                  title: [{ seat: mine.seat }, ` ${SEATS[mine.seat].name}`],
-                  subtitle: `Speaker: ${SEATS[speaker].name} → ${SEATS[mine.seat].name}`,
-                  control: change("seat"),
-                },
-              ]
-            : [{ title: ["No player chosen"] }],
-        },
-        {
-          kind: "card",
-          title: "Action cards",
-          rows: [{ icon: "card", title: ["Draw 2 action cards"], subtitle: draw }],
-        },
-      ],
-      problem: mine.seat ? "" : "Choose 1 player.",
-      staged: !!mine.seat,
-      main: "Resolve · look at the agenda deck",
-      pick: {
-        verb: "Choose",
-        seats: Object.fromEntries(
-          seats.map((seat) => [seat, { reason: seat === speaker ? "Is the speaker" : null }]),
-        ),
-        chosen: mine.seat ? [mine.seat] : [],
-      },
-    };
-  }
-  // The agenda cards are revealed to the viewer only: where each one goes, and the deck after.
-  const place = (where: "top" | "bottom") => {
-    const at = [0, 1].filter((index) => mine.agenda[index] === where);
-    return mine.swap ? at.reverse() : at;
-  };
-  const tops = place("top");
-  const bottoms = place("bottom");
-  const both = tops.length === 2 || bottoms.length === 2;
-  const swap: RowView["control"] = {
-    kind: "button",
-    button: button({ type: "chooseOption", option: "swap", group: "agenda" }, "Swap"),
-  };
-  const deck: RowView[] = [
-    ...tops.map((index, at) => ({
-      icon: "card" as const,
-      title: [at ? "Second from the top" : "Top of the deck · the next agenda"],
-      subtitle: AGENDAS[index].name,
-      control: both && !at ? swap : undefined,
-    })),
-    ...bottoms.map((index, at) => ({
-      icon: "card" as const,
-      title: [at === bottoms.length - 1 ? "Bottom of the deck" : "Second from the bottom"],
-      subtitle: AGENDAS[index].name,
-      control: both && !at ? swap : undefined,
-    })),
-  ];
-  const where = (index: number) =>
-    `${AGENDAS[index].name} ${mine.agenda[index] === "top" ? "on top" : "on the bottom"}`;
-  return {
-    ...base(),
-    blocks: [
-      ...AGENDAS.flatMap((agenda, index): BlockView[] => [
-        { kind: "source", ...agenda },
-        {
-          kind: "menu",
-          rows: (["top", "bottom"] as const).map((option, at) => ({
-            key: `${index * 2 + at + 1}`,
-            title: option === "top" ? "Top of the deck" : "Bottom of the deck",
-            selected: mine.agenda[index] === option,
-            disabled: false,
-            intent: { type: "chooseOption", option, group: `agenda:${index}` },
-          })),
-        },
-      ]),
-      {
-        kind: "card",
-        title: "Agenda deck after",
-        aside: `${tops.length + bottoms.length} / 2 placed`,
-        rows: deck.length ? deck : [{ icon: "card", title: ["No card placed"] }],
-      },
-    ],
-    problem: mine.agenda.includes(null) ? "Place both agenda cards." : "",
-    staged: mine.agenda.some(Boolean),
-    result: `Jamie made ${SEATS[flow.speaker]?.name} the speaker, drew 2 action cards and placed ${where(0)} and ${where(1)} of the agenda deck.`,
-  };
-}
 
 // ---- 4 Construction ------------------------------------------------------------------------------
 
@@ -787,8 +660,6 @@ function imperial(state: State, primary: boolean): Editor {
 export function strategyEditor(state: State, seats: string[]): Editor {
   const primary = state.flow.owner === "sol";
   switch (state.flow.number ?? 1) {
-    case 3:
-      return politics(state, primary, seats);
     case 4:
       return construction(state, primary);
     case 5:
@@ -826,14 +697,10 @@ function clearLast(mine: any, number: number): boolean {
     mine.build.findLast((slot: any) => slot.planet).planet = null;
   } else if (mine.build[0].type) {
     mine.build[0].type = null;
-  } else if (mine.agenda.some(Boolean)) {
-    Object.assign(mine, { agenda: [null, null], swap: false });
   } else if (mine.objective) {
     mine.objective = null;
   } else if (mine.seats.length) {
     mine.seats.pop();
-  } else if (mine.seat) {
-    mine.seat = null;
   } else if (mine.system) {
     mine.system = null;
   } else if (mine.follow !== null) {
@@ -891,12 +758,10 @@ export function strategyIntent(state: State, seats: string[], intent: Intent): b
       }
       if (number === 5) {
         toggle(mine.seats, intent.seat);
-      } else {
-        mine.seat = mine.seat === intent.seat ? null : intent.seat;
       }
       return true;
     case "chooseOption": {
-      const [group, index] = (intent.group ?? "").split(":");
+      const [group] = (intent.group ?? "").split(":");
       if (group === "follow") {
         const follow = intent.option === "follow";
         mine.follow = mine.follow === follow ? null : follow;
@@ -904,10 +769,6 @@ export function strategyIntent(state: State, seats: string[], intent: Intent): b
         if (!mine.build[0].planet) {
           mine.build[0].type = mine.build[0].type === intent.option ? null : intent.option;
         }
-      } else if (group === "agenda" && index === undefined) {
-        mine.swap = !mine.swap;
-      } else if (group === "agenda") {
-        mine.agenda[+index] = mine.agenda[+index] === intent.option ? null : intent.option;
       } else if (
         group === "objective" &&
         OBJECTIVES.find((item) => item.name === intent.option)?.state === "open"
@@ -942,8 +803,6 @@ export function strategyIntent(state: State, seats: string[], intent: Intent): b
         mine.system = null;
       } else if (part === "seat" && id) {
         toggle(mine.seats, id);
-      } else if (part === "seat") {
-        mine.seat = null;
       } else if (part === "build") {
         mine.build[+id].planet = null;
       } else if (part === "tech") {

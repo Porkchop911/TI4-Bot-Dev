@@ -138,6 +138,7 @@ pub const SCENARIOS: &[Scenario] = &[
     three_seats::STRATEGY_LEADERSHIP,
     three_seats::STRATEGY_DIPLOMACY,
     three_seats::STRATEGY_DIPLOMACY_BASE,
+    three_seats::STRATEGY_POLITICS,
 ];
 
 /// The scenario with this id.
