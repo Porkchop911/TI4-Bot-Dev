@@ -25,7 +25,7 @@ import type {
 import { type LocalState, openChoice } from "./action";
 import { selectInvasion } from "./invasion";
 import { selectProduction } from "./production";
-import { selectMovement, systemLabel, tilesOf } from "./movement";
+import { selectMovement, selectMovementResult, systemLabel, tilesOf } from "./movement";
 import { ANOMALIES, WORMHOLES, factionName } from "./names";
 
 const STEPS = ["Activation", "Movement", "Space combat", "Invasion", "Production"];
@@ -212,7 +212,14 @@ function movement(
     };
   }
   const nothing = Object.keys(local.movement).length === 0;
-  const content = selectMovement(update, facts, local.movement, local.handled, local.odds ?? null);
+  const content = selectMovement(
+    update,
+    facts,
+    local.movement,
+    local.handled,
+    local.odds ?? null,
+    local.rolls,
+  );
   if (local.draft) {
     return { target, content, footer: draftFooter(local, "Move nothing") };
   }
@@ -392,6 +399,36 @@ function production(
 
 const CURRENT = { activation: 0, movement: 1, invasion: 3, production: 4 };
 
+/**
+ * The movement of the action in Live, read-only, while a later step is open: what the dice of
+ * the movement did.
+ */
+function movementResult(
+  update: SessionUpdate,
+  local: LocalState,
+  active: string,
+  current: number,
+): { content: StepContentView; footer: FooterView; target: string } {
+  const next = STEPS[current].toLowerCase();
+  return {
+    target: systemLabel(tilesOf(update), active),
+    content: selectMovementResult(update, active, local.rolls ?? []),
+    footer: {
+      note: `Viewing movement. The action is at ${next}.`,
+      error: false,
+      actions: [
+        {
+          label: `Continue to ${next}`,
+          tone: "primary",
+          key: "Enter",
+          arrow: true,
+          intent: { type: "returnToCurrent" },
+        },
+      ],
+    },
+  };
+}
+
 export function selectTactical(
   update: SessionUpdate,
   local: LocalState,
@@ -401,9 +438,13 @@ export function selectTactical(
   printed: Catalog | null = null,
 ): TacticalActionView {
   const current = CURRENT[facts.kind];
-  const selected = facts.kind === "movement" && local.step === 0 ? 0 : current;
-  const view =
-    facts.kind === "activation"
+  // In Live the movement of the action stays open to read while a later step is open.
+  const reading =
+    !local.draft && local.step === 1 && current > 1 && !!update.view.board.active_system;
+  const selected = facts.kind === "movement" && local.step === 0 ? 0 : reading ? 1 : current;
+  const view = reading
+    ? movementResult(update, local, update.view.board.active_system!, current)
+    : facts.kind === "activation"
       ? activation(update, local, facts)
       : facts.kind === "movement"
         ? movement(update, local, facts)
@@ -486,7 +527,9 @@ export function selectTactical(
           ? { tone: "draft", label: "Editing" }
           : selected !== current
             ? { tone: "done", label: "Drafted" }
-            : { tone: "draft", label: "Preparing" }
+            : local.draft.boundary
+              ? { tone: "draft", label: "Preview ends here" }
+              : { tone: "draft", label: "Preparing" }
         : selected !== current
           ? { tone: "done", label: "Resolved" }
           : local.remaining === null && local.planNote && !local.planNote.error

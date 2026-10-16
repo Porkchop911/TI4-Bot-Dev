@@ -39,7 +39,7 @@ function playBattle(
         .table.sides.flatMap((side) => side.rows)
         .find((row) => row.assign.some((pick) => !pick.disabled));
       if (offer) {
-        reduce(world, { type: "stageHit", unit: offer.unit, kind: offer.assign[0].kind });
+        reduce(world, { type: "stageHit", unit: offer.unit!, kind: offer.assign[0].kind });
       } else {
         reduce(world, { type: "battle", action: "assignHits" });
       }

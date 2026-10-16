@@ -85,19 +85,19 @@ function Side({
           No units
         </div>
       )}
-      {side.rows.map((row) => (
+      {side.rows.map((row, index) => (
         <div
-          key={row.unit}
+          key={row.unit ?? `row-${index}`}
           className={cx(
             "grid min-h-[34px] grid-cols-subgrid items-center gap-y-1.5 border-t border-line/50 py-[3px] text-sm",
             row.gone && "text-faint",
           )}
         >
           <span className="flex min-w-0 items-center gap-[7px] font-mid">
-            <Icon name={row.unit} className="size-[18px] text-icon" />
-            {unitName(row.unit)}
+            {row.unit && <Icon name={row.unit} className="size-[18px] text-icon" />}
+            {row.label ?? (row.unit ? unitName(row.unit) : "")}
           </span>
-          <span className="tabular-nums">×{row.count}</span>
+          <span className="tabular-nums">{row.count === null ? "" : `×${row.count}`}</span>
           <span
             className={cx("tabular-nums", row.modified ? "text-accent" : "text-muted")}
             title={row.targetTitle || undefined}
@@ -131,7 +131,9 @@ function Side({
                   key={pick.kind}
                   size="sm"
                   disabled={pick.disabled}
-                  onClick={() => dispatch({ type: "stageHit", unit: row.unit, kind: pick.kind })}
+                  onClick={() =>
+                    row.unit && dispatch({ type: "stageHit", unit: row.unit, kind: pick.kind })
+                  }
                 >
                   {pick.label}
                 </Button>

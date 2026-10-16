@@ -63,8 +63,12 @@ export interface DieView {
 }
 
 export interface BattleRowView {
-  unit: UnitType;
-  count: number;
+  /** Null for dice whose units the game does not name: `label` says what rolled. */
+  unit: UnitType | null;
+  /** The name of the row, when it is not the name of its unit. */
+  label?: string;
+  /** Null when the units are not known. */
+  count: number | null;
   /** Shown as "7+". Null when the unit does not roll. */
   target: number | null;
   targetTitle: string;
@@ -311,7 +315,8 @@ export interface OriginView {
 }
 
 export interface RiftRowView {
-  unit: UnitType;
+  /** Null when the game does not name the ship that rolled. */
+  unit: UnitType | null;
   name: string;
   text: string;
   /** Null before the roll. */

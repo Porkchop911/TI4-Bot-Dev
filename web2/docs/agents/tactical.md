@@ -26,6 +26,7 @@ The owner chose this design on 2026-10-10, from three that were compared.
 - The demo data follows the game: before a movement, ships of two players are never in one system. Ground forces of two players can be on different planets of one system.
 - The sheet has a small "Reset": it takes back what leaves that system, and its check mark, also one that the player set.
 - The read-only view of a movement (a recorded step in Live, History) is the same tokens in the panel, one band for each system.
+- **The dice of the movement** are read from the public rolls of the action (`GameEvent.roll`, kept by the transport: `session/rolls.ts`): "Gravity rift" has a row for each rift roll (the rift, "Survives on 4+", the die and "Survives" or "Destroyed"), and "Space cannon offense" is a battle table with a side for each seat that fired and a row for each of its rolls. A roll does not name its ship or its unit, so a row does not either: it says what the roll says. They are in the open movement once rolled (an applied draft that a rift roll stopped), and in Live the Movement tab stays open to read while the landings or the production are open: the fleet in the active system now, then the dice, with "Continue to …". A draft holds no dice: the step where its check ends has the pill "Preview ends here".
 
 ## Invasion
 

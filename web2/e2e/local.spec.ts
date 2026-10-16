@@ -447,6 +447,75 @@ test("a movement into a fleet of another seat has the odds of the space combat",
   expect(errors).toEqual([]);
 });
 
+test("a draft stops at the rift roll; Live keeps what the rift and the space cannon offense rolled", async ({
+  page,
+}) => {
+  // Longer than a test of this suite should be: see "Tests" in AGENTS.md.
+  test.setTimeout(10_000);
+  const errors = pageErrors(page, { console: true });
+  await page.goto("/?scenario=late-game&humans=1");
+  const system = (id: string) => page.locator("g.system").filter({ hasText: `#${id}` });
+  const tab = (name: string) => page.getByRole("tab", { name: new RegExp(`^\\S* ?${name}`) });
+  // Perimeter (#60) has a PDS of seat C and no ships; the fleet in the gravity rift (#41) reaches it.
+  await panel(page).getByRole("button", { name: "Activate a system", exact: true }).click();
+  await expect(page.locator("g.system.target:not(.plain)")).not.toHaveCount(0);
+  await system("60").click();
+  await page.keyboard.press("Enter");
+  await expect(heading(page)).toHaveText("Movement");
+  await system("41").click();
+  const fleet = page.getByRole("group", { name: /^Move from / });
+  await fleet.getByRole("button", { name: "Carrier 1 of 1" }).click();
+  await fleet.getByRole("button", { name: /^Load Infantry, Space area, 2 left/ }).click();
+  await fleet.getByRole("button", { name: "Load Infantry on Carrier 1 of 1" }).first().click();
+  await fleet.getByRole("button", { name: "Load Infantry on Carrier 1 of 1" }).first().click();
+  await fleet.getByRole("button", { name: "Cruiser 1 of 1" }).click();
+  await fleet.getByRole("button", { name: "Done with this system" }).click();
+  // The draft holds no dice: its check ends at the first rift roll.
+  await expect(panel(page).getByText("Preview ends here")).toBeVisible();
+  await expect(page.locator("footer")).toContainText("The draft ends at a roll");
+  await expect(panel(page).getByText("2 rift rolls")).toBeVisible();
+  await fitsHeight(page);
+  await page.screenshot({ path: "shots/local/draft-rift.png", animations: "disabled" });
+
+  // Apply sends the carrier, which rolls; the cruiser is staged again in Live.
+  await page.getByRole("button", { name: "Apply to Live" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Apply to Live" }).click();
+  await expect(page.locator("footer")).toContainText("Staged from your draft");
+  // The rolls are the card under the heading of the section.
+  const rift = panel(page)
+    .getByRole("heading", { name: "Gravity rift" })
+    .locator("xpath=following-sibling::*[1]");
+  await expect(rift.getByText("Gravity Rift · #41")).toHaveCount(1);
+  await expect(rift).toContainText("Survives on 4+");
+  await expect(panel(page).getByText("1 rift roll")).toBeVisible();
+  await send(page).click();
+
+  // The PDS of seat C fires at the fleet and hits: the carrier sustains the damage.
+  await expect(heading(page)).toHaveText(/^Cancel a hit/);
+  await panel(page)
+    .getByRole("button", { name: /^Sustain damage/ })
+    .click();
+  await send(page).click();
+  await expect(heading(page)).toHaveText("Invasion");
+
+  // The movement of the action is read while the landings are open: both rift rolls and the guns.
+  await tab("Movement").click();
+  await expect(heading(page)).toHaveText("Movement");
+  await expect(panel(page).getByText("Resolved")).toBeVisible();
+  await expect(rift.getByText("Gravity Rift · #41")).toHaveCount(2);
+  const cannon = panel(page).getByRole("region", { name: "Defender" });
+  await expect(cannon).toContainText(/Seat C\s*Letnev/);
+  await expect(cannon).toContainText("Space cannon");
+  await expect(cannon).toContainText("6+");
+  await expect(cannon).toContainText("1 hit");
+  await fitsHeight(page);
+  await page.screenshot({ path: "shots/local/movement-dice.png", animations: "disabled" });
+  await expect(send(page)).toHaveText(/Continue to invasion/);
+  await send(page).click();
+  await expect(heading(page)).toHaveText("Invasion");
+  expect(errors).toEqual([]);
+});
+
 test("a reload goes on where the game was, and undo takes back one answer @slow", async ({
   page,
 }) => {

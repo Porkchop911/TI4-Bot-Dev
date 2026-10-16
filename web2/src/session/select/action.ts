@@ -23,6 +23,7 @@ import type {
   Choice,
   ChoiceOption,
   ExplorationCatalog,
+  PublicRoll,
   ReactionModes,
   SessionUpdate,
 } from "../wire";
@@ -60,6 +61,11 @@ export interface DraftInfo {
   next: "movement" | "invasion" | "production" | null;
   /** What the draft comes to after the step in view, when no step follows. */
   ends: string | null;
+  /**
+   * The check of the draft ends in the step in view, at a roll or at a step that a draft does not
+   * play: what comes after it is played in Live.
+   */
+  boundary?: boolean;
   /** The live game is at the turn menu of the seat: the draft goes back to it. */
   fromMenu?: boolean;
   /** The recorded activation is open to choose another system: the system that it has. */
@@ -158,6 +164,11 @@ export interface LocalState {
   menu?: TurnMenu | null;
   /** The private draft of a tactical action that the seat keeps, while it is not in view. */
   drafted?: { system: string | null } | null;
+  /**
+   * The public rolls of the action that is played now, in the order of the game. A draft has
+   * none: it holds no dice.
+   */
+  rolls?: PublicRoll[];
 }
 
 /** The choice that the viewer can answer now. */

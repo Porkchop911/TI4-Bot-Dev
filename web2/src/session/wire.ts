@@ -19,9 +19,9 @@ export type ReactionModes = Record<string, Exclude<ReactionMode, "always">>;
 
 /**
  * `initial_snapshot` and `state_update` as one message: a `SessionUpdate` with the version of the
- * game. What only a snapshot has (`content`, `undone`) is absent from an update.
+ * game. What only a snapshot has (`content`, `undone`, `events`) is absent from an update.
  */
-export type StateMsg = StateUpdateMsg & Pick<InitialSnapshotMsg, "content" | "undone">;
+export type StateMsg = StateUpdateMsg & Pick<InitialSnapshotMsg, "content" | "undone" | "events">;
 
 type WithoutVersion<T> = T extends unknown ? Omit<T, "protocol_version"> : never;
 

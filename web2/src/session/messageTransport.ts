@@ -4,6 +4,7 @@
 // `ServerMessage` out. What only one of them has is in `MessagePlay`.
 import type { GameLink, HostCommand } from "@ti4/shared/link/link.ts";
 import type { PlanStep } from "./movementPlan";
+import { NO_ROLLS, type RollLog, actionRolls, logOf, withEvent } from "./rolls";
 import { type LegacyStaged, seatSync } from "./seatStore";
 import { modesOf, passedOf, planStoppedOf, rejection, updateOf } from "./serverMessages";
 import type { Capabilities, PlanStopped, Transport, TransportEvent } from "./transport";
@@ -126,6 +127,8 @@ export function messageTransport(link: GameLink, play: MessagePlay): MessageCore
   let undoing = false;
   /** The notes of the game that were told. A note has an id so that a repeat can be dropped. */
   const noted = new Set<string>();
+  /** The public rolls that the events told, for the update of the action that is played now. */
+  let rolls: RollLog = NO_ROLLS;
   /** The last `replaying` that was told, and when. */
   let shown = 0;
   const replies = typeof link.request === "function";
@@ -173,7 +176,8 @@ export function messageTransport(link: GameLink, play: MessagePlay): MessageCore
     }
     const { version: _, ...event } = latest;
     const seat = play.stepping?.() ?? null;
-    return seat === null ? event : { ...event, stepping: { seat } };
+    const told = { ...event, rolls: actionRolls(rolls) };
+    return seat === null ? told : { ...told, stepping: { seat } };
   };
   /**
    * Tells the game as it is now, once more: what was staged against it starts again. `plan`
@@ -211,6 +215,8 @@ export function messageTransport(link: GameLink, play: MessagePlay): MessageCore
         );
       }
       play.snapshot?.();
+      // A snapshot has every event of the game: an undo took the later ones back.
+      rolls = logOf(message.events);
     }
     settle();
     const told = modesOf(message.reaction_modes ?? {});
@@ -312,6 +318,9 @@ export function messageTransport(link: GameLink, play: MessagePlay): MessageCore
               ? play.stagedRefused
               : message.message,
         });
+      case "event":
+        rolls = withEvent(rolls, message.entry);
+        return;
       case "seat_staged":
         if (play.player) {
           staged.receive(message);

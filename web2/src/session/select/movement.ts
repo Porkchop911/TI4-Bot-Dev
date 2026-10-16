@@ -25,7 +25,15 @@ import {
   sourceId,
 } from "../movementDraft";
 import { type KeptOdds, oddsRequest } from "../movementOdds";
-import type { BoardTileView, CargoPool, MovementFacts, SessionUpdate, ShipFact } from "../wire";
+import type {
+  BoardTileView,
+  CargoPool,
+  MovementFacts,
+  PublicRoll,
+  SessionUpdate,
+  ShipFact,
+} from "../wire";
+import { cannonTable, riftRows } from "./movementRolls";
 import { UNIT_ORDER, isShip, unitType } from "./names";
 
 const RIFT_RULE = "Each ship that leaves a gravity rift rolls: destroyed on 1–3, with its cargo";
@@ -392,6 +400,8 @@ export function selectMovement(
   handled: string[] = [],
   /** The last answer of the engine for the odds of a space combat. */
   odds: KeptOdds | null = null,
+  /** The public rolls of the action so far: a movement that another decision stopped has some. */
+  rolls: readonly PublicRoll[] = [],
 ): MovementView {
   const plan = planOf(update, facts, draft, handled);
   const origins = originsOf(facts);
@@ -432,12 +442,50 @@ export function selectMovement(
     ],
     excessShips: Math.max(0, used - facts.fleet_supply.limit),
     riftRolls: moving.reduce((sum, ship) => sum + (ship.move?.rifts.length ?? 0), 0),
-    // The results of a movement need the event history, which the update does not have yet.
-    rift: null,
+    rift: riftRows(rolls, (id) => systemLabel(plan.tiles, id)),
     removed: [],
-    cannon: null,
+    cannon: cannonTable(rolls, plan.viewer, plan.viewer),
     cannonSkipped: false,
     odds: oddsOf(plan, odds),
+  };
+}
+
+/**
+ * The movement of the action after it was made, read-only: the fleet of the viewer in the active
+ * system now, and what the dice of the movement did. What moved from where is not told yet.
+ */
+export function selectMovementResult(
+  update: SessionUpdate,
+  active: string,
+  rolls: readonly PublicRoll[],
+): MovementView {
+  const tiles = tilesOf(update);
+  const viewer = update.viewer.role === "player" ? update.viewer.seat : "";
+  const there = new Map<UnitType, number>();
+  for (const unit of update.view.board.systems[active]?.units ?? []) {
+    if (unit.owner === viewer && unit.planet === null) {
+      there.set(typeOf(unit.unit_type), (there.get(typeOf(unit.unit_type)) ?? 0) + 1);
+    }
+  }
+  return {
+    kind: "movement",
+    editing: false,
+    target: { system: active, label: systemLabel(tiles, active) },
+    origins: [],
+    unreachable: null,
+    arrival: UNIT_ORDER.filter((unit) => there.has(unit)).map((unit) => ({
+      unit,
+      now: there.get(unit)!,
+      after: there.get(unit)!,
+    })),
+    gauges: [],
+    excessShips: 0,
+    riftRolls: 0,
+    rift: riftRows(rolls, (id) => systemLabel(tiles, id)),
+    removed: [],
+    cannon: cannonTable(rolls, viewer, viewer),
+    cannonSkipped: false,
+    odds: null,
   };
 }
 

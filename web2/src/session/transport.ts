@@ -8,6 +8,7 @@ import type {
   GroundOddsRequest,
   GroundOddsResponse,
   PlanScope,
+  PublicRoll,
   PublicTurnStatus,
   ReactionMode,
   ReactionModes,
@@ -43,6 +44,11 @@ export type TransportEvent =
       plan?: PlanStopped;
       /** The steps of the movement or of the landings that the undo before this update took back, in order. */
       undone?: PlanStep[];
+      /**
+       * The public rolls of the action that is played now, in the order of the game, as the
+       * events told them (`rolls.ts`). Empty outside an action.
+       */
+      rolls?: PublicRoll[];
       /** The game waits before a decision of this seat, which is not played here: `capabilities.stepping.step` goes on. */
       stepping?: { seat: string };
     }

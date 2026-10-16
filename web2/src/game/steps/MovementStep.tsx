@@ -60,7 +60,7 @@ export function MovementStep({ view }: { view: MovementView }) {
             {view.rift.map((ship, index) => (
               <ListRow
                 key={index}
-                icon={ship.unit}
+                icon={ship.unit ?? undefined}
                 title={ship.name}
                 subtitle={ship.text}
                 invalid={!!ship.roll?.lost}

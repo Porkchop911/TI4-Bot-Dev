@@ -95,7 +95,8 @@ const LATE_GAME_SCENARIO: Scenario = Scenario {
         space docks with Space Dock II, and for what they produce: War Sun, Spec Ops II, \
         Sarween Tools, AI Development Algorithm, 6 trade goods and one exhausted planet. \
         Around them: a gravity rift, a nebula, a supernova, an asteroid field, a wormhole pair, \
-        fleets of other seats and a system with Sol's command token. Asteroid fields and \
+        fleets of other seats, a PDS of seat C alone on Perimeter (#60) and a system with \
+        Sol's command token. Asteroid fields and \
         the ships of other seats block. Every seat holds seven action cards, 56 different \
         cards in all, and 17 cards are discarded; the other cards of the deck are in the \
         hands of \"Late game with deflectors\". Every seat has three secret objectives, of \
@@ -316,7 +317,7 @@ mod at {
     pub const ENEMY_B: &str = "75";
     /// A planet of seat A that is exhausted, in `FAR`.
     pub const SPENT: &str = "quann";
-    /// Every other seat has a command token here.
+    /// Every other seat has a command token here, and seat C a PDS on its planet.
     pub const CROWDED: &str = "60";
     pub const ALL: [&str; 15] = [
         HOME, RIFT, NEBULA, SUPERNOVA, DOCK, DEPOT, NORTH, TOKEN, WEST, SOUTH, REPLACED, FAR,
@@ -512,6 +513,19 @@ fn late_game(
             system: at::ENEMY_B,
             space: &[("carrier", 1), ("cruiser", 1), ("fighter", 2)],
             planets: &[("loki", &[("infantry", 2)])],
+        },
+    )?;
+    // A PDS alone on the planet of `CROWDED`: a movement there meets space cannon offense and
+    // no ships, and the landings come after it.
+    place(
+        state,
+        content,
+        sources,
+        c,
+        &Placement {
+            system: at::CROWDED,
+            space: &[],
+            planets: &[("perimeter", &[("pds", 1)])],
         },
     )?;
     for seat in &seats[1..] {
@@ -1185,6 +1199,26 @@ mod tests {
         let seat_a = &hands(&first)[0];
         for name in ["War Effort", "Skilled Retreat", "Hack Election"] {
             assert!(seat_a.contains(&name.to_owned()), "no {name} in {seat_a:?}");
+        }
+    }
+
+    #[test]
+    fn a_pds_alone_waits_for_the_fleet_of_the_rift() {
+        let (state, galaxy) = game(LATE_GAME);
+        let crowded = state.system_state(&SystemId::new(at::CROWDED));
+        assert!(crowded.units.is_empty());
+        let guns: Vec<(&str, &str)> = crowded
+            .planet_units
+            .values()
+            .flatten()
+            .map(|unit| (unit.owner.as_str(), unit.type_id.as_str()))
+            .collect();
+        assert_eq!(guns, [("c", "pds")]);
+        // The ships in the rift reach it, and roll on their way.
+        let facts = facts(&state, &galaxy, at::CROWDED);
+        for ship in ships(&facts, at::RIFT) {
+            let route = ship.r#move.as_ref().expect("a ship of the rift arrives");
+            assert_eq!(route.rifts, [at::RIFT], "{ship:?}");
         }
     }
 
@@ -1969,12 +2003,13 @@ mod tests {
         );
         assert!(!state.relic_deck.contains(&RelicId::new("dynamiscore")));
 
-        // A planet of each deck is free: the two of the free system, one next to seat B, and
-        // the one where every other seat has a token.
+        // A planet of each deck is free: the two of the free system, and one of the industrial
+        // deck. The planet where every other seat has a token is held by the PDS of seat C.
         let explores = |planet: &str| facts.explores.get(&PlanetId::new(planet)).cloned();
         assert_eq!(explores("abyz"), Some(vec!["HAZARDOUS".to_owned()]));
         assert_eq!(explores("abaddon"), Some(vec!["CULTURAL".to_owned()]));
-        assert_eq!(explores("perimeter"), Some(vec!["INDUSTRIAL".to_owned()]));
+        assert_eq!(explores("arnor"), Some(vec!["INDUSTRIAL".to_owned()]));
+        assert_eq!(explores("perimeter"), None);
         assert_eq!(explores("vegamajor"), None);
     }
 

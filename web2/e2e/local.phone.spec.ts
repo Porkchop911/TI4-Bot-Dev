@@ -353,6 +353,42 @@ test("phone: a movement into a fleet of another seat has the odds of the space c
   await page.screenshot({ path: "shots/phone/local/movement-odds.png", animations: "disabled" });
 });
 
+test("phone: the rolls of the gravity rift and the space cannon offense are in the width", async ({
+  page,
+}) => {
+  // Longer than a test of this suite should be: see "Tests" in AGENTS.md.
+  test.setTimeout(10_000);
+  await page.goto("/?scenario=late-game&humans=1");
+  const send = page.locator('footer button[aria-keyshortcuts="Enter"]');
+  const panel = page.locator("#step-panel");
+  const pane = (name: string) =>
+    page.getByRole("navigation", { name: "Panes" }).getByRole("button", { name });
+  const system = (id: string) => page.locator("g.system").filter({ hasText: `#${id}` });
+  const width = page.viewportSize()!.width;
+  const fits = async () =>
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+  // Perimeter (#60) has a PDS of seat C; the fleet in the gravity rift (#41) reaches it.
+  await activateInLive(page, system("60"));
+  await system("41").click();
+  const fleet = page.getByRole("group", { name: /^Move from / });
+  await fleet.getByRole("button", { name: "Carrier 1 of 1" }).click();
+  await fleet.getByRole("button", { name: /^Load Infantry, Space area, 2 left/ }).click();
+  await fleet.getByRole("button", { name: "Load Infantry on Carrier 1 of 1" }).first().click();
+  await fleet.getByRole("button", { name: "Cruiser 1 of 1" }).click();
+  await fleet.getByRole("button", { name: "Done with this system" }).click();
+  await send.click();
+  await pane("Action").click();
+  await expect(panel.getByRole("heading").first()).toHaveText(/^Cancel a hit/);
+  await panel.getByRole("button", { name: /^Sustain damage/ }).click();
+  await send.click();
+  await expect(panel.getByRole("heading").first()).toHaveText("Invasion");
+  await page.getByRole("tab", { name: /^\S* ?Movement/ }).click();
+  await expect(panel.getByRole("heading", { name: "Gravity rift" })).toBeVisible();
+  await expect(panel.getByRole("region", { name: "Defender" })).toContainText("Space cannon");
+  await fits();
+  await page.screenshot({ path: "shots/phone/local/movement-dice.png", animations: "disabled" });
+});
+
 test("phone: the landings on a defended planet have the odds of the ground combat", async ({
   page,
 }) => {

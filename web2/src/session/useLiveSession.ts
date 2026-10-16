@@ -327,6 +327,7 @@ function draftView(
       : STAGES.filter((item) => outcome[item] !== undefined),
     recorded,
     next,
+    boundary: isBoundary(outcome) && stage !== null && stage === frontier(outcome),
     ends:
       recorded && !next && outcome.stop.kind === "complete"
         ? "The action ends here. Every step is drafted."
@@ -343,6 +344,7 @@ function draftView(
       ...local,
       sent: null,
       canUndo: false,
+      rolls: [],
       movement: facts?.kind === "movement" ? draftOf(facts, steps("movement")) : {},
       landing: facts?.kind === "invasion" ? landingOf(facts, steps("invasion")) : {},
       production:
@@ -539,6 +541,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             replaying: null,
             canUndo: event.canUndo,
             stepping: event.stepping?.seat ?? null,
+            rolls: event.rolls ?? [],
           };
         }
         const facts = event.update.tactical;
@@ -625,6 +628,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           remaining,
           planNote,
           stepping: event.stepping?.seat ?? null,
+          rolls: event.rolls ?? [],
           odds: null,
           groundOdds: {},
           menu: null,
@@ -1474,7 +1478,12 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             setPlan((now) => ({ ...now, stage: "movement" }));
             return setLocal((now) => ({ ...now, step: 0 }));
           }
-          return setLocal((now) => ({ ...now, step: moving && intent.step === 0 ? 0 : null }));
+          // In Live the movement of the action is read while the landings or the production are open.
+          const reading = !drafted && intent.step === 1 && (landing || producing);
+          return setLocal((now) => ({
+            ...now,
+            step: moving && intent.step === 0 ? 0 : reading ? 1 : null,
+          }));
         }
         case "returnToCurrent":
           return setLocal((now) => ({ ...now, step: null }));
