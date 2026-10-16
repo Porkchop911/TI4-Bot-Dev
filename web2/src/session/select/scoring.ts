@@ -9,6 +9,7 @@ import type { Catalog, Choice, SessionUpdate } from "../wire";
 import { chooseFollow, followWindow, isFollowWindow } from "./follow";
 import { plain } from "./components";
 import { humanizeId } from "./names";
+import { type Editor, answered } from "./editor";
 
 /** What the player staged: the objective to score (by option id), or the answer of a window. */
 export interface ScoringDraft {
@@ -182,3 +183,10 @@ export function clearLastScoring(choice: Choice, draft: ScoringDraft | null): Sc
   const staged = question.mode === "follow" ? draft.follow !== null : draft.objective !== null;
   return staged ? NO_SCORING : null;
 }
+
+/** The score of a public objective as an editor (`editors.ts`). */
+export const scoringEditor: Editor<ScoringDraft> = {
+  view: (update, choice, draft, printed) => answered(selectScoring(update, choice, draft, printed)),
+  option: chooseScoring,
+  last: clearLastScoring,
+};

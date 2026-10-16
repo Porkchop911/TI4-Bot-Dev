@@ -29,13 +29,8 @@ import { systemLabel } from "./movement";
 import { humanizeId, seatLabel, sentence } from "./names";
 import { printedSource } from "./printed";
 import { interruptOf, reactedAction, selectReaction } from "./reaction";
-import { type PurchaseDraft, selectPurchase } from "./purchase";
-import { type ReadyDraft, selectReady } from "./ready";
-import { type AgendaDraft, selectAgendaDeck } from "./agendaDeck";
-import { type StructureDraft, selectStructures } from "./structures";
-import { type ReplenishDraft, selectReplenish } from "./replenish";
-import { type RecallDraft, selectRecall } from "./recall";
-import { type ScoringDraft, selectScoring } from "./scoring";
+import type { EditorSlot } from "./editor";
+import { type OpenEditor, editorOf } from "./editors";
 import { selectResearch } from "./research";
 import type { Paying } from "./payment";
 import { type Pools, selectTokens } from "./tokens";
@@ -98,22 +93,10 @@ export interface LocalState {
   staged: string | null;
   /** The staged pools of a redistribution of command tokens. Null: the pools of now. */
   pools?: Pools | null;
-  /** The staged gain and purchase of command tokens, with its payment. Null: nothing staged. */
-  purchase?: PurchaseDraft | null;
   /** The staged payment of a paid research. Null: nothing staged. */
   researchPay?: Paying | null;
-  /** The staged system and planets of a readying of planets. Null: nothing staged. */
-  ready?: ReadyDraft | null;
-  /** The staged places of agenda cards on the deck. Null: nothing staged. */
-  agendas?: AgendaDraft | null;
-  /** The staged structures of a placement of structures, with its ability. Null: nothing staged. */
-  structures?: StructureDraft | null;
-  /** The staged seats of a replenish of commodities, or the answer of its window. Null: nothing staged. */
-  replenish?: ReplenishDraft | null;
-  /** The staged system and pools of a recall of a command token. Null: nothing staged. */
-  recall?: RecallDraft | null;
-  /** The staged objective of a score with Imperial, or the answer of its window. Null: nothing staged. */
-  scoring?: ScoringDraft | null;
+  /** What is staged in the editor of the open question (`editors.ts`). Null: nothing staged. */
+  editor?: EditorSlot | null;
   /** The nonce of the choice that was answered. Its update is still the latest one. */
   sent: string | null;
   /** Why the game stopped, if it did. */
@@ -177,6 +160,21 @@ export const openChoice = (update: SessionUpdate, local: LocalState): Choice | n
   !local.replaying
     ? update.pending_choice.choice
     : null;
+
+/**
+ * The editor of the open question of the live game (`editors.ts`). A draft and the draft of a
+ * secondary have none: they record one answer at a time.
+ */
+export const openEditor = (
+  update: SessionUpdate,
+  local: LocalState,
+  printed: Catalog | null = null,
+): OpenEditor | null => {
+  const choice = openChoice(update, local);
+  return choice && !local.draft && !local.follow?.editing
+    ? editorOf(update, choice, local.editor, printed)
+    : null;
+};
 
 /** An option that declines what the question asks: it stays a row of the list. */
 const isDecline = (option: ChoiceOption) => option.kind === "decline";
@@ -250,13 +248,10 @@ export function seatsOf(choice: Choice | null): Record<string, string> | null {
 /** A choice of systems or planets is also made on the board. */
 export function boardTask(update: SessionUpdate, local: LocalState): BoardTaskView | null {
   const choice = openChoice(update, local);
-  // Bought command tokens are paid on the map.
-  const buying =
-    choice && !local.draft && !local.follow?.editing
-      ? selectPurchase(update, choice, local.purchase ?? null)
-      : null;
-  if (buying) {
-    return buying.task;
+  // The map of an editor is its choice, or its payment.
+  const editor = openEditor(update, local);
+  if (editor) {
+    return editor.view.task ?? null;
   }
   // The payment of a paid research is on the map, once its technology is chosen.
   const researching =
@@ -265,30 +260,6 @@ export function boardTask(update: SessionUpdate, local: LocalState): BoardTaskVi
       : null;
   if (researching?.task) {
     return researching.task;
-  }
-  // The system and the planets of a readying of planets are chosen on the map.
-  const readying =
-    choice && !local.draft && !local.follow?.editing
-      ? selectReady(update, choice, local.ready ?? null)
-      : null;
-  if (readying) {
-    return readying.task;
-  }
-  // The planets of a placement of structures are chosen on the map.
-  const building =
-    choice && !local.draft && !local.follow?.editing
-      ? selectStructures(update, choice, local.structures ?? null)
-      : null;
-  if (building) {
-    return building.task;
-  }
-  // The system of a recall of a command token is chosen on the map.
-  const recalling =
-    choice && !local.draft && !local.follow?.editing
-      ? selectRecall(update, choice, local.recall ?? null)
-      : null;
-  if (recalling) {
-    return recalling.task;
   }
   const pick = boardPick(update, choice);
   if (!choice || !pick) {
@@ -338,13 +309,10 @@ export function boardTask(update: SessionUpdate, local: LocalState): BoardTaskVi
 /** The player table is the choice: every option but a decline is a seat. */
 export function seatTask(update: SessionUpdate, local: LocalState): PlayerPickView | null {
   const choice = openChoice(update, local);
-  // The seats that replenish commodities are several, chosen in the player table.
-  const replenishing =
-    choice && !local.draft && !local.follow?.editing
-      ? selectReplenish(update, choice, local.replenish ?? null)
-      : null;
-  if (replenishing) {
-    return replenishing.pick;
+  // An editor that chooses players has them in the player table (several seats at once).
+  const editor = openEditor(update, local);
+  if (editor) {
+    return editor.view.pick ?? null;
   }
   const seats = seatsOf(choice);
   if (!choice || !seats) {
@@ -433,39 +401,10 @@ export function selectAction(
           recording ? undefined : (local.researchPay ?? null),
         )
       : null;
-  // A gain or a purchase of command tokens is one screen of the live game, sent as one plan.
-  const purchase =
-    choice && !window && !recording ? selectPurchase(update, choice, local.purchase ?? null) : null;
-  // A readying of planets, with its system or its window: one screen, answered at once.
-  const ready =
-    choice && !window && !recording
-      ? selectReady(update, choice, local.ready ?? null, printed)
-      : null;
-  // A placement of agenda cards: every agenda on one screen, answered at once.
-  const deck =
-    choice && !window && !recording
-      ? selectAgendaDeck(choice, local.agendas ?? null, printed)
-      : null;
-  // A placement of structures, with its window or its ability: one screen, answered at once.
-  const structures =
-    choice && !window && !recording
-      ? selectStructures(update, choice, local.structures ?? null)
-      : null;
-  // A replenish of commodities: the seats in the player table, or the window, answered at once.
-  const replenish =
-    choice && !window && !recording
-      ? selectReplenish(update, choice, local.replenish ?? null, printed)
-      : null;
-  // A recall of a command token, with the gain and the redistribution after it: one screen.
-  const recall =
-    choice && !window && !recording ? selectRecall(update, choice, local.recall ?? null) : null;
-  // A score of a public objective with what follows it, or its window: one screen.
-  const scoring =
-    choice && !window && !recording
-      ? selectScoring(update, choice, local.scoring ?? null, printed)
-      : null;
-  /** A screen of several questions that is sent at once. */
-  const several = purchase ?? ready ?? deck ?? structures ?? replenish ?? recall ?? scoring;
+  // A gain or a purchase of command tokens, a readying of planets, a placement of agenda cards
+  // or of structures, a replenish, a recall of a command token, a score of an objective: one
+  // screen of several questions of the live game, sent at once (`editors.ts`).
+  const several = window ? null : (openEditor(update, local, printed)?.view ?? null);
   const tiles = new Map((update.view.board.map_tiles ?? []).map((tile) => [tile.system_id, tile]));
   const planetOf = (id: string) =>
     (update.view.board.map_tiles ?? [])
@@ -791,8 +730,8 @@ export function selectAction(
                           ? `${pickWord} ${onBoard ? "on the map" : "in the player table"}.`
                           : `Choose one of ${choice.options.length}.`,
       error: !!local.planNote?.error,
-      ...(purchase?.payment
-        ? { payment: purchase.payment }
+      ...(several?.payment
+        ? { payment: several.payment }
         : research?.payment
           ? { payment: research.payment }
           : {}),

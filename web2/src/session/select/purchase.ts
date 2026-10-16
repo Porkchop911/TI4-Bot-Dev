@@ -18,6 +18,7 @@ import {
   togglePaying,
 } from "./payment";
 import type { Pools } from "./tokens";
+import type { Editor } from "./editor";
 
 /** What the player staged: tokens bought, and what pays for them. */
 export interface PurchaseDraft {
@@ -333,3 +334,16 @@ export function purchasePlan(choice: Choice, draft: PurchaseDraft | null): PlanS
   ];
   return steps;
 }
+
+/** The gain and the purchase of command tokens as an editor (`editors.ts`): sent as one plan. */
+export const purchaseEditor: Editor<PurchaseDraft> = {
+  view: (update, choice, draft) => {
+    const view = selectPurchase(update, choice, draft);
+    const plan = view && purchasePlan(choice, draft);
+    return view && { ...view, send: plan && { choices: [], plan } };
+  },
+  count: countPurchase,
+  planet: togglePurchasePlanet,
+  goods: setPurchaseGoods,
+  pay: payPurchase,
+};

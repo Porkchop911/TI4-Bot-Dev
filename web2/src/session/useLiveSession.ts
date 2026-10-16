@@ -84,44 +84,8 @@ import type { CardSettings } from "./select/cards";
 import { systemLabel } from "./select/movement";
 import { selectShell } from "./select/shell";
 import { tacticalFacts } from "./select/tactical";
-import {
-  countPurchase,
-  payPurchase,
-  purchasePlan,
-  selectPurchase,
-  setPurchaseGoods,
-  togglePurchasePlanet,
-} from "./select/purchase";
-import {
-  chooseReadySystem,
-  clearLastReady,
-  clearReadyPart,
-  selectReady,
-  toggleReadyPlanet,
-} from "./select/ready";
-import { clearLastAgenda, placeAgenda, selectAgendaDeck } from "./select/agendaDeck";
-import {
-  chooseStructure,
-  clearLastStructure,
-  clearStructurePart,
-  placeStructure,
-  selectStructures,
-} from "./select/structures";
-import {
-  chooseReplenish,
-  clearLastReplenish,
-  clearReplenishPart,
-  selectReplenish,
-  toggleReplenishSeat,
-} from "./select/replenish";
-import {
-  chooseRecallSystem,
-  clearLastRecall,
-  clearRecallPart,
-  countRecallPools,
-  selectRecall,
-} from "./select/recall";
-import { chooseScoring, clearLastScoring, selectScoring } from "./select/scoring";
+import type { EditorSlot } from "./select/editor";
+import { editorOf } from "./select/editors";
 import {
   payResearch,
   researchPlan,
@@ -137,14 +101,8 @@ const NOTHING: LocalState = {
   inspected: null,
   staged: null,
   pools: null,
-  purchase: null,
   researchPay: null,
-  ready: null,
-  agendas: null,
-  structures: null,
-  replenish: null,
-  recall: null,
-  scoring: null,
+  editor: null,
   sent: null,
   error: null,
   replaying: null,
@@ -638,14 +596,8 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           inspected,
           staged: null,
           pools: null,
-          purchase: null,
           researchPay: null,
-          ready: null,
-          agendas: null,
-          structures: null,
-          replenish: null,
-          recall: null,
-          scoring: null,
+          editor: null,
           sent: null,
           error: null,
           offline: false,
@@ -944,14 +896,8 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         ...now,
         staged: null,
         pools: null,
-        purchase: null,
         researchPay: null,
-        ready: null,
-        agendas: null,
-        structures: null,
-        replenish: null,
-        recall: null,
-        scoring: null,
+        editor: null,
         inspected: null,
         handled: [],
         step: null,
@@ -985,11 +931,6 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
     const moving = facts?.kind === "movement" ? facts : null;
     const landing = facts?.kind === "invasion" ? facts : null;
     const producing = facts?.kind === "production" ? facts : null;
-    /** A gain or a purchase of command tokens of the live game: one screen, sent as one plan. */
-    const buying =
-      pending && !drafted && !followInfo?.editing && selectPurchase(shown, pending.choice, null)
-        ? pending
-        : null;
     /** A paid research of the live game: the technology and its payment on the map, sent at once. */
     const researching =
       pending &&
@@ -999,36 +940,21 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
       selectResearch(shown, pending.choice, null, null, null)
         ? pending
         : null;
-    /** A readying of planets of the live game, with its system or its window: answered at once. */
-    const readying =
-      pending && !drafted && !followInfo?.editing && selectReady(shown, pending.choice, null)
-        ? pending
+    /**
+     * The editor of the open question of the live game (`select/editors.ts`): several questions
+     * on one screen, answered at once.
+     */
+    const editor =
+      pending && !drafted && !followInfo?.editing
+        ? editorOf(shown, pending.choice, local.editor)
         : null;
-    /** A placement of agenda cards of the live game: every agenda answered at once. */
-    const placing =
-      pending && !drafted && !followInfo?.editing && selectAgendaDeck(pending.choice, null)
-        ? pending
-        : null;
-    /** A placement of structures of the live game, with its window or its ability: at once. */
-    const building =
-      pending && !drafted && !followInfo?.editing && selectStructures(shown, pending.choice, null)
-        ? pending
-        : null;
-    /** A replenish of commodities of the live game: the seats or the window, answered at once. */
-    const replenishing =
-      pending && !drafted && !followInfo?.editing && selectReplenish(shown, pending.choice, null)
-        ? pending
-        : null;
-    /** A score of a public objective of the live game, or its window: answered at once. */
-    const scoring =
-      pending && !drafted && !followInfo?.editing && selectScoring(shown, pending.choice, null)
-        ? pending
-        : null;
-    /** A recall of a command token of the live game, with its gain and its pools: at once. */
-    const recalling =
-      pending && !drafted && !followInfo?.editing && selectRecall(shown, pending.choice, null)
-        ? pending
-        : null;
+    /** A change of what is staged in the editor. False: the editor does not take it. */
+    const restaged = (slot: EditorSlot | null, more: Partial<LocalState> = {}) => {
+      if (slot) {
+        setLocal((now) => ({ ...now, ...more, editor: slot }));
+      }
+      return slot !== null;
+    };
     /** The game can be asked for a staged production: it is paid, and within its limits. */
     const paidFor = (staged: ProductionDraft) => {
       const { units, cost, paid } = producing
@@ -1193,15 +1119,6 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         );
         return setLocal((now) => ({ ...now, sent: pending.nonce, planNote: null }));
       }
-      // A gain or a purchase of command tokens is sent as one plan, with its payment.
-      if (buying) {
-        const steps = purchasePlan(buying.choice, local.purchase ?? null);
-        if (steps) {
-          transport.submitPlan(pending.nonce, { destination: "", steps });
-          setLocal((now) => ({ ...now, purchase: null, sent: pending.nonce, planNote: null }));
-        }
-        return;
-      }
       // A paid research answers its technology, and its payment as the game asks for it.
       if (researching && local.staged) {
         const steps = researchPlan(researching.choice, local.staged, local.researchPay ?? null);
@@ -1220,61 +1137,15 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         }
         return;
       }
-      // A readying of planets answers its system or its window and each planet, in this order.
-      if (readying) {
-        const answers = selectReady(shown, readying.choice, local.ready ?? null)?.answers;
+      // An editor answers every question of its screen at once.
+      if (editor) {
+        const answers = editor.view.send;
         if (answers) {
-          transport.applyDraft(pending.nonce, { choices: answers, plan: null });
-          setLocal((now) => ({ ...now, ready: null, sent: pending.nonce, planNote: null }));
-        }
-        return;
-      }
-      // A placement of agenda cards answers each agenda, in the order that the game asks.
-      if (placing) {
-        const answers = selectAgendaDeck(placing.choice, local.agendas ?? null)?.answers;
-        if (answers) {
-          transport.applyDraft(pending.nonce, { choices: answers, plan: null });
-          setLocal((now) => ({ ...now, agendas: null, sent: pending.nonce, planNote: null }));
-        }
-        return;
-      }
-      // A placement of structures answers its window or its ability and each structure.
-      if (building) {
-        const answers = selectStructures(shown, building.choice, local.structures ?? null)?.answers;
-        if (answers) {
-          transport.applyDraft(pending.nonce, { choices: answers, plan: null });
-          setLocal((now) => ({ ...now, structures: null, sent: pending.nonce, planNote: null }));
-        }
-        return;
-      }
-      // A replenish of commodities answers each chosen seat and then nobody more, or the window.
-      if (replenishing) {
-        const answers = selectReplenish(
-          shown,
-          replenishing.choice,
-          local.replenish ?? null,
-        )?.answers;
-        if (answers) {
-          transport.applyDraft(pending.nonce, { choices: answers, plan: null });
-          setLocal((now) => ({ ...now, replenish: null, sent: pending.nonce, planNote: null }));
-        }
-        return;
-      }
-      // A score of a public objective answers the objective, or nothing, or the window.
-      if (scoring) {
-        const answers = selectScoring(shown, scoring.choice, local.scoring ?? null)?.answers;
-        if (answers) {
-          transport.applyDraft(pending.nonce, { choices: answers, plan: null });
-          setLocal((now) => ({ ...now, scoring: null, sent: pending.nonce, planNote: null }));
-        }
-        return;
-      }
-      // A recall of a command token answers its system, the gain and the arrangement of the pools.
-      if (recalling) {
-        const answers = selectRecall(shown, recalling.choice, local.recall ?? null)?.answers;
-        if (answers) {
-          transport.applyDraft(pending.nonce, { choices: answers, plan: null });
-          setLocal((now) => ({ ...now, recall: null, sent: pending.nonce, planNote: null }));
+          transport.applyDraft(pending.nonce, {
+            choices: answers.choices,
+            plan: answers.plan && { destination: "", steps: answers.plan },
+          });
+          setLocal((now) => ({ ...now, editor: null, sent: pending.nonce, planNote: null }));
         }
         return;
       }
@@ -1396,53 +1267,20 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           return setLocal((now) => ({ ...now, staged: null, sent: pending.nonce }));
         }
         case "pickSeat": {
-          // A seat that replenishes commodities: chosen, or given back.
-          if (replenishing) {
-            const picked = toggleReplenishSeat(
-              replenishing.choice,
-              local.replenish ?? null,
-              intent.seat,
-            );
-            return picked ? setLocal((now) => ({ ...now, replenish: picked })) : undefined;
+          // A seat of an editor that chooses several: chosen, or given back.
+          if (editor) {
+            return void restaged(editor.seat(intent.seat));
           }
           const option = optionOfSeat(pending?.choice ?? null, intent.seat);
           return option ? stage(option) : undefined;
         }
         case "chooseOption": {
+          // A row of an editor: the place of an agenda card, the kind of a structure, the answer
+          // of a window, an objective.
+          if (restaged(editor?.option(intent.group, intent.option) ?? null)) {
+            return;
+          }
           // The kind of ground force that a tap lands is a choice of the hand.
-          // The place of an agenda card on the deck.
-          const placed =
-            placing &&
-            placeAgenda(placing.choice, local.agendas ?? null, intent.group, intent.option);
-          if (placed) {
-            return setLocal((now) => ({ ...now, agendas: placed }));
-          }
-          // The kind of a structure, or the ability of a card that places structures.
-          const kind =
-            building &&
-            chooseStructure(building.choice, local.structures ?? null, intent.group, intent.option);
-          if (kind) {
-            return setLocal((now) => ({ ...now, structures: kind }));
-          }
-          // The answer of the window of a replenish of commodities.
-          const answer =
-            replenishing &&
-            chooseReplenish(
-              replenishing.choice,
-              local.replenish ?? null,
-              intent.group,
-              intent.option,
-            );
-          if (answer) {
-            return setLocal((now) => ({ ...now, replenish: answer }));
-          }
-          // The objective of a score with Imperial, or the answer of its window.
-          const scored =
-            scoring &&
-            chooseScoring(scoring.choice, local.scoring ?? null, intent.group, intent.option);
-          if (scored) {
-            return setLocal((now) => ({ ...now, scoring: scored }));
-          }
           const force = intent.group === "landing" ? forceOfId(intent.option) : null;
           return landing && force !== null
             ? setLocal((now) => ({ ...now, landingKind: force }))
@@ -1468,18 +1306,9 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             );
             return paying && setLocal((now) => ({ ...now, researchPay: paying }));
           }
-          if (buying) {
-            // A planet pays for the bought command tokens.
-            const paying = togglePurchasePlanet(buying.choice, local.purchase ?? null, planet);
-            return paying && setLocal((now) => ({ ...now, purchase: paying }));
-          }
-          if (readying) {
-            const readied = toggleReadyPlanet(readying.choice, local.ready ?? null, planet);
-            return readied && setLocal((now) => ({ ...now, ready: readied }));
-          }
-          if (building) {
-            const built = placeStructure(building.choice, local.structures ?? null, planet);
-            return built && setLocal((now) => ({ ...now, structures: built }));
+          if (editor) {
+            // A planet of an editor: it pays, is readied, or has a structure placed on it.
+            return void restaged(editor.planet(planet));
           }
           if (!landing) {
             // A planet of a choice on the board: its option is staged.
@@ -1506,9 +1335,8 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             );
             return goods && setLocal((now) => ({ ...now, researchPay: goods }));
           }
-          if (buying) {
-            const goods = setPurchaseGoods(buying.choice, local.purchase ?? null, intent.value);
-            return goods && setLocal((now) => ({ ...now, purchase: goods }));
+          if (editor) {
+            return void restaged(editor.goods(intent.value));
           }
           return (
             producing &&
@@ -1525,9 +1353,8 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             );
             return paid && setLocal((now) => ({ ...now, researchPay: paid }));
           }
-          if (buying) {
-            const paid = payPurchase(buying.choice, local.purchase ?? null, intent.action);
-            return paid && setLocal((now) => ({ ...now, purchase: paid }));
+          if (editor) {
+            return void restaged(editor.pay(intent.action));
           }
           return (
             producing &&
@@ -1536,17 +1363,9 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             )
           );
         case "toggleSystem": {
-          // The system of a readying of planets: it is chosen, and it shows what is in it.
-          const chosen =
-            readying && chooseReadySystem(readying.choice, local.ready ?? null, intent.system);
-          if (chosen) {
-            return setLocal((now) => ({ ...now, ready: chosen, inspected: intent.system }));
-          }
-          // The system of a recall of a command token: it is chosen, and it shows what is in it.
-          const recalled =
-            recalling && chooseRecallSystem(recalling.choice, local.recall ?? null, intent.system);
-          if (recalled) {
-            return setLocal((now) => ({ ...now, recall: recalled, inspected: intent.system }));
+          // The system of an editor: it is chosen, and it shows what is in it.
+          if (restaged(editor?.system(intent.system) ?? null, { inspected: intent.system })) {
+            return;
           }
           // In a movement the fleet of a system opens at the system, and closes there. So does
           // the build of a production.
@@ -1559,27 +1378,8 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
                 optionOnBoard(shown, pending?.choice ?? null, intent.system) ?? intent.system,
               );
         }
-        case "clearPart": {
-          const cleared =
-            readying && clearReadyPart(readying.choice, local.ready ?? null, intent.part);
-          if (cleared) {
-            return setLocal((now) => ({ ...now, ready: cleared }));
-          }
-          const unbuilt =
-            building && clearStructurePart(building.choice, local.structures ?? null, intent.part);
-          if (unbuilt) {
-            return setLocal((now) => ({ ...now, structures: unbuilt }));
-          }
-          const given =
-            replenishing &&
-            clearReplenishPart(replenishing.choice, local.replenish ?? null, intent.part);
-          if (given) {
-            return setLocal((now) => ({ ...now, replenish: given }));
-          }
-          const returned =
-            recalling && clearRecallPart(recalling.choice, local.recall ?? null, intent.part);
-          return returned && setLocal((now) => ({ ...now, recall: returned }));
-        }
+        case "clearPart":
+          return void restaged(editor?.part(intent.part) ?? null);
         case "findSystem": {
           const found = pending?.choice.options.find((item) => sameSystem(intent.query, item.id));
           if (found && facts?.kind === "activation") {
@@ -1592,49 +1392,16 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           if (producing && local.productionStage === "pay") {
             return toBuild(producing.system);
           }
-          // Esc in a readying of planets clears the last choice.
-          const back = readying && clearLastReady(readying.choice, local.ready ?? null);
-          if (back) {
-            return setLocal((now) => ({ ...now, ready: back }));
-          }
-          // Esc in a placement of agenda cards clears the last place.
-          if (placing && local.agendas?.placed.length) {
-            return setLocal((now) => ({ ...now, agendas: clearLastAgenda(now.agendas ?? null) }));
-          }
-          // Esc in a placement of structures clears the last choice.
-          const unplaced =
-            building && clearLastStructure(building.choice, local.structures ?? null);
-          if (unplaced) {
-            return setLocal((now) => ({ ...now, structures: unplaced }));
-          }
-          // Esc in a replenish of commodities clears the last seat, or the answer of the window.
-          const unpicked =
-            replenishing && clearLastReplenish(replenishing.choice, local.replenish ?? null);
-          if (unpicked) {
-            return setLocal((now) => ({ ...now, replenish: unpicked }));
-          }
-          // Esc in a score of a public objective clears the objective, or the answer of the window.
-          const unscored = scoring && clearLastScoring(scoring.choice, local.scoring ?? null);
-          if (unscored) {
-            return setLocal((now) => ({ ...now, scoring: unscored }));
-          }
-          // Esc in a recall of a command token puts the pools back, then the system.
-          const unrecalled = recalling && clearLastRecall(recalling.choice, local.recall ?? null);
-          if (unrecalled) {
-            return setLocal((now) => ({ ...now, recall: unrecalled }));
+          // Esc in an editor clears its last choice, or the whole screen.
+          if (restaged(editor?.last() ?? null)) {
+            return;
           }
           return setLocal((now) => ({
             ...now,
             staged: null,
             pools: null,
-            purchase: null,
             researchPay: null,
-            ready: null,
-            agendas: null,
-            structures: null,
-            replenish: null,
-            recall: null,
-            scoring: null,
+            editor: null,
           }));
         }
         case "undo":
@@ -1749,21 +1516,9 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           return setLocal((now) => ({ ...now, staged: null, sent: pending.nonce }));
         }
         case "flowCount": {
-          if (buying) {
-            const bought = countPurchase(
-              buying.choice,
-              local.purchase ?? null,
-              intent.key,
-              intent.value,
-            );
-            return bought && setLocal((now) => ({ ...now, purchase: bought }));
-          }
-          // A counter of the pools of a recall of a command token.
-          const recounted =
-            recalling &&
-            countRecallPools(recalling.choice, local.recall ?? null, intent.key, intent.value);
-          if (recounted) {
-            return setLocal((now) => ({ ...now, recall: recounted }));
+          // A counter of an editor: the bought tokens, a pool.
+          if (editor) {
+            return void restaged(editor.count(intent.key, intent.value));
           }
           // A counter of a pool of command tokens: the arrangement is staged when it is offered.
           const counted =

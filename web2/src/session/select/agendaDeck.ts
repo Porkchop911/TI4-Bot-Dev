@@ -7,6 +7,7 @@ import type { BlockView, MenuRowView, RowView } from "../../model";
 import type { Catalog, Choice } from "../wire";
 import { plain } from "./components";
 import { humanizeId } from "./names";
+import { type Editor, answered } from "./editor";
 
 export type AgendaPlace = "top" | "bottom";
 
@@ -186,3 +187,10 @@ export function placeAgenda(
 export function clearLastAgenda(draft: AgendaDraft | null): AgendaDraft | null {
   return draft?.placed.length ? { placed: draft.placed.slice(0, -1) } : null;
 }
+
+/** The placement of agenda cards as an editor (`editors.ts`). */
+export const agendaDeckEditor: Editor<AgendaDraft> = {
+  view: (_, choice, draft, printed) => answered(selectAgendaDeck(choice, draft, printed)),
+  option: placeAgenda,
+  last: (_, draft) => clearLastAgenda(draft),
+};

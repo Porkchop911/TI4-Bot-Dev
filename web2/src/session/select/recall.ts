@@ -8,6 +8,7 @@ import type { BlockView, BoardTaskView, RowView } from "../../model";
 import type { Choice, SessionUpdate } from "../wire";
 import { systemLabel } from "./movement";
 import { type PoolQuestion, type Pools, countIn, poolQuestion, poolsView } from "./tokens";
+import { type Editor, answered } from "./editor";
 
 /** What the player staged: the system, and the pools after the gain and the redistribution. */
 export interface RecallDraft {
@@ -183,3 +184,12 @@ export function clearLastRecall(choice: Choice, draft: RecallDraft | null): Reca
   }
   return draft.pools ? { ...draft, pools: null } : draft.system ? NO_RECALL : null;
 }
+
+/** The recall of a command token as an editor (`editors.ts`). */
+export const recallEditor: Editor<RecallDraft> = {
+  view: (update, choice, draft) => answered(selectRecall(update, choice, draft)),
+  system: chooseRecallSystem,
+  count: countRecallPools,
+  part: clearRecallPart,
+  last: clearLastRecall,
+};

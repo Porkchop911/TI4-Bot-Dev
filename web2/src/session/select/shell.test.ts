@@ -481,7 +481,9 @@ it("chooses several players that replenish commodities, with what it gives each 
     },
     chosen: [],
   });
-  const both = local({ replenish: { seats: ["letnev", "hacan"], follow: null } });
+  const both = local({
+    editor: { id: "replenish", draft: { seats: ["letnev", "hacan"], follow: null } },
+  });
   expect(selectShell(trade, both).players.pick?.chosen).toEqual(["b", "c"]);
   expect(flow(trade, both).footer.actions.at(-1)?.label).toBe("Resolve primary");
 });

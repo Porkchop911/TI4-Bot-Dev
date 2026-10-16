@@ -1,18 +1,12 @@
 // A strategic action: one list of seats, the primary and then the secondaries in the order in
 // which they are asked. The row of the viewer opens into its choice, or into the private draft
-// of its secondary. The choice itself is still a list (`selectAction`); the editors of the
-// cards come later.
+// of its secondary. The choice is that of every decision (`selectAction`): the editor of its
+// shape (`editors.ts`), else the list of the game.
 import type { ActionButtonView, BlockView, FlowActionView, SeatRowView } from "../../model";
 import type { Catalog, ExplorationCatalog, SecondaryFacts, SessionUpdate } from "../wire";
-import { type LocalState, openChoice, selectAction } from "./action";
+import { type LocalState, openChoice, openEditor, selectAction } from "./action";
+import { secondaryCost } from "./follow";
 import { seatLabel, sentence } from "./names";
-import { selectPurchase } from "./purchase";
-import { selectReady } from "./ready";
-import { selectAgendaDeck } from "./agendaDeck";
-import { selectStructures } from "./structures";
-import { selectReplenish } from "./replenish";
-import { selectRecall } from "./recall";
-import { selectScoring } from "./scoring";
 
 /** The seat that the strategic action waits for: the primary, then the first follower to ask. */
 const decidingSeat = (action: SecondaryFacts): string | null =>
@@ -69,21 +63,9 @@ export function selectStrategy(
   const live = !!choice && !follow?.editing;
   // The card is the heading, so the question is said in the row. The question of a secondary
   // says what it costs (pattern 3).
-  const tokens = choice?.details?.kind === "strategy_secondary" ? choice.details : null;
-  const left = typeof tokens?.tokens_left === "number" ? tokens.tokens_left : null;
-  // A gain or a purchase of command tokens, a readying of planets, a placement of agenda cards, a
-  // placement of structures, a replenish of commodities, a recall of a command token and a score
-  // of a public objective are one screen of several questions: its blocks say it.
-  const several =
-    !!choice &&
-    !follow?.editing &&
-    (selectPurchase(update, choice, null) !== null ||
-      selectReady(update, choice, null) !== null ||
-      selectAgendaDeck(choice, null) !== null ||
-      selectStructures(update, choice, null) !== null ||
-      selectReplenish(update, choice, null) !== null ||
-      selectRecall(update, choice, null) !== null ||
-      selectScoring(update, choice, null) !== null);
+  const secondary = choice?.details?.kind === "strategy_secondary" ? choice.details : null;
+  // An editor is one screen of several questions: its blocks say what it asks and costs.
+  const several = openEditor(update, local) !== null;
   const asked: BlockView[] = choice
     ? [
         ...(several
@@ -93,8 +75,8 @@ export function selectStrategy(
                 kind: "note" as const,
                 tone: "quiet" as const,
                 strong:
-                  tokens?.costs_token === true && left !== null
-                    ? `Strategy pool ${left} → ${left - 1}`
+                  secondary?.costs_token === true
+                    ? (secondaryCost(secondary) ?? undefined)
                     : undefined,
                 text: sentence(choice.prompt),
               },

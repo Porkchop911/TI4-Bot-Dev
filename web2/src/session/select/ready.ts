@@ -9,6 +9,7 @@ import { plural } from "../../model";
 import type { Catalog, Choice, SessionUpdate } from "../wire";
 import { systemLabel } from "./movement";
 import { seatLabel } from "./names";
+import { type Editor, answered } from "./editor";
 
 /** What the player staged: the system, and the planets in the order that they were chosen. */
 export interface ReadyDraft {
@@ -360,3 +361,12 @@ export function clearLastReady(choice: Choice, draft: ReadyDraft | null): ReadyD
       ? { system: null, planets: [] }
       : null;
 }
+
+/** The readying of planets as an editor (`editors.ts`). */
+export const readyEditor: Editor<ReadyDraft> = {
+  view: (update, choice, draft, printed) => answered(selectReady(update, choice, draft, printed)),
+  system: chooseReadySystem,
+  planet: toggleReadyPlanet,
+  part: clearReadyPart,
+  last: clearLastReady,
+};

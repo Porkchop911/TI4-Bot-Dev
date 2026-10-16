@@ -9,6 +9,7 @@ import { plural } from "../../model";
 import type { Catalog, Choice, SessionUpdate } from "../wire";
 import { chooseFollow, followWindow, isFollowWindow } from "./follow";
 import { seatLabel } from "./names";
+import { type Editor, answered } from "./editor";
 
 /** What the player staged: the seats that replenish (by option id), or the answer of a window. */
 export interface ReplenishDraft {
@@ -269,3 +270,13 @@ export function clearLastReplenish(
   const chosen = draft.seats.filter((id) => question.offered.some((item) => item.option === id));
   return chosen.length ? { ...draft, seats: chosen.slice(0, -1) } : null;
 }
+
+/** The replenish of commodities as an editor (`editors.ts`). */
+export const replenishEditor: Editor<ReplenishDraft> = {
+  view: (update, choice, draft, printed) =>
+    answered(selectReplenish(update, choice, draft, printed)),
+  seat: toggleReplenishSeat,
+  option: chooseReplenish,
+  part: clearReplenishPart,
+  last: clearLastReplenish,
+};

@@ -10,6 +10,7 @@ import type { BlockView, BoardTaskView, MenuRowView, RowView } from "../../model
 import { plural } from "../../model";
 import type { Choice, SessionUpdate } from "../wire";
 import { systemLabel } from "./movement";
+import { type Editor, answered } from "./editor";
 
 /** What the player staged: the ability, and the kind and the option of each placement. */
 export interface StructureDraft {
@@ -489,3 +490,12 @@ export function clearLastStructure(
   }
   return draft.ability ? NO_STRUCTURES : null;
 }
+
+/** The placement of structures as an editor (`editors.ts`). */
+export const structuresEditor: Editor<StructureDraft> = {
+  view: (update, choice, draft) => answered(selectStructures(update, choice, draft)),
+  option: chooseStructure,
+  planet: placeStructure,
+  part: clearStructurePart,
+  last: clearLastStructure,
+};
