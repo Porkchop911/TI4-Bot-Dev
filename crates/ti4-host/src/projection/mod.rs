@@ -885,6 +885,9 @@ pub struct SessionUpdate {
     /// ([`crate::view::reaction`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reaction: Option<crate::view::reaction::ReactionFacts>,
+    /// The technology tree of the viewer, while it is asked to research ([`crate::view::research`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub research: Option<crate::view::research::ResearchFacts>,
     /// Who sits in each seat: the name of its player and who plays it ([`crate::view::seats::SeatFact`]).
     /// It is of the table and not of the game, so the host of the game sets it; a game with no
     /// table has none.
@@ -906,7 +909,7 @@ pub struct FactsContext<'a> {
 
 /// Projects what `viewer` is shown of `state` while the game waits in `pending_choice`.
 ///
-/// The update has its eight facts ([`fill_facts`]), made from `state` as it is: the caller gives
+/// The update has its nine facts ([`fill_facts`]), made from `state` as it is: the caller gives
 /// the full state of the game, and each fact shows `viewer` only what that seat may know.
 #[must_use]
 pub fn project_session_update(
@@ -930,13 +933,14 @@ pub fn project_session_update(
         agendas: None,
         secondary: None,
         reaction: None,
+        research: None,
         seats: None,
     };
     fill_facts(&mut update, state, facts);
     update
 }
 
-/// Fills the eight facts of `update`, which was projected from `state`: the one place that does.
+/// Fills the nine facts of `update`, which was projected from `state`: the one place that does.
 ///
 /// `tactical` is of the choice in the update, so only the seat that is asked has it.
 pub fn fill_facts(update: &mut SessionUpdate, state: &GameState, context: &FactsContext<'_>) {
@@ -970,6 +974,9 @@ pub fn fill_facts(update: &mut SessionUpdate, state: &GameState, context: &Facts
     update.secondary = secondary.and_then(|watch| watch.facts(state, content, &update.viewer));
     update.reaction = update.pending_choice.as_ref().and_then(|pending| {
         crate::view::reaction::project_reaction_facts(content, &pending.choice)
+    });
+    update.research = update.pending_choice.as_ref().and_then(|pending| {
+        crate::view::research::project_research_facts(state, content, sources, &pending.choice)
     });
 }
 

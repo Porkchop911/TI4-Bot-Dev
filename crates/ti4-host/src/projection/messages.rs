@@ -64,6 +64,7 @@ pub fn project_initial_snapshot_with_map(
         agendas,
         secondary,
         reaction,
+        research,
         seats,
     } = project_session_update(
         state,
@@ -100,6 +101,7 @@ pub fn project_initial_snapshot_with_map(
         agendas,
         secondary,
         reaction,
+        research,
         seats,
         content: content_digest().to_owned(),
         undone: Vec::new(),
@@ -163,6 +165,7 @@ pub fn project_state_update_with_map(
         agendas,
         secondary,
         reaction,
+        research,
         seats,
     } = project_session_update(
         state,
@@ -196,6 +199,7 @@ pub fn project_state_update_with_map(
         agendas,
         secondary,
         reaction,
+        research,
         seats,
     }
 }

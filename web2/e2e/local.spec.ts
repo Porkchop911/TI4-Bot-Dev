@@ -876,6 +876,55 @@ test("a secondary is drafted while the primary is resolved, and sent when the se
   expect(errors).toEqual([]);
 });
 
+test("a research is chosen in the technology tree, and the second one can research nothing", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // Sol plays Technology with Antimass Deflectors and Neural Motivator, a ready Biotic skip, and
+  // six trade goods. The scenario stops at the free research.
+  await page.goto("/?scenario=research_tech_skips&humans=1");
+  const tree = panel(page).getByRole("heading", { name: "Research", exact: true }).locator("..");
+  await expect(tree).toBeVisible();
+  await expect(panel(page).getByRole("heading", { name: "Technology" })).toBeVisible();
+  // The columns say what stands for prerequisites; the tree has Sol's upgrades and no Carrier II.
+  await expect(panel(page).getByText(/^Blue 1$/)).toBeVisible();
+  await expect(panel(page).getByText(/^Green 1 · \+1 /)).toBeVisible();
+  await expect(panel(page).getByText("Unit upgrades")).toBeVisible();
+  await expect(panel(page).getByRole("button", { name: /^Advanced Carrier II/ })).toBeVisible();
+  await expect(panel(page).getByRole("button", { name: /^Carrier II/ })).toHaveCount(0);
+  // An owned technology and one with missing prerequisites cannot be chosen.
+  await expect(
+    panel(page).getByRole("button", { name: "Antimass Deflectors, researched" }),
+  ).toBeDisabled();
+  await expect(
+    panel(page).getByRole("button", { name: /^War Sun, 4 prerequisites missing/ }),
+  ).toBeDisabled();
+  await expect(send(page)).toBeDisabled();
+  await page.screenshot({ path: "shots/local/research-tree.png", animations: "disabled" });
+
+  // A cell stages its technology; the header names it with its price.
+  await panel(page).getByRole("button", { name: "Gravity Drive", exact: true }).click();
+  await expect(tree).toContainText("Gravity Drive · free");
+  await expect(page.locator("footer")).toContainText("Selected: Gravity Drive");
+  await page.keyboard.press("Enter");
+
+  // The second research costs six resources and may research nothing.
+  await expect(tree).toContainText("Costs 6 resources");
+  await expect(
+    panel(page).getByRole("button", { name: "Gravity Drive, researched" }),
+  ).toBeVisible();
+  await expect(send(page)).toHaveText(/Research nothing/);
+  await panel(page).getByRole("button", { name: "Sarween Tools", exact: true }).click();
+  await expect(tree).toContainText("Sarween Tools · 6 resources");
+  await expect(send(page)).toHaveText(/^Send/);
+  await page.keyboard.press("Escape");
+  await expect(send(page)).toHaveText(/Research nothing/);
+  await page.keyboard.press("Enter");
+  await expect(tree).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
 test("the Dev sheet leads to a game on the server, on the seed of the page", async ({ page }) => {
   await page.goto("/?local=3&players=8&humans=1");
   await expect(send(page)).toBeDisabled();

@@ -606,6 +606,26 @@ test("phone: a reaction window has its card, its setting and Pass, and nothing i
   await page.screenshot({ path: "shots/phone/local/reaction-window.png", animations: "disabled" });
 });
 
+test("phone: the technology tree has its columns in the width, and a cell stages a research", async ({
+  page,
+}) => {
+  await page.goto("/?scenario=research_tech_skips&humans=1");
+  const panel = page.locator("#step-panel");
+  await page
+    .getByRole("navigation", { name: "Panes" })
+    .getByRole("button", { name: "Action" })
+    .click();
+  await expect(panel.getByRole("heading", { name: "Research", exact: true })).toBeVisible();
+  const cell = panel.getByRole("button", { name: "Sarween Tools", exact: true });
+  await cell.click();
+  await expect(cell).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator('footer button[aria-keyshortcuts="Enter"]')).toHaveText(/^Send/);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
+    page.viewportSize()!.width,
+  );
+  await page.screenshot({ path: "shots/phone/local/research-tree.png", animations: "disabled" });
+});
+
 test("phone: the Agendas sheet has the laws and the open groups in its width", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));

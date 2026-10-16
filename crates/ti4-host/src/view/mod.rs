@@ -9,6 +9,7 @@ pub mod exploration;
 pub mod reaction;
 pub mod reaction_modes;
 pub mod records;
+pub mod research;
 pub mod scenario;
 pub mod score;
 pub mod seats;

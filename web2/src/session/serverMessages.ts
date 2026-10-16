@@ -49,6 +49,7 @@ export const updateOf = (message: StateMsg): SessionUpdate => ({
   agendas: message.agendas,
   secondary: message.secondary,
   reaction: message.reaction,
+  research: message.research,
   seats: message.seats,
 });
 

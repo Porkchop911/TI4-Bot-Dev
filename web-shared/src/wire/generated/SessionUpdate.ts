@@ -7,6 +7,7 @@ import type { PendingChoiceEnvelope } from "./PendingChoiceEnvelope.ts";
 import type { PlayerId } from "./PlayerId.ts";
 import type { PublicTurnStatus } from "./PublicTurnStatus.ts";
 import type { ReactionFacts } from "./ReactionFacts.ts";
+import type { ResearchFacts } from "./ResearchFacts.ts";
 import type { ScoreFacts } from "./ScoreFacts.ts";
 import type { SeatFact } from "./SeatFact.ts";
 import type { SecondaryFacts } from "./SecondaryFacts.ts";
@@ -60,6 +61,10 @@ secondary?: SecondaryFacts,
  * ([`crate::view::reaction`]).
  */
 reaction?: ReactionFacts, 
+/**
+ * The technology tree of the viewer, while it is asked to research ([`crate::view::research`]).
+ */
+research?: ResearchFacts, 
 /**
  * Who sits in each seat: the name of its player and who plays it ([`crate::view::seats::SeatFact`]).
  * It is of the table and not of the game, so the host of the game sets it; a game with no

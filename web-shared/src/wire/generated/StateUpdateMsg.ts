@@ -12,6 +12,7 @@ import type { PlayerId } from "./PlayerId.ts";
 import type { PublicTurnStatus } from "./PublicTurnStatus.ts";
 import type { ReactionFacts } from "./ReactionFacts.ts";
 import type { ReactionMode } from "./ReactionMode.ts";
+import type { ResearchFacts } from "./ResearchFacts.ts";
 import type { ScoreFacts } from "./ScoreFacts.ts";
 import type { SeatFact } from "./SeatFact.ts";
 import type { SecondaryFacts } from "./SecondaryFacts.ts";
@@ -72,6 +73,11 @@ secondary?: SecondaryFacts,
  * The reaction window that the viewer is asked in ([`crate::view::reaction`]).
  */
 reaction?: ReactionFacts, 
+/**
+ * The technology tree of the viewer, while it is asked to research
+ * ([`crate::view::research`]).
+ */
+research?: ResearchFacts, 
 /**
  * Who sits in each seat: the name of its player and who plays it
  * ([`crate::setup::SeatFact`]). Public; absent for a game with no table.

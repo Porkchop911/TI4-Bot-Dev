@@ -848,7 +848,11 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
       // A draft is played on a copy of the game, which no table is told to: the seats are those of the game.
       (drafted && { ...drafted.update, seats: update.seats }) ??
       (followInfo?.editing
-        ? { ...update, pending_choice: followOutcome?.update.pending_choice }
+        ? {
+            ...update,
+            pending_choice: followOutcome?.update.pending_choice,
+            research: followOutcome?.update.research,
+          }
         : update);
     const state = drafted?.local ?? live;
     // Nothing is sent while the game cannot be reached: the next update says what is open.
@@ -976,9 +980,14 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         // The screen is of the script before: its main button waits for the game.
         return;
       }
+      // A research with nothing chosen in its tree researches nothing.
+      const pass =
+        shown.research && !state.staged
+          ? (pending.choice.options.find((item) => item.kind === "decline")?.id ?? null)
+          : null;
       if (followInfo?.editing) {
         // Nothing of a draft is sent: the answer is recorded, and the game is asked again.
-        const option = pending.choice.options.find((item) => item.id === state.staged);
+        const option = pending.choice.options.find((item) => item.id === (state.staged ?? pass));
         if (option && drafted0 && followChecked) {
           setFollow(record(drafted0, { id: option.id, label: option.label || option.id }));
           setLocal((now) => ({ ...now, staged: null }));
@@ -1043,8 +1052,8 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         );
         return setLocal((now) => ({ ...now, sent: pending.nonce, planNote: null }));
       }
-      if (local.staged) {
-        transport.submitChoice(pending.nonce, local.staged);
+      if (local.staged || pass) {
+        transport.submitChoice(pending.nonce, local.staged ?? pass!);
         // The details that the choice of the system opened close with it: the movement starts
         // with the whole map in view, as in a draft.
         const opened = facts?.kind === "activation" ? local.staged : null;

@@ -69,6 +69,10 @@ pub struct InitialSnapshotMsg {
     /// The reaction window that the viewer is asked in ([`crate::view::reaction`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reaction: Option<crate::view::reaction::ReactionFacts>,
+    /// The technology tree of the viewer, while it is asked to research
+    /// ([`crate::view::research`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub research: Option<crate::view::research::ResearchFacts>,
     /// Who sits in each seat: the name of its player and who plays it
     /// ([`crate::setup::SeatFact`]). Public; absent for a game with no table.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1781,6 +1785,10 @@ pub struct StateUpdateMsg {
     /// The reaction window that the viewer is asked in ([`crate::view::reaction`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reaction: Option<crate::view::reaction::ReactionFacts>,
+    /// The technology tree of the viewer, while it is asked to research
+    /// ([`crate::view::research`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub research: Option<crate::view::research::ResearchFacts>,
     /// Who sits in each seat: the name of its player and who plays it
     /// ([`crate::setup::SeatFact`]). Public; absent for a game with no table.
     #[serde(default, skip_serializing_if = "Option::is_none")]

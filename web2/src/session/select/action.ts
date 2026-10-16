@@ -10,6 +10,7 @@ import type { Catalog, Choice, ExplorationCatalog, ReactionModes, SessionUpdate 
 import { exploringCard } from "./exploration";
 import { seatLabel, sentence } from "./names";
 import { selectReaction } from "./reaction";
+import { selectResearch } from "./research";
 
 /** The private draft that is in view: what its toolbar and its screens say. */
 export interface DraftInfo {
@@ -173,6 +174,10 @@ export function selectAction(
   const card = choice ? exploringCard(update, catalog) : null;
   const onBoard = boardTask(update, local) !== null;
   const staged = choice?.options.find((option) => option.id === local.staged) ?? null;
+  // A research is chosen in the technology tree.
+  const research = choice && !window ? selectResearch(update, choice, local.staged, printed) : null;
+  /** A draft records the answer; the live game sends it. */
+  const recording = !!local.draft || !!local.follow?.editing;
   const rows: MenuRowView[] = (choice?.options ?? []).map((option, index) => ({
     key: KEYS[index] ?? "",
     title: sentence(option.label || option.id),
@@ -239,20 +244,24 @@ export function selectAction(
                 : `${choice.options.length} systems can be chosen on the board.`,
             },
           ]
-        : [
-            ...(card ? [{ kind: "source" as const, ...card }] : []),
-            { kind: "menu", rows: window?.rows ?? rows },
-          ],
+        : research
+          ? [research.block]
+          : [
+              ...(card ? [{ kind: "source" as const, ...card }] : []),
+              { kind: "menu", rows: window?.rows ?? rows },
+            ],
     footer: {
       note: local.planNote
         ? local.planNote.text
         : !choice
           ? ""
           : staged
-            ? `Selected: ${window?.rows.find((row) => row.selected)?.title ?? sentence(staged.label || staged.id)}`
+            ? `Selected: ${window?.rows.find((row) => row.selected)?.title ?? (research ? research.name(staged.id) : sentence(staged.label || staged.id))}`
             : window
               ? ""
-              : `Choose one of ${choice.options.length}.`,
+              : research
+                ? `${research.open} ${research.open === 1 ? "technology can" : "technologies can"} be researched.`
+                : `Choose one of ${choice.options.length}.`,
       error: !!local.planNote?.error,
       actions: [
         ...(stepping
@@ -294,15 +303,22 @@ export function selectAction(
                     key: "Enter",
                     intent: { type: "reaction" as const, action: "pass" as const },
                   }
-                : {
-                    // A draft sends nothing: the answer is recorded.
-                    label:
-                      local.draft || local.follow?.editing ? "Record" : window ? "Use" : "Send",
-                    tone: "primary" as const,
-                    disabled: !staged,
-                    key: "Enter",
-                    intent: { type: "flow" as const, action: "resolve" as const },
-                  },
+                : research?.pass && !staged
+                  ? {
+                      // Nothing chosen in the tree is a pass, and the main button says so.
+                      label: recording ? "Record · research nothing" : "Research nothing",
+                      tone: "primary" as const,
+                      key: "Enter",
+                      intent: { type: "flow" as const, action: "resolve" as const },
+                    }
+                  : {
+                      // A draft sends nothing: the answer is recorded.
+                      label: recording ? "Record" : window ? "Use" : "Send",
+                      tone: "primary" as const,
+                      disabled: !staged,
+                      key: "Enter",
+                      intent: { type: "flow" as const, action: "resolve" as const },
+                    },
             ]
           : []),
       ],
