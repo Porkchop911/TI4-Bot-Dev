@@ -898,6 +898,7 @@ impl Resolver {
         let mut resolved_here = BTreeSet::<String>::new();
         let result = (|| {
             let mut passed = BTreeSet::<PlayerId>::new();
+            let mut passed_last = BTreeSet::<PlayerId>::new();
             loop {
                 let mut resolved_this_pass = false;
                 for player in self.player_order() {
@@ -909,6 +910,11 @@ impl Resolver {
                         continue;
                     }
                     let Some(ability) = self.pick(eligible, event, &player, relation)? else {
+                        // A seat passing twice in a row closes the window (operator rule), so a
+                        // no-op "resolution" cannot reopen the same window forever.
+                        if passed_last.contains(&player) {
+                            return Ok(());
+                        }
                         passed.insert(player);
                         continue;
                     };
@@ -932,7 +938,7 @@ impl Resolver {
                 if !resolved_this_pass {
                     return Ok(());
                 }
-                passed.clear();
+                passed_last = std::mem::take(&mut passed);
             }
         })();
         self.relation_being_resolved = previous;
@@ -950,6 +956,7 @@ impl Resolver {
         let mut resolved_here = BTreeSet::<String>::new();
         let result = (|| {
             let mut passed = BTreeSet::<PlayerId>::new();
+            let mut passed_last = BTreeSet::<PlayerId>::new();
             // Seats already looked at once in this window (see `Table::window_skipped`).
             let mut announced = BTreeSet::<PlayerId>::new();
             loop {
@@ -980,6 +987,11 @@ impl Resolver {
                     let Some(ability) =
                         self.pick_with_context(eligible, event, &player, relation, context)?
                     else {
+                        // A seat passing twice in a row closes the window (operator rule), so a
+                        // no-op "resolution" cannot reopen the same window forever.
+                        if passed_last.contains(&player) {
+                            return Ok(());
+                        }
                         passed.insert(player);
                         continue;
                     };
@@ -991,10 +1003,23 @@ impl Resolver {
                         player,
                         ability.id
                     ));
+                    let hand = |state: &GameState| state.player(&player).map(|p| p.action_cards.clone());
+                    let hand_before = ability
+                        .id
+                        .starts_with("reaction:")
+                        .then(|| hand(context.state));
                     if let Some(effect) = ability.stateful_effect {
                         effect(event, self, context)?;
                     } else {
                         (ability.effect)(event, self)?;
+                    }
+                    // A reaction slot opened and backed out of plays no card: that is a pass.
+                    if hand_before.is_some_and(|before| before == hand(context.state)) {
+                        if passed_last.contains(&player) {
+                            return Ok(());
+                        }
+                        passed.insert(player);
+                        continue;
                     }
                     resolved_this_pass = true;
                     if event.cancelled {
@@ -1004,7 +1029,7 @@ impl Resolver {
                 if !resolved_this_pass {
                     return Ok(());
                 }
-                passed.clear();
+                passed_last = std::mem::take(&mut passed);
             }
         })();
         self.relation_being_resolved = previous;
@@ -2038,6 +2063,29 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn a_second_consecutive_pass_closes_a_window_a_no_op_slot_keeps_reopening() {
+        // BUG-AGENDA-NESTED-DECLINE: a repeatable slot that resolves nothing used to clear the
+        // other seats' passes forever. Sol passing twice in a row now closes the window.
+        let order = Arc::new(Mutex::new(Vec::new()));
+        let mut timing = resolver(&["sol", "letnev"], "sol");
+        timing
+            .table_mut()
+            .seat(player("sol"), Box::new(Scripted::new(["decline", "decline"])));
+        timing.register([
+            recording_ability("sol", "sol", "E", Relation::When, order.clone()).with_optional(true),
+            recording_ability("slot", "letnev", "E", Relation::When, order.clone())
+                .with_frequency(Frequency::Unlimited)
+                .with_repeatable_in_window(true),
+        ]);
+
+        timing
+            .emit(Event::new(1, "E", BTreeMap::new()), |_| {})
+            .unwrap();
+
+        assert_eq!(*order.lock().unwrap(), ["slot"]);
     }
 
     #[test]

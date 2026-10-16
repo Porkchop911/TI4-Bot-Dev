@@ -214,6 +214,7 @@ fn main() {
     let jobs: Vec<(u64, usize)> = (seed_base..seed_base + seeds)
         .flat_map(|seed| (0..FACTIONS.len()).map(move |rotation| (seed, rotation)))
         .collect();
+    let jobs_count = jobs.len();
     let workers = rayon::current_num_threads().max(1);
     let per_worker = jobs.len().div_ceil(workers);
     let chunks: Vec<(ti4_mlp::Actor, Vec<(u64, usize)>)> = jobs
@@ -292,6 +293,12 @@ fn main() {
                         },
                     );
                 if let Some(error) = &rollout.error {
+                    // An engine no-progress guard (a known decision loop) drops that game, logged;
+                    // the per-seat file then lacks it, and the caller pairs only games both arms have.
+                    if error.contains("without progress") {
+                        eprintln!("SKIPPED: game {seed}/{rotation} failed: {error}");
+                        continue;
+                    }
                     return Err(format!("game {seed}/{rotation} failed: {error}"));
                 }
                 for seat in &rollout.seats {
@@ -333,6 +340,14 @@ fn main() {
         }
     }
 
+    let games_played = rows_games(&tallies, players.len());
+    let games_wanted = jobs_count;
+    if (games_wanted - games_played) * 20 > games_wanted {
+        refuse(&format!(
+            "{} of {games_wanted} games stalled; more than 5% is not an evaluation",
+            games_wanted - games_played
+        ));
+    }
     println!("  faction      seats   clearance          mean VP");
     let mut table = Tally::default();
     for (faction, tally) in &tallies {
@@ -381,4 +396,9 @@ fn main() {
             .unwrap_or_else(|error| refuse(&format!("writing {path}: {error}")));
         println!("  wrote {} seat-games to {path}", rows.len());
     }
+}
+
+/// Games that produced rows: every game seats the same number of players.
+fn rows_games(tallies: &BTreeMap<String, Tally>, seats: usize) -> usize {
+    tallies.values().map(|tally| tally.seats).sum::<usize>() / seats.max(1)
 }
