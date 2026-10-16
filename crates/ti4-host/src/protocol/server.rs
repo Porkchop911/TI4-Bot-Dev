@@ -453,7 +453,8 @@ pub fn stage_for(subtype: &str) -> Option<&'static str> {
         | "warfare_redistribute_tokens"
         | "imperial_score_objective"
         | "warfare_free_tactical"
-        | "construction_choose_ability" => "strategy",
+        | "construction_choose_ability"
+        | ti4_engine::strategy::FOLLOW_SUBTYPE => "strategy",
         "discard_over_hand_limit"
         | "expedition_discard_action_card"
         | "return_over_secret_hand_limit"
@@ -505,6 +506,43 @@ fn public_choice_detail(
                 _ => return None,
             };
             format!("{actor} gained a {pool} command token")
+        }
+        ti4_engine::strategy::FOLLOW_SUBTYPE => {
+            let ti4_engine::decision_context::DecisionSource::StrategyCard {
+                card,
+                secondary: true,
+            } = &context.source
+            else {
+                return None;
+            };
+            let name = strategy_card_name(card)?;
+            if option.is_decline() || id == "no" {
+                format!("{actor} declined the secondary of {name}")
+            } else {
+                format!("{actor} followed {name}")
+            }
+        }
+        ti4_engine::fleet::REMOVE_EXCESS_SUBTYPE
+            if option.kind == ti4_engine::fleet::REMOVE_KIND =>
+        {
+            match (
+                option.label.strip_prefix("remove "),
+                context.target.as_ref(),
+            ) {
+                (
+                    Some(unit),
+                    Some(ti4_engine::decision_context::DecisionTarget::System(system)),
+                ) if ti4_content::units::unit_type(
+                    ti4_content::ContentStore::embedded(),
+                    unit,
+                    ti4_model::content_types::DEFAULT,
+                )
+                .is_some() =>
+                {
+                    format!("{actor} removed {unit} in #{system}")
+                }
+                _ => return None,
+            }
         }
         "buy_token_with_influence" => match id {
             "yes" => format!("{actor} bought a command token with influence"),

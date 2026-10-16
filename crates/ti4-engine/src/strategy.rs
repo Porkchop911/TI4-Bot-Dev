@@ -16,6 +16,11 @@ pub const ACTION_KIND: &str = "action";
 pub const FOLLOW_SECONDARY_ID: &str = "follow";
 /// The choice kind for a strategic-action secondary response.
 pub const STRATEGY_KIND: &str = "strategy";
+/// The subtype of a follower's secondary question (every card but Leadership, whose question is
+/// the purchase question `buy_token_with_influence`). Its source is
+/// [`DecisionSource::StrategyCard`](crate::decision_context::DecisionSource::StrategyCard) with
+/// the card's id and `secondary: true`.
+pub const FOLLOW_SUBTYPE: &str = "strategy_secondary";
 /// Prefix of an option that follows a secondary without spending a strategy token, offered only
 /// when a faction module has a waiver (Winnu Acquiescence). The full id is
 /// `follow|waived|<module index>|<waiver id>`.
@@ -92,12 +97,19 @@ fn secondary_choice(
 ) -> Choice {
     let tokens_left = state.player(player).map_or(0, |seat| seat.strategic_tokens);
     let mut question = secondary_question(content, card, player, costs_token);
+    // The source names the card by its id: the follow question of every card is the same
+    // question, and a log tells which card a seat followed from it.
+    let source = crate::decision_context::DecisionSource::StrategyCard {
+        card: card.to_string(),
+        secondary: true,
+    };
     if crate::strategy_cards::card_name(content, card.as_str()).as_deref() == Some("Leadership") {
         // The window's question is the purchase question itself: typed like the loop's later
-        // asks, and carrying what a client needs to plan every purchase at once.
+        // asks (whose source is the rule, 52.3), and carrying what a client needs to plan every
+        // purchase at once.
         question = question.contextualized(crate::decision_context::DecisionContext::new(
             player.clone(),
-            crate::decision_context::DecisionSource::Rule("52.3".to_owned()),
+            source,
             "buy_token_with_influence",
             state.phase,
             state.round,
@@ -108,6 +120,17 @@ fn secondary_choice(
             question = crate::tokens::with_pool_details(question, state, "buy", Some(0))
                 .hinted("purchase", &purchase);
         }
+    } else {
+        question = question.contextualized(
+            crate::decision_context::DecisionContext::new(
+                player.clone(),
+                source,
+                FOLLOW_SUBTYPE,
+                state.phase,
+                state.round,
+            )
+            .optional(true),
+        );
     }
     if crate::strategy_cards::card_name(content, card.as_str()).as_deref() == Some("Diplomacy") {
         question = question.hinted_fields(&crate::strategy_cards::ready_hints(
@@ -1152,6 +1175,21 @@ mod tests {
         assert_eq!(choice.details["played_by"], "a");
         assert_eq!(choice.details["tokens_left"], 3);
         assert_eq!(choice.details["costs_token"], true);
+        // The context says which card's secondary this is, so that a log can tell the follow.
+        let context = choice
+            .context
+            .as_ref()
+            .expect("a follow question has a context");
+        assert_eq!(context.subtype, FOLLOW_SUBTYPE);
+        assert_eq!(
+            context.source,
+            crate::decision_context::DecisionSource::StrategyCard {
+                card: card.to_string(),
+                secondary: true,
+            }
+        );
+        assert_eq!(context.actor, PlayerId::new("b"));
+        assert!(context.optional);
     }
 
     #[test]
@@ -1574,6 +1612,14 @@ mod tests {
         assert_eq!(
             choice.context.as_ref().map(|c| c.subtype.as_str()),
             Some("buy_token_with_influence")
+        );
+        // Its source is the card's secondary, which tells it from the loop's later asks.
+        assert_eq!(
+            choice.context.as_ref().map(|c| c.source.clone()),
+            Some(crate::decision_context::DecisionSource::StrategyCard {
+                card: card.to_string(),
+                secondary: true,
+            })
         );
         assert_eq!(choice.details["kind"], "strategy_secondary");
         assert_eq!(choice.details["mode"], "buy");

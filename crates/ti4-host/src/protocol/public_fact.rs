@@ -9,7 +9,7 @@
 
 use serde::{Deserialize, Serialize};
 use ti4_engine::choice::{ChoiceOption, DecisionRecord};
-use ti4_engine::decision_context::{DecisionContext, DecisionTarget};
+use ti4_engine::decision_context::{DecisionContext, DecisionSource, DecisionTarget};
 use ti4_model::id::{ObjectiveId, PlayerId};
 use ti4_model::state::GameState;
 
@@ -148,6 +148,81 @@ pub enum PublicFact {
     TokensGained {
         pool: TokenPool,
         count: u32,
+    },
+    /// The answer of a seat to the secondary of `card` (an id): it followed or declined. What a
+    /// follow does is told by the facts after it (a research, a structure, a production...); a
+    /// secondary with no question (Trade, Politics, Imperial) is this fact alone. Leadership's
+    /// follow is its first purchase: [`PublicFact::Paid`] and [`PublicFact::TokensGained`]
+    /// follow.
+    SecondaryFollowed {
+        card: String,
+        followed: bool,
+    },
+    /// The seat buys one more command token for influence (Leadership). The token is the
+    /// [`PublicFact::TokensGained`] after the payment, so a count of tokens counts that fact, not
+    /// this one. The stop of the purchase has no fact.
+    TokenBoughtWithInfluence,
+    /// The system of Diplomacy's primary.
+    DiplomacyChosen {
+        system: String,
+    },
+    /// The new speaker (Politics).
+    SpeakerChosen {
+        seat: PlayerId,
+    },
+    /// The commodities of `seat` replenished (Trade's primary). The end of the replenishing has
+    /// no fact.
+    CommoditiesReplenished {
+        seat: PlayerId,
+    },
+    PlanetReadied {
+        planet: String,
+    },
+    /// The command sheet after a redistribution (the status phase, Warfare).
+    TokensRedistributed {
+        tactic: u32,
+        fleet: u32,
+        strategy: u32,
+    },
+    /// The command token taken back from `system` (Warfare's primary).
+    TokenRecalled {
+        system: String,
+    },
+    /// The system of a tactical action without a command token (Thunder's Edge Warfare).
+    FreeTactical {
+        system: String,
+    },
+    /// A round of ground combat on `planet`; its dice are the rolls of the action.
+    GroundCombatRound {
+        seat: PlayerId,
+        planet: String,
+    },
+    /// The seat started a further ground combat on `planet` (coexistence).
+    GroundCombatStarted {
+        seat: PlayerId,
+        planet: String,
+    },
+    /// The seat did not sustain damage against a hit.
+    SustainDeclined {
+        seat: PlayerId,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        system: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        planet: Option<String>,
+    },
+    /// Bombardment hits on `planet` go to the units of `target` (coexistence).
+    BombardmentTargeted {
+        target: PlayerId,
+        planet: String,
+    },
+    /// The seat removed the custodians token in `system`.
+    CustodiansRemoved {
+        system: String,
+    },
+    /// A unit the seat removed over its fleet supply or capacity in `system`.
+    UnitRemoved {
+        unit: String,
+        system: String,
     },
 }
 
@@ -337,6 +412,112 @@ fn component_source(id: &str) -> ComponentSource {
     }
 }
 
+/// The id of the card of a follower's secondary question.
+fn secondary_card(context: &DecisionContext) -> Option<&str> {
+    match &context.source {
+        DecisionSource::StrategyCard {
+            card,
+            secondary: true,
+        } => Some(card.as_str()),
+        _ => None,
+    }
+}
+
+/// The seat of the faction that an option names by its id (Politics' speaker, Trade's
+/// replenish).
+fn seat_of(state: &GameState, faction: &str) -> Option<PlayerId> {
+    ti4_engine::promissory::seat_of(state, faction)
+}
+
+/// The fact of a choice of a strategy card's primary or secondary, or of the status phase.
+///
+/// The closing steps (the end of a purchase or of a replenishing, a declined structure, research
+/// or Imperial score) have no fact: they end a part whose facts came before.
+fn strategy_fact(
+    context: &DecisionContext,
+    option: &ChoiceOption,
+    state: &GameState,
+) -> Option<PublicFact> {
+    let id = option.id.as_str();
+    Some(match (context.subtype.as_str(), option.kind.as_str()) {
+        (ti4_engine::strategy::FOLLOW_SUBTYPE, _) => {
+            let card = secondary_card(context)?;
+            ti4_engine::strategy_cards::card_name(ti4_content::ContentStore::embedded(), card)?;
+            PublicFact::SecondaryFollowed {
+                card: card.to_owned(),
+                followed: !(option.is_decline() || id == "no"),
+            }
+        }
+        ("buy_token_with_influence", ti4_engine::strategy::STRATEGY_KIND) => {
+            match (secondary_card(context), id) {
+                // The window's question: "yes" buys the first token, Enervate's option takes the
+                // primary instead; both follow.
+                (Some(card), _) => {
+                    ti4_engine::strategy_cards::card_name(
+                        ti4_content::ContentStore::embedded(),
+                        card,
+                    )?;
+                    PublicFact::SecondaryFollowed {
+                        card: card.to_owned(),
+                        followed: !(option.is_decline() || id == "no"),
+                    }
+                }
+                (None, "yes") => PublicFact::TokenBoughtWithInfluence,
+                _ => return None,
+            }
+        }
+        ("diplomacy_choose_system", "system") => PublicFact::DiplomacyChosen {
+            system: id.to_owned(),
+        },
+        ("politics_choose_speaker", "speaker") => PublicFact::SpeakerChosen {
+            seat: seat_of(state, id)?,
+        },
+        ("trade_choose_replenish", "replenish") => PublicFact::CommoditiesReplenished {
+            seat: seat_of(state, id)?,
+        },
+        ("ready_planet", "ready") => PublicFact::PlanetReadied {
+            planet: id.to_owned(),
+        },
+        (subtype, ti4_engine::tokens::REDISTRIBUTE_KIND)
+            if subtype.ends_with("_redistribute_tokens") =>
+        {
+            let mut parts = id.split('|').map(str::parse::<u32>);
+            let (Some(Ok(tactic)), Some(Ok(fleet)), Some(Ok(strategy)), None) =
+                (parts.next(), parts.next(), parts.next(), parts.next())
+            else {
+                return None;
+            };
+            PublicFact::TokensRedistributed {
+                tactic,
+                fleet,
+                strategy,
+            }
+        }
+        ("warfare_recall_token", "recall") => PublicFact::TokenRecalled {
+            system: id.to_owned(),
+        },
+        ("warfare_free_tactical", "activate") => PublicFact::FreeTactical {
+            system: id.to_owned(),
+        },
+        (ti4_engine::fleet::REMOVE_EXCESS_SUBTYPE, ti4_engine::fleet::REMOVE_KIND) => {
+            // The label of the option is `remove <unit type>`, and the units on the board are
+            // public; a label that names no unit type gives no fact.
+            let unit = option.label.strip_prefix("remove ")?;
+            ti4_content::units::unit_type(
+                ti4_content::ContentStore::embedded(),
+                unit,
+                ti4_model::content_types::DEFAULT,
+            )?;
+            let (system, _) = place(context);
+            PublicFact::UnitRemoved {
+                unit: unit.to_owned(),
+                system: system?,
+            }
+        }
+        _ => return None,
+    })
+}
+
 /// The fact of a choice of the action menu (or of the second action at the end of a turn).
 fn turn_fact(state: &GameState, seat: &PlayerId, option: &ChoiceOption) -> Option<PublicFact> {
     let id = option.id.as_str();
@@ -367,10 +548,14 @@ fn turn_fact(state: &GameState, seat: &PlayerId, option: &ChoiceOption) -> Optio
 }
 
 /// The fact of a combat or invasion choice.
+///
+/// The closing steps (done committing, a declined further ground combat) have no fact: they end
+/// a part whose facts came before.
 fn combat_fact(
     context: &DecisionContext,
     option: &ChoiceOption,
     seat: &PlayerId,
+    state: &GameState,
 ) -> Option<PublicFact> {
     let (system, planet) = place(context);
     let unit = || text(option, "unit").map(str::to_owned);
@@ -409,6 +594,32 @@ fn combat_fact(
                 to: to.to_owned(),
             }
         }
+        ("sustain_damage", "decline") if option.id == "decline" => PublicFact::SustainDeclined {
+            seat: seat.clone(),
+            system,
+            planet,
+        },
+        ("fight_ground_combat_round", "ground_casualty") if option.id == "fight" => {
+            PublicFact::GroundCombatRound {
+                seat: seat.clone(),
+                planet: planet?,
+            }
+        }
+        ("start_next_ground_combat", "ground_casualty") if option.id.starts_with("fight|") => {
+            PublicFact::GroundCombatStarted {
+                seat: seat.clone(),
+                planet: planet?,
+            }
+        }
+        ("bombardment_target", "bombardment_target") => PublicFact::BombardmentTargeted {
+            target: state
+                .player(&PlayerId::new(&option.id))
+                .map(|target| target.id.clone())?,
+            planet: planet?,
+        },
+        ("remove_custodians", "custodians") if option.id == "yes" => {
+            PublicFact::CustodiansRemoved { system: system? }
+        }
         ("commit_ground_forces", "commit") if option.id.starts_with("commit|") => {
             PublicFact::Landed {
                 unit: unit()?,
@@ -421,6 +632,9 @@ fn combat_fact(
 }
 
 /// The fact of a choice that names its outcome in the id or an allowlisted payload field.
+///
+/// The closing steps (done moving, loading, producing, voting) have no fact: they end a part
+/// whose facts came before.
 #[allow(
     clippy::too_many_lines,
     reason = "one arm per kind of public decision, read as a table"
@@ -430,6 +644,7 @@ fn choice_fact(
     option: &ChoiceOption,
     seat: &PlayerId,
     destination: Option<&str>,
+    state: &GameState,
 ) -> Option<PublicFact> {
     let id = option.id.as_str();
     Some(match (context.subtype.as_str(), option.kind.as_str()) {
@@ -549,8 +764,30 @@ fn choice_fact(
         ("propose_transaction", _) => PublicFact::TransactionProposed {
             to: about_seat(context)?,
         },
-        _ => return combat_fact(context, option, seat),
+        _ => {
+            return strategy_fact(context, option, state)
+                .or_else(|| combat_fact(context, option, seat, state));
+        }
     })
+}
+
+/// The fact of a question that has no context: Sling Relay's ship, whose option says its unit and
+/// its system. Its question of the system has no fact (the production names it). The engine
+/// leaves these questions without a context, so that the features of the learned policy stay
+/// what they were trained on.
+fn uncontexted_fact(option: &ChoiceOption) -> Option<PublicFact> {
+    (option.kind == ti4_engine::production::PRODUCE_KIND
+        && flag(option, "sling_relay")
+        && option.id.starts_with("build|"))
+    .then(|| {
+        Some(PublicFact::Produced {
+            unit: text(option, "unit")?.to_owned(),
+            count: count(option)?,
+            system: Some(text(option, "system")?.to_owned()),
+            planet: None,
+        })
+    })
+    .flatten()
 }
 
 /// The public fact of `record`, from the option the engine offered for it and public state.
@@ -573,7 +810,9 @@ pub fn decision_fact(
     if record.prompt == "action phase" || matches!(subtype, Some("action_menu" | "end_turn")) {
         return turn_fact(state, seat, option);
     }
-    let context = record.context.as_ref()?;
+    let Some(context) = record.context.as_ref() else {
+        return uncontexted_fact(option);
+    };
     if matches!(
         context.subtype.as_str(),
         "score_objective" | "score_secret_objective"
@@ -601,7 +840,7 @@ pub fn decision_fact(
                 card: alias.to_owned(),
             });
     }
-    choice_fact(context, option, seat, destination)
+    choice_fact(context, option, seat, destination, state)
 }
 
 #[cfg(test)]
@@ -1068,6 +1307,290 @@ mod tests {
             let other = ChoiceOption::new("not-chosen", option.kind.as_str());
             assert_eq!(fact(&decision, &other, &state), None, "{subtype}");
         }
+    }
+
+    fn secondary(mut record: DecisionRecord, card: &str) -> DecisionRecord {
+        record.context.as_mut().unwrap().source = DecisionSource::StrategyCard {
+            card: card.into(),
+            secondary: true,
+        };
+        record
+    }
+
+    #[test]
+    fn a_follow_names_its_card_and_whether_the_seat_followed() {
+        let state = state();
+        let follow = |subtype: &str, id: &str, card: &str| {
+            let option = ChoiceOption::new(id, "strategy");
+            fact(&secondary(record(subtype, &option), card), &option, &state)
+        };
+        let followed = |card: &str, followed| {
+            Some(PublicFact::SecondaryFollowed {
+                card: card.into(),
+                followed,
+            })
+        };
+        let subtype = ti4_engine::strategy::FOLLOW_SUBTYPE;
+        assert_eq!(
+            follow(subtype, "yes", "pok6warfare"),
+            followed("pok6warfare", true)
+        );
+        assert_eq!(
+            follow(subtype, "no", "pok5trade"),
+            followed("pok5trade", false)
+        );
+        assert_eq!(
+            follow(subtype, "follow|waived|0|winnu", "pok7technology"),
+            followed("pok7technology", true)
+        );
+        let decline = ChoiceOption::decline();
+        assert_eq!(
+            fact(
+                &secondary(record(subtype, &decline), "pok8imperial"),
+                &decline,
+                &state
+            ),
+            followed("pok8imperial", false)
+        );
+        // Leadership's follow is its first purchase; a later purchase is no follow.
+        let buy = "buy_token_with_influence";
+        assert_eq!(
+            follow(buy, "yes", "pok1leadership"),
+            followed("pok1leadership", true)
+        );
+        assert_eq!(
+            follow(buy, "no", "pok1leadership"),
+            followed("pok1leadership", false)
+        );
+        let yes = ChoiceOption::new("yes", "strategy");
+        assert_eq!(
+            fact(&record(buy, &yes), &yes, &state),
+            Some(PublicFact::TokenBoughtWithInfluence)
+        );
+        let no = ChoiceOption::new("no", "strategy");
+        assert_eq!(fact(&record(buy, &no), &no, &state), None);
+        // A card that is not in the catalogue, or a question without the card, gives no fact.
+        assert_eq!(follow(subtype, "yes", "nocard"), None);
+        assert_eq!(fact(&record(subtype, &yes), &yes, &state), None);
+    }
+
+    #[test]
+    fn primaries_and_the_status_phase_have_their_fact() {
+        let state = state();
+        let cases = [
+            (
+                "diplomacy_choose_system",
+                ChoiceOption::new("22", "system"),
+                PublicFact::DiplomacyChosen {
+                    system: "22".into(),
+                },
+            ),
+            (
+                "politics_choose_speaker",
+                ChoiceOption::new("hacan", "speaker"),
+                PublicFact::SpeakerChosen { seat: p("p2") },
+            ),
+            (
+                "trade_choose_replenish",
+                ChoiceOption::new("hacan", "replenish"),
+                PublicFact::CommoditiesReplenished { seat: p("p2") },
+            ),
+            (
+                "ready_planet",
+                ChoiceOption::new("jord", "ready"),
+                PublicFact::PlanetReadied {
+                    planet: "jord".into(),
+                },
+            ),
+            (
+                "status_redistribute_tokens",
+                ChoiceOption::new("3|4|2", "redistribute"),
+                PublicFact::TokensRedistributed {
+                    tactic: 3,
+                    fleet: 4,
+                    strategy: 2,
+                },
+            ),
+            (
+                "warfare_redistribute_tokens",
+                ChoiceOption::new("0|2|1", "redistribute"),
+                PublicFact::TokensRedistributed {
+                    tactic: 0,
+                    fleet: 2,
+                    strategy: 1,
+                },
+            ),
+            (
+                "warfare_recall_token",
+                ChoiceOption::new("22", "recall"),
+                PublicFact::TokenRecalled {
+                    system: "22".into(),
+                },
+            ),
+            (
+                "warfare_free_tactical",
+                ChoiceOption::new("22", "activate"),
+                PublicFact::FreeTactical {
+                    system: "22".into(),
+                },
+            ),
+        ];
+        for (subtype, option, expected) in cases {
+            let decision = record(subtype, &option);
+            assert_eq!(
+                fact(&decision, &option, &state),
+                Some(expected),
+                "{subtype}"
+            );
+            let other = ChoiceOption::new("not-chosen", option.kind.as_str());
+            assert_eq!(fact(&decision, &other, &state), None, "{subtype}");
+        }
+        // A faction that is not at the table (a seat id is no faction), or a sheet that is not three counts, gives no fact.
+        for (subtype, option) in [
+            (
+                "politics_choose_speaker",
+                ChoiceOption::new("p9", "speaker"),
+            ),
+            (
+                "trade_choose_replenish",
+                ChoiceOption::new("p9", "replenish"),
+            ),
+            (
+                "status_redistribute_tokens",
+                ChoiceOption::new("3|4", "redistribute"),
+            ),
+            ("trade_choose_replenish", ChoiceOption::decline()),
+            ("research_technology", ChoiceOption::decline()),
+        ] {
+            assert_eq!(
+                fact(&record(subtype, &option), &option, &state),
+                None,
+                "{subtype} {}",
+                option.id
+            );
+        }
+    }
+
+    #[test]
+    fn invasion_steps_and_a_removed_unit_have_their_fact() {
+        let state = state();
+        let system = DecisionTarget::System(SystemId::new("22"));
+        let planet = DecisionTarget::Planet {
+            system: SystemId::new("22"),
+            planet: PlanetId::new("jord"),
+        };
+        let cases = [
+            (
+                "sustain_damage",
+                ChoiceOption::decline(),
+                system.clone(),
+                PublicFact::SustainDeclined {
+                    seat: p("p1"),
+                    system: Some("22".into()),
+                    planet: None,
+                },
+            ),
+            (
+                "fight_ground_combat_round",
+                ChoiceOption::new("fight", "ground_casualty"),
+                planet.clone(),
+                PublicFact::GroundCombatRound {
+                    seat: p("p1"),
+                    planet: "jord".into(),
+                },
+            ),
+            (
+                "start_next_ground_combat",
+                ChoiceOption::new("fight|p2", "ground_casualty"),
+                planet.clone(),
+                PublicFact::GroundCombatStarted {
+                    seat: p("p1"),
+                    planet: "jord".into(),
+                },
+            ),
+            (
+                "bombardment_target",
+                ChoiceOption::new("p2", "bombardment_target"),
+                planet.clone(),
+                PublicFact::BombardmentTargeted {
+                    target: p("p2"),
+                    planet: "jord".into(),
+                },
+            ),
+            (
+                "remove_custodians",
+                ChoiceOption::new("yes", "custodians"),
+                system.clone(),
+                PublicFact::CustodiansRemoved {
+                    system: "22".into(),
+                },
+            ),
+            (
+                ti4_engine::fleet::REMOVE_EXCESS_SUBTYPE,
+                ChoiceOption::labelled("remove|1", "remove", "remove cruiser"),
+                system.clone(),
+                PublicFact::UnitRemoved {
+                    unit: "cruiser".into(),
+                    system: "22".into(),
+                },
+            ),
+        ];
+        for (subtype, option, target, expected) in cases {
+            let decision = about(record(subtype, &option), target);
+            assert_eq!(
+                fact(&decision, &option, &state),
+                Some(expected),
+                "{subtype}"
+            );
+        }
+        // A label that names no unit, a target that is no seat, or a closing step: no fact.
+        for (subtype, option, target) in [
+            (
+                ti4_engine::fleet::REMOVE_EXCESS_SUBTYPE,
+                ChoiceOption::labelled("remove|1", "remove", "remove a secret"),
+                system.clone(),
+            ),
+            (
+                "bombardment_target",
+                ChoiceOption::new("p9", "bombardment_target"),
+                planet.clone(),
+            ),
+            ("start_next_ground_combat", ChoiceOption::decline(), planet),
+            (
+                "commit_ground_forces",
+                ChoiceOption::new("done_committing", "decline"),
+                system,
+            ),
+        ] {
+            let decision = about(record(subtype, &option), target);
+            assert_eq!(fact(&decision, &option, &state), None, "{subtype}");
+        }
+    }
+
+    #[test]
+    fn a_sling_relay_ship_is_a_production_without_a_context() {
+        let state = state();
+        let ship = ChoiceOption::new("build|cruiser|1", "produce")
+            .with("unit", "cruiser")
+            .with("count", 1)
+            .with("sling_relay", true)
+            .with("system", "22");
+        let mut decision = record("produce_unit", &ship);
+        decision.context = None;
+        assert_eq!(
+            fact(&decision, &ship, &state),
+            Some(PublicFact::Produced {
+                unit: "cruiser".into(),
+                count: 1,
+                system: Some("22".into()),
+                planet: None,
+            })
+        );
+        // Any other question without a context has no fact.
+        let follow = ChoiceOption::new("yes", "strategy");
+        let mut bare = record("x", &follow);
+        bare.context = None;
+        assert_eq!(fact(&bare, &follow, &state), None);
     }
 
     #[test]

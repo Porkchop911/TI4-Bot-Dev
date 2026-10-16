@@ -14,9 +14,13 @@ use ti4_model::state::GameState;
 use ti4_model::units::Unit;
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Table};
+use crate::decision_context::{DecisionContext, DecisionSource, DecisionTarget};
 
 /// The choice kind for removing a unit to get back within a limit.
 pub const REMOVE_KIND: &str = "remove";
+/// The subtype of the question which unit a seat removes over its fleet supply or its capacity in
+/// a system (the target). Each option's label is `remove <unit type>`.
+pub const REMOVE_EXCESS_SUBTYPE: &str = "remove_excess_unit";
 
 /// 37.1: non-fighter ships only. 37.1a excludes anything being carried.
 #[must_use]
@@ -695,7 +699,18 @@ fn remove_one(
     .detailed("fleet_charged", standing.fleet_charged)
     .detailed("fleet_limit", standing.fleet_limit)
     .detailed("capacity_consumed", standing.consumed)
-    .detailed("capacity_transport", standing.transport);
+    .detailed("capacity_transport", standing.transport)
+    .contextualized(
+        DecisionContext::new(
+            player.clone(),
+            // Fleet pool (37) or capacity (16).
+            DecisionSource::Rule(if reason == "capacity" { "16" } else { "37" }.to_owned()),
+            REMOVE_EXCESS_SUBTYPE,
+            state.phase,
+            state.round,
+        )
+        .about(DecisionTarget::System(system.clone())),
+    );
     let answer = table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
     let index = answer
         .id
@@ -1158,6 +1173,18 @@ mod tests {
                 .and_then(|v| v.as_i64())
                 .unwrap()
                 >= 3
+        );
+        // Typed: which system, and the unit in each option's label, for a public log.
+        let context = first.context.as_ref().expect("a typed question");
+        assert_eq!(context.subtype, REMOVE_EXCESS_SUBTYPE);
+        assert_eq!(context.target, Some(DecisionTarget::System(system.clone())));
+        assert_eq!(context.source, DecisionSource::Rule("37".to_owned()));
+        assert!(
+            first
+                .options
+                .iter()
+                .all(|option| ["remove cruiser", "remove destroyer"]
+                    .contains(&option.label.as_str()))
         );
     }
 

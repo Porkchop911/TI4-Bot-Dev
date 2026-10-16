@@ -60,7 +60,9 @@ fn is_false(value: &bool) -> bool {
 pub enum DecisionSource {
     /// A core rule, by its LRR number where one applies (`"37.3"`, `"52.3"`).
     Rule(String),
-    /// A strategy card's primary or secondary.
+    /// A strategy card's primary or secondary. `card` is the printed name in the questions of a
+    /// card's own ability, and the card's id in a follower's secondary question
+    /// ([`crate::strategy::FOLLOW_SUBTYPE`]), which a log reads.
     StrategyCard { card: String, secondary: bool },
     /// An action card, by content alias.
     ActionCard(String),
