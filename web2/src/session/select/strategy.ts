@@ -7,6 +7,7 @@ import type { Catalog, ExplorationCatalog, SecondaryFacts, SessionUpdate } from 
 import { type LocalState, openChoice, openEditor, selectAction } from "./action";
 import { secondaryCost } from "./follow";
 import { seatLabel, sentence } from "./names";
+import { strategyCardHelp } from "./printed";
 
 /** The seat that the strategic action waits for: the primary, then the first follower to ask. */
 const decidingSeat = (action: SecondaryFacts): string | null =>
@@ -217,18 +218,11 @@ export function selectStrategy(
           };
   const done = action.open && deciding === null;
   // The printed text of the card is behind hover: the card of this set, as the catalogue prints it.
-  const card = printed?.records.strategy_cards.find((item) => item.id === action.card);
-  const help = card
-    ? [
-        { title: `${card.name} · Primary`, text: card.primary_text },
-        { title: `${card.name} · Secondary`, text: card.secondary_text },
-      ].filter((item) => item.text)
-    : [];
+  const help = strategyCardHelp(action.card, printed);
   return {
     ...inner,
     help,
-    title: "Strategic action",
-    subtitle: `${action.name} · ${name(action.primary)}`,
+    context: `Strategic action · ${name(action.primary)}`,
     badge: live ? inner.badge : null,
     heading: action.name,
     pill: live

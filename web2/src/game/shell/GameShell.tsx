@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { shortcuts, type ExplorationDeck, type GameSession, type Intent } from "../../model";
 import { Badge, Button, Dialog, Drawer, InlineNote, LiveRegion, Toast, usePhone } from "../../ui";
 import { ActionFooter, ActionPanel, footerOf } from "../action/ActionPanel";
@@ -18,6 +18,16 @@ const ACCENT = {
 };
 
 type Pane = "map" | "players" | "action";
+
+/** Intents that only change what is in view: they are no choice of the viewer. */
+const VIEW_ONLY = new Set<Intent["type"]>([
+  "inspectSystem",
+  "closeInspector",
+  "findSystem",
+  "inspectLogEntry",
+  "openReference",
+  "openApply",
+]);
 
 /**
  * The game screen: one toolbar, then the board and the right column (player table, action panel).
@@ -48,7 +58,16 @@ export function GameShell({
   /** The Dev sheet was open before the shell was there: it stays open. */
   settingsOpen?: boolean;
 }) {
-  const { view } = session;
+  const { view: latest } = session;
+  /** The viewer chose something while a decision was open, and its next step is not yet in view. */
+  const acted = useRef(false);
+  // While the game has not yet answered what follows from the viewer's choice, the screen stays
+  // as it was: the pane of the next step is not known, and no pane shows a step with nothing in it.
+  const settled = useRef(latest);
+  if (!latest.settling) {
+    settled.current = latest;
+  }
+  const view = latest.settling && acted.current ? settled.current : latest;
   // The Dev sheet has the tools for testing: it is there when the game has one of them.
   const dev = Object.values(session.capabilities).some(Boolean) ? settings : undefined;
   const [drawer, setDrawer] = useState<string | null>(settingsOpen && dev ? "settings" : null);
@@ -69,9 +88,33 @@ export function GameShell({
       : view.asked
         ? "action"
         : null;
-  // The game opens on the pane of its choice. After that only a tap on a tab changes the pane;
-  // the tab of the choice is marked.
+  // The game opens on the pane of its choice. After that the pane changes with a tap on a tab, and
+  // when a choice of the viewer opens the next step of the viewer in another pane. Anything else
+  // (another player, a bot, a window that opens) only marks the tab of the choice.
   const [pane, setPane] = useState<Pane>(() => choiceOn ?? "action");
+  const lastChoice = useRef(choiceOn);
+  // The game moved on: an entry of the log for each event.
+  const events = view.reference.log.reduce((sum, round) => sum + round.entries.length, 0);
+  const lastEvents = useRef(events);
+  // Before the paint: the next step is never shown in the pane that the viewer leaves.
+  useLayoutEffect(() => {
+    const moved = events !== lastEvents.current;
+    lastEvents.current = events;
+    if (choiceOn === lastChoice.current) {
+      // The next step is in the same pane: a later change does not follow from the choice.
+      if (moved) {
+        acted.current = false;
+      }
+      return;
+    }
+    lastChoice.current = choiceOn;
+    // The first change of the pane after the viewer's choice is its next step. With no decision
+    // open the viewer waits for the game, and what opens next does not follow from the choice.
+    if (choiceOn && acted.current) {
+      setPane(choiceOn);
+    }
+    acted.current = false;
+  }, [choiceOn, events]);
 
   const dispatch = useCallback(
     (intent: Intent) => {
@@ -84,6 +127,9 @@ export function GameShell({
       }
       if (intent.type === "inspectLogEntry") {
         setDrawer(null);
+      }
+      if (lastChoice.current && !VIEW_ONLY.has(intent.type)) {
+        acted.current = true;
       }
       session.dispatch(intent);
     },

@@ -791,8 +791,6 @@ function task(state: State): TaskView {
 }
 
 export function selectTactical(world: World, state: State): TacticalActionView {
-  const draft = state.mode === "draft";
-  const done = state.frontier === null;
   const target: string | null =
     state.edit?.step === 0 ? state.edit.value.system : E.activeId(state);
   const dirtyElsewhere = state.edit?.dirty && state.selected !== state.edit.step;
@@ -804,12 +802,8 @@ export function selectTactical(world: World, state: State): TacticalActionView {
   withKeys(view.footer);
   return {
     kind: "tactical",
-    title: "Tactical action",
-    subtitle: `${target ? sysLabel(target) : "No system chosen"} · ${P.sol.name} (${P.sol.faction})`,
-    badge: {
-      tone: draft ? "draft" : done ? "done" : "live",
-      label: draft ? "Private draft" : done ? "Complete" : "In progress",
-    },
+    context: `Tactical action · ${target ? sysLabel(target) : "No system chosen"} · ${P.sol.name} (${P.sol.faction})`,
+    badge: null,
     past: world.mode === "history" ? { label: state.past.label } : null,
     tabs: STEPS.map((name, step) => {
       const status = E.stepState(state, step);

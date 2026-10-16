@@ -60,7 +60,7 @@ describe("mock engine", () => {
     loadExample(world, example);
     const view = selectShell(world);
     expect(view.board.tiles).toHaveLength(61);
-    expect(view.action.title).toBeTruthy();
+    expect(view.action.kind).toBeTruthy();
   });
 
   it.each(["hacan", "observer"])("selects every live example as %s", (viewer) => {

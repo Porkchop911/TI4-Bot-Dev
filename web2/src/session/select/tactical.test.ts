@@ -117,7 +117,7 @@ it("says how many ships are in range of the staged system", () => {
     originsInRange: 1,
     commandToken: false,
   });
-  expect(view.subtitle).toContain("#23");
+  expect(view.context).toContain("#23");
   expect(labels(activation, staged)).toEqual(["Undo", "Clear", "Activate system"]);
   expect(view.task.footer.actions.at(-1)).toMatchObject({
     disabled: false,

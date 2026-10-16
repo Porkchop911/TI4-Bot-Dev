@@ -183,8 +183,8 @@ export function interruptOf(window: ReactionWindow, system?: string): InterruptV
 
 /** The action that a window is over, as the panel shows it under the window. */
 export interface ReactedAction {
-  title: string;
-  subtitle: string;
+  /** What the heading does not say: the kind of action and its seat, its system, or the phase. */
+  context: string | null;
   heading: string;
   /** What stays in view: the card that was played, the active system. */
   blocks: BlockView[];
@@ -228,8 +228,7 @@ export function reactedAction(
       text: "",
     };
     return {
-      title: "Action card",
-      subtitle: who ? `${printed.name} · ${who}` : printed.name,
+      context: who ? `Action card · ${who}` : "Action card",
       heading: printed.name,
       blocks: [
         { kind: "source", ...printed },
@@ -244,13 +243,16 @@ export function reactedAction(
     card &&
     (kind === "strategic_action_began" || trigger.event_type === "STRATEGIC_ACTION_BEGAN")
   ) {
-    const printed = printedSource({ StrategyCard: { card, secondary: false } }, catalog);
-    const name = printed?.name ?? strategyCard(card, catalog).name;
+    // The card as printed: its primary, then its secondary, each a source block.
+    const parts = [false, true].flatMap((secondary) => {
+      const part = printedSource({ StrategyCard: { card, secondary } }, catalog);
+      return part?.text ? [{ kind: "source" as const, ...part }] : [];
+    });
+    const name = parts[0]?.name ?? strategyCard(card, catalog).name;
     return {
-      title: "Strategic action",
-      subtitle: who ? `${name} · ${who}` : name,
+      context: who ? `Strategic action · ${who}` : "Strategic action",
       heading: name,
-      blocks: printed?.text ? [{ kind: "source", ...printed }] : [],
+      blocks: parts,
     };
   }
   const system = trigger?.system ?? update.view.board.active_system ?? undefined;
@@ -260,8 +262,7 @@ export function reactedAction(
     const tiles = tilesOf(update);
     const label = systemLabel(tiles, system);
     return {
-      title: "Tactical action",
-      subtitle: `${label} · ${who}`,
+      context: label,
       heading: mine ? "Your tactical action" : `${who}’s tactical action`,
       blocks: [
         {
@@ -274,8 +275,7 @@ export function reactedAction(
   }
   const phase = phaseName(update.view.phase);
   return {
-    title: phase,
-    subtitle: "",
+    context: actor ? phase : null,
     heading: actor ? (mine ? "Your turn" : `${who}’s turn`) : phase,
     blocks: [],
   };

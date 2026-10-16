@@ -37,6 +37,7 @@ import {
   tilesOf,
 } from "./movement";
 import { ANOMALIES, WORMHOLES, factionName } from "./names";
+import { strategyCardHelp } from "./printed";
 import { reviewRow } from "./review";
 
 const STEPS = ["Activation", "Movement", "Space combat", "Invasion", "Production"];
@@ -524,7 +525,7 @@ export function selectTactical(
       ? update.secondary
       : null;
   // A tactical action of the primary of a strategy card (Warfare of Thunder's Edge) names the
-  // card, with its primary behind "?".
+  // card, with its primary and its secondary behind "?".
   const primary =
     !strategic && !local.draft && update.secondary?.primary === seat ? update.secondary : null;
   const card =
@@ -576,13 +577,11 @@ export function selectTactical(
   });
   return {
     kind: "tactical",
-    title: strategic ? "Strategic action" : "Tactical action",
-    subtitle: strategic
-      ? `${strategic.name} · ${view.target ?? ""} · ${faction}`
-      : `${primary ? `${primary.name} · ` : ""}${view.target ?? "No system chosen"} · ${faction}`,
-    badge: local.draft
-      ? { tone: "draft", label: "Private draft" }
-      : { tone: "live", label: "In progress" },
+    // The heading is the step, or the card of a strategic action; the pill of the step says its state.
+    context: strategic
+      ? `Strategic action · ${view.target ?? ""} · ${faction}`
+      : `Tactical action · ${primary ? `${primary.name} · ` : ""}${view.target ?? "No system chosen"} · ${faction}`,
+    badge: null,
     past: null,
     tabs: strategic ? [] : tabs,
     selected,
@@ -643,13 +642,8 @@ export function selectTactical(
               printed,
             )
           : null,
-      help: card
-        ? [
-            update.secondary?.primary === seat && !update.secondary.open
-              ? { title: `${card.name} · Primary`, text: card.primary_text }
-              : { title: `${card.name} · Secondary`, text: card.secondary_text },
-          ].filter((item) => item.text)
-        : [],
+      // The primary and the secondary of the card, as printed, as on the list of the seats.
+      help: card ? strategyCardHelp(card.id, printed) : [],
       content: view.content,
       footer: view.footer,
     },

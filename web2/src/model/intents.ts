@@ -74,7 +74,7 @@ export type Intent =
    * The second step of a choice that has one row in the picker: which action card, which other
    * component, or which player to trade with.
    */
-  | { type: "pickGroup"; group: "actionCards" | "components" | "trade" }
+  | { type: "pickGroup"; group: "components" | "trade" }
   | { type: "backToPicker" }
   | { type: "pass" }
   | { type: "endTurn" }

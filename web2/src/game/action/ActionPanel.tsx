@@ -114,8 +114,12 @@ export const footerOf = (view: ActionView): FooterView =>
 
 interface TaskPanelProps {
   heading: string;
+  /** What the heading does not say, muted beside it. */
+  context: string | null;
   interrupt: InterruptView | null;
   pill: PillView | null;
+  /** "Not sent" while a choice is staged. */
+  badge: PillView | null;
   trail: TrailItem[];
   edit?: TaskView["edit"];
   /** Rules and explanations. They are shown on hover or click only. */
@@ -132,8 +136,10 @@ interface TaskPanelProps {
 /** The open step: heading with its state, the content, and a footer that says what the main button does. */
 function TaskPanel({
   heading,
+  context,
   interrupt,
   pill,
+  badge,
   trail,
   edit,
   help,
@@ -162,7 +168,13 @@ function TaskPanel({
     >
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-b border-line px-5 py-[9px] phone:px-3">
         <h2 className="text-lg font-semibold tracking-[-.2px]">{heading}</h2>
+        {context && (
+          <span className="min-w-0 truncate text-sm text-muted" title={context}>
+            {context}
+          </span>
+        )}
         {pill && <Badge tone={pill.tone}>{pill.label}</Badge>}
+        {badge && <Badge tone={badge.tone}>{badge.label}</Badge>}
         {help.length > 0 && (
           <Hint label={`Rules: ${heading}`}>
             {help.map((item) => (
@@ -231,15 +243,9 @@ export function ActionPanel({
           </Button>
         </div>
       )}
-      <div className="flex min-h-10 items-center gap-2 border-b border-line bg-surface py-1 pr-2 pl-4">
-        <strong className="whitespace-nowrap">{view.title}</strong>
-        <span className="min-w-0 truncate text-sm text-muted">{view.subtitle}</span>
-        <span className="ml-auto" />
-        {view.badge && <Badge tone={view.badge.tone}>{view.badge.label}</Badge>}
-      </div>
       {view.tabs.length > 0 && (
         <StepTabs
-          label={`${view.title} steps`}
+          label="Tactical action steps"
           tabs={view.tabs}
           selected={view.selected}
           current={view.current}
@@ -273,8 +279,10 @@ export function ActionPanel({
       {view.kind === "tactical" ? (
         <TaskPanel
           heading={view.task.title}
+          context={view.context}
           interrupt={view.interrupt}
           pill={view.task.pill}
+          badge={view.badge}
           trail={view.task.trail}
           edit={view.task.edit}
           help={view.task.help}
@@ -290,8 +298,10 @@ export function ActionPanel({
       ) : (
         <TaskPanel
           heading={view.heading}
+          context={view.context}
           interrupt={view.interrupt}
           pill={view.pill}
+          badge={view.badge}
           trail={view.trail}
           help={view.help}
           footer={footer ? view.footer : null}

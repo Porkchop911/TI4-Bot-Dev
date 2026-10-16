@@ -32,7 +32,7 @@ import type {
 import { exploringCard } from "./exploration";
 import { systemLabel, tilesOf } from "./movement";
 import { humanizeId, seatLabel, sentence } from "./names";
-import { printedSource } from "./printed";
+import { printedSource, strategyCardHelp } from "./printed";
 import { interruptOf, reactedAction, selectReaction } from "./reaction";
 import { type EditorSlot, hintFieldsOf } from "./editor";
 import { type OpenEditor, editorOf } from "./editors";
@@ -461,6 +461,8 @@ export function selectAction(
   const rows: MenuRowView[] = listed.map((option, index) => ({
     key: KEYS[index] ?? "",
     title: sentence(option.label || option.id),
+    // A strategy card of the strategy phase has its primary and its secondary behind "?".
+    ...(option.kind === "strategy_card" ? { help: strategyCardHelp(option.id, printed) } : {}),
     selected: option.id === staged?.id,
     disabled: false,
     intent: { type: "chooseOption", option: option.id },
@@ -684,34 +686,22 @@ export function selectAction(
                 ...drawn,
                 ...(rows.length || !chosen ? [{ kind: "menu" as const, rows }] : []),
               ];
-  const viewerName = viewer ? seatLabel(update, viewer, printed) : "";
   return {
     kind: "flow",
-    title: local.draft
+    // The heading says the rest. A private draft is said by the bar of the game.
+    context: local.draft
       ? "Tactical action"
       : reacted
-        ? reacted.title
-        : own
+        ? reacted.context
+        : own && what
           ? "Component action"
-          : choice
-            ? "Decision"
-            : turnOf
-              ? passed
-                ? "You passed"
-                : "Turn ended"
-              : "Waiting",
-    subtitle: reacted
-      ? reacted.subtitle
-      : own && what
-        ? `${what.name} · ${viewerName}`
-        : turnOf
-          ? `${faction(turnOf)} is next`
-          : "",
-    badge: local.draft
-      ? { tone: "draft", label: "Private draft" }
-      : staged || several?.changed
-        ? { tone: "draft", label: "Not sent" }
-        : null,
+          : turnOf
+            ? passed
+              ? "You passed"
+              : "Turn ended"
+            : null,
+    badge:
+      !local.draft && (staged || several?.changed) ? { tone: "draft", label: "Not sent" } : null,
     past: null,
     tabs: [],
     selected: 0,

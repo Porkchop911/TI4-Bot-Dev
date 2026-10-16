@@ -11,8 +11,7 @@ const row = (key: string, option: string): MenuRowView => ({
 
 const view = (interrupt: boolean): FlowActionView => ({
   kind: "flow",
-  title: "",
-  subtitle: "",
+  context: null,
   badge: null,
   past: null,
   tabs: [],

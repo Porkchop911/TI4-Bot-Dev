@@ -189,7 +189,6 @@ function seatLine(state: State, row: string): SeatLine {
 
 export function selectFlow(world: World, state: State): FlowActionView {
   const parts = flowParts(state);
-  const done = !E.flowNeed(state);
   const staged: boolean = E.flowStaged(state);
   const closing = world.mode === "live" ? closingBlocks(state) : [];
   if (closing.length) {
@@ -198,11 +197,8 @@ export function selectFlow(world: World, state: State): FlowActionView {
   withKeys(parts.footer);
   return {
     kind: "flow",
-    title: parts.title[0],
-    subtitle: parts.title[1],
-    badge: staged
-      ? { tone: "draft", label: "Not sent" }
-      : { tone: done ? "done" : "live", label: done ? "Complete" : "In progress" },
+    context: parts.title.filter(Boolean).join(" · ") || null,
+    badge: staged ? { tone: "draft", label: "Not sent" } : null,
     past: world.mode === "history" ? { label: state.past.label } : null,
     tabs: [],
     current: null,

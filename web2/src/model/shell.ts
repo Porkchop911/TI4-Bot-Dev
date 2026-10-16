@@ -315,6 +315,11 @@ export interface ShellView {
   announcement: string;
   /** The viewer has a decision open: a question of the game, or a draft. */
   asked: boolean;
+  /**
+   * The game is asked what follows from a draft of the viewer and has not answered yet: the
+   * screen has nothing to decide, and the next step of the viewer is not known.
+   */
+  settling?: boolean;
 }
 
 /**

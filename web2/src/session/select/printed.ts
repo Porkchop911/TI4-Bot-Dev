@@ -21,6 +21,26 @@ const LEGENDARY = "legendary|";
 const EXPLORATION = "play_area:";
 export const ACTION_CARD = "action_card|";
 
+/**
+ * The printed primary and secondary of a strategy card of the set in play, as the catalogue
+ * prints them, for the "?" of a heading or a row. Empty for a card that the catalogue does not
+ * have; a part with no text is left out.
+ */
+export function strategyCardHelp(
+  card: string,
+  catalog: Catalog | null,
+): { title: string; text: string }[] {
+  const record = catalog?.records.strategy_cards.find(
+    (item) => item.id === card || item.name === card,
+  );
+  return record
+    ? [
+        { title: `${record.name} · Primary`, text: record.primary_text },
+        { title: `${record.name} · Secondary`, text: record.secondary_text },
+      ].filter((item) => item.text)
+    : [];
+}
+
 /** The id of the action card of the viewer that an option of the turn menu plays. */
 export function heldCardOf(update: SessionUpdate, option: ChoiceOption): string | null {
   if (!option.id.startsWith(ACTION_CARD)) {

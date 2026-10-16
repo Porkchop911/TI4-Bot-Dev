@@ -640,6 +640,8 @@ export interface MenuRowView {
   state?: string;
   /** Rule text, shown on hover or click. */
   hint?: string;
+  /** Printed text in titled parts, shown on hover or click: the primary and the secondary of a strategy card. */
+  help?: HelpView[];
   /** The printed text of a card, shown under the title. For a list that has the room for it. */
   text?: string;
   /** The staged choice of a list where the player chooses one row. */
@@ -738,8 +740,12 @@ export interface InterruptView {
 // ---- The panel ----------------------------------------------------------------------------------
 
 interface PanelFrame {
-  title: string;
-  subtitle: string;
+  /**
+   * What the panel is about that the heading does not say, muted beside it: the kind of action, its
+   * system and its seat ("Tactical action · #26 · Hacan"), or "Turn ended". Null when the heading says it all.
+   */
+  context: string | null;
+  /** "Not sent" while a choice is staged, beside the pill of the heading. Null in any other state. */
   badge: PillView | null;
   /** Set when the panel shows a past action, read-only. */
   past: { label: string } | null;

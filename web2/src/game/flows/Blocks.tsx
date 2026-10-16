@@ -178,6 +178,18 @@ function MenuRow({ row, grouped }: { row: MenuRowView; grouped: boolean }) {
             <Hint label={`Rules: ${row.title}`}>{row.hint}</Hint>
           </span>
         )}
+        {row.help && row.help.length > 0 && (
+          <span className="relative z-1 inline-flex">
+            <Hint label={`Rules: ${row.title}`}>
+              {row.help.map((item) => (
+                <p key={item.title}>
+                  <strong className="block">{item.title}</strong>
+                  {item.text}
+                </p>
+              ))}
+            </Hint>
+          </span>
+        )}
         {row.text && (
           <span className={cx("w-full text-xs", row.disabled ? "text-faint" : "text-muted")}>
             {row.text}

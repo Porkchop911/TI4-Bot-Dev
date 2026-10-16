@@ -1621,7 +1621,13 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
     const { stepping, switchSeat, scenarios, save } = transport.capabilities;
     return {
       session: {
-        view: { ...selectShell(shown, state, transport.catalog, cards), toast },
+        view: {
+          ...selectShell(shown, state, transport.catalog, cards),
+          toast,
+          settling:
+            (!!drafted && waiting && outcome === unanswered) ||
+            (!!followInfo?.waiting && !followOutcome),
+        },
         dispatch,
         capabilities: {
           stepping: !!stepping,
@@ -1647,6 +1653,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
     transport,
     plan,
     outcome,
+    unanswered,
     waiting,
     locked,
     cards,

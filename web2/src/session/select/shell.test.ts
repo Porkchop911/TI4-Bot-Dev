@@ -369,11 +369,7 @@ it("says whose turn it is after the turn of the viewer, and that the viewer pass
     turn_status: { kind: "waiting_for_decision", seat: "b", phase: "action", round: 2, stage: "" },
   };
   const waiting = flow(theirs, local());
-  expect([waiting.title, waiting.subtitle, waiting.heading]).toEqual([
-    "Turn ended",
-    "Hacan is next",
-    "Hacan’s turn",
-  ]);
+  expect([waiting.context, waiting.heading]).toEqual(["Turn ended", "Hacan’s turn"]);
   expect(waiting.pill).toEqual({ tone: "quiet", label: "Waiting for Hacan" });
   expect(waiting.footer.note).toBe("Waiting for Hacan.");
   const passed: SessionUpdate = {
@@ -385,7 +381,7 @@ it("says whose turn it is after the turn of the viewer, and that the viewer pass
       ),
     },
   };
-  expect(flow(passed, local()).title).toBe("You passed");
+  expect(flow(passed, local()).context).toBe("You passed");
 });
 
 it("closes the turn: what uses no action, and End turn", () => {
@@ -432,7 +428,7 @@ it("chooses a planet of a component action on the board, with the ability behind
   expect(Object.keys(shell.board.task!.values)).toEqual(["jord", "saudor"]);
   expect(shell.board.taskSystems).toEqual(expect.arrayContaining(["01", "23"]));
   const view = flow(drop, local());
-  expect(view.title).toBe("Component action");
+  expect(view.context).toBe("Component action");
   expect(view.pill?.label).toBe("Your decision · Choose a planet");
   expect(view.blocks).toEqual([
     expect.objectContaining({
@@ -565,8 +561,7 @@ it("puts a reaction window on top of the action of another seat: Pass, or play t
     throw new Error("a window is a flow");
   }
   // The action of the other seat stays in view: its card as printed, not resolved yet.
-  expect(view.title).toBe("Action card");
-  expect(view.subtitle).toBe("Mining Initiative · Hacan");
+  expect(view.context).toBe("Action card · Hacan");
   expect(view.heading).toBe("Mining Initiative");
   expect(view.pill?.label).toBe("Your decision · Reaction");
   expect(view.blocks).toEqual([

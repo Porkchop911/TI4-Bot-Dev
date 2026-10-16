@@ -14,10 +14,10 @@ import type { Catalog, Choice, ChoiceOption, SessionUpdate } from "../wire";
 import type { LocalState } from "./action";
 import { systemLabel, tilesOf } from "./movement";
 import { factionName, seatLabel, strategyCard } from "./names";
-import { ACTION_CARD, type Printed, printedOption } from "./printed";
+import { ACTION_CARD, type Printed, printedOption, strategyCardHelp } from "./printed";
 
 /** A list of the picker that the player opened: one row of the picker stands for all of them. */
-export type TurnMenu = "actionCards" | "components" | "trade";
+export type TurnMenu = "components" | "trade";
 
 const KEYS = "123456789";
 const TACTICAL = "tactical";
@@ -134,7 +134,13 @@ export function selectTurn(
   const strategy = facts.cards.map((held) => {
     const card = strategyCard(held.card, printed);
     const record = printed?.records.strategy_cards.find((item) => item.id === held.card);
-    return { ...held, ...card, primary: record?.primary_text ?? "" };
+    return {
+      ...held,
+      ...card,
+      primary: record?.primary_text ?? "",
+      secondary: record?.secondary_text ?? "",
+      help: strategyCardHelp(held.card, printed),
+    };
   });
   const partners = facts.partners.map((partner) => ({
     ...partner,
@@ -166,7 +172,7 @@ export function selectTurn(
   const draftSystem = local.drafted?.system ?? null;
 
   const frame = (parts: {
-    subtitle: string;
+    context?: string;
     heading: string;
     blocks: BlockView[];
     closing?: BlockView[];
@@ -175,8 +181,7 @@ export function selectTurn(
     help?: FlowActionView["help"];
   }): FlowActionView => ({
     kind: "flow",
-    title: "Your turn",
-    subtitle: parts.subtitle,
+    context: parts.context ?? null,
     badge: parts.staged ? { tone: "draft", label: "Not sent" } : null,
     past: null,
     tabs: [],
@@ -186,7 +191,8 @@ export function selectTurn(
     interrupt: null,
     closing: parts.closing ?? [],
     heading: parts.heading,
-    pill: { tone: "live", label: "Your decision" },
+    // The turn is the viewer's: the pill says so, and the bar of the game says that it is a decision.
+    pill: { tone: "live", label: "Your turn" },
     trail: [],
     help: parts.help ?? [],
     blocks: parts.blocks,
@@ -219,11 +225,24 @@ export function selectTurn(
           ? { heading: item.name, ...item, button: `${item.verb} ${item.name}` }
           : { heading: "Pass", name: "Pass", type: "Pass", text: "", button: "Pass" };
     return frame({
-      subtitle: what.type,
+      context: what.type === what.heading ? undefined : what.type,
       heading: what.heading,
       staged: true,
       blocks: what.text
-        ? [{ kind: "source", name: what.name, type: what.type, text: what.text }]
+        ? [
+            { kind: "source", name: what.name, type: what.type, text: what.text },
+            // A strategic action has the secondary of its card under the primary, as printed.
+            ...(held?.secondary
+              ? [
+                  {
+                    kind: "source" as const,
+                    name: held.name,
+                    type: "Secondary",
+                    text: held.secondary,
+                  },
+                ]
+              : []),
+          ]
         : [
             {
               kind: "note",
@@ -240,17 +259,21 @@ export function selectTurn(
     });
   }
 
-  // A list that one row of the picker stands for.
-  const list = (title: string, rows: MenuRowView[], note: string): FlowActionView =>
+  // A list that one row of the picker stands for, in groups: a group with a title is a block of its own.
+  const list = (
+    title: string,
+    groups: { title?: string; rows: MenuRowView[] }[],
+    note: string,
+  ): FlowActionView =>
     frame({
-      subtitle: facts.closing ? "Before you end your turn" : "Choose one action",
+      context: facts.closing ? "Before you end your turn" : undefined,
       heading: title,
-      blocks: [{ kind: "menu", rows }],
+      blocks: groups.map((group) => ({ kind: "menu", title: group.title, rows: group.rows })),
       footer: { note, error: false, actions: [...undo, BACK] },
     });
-  const listRows = (entries: Entry[], text: boolean): MenuRowView[] =>
+  const listRows = (entries: Entry[], text: boolean, first = 0): MenuRowView[] =>
     entries.map((item, index) => ({
-      key: KEYS[index] ?? "",
+      key: KEYS[first + index] ?? "",
       group: undefined,
       title: item.name,
       // A list where the player chooses one card shows its printed text.
@@ -260,24 +283,37 @@ export function selectTurn(
       disabled: false,
       intent: { type: "chooseOption", option: item.option.id },
     }));
-  if (local.menu === "actionCards" && cards.length) {
-    return list("Play an action card", listRows(cards, true), `Choose 1 of ${cards.length}.`);
-  }
-  if (local.menu === "components" && components.length) {
-    return list("Use a component", listRows(components, true), `Choose 1 of ${components.length}.`);
+  // Every component action in one list: the action cards that can be played, then the other
+  // components (leaders, technologies, relics, abilities, …). The keys run on over both groups.
+  const componentCount = cards.length + components.length;
+  if (local.menu === "components" && componentCount) {
+    return list(
+      "Play an action card or use a component",
+      [
+        ...(cards.length ? [{ title: "Action cards", rows: listRows(cards, true) }] : []),
+        ...(components.length
+          ? [{ title: "Other components", rows: listRows(components, true, cards.length) }]
+          : []),
+      ],
+      `Choose 1 of ${componentCount}.`,
+    );
   }
   if (local.menu === "trade" && trades.length) {
     return list(
       "Transaction",
-      trades.map((partner, index) => ({
-        key: partner.option ? (KEYS[index] ?? "") : "",
-        title: partner.name,
-        state: partner.option
-          ? `${plural(partner.trade_goods, "trade good")} · ${plural(partner.commodities, "commodity", "commodities")} · ${plural(partner.promissory_notes, "promissory note")}`
-          : (partner.reason ?? "Not now"),
-        disabled: !partner.option,
-        intent: { type: "chooseOption", option: partner.option?.id ?? "" },
-      })),
+      [
+        {
+          rows: trades.map((partner, index) => ({
+            key: partner.option ? (KEYS[index] ?? "") : "",
+            title: partner.name,
+            state: partner.option
+              ? `${plural(partner.trade_goods, "trade good")} · ${plural(partner.commodities, "commodity", "commodities")} · ${plural(partner.promissory_notes, "promissory note")}`
+              : (partner.reason ?? "Not now"),
+            disabled: !partner.option,
+            intent: { type: "chooseOption", option: partner.option?.id ?? "" },
+          })),
+        },
+      ],
       `${tradeCount} of ${plural(trades.length, "player")} can trade now.`,
     );
   }
@@ -304,25 +340,18 @@ export function selectTurn(
       key: `${card.number}`,
       title: `${card.number} ${card.name}`,
       state: card.used ? "Used in this round" : card.option ? undefined : "Not now",
-      hint: card.primary || undefined,
+      help: card.help,
       disabled: !card.option || !offered.has(card.option),
       intent: { type: "pickAction", action: "strategic", card: card.option ?? "" },
     })),
-    // One row for the action cards and one for the other components, whatever the player holds:
-    // the second list asks which one. So the picker is the same in every turn of a game.
+    // One row for every component action (action cards and the other components), whatever the
+    // player holds: the second list asks which one. So the picker is the same in every turn of a game.
     {
       group: "Component",
-      key: "a",
-      title: "Play an action card",
-      state: cards.length ? `${cards.length} playable` : "None is playable",
-      disabled: !cards.length,
-      intent: { type: "pickGroup", group: "actionCards" },
-    },
-    {
       key: "c",
-      title: "Use another component",
-      state: components.length ? `${components.length} ready` : "None is ready",
-      disabled: !components.length,
+      title: "Play an action card or use a component",
+      state: componentCount ? `${componentCount} ready` : "None is ready",
+      disabled: !componentCount,
       intent: { type: "pickGroup", group: "components" },
     },
     {
@@ -340,7 +369,6 @@ export function selectTurn(
     // After the action: what does not use one, until the seat ends its turn.
     const free = rows.filter((row) => !row.disabled);
     return frame({
-      subtitle: "Action taken",
       heading: "End your turn",
       blocks: [],
       closing: free.length ? [{ kind: "menu", title: "Before you end your turn", rows: free }] : [],
@@ -365,7 +393,6 @@ export function selectTurn(
     intent: { type: "pass" },
   });
   return frame({
-    subtitle: "Choose one action",
     heading: "Choose an action",
     blocks: [{ kind: "menu", rows }],
     help: [
