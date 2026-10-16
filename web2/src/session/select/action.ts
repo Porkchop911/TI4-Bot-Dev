@@ -34,6 +34,7 @@ import { type ReadyDraft, selectReady } from "./ready";
 import { type AgendaDraft, selectAgendaDeck } from "./agendaDeck";
 import { type StructureDraft, selectStructures } from "./structures";
 import { type ReplenishDraft, selectReplenish } from "./replenish";
+import { type RecallDraft, selectRecall } from "./recall";
 import { selectResearch } from "./research";
 import { type Pools, selectTokens } from "./tokens";
 import { type TurnMenu, isTurnMenu, selectTurn } from "./turn";
@@ -105,6 +106,8 @@ export interface LocalState {
   structures?: StructureDraft | null;
   /** The staged seats of a replenish of commodities, or the answer of its window. Null: nothing staged. */
   replenish?: ReplenishDraft | null;
+  /** The staged system and pools of a recall of a command token. Null: nothing staged. */
+  recall?: RecallDraft | null;
   /** The nonce of the choice that was answered. Its update is still the latest one. */
   sent: string | null;
   /** Why the game stopped, if it did. */
@@ -265,6 +268,14 @@ export function boardTask(update: SessionUpdate, local: LocalState): BoardTaskVi
   if (building) {
     return building.task;
   }
+  // The system of a recall of a command token is chosen on the map.
+  const recalling =
+    choice && !local.draft && !local.follow?.editing
+      ? selectRecall(update, choice, local.recall ?? null)
+      : null;
+  if (recalling) {
+    return recalling.task;
+  }
   const pick = boardPick(update, choice);
   if (!choice || !pick) {
     return null;
@@ -421,8 +432,11 @@ export function selectAction(
     choice && !window && !recording
       ? selectReplenish(update, choice, local.replenish ?? null, printed)
       : null;
+  // A recall of a command token, with the gain and the redistribution after it: one screen.
+  const recall =
+    choice && !window && !recording ? selectRecall(update, choice, local.recall ?? null) : null;
   /** A screen of several questions that is sent at once. */
-  const several = purchase ?? ready ?? deck ?? structures ?? replenish;
+  const several = purchase ?? ready ?? deck ?? structures ?? replenish ?? recall;
   const tiles = new Map((update.view.board.map_tiles ?? []).map((tile) => [tile.system_id, tile]));
   const planetOf = (id: string) =>
     (update.view.board.map_tiles ?? [])

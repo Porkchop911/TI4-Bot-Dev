@@ -25,6 +25,9 @@ use ti4_model::units::Unit;
 
 /// The subtype of the choice of a system to activate.
 pub const ACTIVATION_SUBTYPE: &str = "activate_system";
+/// The subtype of the choice of a system for a tactical action that places no command token
+/// (Thunder's Edge Warfare).
+pub const FREE_ACTIVATION_SUBTYPE: &str = "warfare_free_tactical";
 /// The subtype of the choice of a ship to move.
 pub const MOVEMENT_SUBTYPE: &str = "movement_step";
 /// The subtype of the choice of a ground force to land.
@@ -137,6 +140,9 @@ pub struct FleetSupplyFact {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ActivationFacts {
     pub tactic_tokens: i32,
+    /// The activation places a command token of the tactic pool. False for a tactical action
+    /// that places none, in any system, also one with the seat's token (Thunder's Edge Warfare).
+    pub costs_token: bool,
     pub systems: Vec<ReachFact>,
 }
 
@@ -364,9 +370,9 @@ pub fn project_tactical_facts(
 ) -> Option<TacticalFacts> {
     let player = &choice.player;
     match choice.context.as_ref()?.subtype.as_str() {
-        ACTIVATION_SUBTYPE => Some(TacticalFacts::Activation(activation(
-            state, content, sources, galaxy, player, choice,
-        ))),
+        ACTIVATION_SUBTYPE | FREE_ACTIVATION_SUBTYPE => Some(TacticalFacts::Activation(
+            activation(state, content, sources, galaxy, player, choice),
+        )),
         MOVEMENT_SUBTYPE => {
             movement(state, content, sources, galaxy, player).map(TacticalFacts::Movement)
         }
@@ -409,6 +415,10 @@ fn activation(
         .collect();
     ActivationFacts {
         tactic_tokens: state.player(player).map_or(0, |seat| seat.tactic_tokens),
+        costs_token: choice
+            .context
+            .as_ref()
+            .is_none_or(|context| context.subtype != FREE_ACTIVATION_SUBTYPE),
         systems,
     }
 }

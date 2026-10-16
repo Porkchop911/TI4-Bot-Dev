@@ -194,6 +194,8 @@ export interface ActivationView {
   active: { system: SystemId; name: string } | null;
   /** The tactic pool of the acting player, before and after the token of this activation. */
   tacticPool: [now: number, after: number];
+  /** The activation places a command token. False: a tactical action without one (Warfare). */
+  costsToken: boolean;
   draft: boolean;
 }
 

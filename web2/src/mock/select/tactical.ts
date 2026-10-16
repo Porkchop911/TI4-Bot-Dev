@@ -62,6 +62,7 @@ function activation(state: State): ActivationView {
     editing,
     draft,
     tacticPool: [SEATS.sol.tokens[0], SEATS.sol.tokens[0] - 1] as [number, number],
+    costsToken: true,
     systems: Object.keys(MAP).map((id) => ({ id, label: sysLabel(id) })),
   };
   if (!editing) {

@@ -1812,6 +1812,185 @@ test("a component action: the planet of Orbital Drop is chosen on the map, then 
   expect(errors).toEqual([]);
 });
 
+test("Warfare: the token is recalled on the map and the pools are placed, sent at once", async ({
+  page,
+}) => {
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // Sol holds Warfare with 3 · 3 · 2 on its sheet and its command token on #29.
+  await page.goto("/?scenario=strategy_warfare&humans=1");
+  const seat = page.getByRole("region", { name: "Players" }).getByRole("row").filter({
+    hasText: "Seat A",
+  });
+  await expect(heading(page)).toHaveText("Choose an action");
+  await expect(seat).toContainText("3 · 3 · 2");
+  await panel(page)
+    .getByRole("button", { name: /^6 Warfare/ })
+    .click();
+  await page.keyboard.press("Enter");
+
+  // One screen: the token on the map, then the pools with the gained token; no question of a pool.
+  await expect(heading(page)).toHaveText("Warfare");
+  await expect(page.getByText(/into which pool/i)).toHaveCount(0);
+  const token = panel(page).getByRole("heading", { name: "Command token" }).locator("../..");
+  const pools = panel(page).getByRole("heading", { name: "Command pools" }).locator("..");
+  await expect(token).toContainText("No system chosen");
+  await expect(pools).toContainText("8 / 9 placed");
+  await expect(page.locator("footer")).toContainText("Choose a system on the map.");
+  await expect(send(page)).toBeDisabled();
+  await panel(page).getByRole("button", { name: "Rules: Warfare" }).hover();
+  await expect(
+    page.getByText(/Remove 1 of your command tokens from the game board/).first(),
+  ).toBeVisible();
+  await page.mouse.move(0, 0);
+
+  // Only the system with Sol's token is a target.
+  await expect(page.locator("g.system.target")).toHaveCount(1);
+  await page.locator("g.system.target").filter({ hasText: "#29" }).click();
+  await expect(token).toContainText(
+    "The token returns to your reinforcements · you gain 1 command token",
+  );
+  await page.getByRole("button", { name: "Close system details" }).click();
+  await expect(page.locator("footer")).toContainText("Place 1 more token.");
+  await expect(send(page)).toBeDisabled();
+  // The gained token, and one moved from the strategy pool to the fleet pool.
+  await panel(page).getByRole("button", { name: "Add tactic pool token" }).click();
+  await expect(pools).toContainText("9 / 9 placed");
+  await panel(page).getByRole("button", { name: "Remove strategy pool token" }).click();
+  await panel(page).getByRole("button", { name: "Add fleet pool token" }).click();
+  await expect(page.locator("footer")).toContainText("Tactic 3 → 4 · Fleet 3 → 4 · Strategy 2 → 1");
+  // Esc puts the pools back, then the system; "Change" gives the system back.
+  await page.keyboard.press("Escape");
+  await expect(pools).toContainText("8 / 9 placed");
+  await expect(token).toContainText("#29");
+  await token.getByRole("button", { name: "Change" }).click();
+  await expect(token).toContainText("No system chosen");
+  await page.locator("g.system.target").filter({ hasText: "#29" }).click();
+  await page.getByRole("button", { name: "Close system details" }).click();
+  await panel(page).getByRole("button", { name: "Add tactic pool token" }).click();
+  await panel(page).getByRole("button", { name: "Remove strategy pool token" }).click();
+  await panel(page).getByRole("button", { name: "Add fleet pool token" }).click();
+  await expect(send(page)).toHaveText(/Resolve primary/);
+  await fitsHeight(page);
+  await page.screenshot({ path: "shots/local/warfare.png", animations: "disabled" });
+
+  // The main button answers the recall, the gain and the redistribution.
+  await send(page).click();
+  await expect(heading(page)).toHaveText("End your turn");
+  await expect(seat).toContainText("4 · 4 · 1");
+  expect(errors).toEqual([]);
+});
+
+test("Warfare: the secondary produces in the home system, paid on the map", async ({ page }) => {
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // Sol and Hacan are played here.
+  await page.goto("/?scenario=strategy_warfare&humans=3");
+  await expect(heading(page)).toHaveText("Choose an action");
+  await panel(page)
+    .getByRole("button", { name: /^6 Warfare/ })
+    .click();
+  await page.keyboard.press("Enter");
+  await page.locator("g.system.target").filter({ hasText: "#29" }).click();
+  await page.getByRole("button", { name: "Close system details" }).click();
+  await panel(page).getByRole("button", { name: "Add tactic pool token" }).click();
+  await send(page).click();
+
+  // Hacan's row opens into the window, with what it costs.
+  const hacan = page.getByRole("region", { name: "Players" }).getByRole("row").filter({
+    hasText: "Seat B",
+  });
+  await expect(panel(page)).toContainText("Strategy pool 2 → 1");
+  await expect(panel(page).getByRole("button", { name: "Produce" })).toBeVisible();
+  await page.screenshot({ path: "shots/local/warfare-window.png", animations: "disabled" });
+  await panel(page).getByRole("button", { name: "Produce" }).click();
+  await send(page).click();
+
+  // The production of the home system, with no steps of a tactical action.
+  await expect(page.getByRole("group", { name: /^Produce in / })).toBeVisible();
+  await expect(heading(page)).toHaveText("Warfare");
+  await expect(page.getByRole("tablist")).toHaveCount(0);
+  const sheet = page.getByRole("group", { name: /^Produce in / });
+  await panel(page).getByRole("button", { name: "Rules: Warfare" }).hover();
+  await expect(
+    page.getByText(/PRODUCTION ability of 1 of your space docks in your home/).first(),
+  ).toBeVisible();
+  await page.mouse.move(0, 0);
+  await sheet
+    .getByRole("group", { name: "Ships · Space area" })
+    .getByRole("button", { name: "Add Fighter" })
+    .click();
+  await expect(send(page)).toHaveText(/Pay 1 resource/);
+  await fitsHeight(page);
+  await page.screenshot({ path: "shots/local/warfare-secondary.png", animations: "disabled" });
+  await send(page).click();
+  const bar = page.getByRole("group", { name: "Payment" });
+  await bar.getByRole("button", { name: "Auto-pay" }).click();
+  await expect(send(page)).toHaveText(/Produce units/);
+  await fitsHeight(page);
+  await page.screenshot({ path: "shots/local/warfare-secondary-pay.png", animations: "disabled" });
+  await send(page).click();
+  await expect(page.getByRole("group", { name: /^Produce in / })).toHaveCount(0);
+  await expect(hacan).toContainText("3 · 3 · 1");
+  await expect(hacan).toContainText("2/3");
+  expect(errors).toEqual([]);
+});
+
+test("Warfare of Thunder's Edge: the pools before, a tactical action in any system with no token, the pools after", async ({
+  page,
+}) => {
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // Sol holds the Warfare of Thunder's Edge, with its command token on #29.
+  await page.goto("/?scenario=strategy_warfare_te&humans=1");
+  const seat = page.getByRole("region", { name: "Players" }).getByRole("row").filter({
+    hasText: "Seat A",
+  });
+  await expect(heading(page)).toHaveText("Choose an action");
+  await panel(page)
+    .getByRole("button", { name: /^6 Warfare/ })
+    .click();
+  await page.keyboard.press("Enter");
+
+  // The redistribution before the action is the pool editor.
+  await expect(heading(page)).toHaveText("Warfare");
+  await panel(page).getByRole("button", { name: "Rules: Warfare" }).hover();
+  await expect(page.getByText(/Perform a tactical action in any system/).first()).toBeVisible();
+  await page.mouse.move(0, 0);
+  await expect(panel(page)).toContainText("before the tactical action");
+  const pools = panel(page).getByRole("heading", { name: "Command pools" }).locator("..");
+  await expect(pools).toContainText("8 / 8 placed");
+  await panel(page).getByRole("button", { name: "Remove strategy pool token" }).click();
+  await panel(page).getByRole("button", { name: "Add tactic pool token" }).click();
+  await send(page).click();
+  await expect(seat).toContainText("4 · 3 · 1");
+
+  // The activation: any system, with no command token, also #29 with Sol's token.
+  await expect(heading(page)).toHaveText("Activation");
+  await expect(panel(page)).toContainText("No command token · Choose on the map");
+  await expect(page.getByText("Tactical action").first()).toBeVisible();
+  await expect(page.locator("aside").getByText(/^Warfare · /)).toBeVisible();
+  await page.locator("g.system.target").filter({ hasText: "#29" }).click();
+  await expect(page.locator("footer")).toContainText("Selected:");
+  await fitsHeight(page);
+  await page.screenshot({ path: "shots/local/warfare-te.png", animations: "disabled" });
+  await send(page).click();
+
+  // The tactical action goes on in Live; no token is placed.
+  await expect(heading(page)).toHaveText("Movement");
+  await expect(seat).toContainText("4 · 3 · 1");
+  await send(page).click();
+  // The redistribution after the action is the pool editor again.
+  await expect(panel(page)).toContainText("after the tactical action");
+  await expect(pools).toContainText("8 / 8 placed");
+  await send(page).click();
+  await expect(heading(page)).toHaveText("End your turn");
+  expect(errors).toEqual([]);
+});
+
 test("Trade: in a late game only the seats below their commodity limit can be chosen", async ({
   page,
 }) => {
@@ -1840,7 +2019,9 @@ test("Trade: in a late game only the seats below their commodity limit can be ch
   await expect(others).toHaveCount(0);
 });
 
-test("a system is chosen on the map: Warfare recalls a command token", async ({ page }) => {
+test("Warfare in a late game: the token is chosen on the map, with eight seats in view", async ({
+  page,
+}) => {
   await page.goto("/?scenario=late-game&humans=32");
   const system = (id: string) => page.locator("g.system").filter({ hasText: `#${id}` });
   // Seat F is asked other questions before its turn: each is answered with its first row.
@@ -1860,7 +2041,10 @@ test("a system is chosen on the map: Warfare recalls a command token", async ({ 
   await expect(panel(page).getByText("No system chosen")).toBeVisible();
   await expect(system("60")).toHaveClass(/\btarget\b/);
   await system("60").click();
-  await expect(panel(page).getByText("Selected", { exact: true })).toBeVisible();
+  await expect(
+    panel(page).getByRole("heading", { name: "Command token" }).locator("../.."),
+  ).toContainText("#60");
+  await expect(panel(page).getByRole("heading", { name: "Command pools" })).toBeVisible();
   await fitsHeight(page);
   await page.screenshot({ path: "shots/local/pick-system.png", animations: "disabled" });
 });

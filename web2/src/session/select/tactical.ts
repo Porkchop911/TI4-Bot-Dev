@@ -35,9 +35,13 @@ const STEPS = ["Activation", "Movement", "Space combat", "Invasion", "Production
  * production of the viewer.
  */
 export function tacticalFacts(update: SessionUpdate, local: LocalState): TacticalFacts | null {
-  const subtype = openChoice(update, local)?.context?.subtype;
+  const choice = openChoice(update, local);
+  const subtype = choice?.context?.subtype;
   const facts = update.tactical;
-  return (facts?.kind === "activation" && subtype === "activate_system") ||
+  // An activation is any choice of systems to activate: also one that places no command token.
+  const activating =
+    !!choice?.options.length && choice.options.every((option) => option.kind === "activate");
+  return (facts?.kind === "activation" && activating) ||
     (facts?.kind === "movement" && subtype === "movement_step") ||
     (facts?.kind === "invasion" && subtype === "commit_ground_forces") ||
     (facts?.kind === "production" && subtype === "produce_unit")
@@ -103,6 +107,7 @@ function activation(
       editing: true,
       draft: !!local.draft,
       tacticPool: [facts.tactic_tokens, facts.tactic_tokens - 1],
+      costsToken: facts.costs_token,
       systems: facts.systems.map((item) => ({
         id: item.system,
         label: systemLabel(tiles, item.system),
@@ -178,6 +183,7 @@ function movement(
         systems: [],
         active: { system: facts.active, name: tiles.get(facts.active)?.label ?? "System" },
         tacticPool: [pool + 1, pool],
+        costsToken: true,
       },
       footer: {
         note: local.draft
@@ -396,6 +402,20 @@ export function selectTactical(
     update.view.players.find((player) => player.id === seat)?.faction ?? seat,
     printed,
   );
+  // A production of a strategic action (Warfare's secondary) is no tactical action: it has no
+  // steps, and the card is behind "?" of its heading, as on the list of the seats.
+  const strategic =
+    facts.kind === "production" && !local.draft && !update.view.board.active_system
+      ? update.secondary
+      : null;
+  // A tactical action of the primary of a strategy card (Warfare of Thunder's Edge) names the
+  // card, with its primary behind "?".
+  const primary =
+    !strategic && !local.draft && update.secondary?.primary === seat ? update.secondary : null;
+  const card =
+    (strategic ?? primary)
+      ? printed?.records.strategy_cards.find((item) => item.id === (strategic ?? primary)!.card)
+      : undefined;
   const ships = Object.keys(local.movement).length;
   // A draft opens every step that the game came to with it, also the steps after the one in view.
   const reached = (local.draft?.reached ?? []).map((stage) => TAB[stage]);
@@ -427,13 +447,15 @@ export function selectTactical(
   });
   return {
     kind: "tactical",
-    title: "Tactical action",
-    subtitle: `${view.target ?? "No system chosen"} · ${faction}`,
+    title: strategic ? "Strategic action" : "Tactical action",
+    subtitle: strategic
+      ? `${strategic.name} · ${view.target ?? ""} · ${faction}`
+      : `${primary ? `${primary.name} · ` : ""}${view.target ?? "No system chosen"} · ${faction}`,
     badge: local.draft
       ? { tone: "draft", label: "Private draft" }
       : { tone: "live", label: "In progress" },
     past: null,
-    tabs,
+    tabs: strategic ? [] : tabs,
     selected,
     current,
     contentKey: `tactical:${selected}`,
@@ -442,7 +464,7 @@ export function selectTactical(
     closing: [],
     task: {
       step: selected,
-      title: STEPS[selected],
+      title: strategic?.name ?? STEPS[selected],
       pill: local.draft
         ? selected !== current
           ? { tone: "done", label: "Drafted" }
@@ -457,7 +479,13 @@ export function selectTactical(
             : { tone: "live", label: "Your decision" },
       trail: [],
       edit: null,
-      help: [],
+      help: card
+        ? [
+            update.secondary?.primary === seat && !update.secondary.open
+              ? { title: `${card.name} · Primary`, text: card.primary_text }
+              : { title: `${card.name} · Secondary`, text: card.secondary_text },
+          ].filter((item) => item.text)
+        : [],
       content: view.content,
       footer: view.footer,
     },

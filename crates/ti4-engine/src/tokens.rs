@@ -124,6 +124,32 @@ pub fn with_pool_details(
     }
 }
 
+/// What a client needs to plan a gain of `gained` command tokens and the redistribution that
+/// follows it as one screen (display only; Warfare's recall): the pools as they stand now, the
+/// total that the redistribution arranges, the option id of the gain into each pool, and the ids
+/// of every arrangement that the redistribution will offer.
+#[must_use]
+pub fn redistribution_after_gain(
+    state: &GameState,
+    player: &PlayerId,
+    gained: i32,
+) -> serde_json::Value {
+    let (tactic, fleet, strategic) = state.player(player).map_or((0, 0, 0), |seat| {
+        (seat.tactic_tokens, seat.fleet_tokens, seat.strategic_tokens)
+    });
+    let total = tactic + fleet + strategic + gained;
+    serde_json::json!({
+        "pools": { "tactic": tactic, "fleet": fleet, "strategic": strategic },
+        "gained": gained,
+        "total": total,
+        "gain": { "tactic": "tactic_tokens", "fleet": "fleet_tokens", "strategic": "strategic_tokens" },
+        "arrangements": distribution_options(total)
+            .into_iter()
+            .map(|option| option.id)
+            .collect::<Vec<_>>(),
+    })
+}
+
 /// The choice kind for redistributing already-held command tokens across pools in one decision.
 pub const REDISTRIBUTE_KIND: &str = "redistribute";
 

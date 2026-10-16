@@ -143,6 +143,8 @@ pub const SCENARIOS: &[Scenario] = &[
     three_seats::STRATEGY_CONSTRUCTION_BASE,
     three_seats::STRATEGY_CONSTRUCTION_TE,
     three_seats::STRATEGY_TRADE,
+    three_seats::STRATEGY_WARFARE,
+    three_seats::STRATEGY_WARFARE_TE,
 ];
 
 /// The scenario with this id.
@@ -890,8 +892,9 @@ fn place(
 mod tests {
     use super::*;
     use crate::view::tactical::{
-        Blocked, CombatFact, INVASION_SUBTYPE, MOVEMENT_SUBTYPE, MovementFacts, ProductionFacts,
-        ShipFact, TacticalFacts, Unavailable, project_tactical_facts,
+        ACTIVATION_SUBTYPE, Blocked, CombatFact, FREE_ACTIVATION_SUBTYPE, INVASION_SUBTYPE,
+        MOVEMENT_SUBTYPE, MovementFacts, ProductionFacts, ShipFact, TacticalFacts, Unavailable,
+        project_tactical_facts,
     };
     use ti4_engine::choice::Window;
     use ti4_engine::choice::{Choice, ChoiceOption};
@@ -1778,6 +1781,57 @@ mod tests {
                 .filter(|unit| unit.owner == ids[0] && unit.type_id.as_str() == "pds")
                 .count();
             assert_eq!(pds, 1, "{scenario}");
+        }
+    }
+
+    /// Thunder's Edge Warfare is a tactical action in any system, with no command token: its
+    /// question has the facts of an activation, which say that it costs no token, also for the
+    /// system that has the seat's token.
+    #[test]
+    fn the_warfare_scenarios_and_the_free_activation() {
+        let content = ContentStore::embedded();
+        let ids: Vec<PlayerId> = ["a", "b", "c"].map(PlayerId::new).to_vec();
+        for (scenario, card) in [
+            ("strategy_warfare", "pok6warfare"),
+            ("strategy_warfare_te", "te6warfare"),
+        ] {
+            let (state, galaxy) = start(content, scenario, &ids, 42).expect("it starts");
+            let sol = state.player(&ids[0]).expect("a seat");
+            assert_eq!(sol.strategy_cards, [StrategyCardId::new(card)]);
+            let tokens: Vec<SystemId> = state
+                .systems_with_token(&ids[0])
+                .into_iter()
+                .cloned()
+                .collect();
+            assert_eq!(tokens.len(), 1, "{scenario}");
+            if card != "te6warfare" {
+                continue;
+            }
+            let free = |subtype: &str| {
+                let choice = Choice::new(
+                    seat(),
+                    "Warfare: a tactical action without a command token",
+                    ["01", tokens[0].as_str()]
+                        .into_iter()
+                        .map(|system| ChoiceOption::labelled(system, "activate", system))
+                        .collect(),
+                )
+                .contextualized(DecisionContext::new(
+                    seat(),
+                    DecisionSource::Content(card.to_owned()),
+                    subtype,
+                    Phase::Action,
+                    1,
+                ));
+                match project_tactical_facts(&state, content, POK, &galaxy, &choice) {
+                    Some(TacticalFacts::Activation(facts)) => facts,
+                    other => panic!("no activation facts: {other:?}"),
+                }
+            };
+            let facts = free(FREE_ACTIVATION_SUBTYPE);
+            assert!(!facts.costs_token);
+            assert_eq!(facts.systems.len(), 2);
+            assert!(free(ACTIVATION_SUBTYPE).costs_token);
         }
     }
 

@@ -182,11 +182,11 @@ test.describe("flows", () => {
   });
 
   test("rule text opens on hover and stays on click", async ({ page }) => {
-    await page.goto("/?example=live-strategy-6");
-    const hint = page.getByRole("button", { name: "Rules: Warfare" });
+    await page.goto("/?example=live-strategy-7");
+    const hint = page.getByRole("button", { name: "Rules: Technology" });
     await expect(page.getByRole("note")).toHaveCount(0);
     await hint.hover();
-    await expect(page.getByRole("note")).toContainText("Remove 1 of your command tokens");
+    await expect(page.getByRole("note")).toContainText("Research 1 technology");
     await hint.click();
     await page.mouse.move(10, 10);
     await expect(page.getByRole("note")).toBeVisible();
@@ -202,7 +202,7 @@ test.describe("flows", () => {
   });
 
   test("secondary, log and history", async ({ page }) => {
-    await page.goto("/?example=live-secondary-6");
+    await page.goto("/?example=live-secondary-7");
     await page.getByRole("button", { name: "Simulate Alex (demo)" }).click();
     await shot(page, "web2/flow/secondary");
     await page
@@ -278,18 +278,6 @@ test.describe("flows", () => {
       expect(overflow, "the step content needs vertical scroll").toBeLessThanOrEqual(0);
     };
 
-    test("Warfare: token on the board, pools as counters", async ({ page }) => {
-      await start(page, "live-strategy-6");
-      await page
-        .getByRole("button", { name: /^Choose .*Corneeq/ })
-        .first()
-        .click();
-      await page.getByRole("button", { name: "Add fleet pool token" }).click();
-      await shot(page, "web2/flow/strategy-warfare");
-      await page.keyboard.press("Enter");
-      await expect(panel(page)).toContainText("Pools 3 · 4 · 2 → 3 · 5 · 2");
-    });
-
     test("Technology: the tree, the second technology and its payment", async ({ page }) => {
       await start(page, "live-strategy-7");
       const cell = (name: string) => panel(page).getByRole("button", { name, exact: true });
@@ -312,15 +300,6 @@ test.describe("flows", () => {
       await shot(page, "web2/flow/strategy-technology-secondary");
       await page.getByRole("button", { name: /Mark draft ready/ }).click();
       await expect(panel(page)).toContainText("Follow: researched Sling Relay for 4 resources");
-    });
-
-    test("Warfare secondary: production in the draft", async ({ page }) => {
-      await start(page, "live-secondary-6");
-      await page.getByRole("button", { name: "Add cruiser" }).click();
-      await page.getByRole("button", { name: "Add infantry" }).click();
-      await page.getByRole("button", { name: "Auto-pay" }).click();
-      await fits(page);
-      await shot(page, "web2/flow/strategy-warfare-secondary");
     });
 
     test("Imperial: objective by key, the outcome below", async ({ page }) => {

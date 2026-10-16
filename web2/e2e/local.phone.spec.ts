@@ -735,6 +735,98 @@ test("phone: Diplomacy has the system and the planets in the width, chosen on th
   await page.screenshot({ path: "shots/phone/local/diplomacy.png", animations: "disabled" });
 });
 
+test("phone: Warfare has the token on the map and the pools in the width", async ({ page }) => {
+  await page.goto("/?scenario=strategy_warfare&humans=1");
+  const panel = page.locator("#step-panel");
+  const panes = page.getByRole("navigation", { name: "Panes" });
+  const send = page.locator('footer button[aria-keyshortcuts="Enter"]');
+  const width = () => page.evaluate(() => document.documentElement.scrollWidth);
+  await panes.getByRole("button", { name: "Action" }).click();
+  await panel.getByRole("button", { name: /^6 Warfare/ }).click();
+  await send.click();
+  await expect(panel.getByRole("heading", { name: "Command pools" })).toBeVisible();
+  expect(await width()).toBe(page.viewportSize()!.width);
+  await panes.getByRole("button", { name: "Map" }).click();
+  await page.locator("g.system.target").filter({ hasText: "#29" }).tap();
+  await page.getByRole("button", { name: "Close system details" }).tap();
+  expect(await width()).toBe(page.viewportSize()!.width);
+  await panes.getByRole("button", { name: "Action" }).click();
+  await panel.getByRole("button", { name: "Add fleet pool token" }).tap();
+  await expect(
+    panel.getByRole("heading", { name: "Command token" }).locator("../.."),
+  ).toContainText("#29");
+  await expect(page.locator("footer")).toContainText("Fleet 3 → 4");
+  expect(await width()).toBe(page.viewportSize()!.width);
+  await expect(send).toBeInViewport();
+  await page.screenshot({ path: "shots/phone/local/warfare.png", animations: "disabled" });
+  await send.click();
+  await expect(panel.getByRole("heading", { name: "Command pools" })).toHaveCount(0);
+});
+
+test("phone: Warfare's secondary is the production of the home system, in the width", async ({
+  page,
+}) => {
+  test.setTimeout(10_000);
+  await page.goto("/?scenario=strategy_warfare&humans=3");
+  const panel = page.locator("#step-panel");
+  const panes = page.getByRole("navigation", { name: "Panes" });
+  const send = page.locator('footer button[aria-keyshortcuts="Enter"]');
+  const width = () => page.evaluate(() => document.documentElement.scrollWidth);
+  await panes.getByRole("button", { name: "Action" }).click();
+  await panel.getByRole("button", { name: /^6 Warfare/ }).click();
+  await send.click();
+  await panes.getByRole("button", { name: "Map" }).click();
+  await page.locator("g.system.target").filter({ hasText: "#29" }).tap();
+  await page.getByRole("button", { name: "Close system details" }).tap();
+  await panes.getByRole("button", { name: "Action" }).click();
+  await panel.getByRole("button", { name: "Add fleet pool token" }).tap();
+  await send.click();
+  await panel.getByRole("button", { name: "Produce" }).tap();
+  expect(await width()).toBe(page.viewportSize()!.width);
+  await send.click();
+  await panes.getByRole("button", { name: "Map" }).click();
+  const sheet = page.getByRole("group", { name: /^Produce in / });
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole("button", { name: "Add Fighter" }).click();
+  expect(await width()).toBe(page.viewportSize()!.width);
+  await sheet.getByRole("button", { name: "Done with the build" }).click();
+  await expect(send).toHaveText(/Produce units/);
+  await expect(send).toBeInViewport();
+  expect(await width()).toBe(page.viewportSize()!.width);
+  await panes.getByRole("button", { name: "Action" }).click();
+  await expect(panel.getByRole("heading", { name: "Warfare" })).toBeVisible();
+  expect(await width()).toBe(page.viewportSize()!.width);
+  await page.screenshot({
+    path: "shots/phone/local/warfare-secondary.png",
+    animations: "disabled",
+  });
+});
+
+test("phone: Warfare of Thunder's Edge has the pools and the activation in the width", async ({
+  page,
+}) => {
+  await page.goto("/?scenario=strategy_warfare_te&humans=1");
+  const panel = page.locator("#step-panel");
+  const panes = page.getByRole("navigation", { name: "Panes" });
+  const send = page.locator('footer button[aria-keyshortcuts="Enter"]');
+  const width = () => page.evaluate(() => document.documentElement.scrollWidth);
+  await panes.getByRole("button", { name: "Action" }).click();
+  await panel.getByRole("button", { name: /^6 Warfare/ }).click();
+  await send.click();
+  await expect(panel.getByRole("heading", { name: "Command pools" })).toBeVisible();
+  expect(await width()).toBe(page.viewportSize()!.width);
+  await send.click();
+  await expect(panel).toContainText("No command token · Choose on the map");
+  await panes.getByRole("button", { name: "Map" }).click();
+  await page.locator("g.system.target").filter({ hasText: "#29" }).tap();
+  expect(await width()).toBe(page.viewportSize()!.width);
+  await expect(send).toHaveText(/Activate system/);
+  await expect(send).toBeInViewport();
+  await panes.getByRole("button", { name: "Action" }).click();
+  expect(await width()).toBe(page.viewportSize()!.width);
+  await page.screenshot({ path: "shots/phone/local/warfare-te.png", animations: "disabled" });
+});
+
 test("phone: Politics has the speaker in the player table and the agenda deck in the width", async ({
   page,
 }) => {

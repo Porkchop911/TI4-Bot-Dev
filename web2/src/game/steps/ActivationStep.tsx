@@ -62,7 +62,9 @@ export function ActivationStep({ view }: { view: ActivationView }) {
   }
   return (
     <Card>
-      <CardHeading title="Activation target">Costs 1 tactic token · Choose on the map</CardHeading>
+      <CardHeading title="Activation target">
+        {view.costsToken ? "Costs 1 tactic token" : "No command token"} · Choose on the map
+      </CardHeading>
       <label className="flex items-center gap-2.5 border-b border-line px-3.5 py-2 text-xs text-muted">
         <span>Find system</span>
         <input

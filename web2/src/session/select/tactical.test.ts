@@ -210,6 +210,24 @@ it("lists what is committed to the active system, read-only", () => {
   expect(board.inspector?.arriving?.origins[0].cargo).toEqual([]);
 });
 
+it("opens the activation of a tactical action that places no command token", () => {
+  // Warfare of Thunder's Edge: any system, and no token of the tactic pool.
+  const choice = activation.pending_choice!.choice;
+  const free = {
+    ...activation,
+    pending_choice: {
+      ...activation.pending_choice!,
+      choice: { ...choice, context: { ...choice.context!, subtype: "warfare_free_tactical" } },
+    },
+    tactical: { ...activation.tactical!, costs_token: false },
+  } as SessionUpdate;
+  expect(tactical(free, local()).task.content).toMatchObject({
+    kind: "activation",
+    costsToken: false,
+  });
+  expect(tactical(activation, local()).task.content).toMatchObject({ costsToken: true });
+});
+
 it("shows the recorded activation from its tab, and goes back", () => {
   const view = tactical(movement, local({ step: 0, movement: fleet }));
   expect(view.selected).toBe(0);

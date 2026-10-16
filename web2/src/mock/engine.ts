@@ -1249,7 +1249,7 @@ export function makeState(example) {
     const flow = blankState(example, "live", "hostile", baseData);
     const data = clone(config.flow);
     if (config.kind === "strategic") {
-      data.mine = { ...blankMine(data.number), ...data.mine };
+      data.mine = { ...blankMine(), ...data.mine };
     }
     return Object.assign(flow, {
       kind: config.kind,
@@ -1568,27 +1568,9 @@ export function autoPay(cost, key) {
   }
   return pay;
 }
-export const flowFree = (state) => (state.flow.owner === "sol" ? 3 : 0);
-export const flowPaid = (state) => payTotal(state.flow.mine.pay, "inf");
-export function flowProblem(state) {
-  const mine = state.flow.mine,
-    total = flowFree(state) + mine.buy,
-    placed = mine.pools.t + mine.pools.f + mine.pools.s;
-  if (flowPaid(state) < mine.buy * 3) {
-    return `Stage ${mine.buy * 3 - flowPaid(state)} more influence to buy ${plural(mine.buy, "token")}.`;
-  }
-  if (placed !== total) {
-    return `Place ${plural(total, "token")} in your pools. ${placed} placed.`;
-  }
-  return "";
-}
 export function resolveMine(state) {
   const flow = state.flow;
-  flow.results.sol =
-    flow.mine.outcome ??
-    (flow.mine.buy
-      ? `Followed · bought ${plural(flow.mine.buy, "token")} for ${flow.mine.buy * 3} influence`
-      : "Passed");
+  flow.results.sol = flow.mine.outcome ?? "Passed";
   flow.mine.resolved = true;
   flow.turn++;
 }

@@ -114,6 +114,13 @@ import {
   selectReplenish,
   toggleReplenishSeat,
 } from "./select/replenish";
+import {
+  chooseRecallSystem,
+  clearLastRecall,
+  clearRecallPart,
+  countRecallPools,
+  selectRecall,
+} from "./select/recall";
 import { countPools, selectTokens } from "./select/tokens";
 import type { Transport } from "./transport";
 import type { DraftOutcome, DraftStep, PlanScope, ReactionModes, SessionUpdate } from "./wire";
@@ -127,6 +134,7 @@ const NOTHING: LocalState = {
   agendas: null,
   structures: null,
   replenish: null,
+  recall: null,
   sent: null,
   error: null,
   replaying: null,
@@ -625,6 +633,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           agendas: null,
           structures: null,
           replenish: null,
+          recall: null,
           sent: null,
           error: null,
           offline: false,
@@ -928,6 +937,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         agendas: null,
         structures: null,
         replenish: null,
+        recall: null,
         inspected: null,
         handled: [],
         step: null,
@@ -984,6 +994,11 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
     /** A replenish of commodities of the live game: the seats or the window, answered at once. */
     const replenishing =
       pending && !drafted && !followInfo?.editing && selectReplenish(shown, pending.choice, null)
+        ? pending
+        : null;
+    /** A recall of a command token of the live game, with its gain and its pools: at once. */
+    const recalling =
+      pending && !drafted && !followInfo?.editing && selectRecall(shown, pending.choice, null)
         ? pending
         : null;
     /** The game can be asked for a staged production: it is paid, and within its limits. */
@@ -1196,6 +1211,15 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         if (answers) {
           transport.applyDraft(pending.nonce, { choices: answers, plan: null });
           setLocal((now) => ({ ...now, replenish: null, sent: pending.nonce, planNote: null }));
+        }
+        return;
+      }
+      // A recall of a command token answers its system, the gain and the arrangement of the pools.
+      if (recalling) {
+        const answers = selectRecall(shown, recalling.choice, local.recall ?? null)?.answers;
+        if (answers) {
+          transport.applyDraft(pending.nonce, { choices: answers, plan: null });
+          setLocal((now) => ({ ...now, recall: null, sent: pending.nonce, planNote: null }));
         }
         return;
       }
@@ -1428,6 +1452,12 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           if (chosen) {
             return setLocal((now) => ({ ...now, ready: chosen, inspected: intent.system }));
           }
+          // The system of a recall of a command token: it is chosen, and it shows what is in it.
+          const recalled =
+            recalling && chooseRecallSystem(recalling.choice, local.recall ?? null, intent.system);
+          if (recalled) {
+            return setLocal((now) => ({ ...now, recall: recalled, inspected: intent.system }));
+          }
           // In a movement the fleet of a system opens at the system, and closes there. So does
           // the build of a production.
           return moving || producing
@@ -1453,7 +1483,12 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           const given =
             replenishing &&
             clearReplenishPart(replenishing.choice, local.replenish ?? null, intent.part);
-          return given && setLocal((now) => ({ ...now, replenish: given }));
+          if (given) {
+            return setLocal((now) => ({ ...now, replenish: given }));
+          }
+          const returned =
+            recalling && clearRecallPart(recalling.choice, local.recall ?? null, intent.part);
+          return returned && setLocal((now) => ({ ...now, recall: returned }));
         }
         case "findSystem": {
           const found = pending?.choice.options.find((item) => sameSystem(intent.query, item.id));
@@ -1488,6 +1523,11 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           if (unpicked) {
             return setLocal((now) => ({ ...now, replenish: unpicked }));
           }
+          // Esc in a recall of a command token puts the pools back, then the system.
+          const unrecalled = recalling && clearLastRecall(recalling.choice, local.recall ?? null);
+          if (unrecalled) {
+            return setLocal((now) => ({ ...now, recall: unrecalled }));
+          }
           return setLocal((now) => ({
             ...now,
             staged: null,
@@ -1497,6 +1537,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             agendas: null,
             structures: null,
             replenish: null,
+            recall: null,
           }));
         }
         case "undo":
@@ -1619,6 +1660,13 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
               intent.value,
             );
             return bought && setLocal((now) => ({ ...now, purchase: bought }));
+          }
+          // A counter of the pools of a recall of a command token.
+          const recounted =
+            recalling &&
+            countRecallPools(recalling.choice, local.recall ?? null, intent.key, intent.value);
+          if (recounted) {
+            return setLocal((now) => ({ ...now, recall: recounted }));
           }
           // A counter of a pool of command tokens: the arrangement is staged when it is offered.
           const counted =

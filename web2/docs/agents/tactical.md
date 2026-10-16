@@ -2,6 +2,10 @@
 
 Part of `web2/AGENTS.md`: the Patterns and the rules of Screen size and Text there apply here too.
 
+## Activation
+
+- The activation is the choice of a system on the map, with the facts of the system in the panel. An activation that places no command token (Thunder's Edge's Warfare, `costs_token: false` of `ActivationFacts`) is the same step: its card says "No command token" in place of "Costs 1 tactic token", the title of the frame names the card, and every system that the game offers is a target, also one with the seat's token.
+
 ## Movement
 
 The owner chose this design on 2026-10-10, from three that were compared.
@@ -55,6 +59,7 @@ The owner chose this design on 2026-10-11: the build first, then the payment, bo
 - On a phone the open sheet has the room of the footer, as the fleet of a system has. The payment has the whole map pane, with the footer under it.
 - Every map view shows the ships and the ground forces of the system after the staged build.
 - What the game asks before the production (AI Development Algorithm) is a decision in the list.
+- A production outside a tactical action (Warfare's secondary, the PRODUCTION of Thunder's Edge's Construction) is the same step in the frame of its strategic action: no steps of a tactical action, the card as the heading, its printed text behind "?".
 
 ## Battle table
 

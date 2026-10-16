@@ -2438,6 +2438,12 @@ fn warfare_primary(
             .map(|system| ChoiceOption::labelled(system.to_string(), "recall", system.to_string()))
             .collect(),
     )
+    // Display only: the gain of the recalled token and the redistribution after it, so that a
+    // client can stage the whole primary on one screen.
+    .detailed(
+        "redistribution",
+        crate::tokens::redistribution_after_gain(state, player, 1),
+    )
     .contextualized(DecisionContext::new(
         player.clone(),
         DecisionSource::StrategyCard {
@@ -3607,6 +3613,51 @@ mod tests {
         .unwrap();
         assert!(!state.system_state(&system).command_tokens.contains(&player));
         assert_eq!(state.player(&player).unwrap().total_tokens(), before + 1);
+    }
+
+    /// The recall says what comes after it: the option of the gain into each pool, and every
+    /// arrangement that the redistribution then offers, so a client stages all three at once.
+    #[test]
+    fn warfare_recall_tells_the_gain_and_the_redistribution_after_it() {
+        let mut state = game(&["a"]);
+        let player = PlayerId::new("a");
+        state
+            .system_mut(&SystemId::new("18"))
+            .command_tokens
+            .insert(player.clone());
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut table = Table::with_default(Box::new(FirstOptionCapturing { seen: seen.clone() }));
+        primary(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            None,
+            &mut table,
+            &player,
+            &card("Warfare"),
+        )
+        .unwrap();
+        let asked = seen.borrow();
+        let [recall, gain, redistribute] = &asked[..] else {
+            panic!("the recall, the gain and the redistribution: {asked:?}");
+        };
+        let told = &recall.details["redistribution"];
+        let ids = |choice: &Choice| -> Vec<serde_json::Value> {
+            choice
+                .options
+                .iter()
+                .map(|option| serde_json::Value::from(option.id.clone()))
+                .collect()
+        };
+        assert_eq!(told["pools"], gain.details["pools"]);
+        assert_eq!(told["total"], redistribute.details["total"]);
+        assert_eq!(
+            told["arrangements"],
+            serde_json::Value::from(ids(redistribute))
+        );
+        for pool in ["tactic", "fleet", "strategic"] {
+            assert!(ids(gain).contains(&told["gain"][pool]), "{pool}");
+        }
     }
 
     #[test]

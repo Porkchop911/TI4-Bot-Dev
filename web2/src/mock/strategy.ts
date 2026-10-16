@@ -6,15 +6,13 @@ import type {
   BoardTaskView,
   Intent,
   MenuRowView,
-  RowView,
   TechCellView,
   TechColor,
-  UnitType,
 } from "../model";
 import { plural } from "../model";
-import { MAP, PAY, SEATS, TECH, U, blankMine } from "./data";
+import { PAY, SEATS, TECH } from "./data";
 import { E } from "./loose";
-import { button, openPayment } from "./select/shared";
+import { openPayment } from "./select/shared";
 import { TECHS, TECH_BY_ID, TECH_COLORS, type Tech } from "./tech";
 
 type State = any;
@@ -26,12 +24,6 @@ export const STRATEGY_TEXT: Record<number, { primary: string; secondary: string 
     primary: "Gain 3 command tokens. Then buy any number of tokens for 3 influence each.",
     secondary:
       "Buy command tokens. Each other player may buy tokens for 3 influence each. No strategy token is spent.",
-  },
-  6: {
-    primary:
-      "Remove 1 of your command tokens from the game board; then gain 1 command token. Redistribute any number of the command tokens on your command sheet.",
-    secondary:
-      "Spend 1 token from your strategy pool to use the Production ability of 1 of your space docks in your home system.",
   },
   7: {
     primary: "Research 1 technology. Spend 6 resources to research 1 technology.",
@@ -50,7 +42,6 @@ const ME = SEATS.sol;
 const PLANETS = PAY.filter((source) => source.system);
 const planetOf = (id: string) => PLANETS.find((source) => source.id === id)!;
 const planetName = (id: string) => planetOf(id).label.replace("Exhaust ", "");
-const sys = (id: string) => `${MAP[id].name} · #${id}`;
 const names = (list: string[]) =>
   list.length < 2 ? (list[0] ?? "") : `${list.slice(0, -1).join(", ")} and ${list.at(-1)}`;
 
@@ -91,18 +82,6 @@ export const OBJECTIVES: {
     scored: [],
   },
 ];
-/** What the Warfare secondary can produce in the home system, and the Production value there. */
-const PRODUCE: UnitType[] = [
-  "infantry",
-  "fighter",
-  "destroyer",
-  "cruiser",
-  "carrier",
-  "dreadnought",
-];
-const HOME = "1";
-const PRODUCTION = 6;
-
 // ---- Shared parts --------------------------------------------------------------------------------
 
 const paid = (pay: Record<string, boolean | number>, key: "res" | "inf"): number =>
@@ -121,22 +100,6 @@ const payTask = (
   chosen: pay,
   verb: "Exhaust",
   unit: key === "inf" ? "influence" : "resource",
-});
-
-const pickTask = (target: "planet" | "system", ids: string[], chosen: string[]): BoardTaskView => ({
-  target,
-  kind: "pick",
-  interactive: true,
-  values: Object.fromEntries(ids.map((id) => [id, target === "planet" ? planetOf(id).res : 0])),
-  chosen: Object.fromEntries(chosen.map((id) => [id, true])),
-  verb: "Choose",
-  unit: target === "planet" ? "resource" : "system",
-});
-
-/** "Change" on a chosen thing clears that part, so the board or the table serves it again. */
-const change = (part: string): RowView["control"] => ({
-  kind: "button",
-  button: button({ type: "clearPart", part }, "Change"),
 });
 
 /** What a secondary costs: a token of the strategy pool. */
@@ -191,127 +154,6 @@ const base = (): Editor => ({
 
 const followed = (primary: boolean, text: string) =>
   primary ? `Jamie ${text}.` : `Followed · ${text}`;
-
-// ---- 6 Warfare -----------------------------------------------------------------------------------
-
-function warfare(state: State, primary: boolean): Editor {
-  const flow = state.flow;
-  const mine = flow.mine;
-  if (!primary) {
-    const count = (type: UnitType): number => mine.counts[type] || 0;
-    const units = PRODUCE.reduce((sum, type) => sum + count(type), 0);
-    const cost = PRODUCE.reduce(
-      (sum, type) => sum + Math.ceil(count(type) / (U[type].per || 1)) * U[type].cost!,
-      0,
-    );
-    const short = cost - paid(mine.pay, "res");
-    const made = PRODUCE.filter(count).map(
-      (type) => `${count(type)} ${E.unitName(type, count(type)).toLowerCase()}`,
-    );
-    return {
-      ...base(),
-      blocks: [
-        {
-          kind: "gauges",
-          gauges: [{ label: `Production in ${sys(HOME)}`, used: units, total: PRODUCTION }],
-        },
-        {
-          kind: "card",
-          title: "Produce",
-          aside: `${plural(units, "unit")} · ${plural(cost, "resource")} · ${tokenCost()}`,
-          bad: units > PRODUCTION,
-          rows: PRODUCE.map((type) => ({
-            title: [E.unitName(type, 2)],
-            subtitle: `Cost ${U[type].cost}${U[type].per ? ` for ${U[type].per}` : ""}`,
-            link: [`sys:${HOME}`],
-            control: {
-              kind: "counter",
-              counter: {
-                id: `counts.${type}`,
-                value: count(type),
-                max: 9,
-                label: E.unitName(type).toLowerCase(),
-              },
-            },
-          })),
-        },
-      ],
-      problem:
-        units > PRODUCTION
-          ? `The Production value is ${PRODUCTION}. Remove ${plural(units - PRODUCTION, "unit")}.`
-          : short > 0
-            ? `Stage ${plural(short, "more resource")} to produce.`
-            : "",
-      staged: units > 0,
-      pass: !units,
-      cost: { amount: cost, key: "res" },
-      task: cost ? payTask(cost, "res", mine.pay) : null,
-      result: units
-        ? `Followed · produced ${names(made)} in ${MAP[HOME].name} for ${plural(cost, "resource")}`
-        : "Passed",
-    };
-  }
-  const now: number[] = ME.tokens;
-  const total = now[0] + now[1] + now[2] + 1;
-  const placed = mine.pools.t + mine.pools.f + mine.pools.s;
-  const tokens = Object.keys(MAP).filter((id) => MAP[id].token);
-  return {
-    ...base(),
-    blocks: [
-      {
-        kind: "card",
-        title: "Command token",
-        aside: "Choose on the map",
-        rows: mine.system
-          ? [
-              {
-                icon: "token",
-                title: [sys(mine.system)],
-                subtitle: "The token returns to your reinforcements · you gain 1 command token",
-                link: [`sys:${mine.system}`],
-                control: change("system"),
-              },
-            ]
-          : [{ icon: "token", title: ["No system chosen"] }],
-      },
-      {
-        kind: "card",
-        title: "Command pools",
-        aside: `${placed} / ${total} placed`,
-        bad: placed !== total,
-        rows: (
-          [
-            ["t", "Tactic pool", 0],
-            ["f", "Fleet pool", 1],
-            ["s", "Strategy pool", 2],
-          ] as const
-        ).map(([key, name, index]) => ({
-          title: [name],
-          tokens: { now: now[index], after: mine.pools[key], up: key === "f" },
-          control: {
-            kind: "counter",
-            counter: {
-              id: `pools.${key}`,
-              value: mine.pools[key],
-              max: mine.pools[key] + Math.max(0, total - placed),
-              label: name.toLowerCase() + " token",
-            },
-          },
-        })),
-      },
-    ],
-    problem: !mine.system
-      ? "Choose 1 system with your command token."
-      : placed !== total
-        ? `Place ${total} tokens in your pools. ${placed} placed.`
-        : "",
-    staged: !!mine.system || poolsChanged(mine, 6),
-    task: pickTask("system", tokens, mine.system ? [mine.system] : []),
-    result: mine.system
-      ? `Jamie removed the command token from ${sys(mine.system)} and gained 1 command token. Pools ${now.join(" · ")} → ${mine.pools.t} · ${mine.pools.f} · ${mine.pools.s}.`
-      : "",
-  };
-}
 
 // ---- 7 Technology --------------------------------------------------------------------------------
 
@@ -466,8 +308,6 @@ function imperial(state: State, primary: boolean): Editor {
 export function strategyEditor(state: State): Editor {
   const primary = state.flow.owner === "sol";
   switch (state.flow.number ?? 1) {
-    case 6:
-      return warfare(state, primary);
     case 7:
       return technology(state, primary);
     case 8:
@@ -477,28 +317,14 @@ export function strategyEditor(state: State): Editor {
   }
 }
 
-/** The pool counters differ from where the card starts them. */
-const poolsChanged = (mine: any, number: number) => {
-  const blank = blankMine(number).pools;
-  return (["t", "f", "s"] as const).some((key) => mine.pools[key] !== blank[key]);
-};
-
 /** Esc: the last staged choice goes first. False when nothing is staged. */
-function clearLast(mine: any, number: number): boolean {
+function clearLast(mine: any): boolean {
   if (Object.values(mine.pay).some(Boolean)) {
     mine.pay = {};
-  } else if (poolsChanged(mine, number)) {
-    mine.pools = blankMine(number).pools;
-  } else if (mine.buy) {
-    mine.buy = 0;
-  } else if (Object.values(mine.counts).some(Boolean)) {
-    mine.counts = {};
   } else if (mine.techs.length) {
     mine.techs.pop();
   } else if (mine.objective) {
     mine.objective = null;
-  } else if (mine.system) {
-    mine.system = null;
   } else if (mine.follow !== null) {
     mine.follow = null;
   } else {
@@ -514,16 +340,8 @@ function clearLast(mine: any, number: number): boolean {
 export function strategyIntent(state: State, intent: Intent): boolean {
   const flow = state.flow;
   const mine = flow.mine;
-  const number = flow.number ?? 1;
   const editor = strategyEditor(state);
   switch (intent.type) {
-    case "toggleSystem":
-      if (editor.task?.target !== "system" || !(intent.system in editor.task.values)) {
-        return true;
-      }
-      mine.system = mine.system === intent.system ? null : intent.system;
-      state.reveal = `sys:${intent.system}`;
-      return true;
     case "togglePlanet":
       if (editor.task?.target !== "planet" || !(intent.planet in editor.task.values)) {
         return true;
@@ -568,9 +386,7 @@ export function strategyIntent(state: State, intent: Intent): boolean {
     }
     case "clearPart": {
       const [part, id] = intent.part.split(":");
-      if (part === "system") {
-        mine.system = null;
-      } else if (part === "tech") {
+      if (part === "tech") {
         mine.techs.splice(+id);
       }
       if (!strategyEditor(state).cost?.amount) {
@@ -579,7 +395,7 @@ export function strategyIntent(state: State, intent: Intent): boolean {
       return true;
     }
     case "clearChoice":
-      return clearLast(mine, number);
+      return clearLast(mine);
     case "payment":
       mine.pay =
         intent.action === "auto" && editor.cost

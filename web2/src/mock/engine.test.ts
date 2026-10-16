@@ -488,48 +488,8 @@ describe("mock engine", () => {
     const main = (world: ReturnType<typeof createWorld>) =>
       footer(world).actions.find((action) => action.tone === "primary")!;
 
-    it("Warfare: a token on the board and the pools as counters", () => {
-      const world = open("live-strategy-6");
-      expect(Object.keys(selectShell(world).board.task!.values).sort()).toEqual(["33", "38"]);
-      reduce(world, { type: "toggleSystem", system: "33" });
-      expect(footer(world).note).toContain("Place 10 tokens");
-      reduce(world, { type: "flowCount", key: "pools.t", value: 4 });
-      reduce(world, { type: "flow", action: "resolve" });
-      expect(flow(world).primaryResult).toContain("Pools 3 · 4 · 2 → 4 · 4 · 2");
-    });
-
-    it("Warfare secondary: production with a payment, drafted before the seat", () => {
-      const world = open("live-secondary-6");
-      expect(main(world).label).toBe("Mark draft ready · pass");
-      reduce(world, { type: "flowCount", key: "counts.cruiser", value: 1 });
-      expect(footer(world).note).toBe("Stage 2 more resources to produce.");
-      reduce(world, { type: "payment", action: "auto" });
-      expect(main(world).label).toBe("Mark draft ready");
-      reduce(world, { type: "flow", action: "ready" });
-      for (let turn = 0; turn < 4; turn++) {
-        reduce(world, { type: "simulate" });
-      }
-      expect(flow(world).results.sol).toBe("Followed · produced 1 cruiser in Jord for 2 resources");
-    });
-
-    it("Esc clears staged counters: the payment, then the pools, then the bought tokens", () => {
-      const world = open("live-strategy-6");
-      reduce(world, { type: "flowCount", key: "pools.t", value: 4 });
-      reduce(world, { type: "clearChoice" });
-      expect(flow(world).mine.pools).toEqual({ t: 3, f: 4, s: 2 });
-      loadExample(world, "live-secondary-6");
-      reduce(world, { type: "flowCount", key: "counts.cruiser", value: 1 });
-      reduce(world, { type: "payment", action: "auto" });
-      reduce(world, { type: "clearChoice" });
-      expect(flow(world).mine.pay).toEqual({});
-      expect(flow(world).mine.counts.cruiser).toBe(1);
-      reduce(world, { type: "clearChoice" });
-      expect(flow(world).mine.counts).toEqual({});
-      expect(main(world).label).toBe("Mark draft ready · pass");
-    });
-
     it("another viewer sees the public side only, and cannot edit", () => {
-      const world = open("live-secondary-6");
+      const world = open("live-secondary-7");
       setViewer(world, "hacan");
       const view = selectShell(world);
       if (view.action.kind !== "flow") {
@@ -545,8 +505,8 @@ describe("mock engine", () => {
       expect(jamie.you).toBe(false);
       expect(jamie.status.label).not.toContain("draft");
       expect(view.board.task).toBe(null);
-      reduce(world, { type: "flowCount", key: "counts.cruiser", value: 1 });
-      expect(flow(world).mine.counts).toEqual({});
+      reduce(world, { type: "pickTech", tech: "sling-relay" });
+      expect(flow(world).mine.techs).toEqual([]);
     });
 
     it("Technology: the tree, a second technology for 6 resources that counts the first", () => {

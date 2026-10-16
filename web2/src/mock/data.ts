@@ -731,23 +731,14 @@ export const baseData = {
   },
 };
 /** What the viewer has staged in a strategy card. Each card uses the fields of its parts. */
-export const blankMine = (number = 1) => ({
-  buy: 0,
-  // Warfare redistributes the pools, so its counters start at the tokens that are there.
-  pools: number === 6 ? { t: 3, f: 4, s: 2 } : { t: 0, f: 0, s: 0 },
+export const blankMine = () => ({
   pay: {},
-  system: null,
   follow: null,
   techs: [],
-  counts: {},
   objective: null,
 });
 /** What the other players do with each card in the demo: the primary, and a followed secondary. */
 export const STRATEGY_SIM: Record<number, { primary: string; follow: string }> = {
-  6: {
-    primary: "removed 1 command token from the board, gained 1 and redistributed the pools.",
-    follow: "produced 2 units in the home system",
-  },
   7: { primary: "researched Gravity Drive.", follow: "researched 1 technology for 4 resources" },
   8: {
     primary: "scored Corner the Market and drew 1 secret objective.",
@@ -757,7 +748,7 @@ export const STRATEGY_SIM: Record<number, { primary: string; follow: string }> =
 const STRATEGY_EXAMPLES: Record<string, any> = {
   // The viewer's primary of each card.
   ...Object.fromEntries(
-    [6, 7, 8].map((number) => [
+    [7, 8].map((number) => [
       `live-strategy-${number}`,
       {
         mode: "live",
@@ -778,7 +769,7 @@ const STRATEGY_EXAMPLES: Record<string, any> = {
   ),
   // The viewer's secondary on another player's card, drafted before the seat is reached.
   ...Object.fromEntries(
-    [6, 7, 8].map((number) => [
+    [7, 8].map((number) => [
       `live-secondary-${number}`,
       {
         mode: "live",

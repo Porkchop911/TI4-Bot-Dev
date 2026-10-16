@@ -45,6 +45,8 @@ pub const STRATEGY_CARDS: &[(&str, &str)] = &[
     ("strategy_construction_base", "base4"),
     ("strategy_construction_te", "te4construction"),
     ("strategy_trade", "pok5trade"),
+    ("strategy_warfare", "pok6warfare"),
+    ("strategy_warfare_te", "te6warfare"),
 ];
 
 /// Sol is played by a person, Hacan and Letnev by the rule bot.
@@ -272,6 +274,24 @@ pub const STRATEGY_TRADE: Scenario = Scenario {
     description: "Sol has the turn and holds Trade. Sol has 4 trade goods and 1 commodity; Hacan \
         and Letnev have no commodities, so both can be chosen to replenish. With Sol and Hacan \
         played here, Hacan resolves the secondary.",
+    ..STRATEGY
+};
+
+pub const STRATEGY_WARFARE: Scenario = Scenario {
+    id: "strategy_warfare",
+    title: "Strategy card: Warfare",
+    description: "Sol has the turn and holds Warfare, with its command token on a system next to \
+        its home to recall. With Sol and Hacan played here, Hacan resolves the secondary: a \
+        production at the space dock of its home.",
+    ..STRATEGY
+};
+
+pub const STRATEGY_WARFARE_TE: Scenario = Scenario {
+    id: "strategy_warfare_te",
+    title: "Strategy card: Warfare (Thunder's Edge)",
+    description: "The scenario \"Strategy card: Warfare\" on a table of Thunder's Edge, whose \
+        Warfare is a tactical action in any system without a command token, also in the system \
+        next to Sol's home that has its token, with a redistribution before and after.",
     ..STRATEGY
 };
 

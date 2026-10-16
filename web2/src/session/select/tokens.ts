@@ -52,7 +52,8 @@ const poolsOf = (value: unknown): Pools | null => {
     : null;
 };
 
-interface Question {
+/** The pools of a redistribution: the sheet of now, the tokens to arrange, and what is offered. */
+export interface PoolQuestion {
   now: Pools;
   total: number;
   offered: Set<string>;
@@ -60,32 +61,44 @@ interface Question {
   min: Pools;
 }
 
-/** A question that redistributes command tokens. Null for any other question. */
-function questionOf(choice: Choice): Question | null {
-  const details = choice.details ?? {};
-  const now = poolsOf(details.pools);
-  if (
-    details.kind !== "command_tokens" ||
-    details.mode !== "redistribute" ||
-    !now ||
-    typeof details.total !== "number" ||
-    !choice.options.length ||
-    choice.options.some((option) => option.kind !== REDISTRIBUTE)
-  ) {
+/**
+ * The pools of a redistribution that offers the arrangements `ids` of `total` tokens, from the
+ * sheet `now`. Null when they are not that.
+ */
+export function poolQuestion(now: unknown, total: unknown, ids: unknown[]): PoolQuestion | null {
+  const sheet = poolsOf(now);
+  if (!sheet || typeof total !== "number" || !ids.length) {
     return null;
   }
-  const arrangements = choice.options.map((option) => parse(option.id));
+  const arrangements = ids.map((id) => (typeof id === "string" ? parse(id) : null));
   if (arrangements.some((pools) => !pools)) {
     return null;
   }
   const all = arrangements as Pools[];
   const least = (key: keyof Pools) => Math.min(...all.map((pools) => pools[key]));
   return {
-    now,
-    total: details.total,
-    offered: new Set(choice.options.map((option) => option.id)),
+    now: sheet,
+    total,
+    offered: new Set(all.map(idOf)),
     min: { tactic: least("tactic"), fleet: least("fleet"), strategic: least("strategic") },
   };
+}
+
+/** A question that redistributes command tokens. Null for any other question. */
+function questionOf(choice: Choice): PoolQuestion | null {
+  const details = choice.details ?? {};
+  if (
+    details.kind !== "command_tokens" ||
+    details.mode !== "redistribute" ||
+    choice.options.some((option) => option.kind !== REDISTRIBUTE)
+  ) {
+    return null;
+  }
+  return poolQuestion(
+    details.pools,
+    details.total,
+    choice.options.map((option) => option.id),
+  );
 }
 
 /** The staged arrangement of a question: what the player staged, else the pools of now. */
@@ -95,9 +108,24 @@ export const stagingOf = (choice: Choice, staging: Pools | null): Pools | null =
 };
 
 /**
- * One step of a counter (`pools.t`, `pools.f`, `pools.s`): the pools after it, and the option
- * that they make when the game offers it. Null for a key or a question that is not of pools.
+ * One step of a counter (`pools.t`, `pools.f`, `pools.s`) of `question`: the pools after it,
+ * and the arrangement that they make when the game offers it. Null for another key.
  */
+export function countIn(
+  question: PoolQuestion,
+  staging: Pools | null,
+  key: string,
+  value: number,
+): { pools: Pools; staged: string | null } | null {
+  const pool = POOLS.find(([, short]) => `pools.${short}` === key)?.[0];
+  if (!pool) {
+    return null;
+  }
+  const pools = { ...(staging ?? question.now), [pool]: Math.max(0, value) };
+  return { pools, staged: question.offered.has(idOf(pools)) ? idOf(pools) : null };
+}
+
+/** One step of a counter of a redistribution of command tokens. Null for any other question. */
 export function countPools(
   choice: Choice,
   staging: Pools | null,
@@ -105,20 +133,17 @@ export function countPools(
   value: number,
 ): { pools: Pools; staged: string | null } | null {
   const question = questionOf(choice);
-  const pool = POOLS.find(([, short]) => `pools.${short}` === key)?.[0];
-  if (!question || !pool) {
-    return null;
-  }
-  const pools = { ...(staging ?? question.now), [pool]: Math.max(0, value) };
-  return { pools, staged: question.offered.has(idOf(pools)) ? idOf(pools) : null };
+  return question ? countIn(question, staging, key, value) : null;
 }
 
 /** The pool editor of a redistribution of command tokens. Null for any other question. */
 export function selectTokens(choice: Choice, staging: Pools | null): TokensView | null {
   const question = questionOf(choice);
-  if (!question) {
-    return null;
-  }
+  return question ? poolsView(question, staging) : null;
+}
+
+/** The pool editor of the pools of `question`, staged as `staging` (null: the sheet of now). */
+export function poolsView(question: PoolQuestion, staging: Pools | null): TokensView {
   const { now, total, offered, min } = question;
   const after = staging ?? now;
   const placed = sumOf(after);
