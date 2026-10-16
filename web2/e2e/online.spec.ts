@@ -105,10 +105,14 @@ test("a seeded game on the server: the first turn, with a draft, the sheets and 
     .first()
     .click();
   const sheet = page.getByRole("group", { name: /^Move from / });
-  const ships = sheet.getByRole("button", { name: /^[A-Z][a-z ]+ \d of \d$/, pressed: false });
+  const ships = sheet.getByRole("button", {
+    name: /^(?!Load )[A-Z][A-Za-z ]+ \d of \d$/,
+    pressed: false,
+  });
   await ships.first().click();
+  await expect(sheet.getByText(/· 1 ship\b/)).toBeVisible();
   await ships.first().click();
-  await expect(sheet.getByText(/· 2 ships$/)).toBeVisible();
+  await expect(sheet.getByText(/· 2 ships\b/)).toBeVisible();
   await expect(system(page, target)).toHaveAttribute("aria-label", /, 2 [^,]+ ships$/);
   await expect(page.locator("footer").getByText("The action ends here.")).toBeVisible();
   await page.screenshot({ path: "shots/online/draft-movement.png", animations: "disabled" });
@@ -223,7 +227,10 @@ test("the same seat in two tabs: what one tab stages, the other shows", async ({
     .first()
     .click();
   const sheet = page.getByRole("group", { name: /^Move from / });
-  const ships = sheet.getByRole("button", { name: /^[A-Z][a-z ]+ \d of \d$/, pressed: false });
+  const ships = sheet.getByRole("button", {
+    name: /^(?!Load )[A-Z][A-Za-z ]+ \d of \d$/,
+    pressed: false,
+  });
   await ships.first().click();
   await ships.first().click();
   await expect(system(page, target)).toHaveAttribute("aria-label", /, 2 [^,]+ ships$/);
@@ -233,7 +240,7 @@ test("the same seat in two tabs: what one tab stages, the other shows", async ({
   await expect(system(other, target)).toHaveAttribute("aria-label", /, 2 [^,]+ ships$/);
   // One ship less in tab A is one ship less in tab B.
   await sheet
-    .getByRole("button", { name: /^[A-Z][a-z ]+ \d of \d$/, pressed: true })
+    .getByRole("button", { name: /^(?!Load )[A-Z][A-Za-z ]+ \d of \d$/, pressed: true })
     .first()
     .click();
   await expect(system(page, target)).toHaveAttribute("aria-label", /, 1 [^,]+ ship$/);

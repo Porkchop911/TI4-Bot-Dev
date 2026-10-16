@@ -1,7 +1,13 @@
 import { expect, it } from "vitest";
 import menuUpdate from "../../../../fixtures/protocol/update-menu.json";
 import systemsUpdate from "../../../../fixtures/protocol/update-load.json";
-import type { Choice, ComponentCatalog, ContentRecords, SessionUpdate } from "../wire";
+import type {
+  Choice,
+  ComponentCatalog,
+  ContentRecords,
+  SessionUpdate,
+  TradeReplenishHints,
+} from "../wire";
 import type { LocalState } from "./action";
 import { selectShell } from "./shell";
 
@@ -470,7 +476,13 @@ it("chooses several players that replenish commodities, with what it gives each 
     ],
     details: {
       seats: { hacan: "b", letnev: "c" },
-      commodities: { hacan: { have: 0, max: 6 }, letnev: { have: 1, max: 2 } },
+      ...({
+        commodities: { hacan: { have: 0, max: 6 }, letnev: { have: 1, max: 2 } },
+        own: {
+          trade_goods: { before: 2, after: 5 },
+          commodities: { before: 1, after: 4 },
+        },
+      } satisfies TradeReplenishHints),
     },
   });
   expect(selectShell(trade, local()).players.pick).toEqual({
