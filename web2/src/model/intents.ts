@@ -1,14 +1,13 @@
 import type { ExplorationDeck } from "./board";
-import type { OfferMode, PlanetId, SeatId, SystemId, UnitType } from "./core";
+import type { OfferMode, PlanetId, SeatId, SystemId } from "./core";
 
 /**
- * Everything a player can ask for. The data source decides what an intent does: the mock engine
- * today, `submit_choice` and the drafts of the wire protocol later.
+ * Everything a player can ask for. The session decides what an intent does: an answer, a plan or
+ * a draft for the transport, or a change of what is staged or in view.
  */
 export type Intent =
   // Workspaces
-  | { type: "workspace"; mode: "live" | "draft" | "history" }
-  | { type: "closeHistory" }
+  | { type: "workspace"; mode: "live" | "draft" }
   | { type: "undo" }
   | { type: "redo" }
   | { type: "startOver" }
@@ -19,7 +18,6 @@ export type Intent =
   // Steps
   | { type: "selectStep"; step: number }
   | { type: "returnToCurrent" }
-  | { type: "returnToEdit" }
   | { type: "editStep"; step: number }
   /** Takes the entry of a draft that no longer fits out of the draft. */
   | { type: "removeEntry" }
@@ -27,7 +25,6 @@ export type Intent =
   | { type: "commitEdit" }
   // Staged values of the open step
   | { type: "setCount"; key: string; value: number }
-  | { type: "removeLine"; key: string }
   /**
    * Loads one ship, or every ship that leaves a system ("origin:<system>"), until the holds are
    * full or nothing is left. `source` is the kind of unit that is loaded: a cargo source.
@@ -46,7 +43,6 @@ export type Intent =
    * build: the payment is next.
    */
   | { type: "markOrigin"; system: SystemId }
-  | { type: "setPlacement"; unit: UnitType; place: string }
   | { type: "setPayment"; source: string; value: number }
   /** Stages a suggested payment on the map, or clears the staged payment. */
   | { type: "payment"; action: "auto" | "reset" }
@@ -56,12 +52,6 @@ export type Intent =
   | { type: "findSystem"; query: string }
   | { type: "togglePlanet"; planet: PlanetId }
   | { type: "toggleSystem"; system: SystemId }
-  // Battles
-  | {
-      type: "battle";
-      action: "roll" | "announceRetreat" | "assignHits" | "resetHits" | "retreat";
-    }
-  | { type: "stageHit"; unit: UnitType; kind: "sustain" | "destroy" | "destroy-damaged" }
   // Other actions
   | {
       type: "pickAction";
@@ -90,8 +80,7 @@ export type Intent =
   | { type: "clearChoice" }
   /** "Change" on a chosen thing: clears that part of the action, so it is open again. */
   | { type: "clearPart"; part: string }
-  // Reaction windows: a card is staged, then played; or the viewer passes.
-  | { type: "stageReaction"; card: string }
+  // Reaction windows: the viewer plays the staged card, or passes.
   | { type: "reaction"; action: "pass" | "play" }
   /**
    * When the viewer is offered a reaction: an action card by its printed name, the card of an
@@ -105,5 +94,5 @@ export type Intent =
   /** Opens the exploration decks at one deck. */
   | { type: "openReference"; sheet: "exploration"; deck: ExplorationDeck }
   | { type: "inspectLogEntry"; id: string }
-  /** Lets another seat act. Only the demo offers this. */
+  /** Lets the seat that the game waits for decide ("Step" of "Other seats"). */
   | { type: "simulate" };

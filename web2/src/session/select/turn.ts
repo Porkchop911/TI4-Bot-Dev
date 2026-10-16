@@ -183,7 +183,6 @@ export function selectTurn(
     kind: "flow",
     context: parts.context ?? null,
     badge: parts.staged ? { tone: "draft", label: "Not sent" } : null,
-    past: null,
     tabs: [],
     selected: 0,
     current: null,

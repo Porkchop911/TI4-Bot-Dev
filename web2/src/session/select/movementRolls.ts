@@ -94,8 +94,6 @@ const row = (change: Partial<BattleRowView>): BattleRowView => ({
   hits: "",
   scored: false,
   pills: [],
-  gone: false,
-  assign: [],
   ...change,
 });
 
@@ -148,15 +146,13 @@ function table(
       role: seat === active ? "Attacker" : "Defender",
       isViewer: seat === viewer,
       hits: own.length && scored.length ? scored.reduce((sum, count) => sum + count, 0) : null,
-      meta: [],
-      cards: "",
       rows: [
         ...own.flatMap((gun) => gun.rows),
         ...(targets.has(seat) ? shipRows(ships, seat) : []),
       ],
     };
   });
-  return { label: "Space cannon offense", score, owed: null, sides, notes: [] };
+  return { label: "Space cannon offense", score, owed: null, sides };
 }
 
 /** Whom a gun fires at, when the roll does not say: every gun but the seat's own fires at it. */

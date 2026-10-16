@@ -58,7 +58,3 @@ export function ListRow({
     </div>
   );
 }
-
-export function Quantity({ count }: { count: number }) {
-  return <span className="font-mid tabular-nums">× {count}</span>;
-}

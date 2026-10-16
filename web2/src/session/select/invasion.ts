@@ -87,8 +87,6 @@ function previewOf(
     role,
     isViewer: seat === viewer,
     hits: null,
-    meta: [],
-    cards: "",
     rows: Object.entries(fielded)
       .filter(([, count]) => count > 0)
       .map(([id, count]) => ({ id, count, unit: typeOf(id), roll: rolls[id] }))
@@ -111,8 +109,6 @@ function previewOf(
           hits: target === null ? "" : `≈${(dice * hitChance(target)).toFixed(1)}`,
           scored: false,
           pills: [],
-          gone: false,
-          assign: [],
         };
       }),
   });
@@ -129,7 +125,6 @@ function previewOf(
         side(invader, "Attacker", response.attacker_fielded, response.attacker_rolls),
         side(defender, "Defender", response.defender_fielded, response.defender_rolls),
       ],
-      notes: [],
     },
     odds: {
       kind: "ground",
@@ -301,11 +296,6 @@ export const selectInvasion = (
 ): InvasionView => ({
   kind: "invasion",
   landing: selectLanding(update, facts, draft, chosen, catalog, odds, printed),
-  skipped: null,
-  planets: [],
-  gauges: [],
-  plannedNote: false,
-  revision: "",
 });
 
 /** The planets of the active system are the choice on the board: a tap lands one unit there. */

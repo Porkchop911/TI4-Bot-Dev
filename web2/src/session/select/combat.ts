@@ -44,8 +44,6 @@ const row = (change: Partial<BattleRowView>): BattleRowView => ({
   hits: "",
   scored: false,
   pills: [],
-  gone: false,
-  assign: [],
   ...change,
 });
 
@@ -121,8 +119,6 @@ export function roundTable(
     hits: rolled
       ? ((seat === combat.attacker ? combat.attacker_hits : combat.defender_hits) ?? 0)
       : null,
-    meta: [],
-    cards: "",
     rows: sideRows(
       ships.filter((unit) => unit.owner === seat),
       combat,
@@ -136,7 +132,6 @@ export function roundTable(
     score: stageOf(combat),
     owed: owed ? { hits: combat.hits_to_assign!, seat: combat.active_player! } : null,
     sides,
-    notes: [],
   };
 }
 
@@ -157,9 +152,6 @@ export function selectCombat(
     target: systemLabel(tilesOf(update), combat.system_id),
     content: {
       kind: "combat",
-      skipped: null,
-      outcome: null,
-      offers: [],
       decision,
       records: [
         {

@@ -582,12 +582,10 @@ export function selectTactical(
       ? `Strategic action · ${view.target ?? ""} · ${faction}`
       : `Tactical action · ${primary ? `${primary.name} · ` : ""}${view.target ?? "No system chosen"} · ${faction}`,
     badge: null,
-    past: null,
     tabs: strategic ? [] : tabs,
     selected,
     current,
     contentKey: `tactical:${selected}`,
-    uncommitted: null,
     // A reaction window during the combat is the band on top of the step.
     interrupt: facts.kind === "combat" ? facts.flow.interrupt : null,
     closing: [],

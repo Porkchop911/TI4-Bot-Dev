@@ -239,13 +239,7 @@ export const selectProduction = (
 ): ProductionView => ({
   kind: "production",
   sheet: selectBuild(update, facts, draft, stage, printed, standing),
-  skipped: null,
-  title: "",
-  subtitle: "",
-  rows: [],
-  gauges: [],
   payment: selectPayment(update, facts, draft, stage === "pay"),
-  done: null,
 });
 
 /**

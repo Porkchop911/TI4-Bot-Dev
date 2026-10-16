@@ -27,10 +27,6 @@ export function CardHeading({
   );
 }
 
-export function CardBody({ className, ...rest }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cx("space-y-2.5 px-3.5 py-3", className)} {...rest} />;
-}
-
 /** A quiet line inside a card: an empty state or a read-only summary. */
 export function CardText({ children }: { children: ReactNode }) {
   return <div className="px-3.5 py-3 text-xs text-muted">{children}</div>;
@@ -84,30 +80,6 @@ export function InlineNote({
     <div className={cx("rounded-r-[5px] border-l-2 px-3 py-2 text-sm", NOTE[tone])}>
       {strong != null && <strong className="font-mid text-text">{strong} </strong>}
       {children}
-    </div>
-  );
-}
-
-/** A decision the player may take now: an action card, a retreat. `hint` holds the rule text. */
-export function Offer({
-  eyebrow,
-  title,
-  hint,
-  actions,
-}: {
-  eyebrow: string;
-  title: string;
-  hint?: ReactNode;
-  actions?: ReactNode;
-}) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-lg border border-gold/25 bg-gold/[.03] px-3.5 py-1.5">
-      <div className="flex flex-wrap items-center gap-x-2.5">
-        <Eyebrow className="text-gold">{eyebrow}</Eyebrow>
-        <h3 className="text-[15px] font-semibold">{title}</h3>
-        {hint}
-      </div>
-      {actions != null && <div className="flex flex-wrap gap-1.5">{actions}</div>}
     </div>
   );
 }

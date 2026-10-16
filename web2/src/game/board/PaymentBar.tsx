@@ -1,7 +1,7 @@
 import type { PaymentView } from "../../model";
 import { Button, Counter, cx } from "../../ui";
 import { ActionButton, useDispatch } from "../context";
-import { payState, payUnit } from "../steps/PaymentList";
+import { payState, payUnit } from "../steps/payState";
 
 /**
  * The open payment, on the board where the player chooses the planets: how it stands, and every

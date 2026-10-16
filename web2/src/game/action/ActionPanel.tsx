@@ -1,5 +1,5 @@
-import { payState } from "../steps/PaymentList";
-import { useEffect, useRef, type ReactNode } from "react";
+import { payState } from "../steps/payState";
+import type { ReactNode } from "react";
 import type {
   ActionView,
   FooterView,
@@ -145,7 +145,6 @@ interface TaskPanelProps {
   /** Scroll position is kept while this stays the same. */
   contentKey: string;
   labelledBy?: string;
-  reveal: string | null;
   children: ReactNode;
 }
 
@@ -162,18 +161,9 @@ function TaskPanel({
   footer,
   contentKey,
   labelledBy,
-  reveal,
   children,
 }: TaskPanelProps) {
   const dispatch = useDispatch();
-  const content = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (reveal) {
-      content.current
-        ?.querySelector(`[data-link~="${reveal}"]`)
-        ?.scrollIntoView({ block: "nearest" });
-    }
-  }, [reveal]);
   return (
     <section
       id="step-panel"
@@ -237,7 +227,6 @@ function TaskPanel({
       {interrupt && <Interrupt view={interrupt} />}
       <div
         key={contentKey}
-        ref={content}
         className="min-h-0 flex-1 space-y-2.5 overflow-y-auto px-5 pt-3 pb-4 phone:px-3"
       >
         {children}
@@ -249,37 +238,24 @@ function TaskPanel({
 
 /**
  * The action panel: one frame for every action. A tactical action has five steps, a strategic action
- * has two, a component action has none. Live, Draft and History use the same frame.
+ * has two, a component action has none. Live and Draft use the same frame.
  * The panel has one width for every step.
  */
 export function ActionPanel({
   view,
   status,
-  reveal,
   footer = true,
 }: {
   view: ActionView;
   /** The status in the bar of the game. The pill of the heading does not say it again. */
   status: string;
-  reveal: string | null;
   /** False when the shell shows `ActionFooter` itself, under every pane. */
   footer?: boolean;
 }) {
   const dispatch = useDispatch();
   const away = view.kind === "tactical" && view.current !== null && view.selected !== view.current;
-  const uncommitted = view.kind === "tactical" ? view.uncommitted : null;
   return (
     <aside className="flex min-h-0 min-w-0 flex-1 flex-col">
-      {view.past && (
-        <div className="flex items-center justify-between gap-2.5 border-b border-green/25 bg-green/[.07] py-1.5 pr-2.5 pl-4 text-sm">
-          <span>
-            <strong>History</strong> · {view.past.label} · read-only
-          </span>
-          <Button size="sm" iconAfter="arrow" onClick={() => dispatch({ type: "closeHistory" })}>
-            Back to Live
-          </Button>
-        </div>
-      )}
       {view.tabs.length > 0 && (
         <StepTabs
           label="Tactical action steps"
@@ -289,28 +265,16 @@ export function ActionPanel({
           onSelect={(step) => dispatch({ type: "selectStep", step })}
         />
       )}
-      {(uncommitted || away) && (
+      {away && (
         <div className="flex flex-none items-center justify-end gap-1.5 border-b border-line px-3 py-[5px]">
-          {uncommitted && (
-            <Button
-              tone="quiet"
-              size="sm"
-              icon="edit"
-              onClick={() => dispatch({ type: "returnToEdit" })}
-            >
-              {uncommitted.name} · uncommitted
-            </Button>
-          )}
-          {away && (
-            <Button
-              tone="quiet"
-              size="sm"
-              iconAfter="arrow"
-              onClick={() => dispatch({ type: "returnToCurrent" })}
-            >
-              Go to current
-            </Button>
-          )}
+          <Button
+            tone="quiet"
+            size="sm"
+            iconAfter="arrow"
+            onClick={() => dispatch({ type: "returnToCurrent" })}
+          >
+            Go to current
+          </Button>
         </div>
       )}
       {view.kind === "tactical" ? (
@@ -326,7 +290,6 @@ export function ActionPanel({
           footer={footer ? view.task.footer : null}
           contentKey={view.contentKey}
           labelledBy={`step-tab-${view.selected}`}
-          reveal={reveal}
         >
           {view.task.review && <Review view={view.task.review} />}
           <StepContent view={view.task.content} />
@@ -343,7 +306,6 @@ export function ActionPanel({
           help={view.help}
           footer={footer ? view.footer : null}
           contentKey={view.contentKey}
-          reveal={reveal}
         >
           <Blocks blocks={view.blocks} />
           <Blocks blocks={view.closing} />

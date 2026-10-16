@@ -3,7 +3,7 @@ import type { BoardView, ExplorationDeck } from "./board";
 import type { OfferView, Rich, SeatId, SeatView } from "./core";
 import type { Intent } from "./intents";
 
-export type Workspace = "live" | "draft" | "history";
+export type Workspace = "live" | "draft";
 
 export interface ToolbarView {
   round: number;
@@ -15,7 +15,6 @@ export interface ToolbarView {
   workspace: Workspace;
   /** False when the viewer may not draft, with the reason. */
   draftLocked: string | null;
-  past: { label: string } | null;
   /** Controls of the private draft. Null outside the draft. */
   draft: { canUndo: boolean; canRedo: boolean; canApply: boolean; applyHint: string } | null;
 }
@@ -309,10 +308,7 @@ export interface ShellView {
   reference: ReferenceView;
   /** What "Apply to Live" will commit. Null when there is nothing to apply. */
   apply: ApplyView | null;
-  /** A list row to scroll into view, after the player chose its counterpart on the board. */
-  reveal: string | null;
   toast: { id: number; text: string } | null;
-  announcement: string;
   /** The viewer has a decision open: a question of the game, or a draft. */
   asked: boolean;
   /**
@@ -342,7 +338,7 @@ export interface Capabilities {
   save: boolean;
 }
 
-/** The only thing the game shell needs. The mock implements it now; a websocket session will later. */
+/** The only thing the game shell needs: `useLiveSession` makes it, over any transport. */
 export interface GameSession {
   view: ShellView;
   dispatch: (intent: Intent) => void;

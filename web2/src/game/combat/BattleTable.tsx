@@ -1,39 +1,16 @@
-import type {
-  BattleOfferView,
-  BattleRecordView,
-  BattleSideView,
-  BattleTableView,
-  OddsView,
-  OutcomeView,
-} from "../../model";
-import { forceText, plural, unitName } from "../../model";
-import {
-  Button,
-  Card,
-  ChipTabs,
-  Die,
-  Eyebrow,
-  Hint,
-  Icon,
-  InlineNote,
-  Offer,
-  Pill,
-  cx,
-} from "../../ui";
-import { ActionButton, useDispatch, useSeat, useSeats } from "../context";
+import type { BattleRecordView, BattleSideView, BattleTableView, OddsView } from "../../model";
+import { plural, unitName } from "../../model";
+import { ChipTabs, Die, Eyebrow, Hint, Icon, Pill, cx } from "../../ui";
+import { useSeat, useSeats } from "../context";
 
-/** `lines`: which header lines the table has. Both sides keep them, so their unit rows start level. */
 function Side({
   side,
-  lines,
   odds,
 }: {
   side: BattleSideView;
-  lines: { meta: boolean; cards: boolean };
   /** Simulated result for this side, before the roll. */
   odds?: { wins: number; left: string };
 }) {
-  const dispatch = useDispatch();
   const seat = useSeat(side.seat);
   return (
     <section
@@ -62,27 +39,6 @@ function Side({
           {side.hits !== null && <span className="font-strong">{plural(side.hits, "hit")}</span>}
         </span>
       </div>
-      {lines.meta && (
-        <div className="mt-0.5 flex h-[18px] gap-x-3 overflow-hidden text-xs whitespace-nowrap text-muted">
-          {side.meta.map((item) => (
-            <span
-              key={item.text}
-              className={cx(
-                item.tone === "bad" && "text-red",
-                item.tone === "accent" && "text-accent",
-              )}
-            >
-              {item.text}
-            </span>
-          ))}
-        </div>
-      )}
-      {lines.cards && (
-        <div className="h-[18px] truncate text-xs text-muted" title={side.cards}>
-          {side.cards}
-        </div>
-      )}
-      {(lines.meta || lines.cards) && <div className="h-[5px]" />}
       {side.rows.length === 0 && (
         <div className="min-h-[34px] border-t border-line/50 py-[3px] text-sm leading-7 text-faint">
           No units
@@ -91,10 +47,7 @@ function Side({
       {side.rows.map((row, index) => (
         <div
           key={`${row.unit ?? "row"}-${index}`}
-          className={cx(
-            "grid min-h-[34px] grid-cols-subgrid items-center gap-y-1.5 border-t border-line/50 py-[3px] text-sm",
-            row.gone && "text-faint",
-          )}
+          className="grid min-h-[34px] grid-cols-subgrid items-center gap-y-1.5 border-t border-line/50 py-[3px] text-sm"
         >
           <span className="flex min-w-0 items-center gap-[7px] font-mid">
             {row.unit && <Icon name={row.unit} className="size-[18px] shrink-0 text-icon" />}
@@ -133,22 +86,6 @@ function Side({
               </Pill>
             ))}
           </span>
-          {row.assign.length > 0 && (
-            <div className="col-span-full flex flex-wrap gap-1.5 pb-1 pl-[25px]">
-              {row.assign.map((pick) => (
-                <Button
-                  key={pick.kind}
-                  size="sm"
-                  disabled={pick.disabled}
-                  onClick={() =>
-                    row.unit && dispatch({ type: "stageHit", unit: row.unit, kind: pick.kind })
-                  }
-                >
-                  {pick.label}
-                </Button>
-              ))}
-            </div>
-          )}
         </div>
       ))}
     </section>
@@ -160,110 +97,39 @@ export function BattleTable({ view, odds }: { view: BattleTableView; odds?: Odds
   const seats = useSeats();
   const draw = odds ? 100 - odds.attackerWins - odds.defenderWins : 0;
   return (
-    <>
-      <div className="overflow-hidden rounded-lg border border-line">
-        <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1 border-b border-line bg-white/[.016] px-3 py-1.5 text-sm">
-          <strong>{view.label}</strong>
-          <span className="text-muted">{view.score}</span>
-          {view.hint && <Hint label={`Rules: ${view.label}`}>{view.hint}</Hint>}
-          {odds && (
-            <span className="inline-flex items-center gap-2 text-muted">
-              Avg {odds.rounds} rounds{draw > 0 ? ` · ${draw}% both destroyed` : ""}
-              <Hint label="About the odds">
-                Simulated · {odds.rollouts} rollouts · {odds.caveat}
-              </Hint>
-            </span>
-          )}
-          {view.owed && (
-            <span className="ml-auto font-strong text-accent">
-              {plural(view.owed.hits, "hit")} for {seats[view.owed.seat].name} to assign
-            </span>
-          )}
-        </div>
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(330px,1fr))]">
-          {view.sides.map((side) => (
-            <Side
-              key={side.seat}
-              side={side}
-              odds={
-                odds && {
-                  wins: side.seat === odds.attacker ? odds.attackerWins : odds.defenderWins,
-                  left: side.seat === odds.attacker ? odds.attackerLeft : odds.defenderLeft,
-                }
-              }
-              lines={{
-                meta: view.sides.some((item) => item.meta.length > 0),
-                cards: view.sides.some((item) => item.cards),
-              }}
-            />
-          ))}
-        </div>
+    <div className="overflow-hidden rounded-lg border border-line">
+      <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1 border-b border-line bg-white/[.016] px-3 py-1.5 text-sm">
+        <strong>{view.label}</strong>
+        <span className="text-muted">{view.score}</span>
+        {odds && (
+          <span className="inline-flex items-center gap-2 text-muted">
+            Avg {odds.rounds} rounds{draw > 0 ? ` · ${draw}% both destroyed` : ""}
+            <Hint label="About the odds">
+              Simulated · {odds.rollouts} rollouts · {odds.caveat}
+            </Hint>
+          </span>
+        )}
+        {view.owed && (
+          <span className="ml-auto font-strong text-accent">
+            {plural(view.owed.hits, "hit")} for {seats[view.owed.seat].name} to assign
+          </span>
+        )}
       </div>
-      {view.notes.map((note) => (
-        <InlineNote key={note} tone="quiet">
-          {note}
-        </InlineNote>
-      ))}
-    </>
-  );
-}
-
-export function OutcomeCard({ view }: { view: OutcomeView }) {
-  const seats = useSeats();
-  return (
-    <>
-      <Card className="border-green/20! bg-green/[.024]! px-3.5 py-3">
-        <h3 className="text-md font-semibold">{view.title}</h3>
-        <p className="text-xs text-muted">{view.subtitle}</p>
-        <div className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-1.5 border-t border-green/15 pt-2.5 text-sm">
-          {view.sides.map((side) => (
-            <div key={side.seat}>
-              <Eyebrow className="block text-faint">{seats[side.seat].faction} losses</Eyebrow>
-              {forceText(side.lost)}
-              <Eyebrow className="mt-1.5 block text-faint">{side.keptLabel}</Eyebrow>
-              {forceText(side.kept)}
-            </div>
-          ))}
-        </div>
-      </Card>
-      {view.note && <InlineNote>{view.note}</InlineNote>}
-    </>
-  );
-}
-
-/** Cards, warnings and choices that belong to the open stage of a battle. */
-export function BattleOffers({ offers }: { offers: BattleOfferView[] }) {
-  return (
-    <>
-      {offers.map((offer) =>
-        offer.kind === "note" ? (
-          <InlineNote
-            key={offer.strong}
-            tone={offer.tone}
-            strong={
-              <>
-                {offer.alert && <Icon name="alert" />} {offer.strong}
-              </>
-            }
-          >
-            {offer.text}
-            {offer.hint && <Hint label={`Rules: ${offer.strong}`}>{offer.hint}</Hint>}
-          </InlineNote>
-        ) : (
-          <Offer
-            key={offer.title}
-            eyebrow={offer.eyebrow}
-            title={offer.title}
-            hint={offer.text && <Hint label={`About ${offer.title}`}>{offer.text}</Hint>}
-            actions={
-              offer.actions.length
-                ? offer.actions.map((action) => <ActionButton key={action.label} view={action} />)
-                : undefined
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(330px,1fr))]">
+        {view.sides.map((side) => (
+          <Side
+            key={side.seat}
+            side={side}
+            odds={
+              odds && {
+                wins: side.seat === odds.attacker ? odds.attackerWins : odds.defenderWins,
+                left: side.seat === odds.attacker ? odds.attackerLeft : odds.defenderLeft,
+              }
             }
           />
-        ),
-      )}
-    </>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -273,29 +139,26 @@ export function BattleRecords({
   records,
   selected,
   onSelect,
-  offers,
 }: {
   label: string;
   records: BattleRecordView[];
   selected: string | null;
   onSelect: (key: string) => void;
-  offers?: BattleOfferView[];
 }) {
   if (!records.length) {
-    return offers?.length ? <BattleOffers offers={offers} /> : null;
+    return null;
   }
   const latest = records[records.length - 1];
   const record = records.find((item) => item.key === selected) ?? latest;
   return (
     <>
-      {record === latest && offers && <BattleOffers offers={offers} />}
       <ChipTabs
         label={label}
         options={records.map((item) => ({ id: item.key, label: item.label }))}
         value={record.key}
         onChange={onSelect}
       />
-      <BattleTable view={record.table} odds={record.odds} />
+      <BattleTable view={record.table} />
     </>
   );
 }

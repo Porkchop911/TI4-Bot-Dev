@@ -22,7 +22,7 @@ These rules hold on every screen. The feature sections below give the specifics 
 7. **An element that never changes and repeats other content is removed.** Case: the pills for the stages of a strategy card.
 8. **An amount changes in steps of one.** A button for the usual target can stand next to the counter ("Pay rest", "Auto-pay"). There is no all-or-nothing button for an amount.
 9. **When a screen does not fit: move, restructure, make dense. Do not scroll.** In this order: put a summary into a row that exists on every screen (the footer, the heading, the header of a block); remove what repeats; make secondary rows dense. Only then ask the owner for an exception. Cases: the payment line in the footer; the chosen technologies in the header of the tree; the 24px rows of the seat list.
-10. **Live, Draft, History and the event log use the same screen.** Read-only is the same screen with nothing open, not another view.
+10. **Live, Draft and the event log use the same screen.** Read-only is the same screen with nothing open, not another view.
 11. **Hidden information.** A choice of another player is visible when it is resolved, never before. A row of another player is not a control.
 12. **Symbols follow the physical game** where the game has a convention. Case: command tokens are triangles, and the fleet pool points up.
 13. **Names and long texts.** A name is in a column of fixed width and is cut with "…"; the full name is on hover. Check every screen with 8 players, two long player names (the table of eight of `e2e/lobby.spec.ts` and `e2e/lobby.phone.spec.ts`), and the rows that only some factions have (faction technologies).
@@ -34,7 +34,7 @@ Checklist for a new screen or a changed screen:
 - Does every state have a sign or a word, and only one signal?
 - Does it fit at 1920×1080 with 8 players and the long names?
 - On a phone: is nothing cut at the side, and is the main button in view?
-- Does History show the same screen read-only?
+- Does a read-only state show the same screen with nothing open?
 
 ## Screen size
 
@@ -67,7 +67,7 @@ There are two layouts, and no others.
 
 - The action panel has one fixed width. It does not change with the step.
 - There is no control to change the panel width.
-- The top of the panel has two rows: the bar of the game (round, phase, turn and the status, "Your decision" or whom the game waits for; Live, Draft and the menu) and the heading of the open step. The heading row has the heading, beside it in muted text what the heading does not say (the kind of action, its system and its seat: "Tactical action · #26 · Hacan", "Action card · Hacan", "Turn ended"), the pill of its state ("Your turn" in the action picker, "Reaction", "Resolved"; never "Waiting for …": whom the game waits for is the status of the bar, "Turn of Hacan", "Waiting for Hacan" or "Waiting for reactions"), "Not sent" while a choice is staged, "?" with the rules, and the trail. The pill does not say again what the bar of the game says: a pill that is the status of the bar is not shown, and "Your decision · Reaction" is "Reaction" (`pillBeyond` in `ActionPanel.tsx`). The heading, the context, the pill, "Not sent" and "?" are one line; the context is cut with "…" first. A tactical action has its step tabs between the two rows; History has its banner above them.
+- The top of the panel has two rows: the bar of the game (round, phase, turn and the status, "Your decision" or whom the game waits for; Live, Draft and the menu) and the heading of the open step. The heading row has the heading, beside it in muted text what the heading does not say (the kind of action, its system and its seat: "Tactical action · #26 · Hacan", "Action card · Hacan", "Turn ended"), the pill of its state ("Your turn" in the action picker, "Reaction", "Resolved"; never "Waiting for …": whom the game waits for is the status of the bar, "Turn of Hacan", "Waiting for Hacan" or "Waiting for reactions"), "Not sent" while a choice is staged, "?" with the rules, and the trail. The pill does not say again what the bar of the game says: a pill that is the status of the bar is not shown, and "Your decision · Reaction" is "Reaction" (`pillBeyond` in `ActionPanel.tsx`). The heading, the context, the pill, "Not sent" and "?" are one line; the context is cut with "…" first. A tactical action has its step tabs between the two rows.
 - The board for 8 players (61 systems) must stay usable in the space that remains. Improve the board; do not make the panel narrower.
 
 ## Text

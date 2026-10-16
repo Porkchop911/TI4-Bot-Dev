@@ -163,7 +163,6 @@ export function selectShell(
       status: status(update, local, printed),
       workspace: local.draft ? "draft" : "live",
       draftLocked: local.draftLocked,
-      past: null,
       draft: local.draft && {
         canUndo: local.draft.canUndo,
         canRedo: local.draft.canRedo,
@@ -199,9 +198,7 @@ export function selectShell(
       log: [],
     },
     apply: local.draft?.apply ?? null,
-    reveal: null,
     toast: null,
-    announcement: "",
     asked: !!update.pending_choice || !!local.draft,
   };
 }

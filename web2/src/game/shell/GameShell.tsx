@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { shortcuts, type ExplorationDeck, type GameSession, type Intent } from "../../model";
-import { Badge, Button, Dialog, Drawer, InlineNote, LiveRegion, Toast, usePhone } from "../../ui";
+import { Badge, Button, Dialog, Drawer, InlineNote, Toast, usePhone } from "../../ui";
 import { ActionFooter, ActionPanel, footerOf } from "../action/ActionPanel";
 import { Board } from "../board/Board";
 import { GameProvider } from "../context";
@@ -234,7 +234,7 @@ export function GameShell({
           column={
             <>
               {players}
-              <ActionPanel view={view.action} status={view.toolbar.status} reveal={view.reveal} />
+              <ActionPanel view={view.action} status={view.toolbar.status} />
             </>
           }
           panes={[
@@ -244,12 +244,7 @@ export function GameShell({
               id: "action",
               label: "Action",
               content: (
-                <ActionPanel
-                  view={view.action}
-                  status={view.toolbar.status}
-                  reveal={view.reveal}
-                  footer={false}
-                />
+                <ActionPanel view={view.action} status={view.toolbar.status} footer={false} />
               ),
             },
           ]}
@@ -300,7 +295,6 @@ export function GameShell({
             <InlineNote strong={view.apply?.cost}>{view.apply?.note}</InlineNote>
           </Dialog>
           <Toast message={view.toast} />
-          <LiveRegion text={view.announcement} />
         </ShellFrame>
       </LinkProvider>
     </GameProvider>

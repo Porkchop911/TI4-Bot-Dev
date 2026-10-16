@@ -709,7 +709,6 @@ export function selectAction(
             : null,
     badge:
       !local.draft && (staged || several?.changed) ? { tone: "draft", label: "Not sent" } : null,
-    past: null,
     tabs: [],
     selected: 0,
     current: null,

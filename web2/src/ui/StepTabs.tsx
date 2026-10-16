@@ -8,7 +8,6 @@ export type StepStatus =
   | "done"
   | "decision"
   | "needs-review"
-  | "boundary"
   | "battle"
   | "draft";
 

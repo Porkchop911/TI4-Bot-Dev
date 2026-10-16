@@ -24,7 +24,6 @@ import {
 import { ActionButton, RichText, SeatSymbol, TECH_COLOR, useDispatch } from "../context";
 import { OfferSelect } from "../OfferSelect";
 import { useLink } from "../link";
-import { PaymentList } from "../steps/PaymentList";
 
 /**
  * A pool of command tokens, one triangle for each token. The fleet pool points up and the other
@@ -570,8 +569,6 @@ export function Blocks({ blocks }: { blocks: BlockView[] }) {
                 )}
               </Card>
             );
-          case "payment":
-            return <PaymentList key={index} view={block.payment} />;
           case "deal":
             return <Deal key={index} sides={block.sides} />;
           case "draft":

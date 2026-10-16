@@ -37,7 +37,7 @@ A decision is any choice that a card, an ability or a rule asks for. Every decis
 - An amount is a counter row. A limit is a gauge above the rows: a unit that is removed over the fleet supply or the capacity has the gauge of that limit as the engine counts it; the engine asks for one unit at a time, so the rows are the units and not counters.
 - A choice is staged, then sent. A staged choice shows "Selected" and "Not sent". The main button of the footer sends it. Esc clears the choice first, then leaves the action.
 - A thing that cannot be chosen stays in view and shows the reason.
-- Draft and History use the same blocks.
+- Live and Draft use the same blocks.
 
 ## Reaction windows
 

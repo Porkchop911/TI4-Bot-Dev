@@ -13,7 +13,6 @@ const view = (interrupt: boolean): FlowActionView => ({
   kind: "flow",
   context: null,
   badge: null,
-  past: null,
   tabs: [],
   selected: 0,
   current: null,

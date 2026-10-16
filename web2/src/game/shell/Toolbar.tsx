@@ -78,20 +78,6 @@ export function Toolbar({
       >
         {tab("live", "Live")}
         {tab("draft", "Draft", !!view.draftLocked, view.draftLocked ?? undefined)}
-        {view.past && (
-          <>
-            {tab("history", `History · ${view.past.label}`)}
-            <button
-              type="button"
-              className="rounded-[5px] px-2 text-sm text-muted hover:text-text"
-              aria-label="Close history view"
-              title="Close history view"
-              onClick={() => dispatch({ type: "closeHistory" })}
-            >
-              ✕
-            </button>
-          </>
-        )}
       </nav>
       {phone ? null : (
         <nav aria-label="Reference" className="ml-auto flex gap-1">
