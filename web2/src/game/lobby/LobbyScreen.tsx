@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import type {
   FactionSheetView,
   Intent,
@@ -154,13 +154,16 @@ function FactionName({ name, sheet }: { name: string; sheet: FactionSheetView | 
   );
 }
 
-/** One faction of the choice. The row is the control; the sheet of the faction is behind "?". */
+/**
+ * One faction of the choice. The row is the control, and a choice closes the list; the sheet of
+ * the faction is behind "?".
+ */
 function FactionOption({
   option,
-  dispatch,
+  onChoose,
 }: {
   option: LobbyFactionOptionView;
-  dispatch: (intent: LobbyIntent) => void;
+  onChoose: (intent: LobbyIntent) => void;
 }) {
   const { intent } = option;
   return (
@@ -175,7 +178,7 @@ function FactionOption({
           option.chosen ? "font-mid text-accent" : "hover:bg-raised",
           option.taken && "opacity-55 hover:bg-transparent",
         )}
-        onClick={() => intent && dispatch(intent)}
+        onClick={() => intent && onChoose(intent)}
       >
         <span className="w-3 flex-none" aria-hidden="true">
           {option.chosen && "▸"}
@@ -194,13 +197,19 @@ function FactionOption({
   );
 }
 
-/** The choice of the faction of a seat, open in its row. A choice applies at once. */
+/**
+ * The choice of the faction of a seat, open in its row. A choice applies at once and closes the
+ * list; Esc and a click outside the row leave it as it is.
+ */
 function FactionEditor({
   editor,
+  row,
   onClose,
   dispatch,
 }: {
   editor: LobbyFactionEditorView;
+  /** The row of the choice: a click outside it closes the choice. */
+  row: RefObject<HTMLElement | null>;
   onClose: () => void;
   dispatch: (intent: LobbyIntent) => void;
 }) {
@@ -210,20 +219,35 @@ function FactionEditor({
   const close = useRef(onClose);
   close.current = onClose;
   useEffect(() => {
-    // Esc goes one level back: it closes a text that is open (the sheet of a faction) first,
-    // then the choice.
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !document.querySelector('[role="note"]')) {
+    // Esc and a click outside the row go one level back: they close a text that is open (the
+    // sheet of a faction) first, then the choice.
+    const onEvent = (event: Event) => {
+      if (document.querySelector('[role="note"]')) {
+        return;
+      }
+      if (
+        event instanceof KeyboardEvent
+          ? event.key === "Escape"
+          : !row.current?.contains(event.target as Node)
+      ) {
         close.current();
       }
     };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, []);
+    document.addEventListener("keydown", onEvent);
+    document.addEventListener("pointerdown", onEvent);
+    return () => {
+      document.removeEventListener("keydown", onEvent);
+      document.removeEventListener("pointerdown", onEvent);
+    };
+  }, [row]);
+  const choose = (intent: LobbyIntent) => {
+    dispatch(intent);
+    onClose();
+  };
   return (
     <div ref={root} role="group" aria-label={editor.label} className="px-5 pt-0.5 pb-2 phone:px-3">
       <ul>
-        <FactionOption option={editor.random} dispatch={dispatch} />
+        <FactionOption option={editor.random} onChoose={choose} />
       </ul>
       {editor.groups.map((group) => (
         <section key={group.name} aria-label={group.name || "Factions"}>
@@ -234,7 +258,7 @@ function FactionEditor({
           )}
           <ul className="grid grid-cols-3 gap-x-4 phone:grid-cols-2">
             {group.options.map((option) => (
-              <FactionOption key={option.id} option={option} dispatch={dispatch} />
+              <FactionOption key={option.id} option={option} onChoose={choose} />
             ))}
           </ul>
         </section>
@@ -259,6 +283,7 @@ function PlayerRow({
 }) {
   // The name of the viewer is edited in its row. Null: the row is closed.
   const [name, setName] = useState<string | null>(null);
+  const item = useRef<HTMLLIElement>(null);
   const who = (
     <>
       <Sign sign={row.sign} />
@@ -295,6 +320,7 @@ function PlayerRow({
   );
   return (
     <li
+      ref={item}
       aria-current={row.you ? "true" : undefined}
       className={cx("[li+&]:border-t [li+&]:border-line/50", row.you && "bg-cyan/[.06]")}
     >
@@ -338,43 +364,51 @@ function PlayerRow({
             </button>
           </span>
         )}
-        {/* The kinds of an open seat wrap on a phone: up to three models follow "Random". */}
-        <span
-          className={cx(
-            "ml-auto flex flex-none items-center gap-1.5",
-            row.buttons.length > 0 &&
-              "phone:min-w-0 phone:flex-1 phone:flex-wrap phone:justify-end",
-          )}
-        >
-          {row.rename && name === null && (
-            <Button
-              tone="quiet"
-              size="icon"
-              aria-label="Change your name"
-              title="Change your name"
-              onClick={() => setName(row.name)}
-            >
-              ✎
-            </Button>
-          )}
-          {row.buttons.map((button) => (
-            <RowButton key={button.label} view={button} dispatch={dispatch} />
-          ))}
-          {row.remove && (
-            <Button
-              tone="quiet"
-              size="icon"
-              aria-label={row.remove.label}
-              title={row.remove.label}
-              onClick={() => dispatch(row.remove!.intent)}
-            >
-              ×
-            </Button>
-          )}
-        </span>
+        {/* The kinds of an open seat wrap on a phone: up to three models follow "Random". While the
+            choice of the faction is open, the row is that choice: its other actions are hidden. */}
+        {!open && (
+          <span
+            className={cx(
+              "ml-auto flex flex-none items-center gap-1.5",
+              row.buttons.length > 0 &&
+                "phone:min-w-0 phone:flex-1 phone:flex-wrap phone:justify-end",
+            )}
+          >
+            {row.rename && name === null && (
+              <Button
+                tone="quiet"
+                size="icon"
+                aria-label="Change your name"
+                title="Change your name"
+                onClick={() => setName(row.name)}
+              >
+                ✎
+              </Button>
+            )}
+            {row.buttons.map((button) => (
+              <RowButton key={button.label} view={button} dispatch={dispatch} />
+            ))}
+            {row.remove && (
+              <Button
+                tone="quiet"
+                size="icon"
+                aria-label={row.remove.label}
+                title={row.remove.label}
+                onClick={() => dispatch(row.remove!.intent)}
+              >
+                ×
+              </Button>
+            )}
+          </span>
+        )}
       </div>
       {open && row.editor && (
-        <FactionEditor editor={row.editor} onClose={() => onOpen(false)} dispatch={dispatch} />
+        <FactionEditor
+          editor={row.editor}
+          row={item}
+          onClose={() => onOpen(false)}
+          dispatch={dispatch}
+        />
       )}
     </li>
   );
