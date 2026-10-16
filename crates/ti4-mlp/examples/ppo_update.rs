@@ -2063,10 +2063,19 @@ fn main() {
         let mut sil_selected: Vec<ti4_mlp::positive_corpus::AdvantageDemo> = Vec::new();
         let mut sil_seats: std::collections::BTreeSet<(usize, usize)> =
             std::collections::BTreeSet::new();
+        let mut stalled_games = 0usize;
         for (job, result) in by_job.into_iter().enumerate() {
-            let (game, outcomes, wasted, tactical, record, qualifying) = result
-                .unwrap_or_else(|| refuse("a rollout job was never played"))
-                .unwrap_or_else(|error| refuse(&error));
+            let played = result.unwrap_or_else(|| refuse("a rollout job was never played"));
+            // An engine no-progress guard (a rare decision loop) drops that one game, logged, so a
+            // long run survives it; anything else, or more than two in one update, still refuses.
+            let (game, outcomes, wasted, tactical, record, qualifying) = match played {
+                Err(error) if error.contains("without progress") && stalled_games < 2 => {
+                    stalled_games += 1;
+                    eprintln!("SKIPPED (no-progress guard, update {update}): {error}");
+                    continue;
+                }
+                played => played.unwrap_or_else(|error| refuse(&error)),
+            };
             if self_imitation > 0.0 {
                 for (step, seat) in game.iter().zip(&qualifying) {
                     let (Some(seat), Some(critic)) = (seat, &step.critic) else {
