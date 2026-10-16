@@ -181,9 +181,10 @@ export interface BoardView {
   /** The build of the active system, with its controls, while it is staged and open. */
   production: BuildSheetView | null;
   /**
-   * The blocks of an open decision whose payment is on the map (the command pools of
-   * Leadership): a phone shows them on the map with the payment, so that the whole choice is in
-   * one pane. Desktop has them in the action panel next to the map.
+   * The blocks of an open decision that is made on the map (a payment, the system and the
+   * planets of Diplomacy or Construction, the command pools): a phone shows them under the map,
+   * the group "Choice on the map", so that the whole choice is in one pane. Desktop has them in
+   * the action panel next to the map.
    */
   blocks?: BlockView[];
   /** The systems of the open task, for "Fit task". */

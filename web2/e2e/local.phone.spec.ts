@@ -866,7 +866,7 @@ test("phone: the command pools of the status phase fit the width, and Send is in
   // A decision of the pools is under the map: the choice of the player opens the map.
   await expect(pane("Map")).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByText(/into which pool/i)).toHaveCount(0);
-  const choice = page.getByRole("group", { name: "Choice with the payment" });
+  const choice = page.getByRole("group", { name: "Choice on the map" });
   const pools = choice.getByRole("heading", { name: "Command pools" }).locator("..");
   await expect(pools).toContainText("7 / 10 placed");
   // Each row is one line in the width: the slot that adds a token is in view.
@@ -899,7 +899,7 @@ test("phone: Leadership has the purchase and the pools on the map, with the paym
   await page.locator('footer button[aria-keyshortcuts="Enter"]').click();
   // The tokens are bought and placed where they are paid: the choice of the player opens the map.
   await expect(panes.getByRole("button", { name: "Map" })).toHaveAttribute("aria-pressed", "true");
-  const choice = page.getByRole("group", { name: "Choice with the payment" });
+  const choice = page.getByRole("group", { name: "Choice on the map" });
   await expect(choice.getByRole("heading", { name: "Command pools" })).toBeVisible();
   await choice.getByRole("button", { name: "Add bought token" }).click();
   for (const pool of ["tactic", "fleet", "strategy", "strategy"]) {
@@ -1022,7 +1022,7 @@ test("phone: Diplomacy has the system and the planets on the map, where they are
   await page.locator('footer button[aria-keyshortcuts="Enter"]').click();
   // The choice is in the map, with its blocks under it: the choice of the player opens it.
   await expect(panes.getByRole("button", { name: "Map" })).toHaveAttribute("aria-pressed", "true");
-  const choice = page.getByRole("group", { name: "Choice with the payment" });
+  const choice = page.getByRole("group", { name: "Choice on the map" });
   await expect(choice.getByRole("heading", { name: "Ready planets" })).toBeVisible();
   expect(await width()).toBe(page.viewportSize()!.width);
   await page.locator("g.system.target").filter({ hasText: "#37" }).tap();
@@ -1048,7 +1048,7 @@ test("phone: Warfare has the token and the pools on the map, in the width", asyn
   await send.click();
   // The token and the pools are on the map: the choice of the player opens it.
   await expect(panes.getByRole("button", { name: "Map" })).toHaveAttribute("aria-pressed", "true");
-  const choice = page.getByRole("group", { name: "Choice with the payment" });
+  const choice = page.getByRole("group", { name: "Choice on the map" });
   await expect(choice.getByRole("heading", { name: "Command pools" })).toBeVisible();
   expect(await width()).toBe(page.viewportSize()!.width);
   await page.locator("g.system.target").filter({ hasText: "#29" }).tap();
@@ -1081,7 +1081,7 @@ test("phone: Warfare's secondary is the production of the home system, in the wi
   await page.locator("g.system.target").filter({ hasText: "#29" }).tap();
   await page.getByRole("button", { name: "Close system details" }).tap();
   await page
-    .getByRole("group", { name: "Choice with the payment" })
+    .getByRole("group", { name: "Choice on the map" })
     .getByRole("button", { name: "Add fleet pool token" })
     .tap();
   await send.click();
@@ -1121,7 +1121,7 @@ test("phone: Warfare of Thunder's Edge has the pools and the activation in the w
   // The redistribution is under the map: the choice of the player opens it.
   await expect(
     page
-      .getByRole("group", { name: "Choice with the payment" })
+      .getByRole("group", { name: "Choice on the map" })
       .getByRole("heading", { name: "Command pools" }),
   ).toBeVisible();
   expect(await width()).toBe(page.viewportSize()!.width);
@@ -1189,7 +1189,7 @@ test("phone: Construction is chosen on the map, with the planets of the system u
   await panel.getByRole("button", { name: /^4 Construction/ }).click();
   await page.locator('footer button[aria-keyshortcuts="Enter"]').click();
   const pane = (name: string) => panes.getByRole("button", { name });
-  const choice = page.getByRole("group", { name: "Choice with the payment" });
+  const choice = page.getByRole("group", { name: "Choice on the map" });
   const open = (name: string) =>
     choice.getByRole("heading", { name, exact: true }).locator("../..");
   // The whole choice is on the map. A planet with two structures offered chooses its system:
@@ -1230,7 +1230,7 @@ test("phone: Construction of Thunder's Edge has the ability and the structures o
   await panel.getByRole("button", { name: /Place a structure/ }).tap();
   await panes.getByRole("button", { name: "Map" }).tap();
   await mapPlanet(page, "Rarron").tap();
-  const choice = page.getByRole("group", { name: "Choice with the payment" });
+  const choice = page.getByRole("group", { name: "Choice on the map" });
   const open = (name: string) =>
     choice.getByRole("heading", { name, exact: true }).locator("../..");
   // #29: Qucen'n, then Rarron, each with a space dock and a PDS.

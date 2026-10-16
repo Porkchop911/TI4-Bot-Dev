@@ -200,12 +200,12 @@ export function Board({ view, children }: { view: BoardView; children?: ReactNod
       {view.origin && <OriginSheet key={view.origin.system} view={view.origin} />}
       {view.landing && <LandingSheet view={view.landing} />}
       {view.production && <ProductionSheet view={view.production} />}
-      {/* A phone has the choice that goes with the payment on the map, in one pane with it, under
-          the map so that the planets that pay stay in view. */}
+      {/* A phone has a choice that is made on the map (a payment, a system, planets, pools) in one
+          pane with it, under the map so that the board stays in view. */}
       {phone && view.blocks && (
         <div
           role="group"
-          aria-label="Choice with the payment"
+          aria-label="Choice on the map"
           className="relative z-2 flex max-h-[55%] flex-none flex-col gap-2 overflow-auto border-t border-line bg-surface p-2"
         >
           <Blocks blocks={view.blocks} />
