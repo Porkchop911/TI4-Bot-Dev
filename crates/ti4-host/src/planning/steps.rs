@@ -350,14 +350,18 @@ pub fn plan_answer(
         }
     }
     // The bill of a purchase of the plan: the step before is that purchase, or a part of its
-    // payment.
-    let bill = next > 0
-        && matches!(
+    // payment. A plan that starts with its payment pays the bill of the answer before it (a
+    // research, answered by the id of its option).
+    let bill = if next == 0 {
+        matches!(steps.first(), Some(PlanStep::Pay { .. }))
+    } else {
+        matches!(
             steps.get(next - 1),
             Some(
                 PlanStep::Produce { .. } | PlanStep::Pay { .. } | PlanStep::Purchase { buy: true }
             )
-        );
+        )
+    };
     // A command token that is bought with influence is paid as a unit is.
     if own && matches!(subtype, "pay_resources" | "pay_influence") && bill {
         let offered = |step: &PlanStep| {
@@ -661,6 +665,26 @@ mod tests {
         // A seat that can afford no more is not asked: "no" is not needed.
         let later = asked("end_turn", vec![ChoiceOption::new("end_turn", "end_turn")]);
         assert_eq!(plan_answer(&order, 5, &later, &seat()), PlanAnswer::Done);
+    }
+
+    #[test]
+    fn a_plan_of_payments_alone_pays_in_any_order() {
+        // A research paid on the map: the payments follow its answer, in the order of the map.
+        let steps = [pay("exhaust|jord"), pay("trade_good"), pay("trade_good")];
+        let bill = asked("pay_resources", vec![paying("trade_good")]);
+        let PlanAnswer::Answer {
+            option,
+            next,
+            steps: Some(order),
+        } = plan_answer(&steps, 0, &bill, &seat())
+        else {
+            panic!("no answer");
+        };
+        assert_eq!((option.id.as_str(), next), ("trade_good", 1));
+        assert_eq!(order[0], pay("trade_good"));
+        // The game needs no more: what is left is not of the game.
+        let later = asked("end_turn", vec![ChoiceOption::new("end_turn", "end_turn")]);
+        assert_eq!(plan_answer(&order, 1, &later, &seat()), PlanAnswer::Done);
     }
 
     #[test]

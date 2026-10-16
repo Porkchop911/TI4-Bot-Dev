@@ -145,6 +145,7 @@ pub const SCENARIOS: &[Scenario] = &[
     three_seats::STRATEGY_TRADE,
     three_seats::STRATEGY_WARFARE,
     three_seats::STRATEGY_WARFARE_TE,
+    three_seats::STRATEGY_TECHNOLOGY,
     three_seats::STRATEGY_IMPERIAL,
     three_seats::STRATEGY_IMPERIAL_MECATOL,
 ];
@@ -1805,6 +1806,26 @@ mod tests {
             assert_eq!(holds, mecatol, "{scenario}");
             assert_eq!(sol.victory_points, 2 + i32::from(mecatol), "{scenario}");
         }
+    }
+
+    /// Technology: Sol holds the card and can pay the second research of its primary in more than
+    /// one way.
+    #[test]
+    fn the_technology_scenario_gives_sol_the_card_and_a_payment_to_choose() {
+        let content = ContentStore::embedded();
+        let ids: Vec<PlayerId> = ["a", "b", "c"].map(PlayerId::new).to_vec();
+        let (state, _) = start(content, "strategy_technology", &ids, 42).expect("it starts");
+        let sol = state.player(&ids[0]).expect("a seat");
+        assert_eq!(sol.strategy_cards, [StrategyCardId::new("pok7technology")]);
+        let plans = ti4_engine::payment::plans(
+            &state,
+            content,
+            ti4_model::content_types::POK,
+            &ids[0],
+            ti4_engine::strategy_cards::TECHNOLOGY_PRIMARY_SECOND_COST,
+            ti4_engine::production::Spend::Resources,
+        );
+        assert!(plans.len() > 1, "several ways to pay six resources");
     }
 
     /// Thunder's Edge Warfare is a tactical action in any system, with no command token: its

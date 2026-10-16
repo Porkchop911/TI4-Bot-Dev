@@ -730,61 +730,7 @@ export const baseData = {
     place: { infantry: "starpoint", mech: "starpoint" },
   },
 };
-/** What the viewer has staged in a strategy card. Each card uses the fields of its parts. */
-export const blankMine = () => ({
-  pay: {},
-  techs: [],
-});
-/** What the other players do with each card in the demo: the primary, and a followed secondary. */
-export const STRATEGY_SIM: Record<number, { primary: string; follow: string }> = {
-  7: { primary: "researched Gravity Drive.", follow: "researched 1 technology for 4 resources" },
-};
-const STRATEGY_EXAMPLES: Record<string, any> = {
-  // The viewer's primary of each card.
-  ...Object.fromEntries(
-    [7].map((number) => [
-      `live-strategy-${number}`,
-      {
-        mode: "live",
-        kind: "strategic",
-        flow: {
-          card: CARDS[number - 1],
-          number,
-          owner: "sol",
-          stage: "primary",
-          order: SEAT_IDS.slice(1),
-          turn: 0,
-          results: {},
-          mine: {},
-        },
-        tip: "Every part of the card is staged on this screen. Resolve primary sends it. Esc clears the last choice.",
-      },
-    ]),
-  ),
-  // The viewer's secondary on another player's card, drafted before the seat is reached.
-  ...Object.fromEntries(
-    [7].map((number) => [
-      `live-secondary-${number}`,
-      {
-        mode: "live",
-        kind: "strategic",
-        flow: {
-          card: CARDS[number - 1],
-          number,
-          owner: "hacan",
-          stage: "primary",
-          order: ["xxcha", "letnev", "sol", ...SEAT_IDS.slice(4)],
-          turn: 0,
-          results: {},
-          mine: {},
-        },
-        tip: "You draft your secondary while the game waits for other players. It resolves by itself when your seat is reached.",
-      },
-    ]),
-  ),
-};
 export const examples: Record<string, any> = {
-  ...STRATEGY_EXAMPLES,
   "draft-combat": {
     mode: "draft",
     route: "hostile",

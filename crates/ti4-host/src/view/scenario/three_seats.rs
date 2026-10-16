@@ -48,6 +48,7 @@ pub const STRATEGY_CARDS: &[(&str, &str)] = &[
     ("strategy_trade", "pok5trade"),
     ("strategy_warfare", "pok6warfare"),
     ("strategy_warfare_te", "te6warfare"),
+    ("strategy_technology", "pok7technology"),
     ("strategy_imperial", "pok8imperial"),
 ];
 
@@ -294,6 +295,16 @@ pub const STRATEGY_WARFARE_TE: Scenario = Scenario {
     description: "The scenario \"Strategy card: Warfare\" on a table of Thunder's Edge, whose \
         Warfare is a tactical action in any system without a command token, also in the system \
         next to Sol's home that has its token, with a redistribution before and after.",
+    ..STRATEGY
+};
+
+pub const STRATEGY_TECHNOLOGY: Scenario = Scenario {
+    id: "strategy_technology",
+    title: "Strategy card: Technology",
+    description: "Sol has the turn and holds Technology, with 4 trade goods and the ready planets \
+        of a system next to its home: the second research of the primary is paid on the map. With \
+        Sol and Hacan played here, Hacan resolves the secondary and pays its 4 resources with its \
+        home planets and 3 trade goods.",
     ..STRATEGY
 };
 

@@ -181,41 +181,12 @@ test.describe("flows", () => {
     await shot(page, "web2/flow/production-pay");
   });
 
-  test("rule text opens on hover and stays on click", async ({ page }) => {
-    await page.goto("/?example=live-strategy-7");
-    const hint = page.getByRole("button", { name: "Rules: Technology" });
-    await expect(page.getByRole("note")).toHaveCount(0);
-    await hint.hover();
-    await expect(page.getByRole("note")).toContainText("Research 1 technology");
-    await hint.click();
-    await page.mouse.move(10, 10);
-    await expect(page.getByRole("note")).toBeVisible();
-    await shot(page, "web2/flow/rules-hint");
-  });
-
   test("apply a draft", async ({ page }) => {
     await page.goto("/?example=draft-combat");
     await page.locator("header").getByRole("button", { name: "Apply to Live" }).click();
     await shot(page, "web2/flow/apply-dialog");
     await page.getByRole("dialog").getByRole("button", { name: "Apply to Live" }).click();
     await shot(page, "web2/flow/applied");
-  });
-
-  test("secondary, log and history", async ({ page }) => {
-    await page.goto("/?example=live-secondary-7");
-    await page.getByRole("button", { name: "Simulate Alex (demo)" }).click();
-    await shot(page, "web2/flow/secondary");
-    await page
-      .getByRole("navigation", { name: "Reference" })
-      .getByRole("button", { name: "Log", exact: true })
-      .click();
-    await shot(page, "web2/flow/log");
-    await page
-      .getByRole("complementary", { name: "Log" })
-      .getByRole("button", { name: "Inspect", exact: true })
-      .first()
-      .click();
-    await shot(page, "web2/flow/history");
   });
 
   test("a retreat: the destination is chosen on the board", async ({ page }) => {
@@ -263,58 +234,6 @@ test.describe("flows", () => {
     await bar.getByRole("button", { name: "Auto-pay" }).click();
     await expect(panel.locator("footer")).toContainText("Payment");
     await shot(page, "web2/flow/auto-pay-production");
-  });
-
-  test.describe("strategy cards", () => {
-    const panel = (page: Page) => page.locator("#step-panel");
-    const start = async (page: Page, example: string) => {
-      await page.goto(`/?example=${example}`);
-      await panel(page).waitFor();
-    };
-    const fits = async (page: Page) => {
-      const overflow = await page
-        .locator("#step-panel > div.overflow-y-auto")
-        .evaluate((element) => element.scrollHeight - element.clientHeight);
-      expect(overflow, "the step content needs vertical scroll").toBeLessThanOrEqual(0);
-    };
-
-    test("Technology: the tree, the second technology and its payment", async ({ page }) => {
-      await start(page, "live-strategy-7");
-      const cell = (name: string) => panel(page).getByRole("button", { name, exact: true });
-      await expect(cell("Graviton Laser System, 1 prerequisite missing")).toBeDisabled();
-      await cell("Sarween Tools").click();
-      await cell("Graviton Laser System").click();
-      await expect(page.getByRole("group", { name: "Payment" })).toContainText("0 / 6");
-      await page.getByRole("button", { name: "Auto-pay" }).click();
-      await fits(page);
-      await shot(page, "web2/flow/strategy-technology");
-      await page.keyboard.press("Enter");
-      await expect(panel(page)).toContainText("researched Sarween Tools and Graviton Laser System");
-    });
-
-    test("Technology secondary: the tree and the payment fit", async ({ page }) => {
-      await start(page, "live-secondary-7");
-      await panel(page).getByRole("button", { name: "Sling Relay", exact: true }).click();
-      await page.getByRole("button", { name: "Auto-pay" }).click();
-      await fits(page);
-      await shot(page, "web2/flow/strategy-technology-secondary");
-      await page.getByRole("button", { name: /Mark draft ready/ }).click();
-      await expect(panel(page)).toContainText("Follow: researched Sling Relay for 4 resources");
-    });
-
-    test("one list shows what every player did", async ({ page }) => {
-      await start(page, "live-strategy-7");
-      await panel(page).getByRole("button", { name: "Sarween Tools", exact: true }).click();
-      await page.keyboard.press("Enter");
-      await expect(panel(page)).toContainText("Jamie researched Sarween Tools");
-      for (let seat = 0; seat < 3; seat++) {
-        await page.getByRole("button", { name: /Simulate/ }).click();
-      }
-      await expect(panel(page)).toContainText("Followed");
-      await expect(panel(page)).toContainText("Waits for");
-      await fits(page);
-      await shot(page, "web2/flow/strategy-seat-list");
-    });
   });
 
   for (const viewer of ["hacan", "observer"]) {

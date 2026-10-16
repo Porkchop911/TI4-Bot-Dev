@@ -122,6 +122,13 @@ import {
   selectRecall,
 } from "./select/recall";
 import { chooseScoring, clearLastScoring, selectScoring } from "./select/scoring";
+import {
+  payResearch,
+  researchPlan,
+  selectResearch,
+  setResearchGoods,
+  toggleResearchPlanet,
+} from "./select/research";
 import { countPools, selectTokens } from "./select/tokens";
 import type { Transport } from "./transport";
 import type { DraftOutcome, DraftStep, PlanScope, ReactionModes, SessionUpdate } from "./wire";
@@ -131,6 +138,7 @@ const NOTHING: LocalState = {
   staged: null,
   pools: null,
   purchase: null,
+  researchPay: null,
   ready: null,
   agendas: null,
   structures: null,
@@ -631,6 +639,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           staged: null,
           pools: null,
           purchase: null,
+          researchPay: null,
           ready: null,
           agendas: null,
           structures: null,
@@ -936,6 +945,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         staged: null,
         pools: null,
         purchase: null,
+        researchPay: null,
         ready: null,
         agendas: null,
         structures: null,
@@ -978,6 +988,15 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
     /** A gain or a purchase of command tokens of the live game: one screen, sent as one plan. */
     const buying =
       pending && !drafted && !followInfo?.editing && selectPurchase(shown, pending.choice, null)
+        ? pending
+        : null;
+    /** A paid research of the live game: the technology and its payment on the map, sent at once. */
+    const researching =
+      pending &&
+      !drafted &&
+      !followInfo?.editing &&
+      pending.choice.details?.payment &&
+      selectResearch(shown, pending.choice, null, null, null)
         ? pending
         : null;
     /** A readying of planets of the live game, with its system or its window: answered at once. */
@@ -1180,6 +1199,24 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         if (steps) {
           transport.submitPlan(pending.nonce, { destination: "", steps });
           setLocal((now) => ({ ...now, purchase: null, sent: pending.nonce, planNote: null }));
+        }
+        return;
+      }
+      // A paid research answers its technology, and its payment as the game asks for it.
+      if (researching && local.staged) {
+        const steps = researchPlan(researching.choice, local.staged, local.researchPay ?? null);
+        if (steps) {
+          transport.applyDraft(pending.nonce, {
+            choices: [local.staged],
+            plan: { destination: "", steps },
+          });
+          setLocal((now) => ({
+            ...now,
+            staged: null,
+            researchPay: null,
+            sent: pending.nonce,
+            planNote: null,
+          }));
         }
         return;
       }
@@ -1421,6 +1458,16 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
               produce((now) => togglePlanet(producing, now, planet))
             );
           }
+          if (researching) {
+            // A planet pays for the research.
+            const paying = toggleResearchPlanet(
+              researching.choice,
+              local.staged,
+              local.researchPay ?? null,
+              planet,
+            );
+            return paying && setLocal((now) => ({ ...now, researchPay: paying }));
+          }
           if (buying) {
             // A planet pays for the bought command tokens.
             const paying = togglePurchasePlanet(buying.choice, local.purchase ?? null, planet);
@@ -1450,6 +1497,15 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           );
         }
         case "setPayment":
+          if (researching) {
+            const goods = setResearchGoods(
+              researching.choice,
+              local.staged,
+              local.researchPay ?? null,
+              intent.value,
+            );
+            return goods && setLocal((now) => ({ ...now, researchPay: goods }));
+          }
           if (buying) {
             const goods = setPurchaseGoods(buying.choice, local.purchase ?? null, intent.value);
             return goods && setLocal((now) => ({ ...now, purchase: goods }));
@@ -1460,6 +1516,15 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             produce((now) => setGoods(producing, now, intent.value))
           );
         case "payment":
+          if (researching) {
+            const paid = payResearch(
+              researching.choice,
+              local.staged,
+              local.researchPay ?? null,
+              intent.action,
+            );
+            return paid && setLocal((now) => ({ ...now, researchPay: paid }));
+          }
           if (buying) {
             const paid = payPurchase(buying.choice, local.purchase ?? null, intent.action);
             return paid && setLocal((now) => ({ ...now, purchase: paid }));
@@ -1563,6 +1628,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             staged: null,
             pools: null,
             purchase: null,
+            researchPay: null,
             ready: null,
             agendas: null,
             structures: null,

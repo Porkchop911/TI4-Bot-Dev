@@ -16,7 +16,7 @@ import {
   examples,
 } from "./data";
 import { E } from "./loose";
-import { strategyEditor, strategyIntent } from "./strategy";
+import { strategyEditor } from "./strategy";
 
 export type State = any;
 export interface World {
@@ -216,7 +216,6 @@ const PRIVATE = new Set<Intent["type"]>([
   "toggleSystem",
   "pickSeat",
   "chooseOption",
-  "pickTech",
   "clearPart",
   "clearChoice",
   "stageReaction",
@@ -298,15 +297,6 @@ export function reduce(world: World, intent: Intent) {
   }
 
   if (!E.own() && state.kind !== "tactical" && PRIVATE.has(intent.type)) {
-    return;
-  }
-  // A choice in the open half of a strategy card goes to the part that is open there.
-  const editing = state.kind === "strategic" && world.mode === "live" && E.flowEditing(state);
-  if (editing && strategyIntent(state, intent)) {
-    announce(strategyEditor(state).problem || "Selection updated.");
-    for (const text of E.env.toasts.splice(0)) {
-      toast(text);
-    }
     return;
   }
   switch (intent.type) {
@@ -533,7 +523,6 @@ export function reduce(world: World, intent: Intent) {
       break;
     case "pickSeat":
     case "chooseOption":
-    case "pickTech":
     case "clearPart":
       break;
     case "clearChoice":

@@ -1734,6 +1734,106 @@ test("Imperial: the secondary draws a secret objective or passes in the row of t
   expect(errors).toEqual([]);
 });
 
+test("Technology: the second research of the primary is paid on the map and sent with it", async ({
+  page,
+}) => {
+  // The load of the scenario, two researches and the payment.
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // Sol holds Technology with 4 trade goods, Jord and the ready planets of a system next to it.
+  await page.goto("/?scenario=strategy_technology&humans=1");
+  const planet = (name: string) => page.locator("g.planet").filter({ hasText: name });
+  await expect(heading(page)).toHaveText("Choose an action");
+  await page.keyboard.press("7");
+  await page.keyboard.press("Enter");
+  // The printed card opens on hover and stays on click.
+  const hint = panel(page).getByRole("button", { name: "Rules: Technology" });
+  await expect(page.getByRole("note")).toHaveCount(0);
+  await hint.hover();
+  await expect(page.getByRole("note")).toContainText("Research 1 technology");
+  await hint.click();
+  await page.mouse.move(10, 10);
+  await expect(page.getByRole("note")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.mouse.click(10, 10);
+  // The first research is free: no payment.
+  const tree = panel(page).getByRole("heading", { name: "Research", exact: true }).locator("..");
+  await expect(tree).toContainText("Free");
+  await panel(page).getByRole("button", { name: "Gravity Drive", exact: true }).click();
+  const bar = page.getByRole("group", { name: "Payment" });
+  await expect(bar).toHaveCount(0);
+  await page.keyboard.press("Enter");
+
+  // The second costs six resources: a chosen technology opens the payment on the map.
+  await expect(tree).toContainText("Costs 6 resources");
+  await panel(page).getByRole("button", { name: "Sarween Tools", exact: true }).click();
+  await expect(tree).toContainText("Sarween Tools · 6 resources");
+  await expect(bar.getByRole("status").first()).toHaveText(/0 \/ 6\s*resources\s*6 more/);
+  await expect(page.locator("footer")).toContainText("Pay 6 more resources.");
+  await expect(send(page)).toBeDisabled();
+  await planet("Jord").click();
+  await bar.getByRole("button", { name: "Pay rest" }).click();
+  await expect(bar.getByRole("status").first()).toHaveText(/6 \/ 6\s*resources\s*✓ Paid/);
+  await expect(page.locator("footer")).toContainText(
+    /Selected: Sarween Tools · Technologies \d+ → \d+ · Trade goods 4 → 2/,
+  );
+  await expect(send(page)).toBeEnabled();
+  // More than the price is allowed, and says what is wasted.
+  await bar.getByRole("button", { name: "Add trade good" }).click();
+  await expect(bar.getByRole("status").first()).toHaveText(/7 \/ 6\s*resources\s*⚠ 1 wasted/);
+  await expect(send(page)).toBeEnabled();
+  await bar.getByRole("button", { name: "Remove trade good" }).click();
+  await fitsHeight(page);
+  await page.screenshot({ path: "shots/local/technology-pay.png", animations: "disabled" });
+
+  // One button sends the research and its payment; the game asks nothing more of it.
+  await send(page).click();
+  await expect(heading(page)).toHaveText("End your turn");
+  await expect(page.locator("g.planet.exhausted").filter({ hasText: "Jord" })).toHaveCount(1);
+  expect(errors).toEqual([]);
+});
+
+test("Technology: the secondary researches in the row of the seat and pays on the map", async ({
+  page,
+}) => {
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // Sol and Hacan are played here: Sol researches, then Hacan follows for 4 resources.
+  await page.goto("/?scenario=strategy_technology&humans=3");
+  await expect(heading(page)).toHaveText("Choose an action");
+  await page.keyboard.press("7");
+  await page.keyboard.press("Enter");
+  await panel(page).getByRole("button", { name: "Gravity Drive", exact: true }).click();
+  await page.keyboard.press("Enter");
+  await expect(send(page)).toHaveText(/Research nothing/);
+  await page.keyboard.press("Enter");
+
+  // One list shows what every seat did: Sol's primary is resolved, Hacan decides, Letnev waits.
+  await expect(panel(page)).toContainText("✓ Resolved");
+  await expect(panel(page)).toContainText("▶ Your decision");
+  await expect(panel(page)).toContainText("· Waits for you");
+  // Hacan's window is a list; following opens the tree in its row.
+  await expect(panel(page)).toContainText("Strategy pool 2 → 1");
+  await panel(page).getByRole("button", { name: "Spend", exact: true }).click();
+  await send(page).click();
+  const tree = panel(page).getByRole("heading", { name: "Research", exact: true }).locator("..");
+  await expect(tree).toContainText("Costs 4 resources");
+  await panel(page).getByRole("button", { name: "Gravity Drive", exact: true }).click();
+  const bar = page.getByRole("group", { name: "Payment" });
+  await expect(bar.getByRole("status").first()).toHaveText(/0 \/ 4\s*resources\s*4 more/);
+  await bar.getByRole("button", { name: "Auto-pay" }).click();
+  await expect(bar.getByRole("status").first()).toContainText("✓ Paid");
+  await fitsHeight(page);
+  await page.screenshot({ path: "shots/local/technology-secondary.png", animations: "disabled" });
+  await send(page).click();
+  await expect(tree).toHaveCount(0);
+  // The strategic action is over: Sol ends its turn.
+  await expect(heading(page)).toHaveText("End your turn");
+  expect(errors).toEqual([]);
+});
+
 test("the Dev sheet leads to a game on the server, on the seed of the page", async ({ page }) => {
   await page.goto("/?local=3&players=8&humans=1");
   await expect(send(page)).toBeDisabled();

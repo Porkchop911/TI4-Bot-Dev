@@ -16,13 +16,6 @@ export const EXAMPLE_GROUPS: [string, [string, string][]][] = [
     ],
   ],
   [
-    "Strategy cards",
-    [
-      ["live-strategy-7", "Live · 7 Technology (your primary)"],
-      ["live-secondary-7", "Live · 7 Technology (your secondary)"],
-    ],
-  ],
-  [
     "Live action",
     [
       ["live-combat", "Live · Space combat decisions"],

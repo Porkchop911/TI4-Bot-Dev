@@ -85,7 +85,6 @@ export type Intent =
    * force that a tap lands: a choice of the hand, which the game is not told.
    */
   | { type: "chooseOption"; option: string; group?: string }
-  | { type: "pickTech"; tech: string }
   | { type: "clearChoice" }
   /** "Change" on a chosen thing: clears that part of the action, so it is open again. */
   | { type: "clearPart"; part: string }

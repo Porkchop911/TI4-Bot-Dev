@@ -22,11 +22,9 @@ import {
   SPECS,
   STEPS,
   STOCK,
-  STRATEGY_SIM,
   SUPPLY,
   U,
   baseData,
-  blankMine,
   clone,
   examples,
   LINES,
@@ -1248,9 +1246,6 @@ export function makeState(example) {
   if (config.kind) {
     const flow = blankState(example, "live", "hostile", baseData);
     const data = clone(config.flow);
-    if (config.kind === "strategic") {
-      data.mine = { ...blankMine(), ...data.mine };
-    }
     return Object.assign(flow, {
       kind: config.kind,
       flow: data,
@@ -1593,17 +1588,13 @@ export function flowAdvance(state) {
   if (flow.stage === "primary") {
     Object.assign(flow, {
       stage: "secondary",
-      primaryResult: `${SEATS[flow.owner].name} ${STRATEGY_SIM[flow.number]?.primary ?? "gained 3 command tokens and bought 1 for 3 influence."}`,
+      primaryResult: `${SEATS[flow.owner].name} gained 3 command tokens and bought 1 for 3 influence.`,
     });
   } else if (flow.stage === "secondary" && flow.order[flow.turn] === "sol") {
     // Another viewer simulates Jamie: the draft resolves as it stands.
     resolveMine(state);
   } else if (flow.stage === "secondary") {
-    const sim = SIM[flow.order[flow.turn]];
-    flow.results[flow.order[flow.turn]] =
-      STRATEGY_SIM[flow.number] && sim.startsWith("Followed")
-        ? `Followed · ${STRATEGY_SIM[flow.number].follow}`
-        : sim;
+    flow.results[flow.order[flow.turn]] = SIM[flow.order[flow.turn]];
     flow.turn++;
   }
   settle(state);

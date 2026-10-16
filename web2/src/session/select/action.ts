@@ -37,6 +37,7 @@ import { type ReplenishDraft, selectReplenish } from "./replenish";
 import { type RecallDraft, selectRecall } from "./recall";
 import { type ScoringDraft, selectScoring } from "./scoring";
 import { selectResearch } from "./research";
+import type { Paying } from "./payment";
 import { type Pools, selectTokens } from "./tokens";
 import { type TurnMenu, isTurnMenu, selectTurn } from "./turn";
 
@@ -99,6 +100,8 @@ export interface LocalState {
   pools?: Pools | null;
   /** The staged gain and purchase of command tokens, with its payment. Null: nothing staged. */
   purchase?: PurchaseDraft | null;
+  /** The staged payment of a paid research. Null: nothing staged. */
+  researchPay?: Paying | null;
   /** The staged system and planets of a readying of planets. Null: nothing staged. */
   ready?: ReadyDraft | null;
   /** The staged places of agenda cards on the deck. Null: nothing staged. */
@@ -255,6 +258,14 @@ export function boardTask(update: SessionUpdate, local: LocalState): BoardTaskVi
   if (buying) {
     return buying.task;
   }
+  // The payment of a paid research is on the map, once its technology is chosen.
+  const researching =
+    choice && !local.draft && !local.follow?.editing
+      ? selectResearch(update, choice, local.staged, null, local.researchPay ?? null)
+      : null;
+  if (researching?.task) {
+    return researching.task;
+  }
   // The system and the planets of a readying of planets are chosen on the map.
   const readying =
     choice && !local.draft && !local.follow?.editing
@@ -409,9 +420,19 @@ export function selectAction(
   const stagedId = tokens ? tokens.staged : local.staged;
   const staged = choice?.options.find((option) => option.id === stagedId) ?? null;
   // A research is chosen in the technology tree.
-  const research = choice && !window ? selectResearch(update, choice, local.staged, printed) : null;
   /** A draft records the answer; the live game sends it. */
   const recording = !!local.draft || !!local.follow?.editing;
+  // A paid research is paid on the map in the live game; a draft records the research alone.
+  const research =
+    choice && !window
+      ? selectResearch(
+          update,
+          choice,
+          local.staged,
+          printed,
+          recording ? undefined : (local.researchPay ?? null),
+        )
+      : null;
   // A gain or a purchase of command tokens is one screen of the live game, sent as one plan.
   const purchase =
     choice && !window && !recording ? selectPurchase(update, choice, local.purchase ?? null) : null;
@@ -756,17 +777,25 @@ export function selectAction(
             ? several.note
             : tokens
               ? tokens.note
-              : staged
-                ? `Selected: ${window?.rows.find((row) => row.selected)?.title ?? (research ? research.name(staged.id) : optionText(update, staged, onBoard, seats, printed))}`
-                : window
-                  ? ""
-                  : research
-                    ? `${research.open} ${research.open === 1 ? "technology can" : "technologies can"} be researched.`
-                    : pickWord
-                      ? `${pickWord} ${onBoard ? "on the map" : "in the player table"}.`
-                      : `Choose one of ${choice.options.length}.`,
+              : research?.problem
+                ? research.problem
+                : staged && research?.change
+                  ? `Selected: ${research.name(staged.id)} · ${research.change}`
+                  : staged
+                    ? `Selected: ${window?.rows.find((row) => row.selected)?.title ?? (research ? research.name(staged.id) : optionText(update, staged, onBoard, seats, printed))}`
+                    : window
+                      ? ""
+                      : research
+                        ? `${research.open} ${research.open === 1 ? "technology can" : "technologies can"} be researched.`
+                        : pickWord
+                          ? `${pickWord} ${onBoard ? "on the map" : "in the player table"}.`
+                          : `Choose one of ${choice.options.length}.`,
       error: !!local.planNote?.error,
-      ...(purchase?.payment ? { payment: purchase.payment } : {}),
+      ...(purchase?.payment
+        ? { payment: purchase.payment }
+        : research?.payment
+          ? { payment: research.payment }
+          : {}),
       actions: [
         ...(stepping
           ? [
@@ -831,7 +860,7 @@ export function selectAction(
                               ? "Send · look at the agenda deck"
                               : "Send",
                           tone: "primary" as const,
-                          disabled: !staged,
+                          disabled: !staged || !!research?.problem,
                           key: "Enter",
                           intent: { type: "flow" as const, action: "resolve" as const },
                         },

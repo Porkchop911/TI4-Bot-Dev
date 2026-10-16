@@ -3,10 +3,20 @@
 // time; here the whole of it is one screen: the bought tokens on a counter, the pools of the
 // command sheet with what is gained and bought, and the payment on the map. It is sent as one
 // plan (`pool`, `purchase` and `pay` steps), which the game answers in the order that it asks.
-import type { ActionButtonView, BlockView, BoardTaskView, PaymentView, RowView } from "../../model";
+import type { BlockView, BoardTaskView, PaymentView, RowView } from "../../model";
 import { plural } from "../../model";
 import type { PlanStep } from "../movementPlan";
 import type { Choice, SessionUpdate } from "../wire";
+import {
+  type PayOffer,
+  autoPaying,
+  goodsPaying,
+  paidBy,
+  payOfferOf,
+  paySteps,
+  paymentOf,
+  togglePaying,
+} from "./payment";
 import type { Pools } from "./tokens";
 
 /** What the player staged: tokens bought, and what pays for them. */
@@ -21,15 +31,9 @@ export interface PurchaseDraft {
 
 export const NO_PURCHASE: PurchaseDraft = { buy: 0, pools: null, planets: [], goods: 0 };
 
-/** The id of the trade goods of the payment (the option of the game). */
-const GOODS = "trade_good";
-
-interface Offer {
+interface Offer extends PayOffer {
   cost: number;
   max: number;
-  planets: { id: string; worth: number }[];
-  goods: number;
-  goodWorth: number;
 }
 
 interface Question {
@@ -53,20 +57,8 @@ function offerOf(value: unknown): Offer | null {
   const offer = value as Record<string, unknown> | null;
   const cost = num(offer?.cost);
   const max = num(offer?.max);
-  if (!offer || cost === null || max === null || !Array.isArray(offer.planets)) {
-    return null;
-  }
-  return {
-    cost,
-    max,
-    planets: (offer.planets as { id?: unknown; worth?: unknown }[]).flatMap((planet) =>
-      typeof planet.id === "string" && typeof planet.worth === "number"
-        ? [{ id: planet.id, worth: planet.worth }]
-        : [],
-    ),
-    goods: num(offer.trade_goods) ?? 0,
-    goodWorth: num(offer.trade_good_worth) ?? 1,
-  };
+  const paying = payOfferOf(value);
+  return paying && cost !== null && max !== null ? { ...paying, cost, max } : null;
 }
 
 /**
@@ -112,14 +104,7 @@ function questionOf(choice: Choice): Question | null {
 const sum = (pools: Pools) => pools.tactic + pools.fleet + pools.strategic;
 
 /** What the staged payment is worth, in influence. */
-const paidOf = (offer: Offer | null, draft: PurchaseDraft) =>
-  offer
-    ? draft.planets.reduce(
-        (total, id) => total + (offer.planets.find((planet) => planet.id === id)?.worth ?? 0),
-        0,
-      ) +
-      draft.goods * offer.goodWorth
-    : 0;
+const paidOf = (offer: Offer | null, draft: PurchaseDraft) => (offer ? paidBy(offer, draft) : 0);
 
 export interface PurchaseView {
   blocks: BlockView[];
@@ -134,14 +119,6 @@ export interface PurchaseView {
   /** Something is staged: Esc clears it. */
   changed: boolean;
 }
-
-/** The planets of the map by id, with their names. */
-const planetNames = (update: SessionUpdate) =>
-  new Map(
-    (update.view.board.map_tiles ?? []).flatMap((tile) =>
-      (tile.planets ?? []).map((planet) => [planet.id, planet.label] as const),
-    ),
-  );
 
 /** The gain and the purchase of command tokens. Null for any other question. */
 export function selectPurchase(
@@ -162,7 +139,6 @@ export function selectPurchase(
   const left = total - placed;
   const cost = offer ? buy * offer.cost : 0;
   const paid = paidOf(offer, staging);
-  const names = planetNames(update);
 
   const rows: RowView[] = POOLS.map(([key, , name]) => ({
     title: [name],
@@ -212,61 +188,9 @@ export function selectPurchase(
     },
   ];
 
-  const summary = [
-    ...staging.planets.map(
-      (id) =>
-        `${names.get(id) ?? id} ${offer?.planets.find((planet) => planet.id === id)?.worth ?? 0}`,
-    ),
-    ...(staging.goods ? [plural(staging.goods, "trade good")] : []),
-  ].join(" + ");
-  const short = cost - (paid - staging.goods * (offer?.goodWorth ?? 1));
-  const worth = Math.max(1, offer?.goodWorth ?? 1);
-  const rest = short >= 0 && short % worth === 0 ? short / worth : null;
-  const action = (
-    label: string,
-    intent: ActionButtonView["intent"],
-    disabled: boolean,
-  ): ActionButtonView => ({ label, tone: "quiet", intent, disabled });
-  const payment: PaymentView | null =
-    offer && buy
-      ? {
-          title: "Payment",
-          cost,
-          paid,
-          unit: "influence",
-          editable: true,
-          summary,
-          goods: offer.goods
-            ? {
-                id: GOODS,
-                value: staging.goods,
-                max: offer.goods,
-                rest: rest !== null && rest !== staging.goods && rest <= offer.goods ? rest : null,
-              }
-            : null,
-          actions: [
-            action("Auto-pay", { type: "payment", action: "auto" }, false),
-            action(
-              "Clear payment",
-              { type: "payment", action: "reset" },
-              !staging.planets.length && !staging.goods,
-            ),
-          ],
-        }
-      : null;
-  const task: BoardTaskView | null =
-    offer && buy
-      ? {
-          target: "planet",
-          kind: "pay",
-          interactive: true,
-          values: Object.fromEntries(offer.planets.map((planet) => [planet.id, planet.worth])),
-          chosen: Object.fromEntries(staging.planets.map((id) => [id, true])),
-          verb: "Exhaust",
-          unit: "influence",
-          payment: payment!,
-        }
-      : null;
+  const open = offer && buy ? paymentOf(update, offer, staging, cost, "influence") : null;
+  const payment: PaymentView | null = open?.payment ?? null;
+  const task: BoardTaskView | null = open?.task ?? null;
   const problem =
     left > 0
       ? `Place ${plural(left, "more token")}.`
@@ -290,7 +214,12 @@ export function selectPurchase(
         : buy
           ? `Buy ${plural(buy, "token")}`
           : "Send",
-    changed: !!draft && (staging.buy > 0 || staging.pools !== null || summary !== ""),
+    changed:
+      !!draft &&
+      (staging.buy > 0 ||
+        staging.pools !== null ||
+        staging.planets.length > 0 ||
+        staging.goods > 0),
   };
 }
 
@@ -336,15 +265,8 @@ export function togglePurchasePlanet(
 ): PurchaseDraft | null {
   const offer = questionOf(choice)?.offer;
   const staging = draft ?? NO_PURCHASE;
-  if (!offer || !staging.buy || !offer.planets.some((item) => item.id === planet)) {
-    return null;
-  }
-  return {
-    ...staging,
-    planets: staging.planets.includes(planet)
-      ? staging.planets.filter((id) => id !== planet)
-      : [...staging.planets, planet],
-  };
+  const paying = offer && staging.buy ? togglePaying(offer, staging, planet) : null;
+  return paying ? { ...staging, ...paying } : null;
 }
 
 /** The trade goods of the payment. */
@@ -355,9 +277,7 @@ export function setPurchaseGoods(
 ): PurchaseDraft | null {
   const offer = questionOf(choice)?.offer;
   const staging = draft ?? NO_PURCHASE;
-  return offer && staging.buy
-    ? { ...staging, goods: Math.max(0, Math.min(value, offer.goods)) }
-    : null;
+  return offer && staging.buy ? { ...staging, ...goodsPaying(offer, staging, value) } : null;
 }
 
 /**
@@ -377,33 +297,8 @@ export function payPurchase(
   if (how === "reset") {
     return { ...staging, planets: [], goods: 0 };
   }
-  const cost = staging.buy * offer.cost;
-  const top = cost + Math.max(0, ...offer.planets.map((planet) => planet.worth));
-  const best: (string[] | null)[] = Array.from({ length: top + 1 }, () => null);
-  best[0] = [];
-  for (const planet of offer.planets) {
-    for (let total = top; total >= planet.worth; total--) {
-      const before = best[total - planet.worth];
-      const now = best[total];
-      if (before && total - planet.worth < cost && (!now || now.length > before.length + 1)) {
-        best[total] = [...before, planet.id];
-      }
-    }
-  }
-  let pick: { planets: string[]; goods: number; waste: number } | null = null;
-  for (let total = 0; total <= top; total++) {
-    const chosen = best[total];
-    const rest = Math.max(0, cost - total);
-    if (!chosen || rest > offer.goods * offer.goodWorth) {
-      continue;
-    }
-    const goods = Math.ceil(rest / Math.max(1, offer.goodWorth));
-    const waste = total + goods * offer.goodWorth - cost;
-    if (!pick || waste < pick.waste || (waste === pick.waste && goods < pick.goods)) {
-      pick = { planets: chosen, goods, waste };
-    }
-  }
-  return pick ? { ...staging, planets: pick.planets, goods: pick.goods } : staging;
+  const pick = autoPaying(offer, staging.buy * offer.cost);
+  return pick ? { ...staging, ...pick } : staging;
 }
 
 /**
@@ -434,8 +329,7 @@ export function purchasePlan(choice: Choice, draft: PurchaseDraft | null): PlanS
       { kind: "pool", pool },
     ]),
     ...(offer ? [{ kind: "purchase", buy: false } as PlanStep] : []),
-    ...staging.planets.map((planet): PlanStep => ({ kind: "pay", source: `exhaust|${planet}` })),
-    ...Array.from({ length: staging.goods }, (): PlanStep => ({ kind: "pay", source: GOODS })),
+    ...paySteps(staging),
   ];
   return steps;
 }

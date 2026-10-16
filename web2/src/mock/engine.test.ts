@@ -5,18 +5,6 @@ import { selectShell } from "./select/shell";
 import { E } from "./loose";
 import { createWorld, currentState, loadExample, reduce, setViewer } from "./world";
 
-/** The blocks of an action; for a strategy card, the editor in the open row of the viewer. */
-function editorBlocks(action: ReturnType<typeof selectShell>["action"]) {
-  if (action.kind !== "flow") {
-    throw new Error("not a flow");
-  }
-  const list = action.blocks[0];
-  if (list?.kind !== "seats") {
-    return action.blocks;
-  }
-  return list.rows.find((row) => row.open)?.open ?? [];
-}
-
 /**
  * Plays the open space battle with the first choice that is allowed at every stop. `stop` sees the
  * stage before each move; true ends the play there. Returns that stage, or null when the battle
@@ -468,100 +456,5 @@ describe("mock engine", () => {
     const state = currentState(world);
     const total = E.productionTotals(state, state.edit.value);
     expect(total.paid).toBeGreaterThanOrEqual(total.cost);
-  });
-
-  describe("strategy cards", () => {
-    const open = (example: string) => {
-      const world = createWorld();
-      loadExample(world, example);
-      return world;
-    };
-    const flow = (world: ReturnType<typeof createWorld>) => currentState(world).flow;
-    const footer = (world: ReturnType<typeof createWorld>) => {
-      const action = selectShell(world).action;
-      if (action.kind !== "flow") {
-        throw new Error("not a flow");
-      }
-      return action.footer;
-    };
-    const main = (world: ReturnType<typeof createWorld>) =>
-      footer(world).actions.find((action) => action.tone === "primary")!;
-
-    it("another viewer sees the public side only, and cannot edit", () => {
-      const world = open("live-secondary-7");
-      setViewer(world, "hacan");
-      const view = selectShell(world);
-      if (view.action.kind !== "flow") {
-        throw new Error("not a flow");
-      }
-      const seats = view.action.blocks.find((block) => block.kind === "seats");
-      if (seats?.kind !== "seats") {
-        throw new Error("no seat list");
-      }
-      expect(seats.rows.every((row) => !row.open)).toBe(true);
-      expect(seats.rows.find((row) => row.seat === "hacan")).toMatchObject({ you: true });
-      const jamie = seats.rows.find((row) => row.seat === "sol")!;
-      expect(jamie.you).toBe(false);
-      expect(jamie.status.label).not.toContain("draft");
-      expect(view.board.task).toBe(null);
-      reduce(world, { type: "pickTech", tech: "sling-relay" });
-      expect(flow(world).mine.techs).toEqual([]);
-    });
-
-    it("Technology: the tree, a second technology for 6 resources that counts the first", () => {
-      const world = open("live-strategy-7");
-      const cell = (id: string) => {
-        const tree = editorBlocks(selectShell(world).action).find(
-          (block) => block.kind === "techs",
-        );
-        if (tree?.kind !== "techs") {
-          throw new Error("no tree");
-        }
-        return [
-          ...tree.columns.flatMap((column) => column.cells),
-          ...tree.bands.flatMap((band) => band.cells),
-        ].find((item) => item.id === id)!;
-      };
-      expect(cell("antimass-deflectors").state).toBe("owned");
-      // Blue 2 and the specialty of Arnor.
-      expect(cell("light-wave-deflector").state).toBe("open");
-      expect(cell("graviton-laser-system").state).toBe("closed");
-      expect(cell("graviton-laser-system").needs).toEqual([{ color: "Y", missing: true }]);
-      reduce(world, { type: "pickTech", tech: "graviton-laser-system" });
-      expect(flow(world).mine.techs).toEqual([]);
-      reduce(world, { type: "pickTech", tech: "sarween-tools" });
-      expect(cell("graviton-laser-system").state).toBe("open");
-      reduce(world, { type: "pickTech", tech: "graviton-laser-system" });
-      expect(footer(world).note).toBe("Stage 6 more resources to research.");
-      reduce(world, { type: "payment", action: "auto" });
-      expect(main(world).disabled).toBe(false);
-      // Without the first technology the second one has no prerequisite.
-      reduce(world, { type: "pickTech", tech: "sarween-tools" });
-      expect(flow(world).mine.techs).toEqual([]);
-      expect(flow(world).mine.pay).toEqual({});
-      reduce(world, { type: "pickTech", tech: "sarween-tools" });
-      reduce(world, { type: "flow", action: "resolve" });
-      expect(flow(world).primaryResult).toBe("Jamie researched Sarween Tools.");
-    });
-
-    it("the row of the viewer closes with its result; history has no open row", () => {
-      const world = open("live-strategy-7");
-      reduce(world, { type: "pickTech", tech: "sarween-tools" });
-      reduce(world, { type: "flow", action: "resolve" });
-      const seats = () => {
-        const action = selectShell(world).action;
-        const block = action.kind === "flow" ? action.blocks[0] : undefined;
-        if (block?.kind !== "seats") {
-          throw new Error("no seat list");
-        }
-        return block.rows;
-      };
-      expect(seats()[0].open).toBeUndefined();
-      expect(seats()[0].text).toContain("Jamie researched Sarween Tools");
-      reduce(world, { type: "inspectLogEntry", id: "h2" });
-      expect(selectShell(world).toolbar.workspace).toBe("history");
-      expect(seats().some((row) => row.open)).toBe(false);
-      expect(seats().map((row) => row.status.label)).not.toContain("Deciding");
-    });
   });
 });

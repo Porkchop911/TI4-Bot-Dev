@@ -708,6 +708,98 @@ test("phone: Leadership has the purchase and the pools in the width, and the pay
   );
 });
 
+test("phone: Technology has the tree in the width, and the payment of the second research on the map", async ({
+  page,
+}) => {
+  await page.goto("/?scenario=strategy_technology&humans=1");
+  const panel = page.locator("#step-panel");
+  const panes = page.getByRole("navigation", { name: "Panes" });
+  const send = page.locator('footer button[aria-keyshortcuts="Enter"]');
+  await panes.getByRole("button", { name: "Action" }).click();
+  await panel.getByRole("button", { name: /^7 Technology/ }).click();
+  await send.click();
+  await panel.getByRole("button", { name: "Gravity Drive", exact: true }).click();
+  await send.click();
+  await panel.getByRole("button", { name: "Sarween Tools", exact: true }).click();
+  await expect(page.locator("footer")).toContainText("Pay 6 more resources");
+  await expect(send).toBeDisabled();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
+    page.viewportSize()!.width,
+  );
+  await page.screenshot({ path: "shots/phone/local/technology.png", animations: "disabled" });
+  await panes.getByRole("button", { name: "Map" }).click();
+  const bar = page.getByRole("group", { name: "Payment" });
+  await bar.getByRole("button", { name: "Auto-pay" }).click();
+  await expect(bar.getByRole("status").first()).toContainText("✓ Paid");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
+    page.viewportSize()!.width,
+  );
+  await page.screenshot({ path: "shots/phone/local/technology-pay.png", animations: "disabled" });
+  await expect(send).toBeEnabled();
+  await send.click();
+  await expect(bar).toHaveCount(0);
+});
+
+test("phone: the three panes, two fingers zoom the map, and a tap inspects a system", async ({
+  page,
+}) => {
+  await page.goto("/?scenario=strategy_technology&humans=1");
+  const pane = (name: string) =>
+    page.getByRole("navigation", { name: "Panes" }).getByRole("button", { name });
+  for (const name of ["Map", "Players", "Action"]) {
+    await pane(name).click();
+    await expect(pane(name)).toHaveAttribute("aria-pressed", "true");
+  }
+  await pane("Map").click();
+  const svg = page.locator(".galaxy svg");
+  const before = await svg.getAttribute("viewBox");
+  const box = (await svg.boundingBox())!;
+  // Two fingers that move apart. Playwright has no pinch, so the pointer events are sent.
+  await svg.evaluate(
+    (element, [x, y]) => {
+      const send = (type: string, id: number, dx: number) =>
+        (type === "pointerdown" ? element : document).dispatchEvent(
+          new PointerEvent(type, {
+            pointerId: id,
+            pointerType: "touch",
+            button: 0,
+            clientX: x + dx,
+            clientY: y,
+            bubbles: true,
+          }),
+        );
+      send("pointerdown", 1, -40);
+      send("pointerdown", 2, 40);
+      send("pointermove", 1, -120);
+      send("pointermove", 2, 120);
+      send("pointerup", 1, -120);
+      send("pointerup", 2, 120);
+    },
+    [box.x + box.width / 2, box.y + box.height / 2],
+  );
+  const width = (viewBox: string | null) => Number(viewBox!.split(" ")[2]);
+  expect(width(await svg.getAttribute("viewBox")) * 2.9).toBeLessThan(width(before));
+  await page.screenshot({ path: "shots/phone/local/pinch.png", animations: "disabled" });
+  // The system in the middle of the zoomed map: Mecatol Rex.
+  await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(page.getByRole("button", { name: "Close system details" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
+    page.viewportSize()!.width,
+  );
+});
+
+test("phone: the reference sheets and the other app are one menu, and a sheet covers the pane", async ({
+  page,
+}) => {
+  await page.goto("/?scenario=strategy_technology&humans=1");
+  await page.getByRole("button", { name: "Reference and more" }).tap();
+  await expect(page.getByRole("menuitem", { name: "Demo" })).toBeVisible();
+  await page.getByRole("menuitem", { name: "Objectives" }).tap();
+  await expect(page.getByRole("complementary", { name: "Objectives" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Panes" })).toBeHidden();
+  await page.screenshot({ path: "shots/phone/local/reference.png", animations: "disabled" });
+});
+
 test("phone: Diplomacy has the system and the planets in the width, chosen on the map", async ({
   page,
 }) => {
