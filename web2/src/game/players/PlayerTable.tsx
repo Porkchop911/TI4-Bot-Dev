@@ -363,7 +363,8 @@ export function PlayerTable({
   const hint = open ? "Show only you and the active player" : "Show all players";
   return (
     <section aria-label="Players" className="relative flex-none border-b border-line bg-board">
-      <div className="flex items-center gap-1.5 px-2 pt-1 text-xs text-faint">
+      {/* Under a finger the tap area of "?" reaches 10px past the button: the row keeps the room. */}
+      <div className="flex items-center gap-1.5 px-2 pt-1 text-xs text-faint touch:pr-3">
         <button
           type="button"
           className="w-3 text-muted phone:hidden"
