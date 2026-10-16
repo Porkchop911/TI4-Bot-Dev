@@ -182,11 +182,11 @@ test.describe("flows", () => {
   });
 
   test("rule text opens on hover and stays on click", async ({ page }) => {
-    await page.goto("/?example=live-strategy-4");
-    const hint = page.getByRole("button", { name: "Rules: Construction" });
+    await page.goto("/?example=live-strategy-5");
+    const hint = page.getByRole("button", { name: "Rules: Trade" });
     await expect(page.getByRole("note")).toHaveCount(0);
     await hint.hover();
-    await expect(page.getByRole("note")).toContainText("Place 1 PDS or 1 space dock");
+    await expect(page.getByRole("note")).toContainText("Gain 3 trade goods");
     await hint.click();
     await page.mouse.move(10, 10);
     await expect(page.getByRole("note")).toBeVisible();
@@ -202,7 +202,7 @@ test.describe("flows", () => {
   });
 
   test("secondary, log and history", async ({ page }) => {
-    await page.goto("/?example=live-secondary-4");
+    await page.goto("/?example=live-secondary-6");
     await page.getByRole("button", { name: "Simulate Alex (demo)" }).click();
     await shot(page, "web2/flow/secondary");
     await page
@@ -277,19 +277,6 @@ test.describe("flows", () => {
         .evaluate((element) => element.scrollHeight - element.clientHeight);
       expect(overflow, "the step content needs vertical scroll").toBeLessThanOrEqual(0);
     };
-
-    test("Construction: structure by key, planets on the board", async ({ page }) => {
-      await start(page, "live-strategy-4");
-      await page.keyboard.press("1");
-      await page.getByRole("button", { name: /^Choose Vefut/ }).click();
-      await page.getByRole("button", { name: /^Choose Starpoint/ }).click();
-      await expect(panel(page)).toContainText("Starpoint has 0 space docks and 1 PDS");
-      await shot(page, "web2/flow/strategy-construction");
-      await page.keyboard.press("Enter");
-      await expect(panel(page)).toContainText(
-        "placed a space dock on Vefut and a PDS on Starpoint",
-      );
-    });
 
     test("Trade: players in the player table", async ({ page }) => {
       await start(page, "live-strategy-5");

@@ -488,30 +488,6 @@ describe("mock engine", () => {
     const main = (world: ReturnType<typeof createWorld>) =>
       footer(world).actions.find((action) => action.tone === "primary")!;
 
-    it("Construction: the structure in a list, the planet on the board; the second is a PDS", () => {
-      const world = open("live-strategy-4");
-      expect(selectShell(world).board.task).toBeNull();
-      reduce(world, shortcuts(selectShell(world).action).get("1")!);
-      const task = selectShell(world).board.task!;
-      // Jord and Arnor have a space dock.
-      expect("jord" in task.values).toBe(false);
-      expect("vefut" in task.values).toBe(true);
-      reduce(world, { type: "togglePlanet", planet: "jord" });
-      expect(flow(world).mine.build[0].planet).toBeNull();
-      reduce(world, { type: "togglePlanet", planet: "vefut" });
-      expect(main(world).label).toBe("Resolve primary · 1 structure");
-      reduce(world, { type: "togglePlanet", planet: "jord" });
-      expect(flow(world).mine.build[1]).toEqual({ type: "pds", planet: "jord" });
-      expect(selectShell(world).board.task).toMatchObject({
-        interactive: false,
-        chosen: { vefut: true, jord: true },
-      });
-      reduce(world, { type: "flow", action: "resolve" });
-      expect(flow(world).primaryResult).toBe(
-        "Jamie placed a space dock on Vefut and a PDS on Jord.",
-      );
-    });
-
     it("Trade: several players in the player table, with what each gains", () => {
       const world = open("live-strategy-5");
       const pick = selectShell(world).players.pick!;

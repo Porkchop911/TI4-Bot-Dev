@@ -100,6 +100,13 @@ import {
   toggleReadyPlanet,
 } from "./select/ready";
 import { clearLastAgenda, placeAgenda, selectAgendaDeck } from "./select/agendaDeck";
+import {
+  chooseStructure,
+  clearLastStructure,
+  clearStructurePart,
+  placeStructure,
+  selectStructures,
+} from "./select/structures";
 import { countPools, selectTokens } from "./select/tokens";
 import type { Transport } from "./transport";
 import type { DraftOutcome, DraftStep, PlanScope, ReactionModes, SessionUpdate } from "./wire";
@@ -111,6 +118,7 @@ const NOTHING: LocalState = {
   purchase: null,
   ready: null,
   agendas: null,
+  structures: null,
   sent: null,
   error: null,
   replaying: null,
@@ -607,6 +615,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           purchase: null,
           ready: null,
           agendas: null,
+          structures: null,
           sent: null,
           error: null,
           offline: false,
@@ -908,6 +917,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         purchase: null,
         ready: null,
         agendas: null,
+        structures: null,
         inspected: null,
         handled: [],
         step: null,
@@ -954,6 +964,11 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
     /** A placement of agenda cards of the live game: every agenda answered at once. */
     const placing =
       pending && !drafted && !followInfo?.editing && selectAgendaDeck(pending.choice, null)
+        ? pending
+        : null;
+    /** A placement of structures of the live game, with its window or its ability: at once. */
+    const building =
+      pending && !drafted && !followInfo?.editing && selectStructures(shown, pending.choice, null)
         ? pending
         : null;
     /** The game can be asked for a staged production: it is paid, and within its limits. */
@@ -1147,6 +1162,15 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         }
         return;
       }
+      // A placement of structures answers its window or its ability and each structure.
+      if (building) {
+        const answers = selectStructures(shown, building.choice, local.structures ?? null)?.answers;
+        if (answers) {
+          transport.applyDraft(pending.nonce, { choices: answers, plan: null });
+          setLocal((now) => ({ ...now, structures: null, sent: pending.nonce, planNote: null }));
+        }
+        return;
+      }
       const chosen = pools ? pools.staged : (local.staged ?? pass);
       if (chosen) {
         transport.submitChoice(pending.nonce, chosen);
@@ -1277,6 +1301,13 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           if (placed) {
             return setLocal((now) => ({ ...now, agendas: placed }));
           }
+          // The kind of a structure, or the ability of a card that places structures.
+          const kind =
+            building &&
+            chooseStructure(building.choice, local.structures ?? null, intent.group, intent.option);
+          if (kind) {
+            return setLocal((now) => ({ ...now, structures: kind }));
+          }
           const force = intent.group === "landing" ? forceOfId(intent.option) : null;
           return landing && force !== null
             ? setLocal((now) => ({ ...now, landingKind: force }))
@@ -1300,6 +1331,10 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           if (readying) {
             const readied = toggleReadyPlanet(readying.choice, local.ready ?? null, planet);
             return readied && setLocal((now) => ({ ...now, ready: readied }));
+          }
+          if (building) {
+            const built = placeStructure(building.choice, local.structures ?? null, planet);
+            return built && setLocal((now) => ({ ...now, structures: built }));
           }
           if (!landing) {
             // A planet of a choice on the board: its option is staged.
@@ -1358,7 +1393,12 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         case "clearPart": {
           const cleared =
             readying && clearReadyPart(readying.choice, local.ready ?? null, intent.part);
-          return cleared && setLocal((now) => ({ ...now, ready: cleared }));
+          if (cleared) {
+            return setLocal((now) => ({ ...now, ready: cleared }));
+          }
+          const unbuilt =
+            building && clearStructurePart(building.choice, local.structures ?? null, intent.part);
+          return unbuilt && setLocal((now) => ({ ...now, structures: unbuilt }));
         }
         case "findSystem": {
           const found = pending?.choice.options.find((item) => sameSystem(intent.query, item.id));
@@ -1381,6 +1421,12 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           if (placing && local.agendas?.placed.length) {
             return setLocal((now) => ({ ...now, agendas: clearLastAgenda(now.agendas ?? null) }));
           }
+          // Esc in a placement of structures clears the last choice.
+          const unplaced =
+            building && clearLastStructure(building.choice, local.structures ?? null);
+          if (unplaced) {
+            return setLocal((now) => ({ ...now, structures: unplaced }));
+          }
           return setLocal((now) => ({
             ...now,
             staged: null,
@@ -1388,6 +1434,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             purchase: null,
             ready: null,
             agendas: null,
+            structures: null,
           }));
         }
         case "undo":

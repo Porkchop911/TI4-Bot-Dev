@@ -98,7 +98,7 @@ export function LocalApp({
   game,
   id: savedId,
   onNewGame,
-  other = { label: "Demo", href: "/?example=live-strategy-4" },
+  other = { label: "Demo", href: "/?example=live-strategy-5" },
 }: {
   game: LocalGame;
   /** The saved game of this id (`?save=<id>`), in place of the game of the slot of `game`. */

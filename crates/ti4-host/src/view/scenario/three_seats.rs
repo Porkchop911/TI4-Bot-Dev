@@ -41,6 +41,9 @@ pub const STRATEGY_CARDS: &[(&str, &str)] = &[
     ("strategy_diplomacy", "pok2diplomacy"),
     ("strategy_diplomacy_base", "base2"),
     ("strategy_politics", "pok3politics"),
+    ("strategy_construction", "pok4construction"),
+    ("strategy_construction_base", "base4"),
+    ("strategy_construction_te", "te4construction"),
 ];
 
 /// Sol is played by a person, Hacan and Letnev by the rule bot.
@@ -233,6 +236,35 @@ pub const STRATEGY_POLITICS: Scenario = Scenario {
     ..STRATEGY
 };
 
+const CONSTRUCTION_DESCRIPTION: &str = "Sol has the turn and holds Construction. Sol \
+    controls its home with a space dock, a planet next to it with a PDS and Sol's command token \
+    on that system, and a second system next to its home. With Sol and Hacan played here, Hacan \
+    resolves the secondary.";
+
+pub const STRATEGY_CONSTRUCTION: Scenario = Scenario {
+    id: "strategy_construction",
+    title: "Strategy card: Construction",
+    description: CONSTRUCTION_DESCRIPTION,
+    ..STRATEGY
+};
+
+pub const STRATEGY_CONSTRUCTION_BASE: Scenario = Scenario {
+    id: "strategy_construction_base",
+    title: "Strategy card: Construction (base game)",
+    description: "The scenario \"Strategy card: Construction\" on a table of the base game with \
+        Codex I, whose Construction is base4.",
+    ..STRATEGY
+};
+
+pub const STRATEGY_CONSTRUCTION_TE: Scenario = Scenario {
+    id: "strategy_construction_te",
+    title: "Strategy card: Construction (Thunder's Edge)",
+    description: "The scenario \"Strategy card: Construction\" on a table of Thunder's Edge, \
+        whose Construction places a structure or uses the PRODUCTION of a space dock, then places \
+        a structure.",
+    ..STRATEGY
+};
+
 pub const FULL_GAME: Scenario = Scenario {
     id: FULL_GAME_ID,
     title: "Full Game Match",
@@ -320,6 +352,20 @@ fn strategy_card(
             .strategy_cards = vec![held];
     }
     let dealt = [card, others[0].as_str(), others[1].as_str()];
+    // A card of another set is played on a table of that set.
+    if !state
+        .unclaimed_strategy_cards
+        .iter()
+        .any(|unclaimed| unclaimed.as_str() == card)
+    {
+        let set = ["te", "base_game_codex1", "base_game"]
+            .into_iter()
+            .filter_map(|set| ti4_engine::setup::strategy_card_setup_for_set(content, set).ok())
+            .map(|(cards, _)| cards)
+            .find(|cards| cards.iter().any(|held| held.as_str() == card))
+            .ok_or_else(|| format!("no set of strategy cards has {card}"))?;
+        state.unclaimed_strategy_cards = set;
+    }
     state
         .unclaimed_strategy_cards
         .retain(|unclaimed| !dealt.contains(&unclaimed.as_str()));
@@ -370,6 +416,18 @@ fn strategy_card(
                 state.exhaust_planet(PlanetId::new(planet));
             }
         }
+    }
+    if name(card).as_deref() == Some("Construction") {
+        // A PDS on the first planet of the first system: a second PDS there fills it.
+        let planet = ti4_content::galaxy::system(content, first, POK)
+            .and_then(|tile| tile.planets().first().map(|planet| PlanetId::new(*planet)))
+            .ok_or("the first system has no planet")?;
+        state
+            .system_mut(&SystemId::new(first))
+            .planet_units
+            .entry(planet)
+            .or_default()
+            .push(Unit::new(UnitTypeId::new("pds"), sol.clone()));
     }
     if name(card).as_deref() == Some("Diplomacy") {
         // More exhausted planets than Diplomacy readies, for Sol and for Hacan's secondary.

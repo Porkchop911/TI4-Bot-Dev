@@ -741,15 +741,10 @@ export const blankMine = (number = 1) => ({
   follow: null,
   techs: [],
   counts: {},
-  build: [
-    { type: null, planet: null },
-    { type: "pds", planet: null },
-  ],
   objective: null,
 });
 /** What the other players do with each card in the demo: the primary, and a followed secondary. */
 export const STRATEGY_SIM: Record<number, { primary: string; follow: string }> = {
-  4: { primary: "placed a space dock and a PDS.", follow: "placed 1 PDS" },
   5: {
     primary:
       "gained 3 trade goods, replenished commodities and chose Jamie and Blair for a free replenish.",
@@ -768,7 +763,7 @@ export const STRATEGY_SIM: Record<number, { primary: string; follow: string }> =
 const STRATEGY_EXAMPLES: Record<string, any> = {
   // The viewer's primary of each card.
   ...Object.fromEntries(
-    [4, 5, 6, 7, 8].map((number) => [
+    [5, 6, 7, 8].map((number) => [
       `live-strategy-${number}`,
       {
         mode: "live",
@@ -789,7 +784,7 @@ const STRATEGY_EXAMPLES: Record<string, any> = {
   ),
   // The viewer's secondary on another player's card, drafted before the seat is reached.
   ...Object.fromEntries(
-    [4, 5, 6, 7, 8].map((number) => [
+    [5, 6, 7, 8].map((number) => [
       `live-secondary-${number}`,
       {
         mode: "live",

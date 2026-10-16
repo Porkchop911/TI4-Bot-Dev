@@ -775,6 +775,59 @@ test("phone: Politics has the speaker in the player table and the agenda deck in
   await page.screenshot({ path: "shots/phone/local/politics.png", animations: "disabled" });
 });
 
+test("phone: Construction has the structures in the width, the planets chosen on the map", async ({
+  page,
+}) => {
+  await page.goto("/?scenario=strategy_construction&humans=1");
+  const panel = page.locator("#step-panel");
+  const panes = page.getByRole("navigation", { name: "Panes" });
+  const width = () => page.evaluate(() => document.documentElement.scrollWidth);
+  await panes.getByRole("button", { name: "Action" }).click();
+  await panel.getByRole("button", { name: /^4 Construction/ }).click();
+  await page.locator('footer button[aria-keyshortcuts="Enter"]').click();
+  await expect(panel.getByRole("heading", { name: "Structures" })).toBeVisible();
+  expect(await width()).toBe(page.viewportSize()!.width);
+  await panel.getByRole("button", { name: /PDS/ }).first().tap();
+  await panes.getByRole("button", { name: "Map" }).click();
+  await page.locator("g.planet").filter({ hasText: "Rarron" }).tap();
+  await page.locator("g.planet").filter({ hasText: "Jord" }).tap();
+  await expect(page.locator("footer")).toContainText("PDS on Rarron · PDS on Jord");
+  expect(await width()).toBe(page.viewportSize()!.width);
+  await panes.getByRole("button", { name: "Action" }).click();
+  await expect(panel.getByRole("heading", { name: "Structures" }).locator("../..")).toContainText(
+    "Jord · #01PDS 0 → 1",
+  );
+  expect(await width()).toBe(page.viewportSize()!.width);
+  await page.screenshot({ path: "shots/phone/local/construction.png", animations: "disabled" });
+});
+
+test("phone: Construction of Thunder's Edge has the ability and the structures in the width", async ({
+  page,
+}) => {
+  await page.goto("/?scenario=strategy_construction_te&humans=1");
+  const panel = page.locator("#step-panel");
+  const panes = page.getByRole("navigation", { name: "Panes" });
+  const width = () => page.evaluate(() => document.documentElement.scrollWidth);
+  await panes.getByRole("button", { name: "Action" }).click();
+  await panel.getByRole("button", { name: /^4 Construction/ }).click();
+  await page.locator('footer button[aria-keyshortcuts="Enter"]').click();
+  await panel.getByRole("button", { name: /Place a structure/ }).tap();
+  await expect(panel.getByRole("heading", { name: "Structures" })).toBeVisible();
+  expect(await width()).toBe(page.viewportSize()!.width);
+  await panel
+    .getByRole("button", { name: /Space dock/ })
+    .first()
+    .tap();
+  await panes.getByRole("button", { name: "Map" }).click();
+  await page.locator("g.planet").filter({ hasText: "Rarron" }).tap();
+  await expect(page.locator("footer")).toContainText("Space dock on Rarron");
+  expect(await width()).toBe(page.viewportSize()!.width);
+  await panes.getByRole("button", { name: "Action" }).click();
+  await expect(panel.getByText("Structure 2 of 2")).toBeVisible();
+  expect(await width()).toBe(page.viewportSize()!.width);
+  await page.screenshot({ path: "shots/phone/local/construction-te.png", animations: "disabled" });
+});
+
 test("phone: the Agendas sheet has the laws and the open groups in its width", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));

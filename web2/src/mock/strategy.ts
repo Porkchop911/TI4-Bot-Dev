@@ -28,12 +28,6 @@ export const STRATEGY_TEXT: Record<number, { primary: string; secondary: string 
     secondary:
       "Buy command tokens. Each other player may buy tokens for 3 influence each. No strategy token is spent.",
   },
-  4: {
-    primary:
-      "Place 1 PDS or 1 space dock on a planet you control. Place 1 PDS on a planet you control.",
-    secondary:
-      "Place 1 token from your strategy pool in any system; you may place either 1 space dock or 1 PDS on a planet you control in that system.",
-  },
   5: {
     primary:
       "Gain 3 trade goods. Replenish commodities. Choose any number of other players. Those players use the secondary ability of this card without spending a command token.",
@@ -66,13 +60,6 @@ const sys = (id: string) => `${MAP[id].name} · #${id}`;
 const names = (list: string[]) =>
   list.length < 2 ? (list[0] ?? "") : `${list.slice(0, -1).join(", ")} and ${list.at(-1)}`;
 
-/** Structures of the viewer on the board. A player has 3 space docks and 6 PDS. */
-const STRUCTURES: Record<string, { dock: number; pds: number }> = {
-  jord: { dock: 1, pds: 1 },
-  starpoint: { dock: 0, pds: 1 },
-  arnor: { dock: 1, pds: 0 },
-};
-const STRUCTURE = { dock: ["Space dock", 3], pds: ["PDS", 6] } as const;
 /** The public objectives, and whether the viewer fulfills each. The Objectives sheet shows the same. */
 export const OBJECTIVES: {
   name: string;
@@ -158,14 +145,6 @@ const change = (part: string): RowView["control"] => ({
   button: button({ type: "clearPart", part }, "Change"),
 });
 
-const planetRow = (id: string, subtitle: string, part: string): RowView => ({
-  icon: "planet",
-  title: [`${planetName(id)} · #${planetOf(id).system}`],
-  subtitle,
-  link: [`pl:${id}`, `sys:${planetOf(id).system}`],
-  control: change(part),
-});
-
 /** What a secondary costs: a token of the strategy pool, or nothing when the active player gave it. */
 function tokenCost(flow: any): string {
   if (flow.free?.includes("sol")) {
@@ -225,95 +204,6 @@ const base = (): Editor => ({
 
 const followed = (primary: boolean, text: string) =>
   primary ? `Jamie ${text}.` : `Followed · ${text}`;
-
-// ---- 4 Construction ------------------------------------------------------------------------------
-
-function construction(state: State, primary: boolean): Editor {
-  const flow = state.flow;
-  const mine = flow.mine;
-  const slots: { type: "dock" | "pds" | null; planet: string | null }[] = primary
-    ? mine.build
-    : mine.build.slice(0, 1);
-  const has = (id: string) => STRUCTURES[id] ?? { dock: 0, pds: 0 };
-  const staged = (type: string, planet?: string) =>
-    slots.filter((slot) => slot.planet && slot.type === type && (!planet || slot.planet === planet))
-      .length;
-  const onBoard = (type: "dock" | "pds") =>
-    Object.values(STRUCTURES).reduce((sum, item) => sum + item[type], 0) + staged(type);
-  const open = slots.findIndex((slot) => !slot.planet);
-  const type = open >= 0 ? slots[open].type : null;
-  const allowed = PLANETS.filter((source) =>
-    type === "dock"
-      ? !has(source.id).dock && !staged("dock", source.id) && onBoard("dock") < 3
-      : has(source.id).pds + staged("pds", source.id) < 2 && onBoard("pds") < 6,
-  ).map((source) => source.id);
-  const label = ["1 of 2 · space dock or PDS", "2 of 2 · PDS only"];
-  const rows: RowView[] = slots.map((slot, index) => {
-    if (!slot.planet) {
-      return {
-        icon: "planet",
-        title: [primary ? label[index] : "Space dock or PDS"],
-        subtitle: slot.type ? "No planet chosen" : "Choose the structure first",
-      };
-    }
-    const here = has(slot.planet);
-    return planetRow(
-      slot.planet,
-      `${STRUCTURE[slot.type!][0]} · ${planetName(slot.planet)} has ${plural(here.dock, "space dock")} and ${here.pds} PDS${primary ? "" : ` · your command token goes to #${planetOf(slot.planet).system}`}`,
-      `build:${index}`,
-    );
-  });
-  const built = slots.flatMap((slot) => (slot.planet ? [slot.planet] : []));
-  const placed = slots
-    .filter((slot) => slot.planet)
-    .map(
-      (slot) =>
-        `a ${STRUCTURE[slot.type!][0].replace("Space", "space")} on ${planetName(slot.planet!)}`,
-    );
-  return {
-    ...base(),
-    blocks: [
-      {
-        kind: "gauges",
-        gauges: (["dock", "pds"] as const).map((item) => ({
-          label: `${STRUCTURE[item][0]}s on the board`.replace("PDSs", "PDS"),
-          used: onBoard(item),
-          total: STRUCTURE[item][1],
-        })),
-      },
-      {
-        kind: "menu",
-        title: primary ? "Structure 1 of 2" : "Structure",
-        rows: (["dock", "pds"] as const).map((item, index) => ({
-          key: `${index + 1}`,
-          title: STRUCTURE[item][0],
-          state: `${STRUCTURE[item][1] - onBoard(item)} in your reinforcements`,
-          selected: slots[0].type === item,
-          disabled: !!slots[0].planet,
-          intent: { type: "chooseOption", option: item, group: "structure" },
-        })),
-      },
-      {
-        kind: "card",
-        title: primary ? "Structures" : "Planet",
-        aside: primary ? "Choose on the map" : `Choose on the map · ${tokenCost(flow)}`,
-        rows,
-      },
-    ],
-    problem: primary && !placed.length ? "Place at least 1 structure." : "",
-    pass: !placed.length,
-    staged: !!slots[0].type || placed.length > 0,
-    main: primary && placed.length === 1 ? "Resolve primary · 1 structure" : undefined,
-    // The chosen planets stay marked on the board, also when no structure is left to place.
-    task:
-      open >= 0 && type
-        ? pickTask("planet", allowed, built)
-        : built.length
-          ? { ...pickTask("planet", [], built), interactive: false }
-          : null,
-    result: placed.length ? followed(primary, `placed ${names(placed)}`) : "Passed",
-  };
-}
 
 // ---- 5 Trade -------------------------------------------------------------------------------------
 
@@ -660,8 +550,6 @@ function imperial(state: State, primary: boolean): Editor {
 export function strategyEditor(state: State, seats: string[]): Editor {
   const primary = state.flow.owner === "sol";
   switch (state.flow.number ?? 1) {
-    case 4:
-      return construction(state, primary);
     case 5:
       return trade(state, primary, seats);
     case 6:
@@ -693,10 +581,6 @@ function clearLast(mine: any, number: number): boolean {
     mine.counts = {};
   } else if (mine.techs.length) {
     mine.techs.pop();
-  } else if (mine.build.some((slot: any) => slot.planet)) {
-    mine.build.findLast((slot: any) => slot.planet).planet = null;
-  } else if (mine.build[0].type) {
-    mine.build[0].type = null;
   } else if (mine.objective) {
     mine.objective = null;
   } else if (mine.seats.length) {
@@ -727,7 +611,6 @@ export function strategyIntent(state: State, seats: string[], intent: Intent): b
   const flow = state.flow;
   const mine = flow.mine;
   const number = flow.number ?? 1;
-  const primary = flow.owner === "sol";
   const editor = strategyEditor(state, seats);
   switch (intent.type) {
     case "toggleSystem":
@@ -743,12 +626,6 @@ export function strategyIntent(state: State, seats: string[], intent: Intent): b
       }
       if (editor.task.kind === "pay") {
         mine.pay[intent.planet] = !mine.pay[intent.planet];
-      } else if (number === 4) {
-        const slots = primary ? mine.build : mine.build.slice(0, 1);
-        const open = slots.find((slot: any) => !slot.planet);
-        if (open) {
-          open.planet = intent.planet;
-        }
       }
       state.reveal = `pl:${intent.planet}`;
       return true;
@@ -765,10 +642,6 @@ export function strategyIntent(state: State, seats: string[], intent: Intent): b
       if (group === "follow") {
         const follow = intent.option === "follow";
         mine.follow = mine.follow === follow ? null : follow;
-      } else if (group === "structure") {
-        if (!mine.build[0].planet) {
-          mine.build[0].type = mine.build[0].type === intent.option ? null : intent.option;
-        }
       } else if (
         group === "objective" &&
         OBJECTIVES.find((item) => item.name === intent.option)?.state === "open"
@@ -803,8 +676,6 @@ export function strategyIntent(state: State, seats: string[], intent: Intent): b
         mine.system = null;
       } else if (part === "seat" && id) {
         toggle(mine.seats, id);
-      } else if (part === "build") {
-        mine.build[+id].planet = null;
       } else if (part === "tech") {
         mine.techs.splice(+id);
       }

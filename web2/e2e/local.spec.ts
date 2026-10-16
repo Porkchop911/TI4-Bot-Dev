@@ -1355,6 +1355,172 @@ test("Politics: another seat follows as the game asks it, and does not see the a
   expect(errors).toEqual([]);
 });
 
+test("Construction: the structure in the panel, the planet on the map; both are sent at once", async ({
+  page,
+}) => {
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // Sol holds Construction; Jord has Sol's space dock, Qucen'n (#29) a PDS of Sol.
+  await page.goto("/?scenario=strategy_construction&humans=1");
+  const planet = (name: string) => page.locator("g.planet").filter({ hasText: name });
+  await expect(heading(page)).toHaveText("Choose an action");
+  await panel(page)
+    .getByRole("button", { name: /^4 Construction/ })
+    .click();
+  await page.keyboard.press("Enter");
+
+  // One screen: the gauges, the kind of the first structure, and both structures.
+  await expect(heading(page)).toHaveText("Construction");
+  const structures = panel(page).getByRole("heading", { name: "Structures" }).locator("../..");
+  await expect(panel(page)).toContainText("PDS on the board");
+  await expect(panel(page)).toContainText("1 / 6");
+  await expect(panel(page).getByText("Structure 1 of 2")).toBeVisible();
+  await expect(structures).toContainText("1 of 2 · space dock or PDS");
+  await expect(structures).toContainText("2 of 2 · PDS only");
+  await expect(page.locator("footer")).toContainText("Choose a structure, then a planet");
+  // The printed card of this set is behind the hover of the heading.
+  await panel(page).getByRole("button", { name: "Rules: Construction" }).hover();
+  await expect(
+    page.getByText(/Spend 1 token from your strategy pool and place it/).first(),
+  ).toBeVisible();
+  await page.mouse.move(0, 0);
+
+  // A PDS on Qucen'n fills it: the PDS of the second structure goes elsewhere.
+  await page.keyboard.press("2");
+  await planet("Qucen'n").click();
+  await expect(structures).toContainText("Qucen'n · #29PDS 1 → 2");
+  // Jord, Rarron and the two planets of #37, with the chosen Qucen'n marked.
+  await expect(page.locator("g.planet.payable")).toHaveCount(5);
+  await expect(page.locator("g.planet.chosen")).toHaveCount(1);
+  await planet("Qucen'n").click();
+  await expect(structures).toContainText("2 of 2 · PDS only");
+  // "Change" gives the planet back, and the kind is chosen again.
+  await structures.getByRole("button", { name: "Change" }).click();
+  await page.keyboard.press("1");
+  await expect(panel(page)).toContainText("Space dock");
+  await planet("Rarron").click();
+  await planet("Qucen'n").click();
+  await expect(structures).toContainText("Rarron · #29Space dock 0 → 1");
+  await expect(structures).toContainText("Qucen'n · #29PDS 1 → 2");
+  await expect(panel(page)).toContainText("2 / 3");
+  await expect(page.locator("footer")).toContainText("Space dock on Rarron · PDS on Qucen'n");
+  await expect(send(page)).toHaveText(/Resolve primary/);
+  // Esc clears the last planet.
+  await page.keyboard.press("Escape");
+  await expect(send(page)).toHaveText(/Resolve primary · 1 structure/);
+  await planet("Qucen'n").click();
+  await fitsHeight(page);
+  await page.screenshot({ path: "shots/local/construction.png", animations: "disabled" });
+
+  // The main button answers both structures; the game asks nothing more of them.
+  await send(page).click();
+  await expect(heading(page)).toHaveText("End your turn");
+  expect(errors).toEqual([]);
+});
+
+test("Construction: the secondary places one structure on the map; nothing chosen is a pass", async ({
+  page,
+}) => {
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // Sol and Hacan are played here.
+  await page.goto("/?scenario=strategy_construction&humans=3");
+  await expect(heading(page)).toHaveText("Choose an action");
+  await panel(page)
+    .getByRole("button", { name: /^4 Construction/ })
+    .click();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("1");
+  await page.locator("g.planet").filter({ hasText: "Rarron" }).click();
+  await send(page).click();
+
+  // Hacan's row opens into the structure, with what the secondary costs.
+  const planet = panel(page).getByRole("heading", { name: "Planet" }).locator("../..");
+  await expect(planet).toContainText("Choose on the map · Strategy pool 2 → 1");
+  await expect(planet).toContainText("Space dock or PDS");
+  await expect(send(page)).toHaveText(/^Pass/);
+  await page.keyboard.press("2");
+  await expect(page.locator("g.planet.payable")).toHaveCount(3);
+  await page.locator("g.planet").filter({ hasText: "Hercant" }).click();
+  await expect(planet).toContainText("PDS 0 → 1");
+  await expect(send(page)).toHaveText(/Follow · place PDS/);
+  await fitsHeight(page);
+  await page.screenshot({ path: "shots/local/construction-secondary.png", animations: "disabled" });
+  await send(page).click();
+  const hacan = page.getByRole("region", { name: "Players" }).getByRole("row").filter({
+    hasText: "Seat B",
+  });
+  await expect(hacan).toContainText("3 · 3 · 1");
+  expect(errors).toEqual([]);
+});
+
+test("Construction of Thunder's Edge: the ability first, then two structures of any kind", async ({
+  page,
+}) => {
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/?scenario=strategy_construction_te&humans=1");
+  const planet = (name: string) => page.locator("g.planet").filter({ hasText: name });
+  await expect(heading(page)).toHaveText("Choose an action");
+  await panel(page)
+    .getByRole("button", { name: /^4 Construction/ })
+    .click();
+  await page.keyboard.press("Enter");
+  await expect(heading(page)).toHaveText("Construction");
+  await panel(page).getByRole("button", { name: "Rules: Construction" }).hover();
+  await expect(
+    page.getByText(/use the PRODUCTION ability of 1 of your space docks/).first(),
+  ).toBeVisible();
+  await page.mouse.move(0, 0);
+  await expect(page.locator("footer")).toContainText("Choose an ability");
+  await expect(send(page)).toBeDisabled();
+  // A production is sent alone: the second structure is asked after it.
+  await page.keyboard.press("2");
+  await expect(send(page)).toHaveText(/Resolve primary · use PRODUCTION/);
+  await expect(panel(page)).toContainText("After the production");
+  // A structure places two, each of any kind.
+  await page.keyboard.press("1");
+  const structures = panel(page).getByRole("heading", { name: "Structures" }).locator("../..");
+  await expect(structures).toContainText("1 of 2 · space dock or PDS");
+  await expect(structures).toContainText("2 of 2 · space dock or PDS");
+  await page.keyboard.press("3");
+  await planet("Rarron").click();
+  await expect(panel(page).getByText("Structure 2 of 2")).toBeVisible();
+  await page.keyboard.press("4");
+  await planet("Jord").click();
+  await expect(page.locator("footer")).toContainText("Space dock on Rarron · PDS on Jord");
+  await fitsHeight(page);
+  await page.screenshot({ path: "shots/local/construction-te.png", animations: "disabled" });
+  await send(page).click();
+  await expect(heading(page)).toHaveText("End your turn");
+  expect(errors).toEqual([]);
+});
+
+test("Construction of the base game has its own printed text and the same screen", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/?scenario=strategy_construction_base&humans=1");
+  await expect(heading(page)).toHaveText("Choose an action");
+  await panel(page)
+    .getByRole("button", { name: /^4 Construction/ })
+    .click();
+  await page.keyboard.press("Enter");
+  await expect(heading(page)).toHaveText("Construction");
+  await panel(page).getByRole("button", { name: "Rules: Construction" }).hover();
+  await expect(
+    page.getByText(/Place 1 token from your strategy pool in any system/).first(),
+  ).toBeVisible();
+  await page.mouse.move(0, 0);
+  const structures = panel(page).getByRole("heading", { name: "Structures" }).locator("../..");
+  await expect(structures).toContainText("2 of 2 · PDS only");
+  expect(errors).toEqual([]);
+});
+
 test("the Dev sheet leads to a game on the server, on the seed of the page", async ({ page }) => {
   await page.goto("/?local=3&players=8&humans=1");
   await expect(send(page)).toBeDisabled();

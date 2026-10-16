@@ -117,6 +117,20 @@ fn secondary_choice(
             )
             .detailed("ready_count", crate::strategy_cards::DIPLOMACY_READIES);
     }
+    if crate::strategy_cards::card_name(content, card.as_str()).as_deref() == Some("Construction") {
+        // Display only: the structure that "yes" places, so that a client can stage it with the
+        // window.
+        question = question.detailed(
+            "structures",
+            crate::strategy_cards::structure_hints(
+                state,
+                content,
+                sources,
+                player,
+                &crate::strategy_cards::ONE_STRUCTURE,
+            ),
+        );
+    }
     if crate::strategy_cards::card_name(content, card.as_str()).as_deref() == Some("Trade") {
         // Display only: the follower's commodities now and at the limit the replenish fills to.
         question = question.detailed(

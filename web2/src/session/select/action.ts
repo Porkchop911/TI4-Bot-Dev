@@ -32,6 +32,7 @@ import { interruptOf, reactedAction, selectReaction } from "./reaction";
 import { type PurchaseDraft, selectPurchase } from "./purchase";
 import { type ReadyDraft, selectReady } from "./ready";
 import { type AgendaDraft, selectAgendaDeck } from "./agendaDeck";
+import { type StructureDraft, selectStructures } from "./structures";
 import { selectResearch } from "./research";
 import { type Pools, selectTokens } from "./tokens";
 import { type TurnMenu, isTurnMenu, selectTurn } from "./turn";
@@ -99,6 +100,8 @@ export interface LocalState {
   ready?: ReadyDraft | null;
   /** The staged places of agenda cards on the deck. Null: nothing staged. */
   agendas?: AgendaDraft | null;
+  /** The staged structures of a placement of structures, with its ability. Null: nothing staged. */
+  structures?: StructureDraft | null;
   /** The nonce of the choice that was answered. Its update is still the latest one. */
   sent: string | null;
   /** Why the game stopped, if it did. */
@@ -262,6 +265,14 @@ export function boardTask(update: SessionUpdate, local: LocalState): BoardTaskVi
   if (readying) {
     return readying.task;
   }
+  // The planets of a placement of structures are chosen on the map.
+  const building =
+    choice && !local.draft && !local.follow?.editing
+      ? selectStructures(update, choice, local.structures ?? null)
+      : null;
+  if (building) {
+    return building.task;
+  }
   const pick = boardPick(update, choice);
   if (!choice || !pick) {
     return null;
@@ -408,8 +419,13 @@ export function selectAction(
     choice && !window && !recording
       ? selectAgendaDeck(choice, local.agendas ?? null, printed)
       : null;
+  // A placement of structures, with its window or its ability: one screen, answered at once.
+  const structures =
+    choice && !window && !recording
+      ? selectStructures(update, choice, local.structures ?? null)
+      : null;
   /** A screen of several questions that is sent at once. */
-  const several = purchase ?? ready ?? deck;
+  const several = purchase ?? ready ?? deck ?? structures;
   const tiles = new Map((update.view.board.map_tiles ?? []).map((tile) => [tile.system_id, tile]));
   const planetOf = (id: string) =>
     (update.view.board.map_tiles ?? [])

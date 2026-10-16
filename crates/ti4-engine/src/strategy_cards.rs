@@ -31,6 +31,43 @@ pub const POLITICS_LOOKS: usize = 2;
 pub const DIPLOMACY_READIES: usize = 2;
 pub const RESEARCH_KIND: &str = "research";
 
+/// One placement of a structure ability: which placement of a card's sequence it is (`step` of
+/// `of`, display only) and whether it places only a PDS.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct StructureStep {
+    pub(crate) step: Option<(u32, u32)>,
+    pub(crate) only_pds: bool,
+}
+
+/// A lone placement of any structure: Construction's secondary, a law or a relic.
+pub(crate) const ONE_STRUCTURE: [StructureStep; 1] = [StructureStep {
+    step: None,
+    only_pds: false,
+}];
+/// Construction's primary (Prophecy of Kings and the base game): a PDS or a space dock, then a
+/// PDS.
+const CONSTRUCTION_STEPS: [StructureStep; 2] = [
+    StructureStep {
+        step: Some((1, 2)),
+        only_pds: false,
+    },
+    StructureStep {
+        step: Some((2, 2)),
+        only_pds: true,
+    },
+];
+/// Thunder's Edge Construction's primary: a structure (or a production), then a structure.
+const TE_CONSTRUCTION_STEPS: [StructureStep; 2] = [
+    StructureStep {
+        step: Some((1, 2)),
+        only_pds: false,
+    },
+    StructureStep {
+        step: Some((2, 2)),
+        only_pds: false,
+    },
+];
+
 /// Result of a primary.  TE Warfare hands its free activation back to the stepped game driver.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ability {
@@ -1887,16 +1924,22 @@ pub(crate) fn place_structure(
     only_pds: bool,
 ) -> Result<Option<SystemId>, IllegalChoice> {
     place_structure_step(
-        state, content, sources, galaxy, table, player, only_pds, None,
+        state,
+        content,
+        sources,
+        galaxy,
+        table,
+        player,
+        &[StructureStep {
+            step: None,
+            only_pds,
+        }],
     )
 }
 
-/// [`place_structure`] that tells the client which placement of a card's sequence this is
-/// (`step` of `of`), e.g. Construction's two structures. Display only.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "the shared structure ability plus its display step"
-)]
+/// [`place_structure`] of the first of `steps`, the placements of a card from this one on (e.g.
+/// Construction's two structures). The question tells the client which placement this is
+/// (`step` of `of`) and, in `structures`, every placement of `steps` (display only).
 pub(crate) fn place_structure_step(
     state: &mut GameState,
     content: &ContentStore,
@@ -1904,9 +1947,11 @@ pub(crate) fn place_structure_step(
     galaxy: Option<&Galaxy>,
     table: &mut Table,
     player: &PlayerId,
-    only_pds: bool,
-    step: Option<(u32, u32)>,
+    steps: &[StructureStep],
 ) -> Result<Option<SystemId>, IllegalChoice> {
+    let Some(&StructureStep { step, only_pds }) = steps.first() else {
+        return Ok(None);
+    };
     let mut options = structure_options(state, content, sources, player, only_pds);
     if options.is_empty() {
         return Ok(None);
@@ -1930,6 +1975,10 @@ pub(crate) fn place_structure_step(
     if only_pds {
         choice = choice.detailed("only_pds", true);
     }
+    choice = choice.detailed(
+        "structures",
+        structure_hints(state, content, sources, player, steps),
+    );
     let answer = ask(state, content, sources, galaxy, table, &choice)?;
     if answer.is_decline() {
         return Ok(None);
@@ -2001,13 +2050,7 @@ pub(crate) fn place_structure_step(
             }
         }
     }
-    let placed = construction_unit(state, content, sources, player, kind);
-    state
-        .system_mut(&system)
-        .planet_units
-        .entry(planet)
-        .or_default()
-        .push(Unit::new(placed, player.clone()));
+    put_structure(state, content, sources, player, kind, &system, planet);
 
     // Minister of Industry: "When the owner of this card places a space dock in a system, their
     // units in that system may use their PRODUCTION abilities." A space dock specifically, so a
@@ -2016,6 +2059,131 @@ pub(crate) fn place_structure_step(
         produce_all(state, content, sources, galaxy, table, player, &system)?;
     }
     Ok(Some(system))
+}
+
+/// Puts the structure of `kind` that this player places on `planet`.
+fn put_structure(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    kind: &str,
+    system: &SystemId,
+    planet: PlanetId,
+) {
+    let placed = construction_unit(state, content, sources, player, kind);
+    state
+        .system_mut(system)
+        .planet_units
+        .entry(planet)
+        .or_default()
+        .push(Unit::new(placed, player.clone()));
+}
+
+/// Display only: every placement of `steps` as the game will offer it, so that a client can
+/// stage them all at once. Each placement has its options (`id`, `unit`, `planet`, `system`);
+/// a later placement says which of its options a chosen option of the placement before it takes
+/// away (`without`: a second PDS where the planet then has two, the last one of the box). With
+/// them, the player's structures on each planet of an option, and the PDS and space docks on the
+/// board against the box.
+pub(crate) fn structure_hints(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    steps: &[StructureStep],
+) -> serde_json::Value {
+    let text = |option: &ChoiceOption, key: &str| {
+        option
+            .payload
+            .get(key)
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let listed = |options: &[ChoiceOption]| -> Vec<serde_json::Value> {
+        options
+            .iter()
+            .map(|option| {
+                serde_json::json!({
+                    "id": option.id,
+                    "unit": text(option, "unit"),
+                    "planet": text(option, "planet"),
+                    "system": text(option, "system"),
+                })
+            })
+            .collect()
+    };
+    let mut offered: Vec<ChoiceOption> = Vec::new();
+    let mut placements = Vec::new();
+    let mut before: Option<Vec<ChoiceOption>> = None;
+    for step in steps.iter().take(2) {
+        let options = structure_options(state, content, sources, player, step.only_pds);
+        let mut without = serde_json::Map::new();
+        for earlier in before.iter().flatten() {
+            let mut after = state.clone();
+            put_structure(
+                &mut after,
+                content,
+                sources,
+                player,
+                &text(earlier, "unit"),
+                &SystemId::new(text(earlier, "system")),
+                PlanetId::new(text(earlier, "planet")),
+            );
+            let left: BTreeSet<String> =
+                structure_options(&after, content, sources, player, step.only_pds)
+                    .into_iter()
+                    .map(|option| option.id)
+                    .collect();
+            let gone: Vec<&str> = options
+                .iter()
+                .filter(|option| !left.contains(&option.id))
+                .map(|option| option.id.as_str())
+                .collect();
+            if !gone.is_empty() {
+                without.insert(earlier.id.clone(), serde_json::json!(gone));
+            }
+        }
+        placements.push(serde_json::json!({
+            "step": step.step.map(|(step, _)| step),
+            "of": step.step.map(|(_, of)| of),
+            "only_pds": step.only_pds,
+            "options": listed(&options),
+            "without": without,
+        }));
+        offered.extend(options.iter().cloned());
+        before = Some(options);
+    }
+    let mut planets = serde_json::Map::new();
+    for option in &offered {
+        let planet = PlanetId::new(text(option, "planet"));
+        planets
+            .entry(planet.as_str().to_owned())
+            .or_insert_with(|| {
+                let on = |kind: &str| {
+                    crate::production::structures_on(state, content, sources, player, &planet, kind)
+                };
+                serde_json::json!({ "pds": on("pds"), "spacedock": on("spacedock") })
+            });
+    }
+    let supply: serde_json::Map<String, serde_json::Value> = ["pds", "spacedock"]
+        .into_iter()
+        .map(|kind| {
+            (
+                kind.to_owned(),
+                serde_json::json!({
+                    "placed": crate::supply::held(state, content, sources, player, kind),
+                    "limit": crate::supply::plastic(kind),
+                }),
+            )
+        })
+        .collect();
+    serde_json::json!({
+        "placements": placements,
+        "planets": planets,
+        "supply": supply,
+    })
 }
 
 /// Use every PRODUCTION ability in a system, until the player stops buying.
@@ -2545,6 +2713,12 @@ pub fn primary(
             "Construction: a structure or a production",
             options,
         )
+        // Display only: the two structures that "structure" places, so that a client can stage
+        // the ability with them.
+        .detailed(
+            "structures",
+            structure_hints(state, content, sources, player, &TE_CONSTRUCTION_STEPS),
+        )
         .contextualized(DecisionContext::new(
             player.clone(),
             DecisionSource::Content("te4construction".to_owned()),
@@ -2571,8 +2745,7 @@ pub fn primary(
                 galaxy,
                 table,
                 player,
-                false,
-                Some((1, 2)),
+                &TE_CONSTRUCTION_STEPS,
             )?;
         }
         place_structure_step(
@@ -2582,8 +2755,7 @@ pub fn primary(
             galaxy,
             table,
             player,
-            false,
-            Some((2, 2)),
+            &TE_CONSTRUCTION_STEPS[1..],
         )?;
         return Ok(Ability::Resolved);
     }
@@ -2615,8 +2787,7 @@ pub fn primary(
                 galaxy,
                 table,
                 player,
-                false,
-                Some((1, 2)),
+                &CONSTRUCTION_STEPS,
             )?;
             place_structure_step(
                 state,
@@ -2625,8 +2796,7 @@ pub fn primary(
                 galaxy,
                 table,
                 player,
-                true,
-                Some((2, 2)),
+                &CONSTRUCTION_STEPS[1..],
             )?;
         }
         "Trade" => trade_primary(state, content, sources, galaxy, table, player)?,
@@ -4691,6 +4861,48 @@ mod tests {
         assert_eq!(placements[1].details["step"], 2);
         assert_eq!(placements[1].details["of"], 2);
         assert_eq!(placements[1].details["only_pds"], true);
+    }
+
+    /// The first placement tells both: its own options and the PDS of the second, with the
+    /// second PDS on a planet that a first PDS would fill taken away.
+    #[test]
+    fn construction_tells_both_placements_with_the_first() {
+        let content = ContentStore::embedded();
+        let mut state = game(&["a"]);
+        let player = PlayerId::new("a");
+        let (system, planet) = a_placed_planet();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player.clone());
+        state
+            .system_mut(&system)
+            .planet_units
+            .entry(planet.clone())
+            .or_default()
+            .push(Unit::new(UnitTypeId::new("pds"), player.clone()));
+        let hints = structure_hints(&state, content, POK, &player, &CONSTRUCTION_STEPS);
+        let [first, second] = hints["placements"].as_array().unwrap().as_slice() else {
+            panic!("two placements: {hints}");
+        };
+        assert_eq!(first["step"], 1);
+        assert_eq!(second["only_pds"], true);
+        let pds = format!("pds|{system}|{planet}");
+        let dock = format!("spacedock|{system}|{planet}");
+        let ids = |placement: &serde_json::Value| -> Vec<String> {
+            placement["options"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|option| option["id"].as_str().unwrap().to_owned())
+                .collect()
+        };
+        assert!(ids(first).contains(&pds) && ids(first).contains(&dock));
+        assert_eq!(ids(second), std::slice::from_ref(&pds));
+        assert_eq!(second["without"][&pds], serde_json::json!([pds.clone()]));
+        assert!(second["without"].get(&dock).is_none());
+        assert_eq!(hints["planets"][planet.as_str()]["pds"], 1);
+        assert_eq!(hints["supply"]["pds"]["placed"], 1);
+        assert_eq!(hints["supply"]["pds"]["limit"], 6);
     }
 
     #[test]

@@ -139,6 +139,9 @@ pub const SCENARIOS: &[Scenario] = &[
     three_seats::STRATEGY_DIPLOMACY,
     three_seats::STRATEGY_DIPLOMACY_BASE,
     three_seats::STRATEGY_POLITICS,
+    three_seats::STRATEGY_CONSTRUCTION,
+    three_seats::STRATEGY_CONSTRUCTION_BASE,
+    three_seats::STRATEGY_CONSTRUCTION_TE,
 ];
 
 /// The scenario with this id.
@@ -1745,6 +1748,35 @@ mod tests {
             };
             assert!(exhausted(&ids[0]) > 2, "{scenario}");
             assert!(exhausted(&ids[1]) > 2, "{scenario}");
+        }
+    }
+
+    #[test]
+    fn the_construction_scenarios_play_the_card_on_a_table_of_its_set() {
+        let content = ContentStore::embedded();
+        let ids: Vec<PlayerId> = ["a", "b", "c"].map(PlayerId::new).to_vec();
+        for (scenario, card, warfare) in [
+            ("strategy_construction", "pok4construction", "pok6warfare"),
+            ("strategy_construction_base", "base4", "pok6warfare"),
+            ("strategy_construction_te", "te4construction", "te6warfare"),
+        ] {
+            let (state, _) = start(content, scenario, &ids, 42).expect("it starts");
+            let sol = state.player(&ids[0]).expect("a seat");
+            assert_eq!(sol.strategy_cards, [StrategyCardId::new(card)]);
+            assert!(
+                state
+                    .unclaimed_strategy_cards
+                    .contains(&StrategyCardId::new(warfare)),
+                "{scenario}"
+            );
+            assert_eq!(state.unclaimed_strategy_cards.len(), 5, "{scenario}");
+            let pds = state
+                .board
+                .values()
+                .flat_map(|system| system.planet_units.values().flatten())
+                .filter(|unit| unit.owner == ids[0] && unit.type_id.as_str() == "pds")
+                .count();
+            assert_eq!(pds, 1, "{scenario}");
         }
     }
 
