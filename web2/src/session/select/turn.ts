@@ -198,12 +198,12 @@ export function selectTurn(
     footer: parts.footer,
   });
 
-  // A staged action: what it is, as printed. The main button sends it.
+  // A staged action: what it is, as printed. The main button sends it. A partner of a transaction
+  // is never staged: its pick opens the transaction.
   const staged = local.staged ? offered.get(local.staged) : undefined;
   if (staged) {
     const held = strategy.find((card) => card.option === staged.id);
-    const partner = trades.find((item) => item.option?.id === staged.id);
-    const item = held || partner || staged.id === PASS ? null : entry(staged);
+    const item = held || staged.id === PASS ? null : entry(staged);
     const what = held
       ? {
           heading: `${held.number} ${held.name}`,
@@ -212,17 +212,9 @@ export function selectTurn(
           text: held.primary,
           button: `Use ${held.name}`,
         }
-      : partner
-        ? {
-            heading: `Transaction with ${partner.name}`,
-            name: partner.name,
-            type: "Transaction",
-            text: "",
-            button: "Open transaction",
-          }
-        : item
-          ? { heading: item.name, ...item, button: `${item.verb} ${item.name}` }
-          : { heading: "Pass", name: "Pass", type: "Pass", text: "", button: "Pass" };
+      : item
+        ? { heading: item.name, ...item, button: `${item.verb} ${item.name}` }
+        : { heading: "Pass", name: "Pass", type: "Pass", text: "", button: "Pass" };
     return frame({
       context: what.type === what.heading ? undefined : what.type,
       heading: what.heading,
@@ -396,8 +388,8 @@ export function selectTurn(
     blocks: [{ kind: "menu", rows }],
     help: [
       {
-        title: "Nothing is sent by a choice",
-        text: "A tactical action opens as your private draft. Any other action is staged; the main button of the footer sends it. Esc goes back.",
+        title: "What a choice sends",
+        text: "A tactical action opens as your private draft. A player of Transaction opens the transaction with that player at once. Any other action is staged; the main button of the footer sends it. Esc goes back.",
       },
     ],
     footer: { note: "Your turn. Choose one action.", error: false, actions: [...undo] },

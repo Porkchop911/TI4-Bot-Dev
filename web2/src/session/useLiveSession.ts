@@ -1345,6 +1345,15 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           if (restaged(editor?.option(intent.group, intent.option) ?? null)) {
             return;
           }
+          // A partner of a transaction is sent on the pick: opening a transaction is free (94.1a),
+          // and the game then asks the transaction itself. Nothing is staged.
+          const open = pending?.choice.options.find(
+            (option) => option.id === intent.option && option.kind === "open_transaction",
+          );
+          if (pending && open && !drafted) {
+            transport.submitChoice(pending.nonce, open.id);
+            return setLocal((now) => ({ ...now, staged: null, sent: pending.nonce }));
+          }
           // The kind of ground force that a tap lands is a choice of the hand.
           const force = intent.group === "landing" ? forceOfId(intent.option) : null;
           return landing && force !== null
