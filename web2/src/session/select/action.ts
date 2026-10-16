@@ -25,7 +25,7 @@ import type {
   SessionUpdate,
 } from "../wire";
 import { exploringCard } from "./exploration";
-import { systemLabel } from "./movement";
+import { systemLabel, tilesOf } from "./movement";
 import { humanizeId, seatLabel, sentence } from "./names";
 import { printedSource } from "./printed";
 import { interruptOf, reactedAction, selectReaction } from "./reaction";
@@ -405,7 +405,7 @@ export function selectAction(
   // or of structures, a replenish, a recall of a command token, a score of an objective: one
   // screen of several questions of the live game, sent at once (`editors.ts`).
   const several = window ? null : (openEditor(update, local, printed)?.view ?? null);
-  const tiles = new Map((update.view.board.map_tiles ?? []).map((tile) => [tile.system_id, tile]));
+  const tiles = tilesOf(update);
   const planetOf = (id: string) =>
     (update.view.board.map_tiles ?? [])
       .flatMap((tile) => (tile.planets ?? []).map((planet) => ({ planet, tile })))
@@ -820,9 +820,7 @@ function optionText(
 ): string {
   const thing = onBoard?.of[option.id];
   if (thing && onBoard?.target === "system") {
-    const tiles = new Map(
-      (update.view.board.map_tiles ?? []).map((tile) => [tile.system_id, tile]),
-    );
+    const tiles = tilesOf(update);
     return systemLabel(tiles, thing);
   }
   if (thing) {

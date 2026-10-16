@@ -7,6 +7,7 @@ import type { ActionButtonView, BoardTaskView, PaymentView } from "../../model";
 import { plural } from "../../model";
 import type { PlanStep } from "../movementPlan";
 import type { SessionUpdate } from "../wire";
+import { num } from "./editor";
 
 /** The id of the trade goods of the payment (the option of the game). */
 export const GOODS = "trade_good";
@@ -26,8 +27,6 @@ export interface Paying {
 }
 
 export const NO_PAYMENT: Paying = { planets: [], goods: 0 };
-
-const num = (value: unknown): number | null => (typeof value === "number" ? value : null);
 
 /** The planets and trade goods of a payment of the engine (`planets`, `trade_goods`, `trade_good_worth`). */
 export function payOfferOf(value: unknown): PayOffer | null {

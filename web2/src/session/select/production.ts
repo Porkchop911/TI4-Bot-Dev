@@ -22,16 +22,13 @@ import {
   totals,
 } from "../productionDraft";
 import type { BuildFact, ProductionFacts, SessionUpdate } from "../wire";
-import { systemLabel } from "./movement";
+import { systemLabel, tilesOf } from "./movement";
 import { isShip, unitType } from "./names";
 
 export type Stage = "build" | "pay";
 
 /** The icon of a unit. A unit that the table of names does not have is shown as infantry. */
 const typeOf = (unit: string): UnitType => unitType(unit) ?? "infantry";
-
-const tilesOf = (update: SessionUpdate) =>
-  new Map((update.view.board.map_tiles ?? []).map((tile) => [tile.system_id, tile]));
 
 /** The name of a planet, wherever it is on the map. */
 const planetNames = (update: SessionUpdate) =>

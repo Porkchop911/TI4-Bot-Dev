@@ -4,12 +4,13 @@
 // asks the system, the window and each planet one at a time; here they are one screen: the
 // system and the planets are chosen on the map, and the main button answers all of them at once,
 // by the ids of their options.
-import type { BlockView, BoardTaskView, RowView } from "../../model";
+import type { BlockView, BoardTaskView } from "../../model";
 import { plural } from "../../model";
 import type { Catalog, Choice, SessionUpdate } from "../wire";
-import { systemLabel } from "./movement";
+import { systemLabel, tilesOf } from "./movement";
+import { isFollowWindow, secondaryCost } from "./follow";
 import { seatLabel } from "./names";
-import { type Editor, answered } from "./editor";
+import { type Editor, answered, changeControl, num } from "./editor";
 
 /** What the player staged: the system, and the planets in the order that they were chosen. */
 export interface ReadyDraft {
@@ -43,8 +44,6 @@ interface Question {
   spenders: Spender[];
 }
 
-const num = (value: unknown): number | null => (typeof value === "number" ? value : null);
-
 function questionOf(choice: Choice): Question | null {
   const details = choice.details ?? {};
   const hints = details.ready_hints as { planets?: unknown; spenders?: unknown } | undefined;
@@ -71,7 +70,6 @@ function questionOf(choice: Choice): Question | null {
         : [],
   );
   const options = choice.options.filter((option) => option.kind !== "decline");
-  const ids = new Set(choice.options.map((option) => option.id));
   if (options.length && options.every((option) => option.kind === "system")) {
     return {
       mode: "system",
@@ -81,7 +79,7 @@ function questionOf(choice: Choice): Question | null {
       spenders,
     };
   }
-  if (details.kind === "strategy_secondary" && ids.has("yes") && ids.has("no") && ids.size === 2) {
+  if (isFollowWindow(choice)) {
     return { mode: "follow", systems: [], planets: hinted, count, spenders };
   }
   if (options.length && options.every((option) => option.kind === "ready")) {
@@ -152,24 +150,19 @@ export function selectReady(
     return null;
   }
   const { system, planets, need } = stagedOf(question, draft);
-  const tiles = new Map((update.view.board.map_tiles ?? []).map((tile) => [tile.system_id, tile]));
+  const tiles = tilesOf(update);
   const systemOf = (planet: string) =>
     (update.view.board.map_tiles ?? []).find((tile) =>
       (tile.planets ?? []).some((item) => item.id === planet),
     )?.system_id;
   const planetOf = (id: string) => question.planets.find((planet) => planet.id === id)!;
   const viewer = update.viewer.role === "player" ? update.viewer.seat : null;
-  const details = choice.details ?? {};
-  const left = num(details.tokens_left);
+  // What the secondary costs. The game does not say who makes it free.
   const cost =
-    question.mode === "follow" && details.costs_token === true && left !== null
-      ? `Strategy pool ${left} → ${left - 1}`
+    question.mode === "follow" && choice.details?.costs_token === true
+      ? secondaryCost(choice.details)
       : null;
 
-  const change = (part: string): RowView["control"] => ({
-    kind: "button",
-    button: { label: "Change", tone: "quiet", intent: { type: "clearPart", part } },
-  });
   const blocks: BlockView[] = [];
   if (question.mode === "system") {
     const others = update.view.players
@@ -186,7 +179,7 @@ export function selectReady(
               title: [systemLabel(tiles, system)],
               subtitle: `${names(others)} ${others.length === 1 ? "places" : "place"} a command token here`,
               link: [`sys:${system}`],
-              control: change("system"),
+              control: changeControl("system"),
             },
           ]
         : [{ icon: "token", title: ["No system chosen"] }],
@@ -212,7 +205,7 @@ export function selectReady(
             title: [where ? `${planetOf(id).name} · #${where}` : planetOf(id).name],
             subtitle: `Exhausted → ready${worth(planetOf(id))}`,
             link: where ? [`pl:${id}`, `sys:${where}`] : [`pl:${id}`],
-            control: change(`planet:${id}`),
+            control: changeControl(`planet:${id}`),
           };
         })
       : [{ icon: "planet", title: [need ? "No planet chosen" : "No exhausted planet"] }],

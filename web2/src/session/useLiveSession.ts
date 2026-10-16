@@ -81,7 +81,7 @@ import {
   optionOnBoard,
 } from "./select/action";
 import type { CardSettings } from "./select/cards";
-import { systemLabel } from "./select/movement";
+import { systemLabel, tilesOf } from "./select/movement";
 import { selectShell } from "./select/shell";
 import { tacticalFacts } from "./select/tactical";
 import type { EditorSlot } from "./select/editor";
@@ -208,7 +208,7 @@ const menuNonce = (update: SessionUpdate, local: LocalState): string | null => {
 
 /** What "Apply to Live" sends, in words: the steps of the draft that the game played. */
 function applyItems(update: SessionUpdate, system: string, sent: PlanStep[], entry: DraftEntry) {
-  const tiles = new Map((update.view.board.map_tiles ?? []).map((tile) => [tile.system_id, tile]));
+  const tiles = tilesOf(update);
   const items = [`Activate ${systemLabel(tiles, system)}`];
   const has = (stage: Stage) => sent.some((step) => stageOf(step) === stage);
   if (!has("movement")) {

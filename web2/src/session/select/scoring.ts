@@ -9,7 +9,7 @@ import type { Catalog, Choice, SessionUpdate } from "../wire";
 import { chooseFollow, followWindow, isFollowWindow } from "./follow";
 import { plain } from "./components";
 import { humanizeId } from "./names";
-import { type Editor, answered } from "./editor";
+import { type Editor, answered, num } from "./editor";
 
 /** What the player staged: the objective to score (by option id), or the answer of a window. */
 export interface ScoringDraft {
@@ -31,8 +31,6 @@ interface Question {
   held: number;
   max: number;
 }
-
-const num = (value: unknown): number | null => (typeof value === "number" ? value : null);
 
 function questionOf(choice: Choice): Question | null {
   const details = choice.details ?? {};

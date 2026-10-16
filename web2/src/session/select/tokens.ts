@@ -3,6 +3,7 @@
 // question, ids "<tactic>|<fleet>|<strategy>"); the pools are staged here, and the arrangement
 // that they make is the staged option when the game offers it.
 import type { BlockView, RowView } from "../../model";
+import { plural } from "../../model";
 import type { Choice } from "../wire";
 
 /** The three pools of a command sheet. */
@@ -27,11 +28,12 @@ export interface TokensView {
   staged: string | null;
   /** The footer: what is left to place, or the change in game values. */
   note: string;
+  /** The tokens that are still to place; less than 0: too many are placed. */
+  left: number;
 }
 
 const idOf = (pools: Pools) => `${pools.tactic}|${pools.fleet}|${pools.strategic}`;
 const sumOf = (pools: Pools) => pools.tactic + pools.fleet + pools.strategic;
-const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
 /** The arrangement of an option id, or null when the id is not one. */
 const parse = (id: string): Pools | null => {
@@ -42,7 +44,7 @@ const parse = (id: string): Pools | null => {
 };
 
 /** The pools that a question states, from its details. */
-const poolsOf = (value: unknown): Pools | null => {
+export const poolsOf = (value: unknown): Pools | null => {
   const pools = value as Partial<Record<keyof Pools, unknown>> | null;
   return pools &&
     typeof pools.tactic === "number" &&
@@ -142,13 +144,12 @@ export function selectTokens(choice: Choice, staging: Pools | null): TokensView 
   return question ? poolsView(question, staging) : null;
 }
 
-/** The pool editor of the pools of `question`, staged as `staging` (null: the sheet of now). */
-export function poolsView(question: PoolQuestion, staging: Pools | null): TokensView {
-  const { now, total, offered, min } = question;
-  const after = staging ?? now;
-  const placed = sumOf(after);
-  const left = total - placed;
-  const rows: RowView[] = POOLS.map(([key, short, name]) => ({
+/**
+ * The rows of the three pools: the tokens of now and after, and a counter from `min` up to the
+ * tokens that are `left` to place.
+ */
+export const poolRows = (now: Pools, after: Pools, min: Pools, left: number): RowView[] =>
+  POOLS.map(([key, short, name]) => ({
     title: [name],
     tokens: { now: now[key], after: after[key], up: key === "fleet" },
     control: {
@@ -162,6 +163,28 @@ export function poolsView(question: PoolQuestion, staging: Pools | null): Tokens
       },
     },
   }));
+
+/** The change of the pools in game values: "Tactic 2 → 3 · Fleet 3 · Strategy 2". */
+export const poolChange = (now: Pools, after: Pools) =>
+  POOLS.map(([key, , , word]) =>
+    now[key] === after[key] ? `${word} ${now[key]}` : `${word} ${now[key]} → ${after[key]}`,
+  ).join(" · ");
+
+/** What is wrong with pools that do not hold their tokens: "Place 2 more tokens". Null: they do. */
+export const placeProblem = (left: number) =>
+  left > 0
+    ? `Place ${plural(left, "more token")}`
+    : left < 0
+      ? `Remove ${plural(-left, "token")}`
+      : null;
+
+/** The pool editor of the pools of `question`, staged as `staging` (null: the sheet of now). */
+export function poolsView(question: PoolQuestion, staging: Pools | null): TokensView {
+  const { now, total, offered, min } = question;
+  const after = staging ?? now;
+  const placed = sumOf(after);
+  const left = total - placed;
+  const rows = poolRows(now, after, min, left);
   const id = idOf(after);
   return {
     block: {
@@ -172,15 +195,7 @@ export function poolsView(question: PoolQuestion, staging: Pools | null): Tokens
       rows,
     },
     staged: offered.has(id) ? id : null,
-    note:
-      left > 0
-        ? `Place ${plural(left, "more token")}`
-        : left < 0
-          ? `Remove ${plural(-left, "token")}`
-          : POOLS.map(([key, , , word]) =>
-              now[key] === after[key]
-                ? `${word} ${now[key]}`
-                : `${word} ${now[key]} → ${after[key]}`,
-            ).join(" · "),
+    note: placeProblem(left) ?? poolChange(now, after),
+    left,
   };
 }

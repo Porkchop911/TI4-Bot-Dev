@@ -20,7 +20,7 @@ import {
 } from "../landingDraft";
 import type { ExplorationCatalog, InvasionFacts, LandingPool, SessionUpdate } from "../wire";
 import { NO_TRAITS, planetTraits } from "./exploration";
-import { systemLabel } from "./movement";
+import { systemLabel, tilesOf } from "./movement";
 import { forceOf, unitType } from "./names";
 
 /** The icon of a unit. A unit that the table of names does not have is shown as infantry. */
@@ -46,7 +46,7 @@ export function selectLanding(
   catalog: ExplorationCatalog | null = null,
 ): LandingView {
   const traits = planetTraits(update, catalog);
-  const tiles = new Map((update.view.board.map_tiles ?? []).map((tile) => [tile.system_id, tile]));
+  const tiles = tilesOf(update);
   const planetName = (system: string, planet: string) =>
     tiles.get(system)?.planets?.find((item) => item.id === planet)?.label ?? planet;
   const system = update.view.board.systems[facts.active];

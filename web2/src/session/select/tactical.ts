@@ -25,7 +25,7 @@ import type {
 import { type LocalState, openChoice } from "./action";
 import { selectInvasion } from "./invasion";
 import { selectProduction } from "./production";
-import { selectMovement, systemLabel } from "./movement";
+import { selectMovement, systemLabel, tilesOf } from "./movement";
 import { ANOMALIES, WORMHOLES, factionName } from "./names";
 
 const STEPS = ["Activation", "Movement", "Space combat", "Invasion", "Production"];
@@ -48,9 +48,6 @@ export function tacticalFacts(update: SessionUpdate, local: LocalState): Tactica
     ? facts
     : null;
 }
-
-const tilesOf = (update: SessionUpdate) =>
-  new Map((update.view.board.map_tiles ?? []).map((tile) => [tile.system_id, tile]));
 
 const UNDO: ActionButtonView = { label: "Undo", tone: "quiet", intent: { type: "undo" } };
 

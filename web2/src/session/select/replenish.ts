@@ -9,7 +9,7 @@ import { plural } from "../../model";
 import type { Catalog, Choice, SessionUpdate } from "../wire";
 import { chooseFollow, followWindow, isFollowWindow } from "./follow";
 import { seatLabel } from "./names";
-import { type Editor, answered } from "./editor";
+import { type Editor, answered, changeControl, num } from "./editor";
 
 /** What the player staged: the seats that replenish (by option id), or the answer of a window. */
 export interface ReplenishDraft {
@@ -43,8 +43,6 @@ interface Question {
   /** The follower's commodities now and at its limit. */
   standing: { have: number; max: number } | null;
 }
-
-const num = (value: unknown): number | null => (typeof value === "number" ? value : null);
 
 function rangeOf(value: unknown): Range | null {
   const item = value as Record<string, unknown> | undefined;
@@ -172,14 +170,7 @@ export function selectReplenish(
           icon: "card",
           title: [{ seat: item.seat }, ` ${name(item.seat)}`],
           subtitle: `${commodities(item.have, item.max)} · no strategy token`,
-          control: {
-            kind: "button",
-            button: {
-              label: "Change",
-              tone: "quiet",
-              intent: { type: "clearPart", part: `seat:${item.option}` },
-            },
-          },
+          control: changeControl(`seat:${item.option}`),
         }))
       : [{ icon: "card", title: ["No player chosen"] }],
   });

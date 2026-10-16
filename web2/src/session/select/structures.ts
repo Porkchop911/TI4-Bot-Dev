@@ -9,8 +9,10 @@
 import type { BlockView, BoardTaskView, MenuRowView, RowView } from "../../model";
 import { plural } from "../../model";
 import type { Choice, SessionUpdate } from "../wire";
-import { systemLabel } from "./movement";
-import { type Editor, answered } from "./editor";
+import { isFollowWindow, secondaryCost } from "./follow";
+import { systemLabel, tilesOf } from "./movement";
+import { planetNames } from "./payment";
+import { type Editor, answered, changeControl, num } from "./editor";
 
 /** What the player staged: the ability, and the kind and the option of each placement. */
 export interface StructureDraft {
@@ -55,7 +57,6 @@ const NAME: Record<string, string> = { spacedock: "Space dock", pds: "PDS" };
 const nameOf = (unit: string) => NAME[unit] ?? unit;
 const lower = (unit: string) => (unit === "pds" ? "PDS" : nameOf(unit).toLowerCase());
 
-const num = (value: unknown): number | null => (typeof value === "number" ? value : null);
 const str = (value: unknown): string => (typeof value === "string" ? value : "");
 
 function spotsOf(value: unknown): Spot[] {
@@ -96,7 +97,7 @@ function questionOf(choice: Choice): Question | null {
   );
   const ids = new Set(choice.options.map((option) => option.id));
   const base = { placements, planets, supply, abilities: [] };
-  if (details.kind === "strategy_secondary" && ids.has("yes") && ids.has("no") && ids.size === 2) {
+  if (isFollowWindow(choice)) {
     return { ...base, mode: "follow" };
   }
   if (ids.has("structure")) {
@@ -181,16 +182,13 @@ export function selectStructures(
     : null;
   const { options, units, spots, open } = stagedOf(question, { ...staging, ability });
   const placements = activeOf(question, { ...staging, ability });
-  const tiles = new Map((update.view.board.map_tiles ?? []).map((tile) => [tile.system_id, tile]));
-  const planetName = (id: string) =>
-    (update.view.board.map_tiles ?? [])
-      .flatMap((tile) => tile.planets ?? [])
-      .find((planet) => planet.id === id)?.label ?? id;
-  const details = choice.details ?? {};
-  const left = num(details.tokens_left);
+  const tiles = tilesOf(update);
+  const planets = planetNames(update);
+  const planetName = (id: string) => planets.get(id) ?? id;
+  // What the secondary costs. The game does not say who makes it free.
   const cost =
-    question.mode === "follow" && details.costs_token === true && left !== null
-      ? `Strategy pool ${left} → ${left - 1}`
+    question.mode === "follow" && choice.details?.costs_token === true
+      ? secondaryCost(choice.details)
       : null;
   /** The structures of a kind on a planet now, and with what is staged before `index`. */
   const onPlanet = (planet: string, unit: string, index: number) => {
@@ -283,14 +281,7 @@ export function selectStructures(
       title: [`${planetName(spot.planet)} · #${spot.system}`],
       subtitle: `${nameOf(spot.unit)} ${now} → ${now + 1}`,
       link: [`pl:${spot.planet}`, `sys:${spot.system}`],
-      control: {
-        kind: "button",
-        button: {
-          label: "Change",
-          tone: "quiet",
-          intent: { type: "clearPart", part: `structure:${index}` },
-        },
-      },
+      control: changeControl(`structure:${index}`),
     };
   });
   const production = question.abilities.find((item) => item.id === ability && item.system);

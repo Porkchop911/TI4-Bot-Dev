@@ -12,7 +12,7 @@ import type {
 import { plural } from "../../model";
 import type { Catalog, Choice, ChoiceOption, SessionUpdate } from "../wire";
 import type { LocalState } from "./action";
-import { systemLabel } from "./movement";
+import { systemLabel, tilesOf } from "./movement";
 import { factionName, seatLabel, strategyCard } from "./names";
 import { ACTION_CARD, type Printed, printedOption } from "./printed";
 
@@ -119,7 +119,7 @@ export function selectTurn(
 ): FlowActionView {
   const facts = factsOf(choice);
   const offered = new Map(choice.options.map((option) => [option.id, option]));
-  const tiles = new Map((update.view.board.map_tiles ?? []).map((tile) => [tile.system_id, tile]));
+  const tiles = tilesOf(update);
   const entry = (option: ChoiceOption): Entry => {
     const card = printedOption(update, option, printed);
     return {

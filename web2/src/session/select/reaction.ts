@@ -11,7 +11,7 @@ import type {
   SessionUpdate,
 } from "../wire";
 import { plain, timing } from "./components";
-import { systemLabel } from "./movement";
+import { systemLabel, tilesOf } from "./movement";
 import { factionName, humanizeId, phaseName, seatLabel, strategyCard } from "./names";
 import { printedSource } from "./printed";
 
@@ -257,9 +257,7 @@ export function reactedAction(
   const tactical =
     !!trigger && (TACTICAL.has(trigger.kind) || TACTICAL_EVENTS.has(trigger.event_type));
   if (actor && system && (tactical || update.view.board.active_system)) {
-    const tiles = new Map(
-      (update.view.board.map_tiles ?? []).map((tile) => [tile.system_id, tile]),
-    );
+    const tiles = tilesOf(update);
     const label = systemLabel(tiles, system);
     return {
       title: "Tactical action",

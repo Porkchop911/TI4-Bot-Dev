@@ -4,11 +4,11 @@
 // the three one at a time; here they are one screen: the system is chosen on the map, the
 // arrangement of the pools in the pool editor, and the main button answers all three at once,
 // by the ids of their options.
-import type { BlockView, BoardTaskView, RowView } from "../../model";
+import type { BlockView, BoardTaskView } from "../../model";
 import type { Choice, SessionUpdate } from "../wire";
-import { systemLabel } from "./movement";
+import { systemLabel, tilesOf } from "./movement";
 import { type PoolQuestion, type Pools, countIn, poolQuestion, poolsView } from "./tokens";
-import { type Editor, answered } from "./editor";
+import { type Editor, answered, changeControl } from "./editor";
 
 /** What the player staged: the system, and the pools after the gain and the redistribution. */
 export interface RecallDraft {
@@ -80,11 +80,7 @@ export function selectRecall(
   const staging = draft ?? NO_RECALL;
   const system =
     staging.system && question.systems.includes(staging.system) ? staging.system : null;
-  const tiles = new Map((update.view.board.map_tiles ?? []).map((tile) => [tile.system_id, tile]));
-  const change: RowView["control"] = {
-    kind: "button",
-    button: { label: "Change", tone: "quiet", intent: { type: "clearPart", part: "system" } },
-  };
+  const tiles = tilesOf(update);
   const pools = question.pools ? poolsView(question.pools, staging.pools) : null;
   const blocks: BlockView[] = [
     {
@@ -100,7 +96,7 @@ export function selectRecall(
                 ? `The token returns to your reinforcements · you gain ${question.gained} command token${question.gained === 1 ? "" : "s"}`
                 : "The token returns to your reinforcements",
               link: [`sys:${system}`],
-              control: change,
+              control: changeControl("system"),
             },
           ]
         : [{ icon: "token", title: ["No system chosen"] }],
@@ -116,7 +112,7 @@ export function selectRecall(
   const problem = !system
     ? "Choose a system on the map."
     : pools && (!pools.staged || !gainOption)
-      ? pools.note.startsWith("Place") || pools.note.startsWith("Remove")
+      ? pools.left !== 0
         ? `${pools.note}.`
         : "The game does not offer this arrangement."
       : null;

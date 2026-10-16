@@ -3,7 +3,7 @@
 // time; here the whole of it is one screen: the bought tokens on a counter, the pools of the
 // command sheet with what is gained and bought, and the payment on the map. It is sent as one
 // plan (`pool`, `purchase` and `pay` steps), which the game answers in the order that it asks.
-import type { BlockView, BoardTaskView, PaymentView, RowView } from "../../model";
+import type { BlockView, BoardTaskView, PaymentView } from "../../model";
 import { plural } from "../../model";
 import type { PlanStep } from "../movementPlan";
 import type { Choice, SessionUpdate } from "../wire";
@@ -17,8 +17,8 @@ import {
   paymentOf,
   togglePaying,
 } from "./payment";
-import type { Pools } from "./tokens";
-import type { Editor } from "./editor";
+import { type Pools, placeProblem, poolChange, poolRows, poolsOf } from "./tokens";
+import { type Editor, num } from "./editor";
 
 /** What the player staged: tokens bought, and what pays for them. */
 export interface PurchaseDraft {
@@ -46,13 +46,12 @@ interface Question {
   offer: Offer | null;
 }
 
-const POOLS: [keyof Pools, string, string, string][] = [
-  ["tactic", "tactic_tokens", "Tactic pool", "Tactic"],
-  ["fleet", "fleet_tokens", "Fleet pool", "Fleet"],
-  ["strategic", "strategic_tokens", "Strategy pool", "Strategy"],
+/** The pools, with the options of a gain into each. */
+const POOLS: [keyof Pools, string][] = [
+  ["tactic", "tactic_tokens"],
+  ["fleet", "fleet_tokens"],
+  ["strategic", "strategic_tokens"],
 ];
-
-const num = (value: unknown): number | null => (typeof value === "number" ? value : null);
 
 function offerOf(value: unknown): Offer | null {
   const offer = value as Record<string, unknown> | null;
@@ -68,14 +67,7 @@ function offerOf(value: unknown): Offer | null {
  */
 function questionOf(choice: Choice): Question | null {
   const details = choice.details ?? {};
-  const pools = details.pools as Partial<Record<keyof Pools, unknown>> | undefined;
-  const now =
-    pools &&
-    typeof pools.tactic === "number" &&
-    typeof pools.fleet === "number" &&
-    typeof pools.strategic === "number"
-      ? { tactic: pools.tactic, fleet: pools.fleet, strategic: pools.strategic }
-      : null;
+  const now = poolsOf(details.pools);
   // The window of Leadership's secondary is the purchase question itself, with the kind of
   // the window.
   if (!now || (details.kind !== "command_tokens" && details.kind !== "strategy_secondary")) {
@@ -141,20 +133,7 @@ export function selectPurchase(
   const cost = offer ? buy * offer.cost : 0;
   const paid = paidOf(offer, staging);
 
-  const rows: RowView[] = POOLS.map(([key, , name]) => ({
-    title: [name],
-    tokens: { now: now[key], after: after[key], up: key === "fleet" },
-    control: {
-      kind: "counter",
-      counter: {
-        id: `pools.${key[0]}`,
-        value: after[key],
-        min: now[key],
-        max: after[key] + Math.max(0, left),
-        label: `${name.toLowerCase()} token`,
-      },
-    },
-  }));
+  const rows = poolRows(now, after, now, left);
   const blocks: BlockView[] = [
     ...(offer
       ? [
@@ -192,17 +171,13 @@ export function selectPurchase(
   const open = offer && buy ? paymentOf(update, offer, staging, cost, "influence") : null;
   const payment: PaymentView | null = open?.payment ?? null;
   const task: BoardTaskView | null = open?.task ?? null;
-  const problem =
-    left > 0
-      ? `Place ${plural(left, "more token")}.`
-      : left < 0
-        ? `Remove ${plural(-left, "token")}.`
-        : paid < cost
-          ? `Pay ${cost - paid} more influence.`
-          : null;
-  const change = POOLS.map(([key, , , word]) =>
-    now[key] === after[key] ? `${word} ${now[key]}` : `${word} ${now[key]} → ${after[key]}`,
-  ).join(" · ");
+  const placing = placeProblem(left);
+  const problem = placing
+    ? `${placing}.`
+    : paid < cost
+      ? `Pay ${cost - paid} more influence.`
+      : null;
+  const change = poolChange(now, after);
   return {
     blocks,
     task,

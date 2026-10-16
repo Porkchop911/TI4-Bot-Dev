@@ -55,10 +55,14 @@ function planOf(
     facts,
     draft,
     handled,
-    tiles: new Map((update.view.board.map_tiles ?? []).map((tile) => [tile.system_id, tile])),
+    tiles: tilesOf(update),
     viewer: update.viewer.role === "player" ? update.viewer.seat : "",
   };
 }
+
+/** The systems of the board by id. */
+export const tilesOf = (update: SessionUpdate): Map<string, BoardTileView> =>
+  new Map((update.view.board.map_tiles ?? []).map((tile) => [tile.system_id, tile]));
 
 export const systemLabel = (tiles: Map<string, BoardTileView>, id: string) =>
   `${tiles.get(id)?.label ?? "System"} · #${id}`;

@@ -17,6 +17,7 @@ import {
   payOfferOf,
   paySteps,
   paymentOf,
+  planetNames,
   togglePaying,
 } from "./payment";
 
@@ -114,11 +115,7 @@ export function selectResearch(
   const open = new Set(offered.map((option) => option.id));
   const cards = new Map((printed?.components.technologies ?? []).map((card) => [card.id, card]));
   const name = (id: string) => cards.get(id)?.name ?? humanizeId(id);
-  const planets = new Map(
-    (update.view.board.map_tiles ?? []).flatMap((tile) =>
-      (tile.planets ?? []).map((planet) => [planet.id, planet.label] as const),
-    ),
-  );
+  const planets = planetNames(update);
   const owned = (color: TechColor) =>
     facts.technologies.filter((tech) => tech.owned && tech.colour === color && !tech.unit_upgrade)
       .length;
