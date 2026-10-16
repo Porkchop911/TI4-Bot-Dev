@@ -99,6 +99,7 @@ function tileView(
         groundForces: types.filter((type) => type && isGroundForce(type)).length,
         planetaryShield: types.includes("pds"),
         traits: traits(planet),
+        exhausted: !!system?.planets[planet.id]?.exhausted,
       };
     }),
     control: fleets.length > 1 ? "contested" : (fleets[0]?.seat ?? null),

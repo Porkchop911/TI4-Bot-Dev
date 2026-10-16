@@ -14,7 +14,7 @@ import { useLink } from "../link";
 import { TYPE_COLOR, TYPE_NAME } from "./PlanetTraits";
 import { HEX_R, hexCenter, hexPoints, routePath } from "./hex";
 
-export type MapViewId = "standard" | "economy" | "space" | "ground" | "tech" | "explore";
+export type MapViewId = "standard" | "owner" | "space" | "ground" | "tech" | "explore";
 
 const TYPE_LETTER = { cultural: "C", hazardous: "H", industrial: "I" } as const;
 
@@ -118,7 +118,7 @@ function Planet({
         </>,
         r > 11 ? 12.5 : 11,
       )
-    : view === "economy"
+    : view === "standard"
       ? text(
           <>
             <tspan style={{ fill: "var(--color-gold)" }}>{planet.resources}</tspan>
@@ -161,7 +161,7 @@ function Planet({
           role: "button",
           tabIndex: 0,
           "aria-pressed": chosen,
-          "aria-label": `${onPlanets.verb} ${planet.name}, ${onPlanets.values[planet.id]} ${onPlanets.unit}, ${planet.resources} resources / ${planet.influence} influence`,
+          "aria-label": `${onPlanets.verb} ${planet.name}, ${onPlanets.values[planet.id]} ${onPlanets.unit}, ${planet.resources} resources / ${planet.influence} influence${planet.exhausted ? ", exhausted" : ""}`,
           onKeyDown: pressOnKey,
           onClick: (event: React.MouseEvent) => {
             event.stopPropagation();
@@ -177,8 +177,9 @@ function Planet({
         "planet",
         !planet.owner && "free",
         payable && "payable",
-        chosen &&
-          (payable ? (onPlanets?.kind === "pay" ? "chosen" : "chosen picked") : "exhausted"),
+        chosen && payable && (onPlanets?.kind === "pay" ? "chosen" : "chosen picked"),
+        // A planet of a recorded payment is exhausted too.
+        (planet.exhausted || (chosen && !payable)) && "exhausted",
         linked && "linked",
       )}
       style={color ? ({ "--seat": color } as React.CSSProperties) : undefined}
@@ -188,6 +189,7 @@ function Planet({
       <title>
         {planet.name} · {planet.resources} resources / {planet.influence} influence
         {planet.owner ? " · " + seats[planet.owner].faction : ""}
+        {planet.exhausted ? " · exhausted" : ""}
         {planet.traits.types.map((type) => " · " + TYPE_NAME[type]).join("")}
         {planet.traits.unexplored ? " · unexplored" : ""}
         {planet.traits.attachments.map((item) => " · " + item.name).join("")}

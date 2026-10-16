@@ -36,6 +36,8 @@ export interface PlanetMarkView {
   groundForces: number;
   planetaryShield: boolean;
   traits: PlanetTraitsView;
+  /** Every map view draws the outline of an exhausted planet dashed. */
+  exhausted: boolean;
 }
 
 /** One system on the board. Compare `BoardTileView` + `SystemView`. */

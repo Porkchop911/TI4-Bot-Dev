@@ -770,7 +770,7 @@ test("a draft goes on to the landings and the production, and ends at a draw", a
     .locator("section[aria-label='Galaxy board'] > div")
     .filter({ hasText: "Velnor" });
   await expect(inspector.getByText(/2 Cruisers/)).toBeVisible();
-  await expect(inspector.getByText("Exhausted")).toHaveCount(1);
+  await expect(inspector.getByText("Exhausted", { exact: true })).toHaveCount(1);
   expect(errors).toEqual([]);
 });
 
@@ -1438,7 +1438,7 @@ test("a production: the build is staged on the map, then paid on the map, and se
     .filter({ hasText: "Velnor" });
   await expect(inspector.getByText(/2 Cruisers/)).toBeVisible();
   await expect(inspector.getByText(/4 Fighters/)).toBeVisible();
-  await expect(inspector.getByText("Exhausted")).toHaveCount(1);
+  await expect(inspector.getByText("Exhausted", { exact: true })).toHaveCount(1);
   await page.screenshot({ path: "shots/local/after-production.png", animations: "disabled" });
 
   // One undo takes the production back whole, and it is staged again.

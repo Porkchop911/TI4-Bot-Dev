@@ -185,9 +185,13 @@
   opacity: 0.3;
 }
 
-.galaxy .planet.exhausted circle {
-  fill-opacity: 0.35;
-  stroke-dasharray: 2 2;
+/* An exhausted planet: a dashed outline in every map view, also while the task can use it. */
+.galaxy .planet.exhausted > circle {
+  stroke-dasharray: 3 2;
+}
+
+.galaxy .planet.exhausted:not(.payable, .linked) > circle {
+  stroke-width: 1.5;
 }
 
 .galaxy .planet.chosen > circle {

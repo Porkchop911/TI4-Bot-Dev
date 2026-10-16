@@ -177,7 +177,6 @@ test.describe("flows", () => {
 
   test("pay for production on the board", async ({ page }) => {
     await page.goto("/?example=draft-production");
-    await page.getByRole("button", { name: "Res / Inf" }).click();
     await page.getByRole("button", { name: /Exhaust Jord/ }).click();
     await shot(page, "web2/flow/production-pay");
   });

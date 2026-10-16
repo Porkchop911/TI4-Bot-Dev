@@ -10,6 +10,7 @@ export interface MapPlanet {
   owner: string | null;
   troops?: number;
   tech?: string;
+  exhausted?: boolean;
 }
 export interface MapSystem {
   q: number;
@@ -83,7 +84,7 @@ export const MAP: Record<string, MapSystem> = {
     name: "Starpoint / New Albion",
     planets: [
       { id: "starpoint", name: "Starpoint", res: 3, inf: 1, owner: "sol" },
-      { id: "newalbion", name: "New Albion", res: 1, inf: 1, owner: "hacan" },
+      { id: "newalbion", name: "New Albion", res: 1, inf: 1, owner: "hacan", exhausted: true },
     ],
   },
   "1": {
@@ -153,7 +154,9 @@ export const MAP: Record<string, MapSystem> = {
     q: 2,
     r: -2,
     name: "Abyz",
-    planets: [{ id: "abyz", name: "Abyz", res: 3, inf: 0, owner: "hacan", troops: 3 }],
+    planets: [
+      { id: "abyz", name: "Abyz", res: 3, inf: 0, owner: "hacan", troops: 3, exhausted: true },
+    ],
     fleets: { hacan: { carrier: 1, fighter: 2 } },
   },
 };

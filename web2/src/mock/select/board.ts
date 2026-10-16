@@ -184,10 +184,12 @@ function inspector(
       ...Object.keys(fleets).map((seat) => ({ seat, force: countsForce(fleets[seat]) })),
       ...E.planetsOf(state, id).map((planet: any) => ({
         planet: planetHead(planet),
-        notes:
-          planet.owner && planet.owner !== "sol"
+        notes: [
+          ...(planet.owner && planet.owner !== "sol"
             ? [{ text: plural(planet.troops || 2, "ground force"), tone: "muted" as const }]
-            : [],
+            : []),
+          ...(planet.exhausted ? [{ text: "Exhausted", tone: "muted" as const }] : []),
+        ],
       })),
     ];
     return { ...base, rows, activate };
@@ -232,6 +234,7 @@ function inspector(
       notes: [
         ...(structures ? [{ text: structures, tone: "muted" as const }] : []),
         ...(E.size(plan) ? [{ text: `+ ${E.list(plan)} planned`, tone: "planned" as const }] : []),
+        ...(planet.exhausted ? [{ text: "Exhausted", tone: "muted" as const }] : []),
       ],
     };
   });
@@ -359,6 +362,7 @@ export function selectBoard(world: World, state: State): BoardView {
         groundForces: troops(planet),
         planetaryShield: !!(here && planet.structures?.includes("pds")),
         traits: traitsOf(planet),
+        exhausted: !!planet.exhausted,
       })),
       control: marks.length > 1 ? "contested" : (marks[0]?.seat ?? null),
       fleets: marks,

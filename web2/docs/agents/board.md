@@ -14,6 +14,8 @@ Part of `web2/AGENTS.md`: the Patterns and the rules of Screen size and Text the
 - The inner ring of a system shows who has ships there, in the colour of that seat. A red dashed ring shows that two or more players have ships there.
 - Seat symbols are drawn shapes of one size (`SeatShape` in `src/game/context.tsx`). Do not use font glyphs for them: their sizes are not equal.
 
+- The map opens on the view "Standard", the first of the map views: `res/inf` of each planet. The view "Owner" has the symbol of the owner in each planet.
+- An exhausted planet has a dashed outline in every map view, also while the open task can use it; its tooltip says "exhausted". The inspector has the note "Exhausted".
 - The board has no log line and no log button. The log is a reference sheet in the toolbar.
 - The map view "Exploration" shows the type of each planet as a letter in the colour of the type (C, H, I), "?" while the planet is still explored when a player takes it, and "+" when something is attached. It is not a control. A planet of the open choice keeps its `res/inf` in every map view.
 - Every map view shows the board after the staged movement: the ships and ground forces that stay, and the fleet that arrives. The player must see what a move leaves behind.
