@@ -99,17 +99,17 @@ pub fn with_pool_details(
     mode: &str,
     tokens_to_place: Option<usize>,
 ) -> Choice {
-    let (tactic, fleet, strategic) = state.player(&choice.player).map_or((0, 0, 0), |seat| {
-        (seat.tactic_tokens, seat.fleet_tokens, seat.strategic_tokens)
-    });
+    let pools = CommandPools::of(state, &choice.player);
+    let CommandPools {
+        tactic,
+        fleet,
+        strategic,
+    } = pools;
     let reinforcements = state.tokens_in_reinforcements(&choice.player);
     let choice = choice
         .detailed("kind", "command_tokens")
         .detailed("mode", mode)
-        .detailed(
-            "pools",
-            serde_json::json!({ "tactic": tactic, "fleet": fleet, "strategic": strategic }),
-        );
+        .hinted("pools", &pools);
     match (mode, tokens_to_place) {
         ("gain" | "buy", Some(count)) => choice
             .detailed("reinforcements", reinforcements)
@@ -131,30 +131,84 @@ pub fn with_pool_details(
     }
 }
 
-/// What a client needs to plan a gain of `gained` command tokens and the redistribution that
-/// follows it as one screen (display only; Warfare's recall): the pools as they stand now, the
-/// total that the redistribution arranges, the option id of the gain into each pool, and the ids
-/// of every arrangement that the redistribution will offer.
+/// The three pools of a command sheet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct CommandPools {
+    pub tactic: i32,
+    pub fleet: i32,
+    pub strategic: i32,
+}
+
+impl CommandPools {
+    /// The pools of `player` as they stand now; all 0 for a player who is not seated.
+    #[must_use]
+    pub fn of(state: &GameState, player: &PlayerId) -> Self {
+        state.player(player).map_or(
+            Self {
+                tactic: 0,
+                fleet: 0,
+                strategic: 0,
+            },
+            |seat| Self {
+                tactic: seat.tactic_tokens,
+                fleet: seat.fleet_tokens,
+                strategic: seat.strategic_tokens,
+            },
+        )
+    }
+}
+
+/// The option id of a gained command token that goes into each pool ([`TACTIC_POOL`],
+/// [`FLEET_POOL`], [`STRATEGIC_POOL`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct PoolOptions {
+    pub tactic: String,
+    pub fleet: String,
+    pub strategic: String,
+}
+
+/// The look-ahead of a gain and the redistribution after it (`details.redistribution` of
+/// Warfare's recall): what a client needs to plan both as one screen (display only).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct RedistributionHints {
+    /// The pools as they stand now, before the gain.
+    pub pools: CommandPools,
+    pub gained: i32,
+    /// The tokens that the redistribution arranges: the pools of now and the gained ones.
+    pub total: i32,
+    /// The option of the gain into each pool.
+    pub gain: PoolOptions,
+    /// The id of every arrangement that the redistribution will offer (`tactic|fleet|strategic`).
+    pub arrangements: Vec<String>,
+}
+
+/// Display only: the gain of `gained` command tokens and the redistribution that follows it
+/// (Warfare's recall); see [`RedistributionHints`].
 #[must_use]
 pub fn redistribution_after_gain(
     state: &GameState,
     player: &PlayerId,
     gained: i32,
-) -> serde_json::Value {
-    let (tactic, fleet, strategic) = state.player(player).map_or((0, 0, 0), |seat| {
-        (seat.tactic_tokens, seat.fleet_tokens, seat.strategic_tokens)
-    });
-    let total = tactic + fleet + strategic + gained;
-    serde_json::json!({
-        "pools": { "tactic": tactic, "fleet": fleet, "strategic": strategic },
-        "gained": gained,
-        "total": total,
-        "gain": { "tactic": TACTIC_POOL, "fleet": FLEET_POOL, "strategic": STRATEGIC_POOL },
-        "arrangements": distribution_options(total)
+) -> RedistributionHints {
+    let pools = CommandPools::of(state, player);
+    let total = pools.tactic + pools.fleet + pools.strategic + gained;
+    RedistributionHints {
+        pools,
+        gained,
+        total,
+        gain: PoolOptions {
+            tactic: TACTIC_POOL.to_owned(),
+            fleet: FLEET_POOL.to_owned(),
+            strategic: STRATEGIC_POOL.to_owned(),
+        },
+        arrangements: distribution_options(total)
             .into_iter()
             .map(|option| option.id)
-            .collect::<Vec<_>>(),
-    })
+            .collect(),
+    }
 }
 
 /// The choice kind for redistributing already-held command tokens across pools in one decision.

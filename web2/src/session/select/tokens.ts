@@ -4,14 +4,10 @@
 // that they make is the staged option when the game offers it.
 import type { BlockView, RowView } from "../../model";
 import { plural } from "../../model";
-import type { Choice } from "../wire";
+import type { Choice, CommandPools } from "../wire";
 
-/** The three pools of a command sheet. */
-export interface Pools {
-  tactic: number;
-  fleet: number;
-  strategic: number;
-}
+/** The three pools of a command sheet (the engine's `CommandPools`). */
+export type Pools = CommandPools;
 
 /** The kind of an option that sets the three pools (`REDISTRIBUTE_KIND` of the engine). */
 const REDISTRIBUTE = "redistribute";

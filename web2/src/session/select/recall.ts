@@ -5,10 +5,10 @@
 // arrangement of the pools in the pool editor, and the main button answers all three at once,
 // by the ids of their options.
 import type { BlockView, BoardTaskView } from "../../model";
-import type { Choice, SessionUpdate } from "../wire";
+import type { Choice, PoolOptions, RedistributionHints, SessionUpdate } from "../wire";
 import { systemLabel, tilesOf } from "./movement";
 import { type PoolQuestion, type Pools, countIn, poolQuestion, poolsView } from "./tokens";
-import { type Editor, answered, changeControl } from "./editor";
+import { type Editor, answered, changeControl, hintOf } from "./editor";
 
 /** What the player staged: the system, and the pools after the gain and the redistribution. */
 export interface RecallDraft {
@@ -22,8 +22,8 @@ interface Question {
   systems: string[];
   /** The redistribution after the recall. Null: the game asks nothing after it. */
   pools: PoolQuestion | null;
-  /** The option of the gain into each pool. */
-  gain: Partial<Record<keyof Pools, string>>;
+  /** The option of the gain into each pool. Null: the game asks nothing after the recall. */
+  gain: PoolOptions | null;
   gained: number;
 }
 
@@ -31,24 +31,12 @@ function questionOf(choice: Choice): Question | null {
   if (!choice.options.length || choice.options.some((option) => option.kind !== "recall")) {
     return null;
   }
-  const told = choice.details?.redistribution as Record<string, unknown> | undefined;
-  const pools = told
-    ? poolQuestion(
-        told.pools,
-        told.total,
-        Array.isArray(told.arrangements) ? told.arrangements : [],
-      )
-    : null;
-  const gain = (told?.gain ?? {}) as Record<string, unknown>;
+  const told = hintOf<RedistributionHints>(choice, "redistribution");
   return {
     systems: choice.options.map((option) => option.id),
-    pools,
-    gain: Object.fromEntries(
-      (["tactic", "fleet", "strategic"] as const).flatMap((key) =>
-        typeof gain[key] === "string" ? [[key, gain[key]]] : [],
-      ),
-    ),
-    gained: typeof told?.gained === "number" ? told.gained : 0,
+    pools: told ? poolQuestion(told.pools, told.total, told.arrangements) : null,
+    gain: told?.gain ?? null,
+    gained: told?.gained ?? 0,
   };
 }
 
@@ -106,9 +94,9 @@ export function selectRecall(
   // The gain goes into a pool that the arrangement fills; the redistribution then sets them all.
   const after = staging.pools ?? question.pools?.now ?? null;
   const into = question.pools
-    ? KEYS.find((key) => after && after[key] > question.pools!.now[key] && question.gain[key])
+    ? KEYS.find((key) => after && after[key] > question.pools!.now[key] && question.gain)
     : undefined;
-  const gainOption = into ? question.gain[into] : undefined;
+  const gainOption = into ? question.gain?.[into] : undefined;
   const problem = !system
     ? "Choose a system on the map."
     : pools && (!pools.staged || !gainOption)

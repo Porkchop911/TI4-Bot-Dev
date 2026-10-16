@@ -68,6 +68,7 @@ pub fn files() -> BTreeMap<String, String> {
     collect.visit::<ti4_engine::strategy_cards::ResearchPaymentHints>();
     collect.visit::<ti4_engine::strategy_cards::PurchaseHints>();
     collect.visit::<ti4_engine::strategy_cards::StructureHints>();
+    collect.visit::<ti4_engine::tokens::RedistributionHints>();
     collect.visit::<crate::host_session::HostSave>();
     let mut index = format!("{NOTE}\n");
     for name in collect.names.keys() {

@@ -2632,9 +2632,9 @@ fn warfare_primary(
     )
     // Display only: the gain of the recalled token and the redistribution after it, so that a
     // client can stage the whole primary on one screen.
-    .detailed(
+    .hinted(
         "redistribution",
-        crate::tokens::redistribution_after_gain(state, player, 1),
+        &crate::tokens::redistribution_after_gain(state, player, 1),
     )
     .contextualized(DecisionContext::new(
         player.clone(),
@@ -3836,23 +3836,31 @@ mod tests {
         let [recall, gain, redistribute] = &asked[..] else {
             panic!("the recall, the gain and the redistribution: {asked:?}");
         };
-        let told = &recall.details["redistribution"];
-        let ids = |choice: &Choice| -> Vec<serde_json::Value> {
+        let told = recall
+            .hint::<crate::tokens::RedistributionHints>("redistribution")
+            .expect("the look-ahead of the redistribution");
+        let ids = |choice: &Choice| -> Vec<String> {
             choice
                 .options
                 .iter()
-                .map(|option| serde_json::Value::from(option.id.clone()))
+                .map(|option| option.id.clone())
                 .collect()
         };
-        assert_eq!(told["pools"], gain.details["pools"]);
-        assert_eq!(told["total"], redistribute.details["total"]);
         assert_eq!(
-            told["arrangements"],
-            serde_json::Value::from(ids(redistribute))
+            Some(told.pools),
+            gain.hint::<crate::tokens::CommandPools>("pools")
         );
-        for pool in ["tactic", "fleet", "strategic"] {
-            assert!(ids(gain).contains(&told["gain"][pool]), "{pool}");
+        assert_eq!(told.gained, 1);
+        assert_eq!(told.total, redistribute.details["total"]);
+        assert_eq!(told.arrangements, ids(redistribute));
+        for pool in [&told.gain.tactic, &told.gain.fleet, &told.gain.strategic] {
+            assert!(ids(gain).contains(pool), "{pool}");
         }
+        // Written as JSON with the keys that the clients read.
+        let json = &recall.details["redistribution"];
+        assert_eq!(json["pools"], gain.details["pools"]);
+        assert_eq!(json["gain"]["fleet"], crate::tokens::FLEET_POOL);
+        assert_eq!(json["arrangements"][0], ids(redistribute)[0].as_str());
     }
 
     #[test]

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Choice, SessionUpdate } from "../wire";
+import type { Choice, RedistributionHints, SessionUpdate } from "../wire";
 import {
   chooseRecallSystem,
   clearLastRecall,
@@ -30,7 +30,7 @@ const recall: Choice = {
       total: 9,
       gain: { tactic: "tactic_tokens", fleet: "fleet_tokens", strategic: "strategic_tokens" },
       arrangements: arrangements(9),
-    },
+    } satisfies RedistributionHints,
   },
 };
 const update = {

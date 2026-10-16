@@ -1,6 +1,6 @@
 # Review of the shared code of the demo removal, and its cleanup (2026-10-16)
 
-Status: in progress, steps 1–5 and Technology/Leadership and Construction of step 6 done.
+Status: in progress, steps 1–5 and Technology/Leadership, Construction and Warfare of step 6 done.
 
 ## Context
 
