@@ -38,18 +38,18 @@ pub const STRATEGY_IMPERIAL_MECATOL_ID: &str = "strategy_imperial_mecatol";
 
 /// The scenarios of one strategy card each: the id of the scenario and the card that Sol plays.
 pub const STRATEGY_CARDS: &[(&str, &str)] = &[
-    ("strategy_leadership", "pok1leadership"),
-    ("strategy_diplomacy", "pok2diplomacy"),
-    ("strategy_diplomacy_base", "base2"),
-    ("strategy_politics", "pok3politics"),
-    ("strategy_construction", "pok4construction"),
-    ("strategy_construction_base", "base4"),
-    ("strategy_construction_te", "te4construction"),
-    ("strategy_trade", "pok5trade"),
-    ("strategy_warfare", "pok6warfare"),
-    ("strategy_warfare_te", "te6warfare"),
-    ("strategy_technology", "pok7technology"),
-    ("strategy_imperial", "pok8imperial"),
+    (STRATEGY_LEADERSHIP.id, "pok1leadership"),
+    (STRATEGY_DIPLOMACY.id, "pok2diplomacy"),
+    (STRATEGY_DIPLOMACY_BASE.id, "base2"),
+    (STRATEGY_POLITICS.id, "pok3politics"),
+    (STRATEGY_CONSTRUCTION.id, "pok4construction"),
+    (STRATEGY_CONSTRUCTION_BASE.id, "base4"),
+    (STRATEGY_CONSTRUCTION_TE.id, "te4construction"),
+    (STRATEGY_TRADE.id, "pok5trade"),
+    (STRATEGY_WARFARE.id, "pok6warfare"),
+    (STRATEGY_WARFARE_TE.id, "te6warfare"),
+    (STRATEGY_TECHNOLOGY.id, "pok7technology"),
+    (STRATEGY_IMPERIAL.id, "pok8imperial"),
 ];
 
 /// Sol is played by a person, Hacan and Letnev by the rule bot.
@@ -366,18 +366,12 @@ pub(super) fn apply(
         INVASION_FOUR_VIEWS_ID | INVASION_COEXISTENCE_ID | INVASION_PARLEY_ID => {
             invasion(state, galaxy, content, [&sol, &hacan, &letnev], id)
         }
-        ENDGAME_ID => {
-            endgame(state, [&sol, &hacan, &letnev]);
-            Ok(())
-        }
+        ENDGAME_ID => endgame(state, [&sol, &hacan, &letnev]),
         SCORE_STATUS_ID => {
             score_status(state, &sol);
             Ok(())
         }
-        SCORE_IMPERIAL_ID => {
-            score_imperial(state, &sol);
-            Ok(())
-        }
+        SCORE_IMPERIAL_ID => score_imperial(state, &sol),
         FULL_GAME_ID => Ok(()),
         STRATEGY_IMPERIAL_MECATOL_ID => {
             strategy_card(
@@ -407,40 +401,33 @@ fn strategy_card(
     card: &str,
 ) -> Result<(), String> {
     let name = |id: &str| ti4_engine::strategy_cards::card_name(content, id);
-    let others: Vec<StrategyCardId> = ["pok3politics", "pok8imperial", "pok1leadership"]
+    let others: Vec<&str> = ["pok3politics", "pok8imperial", "pok1leadership"]
         .into_iter()
         .filter(|other| name(other) != name(card))
         .take(2)
-        .map(StrategyCardId::new)
         .collect();
-    for (seat, held) in [
-        (sol, StrategyCardId::new(card)),
-        (hacan, others[0].clone()),
-        (letnev, others[1].clone()),
-    ] {
-        state
-            .player_mut(seat)
-            .ok_or("a seat is missing")?
-            .strategy_cards = vec![held];
-    }
-    let dealt = [card, others[0].as_str(), others[1].as_str()];
-    // A card of another set is played on a table of that set.
-    if !state
+    // A card of another set is played on a table of that set: the cards of this set leave it.
+    let in_play = state
         .unclaimed_strategy_cards
         .iter()
-        .any(|unclaimed| unclaimed.as_str() == card)
-    {
+        .chain(state.players.iter().flat_map(|seat| &seat.strategy_cards))
+        .any(|held| held.as_str() == card);
+    if !in_play {
         let set = ["te", "base_game_codex1", "base_game"]
             .into_iter()
             .filter_map(|set| ti4_engine::setup::strategy_card_setup_for_set(content, set).ok())
             .map(|(cards, _)| cards)
             .find(|cards| cards.iter().any(|held| held.as_str() == card))
             .ok_or_else(|| format!("no set of strategy cards has {card}"))?;
+        for seat in &mut state.players {
+            seat.strategy_cards.clear();
+        }
         state.unclaimed_strategy_cards = set;
     }
-    state
-        .unclaimed_strategy_cards
-        .retain(|unclaimed| !dealt.contains(&unclaimed.as_str()));
+    deal(
+        state,
+        &[(sol, card), (hacan, others[0]), (letnev, others[1])],
+    )?;
     state
         .player_mut(sol)
         .ok_or("Sol is not seated")?
@@ -546,6 +533,42 @@ pub(super) fn prepared_system(id: &str, galaxy: &Galaxy, content: &ContentStore)
     }
 }
 
+/// The cards that `seat` holds go back to the unclaimed cards, which stay in the order of their
+/// initiative.
+fn release(state: &mut GameState, seat: &PlayerId) -> Result<(), String> {
+    let held = std::mem::take(
+        &mut state
+            .player_mut(seat)
+            .ok_or("a seat is missing")?
+            .strategy_cards,
+    );
+    state.unclaimed_strategy_cards.extend(held);
+    let initiative = state.card_initiative.clone();
+    state
+        .unclaimed_strategy_cards
+        .sort_by_key(|card| initiative.get(card).copied().unwrap_or(i32::MAX));
+    Ok(())
+}
+
+/// Each seat of `held` holds its card alone: what it held before goes back to the unclaimed
+/// cards, and the card that it holds now leaves them.
+fn deal(state: &mut GameState, held: &[(&PlayerId, &str)]) -> Result<(), String> {
+    for (seat, _) in held {
+        release(state, seat)?;
+    }
+    for (seat, card) in held {
+        let card = StrategyCardId::new(*card);
+        state
+            .unclaimed_strategy_cards
+            .retain(|unclaimed| *unclaimed != card);
+        state
+            .player_mut(seat)
+            .ok_or("a seat is missing")?
+            .strategy_cards = vec![card];
+    }
+    Ok(())
+}
+
 /// The game of every scenario of three seats: Sol has Leadership, Hacan Trade and Letnev
 /// Warfare, and Sol has the first turn of the action phase.
 fn base(state: &mut GameState) -> Result<[PlayerId; 3], String> {
@@ -553,20 +576,14 @@ fn base(state: &mut GameState) -> Result<[PlayerId; 3], String> {
         [a, b, c] => [a.id.clone(), b.id.clone(), c.id.clone()],
         seats => return Err(format!("a game of three seats has {}", seats.len())),
     };
-    let cards = [
-        (&sol, StrategyCardId::new("leadership")),
-        (&hacan, StrategyCardId::new("trade")),
-        (&letnev, StrategyCardId::new("warfare")),
-    ];
-    for (seat, card) in &cards {
-        state
-            .player_mut(seat)
-            .ok_or("a seat is missing")?
-            .strategy_cards = vec![card.clone()];
-    }
-    state
-        .unclaimed_strategy_cards
-        .retain(|card| cards.iter().all(|(_, dealt)| dealt != card));
+    deal(
+        state,
+        &[
+            (&sol, "pok1leadership"),
+            (&hacan, "pok5trade"),
+            (&letnev, "pok6warfare"),
+        ],
+    )?;
     phase::advance_phase(state);
     phase::begin_action_turn(state, &sol);
     let seat = state.player_mut(&sol).ok_or("Sol is not seated")?;
@@ -597,20 +614,13 @@ fn research(
     content: &ContentStore,
     sol: &PlayerId,
 ) -> Result<(), String> {
-    let technology = StrategyCardId::new("pok7technology");
+    deal(state, &[(sol, "pok7technology")])?;
     if let Some(seat) = state.player_mut(sol) {
-        seat.strategy_cards = vec![technology.clone()];
         seat.trade_goods = 6;
         seat.technologies = [TechnologyId::new("amd"), TechnologyId::new("nm")]
             .into_iter()
             .collect();
     }
-    state
-        .unclaimed_strategy_cards
-        .retain(|card| *card != technology);
-    state
-        .unclaimed_strategy_cards
-        .push(StrategyCardId::new("leadership"));
 
     // One ready Biotic skip (Sol's Spec Ops II needs a second green prerequisite) and one
     // exhausted skip of any colour, whichever planets this map carries.
@@ -916,17 +926,18 @@ fn invasion(
     Ok(())
 }
 
-fn endgame(state: &mut GameState, seats: [&PlayerId; 3]) {
+fn endgame(state: &mut GameState, seats: [&PlayerId; 3]) -> Result<(), String> {
     for (seat, points) in seats.into_iter().zip([9, 9, 8]) {
+        release(state, seat)?;
         if let Some(player) = state.player_mut(seat) {
             player.victory_points = points;
             player.tactic_tokens = 0;
             player.strategic_tokens = 0;
-            player.strategy_cards.clear();
         }
     }
     state.objective_deck.clear();
     state.round = 5;
+    Ok(())
 }
 
 /// Lead From the Front, Negotiate Trade Routes and Corner the Market are revealed and nobody
@@ -981,19 +992,11 @@ fn score_status(state: &mut GameState, sol: &PlayerId) {
     revealed_objectives(state, sol);
 }
 
-fn score_imperial(state: &mut GameState, sol: &PlayerId) {
-    let imperial = StrategyCardId::new("pok8imperial");
-    if let Some(seat) = state.player_mut(sol) {
-        seat.strategy_cards = vec![imperial.clone()];
-    }
-    state
-        .unclaimed_strategy_cards
-        .retain(|card| *card != imperial);
-    state
-        .unclaimed_strategy_cards
-        .push(StrategyCardId::new("leadership"));
+fn score_imperial(state: &mut GameState, sol: &PlayerId) -> Result<(), String> {
+    deal(state, &[(sol, "pok8imperial")])?;
     revealed_objectives(state, sol);
     state.active = Some(sol.clone());
+    Ok(())
 }
 
 // --- the openings ------------------------------------------------------------------------------

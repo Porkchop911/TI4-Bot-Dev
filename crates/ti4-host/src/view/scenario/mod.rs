@@ -357,7 +357,10 @@ fn late_game(
 
     // The action phase of round 4: every seat has a card, and seat A is first.
     let mut cards = std::mem::take(&mut state.unclaimed_strategy_cards);
-    cards.sort_by_key(|card| card.as_str() != "leadership");
+    cards.sort_by_key(|card| {
+        ti4_engine::strategy_cards::card_name(content, card.as_str()).as_deref()
+            != Some("Leadership")
+    });
     let mut cards = cards.into_iter();
     for seat in &seats {
         let card: StrategyCardId = cards
@@ -1708,6 +1711,32 @@ mod tests {
                 .is_some_and(|unit| unit == "warsun")
         }));
         assert_eq!(find(&facts, "warsun").unavailable, None);
+    }
+
+    #[test]
+    fn every_scenario_of_three_seats_deals_cards_that_the_engine_knows() {
+        let content = ContentStore::embedded();
+        let ids: Vec<PlayerId> = ["a", "b", "c"].map(PlayerId::new).to_vec();
+        for scenario in SCENARIOS.iter().filter(|scenario| scenario.players == 3) {
+            let (state, _) = start(content, scenario.id, &ids, 42).expect("it starts");
+            let held: Vec<&StrategyCardId> = state
+                .players
+                .iter()
+                .flat_map(|seat| &seat.strategy_cards)
+                .collect();
+            for card in &held {
+                assert!(
+                    ti4_engine::strategy_cards::card_name(content, card.as_str()).is_some(),
+                    "{}: {card}",
+                    scenario.id
+                );
+                assert!(
+                    !state.unclaimed_strategy_cards.contains(card),
+                    "{}: {card} is held and unclaimed",
+                    scenario.id
+                );
+            }
+        }
     }
 
     #[test]
