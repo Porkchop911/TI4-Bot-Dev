@@ -2,6 +2,24 @@ import { expect, type Locator, type Page } from "@playwright/test";
 
 // What several suites of the real game do the same way.
 
+/** Collects the errors of the page, and with `console` the errors that it logs: a test of the real game expects none. */
+export function pageErrors(page: Page, { console = false } = {}): string[] {
+  const errors: string[] = [];
+  if (console) {
+    page.on("console", (message) => message.type() === "error" && errors.push(message.text()));
+  }
+  page.on("pageerror", (error) => errors.push(error.message));
+  return errors;
+}
+
+/** The row of a seat in the player table ("Seat A"). */
+export const seatRow = (page: Page, seat: string) =>
+  page.getByRole("region", { name: "Players" }).getByRole("row").filter({ hasText: seat });
+
+/** A planet of the map, by its name. */
+export const mapPlanet = (page: Page, name: string) =>
+  page.locator("g.planet").filter({ hasText: name });
+
 /**
  * Takes a tactical action in Live, as a player does: the picker opens it as the private draft,
  * the system is chosen on the map and recorded there, and "Apply to Live" sends the action and

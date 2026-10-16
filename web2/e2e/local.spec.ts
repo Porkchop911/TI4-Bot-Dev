@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, test, type Page } from "@playwright/test";
-import { activateInLive } from "./actions";
+import { activateInLive, pageErrors, seatRow, mapPlanet } from "./actions";
 
 // A real game of the wasm engine in the shell: `?local=<seed>&players=8&humans=<mask>`.
 // Needs the engine: `scripts/build-wasm.sh`. Screenshots go to shots/local/.
@@ -23,6 +23,15 @@ const questionOpen = (page: Page) =>
       .or(heading(page).filter({ hasText: "Choose an action" }))
       .first(),
   ).toBeVisible();
+
+/** At the turn menu, the row of a strategy card ("2 Diplomacy") stages its action, and Enter sends it. */
+async function playStrategyCard(page: Page, row: string) {
+  await expect(heading(page)).toHaveText("Choose an action");
+  await panel(page)
+    .getByRole("button", { name: new RegExp(`^${row}`) })
+    .click();
+  await page.keyboard.press("Enter");
+}
 
 /** Opens the Dev sheet from the header. */
 async function openSettings(page: Page) {
@@ -162,9 +171,7 @@ async function answer(page: Page) {
 }
 
 test("a game of eight is played through the decision list @slow", async ({ page }) => {
-  const errors: string[] = [];
-  page.on("console", (message) => message.type() === "error" && errors.push(message.text()));
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page, { console: true });
   await page.goto("/?local=3&players=8&humans=1");
   await expect(send(page)).toBeDisabled();
   await expect(page.locator("g.system")).toHaveCount(55);
@@ -235,9 +242,7 @@ test("a game of eight is played through the decision list @slow", async ({ page 
 test("a tactical action: the system and the movement are staged on the map", async ({ page }) => {
   // Longer than a test of this suite should be: see "Tests" in AGENTS.md.
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("console", (message) => message.type() === "error" && errors.push(message.text()));
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page, { console: true });
   await page.goto("/?local=3&players=8&humans=1");
   await expect(send(page)).toBeDisabled();
   const row = (name: string | RegExp) => panel(page).getByRole("button", { name });
@@ -388,9 +393,7 @@ test("a movement into a fleet of another seat has the odds of the space combat",
 }) => {
   // Longer than a test of this suite should be: see "Tests" in AGENTS.md.
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("console", (message) => message.type() === "error" && errors.push(message.text()));
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page, { console: true });
   await page.goto("/?scenario=late-game&humans=1");
   const system = (id: string) => page.locator("g.system").filter({ hasText: `#${id}` });
   // Seat C has two cruisers and a destroyer in 32, and a PDS on its planet.
@@ -598,9 +601,7 @@ test("a draft of a tactical action is private, is kept, and is applied as one re
 }) => {
   // Longer than a test of this suite should be: see "Tests" in AGENTS.md.
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("console", (message) => message.type() === "error" && errors.push(message.text()));
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page, { console: true });
   await page.goto("/?local=3&players=8&humans=1");
   const workspace = (name: string) =>
     page.getByRole("navigation", { name: "Workspace" }).getByRole("button", { name });
@@ -672,15 +673,12 @@ test("a draft of a tactical action is private, is kept, and is applied as one re
 test("a draft goes on to the landings and the production, and ends at a draw", async ({ page }) => {
   // Longer than a test of this suite should be: see "Tests" in AGENTS.md.
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("console", (message) => message.type() === "error" && errors.push(message.text()));
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page, { console: true });
   await page.goto("/?scenario=late-game&humans=1");
   const workspace = (name: string) =>
     page.getByRole("navigation", { name: "Workspace" }).getByRole("button", { name });
   const row = (name: string | RegExp) => panel(page).getByRole("button", { name });
   const system = (id: string) => page.locator("g.system").filter({ hasText: `#${id}` });
-  const planet = (name: string) => page.locator("g.planet").filter({ hasText: name });
   const tab = (name: string) => page.getByRole("tab", { name: new RegExp(`^\\S* ?${name}`) });
   const footer = page.locator("footer");
   const apply = page.getByRole("button", { name: "Apply to Live" });
@@ -714,7 +712,7 @@ test("a draft goes on to the landings and the production, and ends at a draw", a
   await expect(send(page)).toHaveText(/Land nothing/);
   await page.screenshot({ path: "shots/local/draft-invasion.png", animations: "disabled" });
   // A unit on a planet that nobody explored: the card that it draws ends the draft.
-  await planet("Abyz").click();
+  await mapPlanet(page, "Abyz").click();
   await expect(
     panel(page)
       .getByText(/^Abyz.*1 Infantry/)
@@ -772,7 +770,7 @@ test("a draft goes on to the landings and the production, and ends at a draw", a
   await expect(build).toBeHidden();
   const bar = page.getByRole("group", { name: "Payment" });
   await expect(bar.getByRole("status").first()).toHaveText(/Paying\s*0 \/ 1\s*resource/);
-  await planet("Lisis").click();
+  await mapPlanet(page, "Lisis").click();
   await expect(bar.getByRole("status").first()).toHaveText(/2 \/ 1\s*resource/);
   // Paid: the game played the whole action.
   await expect(footer.getByText("The action ends here. Every step is drafted.")).toBeVisible();
@@ -836,9 +834,7 @@ test("a secondary is drafted while the primary is resolved, and sent when the se
 }) => {
   // Longer than a test of this suite should be: see "Tests" in AGENTS.md.
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("console", (message) => message.type() === "error" && errors.push(message.text()));
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page, { console: true });
   // The other seats wait for a step, so that the page is shown the game between their decisions.
   await page.addInitScript(() => localStorage.setItem("ti4.local.stepping", "1"));
   // In the game of this seed Leadership and Politics are played before the seat has its turn, and
@@ -909,8 +905,7 @@ test("a secondary is drafted while the primary is resolved, and sent when the se
 test("a research is chosen in the technology tree, and the second one can research nothing", async ({
   page,
 }) => {
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   // Sol plays Technology with Antimass Deflectors and Neural Motivator, a ready Biotic skip, and
   // six trade goods. The scenario stops at the free research.
   await page.goto("/?scenario=research_tech_skips&humans=1");
@@ -960,14 +955,11 @@ test("the status phase gains the command tokens in the one redistribution, in th
 }) => {
   // The load of the scenario, an answer, the editor and a second answer.
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   // Sol is in the status phase with 2 · 3 · 2 on its sheet. It gains 2 tokens, and 1 more for
   // Versatile.
   await page.goto("/?scenario=score_objective_status&humans=1");
-  const seat = page.getByRole("region", { name: "Players" }).getByRole("row").filter({
-    hasText: "Seat A",
-  });
+  const seat = seatRow(page, "Seat A");
   await expect(seat).toContainText("2 · 3 · 2");
   await expect(heading(page)).toHaveText("Score an objective");
   await panel(page).getByRole("button", { name: "Decline" }).click();
@@ -1008,15 +1000,11 @@ test("Leadership: the gained and the bought tokens are placed in the pools, paid
 }) => {
   // The load of the scenario, the editor, the payment and an undo.
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   // Sol holds Leadership with 3 · 3 · 2 on its sheet, 4 trade goods and three ready planets that
   // pay in influence.
   await page.goto("/?scenario=strategy_leadership&humans=1");
-  const seat = page.getByRole("region", { name: "Players" }).getByRole("row").filter({
-    hasText: "Seat A",
-  });
-  const planet = (name: string) => page.locator("g.planet").filter({ hasText: name });
+  const seat = seatRow(page, "Seat A");
   await expect(heading(page)).toHaveText("Choose an action");
   await page.keyboard.press("1");
   await page.keyboard.press("Enter");
@@ -1052,7 +1040,7 @@ test("Leadership: the gained and the bought tokens are placed in the pools, paid
   const bar = page.getByRole("group", { name: "Payment" });
   await expect(bar.getByRole("status").first()).toHaveText(/0 \/ 6\s*influence\s*6 more/);
   await expect(page.locator("g.planet.payable")).toHaveCount(3);
-  await planet("Rarron").click();
+  await mapPlanet(page, "Rarron").click();
   await bar.getByRole("button", { name: "Pay rest" }).click();
   await expect(bar.getByRole("status").first()).toHaveText(/6 \/ 6\s*influence\s*✓ Paid/);
   await expect(page.locator("footer")).toContainText("Tactic 3 → 5 · Fleet 3 → 4 · Strategy 2 → 4");
@@ -1083,8 +1071,7 @@ test("Leadership: the secondary buys tokens on the same screen, with no strategy
   page,
 }) => {
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   // Sol and Hacan are played here: Sol plays Leadership and gains its tokens, then Hacan follows.
   await page.goto("/?scenario=strategy_leadership&humans=3");
   await expect(heading(page)).toHaveText("Choose an action");
@@ -1098,9 +1085,7 @@ test("Leadership: the secondary buys tokens on the same screen, with no strategy
   await expect(send(page)).toHaveText(/^Send/);
   await send(page).click();
   // Hacan's row opens into the purchase: no pool is gained, and nothing bought is a pass.
-  const hacan = page.getByRole("region", { name: "Players" }).getByRole("row").filter({
-    hasText: "Seat B",
-  });
+  const hacan = seatRow(page, "Seat B");
   const pools = panel(page).getByRole("heading", { name: "Command pools" }).locator("..");
   await expect(pools).toContainText("0 bought · 0 / 0 placed");
   await expect(send(page)).toHaveText(/Buy nothing/);
@@ -1120,14 +1105,10 @@ test("Diplomacy: the system and the planets to ready are chosen on the map and s
   page,
 }) => {
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   // Sol holds Diplomacy; Jord and both planets of #37 are exhausted (1 of 6 resources ready).
   await page.goto("/?scenario=strategy_diplomacy&humans=1");
-  const seat = page.getByRole("region", { name: "Players" }).getByRole("row").filter({
-    hasText: "Seat A",
-  });
-  const planet = (name: string) => page.locator("g.planet").filter({ hasText: name });
+  const seat = seatRow(page, "Seat A");
   await expect(heading(page)).toHaveText("Choose an action");
   await expect(seat).toContainText("1/6");
   await panel(page)
@@ -1155,10 +1136,10 @@ test("Diplomacy: the system and the planets to ready are chosen on the map and s
   await expect(system).toContainText("Hacan and Letnev place a command token here");
   await page.getByRole("button", { name: "Close system details" }).click();
   await expect(page.locator("g.planet.payable")).toHaveCount(3);
-  await planet("Jord").click();
-  await planet("Meer").click();
+  await mapPlanet(page, "Jord").click();
+  await mapPlanet(page, "Meer").click();
   // No more than the game readies: a third planet is not taken.
-  await planet("Arinam").click();
+  await mapPlanet(page, "Arinam").click();
   await expect(ready).toContainText("2 / 2");
   await expect(ready).not.toContainText("Arinam");
   await expect(ready).toContainText("Exhausted → ready · 4 resources / 2 influence");
@@ -1168,8 +1149,8 @@ test("Diplomacy: the system and the planets to ready are chosen on the map and s
   await page.keyboard.press("Escape");
   await expect(ready).toContainText("0 / 2");
   await expect(system).toContainText("#37");
-  await planet("Jord").click();
-  await planet("Arinam").click();
+  await mapPlanet(page, "Jord").click();
+  await mapPlanet(page, "Arinam").click();
   await expect(page.locator("footer")).toContainText("#37 · Ready Jord, Arinam");
   await expect(send(page)).toHaveText(/Resolve primary/);
   await fitsHeight(page);
@@ -1184,34 +1165,27 @@ test("Diplomacy: the system and the planets to ready are chosen on the map and s
 
 test("Diplomacy: the secondary readies on the map; nothing chosen is a pass", async ({ page }) => {
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   // Sol and Hacan are played here; the three planets of Hacan's home are exhausted.
   await page.goto("/?scenario=strategy_diplomacy&humans=3");
-  await expect(heading(page)).toHaveText("Choose an action");
-  await panel(page)
-    .getByRole("button", { name: /^2 Diplomacy/ })
-    .click();
-  await page.keyboard.press("Enter");
+  await playStrategyCard(page, "2 Diplomacy");
   await page.locator("g.system.target").filter({ hasText: "#29" }).click();
   await page.getByRole("button", { name: "Close system details" }).click();
-  await page.locator("g.planet").filter({ hasText: "Jord" }).click();
-  await page.locator("g.planet").filter({ hasText: "Arinam" }).click();
+  await mapPlanet(page, "Jord").click();
+  await mapPlanet(page, "Arinam").click();
   await send(page).click();
 
   // Hacan's row opens into the planets, with what the secondary costs.
-  const hacan = page.getByRole("region", { name: "Players" }).getByRole("row").filter({
-    hasText: "Seat B",
-  });
+  const hacan = seatRow(page, "Seat B");
   const ready = panel(page).getByRole("heading", { name: "Ready planets" }).locator("../..");
   await expect(ready).toContainText("0 / 2 · Choose on the map · Strategy pool 2 → 1");
   await expect(panel(page).getByRole("heading", { name: "System" })).toHaveCount(0);
   await expect(send(page)).toHaveText(/^Pass/);
   await expect(page.locator("g.planet.payable")).toHaveCount(3);
-  await page.locator("g.planet").filter({ hasText: "Arretze" }).click();
+  await mapPlanet(page, "Arretze").click();
   await expect(page.locator("footer")).toContainText("Choose 1 more planet on the map.");
   await expect(send(page)).toBeDisabled();
-  await page.locator("g.planet").filter({ hasText: "Hercant" }).click();
+  await mapPlanet(page, "Hercant").click();
   await expect(send(page)).toHaveText(/Follow · ready 2 planets/);
   await fitsHeight(page);
   await page.screenshot({ path: "shots/local/diplomacy-secondary.png", animations: "disabled" });
@@ -1224,14 +1198,9 @@ test("Diplomacy: the secondary readies on the map; nothing chosen is a pass", as
 test("Diplomacy of the base game has its own printed text and the same screen", async ({
   page,
 }) => {
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.goto("/?scenario=strategy_diplomacy_base&humans=1");
-  await expect(heading(page)).toHaveText("Choose an action");
-  await panel(page)
-    .getByRole("button", { name: /^2 Diplomacy/ })
-    .click();
-  await page.keyboard.press("Enter");
+  await playStrategyCard(page, "2 Diplomacy");
   await expect(heading(page)).toHaveText("Diplomacy");
   await panel(page).getByRole("button", { name: "Rules: Diplomacy" }).hover();
   await expect(
@@ -1250,8 +1219,7 @@ test("Politics: the speaker is chosen in the player table, then the agenda deck 
   page,
 }) => {
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   // Sol holds Politics and is the speaker; it has no action cards.
   await page.goto("/?scenario=strategy_politics&humans=1");
   const row = (name: string) =>
@@ -1312,15 +1280,10 @@ test("Politics: another seat follows as the game asks it, and does not see the a
   page,
 }) => {
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   // Sol and Hacan are played here: Sol plays Politics, then Hacan follows.
   await page.goto("/?scenario=strategy_politics&humans=3");
-  await expect(heading(page)).toHaveText("Choose an action");
-  await panel(page)
-    .getByRole("button", { name: /^3 Politics/ })
-    .click();
-  await page.keyboard.press("Enter");
+  await playStrategyCard(page, "3 Politics");
   await page
     .getByRole("region", { name: "Players" })
     .getByRole("row")
@@ -1348,9 +1311,7 @@ test("Politics: another seat follows as the game asks it, and does not see the a
   await fitsHeight(page);
   await page.keyboard.press("2");
   await send(page).click();
-  const hacan = page.getByRole("region", { name: "Players" }).getByRole("row").filter({
-    hasText: "Seat B",
-  });
+  const hacan = seatRow(page, "Seat B");
   await expect(hacan).toContainText("3 · 3 · 1");
   expect(errors).toEqual([]);
 });
@@ -1359,16 +1320,10 @@ test("Construction: the structure in the panel, the planet on the map; both are 
   page,
 }) => {
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   // Sol holds Construction; Jord has Sol's space dock, Qucen'n (#29) a PDS of Sol.
   await page.goto("/?scenario=strategy_construction&humans=1");
-  const planet = (name: string) => page.locator("g.planet").filter({ hasText: name });
-  await expect(heading(page)).toHaveText("Choose an action");
-  await panel(page)
-    .getByRole("button", { name: /^4 Construction/ })
-    .click();
-  await page.keyboard.press("Enter");
+  await playStrategyCard(page, "4 Construction");
 
   // One screen: the gauges, the kind of the first structure, and both structures.
   await expect(heading(page)).toHaveText("Construction");
@@ -1388,19 +1343,19 @@ test("Construction: the structure in the panel, the planet on the map; both are 
 
   // A PDS on Qucen'n fills it: the PDS of the second structure goes elsewhere.
   await page.keyboard.press("2");
-  await planet("Qucen'n").click();
+  await mapPlanet(page, "Qucen'n").click();
   await expect(structures).toContainText("Qucen'n · #29PDS 1 → 2");
   // Jord, Rarron and the two planets of #37, with the chosen Qucen'n marked.
   await expect(page.locator("g.planet.payable")).toHaveCount(5);
   await expect(page.locator("g.planet.chosen")).toHaveCount(1);
-  await planet("Qucen'n").click();
+  await mapPlanet(page, "Qucen'n").click();
   await expect(structures).toContainText("2 of 2 · PDS only");
   // "Change" gives the planet back, and the kind is chosen again.
   await structures.getByRole("button", { name: "Change" }).click();
   await page.keyboard.press("1");
   await expect(panel(page)).toContainText("Space dock");
-  await planet("Rarron").click();
-  await planet("Qucen'n").click();
+  await mapPlanet(page, "Rarron").click();
+  await mapPlanet(page, "Qucen'n").click();
   await expect(structures).toContainText("Rarron · #29Space dock 0 → 1");
   await expect(structures).toContainText("Qucen'n · #29PDS 1 → 2");
   await expect(panel(page)).toContainText("2 / 3");
@@ -1409,7 +1364,7 @@ test("Construction: the structure in the panel, the planet on the map; both are 
   // Esc clears the last planet.
   await page.keyboard.press("Escape");
   await expect(send(page)).toHaveText(/Resolve primary · 1 structure/);
-  await planet("Qucen'n").click();
+  await mapPlanet(page, "Qucen'n").click();
   await fitsHeight(page);
   await page.screenshot({ path: "shots/local/construction.png", animations: "disabled" });
 
@@ -1423,17 +1378,12 @@ test("Construction: the secondary places one structure on the map; nothing chose
   page,
 }) => {
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   // Sol and Hacan are played here.
   await page.goto("/?scenario=strategy_construction&humans=3");
-  await expect(heading(page)).toHaveText("Choose an action");
-  await panel(page)
-    .getByRole("button", { name: /^4 Construction/ })
-    .click();
-  await page.keyboard.press("Enter");
+  await playStrategyCard(page, "4 Construction");
   await page.keyboard.press("1");
-  await page.locator("g.planet").filter({ hasText: "Rarron" }).click();
+  await mapPlanet(page, "Rarron").click();
   await send(page).click();
 
   // Hacan's row opens into the structure, with what the secondary costs.
@@ -1443,15 +1393,13 @@ test("Construction: the secondary places one structure on the map; nothing chose
   await expect(send(page)).toHaveText(/^Pass/);
   await page.keyboard.press("2");
   await expect(page.locator("g.planet.payable")).toHaveCount(3);
-  await page.locator("g.planet").filter({ hasText: "Hercant" }).click();
+  await mapPlanet(page, "Hercant").click();
   await expect(planet).toContainText("PDS 0 → 1");
   await expect(send(page)).toHaveText(/Follow · place PDS/);
   await fitsHeight(page);
   await page.screenshot({ path: "shots/local/construction-secondary.png", animations: "disabled" });
   await send(page).click();
-  const hacan = page.getByRole("region", { name: "Players" }).getByRole("row").filter({
-    hasText: "Seat B",
-  });
+  const hacan = seatRow(page, "Seat B");
   await expect(hacan).toContainText("3 · 3 · 1");
   expect(errors).toEqual([]);
 });
@@ -1460,15 +1408,9 @@ test("Construction of Thunder's Edge: the ability first, then two structures of 
   page,
 }) => {
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.goto("/?scenario=strategy_construction_te&humans=1");
-  const planet = (name: string) => page.locator("g.planet").filter({ hasText: name });
-  await expect(heading(page)).toHaveText("Choose an action");
-  await panel(page)
-    .getByRole("button", { name: /^4 Construction/ })
-    .click();
-  await page.keyboard.press("Enter");
+  await playStrategyCard(page, "4 Construction");
   await expect(heading(page)).toHaveText("Construction");
   await panel(page).getByRole("button", { name: "Rules: Construction" }).hover();
   await expect(
@@ -1487,10 +1429,10 @@ test("Construction of Thunder's Edge: the ability first, then two structures of 
   await expect(structures).toContainText("1 of 2 · space dock or PDS");
   await expect(structures).toContainText("2 of 2 · space dock or PDS");
   await page.keyboard.press("3");
-  await planet("Rarron").click();
+  await mapPlanet(page, "Rarron").click();
   await expect(panel(page).getByText("Structure 2 of 2")).toBeVisible();
   await page.keyboard.press("4");
-  await planet("Jord").click();
+  await mapPlanet(page, "Jord").click();
   await expect(page.locator("footer")).toContainText("Space dock on Rarron · PDS on Jord");
   await fitsHeight(page);
   await page.screenshot({ path: "shots/local/construction-te.png", animations: "disabled" });
@@ -1502,14 +1444,9 @@ test("Construction of Thunder's Edge: the ability first, then two structures of 
 test("Construction of the base game has its own printed text and the same screen", async ({
   page,
 }) => {
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.goto("/?scenario=strategy_construction_base&humans=1");
-  await expect(heading(page)).toHaveText("Choose an action");
-  await panel(page)
-    .getByRole("button", { name: /^4 Construction/ })
-    .click();
-  await page.keyboard.press("Enter");
+  await playStrategyCard(page, "4 Construction");
   await expect(heading(page)).toHaveText("Construction");
   await panel(page).getByRole("button", { name: "Rules: Construction" }).hover();
   await expect(
@@ -1525,17 +1462,12 @@ test("Trade: the own gain is a value, the other players are chosen in the player
   page,
 }) => {
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   // Sol holds Trade with 4 trade goods and 1 commodity; Hacan and Letnev have no commodities.
   await page.goto("/?scenario=strategy_trade&humans=1");
   const row = (name: string) =>
     page.getByRole("region", { name: "Players" }).getByRole("row").filter({ hasText: name });
-  await expect(heading(page)).toHaveText("Choose an action");
-  await panel(page)
-    .getByRole("button", { name: /^5 Trade/ })
-    .click();
-  await page.keyboard.press("Enter");
+  await playStrategyCard(page, "5 Trade");
 
   // One screen: what Sol gained, and the other players.
   await expect(heading(page)).toHaveText("Trade");
@@ -1578,23 +1510,16 @@ test("Trade: the own gain is a value, the other players are chosen in the player
 
 test("Trade: the secondary replenishes or passes in the row of the seat", async ({ page }) => {
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   // Sol and Hacan are played here.
   await page.goto("/?scenario=strategy_trade&humans=3");
-  await expect(heading(page)).toHaveText("Choose an action");
-  await panel(page)
-    .getByRole("button", { name: /^5 Trade/ })
-    .click();
-  await page.keyboard.press("Enter");
+  await playStrategyCard(page, "5 Trade");
   await expect(send(page)).toHaveText(/Resolve primary · nobody else/);
   await send(page).click();
 
   // Hacan's row opens into Follow and Pass, with the commodities and what it costs: nothing, by
   // Hacan's Masters of Trade.
-  const hacan = page.getByRole("region", { name: "Players" }).getByRole("row").filter({
-    hasText: "Seat B",
-  });
+  const hacan = seatRow(page, "Seat B");
   await expect(panel(page).getByRole("button", { name: /Replenish commodities/ })).toBeVisible();
   await expect(panel(page)).toContainText("Commodities 0 → 6 · no strategy token");
   await expect(send(page)).toBeDisabled();
@@ -1614,19 +1539,12 @@ test("Imperial: an objective from the list, then the secret objective, sent at o
   page,
 }) => {
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   // Sol holds Imperial with 2 victory points, can score Lead From the Front and Negotiate Trade
   // Routes, and does not control Mecatol Rex.
   await page.goto("/?scenario=strategy_imperial&humans=1");
-  const sol = page.getByRole("region", { name: "Players" }).getByRole("row").filter({
-    hasText: "Seat A",
-  });
-  await expect(heading(page)).toHaveText("Choose an action");
-  await panel(page)
-    .getByRole("button", { name: /^8 Imperial/ })
-    .click();
-  await page.keyboard.press("Enter");
+  const sol = seatRow(page, "Seat A");
+  await playStrategyCard(page, "8 Imperial");
 
   // One screen: the objectives that can be scored, as printed, and what follows.
   await expect(heading(page)).toHaveText("Imperial");
@@ -1671,15 +1589,10 @@ test("Imperial: an objective from the list, then the secret objective, sent at o
 
 test("Imperial with Mecatol Rex: the victory point follows the objective", async ({ page }) => {
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   // Sol controls Mecatol Rex and has 3 victory points.
   await page.goto("/?scenario=strategy_imperial_mecatol&humans=1");
-  await expect(heading(page)).toHaveText("Choose an action");
-  await panel(page)
-    .getByRole("button", { name: /^8 Imperial/ })
-    .click();
-  await page.keyboard.press("Enter");
+  await playStrategyCard(page, "8 Imperial");
   const then = panel(page).getByRole("heading", { name: "Then" }).locator("../..");
   await expect(then).toContainText(
     "Gain 1 victory pointYou control Mecatol Rex · Victory points 3 → 4",
@@ -1693,9 +1606,7 @@ test("Imperial with Mecatol Rex: the victory point follows the objective", async
   await page.screenshot({ path: "shots/local/imperial-mecatol.png", animations: "disabled" });
   await send(page).click();
   await expect(heading(page)).toHaveText("End your turn");
-  const sol = page.getByRole("region", { name: "Players" }).getByRole("row").filter({
-    hasText: "Seat A",
-  });
+  const sol = seatRow(page, "Seat A");
   await expect(sol.getByRole("cell").nth(1)).toHaveText("5");
   expect(errors).toEqual([]);
 });
@@ -1704,21 +1615,14 @@ test("Imperial: the secondary draws a secret objective or passes in the row of t
   page,
 }) => {
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   // Sol and Hacan are played here.
   await page.goto("/?scenario=strategy_imperial&humans=3");
-  await expect(heading(page)).toHaveText("Choose an action");
-  await panel(page)
-    .getByRole("button", { name: /^8 Imperial/ })
-    .click();
-  await page.keyboard.press("Enter");
+  await playStrategyCard(page, "8 Imperial");
   await send(page).click();
 
   // Hacan's row opens into Follow and Pass, with the secret objectives and what it costs.
-  const hacan = page.getByRole("region", { name: "Players" }).getByRole("row").filter({
-    hasText: "Seat B",
-  });
+  const hacan = seatRow(page, "Seat B");
   await expect(panel(page).getByRole("button", { name: /Draw 1 secret objective/ })).toBeVisible();
   await expect(panel(page)).toContainText("Secret objectives 1 → 2 of 3 · Strategy pool 2 → 1");
   await expect(send(page)).toBeDisabled();
@@ -1739,11 +1643,9 @@ test("Technology: the second research of the primary is paid on the map and sent
 }) => {
   // The load of the scenario, two researches and the payment.
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   // Sol holds Technology with 4 trade goods, Jord and the ready planets of a system next to it.
   await page.goto("/?scenario=strategy_technology&humans=1");
-  const planet = (name: string) => page.locator("g.planet").filter({ hasText: name });
   await expect(heading(page)).toHaveText("Choose an action");
   await page.keyboard.press("7");
   await page.keyboard.press("Enter");
@@ -1772,7 +1674,7 @@ test("Technology: the second research of the primary is paid on the map and sent
   await expect(bar.getByRole("status").first()).toHaveText(/0 \/ 6\s*resources\s*6 more/);
   await expect(page.locator("footer")).toContainText("Pay 6 more resources.");
   await expect(send(page)).toBeDisabled();
-  await planet("Jord").click();
+  await mapPlanet(page, "Jord").click();
   await bar.getByRole("button", { name: "Pay rest" }).click();
   await expect(bar.getByRole("status").first()).toHaveText(/6 \/ 6\s*resources\s*✓ Paid/);
   await expect(page.locator("footer")).toContainText(
@@ -1798,8 +1700,7 @@ test("Technology: the secondary researches in the row of the seat and pays on th
   page,
 }) => {
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   // Sol and Hacan are played here: Sol researches, then Hacan follows for 4 resources.
   await page.goto("/?scenario=strategy_technology&humans=3");
   await expect(heading(page)).toHaveText("Choose an action");
@@ -1859,9 +1760,7 @@ test("the Dev sheet leads to a game on the server, on the seed of the page", asy
 test("the turn menu is the action picker: a key for each group, the lists of cards, and Esc back", async ({
   page,
 }) => {
-  const errors: string[] = [];
-  page.on("console", (message) => message.type() === "error" && errors.push(message.text()));
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page, { console: true });
   await page.goto("/?scenario=late-game&humans=1");
   const row = (name: string | RegExp) => panel(page).getByRole("button", { name });
   // The fixed groups in their fixed order; a row that cannot be used says why.
@@ -1994,9 +1893,7 @@ test("a component action: the planet of Orbital Drop is chosen on the map, then 
 }) => {
   // Longer than a test of this suite should be: see "Tests" in AGENTS.md.
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("console", (message) => message.type() === "error" && errors.push(message.text()));
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page, { console: true });
   await page.goto("/?scenario=late-game&humans=1");
   await expect(heading(page)).toHaveText("Choose an action");
   await page.keyboard.press("c");
@@ -2040,13 +1937,10 @@ test("Warfare: the token is recalled on the map and the pools are placed, sent a
   page,
 }) => {
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   // Sol holds Warfare with 3 · 3 · 2 on its sheet and its command token on #29.
   await page.goto("/?scenario=strategy_warfare&humans=1");
-  const seat = page.getByRole("region", { name: "Players" }).getByRole("row").filter({
-    hasText: "Seat A",
-  });
+  const seat = seatRow(page, "Seat A");
   await expect(heading(page)).toHaveText("Choose an action");
   await expect(seat).toContainText("3 · 3 · 2");
   await panel(page)
@@ -2108,24 +2002,17 @@ test("Warfare: the token is recalled on the map and the pools are placed, sent a
 
 test("Warfare: the secondary produces in the home system, paid on the map", async ({ page }) => {
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   // Sol and Hacan are played here.
   await page.goto("/?scenario=strategy_warfare&humans=3");
-  await expect(heading(page)).toHaveText("Choose an action");
-  await panel(page)
-    .getByRole("button", { name: /^6 Warfare/ })
-    .click();
-  await page.keyboard.press("Enter");
+  await playStrategyCard(page, "6 Warfare");
   await page.locator("g.system.target").filter({ hasText: "#29" }).click();
   await page.getByRole("button", { name: "Close system details" }).click();
   await panel(page).getByRole("button", { name: "Add tactic pool token" }).click();
   await send(page).click();
 
   // Hacan's row opens into the window, with what it costs.
-  const hacan = page.getByRole("region", { name: "Players" }).getByRole("row").filter({
-    hasText: "Seat B",
-  });
+  const hacan = seatRow(page, "Seat B");
   await expect(panel(page)).toContainText("Strategy pool 2 → 1");
   await expect(panel(page).getByRole("button", { name: "Produce" })).toBeVisible();
   await page.screenshot({ path: "shots/local/warfare-window.png", animations: "disabled" });
@@ -2166,18 +2053,11 @@ test("Warfare of Thunder's Edge: the pools before, a tactical action in any syst
   page,
 }) => {
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   // Sol holds the Warfare of Thunder's Edge, with its command token on #29.
   await page.goto("/?scenario=strategy_warfare_te&humans=1");
-  const seat = page.getByRole("region", { name: "Players" }).getByRole("row").filter({
-    hasText: "Seat A",
-  });
-  await expect(heading(page)).toHaveText("Choose an action");
-  await panel(page)
-    .getByRole("button", { name: /^6 Warfare/ })
-    .click();
-  await page.keyboard.press("Enter");
+  const seat = seatRow(page, "Seat A");
+  await playStrategyCard(page, "6 Warfare");
 
   // The redistribution before the action is the pool editor.
   await expect(heading(page)).toHaveText("Warfare");
@@ -2276,9 +2156,7 @@ test("Warfare in a late game: the token is chosen on the map, with eight seats i
 test("a scenario is chosen in the Dev sheet and starts at the turn menu of its board", async ({
   page,
 }) => {
-  const errors: string[] = [];
-  page.on("console", (message) => message.type() === "error" && errors.push(message.text()));
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page, { console: true });
   await page.goto("/?local=3&players=8&humans=1");
   await expect(send(page)).toBeDisabled();
   await openSettings(page);
@@ -2411,9 +2289,7 @@ test("the Dev sheet plays another seat, several times, and undo stays with the s
 test("an invasion: the landings are staged on the map and sent as one plan", async ({ page }) => {
   // Longer than a test of this suite should be: see "Tests" in AGENTS.md.
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("console", (message) => message.type() === "error" && errors.push(message.text()));
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page, { console: true });
   await page.goto("/?scenario=late-game&humans=1");
   const system = (id: string) => page.locator("g.system").filter({ hasText: `#${id}` });
   const board = page.locator("section[aria-label='Galaxy board']");
@@ -2456,7 +2332,6 @@ test("an invasion: the landings are staged on the map and sent as one plan", asy
   await expect(sheet.getByRole("button", { name: "Land Mech, Space area, 1 left" })).toBeVisible();
   await expect(panel(page).getByText("2 Infantry, 1 Mech · not landed")).toBeVisible();
   await expect(panel(page).getByRole("spinbutton")).toHaveCount(0);
-  const planet = (name: string) => page.locator("g.planet").filter({ hasText: name });
   await expect(page.locator("g.planet.payable")).toHaveCount(2);
   await page.screenshot({ path: "shots/local/invasion-open.png", animations: "disabled" });
   const saved = await savedLine(page);
@@ -2481,14 +2356,14 @@ test("an invasion: the landings are staged on the map and sent as one plan", asy
   // The map view of the exploration: the type of each planet, "?" while it is still explored.
   await mapView("Exploration").click();
   // (A planet of the open choice keeps its values in every map view.)
-  await expect(planet("Siig")).toContainText("H?");
-  await expect(page.locator("g.planet").filter({ hasText: "Vega Major" })).toContainText("C+");
+  await expect(mapPlanet(page, "Siig")).toContainText("H?");
+  await expect(mapPlanet(page, "Vega Major")).toContainText("C+");
   await page.screenshot({ path: "shots/local/exploration-map.png", animations: "disabled" });
   await mapView("Standard").click();
 
   // A slot of the sheet lands the chosen kind; a tap on a planet of the map lands one more.
   await sheet.getByRole("button", { name: "Land Infantry on Abyz" }).click();
-  await planet("Abyz").click();
+  await mapPlanet(page, "Abyz").click();
   await sheet.getByRole("button", { name: "Land Mech, Space area, 1 left" }).click();
   await sheet.getByRole("button", { name: "Land Mech on Fria" }).click();
   await expect(sheet.getByText("3 units land")).toBeVisible();
@@ -2563,13 +2438,10 @@ test("a production: the build is staged on the map, then paid on the map, and se
 }) => {
   // Longer than a test of this suite should be: see "Tests" in AGENTS.md.
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("console", (message) => message.type() === "error" && errors.push(message.text()));
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page, { console: true });
   await page.goto("/?scenario=late-game&humans=1");
   const row = (name: string | RegExp) => panel(page).getByRole("button", { name });
   const system = (id: string) => page.locator("g.system").filter({ hasText: `#${id}` });
-  const planet = (name: string) => page.locator("g.planet").filter({ hasText: name });
   // The system with two space docks. The destroyer of the nebula moves there.
   await activateInLive(page, system("72"));
   await expect(heading(page)).toHaveText("Movement");
@@ -2667,7 +2539,7 @@ test("a production: the build is staged on the map, then paid on the map, and se
   await expect(send(page)).toHaveText(/Produce units/);
   await expect(send(page)).toBeDisabled();
   await expect(page.locator("g.planet.payable")).toHaveCount(8);
-  await planet("Lisis").click();
+  await mapPlanet(page, "Lisis").click();
   await expect(bar.getByRole("status").first()).toHaveText(/2 \/ 3\s*resources\s*1 more/);
   await bar.getByRole("button", { name: "Pay rest" }).click();
   await expect(bar.getByRole("status").first()).toHaveText(/3 \/ 3\s*resources\s*✓ Paid/);
@@ -2686,7 +2558,7 @@ test("a production: the build is staged on the map, then paid on the map, and se
   await expect(bar).toHaveCount(0);
   await send(page).click();
   await bar.getByRole("button", { name: "Clear payment" }).click();
-  await planet("Lisis").click();
+  await mapPlanet(page, "Lisis").click();
   await bar.getByRole("button", { name: "Pay rest" }).click();
   // Nothing was sent yet, and a reload keeps what is staged.
   expect(await savedLine(page)).toBe(saved);
@@ -2729,8 +2601,7 @@ test("a production: the build is staged on the map, then paid on the map, and se
 test("the Secrets sheet of the late game has scored and unscored objectives of every seat", async ({
   page,
 }) => {
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.goto("/?scenario=late-game&humans=1");
   await expect(heading(page)).toBeVisible();
   await page.getByRole("button", { name: "Secrets", exact: true }).click();
@@ -2767,8 +2638,7 @@ test("the Secrets sheet of the late game has scored and unscored objectives of e
 test("the Objectives sheet of the late game says where the points of every seat come from", async ({
   page,
 }) => {
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.goto("/?scenario=late-game&humans=1");
   await expect(heading(page)).toBeVisible();
   await page.getByRole("button", { name: "Objectives", exact: true }).click();
@@ -2872,8 +2742,7 @@ test("the sheet of a player has its abilities, leaders and used cards as printed
 test("a reaction window is on top of the action of another seat, has its cards as printed, and each has its setting", async ({
   page,
 }) => {
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   // Seat G is Sardakk: it holds Reverse Engineer, and the first seat of the round discards a card.
   await page.goto("/?scenario=late-game&humans=64");
   const window = panel(page).getByRole("group", { name: /^Reaction · After .+ discards .+$/ });
@@ -2941,8 +2810,7 @@ test("a reaction window is on top of the action of another seat, has its cards a
 test("the Agendas sheet of the late game has the laws in play and the deck in groups", async ({
   page,
 }) => {
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.goto("/?scenario=late-game&humans=1");
   await expect(heading(page)).toBeVisible();
   await page.getByRole("button", { name: "Agendas", exact: true }).click();
@@ -2986,9 +2854,7 @@ test("single player: a table is set up in the page, started, kept and set up aga
   page,
 }) => {
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("console", (message) => message.type() === "error" && errors.push(message.text()));
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page, { console: true });
   // With no game of this browser, "Single player" of the start screen is the setup.
   await page.goto("/");
   await expect(page.getByRole("link", { name: /Single player/ })).toHaveAttribute(
@@ -3116,9 +2982,7 @@ test("single player: a model plays a seat, its file is fetched once, and the gam
   page,
 }) => {
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("console", (message) => message.type() === "error" && errors.push(message.text()));
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page, { console: true });
   /** The files of the models that the page fetched from the server (not from the Cache API). */
   const fetched: string[] = [];
   page.on("requestfinished", (request) => {

@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
-import { activateInLive } from "./actions";
+import { activateInLive, pageErrors, seatRow, mapPlanet } from "./actions";
 
 // Local play on a Pixel 9 in portrait. Needs the engine: `scripts/build-wasm.sh`.
 const WASM = fileURLToPath(new URL("../src/session/ti4.wasm", import.meta.url));
@@ -376,8 +376,6 @@ test("phone: the landings are staged in a sheet over the map", async ({ page }) 
 test("phone: a production is a sheet on the map, then the map is the payment", async ({ page }) => {
   // Longer than a test of this suite should be: see "Tests" in AGENTS.md.
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/?scenario=late-game&humans=1");
   const send = page.locator('footer button[aria-keyshortcuts="Enter"]');
   const pane = (name: string) =>
@@ -464,8 +462,7 @@ test("phone: a production is a sheet on the map, then the map is the payment", a
 test("phone: a draft goes on to the landings and the production", async ({ page }) => {
   // Longer than a test of this suite should be: see "Tests" in AGENTS.md.
   test.setTimeout(10_000);
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.goto("/?scenario=late-game&humans=1");
   const send = page.locator('footer button[aria-keyshortcuts="Enter"]');
   const pane = (name: string) =>
@@ -675,9 +672,7 @@ test("phone: the command pools of the status phase fit the width, and Send is in
   await page.screenshot({ path: "shots/phone/local/command-pools.png", animations: "disabled" });
   await send.click();
   await pane("Players").click();
-  await expect(
-    page.getByRole("region", { name: "Players" }).getByRole("row").filter({ hasText: "Seat A" }),
-  ).toContainText("3 · 4 · 3");
+  await expect(seatRow(page, "Seat A")).toContainText("3 · 4 · 3");
 });
 
 test("phone: Leadership has the purchase and the pools in the width, and the payment on the map", async ({
@@ -815,8 +810,8 @@ test("phone: Diplomacy has the system and the planets in the width, chosen on th
   await panes.getByRole("button", { name: "Map" }).click();
   await page.locator("g.system.target").filter({ hasText: "#37" }).tap();
   await page.getByRole("button", { name: "Close system details" }).tap();
-  await page.locator("g.planet").filter({ hasText: "Jord" }).tap();
-  await page.locator("g.planet").filter({ hasText: "Arinam" }).tap();
+  await mapPlanet(page, "Jord").tap();
+  await mapPlanet(page, "Arinam").tap();
   await expect(page.locator("footer")).toContainText("Ready Jord, Arinam");
   expect(await width()).toBe(page.viewportSize()!.width);
   await panes.getByRole("button", { name: "Action" }).click();
@@ -973,8 +968,8 @@ test("phone: Construction has the structures in the width, the planets chosen on
   expect(await width()).toBe(page.viewportSize()!.width);
   await panel.getByRole("button", { name: /PDS/ }).first().tap();
   await panes.getByRole("button", { name: "Map" }).click();
-  await page.locator("g.planet").filter({ hasText: "Rarron" }).tap();
-  await page.locator("g.planet").filter({ hasText: "Jord" }).tap();
+  await mapPlanet(page, "Rarron").tap();
+  await mapPlanet(page, "Jord").tap();
   await expect(page.locator("footer")).toContainText("PDS on Rarron · PDS on Jord");
   expect(await width()).toBe(page.viewportSize()!.width);
   await panes.getByRole("button", { name: "Action" }).click();
@@ -1003,7 +998,7 @@ test("phone: Construction of Thunder's Edge has the ability and the structures i
     .first()
     .tap();
   await panes.getByRole("button", { name: "Map" }).click();
-  await page.locator("g.planet").filter({ hasText: "Rarron" }).tap();
+  await mapPlanet(page, "Rarron").tap();
   await expect(page.locator("footer")).toContainText("Space dock on Rarron");
   expect(await width()).toBe(page.viewportSize()!.width);
   await panes.getByRole("button", { name: "Action" }).click();
@@ -1066,8 +1061,7 @@ test("phone: Imperial has the objectives and what follows in the width", async (
 });
 
 test("phone: the Agendas sheet has the laws and the open groups in its width", async ({ page }) => {
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  const errors = pageErrors(page);
   await page.goto("/?scenario=late-game&humans=1");
   const width = page.viewportSize()!.width;
   const fits = async () =>
