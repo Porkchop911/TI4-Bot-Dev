@@ -1,14 +1,18 @@
-// What a transaction moves, in the names of the page: the engine says it as typed data
-// (`details.transaction`, the engine's `TransactionHints`), each card by its record in the
-// catalogue, and this file words it. A text of the engine that names a note or a faction by its id
-// outside a transaction (`namedText`) is the fallback. Presentation only: no rule is decided here.
+// What a transaction moves, and what a text of the engine names by id, in the names of the page:
+// the engine says it as typed data (`details.transaction`, the engine's `TransactionHints`, and
+// `details.phrases`, its `PhraseHints`), each card by its record in the catalogue, and this file
+// words it. A text with no typed data is shown as the engine says it. Presentation only: no rule
+// is decided here.
 import type { HelpView } from "../../model";
 import { plural } from "../../model";
 import type {
   Catalog,
   Choice,
+  Phrase,
+  PhraseHints,
   PromissoryNoteRecord,
   SessionUpdate,
+  Subject,
   TradeDeal,
   TradeItem,
   TransactionHints,
@@ -55,8 +59,14 @@ export interface Named {
   help: HelpView | null;
 }
 
-function card(cards: { id: string; name: string; text: string }[] | undefined, id: string): Named {
-  const found = cards?.find((item) => item.id === id);
+function card(
+  cards: { id: string; name: string; text: string; automation_id?: string }[] | undefined,
+  id: string,
+): Named {
+  // An action card of the engine is a copy of the catalogue ("mb1") or its name in the rules
+  // ("bribery", `automation_id`).
+  const found =
+    cards?.find((item) => item.id === id) ?? cards?.find((item) => item.automation_id === id);
   return found
     ? { text: found.name, help: { title: found.name, text: plain(found.text) } }
     : { text: humanizeId(id), help: null };
@@ -153,56 +163,47 @@ export function transactionPrompt(
     : { text: `Transaction with ${seatLabel(update, hints.partner, catalog)}`, help: [] };
 }
 
-// ---- The fallback: a text of the engine that names notes and factions by id --------------------
+// ---- A text of the engine that names a seat, a note or a card by its id ---------------------
 
-/** A note that every faction has is `<color>_<alias>` in the catalogue. */
-const GENERIC = "<color>_";
-/** Support for the Throne is `support:<owner>` in the engine and `<color>_sftt` in the catalogue. */
-const SUPPORT = "support";
-const SUPPORT_ALIAS = "sftt";
+/** What the texts of a question name by id (`details.phrases`, the engine's `PhraseHints`). */
+export const phrasesOf = (choice: Choice | null | undefined): PhraseHints | null =>
+  choice ? hintOf<PhraseHints>(choice, "phrases") : null;
 
-/** A note id of the engine ("cf:sol"), as printed. Null for an id that is no note of the catalogue. */
-function printedNote(note: string, update: SessionUpdate, catalog: Catalog | null) {
-  const [alias, owner] = note.split(":");
-  if (!alias || !owner || note.slice(alias.length + 1).includes(":")) {
-    return null;
-  }
-  const key = alias === SUPPORT ? SUPPORT_ALIAS : alias;
-  const record = noteRecord(key, catalog) ?? noteRecord(GENERIC + key, catalog);
-  return record ? printed(record, owner, update, catalog) : null;
+/** A thing that a text names, as the page names it: a seat by `seatLabel`, a card as printed. */
+function subjectOf(subject: Subject, update: SessionUpdate, catalog: Catalog | null): Named {
+  return subject.kind === "seat"
+    ? { text: seatLabel(update, subject.player, catalog), help: null }
+    : itemOf(subject, update, catalog);
 }
-
-const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
- * A text of the engine with its note ids and the faction ids of the table in the names of the
- * page, for the questions that do not say what they name as typed data (a note given with an
- * ability, "{faction} becomes speaker"): a note as printed, a faction as the page calls its seat
- * (`seatLabel`). `help` has the printed text of the notes that it names.
+ * A text of the engine in the names of the page: each `{key}` of the phrase is its subject, and
+ * `help` has the printed text of the cards that it names.
  */
-export function namedText(text: string, update: SessionUpdate, catalog: Catalog | null): Worded {
-  const seats = update.view.players.filter((player) => player.faction);
-  const factions = seats.map((player) => escapeRegExp(player.faction));
-  const pattern = new RegExp(
-    `\\b[a-z0-9_]+:[a-z0-9_]+\\b${factions.length ? `|\\b(?:${factions.join("|")})\\b` : ""}`,
-    "g",
-  );
+export function phraseWords(
+  phrase: Phrase,
+  update: SessionUpdate,
+  catalog: Catalog | null,
+): Worded {
   const help: HelpView[] = [];
-  const named = text.replace(pattern, (token) => {
-    if (token.includes(":")) {
-      const note = printedNote(token, update, catalog);
-      if (note?.text && !help.some((item) => item.title === note.label)) {
-        help.push({ title: note.label, text: note.text });
-      }
-      return note?.label ?? token;
+  const text = phrase.text.replace(/\{(\w+)\}/g, (token, key: string) => {
+    const subject = phrase.refs[key];
+    if (!subject) {
+      return token;
     }
-    const seat = seats.find((player) => player.faction === token);
-    return seat ? seatLabel(update, seat.id, catalog) : token;
+    const named = subjectOf(subject, update, catalog);
+    if (named.help?.text && !help.some((item) => item.title === named.help?.title)) {
+      help.push(named.help);
+    }
+    return named.text;
   });
-  return { text: named, help };
+  return { text, help };
 }
 
-/** The text of an option of a question, in the names of the page: its deal, else `namedText`. */
+/**
+ * The text of an option of a question, in the names of the page: its deal, else its phrase, else
+ * the label of the engine.
+ */
 export function optionWords(
   choice: Choice | null | undefined,
   option: { id: string; label: string },
@@ -214,11 +215,14 @@ export function optionWords(
   if (deal) {
     return deal;
   }
-  const named = namedText(option.label || option.id, update, catalog);
+  const phrase = phrasesOf(choice)?.options?.[option.id];
+  const named = phrase
+    ? phraseWords(phrase, update, catalog)
+    : { text: option.label || option.id, help: [] };
   return { text: sentence(named.text), help: named.help };
 }
 
-/** The question in the names of the page: its deal, else `namedText`. */
+/** The question in the names of the page: its deal, else its phrase, else the prompt of the engine. */
 export function promptWords(
   choice: Choice | null | undefined,
   update: SessionUpdate,
@@ -228,6 +232,9 @@ export function promptWords(
   if (hints) {
     return transactionPrompt(hints, update, catalog);
   }
-  const named = namedText(choice?.prompt ?? "", update, catalog);
+  const phrase = phrasesOf(choice)?.prompt;
+  const named = phrase
+    ? phraseWords(phrase, update, catalog)
+    : { text: choice?.prompt ?? "", help: [] };
   return { text: sentence(named.text), help: named.help };
 }
