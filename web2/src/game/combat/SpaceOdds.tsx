@@ -83,11 +83,11 @@ function SideLine({ side, pending }: { side: CombatOddsView["sides"][number]; pe
     >
       <SeatSymbol seat={side.seat} />{" "}
       <span className={cx("flex flex-wrap gap-x-3 gap-y-0.5", pending && "opacity-50")}>
-        {side.units.map((item) => (
+        {side.units.map((item, index) => (
           <span
-            key={item.unit}
+            key={`${item.unit}-${index}`}
             className="inline-flex items-center gap-1 whitespace-nowrap tabular-nums"
-            title={unitName(item.unit, item.fielded)}
+            title={item.name ?? unitName(item.unit, item.fielded)}
           >
             <Icon name={item.unit} className="size-4 text-icon" />
             {item.expected ?? "…"} / {item.fielded}{" "}

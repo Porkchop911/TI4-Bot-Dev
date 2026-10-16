@@ -378,7 +378,7 @@ export function movement(state: State): MovementView {
     excessShips: Math.max(0, it.shipsAfter - SUPPLY),
     riftRolls: editing ? exits.length : 0,
     rift,
-    removed: editing ? [] : state.removed,
+    removed: editing ? [] : state.removed.map((type: string) => E.unitName(type, 1) as string),
     cannon,
     odds: null,
   };

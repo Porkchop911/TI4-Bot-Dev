@@ -15,7 +15,7 @@ import type {
   TileView,
   UnitType,
 } from "../../model";
-import { GROUND_ODDS_COUNT, unitName } from "../../model";
+import { GROUND_ODDS_COUNT } from "../../model";
 import {
   type LandingDraft,
   chosenForce,
@@ -26,6 +26,7 @@ import {
 } from "../landingDraft";
 import { type GroundAsk, type KeptGroundOdds, groundAsks } from "../groundOdds";
 import type {
+  Catalog,
   ExplorationCatalog,
   GroundOddsResponse,
   GroundRoll,
@@ -35,20 +36,25 @@ import type {
 } from "../wire";
 import { NO_TRAITS, planetTraits } from "./exploration";
 import { systemLabel, tilesOf } from "./movement";
-import { UNIT_ORDER, forceOf, unitType } from "./names";
+import { byUnitOrder, forceOf, unitLabel, unitType } from "./names";
 import { combatOdds } from "./odds";
 
 /** The icon of a unit. A unit that the table of names does not have is shown as infantry. */
 const typeOf = (unit: string): UnitType => unitType(unit) ?? "infantry";
-const nameOf = (pool: LandingPool, count = 1) =>
-  unitName(typeOf(pool.unit), count) + (pool.damaged ? " (damaged)" : "");
+/** The printed name of the units of a force: "Infantry II", "Mech (damaged)". */
+const nameOf = (pool: LandingPool, printed: Catalog | null, count = 1) =>
+  unitLabel(pool.unit, printed, count) + (pool.damaged ? " (damaged)" : "");
 
-/** "2 Infantry, 1 Mech": units of the forces, by the counts of `taken`. */
-const unitsText = (facts: InvasionFacts, taken: (force: number) => number) =>
+/** "2 Infantry I, 1 Mech": units of the forces, by the counts of `taken`. */
+const unitsText = (
+  facts: InvasionFacts,
+  printed: Catalog | null,
+  taken: (force: number) => number,
+) =>
   facts.forces
     .flatMap((pool, force) => {
       const count = taken(force);
-      return count ? [`${count} ${nameOf(pool, count)}`] : [];
+      return count ? [`${count} ${nameOf(pool, printed, count)}`] : [];
     })
     .join(", ");
 
@@ -69,6 +75,7 @@ function previewOf(
   defender: string,
   response: GroundOddsResponse,
   view: CombatOddsView,
+  printed: Catalog | null,
 ): { table: BattleTableView; odds: OddsView } {
   const side = (
     seat: string,
@@ -85,13 +92,14 @@ function previewOf(
     rows: Object.entries(fielded)
       .filter(([, count]) => count > 0)
       .map(([id, count]) => ({ id, count, unit: typeOf(id), roll: rolls[id] }))
-      .sort((a, b) => UNIT_ORDER.indexOf(a.unit) - UNIT_ORDER.indexOf(b.unit))
-      .map(({ count, unit, roll }): BattleRowView => {
+      .sort((a, b) => byUnitOrder(a.id, b.id))
+      .map(({ id, count, unit, roll }): BattleRowView => {
         const rolls = roll && roll.dice > 0;
         const target = rolls ? roll.hits_on - roll.modifier : null;
         const dice = rolls ? roll.dice * count : 0;
         return {
           unit,
+          label: unitLabel(id, printed),
           count,
           target,
           targetTitle:
@@ -148,6 +156,7 @@ function oddsOf(
   viewer: string | null,
   ask: GroundAsk | undefined,
   kept: KeptGroundOdds | undefined,
+  printed: Catalog | null,
 ): GroundOddsView | null {
   if (!ask || !invader) {
     return null;
@@ -179,12 +188,14 @@ function oddsOf(
     draw: response?.mutual_destruction_rate ?? 0,
     pending,
     fielded: { attacker: attacker.units, defender: defender.units },
+    printed,
   });
   // The table is of the answer: of its units, also while the answer for new landings is on its way.
   return {
     ...view,
     unavailable: false,
-    preview: response && previewOf(name, invader, viewer, ask.ask.defender, response, view),
+    preview:
+      response && previewOf(name, invader, viewer, ask.ask.defender, response, view, printed),
   };
 }
 
@@ -197,6 +208,8 @@ export function selectLanding(
   catalog: ExplorationCatalog | null = null,
   /** The last answers of the engine for the odds of the ground combats. */
   odds: GroundOddsKept = {},
+  /** The printed names of the units. */
+  printed: Catalog | null = null,
 ): LandingView {
   const asks = new Map(groundAsks(update, facts, draft).map((ask) => [ask.planet, ask]));
   const traits = planetTraits(update, catalog);
@@ -210,7 +223,7 @@ export function selectLanding(
     return {
       id: forceId(force),
       unit: typeOf(pool.unit),
-      name: nameOf(pool),
+      name: nameOf(pool, printed),
       place: pool.from_planet ? `Planet ${planetName(from, pool.from_planet)}` : "Space area",
       site: from === facts.active ? null : { system: from, label: systemLabel(tiles, from) },
       left: forceLeft(facts, draft, force),
@@ -231,14 +244,17 @@ export function selectLanding(
       traits: info ? traits(info) : NO_TRAITS,
       there: [...new Set(units.map((unit) => unit.owner))].map((seat) => ({
         seat,
-        force: forceOf(units.filter((unit) => unit.owner === seat)),
+        force: forceOf(
+          units.filter((unit) => unit.owner === seat),
+          printed,
+        ),
       })),
       tokens: Object.entries(staged).flatMap(([force, count]) => {
         const pool = facts.forces[Number(force)];
         return Array.from({ length: count }, () => ({
           key: landKey(planet, Number(force)),
           unit: typeOf(pool.unit),
-          name: nameOf(pool),
+          name: nameOf(pool, printed),
           value: count - 1,
         }));
       }),
@@ -250,7 +266,7 @@ export function selectLanding(
             { key: landKey(planet, force), value: (staged[force] ?? 0) + 1 },
           ]),
       ),
-      lands: unitsText(facts, (force) => staged[force] ?? 0),
+      lands: unitsText(facts, printed, (force) => staged[force] ?? 0),
       reason: lands.length ? null : "Ground forces cannot land here",
       odds: oddsOf(
         info?.label ?? planet,
@@ -258,6 +274,7 @@ export function selectLanding(
         update.viewer.role === "player" ? update.viewer.seat : null,
         asks.get(planet),
         odds[planet],
+        printed,
       ),
     };
   });
@@ -268,7 +285,7 @@ export function selectLanding(
     chosen: pick === null ? null : forceId(pick),
     planets,
     landed: landed(draft),
-    stays: unitsText(facts, (force) => forceLeft(facts, draft, force)),
+    stays: unitsText(facts, printed, (force) => forceLeft(facts, draft, force)),
   };
 }
 
@@ -280,9 +297,10 @@ export const selectInvasion = (
   chosen: number | null,
   catalog: ExplorationCatalog | null = null,
   odds: GroundOddsKept = {},
+  printed: Catalog | null = null,
 ): InvasionView => ({
   kind: "invasion",
-  landing: selectLanding(update, facts, draft, chosen, catalog, odds),
+  landing: selectLanding(update, facts, draft, chosen, catalog, odds, printed),
   skipped: null,
   planets: [],
   gauges: [],

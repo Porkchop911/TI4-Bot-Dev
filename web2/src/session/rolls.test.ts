@@ -7,7 +7,23 @@ import {
   removedUnits,
   riftRows,
 } from "./select/movementRolls";
-import type { GameEvent, PublicRoll } from "./wire";
+import type { Catalog, GameEvent, PublicRoll } from "./wire";
+
+/** The unit cards that the rolls name, as the catalogue prints them. */
+const printed = {
+  records: {
+    units: [
+      { id: "cruiser", base_type: "cruiser", name: "Cruiser I" },
+      { id: "cruiser2", base_type: "cruiser", name: "Cruiser II" },
+      { id: "carrier", base_type: "carrier", name: "Carrier I" },
+      { id: "fighter", base_type: "fighter", name: "Fighter I" },
+      { id: "infantry", base_type: "infantry", name: "Infantry I" },
+      { id: "infantry2", base_type: "infantry", name: "Infantry II" },
+      { id: "pds", base_type: "pds", name: "PDS I" },
+      { id: "pds2", base_type: "pds", name: "PDS II" },
+    ],
+  },
+} as unknown as Catalog;
 
 const event = (id: number, change: Partial<GameEvent>): GameEvent => ({
   id: `g-${id}`,
@@ -72,7 +88,7 @@ describe("the dice of a movement", () => {
           unit: "carrier",
           damaged: true,
           origin: "26",
-          cargo: ["infantry", "fighter", "infantry"],
+          cargo: ["infantry", "fighter", "infantry2", "infantry"],
         }),
         {
           index: 2,
@@ -84,37 +100,46 @@ describe("the dice of a movement", () => {
         },
       ],
       label,
+      printed,
     );
     expect(rows).toEqual([
       {
         unit: "cruiser",
-        name: "Cruiser",
+        name: "Cruiser II",
         text: "Leaves Gravity Rift · #41 · survives on 4+",
         roll: { face: 5, lost: false },
       },
       {
         unit: "carrier",
-        name: "Carrier (damaged)",
-        text: "Leaves Gravity Rift · #41 · from Gravity Rift · #26 · carries 1 Fighter, 2 Infantry · survives on 4+",
+        name: "Carrier I (damaged)",
+        // Units are counted by the printed unit: an Infantry II is not an Infantry I.
+        text: "Leaves Gravity Rift · #41 · from Gravity Rift · #26 · carries 1 Fighter I, 2 Infantry I, 1 Infantry II · survives on 4+",
         roll: { face: 2, lost: true },
       },
     ]);
     expect(riftRows([], label)).toBeNull();
+    // Without the catalogue a unit is named by its base unit.
+    expect(riftRows([rift(0, 5, { unit: "cruiser2", origin: "41" })], label)?.[0].name).toBe(
+      "Cruiser",
+    );
   });
 
   it("say what a rift removed: the ship and its cargo", () => {
     expect(
-      removedUnits([
-        rift(0, 5, { unit: "cruiser" }),
-        rift(1, 2, { unit: "carrier", cargo: ["infantry", "infantry"] }),
-      ]),
-    ).toEqual(["carrier", "infantry", "infantry"]);
+      removedUnits(
+        [
+          rift(0, 5, { unit: "cruiser" }),
+          rift(1, 2, { unit: "carrier", cargo: ["infantry", "infantry2"] }),
+        ],
+        printed,
+      ),
+    ).toEqual(["Carrier I", "Infantry I", "Infantry II"]);
   });
 
   it("give the space cannon offense a side for each seat that fired and for the ships fired at", () => {
     const ships: ShipsOf = (seat) =>
       seat === "a"
-        ? [{ unit: "carrier", count: 1 }]
+        ? [{ unit: "carrier", name: "Carrier I", count: 1 }]
         : seat === "b"
           ? [{ unit: "destroyer", count: 2 }]
           : [];
@@ -155,6 +180,7 @@ describe("the dice of a movement", () => {
       "a",
       "a",
       ships,
+      printed,
     );
     expect(table?.score).toBe("1 hit");
     expect(table?.sides.map((side) => [side.seat, side.role, side.isViewer, side.hits])).toEqual([
@@ -163,13 +189,15 @@ describe("the dice of a movement", () => {
       ["b", "Defender", false, null],
     ]);
     // The guns of a seat, then the ships of the seat that are fired at.
-    expect(table?.sides[0].rows.map((row) => [row.unit, row.count, row.target])).toEqual([
-      ["pds", null, 6],
-      ["carrier", 1, null],
-    ]);
+    expect(table?.sides[0].rows.map((row) => [row.unit, row.label, row.count, row.target])).toEqual(
+      [
+        ["pds", "PDS I", null, 6],
+        ["carrier", "Carrier I", 1, null],
+      ],
+    );
     expect(table?.sides[1].rows[0]).toMatchObject({
       unit: "pds",
-      label: "PDS",
+      label: "PDS II",
       count: null,
       target: 6,
       dice: [

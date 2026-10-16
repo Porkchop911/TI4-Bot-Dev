@@ -94,8 +94,14 @@ function Side({
           )}
         >
           <span className="flex min-w-0 items-center gap-[7px] font-mid">
-            {row.unit && <Icon name={row.unit} className="size-[18px] text-icon" />}
-            {row.label ?? (row.unit ? unitName(row.unit) : "")}
+            {row.unit && <Icon name={row.unit} className="size-[18px] shrink-0 text-icon" />}
+            {/* A long printed name is cut, with the full name on hover; a phone wraps it. */}
+            <span
+              className="min-w-0 truncate phone:whitespace-normal"
+              title={row.label ?? (row.unit ? unitName(row.unit) : undefined)}
+            >
+              {row.label ?? (row.unit ? unitName(row.unit) : "")}
+            </span>
           </span>
           <span className="tabular-nums">{row.count === null ? "" : `×${row.count}`}</span>
           <span

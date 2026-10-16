@@ -1,6 +1,6 @@
 // How ids of the wire protocol are shown. Presentation only: no rule is decided here.
-import type { Force, TechColor, UnitType } from "../../model";
-import type { Catalog, SessionUpdate } from "../wire";
+import { type Force, type TechColor, type UnitType, unitName } from "../../model";
+import type { Catalog, SessionUpdate, UnitRecord } from "../wire";
 import { humanizeId } from "@ti4/shared/content/names.ts";
 
 const SYMBOLS = ["●", "◆", "▲", "■", "✚", "✖", "♣", "★"];
@@ -72,29 +72,83 @@ const UNITS: [suffix: string, unit: UnitType][] = [
 export const UNIT_ORDER: UnitType[] = UNITS.map(([, unit]) => unit);
 /**
  * A faction's unit has the base type as a part of its id ("sol_carrier", "naaz_mech_space"),
- * and an upgraded unit has a 2 after it ("cruiser2", "sol_carrier2").
+ * and an upgraded unit has a number after it ("cruiser2", "sol_carrier2", "mentak_cruiser3").
  */
 export function unitType(id: string): UnitType | null {
-  const parts = id.split("_").map((part) => part.replace(/2$/, ""));
+  const parts = id.split("_").map((part) => part.replace(/\d$/, ""));
   return UNITS.find(([name]) => parts.includes(name))?.[1] ?? null;
 }
 
-/** Units counted by type, in display order. */
-export function forceOf(units: { unit_type: string; damaged: boolean }[]): Force {
-  const counts = new Map<UnitType, { count: number; damaged: number }>();
+const unitRecords = new WeakMap<Catalog, Map<string, UnitRecord>>();
+/** The unit card of the catalogue with the id `id`. */
+export function unitRecord(id: string, printed: Catalog | null): UnitRecord | null {
+  if (!printed) {
+    return null;
+  }
+  let records = unitRecords.get(printed);
+  if (!records) {
+    records = new Map((printed.records?.units ?? []).map((unit) => [unit.id, unit]));
+    unitRecords.set(printed, records);
+  }
+  return records.get(id) ?? null;
+}
+
+/**
+ * The name of a unit by its id, as its card prints it: "Cruiser II", "Hel-Titan I",
+ * "Z-Grav Eidolon". A printed name has no plural. Without the card it is the name of the base
+ * unit, in the plural for `count` other than 1.
+ */
+export function unitLabel(id: string, printed: Catalog | null, count = 1): string {
+  const record = unitRecord(id, printed);
+  if (record) {
+    return record.name.trim();
+  }
+  const type = unitType(id);
+  return type ? unitName(type, count) : humanizeId(id);
+}
+
+/**
+ * What units are grouped by where they are counted ("3 Infantry I"): the printed unit when the
+ * catalogue has it, so that "Infantry II" stays apart from "Infantry I"; else the base unit.
+ */
+export const unitKey = (id: string, printed: Catalog | null): string =>
+  unitRecord(id, printed) ? id : (unitType(id) ?? id);
+
+/** Unit ids in display order: by base unit, and an upgrade after the unit it upgrades. */
+export const byUnitOrder = (a: string, b: string) => {
+  const rank = (id: string) => {
+    const type = unitType(id);
+    return type ? UNIT_ORDER.indexOf(type) : UNIT_ORDER.length;
+  };
+  return rank(a) - rank(b) || a.localeCompare(b);
+};
+
+/**
+ * Units counted by the printed unit (by base unit without the catalogue), in display order.
+ * A unit that is no known type is left out.
+ */
+export function forceOf(
+  units: { unit_type: string; damaged: boolean }[],
+  printed: Catalog | null = null,
+): Force {
+  const counts = new Map<string, { id: string; count: number; damaged: number }>();
   for (const unit of units) {
-    const type = unitType(unit.unit_type);
-    if (type) {
-      const entry = counts.get(type) ?? { count: 0, damaged: 0 };
+    if (unitType(unit.unit_type)) {
+      const key = unitKey(unit.unit_type, printed);
+      const entry = counts.get(key) ?? { id: unit.unit_type, count: 0, damaged: 0 };
       entry.count++;
       entry.damaged += unit.damaged ? 1 : 0;
-      counts.set(type, entry);
+      counts.set(key, entry);
     }
   }
-  return UNIT_ORDER.flatMap((unit) => {
-    const entry = counts.get(unit);
-    return entry ? [{ unit, ...entry }] : [];
-  });
+  return [...counts.values()]
+    .sort((a, b) => byUnitOrder(a.id, b.id))
+    .map(({ id, count, damaged }) => ({
+      unit: unitType(id)!,
+      name: unitLabel(id, printed, count),
+      count,
+      damaged,
+    }));
 }
 
 const SHIPS = new Set<UnitType>([

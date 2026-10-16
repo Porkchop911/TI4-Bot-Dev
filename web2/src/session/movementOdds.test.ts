@@ -8,7 +8,7 @@ import { type MovementDraft, setLoad, setShip } from "./movementDraft";
 import { type KeptOdds, oddsRequest } from "./movementOdds";
 import { selectArrival, selectMovement } from "./select/movement";
 import { percentages } from "./select/odds";
-import type { BattleResponse, MovementFacts, SessionUpdate } from "./wire";
+import type { BattleResponse, Catalog, MovementFacts, SessionUpdate } from "./wire";
 
 // An update of a real game, written by the engine: in the late game, seat a (Sol) moves into
 // the system of seat c (Letnev), which has two cruisers, a destroyer and a PDS there
@@ -27,6 +27,20 @@ const staged = (...changes: ((draft: MovementDraft) => MovementDraft)[]) =>
 const ship = (id: string) => (draft: MovementDraft) => setShip(facts, draft, id, true);
 const load = (id: string, pool: number, count: number) => (draft: MovementDraft) =>
   setLoad(facts, draft, id, pool, count);
+
+/** The unit cards of the battle, as the catalogue prints them. */
+const printed = {
+  records: {
+    units: [
+      { id: "warsun", base_type: "warsun", name: "War Sun" },
+      { id: "fighter2", base_type: "fighter", name: "Fighter II" },
+      { id: "sol_carrier2", base_type: "carrier", name: "Advanced Carrier II" },
+      { id: "cruiser", base_type: "cruiser", name: "Cruiser I" },
+      { id: "cruiser2", base_type: "cruiser", name: "Cruiser II" },
+      { id: "destroyer", base_type: "destroyer", name: "Destroyer I" },
+    ],
+  },
+} as unknown as Catalog;
 
 /** An answer of the engine, as it could be: Sol wins mostly, and keeps most of its ships. */
 const RESPONSE: BattleResponse = {
@@ -102,7 +116,8 @@ it("rounds the rates to whole percentages that sum to 100", () => {
 describe("the odds in the movement", () => {
   const draft = staged(ship(WARSUN), load(WARSUN, FIGHTERS, 2));
   const asked = oddsRequest(facts, draft)!;
-  const view = (kept: KeptOdds | null) => selectMovement(update, facts, draft, [], kept).odds;
+  const view = (kept: KeptOdds | null) =>
+    selectMovement(update, facts, draft, [], kept, [], printed).odds;
 
   it("is pending before the first answer, with the ships that fight", () => {
     expect(view(null)).toEqual({
@@ -116,15 +131,15 @@ describe("the odds in the movement", () => {
         {
           seat: "a",
           units: [
-            { unit: "warsun", expected: null, fielded: 1 },
-            { unit: "fighter", expected: null, fielded: 2 },
+            { unit: "warsun", name: "War Sun", expected: null, fielded: 1 },
+            { unit: "fighter", name: "Fighter II", expected: null, fielded: 2 },
           ],
         },
         {
           seat: "c",
           units: [
-            { unit: "cruiser", expected: null, fielded: 2 },
-            { unit: "destroyer", expected: null, fielded: 1 },
+            { unit: "cruiser", name: "Cruiser I", expected: null, fielded: 2 },
+            { unit: "destroyer", name: "Destroyer I", expected: null, fielded: 1 },
           ],
         },
       ],
@@ -132,32 +147,40 @@ describe("the odds in the movement", () => {
     expect(selectMovement(update, facts, {}, [], null).odds).toBeNull();
   });
 
-  it("has Win, Draw and Loss and the survivors by kind of the answer", () => {
+  it("has Win, Draw and Loss and the survivors by printed unit of the answer", () => {
     const odds = view({ key: asked.key, response: RESPONSE });
     expect(odds).toMatchObject({ win: 72, draw: 3, loss: 25, rollouts: 2000, pending: false });
     expect(odds?.sides.map((side) => side.units)).toEqual([
       [
-        { unit: "warsun", expected: "0.9", fielded: 1 },
-        { unit: "fighter", expected: "1.8", fielded: 2 },
+        { unit: "warsun", name: "War Sun", expected: "0.9", fielded: 1 },
+        { unit: "fighter", name: "Fighter II", expected: "1.8", fielded: 2 },
       ],
       [
-        // Two ids of one kind are one kind.
-        { unit: "cruiser", expected: "0.5", fielded: 2 },
-        { unit: "destroyer", expected: "0.1", fielded: 1 },
+        // A Cruiser II is not a Cruiser I: only the survivors of the units that fight count.
+        { unit: "cruiser", name: "Cruiser I", expected: "0.2", fielded: 2 },
+        { unit: "destroyer", name: "Destroyer I", expected: "0.1", fielded: 1 },
       ],
     ]);
     // The active system has the same odds in its inspector.
     expect(
-      selectArrival(update, facts, draft, { key: asked.key, response: RESPONSE }).odds,
+      selectArrival(update, facts, draft, { key: asked.key, response: RESPONSE }, printed).odds,
     ).toEqual(odds);
+    // Without the catalogue the units are counted and named by kind.
+    expect(
+      selectMovement(update, facts, draft, [], { key: asked.key, response: RESPONSE }).odds
+        ?.sides[1].units,
+    ).toEqual([
+      { unit: "cruiser", name: "Cruisers", expected: "0.5", fielded: 2 },
+      { unit: "destroyer", name: "Destroyer", expected: "0.1", fielded: 1 },
+    ]);
   });
 
   it("keeps the numbers of another movement as pending, with the ships of this one", () => {
     const odds = view({ key: "another movement", response: RESPONSE });
     expect(odds).toMatchObject({ win: 72, draw: 3, loss: 25, pending: true });
     expect(odds?.sides[0].units).toEqual([
-      { unit: "warsun", expected: "0.9", fielded: 1 },
-      { unit: "fighter", expected: "1.8", fielded: 2 },
+      { unit: "warsun", name: "War Sun", expected: "0.9", fielded: 1 },
+      { unit: "fighter", name: "Fighter II", expected: "1.8", fielded: 2 },
     ]);
   });
 

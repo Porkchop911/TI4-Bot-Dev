@@ -183,6 +183,7 @@ function movement(
   update: SessionUpdate,
   local: LocalState,
   facts: MovementFacts,
+  printed: Catalog | null,
 ): { content: StepContentView; footer: FooterView; target: string } {
   const tiles = tilesOf(update);
   const target = systemLabel(tiles, facts.active);
@@ -226,6 +227,7 @@ function movement(
     local.handled,
     local.odds ?? null,
     local.rolls,
+    printed,
   );
   if (local.draft) {
     return { target, content, footer: draftFooter(local, "Move nothing") };
@@ -264,6 +266,7 @@ function invasion(
   local: LocalState,
   facts: InvasionFacts,
   catalog: ExplorationCatalog | null,
+  printed: Catalog | null,
 ): { content: StepContentView; footer: FooterView; target: string } {
   const nothing = landed(local.landing) === 0;
   const content = selectInvasion(
@@ -273,6 +276,7 @@ function invasion(
     local.landingKind,
     catalog,
     local.groundOdds ?? {},
+    printed,
   );
   if (local.draft) {
     return {
@@ -314,9 +318,10 @@ function production(
   update: SessionUpdate,
   local: LocalState,
   facts: ProductionFacts,
+  printed: Catalog | null,
 ): { content: StepContentView; footer: FooterView; target: string } {
   const stage = local.productionStage;
-  const content = selectProduction(update, facts, local.production, stage);
+  const content = selectProduction(update, facts, local.production, stage, printed);
   const { units, cost, paid } = totals(facts, local.production);
   // The limits are soft in the sheet. A build over one blocks the main button, as a payment
   // that is short does: the game would refuse it.
@@ -415,11 +420,12 @@ function movementResult(
   local: LocalState,
   active: string,
   current: number,
+  printed: Catalog | null,
 ): { content: StepContentView; footer: FooterView; target: string } {
   const next = STEPS[current].toLowerCase();
   return {
     target: systemLabel(tilesOf(update), active),
-    content: selectMovementResult(update, active, local.rolls ?? []),
+    content: selectMovementResult(update, active, local.rolls ?? [], printed),
     footer: {
       note: `Viewing movement. The action is at ${next}.`,
       error: false,
@@ -441,7 +447,7 @@ export function selectTactical(
   local: LocalState,
   facts: TacticalFacts,
   catalog: ExplorationCatalog | null = null,
-  /** The printed names. Without it a faction is shown by its id. */
+  /** The printed names. Without it a faction is shown by its id and a unit by its base unit. */
   printed: Catalog | null = null,
 ): TacticalActionView {
   const current = CURRENT[facts.kind];
@@ -450,14 +456,14 @@ export function selectTactical(
     !local.draft && local.step === 1 && current > 1 && !!update.view.board.active_system;
   const selected = facts.kind === "movement" && local.step === 0 ? 0 : reading ? 1 : current;
   const view = reading
-    ? movementResult(update, local, update.view.board.active_system!, current)
+    ? movementResult(update, local, update.view.board.active_system!, current, printed)
     : facts.kind === "activation"
       ? activation(update, local, facts)
       : facts.kind === "movement"
-        ? movement(update, local, facts)
+        ? movement(update, local, facts, printed)
         : facts.kind === "invasion"
-          ? invasion(update, local, facts, catalog)
-          : production(update, local, facts);
+          ? invasion(update, local, facts, catalog, printed)
+          : production(update, local, facts, printed);
   const units = landed(local.landing);
   const built = facts.kind === "production" ? totals(facts, local.production).units : 0;
   const active = facts.kind === "production" ? facts.system : "active" in facts ? facts.active : "";
@@ -577,7 +583,7 @@ export function selectTactical(
           : null,
       review:
         review && selected === reviewTab && !local.draft?.editing
-          ? reviewRow(update, facts, review.entry, review.system)
+          ? reviewRow(update, facts, review.entry, review.system, printed)
           : null,
       help: card
         ? [

@@ -65,7 +65,7 @@ test("phone: a game of eight is played through the decision list @slow", async (
       await expect(pane("Map")).toHaveAttribute("aria-pressed", "true");
       await page.locator("g.system").filter({ hasText: "#01" }).click();
       const sheet = page.getByRole("group", { name: /^Move from / });
-      await sheet.getByRole("button", { name: /^Carrier 1 of / }).click();
+      await sheet.getByRole("button", { name: /^Advanced Carrier I 1 of / }).click();
       await expect(send).toBeHidden();
       await page.screenshot({ path: "shots/phone/local/movement.png", animations: "disabled" });
       // The check of the sheet closes it: the main button is back.
@@ -159,7 +159,7 @@ test("phone: a draft is staged on the map and applied from the toolbar", async (
   const sheet = page.getByRole("group", { name: /^Move from / });
   // The fleet sheet has what is in the system, as the inspector has it.
   await expect(sheet.getByText("4 / 2")).toBeAttached();
-  await sheet.getByRole("button", { name: /^Carrier 1 of / }).click();
+  await sheet.getByRole("button", { name: /^Advanced Carrier I 1 of / }).click();
   await sheet.getByRole("button", { name: "Done with this system" }).click();
   await expect(send).toHaveCount(0);
   await expect(system("23")).toHaveAttribute("aria-label", /1 Sol ship/);
@@ -199,7 +199,7 @@ test("phone: the recorded activation of a draft is edited in the width", async (
   await send.click();
   await system("01").click();
   const sheet = page.getByRole("group", { name: /^Move from / });
-  await sheet.getByRole("button", { name: /^Carrier 1 of / }).click();
+  await sheet.getByRole("button", { name: /^Advanced Carrier I 1 of / }).click();
   await sheet.getByRole("button", { name: "Done with this system" }).click();
   await expect(system("23")).toHaveAttribute("aria-label", /1 Sol ship/);
 
@@ -249,8 +249,8 @@ test("phone: a draft entry that no longer fits is marked in its step and removed
   await send.click();
   await system("01").click();
   const sheet = page.getByRole("group", { name: /^Move from / });
-  await sheet.getByRole("button", { name: /^Carrier 1 of / }).click();
-  await sheet.getByRole("button", { name: /^Destroyer 1 of / }).click();
+  await sheet.getByRole("button", { name: /^Advanced Carrier I 1 of / }).click();
+  await sheet.getByRole("button", { name: /^Destroyer I 1 of / }).click();
   await sheet.getByRole("button", { name: "Done with this system" }).click();
   await expect(system("23")).toHaveAttribute("aria-label", /2 Sol ships/);
 
@@ -267,7 +267,7 @@ test("phone: a draft entry that no longer fits is marked in its step and removed
     "needs-review",
   );
   const review = panel.getByRole("group", { name: "Needs review" });
-  await expect(review.getByText(/^✗ Carrier from .+ · #01$/)).toBeVisible();
+  await expect(review.getByText(/^✗ Advanced Carrier I from .+ · #01$/)).toBeVisible();
   const remove = review.getByRole("button", { name: "Remove" });
   await expect(remove).toBeInViewport({ ratio: 1 });
   await expect(page.locator("footer").getByText(/no longer fits: remove it/)).toBeVisible();
@@ -382,7 +382,7 @@ test("phone: a movement into a fleet of another seat has the odds of the space c
   await expect(send).toHaveText(/Move nothing/);
   await system("24").click();
   const fleet = page.getByRole("group", { name: /^Move from / });
-  await fleet.getByRole("button", { name: "Dreadnought 1 of 1" }).click();
+  await fleet.getByRole("button", { name: "Dreadnought II 1 of 1" }).click();
   await fleet.getByRole("button", { name: "Done with this system" }).click();
 
   // The inspector of the active system has the odds under "Arrives".
@@ -427,10 +427,13 @@ test("phone: the rolls of the gravity rift and the space cannon offense are in t
   await activateInLive(page, system("60"));
   await system("41").click();
   const fleet = page.getByRole("group", { name: /^Move from / });
-  await fleet.getByRole("button", { name: "Carrier 1 of 1" }).click();
-  await fleet.getByRole("button", { name: /^Load Infantry, Space area, 2 left/ }).click();
-  await fleet.getByRole("button", { name: "Load Infantry on Carrier 1 of 1" }).first().click();
-  await fleet.getByRole("button", { name: "Cruiser 1 of 1" }).click();
+  await fleet.getByRole("button", { name: "Advanced Carrier II 1 of 1" }).click();
+  await fleet.getByRole("button", { name: /^Load Spec Ops II, Space area, 2 left/ }).click();
+  await fleet
+    .getByRole("button", { name: "Load Spec Ops II on Advanced Carrier II 1 of 1" })
+    .first()
+    .click();
+  await fleet.getByRole("button", { name: "Cruiser II 1 of 1" }).click();
   await fleet.getByRole("button", { name: "Done with this system" }).click();
   await send.click();
   await pane("Action").click();
@@ -462,8 +465,8 @@ test("phone: the landings on a defended planet have the odds of the ground comba
   await send.click();
   await pane("Map").click();
   const sheet = page.getByRole("group", { name: /^Land in / });
-  await sheet.getByRole("button", { name: /^Land Infantry on Qucen/ }).click();
-  await sheet.getByRole("button", { name: /^Land Infantry on Rarron/ }).click();
+  await sheet.getByRole("button", { name: /^Land Infantry I on Qucen/ }).click();
+  await sheet.getByRole("button", { name: /^Land Infantry I on Rarron/ }).click();
   const odds = sheet.getByRole("region", { name: "Ground combat" });
   await expect(odds).toHaveCount(2);
   await expect(odds.first()).toHaveAttribute("aria-busy", "false");
@@ -496,10 +499,16 @@ test("phone: the landings are staged in a sheet over the map", async ({ page }) 
   await expect(send).toHaveText(/Move nothing/);
   await system("63").click();
   const fleet = page.getByRole("group", { name: /^Move from / });
-  await fleet.getByRole("button", { name: "Carrier 1 of 1" }).click();
-  await fleet.getByRole("button", { name: /^Load Infantry, Planet Vorhal/ }).click();
-  await fleet.getByRole("button", { name: "Load Infantry on Carrier 1 of 1" }).first().click();
-  await fleet.getByRole("button", { name: "Load Infantry on Carrier 1 of 1" }).first().click();
+  await fleet.getByRole("button", { name: "Advanced Carrier II 1 of 1" }).click();
+  await fleet.getByRole("button", { name: /^Load Spec Ops II, Planet Vorhal/ }).click();
+  await fleet
+    .getByRole("button", { name: "Load Spec Ops II on Advanced Carrier II 1 of 1" })
+    .first()
+    .click();
+  await fleet
+    .getByRole("button", { name: "Load Spec Ops II on Advanced Carrier II 1 of 1" })
+    .first()
+    .click();
   await fleet.getByRole("button", { name: "Done with this system" }).click();
   await send.click();
 
@@ -508,8 +517,8 @@ test("phone: the landings are staged in a sheet over the map", async ({ page }) 
   await expect(sheet).toBeVisible();
   await expect(pane("Map")).toHaveAttribute("aria-pressed", "true");
   await expect(send).toBeHidden();
-  await sheet.getByRole("button", { name: "Land Infantry on Abyz" }).click();
-  await sheet.getByRole("button", { name: "Land Infantry on Fria" }).click();
+  await sheet.getByRole("button", { name: "Land Spec Ops II on Abyz" }).click();
+  await sheet.getByRole("button", { name: "Land Spec Ops II on Fria" }).click();
   await expect(sheet.getByText("2 units land")).toBeVisible();
   await fits();
   await page.screenshot({ path: "shots/phone/local/invasion.png", animations: "disabled" });
@@ -538,7 +547,7 @@ test("phone: the landings are staged in a sheet over the map", async ({ page }) 
   await fits();
   await page
     .locator("#step-panel")
-    .getByRole("button", { name: /^Abyz 1 Infantry$/ })
+    .getByRole("button", { name: /^Abyz 1 Spec Ops II$/ })
     .click();
   await pane("Map").click();
   await expect(sheet).toBeVisible();
@@ -574,12 +583,12 @@ test("phone: a production is a sheet on the map, then the map is the payment", a
   await expect(sheet).toBeVisible();
   await expect(pane("Map")).toHaveAttribute("aria-pressed", "true");
   await expect(send).toBeHidden();
-  await sheet.getByRole("button", { name: "Add Fighter" }).click();
-  await sheet.getByRole("button", { name: "Add Cruiser" }).click();
-  await sheet.getByRole("button", { name: "Add Infantry, Planet Velnor" }).click();
+  await sheet.getByRole("button", { name: "Add Fighter II" }).click();
+  await sheet.getByRole("button", { name: "Add Cruiser II" }).click();
+  await sheet.getByRole("button", { name: "Add Spec Ops II, Planet Velnor" }).click();
   // The printed values are behind the name: a tap opens the card, and nothing is cut at the side.
   const card = page.getByRole("note");
-  await sheet.getByRole("button", { name: "War sun, printed values" }).tap();
+  await sheet.getByRole("button", { name: "War Sun, printed values" }).tap();
   await expect(card).toContainText("BOMBARDMENT 3+ (x3)");
   await expect(card).toBeInViewport({ ratio: 1 });
   await fits();
@@ -587,7 +596,7 @@ test("phone: a production is a sheet on the map, then the map is the payment", a
     path: "shots/phone/local/production-card.png",
     animations: "disabled",
   });
-  await sheet.getByRole("button", { name: "War sun, printed values" }).tap();
+  await sheet.getByRole("button", { name: "War Sun, printed values" }).tap();
   await expect(card).toHaveCount(0);
   await expect(sheet.getByRole("status").first()).toContainText("5 units · 3 resources");
   await fits();
@@ -625,7 +634,7 @@ test("phone: a production is a sheet on the map, then the map is the payment", a
     path: "shots/phone/local/production-panel.png",
     animations: "disabled",
   });
-  await row(/^Planet Velnor 2 Infantry$/).click();
+  await row(/^Planet Velnor 2 Spec Ops II$/).click();
   await pane("Map").click();
   await expect(sheet).toBeVisible();
   await sheet.getByRole("button", { name: "Done with the build" }).click();
@@ -670,7 +679,7 @@ test("phone: a draft goes on to the landings and the production", async ({ page 
   const sheet = page.getByRole("group", { name: /^Produce in / });
   await expect(sheet).toBeVisible();
   await expect(pane("Map")).toHaveAttribute("aria-pressed", "true");
-  await sheet.getByRole("button", { name: "Add Cruiser" }).click();
+  await sheet.getByRole("button", { name: "Add Cruiser II" }).click();
   await expect(sheet.getByRole("status").first()).toContainText("1 unit · 1 resource");
   await fits();
   await page.screenshot({
@@ -701,9 +710,12 @@ test("phone: a draft goes on to the landings and the production", async ({ page 
   await expect(send).toHaveText(/Move nothing/);
   await system("63").click();
   const fleet = page.getByRole("group", { name: /^Move from / });
-  await fleet.getByRole("button", { name: "Carrier 1 of 1" }).click();
-  await fleet.getByRole("button", { name: /^Load Infantry, Planet Vorhal, 2 left/ }).click();
-  await fleet.getByRole("button", { name: "Load Infantry on Carrier 1 of 1" }).first().click();
+  await fleet.getByRole("button", { name: "Advanced Carrier II 1 of 1" }).click();
+  await fleet.getByRole("button", { name: /^Load Spec Ops II, Planet Vorhal, 2 left/ }).click();
+  await fleet
+    .getByRole("button", { name: "Load Spec Ops II on Advanced Carrier II 1 of 1" })
+    .first()
+    .click();
   await fleet.getByRole("button", { name: /^Done with/ }).click();
   await expect(send).toHaveText(/Go to invasion/);
   await expect(send).toBeInViewport({ ratio: 1 });
@@ -1502,7 +1514,7 @@ test("phone: the movement says what no ship can load, a wormhole and a damaged s
   await activateInLive(page, system("42"));
   await pane("Action").click();
   await expect(
-    page.locator("#step-panel").getByText(/^⚠ Stay: 2 Infantry \(Planet Vega Major\)/),
+    page.locator("#step-panel").getByText(/^⚠ Stay: 2 Spec Ops II \(Planet Vega Major\)/),
   ).toBeVisible();
   await fits();
   await page.screenshot({ path: "shots/phone/local/movement-cases.png", animations: "disabled" });
@@ -1510,13 +1522,13 @@ test("phone: the movement says what no ship can load, a wormhole and a damaged s
   await pane("Map").click();
   await system("25").click();
   const fleet = page.getByRole("group", { name: /^Move from / });
-  await fleet.getByRole("button", { name: "Cruiser 1 of 1" }).tap();
+  await fleet.getByRole("button", { name: "Cruiser II 1 of 1" }).tap();
   await expect(fleet.getByText(/β wormhole/).first()).toBeVisible();
   await fits();
   await fleet.getByRole("button", { name: "Done with this system" }).tap();
   await system("63").click();
   await expect(
-    fleet.getByRole("button", { name: "Dreadnought (damaged) 1 of 1", exact: true }),
+    fleet.getByRole("button", { name: "Dreadnought II (damaged) 1 of 1", exact: true }),
   ).toBeVisible();
   await fits();
   expect(errors).toEqual([]);

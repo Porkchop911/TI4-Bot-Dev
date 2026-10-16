@@ -10,10 +10,10 @@ import type {
   RiftRowView,
   UnitType,
 } from "../../model";
-import { plural, unitName } from "../../model";
+import { plural } from "../../model";
 import { reasonOf } from "../rolls";
-import type { CannonFact, PublicRoll } from "../wire";
-import { UNIT_ORDER, humanizeId, unitType } from "./names";
+import type { CannonFact, Catalog, PublicRoll } from "../wire";
+import { byUnitOrder, humanizeId, unitKey, unitLabel, unitType } from "./names";
 
 const RIFT = "gravity rift";
 const CANNON = "space cannon";
@@ -21,24 +21,19 @@ const CANNON = "space cannon";
 /** The roll hit: a ship that leaves a rift survives on a hit. */
 const hits = (roll: PublicRoll) => roll.hits ?? 0;
 
-const nameOf = (unit: string, damaged = false, count = 1) => {
-  const type = unitType(unit);
-  return (type ? unitName(type, count) : humanizeId(unit)) + (damaged ? " (damaged)" : "");
-};
+const nameOf = (unit: string, printed: Catalog | null, damaged = false, count = 1) =>
+  unitLabel(unit, printed, count) + (damaged ? " (damaged)" : "");
 
-/** "2 Infantry, 1 Fighter": units by type id, counted, in the order of the units. */
-function unitsText(units: readonly string[]): string {
-  const counts = new Map<string, number>();
+/** "2 Infantry I, 1 Fighter II": units by the printed unit, counted, in the order of the units. */
+function unitsText(units: readonly string[], printed: Catalog | null): string {
+  const counts = new Map<string, { id: string; count: number }>();
   for (const unit of units) {
-    counts.set(unit, (counts.get(unit) ?? 0) + 1);
+    const key = unitKey(unit, printed);
+    counts.set(key, { id: unit, count: (counts.get(key)?.count ?? 0) + 1 });
   }
-  const order = (unit: string) => {
-    const type = unitType(unit);
-    return type ? UNIT_ORDER.indexOf(type) : UNIT_ORDER.length;
-  };
-  return [...counts]
-    .sort(([a], [b]) => order(a) - order(b))
-    .map(([unit, count]) => `${count} ${nameOf(unit, false, count)}`)
+  return [...counts.values()]
+    .sort((a, b) => byUnitOrder(a.id, b.id))
+    .map(({ id, count }) => `${count} ${nameOf(id, printed, false, count)}`)
     .join(", ");
 }
 
@@ -53,16 +48,17 @@ export function riftRows(
   rolls: readonly PublicRoll[],
   /** The name of a system on the map. */
   label: (system: string) => string,
+  printed: Catalog | null = null,
 ): RiftRowView[] | null {
   const rows = riftRolls(rolls).map((roll): RiftRowView => {
     const type = roll.unit ? unitType(roll.unit) : null;
     return {
       unit: type,
-      name: roll.unit ? nameOf(roll.unit, roll.damaged) : roll.label,
+      name: roll.unit ? nameOf(roll.unit, printed, roll.damaged) : roll.label,
       text: [
         roll.system ? `Leaves ${label(roll.system)}` : null,
         roll.origin && roll.origin !== roll.system ? `from ${label(roll.origin)}` : null,
-        roll.cargo?.length ? `carries ${unitsText(roll.cargo)}` : null,
+        roll.cargo?.length ? `carries ${unitsText(roll.cargo, printed)}` : null,
         roll.hits_on ? `survives on ${roll.hits_on}+` : null,
       ]
         .filter((part) => part !== null)
@@ -73,17 +69,20 @@ export function riftRows(
   return rows.length ? rows : null;
 }
 
-/** The ships that a rift destroyed, each with its cargo, in the order of the game. */
-export function removedUnits(rolls: readonly PublicRoll[]): UnitType[] {
+/** The names of the ships that a rift destroyed, each with its cargo, in the order of the game. */
+export function removedUnits(
+  rolls: readonly PublicRoll[],
+  printed: Catalog | null = null,
+): string[] {
   return riftRolls(rolls)
     .filter((roll) => hits(roll) === 0)
     .flatMap((roll) => [roll.unit ?? "", ...(roll.cargo ?? [])])
-    .map((unit) => unitType(unit))
-    .filter((unit) => unit !== null);
+    .filter((unit) => unitType(unit) !== null)
+    .map((unit) => unitLabel(unit, printed));
 }
 
-/** The ships of a seat in the active system that the guns fire at. */
-export type ShipsOf = (seat: string) => { unit: UnitType; count: number }[];
+/** The ships of a seat in the active system that the guns fire at, with their printed names. */
+export type ShipsOf = (seat: string) => { unit: UnitType; name?: string; count: number }[];
 
 const row = (change: Partial<BattleRowView>): BattleRowView => ({
   unit: null,
@@ -101,15 +100,19 @@ const row = (change: Partial<BattleRowView>): BattleRowView => ({
 });
 
 /** The row of one gun, or of an attachment's SPACE CANNON. */
-const gunName = (unit: string | null | undefined, planet?: string | null) =>
+const gunName = (
+  unit: string | null | undefined,
+  planet: string | null | undefined,
+  printed: Catalog | null,
+) =>
   unit
-    ? { unit: unitType(unit), label: nameOf(unit) }
+    ? { unit: unitType(unit), label: nameOf(unit, printed) }
     : { unit: null, label: planet ? `Space cannon · ${humanizeId(planet)}` : "Space cannon" };
 
-function rolledRow(roll: PublicRoll): BattleRowView {
+function rolledRow(roll: PublicRoll, printed: Catalog | null): BattleRowView {
   const target = roll.hits_on ?? null;
   return row({
-    ...gunName(roll.unit),
+    ...gunName(roll.unit, null, printed),
     target,
     targetTitle: target ? `Hits on ${target}+` : "",
     dice: roll.faces.map((face) => ({ roll: face, hit: target !== null && face >= target })),
@@ -120,7 +123,7 @@ function rolledRow(roll: PublicRoll): BattleRowView {
 }
 
 const shipRows = (ships: ShipsOf, seat: string) =>
-  ships(seat).map((ship) => row({ unit: ship.unit, count: ship.count }));
+  ships(seat).map((ship) => row({ unit: ship.unit, label: ship.name, count: ship.count }));
 
 /**
  * The table of seats: the seat of the action first. A seat that fires has its guns; a seat that is
@@ -170,6 +173,7 @@ export function cannonTable(
   active: string,
   viewer: string,
   ships: ShipsOf = () => [],
+  printed: Catalog | null = null,
 ): BattleTableView | null {
   const fired = rolls.filter(
     (roll) => reasonOf(roll) === CANNON && roll.faces.length > 0 && roll.roller,
@@ -182,7 +186,7 @@ export function cannonTable(
     fired.map((roll) => ({
       seat: roll.roller!,
       target: targetOf(roll.roller!, roll.target, active),
-      rows: [rolledRow(roll)],
+      rows: [rolledRow(roll, printed)],
       hits: hits(roll),
     })),
     active,
@@ -206,6 +210,7 @@ export function cannonPreview(
   active: string,
   viewer: string,
   ships: ShipsOf,
+  printed: Catalog | null = null,
 ): BattleTableView | null {
   if (!guns.length) {
     return null;
@@ -223,7 +228,7 @@ export function cannonPreview(
       target: targetOf(gun.seat, gun.target, active),
       rows: [
         row({
-          ...gunName(gun.unit, gun.planet),
+          ...gunName(gun.unit, gun.planet, printed),
           count,
           target: gun.hits_on,
           targetTitle: `Hits on ${gun.hits_on}+`,

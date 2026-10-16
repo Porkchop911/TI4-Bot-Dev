@@ -10,7 +10,7 @@ import type {
   TileView,
   UnitType,
 } from "../../model";
-import { plural, unitName } from "../../model";
+import { plural } from "../../model";
 import {
   GOODS,
   type ProductionDraft,
@@ -21,9 +21,9 @@ import {
   sizes,
   totals,
 } from "../productionDraft";
-import type { BuildFact, ProductionFacts, SessionUpdate } from "../wire";
+import type { BuildFact, Catalog, ProductionFacts, SessionUpdate } from "../wire";
 import { systemLabel, tilesOf } from "./movement";
-import { isShip, unitType } from "./names";
+import { isShip, unitLabel, unitType } from "./names";
 
 export type Stage = "build" | "pay";
 
@@ -56,6 +56,8 @@ export function selectBuild(
   facts: ProductionFacts,
   draft: ProductionDraft,
   stage: Stage,
+  /** The printed names of the units. */
+  printed: Catalog | null = null,
 ): BuildSheetView {
   const tiles = tilesOf(update);
   const names = planetNames(update);
@@ -75,7 +77,7 @@ export function selectBuild(
   );
   const row = (fact: BuildFact, index: number): BuildUnitView => {
     const unit = typeOf(fact.unit);
-    const name = unitName(unit, 1);
+    const name = unitLabel(fact.unit, printed);
     const reason = blocked(facts, draft, index);
     return {
       id: `build-unit:${index}`,
@@ -127,7 +129,7 @@ export function selectBuild(
       builds: facts.units
         .flatMap((unit, index) => {
           const count = madeAt(index, place);
-          return count ? [`${count} ${unitName(typeOf(unit.unit), count)}`] : [];
+          return count ? [`${count} ${unitLabel(unit.unit, printed, count)}`] : [];
         })
         .join(", "),
     })),
@@ -204,9 +206,10 @@ export const selectProduction = (
   facts: ProductionFacts,
   draft: ProductionDraft,
   stage: Stage,
+  printed: Catalog | null = null,
 ): ProductionView => ({
   kind: "production",
-  sheet: selectBuild(update, facts, draft, stage),
+  sheet: selectBuild(update, facts, draft, stage, printed),
   skipped: null,
   title: "",
   subtitle: "",

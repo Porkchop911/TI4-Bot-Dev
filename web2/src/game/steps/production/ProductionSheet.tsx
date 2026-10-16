@@ -127,7 +127,10 @@ function UnitRow({ unit, inline }: { unit: BuildUnitView; inline: boolean }) {
           trigger={
             <>
               <Icon name={unit.unit} className="size-4 flex-none text-icon" />
-              <strong className="min-w-0 truncate font-mid underline decoration-dotted decoration-muted/60 underline-offset-4">
+              <strong
+                className="min-w-0 truncate font-mid underline decoration-dotted decoration-muted/60 underline-offset-4 phone:whitespace-normal"
+                title={unit.name}
+              >
                 {unit.name}
               </strong>
             </>

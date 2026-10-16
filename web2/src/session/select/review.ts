@@ -1,15 +1,11 @@
 // The entry of a draft that the game refused, as the row that marks it in its step: what it
 // names, by the board and the names of the units, and why it no longer fits.
 import type { ReviewView, UnitType } from "../../model";
-import { unitName } from "../../model";
 import { type Review, removable } from "../draft";
-import type { SessionUpdate, TacticalFacts } from "../wire";
+import type { Catalog, SessionUpdate, TacticalFacts } from "../wire";
 import { systemLabel, tilesOf } from "./movement";
-import { unitType } from "./names";
+import { unitLabel, unitType } from "./names";
 import { planetNames } from "./production";
-
-const nameOf = (unit: string, damaged = false) =>
-  unitName(unitType(unit) ?? "infantry", 1) + (damaged ? " (damaged)" : "");
 
 /** Why a ship of the movement no longer fits, from the facts of the movement. */
 function shipReason(
@@ -41,7 +37,11 @@ export function reviewRow(
   facts: TacticalFacts | null,
   review: Review,
   system: string | null,
+  /** The printed names of the units. */
+  printed: Catalog | null = null,
 ): ReviewView {
+  const nameOf = (unit: string, damaged = false) =>
+    unitLabel(unit, printed) + (damaged ? " (damaged)" : "");
   const tiles = tilesOf(update);
   const planets = planetNames(update);
   const planet = (id: string) => `Planet ${planets.get(id) ?? id}`;

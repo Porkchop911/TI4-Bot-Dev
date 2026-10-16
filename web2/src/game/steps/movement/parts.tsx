@@ -20,9 +20,12 @@ export function Arrival({ view }: { view: MovementView }) {
         <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-sm">
           {view.arrival.length ? (
             view.arrival.map((row) => (
-              <span key={row.unit} className="inline-flex items-center gap-1.5 whitespace-nowrap">
+              <span
+                key={`${row.unit}-${row.name ?? ""}`}
+                className="inline-flex items-center gap-1.5 whitespace-nowrap"
+              >
                 <Icon name={row.unit} className="size-4 text-icon" />
-                {unitName(row.unit, row.after)}
+                {row.name ?? unitName(row.unit, row.after)}
                 <strong className="font-mid tabular-nums">
                   {row.now === row.after ? row.after : `${row.now} → ${row.after}`}
                 </strong>

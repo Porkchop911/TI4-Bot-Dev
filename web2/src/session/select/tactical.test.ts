@@ -3,8 +3,9 @@ import activationUpdate from "../../../../fixtures/protocol/update-activation.js
 import loadUpdate from "../../../../fixtures/protocol/update-load.json";
 import movementUpdate from "../../../../fixtures/protocol/update-movement.json";
 import { setLoad, setShip } from "../movementDraft";
-import type { SessionUpdate, TacticalFacts } from "../wire";
+import type { Catalog, SessionUpdate, TacticalFacts } from "../wire";
 import type { LocalState } from "./action";
+import { selectMovement } from "./movement";
 import { selectShell } from "./shell";
 
 // Updates of a real game, written by the engine: the activation, the movement and the loading
@@ -33,6 +34,25 @@ const local = (change: Partial<LocalState> = {}): LocalState => ({
   draft: null,
   ...change,
 });
+/** The unit cards of the fixtures, as the catalogue prints them. */
+const printed = {
+  records: {
+    units: [
+      { id: "sol_carrier", base_type: "carrier", name: "Advanced Carrier I" },
+      { id: "carrier", base_type: "carrier", name: "Carrier I" },
+      { id: "cruiser", base_type: "cruiser", name: "Cruiser I" },
+      { id: "destroyer", base_type: "destroyer", name: "Destroyer I" },
+      { id: "dreadnought", base_type: "dreadnought", name: "Dreadnought I" },
+      { id: "l1z1x_dreadnought", base_type: "dreadnought", name: "Super Dreadnought I" },
+      { id: "fighter", base_type: "fighter", name: "Fighter I" },
+      { id: "infantry", base_type: "infantry", name: "Infantry I" },
+      { id: "sol_infantry", base_type: "infantry", name: "Spec Ops I" },
+      { id: "pds", base_type: "pds", name: "PDS I" },
+      { id: "spacedock", base_type: "spacedock", name: "Space Dock I" },
+    ],
+  },
+} as unknown as Catalog;
+
 const tactical = (update: SessionUpdate, state: LocalState) => {
   const { action } = selectShell(update, state);
   if (action.kind !== "tactical") {
@@ -149,11 +169,12 @@ it("shows the staged movement in the panel and on the board", () => {
   expect(view.tabs[1].caption).toBe("2 ships");
   expect(labels(movement, state)).toEqual(["Reset selection", "Move fleet"]);
   expect(content.origins[0].leaves).toBe("2 ships · 3 cargo");
+  // Without the catalogue a unit is named by its base unit.
   expect(content.arrival).toEqual([
-    { unit: "carrier", now: 0, after: 1 },
-    { unit: "destroyer", now: 0, after: 1 },
-    { unit: "fighter", now: 0, after: 1 },
-    { unit: "infantry", now: 0, after: 2 },
+    { unit: "carrier", name: "Carrier", now: 0, after: 1 },
+    { unit: "destroyer", name: "Destroyer", now: 0, after: 1 },
+    { unit: "fighter", name: "Fighter", now: 0, after: 1 },
+    { unit: "infantry", name: "Infantry", now: 0, after: 2 },
   ]);
   expect(content.gauges).toEqual([
     { label: "Fleet supply", used: 2, total: 3 },
@@ -289,4 +310,25 @@ it("says the move value of a kind in its heading, and of a ship where it differs
   expect(capped.facts).toEqual(["Move 2 → 1 · Nebula"]);
   // A ship that stays says nothing of a boost.
   expect(ships(changed, local())[0].units.map((unit) => unit.move)).toEqual([null, null]);
+});
+
+it("names every unit of the movement as its card prints it", () => {
+  const content = selectMovement(movement, facts, fleet, [], null, [], printed);
+  expect(content.arrival).toEqual([
+    { unit: "carrier", name: "Advanced Carrier I", now: 0, after: 1 },
+    { unit: "destroyer", name: "Destroyer I", now: 0, after: 1 },
+    { unit: "fighter", name: "Fighter I", now: 0, after: 1 },
+    { unit: "infantry", name: "Spec Ops I", now: 0, after: 2 },
+  ]);
+  const origin = content.origins[0];
+  expect(origin.ships.map((ship) => ship.name)).toContain("Advanced Carrier I");
+  expect(origin.cargo.map((cargo) => cargo.name)).toEqual(
+    expect.arrayContaining(["Spec Ops I", "Fighter I"]),
+  );
+  const carrier = origin.ships.find((ship) => ship.name === "Advanced Carrier I")!;
+  expect(carrier.units[0].hold!.slots.map((slot) => slot.name)).toEqual([
+    "Fighter I",
+    "Spec Ops I",
+    "Spec Ops I",
+  ]);
 });

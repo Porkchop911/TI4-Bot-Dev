@@ -2,12 +2,28 @@ import { expect, it } from "vitest";
 import landingUpdate from "../../../fixtures/protocol/update-landing.json";
 import { groundAsks } from "./groundOdds";
 import { selectLanding } from "./select/invasion";
-import type { GroundOddsResponse, InvasionFacts, InvasionOddsContext, SessionUpdate } from "./wire";
+import type {
+  Catalog,
+  GroundOddsResponse,
+  InvasionFacts,
+  InvasionOddsContext,
+  SessionUpdate,
+} from "./wire";
 
 // The landings of `update-landing` (seat a, Sol, at the free planet Saudor of 23), with Letnev's
 // ground forces and a PDS put on Saudor, and the context of the odds that the engine sends.
 const fixture = landingUpdate as unknown as SessionUpdate;
 const facts = fixture.tactical as InvasionFacts;
+
+/** The unit cards of the combat, as the catalogue prints them. It has no `letnev_infantry`. */
+const printed = {
+  records: {
+    units: [
+      { id: "sol_infantry", base_type: "infantry", name: "Spec Ops I" },
+      { id: "letnev_mech", base_type: "mech", name: "Dunlain Reaper" },
+    ],
+  },
+} as unknown as Catalog;
 
 function defended(context: Partial<InvasionOddsContext> = {}): SessionUpdate {
   const update = structuredClone(fixture);
@@ -87,7 +103,7 @@ it("shows the last answer, pending while the answer for new landings is on its w
   const [ask] = groundAsks(update, facts, { saudor: { 0: 1 } });
   const key = ask.kind === "ask" ? ask.ask.key : "";
   const odds = (draft: Record<number, number>, kept = {}) =>
-    selectLanding(update, facts, { saudor: draft }, null, null, kept).planets[0].odds;
+    selectLanding(update, facts, { saudor: draft }, null, null, kept, printed).planets[0].odds;
   expect(odds({ 0: 1 })).toEqual({
     defender: "c",
     win: null,
@@ -96,12 +112,13 @@ it("shows the last answer, pending while the answer for new landings is on its w
     rollouts: 0,
     pending: true,
     sides: [
-      { seat: "a", units: [{ unit: "infantry", expected: null, fielded: 1 }] },
+      { seat: "a", units: [{ unit: "infantry", name: "Spec Ops I", expected: null, fielded: 1 }] },
       {
         seat: "c",
         units: [
-          { unit: "mech", expected: null, fielded: 1 },
-          { unit: "infantry", expected: null, fielded: 2 },
+          { unit: "mech", name: "Dunlain Reaper", expected: null, fielded: 1 },
+          // A unit that the catalogue does not have is named by its base unit.
+          { unit: "infantry", name: "Infantry", expected: null, fielded: 2 },
         ],
       },
     ],
@@ -129,7 +146,9 @@ it("shows the last answer, pending while the answer for new landings is on its w
   // New landings: the numbers of the last answer, pending, with the units that fight now.
   const pending = odds({ 0: 2 }, answered);
   expect(pending).toMatchObject({ win: 35, pending: true });
-  expect(pending?.sides[0].units).toEqual([{ unit: "infantry", expected: "0.4", fielded: 2 }]);
+  expect(pending?.sides[0].units).toEqual([
+    { unit: "infantry", name: "Spec Ops I", expected: "0.4", fielded: 2 },
+  ]);
   // The engine had no odds for these sides.
   expect(odds({ 0: 1 }, { saudor: { key, response: null } })).toBeNull();
   // Nothing lands: no odds.
@@ -140,9 +159,15 @@ it("has the first round of the ground combat, with the odds in the headers", () 
   const update = defended();
   const [ask] = groundAsks(update, facts, { saudor: { 0: 2 } });
   const key = ask.kind === "ask" ? ask.ask.key : "";
-  const odds = selectLanding(update, facts, { saudor: { 0: 2 } }, null, null, {
-    saudor: { key, response: answer(2) },
-  }).planets[0].odds;
+  const odds = selectLanding(
+    update,
+    facts,
+    { saudor: { 0: 2 } },
+    null,
+    null,
+    { saudor: { key, response: answer(2) } },
+    printed,
+  ).planets[0].odds;
   const preview = odds?.preview;
   expect(preview?.table.label).toMatch(/· Ground combat · Round 1$/);
   expect(preview?.table.sides.map((side) => [side.seat, side.role])).toEqual([
@@ -151,13 +176,20 @@ it("has the first round of the ground combat, with the odds in the headers", () 
   ]);
   expect(
     preview?.table.sides.map((side) =>
-      side.rows.map(({ unit, count, target, dice, hits }) => ({ unit, count, target, dice, hits })),
+      side.rows.map(({ unit, label, count, target, dice, hits }) => ({
+        unit,
+        label,
+        count,
+        target,
+        dice,
+        hits,
+      })),
     ),
   ).toEqual([
-    [{ unit: "infantry", count: 2, target: 7, dice: 2, hits: "≈0.8" }],
+    [{ unit: "infantry", label: "Spec Ops I", count: 2, target: 7, dice: 2, hits: "≈0.8" }],
     [
-      { unit: "mech", count: 1, target: 6, dice: 1, hits: "≈0.5" },
-      { unit: "infantry", count: 2, target: 8, dice: 2, hits: "≈0.6" },
+      { unit: "mech", label: "Dunlain Reaper", count: 1, target: 6, dice: 1, hits: "≈0.5" },
+      { unit: "infantry", label: "Infantry", count: 2, target: 8, dice: 2, hits: "≈0.6" },
     ],
   ]);
   expect(preview?.odds).toMatchObject({

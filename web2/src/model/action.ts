@@ -141,6 +141,8 @@ export interface CombatOddsView {
     seat: SeatId;
     units: {
       unit: UnitType;
+      /** The printed name of the unit ("Fighter II"). Without it the unit is named by its kind. */
+      name?: string;
       /** The units that are expected to survive, with one decimal ("1.8"). Null before the first answer. */
       expected: string | null;
       /** The units that fight. */
@@ -338,12 +340,13 @@ export interface MovementView {
     rows: { unit: UnitType; name: string; text: string; system: SystemId }[];
   } | null;
   /** The fleet of the player in the active system, before and after the staged movement. */
-  arrival: { unit: UnitType; now: number; after: number }[];
+  arrival: { unit: UnitType; name?: string; now: number; after: number }[];
   gauges: GaugeView[];
   excessShips: number;
   riftRolls: number;
   rift: RiftRowView[] | null;
-  removed: UnitType[];
+  /** The names of the units that a rift destroyed: "Carrier II", "Infantry I". */
+  removed: string[];
   /** What the space cannon offense rolled, else the guns that will roll, without dice. */
   cannon: BattleTableView | null;
   /** The space combat that the staged ships start. Null when no other seat has ships there, or no ship moves. */

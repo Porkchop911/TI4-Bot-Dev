@@ -1,5 +1,5 @@
 import type { MovementView } from "../../model";
-import { plural, unitName } from "../../model";
+import { plural } from "../../model";
 import { Card, Die, Hint, Icon, InlineNote, ListRow, Pill, SectionTitle, cx } from "../../ui";
 import { BattleTable } from "../combat/BattleTable";
 import { useLink } from "../link";
@@ -85,9 +85,7 @@ export function MovementStep({ view }: { view: MovementView }) {
         </>
       )}
       {view.removed.length > 0 && (
-        <InlineNote>
-          Removed after movement: {view.removed.map((unit) => unitName(unit)).join(", ")}.
-        </InlineNote>
+        <InlineNote>Removed after movement: {view.removed.join(", ")}.</InlineNote>
       )}
       {view.cannon && (
         <>

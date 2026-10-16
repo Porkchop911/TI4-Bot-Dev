@@ -14,6 +14,7 @@ import type { KeptOdds } from "../movementOdds";
 import type { ProductionDraft } from "../productionDraft";
 import type {
   BoardTileView,
+  Catalog,
   ExplorationCatalog,
   InvasionFacts,
   MovementFacts,
@@ -114,11 +115,15 @@ function inspector(
   system: SystemView | undefined,
   viewer: string | null,
   traits: Traits,
+  printed: Catalog | null = null,
 ): InspectorView {
   const ships = shipsIn(system);
   const space: InspectorRowView[] = seatsOf(ships).map((seat) => ({
     seat,
-    force: force(ships.filter((unit) => unit.owner === seat)),
+    force: force(
+      ships.filter((unit) => unit.owner === seat),
+      printed,
+    ),
   }));
   const planets = (tile.planets ?? []).map((planet): InspectorRowView => {
     const units = onPlanet(system, planet.id);
@@ -130,7 +135,7 @@ function inspector(
         owner: system?.planets[planet.id]?.controlled_by ?? null,
         traits: traits(planet),
       },
-      force: force(units),
+      force: force(units, printed),
       notes: system?.planets[planet.id]?.exhausted ? [{ text: "Exhausted", tone: "muted" }] : [],
     };
   });
@@ -225,6 +230,8 @@ export function selectBoard(
   } | null = null,
   /** The viewer can start a tactical action now: a system in the inspector can be activated. */
   activates = false,
+  /** The printed names of the units. Without it a unit is named by its base unit. */
+  printed: Catalog | null = null,
 ): BoardView {
   const traits = planetTraits(update, catalog);
   const viewer = viewerSeat(update);
@@ -242,15 +249,29 @@ export function selectBoard(
       movement.draft,
       open?.system_id ?? null,
       movement.handled,
+      printed,
     );
   // A sheet of a task at a system has what is in it, as the inspector has.
   const details = (tile: BoardTileView) => {
-    const { facts, notes, rows } = inspector(tile, board.systems[tile.system_id], viewer, traits);
+    const { facts, notes, rows } = inspector(
+      tile,
+      board.systems[tile.system_id],
+      viewer,
+      traits,
+      printed,
+    );
     return { facts, notes, rows };
   };
   const fleet =
     movement &&
-    selectOrigin(update, movement.facts, movement.draft, open?.system_id ?? null, movement.handled);
+    selectOrigin(
+      update,
+      movement.facts,
+      movement.draft,
+      open?.system_id ?? null,
+      movement.handled,
+      printed,
+    );
   const origin = fleet && open ? { ...fleet, details: details(open) } : fleet;
   const tiles = map.map((tile) => tileView(tile, board.systems[tile.system_id], viewer, traits));
   // The landings with their controls take the place of the inspector of the active system.
@@ -263,13 +284,14 @@ export function selectBoard(
           landing.chosen,
           catalog,
           landing.odds ?? {},
+          printed,
         )
       : null;
   // The build with its controls takes the place of the inspector too, while it is chosen.
   const build =
     production && production.stage === "build" && open?.system_id === production.facts.system
       ? {
-          ...selectBuild(update, production.facts, production.draft, "build"),
+          ...selectBuild(update, production.facts, production.draft, "build", printed),
           details: details(open),
         }
       : null;
@@ -311,7 +333,7 @@ export function selectBoard(
     inspector:
       open && !origin && !sheet && !build
         ? {
-            ...inspector(open, board.systems[open.system_id], viewer, traits),
+            ...inspector(open, board.systems[open.system_id], viewer, traits, printed),
             // The command token of the viewer is here: the inspector says it, with no button.
             activate: !activates
               ? null
@@ -325,6 +347,7 @@ export function selectBoard(
                     movement.facts,
                     movement.draft,
                     movement.odds ?? null,
+                    printed,
                   ),
                 }
               : {}),

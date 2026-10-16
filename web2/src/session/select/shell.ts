@@ -165,6 +165,7 @@ export function selectShell(
       production,
       !local.draft &&
         !!openChoice(update, local)?.options.some((option) => option.id === "tactical"),
+      printed,
     ),
     action: withBack(
       local.draft?.waiting || local.follow?.waiting ? waitingFor(action) : action,
