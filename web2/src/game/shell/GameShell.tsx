@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { shortcuts, type ExplorationDeck, type GameSession, type Intent } from "../../model";
 import { Badge, Button, Dialog, Drawer, InlineNote, Toast, usePhone } from "../../ui";
-import { ActionFooter, ActionPanel, Interrupt, footerOf } from "../action/ActionPanel";
+import { ActionFooter, ActionPanel, footerOf } from "../action/ActionPanel";
+import { StepSheet } from "../action/StepSheet";
 import { Board } from "../board/Board";
 import { GameProvider } from "../context";
 import { LinkProvider } from "../link";
+import { LogPanel } from "../log/LogPanel";
 import { PlayerTable } from "../players/PlayerTable";
 import { ReferenceDrawer } from "./Reference";
 import { ShellFrame } from "./ShellFrame";
@@ -17,7 +19,7 @@ const ACCENT = {
   done: "var(--color-green)",
 };
 
-type Pane = "map" | "players" | "action";
+type Pane = "map" | "players" | "log";
 
 /**
  * The intents that ask the game what follows from a choice of the viewer: an answer is sent, a
@@ -49,8 +51,8 @@ const asksTheGame = (intent: Intent): boolean => {
 /**
  * The game screen: one toolbar, then the board and the right column (player table, action panel).
  * The right column has one fixed width. The design target is 1920×1080 or larger; see AGENTS.md.
- * A portrait phone shows the same three parts one at a time, with the footer of the action under
- * each of them.
+ * A portrait phone shows the map, the players and the log one at a time, with the open step as a
+ * sheet over the board and the footer of the action under each of them.
  * It needs a `GameSession` and nothing else. State that only changes what is in view lives here.
  */
 export function GameShell({
@@ -100,26 +102,20 @@ export function GameShell({
     setDrawer((now) => (now === id ? null : id));
   };
   const phone = usePhone();
-  // The pane where the open choice is made: the board, the player table, or the action.
+  // The pane where the open choice is made: a seat is picked in the player table, every other
+  // choice is made on the map, where the open step is a sheet over the board.
   const asked: Pane | null = view.players.pick
     ? "players"
-    : view.board.task?.interactive ||
-        view.board.targeting ||
-        view.board.blocks ||
-        // A window (a reaction, an ability in the middle of an action) is about the board: a
-        // phone has it on the map, where its system is marked.
-        (view.asked && view.action.interrupt)
+    : view.board.task?.interactive || view.board.targeting || view.board.blocks || view.asked
       ? "map"
-      : view.asked
-        ? "action"
-        : null;
+      : null;
   const lastChoice = useRef(asked);
   // A sent answer is not a step: the pane of the choice is the one before, until the game answers.
   const choiceOn = view.answered && acted.current ? lastChoice.current : asked;
   // The game opens on the pane of its choice. After that the pane changes with a tap on a tab, and
   // when a choice of the viewer opens the next step of the viewer in another pane. Anything else
   // (another player, a bot, a window that opens) only marks the tab of the choice.
-  const [pane, setPane] = useState<Pane>(() => choiceOn ?? "action");
+  const [pane, setPane] = useState<Pane>(() => choiceOn ?? "map");
   const lastReply = useRef(view.reply);
   // Before the paint: the next step is never shown in the pane that the viewer leaves.
   useLayoutEffect(() => {
@@ -237,24 +233,12 @@ export function GameShell({
       onOpenSeat={(seat) => toggleDrawer(`player:${seat}`)}
     />
   );
-  // The window of the open action is a sheet on the map of a phone, under the heading of the
-  // action that it is on top of.
-  const interrupt = view.asked ? view.action.interrupt : null;
+  // A phone has the open step as a sheet over the board. An open fleet, the open landings and the
+  // open build of a production have its room; their check mark gives it back.
+  const boardSheet = view.board.origin || view.board.landing || view.board.production;
   const board = (
     <Board view={view.board}>
-      {interrupt && (
-        <div className="absolute inset-x-0 bottom-0 z-2 max-h-[50%] overflow-auto border-t border-line bg-surface">
-          <p className="flex min-w-0 items-baseline gap-x-2 px-3 pt-2">
-            <strong className="truncate text-base font-semibold">
-              {view.action.kind === "tactical" ? view.action.task.title : view.action.heading}
-            </strong>
-            {view.action.context && (
-              <span className="min-w-0 truncate text-sm text-muted">{view.action.context}</span>
-            )}
-          </p>
-          <Interrupt view={interrupt} className="border-b-0 bg-transparent" />
-        </div>
-      )}
+      {!boardSheet && <StepSheet view={view.action} status={view.toolbar.status} />}
     </Board>
   );
 
@@ -284,13 +268,7 @@ export function GameShell({
           panes={[
             { id: "map", label: "Map", content: board },
             { id: "players", label: "Players", content: players, scrolls: true },
-            {
-              id: "action",
-              label: "Action",
-              content: (
-                <ActionPanel view={view.action} status={view.toolbar.status} footer={false} />
-              ),
-            },
+            { id: "log", label: "Log", content: <LogPanel />, scrolls: true },
           ]}
           pane={pane}
           onPane={(id) => setPane(id as Pane)}
@@ -299,10 +277,7 @@ export function GameShell({
           footer={
             // An open fleet has the room of the footer, and so have the open landings and the
             // open build of a production. The check mark of the sheet gives the footer back.
-            !(
-              pane === "map" &&
-              (view.board.origin || view.board.landing || view.board.production)
-            ) && <ActionFooter view={footerOf(view.action)} />
+            !(pane === "map" && boardSheet) && <ActionFooter view={footerOf(view.action)} />
           }
         >
           <Dialog

@@ -182,9 +182,8 @@ export interface BoardView {
   production: BuildSheetView | null;
   /**
    * The blocks of an open decision that is made on the map (a payment, the system and the
-   * planets of Diplomacy or Construction, the command pools): a phone shows them under the map,
-   * the group "Choice on the map", so that the whole choice is in one pane. Desktop has them in
-   * the action panel next to the map.
+   * planets of Diplomacy or Construction, the command pools). The action panel has them; the
+   * board only knows that the choice is on the map.
    */
   blocks?: BlockView[];
   /** The systems of the open task, for "Fit task". */

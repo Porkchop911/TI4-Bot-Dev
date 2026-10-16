@@ -3,7 +3,6 @@ import type { BoardView, InspectorView } from "../../model";
 import { Button, CloseButton, Hint, Icon, Segmented, cx, usePhone, type IconName } from "../../ui";
 import { useDispatch } from "../context";
 import { SpaceOdds } from "../combat/SpaceOdds";
-import { Blocks } from "../flows/Blocks";
 import { GalaxyMap, type MapViewId } from "./GalaxyMap";
 import { LandingSheet } from "../steps/invasion/LandingSheet";
 import { ProductionSheet } from "../steps/production/ProductionSheet";
@@ -192,25 +191,14 @@ export function Board({ view, children }: { view: BoardView; children?: ReactNod
       >
         <GalaxyMap view={view} mapView={mapView} svgRef={svg} />
       </div>
-      {/* On a phone the choice under the map is the sheet of the task at its chosen system (the
-          planets of Construction): the inspector of that system would cover it. */}
+      {/* On a phone the step sheet over the map has the choice at its chosen system (the planets of
+          Construction): the inspector of that system would cover it. */}
       {view.inspector && !(phone && view.blocks && view.task?.chosen[view.inspector.system]) && (
         <SystemInspector view={view.inspector} />
       )}
       {view.origin && <OriginSheet key={view.origin.system} view={view.origin} />}
       {view.landing && <LandingSheet view={view.landing} />}
       {view.production && <ProductionSheet view={view.production} />}
-      {/* A phone has a choice that is made on the map (a payment, a system, planets, pools) in one
-          pane with it, under the map so that the board stays in view. */}
-      {phone && view.blocks && (
-        <div
-          role="group"
-          aria-label="Choice on the map"
-          className="relative z-2 flex max-h-[55%] flex-none flex-col gap-2 overflow-auto border-t border-line bg-surface p-2"
-        >
-          <Blocks blocks={view.blocks} />
-        </div>
-      )}
       {children}
     </section>
   );
