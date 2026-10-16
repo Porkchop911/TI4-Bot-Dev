@@ -182,11 +182,11 @@ test.describe("flows", () => {
   });
 
   test("rule text opens on hover and stays on click", async ({ page }) => {
-    await page.goto("/?example=live-strategy-5");
-    const hint = page.getByRole("button", { name: "Rules: Trade" });
+    await page.goto("/?example=live-strategy-6");
+    const hint = page.getByRole("button", { name: "Rules: Warfare" });
     await expect(page.getByRole("note")).toHaveCount(0);
     await hint.hover();
-    await expect(page.getByRole("note")).toContainText("Gain 3 trade goods");
+    await expect(page.getByRole("note")).toContainText("Remove 1 of your command tokens");
     await hint.click();
     await page.mouse.move(10, 10);
     await expect(page.getByRole("note")).toBeVisible();
@@ -278,19 +278,6 @@ test.describe("flows", () => {
       expect(overflow, "the step content needs vertical scroll").toBeLessThanOrEqual(0);
     };
 
-    test("Trade: players in the player table", async ({ page }) => {
-      await start(page, "live-strategy-5");
-      await page.getByRole("button", { name: /^Choose Alex/ }).click();
-      await page.getByRole("button", { name: /^Choose Casey/ }).click();
-      await expect(
-        page.getByRole("button", { name: /^Choose Bartholomew.*Commodities full/ }),
-      ).toBeDisabled();
-      await expect(panel(page)).toContainText("2 chosen");
-      await shot(page, "web2/flow/strategy-trade");
-      await page.keyboard.press("Enter");
-      await expect(panel(page)).toContainText("chose Alex and Casey for a free replenish");
-    });
-
     test("Warfare: token on the board, pools as counters", async ({ page }) => {
       await start(page, "live-strategy-6");
       await page
@@ -347,9 +334,9 @@ test.describe("flows", () => {
     });
 
     test("one list shows what every player did", async ({ page }) => {
-      await start(page, "live-strategy-5");
+      await start(page, "live-strategy-8");
       await page.keyboard.press("Enter");
-      await expect(panel(page)).toContainText("Jamie gained 3 trade goods");
+      await expect(panel(page)).toContainText("Jamie scored no objective");
       for (let seat = 0; seat < 3; seat++) {
         await page.getByRole("button", { name: /Simulate/ }).click();
       }
@@ -357,15 +344,6 @@ test.describe("flows", () => {
       await expect(panel(page)).toContainText("Waits for");
       await fits(page);
       await shot(page, "web2/flow/strategy-seat-list");
-    });
-
-    test("a secondary without a choice: Follow or Pass by key", async ({ page }) => {
-      await start(page, "live-secondary-5");
-      await page.keyboard.press("1");
-      await expect(panel(page)).toContainText("Free · chosen by Alex");
-      await shot(page, "web2/flow/strategy-trade-secondary");
-      await page.keyboard.press("Enter");
-      await expect(panel(page)).toContainText("Follow: replenished commodities");
     });
   });
 

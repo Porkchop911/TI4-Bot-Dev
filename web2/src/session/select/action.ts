@@ -33,6 +33,7 @@ import { type PurchaseDraft, selectPurchase } from "./purchase";
 import { type ReadyDraft, selectReady } from "./ready";
 import { type AgendaDraft, selectAgendaDeck } from "./agendaDeck";
 import { type StructureDraft, selectStructures } from "./structures";
+import { type ReplenishDraft, selectReplenish } from "./replenish";
 import { selectResearch } from "./research";
 import { type Pools, selectTokens } from "./tokens";
 import { type TurnMenu, isTurnMenu, selectTurn } from "./turn";
@@ -102,6 +103,8 @@ export interface LocalState {
   agendas?: AgendaDraft | null;
   /** The staged structures of a placement of structures, with its ability. Null: nothing staged. */
   structures?: StructureDraft | null;
+  /** The staged seats of a replenish of commodities, or the answer of its window. Null: nothing staged. */
+  replenish?: ReplenishDraft | null;
   /** The nonce of the choice that was answered. Its update is still the latest one. */
   sent: string | null;
   /** Why the game stopped, if it did. */
@@ -235,17 +238,6 @@ export function seatsOf(choice: Choice | null): Record<string, string> | null {
   return named.length ? Object.fromEntries(named) : null;
 }
 
-/** What an option changes, in game values, when the engine says it. */
-function effectOf(choice: Choice, option: ChoiceOption): string | undefined {
-  const commodities = choice.details?.commodities as
-    | Record<string, { have: number; max: number }>
-    | undefined;
-  const mine = commodities?.[option.id];
-  return mine && typeof mine.have === "number" && typeof mine.max === "number"
-    ? `Commodities ${mine.have} → ${mine.max}`
-    : undefined;
-}
-
 /** A choice of systems or planets is also made on the board. */
 export function boardTask(update: SessionUpdate, local: LocalState): BoardTaskView | null {
   const choice = openChoice(update, local);
@@ -321,6 +313,14 @@ export function boardTask(update: SessionUpdate, local: LocalState): BoardTaskVi
 /** The player table is the choice: every option but a decline is a seat. */
 export function seatTask(update: SessionUpdate, local: LocalState): PlayerPickView | null {
   const choice = openChoice(update, local);
+  // The seats that replenish commodities are several, chosen in the player table.
+  const replenishing =
+    choice && !local.draft && !local.follow?.editing
+      ? selectReplenish(update, choice, local.replenish ?? null)
+      : null;
+  if (replenishing) {
+    return replenishing.pick;
+  }
   const seats = seatsOf(choice);
   if (!choice || !seats) {
     return null;
@@ -328,15 +328,7 @@ export function seatTask(update: SessionUpdate, local: LocalState): PlayerPickVi
   const chosen = local.staged ? seats[local.staged] : undefined;
   return {
     verb: "Choose",
-    seats: Object.fromEntries(
-      Object.entries(seats).map(([option, seat]) => {
-        const effect = effectOf(
-          choice,
-          choice.options.find((item) => item.id === option)!,
-        );
-        return [seat, { reason: null, ...(effect ? { note: effect } : {}) }];
-      }),
-    ),
+    seats: Object.fromEntries(Object.values(seats).map((seat) => [seat, { reason: null }])),
     chosen: chosen ? [chosen] : [],
   };
 }
@@ -424,8 +416,13 @@ export function selectAction(
     choice && !window && !recording
       ? selectStructures(update, choice, local.structures ?? null)
       : null;
+  // A replenish of commodities: the seats in the player table, or the window, answered at once.
+  const replenish =
+    choice && !window && !recording
+      ? selectReplenish(update, choice, local.replenish ?? null, printed)
+      : null;
   /** A screen of several questions that is sent at once. */
-  const several = purchase ?? ready ?? deck ?? structures;
+  const several = purchase ?? ready ?? deck ?? structures ?? replenish;
   const tiles = new Map((update.view.board.map_tiles ?? []).map((tile) => [tile.system_id, tile]));
   const planetOf = (id: string) =>
     (update.view.board.map_tiles ?? [])
@@ -438,7 +435,6 @@ export function selectAction(
   const rows: MenuRowView[] = listed.map((option, index) => ({
     key: KEYS[index] ?? "",
     title: sentence(option.label || option.id),
-    state: choice ? effectOf(choice, option) : undefined,
     selected: option.id === staged?.id,
     disabled: false,
     intent: { type: "chooseOption", option: option.id },
@@ -509,7 +505,7 @@ export function selectAction(
                 title: [{ seat }, ` ${seatLabel(update, seat, printed)}`],
                 subtitle: speaker
                   ? `Speaker: ${seatLabel(update, update.view.speaker, printed)} → ${seatLabel(update, seat, printed)}`
-                  : effectOf(choice, staged!),
+                  : undefined,
                 control: selected,
               },
             ]

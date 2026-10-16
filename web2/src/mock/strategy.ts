@@ -6,7 +6,6 @@ import type {
   BoardTaskView,
   Intent,
   MenuRowView,
-  PlayerPickView,
   RowView,
   TechCellView,
   TechColor,
@@ -27,11 +26,6 @@ export const STRATEGY_TEXT: Record<number, { primary: string; secondary: string 
     primary: "Gain 3 command tokens. Then buy any number of tokens for 3 influence each.",
     secondary:
       "Buy command tokens. Each other player may buy tokens for 3 influence each. No strategy token is spent.",
-  },
-  5: {
-    primary:
-      "Gain 3 trade goods. Replenish commodities. Choose any number of other players. Those players use the secondary ability of this card without spending a command token.",
-    secondary: "Spend 1 token from your strategy pool to replenish your commodities.",
   },
   6: {
     primary:
@@ -145,18 +139,13 @@ const change = (part: string): RowView["control"] => ({
   button: button({ type: "clearPart", part }, "Change"),
 });
 
-/** What a secondary costs: a token of the strategy pool, or nothing when the active player gave it. */
-function tokenCost(flow: any): string {
-  if (flow.free?.includes("sol")) {
-    return `Free · chosen by ${SEATS[flow.owner].name}`;
-  }
-  return `Strategy pool ${ME.tokens[2]} → ${ME.tokens[2] - 1}`;
-}
+/** What a secondary costs: a token of the strategy pool. */
+const tokenCost = () => `Strategy pool ${ME.tokens[2]} → ${ME.tokens[2] - 1}`;
 
 /** A secondary with no choice: follow or pass, as a list. */
 function followMenu(flow: any, title: string, effect: string): BlockView {
   const mine = flow.mine;
-  const blocked = !ME.tokens[2] && !flow.free?.includes("sol");
+  const blocked = !ME.tokens[2];
   const row = (key: string, option: string, name: string, state?: string): MenuRowView => ({
     key,
     title: name,
@@ -168,7 +157,7 @@ function followMenu(flow: any, title: string, effect: string): BlockView {
   return {
     kind: "menu",
     rows: [
-      row("1", "follow", title, blocked ? "No strategy token" : `${effect} · ${tokenCost(flow)}`),
+      row("1", "follow", title, blocked ? "No strategy token" : `${effect} · ${tokenCost()}`),
       row("2", "pass", "Pass"),
     ],
   };
@@ -186,7 +175,6 @@ export interface Editor {
   main?: string;
   cost: { amount: number; key: "res" | "inf" } | null;
   task: BoardTaskView | null;
-  pick: PlayerPickView | null;
   /** What the sent choice did, in game values. */
   result: string;
 }
@@ -198,81 +186,11 @@ const base = (): Editor => ({
   staged: false,
   cost: null,
   task: null,
-  pick: null,
   result: "",
 });
 
 const followed = (primary: boolean, text: string) =>
   primary ? `Jamie ${text}.` : `Followed · ${text}`;
-
-// ---- 5 Trade -------------------------------------------------------------------------------------
-
-function trade(state: State, primary: boolean, seats: string[]): Editor {
-  const flow = state.flow;
-  const mine = flow.mine;
-  const comm = (seat: string) => `Commodities ${SEATS[seat].comm[0]} → ${SEATS[seat].comm[1]}`;
-  if (!primary) {
-    return {
-      ...base(),
-      blocks: [followMenu(flow, "Replenish commodities", comm("sol"))],
-      problem: mine.follow === null ? "Choose Follow or Pass." : "",
-      pass: mine.follow === false,
-      staged: mine.follow !== null,
-      result: mine.follow ? "Followed · replenished commodities" : "Passed",
-    };
-  }
-  return {
-    ...base(),
-    blocks: [
-      {
-        kind: "card",
-        title: "Trade",
-        rows: [
-          {
-            title: ["Gain 3 trade goods"],
-            subtitle: `Trade goods ${ME.tg} → ${ME.tg + 3}`,
-          },
-          { title: ["Replenish commodities"], subtitle: comm("sol") },
-        ],
-      },
-      {
-        kind: "card",
-        title: "Free replenish",
-        aside: `${mine.seats.length} chosen · choose in the player table`,
-        rows: mine.seats.length
-          ? mine.seats.map((seat: string) => ({
-              title: [{ seat }, ` ${SEATS[seat].name}`],
-              subtitle: `${comm(seat)} · no strategy token`,
-              control: change(`seat:${seat}`),
-            }))
-          : [{ title: ["No player chosen"] }],
-      },
-    ],
-    staged: mine.seats.length > 0,
-    pick: {
-      verb: "Choose",
-      seats: Object.fromEntries(
-        seats.map((seat) => {
-          const full = SEATS[seat].comm[0] >= SEATS[seat].comm[1];
-          const gain = SEATS[seat].comm[1] - SEATS[seat].comm[0];
-          return [
-            seat,
-            {
-              reason: seat === "sol" ? "You" : full ? "Commodities full" : null,
-              note: `+${plural(gain, "commodity", "commodities")}`,
-            },
-          ];
-        }),
-      ),
-      chosen: mine.seats,
-    },
-    result: `Jamie gained 3 trade goods, replenished commodities and chose ${
-      mine.seats.length
-        ? `${names(mine.seats.map((seat: string) => SEATS[seat].name))} for a free replenish`
-        : "no player"
-    }.`,
-  };
-}
 
 // ---- 6 Warfare -----------------------------------------------------------------------------------
 
@@ -300,7 +218,7 @@ function warfare(state: State, primary: boolean): Editor {
         {
           kind: "card",
           title: "Produce",
-          aside: `${plural(units, "unit")} · ${plural(cost, "resource")} · ${tokenCost(flow)}`,
+          aside: `${plural(units, "unit")} · ${plural(cost, "resource")} · ${tokenCost()}`,
           bad: units > PRODUCTION,
           rows: PRODUCE.map((type) => ({
             title: [E.unitName(type, 2)],
@@ -459,9 +377,7 @@ function technology(state: State, primary: boolean): Editor {
           (id, index) =>
             `${TECH_BY_ID[id].name} · ${price[index].replace("Optional · ", "").toLowerCase()}`,
         ),
-        aside: primary
-          ? `${chosen.length} / 2 chosen · the second costs 6 resources`
-          : tokenCost(flow),
+        aside: primary ? `${chosen.length} / 2 chosen · the second costs 6 resources` : tokenCost(),
         columns: TECH_COLORS.map(([color, name]) => ({
           color,
           label: `${name} ${have(color, []) - (SKIPS[color] ? 1 : 0)}${SKIPS[color] ? ` · +1 ${SKIPS[color]}` : ""}`,
@@ -547,11 +463,9 @@ function imperial(state: State, primary: boolean): Editor {
 // ---- The frame -----------------------------------------------------------------------------------
 
 /** The editor of the half of the card that the viewer resolves: the primary, or their secondary. */
-export function strategyEditor(state: State, seats: string[]): Editor {
+export function strategyEditor(state: State): Editor {
   const primary = state.flow.owner === "sol";
   switch (state.flow.number ?? 1) {
-    case 5:
-      return trade(state, primary, seats);
     case 6:
       return warfare(state, primary);
     case 7:
@@ -583,8 +497,6 @@ function clearLast(mine: any, number: number): boolean {
     mine.techs.pop();
   } else if (mine.objective) {
     mine.objective = null;
-  } else if (mine.seats.length) {
-    mine.seats.pop();
   } else if (mine.system) {
     mine.system = null;
   } else if (mine.follow !== null) {
@@ -595,23 +507,15 @@ function clearLast(mine: any, number: number): boolean {
   return true;
 }
 
-const toggle = (list: string[], id: string, max = Infinity) => {
-  if (list.includes(id)) {
-    list.splice(list.indexOf(id), 1);
-  } else if (list.length < max) {
-    list.push(id);
-  }
-};
-
 /**
  * A choice of the viewer in the open half of a strategy card. Each intent goes to the part that
- * the board or the player table serves now. Returns false when the intent is not for this card.
+ * the board serves now. Returns false when the intent is not for this card.
  */
-export function strategyIntent(state: State, seats: string[], intent: Intent): boolean {
+export function strategyIntent(state: State, intent: Intent): boolean {
   const flow = state.flow;
   const mine = flow.mine;
   const number = flow.number ?? 1;
-  const editor = strategyEditor(state, seats);
+  const editor = strategyEditor(state);
   switch (intent.type) {
     case "toggleSystem":
       if (editor.task?.target !== "system" || !(intent.system in editor.task.values)) {
@@ -628,14 +532,6 @@ export function strategyIntent(state: State, seats: string[], intent: Intent): b
         mine.pay[intent.planet] = !mine.pay[intent.planet];
       }
       state.reveal = `pl:${intent.planet}`;
-      return true;
-    case "pickSeat":
-      if (editor.pick?.seats[intent.seat]?.reason !== null) {
-        return true;
-      }
-      if (number === 5) {
-        toggle(mine.seats, intent.seat);
-      }
       return true;
     case "chooseOption": {
       const [group] = (intent.group ?? "").split(":");
@@ -665,7 +561,7 @@ export function strategyIntent(state: State, seats: string[], intent: Intent): b
           mine.techs.push(intent.tech);
         }
       }
-      if (!strategyEditor(state, seats).cost?.amount) {
+      if (!strategyEditor(state).cost?.amount) {
         mine.pay = {};
       }
       return true;
@@ -674,12 +570,10 @@ export function strategyIntent(state: State, seats: string[], intent: Intent): b
       const [part, id] = intent.part.split(":");
       if (part === "system") {
         mine.system = null;
-      } else if (part === "seat" && id) {
-        toggle(mine.seats, id);
       } else if (part === "tech") {
         mine.techs.splice(+id);
       }
-      if (!strategyEditor(state, seats).cost?.amount) {
+      if (!strategyEditor(state).cost?.amount) {
         mine.pay = {};
       }
       return true;

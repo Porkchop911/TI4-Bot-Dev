@@ -2294,9 +2294,20 @@ fn trade_primary(
     table: &mut Table,
     player: &PlayerId,
 ) -> Result<(), IllegalChoice> {
+    let before = state
+        .player(player)
+        .map_or((0, 0), |seat| (seat.trade_goods, seat.commodities));
     // No timing handle here: the gain is staged and announced by `supply::flush_staged_events`.
     crate::supply::gain_trade_goods_staged(state, player, 3, "trade_primary");
     replenish(state, content, player);
+    let after = state
+        .player(player)
+        .map_or((0, 0), |seat| (seat.trade_goods, seat.commodities));
+    // Display only: what the primary already gave its own seat, before it chooses the others.
+    let own = serde_json::json!({
+        "trade_goods": { "before": before.0, "after": after.0 },
+        "commodities": { "before": before.1, "after": after.1 },
+    });
     let mut remaining: Vec<PlayerId> = state
         .seating_order
         .iter()
@@ -2343,6 +2354,7 @@ fn trade_primary(
         )
         .detailed("seats", seat_map(&named))
         .detailed("commodities", commodity_map(state, content, &named))
+        .detailed("own", own.clone())
         .contextualized(DecisionContext::new(
             player.clone(),
             DecisionSource::StrategyCard {
@@ -3541,6 +3553,35 @@ mod tests {
             seat.commodities,
             commodity_limit(&state, ContentStore::embedded(), &PlayerId::new("a"))
         );
+    }
+
+    /// The question of the other seats says what the primary already gave its own seat, and each
+    /// later question says it again.
+    #[test]
+    fn trade_tells_its_own_gain_with_the_choice_of_the_others() {
+        let content = ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let mut state = seated_game(&[("a", "sol"), ("b", "hacan"), ("c", "letnev")], POK);
+        let seat = state.player_mut(&player).unwrap();
+        seat.trade_goods = 2;
+        seat.commodities = 1;
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut table = Table::with_default(Box::new(FirstOptionCapturing { seen: seen.clone() }));
+
+        trade_primary(&mut state, content, POK, None, &mut table, &player).unwrap();
+
+        let limit = commodity_limit(&state, content, &player);
+        let asked = seen.borrow();
+        assert_eq!(asked.len(), 2, "b, then c: {asked:?}");
+        for question in asked.iter() {
+            assert_eq!(
+                question.details["own"],
+                serde_json::json!({
+                    "trade_goods": { "before": 2, "after": 5 },
+                    "commodities": { "before": 1, "after": limit },
+                })
+            );
+        }
     }
 
     #[test]

@@ -440,24 +440,50 @@ it("chooses a planet of a component action on the board, with the ability behind
   expect(staged.footer.note).toBe("Selected: Saudor");
 });
 
-it("chooses a player of a decision in the player table, with what it gives each seat", () => {
+it("chooses a player of a decision in the player table", () => {
+  const choose = asking({
+    prompt: "choose a player",
+    options: [
+      { id: "hacan", kind: "player", label: "hacan", payload: {} },
+      { id: "done", kind: "decline", label: "nobody", payload: {} },
+    ],
+    details: { seats: { hacan: "b" } },
+  });
+  const shell = selectShell(choose, local());
+  expect(shell.players.pick).toEqual({
+    verb: "Choose",
+    seats: { b: { reason: null } },
+    chosen: [],
+  });
+  // The answer that names no seat stays a row of the list.
+  expect(rows(choose, local()).map((row) => row.title)).toEqual(["Nobody"]);
+  expect(selectShell(choose, local({ staged: "hacan" })).players.pick?.chosen).toEqual(["b"]);
+});
+
+it("chooses several players that replenish commodities, with what it gives each seat", () => {
   const trade = asking({
     prompt: "let another player replenish commodities",
     options: [
       { id: "hacan", kind: "replenish", label: "hacan replenishes commodities", payload: {} },
+      { id: "letnev", kind: "replenish", label: "letnev replenishes commodities", payload: {} },
       { id: "done", kind: "decline", label: "nobody else replenishes", payload: {} },
     ],
-    details: { seats: { hacan: "b" }, commodities: { hacan: { have: 0, max: 6 } } },
+    details: {
+      seats: { hacan: "b", letnev: "c" },
+      commodities: { hacan: { have: 0, max: 6 }, letnev: { have: 1, max: 2 } },
+    },
   });
-  const shell = selectShell(trade, local());
-  expect(shell.players.pick).toEqual({
+  expect(selectShell(trade, local()).players.pick).toEqual({
     verb: "Choose",
-    seats: { b: { reason: null, note: "Commodities 0 → 6" } },
+    seats: {
+      b: { reason: null, note: "Commodities 0 → 6" },
+      c: { reason: null, note: "Commodities 1 → 2" },
+    },
     chosen: [],
   });
-  // The answer that names no seat stays a row of the list.
-  expect(rows(trade, local()).map((row) => row.title)).toEqual(["Nobody else replenishes"]);
-  expect(selectShell(trade, local({ staged: "hacan" })).players.pick?.chosen).toEqual(["b"]);
+  const both = local({ replenish: { seats: ["letnev", "hacan"], follow: null } });
+  expect(selectShell(trade, both).players.pick?.chosen).toEqual(["b", "c"]);
+  expect(flow(trade, both).footer.actions.at(-1)?.label).toBe("Resolve primary");
 });
 
 it("shows the fleet supply that a unit is removed for, as the engine counts it", () => {

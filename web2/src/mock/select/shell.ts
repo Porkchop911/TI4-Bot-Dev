@@ -30,7 +30,7 @@ import {
   SECRETS,
 } from "../data";
 import { E } from "../loose";
-import { OBJECTIVES, strategyEditor } from "../strategy";
+import { OBJECTIVES } from "../strategy";
 import { currentState, pastState, type State, type World } from "../world";
 import { selectBoard } from "./board";
 import { selectFlow } from "./flows";
@@ -265,10 +265,7 @@ function players(world: World, state: State): PlayerTableView {
   const next = now && queue.length > 1 ? queue[(queue.indexOf(now) + 1) % queue.length] : null;
   const me = world.viewer === "observer" ? "sol" : world.viewer;
   return {
-    pick:
-      world.mode === "live" && state.kind === "strategic" && E.flowEditing(state)
-        ? strategyEditor(state, seats).pick
-        : null,
+    pick: null,
     rows: seats.map((seat) => {
       const player = SEATS[seat];
       const tokens =

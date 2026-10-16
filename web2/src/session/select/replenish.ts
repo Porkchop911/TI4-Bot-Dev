@@ -1,0 +1,307 @@
+// The replenish of commodities (`details.commodities`): the choice of other seats that replenish
+// (Trade's primary: options of kind `replenish` with `details.seats`, and a decline), or the window
+// of a secondary that replenishes the follower's own (`yes` and `no`). The game asks one seat at a
+// time, and every question after the first offers the seats that are left; here it is one screen:
+// the seats are chosen in the player table, and the main button answers every question at once,
+// by the ids of their options.
+import type { BlockView, MenuRowView, PlayerPickView, RowView } from "../../model";
+import { plural } from "../../model";
+import type { Catalog, Choice, SessionUpdate } from "../wire";
+import { seatLabel } from "./names";
+
+/** What the player staged: the seats that replenish (by option id), or the answer of a window. */
+export interface ReplenishDraft {
+  seats: string[];
+  follow: boolean | null;
+}
+
+export const NO_REPLENISH: ReplenishDraft = { seats: [], follow: null };
+
+interface Range {
+  before: number;
+  after: number;
+}
+
+interface Offered {
+  option: string;
+  seat: string;
+  have: number;
+  max: number;
+}
+
+interface Question {
+  /** The other seats are chosen, or the window of a secondary. */
+  mode: "choose" | "follow";
+  /** The seats that can be chosen, in the order of the options. */
+  offered: Offered[];
+  /** The option that chooses nobody more. */
+  decline: string | null;
+  /** What the card already gave the seat of the question (`details.own`). */
+  own: { tradeGoods: Range; commodities: Range } | null;
+  /** The follower's commodities now and at its limit. */
+  standing: { have: number; max: number } | null;
+}
+
+const num = (value: unknown): number | null => (typeof value === "number" ? value : null);
+
+function rangeOf(value: unknown): Range | null {
+  const item = value as Record<string, unknown> | undefined;
+  const before = num(item?.before);
+  const after = num(item?.after);
+  return before !== null && after !== null ? { before, after } : null;
+}
+
+function questionOf(choice: Choice): Question | null {
+  const details = choice.details ?? {};
+  const commodities = details.commodities as Record<string, unknown> | undefined;
+  if (!commodities || typeof commodities !== "object") {
+    return null;
+  }
+  const ids = new Set(choice.options.map((option) => option.id));
+  if (details.kind === "strategy_secondary" && ids.has("yes") && ids.has("no") && ids.size === 2) {
+    const have = num(commodities.have);
+    const max = num(commodities.max);
+    return have !== null && max !== null
+      ? { mode: "follow", offered: [], decline: null, own: null, standing: { have, max } }
+      : null;
+  }
+  const seats = (details.seats ?? {}) as Record<string, unknown>;
+  const choosing = choice.options.filter((option) => option.kind !== "decline");
+  const offered = choosing.flatMap((option): Offered[] => {
+    const seat = seats[option.id];
+    const standing = commodities[option.id] as Record<string, unknown> | undefined;
+    const have = num(standing?.have);
+    const max = num(standing?.max);
+    return typeof seat === "string" && have !== null && max !== null
+      ? [{ option: option.id, seat, have, max }]
+      : [];
+  });
+  if (!offered.length || offered.length !== choosing.length) {
+    return null;
+  }
+  const own = details.own as Record<string, unknown> | undefined;
+  const tradeGoods = rangeOf(own?.trade_goods);
+  const mine = rangeOf(own?.commodities);
+  return {
+    mode: "choose",
+    offered,
+    decline: choice.options.find((option) => option.kind === "decline")?.id ?? null,
+    own: tradeGoods && mine ? { tradeGoods, commodities: mine } : null,
+    standing: null,
+  };
+}
+
+export interface ReplenishView {
+  blocks: BlockView[];
+  /** The player table is the choice. Null for a window. */
+  pick: PlayerPickView | null;
+  note: string;
+  /** Why nothing can be sent yet. Null: the main button sends. */
+  problem: string | null;
+  label: string;
+  /** Something is staged: Esc clears it. */
+  changed: boolean;
+  /** The answers, by the ids of their options, in the order that the game asks. Null: not yet. */
+  answers: string[] | null;
+}
+
+/** "A, B and C" */
+const names = (list: string[]) =>
+  list.length < 2 ? (list[0] ?? "") : `${list.slice(0, -1).join(", ")} and ${list.at(-1)}`;
+
+/** The staged seats that the question still offers, in the order of the options. */
+const stagedOf = (question: Question, draft: ReplenishDraft | null) =>
+  question.offered.filter((item) => (draft ?? NO_REPLENISH).seats.includes(item.option));
+
+/** The replenish of commodities, of other seats or of the follower. Null for any other question. */
+export function selectReplenish(
+  update: SessionUpdate,
+  choice: Choice,
+  draft: ReplenishDraft | null,
+  printed: Catalog | null = null,
+): ReplenishView | null {
+  const question = questionOf(choice);
+  if (!question) {
+    return null;
+  }
+  const commodities = (have: number, max: number) => `Commodities ${have} → ${max}`;
+  if (question.mode === "follow") {
+    const { have, max } = question.standing!;
+    const details = choice.details ?? {};
+    const left = num(details.tokens_left);
+    // What the secondary costs; the game does not say who or what makes it free.
+    const cost =
+      details.costs_token === false
+        ? "no strategy token"
+        : details.costs_token === true && left !== null
+          ? `Strategy pool ${left} → ${left - 1}`
+          : null;
+    const follow = draft?.follow ?? null;
+    const row = (key: string, option: string, title: string, state?: string): MenuRowView => ({
+      key,
+      title,
+      state,
+      selected: follow === (option === "yes"),
+      disabled: false,
+      intent: { type: "chooseOption", option, group: "follow" },
+    });
+    const problem = follow === null ? "Replenish commodities, or pass." : null;
+    return {
+      blocks: [
+        {
+          kind: "menu",
+          rows: [
+            row(
+              "1",
+              "yes",
+              "Replenish commodities",
+              [commodities(have, max), ...(cost ? [cost] : [])].join(" · "),
+            ),
+            row("2", "no", "Pass"),
+          ],
+        },
+      ],
+      pick: null,
+      note: problem ?? (follow ? commodities(have, max) : "You pass."),
+      problem,
+      label: follow === null ? "Send" : follow ? "Follow · replenish commodities" : "Pass",
+      changed: follow !== null,
+      answers: follow === null ? null : [follow ? "yes" : "no"],
+    };
+  }
+
+  const chosen = stagedOf(question, draft);
+  const name = (seat: string) => seatLabel(update, seat, printed);
+  const blocks: BlockView[] = [];
+  const own = question.own;
+  if (own) {
+    const gained = own.tradeGoods.after - own.tradeGoods.before;
+    blocks.push({
+      kind: "card",
+      title: "Your seat",
+      rows: [
+        {
+          icon: "card",
+          title: [`Gain ${plural(gained, "trade good")}`],
+          subtitle: `Trade goods ${own.tradeGoods.before} → ${own.tradeGoods.after}`,
+        },
+        {
+          icon: "card",
+          title: ["Replenish commodities"],
+          subtitle: commodities(own.commodities.before, own.commodities.after),
+        },
+      ],
+    });
+  }
+  blocks.push({
+    kind: "card",
+    title: "Other players",
+    aside: `${chosen.length} / ${question.offered.length} chosen · Choose in the player table`,
+    rows: chosen.length
+      ? chosen.map((item): RowView => ({
+          icon: "card",
+          title: [{ seat: item.seat }, ` ${name(item.seat)}`],
+          subtitle: `${commodities(item.have, item.max)} · no strategy token`,
+          control: {
+            kind: "button",
+            button: {
+              label: "Change",
+              tone: "quiet",
+              intent: { type: "clearPart", part: `seat:${item.option}` },
+            },
+          },
+        }))
+      : [{ icon: "card", title: ["No player chosen"] }],
+  });
+  const pick: PlayerPickView = {
+    verb: "Choose",
+    seats: Object.fromEntries(
+      question.offered.map((item) => [
+        item.seat,
+        { reason: null, note: commodities(item.have, item.max) },
+      ]),
+    ),
+    chosen: chosen.map((item) => item.seat),
+  };
+  // Every seat that is not chosen is declined at once; when all are chosen the game asks no more.
+  const answers = [
+    ...chosen.map((item) => item.option),
+    ...(chosen.length < question.offered.length && question.decline ? [question.decline] : []),
+  ];
+  const who = names(chosen.map((item) => name(item.seat)));
+  return {
+    blocks,
+    pick,
+    note: chosen.length
+      ? `${who} ${chosen.length === 1 ? "replenishes" : "replenish"} commodities`
+      : "Choose players in the player table, or nobody.",
+    problem: null,
+    label: chosen.length ? "Resolve primary" : "Resolve primary · nobody else",
+    changed: chosen.length > 0,
+    answers,
+  };
+}
+
+/** A seat of the player table is chosen, or given back. */
+export function toggleReplenishSeat(
+  choice: Choice,
+  draft: ReplenishDraft | null,
+  seat: string,
+): ReplenishDraft | null {
+  const question = questionOf(choice);
+  const option = question?.offered.find((item) => item.seat === seat)?.option;
+  if (question?.mode !== "choose" || !option) {
+    return null;
+  }
+  const staging = draft ?? NO_REPLENISH;
+  return staging.seats.includes(option)
+    ? { ...staging, seats: staging.seats.filter((id) => id !== option) }
+    : { ...staging, seats: [...staging.seats, option] };
+}
+
+/** The answer of a window: `yes` follows, `no` passes. The same answer again takes it back. */
+export function chooseReplenish(
+  choice: Choice,
+  draft: ReplenishDraft | null,
+  group: string | undefined,
+  option: string,
+): ReplenishDraft | null {
+  if (questionOf(choice)?.mode !== "follow" || group !== "follow") {
+    return null;
+  }
+  if (option !== "yes" && option !== "no") {
+    return null;
+  }
+  const staging = draft ?? NO_REPLENISH;
+  const follow = option === "yes";
+  return { ...staging, follow: staging.follow === follow ? null : follow };
+}
+
+/** "Change" of a chosen seat (`seat:<option>`): it is given back. */
+export function clearReplenishPart(
+  choice: Choice,
+  draft: ReplenishDraft | null,
+  part: string,
+): ReplenishDraft | null {
+  const option = part.startsWith("seat:") ? part.slice(5) : null;
+  if (!questionOf(choice) || !draft || !option || !draft.seats.includes(option)) {
+    return null;
+  }
+  return { ...draft, seats: draft.seats.filter((id) => id !== option) };
+}
+
+/** Esc clears the last choice: the last seat, or the answer of the window. */
+export function clearLastReplenish(
+  choice: Choice,
+  draft: ReplenishDraft | null,
+): ReplenishDraft | null {
+  const question = questionOf(choice);
+  if (!question || !draft) {
+    return null;
+  }
+  if (question.mode === "follow") {
+    return draft.follow !== null ? NO_REPLENISH : null;
+  }
+  const chosen = draft.seats.filter((id) => question.offered.some((item) => item.option === id));
+  return chosen.length ? { ...draft, seats: chosen.slice(0, -1) } : null;
+}

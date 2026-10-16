@@ -107,6 +107,13 @@ import {
   placeStructure,
   selectStructures,
 } from "./select/structures";
+import {
+  chooseReplenish,
+  clearLastReplenish,
+  clearReplenishPart,
+  selectReplenish,
+  toggleReplenishSeat,
+} from "./select/replenish";
 import { countPools, selectTokens } from "./select/tokens";
 import type { Transport } from "./transport";
 import type { DraftOutcome, DraftStep, PlanScope, ReactionModes, SessionUpdate } from "./wire";
@@ -119,6 +126,7 @@ const NOTHING: LocalState = {
   ready: null,
   agendas: null,
   structures: null,
+  replenish: null,
   sent: null,
   error: null,
   replaying: null,
@@ -616,6 +624,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           ready: null,
           agendas: null,
           structures: null,
+          replenish: null,
           sent: null,
           error: null,
           offline: false,
@@ -918,6 +927,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         ready: null,
         agendas: null,
         structures: null,
+        replenish: null,
         inspected: null,
         handled: [],
         step: null,
@@ -969,6 +979,11 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
     /** A placement of structures of the live game, with its window or its ability: at once. */
     const building =
       pending && !drafted && !followInfo?.editing && selectStructures(shown, pending.choice, null)
+        ? pending
+        : null;
+    /** A replenish of commodities of the live game: the seats or the window, answered at once. */
+    const replenishing =
+      pending && !drafted && !followInfo?.editing && selectReplenish(shown, pending.choice, null)
         ? pending
         : null;
     /** The game can be asked for a staged production: it is paid, and within its limits. */
@@ -1171,6 +1186,19 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         }
         return;
       }
+      // A replenish of commodities answers each chosen seat and then nobody more, or the window.
+      if (replenishing) {
+        const answers = selectReplenish(
+          shown,
+          replenishing.choice,
+          local.replenish ?? null,
+        )?.answers;
+        if (answers) {
+          transport.applyDraft(pending.nonce, { choices: answers, plan: null });
+          setLocal((now) => ({ ...now, replenish: null, sent: pending.nonce, planNote: null }));
+        }
+        return;
+      }
       const chosen = pools ? pools.staged : (local.staged ?? pass);
       if (chosen) {
         transport.submitChoice(pending.nonce, chosen);
@@ -1289,6 +1317,15 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           return setLocal((now) => ({ ...now, staged: null, sent: pending.nonce }));
         }
         case "pickSeat": {
+          // A seat that replenishes commodities: chosen, or given back.
+          if (replenishing) {
+            const picked = toggleReplenishSeat(
+              replenishing.choice,
+              local.replenish ?? null,
+              intent.seat,
+            );
+            return picked ? setLocal((now) => ({ ...now, replenish: picked })) : undefined;
+          }
           const option = optionOfSeat(pending?.choice ?? null, intent.seat);
           return option ? stage(option) : undefined;
         }
@@ -1307,6 +1344,18 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             chooseStructure(building.choice, local.structures ?? null, intent.group, intent.option);
           if (kind) {
             return setLocal((now) => ({ ...now, structures: kind }));
+          }
+          // The answer of the window of a replenish of commodities.
+          const answer =
+            replenishing &&
+            chooseReplenish(
+              replenishing.choice,
+              local.replenish ?? null,
+              intent.group,
+              intent.option,
+            );
+          if (answer) {
+            return setLocal((now) => ({ ...now, replenish: answer }));
           }
           const force = intent.group === "landing" ? forceOfId(intent.option) : null;
           return landing && force !== null
@@ -1398,7 +1447,13 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           }
           const unbuilt =
             building && clearStructurePart(building.choice, local.structures ?? null, intent.part);
-          return unbuilt && setLocal((now) => ({ ...now, structures: unbuilt }));
+          if (unbuilt) {
+            return setLocal((now) => ({ ...now, structures: unbuilt }));
+          }
+          const given =
+            replenishing &&
+            clearReplenishPart(replenishing.choice, local.replenish ?? null, intent.part);
+          return given && setLocal((now) => ({ ...now, replenish: given }));
         }
         case "findSystem": {
           const found = pending?.choice.options.find((item) => sameSystem(intent.query, item.id));
@@ -1427,6 +1482,12 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           if (unplaced) {
             return setLocal((now) => ({ ...now, structures: unplaced }));
           }
+          // Esc in a replenish of commodities clears the last seat, or the answer of the window.
+          const unpicked =
+            replenishing && clearLastReplenish(replenishing.choice, local.replenish ?? null);
+          if (unpicked) {
+            return setLocal((now) => ({ ...now, replenish: unpicked }));
+          }
           return setLocal((now) => ({
             ...now,
             staged: null,
@@ -1435,6 +1496,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             ready: null,
             agendas: null,
             structures: null,
+            replenish: null,
           }));
         }
         case "undo":

@@ -44,6 +44,7 @@ pub const STRATEGY_CARDS: &[(&str, &str)] = &[
     ("strategy_construction", "pok4construction"),
     ("strategy_construction_base", "base4"),
     ("strategy_construction_te", "te4construction"),
+    ("strategy_trade", "pok5trade"),
 ];
 
 /// Sol is played by a person, Hacan and Letnev by the rule bot.
@@ -265,6 +266,15 @@ pub const STRATEGY_CONSTRUCTION_TE: Scenario = Scenario {
     ..STRATEGY
 };
 
+pub const STRATEGY_TRADE: Scenario = Scenario {
+    id: "strategy_trade",
+    title: "Strategy card: Trade",
+    description: "Sol has the turn and holds Trade. Sol has 4 trade goods and 1 commodity; Hacan \
+        and Letnev have no commodities, so both can be chosen to replenish. With Sol and Hacan \
+        played here, Hacan resolves the secondary.",
+    ..STRATEGY
+};
+
 pub const FULL_GAME: Scenario = Scenario {
     id: FULL_GAME_ID,
     title: "Full Game Match",
@@ -428,6 +438,13 @@ fn strategy_card(
             .entry(planet)
             .or_default()
             .push(Unit::new(UnitTypeId::new("pds"), sol.clone()));
+    }
+    if name(card).as_deref() == Some("Trade") {
+        // Below its limit, so that the replenish of Sol shows a change.
+        state
+            .player_mut(sol)
+            .ok_or("Sol is not seated")?
+            .commodities = 1;
     }
     if name(card).as_deref() == Some("Diplomacy") {
         // More exhausted planets than Diplomacy readies, for Sol and for Hacan's secondary.

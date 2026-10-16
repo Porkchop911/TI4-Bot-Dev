@@ -828,6 +828,38 @@ test("phone: Construction of Thunder's Edge has the ability and the structures i
   await page.screenshot({ path: "shots/phone/local/construction-te.png", animations: "disabled" });
 });
 
+test("phone: Trade has the other players in the player table, and its screen in the width", async ({
+  page,
+}) => {
+  await page.goto("/?scenario=strategy_trade&humans=1");
+  const panel = page.locator("#step-panel");
+  const panes = page.getByRole("navigation", { name: "Panes" });
+  const send = page.locator('footer button[aria-keyshortcuts="Enter"]');
+  const width = () => page.evaluate(() => document.documentElement.scrollWidth);
+  const row = (name: string) =>
+    page.getByRole("region", { name: "Players" }).getByRole("row").filter({ hasText: name });
+  await panes.getByRole("button", { name: "Action" }).click();
+  await panel.getByRole("button", { name: /^5 Trade/ }).click();
+  await send.click();
+  await expect(panel.getByRole("heading", { name: "Other players" })).toBeVisible();
+  await expect(panel).toContainText("Trade goods 4 → 7");
+  expect(await width()).toBe(page.viewportSize()!.width);
+  await panes.getByRole("button", { name: "Players" }).click();
+  await expect(row("Seat B")).toContainText("Commodities 0 → 6");
+  await row("Seat B").tap();
+  await row("Seat C").tap();
+  expect(await width()).toBe(page.viewportSize()!.width);
+  await panes.getByRole("button", { name: "Action" }).click();
+  await expect(
+    panel.getByRole("heading", { name: "Other players" }).locator("../.."),
+  ).toContainText("2 / 2 chosen");
+  expect(await width()).toBe(page.viewportSize()!.width);
+  await expect(send).toBeInViewport();
+  await page.screenshot({ path: "shots/phone/local/trade.png", animations: "disabled" });
+  await send.click();
+  await expect(panel.getByRole("heading", { name: "Other players" })).toHaveCount(0);
+});
+
 test("phone: the Agendas sheet has the laws and the open groups in its width", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));

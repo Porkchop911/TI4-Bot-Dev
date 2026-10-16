@@ -1521,6 +1521,95 @@ test("Construction of the base game has its own printed text and the same screen
   expect(errors).toEqual([]);
 });
 
+test("Trade: the own gain is a value, the other players are chosen in the player table and sent at once", async ({
+  page,
+}) => {
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // Sol holds Trade with 4 trade goods and 1 commodity; Hacan and Letnev have no commodities.
+  await page.goto("/?scenario=strategy_trade&humans=1");
+  const row = (name: string) =>
+    page.getByRole("region", { name: "Players" }).getByRole("row").filter({ hasText: name });
+  await expect(heading(page)).toHaveText("Choose an action");
+  await panel(page)
+    .getByRole("button", { name: /^5 Trade/ })
+    .click();
+  await page.keyboard.press("Enter");
+
+  // One screen: what Sol gained, and the other players.
+  await expect(heading(page)).toHaveText("Trade");
+  const own = panel(page).getByRole("heading", { name: "Your seat" }).locator("../..");
+  const others = panel(page).getByRole("heading", { name: "Other players" }).locator("../..");
+  await expect(own).toContainText("Trade goods 4 → 7");
+  await expect(own).toContainText("Commodities 1 → 4");
+  await expect(others).toContainText("0 / 2 chosen · Choose in the player table");
+  await expect(send(page)).toHaveText(/Resolve primary · nobody else/);
+  await panel(page).getByRole("button", { name: "Rules: Trade" }).hover();
+  await expect(page.getByText(/Gain 3 trade goods/).first()).toBeVisible();
+  await page.mouse.move(0, 0);
+
+  // Each row of the player table says what the choice gives that player.
+  await expect(row("Seat B")).toContainText("Commodities 0 → 6");
+  await expect(row("Seat C")).toContainText("Commodities 0 → 2");
+  await row("Seat B").click();
+  await row("Seat C").click();
+  await expect(others).toContainText("2 / 2 chosen");
+  await expect(others).toContainText("Commodities 0 → 6 · no strategy token");
+  // "Change" gives a player back; Esc clears the last one.
+  await others.getByRole("button", { name: "Change" }).first().click();
+  await expect(others).toContainText("1 / 2 chosen");
+  await page.keyboard.press("Escape");
+  await expect(others).toContainText("No player chosen");
+  await row("Seat C").click();
+  await expect(page.locator("footer")).toContainText("replenishes commodities");
+  await expect(send(page)).toHaveText(/^Resolve primary/);
+  await expect(send(page)).not.toHaveText(/nobody/);
+  await fitsHeight(page);
+  await page.screenshot({ path: "shots/local/trade.png", animations: "disabled" });
+
+  // The main button answers Letnev and then nobody more; Hacan is not replenished.
+  await send(page).click();
+  await expect(heading(page)).toHaveText("End your turn");
+  await expect(row("Seat C")).toContainText("2/2");
+  await expect(row("Seat B")).toContainText("0/6");
+  expect(errors).toEqual([]);
+});
+
+test("Trade: the secondary replenishes or passes in the row of the seat", async ({ page }) => {
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // Sol and Hacan are played here.
+  await page.goto("/?scenario=strategy_trade&humans=3");
+  await expect(heading(page)).toHaveText("Choose an action");
+  await panel(page)
+    .getByRole("button", { name: /^5 Trade/ })
+    .click();
+  await page.keyboard.press("Enter");
+  await expect(send(page)).toHaveText(/Resolve primary · nobody else/);
+  await send(page).click();
+
+  // Hacan's row opens into Follow and Pass, with the commodities and what it costs: nothing, by
+  // Hacan's Masters of Trade.
+  const hacan = page.getByRole("region", { name: "Players" }).getByRole("row").filter({
+    hasText: "Seat B",
+  });
+  await expect(panel(page).getByRole("button", { name: /Replenish commodities/ })).toBeVisible();
+  await expect(panel(page)).toContainText("Commodities 0 → 6 · no strategy token");
+  await expect(send(page)).toBeDisabled();
+  await page.keyboard.press("2");
+  await expect(send(page)).toHaveText(/^Pass/);
+  await page.keyboard.press("1");
+  await expect(send(page)).toHaveText(/Follow · replenish commodities/);
+  await fitsHeight(page);
+  await page.screenshot({ path: "shots/local/trade-secondary.png", animations: "disabled" });
+  await send(page).click();
+  await expect(hacan).toContainText("6/6");
+  await expect(hacan).toContainText("3 · 3 · 2");
+  expect(errors).toEqual([]);
+});
+
 test("the Dev sheet leads to a game on the server, on the seed of the page", async ({ page }) => {
   await page.goto("/?local=3&players=8&humans=1");
   await expect(send(page)).toBeDisabled();
@@ -1723,7 +1812,7 @@ test("a component action: the planet of Orbital Drop is chosen on the map, then 
   expect(errors).toEqual([]);
 });
 
-test("a player is chosen in the player table: Trade lets another seat replenish", async ({
+test("Trade: in a late game only the seats below their commodity limit can be chosen", async ({
   page,
 }) => {
   await page.goto("/?scenario=late-game&humans=16");
@@ -1732,24 +1821,23 @@ test("a player is chosen in the player table: Trade lets another seat replenish"
   await page.keyboard.press("5");
   await page.keyboard.press("Enter");
   // The engine names the seat of each answer: the player table is the choice.
-  await expect(panel(page).getByText("Choose in the player table")).toBeVisible();
-  await expect(panel(page).getByText("No player chosen")).toBeVisible();
+  const others = panel(page).getByRole("heading", { name: "Other players" }).locator("../..");
+  await expect(others).toContainText("Choose in the player table");
+  await expect(others).toContainText("No player chosen");
   await expect(players.getByRole("button", { name: /^Choose Seat B, Hacan/ })).toBeEnabled();
   await expect(players.getByRole("button", { name: /^Choose Seat E,/ })).toBeDisabled();
   // A row says what the choice gives that seat.
   await expect(players.getByText("Commodities 0 → 6")).toBeVisible();
-  // The answer that names no seat stays a row of the list.
-  await expect(
-    panel(page).getByRole("button", { name: /^Nobody else replenishes$/ }),
-  ).toBeVisible();
   await players.getByRole("button", { name: /^Choose Seat B, Hacan/ }).click();
-  await expect(panel(page).getByText("Selected", { exact: true })).toBeVisible();
-  await expect(page.locator("footer")).toContainText("Selected: Hacan");
+  await expect(players.getByRole("button", { name: /^Choose Seat B, Hacan/ })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(page.locator("footer")).toContainText("Hacan replenishes commodities");
   await fitsHeight(page);
   await page.screenshot({ path: "shots/local/pick-player.png", animations: "disabled" });
   await page.keyboard.press("Enter");
-  await expect(players.getByRole("button", { name: /^Choose Seat B, Hacan/ })).toBeDisabled();
-  await expect(players.getByRole("button", { name: /^Choose Seat C,/ })).toBeEnabled();
+  await expect(others).toHaveCount(0);
 });
 
 test("a system is chosen on the map: Warfare recalls a command token", async ({ page }) => {

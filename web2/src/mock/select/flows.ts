@@ -24,7 +24,7 @@ type Parts = {
   footer: FooterView;
 };
 
-function flowParts(world: World, state: State): Parts {
+function flowParts(state: State): Parts {
   const flow = state.flow;
   const wait = E.flowNeed(state);
   const foot = (
@@ -82,7 +82,7 @@ function flowParts(world: World, state: State): Parts {
       : `Waiting for ${SEATS[wait.seat].name} · ${flow.card} ${flow.stage === "primary" ? "primary" : "secondary"}.`;
   // The viewer's own row with an open choice: the editor.
   if (E.flowEditing(state)) {
-    const editor = strategyEditor(state, world.table.seats);
+    const editor = strategyEditor(state);
     const error = editor.problem;
     const clear = editor.staged ? [button({ type: "clearChoice" }, "Clear choice")] : [];
     const payment = editor.task?.payment;
@@ -242,7 +242,7 @@ function seatLine(state: State, row: string): SeatLine {
     };
   }
   // A ready draft: what it will do, visible to the viewer only.
-  const editor = strategyEditor(state, []);
+  const editor = strategyEditor(state);
   return {
     status: { tone: "draft", sign: "✎", label: "Draft ready" },
     text: `${editor.pass ? "Pass" : `Follow: ${editor.result.replace("Followed · ", "")}`} · not sent, resolves after ${before}`,
@@ -250,7 +250,7 @@ function seatLine(state: State, row: string): SeatLine {
 }
 
 export function selectFlow(world: World, state: State): FlowActionView {
-  const parts = flowParts(world, state);
+  const parts = flowParts(state);
   const done = !E.flowNeed(state);
   const staged: boolean = E.flowStaged(state);
   const closing = world.mode === "live" ? closingBlocks(state) : [];

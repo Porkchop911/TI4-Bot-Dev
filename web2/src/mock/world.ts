@@ -302,8 +302,8 @@ export function reduce(world: World, intent: Intent) {
   }
   // A choice in the open half of a strategy card goes to the part that is open there.
   const editing = state.kind === "strategic" && world.mode === "live" && E.flowEditing(state);
-  if (editing && strategyIntent(state, world.table.seats, intent)) {
-    announce(strategyEditor(state, world.table.seats).problem || "Selection updated.");
+  if (editing && strategyIntent(state, intent)) {
+    announce(strategyEditor(state).problem || "Selection updated.");
     for (const text of E.env.toasts.splice(0)) {
       toast(text);
     }
@@ -640,17 +640,17 @@ export function reduce(world: World, intent: Intent) {
       break;
     case "flowCount":
       E.put(state.flow.mine, intent.key, Math.max(0, intent.value));
-      if (!strategyEditor(state, world.table.seats).cost?.amount) {
+      if (!strategyEditor(state).cost?.amount) {
         state.flow.mine.pay = {};
       }
-      announce(strategyEditor(state, world.table.seats).problem || "Selection updated.");
+      announce(strategyEditor(state).problem || "Selection updated.");
       break;
     case "flow": {
       const flow = state.flow;
       if (intent.action === "play") {
         break;
       } else if (intent.action === "ready") {
-        const editor = strategyEditor(state, world.table.seats);
+        const editor = strategyEditor(state);
         if (editor.problem) {
           break;
         }
@@ -660,7 +660,7 @@ export function reduce(world: World, intent: Intent) {
       } else if (intent.action === "change") {
         flow.mine.ready = false;
       } else {
-        const editor = strategyEditor(state, world.table.seats);
+        const editor = strategyEditor(state);
         if (editor.problem) {
           break;
         }

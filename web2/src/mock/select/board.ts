@@ -80,7 +80,7 @@ function boardTask(world: World, state: State): BoardTaskView | null {
       : null;
   }
   if (state.kind === "strategic") {
-    return E.flowEditing(state) ? strategyEditor(state, world.table.seats).task : null;
+    return E.flowEditing(state) ? strategyEditor(state).task : null;
   }
   return null;
 }
