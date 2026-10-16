@@ -15,7 +15,7 @@ use ti4_engine::choice::Choice;
 use ti4_engine::decision_context::{ConstraintKind, DecisionTarget};
 use ti4_engine::invasion::COMMIT_KIND;
 use ti4_engine::movement::{Board, MovementRules};
-use ti4_engine::production::{PRODUCE_KIND, Spend};
+use ti4_engine::production::{PRODUCE_KIND, Spend, WITHHELD_KEY, Withheld, WithheldUnit};
 use ti4_engine::tactical::{ACTIVATE_KIND, Movable, effective_move_value_for_ship, movable_into};
 pub use ti4_engine::transit::Unloadable;
 use ti4_engine::transit::{CargoSource, CargoWindow, LOAD_KIND, Route, rifts_exited};
@@ -339,7 +339,8 @@ pub struct CombatFact {
     pub dice: i64,
 }
 
-/// Why a unit cannot be produced.
+/// Why a unit cannot be produced: the reason of the production window
+/// (`ti4_engine::production::ProductionWindow::withheld`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
@@ -360,7 +361,8 @@ pub enum Unavailable {
     Banned,
     /// An ability of the seat bars the producers in the system from making this unit (Mitosis).
     Barred,
-    /// The game does not offer the unit, for a reason that these facts do not know.
+    /// The game does not offer the unit, and the question does not say why: it is not one of a
+    /// production window.
     NotOffered,
 }
 
@@ -1085,76 +1087,48 @@ fn production(
         .first()
         .and_then(|option| number(option, "credit"))
         .unwrap_or(0);
-    // Every other unit that a production makes, with why the game does not offer it. A unit that
-    // the seat only cannot afford has no reason: the resources are a limit that the client shows.
+    // Every other unit that a production makes, with why the game does not offer it
+    // (`ProductionWindow::withheld`). A unit that the seat only cannot afford now, or that the
+    // limit of this use leaves out, has no reason: these are limits that the client shows.
+    // A kind that the window does not name was never considered.
+    let withheld: Vec<WithheldUnit> = choice.hint(WITHHELD_KEY).unwrap_or_default();
     let buildable = ti4_engine::production::buildable_for(state, content, sources, player);
-    let funds =
-        ti4_engine::production::available(state, content, sources, player, Spend::Resources)
-            + credit;
     for base in ti4_engine::production::BUILDABLE {
-        let listed = |unit: &BuildFact| {
-            types
-                .get(unit.unit.as_str())
-                .is_some_and(|kind| kind.base_type() == base)
-        };
-        if units.iter().any(listed) {
+        let of_base = |unit: &str| types.get(unit).is_some_and(|kind| kind.base_type() == base);
+        if units.iter().any(|unit| of_base(&unit.unit)) {
             continue;
         }
-        let owned = buildable
-            .iter()
-            .filter_map(|id| types.get(id.as_str()))
-            .find(|kind| kind.base_type() == base);
-        // A unit behind a technology is shown as its printed generic form.
-        let Some(kind) = owned.or_else(|| types.get(base)) else {
+        let (kind, unavailable) = match withheld.iter().find(|known| of_base(&known.unit)) {
+            Some(known) => (
+                types.get(known.unit.as_str()),
+                match known.reason {
+                    Withheld::Technology => Some(Unavailable::Technology),
+                    Withheld::OnlyAnother => Some(Unavailable::OnlyAnother),
+                    Withheld::TooCostly => Some(Unavailable::TooCostly),
+                    Withheld::Banned => Some(Unavailable::Banned),
+                    Withheld::Blockade => Some(Unavailable::Blockade),
+                    Withheld::NoPlace => Some(Unavailable::NoPlace),
+                    Withheld::Barred => Some(Unavailable::Barred),
+                    Withheld::Supply => Some(Unavailable::Supply),
+                    Withheld::Unaffordable | Withheld::Limit => None,
+                },
+            ),
+            // A unit behind a technology is shown as its printed generic form.
+            None => (
+                buildable
+                    .iter()
+                    .filter_map(|id| types.get(id.as_str()))
+                    .find(|kind| kind.base_type() == base)
+                    .or_else(|| types.get(base)),
+                Some(Unavailable::NotOffered),
+            ),
+        };
+        let Some(kind) = kind else {
             continue;
         };
         let (cost, per) = ti4_engine::production::price_of_under(Some(state), kind);
         let places =
             ti4_engine::production::placements(state, content, sources, player, system, kind);
-        let left = ti4_engine::supply::remaining(
-            state,
-            content,
-            sources,
-            player,
-            &ti4_model::id::UnitTypeId::new(kind.id()),
-        );
-        let detail = |key: &str| choice.details.get(key);
-        let only_another = detail("only_unit")
-            .and_then(serde_json::Value::as_str)
-            .is_some_and(|only| only != kind.id());
-        let too_costly = detail("max_unit_cost")
-            .and_then(serde_json::Value::as_i64)
-            .is_some_and(|max| cost > max);
-        let by_ability = detail("by_ability").and_then(serde_json::Value::as_bool) == Some(true);
-        let unavailable = if owned.is_none() {
-            Some(Unavailable::Technology)
-        } else if places.is_empty() {
-            Some(if kind.is_ship() {
-                Unavailable::Blockade
-            } else {
-                Unavailable::NoPlace
-            })
-        } else if left == 0 {
-            Some(Unavailable::Supply)
-        } else if only_another {
-            Some(Unavailable::OnlyAnother)
-        } else if too_costly {
-            Some(Unavailable::TooCostly)
-        } else if by_ability
-            && ti4_engine::production::banned_from_ability_production(state, content, player, kind)
-        {
-            Some(Unavailable::Banned)
-        } else if !by_ability
-            && ti4_engine::production::barred_capacity(
-                state, content, sources, player, system, kind,
-            ) >= limit.amount
-        {
-            Some(Unavailable::Barred)
-        } else if cost - discount > funds || limit.paid >= limit.amount {
-            None
-        } else {
-            Some(Unavailable::NotOffered)
-        };
         units.push(build_fact(
             state,
             content,

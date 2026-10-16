@@ -1764,10 +1764,24 @@ mod tests {
             .expect("seat A")
             .technologies
             .retain(|technology| technology.as_str() != "ws");
-        let (_, facts) = production(&plain, &galaxy, at::DOCK);
+        let (choice, facts) = production(&plain, &galaxy, at::DOCK);
         let sun = find(&facts, "warsun");
         assert_eq!(sun.unavailable, Some(Unavailable::Technology));
         assert_eq!(sun.cost, 12);
+        // The reasons are the window's: a question that does not say why has none.
+        let mut silent = choice.clone();
+        silent.details.remove(ti4_engine::production::WITHHELD_KEY);
+        let mut active = plain.clone();
+        active.active_system = Some(SystemId::new(at::DOCK));
+        let Some(TacticalFacts::Production(facts)) =
+            project_tactical_facts(&active, ContentStore::embedded(), POK, &galaxy, &silent)
+        else {
+            panic!("no production facts");
+        };
+        assert_eq!(
+            find(&facts, "warsun").unavailable,
+            Some(Unavailable::NotOffered)
+        );
 
         // Ships of another player: no ship is produced, the ground forces are.
         let mut blockaded = state.clone();

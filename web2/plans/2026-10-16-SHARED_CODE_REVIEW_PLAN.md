@@ -1,6 +1,6 @@
 # Review of the shared code of the demo removal, and its cleanup (2026-10-16)
 
-Status: in progress, steps 1–7 done.
+Status: in progress, steps 1–8 done.
 
 ## Context
 
@@ -119,10 +119,14 @@ facts, and asks the engine of the page when it stages something that is not sent
     movement starts in or passes, why no ship loads it (`transit::Unloadable`: a command token,
     a route of Myru Vos, no capacity), from the same checks as the load offers.
     `MovementFacts.unloadable` maps that function's result. There is no `NotOffered`.
-  - `ProductionWindow` gets a function that returns, for each unit kind that it does not offer,
-    the first check that excluded it (technology, supply, blockade, no place, only another, too
-    costly, banned, barred). The host maps it to `Unavailable`. `NotOffered` stays only for kinds
-    that the window never considered.
+  - `ProductionWindow::withheld` returns, for each unit kind that the window does not offer, the
+    first check that excluded it (`production::Withheld`: technology, only another, too costly,
+    banned, blockade, no place, barred, supply, then the soft limits unaffordable and limit),
+    from the same pass that builds the offers (`ProductionWindow::screen`). The question carries
+    it as `details.withheld` (`Choice::hinted`), in place of the details `only_unit`,
+    `max_unit_cost` and `by_ability`. The host maps it to `Unavailable`; the soft limits have no
+    reason, as the client shows them. `NotOffered` stays only for a question that does not say
+    why.
 - **A failed status-phase redistribution is an error of the step.** `Game::finish_status_phase`
   returns it like every other failed answer. `COMMAND_TOKEN_GAINED` keeps naming the pools that
   grew; this is documented as display only.
