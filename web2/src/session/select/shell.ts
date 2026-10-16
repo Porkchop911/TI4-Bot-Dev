@@ -10,6 +10,8 @@ import {
   selectAction,
 } from "./action";
 import { selectBoard } from "./board";
+import { NO_EVENTS } from "../events";
+import { selectLog } from "./log";
 import { selectTokens } from "./tokens";
 import { type CardSettings, NO_CARD_SETTINGS, selectActionCards } from "./cards";
 import { selectExploration } from "./exploration";
@@ -218,6 +220,7 @@ export function selectShell(
       exploration: selectExploration(update, catalog, printed),
       log: [],
     },
+    log: selectLog(update, local.events ?? NO_EVENTS, printed),
     apply: local.draft?.apply ?? null,
     toast: null,
     asked: !!update.pending_choice || !!local.draft,

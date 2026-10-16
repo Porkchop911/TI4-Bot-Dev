@@ -25,4 +25,25 @@ Part of `web2/AGENTS.md`: the Patterns and the rules of Screen size and Text the
 
 ## The history
 
-- The turns of the other seats since the viewer's last turn come with typed public facts of the host (not there yet). Until then the history is "No turns since your last turn".
+- The history is made from the public events of the game (`GameEvent`), which the transport keeps next to the rolls: the events of a snapshot replace the list, since an undo takes the later ones back, and each `event` message adds one, once by its `id` (`src/session/events.ts`). Both kinds of game get them the same way: the engine of a local game sends the event messages and the snapshot with its events as the server does. An event of a seat or of the referee is not kept. `selectLog` (`src/session/select/log.ts`) makes `ShellView.log` (`LogView`, `src/model/log.ts`) from them. `LogPanel` does not show it yet: there the history is "No turns since your last turn".
+- Only the typed facts of an event are read (`fact`, `roll`), never its `detail` text. An event without a fact adds nothing, and a fact that the Log does not know yet (a newer host) is skipped. Every id is named as the rest of the page names it: a seat by `seatLabel`, a system as "Mecatol Rex · #18", a planet by the board, a unit by its card ("Carrier I"), a technology, a strategy card, an objective, an action card, a leader, a relic, an ability by the catalogue. No raw id is on the screen; without the catalogue a name is the id in words.
+
+### The turn model
+
+- A turn is the events of one `action_id`. It starts at the fact `action_started` (its action: tactical, strategic with its card, component with its source, pass) and ends at `turn_ended`, a pass, the next `action_id`, a phase transition or the end of the game. The rolls of the action phase carry their `action_id` and belong to their turn. A component action within a turn (an agent) is a line of that turn.
+- What a seat does at its turn menu before it chooses its action (a transaction) has an `action_id` of its own: it is a part of the turn that follows when that turn is of the same seat; else it is a turn of its own, "Transaction".
+- The turns are numbered in their round from 1, in the order of the game.
+- A phase that is no action phase is one entry, "Strategy phase · Round 3", with what the seats did in it: the picks, the scored objectives, the votes of each agenda, the cards that were played. The start of an action phase is an entry with no details: a divider between the turns.
+
+### The scope
+
+- The Log starts at the last turn of the viewer, and that turn is its first entry, so that the player sees what it did and then what the others did after it. Oldest first; the phases in between are their entries. The turn that is played now is last and marked live. A turn of the viewer that is played now is not its last turn: the Log starts at the turn before it.
+- A spectator, and a seat before its first turn, see the round in play.
+
+### An entry
+
+- A turn has its seat, its kind ("Tactical · Mecatol Rex · #18", "Strategic · Technology", "Component · Sabotage", "Pass"), its round and its number, a summary of at most three outcomes of its seat ("moved 3 ships · combat (lost 1, destroyed 1) · landed on Mecatol Rex", "researched Gravity Drive"), and its details in groups. A pass has no summary and no details.
+- The groups of a tactical or a component action are its steps: Activation, Movement (the ships from each system to each system, by unit, and what was loaded), Space cannon, Space combat (the rolls of each round, the losses, a retreat), Invasion (the bombardment, the landings by planet, the ground combat), Production (what was produced where, and what paid for it), then Effects, Cards played and Transactions. A strategic action has Primary (what its seat did) and Secondaries (a line for each thing that another seat did), then Cards played and Transactions.
+- A line has its seat, a text in words, and the dice of a roll (the faces, the face that hits, the hits). Units of one line are counted: "Dreadnought I, 2 Carrier I".
+- The rounds of a combat are not told by the host: a roll after a decision, or a second roll of the same seat at the same value (the engine rolls the units of one seat and one value together), starts the next round.
+- Not there yet, because the host does not say it: the casualties that no seat chose (a forced loss, the anti-fighter barrage), who won a combat, a planet that changed hands, the outcome of an agenda, an exploration, the revealed objectives, and whether a seat followed a secondary when it did nothing that has a fact. The Log shows what the facts say and adds nothing to it.

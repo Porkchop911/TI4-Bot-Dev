@@ -110,7 +110,7 @@ The rules of each feature are in `docs/agents/`. Before you change a feature, re
 | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
 | A decision, the decision list, a reaction window, the action picker, shortcut keys                                                                                           | `docs/agents/decisions.md`      |
 | A reference sheet: Cards, Secrets, Agendas, Objectives, the sheet of a player (`src/game/shell/Reference.tsx`)                                                               | `docs/agents/sheets.md`         |
-| The Log: the current action read-only, its groups, the history of turns (`src/game/log/`)                                                                                    | `docs/agents/log.md`            |
+| The Log: the current action read-only, its groups, the history of turns (`src/game/log/`, `select/log.ts`, `events.ts`)                                                      | `docs/agents/log.md`            |
 | A strategy card, its primary or secondary, the draft of a secondary, the technology tree                                                                                     | `docs/agents/strategy-cards.md` |
 | The map, a system, the inspector, the payment bar, exploration (`src/game/board/`)                                                                                           | `docs/agents/board.md`          |
 | Movement, invasion, production, the battle table, the space odds (`src/game/steps/`, `src/game/combat/`)                                                                     | `docs/agents/tactical.md`       |

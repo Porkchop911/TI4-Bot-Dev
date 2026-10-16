@@ -2,6 +2,7 @@ import type { ActionView } from "./action";
 import type { BoardView, ExplorationDeck } from "./board";
 import type { OfferView, Rich, SeatId, SeatView } from "./core";
 import type { Intent } from "./intents";
+import type { LogView } from "./log";
 
 export type Workspace = "live" | "draft";
 
@@ -318,6 +319,8 @@ export interface ShellView {
   board: BoardView;
   action: ActionView;
   reference: ReferenceView;
+  /** What the seats did since the last turn of the viewer, from the public events of the game. */
+  log: LogView;
   /** What "Apply to Live" will commit. Null when there is nothing to apply. */
   apply: ApplyView | null;
   toast: { id: number; text: string } | null;
