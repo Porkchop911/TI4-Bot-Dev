@@ -4,7 +4,7 @@
 import type { DeckSecretView, SecretObjectiveView, SecretsView } from "../../model";
 import type { Catalog, SessionUpdate } from "../wire";
 import { plain } from "./components";
-import { titleCase } from "./names";
+import { humanizeId } from "./names";
 
 /** The group of an objective that the catalogue does not have. */
 const OTHER = "Other";
@@ -29,7 +29,7 @@ export function selectSecrets(update: SessionUpdate, catalog: Catalog | null): S
           text: plain(found.text),
           group: found.group,
         }
-      : { name: titleCase(id), phase: "", text: "", group: OTHER };
+      : { name: humanizeId(id), phase: "", text: "", group: OTHER };
   };
   const facts = update.secret_objectives;
   // Where an objective is: scored is public; a hand is the viewer's, or one that a law reveals.

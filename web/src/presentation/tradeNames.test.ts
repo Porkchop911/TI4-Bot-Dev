@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { ChoiceOptionDto } from "../protocol/types.ts";
+import type { ChoiceOption } from "../protocol/types.ts";
 import { decodeTradeOption } from "./tradeDecoder.ts";
 import { dealToStaged, sideLines, emptySide } from "./tradeStaging.ts";
 import { humanizeOfferPrompt, printedCardName, printedItemLabel } from "./tradeNames.ts";
@@ -44,7 +44,7 @@ describe("sideLines", () => {
 });
 
 describe("Quick deal labels", () => {
-  const opt = (id: string, label: string, payload: Record<string, unknown> = {}): ChoiceOptionDto => ({
+  const opt = (id: string, label: string, payload: Record<string, unknown> = {}): ChoiceOption => ({
     id,
     kind: "offer",
     label,

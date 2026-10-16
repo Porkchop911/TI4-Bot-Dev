@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { describeStrategySecondary, secondaryButtonLabel } from "./strategySecondary.ts";
 
 const options = [
-  { id: "no", label: "decline", kind: "strategy" },
-  { id: "yes", label: "draw", kind: "strategy" },
+  { id: "no", label: "decline", kind: "strategy", payload: {} },
+  { id: "yes", label: "draw", kind: "strategy", payload: {} },
 ];
 
 describe("secondaryButtonLabel", () => {
@@ -48,7 +48,7 @@ describe("describeStrategySecondary", () => {
   it("is not a secondary without the server's details or without a yes/no pair", () => {
     expect(describeStrategySecondary({ ...choice, details: undefined })).toBeNull();
     expect(
-      describeStrategySecondary({ ...choice, options: [...options, { id: "x", label: "x" }] }),
+      describeStrategySecondary({ ...choice, options: [...options, { id: "x", label: "x", payload: {}, kind: "" }] }),
     ).toBeNull();
   });
 
@@ -56,8 +56,8 @@ describe("describeStrategySecondary", () => {
     const trade = describeStrategySecondary({
       prompt: "spend a strategy token to replenish commodities",
       options: [
-        { id: "no", label: "decline", kind: "strategy" },
-        { id: "yes", label: "replenish", kind: "strategy" },
+        { id: "no", label: "decline", kind: "strategy", payload: {} },
+        { id: "yes", label: "replenish", kind: "strategy", payload: {} },
       ],
       details: {
         kind: "strategy_secondary",

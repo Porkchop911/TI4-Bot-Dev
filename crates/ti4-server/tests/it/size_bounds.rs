@@ -1,10 +1,10 @@
+use ti4_host::protocol::PROTOCOL_VERSION;
+use ti4_host::protocol::client::ClientMessage;
+use ti4_host::protocol::server::ServerMessage;
 use ti4_server::fixtures::{
     sample_actor_snapshot, sample_opponent_snapshot, sample_spectator_snapshot,
     sample_stale_submission_rejected, sample_terminal_game_over,
 };
-use ti4_server::protocol::PROTOCOL_VERSION;
-use ti4_server::protocol::client::ClientMessage;
-use ti4_server::protocol::server::ServerMessage;
 
 const SNAPSHOT_BOUND_BYTES: usize = 256 * 1024; // 256 KiB
 const CHOICE_BOUND_BYTES: usize = 64 * 1024; // 64 KiB

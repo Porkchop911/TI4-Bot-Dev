@@ -16,9 +16,10 @@ import {
   resolveOptionSystem,
 } from "./planetSelection.ts";
 import { buildBoardPresentationModel, deriveActorTargetHighlights } from "./boardPresentation.ts";
-import { BoardView, ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import { BoardView, ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
+import { partialContext } from "../test/wire.ts";
 
-const decline: ChoiceOptionDto = { id: "decline", kind: "decline", label: "decline" };
+const decline: ChoiceOption = { id: "decline", kind: "decline", label: "decline", payload: {} };
 const planet = (id: string, payload: Record<string, unknown>, label = id, kind = "planet") => ({
   id,
   kind,
@@ -28,7 +29,7 @@ const planet = (id: string, payload: Record<string, unknown>, label = id, kind =
 
 const choiceOf = (
   subtype: string,
-  options: ChoiceOptionDto[],
+  options: ChoiceOption[],
   extra: Partial<PendingChoiceDto> = {},
   source?: Record<string, unknown>,
 ): PendingChoiceDto => ({
@@ -36,7 +37,7 @@ const choiceOf = (
   actor: "p1",
   prompt: "choose",
   options,
-  context: { subtype, ...(source ? { source } : {}) },
+  context: partialContext({ subtype, ...(source ? { source } : {}) }),
   ...extra,
 });
 
@@ -109,7 +110,7 @@ describe("planet_selection classification", () => {
     ["stellar_converter_choose_target", [planet("lodor", { planet: "lodor", system: "26" })]],
     ["defense_act_choose_pds", [planet("lodor", { planet: "lodor", system: "26", unit: "pds" })]],
   ])("classifies %s as planet_selection", (subtype, options) => {
-    const choice = choiceOf(subtype, options as ChoiceOptionDto[]);
+    const choice = choiceOf(subtype, options as ChoiceOption[]);
     expect(isPlanetSelectionChoice(choice)).toBe(true);
     expect(deriveChoiceRendererModel(choice, "p1")?.workflow).toBe("planet_selection");
   });
@@ -155,7 +156,7 @@ describe("planet_selection classification", () => {
     expect(classifyChoiceWorkflow(bioStims)).toBe("planet_selection");
     const acropolis = choiceOf("legendary_acropolis", [
       planet("planet|lodor", { planet: "lodor" }, "ready lodor"),
-      { id: "relic|crown", label: "ready The Crown" },
+      { id: "relic|crown", label: "ready The Crown", payload: {}, kind: "" },
     ]);
     expect(classifyChoiceWorkflow(acropolis)).toBe("planet_selection");
   });
@@ -168,8 +169,8 @@ describe("planet_selection classification", () => {
     ]);
     expect(classifyChoiceWorkflow(elect)).toBe("planet_selection");
     const outcome = choiceOf("cast_vote", [
-      { id: "for", kind: "vote", label: "For" },
-      { id: "against", kind: "vote", label: "Against" },
+      { id: "for", kind: "vote", label: "For", payload: {} },
+      { id: "against", kind: "vote", label: "Against", payload: {} },
     ]);
     expect(classifyChoiceWorkflow(outcome)).toBe("agenda_vote_outcome");
   });
@@ -179,7 +180,7 @@ describe("planet_selection classification", () => {
       [
         choiceOf("pay_resources", [
           planet("exhaust|lodor", { planet: "lodor", worth: 3 }, "Lodor", "pay"),
-          { id: "trade_good", kind: "pay", label: "TG" },
+          { id: "trade_good", kind: "pay", label: "TG", payload: {} },
         ]),
         "payment",
       ],
@@ -220,7 +221,7 @@ describe("planet_selection classification", () => {
       ],
       [
         choiceOf("crashlanding_choose_planet", [planet("lodor", { planet: "lodor" })], {
-          context: { subtype: "crashlanding_choose_planet", invasion_seq: 2 },
+          context: partialContext({ subtype: "crashlanding_choose_planet", invasion_seq: 2 }),
         }),
         "generic_selection",
       ],
@@ -353,7 +354,7 @@ describe("planet selection helpers", () => {
       optionId: "exhaust|lodor",
     });
     const vote = choiceOf("vote_exhaust_planet", [
-      { id: "lodor", kind: "vote_planet", label: "x" },
+      { id: "lodor", kind: "vote_planet", label: "x", payload: {} },
     ]);
     expect(resolveMapTargetSelection(vote, "26", "lodor")).toMatchObject({ optionId: "lodor" });
     const activation = choiceOf("activate_system", [
@@ -406,6 +407,7 @@ describe("board planet targeting mode", () => {
         current_planet: null,
         defender: null,
         ground_round: 0,
+        odds_context: {},
       },
     };
     expect(deriveActorTargetHighlights(miningInitiative, "p1", invading).targetMode).toBeNull();

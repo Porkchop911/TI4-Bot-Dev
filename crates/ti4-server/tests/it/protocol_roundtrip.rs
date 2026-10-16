@@ -1,16 +1,16 @@
 use std::collections::BTreeMap;
 use ti4_engine::choice::{Choice, ChoiceOption};
-use ti4_model::id::PlayerId;
-use ti4_server::protocol::client::ClientMessage;
-use ti4_server::protocol::error::{ErrorKind, ProtocolError};
-use ti4_server::protocol::server::{
+use ti4_host::protocol::client::ClientMessage;
+use ti4_host::protocol::error::{ErrorKind, ProtocolError};
+use ti4_host::protocol::server::{
     ActionAcceptedMsg, ActionRejectedMsg, GameOverMsg, PendingChoiceMsg, ProtocolErrorMsg,
     ServerMessage,
 };
-use ti4_server::protocol::status::RejectionReason;
-use ti4_server::protocol::{
+use ti4_host::protocol::status::RejectionReason;
+use ti4_host::protocol::{
     PROTOCOL_VERSION, parse_client_message, parse_server_message, validate_protocol_version,
 };
+use ti4_model::id::PlayerId;
 
 #[test]
 fn client_subscribe_round_trips() {
@@ -51,13 +51,13 @@ fn staged_work_is_asked_for_and_written_in_the_form_that_web2_sends() {
             "answers": [{"id": "yes", "label": "Follow"}], "ready": true}});
     let parsed = parse_client_message(&put.to_string()).expect("parse");
     // The server reads the draft of a secondary in the form that web2 writes it.
-    let draft = ti4_server::session::staged::SecondaryDraft::of(&put["value"]).expect("a draft");
+    let draft = ti4_host::staged::SecondaryDraft::of(&put["value"]).expect("a draft");
     assert!(draft.ready);
     assert_eq!(draft.answers[0].id, "yes");
     assert!(matches!(
         &parsed,
         ClientMessage::PutStaged {
-            slot: ti4_server::session::staged::StagedSlot::Secondary,
+            slot: ti4_host::protocol::staged::StagedSlot::Secondary,
             base_revision: 4,
             value: Some(_),
             ..
@@ -76,80 +76,32 @@ fn staged_work_is_asked_for_and_written_in_the_form_that_web2_sends() {
 }
 
 #[test]
-fn movement_edit_round_trips_with_only_a_server_script_identity() {
-    let message = ClientMessage::EditPlanningMovement {
-        protocol_version: PROTOCOL_VERSION,
-        game_id: "game_abc".into(),
-        identity: ti4_server::planning::runner::AttemptIdentity {
-            checkpoint_id: 10,
-            plan_revision: 4,
-            generation_id: 2,
-        },
-    };
-    let json = serde_json::to_string(&message).unwrap();
-    assert_eq!(parse_client_message(&json).unwrap(), message);
-    assert!(format!("{message:?}").contains("EditPlanningMovement"));
-    let mut injected = serde_json::to_value(message).unwrap();
-    injected["recorded_decisions"] = serde_json::json!([]);
-    assert!(parse_client_message(&injected.to_string()).is_err());
-}
-
-#[test]
-fn planning_updates_and_results_round_trip_without_a_live_game_version() {
-    use ti4_server::planning::runner::{
-        AttemptIdentity, FailureCategory, PlanningEnvelope, PlanningUpdate, Progress,
-    };
-    use ti4_server::protocol::server::{PlanningRejection, PlanningResultMsg, PlanningUpdateMsg};
-    let identity = AttemptIdentity {
-        checkpoint_id: 10,
-        plan_revision: 2,
-        generation_id: 3,
-    };
-    for message in [
-        ServerMessage::PlanningUpdate(PlanningUpdateMsg {
-            protocol_version: PROTOCOL_VERSION,
-            game_id: "game_abc".into(),
-            draft: Default::default(),
-            envelope: PlanningEnvelope {
-                publication_id: 1,
-                identity,
-                reset_revision: 1,
-                editing_movement: true,
-                movement_edit_revision: 1,
-                awaiting_answer: false,
-                recorded_request_ids: vec!["answer-request".into()],
-                recorded_decisions: vec![],
-                assumptions: vec![],
-                progress: Progress {
-                    recorded_answers: 0,
-                    replayed: 1,
-                    remaining: 2,
-                    completed_steps: 3,
-                    nested_answers_since_checkpoint: 0,
-                },
-                update: PlanningUpdate::Failed(FailureCategory::Engine),
-            },
-        }),
-        ServerMessage::PlanningResult(PlanningResultMsg {
-            protocol_version: PROTOCOL_VERSION,
-            game_id: "game_abc".into(),
-            draft: Default::default(),
-            identity: Some(identity),
-            rejection: Some(PlanningRejection::Retired),
-        }),
-        ServerMessage::PlanningResult(PlanningResultMsg {
-            protocol_version: PROTOCOL_VERSION,
-            game_id: "game_abc".into(),
-            draft: Default::default(),
-            identity: None,
-            rejection: None,
-        }),
+fn the_planning_runner_messages_are_unknown() {
+    // A draft is a script (`run_draft`, `apply_draft`); the server runs no plan of its own.
+    for kind in [
+        "start_planning",
+        "reset_planning",
+        "edit_planning_movement",
+        "apply_planning",
+        "submit_planning_choice",
+        "secondary_planning",
     ] {
-        let json = serde_json::to_string(&message).unwrap();
-        assert_eq!(parse_server_message(&json).unwrap(), message);
-        assert_eq!(message.protocol_version(), PROTOCOL_VERSION);
-        assert_eq!(message.game_id(), Some("game_abc"));
-        assert_eq!(message.game_version(), None);
+        let message = serde_json::json!({
+            "type": kind, "protocol_version": PROTOCOL_VERSION, "game_id": "game_abc",
+        });
+        assert!(
+            parse_client_message(&message.to_string()).is_err(),
+            "{kind}"
+        );
+    }
+    for kind in ["planning_status", "planning_update", "planning_result"] {
+        let message = serde_json::json!({
+            "type": kind, "protocol_version": PROTOCOL_VERSION, "game_id": "game_abc",
+        });
+        assert!(
+            parse_server_message(&message.to_string()).is_err(),
+            "{kind}"
+        );
     }
 }
 
@@ -262,7 +214,7 @@ fn server_pending_choice_round_trips() {
             ],
         ),
         state,
-        galaxy_layout: ti4_server::map::GalaxyLayout {
+        galaxy_layout: ti4_host::map::GalaxyLayout {
             version: 1,
             active_sources: vec!["base".to_owned()],
             placements: Vec::new(),
@@ -276,15 +228,15 @@ fn server_pending_choice_round_trips() {
 
 #[test]
 fn server_event_round_trips() {
-    let msg = ServerMessage::Event(ti4_server::protocol::server::GameEventMsg {
+    let msg = ServerMessage::Event(ti4_host::protocol::server::GameEventMsg {
         protocol_version: PROTOCOL_VERSION,
         game_id: "game_abc".to_owned(),
-        entry: ti4_server::protocol::server::GameEvent {
+        entry: ti4_host::protocol::server::GameEvent {
             id: "game_abc-1".to_owned(),
             timestamp: "12:34:56".to_owned(),
             version: Some(2),
-            visibility: ti4_server::protocol::server::EventVisibility::Public,
-            event: ti4_server::protocol::server::GameEventKind::DecisionResolved,
+            visibility: ti4_host::protocol::server::EventVisibility::Public,
+            event: ti4_host::protocol::server::GameEventKind::DecisionResolved,
             decision_count: Some(1),
             batch_id: None,
             batch_start_cursor: None,
@@ -386,10 +338,10 @@ fn subscribe_accepts_only_the_v3_player_session_field() {
 
 #[test]
 fn the_script_messages_round_trip_in_the_form_that_a_local_game_takes() {
-    use ti4_server::protocol::client::MAX_SCRIPT_ENTRIES;
-    use ti4_server::protocol::server::{DraftAppliedMsg, ScriptStopped};
-    use ti4_view::planning::draft::DraftStep;
-    use ti4_view::planning::steps::PlanStep;
+    use ti4_host::planning::draft::DraftStep;
+    use ti4_host::planning::steps::PlanStep;
+    use ti4_host::protocol::client::MAX_SCRIPT_ENTRIES;
+    use ti4_host::protocol::server::{DraftAppliedMsg, ScriptStopped};
 
     // The script of the page: an answer by its id, then the steps as `submitPlan` has them.
     let json = serde_json::json!({
@@ -423,7 +375,7 @@ fn the_script_messages_round_trip_in_the_form_that_a_local_game_takes() {
         game_id: "game_abc".to_owned(),
         request_id: "r1".to_owned(),
         script,
-        scope: ti4_view::planning::audit::PlanScope::Tactical,
+        scope: ti4_host::planning::audit::PlanScope::Tactical,
     };
     let json = serde_json::to_string(&run(script.clone())).unwrap();
     assert!(json.contains("\"type\":\"run_draft\""));
@@ -458,8 +410,8 @@ fn the_script_messages_round_trip_in_the_form_that_a_local_game_takes() {
 
 #[test]
 fn the_undo_of_a_seat_round_trips_and_is_absent_from_a_message_without_it() {
-    use ti4_server::protocol::server::{ActionRejectedMsg, HistoryStatus};
-    use ti4_server::protocol::status::UndoBarrier;
+    use ti4_host::protocol::server::{ActionRejectedMsg, HistoryStatus};
+    use ti4_host::protocol::status::UndoBarrier;
 
     let json = serde_json::json!({
         "type": "undo",

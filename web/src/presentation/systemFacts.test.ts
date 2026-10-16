@@ -9,6 +9,7 @@ import {
 } from "./systemFacts.ts";
 import { buildBoardPresentationModel } from "./boardPresentation.ts";
 import { resolveMapTargetSelection } from "./planetSelection.ts";
+import { partialContext } from "../test/wire.ts";
 
 const board: BoardView = {
   systems: {
@@ -16,10 +17,10 @@ const board: BoardView = {
       system_id: "14",
       command_tokens: ["p2"],
       units: [
-        { unit_type: "sol_carrier2", owner: "p1", damaged: false },
-        { unit_type: "fighter", owner: "p1", damaged: false },
-        { unit_type: "fighter", owner: "p1", damaged: false },
-        { unit_type: "infantry", owner: "p1", planet: "arinam", damaged: false },
+        { unit_type: "sol_carrier2", owner: "p1", damaged: false, planet: null, galvanized: false },
+        { unit_type: "fighter", owner: "p1", damaged: false, planet: null, galvanized: false },
+        { unit_type: "fighter", owner: "p1", damaged: false, planet: null, galvanized: false },
+        { unit_type: "infantry", owner: "p1", planet: "arinam", damaged: false, galvanized: false },
       ],
       planets: { arinam: { planet_id: "arinam", controlled_by: "p1", exhausted: false } },
     },
@@ -41,10 +42,10 @@ const diplomacy: PendingChoiceDto = {
   nonce: "d1",
   actor: "p1",
   prompt: "choose a system",
-  context: { subtype: "diplomacy_choose_system", source: { StrategyCard: { card: "Diplomacy", secondary: false } } },
+  context: partialContext({ subtype: "diplomacy_choose_system", source: { StrategyCard: { card: "Diplomacy", secondary: false } } }),
   options: [
-    { id: "14", kind: "system", label: "14" },
-    { id: "18", kind: "system", label: "18" },
+    { id: "14", kind: "system", label: "14", payload: {} },
+    { id: "18", kind: "system", label: "18", payload: {} },
   ],
 };
 
@@ -66,12 +67,12 @@ describe("system facts", () => {
   it("recognises a bare system pick, only when every option is a board system", () => {
     expect(isSystemPickChoice(diplomacy, board)).toBe(true);
     expect(isSystemPickChoice(diplomacy, null)).toBe(false);
-    const bogus = { ...diplomacy, options: [{ id: "999", kind: "system", label: "999" }] };
+    const bogus = { ...diplomacy, options: [{ id: "999", kind: "system", label: "999", payload: {} }] };
     expect(isSystemPickChoice(bogus, board)).toBe(false);
-    const other = { ...diplomacy, context: { subtype: "gain_command_token" } };
+    const other = { ...diplomacy, context: partialContext({ subtype: "gain_command_token" }) };
     expect(isSystemPickChoice(other, board)).toBe(false);
     // Unexpected Action: recall your own token from one of the systems that hold it.
-    const unexpected = { ...diplomacy, context: { subtype: "unexpected_pick_recall" } };
+    const unexpected = { ...diplomacy, context: partialContext({ subtype: "unexpected_pick_recall" }) };
     expect(isSystemPickChoice(unexpected, board)).toBe(true);
   });
 

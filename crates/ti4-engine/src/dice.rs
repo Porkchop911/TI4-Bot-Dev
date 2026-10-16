@@ -329,7 +329,10 @@ mod tests {
         noted.roll(&mut noted_rng, 1, "gravity rift", Some(4));
         noted.annotate_last(Some("25"), Some("ship destroyed"));
         assert_eq!(noted.history()[0].system.as_deref(), Some("25"));
-        assert_eq!(noted.history()[0].outcome.as_deref(), Some("ship destroyed"));
+        assert_eq!(
+            noted.history()[0].outcome.as_deref(),
+            Some("ship destroyed")
+        );
         assert_eq!(
             plain.roll(&mut plain_rng, 3, "next", None).faces,
             noted.roll(&mut noted_rng, 3, "next", None).faces,

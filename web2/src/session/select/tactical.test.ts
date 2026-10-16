@@ -1,18 +1,17 @@
 import { expect, it } from "vitest";
-import activationUpdate from "../fixtures/update-activation.json";
-import loadUpdate from "../fixtures/update-load.json";
-import movementUpdate from "../fixtures/update-movement.json";
+import activationUpdate from "../../../../fixtures/protocol/update-activation.json";
+import loadUpdate from "../../../../fixtures/protocol/update-load.json";
+import movementUpdate from "../../../../fixtures/protocol/update-movement.json";
 import { setLoad, setShip } from "../movementDraft";
-import type { MovementFacts, SessionUpdate } from "../wire";
+import type { SessionUpdate, TacticalFacts } from "../wire";
 import type { LocalState } from "./action";
 import { selectShell } from "./shell";
 
-// Updates of a real game, written by the engine. See `movement.test.ts` for the commands; the
-// activation is choice 4 of the same game:
-//   cargo run -p ti4-wasm --example record -- 3 8 1 4 pok8imperial no tactical > web2/src/session/fixtures/update-activation.json
+// Updates of a real game, written by the engine: the activation, the movement and the loading
+// of one tactical action (`crates/ti4-wasm/tests/it/protocol_fixtures.rs` (`cargo wire-web`)).
 const activation = activationUpdate as unknown as SessionUpdate;
 const movement = movementUpdate as unknown as SessionUpdate;
-const facts = movement.tactical as MovementFacts;
+const facts = movement.tactical as Extract<TacticalFacts, { kind: "movement" }>;
 const local = (change: Partial<LocalState> = {}): LocalState => ({
   inspected: null,
   staged: null,
@@ -76,10 +75,10 @@ it("opens the activation step: the map is the picker, the panel has the choice",
   expect(Object.keys(board.task!.values).sort()).toEqual(
     choice.options.map((option) => option.id).sort(),
   );
-  // Only the systems where the action does something stand out: 12 in reach of the ships, and
+  // Only the systems where the action does something stand out: 11 in reach of the ships, and
   // home, where the space dock is. "Fit task" frames these.
   const highlight = board.task!.highlight!;
-  expect(highlight).toHaveLength(13);
+  expect(highlight).toHaveLength(12);
   expect(highlight).toContain("23");
   expect(highlight).toContain("01");
   expect(highlight.every((id) => id in board.task!.values)).toBe(true);

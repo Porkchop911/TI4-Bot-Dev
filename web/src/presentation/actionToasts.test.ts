@@ -156,8 +156,8 @@ describe("autoResolvedToast", () => {
     actor: "p1",
     nonce: "n1",
     options: [
-      { id: "technology", label: "Technology", kind: "strategy_card", auto_resolved: auto },
-      ...Array.from({ length: extra }, (_, i) => ({ id: `o${i}`, label: "x", kind: "k" })),
+      { id: "technology", label: "Technology", kind: "strategy_card", payload: {}, auto_resolved: auto },
+      ...Array.from({ length: extra }, (_, i) => ({ id: `o${i}`, label: "x", kind: "k", payload: {} })),
     ],
   });
   it("reports the viewer's single auto-resolved option", () => {

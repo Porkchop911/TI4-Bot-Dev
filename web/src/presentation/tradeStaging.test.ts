@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { ChoiceOptionDto } from "../protocol/types.ts";
+import type { ChoiceOption } from "../protocol/types.ts";
 import {
   emptyStaged,
   freeFormId,
@@ -14,7 +14,7 @@ import {
   type Staged,
 } from "./tradeStaging.ts";
 
-const offer = (id: string, payload: Record<string, unknown> = {}): ChoiceOptionDto => ({
+const offer = (id: string, payload: Record<string, unknown> = {}): ChoiceOption => ({
   id,
   label: id,
   kind: "offer",
@@ -22,7 +22,7 @@ const offer = (id: string, payload: Record<string, unknown> = {}): ChoiceOptionD
 });
 
 /** A catalog shaped like the engine's `offer_options` for a Hacan-style proposer. */
-const CATALOG: ChoiceOptionDto[] = [
+const CATALOG: ChoiceOption[] = [
   offer("ss"),
   offer("pnra:jolnar:3", { note: "ra:jolnar" }),
   offer("pnceasefire:jolnar:0", { note: "ceasefire:jolnar", gift: true }),
@@ -43,7 +43,7 @@ const CATALOG: ChoiceOptionDto[] = [
   offer("pcra:jolnar:3", { promissory: "ra:jolnar" }),
   offer("nnra:jolnar>cf:jolnar", { promissory: "ra:jolnar", received_promissory: "cf:jolnar" }),
   offer("cnsabo1>cf:jolnar", { action_card: "sabo1", received_promissory: "cf:jolnar" }),
-  { id: "decline", label: "Offer nothing", kind: "decline" },
+  { id: "decline", label: "Offer nothing", kind: "decline", payload: {} },
 ];
 
 describe("staged <-> deal id", () => {

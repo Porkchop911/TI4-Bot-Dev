@@ -8,11 +8,11 @@ use std::time::{Duration, Instant};
 
 use ti4_content::ContentStore;
 use ti4_engine::setup::start_game_seeded;
+use ti4_host::protocol::server::ServerMessage;
+use ti4_host::protocol::status::ViewerRole;
 use ti4_model::POK;
 use ti4_model::id::PlayerId;
-use ti4_server::dev::execute_launch_scenario;
-use ti4_server::protocol::server::ServerMessage;
-use ti4_server::protocol::status::ViewerRole;
+use ti4_server::dev::launch_scenario;
 use ti4_server::session::bluff::BluffPolicy;
 use ti4_server::session::registry::HistoryAction;
 use ti4_server::session::{GameRegistry, GameSession, MockClient, SeatController, SessionConfig};
@@ -216,8 +216,8 @@ fn after_an_undo_a_declared_bluff_holds_the_game_as_in_a_fresh_one() {
         ..BluffPolicy::default()
     };
     let registry = Arc::new(GameRegistry::new());
-    let launch = execute_launch_scenario(&registry, "ongoing_combat_four_views", Some(SEED))
-        .expect("launch");
+    let launch =
+        launch_scenario(&registry, "ongoing_combat_four_views", Some(SEED)).expect("launch");
     let session = registry.get_game(&launch.game_id).expect("game");
     wait_ready(&session);
     let version = session.game_version();
@@ -264,15 +264,16 @@ fn wait_pending(session: &GameSession) -> (PlayerId, String, u64) {
 
 #[test]
 fn a_session_made_by_a_batch_commit_is_not_replaying_once_live() {
-    use ti4_server::session::batch::{BatchKind, BatchRequest, MovementPlan, MovementStep};
+    use ti4_host::batch::{BatchKind, BatchRequest, MovementPlan, MovementStep};
     let (dir, store) = temp_store();
     let registry = GameRegistry::new().with_store(store);
     let host = PlayerId::new("p1");
     let guest = PlayerId::new("p2");
     let players = vec![host.clone(), guest.clone()];
     let (state, galaxy) =
-        ti4_server::map::create_game_with_map(ContentStore::embedded(), &players, 42).unwrap();
-    let tiles = ti4_server::map::build_board_tiles(ContentStore::embedded(), &galaxy);
+        ti4_host::map::create_game_with_template(ContentStore::embedded(), &players, 42, None)
+            .unwrap();
+    let tiles = ti4_host::map::build_board_tiles(ContentStore::embedded(), &galaxy);
     let mut config = SessionConfig::new("hist_batch_live", state)
         .with_seed(42)
         .with_player_ids(players)

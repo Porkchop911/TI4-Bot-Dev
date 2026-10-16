@@ -13,8 +13,8 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
+use ti4_host::protocol::PROTOCOL_VERSION;
 use ti4_server::create_app;
-use ti4_server::protocol::PROTOCOL_VERSION;
 use ti4_server::public::PublicConfig;
 use ti4_server::session::GameRegistry;
 

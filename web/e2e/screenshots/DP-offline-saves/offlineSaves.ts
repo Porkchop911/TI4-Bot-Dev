@@ -9,9 +9,9 @@ export const ENGINE_LABEL = /^engine [0-9a-f]{8}$/;
 
 /** Blocks every call to a server, like a device with no connection. /health says it is the public build. */
 export async function blockServer(page: Page, options: { health?: boolean } = {}) {
-  await page.route(/\/(api|ws|advisor|health)(\/|$)/, (route) => {
+  await page.route(/\/(api|ws|health)(\/|$)/, (route) => {
     if (options.health && route.request().url().endsWith("/health"))
-      return route.fulfill({ json: { status: "ok", protocol_version: 3, commit: "51390594", public: true } });
+      return route.fulfill({ json: { status: "ok", protocol_version: 4, commit: "51390594", public: true } });
     return route.abort();
   });
 }

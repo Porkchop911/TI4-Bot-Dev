@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { BoardView, ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import { BoardView, ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import { SemanticIntent, usePipelineRunner } from "../hooks/usePipelineRunner.ts";
 import { DecisionHeader } from "./DecisionHeader.tsx";
 
@@ -121,7 +121,7 @@ export const CargoLoadingTray: React.FC<{
     }
     const intents: SemanticIntent[] = groups.flatMap((group) =>
       Array.from({ length: staged[group.key] ?? 0 }, () => ({
-        predicate: (option: ChoiceOptionDto) =>
+        predicate: (option: ChoiceOption) =>
           option.kind !== "decline" &&
           option.payload?.unit === group.unit &&
           (typeof option.payload?.source === "string" ? option.payload.source : null) ===

@@ -7,7 +7,7 @@ import { prefix, record } from "./shared";
 
 // Bug 2: the server sends `visibility` as an object ({"visibility":"public"}); the client compared it
 // with the string "public", so no action toast and no recap toast ever fired in a real game. These
-// events use the real wire shape (see crates/ti4-server/fixtures/event_visibility.json).
+// events use the real wire shape (see fixtures/protocol/event_visibility.json).
 // Regenerate the "before" shots with TI4_SHOT_PREFIX=before on the base commit.
 
 test("toasts with the real wire shape: another player's action", async ({ page }, testInfo) => {

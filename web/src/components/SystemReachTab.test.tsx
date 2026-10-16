@@ -11,13 +11,13 @@ const board: BoardView = {
     "27": {
       system_id: "27",
       planets: {},
-      units: [{ unit_type: "cruiser", owner: "p1", damaged: false }],
+      units: [{ unit_type: "cruiser", owner: "p1", damaged: false, planet: null, galvanized: false }],
       command_tokens: [],
     },
     "41": {
       system_id: "41",
       planets: {},
-      units: [{ unit_type: "dreadnought", owner: "p2", damaged: false }],
+      units: [{ unit_type: "dreadnought", owner: "p2", damaged: false, planet: null, galvanized: false }],
       command_tokens: [],
     },
   },

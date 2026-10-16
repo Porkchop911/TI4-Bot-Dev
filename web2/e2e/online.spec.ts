@@ -17,6 +17,10 @@ const system = (page: Page, id: string) => page.locator("g.system").filter({ has
 const workspace = (page: Page, name: string) =>
   page.getByRole("navigation", { name: "Workspace" }).getByRole("button", { name });
 const status = (page: Page) => page.locator("header strong").first();
+/** The header of a game that random bots play from its start. The speaker is drawn: a seat that
+ * chooses last is given the last strategy card, and is asked in the action phase first, after the
+ * seats before it took their turns. */
+const round1 = /^Round 1 · (Strategy phase|Action phase( · Turn \d+)?)$/;
 
 /** The errors of the page. A test expects none. */
 function errorsOf(page: Page) {
@@ -264,10 +268,8 @@ test("the quick start is a game on the server, at its address", async ({ page })
   const errors = errorsOf(page);
   await page.goto("/?online&fill=random");
   await expect(page).toHaveURL(/\?online=[^&]+&seat=[^&]+$/);
-  // The page asks the table first, then loads the engine and opens the game. The speaker is
-  // drawn: a seat that chooses last is given the last strategy card, and is asked in the
-  // action phase first.
-  await expect(page.getByText(/^Round 1 · (Strategy|Action) phase$/)).toBeVisible();
+  // The page asks the table first, then loads the engine and opens the game.
+  await expect(page.getByText(round1)).toBeVisible();
   await expect(page.getByRole("region", { name: "Players" }).locator("tbody tr")).toHaveCount(8);
   // The page plays a seat: it is asked, or it waits for a seat before it.
   await expect(status(page)).toHaveText(/^(Your decision|Waiting for .+|Turn of .+)$/);
@@ -280,7 +282,7 @@ test("the quick start is a game on the server, at its address", async ({ page })
   );
   expect(Object.keys(players)).toEqual([address.get("seat")]);
   await page.reload();
-  await expect(page.getByText(/^Round 1 · (Strategy|Action) phase$/)).toBeVisible();
+  await expect(page.getByText(round1)).toBeVisible();
   await expect(status(page)).toHaveText(/^(Your decision|Waiting for .+|Turn of .+)$/);
   expect(errors).toEqual([]);
 });
@@ -331,8 +333,9 @@ test("a lost connection is said in the toolbar, and the game comes back by itsel
     open.push(socket);
   });
   await page.goto("/?online&fill=random");
-  await expect(page.getByText(/^Round 1 · (Strategy|Action) phase$/)).toBeVisible();
-  const before = await status(page).textContent();
+  await expect(page.getByText(round1)).toBeVisible();
+  // The bots play until the seat is asked; then the game waits for it, also while it is offline.
+  await expect(status(page)).toHaveText("Your decision");
 
   down = true;
   await Promise.all(open.map((socket) => socket.close()));
@@ -340,11 +343,14 @@ test("a lost connection is said in the toolbar, and the game comes back by itsel
   await expect(status(page)).toHaveText("Offline · reconnecting");
   await expect(page.getByRole("region", { name: "Players" }).locator("tbody tr")).toHaveCount(8);
   await expect(send(page)).toHaveCount(0);
-  await expect(panel(page).getByText("The game cannot be reached.")).toBeVisible();
+  // The note is in the panel of a waiting seat. The secondary of a strategic action keeps the
+  // overview of the card, which has no note: the toolbar alone says it there.
+  const strategic = page.getByRole("complementary").getByText("Strategic action", { exact: true });
+  await expect(panel(page).getByText("The game cannot be reached.").or(strategic)).toBeVisible();
   await page.screenshot({ path: "shots/online/offline.png", animations: "disabled" });
 
   // The page tries again by itself, and the snapshot after it is the game as it is.
   down = false;
-  await expect(status(page)).toHaveText(before ?? "");
+  await expect(status(page)).toHaveText("Your decision");
   expect(errors).toEqual([]);
 });

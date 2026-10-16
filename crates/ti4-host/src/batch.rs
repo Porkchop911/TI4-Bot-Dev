@@ -556,6 +556,22 @@ impl BatchFailure {
     }
 }
 
+/// A batch applied to the history: its request, its seat and the decisions it answered
+/// (`start_cursor..end_cursor`). Saved with the history and in the timeline a turn redo keeps
+/// (`history::turn_redo::AlternateTimeline`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BatchRecord {
+    pub request_id: String,
+    pub batch_id: String,
+    pub actor: PlayerId,
+    pub start_cursor: usize,
+    pub end_cursor: usize,
+    /// Set when the batch stopped at a reaction window; answers a repeated request the same way.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub interrupted: Option<BatchInterruption>,
+}
+
 /// A batch that stopped early because the engine opened a reaction window the plan did not
 /// plan for. The steps before it are applied and recorded; the window stays pending for its
 /// seat, and `remaining_steps` is what the client may offer to re-send once it has resolved.
@@ -1447,7 +1463,10 @@ fn simulate_script(
     }
     let replayed = prefix.len() - covered;
     let clock = config.clock();
-    let deadline = Deadline::after(clock, u64::try_from(replay_budget(replayed).as_millis()).unwrap_or(u64::MAX));
+    let deadline = Deadline::after(
+        clock,
+        u64::try_from(replay_budget(replayed).as_millis()).unwrap_or(u64::MAX),
+    );
     let mut phase = game.state.phase;
     let mut round = game.state.round;
     let mut transitions = Vec::new();
@@ -1618,7 +1637,8 @@ mod tests {
     fn a_three_way_tie_ending_inside_a_batch_goes_to_the_first_in_initiative() {
         let players: Vec<PlayerId> = ["p1", "p2", "p3"].into_iter().map(PlayerId::new).collect();
         let (mut state, galaxy) =
-            ti4_view::map::create_game_with_map(ContentStore::embedded(), &players, 42).unwrap();
+            crate::map::create_game_with_template(ContentStore::embedded(), &players, 42, None)
+                .unwrap();
         let mut by_initiative: Vec<_> = state
             .card_initiative
             .iter()

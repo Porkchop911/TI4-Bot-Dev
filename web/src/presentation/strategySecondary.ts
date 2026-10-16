@@ -1,4 +1,4 @@
-import type { ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import type { ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import { readReadyHints, type ReadyHints } from "./readyHints.ts";
 import { findStrategyCardMeta, humanizeId } from "../protocol/contentCatalog.ts";
 import { describeCommodityStanding, type CommodityStanding } from "./commodityStanding.ts";
@@ -12,8 +12,8 @@ export interface StrategySecondaryView {
   secondaryText: string | null;
   tokensLeft: number | null;
   costsToken: boolean;
-  yes: ChoiceOptionDto;
-  no: ChoiceOptionDto;
+  yes: ChoiceOption;
+  no: ChoiceOption;
   /** A button caption that says what happens, e.g. "Spend 1 strategy token to draw two action cards". */
   yesLabel: string;
   noLabel: string;
@@ -23,7 +23,7 @@ export interface StrategySecondaryView {
   commodities: CommodityStanding | null;
 }
 
-const isNo = (option: ChoiceOptionDto) =>
+const isNo = (option: ChoiceOption) =>
   option.id === "no" || option.id === "decline" || option.kind === "decline";
 
 /** "spend a strategy token and 4 resources to research" -> "Spend 1 strategy token + 4 resources to research". */

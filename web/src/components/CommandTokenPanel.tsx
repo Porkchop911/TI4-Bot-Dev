@@ -155,6 +155,12 @@ export const CommandTokenPanel: React.FC<CommandTokenPanelProps> = ({
               ({view.total} free + {bought} bought)
             </span>
           )}
+          {view.gained > 0 && (
+            <span className="token-panel__split" data-testid="token-gained-split">
+              {" "}
+              ({view.total - view.gained} held + {view.gained} gained)
+            </span>
+          )}
         </span>
         <span
           className="token-panel__remaining"

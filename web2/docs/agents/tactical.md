@@ -1,0 +1,63 @@
+# web2: movement, invasion, production, battle table
+
+Part of `web2/AGENTS.md`: the Patterns and the rules of Screen size and Text there apply here too.
+
+## Movement
+
+The owner chose this design on 2026-10-10, from three that were compared.
+
+- The movement is staged on the map. A system that ships can leave opens its fleet there, in a sheet: one token for each ship. A tap moves a ship or takes it back. The panel says what leaves each system; it has no controls.
+- A ship that moves is one row: its token, then its own hold, one slot for each unit. The game rolls for each ship at a gravity rift, so the player must see what each ship carries. Ships of a kind that stay are tokens in one row.
+- What the ships of a system can load is one row of the sheet, a chip for each kind of unit with the count that is left. The chips are grouped by place, and the place is text before its chips ("Space area", "Planet Jord", "#23 Planet Vefut"). One chip is chosen (▸). A tap on an empty slot loads that kind; a tap on a used slot unloads. "Fill" loads the chosen kind on every ship that leaves the system, until the holds are full or none is left. A chip is the icon of the unit and the count; the name is its tooltip. The heading and this row stay in view while the ships scroll.
+- When the ships of a system can load at more than one place, the row of a ship says in text where its cargo is from ("Planet Jord 2 · Space area 1").
+- A pickup on the way has one sign, the bent arrow: on its chip, after the number of the system, and on the slot that holds the unit. A slot of a ship that does not pass the system cannot take it.
+- Gravity Drive is a toggle on the row of a ship, where it changes what the ship does: it spares the ship a gravity rift, or the ship cannot move without it. One ship of the action has it; the toggle of another ship names that ship. The game chooses the path, and the row shows what the path means ("⚄ Rift roll").
+- A system that the player is done with has a check mark: the movement takes something from it, or the player marked it. The "✓" of the sheet closes the sheet and marks the system; the sheet has no "×". A tap on the system closes the sheet with no mark. The mark of the player is kept in the page only, until the movement is sent: a reload loses it. The panel says "✓ Nothing leaves" for a marked system with nothing staged. The count of the player's ships shows "now → after" in the standard view.
+- The paths of the ships are drawn for the open system only, with the marks of that path (rift roll, Gravity Drive). The game chooses the path. The map shows no cargo labels.
+- Exception to "a choice is staged, then sent": a draft records every change of the movement at once, and the later steps are checked again. The same holds for the landings and the production of a draft. The step has no "Reset selection". Its main button sends nothing: it records a step with nothing staged ("Move nothing", "Land nothing", "Produce nothing"), or goes on to the step that the game comes to ("Go to invasion", "Go to production"). When no step follows, there is no button. The reason: a draft is private, every change is one step of undo, and the step tabs go on. Live keeps "Move fleet", because that sends to the game.
+- The active system opens the list of what is committed to it: the ships that were there, then the ships that move, by the system that they leave, each with its hold. It is read-only; a system in the list opens its sheet.
+- **The odds of the space combat** (owner, 2026-10-14) are shown where the movement shows what arrives: a row of the card "Arrives in …" of the panel, and the "Arrives" block of the inspector of the active system (`SpaceOdds`). They are there when another seat has ships in the active system and a ship moves in. They have only "Space combat · ‹defender›", Win, Draw and Loss of the moving seat in whole percentages, and one line for each side with the expected survivors by kind against the ships that fight ("1.8 / 2"; the name of the kind on hover). The rollouts and what the calculation counts and leaves out are behind a `Hint`. While the answer for a new movement is on its way, the last numbers are dimmed and the line has "…". `ti4-calc` computes them in the page (`spaceOdds` of `web-shared/src/engine/odds.ts`, the query `space_odds` of the engine of the page: the Worker of a local game, an instance on the main thread in an online game), from the sides that the engine gives (`MovementFacts.battle`) and the staged ships (`session/movementOdds.ts`), on a fixed seed: the numbers do not change while the movement does not. A ground combat and the activation have no odds, and action cards are not counted.
+- The demo data follows the game: before a movement, ships of two players are never in one system. Ground forces of two players can be on different planets of one system.
+- The sheet has a small "Reset": it takes back what leaves that system, and its check mark, also one that the player set.
+- The read-only view of a movement (a recorded step in Live, History) is the same tokens in the panel, one band for each system.
+
+## Invasion
+
+The owner chose this design on 2026-10-10, from three that were compared.
+
+- The landings are staged on the map, in one sheet at the active system. It opens when the step opens. The panel says what lands on each planet and what stays in space; it has no controls. A row of it opens the sheet.
+- The ground forces that can land are one row of the sheet, the same chips as the load row of the movement: a chip for each kind with the count that is left, grouped by place, one chip chosen (▸).
+- Each planet of the system is one row: its name, `res/inf`, its type and what the exploration left there (the Exploration section of `board.md`), who controls it, the units that are there by seat, then one token for each unit that lands and one free slot ("+"). A tap on the slot lands the chosen kind; a tap on a token takes it back. A planet where nothing can land stays in its place and says so.
+- A tap on a planet of the active system on the map lands one more unit of the chosen kind there. The planets that can be landed on stand out, as in a payment, and a planet with a staged landing has the check mark.
+- Every map view shows the ground forces of a planet after the staged landings.
+- "Reset" of the sheet takes every staged landing back. The "✓" closes the sheet and sets no mark: there is one system. A tap on the active system opens it again. On a phone the open sheet has the room of the footer, as the fleet of a system has.
+- The footer has "Commit ground forces", or "Land nothing" when nothing is staged, and "Reset selection".
+- What follows the landings (space cannon defense, ground combat, control, exploration) is not on this screen yet: these are decisions in the list. A decision of an exploration card names the card.
+
+## Production
+
+The owner chose this design on 2026-10-11: the build first, then the payment, both on the map.
+
+- The step has two stages. Nothing is sent before the last button.
+- **Build.** The units are staged on the map, in one sheet at the system that produces. It opens when the step opens. The panel says what is produced in each place and has the limits; it has no controls. A row of it opens the sheet.
+- Every kind of unit of a production is one row (owner, 2026-10-11; a row of chips with one chosen kind and a row with all printed values were tried, and were hard to read): the icon, the name, the cost ("2", "1 for 2"), how many are left in the supply, the units that are staged, and the tokens. The columns have fixed widths, so cost and left line up over the rows; each group heading says "Cost" and "Left" once.
+- The printed values are behind the name (`Peek`): hover shows them, a click or a tap keeps them open, and the card opens above the name when there is no room below. The name has a dotted underline on both layouts. The card is laid out as the printed unit card: the icon and the name, the four values in one row (cost, combat, move, capacity; the number over its word), the keywords with their values, one line each in capitals, and the printed special rule of the unit (`rules`). A section with nothing is not shown. The card has no control, and a keyword is not explained (the Text section of `AGENTS.md`).
+- A dice value is read as the game says it: "5+", and "3+ (x3)" with more than one die; the same for BOMBARDMENT, ANTI-FIGHTER BARRAGE and SPACE CANNON. PRODUCTION has the printed value ("PRODUCTION +2").
+- The rows are in two groups. "Ships · Space area" says the place once. "Ground forces" says its place in the heading when there is one place only ("Planet Jord"); with several places each unit has one line for each ("Planet Lisis"), under a row with the total.
+- What is staged is the count of units (zero is dimmed, more than zero in the accent colour), then one token for each purchase, with the icon of every unit that it makes: a pair of fighters is a token with two icons. A tap on a token takes that purchase back. The dashed slot adds one purchase and shows the units that it makes. It is not shown when nothing more can be added. One step is one purchase. Fighters and infantry come two at a time, as the game sells them; the last pair makes one unit when the production limit has room for one only.
+- A unit that cannot be produced in this use keeps its row. It is dimmed and has a word in place of the tokens ("No technology", "None left", "Blockaded", "No place"), with the reason in full as tooltip.
+- The limits are gauges of the sheet and of the panel: "Production capacity", "Resources", "Fleet supply after", "Fighters and cargo in space". The heading of the sheet says what is staged and what it costs after a discount ("5 units · 3 resources · discount 1").
+- The limits are soft, except the supply of a unit (the plastic): the player plans against them. A build over a soft limit is staged. The gauge is red, the footer says what is over ("2 resources short · 1 unit over the production limit"), and the main button and the "✓" of the sheet wait (pattern 5). The soft limits are the resources (the cost of the staged build against what the ready planets and the trade goods of the seat pay), the production limit, the fleet supply and the capacity. A purchase after the production limit makes all its units. The supply of a unit is hard: "Left" counts down, and when none is left the slot is not shown.
+- "Fighters and cargo in space" has both sides after the build: a staged fighter uses capacity, and a staged ship adds its own.
+- No planet pays while the build is chosen, and there is no payment bar. The main button says what is next: "Pay 3 resources", "Produce units" when the build costs nothing, "Produce nothing" when nothing is staged. The "✓" of the sheet does what "Pay …" does. "Reset" takes the build back.
+- **Pay.** The sheet closes and the map is the payment (the Payment section of `board.md`): the bar, the planets that pay, Auto-pay. The footer has the payment line and "Produce units", which is disabled while the payment is short. "Back to build" (Esc) or a tap on the system that produces opens the sheet again; the staged payment stays and is measured against the new cost.
+- Exception to "a tap on a planet of the active system acts on the open sheet" (the Invasion section): in a production a planet always pays. The reason: every ready planet pays, also the planets of the system that produces.
+- On a phone the open sheet has the room of the footer, as the fleet of a system has. The payment has the whole map pane, with the footer under it.
+- Every map view shows the ships and the ground forces of the system after the staged build.
+- What the game asks before the production (AI Development Algorithm) is a decision in the list.
+
+## Battle table
+
+- The headers of the attacker and the defender have the same lines, so the unit rows start at the same height.
+- The simulated odds are in these headers (win % and survivors). They have no card of their own.
+- A player can have more than one strategy card (a game of four or fewer players). The player table shows all of them.

@@ -7,7 +7,7 @@ import { actionToastFromEvent } from "../presentation/actionToasts.ts";
 
 // Produced by (and round-trip checked in) the server's serde tests.
 const serverEvents = JSON.parse(
-  fs.readFileSync(path.resolve(__dirname, "../../../crates/ti4-server/fixtures/event_visibility.json"), "utf-8"),
+  fs.readFileSync(path.resolve(__dirname, "../../../fixtures/protocol/event_visibility.json"), "utf-8"),
 ) as GameEvent[];
 
 describe("event visibility decoding", () => {

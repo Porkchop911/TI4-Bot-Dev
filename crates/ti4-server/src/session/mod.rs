@@ -1,37 +1,36 @@
 pub mod bluff;
 pub mod bluff_hold;
 pub mod decider;
-mod planning;
+mod draft_basis;
 pub mod preview;
 pub mod random_bot;
 pub mod reach;
-pub mod reaction_modes;
 pub(crate) mod ready_secondary;
 pub mod registry;
 pub(crate) mod script;
-pub mod splice;
 pub mod staged;
 pub mod table;
 pub mod transport;
-pub mod turn_redo;
 pub(crate) mod undo;
 pub mod worker;
-
-/// The rule bot, under the paths it had before it moved to its own crate (`ti4-rule-bot`).
-pub use ti4_rule_bot as smart_bot;
-pub use ti4_rule_bot::faction_plans as smart_bot_faction_plans;
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, Weak, mpsc};
 use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 use ti4_engine::choice::DecisionRecord;
 use ti4_engine::fingerprint::CanonicalHash;
 use ti4_model::id::PlayerId;
 use ti4_model::state::GameState;
 
-use crate::protocol::server::{ActionAcceptedMsg, InitialSnapshotMsg, ServerMessage};
-use crate::protocol::status::{RejectionReason, ViewerRole};
+use ti4_host::protocol::check_submission;
+use ti4_host::protocol::server::{ActionAcceptedMsg, InitialSnapshotMsg, ServerMessage};
+use ti4_host::protocol::status::{RejectionReason, ViewerRole};
+use ti4_host::rng_force::RngMarks;
+use ti4_host::view::reaction_modes;
+use ti4_host::{batch, step_snapshot};
+
 use crate::session::decider::ChoiceSubmission;
 use crate::session::worker::{
     PendingSubmissionState, SessionShared, Subscriber, spawn_session_worker,
@@ -62,6 +61,11 @@ impl SessionSubscription {
     pub fn try_recv(&self) -> Result<ServerMessage, mpsc::TryRecvError> {
         self.receiver.try_recv()
     }
+
+    /// Receives the next update, waiting at most `timeout`.
+    pub fn recv_timeout(&self, timeout: Duration) -> Result<ServerMessage, mpsc::RecvTimeoutError> {
+        self.receiver.recv_timeout(timeout)
+    }
 }
 
 impl Drop for SessionSubscription {
@@ -79,16 +83,13 @@ impl Drop for SessionSubscription {
 use serde::{Deserialize, Serialize};
 
 pub use decider::RemoteHumanDecider;
-pub use planning::PlanningError;
 pub use random_bot::{RANDOM_BOT_DELAY_ENV, random_bot_delay_ms};
-pub use registry::{BotServiceConfig, GameRegistry};
-pub use ti4_host::replay::{ReplayError, ReplayReport, replay_session, replay_session_forced};
-pub use ti4_host::rng_force::{RngForce, RngMarks};
-pub use ti4_host::{batch, replay, rng_force, step_snapshot};
+pub use registry::GameRegistry;
 pub use transport::MockClient;
 
 /// Configuration for the controller occupying a table seat.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "StoredSeatController")]
 pub enum SeatController {
     /// Remote human seat routed through channels to network/mock clients.
     Human,
@@ -98,31 +99,63 @@ pub enum SeatController {
     BotAlwaysDecline,
     /// Automated bot following a scripted sequence of option IDs.
     BotScripted(Vec<String>),
-    /// In-process bot choosing uniformly among the legal options, reproducibly from
-    /// (game seed, seat, decision index) with a think delay between decisions. See
-    /// [`random_bot`].
+    /// In-process bot of a kind of `ti4_host::bots`: the rule bot, a random seat, or an MLP
+    /// model. It decides reproducibly from (game seed, seat, decision index), with a think delay
+    /// between decisions. See [`random_bot`]. Written as the id of the kind (`{"Bot": "smart"}`);
+    /// reading `mlp:<name>` needs the model loaded (`ti4_host::bots::loaded`).
+    Bot(ti4_host::bots::BotKind),
+}
+
+/// [`SeatController`] as a record of an earlier build may have it: `BotRandom` and `BotSmart`
+/// are the kinds `random` and `smart`.
+#[derive(Deserialize)]
+enum StoredSeatController {
+    Human,
+    BotFirstOption,
+    BotAlwaysDecline,
+    BotScripted(Vec<String>),
     BotRandom,
-    /// In-process bot like [`SeatController::BotRandom`] that answers the board questions it has
-    /// an opinion on with simple heuristics (claim nearby planets, fight battles it expects to
-    /// win, build when short of units, take favourable trades) and the rest at random. See
-    /// [`smart_bot`].
     BotSmart,
+    Bot(ti4_host::bots::BotKind),
+}
+
+impl From<StoredSeatController> for SeatController {
+    fn from(stored: StoredSeatController) -> Self {
+        match stored {
+            StoredSeatController::Human => Self::Human,
+            StoredSeatController::BotFirstOption => Self::BotFirstOption,
+            StoredSeatController::BotAlwaysDecline => Self::BotAlwaysDecline,
+            StoredSeatController::BotScripted(script) => Self::BotScripted(script),
+            StoredSeatController::BotRandom => Self::Bot(ti4_host::bots::BotKind::Random),
+            StoredSeatController::BotSmart => Self::Bot(ti4_host::bots::BotKind::Smart),
+            StoredSeatController::Bot(kind) => Self::Bot(kind),
+        }
+    }
 }
 
 impl SeatController {
-    /// Whether the seat is answered inside the game worker (a random or rule bot): no
+    /// The rule bot.
+    pub const SMART: Self = Self::Bot(ti4_host::bots::BotKind::Smart);
+    /// The random seat.
+    pub const RANDOM: Self = Self::Bot(ti4_host::bots::BotKind::Random);
+
+    /// Whether the seat is answered inside the game worker (a bot of `ti4_host::bots`): no
     /// credential, no connection, never taken over.
     #[must_use]
     pub const fn is_in_process_bot(&self) -> bool {
-        matches!(self, Self::BotRandom | Self::BotSmart)
+        matches!(self, Self::Bot(_))
+    }
+
+    /// Whether the seat is played by an MLP model.
+    #[must_use]
+    pub const fn is_mlp(&self) -> bool {
+        matches!(self, Self::Bot(ti4_host::bots::BotKind::Mlp(_)))
     }
 }
 
 /// Configuration used to spawn an authoritative game session.
 #[derive(Debug, Clone)]
 pub struct SessionConfig {
-    /// In-memory drafts carried across session replacement (undo/redo).
-    pub plans: BTreeMap<PlayerId, crate::planning::runner::PlayerPlan>,
     pub game_id: String,
     pub state: GameState,
     pub seats: BTreeMap<PlayerId, SeatController>,
@@ -131,20 +164,20 @@ pub struct SessionConfig {
     pub nicknames: BTreeMap<PlayerId, String>,
     pub seat_tokens: BTreeMap<PlayerId, String>,
     pub galaxy: Option<ti4_content::galaxy::Galaxy>,
-    pub map_tiles: Vec<crate::protocol::view::BoardTileView>,
-    pub galaxy_layout: crate::map::GalaxyLayout,
+    pub map_tiles: Vec<ti4_host::protocol::view::BoardTileView>,
+    pub galaxy_layout: ti4_host::map::GalaxyLayout,
     pub seed: Option<u64>,
     pub player_ids: Vec<PlayerId>,
     pub store: Option<Arc<crate::storage::FileGameStore>>,
     pub prior_decisions: Vec<DecisionRecord>,
-    pub prior_events: Vec<crate::protocol::server::GameEvent>,
+    pub prior_events: Vec<ti4_host::protocol::server::GameEvent>,
     pub initial_version: u64,
     pub redo_decisions: Vec<DecisionRecord>,
     pub history_active: bool,
-    pub redo_events: Vec<crate::protocol::server::GameEvent>,
+    pub redo_events: Vec<ti4_host::protocol::server::GameEvent>,
     pub event_counter: u64,
     pub history_generation: u64,
-    pub batches: Vec<crate::storage::BatchRecord>,
+    pub batches: Vec<ti4_host::batch::BatchRecord>,
     /// Stream positions forced while replaying `prior_decisions` and `redo_decisions`
     /// (set only on a timeline made by a turn redo).
     pub rng_marks: RngMarks,
@@ -163,11 +196,11 @@ pub struct SessionConfig {
     pub staged: staged::StagedBook,
     /// The steps that the undo of a seat took back, when this session is what that undo left.
     /// Every first snapshot of a connection of the seat has them, until the seat decides again.
-    pub undone: BTreeMap<PlayerId, Vec<ti4_view::planning::steps::PlanStep>>,
+    pub undone: BTreeMap<PlayerId, Vec<ti4_host::planning::steps::PlanStep>>,
     /// Whether the worker keeps a step-boundary copy of the game for batch checks (see
     /// `step_snapshot`). Off only in tests that compare against the full-replay path.
     pub step_snapshots: bool,
-    /// Think delay of the `BotRandom` seats in milliseconds; `None` reads
+    /// Think delay of the bot seats in milliseconds; `None` reads
     /// `TI4_RANDOM_BOT_DELAY_MS` (default 600). Tests and soaks set `Some(0)`.
     pub random_bot_delay_ms: Option<u64>,
     /// A copy of the game at an earlier step boundary of this same history: the worker forks it
@@ -175,6 +208,10 @@ pub struct SessionConfig {
     /// committed batch replaces a session. Checked against `prior_decisions` (prefix property)
     /// and ignored when it does not fit.
     pub resume: Option<Arc<step_snapshot::StepSnapshot>>,
+    /// The opening of the scenario that a new game starts from
+    /// (`ti4_host::view::scenario::Opening`): the worker answers the questions of its seat until
+    /// it stops. Only a game with no decisions plays it.
+    pub opening: Option<ti4_host::view::scenario::Opening>,
 }
 
 impl batch::ReplayBasis for SessionConfig {
@@ -203,7 +240,6 @@ impl SessionConfig {
     #[must_use]
     pub fn new(game_id: impl Into<String>, state: GameState) -> Self {
         Self {
-            plans: BTreeMap::new(),
             game_id: game_id.into(),
             state,
             seats: BTreeMap::new(),
@@ -211,7 +247,7 @@ impl SessionConfig {
             seat_tokens: BTreeMap::new(),
             galaxy: None,
             map_tiles: Vec::new(),
-            galaxy_layout: crate::map::GalaxyLayout {
+            galaxy_layout: ti4_host::map::GalaxyLayout {
                 version: 1,
                 active_sources: Vec::new(),
                 placements: Vec::new(),
@@ -238,6 +274,7 @@ impl SessionConfig {
             step_snapshots: true,
             random_bot_delay_ms: None,
             resume: None,
+            opening: None,
         }
     }
 
@@ -260,11 +297,11 @@ impl SessionConfig {
     pub fn with_galaxy(
         mut self,
         galaxy: ti4_content::galaxy::Galaxy,
-        map_tiles: Vec<crate::protocol::view::BoardTileView>,
+        map_tiles: Vec<ti4_host::protocol::view::BoardTileView>,
     ) -> Self {
         self.galaxy = Some(galaxy);
         self.map_tiles = map_tiles;
-        self.galaxy_layout = crate::map::GalaxyLayout::from_galaxy(
+        self.galaxy_layout = ti4_host::map::GalaxyLayout::from_galaxy(
             self.galaxy.as_ref().expect("galaxy just assigned"),
             ti4_model::content_types::POK,
         );
@@ -299,7 +336,7 @@ impl SessionConfig {
     pub fn with_prior_history(
         mut self,
         decisions: Vec<DecisionRecord>,
-        events: Vec<crate::protocol::server::GameEvent>,
+        events: Vec<ti4_host::protocol::server::GameEvent>,
     ) -> Self {
         self.replay_boundary_state = None;
         self.prior_decisions = decisions;
@@ -337,7 +374,7 @@ impl GameSession {
     pub fn start_recovered(
         mut config: SessionConfig,
         prior_decisions: Vec<DecisionRecord>,
-        prior_events: Vec<crate::protocol::server::GameEvent>,
+        prior_events: Vec<ti4_host::protocol::server::GameEvent>,
     ) -> Self {
         let game_id = config.game_id.clone();
         if config.prior_decisions != prior_decisions {
@@ -413,23 +450,13 @@ impl GameSession {
                 });
             }
 
-            if pending.submission_state == PendingSubmissionState::Reserved {
-                return Err(RejectionReason::NoPendingChoice);
-            }
-            if pending.nonce != nonce {
-                return Err(RejectionReason::StaleNonce);
-            }
-            if pending.game_version != expected_version {
-                return Err(RejectionReason::StaleVersion {
-                    expected: expected_version,
-                    current: pending.game_version,
-                });
-            }
-            if pending.choice.answer_for(option_id).is_none() {
-                return Err(RejectionReason::UnknownOption {
-                    option_id: option_id.to_owned(),
-                });
-            }
+            check_submission(
+                pending.open(),
+                nonce,
+                expected_version,
+                pending.game_version,
+                Some(option_id),
+            )?;
             pending.submission_state = PendingSubmissionState::Reserved;
             lock.note_answer(seat, nonce);
 
@@ -488,7 +515,7 @@ impl GameSession {
             .as_ref()
             .map(|p| (&p.choice, p.nonce.as_str()));
 
-        let mut snapshot = crate::projection::project_initial_snapshot_with_map(
+        let mut snapshot = ti4_host::projection::project_initial_snapshot_with_map(
             &self.game_id,
             lock.game_version,
             &lock.latest_state,
@@ -497,7 +524,7 @@ impl GameSession {
             &lock.map_tiles,
             &lock.galaxy_layout,
             lock.galaxy.as_deref(),
-            Some(&lock.planning.watch),
+            Some(&lock.basis.watch),
             &lock.event_log,
         )
         .with_history(
@@ -508,7 +535,7 @@ impl GameSession {
         snapshot.history.can_undo = lock.can_undo(viewer);
         snapshot.seats = lock.table_seats();
         snapshot.reaction_modes = lock.reaction_modes_for(viewer);
-        snapshot.current_path = crate::protocol::server::current_log_path(
+        snapshot.current_path = ti4_host::protocol::server::current_log_path(
             &lock.latest_state,
             pending.map(|(choice, _)| choice),
             &lock.decision_log,
@@ -560,7 +587,7 @@ impl GameSession {
 
     /// Returns static board tiles for the game session.
     #[must_use]
-    pub fn map_tiles(&self) -> Vec<crate::protocol::view::BoardTileView> {
+    pub fn map_tiles(&self) -> Vec<ti4_host::protocol::view::BoardTileView> {
         let lock = self.shared.lock().expect("shared lock");
         lock.map_tiles.clone()
     }
@@ -572,6 +599,47 @@ impl GameSession {
         lock.pending_decision
             .as_ref()
             .map(|p| (p.seat.clone(), p.nonce.clone(), p.game_version))
+    }
+
+    /// The pending decision of [`Self::current_pending_decision`] once its seat may answer it: not
+    /// while it is reserved, as when the server checks a ready draft of a secondary before the
+    /// seat is asked (`ready_secondary`).
+    #[must_use]
+    pub fn open_pending_decision(&self) -> Option<(PlayerId, String, u64)> {
+        let lock = self.shared.lock().expect("shared lock");
+        lock.pending_decision
+            .as_ref()
+            .filter(|p| p.submission_state == PendingSubmissionState::AwaitingSubmission)
+            .map(|p| (p.seat.clone(), p.nonce.clone(), p.game_version))
+    }
+
+    /// Blocks until the game asks `seat` a question that it may answer, the game ends, or
+    /// `timeout` passes. A new game that starts from a scenario asks its first human seat once
+    /// the opening of the scenario stopped.
+    ///
+    /// # Errors
+    /// The error of a failed game, or a message when `timeout` passes.
+    pub fn wait_until_asked(&self, seat: &PlayerId, timeout: Duration) -> Result<(), String> {
+        let updates = self.subscribe(ViewerRole::Player(seat.clone()));
+        let deadline = Instant::now() + timeout;
+        loop {
+            if self
+                .open_pending_decision()
+                .is_some_and(|(asked, _, _)| asked == *seat)
+                || self.is_finished()
+            {
+                return Ok(());
+            }
+            if let Some(error) = self.error() {
+                return Err(error);
+            }
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return Err(format!("the game did not ask {seat} within {timeout:?}"));
+            }
+            // A failure is not told to the subscribers: look again at least every 50 ms.
+            let _ = updates.recv_timeout(left.min(Duration::from_millis(50)));
+        }
     }
 
     /// Returns a clone of the authoritative latest `GameState`.
@@ -652,14 +720,14 @@ impl GameSession {
 
     /// Returns the accumulated authoritative game event log.
     #[must_use]
-    pub fn event_log(&self) -> Vec<crate::protocol::server::GameEvent> {
+    pub fn event_log(&self) -> Vec<ti4_host::protocol::server::GameEvent> {
         self.shared.lock().expect("shared lock").event_log.clone()
     }
 
     /// Public decision cursor and the number of decisions available for redo.
-    pub fn history_status(&self) -> crate::protocol::server::HistoryStatus {
+    pub fn history_status(&self) -> ti4_host::protocol::server::HistoryStatus {
         let lock = self.shared.lock().expect("shared lock");
-        crate::protocol::server::HistoryStatus {
+        ti4_host::protocol::server::HistoryStatus {
             cursor: lock.decision_log.len(),
             redo_count: lock.redo_decisions.len(),
             generation: lock.history_generation,
@@ -679,7 +747,7 @@ impl GameSession {
         &self,
         seat: &PlayerId,
         expected_version: u64,
-    ) -> Result<(usize, Vec<ti4_view::planning::steps::PlanStep>), RejectionReason> {
+    ) -> Result<(usize, Vec<ti4_host::planning::steps::PlanStep>), RejectionReason> {
         self.shared
             .lock()
             .expect("shared lock")
@@ -690,7 +758,7 @@ impl GameSession {
     /// the seat is told them with its first snapshot of this session, as a local game tells them
     /// with one update; they are forgotten when the seat decides again.
     #[must_use]
-    pub fn undone_for(&self, seat: &PlayerId) -> Vec<ti4_view::planning::steps::PlanStep> {
+    pub fn undone_for(&self, seat: &PlayerId) -> Vec<ti4_host::planning::steps::PlanStep> {
         self.shared
             .lock()
             .expect("shared lock")
@@ -702,7 +770,7 @@ impl GameSession {
 
     /// What `seat` has staged (see `staged`).
     #[must_use]
-    pub fn seat_staged(&self, seat: &PlayerId) -> staged::SeatStaged {
+    pub fn seat_staged(&self, seat: &PlayerId) -> ti4_host::staged::SeatStaged {
         self.initial_config
             .staged
             .lock()
@@ -712,7 +780,7 @@ impl GameSession {
     }
 
     /// Write one slot of what `seat` has staged, by compare-and-set on its revision
-    /// ([`staged::SeatStaged::put`]), save it, and send it to every connection of the seat with
+    /// ([`ti4_host::staged::SeatStaged::put`]), save it, and send it to every connection of the seat with
     /// `writer` as the writer. A stale or unchanged put writes and sends nothing.
     ///
     /// # Errors
@@ -720,11 +788,11 @@ impl GameSession {
     pub fn put_staged(
         &self,
         seat: &PlayerId,
-        slot: staged::StagedSlot,
+        slot: ti4_host::protocol::staged::StagedSlot,
         base_revision: u64,
         value: Option<serde_json::Value>,
         writer: u64,
-    ) -> Result<staged::Put, String> {
+    ) -> Result<ti4_host::staged::Put, String> {
         staged::put_and_tell(
             &self.shared,
             &self.initial_config.staged,
@@ -772,22 +840,23 @@ impl GameSession {
             return;
         };
         let book = &self.initial_config.staged;
-        let Some(ready) = ready_secondary::ready_draft(book, seat, &choice, round) else {
+        let Some(ready) = ti4_host::staged::ready::ready_draft(&book.lock(), seat, &choice, round)
+        else {
             return;
         };
-        match ready_secondary::check(&self.shared, seat, &ready.draft) {
-            ready_secondary::Check::Fits(script) => {
-                match self.apply_draft(seat, &nonce, version, &script) {
+        match ready_secondary::check(&self.shared, seat, &ready) {
+            ti4_host::staged::ready::Check::Fits => {
+                match self.apply_draft(seat, &nonce, version, &ready.draft.script()) {
                     Ok(None) => ready_secondary::spent(&self.shared, book, seat, ready.revision),
                     Ok(Some(_)) => ready_secondary::unready(&self.shared, book, seat, ready),
                     // The seat answered meanwhile, or the game went on.
                     Err(_) => {}
                 }
             }
-            ready_secondary::Check::Unfit => {
+            ti4_host::staged::ready::Check::Unfit => {
                 ready_secondary::unready(&self.shared, book, seat, ready);
             }
-            ready_secondary::Check::Unknown => {}
+            ti4_host::staged::ready::Check::Unknown => {}
         }
     }
 
@@ -825,8 +894,8 @@ impl GameSession {
     pub fn preview_secondary(
         &self,
         seat: &PlayerId,
-        request: &preview::PreviewRequest,
-    ) -> crate::protocol::server::SecondaryPreviewMsg {
+        request: &ti4_host::preview::PreviewRequest,
+    ) -> ti4_host::protocol::server::SecondaryPreviewMsg {
         preview::answer(&self.shared, &self.game_id, seat, request)
     }
 
@@ -837,7 +906,7 @@ impl GameSession {
         &self,
         request_id: u64,
         system_id: &str,
-    ) -> crate::protocol::reach::ReachIntoMsg {
+    ) -> ti4_host::protocol::reach::ReachIntoMsg {
         reach::answer(&self.shared, &self.game_id, request_id, system_id)
     }
 
@@ -855,7 +924,7 @@ impl GameSession {
     pub fn reaction_intent_state(
         &self,
         seat: &PlayerId,
-    ) -> crate::protocol::server::ReactionIntentStateMsg {
+    ) -> ti4_host::protocol::server::ReactionIntentStateMsg {
         self.shared
             .lock()
             .expect("shared lock")
@@ -882,144 +951,8 @@ impl GameSession {
         self.shared.lock().expect("shared lock").game_version
     }
 
-    /// Starts an inactive human seat's draft from the last completed live step.
-    /// This transport-neutral API takes a seat already authorized by its caller,
-    /// just like submit_choice. It does not alter the live pending decision.
-    pub fn start_planning(&self, player: &PlayerId) -> Result<(), PlanningError> {
-        let mut lock = self.shared.lock().expect("shared lock");
-        if lock.stopped || lock.finished || lock.error.is_some() || !lock.replay_complete {
-            return Err(PlanningError::Unavailable);
-        }
-        if lock.seats.get(player) != Some(&SeatController::Human) {
-            return Err(PlanningError::UnknownSeat);
-        }
-        if lock.latest_state.active.as_ref() == Some(player) {
-            return Err(PlanningError::ActivePlayer);
-        }
-        lock.planning.start(player)
-    }
-
-    pub fn submit_planning_choice(
-        &self,
-        player: &PlayerId,
-        identity: crate::planning::runner::AttemptIdentity,
-        option_id: &str,
-    ) -> Result<(), PlanningError> {
-        self.submit_planning_choice_with_request_id(player, identity, option_id, None)
-    }
-
-    pub fn submit_planning_choice_with_request_id(
-        &self,
-        player: &PlayerId,
-        identity: crate::planning::runner::AttemptIdentity,
-        option_id: &str,
-        request_id: Option<&str>,
-    ) -> Result<(), PlanningError> {
-        let lock = self.shared.lock().expect("shared lock");
-        if lock.stopped || lock.finished || lock.error.is_some() {
-            return Err(PlanningError::Unavailable);
-        }
-        if lock.planning.has_application(player) {
-            return Err(PlanningError::Submission(
-                crate::planning::runner::SubmissionError::NotWaiting,
-            ));
-        }
-        lock.planning
-            .runners
-            .get(player)
-            .ok_or(PlanningError::NotStarted)?
-            .submit_with_request_id(identity, option_id, request_id)
-            .map_err(PlanningError::Submission)
-    }
-
-    pub fn reset_planning(
-        &self,
-        player: &PlayerId,
-        identity: crate::planning::runner::AttemptIdentity,
-    ) -> Result<(), PlanningError> {
-        let mut lock = self.shared.lock().expect("shared lock");
-        if lock.stopped || lock.finished || lock.error.is_some() || !lock.replay_complete {
-            return Err(PlanningError::Unavailable);
-        }
-        lock.planning.reset(player, identity)
-    }
-
-    pub fn edit_planning_movement(
-        &self,
-        player: &PlayerId,
-        identity: crate::planning::runner::AttemptIdentity,
-    ) -> Result<(), PlanningError> {
-        let mut lock = self.shared.lock().expect("shared lock");
-        if lock.stopped || lock.finished || lock.error.is_some() || !lock.replay_complete {
-            return Err(PlanningError::Unavailable);
-        }
-        lock.planning.edit_movement(player, identity)
-    }
-
-    /// Confirm the current validated draft at a real tactical action opportunity.
-    /// Execution then stays with the live decider, independent of the connection.
-    pub fn apply_planning(
-        &self,
-        player: &PlayerId,
-        identity: crate::planning::runner::AttemptIdentity,
-        nonce: &str,
-        expected_version: u64,
-    ) -> Result<(), PlanningError> {
-        let mut lock = self.shared.lock().expect("shared lock");
-        if lock.stopped || lock.finished || lock.error.is_some() || !lock.replay_complete {
-            return Err(PlanningError::Unavailable);
-        }
-        let pending = lock
-            .pending_decision
-            .as_ref()
-            .ok_or(PlanningError::NoActionOpportunity)?;
-        if pending.submission_state != PendingSubmissionState::AwaitingSubmission
-            || pending.nonce != nonce
-            || pending.game_version != expected_version
-        {
-            return Err(PlanningError::Submission(
-                crate::planning::runner::SubmissionError::Retired,
-            ));
-        }
-        let plan = lock
-            .planning
-            .executable_plan(player, identity, &pending.choice)?;
-        let inbox = lock
-            .seat_inboxes
-            .get(player)
-            .ok_or(PlanningError::UnknownSeat)?
-            .clone();
-        let (reply_tx, _reply_rx) = mpsc::channel();
-        lock.pending_decision
-            .as_mut()
-            .expect("pending decision")
-            .submission_state = PendingSubmissionState::Reserved;
-        // Queue the first answer under the same reservation lock used by live input.
-        // No browser-supplied choices or hypothetical state enter the live game.
-        if inbox
-            .send(ChoiceSubmission {
-                seat: player.clone(),
-                nonce: nonce.to_owned(),
-                expected_version,
-                option_id: "tactical".into(),
-                reply_tx,
-            })
-            .is_err()
-        {
-            lock.pending_decision
-                .as_mut()
-                .expect("pending decision")
-                .submission_state = PendingSubmissionState::AwaitingSubmission;
-            return Err(PlanningError::Unavailable);
-        }
-        let activation_seq = lock.latest_state.activation_seq;
-        lock.planning
-            .begin_application(player, plan, activation_seq);
-        Ok(())
-    }
-
     /// Plays `script` as the next turn of `player`, or as its secondary (`scope`), on a copy of
-    /// the game at its last completed step, as a local game does (`ti4_view::planning::draft::run_draft`). The game is not
+    /// the game at its last completed step, as a local game does (`ti4_host::planning::draft::run_draft`). The game is not
     /// changed and nothing of the script is kept. Returns the version of the game that the
     /// script was played on.
     ///
@@ -1028,10 +961,10 @@ impl GameSession {
     pub fn run_draft(
         &self,
         player: &PlayerId,
-        scope: &ti4_view::planning::audit::PlanScope,
-        script: &[ti4_view::planning::draft::DraftStep],
-    ) -> (u64, ti4_view::planning::draft::DraftOutcome) {
-        use ti4_view::planning::draft::{DraftOutcome, DraftStop};
+        scope: &ti4_host::planning::audit::PlanScope,
+        script: &[ti4_host::planning::draft::DraftStep],
+    ) -> (u64, ti4_host::planning::draft::DraftOutcome) {
+        use ti4_host::planning::draft::{DraftOutcome, DraftStop};
         let (version, outcome) = run_draft_on(&self.shared, player, scope, script);
         if let Some(outcome) = outcome {
             return (version, outcome);
@@ -1044,12 +977,12 @@ impl GameSession {
                 lock.latest_state.clone(),
             )
         };
-        let update = crate::projection::project_session_update(
+        let update = ti4_host::projection::project_session_update(
             &state,
             &ViewerRole::Player(player.clone()),
             None,
             &tiles,
-            &crate::projection::facts_context(galaxy.as_deref()),
+            &ti4_host::projection::facts_context(galaxy.as_deref()),
         );
         let outcome = DraftOutcome {
             update,
@@ -1065,7 +998,7 @@ impl GameSession {
     }
 
     /// Sends `script` to the live game: the pending choice of `player` and the choices after
-    /// it are answered from it, as a local game answers them (`script_answer` of `ti4-view`).
+    /// it are answered from it, as a local game answers them (`script_answer` of `ti4-host`).
     ///
     /// The script is first played on a copy of the game. When the game would refuse an entry,
     /// nothing is sent and the refusal is returned: the game is as before. Otherwise the first
@@ -1083,9 +1016,9 @@ impl GameSession {
         player: &PlayerId,
         nonce: &str,
         expected_version: u64,
-        script: &[ti4_view::planning::draft::DraftStep],
-    ) -> Result<Option<crate::protocol::server::ScriptStopped>, RejectionReason> {
-        use ti4_view::planning::draft::{ScriptAnswer, script_answer};
+        script: &[ti4_host::planning::draft::DraftStep],
+    ) -> Result<Option<ti4_host::protocol::server::ScriptStopped>, RejectionReason> {
+        use ti4_host::planning::script::{Check, First, check_script, first_answer, refused};
         // The choice is reserved while the copy plays, so no other answer can take it.
         let (choice, copy, tail, never) = {
             let mut lock = self.shared.lock().expect("shared lock");
@@ -1100,22 +1033,15 @@ impl GameSession {
                     seat: Some(player.clone()),
                 });
             }
-            if pending.submission_state == PendingSubmissionState::Reserved
-                || lock.planning.has_application(player)
-            {
-                return Err(RejectionReason::NoPendingChoice);
-            }
-            if pending.nonce != nonce {
-                return Err(RejectionReason::StaleNonce);
-            }
-            if pending.game_version != expected_version {
-                return Err(RejectionReason::StaleVersion {
-                    expected: expected_version,
-                    current: pending.game_version,
-                });
-            }
+            check_submission(
+                pending.open(),
+                nonce,
+                expected_version,
+                pending.game_version,
+                None,
+            )?;
             let choice = pending.choice.clone();
-            let copy = lock.planning.fork();
+            let copy = lock.basis.fork();
             let tail = copy
                 .as_ref()
                 .and_then(|(_, decisions)| lock.decision_log.get(*decisions..))
@@ -1142,32 +1068,29 @@ impl GameSession {
                 pending.submission_state = PendingSubmissionState::AwaitingSubmission;
             }
         };
-        let first = script_answer(script, 0, &choice, player);
+        let first = first_answer(script, &choice, player);
         let refusal = match &first {
-            ScriptAnswer::Answer { .. } => match copy.zip(tail) {
+            Ok(_) => match copy.zip(tail) {
                 Some((game, tail)) => {
-                    match script::check_script(game, tail, &choice, script, player, never) {
-                        script::Check::Refused { reason, .. } => Some(reason),
-                        script::Check::Plays | script::Check::Unknown => None,
+                    match check_script(game, tail, &choice, script, player, never) {
+                        Check::Refused { reason, .. } => Some(reason),
+                        Check::Plays | Check::Unknown => None,
                     }
                 }
                 None => None,
             },
-            ScriptAnswer::Done => Some("The script has no answer for this choice.".to_owned()),
-            ScriptAnswer::Interrupted { reason } | ScriptAnswer::Mismatch { reason, .. } => {
-                Some(reason.clone())
-            }
+            Err(reason) => Some(reason.clone()),
         };
         let mut lock = self.shared.lock().expect("shared lock");
         if let Some(reason) = refusal {
             release(&mut lock);
-            return Ok(Some(script::refused(script, reason)));
+            return Ok(Some(refused(script, reason)));
         }
-        let ScriptAnswer::Answer {
+        let Ok(First {
             option,
             next,
-            script: reordered,
-        } = first
+            script: ordered,
+        }) = first
         else {
             unreachable!("every other answer is a refusal");
         };
@@ -1189,216 +1112,8 @@ impl GameSession {
             release(&mut lock);
             return Err(RejectionReason::NoPendingChoice);
         }
-        lock.begin_script(
-            player,
-            nonce,
-            reordered.unwrap_or_else(|| script.to_vec()),
-            next,
-        );
+        lock.begin_script(player, nonce, ordered, next);
         Ok(None)
-    }
-
-    /// One operation on a follower's secondary draft. Unlike a tactical draft it
-    /// is open to every follower at once, whoever the active player is, and
-    /// never touches the live pending decision.
-    pub fn secondary_planning(
-        &self,
-        player: &PlayerId,
-        request: &crate::protocol::client::SecondaryPlanningRequest,
-    ) -> Result<(), PlanningError> {
-        use crate::protocol::client::SecondaryPlanningRequest as Request;
-        let mut lock = self.shared.lock().expect("shared lock");
-        if lock.stopped || lock.finished || lock.error.is_some() || !lock.replay_complete {
-            return Err(PlanningError::Unavailable);
-        }
-        if lock.seats.get(player) != Some(&SeatController::Human) {
-            return Err(PlanningError::UnknownSeat);
-        }
-        match request {
-            Request::Start {} => lock.planning.start_secondary(player),
-            Request::Reset { identity } => lock.planning.reset_secondary(player, *identity),
-            Request::Answer {
-                identity,
-                option_id,
-            } => lock.planning.submit_secondary(player, *identity, option_id),
-            Request::SetReady { identity, ready } => {
-                lock.planning.set_secondary_ready(player, *identity, *ready)
-            }
-        }
-    }
-
-    pub fn planning_status(&self, player: &PlayerId) -> crate::protocol::server::PlanningStatusMsg {
-        let lock = self.shared.lock().expect("shared lock");
-        let available = !lock.stopped
-            && !lock.finished
-            && lock.error.is_none()
-            && lock.replay_complete
-            && lock.planning.available;
-        let can_apply = available
-            && lock.pending_decision.as_ref().is_some_and(|pending| {
-                pending.submission_state == PendingSubmissionState::AwaitingSubmission
-                    && lock.planning.runners.get(player).is_some_and(|runner| {
-                        lock.planning
-                            .executable_plan(player, runner.identity(), &pending.choice)
-                            .is_ok()
-                    })
-            });
-        crate::protocol::server::PlanningStatusMsg {
-            protocol_version: crate::protocol::PROTOCOL_VERSION,
-            game_id: self.game_id.clone(),
-            checkpoint_id: lock.planning.checkpoint_id,
-            available,
-            can_start: available
-                && lock.seats.get(player) == Some(&SeatController::Human)
-                && lock.latest_state.active.as_ref() != Some(player),
-            has_draft: lock.planning.has_draft(player),
-            identity: lock
-                .planning
-                .runners
-                .get(player)
-                .map(|runner| runner.identity()),
-            can_apply,
-            application: lock.planning.application(player),
-            secondary: (!lock.stopped
-                && !lock.finished
-                && lock.error.is_none()
-                && lock.replay_complete)
-                .then(|| {
-                    lock.planning.secondary_status(
-                        player,
-                        lock.seats.get(player) == Some(&SeatController::Human),
-                    )
-                })
-                .flatten(),
-        }
-    }
-
-    pub(crate) fn subscribe_secondary_planning(
-        &self,
-        player: &PlayerId,
-    ) -> Option<mpsc::Receiver<crate::planning::runner::PlanningEnvelope>> {
-        let lock = self.shared.lock().expect("shared lock");
-        if lock.stopped || !lock.replay_complete {
-            return None;
-        }
-        lock.planning
-            .secondary_runner(player)
-            .map(|runner| runner.subscribe())
-    }
-
-    pub(crate) fn secondary_attempt_is_current(
-        &self,
-        player: &PlayerId,
-        identity: crate::planning::runner::AttemptIdentity,
-    ) -> bool {
-        let lock = self.shared.lock().expect("shared lock");
-        !lock.stopped
-            && lock
-                .planning
-                .secondary_runner(player)
-                .is_some_and(|runner| runner.is_current_attempt(identity))
-    }
-
-    /// As [`Self::recv_planning_timeout`], for the seat's secondary draft.
-    pub fn recv_secondary_planning_timeout(
-        &self,
-        player: &PlayerId,
-        timeout: std::time::Duration,
-    ) -> Result<crate::planning::runner::PlanningEnvelope, mpsc::RecvTimeoutError> {
-        let deadline = std::time::Instant::now() + timeout;
-        loop {
-            {
-                let lock = self.shared.lock().expect("shared lock");
-                if lock.stopped || lock.finished || lock.error.is_some() || !lock.replay_complete {
-                    return Err(mpsc::RecvTimeoutError::Disconnected);
-                }
-                let runner = lock
-                    .planning
-                    .secondary_runner(player)
-                    .ok_or(mpsc::RecvTimeoutError::Disconnected)?;
-                match runner.try_recv() {
-                    Ok(envelope) => return Ok(envelope),
-                    Err(mpsc::TryRecvError::Disconnected) => {
-                        return Err(mpsc::RecvTimeoutError::Disconnected);
-                    }
-                    Err(mpsc::TryRecvError::Empty) => {}
-                }
-            }
-            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-            if remaining.is_zero() {
-                return Err(mpsc::RecvTimeoutError::Timeout);
-            }
-            std::thread::sleep(remaining.min(std::time::Duration::from_millis(5)));
-        }
-    }
-
-    /// Private stream independent of the captured runner output used by tests.
-    pub(crate) fn subscribe_planning(
-        &self,
-        player: &PlayerId,
-    ) -> Option<mpsc::Receiver<crate::planning::runner::PlanningEnvelope>> {
-        let lock = self.shared.lock().expect("shared lock");
-        if lock.stopped || !lock.replay_complete {
-            return None;
-        }
-        lock.planning
-            .runners
-            .get(player)
-            .map(|runner| runner.subscribe())
-    }
-
-    pub(crate) fn planning_attempt_is_current(
-        &self,
-        player: &PlayerId,
-        identity: crate::planning::runner::AttemptIdentity,
-    ) -> bool {
-        let lock = self.shared.lock().expect("shared lock");
-        !lock.stopped
-            && lock
-                .planning
-                .runners
-                .get(player)
-                .is_some_and(|runner| runner.is_current_attempt(identity))
-    }
-
-    /// Wait without holding the session lock: the live worker must remain free
-    /// to refresh or cancel the runner whose output we are waiting for.
-    pub fn recv_planning_timeout(
-        &self,
-        player: &PlayerId,
-        timeout: std::time::Duration,
-    ) -> Result<crate::planning::runner::PlanningEnvelope, mpsc::RecvTimeoutError> {
-        let deadline = std::time::Instant::now() + timeout;
-        loop {
-            {
-                let lock = self.shared.lock().expect("shared lock");
-                if lock.stopped || lock.finished || lock.error.is_some() || !lock.replay_complete {
-                    return Err(mpsc::RecvTimeoutError::Disconnected);
-                }
-                let runner = lock
-                    .planning
-                    .runners
-                    .get(player)
-                    .ok_or(mpsc::RecvTimeoutError::Disconnected)?;
-                match runner.try_recv() {
-                    Ok(envelope) => return Ok(envelope),
-                    Err(mpsc::TryRecvError::Disconnected) => {
-                        return Err(mpsc::RecvTimeoutError::Disconnected);
-                    }
-                    Err(mpsc::TryRecvError::Empty) => {}
-                }
-            }
-            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-            if remaining.is_zero() {
-                return Err(mpsc::RecvTimeoutError::Timeout);
-            }
-            std::thread::sleep(remaining.min(std::time::Duration::from_millis(5)));
-        }
-    }
-
-    /// Scripts survive stopped attempts and session replacement.
-    pub fn plans(&self) -> BTreeMap<PlayerId, crate::planning::runner::PlayerPlan> {
-        self.shared.lock().expect("shared lock").planning.plans()
     }
 
     /// The live history exactly as `history.json` would hold it right now (unsaved batches
@@ -1425,7 +1140,6 @@ impl GameSession {
 
     pub fn restart_config(&self) -> SessionConfig {
         let mut config = self.initial_config.clone();
-        config.plans = self.plans();
         // Callers can replace the decision prefix (batch commit, undo, redo).
         // The old speculative view must never be reused for a different cursor.
         config.replay_boundary_state = None;
@@ -1434,6 +1148,8 @@ impl GameSession {
         config.announce_tail = false;
         // A copy of the game belongs to one history; whatever replaces this one gets its own.
         config.resume = None;
+        // The opening of a scenario is played once: its answers are in the decisions now.
+        config.opening = None;
         // A rewind or a batch starts a new worker; what each seat asked for survives it.
         {
             let lock = self.shared.lock().expect("shared lock");
@@ -1563,12 +1279,12 @@ impl GameSession {
             .clone()
     }
 
-    pub fn history_events(&self) -> (Vec<crate::protocol::server::GameEvent>, u64) {
+    pub fn history_events(&self) -> (Vec<ti4_host::protocol::server::GameEvent>, u64) {
         let lock = self.shared.lock().expect("shared lock");
         (lock.redo_events.clone(), lock.event_counter)
     }
 
-    pub fn batches(&self) -> Vec<crate::storage::BatchRecord> {
+    pub fn batches(&self) -> Vec<ti4_host::batch::BatchRecord> {
         self.shared.lock().expect("shared lock").batches.clone()
     }
 
@@ -1577,7 +1293,7 @@ impl GameSession {
         {
             let mut lock = self.shared.lock().expect("shared lock");
             lock.stopped = true;
-            lock.planning.close();
+            lock.basis.close();
             // A running bluff hold ends at once instead of at its next poll.
             lock.bluff.wake();
             // Dropping inboxes unblocks any waiting RemoteHumanDecider
@@ -1617,10 +1333,10 @@ impl Drop for GameSession {
 pub(crate) fn run_draft_on(
     shared: &Mutex<SessionShared>,
     player: &PlayerId,
-    scope: &ti4_view::planning::audit::PlanScope,
-    script: &[ti4_view::planning::draft::DraftStep],
-) -> (u64, Option<ti4_view::planning::draft::DraftOutcome>) {
-    use ti4_view::planning::draft::{DraftBase, run_draft};
+    scope: &ti4_host::planning::audit::PlanScope,
+    script: &[ti4_host::planning::draft::DraftStep],
+) -> (u64, Option<ti4_host::planning::draft::DraftOutcome>) {
+    use ti4_host::planning::draft::{DraftBase, run_draft};
     let (copy, version, tiles, galaxy, watch) = {
         let mut lock = shared.lock().expect("shared lock");
         let playable = !lock.stopped
@@ -1629,7 +1345,7 @@ pub(crate) fn run_draft_on(
             && lock.replay_complete
             && lock.seats.contains_key(player);
         let copy = playable
-            .then(|| lock.planning.fork())
+            .then(|| lock.basis.fork())
             .flatten()
             .map(|(game, _)| game);
         (
@@ -1637,7 +1353,7 @@ pub(crate) fn run_draft_on(
             lock.game_version,
             lock.map_tiles.clone(),
             lock.galaxy.clone(),
-            lock.planning.watch.clone(),
+            lock.basis.watch.clone(),
         )
     };
     let Some(game) = copy else {

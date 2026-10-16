@@ -1471,14 +1471,11 @@ const PRODUCERS: &[Producer] = &[
     Producer {
         module: "tokens.rs",
         function: "pending_choice",
-        // Two `Choice::new` sites share this function name: `TokenGain::pending_choice` (81.5's
-        // token-gain window, wired below) and `TokenRedistribution::pending_choice` (81.5's
-        // token-redistribution window -- see its doc comment in `tokens.rs`). The redistribution
-        // window is not wired into a driver yet; `strategy_cards::redistribute_tokens` still
-        // drives the sequential single-move mechanic it is meant to replace. Bug-fix note
-        // 2026-09-07 in `plans/current_bugs_2026-09-07.txt`.
-        count: 2,
-        delivery: Delivery::ObservedVia("game.rs::step_token_gain"),
+        // `TokenRedistribution::pending_choice`: 81.5's gain and redistribution (one decision per
+        // seat), and Warfare's and Predictive Intelligence's redistributions, all asked by
+        // `strategy_cards::redistribute_tokens`.
+        count: 1,
+        delivery: Delivery::ObservedVia("strategy_cards.rs::ask"),
     },
     Producer {
         module: "transactions.rs",
@@ -1641,7 +1638,6 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("game.rs", "step_scoring", 1),
     ("game.rs", "step_secondary", 1),
     ("game.rs", "step_tactical", 1),
-    ("game.rs", "step_token_gain", 1),
     ("game.rs", "step_trade", 1),
     ("game.rs", "step_diplomacy", 1),
     ("game.rs", "step_agenda_talks", 1),

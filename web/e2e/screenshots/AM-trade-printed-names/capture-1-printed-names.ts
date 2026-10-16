@@ -1,5 +1,5 @@
 import { test, type Page, type TestInfo } from "@playwright/test";
-import type { ChoiceOptionDto } from "../../../src/protocol/types";
+import type { ChoiceOption } from "../../../src/protocol/types";
 import { openMockedGame } from "../_shared/mockGame";
 import { shot } from "../_shared/shot";
 import { playerWithHand, opponent, withPlayer } from "../_shared/players";
@@ -15,7 +15,7 @@ const players = [
   withPlayer(opponent, { id: PARTNER, faction: "jolnar", trade_goods: 5, commodities: 2, action_cards_count: 3 }),
 ];
 
-const offer = (id: string, label: string, payload: Record<string, unknown> = {}): ChoiceOptionDto => ({
+const offer = (id: string, label: string, payload: Record<string, unknown> = {}): ChoiceOption => ({
   id,
   label,
   kind: "offer",
@@ -45,7 +45,7 @@ const proposeChoice = {
       received_promissory: "ra:jolnar",
     }),
     { id: "decline", label: "Offer nothing", kind: "decline" },
-  ] as ChoiceOptionDto[],
+  ] as ChoiceOption[],
   nonce: "names-propose",
 };
 
@@ -56,7 +56,7 @@ const answerChoice = {
     { id: "accept", label: "accept", kind: "answer", payload: { net: 1 } },
     { id: "refuse", label: "refuse", kind: "decline" },
     { id: "counter", label: "counter-offer", kind: "answer" },
-  ] as ChoiceOptionDto[],
+  ] as ChoiceOption[],
   nonce: "names-answer",
 };
 

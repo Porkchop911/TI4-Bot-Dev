@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { CombatResolutionModal } from "./CombatResolutionModal.tsx";
 import { BoardView, PendingChoiceDto } from "../protocol/types.ts";
+import { partialContext } from "../test/wire.ts";
 
 describe("CombatResolutionModal", () => {
   it("renders sustain damage stage with Direct Hit warning and handles sustain submit", async () => {
@@ -13,12 +14,12 @@ describe("CombatResolutionModal", () => {
       actor: "seat_1",
       nonce: "10",
       prompt: "Sustain damage on a ship",
-      context: {
+      context: partialContext({
         subtype: "sustain_damage",
-      },
+      }),
       options: [
-        { id: "sustain:dreadnought:1", label: "Dreadnought (System 18)", kind: "sustain" },
-        { id: "decline", label: "Do not sustain damage", kind: "decline" },
+        { id: "sustain:dreadnought:1", label: "Dreadnought (System 18)", kind: "sustain", payload: {} },
+        { id: "decline", label: "Do not sustain damage", kind: "decline", payload: {} },
       ],
     };
 
@@ -52,12 +53,12 @@ describe("CombatResolutionModal", () => {
       actor: "seat_1",
       nonce: "11",
       prompt: "Sustain damage",
-      context: {
+      context: partialContext({
         subtype: "sustain_damage",
-      },
+      }),
       options: [
-        { id: "sustain:dreadnought:1", label: "Dreadnought", kind: "sustain" },
-        { id: "decline", label: "Decline", kind: "decline" },
+        { id: "sustain:dreadnought:1", label: "Dreadnought", kind: "sustain", payload: {} },
+        { id: "decline", label: "Decline", kind: "decline", payload: {} },
       ],
     };
 
@@ -86,10 +87,10 @@ describe("CombatResolutionModal", () => {
       actor: "seat_1",
       nonce: "12",
       prompt: "Assign 2 hits",
-      context: {
+      context: partialContext({
         subtype: "assign_casualty",
         outstanding: [{ amount: 2 }],
-      },
+      }),
       options: [
         {
           id: "destroy|fighter",
@@ -134,10 +135,10 @@ describe("CombatResolutionModal", () => {
       actor: "seat_1",
       nonce: "13",
       prompt: "Assign 2 hits",
-      context: {
+      context: partialContext({
         subtype: "assign_casualty",
         outstanding: [{ amount: 2 }],
-      },
+      }),
       options: [
         {
           id: "destroy|cruiser|0",
@@ -183,12 +184,12 @@ describe("CombatResolutionModal", () => {
       actor: "seat_1",
       nonce: "14",
       prompt: "Announce retreat",
-      context: {
+      context: partialContext({
         subtype: "announce_retreat",
-      },
+      }),
       options: [
-        { id: "announce_retreat:yes", label: "Announce Retreat" },
-        { id: "announce_retreat:no", label: "Decline Retreat" },
+        { id: "announce_retreat:yes", label: "Announce Retreat", payload: {}, kind: "" },
+        { id: "announce_retreat:no", label: "Decline Retreat", payload: {}, kind: "" },
       ],
     };
 
@@ -215,8 +216,8 @@ describe("CombatResolutionModal", () => {
       actor: "seat_1",
       nonce: "15",
       prompt: "retreat to which system",
-      context: { subtype: "retreat_to" },
-      options: [{ id: "1", label: "retreat to 1", kind: "retreat_to" }],
+      context: partialContext({ subtype: "retreat_to" }),
+      options: [{ id: "1", label: "retreat to 1", kind: "retreat_to", payload: {} }],
     };
     const board = {
       systems: {},
@@ -243,10 +244,10 @@ describe("CombatResolutionModal", () => {
       actor: "seat_2",
       nonce: "15",
       prompt: "Sustain damage",
-      context: {
+      context: partialContext({
         subtype: "sustain_damage",
-      },
-      options: [{ id: "sustain:carrier:1", label: "Carrier" }],
+      }),
+      options: [{ id: "sustain:carrier:1", label: "Carrier", payload: {}, kind: "" }],
     };
 
     render(
@@ -272,10 +273,10 @@ describe("CombatResolutionModal", () => {
       actor: "seat_1",
       nonce: "16",
       prompt: "Sustain damage",
-      context: {
+      context: partialContext({
         subtype: "sustain_damage",
-      },
-      options: [{ id: "decline", label: "Decline" }],
+      }),
+      options: [{ id: "decline", label: "Decline", payload: {}, kind: "" }],
     };
 
     const diceRolls = [

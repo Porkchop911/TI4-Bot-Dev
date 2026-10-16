@@ -1,6 +1,6 @@
 import React from "react";
 import { ValueText } from "./PlanetValueIcons.tsx";
-import type { BoardView, ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import type { BoardView, ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import { describeLegendaryOption, legendaryWindow } from "../presentation/legendaryMenu.ts";
 
 /** Above the options: when the window is open and what choosing does to the card. */
@@ -23,7 +23,7 @@ export const LegendaryContextPanel: React.FC<{ choice: PendingChoiceDto }> = ({ 
 /** Inside an option row: the planet that carries the ability, and the card's printed text. */
 export const LegendaryOptionNote: React.FC<{
   choice: PendingChoiceDto;
-  option: ChoiceOptionDto;
+  option: ChoiceOption;
   board?: BoardView | null;
 }> = ({ choice, option, board }) => {
   const view = describeLegendaryOption(choice, option, board);

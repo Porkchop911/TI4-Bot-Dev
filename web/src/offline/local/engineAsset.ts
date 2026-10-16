@@ -9,6 +9,10 @@ const loaders = import.meta.glob("./engine/ti4_wasm.wasm", { query: "?url", impo
   () => Promise<string>
 >;
 
+/** Shown when the browser has no WebAssembly JSPI (`hasJspi` of `@ti4/shared/engine/jspi.ts`). */
+export const JSPI_MISSING =
+  "This browser cannot run the offline engine (it needs WebAssembly JSPI). Use Chrome or Edge 137 or newer.";
+
 export const hasEngineAsset = (): boolean => Object.keys(loaders).length > 0;
 
 export async function engineUrl(): Promise<string> {

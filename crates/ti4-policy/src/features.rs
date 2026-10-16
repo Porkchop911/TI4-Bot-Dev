@@ -6372,7 +6372,10 @@ mod tests {
                 }
             }
         }
-        assert!(missing.is_empty(), "family emitted against the record: {missing:?}");
+        assert!(
+            missing.is_empty(),
+            "family emitted against the record: {missing:?}"
+        );
     }
 
     #[test]

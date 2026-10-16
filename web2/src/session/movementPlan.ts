@@ -1,65 +1,39 @@
 // A staged movement as the steps that the game is asked for, and back. The steps name what is
 // moved and loaded, not the ids of the options: the game numbers its options again after each ship.
 // How a step answers a question of the game is decided in the engine (`plan_answer` in
-// `crates/ti4-view/src/planning/steps.rs`), for a draft and for a plan that is sent.
+// `crates/ti4-host/src/planning/steps.rs`), for a draft and for a plan that is sent.
 import { type MovementDraft, canMove, setLoad, setShip, shipId, shipOf } from "./movementDraft";
-import type { ChoiceOption, MovementFacts } from "./wire";
+import type {
+  ChoiceOption,
+  ChosenOption,
+  DraftStep,
+  MovementFacts,
+  PlanStep as ActionStep,
+} from "./wire";
 
-/** Compare `MovementOnlyStep` in `crates/ti4-server/src/session/batch.rs`. */
-export type MovementStep =
-  | {
-      kind: "move";
-      origin: string;
-      unit: string;
-      damaged: boolean;
-      gravity_drive: boolean;
-      ionian: boolean;
-    }
-  | {
-      kind: "load";
-      /** The system that the ship starts in. */
-      origin: string;
-      /** The system where the unit is picked up. */
-      pickup_system: string;
-      unit: string;
-      /** The planet, or null for the space area. */
-      source: string | null;
-      damaged: boolean;
-      galvanized: boolean;
-    }
-  | { kind: "done_loading" }
-  | { kind: "done_moving" };
+/** The steps of a movement (`PlanStep` of the wire). */
+export type MovementStep = Extract<
+  ActionStep,
+  { kind: "move" | "load" | "done_loading" | "done_moving" }
+>;
 
 /** The landings of an invasion, one unit at a time. The game asks for them as it asks for ships. */
-export type LandingStep =
-  | {
-      kind: "land";
-      planet: string;
-      unit: string;
-      damaged: boolean;
-      /** Where the unit is, when it is not the space area of the active system. */
-      from_system: string | null;
-      from_planet: string | null;
-    }
-  | { kind: "done_committing" };
+export type LandingStep = Extract<ActionStep, { kind: "land" | "done_committing" }>;
 
 /**
  * One use of PRODUCTION. The game asks for a unit, then for what pays it, then for its place
  * when it has more than one, and then for the next unit.
  */
-export type ProductionStep =
-  /** One purchase of a unit: two fighters or infantry, one of any other unit. */
-  | { kind: "produce"; unit: string }
-  /** Where the units of the purchase before it go: `space`, or a planet. */
-  | { kind: "place"; destination: string }
-  /** The id of the option that pays: "exhaust|<planet>" or "trade_good". */
-  | { kind: "pay"; source: string }
-  | { kind: "done_producing" };
+export type ProductionStep = Extract<
+  ActionStep,
+  { kind: "produce" | "place" | "pay" | "done_producing" }
+>;
 
 /** An answer to what the game asks between the steps (an ability of the seat), by the id of the option. */
-export type ChooseStep = { kind: "choose"; option_id: string };
+export type ChooseStep = ChosenOption;
 
-export type PlanStep = MovementStep | LandingStep | ProductionStep | ChooseStep;
+/** A step of a plan or a draft: `DraftStep` of the wire. */
+export type PlanStep = DraftStep;
 
 /** The step of a tactical action that a step of a plan belongs to. Null for an answer by id. */
 export const stageOf = (step: PlanStep): "movement" | "invasion" | "production" | null =>
@@ -160,7 +134,7 @@ export function draftOf(facts: MovementFacts, steps: PlanStep[]): MovementDraft 
 
 /**
  * The step that an option of a movement is. Null for any other option. The inverse of
- * `PlanStep::matches_option` in `crates/ti4-view/src/planning/steps.rs`.
+ * `PlanStep::matches_option` in `crates/ti4-host/src/planning/steps.rs`.
  */
 export function stepOf(option: Pick<ChoiceOption, "id" | "kind" | "payload">): PlanStep | null {
   const { payload } = option;

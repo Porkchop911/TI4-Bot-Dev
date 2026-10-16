@@ -2,27 +2,28 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { PendingChoiceModal } from "./PendingChoiceModal.tsx";
 import { PendingChoiceDto } from "../protocol/types.ts";
+import { partialContext } from "../test/wire.ts";
+import { deriveChoiceRendererModel } from "../presentation/choiceModel.ts";
 
 const mockChoice: PendingChoiceDto = {
   prompt: "Select a Strategy Card",
   actor: "p1",
   nonce: "1234567890abcdef",
   options: [
-    { id: "strat_leadership", label: "Leadership (1)", description: "Gain 3 command tokens" },
-    { id: "strat_diplomacy", label: "Diplomacy (2)", description: "Ready 2 planets" },
+    { id: "strat_leadership", label: "Leadership (1)", kind: "", payload: {} },
+    { id: "strat_diplomacy", label: "Diplomacy (2)", kind: "", payload: {} },
   ],
-  context: {
-    kind: "strategy_draft",
+  context: partialContext({
     subtype: "draft_pick",
-  },
+  }),
 };
 
 describe("PendingChoiceModal Component", () => {
   it("shows the printed primary and secondary text for strategy draft cards", () => {
     const draft: PendingChoiceDto = {
       ...mockChoice,
-      context: { subtype: "draft_strategy_card" },
-      options: [{ id: "pok1leadership", kind: "strategy_card", label: "1. Leadership" }],
+      context: partialContext({ subtype: "draft_strategy_card" }),
+      options: [{ id: "pok1leadership", kind: "strategy_card", label: "1. Leadership", payload: {} }],
     };
     render(<PendingChoiceModal choice={draft} onSubmit={vi.fn()} />);
     expect(screen.getByTestId("choice-option")).toHaveClass("strategy-draft-card");
@@ -32,8 +33,8 @@ describe("PendingChoiceModal Component", () => {
   it("shows the text of the cards the game's set deals, whichever version that is", () => {
     const draftOf = (ids: string[]): PendingChoiceDto => ({
       ...mockChoice,
-      context: { subtype: "draft_strategy_card" },
-      options: ids.map((id) => ({ id, kind: "strategy_card", label: id })),
+      context: partialContext({ subtype: "draft_strategy_card" }),
+      options: ids.map((id) => ({ id, kind: "strategy_card", label: id, payload: {} })),
     });
     const { unmount } = render(
       <PendingChoiceModal
@@ -74,7 +75,7 @@ describe("PendingChoiceModal Component", () => {
   it("does not infer metadata from an opaque option ID", () => {
     const choiceWithoutDescription: PendingChoiceDto = {
       ...mockChoice,
-      options: [{ id: "pok1leadership", label: "Take this option" }],
+      options: [{ id: "pok1leadership", label: "Take this option", payload: {}, kind: "" }],
     };
 
     render(<PendingChoiceModal choice={choiceWithoutDescription} onSubmit={vi.fn()} />);
@@ -184,24 +185,28 @@ describe("PendingChoiceModal Component", () => {
     expect(screen.queryByTestId("minimized-choice-banner")).toBeNull();
   });
 
-  it("handles bounded multi-selection constraints with checkboxes and counter", async () => {
+  it("handles a bounded multi-selection with checkboxes and counter", async () => {
     const multiChoice: PendingChoiceDto = {
       prompt: "Select 2 technologies",
       actor: "p1",
       nonce: "nonce_multi",
       options: [
-        { id: "tech_a", label: "Tech A" },
-        { id: "tech_b", label: "Tech B" },
-        { id: "tech_c", label: "Tech C" },
+        { id: "tech_a", label: "Tech A", payload: {}, kind: "" },
+        { id: "tech_b", label: "Tech B", payload: {}, kind: "" },
+        { id: "tech_c", label: "Tech C", payload: {}, kind: "" },
       ],
-      context: {
-        subtype: "research_technology",
-        outstanding: [{ min_selection: 2, max_selection: 2 }],
-      },
+      context: partialContext({ subtype: "research_technology" }),
     };
 
     const onSubmit = vi.fn().mockResolvedValue(undefined);
-    const { rerender } = render(<PendingChoiceModal choice={multiChoice} onSubmit={onSubmit} />);
+    // Two of three, as the renderer model of a choice can bound it.
+    const model = {
+      ...deriveChoiceRendererModel(multiChoice, "p1")!,
+      selectionMode: { mode: "multi", min: 2, max: 2 } as const,
+    };
+    const { rerender } = render(
+      <PendingChoiceModal choice={multiChoice} model={model} onSubmit={onSubmit} />,
+    );
 
     // Renders checkboxes instead of radios
     const checkboxes = screen.getAllByRole("checkbox");
@@ -237,13 +242,13 @@ describe("PendingChoiceModal Component", () => {
       ...multiChoice,
       nonce: "nonce_multi_step_2",
       options: [
-        { id: "tech_b", label: "Tech B" },
-        { id: "tech_c", label: "Tech C" },
+        { id: "tech_b", label: "Tech B", payload: {}, kind: "" },
+        { id: "tech_c", label: "Tech C", payload: {}, kind: "" },
       ],
     };
 
     await act(async () => {
-      rerender(<PendingChoiceModal choice={secondChoice} onSubmit={onSubmit} />);
+      rerender(<PendingChoiceModal choice={secondChoice} model={model} onSubmit={onSubmit} />);
     });
     expect(onSubmit).toHaveBeenNthCalledWith(2, "tech_b");
   });
@@ -254,12 +259,12 @@ describe("PendingChoiceModal Component", () => {
       actor: "p1",
       nonce: "nonce_large",
       options: [
-        { id: "card_1", label: "Morale Boost", description: "Combat roll bonus" },
-        { id: "card_2", label: "Shields Holding", description: "Cancel hits" },
-        { id: "card_3", label: "Direct Hit", description: "Destroy sustained unit" },
-        { id: "card_4", label: "Sabotage", description: "Cancel action card" },
-        { id: "card_5", label: "Fighter Prototype", description: "Fighter bonus" },
-        { id: "card_6", label: "Skilled Retreat", description: "Retreat ship" },
+        { id: "card_1", label: "Morale Boost", kind: "", payload: {} },
+        { id: "card_2", label: "Shields Holding", kind: "", payload: {} },
+        { id: "card_3", label: "Direct Hit", kind: "", payload: {} },
+        { id: "card_4", label: "Sabotage", kind: "", payload: {} },
+        { id: "card_5", label: "Fighter Prototype", kind: "", payload: {} },
+        { id: "card_6", label: "Skilled Retreat", kind: "", payload: {} },
       ],
     };
 
@@ -283,15 +288,15 @@ describe("PendingChoiceModal context header", () => {
           actor: "seat_1",
           nonce: "ctx-1",
           prompt: "gain a command token into which pool",
-          context: {
+          context: partialContext({
             subtype: "gain_command_token",
             source: { Rule: "52.4" },
-            phase: "Status",
+            phase: "status",
             round: 4,
-          },
+          }),
           options: [
-            { id: "tactic_tokens", label: "tactic pool", kind: "pool" },
-            { id: "fleet_tokens", label: "fleet pool", kind: "pool" },
+            { id: "tactic_tokens", label: "tactic pool", kind: "pool", payload: {} },
+            { id: "fleet_tokens", label: "fleet pool", kind: "pool", payload: {} },
           ],
         }}
         onSubmit={vi.fn()}
@@ -309,7 +314,7 @@ describe("PendingChoiceModal context header", () => {
           actor: "seat_1",
           nonce: "ctx-2",
           prompt: "spend a strategy token to draw two action cards",
-          options: [{ id: "yes", label: "draw" }],
+          options: [{ id: "yes", label: "draw", payload: {}, kind: "" }],
         }}
         onSubmit={vi.fn()}
       />,
@@ -326,10 +331,10 @@ describe("PendingChoiceModal hand decisions", () => {
           actor: "seat_1",
           nonce: "hand-1",
           prompt: "over the hand limit — discard one of 8",
-          context: { subtype: "discard_over_hand_limit", source: { Rule: "2.4" } },
+          context: partialContext({ subtype: "discard_over_hand_limit", source: { Rule: "2.4" } }),
           options: [
-            { id: "4", label: "Ancient Burial Sites", kind: "discard" },
-            { id: "3", label: "Direct Hit", kind: "discard" },
+            { id: "4", label: "Ancient Burial Sites", kind: "discard", payload: {} },
+            { id: "3", label: "Direct Hit", kind: "discard", payload: {} },
           ],
         }}
         onSubmit={vi.fn()}
@@ -351,10 +356,10 @@ describe("PendingChoiceModal hand decisions", () => {
           actor: "seat_1",
           nonce: "hand-2",
           prompt: "return a secret objective to the deck",
-          context: { subtype: "return_over_secret_hand_limit", source: { Rule: "45.4" } },
+          context: partialContext({ subtype: "return_over_secret_hand_limit", source: { Rule: "45.4" } }),
           options: [
-            { id: "baf", label: "return baf", kind: "return" },
-            { id: "ans", label: "return ans", kind: "return" },
+            { id: "baf", label: "return baf", kind: "return", payload: {} },
+            { id: "ans", label: "return ans", kind: "return", payload: {} },
           ],
         }}
         onSubmit={onSubmit}
@@ -376,8 +381,8 @@ describe("PendingChoiceModal strategy secondary", () => {
     nonce: "sec-1",
     prompt: "spend a strategy token to draw two action cards",
     options: [
-      { id: "no", label: "decline", kind: "strategy" },
-      { id: "yes", label: "draw", kind: "strategy" },
+      { id: "no", label: "decline", kind: "strategy", payload: {} },
+      { id: "yes", label: "draw", kind: "strategy", payload: {} },
     ],
     details: {
       kind: "strategy_secondary",
@@ -444,7 +449,7 @@ describe("PendingChoiceModal system pick", () => {
       "14": {
         system_id: "14",
         command_tokens: ["p2"],
-        units: [{ unit_type: "fighter", owner: "p1", damaged: false }],
+        units: [{ unit_type: "fighter", owner: "p1", damaged: false, planet: null, galvanized: false }],
         planets: {},
       },
       "18": { system_id: "18", command_tokens: [], units: [], planets: {} },
@@ -458,10 +463,10 @@ describe("PendingChoiceModal system pick", () => {
     prompt: "choose a system",
     actor: "p1",
     nonce: "sp1",
-    context: { subtype: "diplomacy_choose_system" },
+    context: partialContext({ subtype: "diplomacy_choose_system" }),
     options: [
-      { id: "14", kind: "system", label: "14" },
-      { id: "18", kind: "system", label: "18" },
+      { id: "14", kind: "system", label: "14", payload: {} },
+      { id: "18", kind: "system", label: "18", payload: {} },
     ],
   };
 

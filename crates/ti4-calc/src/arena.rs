@@ -1227,9 +1227,7 @@ mod wide_tests {
                     vec![entry]
                 }
             })
-            .flat_map(|faction| {
-                [false, true].map(|upgraded| Profile { faction, upgraded })
-            })
+            .flat_map(|faction| [false, true].map(|upgraded| Profile { faction, upgraded }))
             .collect();
         assert!(profiles.len() >= 60, "{} profiles", profiles.len());
         for profile in profiles {

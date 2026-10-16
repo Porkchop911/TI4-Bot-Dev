@@ -241,9 +241,10 @@ fn main() {
     let players: Vec<PlayerId> = (0..6)
         .map(|index| PlayerId::new(format!("seat{index}")))
         .collect();
-    let roster = argument("--roster").map_or(ti4_engine::seating::FactionRoster::InScope, |value| {
-        ti4_training::rollout::parse_roster(&value).unwrap_or_else(|error| refuse(&error))
-    });
+    let roster = argument("--roster")
+        .map_or(ti4_engine::seating::FactionRoster::InScope, |value| {
+            ti4_training::rollout::parse_roster(&value).unwrap_or_else(|error| refuse(&error))
+        });
     // Rotations move the six around the seats. Under `--roster wide` every rotation of a seed seats
     // the same six, so more seeds at one rotation reach more factions for the same games.
     let rotations: usize = number("--rotations", FACTIONS.len());

@@ -249,42 +249,6 @@ describe("lobby UI", () => {
     await waitFor(() => expect(screen.getByTestId("create-game-button")).toBeEnabled());
   });
 
-  it("shows Add Bot button only for host when bot service is enabled", async () => {
-    const onAddBot = vi.fn().mockResolvedValue(true);
-    const lobbyWithBots: LobbyDto = {
-      ...lobby,
-      bot_service_enabled: true,
-    };
-
-    // Non-host viewer: no Add Bot button
-    const { rerender } = render(
-      <LobbyStatus lobby={lobbyWithBots} playerId={null} onAddBot={onAddBot} {...props} />,
-    );
-    expect(screen.queryByTestId("add-bot-button-3")).not.toBeInTheDocument();
-
-    // Host viewer: Add Bot button is visible on open slot (position 3)
-    rerender(
-      <LobbyStatus lobby={lobbyWithBots} playerId="player_a" onAddBot={onAddBot} {...props} />,
-    );
-    const addBtn = screen.getByTestId("add-bot-button-3");
-    expect(addBtn).toBeInTheDocument();
-
-    // Clicking opens modal
-    fireEvent.click(addBtn);
-    expect(screen.getByTestId("add-bot-modal")).toBeInTheDocument();
-
-    // Fill password and submit
-    fireEvent.change(screen.getByPlaceholderText("Enter server bot password"), {
-      target: { value: "secret123" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Add Bot" }));
-
-    await waitFor(() => {
-      expect(onAddBot).toHaveBeenCalledWith("secret123", "Bot 3");
-    });
-    expect(localStorage.getItem("ti4_bot_password")).toBe("secret123");
-  });
-
   it("allows host to remove an occupied non-host seat", () => {
     const onRemoveBot = vi.fn().mockResolvedValue(true);
     render(<LobbyStatus lobby={lobby} playerId="player_a" onRemoveBot={onRemoveBot} {...props} />);
@@ -318,11 +282,10 @@ describe("lobby UI", () => {
       expect(onAddRandomBots).toHaveBeenLastCalledWith({ count: 1, kind: "smart" });
       fireEvent.click(screen.getByTestId("fill-smart-bots-button"));
       expect(onAddRandomBots).toHaveBeenLastCalledWith({ fill: true, kind: "smart" });
-      // The random bot is not offered, and no password prompt: in-process bots need none.
+      // The random bot is not offered.
       expect(screen.queryByTestId("add-random-bot-button")).not.toBeInTheDocument();
       expect(screen.queryByTestId("fill-random-bots-button")).not.toBeInTheDocument();
       expect(screen.queryByText(/random bot/i)).not.toBeInTheDocument();
-      expect(screen.queryByTestId("add-bot-modal")).not.toBeInTheDocument();
       // A server without the faction pool offers no picker.
       expect(screen.queryByTestId("new-bot-faction")).not.toBeInTheDocument();
     });

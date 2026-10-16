@@ -1,6 +1,6 @@
 # CO-community-maps
 
-The map picker with the community layouts added in `crates/ti4-server/src/maps/community_maps.json`
+The map picker with the community layouts added in `crates/ti4-host/src/maps/community_maps.json`
 (see `crates/ti4-server/docs/COMMUNITY_MAPS.md`), named by their display name.
 
 Rerun: `cd web && npm run screenshots -- CO`

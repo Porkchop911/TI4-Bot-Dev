@@ -87,7 +87,7 @@ describe("LocalTransport and GameSessionClient feed the reducer equivalently", (
   it("on a synthetic stream with an accepted answer, an event, an undo snapshot and game over", async () => {
     const event = {
       type: "event",
-      protocol_version: 3,
+      protocol_version: 4,
       game_id: GAME,
       entry: { id: "e1", message: "A moved", version: 2, decision_count: 1 },
     };
@@ -98,7 +98,7 @@ describe("LocalTransport and GameSessionClient feed the reducer equivalently", (
       question(3, "n2"),
       snapshot(6, "n5", 1),
       accepted(6, "o2"),
-      { type: "game_over", protocol_version: 3, game_id: GAME, game_version: 8, winner: SEAT, final_scores: { [SEAT]: 10 } },
+      { type: "game_over", protocol_version: 4, game_id: GAME, game_version: 8, winner: SEAT, final_scores: { [SEAT]: 10 } },
     ];
     const { server, local, compared } = await compare(GAME, stream, SEAT);
     expect(compared).toBeGreaterThanOrEqual(3);

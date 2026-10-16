@@ -1,0 +1,4 @@
+{
+  "$schema": "../web2/node_modules/oxfmt/configuration_schema.json",
+  "ignorePatterns": ["src/wire/generated/**"]
+}

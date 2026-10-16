@@ -8,11 +8,9 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use ti4_content::ContentStore;
+use ti4_host::batch::{BatchKind, BatchRequest, FORKED_CHECKS, MovementPlan, MovementStep};
+use ti4_host::protocol::status::ViewerRole;
 use ti4_model::id::PlayerId;
-use ti4_server::protocol::status::ViewerRole;
-use ti4_server::session::batch::{
-    BatchKind, BatchRequest, FORKED_CHECKS, MovementPlan, MovementStep,
-};
 use ti4_server::session::registry::HistoryAction;
 use ti4_server::session::{GameRegistry, GameSession, SeatController, SessionConfig};
 use ti4_server::storage::FileGameStore;
@@ -89,8 +87,9 @@ fn scenario(step_snapshots: bool) -> Outcome {
     let guest = PlayerId::new("p2");
     let players = vec![host.clone(), guest.clone()];
     let (state, galaxy) =
-        ti4_server::map::create_game_with_map(ContentStore::embedded(), &players, 42).unwrap();
-    let tiles = ti4_server::map::build_board_tiles(ContentStore::embedded(), &galaxy);
+        ti4_host::map::create_game_with_template(ContentStore::embedded(), &players, 42, None)
+            .unwrap();
+    let tiles = ti4_host::map::build_board_tiles(ContentStore::embedded(), &galaxy);
     let mut config = SessionConfig::new("resume_probe", state)
         .with_seed(42)
         .with_player_ids(players)

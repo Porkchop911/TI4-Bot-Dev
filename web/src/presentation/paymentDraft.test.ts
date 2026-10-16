@@ -11,6 +11,7 @@ import {
   summarizePayment,
   togglePlanetInDraft,
 } from "./paymentDraft.ts";
+import { partialContext } from "../test/wire.ts";
 
 const planetOpt = (planet: string, worth: number, extra: Record<string, unknown> = {}) => ({
   id: `exhaust|${planet}`,
@@ -27,14 +28,14 @@ const choice = (
   prompt: `pay ${owed}`,
   actor: "p1",
   nonce: "n1",
-  context: {
+  context: partialContext({
     subtype: opts.subtype ?? "pay_resources",
-    outstanding: [{ kind: "resources", amount: owed, paid: 0 }],
-  },
+    outstanding: [{ kind: "Resources", amount: owed, paid: 0 }],
+  }),
   options: [
     ...planets.map(([p, w]) => planetOpt(p, w)),
     ...(opts.tg ? [{ id: "trade_good", label: "tg", kind: "pay", payload: { worth: 1 } }] : []),
-    { id: "decline", label: "Cancel", kind: "decline" },
+    { id: "decline", label: "Cancel", kind: "decline", payload: {} },
   ],
 });
 

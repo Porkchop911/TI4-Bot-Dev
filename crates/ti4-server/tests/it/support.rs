@@ -15,9 +15,9 @@ use ti4_engine::choice::{
     Choice, ChoiceOption, Decider, DecisionRecord, IllegalChoice, SeededRandom, Table,
 };
 use ti4_engine::game::Game;
+use ti4_host::rng_force::{RngForce, RngMarks};
 use ti4_model::id::PlayerId;
 use ti4_model::state::GameState;
-use ti4_server::session::{RngForce, RngMarks};
 use ti4_server::storage::{GameHistory, GameInitRecord};
 
 /// A game's initial position and the decisions recorded for it.
@@ -107,7 +107,7 @@ pub fn start_game(source: &Source) -> Game<'static> {
 pub fn generated(name: &str, seed: u64, max_decisions: usize, mark_every: usize) -> Source {
     let players: Vec<PlayerId> = ["a", "b", "c", "d"].map(PlayerId::new).to_vec();
     let (state, galaxy) =
-        ti4_server::map::create_game_with_template(ContentStore::embedded(), &players, seed, None)
+        ti4_host::map::create_game_with_template(ContentStore::embedded(), &players, seed, None)
             .expect("game");
     play_source(name, seed, max_decisions, mark_every, state, galaxy)
 }
@@ -215,7 +215,7 @@ pub fn load_saved(dir: &Path) -> Result<Source, String> {
     let history: GameHistory =
         serde_json::from_value(payload("history.json")?).map_err(|e| format!("history: {e}"))?;
     let seed = init.seed.ok_or_else(|| "no seed".to_owned())?;
-    let (_, galaxy) = ti4_server::map::create_game_with_template(
+    let (_, galaxy) = ti4_host::map::create_game_with_template(
         ContentStore::embedded(),
         &init.player_ids,
         seed,
@@ -275,7 +275,7 @@ pub fn strictly_replayable(source: &Source) -> bool {
     let mut config = ti4_server::session::SessionConfig::new("strict", source.state.clone())
         .with_galaxy(source.galaxy.clone(), Vec::new());
     config.rng_marks = source.marks.clone();
-    ti4_server::session::batch::replay_boundary_state(&config, &source.records).is_ok()
+    ti4_host::batch::replay_boundary_state(&config, &source.records).is_ok()
 }
 
 /// [`saved_games`] restricted to the ones [`strictly_replayable`] accepts.

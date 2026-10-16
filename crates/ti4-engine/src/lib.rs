@@ -69,12 +69,12 @@ pub mod planets;
 pub mod preview;
 pub mod production;
 pub mod promissory;
+pub mod reach_query;
 pub mod reactions;
 pub mod registry;
 pub mod relics;
 pub mod rng;
 pub mod seating;
-pub mod reach_query;
 pub mod secondary_preview;
 pub mod secrets;
 pub mod setup;
@@ -139,6 +139,6 @@ pub use timing::{
     Ability, AbilityCondition, AbilityEffect, AbilityRegistry, Frequency, OptionPayload, Relation,
     Resolver, TimingError,
 };
-pub use tokens::{POOL_KIND, STATUS_TOKENS, TokenGain, TokenGainError, TokenPlacement};
+pub use tokens::{POOL_KIND, STATUS_TOKENS, TokenGain};
 pub use transit::{Cargo, CargoSource, CargoWindow, MoveOutcome, apply_move};
 pub use vote::{AGAINST, Ballot, FOR, VoteError, VoteWindow, outcomes, votable_planets};

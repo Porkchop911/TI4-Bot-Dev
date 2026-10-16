@@ -14,7 +14,19 @@ workspace = true
 ti4-model = { workspace = true }
 ti4-content = { workspace = true }
 ti4-engine = { workspace = true }
-ti4-view = { workspace = true }
+ti4-calc = { workspace = true }
+# The seats that a host plays itself (`bots`): the rule bot, and the MLP bot on the decision
+# pipeline of `ti4-policy` scored by `ti4-infer`. All three are clean for wasm.
+ti4-rule-bot = { workspace = true }
+ti4-policy = { workspace = true }
+ti4-infer = { workspace = true }
+rand_chacha = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+ts-rs = { workspace = true, optional = true }
+
+# The TypeScript types of the wire (`ti4_wasm::wire_ts`). Off in every build but the tests of the
+# browser game's crates: `ti4-server` enables it through its dev-dependency on `ti4-wasm`.
+[features]
+ts = ["dep:ts-rs", "ti4-model/ts", "ti4-engine/ts", "ti4-calc/ts"]

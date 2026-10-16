@@ -4,9 +4,9 @@ use std::fs;
 use std::sync::Arc;
 
 use ti4_content::ContentStore;
+use ti4_host::protocol::server::ServerMessage;
+use ti4_host::protocol::status::ViewerRole;
 use ti4_model::id::PlayerId;
-use ti4_server::protocol::server::ServerMessage;
-use ti4_server::protocol::status::ViewerRole;
 use ti4_server::session::{GameRegistry, GameSession, MockClient, SeatController, SessionConfig};
 use ti4_server::storage::FileGameStore;
 
@@ -23,9 +23,9 @@ fn test_crash_recovery_persists_and_resumes_cleanly() {
 
     let content = ContentStore::embedded();
     let seed = 424_242;
-    let (state, galaxy) =
-        ti4_server::map::create_game_with_map(content, &players, seed).expect("create map");
-    let map_tiles = ti4_server::map::build_board_tiles(content, &galaxy);
+    let (state, galaxy) = ti4_host::map::create_game_with_template(content, &players, seed, None)
+        .expect("create map");
+    let map_tiles = ti4_host::map::build_board_tiles(content, &galaxy);
 
     let game_id = "test_recovery_game";
     let config = SessionConfig::new(game_id, state.clone())
@@ -58,7 +58,7 @@ fn test_crash_recovery_persists_and_resumes_cleanly() {
         loop {
             match client1.recv().expect("recv") {
                 ServerMessage::PendingChoice(choice_msg) if choice_msg.choice.player == p1 => {
-                    break ti4_server::protocol::PendingChoiceEnvelope {
+                    break ti4_host::protocol::PendingChoiceEnvelope {
                         nonce: choice_msg.nonce,
                         choice: choice_msg.choice,
                     };
@@ -95,7 +95,7 @@ fn test_crash_recovery_persists_and_resumes_cleanly() {
         loop {
             match client2.recv().expect("recv") {
                 ServerMessage::PendingChoice(choice_msg) if choice_msg.choice.player == p2 => {
-                    break ti4_server::protocol::PendingChoiceEnvelope {
+                    break ti4_host::protocol::PendingChoiceEnvelope {
                         nonce: choice_msg.nonce,
                         choice: choice_msg.choice,
                     };

@@ -20,8 +20,9 @@ use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use ti4_model::id::PlayerId;
 
-use crate::protocol::PROTOCOL_VERSION;
-use crate::protocol::error::ErrorKind;
+use ti4_host::protocol::PROTOCOL_VERSION;
+use ti4_host::protocol::error::ErrorKind;
+
 use crate::session::GameRegistry;
 use crate::session::registry::{LobbyError, PlayerLobbyView};
 

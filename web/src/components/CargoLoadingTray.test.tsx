@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { CargoLoadingTray } from "./CargoLoadingTray.tsx";
 import { BoardView, PendingChoiceDto } from "../protocol/types.ts";
+import { partialContext } from "../test/wire.ts";
 
 const board: BoardView = {
   systems: {
@@ -10,9 +11,9 @@ const board: BoardView = {
       command_tokens: [],
       planets: {},
       units: [
-        { owner: "p1", unit_type: "fighter", damaged: false },
-        { owner: "p1", unit_type: "fighter", damaged: false },
-        { owner: "p1", unit_type: "infantry", planet: "home", damaged: false },
+        { owner: "p1", unit_type: "fighter", damaged: false, planet: null, galvanized: false },
+        { owner: "p1", unit_type: "fighter", damaged: false, planet: null, galvanized: false },
+        { owner: "p1", unit_type: "infantry", planet: "home", damaged: false, galvanized: false },
       ],
     },
   },
@@ -21,7 +22,7 @@ const choice: PendingChoiceDto = {
   actor: "p1",
   nonce: "load-1",
   prompt: "load carrier (2 free)",
-  context: { subtype: "load_cargo", target: { System: "42" } },
+  context: partialContext({ subtype: "load_cargo", target: { System: "42" } }),
   options: [
     {
       id: "load|0",
@@ -120,8 +121,8 @@ describe("CargoLoadingTray", () => {
           command_tokens: [],
           planets: {},
           units: [
-            { owner: "p1", unit_type: "infantry", planet: "mid", damaged: false },
-            { owner: "p1", unit_type: "infantry", planet: "mid", damaged: false },
+            { owner: "p1", unit_type: "infantry", planet: "mid", damaged: false, galvanized: false },
+            { owner: "p1", unit_type: "infantry", planet: "mid", damaged: false, galvanized: false },
           ],
         },
       },

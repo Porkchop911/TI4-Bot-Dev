@@ -1,6 +1,6 @@
 # Community maps
 
-`crates/ti4-server/src/maps/community_maps.json` adds 31 fixed, community-made galaxy layouts for
+`crates/ti4-host/src/maps/community_maps.json` adds 31 fixed, community-made galaxy layouts for
 3 to 6 players to the map picker, next to the upstream AsyncTI4 templates in
 `ti4-content/content/map_templates.json`. That upstream file is a pinned mirror (see
 `CHECKSUMS.sha256`), so it is left alone. Both files use the same entry format (`alias`,
@@ -53,7 +53,7 @@ same rotation.
 
 ## Checks
 
-`crates/ti4-server/src/maps/community_tests.rs` checks each map:
+`crates/ti4-host/src/maps/community_tests.rs` checks each map:
 
 - it is named, attributed and has a source;
 - it has unique positions, no open slots, and exactly one home per seat;

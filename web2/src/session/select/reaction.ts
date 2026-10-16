@@ -11,7 +11,7 @@ import type {
   SessionUpdate,
 } from "../wire";
 import { plain, timing } from "./components";
-import { factionName, strategyCard, titleCase } from "./names";
+import { factionName, strategyCard, humanizeId } from "./names";
 
 const KEYS = "123456789";
 
@@ -57,7 +57,7 @@ export function triggerText(
   const card = () => {
     const id = trigger.card ?? "";
     const printed = catalog?.components.action_cards.find((item) => item.id === id);
-    return printed?.name ?? titleCase(id);
+    return printed?.name ?? humanizeId(id);
   };
   const said = (): string | null => {
     switch (trigger.event_type) {
@@ -130,7 +130,7 @@ export function selectReaction(
   const rows: Omit<MenuRowView, "key">[] = [
     ...facts.offers.map((item) => ({
       title: item.name,
-      state: item.kind === "leader" && item.role ? titleCase(item.role) : KIND[item.kind],
+      state: item.kind === "leader" && item.role ? humanizeId(item.role) : KIND[item.kind],
       text: [timing(item.window), plain(item.text)].filter(Boolean).join(" "),
       selected: item.option === staged,
       offer: offer(item),

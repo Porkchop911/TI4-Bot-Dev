@@ -2,9 +2,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use ti4_content::ContentStore;
+use ti4_host::batch::{BatchKind, BatchRequest, MovementPlan, MovementStep};
 use ti4_model::id::{PlayerId, SystemId, UnitTypeId};
 use ti4_model::units::Unit;
-use ti4_server::session::batch::{BatchKind, BatchRequest, MovementPlan, MovementStep};
 use ti4_server::session::registry::{HistoryAction, HistoryError};
 use ti4_server::session::{GameRegistry, GameSession, SeatController, SessionConfig};
 use ti4_server::storage::FileGameStore;
@@ -18,8 +18,9 @@ fn movement_batch_is_atomic_idempotent_and_undoable() {
     let guest = PlayerId::new("p2");
     let players = vec![host.clone(), guest.clone()];
     let (state, galaxy) =
-        ti4_server::map::create_game_with_map(ContentStore::embedded(), &players, 42).unwrap();
-    let tiles = ti4_server::map::build_board_tiles(ContentStore::embedded(), &galaxy);
+        ti4_host::map::create_game_with_template(ContentStore::embedded(), &players, 42, None)
+            .unwrap();
+    let tiles = ti4_host::map::build_board_tiles(ContentStore::embedded(), &galaxy);
     let config = SessionConfig::new("batch_probe", state)
         .with_seed(42)
         .with_player_ids(players)
@@ -32,7 +33,7 @@ fn movement_batch_is_atomic_idempotent_and_undoable() {
     for _ in 0..4 {
         let (seat, nonce, version, _) = pending(&session);
         let choice = session
-            .get_snapshot(&ti4_server::protocol::status::ViewerRole::Player(
+            .get_snapshot(&ti4_host::protocol::status::ViewerRole::Player(
                 seat.clone(),
             ))
             .pending_choice
@@ -50,7 +51,7 @@ fn movement_batch_is_atomic_idempotent_and_undoable() {
     let (seat, nonce, version, _) = pending(&session);
     assert_eq!(seat, host);
     let choice = session
-        .get_snapshot(&ti4_server::protocol::status::ViewerRole::Player(
+        .get_snapshot(&ti4_host::protocol::status::ViewerRole::Player(
             host.clone(),
         ))
         .pending_choice
@@ -295,10 +296,11 @@ fn excess_fleet_batch_replays_at_the_next_choice_and_recovers_its_state() {
     let registry = GameRegistry::new().with_store(store.clone());
     let host = PlayerId::new("p1");
     let guest = PlayerId::new("p2");
-    let (mut state, galaxy) = ti4_server::map::create_game_with_map(
+    let (mut state, galaxy) = ti4_host::map::create_game_with_template(
         ContentStore::embedded(),
         &[host.clone(), guest.clone()],
         42,
+        None,
     )
     .unwrap();
     let origin = SystemId::new(galaxy.adjacent("22").into_iter().next().unwrap());
@@ -306,7 +308,7 @@ fn excess_fleet_batch_replays_at_the_next_choice_and_recovers_its_state() {
         .system_mut(&origin)
         .units
         .extend((0..4).map(|_| Unit::new(UnitTypeId::new("destroyer"), host.clone())));
-    let tiles = ti4_server::map::build_board_tiles(ContentStore::embedded(), &galaxy);
+    let tiles = ti4_host::map::build_board_tiles(ContentStore::embedded(), &galaxy);
     let config = SessionConfig::new("fleet_batch", state)
         .with_seed(42)
         .with_player_ids(vec![host.clone(), guest.clone()])
@@ -318,7 +320,7 @@ fn excess_fleet_batch_replays_at_the_next_choice_and_recovers_its_state() {
     for _ in 0..4 {
         let (seat, nonce, version, _) = pending(&session);
         let choice = session
-            .get_snapshot(&ti4_server::protocol::status::ViewerRole::Player(
+            .get_snapshot(&ti4_host::protocol::status::ViewerRole::Player(
                 seat.clone(),
             ))
             .pending_choice
@@ -425,7 +427,8 @@ fn fiftieth_movement_step_failure_preserves_the_durable_redo_branch() {
     let guest = PlayerId::new("p2");
     let players = vec![host.clone(), guest.clone()];
     let (mut state, galaxy) =
-        ti4_server::map::create_game_with_map(ContentStore::embedded(), &players, 42).unwrap();
+        ti4_host::map::create_game_with_template(ContentStore::embedded(), &players, 42, None)
+            .unwrap();
     let origin = SystemId::new(galaxy.adjacent("22").into_iter().next().unwrap());
     state
         .system_mut(&origin)
@@ -434,7 +437,7 @@ fn fiftieth_movement_step_failure_preserves_the_durable_redo_branch() {
     // Keep the setup legal when the baseline batch ends movement; otherwise the
     // fleet-supply removal window interrupts replay before the redo branch is made.
     state.player_mut(&host).unwrap().fleet_tokens = 100;
-    let tiles = ti4_server::map::build_board_tiles(ContentStore::embedded(), &galaxy);
+    let tiles = ti4_host::map::build_board_tiles(ContentStore::embedded(), &galaxy);
     let config = SessionConfig::new("late_batch", state)
         .with_seed(42)
         .with_player_ids(players)
@@ -446,7 +449,7 @@ fn fiftieth_movement_step_failure_preserves_the_durable_redo_branch() {
     for _ in 0..4 {
         let (seat, nonce, version, _) = pending(&session);
         let choice = session
-            .get_snapshot(&ti4_server::protocol::status::ViewerRole::Player(
+            .get_snapshot(&ti4_host::protocol::status::ViewerRole::Player(
                 seat.clone(),
             ))
             .pending_choice
@@ -473,7 +476,7 @@ fn fiftieth_movement_step_failure_preserves_the_durable_redo_branch() {
         "22"
     );
     let choice = session
-        .get_snapshot(&ti4_server::protocol::status::ViewerRole::Player(
+        .get_snapshot(&ti4_host::protocol::status::ViewerRole::Player(
             host.clone(),
         ))
         .pending_choice
@@ -595,7 +598,7 @@ fn pending(session: &GameSession) -> (PlayerId, String, u64, String) {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         if let Some((seat, nonce, version)) = session.current_pending_decision() {
-            let snapshot = session.get_snapshot(&ti4_server::protocol::status::ViewerRole::Player(
+            let snapshot = session.get_snapshot(&ti4_host::protocol::status::ViewerRole::Player(
                 seat.clone(),
             ));
             let option = snapshot.pending_choice.unwrap().choice.options[0]
@@ -706,10 +709,11 @@ fn movement_batch_survives_a_declined_cargo_hold_for_ground_forces_in_the_active
     let registry = GameRegistry::new();
     let host = PlayerId::new("p1");
     let guest = PlayerId::new("p2");
-    let (mut state, galaxy) = ti4_server::map::create_game_with_map(
+    let (mut state, galaxy) = ti4_host::map::create_game_with_template(
         ContentStore::embedded(),
         &[host.clone(), guest.clone()],
         42,
+        None,
     )
     .unwrap();
     let origin = SystemId::new(galaxy.adjacent("22").into_iter().next().unwrap());
@@ -723,7 +727,7 @@ fn movement_batch_survives_a_declined_cargo_hold_for_ground_forces_in_the_active
         .entry(ti4_model::id::PlanetId::new("tarmann"))
         .or_default()
         .push(Unit::new(UnitTypeId::new("infantry"), host.clone()));
-    let tiles = ti4_server::map::build_board_tiles(ContentStore::embedded(), &galaxy);
+    let tiles = ti4_host::map::build_board_tiles(ContentStore::embedded(), &galaxy);
     let config = SessionConfig::new("cargo_hold_batch", state)
         .with_seed(42)
         .with_player_ids(vec![host.clone(), guest.clone()])
@@ -735,7 +739,7 @@ fn movement_batch_survives_a_declined_cargo_hold_for_ground_forces_in_the_active
     for _ in 0..4 {
         let (seat, nonce, version, _) = pending(&session);
         let choice = session
-            .get_snapshot(&ti4_server::protocol::status::ViewerRole::Player(
+            .get_snapshot(&ti4_host::protocol::status::ViewerRole::Player(
                 seat.clone(),
             ))
             .pending_choice
@@ -800,7 +804,8 @@ fn game_with_a_reaction_holder(
     let guest = PlayerId::new("p2");
     let players = vec![host.clone(), guest.clone()];
     let (mut state, galaxy) =
-        ti4_server::map::create_game_with_map(ContentStore::embedded(), &players, 42).unwrap();
+        ti4_host::map::create_game_with_template(ContentStore::embedded(), &players, 42, None)
+            .unwrap();
     let neighbours: Vec<String> = galaxy
         .adjacent("22")
         .into_iter()
@@ -829,7 +834,7 @@ fn game_with_a_reaction_holder(
         state.player_mut(&guest).unwrap().action_cards =
             vec![ti4_model::id::ActionCardId::new("rescue")];
     }
-    let tiles = ti4_server::map::build_board_tiles(ContentStore::embedded(), &galaxy);
+    let tiles = ti4_host::map::build_board_tiles(ContentStore::embedded(), &galaxy);
     let config = SessionConfig::new(game_id, state)
         .with_seed(42)
         .with_player_ids(players)
@@ -841,7 +846,7 @@ fn game_with_a_reaction_holder(
     for _ in 0..4 {
         let (seat, nonce, version, _) = pending(&session);
         let choice = session
-            .get_snapshot(&ti4_server::protocol::status::ViewerRole::Player(
+            .get_snapshot(&ti4_host::protocol::status::ViewerRole::Player(
                 seat.clone(),
             ))
             .pending_choice
@@ -1057,8 +1062,9 @@ fn undo_action_rewinds_the_whole_movement_pipeline_and_preserves_redo() {
     let guest = PlayerId::new("p2");
     let players = vec![host.clone(), guest.clone()];
     let (state, galaxy) =
-        ti4_server::map::create_game_with_map(ContentStore::embedded(), &players, 42).unwrap();
-    let tiles = ti4_server::map::build_board_tiles(ContentStore::embedded(), &galaxy);
+        ti4_host::map::create_game_with_template(ContentStore::embedded(), &players, 42, None)
+            .unwrap();
+    let tiles = ti4_host::map::build_board_tiles(ContentStore::embedded(), &galaxy);
     let config = SessionConfig::new("probe", state)
         .with_player_ids(players)
         .with_galaxy(galaxy, tiles)
@@ -1068,7 +1074,7 @@ fn undo_action_rewinds_the_whole_movement_pipeline_and_preserves_redo() {
     let host_token = session.seat_tokens()[&host].clone();
     for i in 0..6 {
         let (seat, nonce, version, _) = pending(&session);
-        let snapshot = session.get_snapshot(&ti4_server::protocol::status::ViewerRole::Player(
+        let snapshot = session.get_snapshot(&ti4_host::protocol::status::ViewerRole::Player(
             seat.clone(),
         ));
         let choice = snapshot.pending_choice.unwrap().choice;
@@ -1149,8 +1155,9 @@ fn host_rewinds_replays_and_branches_durably() {
     let guest = PlayerId::new("p2");
     let players = vec![host.clone(), guest.clone()];
     let (state, galaxy) =
-        ti4_server::map::create_game_with_map(ContentStore::embedded(), &players, 42).unwrap();
-    let tiles = ti4_server::map::build_board_tiles(ContentStore::embedded(), &galaxy);
+        ti4_host::map::create_game_with_template(ContentStore::embedded(), &players, 42, None)
+            .unwrap();
+    let tiles = ti4_host::map::build_board_tiles(ContentStore::embedded(), &galaxy);
     let config = SessionConfig::new("history_game", state.clone())
         .with_seed(42)
         .with_player_ids(players)
@@ -1172,7 +1179,7 @@ fn host_rewinds_replays_and_branches_durably() {
     let _ = pending(&session);
     let second_log = session.decision_log();
     let second_hashes = session.decision_hashes();
-    let snapshot = session.get_snapshot(&ti4_server::protocol::status::ViewerRole::Spectator);
+    let snapshot = session.get_snapshot(&ti4_host::protocol::status::ViewerRole::Spectator);
     let first_event = snapshot
         .events
         .iter()
@@ -1286,16 +1293,17 @@ async fn http_history_requires_the_current_host_and_replaces_connected_sessions(
     let registry = Arc::new(GameRegistry::new());
     let host = PlayerId::new("host");
     let guest = PlayerId::new("guest");
-    let (state, galaxy) = ti4_server::map::create_game_with_map(
+    let (state, galaxy) = ti4_host::map::create_game_with_template(
         ContentStore::embedded(),
         &[host.clone(), guest.clone()],
         84,
+        None,
     )
     .unwrap();
     let config = SessionConfig::new("history_http", state)
         .with_galaxy(
             galaxy.clone(),
-            ti4_server::map::build_board_tiles(ContentStore::embedded(), &galaxy),
+            ti4_host::map::build_board_tiles(ContentStore::embedded(), &galaxy),
         )
         .with_player_ids(vec![host.clone(), guest.clone()])
         .with_seat(host.clone(), SeatController::Human)
@@ -1316,7 +1324,7 @@ async fn http_history_requires_the_current_host_and_replaces_connected_sessions(
     socket
         .send(tokio_tungstenite::tungstenite::Message::Text(
             serde_json::json!({
-                "type": "subscribe", "protocol_version": 3, "game_id": "history_http",
+                "type": "subscribe", "protocol_version": 4, "game_id": "history_http",
             })
             .to_string()
             .into(),

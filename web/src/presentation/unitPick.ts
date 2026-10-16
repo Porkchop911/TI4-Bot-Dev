@@ -1,4 +1,4 @@
-import type { ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import type { ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import { findActionCardMeta, findPlanetMeta, humanizeId } from "../protocol/contentCatalog.ts";
 import { getUnitDisplayName } from "../components/UnitIcon.tsx";
 
@@ -25,7 +25,7 @@ const text = (value: unknown): string | null =>
 /** One unit option with its place and what the card does to it; `null` for the stop option or without details. */
 export function describeUnitPickOption(
   choice: Pick<PendingChoiceDto, "context" | "details">,
-  option: Pick<ChoiceOptionDto, "id">,
+  option: Pick<ChoiceOption, "id">,
 ): UnitPickOption | null {
   if (!isUnitPick(choice)) return null;
   const units = choice.details?.units as Record<string, Record<string, unknown>> | undefined;

@@ -3,13 +3,14 @@ import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { WorkflowShell } from "./WorkflowShell.tsx";
 import { PendingChoiceDto } from "../protocol/types.ts";
+import { partialContext } from "../test/wire.ts";
 
 const choice: PendingChoiceDto = {
   actor: "seat_2",
   nonce: "workflow-1",
   prompt: "Choose",
-  context: { subtype: "" },
-  options: [{ id: "decline", label: "Decline", kind: "decline" }],
+  context: partialContext({ subtype: "" }),
+  options: [{ id: "decline", label: "Decline", kind: "decline", payload: {} }],
 };
 
 describe("WorkflowShell", () => {

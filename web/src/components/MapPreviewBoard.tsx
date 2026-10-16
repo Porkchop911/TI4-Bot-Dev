@@ -1,12 +1,12 @@
 import React from "react";
-import type { MapPreviewDto } from "../protocol/types.ts";
+import type { MapPreview } from "../protocol/types.ts";
 import { deriveHexGeometry } from "../presentation/boardPresentation.ts";
 import { homeIdSet, mainTiles, tileKind } from "../presentation/mapPicker.ts";
 import { seatStyle } from "../presentation/playerDisplay.ts";
 import { TILE_FILL } from "./MapThumbnail.tsx";
 import { PlanetValueGlyph, pairLabel } from "./PlanetValueIcons.tsx";
 
-const planetLabel = (tile: MapPreviewDto["tiles"][number]) =>
+const planetLabel = (tile: MapPreview["tiles"][number]) =>
   (tile.planets ?? []).map((p) => pairLabel(p.resources, p.influence)).join("; ");
 
 /**
@@ -15,7 +15,7 @@ const planetLabel = (tile: MapPreviewDto["tiles"][number]) =>
  * starts, so a place names no player and no faction. Read-only.
  */
 export const MapPreviewBoard: React.FC<{
-  preview: MapPreviewDto;
+  preview: MapPreview;
 }> = ({ preview }) => {
   const homes = homeIdSet(preview.seats);
   const seatOf = new Map(preview.seats.map((seat) => [seat.home_system_id, seat]));

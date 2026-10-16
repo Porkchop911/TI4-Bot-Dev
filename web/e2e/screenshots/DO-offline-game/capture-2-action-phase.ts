@@ -12,7 +12,7 @@ for (const [size, viewport] of Object.entries(SIZES)) {
     await playToActionPhase(page, id);
     await expect(page.getByTestId("offline-banner")).toBeVisible();
     await shot(page, testInfo, `3-action-phase-${size}`);
-    // What is hidden offline: turn redo (event log) and the advisor's odds in combat.
+    // What is hidden offline: turn redo (event log).
     // Phones open the log from the bottom bar; the desktop has a toggle on the log itself.
     if (size === "desktop") await page.getByTestId("event-log-toggle").click();
     else await page.locator('button:text-is("Events")').click();

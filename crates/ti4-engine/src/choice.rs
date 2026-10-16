@@ -45,6 +45,7 @@ pub const DECLINE_ID: &str = "decline";
 ///
 /// `id` must be stable for a given game state so decision logs replay faithfully.
 #[derive(Debug, Clone, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChoiceOption {
     pub id: String,
     pub kind: String,
@@ -52,6 +53,7 @@ pub struct ChoiceOption {
     /// Structured detail for whatever will apply this option. Excluded from equality, as in
     /// the oracle: two options with the same id are the same option, and a payload that
     /// differed would mean the id was not stable.
+    #[cfg_attr(feature = "ts", ts(type = "Record<string, unknown>"))]
     pub payload: BTreeMap<String, Value>,
     /// What taking this option would do, when its producer can compute that without mutation.
     ///
@@ -165,6 +167,7 @@ impl ChoiceOption {
 
 /// A decision point handed to exactly one actor.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Choice {
     pub player: PlayerId,
     pub prompt: String,
@@ -176,6 +179,7 @@ pub struct Choice {
     /// left). Display only: never read by the engine, never copied into a [`DecisionRecord`],
     /// and skipped when empty, so records, replays and fingerprints are unaffected.
     #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
+    #[cfg_attr(feature = "ts", ts(type = "Record<string, unknown>"))]
     pub details: serde_json::Map<String, Value>,
     /// An id prefix that names answers built by the asker rather than listed in `options`
     /// (a transaction's free-form deal). Unlisted ids starting with it are accepted as answers;

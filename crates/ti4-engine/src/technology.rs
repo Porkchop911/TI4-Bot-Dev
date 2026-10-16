@@ -2636,7 +2636,10 @@ mod tests {
             ) else {
                 continue;
             };
-            if content.get(ti4_model::content_types::ContentType::Factions, faction).is_none() {
+            if content
+                .get(ti4_model::content_types::ContentType::Factions, faction)
+                .is_none()
+            {
                 continue; // homebrew faction with no faction record (Ghemina)
             }
             checked += 1;
@@ -2665,7 +2668,10 @@ mod tests {
             .map(|unit| unit.type_id.to_string())
             .collect();
             if !ids.iter().any(|id| id == after.id()) || ids.iter().any(|id| id == before) {
-                failures.push(format!("{faction} {tech}: {before} -> {} left {ids:?}", after.id()));
+                failures.push(format!(
+                    "{faction} {tech}: {before} -> {} left {ids:?}",
+                    after.id()
+                ));
             }
         }
         assert!(checked >= 17, "only {checked} faction upgrades found");
@@ -2682,7 +2688,13 @@ mod tests {
         let player = PlayerId::new("a");
         state.board.entry(plain.clone()).or_default();
         crate::fixtures::put(&mut state, &plain, "sol_carrier", &player, 2);
-        gain(&mut state, content, sources, &player, &TechnologyId::new("ac2"));
+        gain(
+            &mut state,
+            content,
+            sources,
+            &player,
+            &TechnologyId::new("ac2"),
+        );
         let ids: Vec<String> = state
             .system_state(&plain)
             .units_of(&player)
@@ -2690,7 +2702,10 @@ mod tests {
             .map(|unit| unit.type_id.to_string())
             .filter(|id| id.starts_with("sol_carrier"))
             .collect();
-        assert!(ids.len() >= 2 && ids.iter().all(|id| id == "sol_carrier2"), "{ids:?}");
+        assert!(
+            ids.len() >= 2 && ids.iter().all(|id| id == "sol_carrier2"),
+            "{ids:?}"
+        );
     }
 
     #[test]

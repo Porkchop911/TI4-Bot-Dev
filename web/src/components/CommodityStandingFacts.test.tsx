@@ -13,8 +13,8 @@ const merchantStation = (details?: Record<string, unknown>): PendingChoiceDto =>
     source: { Content: "merchant_station" },
   } as never,
   options: [
-    { id: "replenish", label: "replenish commodities", kind: "explore" },
-    { id: "convert", label: "convert commodities to trade goods", kind: "explore" },
+    { id: "replenish", label: "replenish commodities", kind: "explore", payload: {} },
+    { id: "convert", label: "convert commodities to trade goods", kind: "explore", payload: {} },
   ],
   details,
 });

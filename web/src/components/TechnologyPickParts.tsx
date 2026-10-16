@@ -1,5 +1,5 @@
 import React from "react";
-import type { ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import type { ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import { describeTechnologyPickOption, technologyPickStage } from "../presentation/technologyPick.ts";
 
 /** Above the options of Divert Funding: which half of the card this is and what it does. */
@@ -17,7 +17,7 @@ export const TechnologyPickPanel: React.FC<{ choice: PendingChoiceDto }> = ({ ch
 };
 
 /** Inside an option row: the technology's colour, what it needs and its printed text. */
-export const TechnologyPickOptionNote: React.FC<{ choice: PendingChoiceDto; option: ChoiceOptionDto }> = ({
+export const TechnologyPickOptionNote: React.FC<{ choice: PendingChoiceDto; option: ChoiceOption }> = ({
   choice,
   option,
 }) => {

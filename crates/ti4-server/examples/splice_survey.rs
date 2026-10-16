@@ -14,8 +14,8 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use ti4_content::ContentStore;
-use ti4_server::protocol::splice::{RngStatus, SpliceEdit};
-use ti4_server::session::splice::SpliceBaseline;
+use ti4_host::history::splice::SpliceBaseline;
+use ti4_host::protocol::splice::{RngStatus, SpliceEdit};
 use ti4_server::storage::FileGameStore;
 
 #[derive(Default)]
@@ -35,7 +35,7 @@ struct Tally {
 }
 
 impl Tally {
-    fn add(&mut self, p: &ti4_server::protocol::splice::SplicePreview, micros: u128) {
+    fn add(&mut self, p: &ti4_host::protocol::splice::SplicePreview, micros: u128) {
         self.previews += 1;
         self.micros += micros;
         if p.survives_to_end {
@@ -137,7 +137,7 @@ fn main() {
                 Ok(Some(h)) => h.decisions,
                 _ => store.load_decisions(&id).unwrap_or_default(),
             };
-            let Ok((_, galaxy)) = ti4_server::map::create_game_with_template(
+            let Ok((_, galaxy)) = ti4_host::map::create_game_with_template(
                 content,
                 &player_ids,
                 seed,

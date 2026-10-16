@@ -19,6 +19,7 @@ import {
   strategyCardSetLabel,
   strategyCardSetName,
 } from "../presentation/strategyCardSet.ts";
+import { ApiError, createTable } from "@ti4/shared/net/api.ts";
 import { decodeCreateGameResponse } from "../protocol/decode.ts";
 import { preferredNickname, rememberNickname, validNickname } from "../protocol/nickname.ts";
 import { SeatBadge } from "../presentation/PlayerIdentity.tsx";
@@ -79,21 +80,14 @@ export const CreateLobby: React.FC<{
     inFlight.current = true;
     setCreating(true);
     try {
-      const response = await fetch("/api/games", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          player_count: count,
-          seed: parsedSeed,
-          nickname,
-          strategy_card_set: cardSet,
-        }),
-      });
-      if (!response.ok) {
-        const text = await response.text();
-        if (response.status === 429) {
+      let made: unknown;
+      try {
+        made = await createTable({ playerCount: count, seed: parsedSeed, nickname, cards: cardSet });
+      } catch (refused) {
+        if (!(refused instanceof ApiError)) throw refused;
+        if (refused.status === 429) {
           try {
-            const body = JSON.parse(text) as { error?: string; games?: OpenGameRow[] };
+            const body = JSON.parse(refused.body) as { error?: string; games?: OpenGameRow[] };
             if (body.error === "too_many_games") {
               setOverflow(Array.isArray(body.games) ? body.games : []);
               return;
@@ -102,9 +96,9 @@ export const CreateLobby: React.FC<{
             // Not JSON: fall through to the plain error.
           }
         }
-        throw new Error(`Create game failed (${response.status}): ${text}`);
+        throw new Error(`Create game failed (${refused.status}): ${refused.body}`);
       }
-      const created = decodeCreateGameResponse(await response.json());
+      const created = decodeCreateGameResponse(made);
       rememberNickname(nickname);
       rememberMyGame({
         gameId: created.game_id,
@@ -252,7 +246,6 @@ interface LobbyStatusProps {
   onJoin: (nickname: string) => void;
   onTakeover: (playerId: string, nickname: string) => void;
   onWatch: () => void;
-  onAddBot?: (password: string, nickname?: string) => Promise<boolean | void>;
   onRemoveBot?: (playerId: string) => Promise<boolean | void>;
   /**
    * Host only: seat in-process bots (one, or every open seat with `fill`) of `kind`. `faction`
@@ -301,7 +294,6 @@ export const LobbyStatus: React.FC<LobbyStatusProps> = ({
   onJoin,
   onTakeover,
   onWatch,
-  onAddBot,
   onRemoveBot,
   onAddRandomBots,
   onSetSeatFaction,
@@ -313,14 +305,6 @@ export const LobbyStatus: React.FC<LobbyStatusProps> = ({
   const [copyState, setCopyState] = useState<string | null>(null);
   const [copying, setCopying] = useState(false);
   const copyingRef = useRef(false);
-  const [addBotPosition, setAddBotPosition] = useState<number | null>(null);
-  const [botPassword, setBotPassword] = useState(
-    () => localStorage.getItem("ti4_bot_password") || "",
-  );
-  const [botNickname, setBotNickname] = useState("");
-  const [rememberBotPassword, setRememberBotPassword] = useState(true);
-  const [botError, setBotError] = useState<string | null>(null);
-  const [addingBot, setAddingBot] = useState(false);
   const [newBotFaction, setNewBotFaction] = useState<string | null>(null);
   const viewer =
     playerId === null ? undefined : lobby.slots.find((slot) => slot.occupant === playerId);
@@ -359,30 +343,6 @@ export const LobbyStatus: React.FC<LobbyStatusProps> = ({
   const canAddSmartBots = canAddInProcessBots && !!lobby.bot_kinds?.includes("smart");
   // There is no "Ready": the host starts the game when every seat is filled.
   const canStart = lobby.phase === "lobby" && lobby.slots.every((slot) => slot.occupant);
-  const handleAddBot = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!botPassword.trim()) {
-      setBotError("Password is required.");
-      return;
-    }
-    if (rememberBotPassword) {
-      localStorage.setItem("ti4_bot_password", botPassword);
-    } else {
-      localStorage.removeItem("ti4_bot_password");
-    }
-    setAddingBot(true);
-    setBotError(null);
-    try {
-      if (onAddBot) {
-        await onAddBot(botPassword, botNickname.trim() || undefined);
-      }
-      setAddBotPosition(null);
-    } catch (err) {
-      setBotError(String(err));
-    } finally {
-      setAddingBot(false);
-    }
-  };
   const copyUrl = async () => {
     if (copyingRef.current || pendingAction) return;
     copyingRef.current = true;
@@ -551,24 +511,6 @@ export const LobbyStatus: React.FC<LobbyStatusProps> = ({
                       </span>
                     )}
                   </>
-                ) : isHost && lobby.phase === "lobby" && lobby.bot_service_enabled ? (
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                    Available
-                    <button
-                      type="button"
-                      className="button button--outline add-bot-button"
-                      data-testid={`add-bot-button-${slot.position}`}
-                      style={{ padding: "2px 8px", fontSize: "11px" }}
-                      disabled={!!pendingAction}
-                      onClick={() => {
-                        setBotNickname(`Bot ${slot.position}`);
-                        setAddBotPosition(slot.position);
-                        setBotError(null);
-                      }}
-                    >
-                      Add Bot 🤖
-                    </button>
-                  </span>
                 ) : (
                   "Available"
                 )}
@@ -624,87 +566,6 @@ export const LobbyStatus: React.FC<LobbyStatusProps> = ({
             </div>
           ))}
         </div>
-        {addBotPosition !== null && (
-          <div
-            className="decision-modal"
-            data-testid="add-bot-modal"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background: "rgba(0, 0, 0, 0.75)",
-            }}
-          >
-            <div className="panel decision-modal__panel" style={{ width: "min(440px, 95vw)" }}>
-              <div className="decision-modal__header">
-                <h2>Add MLP Bot (Position {addBotPosition})</h2>
-                <button
-                  type="button"
-                  className="button button--outline button--icon"
-                  onClick={() => setAddBotPosition(null)}
-                  disabled={addingBot}
-                >
-                  ✕
-                </button>
-              </div>
-              <form onSubmit={handleAddBot} className="lobby-form">
-                <label className="field-label">
-                  Bot Nickname
-                  <input
-                    className="input"
-                    value={botNickname}
-                    disabled={addingBot}
-                    onChange={(e) => setBotNickname(e.target.value)}
-                  />
-                </label>
-                <label className="field-label">
-                  Server Bot Password
-                  <input
-                    className="input"
-                    type="password"
-                    placeholder="Enter server bot password"
-                    value={botPassword}
-                    disabled={addingBot}
-                    onChange={(e) => setBotPassword(e.target.value)}
-                  />
-                </label>
-                <label
-                  className="field-label"
-                  style={{ flexDirection: "row", alignItems: "center", gap: 8, cursor: "pointer" }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={rememberBotPassword}
-                    disabled={addingBot}
-                    onChange={(e) => setRememberBotPassword(e.target.checked)}
-                  />
-                  Remember password on this device
-                </label>
-                {botError && (
-                  <p
-                    role="alert"
-                    style={{ color: "var(--color-danger, #ef4444)", margin: "4px 0" }}
-                  >
-                    {botError}
-                  </p>
-                )}
-                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                  <button type="submit" className="button button--success" disabled={addingBot}>
-                    {addingBot ? "Adding bot…" : "Add Bot"}
-                  </button>
-                  <button
-                    type="button"
-                    className="button button--outline"
-                    disabled={addingBot}
-                    onClick={() => setAddBotPosition(null)}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
         {isHost && lobby.phase === "lobby" && (
           <div>
             <button

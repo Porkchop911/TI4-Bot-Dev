@@ -1,4 +1,4 @@
-//! "Start from" of a table: the game starts from a scenario of `ti4_view::scenario`, as the Dev
+//! "Start from" of a table: the game starts from a scenario of `ti4_host::view::scenario`, as the Dev
 //! sheet of a local game starts it, so that several people can test a screen of the late game.
 
 use std::sync::Arc;
@@ -7,14 +7,14 @@ use std::time::{Duration, Instant};
 use reqwest::StatusCode;
 use serde_json::json;
 use ti4_content::ContentStore;
+use ti4_host::protocol::status::ViewerRole;
+use ti4_host::view::scenario::LATE_GAME;
 use ti4_model::id::PlayerId;
-use ti4_server::protocol::status::ViewerRole;
 use ti4_server::public::PublicConfig;
 use ti4_server::session::registry::LobbyError;
 use ti4_server::session::table::TableSettings;
 use ti4_server::session::{GameRegistry, GameSession};
 use ti4_server::storage::FileGameStore;
-use ti4_view::scenario::LATE_GAME;
 
 use crate::table_http::{open_seats, serve};
 
@@ -64,7 +64,6 @@ async fn a_table_of_two_people_and_bots_starts_the_late_game_and_recovers_it() {
     assert_eq!(view["start_from"], LATE_GAME);
     assert_eq!(view["slots"].as_array().unwrap().len(), 8);
     assert_eq!(open_seats(&view), 6);
-    assert_eq!(view["seat_order"], "join");
     assert_eq!(view["strategy_card_set"], "pok");
     assert_eq!(view["slots"][0]["faction"], "sol");
     assert_eq!(view["slots"][1]["faction"], "hacan");
@@ -124,14 +123,14 @@ async fn a_table_of_two_people_and_bots_starts_the_late_game_and_recovers_it() {
     assert_eq!(seats[1].as_str(), guest_id);
     // The game is the game that a local game starts from the same scenario.
     let (expected, galaxy) =
-        ti4_view::scenario::start(ContentStore::embedded(), LATE_GAME, &seats).unwrap();
+        ti4_host::view::scenario::start(ContentStore::embedded(), LATE_GAME, &seats, 42).unwrap();
     let init = store.load_player_init(&made.game).unwrap();
     assert_eq!(
         serde_json::to_value(&init.initial_state).unwrap(),
         serde_json::to_value(&expected).unwrap()
     );
     assert_eq!(init.start_from.as_deref(), Some(LATE_GAME));
-    let tiles = ti4_server::map::build_board_tiles(ContentStore::embedded(), &galaxy);
+    let tiles = ti4_host::map::build_board_tiles(ContentStore::embedded(), &galaxy);
     assert_eq!(session.map_tiles(), tiles);
     let state = session.current_state();
     assert_eq!(state.round, 4);
@@ -210,7 +209,6 @@ async fn round_1_gives_the_table_its_setup_back() {
         )
         .await;
     assert!(view.get("start_from").is_none(), "{view}");
-    assert_eq!(view["seat_order"], "random");
     assert_eq!(view["strategy_card_set"], "te");
     // The count stays, and the host sets it again.
     assert_eq!(view["slots"].as_array().unwrap().len(), 8);

@@ -3,7 +3,7 @@ import type { OfferMode, PlanetId, SeatId, SystemId, UnitType } from "./core";
 
 /**
  * Everything a player can ask for. The data source decides what an intent does: the mock engine
- * today, `submit_choice` and the planning messages of the wire protocol later.
+ * today, `submit_choice` and the drafts of the wire protocol later.
  */
 export type Intent =
   // Workspaces

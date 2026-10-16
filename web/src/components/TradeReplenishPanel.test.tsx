@@ -9,8 +9,8 @@ const choice: PendingChoiceDto = {
   nonce: "n1",
   context: { subtype: "trade_choose_replenish" } as never,
   options: [
-    { id: "hacan", kind: "replenish", label: "hacan replenishes commodities" },
-    { id: "done", kind: "decline", label: "nobody else replenishes" },
+    { id: "hacan", kind: "replenish", label: "hacan replenishes commodities", payload: {} },
+    { id: "done", kind: "decline", label: "nobody else replenishes", payload: {} },
   ],
   details: {
     seats: { hacan: "seat_b" },

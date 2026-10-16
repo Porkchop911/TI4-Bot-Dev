@@ -3,15 +3,16 @@ import { describe, expect, it } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { useDeclineOption, useNonceReset } from "./useWorkflowState.ts";
 import { PendingChoiceDto } from "../protocol/types.ts";
+import { partialContext } from "../test/wire.ts";
 
 const choice: PendingChoiceDto = {
   actor: "seat_1",
   nonce: "nonce-1",
   prompt: "Choose",
-  context: { subtype: "" },
+  context: partialContext({ subtype: "" }),
   options: [
-    { id: "continue", label: "Continue" },
-    { id: "not-now", label: "Not now", kind: "decline" },
+    { id: "continue", label: "Continue", payload: {}, kind: "" },
+    { id: "not-now", label: "Not now", kind: "decline", payload: {} },
   ],
 };
 

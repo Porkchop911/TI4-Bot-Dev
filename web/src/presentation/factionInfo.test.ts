@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GENERATED_CONTENT_CATALOG } from "../protocol/generatedContentManifest.ts";
+import { CONTENT } from "../protocol/catalogStore.ts";
 import { findTechnologyMeta } from "../protocol/contentCatalog.ts";
 import {
   IN_SCOPE_FACTION_IDS,
@@ -63,14 +63,14 @@ describe("faction descriptions", () => {
   );
 
   it("covers the whole catalog without throwing", () => {
-    for (const id of Object.keys(GENERATED_CONTENT_CATALOG.factions)) {
+    for (const id of Object.keys(CONTENT.factions)) {
       expect(() => describeFaction(id)).not.toThrow();
     }
   });
 
   it("every id a faction record points at exists in the catalog", () => {
     const { factions, units, leaders, factionAbilities, promissoryNotes, technologies } =
-      GENERATED_CONTENT_CATALOG as unknown as Record<string, Record<string, any>>;
+      CONTENT as unknown as Record<string, Record<string, any>>;
     const missing: string[] = [];
     for (const faction of Object.values(factions)) {
       if (faction.id === "neutral") continue;
@@ -156,7 +156,7 @@ describe("unit resolution", () => {
   });
 
   it("every unit's required technology exists in the catalog", () => {
-    const units = Object.values(GENERATED_CONTENT_CATALOG.units) as Array<{
+    const units = Object.values(CONTENT.units) as Array<{
       id: string;
       requiredTechId?: string;
     }>;

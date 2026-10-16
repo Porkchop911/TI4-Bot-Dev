@@ -1,16 +1,16 @@
 import type { MovementPlan, PlanStep } from "./movementPlan";
 import type { SeatStore } from "./seatStore";
 import type {
+  BattleResponse,
   Catalog,
   DraftOutcome,
-  DraftScope,
   DraftStep,
+  PlanScope,
   PublicTurnStatus,
   ReactionMode,
   ReactionModes,
   SessionUpdate,
   SpaceOddsRequest,
-  SpaceOddsResponse,
 } from "./wire";
 
 /** A plan that did not reach its end. Compare `BatchInterruption` and `BatchFailure` of the server. */
@@ -58,7 +58,7 @@ export type TransportEvent =
    * listener drops the answer for a script that is no longer its newest. Null while the game
    * does not wait for this side.
    */
-  | { kind: "draft"; script: DraftStep[]; scope?: DraftScope; outcome: DraftOutcome | null }
+  | { kind: "draft"; script: DraftStep[]; scope?: PlanScope; outcome: DraftOutcome | null }
   /** The mode of each reaction that this side set, by its key, after each change. */
   | { kind: "modes"; modes: ReactionModes }
   /** A window was declined for this side, because this side muted everything that it offered: these, by name. */
@@ -115,9 +115,9 @@ export interface Transport {
   readonly catalog: Catalog | null;
   readonly capabilities: Capabilities;
   /**
-   * Where the game keeps what this seat has staged and not sent, the same in every tab and
-   * device of the seat. Absent when the game does not keep it (a game in this page, a
-   * spectator): the app that made the transport keeps it then.
+   * Where the game keeps what this seat has staged and not sent: the server, the same in every
+   * tab and device of the seat, or the engine of a local game, in its saved game. The game sends
+   * a ready draft of a secondary itself. Absent for a spectator, who stages nothing.
    */
   readonly staged?: SeatStore;
   /**
@@ -139,7 +139,7 @@ export interface Transport {
    * update says when). The game is not changed. Where the run ended is told later, as a `draft`
    * event with this script and this scope. Only the newest script that waits is answered.
    */
-  draft(script: DraftStep[], scope?: DraftScope): void;
+  draft(script: DraftStep[], scope?: PlanScope): void;
   /**
    * Sends a draft to the game: the pending choice and the choices after it are answered with
    * the options of these ids, then with the steps of the movement, as one request with the
@@ -162,7 +162,7 @@ export interface Transport {
    * The odds of a space combat between two sides, from the engine of this page also online: the
    * same sides give the same numbers. Nothing of the game is read or changed.
    */
-  odds(request: SpaceOddsRequest): Promise<SpaceOddsResponse>;
+  odds(request: SpaceOddsRequest): Promise<BattleResponse>;
   /** Ends the game on this side. */
   close(): void;
 }

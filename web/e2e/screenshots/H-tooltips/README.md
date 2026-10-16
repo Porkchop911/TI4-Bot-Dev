@@ -37,4 +37,4 @@ The web UI first appeared on this branch, so every tooltip below is absent from 
 | 27 | Legendary planet | components/SystemInspector.tsx | 01e26a5 clean up ui interaction model |
 | 28 | Lobby: remove player | components/Lobby.tsx | 6c3fa6b implement bot play in server |
 
-The win-probability tooltips (24 to 26) need the odds service: `odds.ts` intercepts `POST /advisor/battle` with Playwright route interception and answers a fixed response. Shot 28 renders the real lobby as its host through `_shared/mockLobby.ts`.
+The win-probability tooltips (24 to 26) show the odds of the page's engine (`odds.ts` waits for them; a fixed seed keeps the numbers the same). Shot 28 renders the real lobby as its host through `_shared/mockLobby.ts`.

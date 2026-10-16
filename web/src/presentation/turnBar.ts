@@ -1,4 +1,4 @@
-import type { ChoiceOptionDto, PendingChoiceDto, PlayerView } from "../protocol/types.ts";
+import type { ChoiceOption, PendingChoiceDto, PlayerView } from "../protocol/types.ts";
 import { describeComponent } from "./componentInfo.ts";
 import {
   findActionCardByName,
@@ -118,12 +118,12 @@ export function isTurnMenuChoice(
   return choice.prompt === "action phase" || subtype === "end_turn";
 }
 
-const isEnd = (o: ChoiceOptionDto) => o.kind === "end_turn" || o.id === "end_turn";
-const isPass = (o: ChoiceOptionDto) => o.id === "pass";
-const isTactical = (o: ChoiceOptionDto) => o.id === "tactical";
-const isStrategic = (o: ChoiceOptionDto) => o.id === "strategic" || o.id.startsWith("strategic|");
-const isTrade = (o: ChoiceOptionDto) => o.kind === "open_transaction";
-const isActionCard = (o: ChoiceOptionDto) => o.id.startsWith("action_card|");
+const isEnd = (o: ChoiceOption) => o.kind === "end_turn" || o.id === "end_turn";
+const isPass = (o: ChoiceOption) => o.id === "pass";
+const isTactical = (o: ChoiceOption) => o.id === "tactical";
+const isStrategic = (o: ChoiceOption) => o.id === "strategic" || o.id.startsWith("strategic|");
+const isTrade = (o: ChoiceOption) => o.kind === "open_transaction";
+const isActionCard = (o: ChoiceOption) => o.id.startsWith("action_card|");
 
 function firstSentence(text: string, max = 96): string {
   const trimmed = text.replace(/\s+/g, " ").trim();
@@ -220,7 +220,7 @@ export function planetsSummary(planets: NonNullable<BarInfo["planets"]>): string
 }
 
 function itemFor(
-  option: ChoiceOptionDto,
+  option: ChoiceOption,
   details?: Record<string, unknown>,
   faction?: string | null,
 ): BarItem {
@@ -310,7 +310,7 @@ const num = (v: unknown): number | null => (typeof v === "number" ? v : null);
 
 function readPartners(
   details: Record<string, unknown> | undefined,
-  options: readonly ChoiceOptionDto[],
+  options: readonly ChoiceOption[],
 ): TradePartnerView[] {
   const trades = options.filter(isTrade);
   const byFaction = (faction: string) =>

@@ -10,11 +10,14 @@ import type {
   PendingChoiceDto,
   PlacedUnitView,
 } from "../protocol/types.ts";
+import { partialContext } from "../test/wire.ts";
 
 const unit = (unit_type: string, damaged = false): PlacedUnitView => ({
   unit_type,
   owner: "seat_1",
   damaged,
+  planet: null,
+  galvanized: false,
 });
 
 const units = [
@@ -200,10 +203,10 @@ const board: BoardView = {
       command_tokens: [],
       planets: {},
       units: [
-        { unit_type: "dreadnought", owner: "seat_1", damaged: false },
-        { unit_type: "fighter", owner: "seat_1", damaged: false },
-        { unit_type: "fighter", owner: "seat_1", damaged: false },
-        { unit_type: "cruiser", owner: "seat_2", damaged: false },
+        { unit_type: "dreadnought", owner: "seat_1", damaged: false, planet: null, galvanized: false },
+        { unit_type: "fighter", owner: "seat_1", damaged: false, planet: null, galvanized: false },
+        { unit_type: "fighter", owner: "seat_1", damaged: false, planet: null, galvanized: false },
+        { unit_type: "cruiser", owner: "seat_2", damaged: false, planet: null, galvanized: false },
       ],
     },
   },
@@ -218,11 +221,11 @@ describe("space combat hit staging", () => {
       actor: "seat_1",
       nonce: "n1",
       prompt: "cancel a hit at 18",
-      context: {
+      context: partialContext({
         subtype: "sustain_damage",
         target: { System: "18" },
         outstanding: [{ kind: "UnitsToRemove", amount: 2, paid: 0 }],
-      },
+      }),
       options: [
         {
           id: "sustain|0",
@@ -230,7 +233,7 @@ describe("space combat hit staging", () => {
           label: "sustain damage on dreadnought",
           payload: { unit: "dreadnought" },
         },
-        { id: "decline", kind: "decline", label: "take the hit" },
+        { id: "decline", kind: "decline", label: "take the hit", payload: {} },
       ],
     };
     render(
@@ -279,18 +282,21 @@ describe("ground combat hit staging", () => {
               owner: "seat_1",
               damaged: false,
               planet: "jord",
+              galvanized: false,
             },
             {
               unit_type: "mech",
               owner: "seat_1",
               damaged: true,
               planet: "jord",
+              galvanized: false,
             },
             {
               unit_type: "infantry",
               owner: "seat_2",
               damaged: false,
               planet: "jord",
+              galvanized: false,
             },
           ],
         },
@@ -305,16 +311,17 @@ describe("ground combat hit staging", () => {
         current_planet: "jord",
         defender: "seat_2",
         ground_round: 1,
+        odds_context: {},
       },
     } as BoardView;
     const choice: PendingChoiceDto = {
       actor: "seat_1",
       nonce: "g1",
       prompt: "assign a hit on jord",
-      context: {
+      context: partialContext({
         subtype: "assign_ground_casualty",
         target: { Planet: { system: "18", planet: "jord" } },
-      },
+      }),
       options: [
         {
           id: "destroy|0",

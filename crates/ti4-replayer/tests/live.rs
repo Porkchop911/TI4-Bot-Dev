@@ -698,10 +698,10 @@ fn a_manual_offer_carries_the_policys_numbers() {
 /// LiveBranch API starts from a checkpoint/map pool and cannot accept a caller-built GameState.
 #[test]
 fn a_manual_ssruu_round_copy_parks_with_target_labels_and_resumes_on_the_chosen_unit() {
+    use ti4_content::ContentStore;
     use ti4_engine::choice::{AlwaysDecline, Table};
     use ti4_engine::event::Event;
     use ti4_engine::fixtures;
-    use ti4_content::ContentStore;
     use ti4_model::content_types::DEFAULT;
     use ti4_model::id::LeaderId;
     use ti4_model::state::LeaderStatus;
@@ -712,10 +712,8 @@ fn a_manual_ssruu_round_copy_parks_with_target_labels_and_resumes_on_the_chosen_
     let source = PlayerId::new("b");
     let target_owner = PlayerId::new("c");
     let (system, _) = fixtures::a_placed_planet();
-    let mut state = fixtures::seated_game(
-        &[("a", "yssaril"), ("b", "letnev"), ("c", "sol")],
-        DEFAULT,
-    );
+    let mut state =
+        fixtures::seated_game(&[("a", "yssaril"), ("b", "letnev"), ("c", "sol")], DEFAULT);
     state.combat_round_seq = 4;
     state
         .player_mut(&borrower)
@@ -765,7 +763,10 @@ fn a_manual_ssruu_round_copy_parks_with_target_labels_and_resumes_on_the_chosen_
             if let Some(pending) = gate.pending().filter(matches) {
                 return pending;
             }
-            assert!(Instant::now() < deadline, "resolver did not park the expected offer");
+            assert!(
+                Instant::now() < deadline,
+                "resolver did not park the expected offer"
+            );
             std::thread::sleep(Duration::from_millis(5));
         }
     };
@@ -773,14 +774,18 @@ fn a_manual_ssruu_round_copy_parks_with_target_labels_and_resumes_on_the_chosen_
     let ability_offer = wait_for(&|offer| {
         offer.actor == borrower
             && offer.options.iter().any(|option| {
-                option.id.contains("leader:ssruu-copy:a:letnevagent:b:COMBAT_ROUND_STARTED")
+                option
+                    .id
+                    .contains("leader:ssruu-copy:a:letnevagent:b:COMBAT_ROUND_STARTED")
             })
     });
     let copy_id = ability_offer
         .options
         .iter()
         .find(|option| {
-            option.id.contains("leader:ssruu-copy:a:letnevagent:b:COMBAT_ROUND_STARTED")
+            option
+                .id
+                .contains("leader:ssruu-copy:a:letnevagent:b:COMBAT_ROUND_STARTED")
         })
         .expect("actual resolver offered the copied Letnev round ability")
         .id
@@ -791,18 +796,22 @@ fn a_manual_ssruu_round_copy_parks_with_target_labels_and_resumes_on_the_chosen_
     ));
 
     let target_offer = wait_for(&|offer| {
-        offer.actor == borrower
-            && offer.prompt.contains("choose one unit for +1 combat die")
+        offer.actor == borrower && offer.prompt.contains("choose one unit for +1 combat die")
     });
     assert_eq!(
-        target_offer.context.as_ref().and_then(|context| context["subtype"].as_str()),
+        target_offer
+            .context
+            .as_ref()
+            .and_then(|context| context["subtype"].as_str()),
         Some("leader_ssruu_round_agent_unit")
     );
     assert_eq!(target_offer.options.len(), 2);
-    assert!(target_offer
-        .options
-        .iter()
-        .any(|option| option.label.contains("c's cruiser (unit 1)")));
+    assert!(
+        target_offer
+            .options
+            .iter()
+            .any(|option| option.label.contains("c's cruiser (unit 1)"))
+    );
     let selected = target_offer
         .options
         .iter()
@@ -849,13 +858,17 @@ fn a_manual_ssruu_round_copy_parks_with_target_labels_and_resumes_on_the_chosen_
         "the human's selected second cruiser receives the copied die"
     );
     assert_eq!(
-        state.player(&borrower).expect("borrower remains seated").leaders
-            [&LeaderId::new("yssarilagent")],
+        state
+            .player(&borrower)
+            .expect("borrower remains seated")
+            .leaders[&LeaderId::new("yssarilagent")],
         LeaderStatus::Exhausted
     );
     assert_eq!(
-        state.player(&source).expect("source remains seated").leaders
-            [&LeaderId::new("letnevagent")],
+        state
+            .player(&source)
+            .expect("source remains seated")
+            .leaders[&LeaderId::new("letnevagent")],
         LeaderStatus::Exhausted,
         "copying does not ready or exhaust the source again"
     );
@@ -879,11 +892,10 @@ fn a_manual_ssruu_l1z1x_copy_preserves_planet_choice_and_replaces_that_planets_i
     let source = PlayerId::new("b");
     let beneficiary = PlayerId::new("c");
     let content = ContentStore::embedded();
-    let (system_record_id, system_record) =
-        ti4_content::galaxy::all_systems(content, DEFAULT)
-            .into_iter()
-            .find(|(_, record)| record.planets().len() >= 2)
-            .expect("content has a system with two planets");
+    let (system_record_id, system_record) = ti4_content::galaxy::all_systems(content, DEFAULT)
+        .into_iter()
+        .find(|(_, record)| record.planets().len() >= 2)
+        .expect("content has a system with two planets");
     let system = SystemId::new(system_record_id);
     let first_planet = PlanetId::new(system_record.planets()[0]);
     let second_planet = PlanetId::new(system_record.planets()[1]);
@@ -891,10 +903,8 @@ fn a_manual_ssruu_l1z1x_copy_preserves_planet_choice_and_replaces_that_planets_i
         .expect("the Sol faction has a mech")
         .id()
         .to_owned();
-    let mut state = fixtures::seated_game(
-        &[("a", "yssaril"), ("b", "l1z1x"), ("c", "sol")],
-        DEFAULT,
-    );
+    let mut state =
+        fixtures::seated_game(&[("a", "yssaril"), ("b", "l1z1x"), ("c", "sol")], DEFAULT);
     state.active = Some(beneficiary.clone());
     state.active_system = Some(system.clone());
     state
@@ -968,21 +978,28 @@ fn a_manual_ssruu_l1z1x_copy_preserves_planet_choice_and_replaces_that_planets_i
             if let Some(pending) = gate.pending().filter(matches) {
                 return pending;
             }
-            assert!(Instant::now() < deadline, "resolver did not park the expected offer");
+            assert!(
+                Instant::now() < deadline,
+                "resolver did not park the expected offer"
+            );
             std::thread::sleep(Duration::from_millis(5));
         }
     };
     let ability_offer = wait_for(&|offer| {
         offer.actor == borrower
             && offer.options.iter().any(|option| {
-                option.id.contains("leader:ssruu-copy:a:l1z1xagent:b:SYSTEM_ACTIVATED")
+                option
+                    .id
+                    .contains("leader:ssruu-copy:a:l1z1xagent:b:SYSTEM_ACTIVATED")
             })
     });
     let copy_id = ability_offer
         .options
         .iter()
         .find(|option| {
-            option.id.contains("leader:ssruu-copy:a:l1z1xagent:b:SYSTEM_ACTIVATED")
+            option
+                .id
+                .contains("leader:ssruu-copy:a:l1z1xagent:b:SYSTEM_ACTIVATED")
         })
         .expect("actual resolver offered the copied L1Z1X activation ability")
         .id
@@ -994,10 +1011,15 @@ fn a_manual_ssruu_l1z1x_copy_preserves_planet_choice_and_replaces_that_planets_i
 
     let target_offer = wait_for(&|offer| {
         offer.actor == beneficiary
-            && offer.prompt.contains("replace which infantry in the active system")
+            && offer
+                .prompt
+                .contains("replace which infantry in the active system")
     });
     assert_eq!(
-        target_offer.context.as_ref().and_then(|context| context["subtype"].as_str()),
+        target_offer
+            .context
+            .as_ref()
+            .and_then(|context| context["subtype"].as_str()),
         Some("leader_l1z1xagent_copy_planet")
     );
     assert_eq!(target_offer.options.len(), 2);
@@ -1019,23 +1041,40 @@ fn a_manual_ssruu_l1z1x_copy_preserves_planet_choice_and_replaces_that_planets_i
 
     let (state, result) = callback.join().expect("timing callback worker completes");
     result.expect("the engine settles the submitted planet through Table::ask");
-    let board = state.board.get(&system).expect("callback system remains on board");
-    let first_units = board.planet_units.get(&first_planet).expect("first planet units");
-    let second_units = board.planet_units.get(&second_planet).expect("second planet units");
-    assert!(first_units.iter().any(|unit| {
-        unit.owner == beneficiary && unit.type_id.as_str() == "infantry"
-    }));
-    assert!(second_units.iter().any(|unit| {
-        unit.owner == beneficiary && unit.type_id.as_str() == sol_mech
-    }));
+    let board = state
+        .board
+        .get(&system)
+        .expect("callback system remains on board");
+    let first_units = board
+        .planet_units
+        .get(&first_planet)
+        .expect("first planet units");
+    let second_units = board
+        .planet_units
+        .get(&second_planet)
+        .expect("second planet units");
+    assert!(
+        first_units
+            .iter()
+            .any(|unit| { unit.owner == beneficiary && unit.type_id.as_str() == "infantry" })
+    );
+    assert!(
+        second_units
+            .iter()
+            .any(|unit| { unit.owner == beneficiary && unit.type_id.as_str() == sol_mech })
+    );
     assert_eq!(
-        state.player(&borrower).expect("borrower remains seated").leaders
-            [&LeaderId::new("yssarilagent")],
+        state
+            .player(&borrower)
+            .expect("borrower remains seated")
+            .leaders[&LeaderId::new("yssarilagent")],
         LeaderStatus::Exhausted
     );
     assert_eq!(
-        state.player(&source).expect("source remains seated").leaders
-            [&LeaderId::new("l1z1xagent")],
+        state
+            .player(&source)
+            .expect("source remains seated")
+            .leaders[&LeaderId::new("l1z1xagent")],
         LeaderStatus::Exhausted,
         "copying leaves the source status unchanged"
     );

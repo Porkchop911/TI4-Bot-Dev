@@ -1,8 +1,7 @@
 import React from "react";
 import type { ProductionTotal as Total } from "../presentation/productionDraft.ts";
 import { plural, productionTotalText } from "../presentation/productionTotalText.ts";
-
-const titleCase = (unit: string) => unit.charAt(0).toUpperCase() + unit.slice(1);
+import { humanizeId } from "../protocol/contentCatalog.ts";
 
 export interface ProductionTotalProps {
   total: Total;
@@ -37,7 +36,7 @@ export const ProductionTotal: React.FC<ProductionTotalProps> = ({ total, availab
           {total.lines.map((line) => (
             <li key={line.optionId}>
               {line.batches > 1 ? `${line.batches}× ` : ""}
-              {titleCase(line.unit)}
+              {humanizeId(line.unit)}
               {line.exchange ? " (exchange)" : ""}
               <span className="production-total__cost">{line.printed}</span>
             </li>

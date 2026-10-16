@@ -1,4 +1,4 @@
-import type { ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import type { ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 
 /** A faction ability offered for a price: the card as printed, what it costs, and the two answers. */
 export interface AbilityOfferView {
@@ -9,11 +9,11 @@ export interface AbilityOfferView {
   effect: string | null;
   tradeGoods: number;
   held: number;
-  yes: ChoiceOptionDto;
-  no: ChoiceOptionDto;
+  yes: ChoiceOption;
+  no: ChoiceOption;
 }
 
-const isNo = (option: ChoiceOptionDto) =>
+const isNo = (option: ChoiceOption) =>
   option.kind === "decline" || option.id === "decline" || option.id === "no";
 
 const text = (value: unknown): string | null =>

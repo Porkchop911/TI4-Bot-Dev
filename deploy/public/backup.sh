@@ -15,7 +15,9 @@ chmod 750 "$BACKUP_DIR"
 out="$BACKUP_DIR/ti4-public-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
 # Files are written atomically (tmp + rename), so a live tar is consistent enough; a game that
 # changed while archiving replays from its log on recovery.
-tar -C "$(dirname "$DATA_DIR")" -czf "$out.tmp" "$(basename "$DATA_DIR")"
+# The MLP models (models/, models.previous/) are left out: scripts/pack-models.sh makes them again.
+tar -C "$(dirname "$DATA_DIR")" --exclude="$(basename "$DATA_DIR")/models*" \
+  -czf "$out.tmp" "$(basename "$DATA_DIR")"
 mv "$out.tmp" "$out"
 find "$BACKUP_DIR" -name 'ti4-public-*.tar.gz' -mtime "+$KEEP_DAYS" -delete
 echo "backup written: $out ($(du -h "$out" | cut -f1))"

@@ -1,3 +1,4 @@
+import { POK_FACTIONS } from "@ti4/shared/content/names.ts";
 import { findFactionRecord } from "./factionInfo.ts";
 import type { LobbyDto, LobbySlot } from "../protocol/types.ts";
 
@@ -28,9 +29,7 @@ export const FACTION_HUE: Readonly<Record<string, string>> = {
 };
 
 /** The Prophecy of Kings factions of the pool; every other faction is base game. */
-export const POK_FACTIONS: ReadonlySet<string> = new Set([
-  "argent", "cabal", "empyrean", "mahact", "naaz", "nomad", "titans",
-]);
+export { POK_FACTIONS };
 
 /** Pool split into the base game and Prophecy of Kings, each in the server's order. */
 export function groupFactions(

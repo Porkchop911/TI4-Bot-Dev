@@ -1,5 +1,5 @@
 import React from "react";
-import type { ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import type { ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import { describeUnitPickCard, describeUnitPickOption } from "../presentation/unitPick.ts";
 import { UnitIcon } from "./UnitIcon.tsx";
 import { MechInfoRow, UnitInfoButton } from "./UnitInfo.tsx";
@@ -24,7 +24,7 @@ export const UnitPickPanel: React.FC<{ choice: PendingChoiceDto }> = ({ choice }
 };
 
 /** Inside an option row: the unit's icon, where it stands and what the card does to it. */
-export const UnitPickOptionNote: React.FC<{ choice: PendingChoiceDto; option: ChoiceOptionDto }> = ({
+export const UnitPickOptionNote: React.FC<{ choice: PendingChoiceDto; option: ChoiceOption }> = ({
   choice,
   option,
 }) => {

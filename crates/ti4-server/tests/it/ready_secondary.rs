@@ -9,18 +9,19 @@ use futures_util::SinkExt;
 use tokio::net::TcpListener;
 use tokio_tungstenite::tungstenite::Message;
 
+use ti4_host::planning::audit::PlanScope;
+use ti4_host::planning::draft::DraftStep;
+use ti4_host::protocol::PROTOCOL_VERSION;
+use ti4_host::protocol::client::ClientMessage;
+use ti4_host::protocol::server::{SeatStagedMsg, ServerMessage};
+use ti4_host::protocol::staged::StagedSlot;
+use ti4_host::protocol::status::{RejectionReason, ViewerRole};
+use ti4_host::staged::SecondaryDraft;
 use ti4_model::id::PlayerId;
-use ti4_server::protocol::PROTOCOL_VERSION;
-use ti4_server::protocol::client::ClientMessage;
-use ti4_server::protocol::server::{SeatStagedMsg, ServerMessage};
-use ti4_server::protocol::status::{RejectionReason, ViewerRole};
-use ti4_server::session::staged::{SecondaryDraft, StagedSlot};
 use ti4_server::session::{GameRegistry, GameSession};
-use ti4_view::planning::audit::PlanScope;
-use ti4_view::planning::draft::DraftStep;
 
 use crate::draft_scripts::next_message;
-use crate::session_secondary_planning::{
+use crate::secondary_draft::{
     LiveOffer, answer_live, answer_until, config_playing, follow_and_research, is_secondary,
     live_offer, play_technology, research, technologies,
 };

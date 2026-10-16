@@ -182,8 +182,6 @@ export interface PlanetInvasionInfo {
   effects: PlanetEffect[];
 }
 
-const titleCase = (s: string) => s.replace(/(^|[\s_-])(\w)/g, (_, a, b) => a + b.toUpperCase());
-
 /** Units of other players on the planet make it defended; controlled-by-me or my forces only make it held. */
 export function planetStanding(
   board: BoardView | undefined,
@@ -296,7 +294,7 @@ export function planetInvasionInfo(
     ].filter(Boolean);
     effects.push({
       kind: "attachment",
-      text: `Attached: ${meta?.name ?? titleCase(humanizeId(id))}${mods.length ? ` (${mods.join(", ")})` : ""}`,
+      text: `Attached: ${meta?.name ?? humanizeId(id)}${mods.length ? ` (${mods.join(", ")})` : ""}`,
       detail: "Attachments stay on the planet when it changes hands; modifiers are already in the values above.",
     });
   }

@@ -17,17 +17,22 @@ Contract (checked by CI for T4):
 
 | Module | Contents | Used by the server in |
 |---|---|---|
-| `protocol` | `ClientMessage`, `ServerMessage` and every message struct (`StateUpdateMsg`, `InitialSnapshotMsg`, `PendingChoiceMsg`, `TurnStatusMsg`, `ActionAcceptedMsg`/`ActionRejectedMsg`, `GameOverMsg`, `Event`...), `GameEvent`/`GameEventKind`/`EventVisibility`/`SeatDecisionDetail`/`MovementFact`/`PublicRoll` and their builders (`public_roll`, `decision_facts`, `verified_decision_facts`, `decision_grouping`, `action_id_for`, `current_log_path`), `HistoryStatus`, `AutoResolvedNote`, `PROTOCOL_VERSION`, `parse_client_message`/`parse_server_message` | everywhere (`ti4_server::protocol` re-exports it) |
-| `projection` | `project_initial_snapshot[_with_map]`, `project_state_update[_with_map]`, `redacted_state`, `project_turn_status`, `project_pending_choice`, `facts_context` (thin layer over `ti4-view`) | `session/worker.rs`, `ws` |
-| `planning` | `PlayerPlan`, `AttemptIdentity`, `PlanningEnvelope`, `PlanningUpdate`, `Progress`, `FailureCategory`, `SubmissionError` + the recorders of `ti4-view::planning` (`RecordingDecider`, `ReplayDecider`, `RecordedDecision`) | `planning/runner.rs` (the thread that runs a plan stays in the server) |
+| `protocol` | `ClientMessage`, `ServerMessage` and every message struct (`StateUpdateMsg`, `InitialSnapshotMsg`, `PendingChoiceMsg`, `TurnStatusMsg`, `ActionAcceptedMsg`/`ActionRejectedMsg`, `GameOverMsg`, `Event`...), `GameEvent`/`GameEventKind`/`EventVisibility`/`SeatDecisionDetail`/`MovementFact`/`PublicRoll` and their builders (`public_roll`, `decision_facts`, `verified_decision_facts`, `decision_grouping`, `action_id_for`, `current_log_path`), `HistoryStatus`, `AutoResolvedNote`, `PROTOCOL_VERSION`, `parse_client_message`/`parse_server_message`, `check_submission` (nonce, version and option of a `submit_choice`/`apply_draft` against the pending choice; the seat check and the reservation stay with each host) | everywhere |
+| `projection` | `project_initial_snapshot[_with_map]`, `project_state_update[_with_map]`, `redacted_state`, `project_turn_status`, `project_pending_choice`, `facts_context`, and the views and the facts they are made of (`project_session_update`, `SessionUpdate`, `FactsContext`; `messages.rs` wraps them in protocol messages) | `session/worker.rs`, `ws` |
+| `planning` | The recorders (`RecordingDecider`, `ReplayDecider`, `RecordedDecision`), the draft (`draft::{run_draft, script_answer}`, `steps::PlanStep`), the scripts sent to the live game (`script::ScriptRuns`: one run per seat, `begin`/`answer`/`after_step` report the scripts that `Ended`, which each host sends as `draft_applied`; `OnMismatch::Stop` on the server, `TakeBack` in the browser; `first_answer`, `refused`, `tactical_complete`, `ACTION_OVER`; `check_script`, the check of a script on a copy of the game before it is sent, with its verdict `Check`), the checks of the publication boundary (`audit`, `fork`) and the undo of a seat (`undo::UndoTrack`: the answers that may still be taken back, fed with each answer; `UndoRules::Table` on the server, where another seat, a die, a shuffle and a revealed card cut, `UndoRules::Local` in the browser, where only a change of the page's seats cuts; `start`, `plan`, `can_undo`; `undo::start`, how far one undo goes back) | `session/mod.rs` (`run_draft`, `apply_draft`), `session/script.rs`, `session/ready_secondary.rs`, `session/undo.rs` |
+| `staged` | The staged work of a seat (`SeatStaged`: the slots, `put` by compare-and-set on the revision of a slot, `Put`; `SecondaryDraft`/`DraftAnswer`, the draft of a secondary as web2 keeps it) and `staged::ready`, the ready draft of a secondary that a host sends when the game asks the seat (`asked`, `ready_draft`, `judge` of the run of the draft on a copy, `Check`, `unready_value`). The wire types are `protocol::staged`. The server keeps the shared book, its storage and the gate of a live session (`may_send`); `HostSession` keeps the slots in its save | `session/staged.rs`, `session/ready_secondary.rs`, storage, `ws` |
+| `preview` | The secondary preview (`ClientMessage::PreviewSecondary`): `eligibility` of a seat at a `Position` (published state, decision log, the open question; refused with `no_strategic_action`, `is_primary` or `already_asked`), `answer` (the engine's `secondary_preview` on a `Basis`, or the refusal, as `SecondaryPreviewMsg`), `PreviewRequest`, `busy`. Each host keeps whether its game is live and the seat that asks; the server also keeps the lock, the copy of the position and the rate limit of a connection | `session/preview.rs`, `ws` |
+| `view` | The facts of an update that the UI reads, beside the view: `tactical`, `exploration`, `action_cards`, `secret_objectives`, `score`, `agendas`, `secondary`, `reaction`, `seats`; `reaction_modes::NeverOffer`; the catalogue of the printed components (`components`). It was the crate `ti4-view` until 2026-10-14. | `session/worker.rs`, `ws`, lobby |
+| `view::scenario` | The scenarios, the one system of prepared games (`SCENARIOS`, `find`, `start`, `apply`): the late games on eight seats, and the games of one question on three seats (`three_seats.rs`: a research, a production, a battle, an invasion, a score...). A `Scenario` names its seats that people play (`humans`; the rule bot plays the others), whether it plays on the seed of the table (`any_seed`), its map, and its `opening`: the answers of its first human seat that take a new game to its question (`opening`, `Opening`, `OpeningAnswer`; `OpeningRun` answers until the opening stops). A table starts one through `setup` (`start_from`) | lobby start (`registry.rs`, the opening in `session/worker.rs`), `dev` (`/api/dev/scenarios`) |
 | `journal` | `reconcile_with_redo`, `build_event`, `build_roll_event`, `roll_is_known`, `roll_cursor`, `consume_or_fork_redo`, `EventDraft`, `Reconciled`, `RedoOutcome` | `SessionShared::{record_and_broadcast_event, record_rolls, consume_or_fork_redo}` |
 | `state_update` | `StateUpdateInputs`, `state_update_for`, `queue_auto_resolved`, `answer_reach` | `SessionShared::{broadcast_state_update, note_passed_window}`, `session/reach.rs` |
 | `rng_force` | `RngMarks`, `RngForce` (forced random positions of a timeline, the "marks" of a history) | storage, turn redo, replay |
 | `replay` | `replay_session`, `replay_session_forced`, `replay_session_with_copy`, `ReplayReport` (deterministic re-execution of a decision log, hash comparison) | storage, recovery |
 | `step_snapshot` | `StepSnapshot` (copy of the game at a step boundary, fork for fast resume) | worker, batch |
-| `batch` | `BatchRequest`, `MovementPlan`, `MovementStep`, `simulate[_with]`, `replay_boundary[_state]`, `replay_budget`, `ReplayBasis` (trait) | registry `submit_batch` |
+| `batch` | `BatchRequest`, `MovementPlan`, `MovementStep`, `simulate[_with]`, `replay_boundary[_state]`, `replay_budget`, `ReplayBasis` (trait), `BatchRecord` (a batch applied to the history, saved with it) | registry `submit_batch`, storage |
+| `history` | Rewrites of the past, played in memory: `splice` (the dry run of a removed or changed decision, `splice_preview`, `SpliceBaseline`, the strict matcher of recorded decisions) and `turn_redo` (the redo of a seat's last turn: `find_turns`, `redo_window`, `prepare_tail`, `autoplay` of the round after it with the dice and cards of the old timeline, `TurnRedoRecord`/`AlternateTimeline`, saved while a redo is in flight). The DTOs are `protocol::{splice, turn_redo}`; the gates, the publication and the storage stay in the server | registry (`turn_redo_ops.rs`, splice preview), storage |
 | `clock` | `Clock`, `Deadline`, `NonceSource`, `SystemClock` (native only), `ManualClock`, `CounterNonce` | all of the above that need time |
-| `preset`, `card_set`, `map`, `maps` | Game setup: start presets, the strategy-card sets, `create_game_with_factions` (what a lobby start calls), the map catalogue and previews (`maps::catalog`). Moved from `ti4-server` unchanged (it re-exports them); the browser host builds the same opening state from the same seed. | lobby start, `/api/maps` |
+| `setup`, `preset`, `map`, `maps` | Game setup: `setup` is the one path of every host (`TableSetup`, `draw`, `create`, `setup_options`, `SpeakerOrder`, the strategy-card sets `setup::card_set`); a start preset (`preset`) is a field of `TableSetup`. `map` has the board geometry and the game of a map with every faction given (`create_game_with_template_seated`, `rebuild_galaxy`; `create_game_with_template` seats the in-scope factions, for tests and fixtures), `maps` the map templates and their builder (`maps::{template_loader, build}`) and the map catalogue and previews (`maps::catalog`). The server and both browser hosts build the same opening state from the same seed. | lobby start, `/api/maps`, wasm setup |
 | `batch::LiveBatch` | A batch applied to the live game one question at a time (the same decider as `simulate`), for a host with no network between the request and its answers | (browser host only) |
 
 ### Injected time and nonces
@@ -59,11 +64,13 @@ pub trait ReplayBasis {
 
 ## The host API for T4/T5: commands in, `ServerMessage` JSON out
 
-One game, one human seat (`ViewerRole::Player(seat)`), no sockets. The wasm export (T4) is
-`host_command(json_in) -> json_out_array` (or a push callback); both ends are the existing
-serde types, so the web client's `decode.ts` and `reduceServerMessage` need no changes.
+One game, the seats of one page (`ViewerRole::Player(seat)`, the seat that is asked), no
+sockets. The wasm exports are `ti4_host_start` and `ti4_host_command` (`crates/ti4-wasm/README.md`,
+"The hosted game"); both ends are the existing serde types, so the offline client of `web/`
+(`reduceServerMessage`) and web2 (`serverMessages.ts`, shared with its server transport) read the
+messages of the server as they are. Both pages play through this one host.
 
-Input is `ClientMessage` JSON (`{"type": "...", "protocol_version": 3, ...}`; unknown fields
+Input is `ClientMessage` JSON (`{"type": "...", "protocol_version": 4, ...}`; unknown fields
 are an error, `parse_client_message` validates the version). Output is a list of
 `ServerMessage` JSON objects (`{"type": "...", ...}`), in the order the server would have sent
 them to that one connection. The mapping, with the server code that produces each answer today:
@@ -71,31 +78,51 @@ them to that one connection. The mapping, with the server code that produces eac
 | Command (`type`) | Output (`ServerMessage`) | Built by |
 |---|---|---|
 | `subscribe` | `initial_snapshot` (state, `galaxy_layout`, `map_tiles`, history status, pending choice with nonce) | `projection::project_initial_snapshot_with_map` |
-| `submit_choice {nonce, expected_version, option_id}` | `action_accepted` or `action_rejected {reason}` (stale version, wrong nonce, unknown option), then after the engine step: `event` (0..n), `state_update` (every step), `pending_choice` / `turn_status` when asked again, `game_over` at the end | `journal::build_event`, `state_update::state_update_for`, `projection::project_turn_status`, `broadcast_game_over` |
+| `submit_choice {nonce, expected_version, option_id}` | `action_accepted` or `action_rejected {reason}` (stale version, wrong nonce, unknown option: `protocol::check_submission`), then after the engine step: `event` (0..n), `state_update` (every step), `pending_choice` / `turn_status` when asked again, `game_over` at the end | `journal::build_event`, `state_update::state_update_for`, `projection::project_turn_status`, `broadcast_game_over` |
 | `undo {expected_version}` | `action_rejected {reason: undo_barrier \| no_pending_choice \| stale_version}` or, on success, a fresh `initial_snapshot` (offline: replay to the earlier position, same game id, `history.generation` + 1) | `StateUpdateInputs.may_undo`, `rng_force`, `replay` |
 | `query_reach {request_id, system_id}` | `reach_into {origins, refused?}` | `state_update::answer_reach(game_id, request_id, system_id, version, Some((&state, &galaxy)))` |
-| `preview_secondary {request_id, card, primary, answers}` | `secondary_preview` | `ti4_engine::secondary_preview` (server glue: `session/preview.rs`, stays out of the host for now; `ti4_draft` with `scope: secondary` is the wasm equivalent) |
-| `run_draft` / `apply_draft` | `draft_outcome` / `draft_applied` (+ `state_update`) | `ti4-view::planning` (`script_answer`, `ti4_plan`) |
-| `start_planning`, `reset_planning`, `edit_planning_movement`, `apply_planning`, `submit_planning_choice`, `secondary_planning` | `planning_status`, `planning_update`, `planning_result` | `planning::PlanningEnvelope` (the runner thread is the server's; offline uses the draft path above) |
+| `preview_secondary {request_id, card, primary, answers}` | `secondary_preview` (for the seat the page is shown as; `busy` unless the game waits for the page) | `preview::{eligibility, answer}` |
+| `run_draft` / `apply_draft` | `draft_outcome` / `draft_applied` (+ `state_update`) | `ti4_host::planning` (`script_answer`; `script::{first_answer, check_script, ScriptRuns}` for `apply_draft`) |
 | `set_reaction_mode {card, mode}` | `state_update` with `reaction_modes` | `StateUpdateInputs.reaction_modes` |
+| `put_staged {slot, base_revision, value?}` (with `subscribe {staged: true}`) | `seat_staged` (to the connections of the seat; a ready draft of a secondary is sent when the game asks the seat) | `staged::SeatStaged::put`, `staged::ready` |
 | `set_reaction_intent`, `pass_reaction_hold` | none (bluff holds are for several humans; dropped offline) | n/a |
 | `ping {sequence}` | `pong` | trivial |
 
 Batches (`BatchRequest` and the movement/production basket as one request) are decoded by
 `batch::BatchRequest` / `MovementPlan` and checked by `batch::simulate`; the batch HTTP/WS
 glue is in `ti4-server/src/session/registry.rs::submit_batch`. Offline it can instead be
-mapped to a `PlanStep` script for `ti4-view::planning::script_answer`, see the plan, 2.2.
+mapped to a `PlanStep` script for `ti4_host::planning::script_answer`, see the plan, 2.2.
 
 ### What the host crate does not do: the session core
 
-The state machine that owns the decision log, the event log, the redo stack, the batches and
-`game_version` is still `ti4_server::session::worker::SessionShared` (fields are coupled to
-`mpsc` subscribers, the file store, bluff books and planning threads). The browser has its own,
-small one: `ti4_wasm::host_session::HostSession`, built out of the pieces above (see
-`crates/ti4-wasm/README.md`, "The hosted game"). It produces the same events and decisions as
-`SessionShared` for the same seed and answers (`crates/ti4-wasm/tests/it/server_parity.rs` checks
-that against a real server session). The sequence that `SessionShared` performs after each engine
-step is its specification, and it only calls host functions for the logic:
+The game logic of a host is here: the protocol, the projection, the setup and the scenarios,
+the scripts and their precheck, the undo of a seat, the staged work and the ready secondary, the
+rewrites of the history and the secondary preview. What stays in `ti4-server` is how a game is
+hosted there:
+
+- The session core: `session/worker.rs` (`SessionShared`: the decision log, the event log, the
+  redo stack, the batches and `game_version`, coupled to `mpsc` subscribers, the file store and
+  the bluff books), `registry` (the lobby, the start of a table, the gates and the publication of a
+  history change), `decider` (the seat of a remote person, the reservation of a submission),
+  `transport`, `session/mod.rs` (threads and channels).
+- What hides a hand from remote people: `bluff`, `bluff_hold`.
+- The wait and the pause of the seats that the server plays (`random_bot`; the pick is
+  `ti4_rule_bot::choose`), the thin wrappers `reach.rs`, `preview.rs` (the lock, the busy check,
+  the copy of the position) and `undo.rs` (`Watched`), and `table.rs` (a lobby record as a
+  `TableSetup`).
+- The server's side of the drafts and the staged work: `draft_basis.rs` (the copy of the game
+  that a draft is played on), `script.rs` (what each seat is told of its script), `staged.rs`
+  (the book of the seats, its storage, the messages to the connections of a seat) and
+  `ready_secondary.rs` (the run of a ready draft on the copy, the gate of a live session).
+- `storage`, `http`, `ws`, `public`, `feedback`, `fixtures`, and the HTTP glue of `dev/` (a launch
+  is a lobby that starts from a scenario).
+
+The browser has its own, small session core: `ti4_wasm::host_session::HostSession`, built out
+of the pieces above (see `crates/ti4-wasm/README.md`, "The hosted game"). It produces the same
+events and decisions as `SessionShared` for the same seed and answers
+(`crates/ti4-wasm/tests/it/server_parity.rs` checks that against a real server session). The
+sequence that `SessionShared` performs after each engine step is its specification, and it only
+calls host functions for the logic:
 
 1. For each newly recorded `DecisionRecord`: `protocol::server::verified_decision_facts(record,
    selected, active_system, &state)` gives `(detail, movement, seat_detail)`.

@@ -7,7 +7,6 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
 use ti4_engine::choice::Choice;
-use ti4_model::id::PlayerId;
 use ti4_wasm::host_api;
 
 /// The exports keep their game in statics: one game at a time.
@@ -79,7 +78,8 @@ pub fn pending(messages: &[Value]) -> Option<(String, u64, Choice, usize)> {
 
 pub fn install(page: &Arc<Mutex<Page>>, seed: u64, viewer: &str) {
     let page = page.clone();
-    let viewer = PlayerId::new(viewer);
+    // The person answers as a rule seat of its place would (seat `a` is place 0).
+    let place = usize::from(viewer.as_bytes()[0] - b'a');
     ti4_wasm::set_native_host(move |text: &str| {
         let envelope: Value = serde_json::from_str(text).expect("the output is JSON");
         let mut page = page.lock().unwrap();
@@ -101,10 +101,10 @@ pub fn install(page: &Arc<Mutex<Page>>, seed: u64, viewer: &str) {
             let (nonce, version, choice, cursor) =
                 pending(&page.messages).expect("an ask has a pending choice");
             let answer_by_policy = |page: &mut Page| -> i32 {
-                let (picked, _) = ti4_rule_bot::choose(&choice, None, seed, &viewer, cursor);
+                let (picked, _) = ti4_rule_bot::choose(&choice, None, seed, place, cursor);
                 let option = choice.options[picked].id.clone();
                 let answered = send(&json!({
-                    "type": "submit_choice", "protocol_version": 3, "game_id": GAME,
+                    "type": "submit_choice", "protocol_version": 4, "game_id": GAME,
                     "nonce": nonce, "expected_version": version, "option_id": option,
                 }));
                 page.messages
@@ -149,6 +149,16 @@ pub fn install(page: &Arc<Mutex<Page>>, seed: u64, viewer: &str) {
 /// Start a game; returns the `end` envelope.
 pub fn start(setup: &Value, resume: Option<&Value>) -> Value {
     let request = json!({ "setup": setup, "resume": resume });
+    let len = host_api::put_input(&request.to_string());
+    let status = ti4_wasm::ti4_host_start(u32::try_from(len).unwrap());
+    let out = host_api::out_text();
+    assert!(status >= 0, "start failed: {out}");
+    serde_json::from_str(&out).expect("the end is JSON")
+}
+
+/// Play a save again from it alone (it names its game); returns the `end` envelope.
+pub fn resume(save: &Value) -> Value {
+    let request = json!({ "resume": save });
     let len = host_api::put_input(&request.to_string());
     let status = ti4_wasm::ti4_host_start(u32::try_from(len).unwrap());
     let out = host_api::out_text();

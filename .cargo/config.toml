@@ -6,9 +6,15 @@
 [env]
 LIBTORCH = { value = "out/libtorch-2.9.1-cpu", relative = true }
 
+# The engine of the page runs the MLP on simd128 (`ti4-infer`, `simd/simd128.rs`). Every browser
+# with JSPI, which the engine requires, has it. A `RUSTFLAGS` in the environment replaces this.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "target-feature=+simd128"]
+
 [alias]
-# The crates the browser game is made of, and nothing else: no libtorch, no policy or training
-# crates. One fixed package set, and every alias builds test targets, so all of them resolve the
+# The crates the browser game is made of, and nothing else: no libtorch, no training crates.
+# `ti4-policy` is in the set: both hosts play the MLP bot through its decision pipeline. One fixed
+# package set, and every alias builds test targets, so all of them resolve the
 # same dependency features and share one build of the engine. A command with another package set
 # (`cargo test -p ti4-engine`, `cargo build -p ti4-server`) resolves other features and builds the
 # engine and everything above it a second time: use the aliases, and narrow a test run with a
@@ -17,11 +23,11 @@ LIBTORCH = { value = "out/libtorch-2.9.1-cpu", relative = true }
 # Use `l-web` for every check: Clippy includes the check, and `c-web` builds a second set of
 # metadata of the game crates (it shares nothing with `l-web` or `t-web`). `c-web` stays only so
 # that old references to it still work.
-c-web = "check -p ti4-model -p ti4-content -p ti4-calc -p ti4-engine -p ti4-view -p ti4-rule-bot -p ti4-server -p ti4-wasm --all-targets"
-l-web = "clippy -p ti4-model -p ti4-content -p ti4-calc -p ti4-engine -p ti4-view -p ti4-rule-bot -p ti4-server -p ti4-wasm --all-targets"
+c-web = "check -p ti4-model -p ti4-content -p ti4-calc -p ti4-engine -p ti4-host -p ti4-rule-bot -p ti4-server -p ti4-wasm -p ti4-infer -p ti4-policy --all-targets"
+l-web = "clippy -p ti4-model -p ti4-content -p ti4-calc -p ti4-engine -p ti4-host -p ti4-rule-bot -p ti4-server -p ti4-wasm -p ti4-infer -p ti4-policy --all-targets"
 # The fast tier: a test whose name starts with `slow_` is left out (each takes 3 s or more in a
 # debug build; together they are 90% of the test time). A bare `cargo test` still runs them all.
-t-web = "test -p ti4-model -p ti4-content -p ti4-calc -p ti4-engine -p ti4-view -p ti4-rule-bot -p ti4-server -p ti4-wasm --lib --tests -- --skip ::slow_"
+t-web = "test -p ti4-model -p ti4-content -p ti4-calc -p ti4-engine -p ti4-host -p ti4-rule-bot -p ti4-server -p ti4-wasm -p ti4-infer -p ti4-policy --lib --tests -- --skip ::slow_"
 # The slow tier, and only it: the tests of the server and of the wasm host whose names start with
 # `slow_`. The game crates are optimized a little (opt-level 1): these tests run about 2.5 times
 # faster, and the engine takes several times longer to build, so this is for the gate before a
@@ -33,11 +39,55 @@ t-web-slow = [
     "--config", "profile.dev.package.ti4-model.opt-level=1",
     "--config", "profile.dev.package.ti4-content.opt-level=1",
     "--config", "profile.dev.package.ti4-engine.opt-level=1",
-    "--config", "profile.dev.package.ti4-view.opt-level=1",
+    "--config", "profile.dev.package.ti4-host.opt-level=1",
     "--config", "profile.dev.package.ti4-rule-bot.opt-level=1",
     "--config", "profile.dev.package.ti4-policy.opt-level=1",
     "-p", "ti4-server", "-p", "ti4-wasm", "--lib", "--test", "it", "--", "::slow_",
 ]
+# Writes the TypeScript types of the wire into `web-shared/src/wire/generated/` (`ti4_wasm::wire_ts`),
+# the messages of `fixtures/protocol/`, the catalogue of `fixtures/catalog/` and the logits of `fixtures/infer/`: the tests that check them, with `TI4_WRITE_WIRE=1`. The
+# package set and the targets of `t-web`, so it builds nothing that `t-web` has not built.
+wire-web = [
+    "test",
+    "--config", "env.TI4_WRITE_WIRE=\"1\"",
+    "-p", "ti4-model", "-p", "ti4-content", "-p", "ti4-calc", "-p", "ti4-engine", "-p", "ti4-host",
+    "-p", "ti4-rule-bot", "-p", "ti4-server", "-p", "ti4-wasm", "-p", "ti4-infer", "-p", "ti4-policy",
+    "--lib", "--tests", "--", "--exact", "wire_types::generated_wire_types_are_current",
+    "protocol_fixtures::protocol_fixtures_are_current", "fixtures_verification::ensure_and_verify_fixtures",
+    "catalog_fixture::catalog_fixture_is_current", "synthetic_logits_fixture_is_current",
+    "model_fixture::model_fixture_is_current",
+]
+# The policy and training crates: everything that uses `ti4-policy` or `ti4-mlp` outside the game
+# crates (`ti4-server` is in the game set). They link libtorch through `ti4-mlp` and `ti4-tensor`;
+# on Linux point `LIBTORCH` at the pinned Linux build (see `t-mlp-parity`). One fixed package set
+# for `l-mlp` and `t-mlp`, for the reason the game aliases have one. `l-mlp` checks every target,
+# the examples of `ti4-mlp` included; `t-mlp` runs the unit tests of the set.
+l-mlp = "clippy -p ti4-policy -p ti4-mlp -p ti4-sim -p ti4-training -p ti4-review -p ti4-cli -p ti4-replayer --all-targets"
+t-mlp = "test -p ti4-policy -p ti4-mlp -p ti4-sim -p ti4-training -p ti4-review -p ti4-cli -p ti4-replayer --lib"
+# The MLP of training on libtorch against `ti4-infer`, decision by decision, on seeded games of
+# `examples/reviewer/checkpoint-473312` (and of a schema-12 bundle of `out/champions/` when there
+# is one): the logits, the option drawn, the features of `MlpBot`, and the time of a decision.
+# Then the rollouts of training on `ti4-infer` (`infer_rollouts`): a short seeded PPO run on each
+# rollout backend, and the bench of a decision and of a game on either. One test at a time, so
+# that the printed times are not those of two tests at once.
+# `ti4-infer` is optimized in the dev profile (`Cargo.toml`), so the printed times compare like
+# with like (libtorch is a release build), and the output is shown. On Linux the pinned libtorch is `out/libtorch-2.9.1-cpu-linux`
+# (`scripts/install_libtorch_cpu_linux.sh`); an exported `LIBTORCH` overrides the `[env]` above:
+#   LIBTORCH=$PWD/out/libtorch-2.9.1-cpu-linux LIBTORCH_BYPASS_VERSION_CHECK=1 \
+#   LD_LIBRARY_PATH=$PWD/out/libtorch-2.9.1-cpu-linux/lib cargo t-mlp-parity
+t-mlp-parity = [
+    "test",
+    "-p", "ti4-mlp", "--test", "infer_parity", "--test", "infer_rollouts", "--", "--nocapture",
+    "--test-threads=1",
+]
+# `ti4-policy` for the target of the page, which links it from step 6 of the MLP inference plan
+# on: a check that it stays clean for wasm (no `getrandom`, no `tch`). Its own target directory
+# (`target/wasm32-unknown-unknown`), so it shares nothing with the native aliases.
+wasm-policy = "check -p ti4-policy --lib --target wasm32-unknown-unknown"
 # `target/debug/server` for the e2e and the transport tests of web2. The test target is named only
 # so that the features are those of `t-web` (it is small); without it the engine is built again.
-b-web = "build -p ti4-model -p ti4-content -p ti4-calc -p ti4-engine -p ti4-view -p ti4-rule-bot -p ti4-server -p ti4-wasm --bin server --test content_ids_resolve"
+b-web = "build -p ti4-model -p ti4-content -p ti4-calc -p ti4-engine -p ti4-host -p ti4-rule-bot -p ti4-server -p ti4-wasm -p ti4-infer -p ti4-policy --bin server --test content_ids_resolve"
+# `target/release/ti4-pack` for `scripts/pack-models.sh`, which packs the models of
+# `models/index.json` for a server. Only `ti4-infer` and its two dependencies, in the release
+# profile: it shares nothing with the game aliases and does not build the engine.
+b-pack = "build --release -p ti4-infer --bin ti4-pack"

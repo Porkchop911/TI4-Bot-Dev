@@ -49,7 +49,6 @@ const lobby = (change: Partial<LobbyState> = {}): LobbyState => ({
   strategy_card_set: "te",
   speaker_order: "random",
   factions: ["sol", "hacan"],
-  seat_order: "random",
   bot_delay_ms: 600,
   ...change,
 });
@@ -86,7 +85,17 @@ const OPTIONS: SetupOptions = {
   max_bot_delay_ms: 30_000,
   default_bot_delay_ms: 600,
   scenarios: [
-    { id: "late-game", title: "Late game", description: "Round 4.", seed: 42, players: 8 },
+    {
+      id: "late-game",
+      title: "Late game",
+      description: "Round 4.",
+      category: "Strategy",
+      seed: 42,
+      players: 8,
+      humans: [0],
+      any_seed: false,
+      map: "recommended",
+    },
   ],
 };
 const of = (
@@ -137,6 +146,8 @@ it("the host sees the rows with their signs, the kinds of an open seat and the r
   ]);
   expect(view.rows[4].buttons.map((button) => button.label)).toEqual(["Rule bot", "Random"]);
   expect(view.fill?.intent).toEqual({ type: "fillBots", kind: "smart" });
+  // The rows are the seats of the game: the host puts them in another order.
+  expect(view.shuffle).toMatchObject({ label: "Shuffle seats", intent: { type: "shuffleSeats" } });
   expect(view.help.map((item) => item.title)).toEqual(["Rule bot", "Random"]);
 });
 
@@ -174,9 +185,56 @@ it("the names of the kinds of a seat are those of the server: none is offered be
   expect(view.fill).toBeNull();
   expect(view.help).toEqual([]);
   expect(view.rows[2].sign).toEqual({ kind: "rule", word: "Played by the server" });
-  // A kind that the server plays in another process is not offered.
+  // A kind with no sign (a bare "mlp" is no kind) is not offered.
   const mlp = selectLobby(table("ada", { bot_kinds: ["random", "smart", "mlp"] }), local(), null);
   expect(mlp.rows[4].buttons.map((button) => button.label)).toEqual(["Rule bot", "Random"]);
+});
+
+it("every model of the options is a kind of an open seat after the rule bot and Random, with its sign", () => {
+  const models = ["Reviewer 473312", "Stage 2 r5", "Champion 9"].map((label, at) => ({
+    id: `mlp:m${at}` as const,
+    name: label,
+    description: "A trained model plays this seat.",
+  }));
+  const options = { ...OPTIONS, bot_kinds: [...OPTIONS.bot_kinds, ...models] };
+  const state = lobby({
+    bot_kinds: ["smart", "random", "mlp:m0", "mlp:m1", "mlp:m2"],
+    slots: [
+      ...lobby().slots.slice(0, 3),
+      slot(4, { occupant: "bot2", nickname: "Reviewer 473312 1", bot: "mlp:m0" }),
+      slot(5),
+      slot(6),
+    ],
+  });
+  const view = selectLobby(of(state, "ada", options), local(), null);
+  expect(view.rows[5].buttons.map((button) => [button.label, button.intent])).toEqual([
+    ["Rule bot", { type: "addBot", kind: "smart" }],
+    ["Random", { type: "addBot", kind: "random" }],
+    ["Reviewer 473312", { type: "addBot", kind: "mlp:m0" }],
+    ["Stage 2 r5", { type: "addBot", kind: "mlp:m1" }],
+    ["Champion 9", { type: "addBot", kind: "mlp:m2" }],
+  ]);
+  expect(view.rows[3].sign).toEqual({
+    kind: "model",
+    word: "Reviewer 473312: played by the server",
+  });
+  // "Fill with rule bots" stays the usual target.
+  expect(view.fill?.intent).toEqual({ type: "fillBots", kind: "smart" });
+});
+
+it("the start of a table in the page waits for the file of a model, and the footer says how far it is", () => {
+  const full = lobby({ slots: lobby().slots.slice(0, 3) });
+  const view = selectLobby(
+    {
+      ...of(full, "ada"),
+      local: true,
+      loading: { label: "Reviewer 473312", done: 12e6, total: 23e6 },
+    },
+    local(),
+    null,
+  );
+  expect(view.footer.note).toBe("Loading Reviewer 473312 · 12 / 23 MB");
+  expect(view.footer.main?.disabled).toBe(true);
 });
 
 it("a player who is not the host has the same rows, no controls of the table and no main button", () => {
@@ -196,6 +254,7 @@ it("a player who is not the host has the same rows, no controls of the table and
     [],
   ]);
   expect(view.fill).toBeNull();
+  expect(view.shuffle).toBeNull();
   expect(view.help).toHaveLength(2);
   expect(view.setup.every((row) => row.control === null)).toBe(true);
   expect(view.rows.map((row) => row.rename)).toEqual([false, true, false, false, false, false]);
@@ -405,6 +464,18 @@ it("a change of the host is one sentence for the other players", () => {
   expect(hostChange(before, lobby({ start_from: "late-game", map_revision: 2 }))).toBe(
     "The host changed where the game starts",
   );
+  // The same players in another order of the rows; a join is no shuffle.
+  const shuffled = lobby();
+  shuffled.slots = [
+    shuffled.slots[2],
+    shuffled.slots[0],
+    ...shuffled.slots.slice(3),
+    shuffled.slots[1],
+  ];
+  expect(hostChange(before, shuffled)).toBe("The host shuffled the seats");
+  const joined = lobby();
+  joined.slots[3] = person(4, "cy", "Cy");
+  expect(hostChange(before, joined)).toBeNull();
 });
 
 it("a lost connection has one signal", () => {
@@ -429,6 +500,7 @@ it("the board is the tiles of the preview, and a home is the place of a seat", (
   const state: TableState = {
     ...table("ada"),
     preview: {
+      choice: { kind: "random" },
       player_count: 2,
       tiles: [
         tile("18", 0, {
@@ -466,6 +538,10 @@ it("another tab of a player is that name with the next free number", () => {
   // From the second tab the number goes on: it is not "Ada 2 2".
   expect(nextNickname(more, "ada2")).toBe("Ada 3");
   expect(nextNickname(lobby(), "bart").length).toBeLessThanOrEqual(64);
+  // 21 characters of three bytes: the number takes the room of the last one.
+  const wide = lobby();
+  wide.slots[0] = person(1, "ada", "東".repeat(21));
+  expect(nextNickname(wide, "ada")).toBe(`${"東".repeat(20)} 2`);
 });
 
 /** The factions as the server groups them, cut to four. */
@@ -649,6 +725,7 @@ it("the table of a running game is the same screen with nothing open, and the ho
     expect([row.editor, row.remove, row.rename, row.buttons]).toEqual([null, null, false, []]);
   }
   expect(view.fill).toBeNull();
+  expect(view.shuffle).toBeNull();
   expect(view.footer).toEqual({ note: "", main: null, nickname: false });
   // Of the setup only the wait has a control.
   expect(view.setup.filter((row) => row.control).map((row) => row.id)).toEqual(["wait"]);

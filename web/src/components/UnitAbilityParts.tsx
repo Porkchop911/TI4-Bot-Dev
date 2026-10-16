@@ -1,5 +1,5 @@
 import React from "react";
-import type { BoardView, ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import type { BoardView, ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import { describeUnitAbilityOption } from "../presentation/unitAbilityOptions.ts";
 import { ValueText } from "./PlanetValueIcons.tsx";
 import { UnitIcon } from "./UnitIcon.tsx";
@@ -7,7 +7,7 @@ import { UnitIcon } from "./UnitIcon.tsx";
 /** Inside an option row: the unit's icon and where it comes from, goes to and what it costs. */
 export const UnitAbilityOptionNote: React.FC<{
   choice: PendingChoiceDto;
-  option: ChoiceOptionDto;
+  option: ChoiceOption;
   board?: BoardView | null;
 }> = ({ choice, option, board }) => {
   const info = describeUnitAbilityOption(choice, option, board);

@@ -2,7 +2,19 @@ import React, { useState } from "react";
 import { ageLabel } from "../protocol/myGames.ts";
 import { lobbyFactionName } from "../presentation/lobbyFactions.ts";
 import { durationLabel } from "./setup.ts";
+import { NOT_PLAYABLE_HERE } from "./storage/shell.ts";
 import type { OfflineGameSummary } from "./types.ts";
+
+/** The factions of a game, seat by seat; the seats of people are marked. Null when none is known. */
+function seatsLine(game: OfflineGameSummary): string | null {
+  if (!game.factions.some((faction) => faction !== null)) return null;
+  return game.factions
+    .map((faction, i) => {
+      const name = faction ? lobbyFactionName(faction) : "?";
+      return game.humanSeats.includes(i + 1) ? `${name} (you)` : name;
+    })
+    .join(", ");
+}
 
 /** "My offline games": resume, export (backup file) and delete with a confirmation. */
 export const OfflineGamesList: React.FC<{
@@ -25,6 +37,7 @@ export const OfflineGamesList: React.FC<{
       {games.map((game) => {
         const asking = confirming === game.gameId;
         const age = ageLabel(game.updatedAt, nowMs);
+        const seats = seatsLine(game);
         return (
           <li key={game.gameId} className="mygames__row offline-games__row" data-testid="offline-game-row">
             <div className="mygames__info">
@@ -39,10 +52,19 @@ export const OfflineGamesList: React.FC<{
                   : game.round !== null
                     ? `Round ${game.round}${game.phase ? `, ${game.phase}` : ""}`
                     : "Not started"}
-                {` · seat ${game.humanSeat}`}
+                {game.humanSeats.length === 1 ? ` · seat ${game.humanSeat}` : ` · seats ${game.humanSeats.join(", ")}`}
                 {age && ` · ${age}`}
               </span>
-              {game.status === "in_progress" && (
+              {seats && (
+                <span className="text-muted" data-testid="offline-game-factions">
+                  {seats}
+                </span>
+              )}
+              {!game.playable ? (
+                <span className="text-faint" data-testid="offline-game-not-playable">
+                  {NOT_PLAYABLE_HERE}
+                </span>
+              ) : game.status === "in_progress" && (
                 <span className="text-faint">Restoring takes {durationLabel(game.resumeEstimateMs)}.</span>
               )}
             </div>
@@ -68,15 +90,17 @@ export const OfflineGamesList: React.FC<{
                 </>
               ) : (
                 <>
-                  <button
-                    type="button"
-                    className="button button--primary"
-                    data-testid="offline-resume"
-                    disabled={disabled}
-                    onClick={() => onResume(game.gameId)}
-                  >
-                    {game.status === "finished" ? "View" : "Resume"}
-                  </button>
+                  {game.playable && (
+                    <button
+                      type="button"
+                      className="button button--primary"
+                      data-testid="offline-resume"
+                      disabled={disabled}
+                      onClick={() => onResume(game.gameId)}
+                    >
+                      {game.status === "finished" ? "View" : "Resume"}
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="button button--outline"
@@ -102,5 +126,57 @@ export const OfflineGamesList: React.FC<{
         );
       })}
     </ul>
+  );
+};
+
+/** The saved games of an older version: not read, only deleted (with a confirmation). */
+export const OlderSaves: React.FC<{ count: number; onDelete: () => void | Promise<void>; disabled?: boolean }> = ({
+  count,
+  onDelete,
+  disabled,
+}) => {
+  const [asking, setAsking] = useState(false);
+  if (count === 0) return null;
+  return (
+    <div className="mygames__row offline-games__row" data-testid="offline-older-saves">
+      <div className="mygames__info">
+        <strong>
+          {count === 1 ? "1 saved game" : `${count} saved games`} from an older version
+        </strong>
+        <span className="text-muted">This version cannot open {count === 1 ? "it" : "them"}.</span>
+      </div>
+      <div className="mygames__actions">
+        {asking ? (
+          <>
+            <span className="text-muted">Delete {count === 1 ? "it" : "them"}?</span>
+            <button
+              type="button"
+              className="button button--danger"
+              data-testid="offline-older-delete-confirm"
+              disabled={disabled}
+              onClick={async () => {
+                await onDelete();
+                setAsking(false);
+              }}
+            >
+              Delete
+            </button>
+            <button type="button" className="button button--outline" onClick={() => setAsking(false)}>
+              Keep
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            className="button button--outline"
+            data-testid="offline-older-delete"
+            disabled={disabled}
+            onClick={() => setAsking(true)}
+          >
+            Delete
+          </button>
+        )}
+      </div>
+    </div>
   );
 };

@@ -1,6 +1,6 @@
 // Snapshots the real server's map catalog and previews (3-6 players) into server-snapshot/<n>p.json, which the
 // captures replay, so the pictured boards are the real community layouts. Rerun after changing
-// crates/ti4-server/src/maps/community_maps.json:
+// crates/ti4-host/src/maps/community_maps.json:
 //   cd web && node e2e/screenshots/CO-community-maps/fetch-real.mjs
 // Builds and starts the server binary on 127.0.0.1:$TI4_FETCH_PORT (default 18765) with a
 // throw-away data directory; honours CARGO_TARGET_DIR.

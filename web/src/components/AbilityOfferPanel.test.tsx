@@ -10,8 +10,8 @@ const munitions = (have = 5): PendingChoiceDto => ({
   prompt: "spend 2 trade goods for Munitions Reserves",
   context: { subtype: "munitions_reserves_reroll" } as never,
   options: [
-    { id: "munitions", kind: "ability", label: "reroll this round's misses" },
-    { id: "decline", kind: "decline", label: "decline" },
+    { id: "munitions", kind: "ability", label: "reroll this round's misses", payload: {} },
+    { id: "decline", kind: "decline", label: "decline", payload: {} },
   ],
   details: {
     kind: "ability_offer",

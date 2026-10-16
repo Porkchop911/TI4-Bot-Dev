@@ -28,9 +28,9 @@ export interface SeatView {
   name: string;
   /**
    * No person plays the seat: the sign of who does, as the lobby has it ("⚙" the rule bot, "⚄" a
-   * random seat), with its word. Absent for a person.
+   * random seat, "✦" a model), with its word. Absent for a person.
    */
-  played?: { kind: "rule" | "random"; word: string };
+  played?: { kind: "rule" | "random" | "model"; word: string };
   faction: string;
   /** Shape that identifies the seat without colour. */
   symbol: string;
@@ -62,6 +62,8 @@ export interface CounterView {
   /** Id of the staged value. It goes back unchanged in a `setCount` intent. */
   id: string;
   value: number;
+  /** The least value, when it is not 0. */
+  min?: number;
   max: number;
   label: string;
 }

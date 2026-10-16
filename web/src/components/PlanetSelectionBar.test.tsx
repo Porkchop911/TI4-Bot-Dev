@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { describe, expect, it, vi } from "vitest";
 import { PlanetSelectionBar } from "./PlanetSelectionBar.tsx";
 import { BoardView, PendingChoiceDto } from "../protocol/types.ts";
+import { partialContext } from "../test/wire.ts";
 
 const board: BoardView = {
   systems: {
@@ -10,9 +11,9 @@ const board: BoardView = {
       system_id: "26",
       command_tokens: [],
       units: [
-        { unit_type: "infantry", owner: "p1", planet: "lodor", damaged: false },
-        { unit_type: "infantry", owner: "p1", planet: "lodor", damaged: false },
-        { unit_type: "pds", owner: "p1", planet: "lodor", damaged: false },
+        { unit_type: "infantry", owner: "p1", planet: "lodor", damaged: false, galvanized: false },
+        { unit_type: "infantry", owner: "p1", planet: "lodor", damaged: false, galvanized: false },
+        { unit_type: "pds", owner: "p1", planet: "lodor", damaged: false, galvanized: false },
       ],
       planets: { lodor: { planet_id: "lodor", controlled_by: "p1", exhausted: false } },
     },
@@ -41,10 +42,10 @@ const mining: PendingChoiceDto = {
   nonce: "n1",
   actor: "p1",
   prompt: "Mining Initiative: mine which planet",
-  context: {
+  context: partialContext({
     subtype: "mining_initiative_pick_planet",
     source: { ActionCard: "mining_initiative" },
-  },
+  }),
   options: [
     { id: "lodor", kind: "planet", label: "Lodor", payload: { planet: "lodor", system: "26" } },
     { id: "gral", kind: "planet", label: "Gral", payload: { planet: "gral" } },
@@ -55,7 +56,7 @@ const structures: PendingChoiceDto = {
   nonce: "n2",
   actor: "p1",
   prompt: "place a structure",
-  context: { subtype: "place_structure", source: { Content: "place_structure" } },
+  context: partialContext({ subtype: "place_structure", source: { Content: "place_structure" } }),
   options: [
     {
       id: "pds|26|lodor",
@@ -69,7 +70,7 @@ const structures: PendingChoiceDto = {
       label: "place spacedock on lodor",
       payload: { planet: "lodor", system: "26", unit: "spacedock" },
     },
-    { id: "decline", kind: "decline", label: "decline" },
+    { id: "decline", kind: "decline", label: "decline", payload: {} },
   ],
 };
 
@@ -77,7 +78,7 @@ const bioStims: PendingChoiceDto = {
   nonce: "n3",
   actor: "p1",
   prompt: "Bio-Stims",
-  context: { subtype: "bio_stims_ready", source: { Content: "bs" } },
+  context: partialContext({ subtype: "bio_stims_ready", source: { Content: "bs" } }),
   options: [
     {
       id: "ready|planet|gral",
@@ -91,7 +92,7 @@ const bioStims: PendingChoiceDto = {
       label: "Bio-Stims: ready Sarween Tools",
       payload: { technology: "st", bio_stims: true },
     },
-    { id: "decline", kind: "decline", label: "decline" },
+    { id: "decline", kind: "decline", label: "decline", payload: {} },
   ],
 };
 
@@ -283,7 +284,7 @@ describe("PlanetSelectionBar", () => {
       nonce: "od1",
       actor: "p1",
       prompt: "Orbital Drop: deploy a mech on lodor",
-      context: { subtype: "orbital_drop_deploy_mech", optional: true },
+      context: partialContext({ subtype: "orbital_drop_deploy_mech", optional: true }),
       options: [
         {
           id: "deploy|sol_mech|1",
@@ -291,7 +292,7 @@ describe("PlanetSelectionBar", () => {
           label: "deploy 1 sol_mech for 3 resources",
           payload: { unit: "sol_mech", count: 1, cost: 3, system: "26", planet: "lodor", orbital_drop_deploy: true },
         },
-        { id: "decline", kind: "decline", label: "Pass" },
+        { id: "decline", kind: "decline", label: "Pass", payload: {} },
       ],
     };
     render(

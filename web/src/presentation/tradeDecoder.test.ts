@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { decodeTradeOption } from "./tradeDecoder.ts";
-import { ChoiceOptionDto } from "../protocol/types.ts";
+import { ChoiceOption } from "../protocol/types.ts";
 
 describe("tradeDecoder", () => {
   it("decodes mutual support for the throne (ss)", () => {
-    const opt: ChoiceOptionDto = {
+    const opt: ChoiceOption = {
       id: "ss",
       kind: "offer",
       label: "Swap Support for the Throne",
@@ -17,7 +17,7 @@ describe("tradeDecoder", () => {
   });
 
   it("decodes commodity swap (cc3)", () => {
-    const opt: ChoiceOptionDto = {
+    const opt: ChoiceOption = {
       id: "cc3",
       kind: "offer",
       label: "swap 3 commodities each",
@@ -30,7 +30,7 @@ describe("tradeDecoder", () => {
   });
 
   it("decodes commodity gift (c2:0)", () => {
-    const opt: ChoiceOptionDto = {
+    const opt: ChoiceOption = {
       id: "c2:0",
       kind: "offer",
       label: "gift 2 commodities",
@@ -43,7 +43,7 @@ describe("tradeDecoder", () => {
   });
 
   it("decodes goods exchange (ct2:3, tc1:2, and 1:2)", () => {
-    const ctOpt: ChoiceOptionDto = {
+    const ctOpt: ChoiceOption = {
       id: "ct2:3",
       kind: "offer",
       label: "give 2 commodities for 3 trade goods",
@@ -54,20 +54,22 @@ describe("tradeDecoder", () => {
     expect(decodedCt.details.giveCommodities).toBe(2);
     expect(decodedCt.details.receiveTradeGoods).toBe(3);
 
-    const tcOpt: ChoiceOptionDto = {
+    const tcOpt: ChoiceOption = {
       id: "tc1:2",
       kind: "offer",
       label: "give 1 trade goods for 2 commodities",
+      payload: {},
     };
     const decodedTc = decodeTradeOption(tcOpt);
     expect(decodedTc.category).toBe("goods_exchange");
     expect(decodedTc.details.giveTradeGoods).toBe(1);
     expect(decodedTc.details.receiveCommodities).toBe(2);
 
-    const tgOpt: ChoiceOptionDto = {
+    const tgOpt: ChoiceOption = {
       id: "1:2",
       kind: "offer",
       label: "give 1 for 2",
+      payload: {},
     };
     const decodedTg = decodeTradeOption(tgOpt);
     expect(decodedTg.category).toBe("goods_exchange");
@@ -76,7 +78,7 @@ describe("tradeDecoder", () => {
   });
 
   it("decodes promissory notes (pnsupport:sol:3)", () => {
-    const opt: ChoiceOptionDto = {
+    const opt: ChoiceOption = {
       id: "pnsupport:sol:3",
       kind: "offer",
       label: "offer Support for 3 TG",
@@ -89,20 +91,22 @@ describe("tradeDecoder", () => {
   });
 
   it("decodes action cards and fragments", () => {
-    const acOpt: ChoiceOptionDto = {
+    const acOpt: ChoiceOption = {
       id: "acmorale_boost:2",
       kind: "offer",
       label: "offer Morale Boost for 2 TG",
+      payload: {},
     };
     const decodedAc = decodeTradeOption(acOpt);
     expect(decodedAc.category).toBe("other");
     expect(decodedAc.details.actionCard).toBe("morale_boost");
     expect(decodedAc.details.price).toBe(2);
 
-    const frOpt: ChoiceOptionDto = {
+    const frOpt: ChoiceOption = {
       id: "frcultural:4",
       kind: "offer",
       label: "offer Cultural Fragment for 4 TG",
+      payload: {},
     };
     const decodedFr = decodeTradeOption(frOpt);
     expect(decodedFr.category).toBe("other");
@@ -116,10 +120,11 @@ describe("tradeDecoder", () => {
     // "ct3:2" starts with 'ct', which is case 6 (commodity→TG).
     // It also starts with 'c' and contains ':', which is case 8 (commodity gift).
     // Case 6 must win because it appears first in the decoder.
-    const opt: ChoiceOptionDto = {
+    const opt: ChoiceOption = {
       id: "ct3:2",
       kind: "offer",
       label: "give 3 commodities for 2 trade goods",
+      payload: {},
     };
     const decoded = decodeTradeOption(opt);
     expect(decoded.category).toBe("goods_exchange");
@@ -134,7 +139,7 @@ describe("tradeDecoder", () => {
     // swap_commodities — payload.note is absent, so the pn branch is still
     // exercised (id prefix wins over the extra payload field).
     // This verifies that a mismatched payload does not corrupt the category.
-    const opt: ChoiceOptionDto = {
+    const opt: ChoiceOption = {
       id: "pnsupport:sol:0",
       kind: "offer",
       label: "Support for the Throne (gift)",
@@ -148,10 +153,11 @@ describe("tradeDecoder", () => {
   });
 
   it('unknown id format falls back to category "other"', () => {
-    const opt: ChoiceOptionDto = {
+    const opt: ChoiceOption = {
       id: "zzunknown_format",
       kind: "offer",
       label: "Some unknown offer",
+      payload: {},
     };
     const decoded = decodeTradeOption(opt);
     expect(decoded.category).toBe("other");
@@ -163,7 +169,7 @@ describe("tradeDecoder", () => {
   it("mutual_support via payload.kind overrides id prefix", () => {
     // An id that does NOT equal 'ss' but carries kind='mutual_support' in
     // the payload should still be classified as mutual_support.
-    const opt: ChoiceOptionDto = {
+    const opt: ChoiceOption = {
       id: "ms_custom",
       kind: "offer",
       label: "Mutual Support Variant",

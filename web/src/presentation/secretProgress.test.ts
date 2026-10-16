@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GENERATED_CONTENT_CATALOG } from "../protocol/generatedContentManifest.ts";
+import { CONTENT } from "../protocol/catalogStore.ts";
 import {
   EVENT_SECRETS,
   SECRET_PROGRESS_UNITS,
@@ -24,7 +24,7 @@ describe("secret objective progress wording", () => {
   });
 
   it("covers every base secret as either a count or an event", () => {
-    const aliases = Object.keys(GENERATED_CONTENT_CATALOG.secretObjectives).filter(
+    const aliases = Object.keys(CONTENT.secretObjectives).filter(
       (id) => id.length <= 4,
     );
     expect(aliases.length).toBe(40);

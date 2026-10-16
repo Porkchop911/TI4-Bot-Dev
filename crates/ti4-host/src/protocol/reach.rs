@@ -15,6 +15,7 @@ pub const MAX_SYSTEM_ID_BYTES: usize = 32;
 /// Why a reach query was refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum ReachRefusal {
     /// The session is replaying, finished or failed, or has no map to search.
     Busy,
@@ -27,6 +28,7 @@ pub enum ReachRefusal {
 /// The answer to a `query_reach`: ships that could move into `system_id`, "as of now".
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ReachIntoMsg {
     pub protocol_version: u16,
     pub game_id: String,

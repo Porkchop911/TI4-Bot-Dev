@@ -7,6 +7,7 @@ import {
   getCombatPayload,
 } from "./choiceModel.ts";
 import { PendingChoiceDto } from "../protocol/types.ts";
+import { partialContext } from "../test/wire.ts";
 
 describe("choiceModel", () => {
   const baseChoice: PendingChoiceDto = {
@@ -14,8 +15,8 @@ describe("choiceModel", () => {
     actor: "seat_1",
     prompt: "Make a choice",
     options: [
-      { id: "opt1", label: "Option 1", kind: "default" },
-      { id: "decline", label: "Decline", kind: "decline" },
+      { id: "opt1", label: "Option 1", kind: "default", payload: {} },
+      { id: "decline", label: "Decline", kind: "decline", payload: {} },
     ],
   };
 
@@ -30,10 +31,10 @@ describe("choiceModel", () => {
       const choice: PendingChoiceDto = {
         ...baseChoice,
         prompt: "pay 4 more resources",
-        context: {
+        context: partialContext({
           subtype: "pay_resources",
-          outstanding: [{ kind: "resources", amount: 6, paid: 2 }],
-        },
+          outstanding: [{ kind: "Resources", amount: 6, paid: 2 }],
+        }),
         options: [
           {
             id: "exhaust|jord",
@@ -65,10 +66,10 @@ describe("choiceModel", () => {
       const choice: PendingChoiceDto = {
         ...baseChoice,
         prompt: "pay 3 influence",
-        context: {
+        context: partialContext({
           subtype: "pay_influence",
-          outstanding: [{ kind: "influence", amount: 3, paid: 0 }],
-        },
+          outstanding: [{ kind: "Influence", amount: 3, paid: 0 }],
+        }),
       };
 
       const model = deriveChoiceRendererModel(choice, "seat_1");
@@ -85,12 +86,12 @@ describe("choiceModel", () => {
       const choice: PendingChoiceDto = {
         ...baseChoice,
         prompt: "spend 6 influence to remove custodians?",
-        context: {
+        context: partialContext({
           subtype: "remove_custodians",
-        },
+        }),
         options: [
-          { id: "yes", label: "Yes", kind: "custodians" },
-          { id: "no", label: "No", kind: "decline" },
+          { id: "yes", label: "Yes", kind: "custodians", payload: {} },
+          { id: "no", label: "No", kind: "decline", payload: {} },
         ],
       };
 
@@ -103,7 +104,7 @@ describe("choiceModel", () => {
       const choice: PendingChoiceDto = {
         ...baseChoice,
         prompt: "activate a system",
-        context: { subtype: "activate_system" },
+        context: partialContext({ subtype: "activate_system" }),
         options: [
           { id: "18", label: "Mecatol Rex", kind: "activate", payload: { system: "18" } },
           { id: "24", label: "Moll Primus", kind: "activate", payload: { system: "24" } },
@@ -120,10 +121,10 @@ describe("choiceModel", () => {
       const moveChoice: PendingChoiceDto = {
         ...baseChoice,
         prompt: "movement",
-        context: {
+        context: partialContext({
           subtype: "movement_step",
           target: { System: "18" },
-        },
+        }),
         options: [
           {
             id: "move|24|0",
@@ -131,7 +132,7 @@ describe("choiceModel", () => {
             kind: "move",
             payload: { origin: "24", unit: "cruiser" },
           },
-          { id: "done_moving", label: "Finish", kind: "decline" },
+          { id: "done_moving", label: "Finish", kind: "decline", payload: {} },
         ],
       };
 
@@ -142,14 +143,14 @@ describe("choiceModel", () => {
       const cargoChoice: PendingChoiceDto = {
         ...baseChoice,
         prompt: "load cargo",
-        context: { subtype: "load_cargo", target: { System: "18" } },
+        context: partialContext({ subtype: "load_cargo", target: { System: "18" } }),
       };
       expect(deriveChoiceRendererModel(cargoChoice, "seat_1")?.workflow).toBe("tactical_cargo");
 
       const invasionChoice: PendingChoiceDto = {
         ...baseChoice,
         prompt: "commit ground forces",
-        context: { subtype: "commit_ground_forces", target: { System: "18" } },
+        context: partialContext({ subtype: "commit_ground_forces", target: { System: "18" } }),
       };
       expect(deriveChoiceRendererModel(invasionChoice, "seat_1")?.workflow).toBe(
         "tactical_invasion",
@@ -160,14 +161,14 @@ describe("choiceModel", () => {
       const choice: PendingChoiceDto = {
         ...baseChoice,
         prompt: "produce units",
-        context: {
+        context: partialContext({
           subtype: "produce_unit",
           target: { System: "18" },
-          outstanding: [{ kind: "production_capacity", amount: 5 }],
-        },
+          outstanding: [{ kind: "ProductionCapacity", amount: 5 }],
+        }),
         options: [
-          { id: "build|fighter", label: "Fighter", kind: "produce" },
-          { id: "decline", label: "Done", kind: "decline" },
+          { id: "build|fighter", label: "Fighter", kind: "produce", payload: {} },
+          { id: "decline", label: "Done", kind: "decline", payload: {} },
         ],
       };
 
@@ -184,11 +185,11 @@ describe("choiceModel", () => {
     it("classifies public and secret objective scoring", () => {
       const publicObjective: PendingChoiceDto = {
         ...baseChoice,
-        context: { subtype: "score_objective" },
+        context: partialContext({ subtype: "score_objective" }),
       };
       const secretObjective: PendingChoiceDto = {
         ...baseChoice,
-        context: { subtype: "score_secret_objective" },
+        context: partialContext({ subtype: "score_secret_objective" }),
       };
 
       expect(deriveChoiceRendererModel(publicObjective, "seat_1")?.workflow).toBe(
@@ -203,10 +204,10 @@ describe("choiceModel", () => {
       const sustainChoice: PendingChoiceDto = {
         ...baseChoice,
         prompt: "sustain damage",
-        context: {
+        context: partialContext({
           subtype: "sustain_damage",
           outstanding: [{ amount: 2 }],
-        },
+        }),
       };
       const sustainModel = deriveChoiceRendererModel(sustainChoice, "seat_1");
       expect(sustainModel?.workflow).toBe("combat_sustain");
@@ -215,10 +216,10 @@ describe("choiceModel", () => {
       const casualtyChoice: PendingChoiceDto = {
         ...baseChoice,
         prompt: "assign hits",
-        context: {
+        context: partialContext({
           subtype: "assign_casualty",
           outstanding: [{ amount: 3 }],
-        },
+        }),
       };
       const casualtyModel = deriveChoiceRendererModel(casualtyChoice, "seat_1");
       expect(casualtyModel?.workflow).toBe("combat_casualty");
@@ -227,7 +228,7 @@ describe("choiceModel", () => {
       const retreatChoice: PendingChoiceDto = {
         ...baseChoice,
         prompt: "announce retreat",
-        context: { subtype: "announce_retreat" },
+        context: partialContext({ subtype: "announce_retreat" }),
       };
       expect(deriveChoiceRendererModel(retreatChoice, "seat_1")?.workflow).toBe("combat_retreat");
     });
@@ -236,13 +237,13 @@ describe("choiceModel", () => {
       const proposeChoice: PendingChoiceDto = {
         ...baseChoice,
         prompt: "transaction with Hacan",
-        context: {
+        context: partialContext({
           subtype: "propose_transaction",
           target: { Player: "seat_2" },
-        },
+        }),
         options: [
-          { id: "cc3", label: "Swap 3 commodities", kind: "offer" },
-          { id: "decline", label: "Decline", kind: "decline" },
+          { id: "cc3", label: "Swap 3 commodities", kind: "offer", payload: {} },
+          { id: "decline", label: "Decline", kind: "decline", payload: {} },
         ],
       };
       const proposeModel = deriveChoiceRendererModel(proposeChoice, "seat_1");
@@ -252,10 +253,10 @@ describe("choiceModel", () => {
       const answerChoice: PendingChoiceDto = {
         ...baseChoice,
         prompt: "Accept offer?",
-        context: {
+        context: partialContext({
           subtype: "answer_transaction",
           target: { Player: "seat_2" },
-        },
+        }),
       };
       expect(deriveChoiceRendererModel(answerChoice, "seat_1")?.workflow).toBe(
         "transaction_answer",
@@ -266,7 +267,7 @@ describe("choiceModel", () => {
       const voteOutcomeChoice: PendingChoiceDto = {
         ...baseChoice,
         prompt: "vote for which outcome",
-        context: { subtype: "cast_vote" },
+        context: partialContext({ subtype: "cast_vote" }),
       };
       expect(deriveChoiceRendererModel(voteOutcomeChoice, "seat_1")?.workflow).toBe(
         "agenda_vote_outcome",
@@ -275,7 +276,7 @@ describe("choiceModel", () => {
       const votePlanetChoice: PendingChoiceDto = {
         ...baseChoice,
         prompt: "exhaust planet to vote",
-        context: { subtype: "vote_exhaust_planet" },
+        context: partialContext({ subtype: "vote_exhaust_planet" }),
       };
       expect(deriveChoiceRendererModel(votePlanetChoice, "seat_1")?.workflow).toBe(
         "agenda_vote_planets",
@@ -286,13 +287,13 @@ describe("choiceModel", () => {
       const reactionChoice: PendingChoiceDto = {
         ...baseChoice,
         prompt: "play Sabotage?",
-        context: {
+        context: partialContext({
           subtype: "play_reaction_when_action_card_played",
           optional: true,
-        },
+        }),
         options: [
-          { id: "sabotage", label: "Play Sabotage", kind: "reaction" },
-          { id: "decline", label: "Pass", kind: "decline" },
+          { id: "sabotage", label: "Play Sabotage", kind: "reaction", payload: {} },
+          { id: "decline", label: "Pass", kind: "decline", payload: {} },
         ],
       };
 
@@ -301,41 +302,16 @@ describe("choiceModel", () => {
       expect(model?.isOptional).toBe(true);
     });
 
-    it("classifies bounded multi-selection fallback", () => {
-      const multiChoice: PendingChoiceDto = {
-        ...baseChoice,
-        prompt: "select 2 items",
-        context: {
-          subtype: "custom_unhandled_selection",
-          outstanding: [
-            {
-              min_selection: 2,
-              max_selection: 2,
-            },
-          ],
-        },
-        options: [
-          { id: "item1", label: "Item 1" },
-          { id: "item2", label: "Item 2" },
-          { id: "item3", label: "Item 3" },
-        ],
-      };
-
-      const model = deriveChoiceRendererModel(multiChoice, "seat_1");
-      expect(model?.workflow).toBe("generic_selection");
-      expect(model?.selectionMode).toEqual({ mode: "multi", min: 2, max: 2 });
-    });
-
     it("classifies research_technology workflow", () => {
       const researchChoice: PendingChoiceDto = {
         ...baseChoice,
         prompt: "Research a technology",
-        context: {
+        context: partialContext({
           subtype: "research_technology",
-        },
+        }),
         options: [
-          { id: "gd", label: "Gravity Drive", kind: "research" },
-          { id: "decline", label: "Decline", kind: "decline" },
+          { id: "gd", label: "Gravity Drive", kind: "research", payload: {} },
+          { id: "decline", label: "Decline", kind: "decline", payload: {} },
         ],
       };
 
@@ -348,10 +324,10 @@ describe("choiceModel", () => {
       const offer: PendingChoiceDto = {
         ...baseChoice,
         prompt: "Deepwrought commander: reduce this research by 1",
-        context: { subtype: "deepwrought_reduce_research" },
+        context: partialContext({ subtype: "deepwrought_reduce_research" }),
         options: [
-          { id: "reduce", label: "reduce by 1", kind: "research" },
-          { id: "decline", label: "Decline", kind: "decline" },
+          { id: "reduce", label: "reduce by 1", kind: "research", payload: {} },
+          { id: "decline", label: "Decline", kind: "decline", payload: {} },
         ],
         details: { kind: "offer", card: { title: "Aello" } },
       };
@@ -365,6 +341,7 @@ describe("choiceModel", () => {
         id: "exhaust|jord",
         label: "Jord",
         payload: { worth: 4, owed: 6, kind: "influence", source: "planet", planet_name: "Jord" },
+        kind: "",
       });
       expect(payload).toEqual({
         worth: 4,
@@ -380,6 +357,7 @@ describe("choiceModel", () => {
         id: "move|24|0",
         label: "Cruiser",
         payload: { origin: "24", unit: "cruiser", damaged: true, capacity: 1, gravity_drive: true },
+        kind: "",
       });
       expect(payload).toEqual({
         origin: "24",
@@ -395,6 +373,7 @@ describe("choiceModel", () => {
         id: "cc3",
         label: "Swap",
         payload: { net: 1, their_net: -1 },
+        kind: "",
       });
       expect(payload).toEqual({
         net: 1,
@@ -407,6 +386,7 @@ describe("choiceModel", () => {
         id: "sustain|0",
         label: "Dreadnought",
         payload: { unit: "dreadnought", damaged: false },
+        kind: "",
       });
       expect(payload).toEqual({
         unit: "dreadnought",
@@ -421,15 +401,16 @@ describe("choiceModel", () => {
         id: `reaction:f:X:${index}`,
         label: `Play Card ${index}`,
         kind: "ability",
+        payload: {},
       })),
-      { id: "decline", label: "Pass", kind: "decline" },
+      { id: "decline", label: "Pass", kind: "decline", payload: {} },
     ];
     const reaction = (subtype: string, count: number, source?: Record<string, unknown>) =>
       deriveChoiceRendererModel(
         {
           ...baseChoice,
           options: options(count),
-          context: { subtype, optional: true, ...(source ? { source } : {}) },
+          context: partialContext({ subtype, optional: true, ...(source ? { source } : {}) }),
         },
         "seat_1",
       )?.workflow;

@@ -11,7 +11,8 @@ compiled to WebAssembly (`crates/ti4-wasm`, built on the shared host crate `ti4-
 a module web worker. After the first load there is no server request: you can switch the network
 off. Games are stored in the browser (IndexedDB).
 
-* One human, 3 to 6 players, every other seat is a rule bot (`ti4-rule-bot`). No ML bots.
+* One human, 3 to 6 players, every other seat is a rule bot (`ti4-rule-bot`). No MLP bots: the
+  page of `web2/` plays those (`mlp:<name>`, `ti4_host::bots`).
 * Same engine and same rules as the server; a game is fully determined by its seed and your answers.
 * The server is needed only to load the page the first time and to deliver feedback.
 
@@ -82,9 +83,9 @@ delivery, "... sent". Operators read these like any other report (`tools/public/
 ## What is disabled offline
 
 Everything that needs a server or other people: lobby, invitations, other seats, spectators,
-presence, takeovers, the access password. Also hidden in v1: the map splice preview, turn redo
-(undo, rewind to an earlier decision and redo of undone decisions stay), the advisor (win odds,
-combat odds). The replay download of an offline game is its save file, not the server's replay
+presence, takeovers, the access password. Also hidden in v1: the map splice preview and turn redo
+(undo, rewind to an earlier decision and redo of undone decisions stay). The combat odds come from
+the engine of the page. The replay download of an offline game is its save file, not the server's replay
 format. The UI hides these through the transport capabilities rather than showing broken buttons.
 Known engine gaps apply (7 and 8 players are not offered; Creuss and Antimass limits as in the
 engine).

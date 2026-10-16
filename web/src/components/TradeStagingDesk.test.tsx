@@ -2,10 +2,11 @@ import { act } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { TradeDeskModal } from "./TradeDeskModal.tsx";
-import type { ChoiceOptionDto, PendingChoiceDto, PlayerView } from "../protocol/types.ts";
+import type { ChoiceOption, PendingChoiceDto, PlayerView } from "../protocol/types.ts";
 import { forgetNegotiation } from "../presentation/tradeNegotiation.ts";
+import { partialContext } from "../test/wire.ts";
 
-const offer = (id: string, payload: Record<string, unknown> = {}): ChoiceOptionDto => ({
+const offer = (id: string, payload: Record<string, unknown> = {}): ChoiceOption => ({
   id,
   label: id,
   kind: "offer",
@@ -16,7 +17,7 @@ const proposeChoice = (nonce = "p1"): PendingChoiceDto => ({
   actor: "seat_1",
   nonce,
   prompt: "transaction with Sol",
-  context: { subtype: "propose_transaction", target: { Player: "seat_2" } },
+  context: partialContext({ subtype: "propose_transaction", target: { Player: "seat_2" } }),
   options: [
     offer("cc2", { net: 2 }),
     offer("2:3", { net: 1 }),
@@ -25,7 +26,7 @@ const proposeChoice = (nonce = "p1"): PendingChoiceDto => ({
     offer("pnra:sol:3", { note: "ra:sol", net: -2 }),
     offer("npcf:sol:2", { received_promissory: "cf:sol", net: 0 }),
     offer("cnsabo1>cf:sol", { action_card: "sabo1", received_promissory: "cf:sol" }),
-    { id: "decline", label: "Offer nothing", kind: "decline" },
+    { id: "decline", label: "Offer nothing", kind: "decline", payload: {} },
   ],
 });
 
@@ -39,11 +40,11 @@ const answerChoice = (): PendingChoiceDto => ({
   actor: "seat_2",
   nonce: "a1",
   prompt: "Sol gives 2 trade goods, ceasefire:sol for 3 commodities -- accept?",
-  context: { subtype: "answer_transaction", target: { Player: "seat_1" } },
+  context: partialContext({ subtype: "answer_transaction", target: { Player: "seat_1" } }),
   options: [
     { id: "accept", label: "accept", kind: "answer", payload: { net: 4 } },
-    { id: "refuse", label: "refuse", kind: "decline" },
-    { id: "counter", label: "counter-offer", kind: "answer" },
+    { id: "refuse", label: "refuse", kind: "decline", payload: {} },
+    { id: "counter", label: "counter-offer", kind: "answer", payload: {} },
   ],
 });
 
@@ -293,11 +294,11 @@ describe("answer screen", () => {
       actor: "seat_2",
       nonce: "c1",
       prompt: "transaction with Hacan",
-      context: { subtype: "propose_transaction", target: { Player: "seat_1" } },
+      context: partialContext({ subtype: "propose_transaction", target: { Player: "seat_1" } }),
       options: [
         offer("tc2:3", { net: 0 }),
         offer("tc1:3", { net: 0 }),
-        { id: "decline", label: "Offer nothing", kind: "decline" },
+        { id: "decline", label: "Offer nothing", kind: "decline", payload: {} },
       ],
     };
     document.body.innerHTML = "";

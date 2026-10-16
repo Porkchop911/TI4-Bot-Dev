@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { gamePath, postJson } from "@ti4/shared/net/api.ts";
 import { ageLabel, forgetMyGame, tokenFor } from "../protocol/myGames.ts";
 
 export interface OpenGameRow {
@@ -40,9 +41,8 @@ export const MyGamesDialog: React.FC<Props> = ({
     const token = tokenFor(gameId);
     if (!token) return false;
     try {
-      const response = await fetch(`/api/games/${encodeURIComponent(gameId)}/terminate`, {
-        method: "POST",
-        headers: { "x-ti4-player-session": token },
+      const response = await postJson(`${gamePath(gameId)}/terminate`, undefined, {
+        session: token,
       });
       // 404: already gone, which is what was wanted.
       if (response.ok || response.status === 404) {

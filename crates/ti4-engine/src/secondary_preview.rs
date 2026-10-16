@@ -54,6 +54,7 @@ pub const MAX_ANSWERS: usize = 48;
     clippy::large_enum_variant,
     reason = "one short-lived value per request; boxing the choice would only complicate every reader"
 )]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum SecondaryPreview {
     /// The next question: the window question when `step` is 0, a follow-up after that.
     Question {
@@ -97,6 +98,7 @@ const fn is_zero(count: &usize) -> bool {
 /// How the engine would pay a Technology secondary's resources: the first plan of
 /// [`crate::payment::plans`], which is the one `paid_research` applies.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct PaymentPreview {
     /// Resources owed.
     pub cost: i64,
@@ -110,6 +112,7 @@ pub struct PaymentPreview {
 
 /// A question outside the card's own that the real flow would ask first, answered "decline" here.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SkippedPrompt {
     pub subtype: String,
     pub prompt: String,

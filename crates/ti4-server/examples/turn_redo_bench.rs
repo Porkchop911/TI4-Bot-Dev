@@ -14,8 +14,8 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use ti4_host::protocol::status::ViewerRole;
 use ti4_model::id::PlayerId;
-use ti4_server::protocol::status::ViewerRole;
 use ti4_server::session::{GameRegistry, GameSession, random_bot};
 use ti4_server::storage::FileGameStore;
 
@@ -89,7 +89,7 @@ fn truncate(store: &FileGameStore, game_id: &str, len: usize) {
     history.decisions.truncate(len);
     history.redo.clear();
     history.redo_events.clear();
-    let split = ti4_server::session::turn_redo::events_through(&history.events, 0, len);
+    let split = ti4_host::history::turn_redo::events_through(&history.events, 0, len);
     history.events.truncate(split);
     history.batches.retain(|b| b.end_cursor <= len);
     history.rng_marks.truncate_to(len);
@@ -120,7 +120,7 @@ fn grow(session: &GameSession, seat: &PlayerId, target: usize) {
         {
             let snap = session.get_snapshot(&ViewerRole::Player(seat.clone()));
             if let Some(pending) = snap.pending_choice {
-                let mut rng = random_bot::decision_rng(7, seat, len);
+                let mut rng = random_bot::decision_rng(7, 0, len);
                 let index = random_bot::pick_index(&pending.choice, &mut rng);
                 let _ = session.submit_choice(
                     seat,

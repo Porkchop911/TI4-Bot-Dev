@@ -1,7 +1,13 @@
 // A local game as it is kept between two visits: not its state, but what plays it again.
 // The engine is deterministic, so the seed and the decisions of the seats give the same game.
 // The server keeps a game the same way: the chosen option of every decision, in order.
+//
+// The games are kept in the save store of `web-shared/src/storage/` (IndexedDB `ti4-offline`,
+// the same list as web/), each under an id and, for a game of an address of this app, a slot.
+// Next to a game, localStorage keeps what the page reads at once: `ti4.save.<id>.<part>`.
 
+import type { SavedGameSummary } from "@ti4/shared/storage/index.ts";
+import type { HostSave } from "./wasmTransport";
 import type { TableRequest } from "./wire";
 
 /** Which game the engine sets up. */
@@ -12,63 +18,36 @@ export interface LocalGame {
   /** Bit 0 is the first seat. A seat whose bit is set is played here; the others decide at random. */
   humans: number;
   /**
-   * The prepared board that the game starts from (`ti4_view::scenario`). The seed and the number
+   * The prepared board that the game starts from (`ti4_host::view::scenario`). The seed and the number
    * of seats are then those of the scenario.
    */
   scenario?: string;
   /**
    * The table that the game was set up as (single player). The engine starts the game from it:
    * `seed` and `players` are those of its setup, and `humans` is the mask of its players of the
-   * kind "human" (bit 0 is the player who came first, with the id "a").
+   * kind "human" (bit 0 is the first seat, with the id "a").
    */
   table?: TableRequest;
   /** The wait of the seats that the page plays before each answer, in milliseconds. */
   waitMs?: number;
 }
 
-/** The seats that are played here changed during the game (Dev, "Play as"). */
-export interface SeatSwitch {
-  /** The number of the decision of the game from which the mask holds (`ti4_decided`). */
-  decision: number;
-  /**
-   * The seats that are played here from then on, as `LocalGame.humans`. An undo does not go back
-   * before the change.
-   */
-  humans: number;
-}
-
-export interface SavedGame extends LocalGame {
-  /**
-   * Formats 1 and 2 had the answers of the page only, and the other seats decided again when
-   * the game was played again. They are not read.
-   */
-  format: 3;
-  /** SHA-256 of the engine file that played it. Another engine may offer other options. */
-  engine: string;
-  /**
-   * The option id of every decision of the game, of every seat, in order: `decisions[n]` answers
-   * the decision with the number `n`.
-   */
-  decisions: string[];
-  /** In order. Left out when the seats did not change. */
-  switches?: SeatSwitch[];
-}
-
 /** The part of `Storage` that is used, so a test can pass a map. */
 export type SaveStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
-/** Where the game of single player is kept: one, whatever its table is. */
-export const SINGLE_KEY = "ti4.single";
+/** The slot of single player: one game, whatever its table is. */
+export const SINGLE_SLOT = "single";
 
 /** The address of single player: the setup of a table, or the game that was started from it. */
 export const SINGLE_ADDRESS = "?single";
 
-export const saveKey = (game: LocalGame): string =>
+/** The slot of a game of an address of this app (`SavedGameRecord.slot`). */
+export const slotOf = (game: LocalGame): string =>
   game.table !== undefined
-    ? SINGLE_KEY
+    ? SINGLE_SLOT
     : game.scenario === undefined
-      ? `ti4.local.${game.seed}.${game.players}.${game.humans}`
-      : `ti4.local.scenario.${game.scenario}.${game.humans}`;
+      ? `local.${game.seed}.${game.players}.${game.humans}`
+      : `scenario.${game.scenario}.${game.humans}`;
 
 /**
  * The address of a game: what `localGame` in `dev/LocalApp.tsx` reads. The game of a table has
@@ -81,121 +60,145 @@ export const gameAddress = (game: LocalGame): string =>
       ? `?local=${game.seed}&players=${game.players}&humans=${game.humans}`
       : `?scenario=${encodeURIComponent(game.scenario)}&humans=${game.humans}`;
 
-/** Where the staged movement of the open movement step is kept: it is not an answer yet. */
-export const draftKey = (game: LocalGame): string => `${saveKey(game)}.movement`;
+/** The address of a saved game that has no slot of this app (an import, a game of web/). */
+export const idAddress = (id: string) => `?save=${encodeURIComponent(id)}`;
 
-/** Where the private draft of a tactical action is kept, with its undo history. */
-export const planKey = (game: LocalGame): string => `${saveKey(game)}.draft`;
+/** The address of a saved game: the address of its slot, or else of its id. */
+export function savedAddress(saved: Pick<SavedGameSummary, "id" | "slot">): string {
+  const slot = saved.slot ?? "";
+  if (slot === SINGLE_SLOT) {
+    return SINGLE_ADDRESS;
+  }
+  const local = /^local\.(\d+)\.(\d+)\.(\d+)$/.exec(slot);
+  if (local) {
+    return gameAddress({ seed: +local[1], players: +local[2], humans: +local[3] });
+  }
+  const scenario = /^scenario\.(.+)\.(\d+)$/.exec(slot);
+  if (scenario) {
+    return gameAddress({ seed: 0, players: 0, humans: +scenario[2], scenario: scenario[1] });
+  }
+  return idAddress(saved.id);
+}
 
-/** Where the private draft of a secondary is kept. */
-export const secondaryKey = (game: LocalGame): string => `${saveKey(game)}.secondary`;
+/** The game that a save plays, as this app names it. */
+export function gameOfSave(save: HostSave): LocalGame {
+  const game = save.game as { table?: TableRequest; local?: { scenario?: string } };
+  const seats = { seed: save.seed, players: save.players, humans: save.humans };
+  if (game.table) {
+    return { ...seats, table: game.table };
+  }
+  const scenario = game.local?.scenario;
+  return scenario === undefined ? seats : { ...seats, scenario };
+}
 
-/** Where the cards that the player is never offered are kept. */
-export const cardsKey = (game: LocalGame): string => `${saveKey(game)}.cards`;
+/** What localStorage keeps next to a saved game: the parts that the page reads or writes at once. */
+export type SidePart = "cards" | "wait" | "left";
+const SIDE_PARTS: SidePart[] = ["cards", "wait", "left"];
+
+export const sideKey = (id: string, part: SidePart) => `ti4.save.${id}.${part}`;
+
+/** Removes what localStorage keeps next to a saved game: the game is gone. */
+export function forgetSide(storage: SaveStorage, id: string) {
+  for (const part of SIDE_PARTS) {
+    storage.removeItem(sideKey(id, part));
+  }
+}
+
+/** The wait of a saved game, in milliseconds (0: none kept). */
+export function readWait(storage: SaveStorage, id: string): number {
+  const value = Number(storage.getItem(sideKey(id, "wait")) || 0);
+  return Number.isInteger(value) && value > 0 ? value : 0;
+}
+
+export function storeWait(storage: SaveStorage, id: string, ms: number) {
+  if (ms > 0) {
+    storage.setItem(sideKey(id, "wait"), String(ms));
+  } else {
+    storage.removeItem(sideKey(id, "wait"));
+  }
+}
+
+/**
+ * The newest save of a game when the page was left, with what was staged then: a write of the
+ * save store does not end when the page is gone, a write of localStorage does. It is removed when
+ * the store has the save.
+ */
+export interface LeftSave {
+  /** The slot of the game, for a game that the store does not have yet. */
+  slot?: string;
+  /** SHA-256 of the engine file that played it. */
+  engine: string;
+  /** When the page was left (`Date.now()`): a record of the store that was written later is newer. */
+  at: number;
+  /** The faction of each seat, as the page knew it. */
+  factions?: Array<string | null>;
+  save: HostSave;
+}
+
+/** Keeps the save of a page that is left. Says whether localStorage took it. */
+export function storeLeft(storage: SaveStorage, id: string, left: LeftSave): boolean {
+  try {
+    storage.setItem(sideKey(id, "left"), JSON.stringify(left));
+    return true;
+  } catch {
+    // Full: the write of the store is all there is.
+    return false;
+  }
+}
+
+export const clearLeft = (storage: SaveStorage, id: string) =>
+  storage.removeItem(sideKey(id, "left"));
+
+/** The save that the page kept when it was left, or null. */
+export function readLeft(storage: Pick<Storage, "getItem">, id: string): LeftSave | null {
+  try {
+    const left: Partial<LeftSave> | null = JSON.parse(
+      storage.getItem(sideKey(id, "left")) ?? "null",
+    );
+    const save = left?.save;
+    return left &&
+      typeof left.engine === "string" &&
+      save?.format === 2 &&
+      Array.isArray(save.decisions)
+      ? (left as LeftSave)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The ids of the games whose save a page kept when it was left. */
+export function leftIds(storage: Pick<Storage, "length" | "key">): string[] {
+  const ids: string[] = [];
+  for (let index = 0; index < storage.length; index++) {
+    const id = /^ti4\.save\.(.+)\.left$/.exec(storage.key(index) ?? "")?.[1];
+    if (id !== undefined) {
+      ids.push(id);
+    }
+  }
+  return ids;
+}
 
 /** Whether the other seats wait for a step. A setting of the page, not of one game. */
 export const STEPPING_KEY = "ti4.local.stepping";
 
-const isCount = (value: unknown): value is number =>
-  Number.isInteger(value) && (value as number) >= 0;
-
-/** Reads a saved game from its JSON text. An error says which part is wrong. */
-export function parseSavedGame(text: string): SavedGame {
-  let value: Partial<Record<keyof SavedGame, unknown>>;
-  try {
-    value = JSON.parse(text);
-  } catch (error) {
-    throw new Error(
-      `The saved game is not JSON: ${error instanceof Error ? error.message : error}`,
-    );
-  }
-  if (typeof value !== "object" || value === null) {
-    throw new Error("The saved game is not a JSON object.");
-  }
-  if (value.format !== 3) {
-    throw new Error(
-      `The saved game has format ${JSON.stringify(value.format)}; this page reads format 3.`,
-    );
-  }
-  for (const field of ["seed", "players", "humans"] as const) {
-    if (!isCount(value[field])) {
-      throw new Error(`The saved game has no whole number in "${field}".`);
+/**
+ * Removes the saves of before the save store: `ti4.single` and `ti4.local.<…>` with their cards.
+ * They are not read. Called at each start; there is nothing to remove after the first.
+ */
+export function dropOldSaves(storage: Pick<Storage, "length" | "key" | "removeItem">) {
+  const old: string[] = [];
+  for (let index = 0; index < storage.length; index++) {
+    const key = storage.key(index);
+    if (
+      key !== null &&
+      key !== STEPPING_KEY &&
+      (key === "ti4.single" || key.startsWith("ti4.single.") || key.startsWith("ti4.local."))
+    ) {
+      old.push(key);
     }
   }
-  if (typeof value.engine !== "string") {
-    throw new Error('The saved game has no text in "engine".');
+  for (const key of old) {
+    storage.removeItem(key);
   }
-  if (value.scenario !== undefined && typeof value.scenario !== "string") {
-    throw new Error('The saved game has no text in "scenario".');
-  }
-  // The engine checks the table when it starts the game: only its shape is read here.
-  const table = value.table as Partial<TableRequest> | undefined;
-  if (
-    table !== undefined &&
-    !(
-      typeof table === "object" &&
-      table !== null &&
-      typeof table.setup === "object" &&
-      table.setup !== null &&
-      Array.isArray(table.seats)
-    )
-  ) {
-    throw new Error('The saved game has no setup and seats in "table".');
-  }
-  if (value.waitMs !== undefined && !isCount(value.waitMs)) {
-    throw new Error('The saved game has no whole number in "waitMs".');
-  }
-  const { decisions } = value;
-  if (!Array.isArray(decisions) || !decisions.every((decision) => typeof decision === "string")) {
-    throw new Error('The saved game has no list of option ids in "decisions".');
-  }
-  const { switches } = value;
-  if (
-    switches !== undefined &&
-    !(
-      Array.isArray(switches) &&
-      switches.every(
-        (item) =>
-          typeof item === "object" &&
-          item !== null &&
-          isCount(item.decision) &&
-          isCount(item.humans),
-      )
-    )
-  ) {
-    throw new Error('The saved game has no list of seat changes in "switches".');
-  }
-  return {
-    format: 3,
-    engine: value.engine,
-    seed: value.seed as number,
-    players: value.players as number,
-    humans: value.humans as number,
-    ...(value.scenario === undefined ? {} : { scenario: value.scenario }),
-    ...(table === undefined ? {} : { table: table as TableRequest }),
-    ...(value.waitMs === undefined ? {} : { waitMs: value.waitMs as number }),
-    decisions,
-    ...(switches?.length
-      ? { switches: switches.map(({ decision, humans }: SeatSwitch) => ({ decision, humans })) }
-      : {}),
-  };
-}
-
-/** The saved game of this seed, seats and human seats, or null when there is none. */
-export function loadSavedGame(storage: SaveStorage, game: LocalGame): SavedGame | null {
-  const text = storage.getItem(saveKey(game));
-  return text === null ? null : parseSavedGame(text);
-}
-
-/** Writes the whole game: one short id for each decision, some hundred KiB for a long game of eight. */
-export function storeSavedGame(storage: SaveStorage, save: SavedGame): void {
-  storage.setItem(saveKey(save), JSON.stringify(save));
-}
-
-export function clearSavedGame(storage: SaveStorage, game: LocalGame): void {
-  storage.removeItem(saveKey(game));
-  storage.removeItem(draftKey(game));
-  storage.removeItem(planKey(game));
-  storage.removeItem(secondaryKey(game));
-  storage.removeItem(cardsKey(game));
 }

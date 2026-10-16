@@ -1,6 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import menuUpdate from "./fixtures/update-menu.json";
+import menuUpdate from "../../../fixtures/protocol/update-menu.json";
 import type { Transport, TransportEvent } from "./transport";
 import { useLiveSession } from "./useLiveSession";
 import type { SessionUpdate } from "./wire";
@@ -8,7 +8,18 @@ import type { SessionUpdate } from "./wire";
 // The Never cards are applied where the game runs (`ti4_engine::reaction_modes`; the test of a
 // local game is in `wasmTransport.test.ts`). The page says what the transport tells, and asks
 // the transport for a change. Seat a holds `scuttle` in this update of the real engine.
-const menu = menuUpdate as unknown as SessionUpdate;
+const base = menuUpdate as unknown as SessionUpdate;
+const menu: SessionUpdate = {
+  ...base,
+  view: {
+    ...base.view,
+    players: base.view.players.map((player) =>
+      player.id === "a"
+        ? { ...player, held_action_cards: ["scuttle", "rally"], action_cards_count: 2 }
+        : player,
+    ),
+  },
+};
 
 function transport() {
   let listener: (event: TransportEvent) => void = () => {};

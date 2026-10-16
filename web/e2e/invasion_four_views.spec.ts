@@ -1,4 +1,4 @@
-import { test, expect, type APIRequestContext } from "@playwright/test";
+import { test, expect, type APIRequestContext, type Locator } from "@playwright/test";
 import { openPlayerGame } from "./lobbyHelpers";
 import type { InitialSnapshotMsg } from "../src/protocol/types";
 
@@ -15,6 +15,16 @@ async function snapshot(
   );
   expect(response.ok(), await response.text()).toBe(true);
   return response.json();
+}
+
+/** The tray opens with the default plan staged; empty it so the test stages its own landings. */
+async function clearLandingDraft(tray: Locator) {
+  const confirm = tray.getByRole("button", { name: "Confirm landings" });
+  // The default plan arrives once the board is known; clear it only after it is staged.
+  await expect(confirm).toBeEnabled();
+  const remove = tray.locator('button[aria-label^="Remove "]:enabled');
+  while ((await remove.count()) > 0) await remove.first().click();
+  await expect(confirm).toBeDisabled();
 }
 
 test("invasion lands, fights and hands off consistently in four independent views", async ({
@@ -39,30 +49,26 @@ test("invasion lands, fights and hands off consistently in four independent view
   const contexts = await Promise.all(Array.from({ length: 4 }, () => browser.newContext()));
   const pages = await Promise.all(contexts.map((ctx) => ctx.newPage()));
   try {
-    const advisorInputs: Array<Record<string, unknown>> = [];
-    await pages[0].route("**/advisor/ground_odds", async (route) => {
-      const input = route.request().postDataJSON() as {
-        attacker: { units: Record<string, number> };
-      };
-      advisorInputs.push(input as unknown as Record<string, unknown>);
-      const count = Object.values(input.attacker.units).reduce((total, n) => total + n, 0);
-      await route.fulfill({
-        json: { attacker_win_rate: Math.min(0.95, count / 10), simulations: 2000 },
-      });
-    });
     await Promise.all(ids.map((id, index) => openPlayerGame(pages[index], game, seats[id])));
     await pages[3].goto(`/games/${game}`);
     await pages[3].getByRole("button", { name: "Watch" }).click();
 
+    // The four views of one game version: the game can move on (an answer of a page) between
+    // two of the reads, so read again until they agree on the version.
     const samePublic = async () => {
-      const views = await Promise.all(
-        pages.map((_, i) => snapshot(request, game, i < 3 ? seats[ids[i]] : undefined)),
-      );
+      let views: InitialSnapshotMsg[] = [];
+      await expect
+        .poll(async () => {
+          views = await Promise.all(
+            pages.map((_, i) => snapshot(request, game, i < 3 ? seats[ids[i]] : undefined)),
+          );
+          return views.every((view) => view.game_version === views[0].game_version);
+        })
+        .toBe(true);
+      const system = views[0].view.board.invasion?.system_id;
       for (const view of views.slice(1)) {
         expect(view.view.board.invasion).toEqual(views[0].view.board.invasion);
-        expect(view.view.board.systems[views[0].view.board.invasion!.system_id]).toEqual(
-          views[0].view.board.systems[views[0].view.board.invasion!.system_id],
-        );
+        if (system) expect(view.view.board.systems[system]).toEqual(views[0].view.board.systems[system]);
       }
       return views;
     };
@@ -96,6 +102,7 @@ test("invasion lands, fights and hands off consistently in four independent view
     expect(choice?.context?.subtype).toBe("commit_ground_forces");
     const tray = pages[0].getByTestId("invasion-landing-tray");
     await expect(tray).toBeVisible();
+    await clearLandingDraft(tray);
     await tray.getByRole("button", { name: planet, exact: true }).click();
     const infantry = tray.getByRole("button", { name: /land infantry.*in space/i }).first();
     await infantry.click();
@@ -107,7 +114,6 @@ test("invasion lands, fights and hands off consistently in four independent view
     await expect
       .poll(async () => pages[0].getByTestId("invasion-odds").textContent())
       .not.toBe(firstOdds);
-    expect(advisorInputs.length).toBeGreaterThanOrEqual(2);
     for (const page of pages.slice(1))
       await expect(page.getByTestId("invasion-odds")).toHaveCount(0);
     await tray.getByRole("button", { name: "Confirm landings" }).click();
@@ -121,7 +127,12 @@ test("invasion lands, fights and hands off consistently in four independent view
       .toBe(2);
     views = await samePublic();
     await expect(tray.getByText("Submitting landings one at a time…")).toHaveCount(0);
+    const landed = await snapshot(request, game, seats[invader]);
     await tray.getByRole("button", { name: "Done committing" }).click();
+    // Read the game only after the server took the answer, not the landing offer it answered.
+    await expect
+      .poll(async () => (await snapshot(request, game, seats[invader])).game_version)
+      .toBeGreaterThan(landed.game_version);
 
     let sawRound = false;
     for (let step = 0; step < 40; step++) {
@@ -134,16 +145,21 @@ test("invasion lands, fights and hands off consistently in four independent view
       if (state.view.board.invasion.last_step?.kind === "ground_round") {
         sawRound = true;
         const publicViews = await samePublic();
+        // The round can end the invasion between the read of `state` and these four.
+        if (!publicViews[0].view.board.invasion) continue;
         expect(publicViews[3].view.board.invasion?.last_step?.planet).toBe(planet);
         for (const page of pages) await expect(page.getByTestId("invasion-step")).toBeVisible();
       }
       const page = pages[ids.indexOf(active)];
+      // Decline what can be declined (a defender's mech deployment would ask for a payment).
+      const answer =
+        offered.options.find((option) => option.kind === "decline") ?? offered.options[0];
       const button =
         offered.context?.subtype === "fight_ground_combat_round"
           ? page.getByRole("button", { name: "Fight next round" }).first()
           : page
               .getByTestId("invasion-overlay")
-              .getByRole("button", { name: offered.options[0].label })
+              .getByRole("button", { name: answer.label })
               .first();
       await button.click();
       await expect
@@ -211,6 +227,7 @@ test("Parley interrupts a non-atomic landing pipeline and preserves the remainin
     const state = await snapshot(request, game, seats[invader]);
     const planet = state.view.board.invasion!.planets[0];
     const tray = invaderPage.getByTestId("invasion-landing-tray");
+    await clearLandingDraft(tray);
     await tray.getByRole("button", { name: planet, exact: true }).click();
     const infantry = tray.getByRole("button", { name: /land infantry.*in space/i }).first();
     await infantry.click();
@@ -245,6 +262,8 @@ test("Parley interrupts a non-atomic landing pipeline and preserves the remainin
       .toBeGreaterThan(paused.game_version);
     await expect(tray).toBeVisible();
     await expect(tray).toContainText("Remaining draft: infantry");
+    // The tray paused: it does not land the rest of the draft on the next offer by itself.
+    await expect(tray).toContainText("Landing paused: another decision intervened");
     await expect
       .poll(
         async () =>
@@ -306,6 +325,7 @@ test("a separate two-planet invasion keeps ground-round evidence scoped to each 
         (unit) => unit.owner === invader && !unit.planet && unit.unit_type === "infantry",
       ).length,
     ).toBe(6);
+    await clearLandingDraft(tray);
     for (const planet of planets) {
       await tray.getByRole("button", { name: planet, exact: true }).click();
       const planetCard = tray.locator(".invasion-planet-landing-card").filter({
@@ -330,7 +350,13 @@ test("a separate two-planet invasion keeps ground-round evidence scoped to each 
         );
       })
       .toEqual([3, 3]);
+    await expect(tray.getByText("Submitting landings one at a time…")).toHaveCount(0);
+    const landed = await snapshot(request, game, seats[invader]);
     await tray.getByRole("button", { name: "Done committing" }).click();
+    // Read the game only after the server took the answer, not the landing offer it answered.
+    await expect
+      .poll(async () => (await snapshot(request, game, seats[invader])).game_version)
+      .toBeGreaterThan(landed.game_version);
     const seen = new Set<string>();
     const fought = new Set<string>();
     for (let step = 0; step < 30; step++) {

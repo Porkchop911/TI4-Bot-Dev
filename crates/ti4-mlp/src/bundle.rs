@@ -409,25 +409,7 @@ fn manifest_document(
     // Blocks decide the schema, and only a schema-8 trunk names them, so a block-free bundle is
     // exactly the schema-7 document it always was.
     let blocks = actor.residual_blocks();
-    let battle = actor.battle_predictor().is_some();
-    let schema = match (actor.head_layout(), blocks == 0, battle) {
-        (HeadLayout::Legacy, _, true) => {
-            return Err(BundleError::Invalid(
-                "a battle predictor needs the diplomacy head layout".to_owned(),
-            ));
-        }
-        (HeadLayout::Legacy, true, false) => SCHEMA,
-        (HeadLayout::Legacy, false, false) => RESIDUAL_SCHEMA,
-        (HeadLayout::Diplomacy, true, false) => DIPLOMACY_SCHEMA,
-        (HeadLayout::Diplomacy, false, false) => DIPLOMACY_RESIDUAL_SCHEMA,
-        (HeadLayout::Diplomacy, true, true) => BATTLE_SCHEMA,
-        (HeadLayout::Diplomacy, false, true) => BATTLE_RESIDUAL_SCHEMA,
-    };
-    let projection_abi = match (actor.head_layout(), battle) {
-        (HeadLayout::Legacy, _) => PROJECTION_ABI_VERSION,
-        (HeadLayout::Diplomacy, false) => DIPLOMACY_PROJECTION_ABI_VERSION,
-        (HeadLayout::Diplomacy, true) => BATTLE_PROJECTION_ABI_VERSION,
-    };
+    let (schema, projection_abi) = schema_of(actor)?;
     let trunk = if blocks == 0 {
         serde_json::json!({ "width": actor.width(), "depth": 2, "activation": "relu" })
     } else {
@@ -481,6 +463,35 @@ fn validate_provenance(provenance: &Provenance) -> Result<(), BundleError> {
         ));
     }
     Ok(())
+}
+
+/// The schema and the projection ABI of the bundle an actor is written as: its head layout, its
+/// residual blocks and its battle predictor decide them.
+///
+/// # Errors
+/// [`BundleError::Invalid`] for a battle predictor on the legacy head layout.
+pub(crate) fn schema_of(actor: &Actor) -> Result<(u32, u32), BundleError> {
+    let blocks = actor.residual_blocks();
+    let battle = actor.battle_predictor().is_some();
+    let schema = match (actor.head_layout(), blocks == 0, battle) {
+        (HeadLayout::Legacy, _, true) => {
+            return Err(BundleError::Invalid(
+                "a battle predictor needs the diplomacy head layout".to_owned(),
+            ));
+        }
+        (HeadLayout::Legacy, true, false) => SCHEMA,
+        (HeadLayout::Legacy, false, false) => RESIDUAL_SCHEMA,
+        (HeadLayout::Diplomacy, true, false) => DIPLOMACY_SCHEMA,
+        (HeadLayout::Diplomacy, false, false) => DIPLOMACY_RESIDUAL_SCHEMA,
+        (HeadLayout::Diplomacy, true, true) => BATTLE_SCHEMA,
+        (HeadLayout::Diplomacy, false, true) => BATTLE_RESIDUAL_SCHEMA,
+    };
+    let projection_abi = match (actor.head_layout(), battle) {
+        (HeadLayout::Legacy, _) => PROJECTION_ABI_VERSION,
+        (HeadLayout::Diplomacy, false) => DIPLOMACY_PROJECTION_ABI_VERSION,
+        (HeadLayout::Diplomacy, true) => BATTLE_PROJECTION_ABI_VERSION,
+    };
+    Ok((schema, projection_abi))
 }
 
 /// A validated schema-7 bundle, and the model it describes.

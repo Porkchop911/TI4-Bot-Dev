@@ -1,6 +1,6 @@
 import type {
   BoardView,
-  ChoiceOptionDto,
+  ChoiceOption,
   PendingChoiceDto,
   PlayerView,
 } from "../protocol/types.ts";
@@ -32,7 +32,7 @@ export interface DryChoice {
    */
   exact: boolean;
   /** How the engine would pay the 4 resources of a Technology research (exact previews only). */
-  payment?: import("../protocol/types.ts").PreviewPayment;
+  payment?: import("../protocol/types.ts").PaymentPreview;
 }
 
 export const DRY_NONCE_PREFIX = "prepare:";
@@ -58,7 +58,7 @@ const baseChoice = (
   step: DryStep,
   key: string,
   prompt: string,
-  options: ChoiceOptionDto[],
+  options: ChoiceOption[],
   subtype: string,
   details?: Record<string, unknown>,
 ): PendingChoiceDto => ({
@@ -127,8 +127,8 @@ function secondaryStep({ action, viewer, board }: DryInput): DryChoice {
       action.key,
       `spend ${INFLUENCE_PER_TOKEN} influence for a command token`,
       [
-        { id: "no", kind: STRATEGY_KIND, label: "spend nothing further" },
-        { id: "yes", kind: STRATEGY_KIND, label: `spend ${INFLUENCE_PER_TOKEN} influence` },
+        { id: "no", kind: STRATEGY_KIND, label: "spend nothing further", payload: {} },
+        { id: "yes", kind: STRATEGY_KIND, label: `spend ${INFLUENCE_PER_TOKEN} influence`, payload: {} },
       ],
       "buy_token_with_influence",
       details,
@@ -148,8 +148,8 @@ function secondaryStep({ action, viewer, board }: DryInput): DryChoice {
     action.key,
     contract?.prompt ?? `${action.card} secondary`,
     [
-      { id: "no", kind: STRATEGY_KIND, label: contract?.no ?? "decline" },
-      { id: "yes", kind: STRATEGY_KIND, label: contract?.yes ?? "follow" },
+      { id: "no", kind: STRATEGY_KIND, label: contract?.no ?? "decline", payload: {} },
+      { id: "yes", kind: STRATEGY_KIND, label: contract?.yes ?? "follow", payload: {} },
     ],
     "strategy_secondary",
     details,
@@ -168,13 +168,13 @@ function secondaryStep({ action, viewer, board }: DryInput): DryChoice {
 function techStep({ action, viewer }: DryInput): DryChoice {
   // As the engine's secondary research offers it (`paid_research`): each option carries the
   // card's 4-resource cost, the strategy token was taken by the window, and decline closes it.
-  const options: ChoiceOptionDto[] = researchableEstimate(viewer).map((id) => ({
+  const options: ChoiceOption[] = researchableEstimate(viewer).map((id) => ({
     id,
     kind: "research",
     label: techName(id),
     payload: { cost: 4, cost_tokens: 0 },
   }));
-  options.push({ id: "decline", kind: "decline", label: "decline" });
+  options.push({ id: "decline", kind: "decline", label: "decline", payload: {} });
   const choice = baseChoice(viewer.id, "tech", action.key, "research a technology", options, "research_technology");
   choice.context = {
     ...choice.context!,
@@ -191,7 +191,7 @@ function techStep({ action, viewer }: DryInput): DryChoice {
 
 function planetStep(input: DryInput): DryChoice {
   const { action, viewer, board, step, taken = [] } = input;
-  const options: ChoiceOptionDto[] = ownPlanets(board, viewer.id)
+  const options: ChoiceOption[] = ownPlanets(board, viewer.id)
     .filter((planet) => planet.exhausted && !taken.includes(planet.planet))
     .map((planet) => ({
       id: planet.planet,
@@ -221,7 +221,7 @@ function siteStep({ action, viewer, board }: DryInput): DryChoice {
       const [type, sys, pl] = entry.split("|");
       return sys === system && pl === planet && type.toLowerCase().includes(unit);
     });
-  const options: ChoiceOptionDto[] = [];
+  const options: ChoiceOption[] = [];
   for (const planet of ownPlanets(board, viewer.id)) {
     for (const unit of STRUCTURE_UNITS) {
       if (has(unit, planet.system, planet.planet)) continue;
@@ -233,7 +233,7 @@ function siteStep({ action, viewer, board }: DryInput): DryChoice {
       });
     }
   }
-  options.push({ id: "decline", kind: "decline", label: "decline" });
+  options.push({ id: "decline", kind: "decline", label: "decline", payload: {} });
   return {
     choice: baseChoice(viewer.id, "site", action.key, "place a structure", options, "place_structure"),
     step: "site",

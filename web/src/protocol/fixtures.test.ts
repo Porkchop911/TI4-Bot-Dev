@@ -2,9 +2,10 @@ import { describe, it, expect } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { InitialSnapshotMsg, ActionRejectedMsg, GameOverMsg, PROTOCOL_VERSION } from "./types.ts";
-import { decodeServerMessage, isStaleServerMessage } from "./decode.ts";
+import { decodeServerMessage, isStaleServerMessage } from "@ti4/shared/wire/decode.ts";
 
-const FIXTURES_DIR = path.resolve(__dirname, "../../../crates/ti4-server/fixtures");
+// The protocol fixtures of both apps, written by the Rust tests (`cargo wire-web`).
+const FIXTURES_DIR = path.resolve(__dirname, "../../../fixtures/protocol");
 
 function loadFixture<T>(filename: string): T {
   const filePath = path.join(FIXTURES_DIR, filename);

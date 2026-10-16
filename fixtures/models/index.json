@@ -1,0 +1,25 @@
+{
+  "models": [
+    {
+      "label": "Synthetic model 1",
+      "name": "synthetic-1",
+      "offered": true,
+      "sha256": "8527a34ad79c32fc8aae4dfff3623c7f34bf61b79cf28026a401113987143036",
+      "temperature": 1.0
+    },
+    {
+      "label": "Synthetic model 2",
+      "name": "synthetic-2",
+      "offered": true,
+      "sha256": "544611a77f05a2c84ba38f21c9bfa60fa4cc636b696bf7e689d875f60c668de1",
+      "temperature": 1.0
+    },
+    {
+      "label": "Synthetic model 3",
+      "name": "synthetic-3",
+      "offered": true,
+      "sha256": "c57563d7438b71af083e3717ae7e5b4ad84166091400a9272e2af1979528dfee",
+      "temperature": 1.0
+    }
+  ]
+}

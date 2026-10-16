@@ -5,7 +5,7 @@ import { TurnActionBar } from "./TurnActionBar.tsx";
 import { deriveReadOnlyTurnBar, deriveTurnBar, type TurnBarModel } from "../presentation/turnBar.ts";
 import type { PendingChoiceDto, PlayerView } from "../protocol/types.ts";
 
-const opt = (id: string, label: string, kind = "action") => ({ id, label, kind });
+const opt = (id: string, label: string, kind = "action") => ({ id, label, kind, payload: {} });
 const tokens = { tactic: 3, fleet: 3, strategy: 2 };
 const twoCards = [
   { card: "pok2diplomacy", used: false, option: "strategic|pok2diplomacy" },

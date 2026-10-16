@@ -1,8 +1,8 @@
 import type {
   BoardTileView,
   MapChoice,
-  MapChoiceDto,
-  MapSeatPreview,
+  MapChoiceView,
+  SeatPreview,
   MapTemplateSummary,
 } from "../protocol/types.ts";
 
@@ -50,14 +50,14 @@ export function templateBadges(alias: string, summary?: { hyperlanes: boolean })
   return badges;
 }
 
-export function sameChoice(a: MapChoice | MapChoiceDto | undefined, b: MapChoice | undefined) {
+export function sameChoice(a: MapChoice | MapChoiceView | undefined, b: MapChoice | undefined) {
   if (!a || !b) return false;
   return (
     a.kind === b.kind && (a.kind !== "template" || a.alias === (b as { alias?: string }).alias)
   );
 }
 
-export function choiceOf(dto: MapChoiceDto | undefined): MapChoice | undefined {
+export function choiceOf(dto: MapChoiceView | undefined): MapChoice | undefined {
   if (!dto) return undefined;
   return dto.kind === "template" && dto.alias
     ? { kind: "template", alias: dto.alias }
@@ -69,7 +69,7 @@ export function choiceOf(dto: MapChoiceDto | undefined): MapChoice | undefined {
 /** The templates the server listed, then Random last. Random is always offered. */
 export function mapCards(
   templates: readonly MapTemplateSummary[],
-  current: MapChoiceDto | undefined,
+  current: MapChoiceView | undefined,
 ): MapCardModel[] {
   const selected = choiceOf(current);
   const cards: MapCardModel[] = templates.map((t) => {
@@ -98,7 +98,7 @@ export function mapCards(
 }
 
 /** One line under the preview: `6 players · Standard by Someone · 37 systems · no hyperlanes`. */
-export function mapSummaryLine(map: MapChoiceDto): string {
+export function mapSummaryLine(map: MapChoiceView): string {
   const count = map.kind === "random" ? null : /^(\d+)p/.exec(map.alias ?? "")?.[1];
   const players = count ? `${count} players · ` : "";
   const name =
@@ -111,7 +111,7 @@ export function mapSummaryLine(map: MapChoiceDto): string {
 }
 
 /** The short name for the lobby row. */
-export function mapName(map: MapChoiceDto): string {
+export function mapName(map: MapChoiceView): string {
   return map.kind === "random" ? "Random" : (map.name ?? map.alias ?? "Map");
 }
 
@@ -134,7 +134,7 @@ export function mainTiles(tiles: readonly BoardTileView[]): BoardTileView[] {
   return tiles.filter((tile) => !tile.special_area);
 }
 
-export function homeIdSet(seats: readonly MapSeatPreview[]): Set<string> {
+export function homeIdSet(seats: readonly SeatPreview[]): Set<string> {
   return new Set(seats.map((seat) => seat.home_system_id));
 }
 
@@ -142,9 +142,9 @@ export function homeIdSet(seats: readonly MapSeatPreview[]): Set<string> {
 export function mapChangeNotice(
   before: {
     revision: number | undefined;
-    map: MapChoiceDto | undefined;
+    map: MapChoiceView | undefined;
   } | null,
-  after: { revision: number | undefined; map: MapChoiceDto | undefined },
+  after: { revision: number | undefined; map: MapChoiceView | undefined },
 ): string | null {
   if (!before || before.revision === undefined || after.revision === undefined) return null;
   if (before.revision === after.revision) return null;

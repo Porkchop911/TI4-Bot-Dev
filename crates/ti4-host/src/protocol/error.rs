@@ -20,6 +20,7 @@ pub enum ProtocolError {
 /// Category of protocol or transport error communicated to the client.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum ErrorKind {
     MalformedMessage,
     UnsupportedVersion,

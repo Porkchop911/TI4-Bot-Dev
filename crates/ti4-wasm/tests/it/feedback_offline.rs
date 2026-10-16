@@ -2,7 +2,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use crate::common::{Act, Page, install, setup, start};
+use crate::common::{Act, Page, install, resume, setup, start};
 use serde_json::{Value, json};
 use ti4_server::feedback::{self, FeedbackRequest};
 
@@ -27,7 +27,7 @@ fn a_save_in_a_stored_report_replays_to_the_same_position() {
     let body = json!({
         "category": "bug", "text": "wrong at this point", "report_id": "test-report-0001",
         "context": { "sender": { "nickname": "Ada" }, "local": {
-            "seed": seed, "setup": save["setup"], "answers": save["answers"],
+            "seed": seed, "answers": save["answers"],
             "engine": { "build": "test", "content_digest": "none" }, "wasm_sha256": "none",
             "save": save,
         } },
@@ -49,7 +49,7 @@ fn a_save_in_a_stored_report_replays_to_the_same_position() {
         ..Page::default()
     }));
     install(&second, seed, "a");
-    start(&blob["setup"], Some(&blob));
+    resume(&blob);
     let second = second.lock().unwrap();
     assert_eq!(
         second.asks[0]["resume_check"]["ok"], true,

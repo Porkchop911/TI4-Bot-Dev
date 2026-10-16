@@ -1,4 +1,4 @@
-import type { BoardView, ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import type { BoardView, ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import { findPlanetMeta, humanizeId } from "../protocol/contentCatalog.ts";
 import { findPlanetSystem } from "./planetSelection.ts";
 
@@ -27,7 +27,7 @@ export function legendaryWindow(choice: Pick<PendingChoiceDto, "context">): stri
 /** One offered legendary ability: its card text and the planet that carries it. */
 export function describeLegendaryOption(
   choice: Pick<PendingChoiceDto, "context">,
-  option: Pick<ChoiceOptionDto, "id" | "kind" | "label">,
+  option: Pick<ChoiceOption, "id" | "kind" | "label">,
   board?: BoardView | null,
 ): LegendaryAbilityView | null {
   if (legendaryWindow(choice) === null || option.kind !== "legendary") return null;

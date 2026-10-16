@@ -1254,11 +1254,20 @@ fn produce_one_from(
             let blocked = if cost > affordable {
                 Some(format!("costs {cost}, you can pay {affordable}"))
             } else if placements(state, content, sources, player, system, kind).is_empty() {
-                Some("no place to put it in this system (ground forces need a planet you control)".to_owned())
+                Some(
+                    "no place to put it in this system (ground forces need a planet you control)"
+                        .to_owned(),
+                )
             } else if !within_fleet_supply {
                 Some("the fleet supply in this system is full".to_owned())
-            } else if crate::supply::allowed(state, content, sources, player, &UnitTypeId::new(&id), 1)
-                == 0
+            } else if crate::supply::allowed(
+                state,
+                content,
+                sources,
+                player,
+                &UnitTypeId::new(&id),
+                1,
+            ) == 0
             {
                 Some("none left in your reinforcements".to_owned())
             } else {

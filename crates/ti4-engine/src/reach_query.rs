@@ -32,6 +32,7 @@ use ti4_model::state::GameState;
 
 /// One kind of ship in one origin system, with how many of it could arrive.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ReachShip {
     pub type_id: String,
     pub count: u32,
@@ -45,6 +46,7 @@ pub struct ReachShip {
 
 /// One seat's ships in one system that could reach the queried system.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ReachOrigin {
     pub owner: String,
     pub origin: String,
@@ -63,14 +65,8 @@ pub fn who_can_reach(
 ) -> Vec<ReachOrigin> {
     let mut found = Vec::new();
     for seat in &state.players {
-        let movable = crate::tactical::movable_into(
-            state,
-            content,
-            sources,
-            galaxy,
-            &seat.id,
-            destination,
-        );
+        let movable =
+            crate::tactical::movable_into(state, content, sources, galaxy, &seat.id, destination);
         found.extend(group(&seat.id, &movable));
     }
     found
@@ -144,7 +140,11 @@ mod tests {
         let theirs: Vec<_> = reach.iter().filter(|r| r.owner == "b").collect();
         assert_eq!(mine.len(), 1);
         assert_eq!(mine[0].origin, near.to_string());
-        let cruisers = mine[0].ships.iter().find(|s| s.type_id == "cruiser").unwrap();
+        let cruisers = mine[0]
+            .ships
+            .iter()
+            .find(|s| s.type_id == "cruiser")
+            .unwrap();
         assert_eq!(cruisers.count, 2);
         assert_eq!(mine[0].ships.len(), 2);
         assert_eq!(theirs.len(), 1);
@@ -166,16 +166,36 @@ mod tests {
         let near = SystemId::new(hub.outer[0].clone());
         let far = SystemId::new(hub.across(near.as_str()));
         put(&mut state, &near, "cruiser", &pid("a"), 1);
-        put(&mut state, &SystemId::new(hub.centre.clone()), "cruiser", &pid("a"), 1);
+        put(
+            &mut state,
+            &SystemId::new(hub.centre.clone()),
+            "cruiser",
+            &pid("a"),
+            1,
+        );
         // The cruiser at the centre is already there; the one in the ring arrives.
         assert_eq!(ask(&state, &hub, &hub.centre).len(), 1);
         // From across the hub, a cruiser (move 2) goes through the centre unless an enemy sits there.
         put(&mut state, &far, "cruiser", &pid("a"), 1);
         let across_reach = ask(&state, &hub, &far.to_string());
-        assert!(across_reach.iter().any(|r| r.owner == "a" && r.origin == near.to_string()));
-        put(&mut state, &SystemId::new(hub.centre.clone()), "cruiser", &pid("b"), 1);
+        assert!(
+            across_reach
+                .iter()
+                .any(|r| r.owner == "a" && r.origin == near.to_string())
+        );
+        put(
+            &mut state,
+            &SystemId::new(hub.centre.clone()),
+            "cruiser",
+            &pid("b"),
+            1,
+        );
         let blocked = ask(&state, &hub, &far.to_string());
-        assert!(!blocked.iter().any(|r| r.owner == "a" && r.origin == near.to_string()));
+        assert!(
+            !blocked
+                .iter()
+                .any(|r| r.owner == "a" && r.origin == near.to_string())
+        );
     }
 
     #[test]
@@ -183,7 +203,13 @@ mod tests {
         let (mut state, hub) = ring_state();
         for (i, id) in hub.outer.iter().enumerate() {
             let owner = if i % 2 == 0 { "a" } else { "b" };
-            put(&mut state, &SystemId::new(id.clone()), "carrier", &pid(owner), 1 + i);
+            put(
+                &mut state,
+                &SystemId::new(id.clone()),
+                "carrier",
+                &pid(owner),
+                1 + i,
+            );
         }
         let reach = ask(&state, &hub, &hub.centre);
         for seat in ["a", "b"] {

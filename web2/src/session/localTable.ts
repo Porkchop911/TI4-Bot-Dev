@@ -1,23 +1,36 @@
 // The table of single player: it is kept in the page, and the engine of the page says what it can
 // be (`ti4_host::setup` through the setup exports), as the server says it for the table of a
 // lobby. The page is its host and its one person; the other seats are played by the page.
+import {
+  type ModelProgress,
+  type ServedModel,
+  modelEntries,
+  modelFile,
+  modelOfKind,
+} from "./models";
 import type { LocalGame } from "./savedGame";
 import type { Table, TableEvent, TableSettings } from "./table";
 import { setupDrawOf, setupOptionsOf, setupPreviewOf } from "./wasmTransport";
 import type {
   LobbyState,
   MapChoice,
-  MapSummary,
+  MapTemplateSummary,
+  SeatRequest,
   TableOptions,
   TablePreview,
   TableRequest,
-  TableSeat,
 } from "./wire";
 
-/** The ids of the players, in the order in which they came (`ti4-wasm`, `SEATS`). */
+/** The ids of the players, in the order of their seats (`ti4-wasm`, `SEATS`). */
 const PLAYERS = "abcdefgh";
-/** The player of the page: the host, who came first. */
-const VIEWER = PLAYERS[0];
+/** The player of the page, the host: the id of the seat of the person. */
+const viewerOf = (seats: { kind: Kind }[]) =>
+  PLAYERS[
+    Math.max(
+      0,
+      seats.findIndex((seat) => seat.kind === "human"),
+    )
+  ];
 /** The kind of a seat that is added with the count: the usual choice. */
 const USUAL_KIND = "smart";
 
@@ -30,10 +43,14 @@ export interface LocalTablePlay {
   seed: number;
   /** The host started the game: what plays it, and plays it again. */
   onStart(game: LocalGame): void;
+  /** The models that the server offers (`GET /api/models`): each is the kind `mlp:<name>`. */
+  models?: readonly ServedModel[];
+  /** Loads the file of a model into the Cache API (`modelFile`); a test gives its own. */
+  loadModel?(model: ServedModel, progress: ModelProgress): Promise<unknown>;
 }
 
 /** Who plays a seat. Null: the seat is open. */
-type Kind = TableSeat["kind"] | null;
+type Kind = SeatRequest["kind"] | null;
 
 /** What the host chose. Everything that the table shows is made from it. */
 interface Chosen {
@@ -59,7 +76,7 @@ export function localTable(module: WebAssembly.Module, play: LocalTablePlay): Ta
   const optionsOf = (count: number) => {
     let asked = options.get(count);
     if (!asked) {
-      asked = setupOptionsOf(module, count);
+      asked = setupOptionsOf(module, count, modelEntries(play.models ?? []));
       options.set(count, asked);
     }
     return asked;
@@ -82,10 +99,74 @@ export function localTable(module: WebAssembly.Module, play: LocalTablePlay): Ta
   let closed = false;
   /** The changes apply one after the other: each is checked against the table before it. */
   let queue: Promise<void> = Promise.resolve();
+  /** The models whose files are loaded, by name. */
+  const loaded = new Set<string>();
+  /** The files that load, by the name of their model: how far each is. */
+  const loading = new Map<string, { label: string; done: number; total: number }>();
 
   const say = (event: TableEvent) => {
     for (const listener of listeners) {
       listener(event);
+    }
+  };
+  /** The names of the models that the seats play, in the order of the seats. */
+  const seatedModels = () => [
+    ...new Set(chosen.seats.flatMap((seat) => modelOfKind(seat.kind) ?? [])),
+  ];
+  /** The first file of the table that is not loaded yet. */
+  const waitingFile = () => {
+    for (const name of seatedModels()) {
+      const file = loading.get(name);
+      if (file) {
+        return file;
+      }
+    }
+    return undefined;
+  };
+  /** Tells the table again with how far its files are. */
+  const tellLoading = () => {
+    if (!latest || closed) {
+      return;
+    }
+    const file = waitingFile();
+    const { loading: _, ...rest } = latest;
+    latest = file ? { ...rest, loading: { ...file } } : rest;
+    say(latest);
+  };
+  /** Loads the file of each model that a seat plays and that is not loaded or loading. */
+  const loadFiles = () => {
+    for (const name of seatedModels()) {
+      const model = play.models?.find((item) => item.id === name);
+      if (!model || loaded.has(name) || loading.has(name)) {
+        continue;
+      }
+      loading.set(name, { label: model.label, done: 0, total: model.bytes });
+      const load = play.loadModel ?? modelFile;
+      load(model, (done, total) => {
+        loading.set(name, { label: model.label, done, total });
+        tellLoading();
+      }).then(
+        () => {
+          loading.delete(name);
+          loaded.add(name);
+          tellLoading();
+        },
+        (error: unknown) => {
+          loading.delete(name);
+          // The seats of the model are open again: the host chooses another kind.
+          apply((next) => {
+            for (const seat of next.seats) {
+              if (modelOfKind(seat.kind) === name) {
+                seat.kind = null;
+              }
+            }
+          });
+          say({
+            kind: "rejected",
+            reason: `${model.label} did not load. ${error instanceof Error ? error.message : String(error)}`,
+          });
+        },
+      );
     }
   };
 
@@ -133,12 +214,12 @@ export function localTable(module: WebAssembly.Module, play: LocalTablePlay): Ta
       })),
     };
     const preview: TablePreview = await setupPreviewOf(module, made);
-    // A scenario seats its own factions, in the order of the join.
+    // A scenario seats its own factions.
     const seated = scenario ? (await setupDrawOf(module, made)).factions : null;
     const lobby: LobbyState = {
       game_id: "single",
       phase: running ? "running" : "lobby",
-      host_player_id: VIEWER,
+      host_player_id: viewerOf(next.seats),
       slots: next.seats.map((seat, place) => {
         const bot = seat.kind !== null && seat.kind !== "human" ? seat.kind : null;
         const faction = seated ? seated[place] : seat.faction;
@@ -162,7 +243,6 @@ export function localTable(module: WebAssembly.Module, play: LocalTablePlay): Ta
         : (cards ?? ""),
       speaker_order: "random",
       factions: known.faction_groups.flatMap((group) => group.factions.map((item) => item.id)),
-      seat_order: scenario ? "join" : "random",
       bot_delay_ms: next.waitMs,
       ...(scenario ? { start_from: scenario.id } : {}),
     };
@@ -185,7 +265,19 @@ export function localTable(module: WebAssembly.Module, play: LocalTablePlay): Ta
         const { made, lobby, preview, known } = await build(next);
         chosen = next;
         request = made;
-        latest = { kind: "table", lobby, viewer: VIEWER, preview, options: known, local: true };
+        latest = {
+          kind: "table",
+          lobby,
+          viewer: lobby.host_player_id,
+          preview,
+          options: known,
+          local: true,
+        };
+        loadFiles();
+        const file = waitingFile();
+        if (file) {
+          latest.loading = { ...file };
+        }
         say(latest);
       } catch (error) {
         say({ kind: "rejected", reason: error instanceof Error ? error.message : String(error) });
@@ -238,14 +330,14 @@ export function localTable(module: WebAssembly.Module, play: LocalTablePlay): Ta
           throw new Refused("No seat is open.");
         }
         for (const seat of fill ? open : open.slice(0, 1)) {
-          seat.kind = kind as TableSeat["kind"];
+          seat.kind = kind as SeatRequest["kind"];
         }
       });
     },
     removeSeat(playerId) {
       apply((next) => {
         const place = placeOf(playerId);
-        if (place <= 0 || next.seats[place].kind === null) {
+        if (place < 0 || next.seats[place].kind === null || next.seats[place].kind === "human") {
           throw new Refused("This seat cannot be removed.");
         }
         next.seats[place] = { kind: null, faction: null };
@@ -281,6 +373,24 @@ export function localTable(module: WebAssembly.Module, play: LocalTablePlay): Ta
         }
       });
     },
+    shuffleSeats() {
+      apply((next) => {
+        // The seats in another order, if the table has one: seats of the same kind with no
+        // faction look the same.
+        const look = (seats: Chosen["seats"]) =>
+          seats.map((seat) => `${seat.kind}:${seat.faction}`).join();
+        const before = look(next.seats);
+        if (new Set(next.seats.map((seat) => `${seat.kind}:${seat.faction}`)).size < 2) {
+          return;
+        }
+        while (look(next.seats) === before) {
+          for (let place = next.seats.length - 1; place > 0; place--) {
+            const other = Math.floor(Math.random() * (place + 1));
+            [next.seats[place], next.seats[other]] = [next.seats[other], next.seats[place]];
+          }
+        }
+      });
+    },
     rename() {},
     setFaction(playerId, faction) {
       apply((next, known) => {
@@ -303,7 +413,7 @@ export function localTable(module: WebAssembly.Module, play: LocalTablePlay): Ta
         next.seats[place].faction = faction;
       });
     },
-    async maps(players): Promise<MapSummary[]> {
+    async maps(players): Promise<MapTemplateSummary[]> {
       return (await optionsOf(players)).maps;
     },
     setMap(map) {
@@ -326,9 +436,13 @@ export function localTable(module: WebAssembly.Module, play: LocalTablePlay): Ta
           // The words of the server for the same refusal.
           return say({ kind: "rejected", reason: "Every seat must be filled before starting" });
         }
+        const file = waitingFile();
+        if (file) {
+          return say({ kind: "rejected", reason: `${file.label} is still loading` });
+        }
         try {
-          // The engine draws the seats and the factions as it will for the game: a table that
-          // cannot start is refused here, with the reason.
+          // The engine draws the factions as it will for the game: a table that cannot start is
+          // refused here, with the reason.
           await setupDrawOf(module, request);
         } catch (error) {
           return say({
@@ -366,8 +480,8 @@ export interface LocalGameTablePlay {
 }
 
 /**
- * The table of a game of single player that runs: who sits in each seat as the start drew it,
- * and how the game was set up. It is read from the table that the game was started from
+ * The table of a game of single player that runs: who sits in each seat, and how the game was
+ * set up. It is read from the table that the game was started from
  * (`LocalGame.table`). Of its setup only the wait changes.
  */
 export function localGameTable(
@@ -408,11 +522,10 @@ export function localGameTable(
     const lobby: LobbyState = {
       game_id: "single",
       phase: "running",
-      host_player_id: VIEWER,
+      host_player_id: viewerOf(request.seats),
       // The slots of a running table are the seats of the game, in their order.
       slots: draw.players.map((player, seat) => {
-        const place = draw.order[seat] ?? seat;
-        const joined = request.seats[place];
+        const joined = request.seats[seat];
         const bot = joined && joined.kind !== "human" ? joined.kind : null;
         return {
           slot_id: `slot_${seat + 1}`,
@@ -433,7 +546,6 @@ export function localGameTable(
       strategy_card_set: scenario ? usual : (request.setup.strategy_cards ?? usual),
       speaker_order: request.setup.speaker_order ?? "random",
       factions: known.faction_groups.flatMap((group) => group.factions.map((item) => item.id)),
-      seat_order: scenario ? "join" : (request.setup.seat_order ?? "random"),
       bot_delay_ms: waitMs,
       ...(scenario ? { start_from: scenario } : {}),
     };
@@ -445,7 +557,14 @@ export function localGameTable(
       if (closed) {
         return;
       }
-      latest = { kind: "table", lobby, viewer: VIEWER, preview, options: known, local: true };
+      latest = {
+        kind: "table",
+        lobby,
+        viewer: lobby.host_player_id,
+        preview,
+        options: known,
+        local: true,
+      };
       say(latest);
     },
     (error: unknown) => {
@@ -475,6 +594,7 @@ export function localGameTable(
     leave() {},
     addBots: () => refuse(RUNNING),
     removeSeat: () => refuse(RUNNING),
+    shuffleSeats: () => refuse(RUNNING),
     setSettings(settings: TableSettings) {
       if (settings.waitMs === undefined || !latest) {
         return refuse(RUNNING);
@@ -490,7 +610,7 @@ export function localGameTable(
     },
     rename() {},
     setFaction: () => refuse(RUNNING),
-    async maps(players): Promise<MapSummary[]> {
+    async maps(players): Promise<MapTemplateSummary[]> {
       return (await setupOptionsOf(module, players)).maps;
     },
     setMap: () => refuse(RUNNING),

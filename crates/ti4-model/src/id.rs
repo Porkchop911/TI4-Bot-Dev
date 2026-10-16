@@ -9,6 +9,7 @@ use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct PlayerId(String);
 
 impl PlayerId {
@@ -29,6 +30,7 @@ impl fmt::Display for PlayerId {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct FactionId(String);
 
 impl FactionId {
@@ -49,6 +51,7 @@ impl fmt::Display for FactionId {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct PlanetId(String);
 
 impl PlanetId {
@@ -78,6 +81,7 @@ impl fmt::Display for PlanetId {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SystemId(String);
 
 impl SystemId {
@@ -98,6 +102,7 @@ impl fmt::Display for SystemId {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct UnitTypeId(String);
 
 impl UnitTypeId {
@@ -118,6 +123,7 @@ impl fmt::Display for UnitTypeId {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct TechnologyId(String);
 
 impl TechnologyId {
@@ -138,6 +144,7 @@ impl fmt::Display for TechnologyId {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ActionCardId(String);
 
 impl ActionCardId {
@@ -158,6 +165,7 @@ impl fmt::Display for ActionCardId {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ObjectiveId(String);
 
 impl ObjectiveId {
@@ -178,6 +186,7 @@ impl fmt::Display for ObjectiveId {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SecretObjectiveId(String);
 
 impl SecretObjectiveId {
@@ -198,6 +207,7 @@ impl fmt::Display for SecretObjectiveId {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct LeaderId(String);
 
 impl LeaderId {
@@ -238,6 +248,7 @@ impl fmt::Display for PromissoryNoteId {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct RelicId(String);
 
 impl RelicId {
@@ -360,6 +371,7 @@ impl fmt::Display for LawId {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(transparent)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct StrategyCardId(String);
 
 impl StrategyCardId {

@@ -5,7 +5,6 @@ import {
   illegalTargetReason,
 } from "../presentation/hitKind.ts";
 import React, { useMemo, useState, useEffect, useRef } from "react";
-import { useCapability } from "../offline/capabilities.ts";
 import {
   PendingChoiceDto,
   PlayerView,
@@ -25,11 +24,9 @@ import { UnitStatsTip } from "./UnitInfo.tsx";
 import { UnitIcon, getUnitBaseType, getUnitDisplayName } from "./UnitIcon.tsx";
 import { CombatResultSummary } from "./CombatResultSummary.tsx";
 import { summarizeCombat } from "../presentation/combatSummary.ts";
-import { BattleOddsResponse } from "../protocol/advisorTypes.ts";
-import {
-  fetchBattleOdds,
-  buildBattleRequest,
-} from "../services/advisorService.ts";
+import type { BattleResponse, SpaceOddsRequest } from "../protocol/types.ts";
+import { spaceOdds } from "@ti4/shared/engine/odds.ts";
+import { useOddsEngine } from "./OddsEngine.tsx";
 import { getActionCardMeta } from "../protocol/contentCatalog.ts";
 import {
   getExpectedSpaceHits,
@@ -66,7 +63,6 @@ export interface SpaceCombatOverlayProps {
   activeSystemId?: string | null;
   isMinimized?: boolean;
   onMinimize?: (minimized: boolean) => void;
-  advisorUrl?: string;
   /** When present, hits are staged in a panel and sent as one casualty plan. */
   onSubmitBatch?: (plan: BasketPlan) => Promise<void>;
 }
@@ -84,7 +80,7 @@ export function isNonFighterShip(unitType: string): boolean {
   );
 }
 
-// Fleet estimate used while the advisor is pending or unavailable.
+// Fleet estimate used while the engine's simulation is pending or unavailable.
 // Uses canonical combat hit probabilities and public player context (factions, tech upgrades).
 function expectedHits(unitType: string, player?: PlayerView | null): number {
   return getExpectedSpaceHits(unitType, player);
@@ -185,11 +181,11 @@ export const SpaceCombatOverlay: React.FC<SpaceCombatOverlayProps> = ({
   activeSystemId,
   isMinimized = false,
   onMinimize,
-  advisorUrl,
   onSubmitBatch,
 }) => {
-  // The advisor is a server service: offline there is nothing to ask, so only the rough estimate shows.
-  const advisorOn = useCapability("advisor");
+  // The odds are simulated by the engine of the page (online) or of the game (offline); a page
+  // without one shows only the rough estimate.
+  const oddsEngine = useOddsEngine();
   const display = usePlayerIdentity();
 
   // Normalize players map
@@ -372,54 +368,42 @@ export const SpaceCombatOverlay: React.FC<SpaceCombatOverlayProps> = ({
     fleetRows.current = { battle: battleId, types: new Map() };
   }
 
-  const [advisorResult, setAdvisorResult] = useState<{
+  const [simulated, setSimulated] = useState<{
     key: string;
-    odds?: BattleOddsResponse;
+    odds?: BattleResponse;
     failed?: boolean;
   } | null>(null);
 
-  const battleParams = useMemo(() => {
-    const attackerUnits: Record<string, number> = {};
-    const attackerDamaged: Record<string, number> = {};
-    for (const g of attackerStats.groupedUnits) {
-      const base = getUnitBaseType(g.unitType);
-      if (base === "spacedock" || base === "pds") continue;
-      attackerUnits[base] = (attackerUnits[base] ?? 0) + g.count;
-      if (g.damagedCount > 0) {
-        attackerDamaged[base] = (attackerDamaged[base] ?? 0) + g.damagedCount;
+  // The ships of each side that fight, by unit id (the engine reads the upgraded and faction
+  // units by their own ids): the combat is under way, so no barrage or space cannon comes first.
+  const oddsRequest = useMemo((): SpaceOddsRequest => {
+    const side = (stats: FleetStats, seat: string) => {
+      const player = playersMap[seat];
+      const units: Record<string, number> = {};
+      const damaged: Record<string, number> = {};
+      for (const g of stats.groupedUnits) {
+        if (!canParticipateInSpaceCombat(g.unitType, player)) continue;
+        units[g.unitType] = (units[g.unitType] ?? 0) + g.count;
+        if (g.damagedCount > 0) {
+          damaged[g.unitType] = (damaged[g.unitType] ?? 0) + g.damagedCount;
+        }
       }
-    }
-
-    const defenderUnits: Record<string, number> = {};
-    const defenderDamaged: Record<string, number> = {};
-    for (const g of defenderStats.groupedUnits) {
-      const base = getUnitBaseType(g.unitType);
-      if (base === "spacedock" || base === "pds") continue;
-      defenderUnits[base] = (defenderUnits[base] ?? 0) + g.count;
-      if (g.damagedCount > 0) {
-        defenderDamaged[base] = (defenderDamaged[base] ?? 0) + g.damagedCount;
-      }
-    }
-
+      return {
+        ...(player?.faction ? { faction: player.faction } : {}),
+        units,
+        ...(Object.keys(damaged).length > 0 ? { damaged } : {}),
+      };
+    };
     return {
-      attackerFaction: playersMap[attackerSeat]?.faction,
-      attackerUnits,
-      attackerDamaged,
-      defenderFaction: playersMap[defenderSeat]?.faction,
-      defenderUnits,
-      defenderDamaged,
+      attacker: side(attackerStats, attackerSeat),
+      defender: side(defenderStats, defenderSeat),
+      in_progress: true,
     };
   }, [attackerStats, defenderStats, playersMap, attackerSeat, defenderSeat]);
 
   const battleKey =
     isPreRoll && board?.combat
-      ? JSON.stringify([
-          battleId,
-          board.combat.round,
-          phase,
-          battleParams,
-          advisorUrl,
-        ])
+      ? JSON.stringify([battleId, board.combat.round, phase, oddsRequest])
       : null;
 
   const fallbackOdds = useMemo(() => {
@@ -455,60 +439,57 @@ export const SpaceCombatOverlay: React.FC<SpaceCombatOverlayProps> = ({
       attSub: "",
       defSub: "",
       avgRounds: "",
-      tag: advisorOn ? "Rough fleet estimate · simulation pending" : "Rough fleet estimate",
+      tag:
+        oddsEngine.state === "loading" || oddsEngine.state === "ready"
+          ? "Rough fleet estimate · simulation pending"
+          : oddsEngine.state === "failed"
+            ? "Rough fleet estimate · simulation unavailable"
+            : "Rough fleet estimate",
       tagClass: "combat-odds-card__tag--offline",
     };
-  }, [attackerStats, defenderStats, advisorOn]);
+  }, [attackerStats, defenderStats, oddsEngine.state]);
 
+  const oddsQuery = oddsEngine.state === "ready" ? oddsEngine.query : null;
   useEffect(() => {
-    if (!advisorOn || !battleKey || (!isOpen && !choice)) return;
+    if (!oddsQuery || !battleKey || (!isOpen && !choice)) return;
 
-    const hasAttackerUnits = Object.keys(battleParams.attackerUnits).length > 0;
-    const hasDefenderUnits = Object.keys(battleParams.defenderUnits).length > 0;
+    const hasAttackerUnits = Object.keys(oddsRequest.attacker.units ?? {}).length > 0;
+    const hasDefenderUnits = Object.keys(oddsRequest.defender.units ?? {}).length > 0;
 
     if (!hasAttackerUnits || !hasDefenderUnits) {
       return;
     }
 
     let active = true;
-    const controller = new AbortController();
-
-    const request = buildBattleRequest({
-      ...battleParams,
-      simulations: 2000,
-    });
-
-    fetchBattleOdds(request, { signal: controller.signal, baseUrl: advisorUrl })
-      .then((res) => {
-        if (!active) return;
-        setAdvisorResult({ key: battleKey, odds: res });
+    spaceOdds(oddsQuery, oddsRequest)
+      .then((odds) => {
+        if (active) setSimulated({ key: battleKey, odds });
       })
-      .catch((_err: unknown) => {
-        if (!active || controller.signal.aborted) return;
-        setAdvisorResult({ key: battleKey, failed: true });
+      .catch((error: unknown) => {
+        console.warn("The engine gave no odds for this combat:", error);
+        if (active) setSimulated({ key: battleKey, failed: true });
       });
 
     return () => {
       active = false;
-      controller.abort();
     };
-  }, [advisorOn, isOpen, Boolean(choice), battleKey, advisorUrl]);
+  }, [oddsQuery, isOpen, Boolean(choice), battleKey]);
 
   // Merged odds for rendering
   const displayedOdds = useMemo(() => {
-    const advisorOdds =
-      advisorResult?.key === battleKey ? advisorResult.odds : undefined;
-    if (advisorOdds) {
-      const attWinPct = Math.round(advisorOdds.attacker_win_rate * 100);
-      const defWinPct = Math.round(advisorOdds.defender_win_rate * 100);
-      const mutWinPct = Math.round(advisorOdds.mutual_destruction_rate * 100);
+    const simulatedOdds =
+      simulated?.key === battleKey ? simulated.odds : undefined;
+    if (simulatedOdds) {
+      const attWinPct = Math.round(simulatedOdds.attacker_win_rate * 100);
+      const defWinPct = Math.round(simulatedOdds.defender_win_rate * 100);
+      const mutWinPct = Math.round(simulatedOdds.mutual_destruction_rate * 100);
       const attExpSurvivors = Object.values(
-        advisorOdds.attacker_expected_survivors,
+        simulatedOdds.attacker_expected_survivors,
       )
         .reduce((a, b) => a + b, 0)
         .toFixed(1);
       const defExpSurvivors = Object.values(
-        advisorOdds.defender_expected_survivors,
+        simulatedOdds.defender_expected_survivors,
       )
         .reduce((a, b) => a + b, 0)
         .toFixed(1);
@@ -519,17 +500,17 @@ export const SpaceCombatOverlay: React.FC<SpaceCombatOverlayProps> = ({
         mutWinPct,
         attSub: `~${attExpSurvivors} survivors`,
         defSub: `~${defExpSurvivors} survivors`,
-        avgRounds: advisorOdds.average_rounds.toFixed(1),
-        tag: `Simulated (${advisorOdds.simulations.toLocaleString()} rollouts)`,
+        avgRounds: simulatedOdds.average_rounds.toFixed(1),
+        tag: `Simulated (${simulatedOdds.simulations.toLocaleString()} rollouts)`,
         tagClass: "combat-odds-card__tag--simulated",
       };
     }
 
     if (!battleKey) return null;
-    return advisorResult?.key === battleKey && advisorResult.failed
-      ? { ...fallbackOdds, tag: "Rough fleet estimate · advisor unavailable" }
+    return simulated?.key === battleKey && simulated.failed
+      ? { ...fallbackOdds, tag: "Rough fleet estimate · simulation unavailable" }
       : fallbackOdds;
-  }, [advisorResult, battleKey, fallbackOdds]);
+  }, [simulated, battleKey, fallbackOdds]);
 
   // Gather dice feed
   const activeDiceFeed: CombatDieRoll[] = useMemo(() => {

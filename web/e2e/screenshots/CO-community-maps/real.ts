@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page } from "@playwright/test";
-import type { MapPreviewDto, MapTemplateSummary } from "../../../../src/protocol/types";
+import type { MapPreview, MapTemplateSummary } from "../../../../src/protocol/types";
 import { openMapLobby } from "../_shared/mapLobby";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -10,7 +10,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 /** The real server's catalog and previews for `players` seats, snapshotted by fetch-real.mjs. */
 export function realMaps(players: number): {
   templates: MapTemplateSummary[];
-  previews: Record<string, MapPreviewDto>;
+  previews: Record<string, MapPreview>;
 } {
   return JSON.parse(readFileSync(join(here, "server-snapshot", `${players}p.json`), "utf8"));
 }

@@ -1,5 +1,5 @@
 import React from "react";
-import type { BoardView, ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import type { BoardView, ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import { describeRemoveUnit } from "../presentation/removeUnit.ts";
 import { UnitIcon } from "./UnitIcon.tsx";
 
@@ -28,7 +28,7 @@ export const RemoveUnitPanel: React.FC<{
 /** Inside an option row: the unit's icon, where it stands and what removing it costs. */
 export const RemoveUnitOptionNote: React.FC<{
   choice: PendingChoiceDto;
-  option: Pick<ChoiceOptionDto, "id" | "label">;
+  option: Pick<ChoiceOption, "id" | "label">;
   board?: BoardView | null;
 }> = ({ choice, option, board }) => {
   const info = describeRemoveUnit(choice, board)?.option(option);

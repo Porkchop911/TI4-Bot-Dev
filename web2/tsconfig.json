@@ -15,7 +15,12 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
+    "paths": {
+      "@ti4/shared/*": ["../web-shared/src/*"],
+      "vitest": ["./node_modules/vitest"],
+      "fake-indexeddb": ["./node_modules/fake-indexeddb"]
+    },
     "types": ["node", "vite/client"]
   },
-  "include": ["src", "e2e", "playwright.config.ts", "vite.config.ts"]
+  "include": ["src", "../web-shared/src", "e2e", "playwright.config.ts", "vite.config.ts"]
 }

@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import type { ChoiceOptionDto, HistoryStatus, PendingChoiceDto } from "../protocol/types.ts";
+import type { ChoiceOption, HistoryStatus, PendingChoiceDto } from "../protocol/types.ts";
 import { loneAction } from "../presentation/loneChoice.ts";
 import { LONE_SUBMIT_DELAY_MS, useLoneAutoSubmit } from "./useLoneAutoSubmit.ts";
 import { AUTO_SUBMIT_KEY } from "./useAutoSubmitSetting.ts";
 
-const opt = (id: string, kind = "action"): ChoiceOptionDto => ({ id, kind, label: id });
+const opt = (id: string, kind = "action"): ChoiceOption => ({ id, kind, label: id, payload: {} });
 
-const menu = (nonce: string, options: ChoiceOptionDto[], closing = false): PendingChoiceDto => ({
+const menu = (nonce: string, options: ChoiceOption[], closing = false): PendingChoiceDto => ({
   actor: "a",
   nonce,
   prompt: "action phase",

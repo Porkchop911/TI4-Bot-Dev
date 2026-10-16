@@ -14,8 +14,6 @@ const board: BoardView = {
   systems: {
     "34": {
       system_id: "34",
-      coordinate: "<1, 0, -1>",
-      tile_type: "normal",
       planets: {
         abyz: { planet_id: "abyz", controlled_by: "p1", exhausted: false, attachments: [] },
         fria: { planet_id: "fria", controlled_by: "p1", exhausted: false, attachments: [] },
@@ -35,6 +33,7 @@ const choice: PendingChoiceDto = {
     id,
     kind: "pool",
     label: id,
+    payload: {},
   })),
   context: { subtype: "gain_command_token" } as PendingChoiceDto["context"],
   details: {

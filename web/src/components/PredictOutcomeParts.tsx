@@ -1,6 +1,6 @@
 import React from "react";
 import { ValueText } from "./PlanetValueIcons.tsx";
-import type { ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import type { ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import { describePrediction, describeRider } from "../presentation/predictOutcome.ts";
 import { useDecisionTable } from "./PoliticsDecisionParts.tsx";
 
@@ -23,7 +23,7 @@ export const PredictOutcomePanel: React.FC<{ choice: PendingChoiceDto }> = ({ ch
 };
 
 /** Inside an option row: the outcome in words, not as an engine id. */
-export const PredictOutcomeNote: React.FC<{ choice: PendingChoiceDto; option: ChoiceOptionDto }> = ({
+export const PredictOutcomeNote: React.FC<{ choice: PendingChoiceDto; option: ChoiceOption }> = ({
   choice,
   option,
 }) => {

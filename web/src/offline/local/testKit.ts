@@ -1,6 +1,6 @@
 import { PROTOCOL_VERSION } from "../../protocol/types.ts";
-import type { Envelope, HostSave } from "./hostApi.ts";
-import type { FromWorker, HostPort, ToWorker } from "./hostProtocol.ts";
+import type { Envelope, HostSave } from "@ti4/shared/engine/host.ts";
+import type { FromWorker, HostPort, ToWorker } from "@ti4/shared/engine/protocol.ts";
 
 /** Messages and a fake worker for the tests of the local transport (no wasm needed). */
 export const GAME = "off_test";
@@ -76,20 +76,20 @@ export const envelope = (kind: Envelope["kind"], fields: Partial<Envelope> = {})
 });
 
 export const save = (answers: string[] = [], finished = false): HostSave => ({
-  format: 1,
-  game_id: GAME,
+  format: 2,
   seed: 7,
   players: 3,
-  human_seat: 0,
-  setup: { game_id: GAME, seed: 7, players: 3 },
+  game: { setup: { game_id: GAME, seed: 7, players: 3, human_seat: 0 } },
+  humans: 1,
+  decisions: answers,
   answers,
+  switches: [],
   redo: [],
   never: [],
   event_times: [],
   event_versions: [],
   version: 1,
   generation: 0,
-  decisions: answers.length,
   decisions_hash: "h",
   finished,
   round: 1,

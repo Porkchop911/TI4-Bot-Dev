@@ -75,8 +75,8 @@ describe("playerStats", () => {
             jord: { planet_id: "jord", controlled_by: "p1", exhausted: false },
           },
           units: [
-            { owner: "p1", unit_type: "carrier", damaged: false },
-            { owner: "p1", unit_type: "space_dock", planet: "jord", damaged: false },
+            { owner: "p1", unit_type: "carrier", damaged: false, planet: null, galvanized: false },
+            { owner: "p1", unit_type: "space_dock", planet: "jord", damaged: false, galvanized: false },
           ],
         },
       },
@@ -118,7 +118,7 @@ describe("playerStats", () => {
           planets: {
             jord: { planet_id: "jord", controlled_by: "p1", exhausted: true },
           },
-          units: [{ owner: "p1", unit_type: "space_dock", planet: "jord", damaged: false }],
+          units: [{ owner: "p1", unit_type: "space_dock", planet: "jord", damaged: false, galvanized: false }],
         },
         "2": {
           system_id: "2",
@@ -180,7 +180,7 @@ describe("playerStats", () => {
           planets: {
             jord: { planet_id: "jord", controlled_by: "p1", exhausted: false },
           },
-          units: [{ owner: "p1", unit_type: "space_dock", planet: "jord", damaged: false }],
+          units: [{ owner: "p1", unit_type: "space_dock", planet: "jord", damaged: false, galvanized: false }],
         },
       },
     };
@@ -200,8 +200,8 @@ describe("playerStats", () => {
             jord: { planet_id: "jord", controlled_by: "p1", exhausted: false },
           },
           units: [
-            { owner: "p1", unit_type: "space_dock", planet: "jord", damaged: false },
-            { owner: "p2", unit_type: "cruiser", damaged: false }, // Enemy ship!
+            { owner: "p1", unit_type: "space_dock", planet: "jord", damaged: false, galvanized: false },
+            { owner: "p2", unit_type: "cruiser", damaged: false, planet: null, galvanized: false }, // Enemy ship!
           ],
         },
       },
@@ -219,7 +219,7 @@ describe("playerStats", () => {
           system_id: "empty_1",
           command_tokens: [],
           planets: {},
-          units: [{ owner: "p1", unit_type: "carrier", damaged: false }],
+          units: [{ owner: "p1", unit_type: "carrier", damaged: false, planet: null, galvanized: false }],
         },
         empty_2: {
           system_id: "empty_2",
@@ -268,7 +268,7 @@ describe("playerStats", () => {
           command_tokens: [],
           planets: {},
           units: [
-            { owner: "saar_player", unit_type: "space_dock", damaged: false }, // Floating Factory I = 5
+            { owner: "saar_player", unit_type: "space_dock", damaged: false, planet: null, galvanized: false }, // Floating Factory I = 5
           ],
         },
       },
@@ -291,9 +291,9 @@ describe("playerStats", () => {
           command_tokens: [],
           planets: {},
           units: [
-            { owner: "arborec_player", unit_type: "infantry", damaged: false }, // Letani Warrior II = 2
-            { owner: "arborec_player", unit_type: "infantry", damaged: false }, // Letani Warrior II = 2
-            { owner: "arborec_player", unit_type: "mech", damaged: false }, // Letani Behemoth = 2
+            { owner: "arborec_player", unit_type: "infantry", damaged: false, planet: null, galvanized: false }, // Letani Warrior II = 2
+            { owner: "arborec_player", unit_type: "infantry", damaged: false, planet: null, galvanized: false }, // Letani Warrior II = 2
+            { owner: "arborec_player", unit_type: "mech", damaged: false, planet: null, galvanized: false }, // Letani Behemoth = 2
           ],
         },
       },
@@ -329,7 +329,7 @@ describe("playerStats", () => {
             jord: { planet_id: "jord", controlled_by: "p1", exhausted: false },
           },
           units: [
-            { owner: "p1", unit_type: "space_dock", planet: "jord", damaged: false }, // 4 + 2 = 6
+            { owner: "p1", unit_type: "space_dock", planet: "jord", damaged: false, galvanized: false }, // 4 + 2 = 6
           ],
         },
         "2": {
@@ -339,7 +339,7 @@ describe("playerStats", () => {
             abyz: { planet_id: "abyz", controlled_by: "p1", exhausted: false },
           },
           units: [
-            { owner: "p1", unit_type: "space_dock", planet: "abyz", damaged: false }, // 3 + 2 = 5
+            { owner: "p1", unit_type: "space_dock", planet: "abyz", damaged: false, galvanized: false }, // 3 + 2 = 5
           ],
         },
       },

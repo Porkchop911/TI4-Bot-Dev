@@ -13,8 +13,8 @@ ti4-content = { workspace = true }
 ti4-engine = { workspace = true }
 ti4-policy = { workspace = true }
 ti4-rule-bot = { workspace = true }
-ti4-view = { workspace = true }
 ti4-host = { workspace = true }
+ti4-infer = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 rand = { workspace = true }
@@ -22,7 +22,7 @@ rand_chacha = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "signal", "process"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "io-util", "signal"] }
 axum = { version = "0.8", features = ["ws"] }
 tower-http = { version = "0.6", features = ["cors", "trace", "fs"] }
 tower = { version = "0.5", features = ["util"] }
@@ -32,7 +32,9 @@ sha2 = { workspace = true }
 
 [dev-dependencies]
 # The wasm host as a native library, for the test that both hosts play the same game.
-ti4-wasm = { path = "../ti4-wasm" }
+# Its `ts` feature: the tests write and check the TypeScript types of the wire. A dev-dependency,
+# so every alias of `.cargo/config.toml` builds the same features and the server binary has none.
+ti4-wasm = { path = "../ti4-wasm", features = ["ts"] }
 tokio-tungstenite = "0.26"
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
 

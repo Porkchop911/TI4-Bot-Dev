@@ -5,6 +5,7 @@ import { ReactionStatusBar } from "./ReactionStatusBar.tsx";
 import { PendingChoiceDto } from "../protocol/types.ts";
 import { fallbackCases } from "../dev/decisionGalleryCases.ts";
 import { COMPACT_KEY, SHRUNK_KEY } from "../presentation/cardTextPrefs.ts";
+import { partialContext } from "../test/wire.ts";
 
 describe("ReactionStatusBar", () => {
   it("renders reaction card options and handles click", async () => {
@@ -14,12 +15,12 @@ describe("ReactionStatusBar", () => {
       actor: "seat_1",
       nonce: "40",
       prompt: "Play Sabotage to cancel Action Card?",
-      context: {
+      context: partialContext({
         subtype: "play_reaction_when_action_card_played",
-      },
+      }),
       options: [
-        { id: "sabotage", label: "Sabotage", kind: "reaction" },
-        { id: "decline", label: "Pass", kind: "decline" },
+        { id: "sabotage", label: "Sabotage", kind: "reaction", payload: {} },
+        { id: "decline", label: "Pass", kind: "decline", payload: {} },
       ],
     };
 
@@ -52,10 +53,10 @@ describe("ReactionStatusBar", () => {
       actor: "seat_1",
       nonce: "42",
       prompt: "reaction_after_SYSTEM_ACTIVATED",
-      context: { subtype: "reaction_after_SYSTEM_ACTIVATED", optional: true, source: { Reaction: "SYSTEM_ACTIVATED" } },
+      context: partialContext({ subtype: "reaction_after_SYSTEM_ACTIVATED", optional: true, source: { Reaction: "SYSTEM_ACTIVATED" } }),
       options: [
-        ...ids.map((id) => ({ id, label: `Play ${id}`, kind: "reaction" })),
-        { id: "decline", label: "Pass", kind: "decline" },
+        ...ids.map((id) => ({ id, label: `Play ${id}`, kind: "reaction", payload: {} })),
+        { id: "decline", label: "Pass", kind: "decline", payload: {} },
       ],
     };
     render(<ReactionStatusBar isOpen={true} choice={choice} viewerSeat="seat_1" onSubmit={onSubmit} />);
@@ -72,11 +73,11 @@ describe("ReactionStatusBar", () => {
       actor: "seat_1",
       nonce: "43",
       prompt: "play an action card (when HITS_TO_ASSIGN)",
-      context: { subtype: "play_reaction_when_HITS_TO_ASSIGN", optional: true },
+      context: partialContext({ subtype: "play_reaction_when_HITS_TO_ASSIGN", optional: true }),
       options: [
         { id: "sh1", label: "play Shields Holding", kind: "action_card", payload: { card: "sh1", card_name: "Shields Holding" } },
         { id: "dh1", label: "play Direct Hit", kind: "action_card", payload: { card: "dh1", card_name: "Direct Hit" } },
-        { id: "decline", label: "Decline", kind: "decline" },
+        { id: "decline", label: "Decline", kind: "decline", payload: {} },
       ],
     };
     render(<ReactionStatusBar isOpen={true} choice={choice} viewerSeat="seat_1" onSubmit={onSubmit} />);
@@ -100,8 +101,8 @@ describe("ReactionStatusBar", () => {
       nonce: "41",
       prompt: "Reaction opportunity",
       options: [
-        { id: "sabotage", label: "Sabotage" },
-        { id: "decline", label: "Pass", kind: "decline" },
+        { id: "sabotage", label: "Sabotage", payload: {}, kind: "" },
+        { id: "decline", label: "Pass", kind: "decline", payload: {} },
       ],
     };
 
@@ -129,8 +130,8 @@ describe("ReactionStatusBar", () => {
       nonce: "42",
       prompt: "Reaction opportunity",
       options: [
-        { id: "sabotage", label: "Sabotage" },
-        { id: "decline", label: "Pass", kind: "decline" },
+        { id: "sabotage", label: "Sabotage", payload: {}, kind: "" },
+        { id: "decline", label: "Pass", kind: "decline", payload: {} },
       ],
     };
 
@@ -157,8 +158,8 @@ describe("ReactionStatusBar", () => {
       nonce: "43",
       prompt: "Reaction opportunity",
       options: [
-        { id: "sabotage", label: "Sabotage" },
-        { id: "decline", label: "Pass", kind: "decline" },
+        { id: "sabotage", label: "Sabotage", payload: {}, kind: "" },
+        { id: "decline", label: "Pass", kind: "decline", payload: {} },
       ],
     };
 
@@ -184,7 +185,7 @@ describe("ReactionStatusBar", () => {
       actor: "seat_2",
       nonce: "44",
       prompt: "Reaction opportunity",
-      options: [{ id: "sabotage", label: "Sabotage" }],
+      options: [{ id: "sabotage", label: "Sabotage", payload: {}, kind: "" }],
     };
 
     render(
@@ -208,7 +209,7 @@ describe("ReactionStatusBar", () => {
       actor: "seat_1",
       nonce: "45",
       prompt: "Reaction opportunity",
-      options: [{ id: "decline", label: "Pass" }],
+      options: [{ id: "decline", label: "Pass", payload: {}, kind: "" }],
     };
 
     render(
@@ -232,17 +233,17 @@ describe("ReactionStatusBar", () => {
       actor: "seat_1",
       nonce: "46",
       prompt: "React with action card?",
-      context: {
+      context: partialContext({
         subtype: "play_reaction_when_action_card_played",
-      },
+      }),
       options: [
         {
           id: "decoy_operation",
           label: "Decoy Operation",
           kind: "reaction",
-          description: "After another player activates a system that contains 1+ of your structures",
+          payload: {},
         },
-        { id: "decline", label: "Pass", kind: "decline" },
+        { id: "decline", label: "Pass", kind: "decline", payload: {} },
       ],
     };
 
@@ -266,11 +267,11 @@ describe("ReactionStatusBar", () => {
       actor: "seat_1",
       nonce: "50",
       prompt: "when ACTION_CARD_PLAYED",
-      context: {
+      context: partialContext({
         subtype: "reaction_when_ACTION_CARD_PLAYED",
         optional: true,
         source: { Reaction: "ACTION_CARD_PLAYED" },
-      },
+      }),
       options: [
         {
           id: "reaction:Sol:ACTION_CARD_PLAYED:when",
@@ -284,7 +285,7 @@ describe("ReactionStatusBar", () => {
           label: "play Decoy Operation",
           payload: { card: "decoy", card_name: "Decoy Operation" },
         },
-        { id: "decline", kind: "decline", label: "Pass" },
+        { id: "decline", kind: "decline", label: "Pass", payload: {} },
       ],
     };
     render(
@@ -325,23 +326,25 @@ describe("ReactionStatusBar", () => {
       actor: "seat_1",
       nonce: "55",
       prompt: "after SYSTEM_ACTIVATED",
-      context: {
+      context: partialContext({
         subtype: "reaction_after_SYSTEM_ACTIVATED",
         optional: true,
         source: { Reaction: "SYSTEM_ACTIVATED" },
-      },
+      }),
       options: [
         {
           id: "ability:empyrean:aetherpassage:SYSTEM_ACTIVATED:after",
           kind: "ability",
           label: "Aetherpassage (after system activated)",
+          payload: {},
         },
         {
           id: "leader:l1z1x:l1z1xagent:SYSTEM_ACTIVATED:after",
           kind: "ability",
           label: "Agent I48S (after system activated)",
+          payload: {},
         },
-        { id: "decline", kind: "decline", label: "Pass" },
+        { id: "decline", kind: "decline", label: "Pass", payload: {} },
       ],
     };
     render(<ReactionStatusBar isOpen choice={choice} viewerSeat="seat_1" onSubmit={vi.fn()} events={[]} />);
@@ -356,7 +359,7 @@ describe("ReactionStatusBar", () => {
       actor: "seat_1",
       nonce: "60",
       prompt: "when ACTION_CARD_PLAYED",
-      context: {
+      context: partialContext({
         subtype: "reaction_when_ACTION_CARD_PLAYED",
         optional: true,
         source: { Reaction: "ACTION_CARD_PLAYED" },
@@ -368,7 +371,7 @@ describe("ReactionStatusBar", () => {
           actor: "seat_2",
           card: "uprising",
         },
-      },
+      }),
       options: [
         {
           id: "reaction:Sol:ACTION_CARD_PLAYED:when",
@@ -376,7 +379,7 @@ describe("ReactionStatusBar", () => {
           label: "Play Sabotage",
           payload: { card: "sabo1", card_name: "Sabotage" },
         },
-        { id: "decline", kind: "decline", label: "Pass" },
+        { id: "decline", kind: "decline", label: "Pass", payload: {} },
       ],
     });
 
@@ -533,11 +536,11 @@ describe("ReactionStatusBar", () => {
       actor: "seat_1",
       nonce: "60",
       prompt: "when ACTION_CARD_PLAYED",
-      context: {
+      context: partialContext({
         subtype: "reaction_when_ACTION_CARD_PLAYED",
         optional: true,
         source: { Reaction: "ACTION_CARD_PLAYED" },
-      },
+      }),
       options: [
         {
           id: "reaction:Sol:ACTION_CARD_PLAYED:when",
@@ -545,7 +548,7 @@ describe("ReactionStatusBar", () => {
           label: "Play Sabotage",
           payload: { card: "sabo1", card_name: "Sabotage" },
         },
-        { id: "decline", kind: "decline", label: "Pass" },
+        { id: "decline", kind: "decline", label: "Pass", payload: {} },
       ],
     };
 

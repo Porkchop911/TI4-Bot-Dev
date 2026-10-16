@@ -142,7 +142,7 @@ fn nicknames_follow_identity_through_the_seat_draw_and_running_takeover_recovery
         registry.join_player_lobby("names", Some(guest_token.as_str()), Some("Other")),
         Err(LobbyError::InvalidNickname)
     ));
-    // The seats are drawn at the start: a name is found by its player, not by its place.
+    // A name is found by its player, not by its place.
     registry
         .start_player_lobby("names", host_token.as_str())
         .unwrap();
@@ -514,9 +514,7 @@ fn takeover_persistence_failure_preserves_old_credential_and_restart_recovers_ne
             .get_game("rotate")
             .unwrap()
             .viewer_for_seat_token(latest.as_str()),
-        Some(ti4_server::protocol::status::ViewerRole::Player(
-            host.clone()
-        ))
+        Some(ti4_host::protocol::status::ViewerRole::Player(host.clone()))
     );
     assert!(
         registry
@@ -542,7 +540,7 @@ fn takeover_persistence_failure_preserves_old_credential_and_restart_recovers_ne
             .get_game("rotate")
             .unwrap()
             .viewer_for_seat_token(latest.as_str()),
-        Some(ti4_server::protocol::status::ViewerRole::Player(host))
+        Some(ti4_host::protocol::status::ViewerRole::Player(host))
     );
     post_start.remove_game("rotate");
     registry.remove_game("rotate");

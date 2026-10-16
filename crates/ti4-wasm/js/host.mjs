@@ -104,7 +104,7 @@ export class Host {
 
 const GAME = "local";
 const message = (host, type, fields) =>
-  host.command({ type, protocol_version: 3, game_id: GAME, ...fields });
+  host.command({ type, protocol_version: 4, game_id: GAME, ...fields });
 
 /** The person: the first option, every time. Collects what the page received. */
 function person(host, log, limit) {
@@ -145,7 +145,7 @@ async function smoke(wasmPath) {
 
   // 1. The setup form.
   const form = (await Host.create(module)).query({ query: "describe" });
-  assert.deepEqual(Object.keys(form.maps), ["3", "4", "5", "6"]);
+  assert.deepEqual(Object.keys(form.maps), ["2", "3", "4", "5", "6", "7", "8"]);
   assert.equal(form.strategy_card_sets.length, 3);
   const picture = (await Host.create(module)).query({
     query: "map_preview", player_count: 4, choice: { kind: "random" },
@@ -180,10 +180,13 @@ async function smoke(wasmPath) {
     again.command({ type: "leave" });
   };
   const resumed = performance.now();
-  await again.start({ setup: save.setup, resume: save });
+  // The save names its game: a resume needs nothing else.
+  assert.equal(save.format, 2);
+  await again.start({ resume: save });
   const replayed = performance.now() - resumed;
   assert.equal(second.check.ok, true, JSON.stringify(second.check));
-  assert.ok(progress.length >= 1 && progress.at(-1).total === save.answers.length, JSON.stringify(progress));
+  // The save has every decision of the game (`decisions`): each is given again, and no bot decides.
+  assert.ok(progress.length >= 1 && progress.at(-1).total === save.decisions.length, JSON.stringify(progress));
   assert.deepEqual(second.messages[0].state, first.question.state);
   assert.deepEqual(second.messages[0].pending_choice, first.question.pending_choice);
   const lastSnapshot = first.messages.map((m) => m.type).lastIndexOf("initial_snapshot");

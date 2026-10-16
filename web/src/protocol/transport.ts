@@ -62,6 +62,11 @@ export interface GameTransport {
   turnRedoCommand(command: TurnRedoCommand): Promise<void>;
   /** Needs `capabilities.splicePreview`. Not used by the hook; the history panel calls it. */
   previewSplice?(edit: SpliceEdit): Promise<SplicePreview>;
+  /**
+   * A question of the engine that plays the game, when it runs on this device (`{"query": ...}`:
+   * the odds of a combat). Without it the page asks its own engine.
+   */
+  queryEngine?(request: object): Promise<unknown>;
 }
 
 /** The WebSocket/HTTP transport to the game server. `GameSessionClient` is its implementation. */

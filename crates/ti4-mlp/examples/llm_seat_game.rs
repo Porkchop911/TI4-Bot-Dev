@@ -62,12 +62,12 @@ fn post_json(url: &str, body: &Value) -> Result<Value, String> {
     let rest = url
         .strip_prefix("http://")
         .ok_or_else(|| format!("{url}: only http:// endpoints"))?;
-    let (host, path) = rest.split_once('/').map_or((rest, "/".to_owned()), |(h, p)| {
-        (h, format!("/{p}"))
-    });
+    let (host, path) = rest
+        .split_once('/')
+        .map_or((rest, "/".to_owned()), |(h, p)| (h, format!("/{p}")));
     let payload = body.to_string();
-    let mut stream =
-        std::net::TcpStream::connect(host).map_err(|error| format!("connecting {host}: {error}"))?;
+    let mut stream = std::net::TcpStream::connect(host)
+        .map_err(|error| format!("connecting {host}: {error}"))?;
     let request = format!(
         "POST {path} HTTP/1.1\r\nHost: {host}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
         payload.len()
@@ -84,9 +84,16 @@ fn post_json(url: &str, body: &Value) -> Result<Value, String> {
         .split_once("\r\n\r\n")
         .ok_or_else(|| "a response without headers".to_owned())?;
     if !head.starts_with("HTTP/1.1 200") && !head.starts_with("HTTP/1.0 200") {
-        return Err(format!("{}: {}", head.lines().next().unwrap_or(""), body.trim()));
+        return Err(format!(
+            "{}: {}",
+            head.lines().next().unwrap_or(""),
+            body.trim()
+        ));
     }
-    let body = if head.to_ascii_lowercase().contains("transfer-encoding: chunked") {
+    let body = if head
+        .to_ascii_lowercase()
+        .contains("transfer-encoding: chunked")
+    {
         let mut out = String::new();
         let mut rest = body;
         loop {
@@ -118,14 +125,14 @@ fn post_stream(
     let rest = url
         .strip_prefix("http://")
         .ok_or_else(|| format!("{url}: only http:// endpoints"))?;
-    let (host, path) = rest.split_once('/').map_or((rest, "/".to_owned()), |(h, p)| {
-        (h, format!("/{p}"))
-    });
+    let (host, path) = rest
+        .split_once('/')
+        .map_or((rest, "/".to_owned()), |(h, p)| (h, format!("/{p}")));
     let mut body = body.clone();
     body["stream"] = json!(true);
     let payload = body.to_string();
-    let mut stream =
-        std::net::TcpStream::connect(host).map_err(|error| format!("connecting {host}: {error}"))?;
+    let mut stream = std::net::TcpStream::connect(host)
+        .map_err(|error| format!("connecting {host}: {error}"))?;
     let request = format!(
         "POST {path} HTTP/1.1\r\nHost: {host}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
         payload.len()
@@ -221,7 +228,10 @@ impl Live {
     }
 
     fn append_thinking(&self, text: &str) {
-        if let Ok(mut file) = std::fs::OpenOptions::new().append(true).open(&self.thinking) {
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&self.thinking)
+        {
             let _ = file.write_all(text.as_bytes());
         }
     }
@@ -292,8 +302,14 @@ impl LlmSeat {
                     me.tactic_tokens,
                     me.fleet_tokens,
                     me.strategic_tokens,
-                    me.strategy_cards.iter().map(ToString::to_string).collect::<Vec<_>>(),
-                    me.technologies.iter().map(ToString::to_string).collect::<Vec<_>>(),
+                    me.strategy_cards
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>(),
+                    me.technologies
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>(),
                 ),
             );
         }
@@ -302,7 +318,10 @@ impl LlmSeat {
             .into_iter()
             .map(|(_, planet)| planet.to_string())
             .collect();
-        let _ = std::fmt::Write::write_fmt(&mut out, format_args!("Planets: {}.\n", planets.join(", ")));
+        let _ = std::fmt::Write::write_fmt(
+            &mut out,
+            format_args!("Planets: {}.\n", planets.join(", ")),
+        );
         let mut fleets = Vec::new();
         for system in observed.systems_with_units_of(&self.seat) {
             let here = observed.system(system);
@@ -313,14 +332,34 @@ impl LlmSeat {
                 .chain(here.planet_units.values().flatten())
                 .filter(|unit| unit.owner == self.seat)
             {
-                *counts.entry(unit_name(content, unit.type_id.as_str())).or_default() += 1;
+                *counts
+                    .entry(unit_name(content, unit.type_id.as_str()))
+                    .or_default() += 1;
             }
-            let units: Vec<String> = counts.iter().map(|(name, n)| format!("{n} {name}")).collect();
-            fleets.push(format!("{}: {}", system_name(content, system.as_str()), units.join(", ")));
+            let units: Vec<String> = counts
+                .iter()
+                .map(|(name, n)| format!("{n} {name}"))
+                .collect();
+            fleets.push(format!(
+                "{}: {}",
+                system_name(content, system.as_str()),
+                units.join(", ")
+            ));
         }
-        let _ = std::fmt::Write::write_fmt(&mut out, format_args!("Your units: {}.\n", fleets.join("; ")));
-        let secrets: Vec<String> = seen.held_secrets().iter().map(ToString::to_string).collect();
-        let cards: Vec<String> = seen.held_action_cards().iter().map(ToString::to_string).collect();
+        let _ = std::fmt::Write::write_fmt(
+            &mut out,
+            format_args!("Your units: {}.\n", fleets.join("; ")),
+        );
+        let secrets: Vec<String> = seen
+            .held_secrets()
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        let cards: Vec<String> = seen
+            .held_action_cards()
+            .iter()
+            .map(ToString::to_string)
+            .collect();
         let _ = std::fmt::Write::write_fmt(
             &mut out,
             format_args!("Your secret objectives: {secrets:?}. Your action cards: {cards:?}.\n"),
@@ -335,7 +374,8 @@ impl LlmSeat {
                     .map(|seat| format!("{player} {} {} VP", seat.faction, seat.victory_points))
             })
             .collect();
-        let _ = std::fmt::Write::write_fmt(&mut out, format_args!("Rivals: {}.\n", rivals.join("; ")));
+        let _ =
+            std::fmt::Write::write_fmt(&mut out, format_args!("Rivals: {}.\n", rivals.join("; ")));
         out
     }
 
@@ -567,19 +607,21 @@ impl Decider for LlmSeat {
     }
 }
 
-#[expect(clippy::too_many_lines, reason = "a linear script: set up, play twice, report")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "a linear script: set up, play twice, report"
+)]
 fn main() {
     let bundle_path = argument("--bundle").unwrap_or_else(|| refuse("--bundle is required"));
-    let pool_path = argument("--map-pool")
-        .unwrap_or_else(|| "out/pools/full_np8_12_holdout.json".to_owned());
+    let pool_path =
+        argument("--map-pool").unwrap_or_else(|| "out/pools/full_np8_12_holdout.json".to_owned());
     let seed: u64 = number("--seed", 900_000_000);
     let rotation: usize = number("--rotation", 0);
     let llm_index: usize = number("--seat", 0);
     let rounds: u32 = number("--rounds", 4);
     let temperature: f64 = number("--temperature", 0.001);
     let max_tokens: u64 = number("--max-tokens", 1024);
-    let endpoint =
-        argument("--endpoint").unwrap_or_else(|| "http://127.0.0.1:8080/v1".to_owned());
+    let endpoint = argument("--endpoint").unwrap_or_else(|| "http://127.0.0.1:8080/v1".to_owned());
     let model = argument("--model").unwrap_or_else(|| "qwen3.8-flash-next-iq3_xxs".to_owned());
     let think = std::env::args().any(|arg| arg == "--think");
     let effort = argument("--effort").unwrap_or_else(|| "low".to_owned());
@@ -616,9 +658,10 @@ fn main() {
         .unwrap_or_else(|| refuse("--seat must be 0..=5"));
     // `--roster new` seats six factions from outside the standard six, as the faction-row pilot
     // trained them; `wide` draws from every faction; `six` (the default) is the standard table.
-    let roster = argument("--roster").map_or(ti4_engine::seating::FactionRoster::InScope, |value| {
-        ti4_training::rollout::parse_roster(&value).unwrap_or_else(|error| refuse(&error))
-    });
+    let roster = argument("--roster")
+        .map_or(ti4_engine::seating::FactionRoster::InScope, |value| {
+            ti4_training::rollout::parse_roster(&value).unwrap_or_else(|error| refuse(&error))
+        });
     // `--lineup a,b,c,d,e,f` names the table outright (the seeded scramble still seats them).
     let factions: Vec<FactionId> = match argument("--lineup") {
         Some(lineup) => {
@@ -663,64 +706,63 @@ fn main() {
 
     let play = |with_llm: bool| {
         let started = Instant::now();
-        let (rollout, _) =
-            ti4_training::rollout::play_with_capabilities_and_decider_factory_digest(
-                content,
-                &players,
-                &seated,
-                DEFAULT,
-                seed,
-                ti4_training::rollout::Horizon {
-                    rounds,
-                    steps: 10_000,
-                },
-                ti4_engine::opening::DEFAULT_REQUIREMENT,
-                &ti4_training::rollout::OpeningMap::PythonPool {
-                    pool: Arc::clone(&pool),
-                    tile_seed_offset: TILE_SEED_OFFSET,
-                },
-                ti4_training::rollout::SimulationCapabilities { diplomacy: true },
-                false,
-                |baselines| {
-                    let mut deciders: BTreeMap<PlayerId, Box<dyn Decider>> = BTreeMap::new();
-                    for (index, player) in players.iter().enumerate() {
-                        if with_llm && *player == llm_player {
-                            deciders.insert(
-                                player.clone(),
-                                Box::new(LlmSeat {
-                                    seat: player.clone(),
-                                    faction: llm_faction.clone(),
-                                    endpoint: endpoint.clone(),
-                                    model: model.clone(),
-                                    think,
-                                    effort: effort.clone(),
-                                    max_tokens,
-                                    tally: Rc::clone(&tally),
-                                    log: Rc::clone(&log),
-                                    live: live.clone(),
-                                }),
-                            );
-                            continue;
-                        }
-                        let row = ti4_mlp::FactionRow::of(seated[player].as_str())
-                            .map_err(|error| format!("{player}: {error}"))?;
-                        let baseline = baselines
-                            .get(player)
-                            .copied()
-                            .ok_or_else(|| format!("{player} has no setup baseline"))?;
-                        let stream = seed
-                            .wrapping_mul(1_000_003)
-                            .wrapping_add(u64::try_from(index).unwrap_or(0));
-                        let (decider, _status) =
-                            ti4_mlp::bot::MlpBot::sharing(&actor, vocabulary.clone(), row, stream)
-                                .at_temperature(temperature)
-                                .from_setup(baseline)
-                                .seat();
-                        deciders.insert(player.clone(), decider);
+        let (rollout, _) = ti4_training::rollout::play_with_capabilities_and_decider_factory_digest(
+            content,
+            &players,
+            &seated,
+            DEFAULT,
+            seed,
+            ti4_training::rollout::Horizon {
+                rounds,
+                steps: 10_000,
+            },
+            ti4_engine::opening::DEFAULT_REQUIREMENT,
+            &ti4_training::rollout::OpeningMap::PythonPool {
+                pool: Arc::clone(&pool),
+                tile_seed_offset: TILE_SEED_OFFSET,
+            },
+            ti4_training::rollout::SimulationCapabilities { diplomacy: true },
+            false,
+            |baselines| {
+                let mut deciders: BTreeMap<PlayerId, Box<dyn Decider>> = BTreeMap::new();
+                for (index, player) in players.iter().enumerate() {
+                    if with_llm && *player == llm_player {
+                        deciders.insert(
+                            player.clone(),
+                            Box::new(LlmSeat {
+                                seat: player.clone(),
+                                faction: llm_faction.clone(),
+                                endpoint: endpoint.clone(),
+                                model: model.clone(),
+                                think,
+                                effort: effort.clone(),
+                                max_tokens,
+                                tally: Rc::clone(&tally),
+                                log: Rc::clone(&log),
+                                live: live.clone(),
+                            }),
+                        );
+                        continue;
                     }
-                    Ok(deciders)
-                },
-            );
+                    let row = ti4_mlp::FactionRow::of(seated[player].as_str())
+                        .map_err(|error| format!("{player}: {error}"))?;
+                    let baseline = baselines
+                        .get(player)
+                        .copied()
+                        .ok_or_else(|| format!("{player} has no setup baseline"))?;
+                    let stream = seed
+                        .wrapping_mul(1_000_003)
+                        .wrapping_add(u64::try_from(index).unwrap_or(0));
+                    let (decider, _status) =
+                        ti4_mlp::bot::MlpBot::sharing(&actor, vocabulary.clone(), row, stream)
+                            .at_temperature(temperature)
+                            .from_setup(baseline)
+                            .seat();
+                    deciders.insert(player.clone(), decider);
+                }
+                Ok(deciders)
+            },
+        );
         (rollout, started.elapsed().as_secs_f64())
     };
 

@@ -5,8 +5,9 @@ use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice, SeatObser
 use ti4_host::clock::NonceSource as _;
 use ti4_model::id::PlayerId;
 
-use crate::protocol::server::ActionAcceptedMsg;
-use crate::protocol::status::RejectionReason;
+use ti4_host::protocol::server::ActionAcceptedMsg;
+use ti4_host::protocol::status::RejectionReason;
+
 use crate::session::ready_secondary;
 use crate::session::worker::{PendingDecision, PendingSubmissionState, SessionShared};
 
@@ -88,16 +89,6 @@ impl Decider for RemoteHumanDecider {
                 pending.reply_tx = Some(reply_tx);
                 return Ok(option);
             }
-            shared.planning.begin_secondary_application(choice);
-            if let Some(option) = shared.planning.application_option(choice) {
-                let (reply_tx, _reply_rx) = mpsc::channel();
-                let pending = shared.pending_decision.as_mut().expect("pending decision");
-                pending.submission_state = PendingSubmissionState::Reserved;
-                pending.submitted_option_id = Some(option.id.clone());
-                pending.reply_tx = Some(reply_tx);
-                shared.planning.application_answered(choice, &option);
-                return Ok(option);
-            }
             // A ready draft of the secondary that the seat is asked is sent by the server. The
             // choice is reserved while the draft is checked on a copy, which needs no lock.
             if ready_secondary::may_send(&shared, &self.seat, choice) {
@@ -164,8 +155,6 @@ impl Decider for RemoteHumanDecider {
                     .expect("reserved pending decision");
                 pending.submitted_option_id = Some(submission.option_id);
                 pending.reply_tx = Some(submission.reply_tx);
-                shared.planning.application_answered(choice, &opt);
-
                 return Ok(opt);
             }
 

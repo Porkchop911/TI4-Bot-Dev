@@ -4,8 +4,9 @@ use std::sync::Arc;
 use std::sync::mpsc::{RecvError, TryRecvError};
 use ti4_model::id::PlayerId;
 
-use crate::protocol::server::{ActionAcceptedMsg, InitialSnapshotMsg, ServerMessage};
-use crate::protocol::status::{RejectionReason, ViewerRole};
+use ti4_host::protocol::server::{ActionAcceptedMsg, InitialSnapshotMsg, ServerMessage};
+use ti4_host::protocol::status::{RejectionReason, ViewerRole};
+
 use crate::session::GameSession;
 
 /// In-memory mock client connected to a `GameSession`.

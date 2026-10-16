@@ -8,7 +8,7 @@ use reqwest::StatusCode;
 use serde_json::{Value, json};
 use ti4_model::id::PlayerId;
 use ti4_server::create_app;
-use ti4_server::session::{BotServiceConfig, GameRegistry, SeatController};
+use ti4_server::session::{GameRegistry, SeatController};
 use ti4_server::storage::FileGameStore;
 
 struct Server {
@@ -26,6 +26,8 @@ impl Drop for Server {
 
 async fn serve(registry: Arc<GameRegistry>) -> Server {
     ti4_server::session::random_bot::set_random_bot_delay_override(Some(0));
+    // The model of the tests is loaded, as a server loads its model directory at start.
+    let _ = ti4_host::bots::test_model();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let app = create_app(registry.clone());
@@ -50,7 +52,7 @@ impl Server {
         let created: Value = self
             .client
             .post(self.url("/api/games"))
-            .json(&json!({"player_count": players, "seed": 42, "nickname": "Host", "seat_order": "join"}))
+            .json(&json!({"player_count": players, "seed": 42, "nickname": "Host"}))
             .send()
             .await
             .unwrap()
@@ -111,8 +113,7 @@ async fn the_host_adds_one_random_bot_with_its_own_credential_and_no_password() 
     let server = serve(Arc::new(GameRegistry::new())).await;
     let (game, host, _) = server.lobby(4).await;
     let view = server.view(&game).await;
-    assert_eq!(view["bot_kinds"], json!(["random", "smart"]));
-    assert_eq!(view["bot_service_enabled"], false);
+    assert_eq!(view["bot_kinds"], json!(["random", "smart", "mlp:test"]));
 
     let (status, body) = server
         .post(&game, "bots", Some(&host), json!({"kind": "random"}))
@@ -220,7 +221,7 @@ async fn validation_and_authorization() {
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 
-    // Unknown kind, mlp through this route, fill with count, count 0, nickname with several.
+    // Unknown kind, a bare mlp (an MLP kind names its model), fill with count, count 0, nickname with several.
     for body in [
         json!({"kind": "wizard"}),
         json!({"kind": "mlp"}),
@@ -272,44 +273,6 @@ async fn validation_and_authorization() {
         )
         .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
-
-    // The MLP route is unchanged: disabled without a bot service.
-    let (status, _) = server
-        .post(&game, "add-bot", Some(&host), json!({"password": "x"}))
-        .await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
-}
-
-#[tokio::test]
-async fn mlp_bots_stay_listed_when_the_service_is_configured() {
-    let registry = GameRegistry::new().with_bot_service(BotServiceConfig {
-        password: "pw".to_owned(),
-        advisor_url: "http://127.0.0.1:1".to_owned(),
-        bot_agent_bin: std::path::PathBuf::from("/bin/true"),
-        server_port: 1,
-        max_active_bots: 0,
-    });
-    let server = serve(Arc::new(registry)).await;
-    let (game, host, _) = server.lobby(3).await;
-    assert_eq!(
-        server.view(&game).await["bot_kinds"],
-        json!(["random", "smart", "mlp"])
-    );
-    // Random bots do not count against the MLP child-process limit (0 here) and need no password.
-    let (status, body) = server
-        .post(
-            &game,
-            "bots",
-            Some(&host),
-            json!({"kind": "random", "fill": true}),
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK, "{body}");
-    // The MLP path still checks its password and its limit.
-    let (status, _) = server
-        .post(&game, "add-bot", Some(&host), json!({"password": "wrong"}))
-        .await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]
@@ -344,8 +307,8 @@ async fn smart_bots_are_added_named_and_started_as_smart_seats() {
     let session = server.registry.get_game(&game).expect("session");
     let seats = session.lobby_details().1;
     let count = |kind: SeatController| seats.values().filter(|c| **c == kind).count();
-    assert_eq!(count(SeatController::BotSmart), 2);
-    assert_eq!(count(SeatController::BotRandom), 1);
+    assert_eq!(count(SeatController::SMART), 2);
+    assert_eq!(count(SeatController::RANDOM), 1);
     // The bots play on their own until the host is asked.
     let deadline = Instant::now() + Duration::from_secs(60);
     loop {
@@ -390,7 +353,7 @@ async fn a_lobby_of_a_host_and_bots_starts_and_the_bots_play() {
     assert_eq!(
         seats
             .values()
-            .filter(|c| **c == SeatController::BotRandom)
+            .filter(|c| **c == SeatController::RANDOM)
             .count(),
         3
     );
@@ -460,7 +423,7 @@ async fn bot_seats_survive_a_restart_of_the_lobby_and_of_the_running_game() {
     let dir = std::env::temp_dir().join(format!("ti4_rb_lobby_{:016x}", rand::random::<u64>()));
     let store = Arc::new(FileGameStore::new(&dir).unwrap());
     let server = serve(Arc::new(GameRegistry::new().with_store(store.clone()))).await;
-    let (game, host, _) = server.lobby(3).await;
+    let (game, host, _) = server.lobby(4).await;
     server
         .post(
             &game,
@@ -469,14 +432,25 @@ async fn bot_seats_survive_a_restart_of_the_lobby_and_of_the_running_game() {
             json!({"kind": "random", "count": 1}),
         )
         .await;
+    let (status, body) = server
+        .post(
+            &game,
+            "bots",
+            Some(&host),
+            json!({"kind": "mlp:test", "count": 1}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["slots"][2]["nickname"], "Test model 1");
     drop(server);
 
-    // The lobby comes back with its bot.
+    // The lobby comes back with its bots.
     let registry = Arc::new(GameRegistry::new().with_store(store.clone()));
     registry.recover_all_games().expect("recover lobby");
     let server = serve(registry).await;
     let view = server.view(&game).await;
     assert_eq!(view["slots"][1]["bot"], "random");
+    assert_eq!(view["slots"][2]["bot"], "mlp:test");
     let (status, _) = server
         .post(
             &game,
@@ -498,7 +472,8 @@ async fn bot_seats_survive_a_restart_of_the_lobby_and_of_the_running_game() {
     drop(session);
     drop(server);
 
-    // The started game recovers with the same bot seats and keeps playing to the host's prompt.
+    // The started game recovers with the same bot seats (the MLP seat with its model) and keeps
+    // playing to the host's prompt.
     let registry = Arc::new(GameRegistry::new().with_store(store.clone()));
     registry.recover_all_games().expect("recover game");
     let session = registry.get_game(&game).expect("recovered");
@@ -506,9 +481,17 @@ async fn bot_seats_survive_a_restart_of_the_lobby_and_of_the_running_game() {
     assert_eq!(
         seats
             .values()
-            .filter(|c| **c == SeatController::BotRandom)
+            .filter(|c| **c == SeatController::RANDOM)
             .count(),
         2
+    );
+    assert_eq!(
+        seats
+            .values()
+            .filter(|c| **c
+                == SeatController::Bot(ti4_host::bots::BotKind::Mlp(ti4_host::bots::test_model())))
+            .count(),
+        1
     );
     session.wait_replayed().expect("replayed");
     assert!(session.error().is_none());
@@ -518,7 +501,7 @@ async fn bot_seats_survive_a_restart_of_the_lobby_and_of_the_running_game() {
     }
     let bot_tokens: Vec<_> = seats
         .iter()
-        .filter(|(_, c)| **c == SeatController::BotRandom)
+        .filter(|(_, c)| **c == SeatController::RANDOM)
         .map(|(seat, _)| session.seat_tokens().get(seat).cloned())
         .collect();
     for token in bot_tokens.into_iter().flatten() {

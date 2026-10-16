@@ -87,10 +87,7 @@ struct Models {
     migrated: (Rc<Actor>, Vocabulary),
 }
 
-fn sparse(
-    vector: &ti4_policy::features::FeatureVector,
-    vocabulary: &Vocabulary,
-) -> SparseOption {
+fn sparse(vector: &ti4_policy::features::FeatureVector, vocabulary: &Vocabulary) -> SparseOption {
     let mut columns = Vec::with_capacity(vector.len());
     let mut values = Vec::with_capacity(vector.len());
     for (key, value) in vector {
@@ -177,7 +174,10 @@ impl Decider for Probe {
             let (mut seat_features, mut option_features, mut with_opt) = (0, 0, 0);
             for vector in &new {
                 let names = ti4_policy::features::names_of(vector);
-                let opt = names.iter().filter(|n| n.starts_with("card-tag-opt:")).count();
+                let opt = names
+                    .iter()
+                    .filter(|n| n.starts_with("card-tag-opt:"))
+                    .count();
                 let seat = names.iter().filter(|n| n.starts_with("card-tag:")).count();
                 seat_features += seat;
                 option_features += opt;
@@ -208,7 +208,6 @@ fn softmax(logits: &[f64]) -> Vec<f64> {
 
 type Trace = Vec<(String, Vec<String>, String)>;
 
-#[expect(clippy::too_many_arguments, reason = "one call site, all required")]
 fn play(
     content: &'static ContentStore,
     models: &Rc<Models>,
@@ -281,7 +280,9 @@ fn play(
         }
         steps += 1;
         if steps >= max_steps {
-            return Err(format!("seed {seed} did not finish within {max_steps} steps"));
+            return Err(format!(
+                "seed {seed} did not finish within {max_steps} steps"
+            ));
         }
     }
     Ok(game
@@ -371,7 +372,11 @@ fn main() {
         );
         if !same {
             let at = before.iter().zip(&after).position(|(a, b)| a != b);
-            println!("  first difference at decision {at:?}; lengths {} vs {}", before.len(), after.len());
+            println!(
+                "  first difference at decision {at:?}; lengths {} vs {}",
+                before.len(),
+                after.len()
+            );
         }
         total.decisions += stats.decisions;
         total.options += stats.options;

@@ -10,7 +10,7 @@ use crate::support;
 use std::collections::BTreeSet;
 
 use ti4_engine::game::Game;
-use ti4_server::session::RngForce;
+use ti4_host::rng_force::RngForce;
 
 use crate::support::{
     Source, forced_decider, generated, generated_with_factions, saved_games, start_game,

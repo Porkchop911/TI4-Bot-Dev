@@ -34,6 +34,87 @@ async function savedLine(page: Page, start = /^Local game · /) {
   return line;
 }
 
+/** A saved game as the save store keeps it (IndexedDB `ti4-offline`, object store `games`). */
+interface StoredGame {
+  id: string;
+  slot?: string;
+  schema: number;
+  engine: { wasmSha256: string };
+  summary: { answers: number };
+  save: {
+    decisions: string[];
+    answers: string[];
+    game: { table?: { setup: object; seats: { kind: string }[] } };
+    [field: string]: unknown;
+  };
+}
+
+/** The page made the database of the save store (a read before would make another one). */
+const storeReady = (page: Page) =>
+  expect
+    .poll(() =>
+      page.evaluate(
+        async () => (await indexedDB.databases()).find((db) => db.name === "ti4-offline")?.version,
+      ),
+    )
+    .toBe(2);
+
+/** The saved games of the browser of the page. */
+const savedGames = async (page: Page) => {
+  await storeReady(page);
+  return page.evaluate(
+    () =>
+      new Promise<StoredGame[]>((resolve, reject) => {
+        const open = indexedDB.open("ti4-offline");
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const db = open.result;
+          const all = db.transaction("games").objectStore("games").getAll();
+          all.onerror = () => reject(all.error);
+          all.onsuccess = () => {
+            db.close();
+            resolve(all.result);
+          };
+        };
+      }),
+  );
+};
+
+/** The saved game of a slot, or undefined. */
+const savedGame = async (page: Page, slot: string) =>
+  (await savedGames(page)).find((game) => game.slot === slot);
+
+/** The saved game of a slot, once it is written. */
+async function written(page: Page, slot: string, answers = 0) {
+  await expect
+    .poll(async () => (await savedGame(page, slot))?.summary.answers ?? -1)
+    .toBeGreaterThanOrEqual(answers);
+  return (await savedGame(page, slot))!;
+}
+
+/** Writes a record of the save store as it is, as an older or another page may have left it. */
+const putRecord = async (page: Page, record: object) => {
+  await storeReady(page);
+  await page.evaluate(
+    (row) =>
+      new Promise<void>((resolve, reject) => {
+        const open = indexedDB.open("ti4-offline");
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const db = open.result;
+          const tx = db.transaction("games", "readwrite");
+          tx.objectStore("games").put(row);
+          tx.oncomplete = () => {
+            db.close();
+            resolve();
+          };
+          tx.onerror = () => reject(tx.error);
+        };
+      }),
+    record,
+  );
+};
+
 /**
  * Answers the open choice: with the first system when it is on the board, with nothing when the
  * main button already has something to send (a movement of no ship), or else with its first row.
@@ -387,10 +468,11 @@ test("an exported game is imported in another browser and opens at the same choi
   const path = await download.path();
 
   const other = await (await browser.newContext()).newPage();
-  // Another game is open: the file says which game it is.
+  // Another game is open: the imported game is a game of its own, at its id.
   await other.goto("/?local=3&players=8&humans=1");
   await expect(send(other)).toBeDisabled();
   await other.getByLabel("Saved game file").setInputFiles(path);
+  await other.waitForURL((url) => url.searchParams.has("save"));
   await expect.poll(() => savedLine(other)).toContain("seed 5");
   await expect.poll(() => savedLine(other)).toContain("6 answers saved");
   await expect(heading(other)).toHaveText(open ?? "");
@@ -400,19 +482,31 @@ test("an exported game is imported in another browser and opens at the same choi
     .getByLabel("Saved game file")
     .setInputFiles({ name: "x.json", mimeType: "application/json", buffer: Buffer.from("{}") });
   await openSettings(other);
-  await expect(settings(other).getByRole("alert")).toContainText("format undefined");
+  await expect(settings(other).getByRole("alert")).toHaveText("The file is not a saved game.");
+  // The start screen lists both games of that browser: the game of the address and the import.
+  await other.goto("/");
+  const imported = other
+    .getByRole("region", { name: "Saved games" })
+    .getByRole("link", { name: /^Imported game/ });
+  await expect(imported).toContainText("6 answers");
+  await imported.click();
+  await expect(heading(other)).toHaveText(open ?? "");
   await other.context().close();
 });
 
 test("a saved game of another engine build is not replayed without a word", async ({ page }) => {
+  // Longer than a test of this suite should be (five loads of a game of eight): see "Tests" in
+  // AGENTS.md.
+  test.setTimeout(10_000);
   await page.goto("/?local=3&players=8&humans=1");
   await expect(send(page)).toBeDisabled();
   await answer(page);
-  await page.evaluate(() => {
-    const save = JSON.parse(localStorage.getItem("ti4.local.3.8.1") ?? "");
-    localStorage.setItem("ti4.local.3.8.1", JSON.stringify({ ...save, engine: "another" }));
-  });
-  await page.reload();
+  // The page is left first: what it saves is written then.
+  await page.goto("/");
+  const saved = await written(page, "local.3.8.1", 1);
+  expect(saved.summary.answers).toBe(1);
+  await putRecord(page, { ...saved, engine: { ...saved.engine, wasmSha256: "another" } });
+  await page.goto("/?local=3&players=8&humans=1");
   await expect(page.getByText("was played by another build of the engine")).toBeVisible();
   await page.getByRole("button", { name: "Replay anyway" }).click();
   await expect(send(page)).toBeDisabled();
@@ -420,30 +514,53 @@ test("a saved game of another engine build is not replayed without a word", asyn
   // The next answer is saved with this engine.
   await answer(page);
   await expect.poll(() => savedLine(page)).toContain("2 answers saved");
+  await page.goto("/");
+  await expect
+    .poll(async () => (await written(page, "local.3.8.1", 2)).engine.wasmSha256)
+    .not.toBe("another");
 
   // A decision that the game does not offer stops the replay and names it.
-  await page.evaluate(() => {
-    const save = JSON.parse(localStorage.getItem("ti4.local.3.8.1") ?? "");
-    localStorage.setItem("ti4.local.3.8.1", JSON.stringify({ ...save, decisions: ["no-such"] }));
-  });
-  await page.reload();
+  const now = await written(page, "local.3.8.1", 2);
+  await putRecord(page, { ...now, save: { ...now.save, decisions: ["no-such"] } });
+  await page.goto("/?local=3&players=8&humans=1");
   await expect(page.getByRole("status")).toContainText(
     'The saved game does not fit this engine: decision 1 of 1 was "no-such"',
   );
 
-  // A save of an older format had the answers of the page only. It is not read, and the page
-  // says so, with the way to a new game.
-  await page.evaluate(() => {
-    const old = { format: 2, engine: "", seed: 3, players: 8, humans: 1, answers: ["sol"] };
-    localStorage.setItem("ti4.local.3.8.1", JSON.stringify(old));
-  });
+  // The start screen deletes it, after a dialog that names it.
+  await page.goto("/");
+  const saves = page.getByRole("region", { name: "Saved games" });
+  await expect(saves.getByRole("link")).toHaveText([/^Local game · seed 3/]);
+  await saves.getByRole("button", { name: "Delete Local game · seed 3" }).click();
+  await expect(page.getByRole("dialog")).toContainText("Delete the saved game?");
+  await page.getByRole("dialog").getByRole("button", { name: "Keep" }).click();
+  await expect(saves.getByRole("link")).toHaveCount(1);
+  await saves.getByRole("button", { name: "Delete Local game · seed 3" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(saves).toHaveCount(0);
+  expect(await savedGames(page)).toEqual([]);
+});
+
+test("a saved game of an older version is not read: the start screen says so and deletes it", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.getByRole("link", { name: /Single player/ })).toBeVisible();
+  // A record of the save store of before (web/ wrote it, or an older page of this app).
+  await putRecord(page, { id: "old-game", schema: 1, summary: { humanSeat: 1 } });
+  // A save of a page of before the save store, in localStorage.
+  await page.evaluate(() => localStorage.setItem("ti4.single", JSON.stringify({ format: 5 })));
   await page.reload();
-  await expect(page.getByRole("status")).toContainText(
-    "The saved game has format 2; this page reads format 3. It cannot be played again.",
+  const saves = page.getByRole("region", { name: "Saved games" });
+  await expect(saves).toContainText(
+    "1 saved game is of an older version. They cannot be played again.",
   );
-  await page.getByRole("status").getByRole("button", { name: "New game" }).click();
-  await expect(send(page)).toBeVisible();
-  expect(await page.evaluate(() => localStorage.getItem("ti4.local.3.8.1"))).toBeNull();
+  // The save of localStorage is removed at the start: it is not read.
+  expect(await page.evaluate(() => localStorage.getItem("ti4.single"))).toBeNull();
+  await saves.getByRole("button", { name: "Delete the saved games of an older version" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(saves).toHaveCount(0);
+  expect(await savedGames(page)).toEqual([]);
 });
 
 test("a draft of a tactical action is private, is kept, and is applied as one request", async ({
@@ -540,6 +657,8 @@ test("a draft goes on to the landings and the production, and ends at a draw", a
   await expect(row("Take a tactical action")).toBeVisible();
   const saved = await savedLine(page);
   await workspace("Draft").click();
+  // The systems are the choice once the engine answered the draft.
+  await expect(page.locator("g.system.target:not(.plain)")).not.toHaveCount(0);
 
   // The carrier of the north takes two infantry to the system with two free planets.
   await system("38").click();
@@ -596,6 +715,7 @@ test("a draft goes on to the landings and the production, and ends at a draw", a
   await page.getByRole("button", { name: "More draft actions" }).click();
   await page.getByRole("menuitem", { name: "Start over" }).click();
   await expect(heading(page)).toHaveText("Activation");
+  await expect(page.locator("g.system.target:not(.plain)")).not.toHaveCount(0);
   await system("72").click();
   await page.keyboard.press("Enter");
   await expect(send(page)).toHaveText(/Move nothing/);
@@ -643,7 +763,8 @@ test("a draft goes on to the landings and the production, and ends at a draw", a
   await expect(dialog.getByText("1 purchase produced and paid")).toBeVisible();
   await dialog.getByRole("button", { name: "Apply to Live" }).click();
   await expect(workspace("Live")).toHaveAttribute("aria-pressed", "true");
-  await expect(heading(page)).not.toHaveText("Production");
+  // The next decision is open before the map is clicked: its update would close the inspector.
+  await expect(heading(page)).toHaveText("Place up to 2 infantry");
   await system("72").click();
   const inspector = page
     .locator("section[aria-label='Galaxy board'] > div")
@@ -752,6 +873,103 @@ test("a secondary is drafted while the primary is resolved, and sent when the se
   expect(await savedLine(page)).not.toBe(saved);
   await expect(page.getByRole("button", { name: /^Step/ })).toBeVisible();
   await page.screenshot({ path: "shots/local/secondary-sent.png", animations: "disabled" });
+  expect(errors).toEqual([]);
+});
+
+test("a research is chosen in the technology tree, and the second one can research nothing", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // Sol plays Technology with Antimass Deflectors and Neural Motivator, a ready Biotic skip, and
+  // six trade goods. The scenario stops at the free research.
+  await page.goto("/?scenario=research_tech_skips&humans=1");
+  const tree = panel(page).getByRole("heading", { name: "Research", exact: true }).locator("..");
+  await expect(tree).toBeVisible();
+  await expect(panel(page).getByRole("heading", { name: "Technology" })).toBeVisible();
+  // The columns say what stands for prerequisites; the tree has Sol's upgrades and no Carrier II.
+  await expect(panel(page).getByText(/^Blue 1$/)).toBeVisible();
+  await expect(panel(page).getByText(/^Green 1 · \+1 /)).toBeVisible();
+  await expect(panel(page).getByText("Unit upgrades")).toBeVisible();
+  await expect(panel(page).getByRole("button", { name: /^Advanced Carrier II/ })).toBeVisible();
+  await expect(panel(page).getByRole("button", { name: /^Carrier II/ })).toHaveCount(0);
+  // An owned technology and one with missing prerequisites cannot be chosen.
+  await expect(
+    panel(page).getByRole("button", { name: "Antimass Deflectors, researched" }),
+  ).toBeDisabled();
+  await expect(
+    panel(page).getByRole("button", { name: /^War Sun, 4 prerequisites missing/ }),
+  ).toBeDisabled();
+  await expect(send(page)).toBeDisabled();
+  await page.screenshot({ path: "shots/local/research-tree.png", animations: "disabled" });
+
+  // A cell stages its technology; the header names it with its price.
+  await panel(page).getByRole("button", { name: "Gravity Drive", exact: true }).click();
+  await expect(tree).toContainText("Gravity Drive · free");
+  await expect(page.locator("footer")).toContainText("Selected: Gravity Drive");
+  await page.keyboard.press("Enter");
+
+  // The second research costs six resources and may research nothing.
+  await expect(tree).toContainText("Costs 6 resources");
+  await expect(
+    panel(page).getByRole("button", { name: "Gravity Drive, researched" }),
+  ).toBeVisible();
+  await expect(send(page)).toHaveText(/Research nothing/);
+  await panel(page).getByRole("button", { name: "Sarween Tools", exact: true }).click();
+  await expect(tree).toContainText("Sarween Tools · 6 resources");
+  await expect(send(page)).toHaveText(/^Send/);
+  await page.keyboard.press("Escape");
+  await expect(send(page)).toHaveText(/Research nothing/);
+  await page.keyboard.press("Enter");
+  await expect(tree).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test("the status phase gains the command tokens in the one redistribution, in the pool editor", async ({
+  page,
+}) => {
+  // The load of the scenario, an answer, the editor and a second answer.
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // Sol is in the status phase with 2 · 3 · 2 on its sheet. It gains 2 tokens, and 1 more for
+  // Versatile.
+  await page.goto("/?scenario=score_objective_status&humans=1");
+  const seat = page.getByRole("region", { name: "Players" }).getByRole("row").filter({
+    hasText: "Seat A",
+  });
+  await expect(seat).toContainText("2 · 3 · 2");
+  await expect(heading(page)).toHaveText("Score an objective");
+  await panel(page).getByRole("button", { name: "Decline" }).click();
+  await send(page).click();
+
+  // No question of a pool for each gained token: the gain is placed in the pools.
+  await expect(heading(page)).toHaveText("Redistribute your command tokens");
+  await expect(page.getByText(/into which pool/i)).toHaveCount(0);
+  const pools = panel(page).getByRole("heading", { name: "Command pools" }).locator("..");
+  await expect(pools).toContainText("7 / 10 placed");
+  await expect(page.locator("footer")).toContainText("Place 3 more tokens");
+  await expect(send(page)).toBeDisabled();
+  await page.screenshot({ path: "shots/local/command-pools.png", animations: "disabled" });
+  // The fleet pool keeps the least that the game offers: 2. Esc puts the pools back.
+  const fewer = panel(page).getByRole("button", { name: "Remove fleet pool token" });
+  await fewer.click();
+  await expect(fewer).toBeDisabled();
+  await expect(pools).toContainText("6 / 10 placed");
+  await page.keyboard.press("Escape");
+  await expect(pools).toContainText("7 / 10 placed");
+
+  for (const pool of ["tactic", "fleet", "strategy"]) {
+    await panel(page)
+      .getByRole("button", { name: `Add ${pool} pool token` })
+      .click();
+  }
+  await expect(pools).toContainText("10 / 10 placed");
+  await expect(panel(page).getByRole("button", { name: "Add tactic pool token" })).toBeDisabled();
+  await expect(page.locator("footer")).toContainText("Tactic 2 → 3 · Fleet 3 → 4 · Strategy 2 → 3");
+  await expect(send(page)).toBeEnabled();
+  await send(page).click();
+  await expect(seat).toContainText("3 · 4 · 3");
   expect(errors).toEqual([]);
 });
 
@@ -1211,7 +1429,8 @@ test("a production: the build is staged on the map, then paid on the map, and se
 
   // The main button sends the build and its payment, and the game goes on.
   await send(page).click();
-  await expect(heading(page)).not.toHaveText("Production");
+  // The next decision is open before the map is clicked: its update would close the inspector.
+  await expect(heading(page)).toHaveText("Place up to 2 infantry");
   await expect(bar).toHaveCount(0);
   await system("72").click();
   const inspector = page
@@ -1549,19 +1768,23 @@ test("single player: a table is set up in the page, started, kept and set up aga
   await panel(page).getByRole("button", { pressed: false }).first().click();
   await send(page).click();
   await expect.poll(() => savedLine(page, /^Single player · /)).toContain("1 answers saved");
-  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("ti4.single")!));
-  expect(saved.format).toBe(3);
-  // The decisions of every seat are kept, in their order: the other seats decided before the page.
-  expect(saved.decisions.length).toBeGreaterThan(1);
-  expect(saved.table.setup).toMatchObject({ player_count: 4, seed: 3, strategy_cards: "pok" });
-  expect(saved.table.seats.map((seat: { kind: string }) => seat.kind)).toEqual([
-    "human",
-    "smart",
-    "smart",
-    "random",
-  ]);
   await page.goto("/");
-  await page.getByRole("link", { name: /Single player/ }).click();
+  // The game is kept in the save store under the slot of single player, with its table.
+  const saved = await written(page, "single", 1);
+  expect(saved.save.format).toBe(2);
+  // The decisions of every seat are kept, in their order: the other seats decided before the page.
+  expect(saved.save.decisions.length).toBeGreaterThan(1);
+  const table = saved.save.game.table!;
+  expect(table.setup).toMatchObject({ player_count: 4, seed: 3, strategy_cards: "pok" });
+  expect(table.seats.map((seat) => seat.kind)).toEqual(["human", "smart", "smart", "random"]);
+  // The start screen lists it.
+  await expect(page.getByRole("region", { name: "Saved games" }).getByRole("link")).toHaveText([
+    /^Single player.*4 seats · Hacan · 1 answers/,
+  ]);
+  await page
+    .getByRole("link", { name: /Single player/ })
+    .first()
+    .click();
   await expect(page).toHaveURL("/?single");
   await expect(send(page)).toBeVisible();
   await expect(
@@ -1572,7 +1795,7 @@ test("single player: a table is set up in the page, started, kept and set up aga
   await openSettings(page);
   await settings(page).getByRole("button", { name: "New game" }).click();
   await expect(lobbyTitle(page)).toHaveText(/^Single player · /);
-  expect(await page.evaluate(() => localStorage.getItem("ti4.single"))).toBeNull();
+  expect(await savedGame(page, "single")).toBeUndefined();
   expect(errors).toEqual([]);
 });
 
@@ -1598,7 +1821,101 @@ test("single player: the other seats take the wait of the table, and the page sa
   await expect(send(page)).toBeVisible();
   await expect(page.locator("header strong").first()).toHaveText("Your decision");
   await expect(heading(page)).toHaveText("Choose a strategy card");
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("ti4.single")!).waitMs)).toBe(
-    500,
+  // The wait is kept next to the saved game.
+  const { id } = await written(page, "single");
+  expect(await page.evaluate((key) => localStorage.getItem(key), `ti4.save.${id}.wait`)).toBe(
+    "500",
   );
+});
+
+test("single player: a model plays a seat, its file is fetched once, and the game is played to the action phase", async ({
+  page,
+}) => {
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("console", (message) => message.type() === "error" && errors.push(message.text()));
+  page.on("pageerror", (error) => errors.push(error.message));
+  /** The files of the models that the page fetched from the server (not from the Cache API). */
+  const fetched: string[] = [];
+  page.on("requestfinished", (request) => {
+    if (/\/api\/models\/[0-9a-f]{64}\.ti4m$/.test(request.url())) {
+      fetched.push(request.url());
+    }
+  });
+  await page.goto("/?single&seed=3&players=8");
+  await expect(lobbyRows(page)).toHaveCount(8);
+  // The e2e server offers three models: each is a kind of an open seat after "Random".
+  await lobbyPlayers(page).getByRole("button", { name: "Remove Rule bot 7" }).click();
+  const open = lobbyRows(page).nth(7);
+  await expect(open.getByRole("button")).toHaveText([
+    "Rule bot",
+    "Random",
+    "Synthetic model 1",
+    "Synthetic model 2",
+    "Synthetic model 3",
+  ]);
+  // The row of the open seat fits the panel, and the page does not scroll.
+  const list = lobbyPlayers(page).getByRole("list");
+  expect(await list.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+  expect(
+    await page.evaluate(() => ({
+      width: document.documentElement.scrollWidth,
+      height: document.documentElement.scrollHeight,
+    })),
+  ).toEqual({ width: 1920, height: 1080 });
+  await page.screenshot({ path: "shots/local/single-models.png", animations: "disabled" });
+
+  // Two seats of models: the sign "✦" says the model on hover, and the start waits for the files.
+  await open.getByRole("button", { name: "Synthetic model 2" }).click();
+  await expect(open).toContainText("Synthetic model 2 1");
+  await expect(open.getByRole("img", { name: "Synthetic model 2: played by the page" })).toHaveText(
+    "✦",
+  );
+  await lobbyPlayers(page).getByRole("button", { name: "Remove Rule bot 6" }).click();
+  await lobbyRows(page).nth(6).getByRole("button", { name: "Synthetic model 1" }).click();
+  await expect(lobbyRows(page).nth(6)).toContainText("Synthetic model 1 1");
+  await page.mouse.move(0, 0);
+  await page.screenshot({ path: "shots/local/single-models-seated.png", animations: "disabled" });
+  await expect(lobbyMain(page)).toBeEnabled();
+  await lobbyMain(page).click();
+
+  // The game: the seats of the models play, and the player table has their sign.
+  await expect(page.getByText("Round 1 · Strategy phase")).toBeVisible();
+  const table = page.getByRole("region", { name: "Players" });
+  await expect(
+    table.getByRole("img", { name: "Synthetic model 1: no person plays this seat" }),
+  ).toHaveText("✦");
+  // Each of eight seats takes one strategy card.
+  await expect(heading(page)).toHaveText("Choose a strategy card");
+  await panel(page).getByRole("button", { pressed: false }).first().click();
+  await send(page).click();
+  await expect(page.getByText("Round 1 · Action phase")).toBeVisible();
+  expect(new Set(fetched).size).toBe(2);
+  expect(fetched).toHaveLength(2);
+
+  // A reload plays the saved game again: the files come from the Cache API, not the server.
+  await page.reload();
+  await expect(page.getByText("Round 1 · Action phase")).toBeVisible();
+  expect(fetched).toHaveLength(2);
+  expect(errors).toEqual([]);
+});
+
+test("single player: a saved game whose model the server no longer offers says so in place of the game", async ({
+  page,
+}) => {
+  await page.goto("/?single&seed=3&players=3");
+  await lobbyPlayers(page).getByRole("button", { name: "Remove Rule bot 2" }).click();
+  await lobbyRows(page).nth(2).getByRole("button", { name: "Synthetic model 1" }).click();
+  await expect(lobbyMain(page)).toBeEnabled();
+  await lobbyMain(page).click();
+  await expect(send(page)).toBeVisible();
+  await written(page, "single");
+  // The server dropped the model: the game cannot go on, and "New game" opens the setup.
+  await page.route("**/api/models", (route) => route.fulfill({ json: [] }));
+  await page.reload();
+  await expect(
+    page.getByText("The server no longer offers the model “synthetic-1” that this game seats."),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "New game" }).click();
+  await expect(lobbyTitle(page)).toHaveText(/^Single player · /);
 });

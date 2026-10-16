@@ -167,6 +167,8 @@ export interface TurnRedoShellProps {
 export interface TurnInfo {
   phase: string;
   activePlayer: string | null;
+  /** The game waits for another seat's decision or for a reaction window (the turn status). */
+  othersDeciding?: boolean;
 }
 
 export interface ChoiceRendererDispatcherProps {
@@ -773,6 +775,7 @@ export const ChoiceRendererDispatcher: React.FC<
         lastError={lastError}
         landingDraft={landingDraft}
         onLandingDraftChange={onLandingDraftChange}
+        othersDeciding={turn?.othersDeciding ?? false}
       />
     );
   }
@@ -852,10 +855,6 @@ export const ChoiceRendererDispatcher: React.FC<
     options: choice.options.map((option) => ({
       ...option,
       label: present(option.label),
-      description:
-        option.description == null
-          ? option.description
-          : present(option.description),
     })),
   };
 

@@ -169,7 +169,7 @@ export const AgendaBallotModal: React.FC<AgendaBallotModalProps> = ({
   if (!isOpen || !choice) return null;
 
   // Extract agenda card information from context details
-  const agendaCard = choice.context?.details?.agenda_card as
+  const agendaCard = choice.details?.agenda_card as
     | { name?: string; yes_outcome?: string; no_outcome?: string }
     | undefined;
 

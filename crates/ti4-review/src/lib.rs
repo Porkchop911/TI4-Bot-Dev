@@ -1030,10 +1030,7 @@ impl LiveReview {
                     // answers under the hook, so manual control and replay work as for any seat.
                     let seat_policy = |learned: Box<dyn Decider>| -> Box<dyn Decider> {
                         if config.rule_seats.contains(&index) {
-                            Box::new(ti4_server::session::random_bot::RuleBotDecider::new(
-                                player.clone(),
-                                config.seed,
-                            ))
+                            Box::new(ti4_rule_bot::RuleBotDecider::new(index, config.seed))
                         } else {
                             learned
                         }

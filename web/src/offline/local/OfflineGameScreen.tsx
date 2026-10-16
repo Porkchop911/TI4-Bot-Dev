@@ -67,7 +67,6 @@ export const OfflineGameScreen: React.FC<{
         if (!save) throw new Error("The game has not started");
         return {
           seed: save.seed,
-          setup: save.setup,
           answers: save.answers,
           engine: { build: save.engine.build, content_digest: save.engine.content_digest },
           wasm_sha256: transport.wasmSha256,

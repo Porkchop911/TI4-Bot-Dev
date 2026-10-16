@@ -8,7 +8,7 @@ import { useRegisterFeedbackSource } from "./source.ts";
 
 function health(isPublic: boolean) {
   globalThis.fetch = vi.fn(async () =>
-    new Response(JSON.stringify({ status: "ok", protocol_version: 3, commit: "abc1234", public: isPublic }), {
+    new Response(JSON.stringify({ status: "ok", protocol_version: 4, commit: "abc1234", public: isPublic }), {
       status: 200,
     }),
   ) as unknown as typeof fetch;

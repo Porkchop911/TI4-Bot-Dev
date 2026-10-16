@@ -9,18 +9,18 @@ use ti4_content::galaxy::Galaxy;
 use ti4_engine::choice::{Choice, ChoiceOption, Decider, DecisionRecord, IllegalChoice, Table};
 use ti4_engine::dice::Roll;
 use ti4_engine::game::Game;
-use ti4_model::deck_reserve::ReservedDraw;
-use ti4_model::id::PlayerId;
-use ti4_model::state::GameState;
-use ti4_server::protocol::splice::ConflictKind;
-use ti4_server::protocol::turn_redo::TurnRedoStop;
-use ti4_server::session::turn_redo::{
+use ti4_host::history::turn_redo::{
     AutoplayResult, RedoWindow, TailBaseline, TailSource, TurnRedoError, autoplay, find_turns,
     next_turn_start, open_segment, redo_window,
 };
-use ti4_server::session::{
-    GameSession, RngForce, RngMarks, SeatController, SessionConfig, replay_session_forced,
-};
+use ti4_host::protocol::splice::ConflictKind;
+use ti4_host::protocol::turn_redo::TurnRedoStop;
+use ti4_host::replay::replay_session_forced;
+use ti4_host::rng_force::{RngForce, RngMarks};
+use ti4_model::deck_reserve::ReservedDraw;
+use ti4_model::id::PlayerId;
+use ti4_model::state::GameState;
+use ti4_server::session::{GameSession, SeatController, SessionConfig};
 
 /// A tiny LCG picks options, so histories are varied but reproducible. The aggressive flavour
 /// marches fleets at each other, which is what makes dice.
@@ -98,7 +98,8 @@ pub fn setup(seed: u64) -> (GameState, Galaxy) {
         PlayerId::new("p3"),
     ];
     let (mut state, galaxy) =
-        ti4_server::map::create_game_with_map(ContentStore::embedded(), &players, seed).unwrap();
+        ti4_host::map::create_game_with_template(ContentStore::embedded(), &players, seed, None)
+            .unwrap();
     // These fixtures name decisions by index in games tuned against the notes a server game held
     // before notes were dealt after seating: four factionless notes in the last seat's hand.
     // Keep that opening so the indices still mean what they were chosen for.
@@ -779,7 +780,7 @@ fn forced_dice_reproduce_the_others_rolls_when_the_new_turn_rolls_fewer_dice_and
             PlayerId::new("p2"),
             PlayerId::new("p3"),
         ];
-        let tiles = ti4_server::map::build_board_tiles(ContentStore::embedded(), galaxy);
+        let tiles = ti4_host::map::build_board_tiles(ContentStore::embedded(), galaxy);
         let mut config = SessionConfig::new("redo_dice_worker", state.clone())
             .with_seed(7)
             .with_player_ids(players.clone())
@@ -1246,7 +1247,7 @@ fn a_worker_recovering_a_redone_history_from_its_marks_reaches_the_same_state_an
             PlayerId::new("p2"),
             PlayerId::new("p3"),
         ];
-        let tiles = ti4_server::map::build_board_tiles(ContentStore::embedded(), galaxy);
+        let tiles = ti4_host::map::build_board_tiles(ContentStore::embedded(), galaxy);
         let mut config = SessionConfig::new("redo_cards_worker", state.clone())
             .with_seed(7)
             .with_player_ids(players.clone())

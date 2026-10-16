@@ -46,8 +46,9 @@ pub enum StatusPhaseError {
 ///
 /// Convenience for callers with no choice driver: it runs the steps before the token gain and
 /// then those after it, skipping 81.5 entirely. A driver that can ask questions should call
-/// [`resolve_before_token_gain`] and [`resolve_after_token_gain`] around a
-/// [`crate::tokens::TokenGain`] window instead, so tokens are gained in their real position.
+/// [`resolve_before_token_gain`] and [`resolve_after_token_gain`] around the 81.5 gain and
+/// redistribution instead (one decision per seat: [`crate::tokens::TokenRedistribution::with_gain`]),
+/// so tokens are gained in their real position.
 ///
 /// Objective scoring (81.1) is excluded from both: it needs the scoreability predicates.
 ///

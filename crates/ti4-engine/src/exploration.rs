@@ -500,7 +500,10 @@ pub fn available_actions(
 }
 
 /// Ask which technology an Enigmatic Device researches, by name, before anything is paid.
-#[allow(clippy::too_many_arguments, reason = "the arguments of a decision site")]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the arguments of a decision site"
+)]
 fn ask_device_technology(
     state: &GameState,
     content: &ContentStore,
@@ -576,9 +579,16 @@ pub fn perform_action(
     let technology = match legacy_technology {
         Some(tech) => TechnologyId::new(tech),
         None => {
-            let Some(chosen) =
-                ask_device_technology(state, content, sources, table, galaxy, player, card, &technologies)
-            else {
+            let Some(chosen) = ask_device_technology(
+                state,
+                content,
+                sources,
+                table,
+                galaxy,
+                player,
+                card,
+                &technologies,
+            ) else {
                 return false;
             };
             chosen
@@ -1164,7 +1174,9 @@ pub fn explore_with(
         placed.push(format!("fragment:{}", trait_name.to_ascii_lowercase()));
     }
     if after.play_area > before.play_area
-        && let Some(card) = state.player(player).and_then(|seat| seat.exploration_cards.last())
+        && let Some(card) = state
+            .player(player)
+            .and_then(|seat| seat.exploration_cards.last())
     {
         placed.push(format!("play_area:{card}"));
     }
@@ -1257,10 +1269,19 @@ impl Holdings {
             ("trade_goods", after.trade_goods - self.trade_goods),
             ("commodities", after.commodities - self.commodities),
             ("command_tokens", after.command_tokens - self.command_tokens),
-            ("action_cards", to_i32(after.action_cards) - to_i32(self.action_cards)),
-            ("secret_objectives", to_i32(after.secrets) - to_i32(self.secrets)),
+            (
+                "action_cards",
+                to_i32(after.action_cards) - to_i32(self.action_cards),
+            ),
+            (
+                "secret_objectives",
+                to_i32(after.secrets) - to_i32(self.secrets),
+            ),
             ("relics", to_i32(after.relics) - to_i32(self.relics)),
-            ("technologies", to_i32(after.technologies) - to_i32(self.technologies)),
+            (
+                "technologies",
+                to_i32(after.technologies) - to_i32(self.technologies),
+            ),
         ]
         .into_iter()
         .filter(|(_, change)| *change != 0)
@@ -2088,14 +2109,18 @@ mod tests {
         );
         let chosen = &offered[0];
         assert_eq!(chosen.id, "play_area:ed1");
-        let wanted = enigmatic_device_technologies(&state, ContentStore::embedded(), POK, &player())
-            .into_iter()
-            .next_back()
-            .expect("a technology to research")
-            .to_string();
+        let wanted =
+            enigmatic_device_technologies(&state, ContentStore::embedded(), POK, &player())
+                .into_iter()
+                .next_back()
+                .expect("a technology to research")
+                .to_string();
 
         // The technology is asked once, by name, before anything is paid.
-        let mut table = crate::choice::Table::with_default(Box::new(crate::choice::Scripted::new([wanted.clone()])));
+        let mut table =
+            crate::choice::Table::with_default(Box::new(crate::choice::Scripted::new([
+                wanted.clone()
+            ])));
         let before = state.player(&player()).unwrap().technologies.len();
         // Measured as spending power, not as trade goods: the seat also controls a planet, so a
         // correct payment draws on both and a trade-good count alone would read as underpaying.
@@ -2451,7 +2476,10 @@ mod tests {
             offered: offered.iter().map(|id| (*id).to_owned()).collect(),
             context: None,
         };
-        mark_legacy_device_ids(&mut state, &[record("tactical", &["tactical", "play_area:ed2"])]);
+        mark_legacy_device_ids(
+            &mut state,
+            &[record("tactical", &["tactical", "play_area:ed2"])],
+        );
         assert!(!state.legacy_device_ids, "new-style ids never mark a game");
         mark_legacy_device_ids(
             &mut state,
@@ -2472,9 +2500,19 @@ mod tests {
             &player(),
             chosen,
         ));
-        assert!(state.player(&player()).unwrap().technologies.contains(&TechnologyId::new("gd")));
         assert!(
-            table.log.records.iter().all(|r| !r.prompt.contains("which technology")),
+            state
+                .player(&player())
+                .unwrap()
+                .technologies
+                .contains(&TechnologyId::new("gd"))
+        );
+        assert!(
+            table
+                .log
+                .records
+                .iter()
+                .all(|r| !r.prompt.contains("which technology")),
             "no follow-up technology question was asked"
         );
     }
@@ -2504,7 +2542,10 @@ mod tests {
         resolve_card(&mut state, &player(), Some(&planet), "ed2", &[]);
         let result = &state.exploration_log[0].result;
         assert!(result.contains("play area"), "{result}");
-        assert_eq!(state.exploration_log[0].placed, vec!["play_area:ed2".to_owned()]);
+        assert_eq!(
+            state.exploration_log[0].placed,
+            vec!["play_area:ed2".to_owned()]
+        );
     }
 
     #[test]
@@ -2664,7 +2705,9 @@ mod tests {
             let unit = entry["unit"].as_str().expect("unit id");
             assert!(entry["reason"].as_str().is_some_and(|r| !r.is_empty()));
             assert!(
-                !ask.options.iter().any(|o| o.id == format!("build|{unit}|1")),
+                !ask.options
+                    .iter()
+                    .any(|o| o.id == format!("build|{unit}|1")),
                 "{unit} is both offered and listed as not offered"
             );
         }

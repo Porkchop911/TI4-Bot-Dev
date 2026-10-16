@@ -5,6 +5,7 @@ import {
   handDecisionNote,
   isHandCardDecision,
 } from "./cardOptions.ts";
+import { partialContext } from "../test/wire.ts";
 
 describe("describeCardOption", () => {
   it("shows a discarded action card's name and printed text", () => {
@@ -41,7 +42,7 @@ describe("take a revealed action card", () => {
     expect(isHandCardDecision("take_revealed_action_card")).toBe(true);
     expect(handDecisionConfirmLabel("take_revealed_action_card")).toBe("Take card");
     expect(
-      handDecisionNote({ prompt: "take 1 of x's action cards", options: [], context: { subtype: "take_revealed_action_card" } }),
+      handDecisionNote({ prompt: "take 1 of x's action cards", options: [], context: partialContext({ subtype: "take_revealed_action_card" }) }),
     ).toContain("Another player has shown you these action cards");
   });
 });
@@ -51,7 +52,7 @@ describe("handDecisionNote", () => {
     const note = handDecisionNote({
       prompt: "over the hand limit — discard one of 8",
       options: [],
-      context: { subtype: "discard_over_hand_limit" },
+      context: partialContext({ subtype: "discard_over_hand_limit" }),
     });
     expect(note).toContain("You hold 8 action cards");
   });
@@ -59,8 +60,8 @@ describe("handDecisionNote", () => {
   it("counts the secret objectives offered", () => {
     const note = handDecisionNote({
       prompt: "return a secret objective to the deck",
-      options: [{ id: "a", label: "x" }, { id: "b", label: "y" }, { id: "c", label: "z" }],
-      context: { subtype: "return_over_secret_hand_limit" },
+      options: [{ id: "a", label: "x", payload: {}, kind: "" }, { id: "b", label: "y", payload: {}, kind: "" }, { id: "c", label: "z", payload: {}, kind: "" }],
+      context: partialContext({ subtype: "return_over_secret_hand_limit" }),
     });
     expect(note).toContain("You hold 3 secret objectives");
     expect(handDecisionConfirmLabel("return_over_secret_hand_limit")).toBe("Return objective");

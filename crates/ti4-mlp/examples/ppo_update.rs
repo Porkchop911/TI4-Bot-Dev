@@ -18,6 +18,14 @@
 //!
 //! Games are played in parallel across rayon workers, one owned actor copy per worker.
 //!
+//! `--rollout-backend infer` plays them on `ti4-infer` instead (`Avx2Fma` where the CPU has it):
+//! after each update the actor is packed in memory into one `ti4_infer::Model`, which every worker
+//! shares by `Arc`, and the value of each recorded decision comes from the value head of that
+//! model (a shared critic only). The update itself stays on libtorch. `--rollout-backend
+//! infer-int8` packs the actor with int8 weights and plays on `Avx2Vnni` (AVX-VNNI CPUs only;
+//! section H of `web2/plans/2026-10-15-MLP_INFERENCE_PLAN.md`); the behaviour probabilities are
+//! those of the int8 model, and the update recomputes them on libtorch as before.
+//!
 //! This exists to be measured as much as to run: every estimate of what M10-038's 30,000 updates
 //! would cost has so far been an extrapolation, and one real update replaces all of them.
 
@@ -56,17 +64,32 @@ const SEEDS_PER_UPDATE: u64 = 16;
 
 enum WorkerInference {
     Cpu(ti4_mlp::Actor),
+    Infer(Arc<ti4_mlp::infer::InferModel>),
     Gpu(ti4_mlp::gpu_batch::GpuInferenceClient),
 }
 
 enum WorkerScopedInference {
     Cpu(Rc<ti4_mlp::Actor>),
+    Infer(Arc<ti4_mlp::infer::InferModel>),
     Gpu(ti4_mlp::gpu_batch::GpuInferenceClient),
+}
+
+/// What plays the benchmark seats of `--opponent`: the frozen actor on libtorch, or packed for
+/// `ti4-infer` once at the start.
+enum FrozenInference {
+    Cpu(Rc<ti4_mlp::Actor>),
+    Infer(Arc<ti4_mlp::infer::InferModel>),
 }
 
 enum RolloutBackend {
     Cpu,
-    GpuBatched { batch_size: usize, flush: Duration },
+    /// `ti4-infer` on this backend: the fastest f32 one of the CPU (`ti4_infer::Backend::fastest`)
+    /// for `infer`, `Avx2Vnni` with int8 weights for `infer-int8`.
+    Infer(ti4_infer::Backend),
+    GpuBatched {
+        batch_size: usize,
+        flush: Duration,
+    },
 }
 
 /// The temperature a frozen benchmark seat acts at.
@@ -544,7 +567,7 @@ impl Decider for Watching {
 )]
 fn play_one(
     inference: &WorkerScopedInference,
-    opponent: Option<&Rc<ti4_mlp::Actor>>,
+    opponent: Option<&FrozenInference>,
     learner_faction: usize,
     content: &ContentStore,
     players: &[PlayerId],
@@ -662,13 +685,32 @@ fn play_one(
                     let bot = if let (false, Some(frozen)) = (learns, opponent) {
                         // A benchmark seat: frozen weights, near-argmax, and no PPO recording, so
                         // nothing it does can reach the learner's batch.
-                        ti4_mlp::bot::MlpBot::sharing(frozen, vocabulary.clone(), row, stream)
-                            .at_temperature(OPPONENT_TEMPERATURE)
-                            .from_setup(baseline)
+                        match frozen {
+                            FrozenInference::Cpu(actor) => ti4_mlp::bot::MlpBot::sharing(
+                                actor,
+                                vocabulary.clone(),
+                                row,
+                                stream,
+                            ),
+                            FrozenInference::Infer(model) => ti4_mlp::bot::MlpBot::on_infer(
+                                model,
+                                vocabulary.clone(),
+                                row,
+                                stream,
+                            ),
+                        }
+                        .at_temperature(OPPONENT_TEMPERATURE)
+                        .from_setup(baseline)
                     } else {
                         match inference {
                             WorkerScopedInference::Cpu(actor) => ti4_mlp::bot::MlpBot::sharing(
                                 actor,
+                                vocabulary.clone(),
+                                row,
+                                stream,
+                            ),
+                            WorkerScopedInference::Infer(model) => ti4_mlp::bot::MlpBot::on_infer(
+                                model,
                                 vocabulary.clone(),
                                 row,
                                 stream,
@@ -1204,9 +1246,10 @@ fn main() {
     // Which factions a game seats (BF-22). `six` is the historical FACTIONS rotation; `wide` draws
     // six distinct factions per seed from the whole implemented roster, and the bundle's pinned
     // faction rows (ti4_mlp::FACTION_ROSTER) condition every one of them.
-    let roster = argument("--roster").map_or(ti4_engine::seating::FactionRoster::InScope, |value| {
-        ti4_training::rollout::parse_roster(&value).unwrap_or_else(|error| refuse(&error))
-    });
+    let roster = argument("--roster")
+        .map_or(ti4_engine::seating::FactionRoster::InScope, |value| {
+            ti4_training::rollout::parse_roster(&value).unwrap_or_else(|error| refuse(&error))
+        });
     if diag_path.is_some() {
         ti4_mlp::perf::enable(diag_sync);
     } else if hash_games || diag_sync {
@@ -1232,6 +1275,13 @@ fn main() {
         .unwrap_or_else(|error| refuse(&format!("--device cuda: {error}")));
     let rollout_backend = match argument("--rollout-backend").as_deref().unwrap_or("cpu") {
         "cpu" => RolloutBackend::Cpu,
+        "infer" => RolloutBackend::Infer(ti4_infer::Backend::fastest()),
+        "infer-int8" => {
+            if !ti4_infer::Backend::Avx2Vnni.is_available() {
+                refuse("--rollout-backend infer-int8 needs a CPU with AVX2, FMA and AVX-VNNI");
+            }
+            RolloutBackend::Infer(ti4_infer::Backend::Avx2Vnni)
+        }
         "gpu-batched" => {
             if !matches!(device, ti4_tensor::Device::Cuda(_)) {
                 refuse("--rollout-backend gpu-batched requires --device cuda");
@@ -1248,10 +1298,10 @@ fn main() {
             }
         }
         other => refuse(&format!(
-            "--rollout-backend {other}: expected cpu or gpu-batched"
+            "--rollout-backend {other}: expected cpu, infer, infer-int8 or gpu-batched"
         )),
     };
-    if matches!(rollout_backend, RolloutBackend::Cpu)
+    if !matches!(rollout_backend, RolloutBackend::GpuBatched { .. })
         && (argument("--gpu-batch").is_some() || argument("--gpu-flush-ms").is_some())
     {
         refuse("--gpu-batch and --gpu-flush-ms require --rollout-backend gpu-batched");
@@ -1451,7 +1501,9 @@ fn main() {
     if roster != ti4_engine::seating::FactionRoster::InScope
         && argument("--waste-penalties").is_some()
     {
-        refuse("--waste-penalties is per faction of the six; with --roster wide or new use --waste-penalty");
+        refuse(
+            "--waste-penalties is per faction of the six; with --roster wide or new use --waste-penalty",
+        );
     }
     if faction_focus > 0.0 && roster != ti4_engine::seating::FactionRoster::Wide {
         refuse("--faction-focus reweights the wide draw; it needs --roster wide");
@@ -1679,8 +1731,19 @@ fn main() {
         .unwrap_or_else(|error| refuse(&format!("the reward is not self-consistent: {error}")));
 
     if opponent_actor.is_some() && matches!(rollout_backend, RolloutBackend::GpuBatched { .. }) {
-        refuse("--opponent needs the CPU rollout backend: the GPU service owns a single actor");
+        refuse("--opponent needs a CPU rollout backend: the GPU service owns a single actor");
     }
+    // The model of ti4-infer has the value readout of a shared critic only: a separate critic has
+    // its own trunk, which it does not carry.
+    if matches!(rollout_backend, RolloutBackend::Infer(_)) && critic_mode == CriticMode::Separate {
+        refuse(
+            "--rollout-backend infer needs a shared critic or batch_mean, not a separate critic",
+        );
+    }
+    let infer_backend = match rollout_backend {
+        RolloutBackend::Infer(backend) => backend,
+        _ => ti4_infer::Backend::fastest(),
+    };
 
     println!("M10-034 PPO update");
     println!("  bundle      {bundle_path}");
@@ -1755,6 +1818,10 @@ fn main() {
     println!("  optimiser   {device:?}");
     match &rollout_backend {
         RolloutBackend::Cpu => println!("  rollout     CPU inference on Rayon workers"),
+        RolloutBackend::Infer(_) => println!(
+            "  rollout     ti4-infer ({}) on Rayon workers, one model per update",
+            infer_backend.name()
+        ),
         RolloutBackend::GpuBatched { batch_size, flush } => println!(
             "  rollout     experimental CUDA service, batch {batch_size}, partial flush {:.1} ms",
             flush.as_secs_f64() * 1_000.0
@@ -1825,10 +1892,8 @@ fn main() {
             .filter(|alias| !FACTIONS.contains(alias))
             .map(|alias| ti4_mlp::FactionRow::of(alias).expect("a roster row"))
             .collect();
-        let masks = actor.faction_rows_masks(
-            &rows,
-            critic_mode == ti4_mlp::bundle::CriticMode::Shared,
-        );
+        let masks =
+            actor.faction_rows_masks(&rows, critic_mode == ti4_mlp::bundle::CriticMode::Shared);
         optimizer
             .restrict(masks)
             .unwrap_or_else(|error| refuse(&format!("restricting the optimiser: {error}")));
@@ -1852,6 +1917,14 @@ fn main() {
     // Read once here rather than per publish: it is 1.1 MB of JSON and does not change.
     let slots_text = std::fs::read_to_string(std::path::Path::new(&bundle_path).join("slots.json"))
         .unwrap_or_else(|error| refuse(&format!("reading slots.json: {error}")));
+    // The frozen benchmark on ti4-infer, packed once: its weights never change.
+    let frozen_infer = match (&rollout_backend, &opponent_actor) {
+        (RolloutBackend::Infer(_), Some((path, frozen))) => Some(Arc::new(
+            ti4_mlp::infer::InferModel::from_actor(frozen, &slots_text, infer_backend)
+                .unwrap_or_else(|error| refuse(&format!("packing {path} for ti4-infer: {error}"))),
+        )),
+        _ => None,
+    };
 
     // Stage-one clearance and victory points accumulate across a reporting window and are compared
     // against the window before it. Per update the numbers are noise -- 96 games, six seats -- but a
@@ -1872,11 +1945,22 @@ fn main() {
         // The optimiser's leaves never act. Every backend takes a frozen inference copy before
         // workers start, then the service is stopped before Adam can mutate the training actor.
         let update_started = Instant::now();
+        let mut infer_model = None;
         let (cpu_inference, mut gpu_service) = match &rollout_backend {
             RolloutBackend::Cpu => (
                 Some(actor.inference_copy().to_device(ti4_tensor::Device::Cpu)),
                 None,
             ),
+            RolloutBackend::Infer(_) => {
+                // The weights of this update, packed once and shared by every worker.
+                infer_model = Some(Arc::new(
+                    ti4_mlp::infer::InferModel::from_actor(&actor, &slots_text, infer_backend)
+                        .unwrap_or_else(|error| {
+                            refuse(&format!("packing the actor for ti4-infer: {error}"))
+                        }),
+                ));
+                (None, None)
+            }
             RolloutBackend::GpuBatched { batch_size, flush } => (
                 None,
                 Some(
@@ -1938,6 +2022,14 @@ fn main() {
                     })
                     .collect()
             }
+            RolloutBackend::Infer(_) => {
+                let model = infer_model
+                    .as_ref()
+                    .unwrap_or_else(|| refuse("ti4-infer rollout has no model"));
+                (0..workers)
+                    .map(|_| (WorkerInference::Infer(Arc::clone(model)), None))
+                    .collect()
+            }
             RolloutBackend::GpuBatched { .. } => {
                 let client = gpu_service
                     .as_ref()
@@ -1974,9 +2066,14 @@ fn main() {
                 // One CPU actor or one GPU-service client per worker, shared by every game it plays.
                 let local = match local {
                     WorkerInference::Cpu(actor) => WorkerScopedInference::Cpu(Rc::new(actor)),
+                    WorkerInference::Infer(model) => WorkerScopedInference::Infer(model),
                     WorkerInference::Gpu(client) => WorkerScopedInference::Gpu(client),
                 };
-                let frozen = frozen.map(Rc::new);
+                let frozen = match (frozen, &frozen_infer) {
+                    (Some(actor), _) => Some(FrozenInference::Cpu(Rc::new(actor))),
+                    (None, Some(model)) => Some(FrozenInference::Infer(Arc::clone(model))),
+                    (None, None) => None,
+                };
                 let mut played = Vec::new();
                 loop {
                     let job = cursor.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -2240,6 +2337,11 @@ fn main() {
             // compares the recorded numbers with the same arithmetic rather than with the device's.
             let scorer = actor.inference_copy().to_device(ti4_tensor::Device::Cpu);
             let mut worst = 0.0f64;
+            // On ti4-infer the recorded probabilities are those of its kernels, whose logits are
+            // within `logit_bound` · max(1, |logit|) of libtorch's (1e-4 in f32, the int8 bound of
+            // the plan on infer-int8): the log-probability within twice that of the largest logit,
+            // over the temperature. On libtorch they are the same arithmetic.
+            let mut worst_excess = 0.0f64;
             let mut by_head: BTreeMap<&str, (usize, f64)> = BTreeMap::new();
             for step in &steps {
                 let name = ti4_mlp::all_heads()
@@ -2252,6 +2354,17 @@ fn main() {
                     .unwrap_or_else(|error| refuse(&format!("rescoring: {error}")));
                 let gap = (p[step.chosen].ln() - step.behaviour_log_prob).abs();
                 worst = worst.max(gap);
+                let tolerance = if let RolloutBackend::Infer(backend) = rollout_backend {
+                    let logits = scorer
+                        .logits(&step.options, name, step.row)
+                        .and_then(|logits| Ok(ti4_tensor::to_vec(&logits)?))
+                        .unwrap_or_else(|error| refuse(&format!("rescoring: {error}")));
+                    let largest = logits.iter().fold(1.0f64, |m, l| m.max(f64::from(l.abs())));
+                    2.0 * ti4_mlp::infer::logit_bound(backend) * largest / step.temperature
+                } else {
+                    1e-6
+                };
+                worst_excess = worst_excess.max(gap - tolerance);
                 let entry = by_head.entry(name).or_default();
                 entry.0 += 1;
                 entry.1 = entry.1.max(gap);
@@ -2261,7 +2374,7 @@ fn main() {
                 steps.len()
             );
             println!("  steps by head (count, max gap): {by_head:?}");
-            if worst > 1e-6 {
+            if worst_excess > 0.0 {
                 refuse("recorded behaviour probabilities do not reproduce");
             }
         }
@@ -2498,7 +2611,7 @@ fn main() {
             let line = serde_json::json!({
                 "kind": "update",
                 "update": update,
-                "rollout_backend": match &rollout_backend { RolloutBackend::Cpu => "cpu", RolloutBackend::GpuBatched { .. } => "gpu-batched" },
+                "rollout_backend": match &rollout_backend { RolloutBackend::Cpu => "cpu", RolloutBackend::Infer(backend) if backend.is_int8() => "infer-int8", RolloutBackend::Infer(_) => "infer", RolloutBackend::GpuBatched { .. } => "gpu-batched" },
                 "games": games,
                 "decisions": batch.len(),
                 "raw_options": raw_options,

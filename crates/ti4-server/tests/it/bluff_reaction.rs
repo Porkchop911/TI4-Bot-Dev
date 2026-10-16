@@ -6,10 +6,10 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use ti4_host::protocol::server::ServerMessage;
+use ti4_host::protocol::status::{PublicTurnStatus, ViewerRole};
 use ti4_model::id::PlayerId;
-use ti4_server::dev::execute_launch_scenario;
-use ti4_server::protocol::server::ServerMessage;
-use ti4_server::protocol::status::{PublicTurnStatus, ViewerRole};
+use ti4_server::dev::launch_scenario;
 use ti4_server::session::bluff::BluffPolicy;
 use ti4_server::session::registry::HistoryAction;
 use ti4_server::session::{GameRegistry, GameSession, MockClient};
@@ -140,7 +140,7 @@ fn event_shape(session: &GameSession) -> String {
 
 fn launch(registry: &Arc<GameRegistry>) -> (Arc<GameSession>, Seats, String) {
     let launch =
-        execute_launch_scenario(registry, "ongoing_combat_four_views", Some(SEED)).expect("launch");
+        launch_scenario(registry, "ongoing_combat_four_views", Some(SEED)).expect("launch");
     let session = registry.get_game(&launch.game_id).expect("game");
     let seats = seats(&session);
     (session, seats, launch.player_session)
@@ -203,7 +203,7 @@ fn a_declared_bluff_holds_the_live_game_and_leaves_no_trace_in_the_history() {
 fn the_banner_is_the_status_a_real_question_sends() {
     use ti4_engine::choice::{Choice, ChoiceOption};
     use ti4_engine::decision_context::{DecisionContext, DecisionSource};
-    use ti4_server::projection::{
+    use ti4_host::projection::{
         project_turn_status, project_turn_status_for, waiting_for_player_status,
         waiting_for_reactions_status,
     };

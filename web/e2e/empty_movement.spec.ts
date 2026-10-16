@@ -85,7 +85,7 @@ test("a real engine advances after an empty tactical movement", async ({ browser
     (option) => option.id === "tactical",
   );
   expect(tactical).toBeDefined();
-  await choose(page, tactical!.id);
+  await page.getByTestId("turn-bar-tactical").click();
 
   current = await choiceAt(request, gameId, actor.session, "activate_system");
   expect(current.pending_choice?.choice.context?.subtype).toBe("activate_system");
@@ -112,31 +112,28 @@ test("a real engine advances after an empty tactical movement", async ({ browser
     );
   });
   expect(distant, "seed 42 must offer a distant activation").toBeDefined();
+  const before = current.game_version;
+  await expect(page.getByTestId("system-activation-bar")).toBeVisible();
   await page.getByTestId(`system-hex-${distant!.id}`).click();
   await page.getByTestId("confirm-activation-btn").click();
 
-  current = await choiceAt(request, gameId, actor.session, "movement_step");
-  expect(current.pending_choice?.choice.context?.subtype).toBe("movement_step");
-  expect(current.pending_choice?.choice.options.map((option) => option.id)).toEqual([
-    "done_moving",
-  ]);
-  expect(current.pending_choice?.choice.options[0].kind).toBe("decline");
-  const before = current.game_version;
-  await expect(page.getByTestId("tactical-movement-tray")).toBeVisible();
-  await expect(page.getByText("No ships eligible to move into the active system.")).toBeVisible();
-  await page.getByTestId("commit-moves-btn").click();
+  // Nothing can move into the distant system: the movement step offers only "done_moving", and
+  // the client answers that lone option itself (auto-submit is on by default), so the movement
+  // tray never asks and the engine advances.
   await expect
     .poll(async () => {
       const state = await snapshot(request, gameId, actor.session);
+      const subtype = state.pending_choice?.choice.context?.subtype;
       return (
-        state.game_version > before &&
-        state.pending_choice?.choice.context?.subtype !== "movement_step"
+        state.game_version > before + 1 &&
+        subtype !== "activate_system" &&
+        subtype !== "movement_step"
       );
     })
     .toBe(true);
   await expect
     .poll(async () => Number((await page.getByTestId("game-version").innerText()).slice(1)))
-    .toBeGreaterThan(before);
+    .toBeGreaterThan(before + 1);
   await expect(page.getByTestId("tactical-movement-tray")).toHaveCount(0);
   await expect(page.getByRole("alert")).toHaveCount(0);
 });

@@ -1,10 +1,10 @@
+use ti4_host::projection::project_combat_view;
+use ti4_host::projection::{project_initial_snapshot, project_state_update};
 use ti4_model::id::PlayerId;
 use ti4_model::id::{SystemId, UnitTypeId};
 use ti4_model::units::Unit;
 use ti4_model::view::{HIDDEN, view_for};
 use ti4_server::fixtures::{create_sample_game, create_sample_pending_choice};
-use ti4_server::projection::project_combat_view;
-use ti4_server::projection::{project_initial_snapshot, project_state_update};
 
 #[test]
 fn board_projection_preserves_normal_and_galvanized_cargo() {
@@ -28,7 +28,7 @@ fn board_projection_preserves_normal_and_galvanized_cargo() {
     assert_eq!(cargo.len(), 2);
     assert_eq!(cargo[0]["galvanized"], false);
     assert_eq!(cargo[1]["galvanized"], true);
-    let decoded: ti4_server::protocol::server::InitialSnapshotMsg =
+    let decoded: ti4_host::protocol::server::InitialSnapshotMsg =
         serde_json::from_value(json).expect("round trip");
     assert_eq!(decoded.view, snapshot.view);
 }
@@ -131,9 +131,9 @@ fn combat_projection_follows_the_driver_not_contested_ships_or_the_last_survivor
         "invasion is outside combat"
     );
 }
-use ti4_server::protocol::server::ServerMessage;
-use ti4_server::protocol::status::ViewerRole;
-use ti4_server::protocol::{EventVisibility, GameEvent, GameEventKind};
+use ti4_host::protocol::server::ServerMessage;
+use ti4_host::protocol::status::ViewerRole;
+use ti4_host::protocol::{EventVisibility, GameEvent, GameEventKind};
 
 #[test]
 fn actor_payload_includes_own_private_information_and_pending_choice() {
@@ -350,12 +350,12 @@ fn a_session_update_is_the_shared_part_of_a_state_update() {
         let pending = Some((&choice, "nonce_123"));
         let message = serde_json::to_value(project_state_update("g", 2, &game, viewer, pending))
             .expect("state update");
-        let update = serde_json::to_value(ti4_server::projection::project_session_update(
+        let update = serde_json::to_value(ti4_host::projection::project_session_update(
             &game,
             viewer,
             pending,
             &[],
-            &ti4_server::projection::facts_context(None),
+            &ti4_host::projection::facts_context(None),
         ))
         .expect("session update");
         let fields = update.as_object().expect("an object");
@@ -449,7 +449,7 @@ fn event_history_is_projected_to_its_explicit_audience() {
             stage: None,
             detail: None,
             movement: None,
-            seat_detail: Some(ti4_server::protocol::server::SeatDecisionDetail {
+            seat_detail: Some(ti4_host::protocol::server::SeatDecisionDetail {
                 seat: PlayerId::new("seat_a"),
                 detail: "Private objective: hidden_test".into(),
             }),
@@ -482,14 +482,14 @@ fn event_history_is_projected_to_its_explicit_audience() {
         },
     ];
 
-    let actor = ti4_server::projection::project_initial_snapshot_with_map(
+    let actor = ti4_host::projection::project_initial_snapshot_with_map(
         "test_game",
         1,
         &game,
         &ViewerRole::Player(PlayerId::new("seat_a")),
         Some((&choice, "nonce_123")),
         &[],
-        &ti4_server::map::GalaxyLayout {
+        &ti4_host::map::GalaxyLayout {
             version: 1,
             active_sources: Vec::new(),
             placements: Vec::new(),
@@ -499,14 +499,14 @@ fn event_history_is_projected_to_its_explicit_audience() {
         None,
         &events,
     );
-    let opponent = ti4_server::projection::project_initial_snapshot_with_map(
+    let opponent = ti4_host::projection::project_initial_snapshot_with_map(
         "test_game",
         1,
         &game,
         &ViewerRole::Player(PlayerId::new("seat_b")),
         Some((&choice, "nonce_123")),
         &[],
-        &ti4_server::map::GalaxyLayout {
+        &ti4_host::map::GalaxyLayout {
             version: 1,
             active_sources: Vec::new(),
             placements: Vec::new(),
@@ -526,7 +526,7 @@ fn event_history_is_projected_to_its_explicit_audience() {
     assert_eq!(opponent.events.len(), 1);
     assert_eq!(opponent.events[0].id, "test-1");
     assert!(opponent.events[0].private_detail.is_none());
-    let spectator = ti4_server::projection::project_initial_snapshot(
+    let spectator = ti4_host::projection::project_initial_snapshot(
         "test_game",
         1,
         &game,
@@ -534,14 +534,14 @@ fn event_history_is_projected_to_its_explicit_audience() {
         None,
     );
     assert!(spectator.events.is_empty());
-    let spectator = ti4_server::projection::project_initial_snapshot_with_map(
+    let spectator = ti4_host::projection::project_initial_snapshot_with_map(
         "test_game",
         1,
         &game,
         &ViewerRole::Spectator,
         None,
         &[],
-        &ti4_server::map::GalaxyLayout {
+        &ti4_host::map::GalaxyLayout {
             version: 1,
             active_sources: Vec::new(),
             placements: Vec::new(),
@@ -564,7 +564,7 @@ fn event_history_is_projected_to_its_explicit_audience() {
 fn late_game() -> (
     ti4_model::state::GameState,
     ti4_content::galaxy::Galaxy,
-    Vec<ti4_server::protocol::view::BoardTileView>,
+    Vec<ti4_host::protocol::view::BoardTileView>,
 ) {
     use ti4_model::content_types::POK;
     let content = ti4_content::ContentStore::embedded();
@@ -572,14 +572,14 @@ fn late_game() -> (
         .iter()
         .map(|name| PlayerId::new(*name))
         .collect();
-    let loader = ti4_server::maps::TemplateLoader::load().expect("the templates load");
-    let template = ti4_server::maps::default_template_for(content, &loader, 8, POK)
+    let loader = ti4_host::maps::TemplateLoader::load().expect("the templates load");
+    let template = ti4_host::maps::default_template_for(content, &loader, 8, POK)
         .expect("a template for eight");
     let (mut state, mut galaxy) =
-        ti4_server::map::create_game_with_template(content, &ids, 42, Some(&template))
+        ti4_host::map::create_game_with_template(content, &ids, 42, Some(&template))
             .expect("a game");
-    ti4_view::scenario::apply(
-        ti4_view::scenario::LATE_GAME,
+    ti4_host::view::scenario::apply(
+        ti4_host::view::scenario::LATE_GAME,
         &mut state,
         &mut galaxy,
         content,
@@ -597,7 +597,7 @@ fn late_game() -> (
             state.players[index].secret_objectives.push(secret);
         }
     }
-    let tiles = ti4_server::map::build_board_tiles(content, &galaxy);
+    let tiles = ti4_host::map::build_board_tiles(content, &galaxy);
     (state, galaxy, tiles)
 }
 
@@ -635,7 +635,7 @@ fn facts_and_hands(message: &serde_json::Value) -> String {
 #[test]
 fn the_facts_show_no_hand_of_another_seat_and_no_order_of_a_deck() {
     let (state, galaxy, tiles) = late_game();
-    let layout = ti4_server::map::GalaxyLayout::from_galaxy(&galaxy, ti4_model::content_types::POK);
+    let layout = ti4_host::map::GalaxyLayout::from_galaxy(&galaxy, ti4_model::content_types::POK);
     let quoted = |id: &str| format!("\"{id}\"");
     let mut viewers = vec![ViewerRole::Spectator];
     viewers.extend(
@@ -645,7 +645,7 @@ fn the_facts_show_no_hand_of_another_seat_and_no_order_of_a_deck() {
             .map(|p| ViewerRole::Player(p.id.clone())),
     );
     for viewer in &viewers {
-        let snapshot = ti4_server::projection::project_initial_snapshot_with_map(
+        let snapshot = ti4_host::projection::project_initial_snapshot_with_map(
             "g",
             1,
             &state,
@@ -657,7 +657,7 @@ fn the_facts_show_no_hand_of_another_seat_and_no_order_of_a_deck() {
             None,
             &[],
         );
-        let update = ti4_server::projection::project_state_update_with_map(
+        let update = ti4_host::projection::project_state_update_with_map(
             "g",
             1,
             &state,
@@ -830,8 +830,8 @@ fn secret_objective_progress_reaches_only_the_holding_seat() {
 #[test]
 fn an_update_of_eight_seats_with_its_facts_stays_small() {
     let (state, galaxy, tiles) = late_game();
-    let layout = ti4_server::map::GalaxyLayout::from_galaxy(&galaxy, ti4_model::content_types::POK);
-    let update = ti4_server::projection::project_state_update_with_map(
+    let layout = ti4_host::map::GalaxyLayout::from_galaxy(&galaxy, ti4_model::content_types::POK);
+    let update = ti4_host::projection::project_state_update_with_map(
         "g",
         1,
         &state,
@@ -881,10 +881,10 @@ fn objective_progress_details_follow_the_redaction_split() {
         .map(PlayerId::new)
         .collect();
     let (mut game, galaxy) =
-        ti4_server::map::create_game_with_map(content, &seats, 7).expect("map game");
+        ti4_host::map::create_game_with_template(content, &seats, 7, None).expect("map game");
     // The generated map has no anomaly; swap one blue tile for a gravity rift so Learn the
     // Secrets has something to count. The projection rebuilds adjacency from these tiles.
-    let mut tiles = ti4_server::map::build_board_tiles(content, &galaxy);
+    let mut tiles = ti4_host::map::build_board_tiles(content, &galaxy);
     let rift = tiles
         .iter_mut()
         .find(|tile| tile.system_id == "19")
@@ -892,9 +892,9 @@ fn objective_progress_details_follow_the_redaction_split() {
     rift.system_id = "41".to_owned();
     // The real board's tiles include the Fracture and the parked Wormhole Nexus; the projection
     // must still rebuild a galaxy from them, or every map-shaped count goes missing.
-    let galaxy = ti4_server::projection::placed_galaxy(&tiles).expect("tiles rebuild a galaxy");
+    let galaxy = ti4_host::projection::placed_galaxy(&tiles).expect("tiles rebuild a galaxy");
     assert!(galaxy.adjacent("18").len() >= 6, "Mecatol keeps its ring");
-    let layout = ti4_server::map::GalaxyLayout::from_galaxy(&galaxy, POK);
+    let layout = ti4_host::map::GalaxyLayout::from_galaxy(&galaxy, POK);
 
     // Everyone shares Mecatol Rex, so all three are neighbours; seat_a also holds it.
     let mecatol = SystemId::new("18");
@@ -922,7 +922,7 @@ fn objective_progress_details_follow_the_redaction_split() {
     game.player_mut(&seats[0]).unwrap().secret_objectives = vec![SecretObjectiveId::new("lsc")];
 
     let view_of = |viewer: &ViewerRole| {
-        ti4_server::projection::project_initial_snapshot_with_map(
+        ti4_host::projection::project_initial_snapshot_with_map(
             "test_game",
             1,
             &game,

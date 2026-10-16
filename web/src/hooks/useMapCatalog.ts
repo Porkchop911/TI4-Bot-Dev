@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { decodeMapList, decodeMapPreview } from "../protocol/mapDecode.ts";
-import type { MapChoice, MapPreviewDto, MapTemplateSummary } from "../protocol/types.ts";
+import { lobbyPath, mapsPath } from "@ti4/shared/net/api.ts";
+import { decodeMapList, decodeMapPreview } from "@ti4/shared/wire/decode.ts";
+import type { MapChoice, MapPreview, MapTemplateSummary } from "../protocol/types.ts";
 
 export type Loadable<T> =
   { status: "loading" } | { status: "error"; message: string } | { status: "ready"; value: T };
@@ -27,7 +28,7 @@ export function useMapCatalog(playerCount: number): {
     }
     let active = true;
     setState({ status: "loading" });
-    getJson(`/api/maps?player_count=${playerCount}`)
+    getJson(mapsPath(playerCount))
       .then((json) => active && setState({ status: "ready", value: decodeMapList(json) }))
       .catch((cause) => active && setState({ status: "error", message: String(cause) }));
     return () => {
@@ -43,7 +44,7 @@ export type MapPreviewSource =
 
 export function previewUrl(source: MapPreviewSource): string {
   if (source.kind === "lobby")
-    return `/api/games/${encodeURIComponent(source.gameId)}/lobby/map-preview`;
+    return lobbyPath(source.gameId, "map-preview");
   const variant = source.variant ?? 0;
   const alias =
     source.choice.kind === "random" ? "random" : encodeURIComponent(source.choice.alias);
@@ -51,7 +52,7 @@ export function previewUrl(source: MapPreviewSource): string {
   return `/api/maps/${alias}/preview?${count}variant=${variant}`;
 }
 
-const cardCache = new Map<string, MapPreviewDto>();
+const cardCache = new Map<string, MapPreview>();
 
 /** Test hook: card pictures are cached for the session because they never change. */
 export function clearMapPreviewCache(): void {
@@ -63,20 +64,20 @@ export function clearMapPreviewCache(): void {
  * keep showing the last picture meanwhile; card previews are cached per choice and variant.
  */
 export function useMapPreview(source: MapPreviewSource | null): {
-  state: Loadable<MapPreviewDto>;
+  state: Loadable<MapPreview>;
   refreshing: boolean;
   retry: () => void;
 } {
   const url = source ? previewUrl(source) : null;
   const cacheable = source?.kind === "card";
   const key = url === null ? null : source!.kind === "lobby" ? `${url}#${source!.revision}` : url;
-  const [state, setState] = useState<Loadable<MapPreviewDto>>(() => {
+  const [state, setState] = useState<Loadable<MapPreview>>(() => {
     const hit = cacheable && url ? cardCache.get(url) : undefined;
     return hit ? { status: "ready", value: hit } : { status: "loading" };
   });
   const [refreshing, setRefreshing] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const last = useRef<MapPreviewDto | null>(null);
+  const last = useRef<MapPreview | null>(null);
   useEffect(() => {
     if (!url) return;
     const hit = cacheable ? cardCache.get(url) : undefined;

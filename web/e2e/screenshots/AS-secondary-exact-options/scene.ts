@@ -2,8 +2,8 @@ import type { Page } from "@playwright/test";
 import {
   PROTOCOL_VERSION,
   type ClientMessage,
-  type EngineChoice,
-  type SecondaryPreviewBody,
+  type Choice,
+  type SecondaryPreview,
 } from "../../../src/protocol/types";
 import { GAME_ID, openMockedGame, type MockedGame } from "../_shared/mockGame";
 import { opponent, playerWithHand, actor } from "../_shared/players";
@@ -37,7 +37,7 @@ export const BUILDS = [
   { unit: "dreadnought", cost: 4, count: 1 },
 ];
 
-export type PreviewScript = (answers: string[]) => SecondaryPreviewBody | null;
+export type PreviewScript = (answers: string[]) => SecondaryPreview | null;
 
 /** A script answering like the engine for Technology: the window, then the research list with its payment. */
 export const technologyScript: PreviewScript = (answers) => {
@@ -118,7 +118,7 @@ export async function openScene(page: Page, scene: SceneOptions): Promise<Mocked
 }
 
 /** A state update that moves the game forward and puts `choice` to the viewer (full engine shape). */
-export function pushChoice(game: MockedGame, version: number, choice: EngineChoice) {
+export function pushChoice(game: MockedGame, version: number, choice: Choice) {
   const { events: _events, ...base } = game.snapshot;
   game.send({
     ...base,
@@ -137,7 +137,7 @@ export function pushChoice(game: MockedGame, version: number, choice: EngineChoi
 }
 
 /** The follower's window question, as the engine sends it when its turn comes. */
-export const windowChoice = (card: string): EngineChoice => ({
+export const windowChoice = (card: string): Choice => ({
   ...engineWindow(card, WINDOWS_PROMPT(card)),
   player: actor,
 });

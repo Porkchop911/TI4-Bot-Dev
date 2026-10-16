@@ -18,11 +18,11 @@ use std::sync::{Arc, Mutex};
 use ti4_content::ContentStore;
 use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice, Table};
 use ti4_engine::game::Game;
-use ti4_server::session::SessionConfig;
-use ti4_server::session::batch::{
+use ti4_host::batch::{
     BatchKind, MovementPlan, MovementStep, SimulationMode, simulate_with, simulation_difference,
 };
-use ti4_server::session::step_snapshot::StepSnapshot;
+use ti4_host::step_snapshot::StepSnapshot;
+use ti4_server::session::SessionConfig;
 
 use crate::support::{Forced, Source, generated, strict_saved_games};
 
@@ -248,7 +248,7 @@ fn differential(source: &Source, default_points: usize) -> Coverage {
     let offers = Arc::new(Mutex::new(Vec::new()));
     let mut boundaries = Vec::new();
     {
-        let force = ti4_server::session::RngForce::new(&source.marks);
+        let force = ti4_host::rng_force::RngForce::new(&source.marks);
         let table = Table::with_default(Box::new(Recording {
             inner: support::forced_decider(source, 0, force.clone()),
             offers: offers.clone(),
@@ -571,7 +571,7 @@ fn slow_a_long_history_batch_check_is_accepted_far_inside_the_old_budget() {
         .unwrap_or_else(|failure| panic!("{failure:?}"));
     assert_eq!(simulation.forked_at, Some(late.boundary));
     assert!(
-        took < ti4_server::session::batch::replay_budget(0) / 5,
+        took < ti4_host::batch::replay_budget(0) / 5,
         "forked check of {} decisions took {took:?}",
         prefix.len()
     );

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
-import { BoardView, ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import { BoardView, ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import { Dialog } from "../primitives/index.ts";
 import { usePipelineRunner, SemanticIntent } from "../hooks/usePipelineRunner.ts";
 import { ChoiceRendererModel, isDeclineOption } from "../presentation/choiceModel.ts";
@@ -102,16 +102,8 @@ export const PendingChoiceModal: React.FC<PendingChoiceModalProps> = ({
     onMinimizedChange?.(next);
   };
 
-  const constraints = model?.outstanding?.[0] ?? choice?.context?.outstanding?.[0];
-  const minSelection =
-    model?.selectionMode.mode === "multi"
-      ? model.selectionMode.min
-      : (constraints?.min_selection ?? 1);
-  const maxSelection =
-    model?.selectionMode.mode === "multi"
-      ? model.selectionMode.max
-      : (constraints?.max_selection ??
-        (constraints?.min_selection ? constraints.min_selection : 1));
+  const minSelection = model?.selectionMode.mode === "multi" ? model.selectionMode.min : 1;
+  const maxSelection = model?.selectionMode.mode === "multi" ? model.selectionMode.max : 1;
   const isMultiSelect = maxSelection > 1;
 
   const selectedOptionId = controlledSelectedOptionId ?? uncontrolledSelectedOptionId;
@@ -161,9 +153,7 @@ export const PendingChoiceModal: React.FC<PendingChoiceModalProps> = ({
   const filteredOptions = choice.options.filter((opt) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
-    return (
-      opt.label.toLowerCase().includes(q) || (opt.description?.toLowerCase().includes(q) ?? false)
-    );
+    return opt.label.toLowerCase().includes(q);
   });
   const strategyDraft = isStrategyCardGrid(choice);
   const investments = investmentsProgress(choice);
@@ -189,7 +179,7 @@ export const PendingChoiceModal: React.FC<PendingChoiceModalProps> = ({
     else if (outcome.kind === "moves") {
       // One engine question per move; the pipeline answers them in turn.
       const intents: SemanticIntent[] = outcome.moveIds.map((id) => ({
-        predicate: (o: ChoiceOptionDto) => o.id === id,
+        predicate: (o: ChoiceOption) => o.id === id,
       }));
       if (outcome.finish) intents.push({ predicate: isDeclineOption });
       executePipeline(intents);
@@ -533,7 +523,7 @@ export const PendingChoiceModal: React.FC<PendingChoiceModalProps> = ({
                           <div className="strategy-draft-card__text">
                             <strong>Primary</strong>
                             <p>
-                              {card.primaryText || opt.description || "No printed text available."}
+                              {card.primaryText || "No printed text available."}
                             </p>
                             <strong>Secondary</strong>
                             <p>{card.secondaryText || "No printed text available."}</p>
@@ -548,18 +538,6 @@ export const PendingChoiceModal: React.FC<PendingChoiceModalProps> = ({
                         <LegendaryOptionNote choice={choice} option={opt} board={boardView} />
                         {card && <StrategyGoodsNote choice={choice} option={opt} />}
                         <SystemPickOptionFacts choice={choice} optionId={opt.id} board={boardView} />
-                        {opt.description && (
-                          <div
-                            style={{
-                              fontSize: 12,
-                              color: "#94a3b8",
-                              marginTop: 2,
-                              whiteSpace: "pre-line",
-                            }}
-                          >
-                            {opt.description}
-                          </div>
-                        )}
                       </div>
                     </label>
                   );

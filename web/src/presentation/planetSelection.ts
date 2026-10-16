@@ -1,4 +1,4 @@
-import { BoardView, ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import { BoardView, ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import {
   findPlanetMeta,
   humanizeId,
@@ -30,7 +30,7 @@ export function findPlanetSystem(planetId: string, board?: BoardView | null): st
 }
 
 /** The system an option points at: `payload.system` when present, else the planet's system. */
-export function resolveOptionSystem(opt: ChoiceOptionDto, board?: BoardView | null): string | null {
+export function resolveOptionSystem(opt: ChoiceOption, board?: BoardView | null): string | null {
   const system = opt.payload?.system;
   if (typeof system === "string" && system) return system;
   if (typeof system === "number") return String(system);
@@ -114,7 +114,7 @@ export function describePlanetDecision(choice: PendingChoiceDto): DecisionDescri
 }
 
 /** The option label without a repeated "Source: " prefix. */
-export function optionActionLabel(opt: ChoiceOptionDto, sourceLabel: string | null): string {
+export function optionActionLabel(opt: ChoiceOption, sourceLabel: string | null): string {
   const label = (opt.label ?? "").trim();
   if (sourceLabel) {
     const prefix = `${sourceLabel.toLowerCase()}:`;
@@ -125,7 +125,7 @@ export function optionActionLabel(opt: ChoiceOptionDto, sourceLabel: string | nu
 
 /** True when the option label says more than the planet's name (e.g. "place pds on lodor"). */
 export function isSpecificOptionLabel(
-  opt: ChoiceOptionDto,
+  opt: ChoiceOption,
   sourceLabel: string | null,
   planet: PlanetDetails,
 ): boolean {
@@ -137,7 +137,7 @@ export function isSpecificOptionLabel(
 export interface PlanetCandidate {
   planetId: string;
   systemId: string | null;
-  options: ChoiceOptionDto[];
+  options: ChoiceOption[];
 }
 
 /** Candidate planets in offer order, each with every option that targets it. */

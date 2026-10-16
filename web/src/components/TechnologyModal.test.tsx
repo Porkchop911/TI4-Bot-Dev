@@ -4,6 +4,7 @@ import { render, screen, fireEvent, within } from "@testing-library/react";
 import { TechnologyModal } from "./TechnologyModal.tsx";
 import { PlayerIdentityProvider } from "../presentation/PlayerIdentity.tsx";
 import type { LobbyDto, PlayerView, BoardView, PendingChoiceDto } from "../protocol/types.ts";
+import { partialContext } from "../test/wire.ts";
 
 const mockLobby: LobbyDto = {
   game_id: "test-game",
@@ -405,7 +406,7 @@ describe("TechnologyModal", () => {
       actor: "player1",
       nonce: "dec-tech-primary",
       prompt: "Research a technology",
-      context: {
+      context: partialContext({
         subtype: "research_technology",
         source: {
           StrategyCard: {
@@ -413,11 +414,11 @@ describe("TechnologyModal", () => {
             secondary: false,
           },
         },
-      },
+      }),
       options: [
-        { id: "amd", label: "Antimass Deflectors", kind: "research" },
-        { id: "ps", label: "Plasma Scoring", kind: "research" },
-        { id: "decline", label: "Decline", kind: "decline" },
+        { id: "amd", label: "Antimass Deflectors", kind: "research", payload: {} },
+        { id: "ps", label: "Plasma Scoring", kind: "research", payload: {} },
+        { id: "decline", label: "Decline", kind: "decline", payload: {} },
       ],
     };
 
@@ -476,7 +477,7 @@ describe("TechnologyModal", () => {
       actor: "player1",
       nonce: "dec-tech-primary-chain",
       prompt: "Research a technology",
-      context: {
+      context: partialContext({
         subtype: "research_technology",
         source: {
           StrategyCard: {
@@ -484,11 +485,11 @@ describe("TechnologyModal", () => {
             secondary: false,
           },
         },
-      },
+      }),
       options: [
-        { id: "st", label: "Sarween Tools", kind: "research" },
-        { id: "ps", label: "Plasma Scoring", kind: "research" },
-        { id: "decline", label: "Decline", kind: "decline" },
+        { id: "st", label: "Sarween Tools", kind: "research", payload: {} },
+        { id: "ps", label: "Plasma Scoring", kind: "research", payload: {} },
+        { id: "decline", label: "Decline", kind: "decline", payload: {} },
       ],
     };
 
@@ -541,11 +542,11 @@ describe("TechnologyModal", () => {
       actor: "player1",
       nonce: "dec-tech-primary-afford",
       prompt: "Research a technology",
-      context: {
+      context: partialContext({
         subtype: "research_technology",
         source: { StrategyCard: { card: "Technology", secondary: false } },
-      },
-      options: ids.map((id) => ({ id, label: id, kind: "research" })),
+      }),
+      options: ids.map((id) => ({ id, label: id, kind: "research", payload: {} })),
     });
     const renderPrimary = (tradeGoods: number, owned: string[], ids: string[]) =>
       renderWithIdentity(

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { GameSessionClient, RECONNECT_GIVE_UP_AFTER } from "./client.ts";
-import { InitialSnapshotMsg, PROTOCOL_VERSION } from "./types.ts";
+import { PROTOCOL_VERSION, type ServerMessage } from "./types.ts";
 
 class FakeWebSocket {
   static CONNECTING = 0;
@@ -40,11 +40,14 @@ const pending = (nonce: string) => ({
     player: "player_a",
     prompt: "Choose",
     context: { subtype: "movement_step" },
-    options: [{ id: "o", label: "O" }],
+    options: [{ id: "o", label: "O", kind: "", payload: {} }],
   },
 });
 
-const snapshot = (version: number, nonce: string | null = "n1"): InitialSnapshotMsg => ({
+const snapshot = (
+  version: number,
+  nonce: string | null = "n1",
+): Extract<ServerMessage, { type: "initial_snapshot" }> => ({
   type: "initial_snapshot",
   protocol_version: PROTOCOL_VERSION,
   game_id: "game_12345",
@@ -67,9 +70,10 @@ const snapshot = (version: number, nonce: string | null = "n1"): InitialSnapshot
       strategy_card_goods: {},
       laws: {},
     },
+    turn: 0,
   },
   turn_status: { kind: "active_turn", player: "player_a", phase: "action", round: 1 },
-  pending_choice: nonce ? (pending(nonce) as never) : null,
+  pending_choice: nonce ? (pending(nonce) as never) : undefined,
   events: [],
 });
 
@@ -87,6 +91,7 @@ afterEach(() => {
   FakeWebSocket.all = [];
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("GameSessionClient resume after idle", () => {
@@ -144,9 +149,11 @@ describe("GameSessionClient resume after idle", () => {
       .mockRejectedValueOnce(new TypeError("Failed to fetch"))
       .mockImplementation(async () => ok(snapshot(6)));
     vi.stubGlobal("fetch", fetchMock);
+    // The longest jitter: the three waits of the retry are 1 s, 2 s and 4 s.
+    vi.spyOn(Math, "random").mockReturnValue(1);
     const client = newClient();
     client.start();
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 7; i++) {
       await vi.advanceTimersByTimeAsync(1_000);
       expect(client.getState().lastError).toBeNull();
     }

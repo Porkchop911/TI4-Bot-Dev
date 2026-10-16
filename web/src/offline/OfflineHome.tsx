@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { OfflineSetupForm } from "./OfflineSetupForm.tsx";
-import { OfflineGamesList } from "./OfflineGamesList.tsx";
+import { OfflineGamesList, OlderSaves } from "./OfflineGamesList.tsx";
 import { ResumeProgress } from "./ResumeProgress.tsx";
 import { OfflineBanner } from "./OfflineBanner.tsx";
 import { useMismatchDecider } from "./EngineMismatchDialog.tsx";
@@ -28,6 +28,8 @@ export const OfflineHome: React.FC<{
   onBack: () => void;
 }> = ({ launcher, onEnter, onBack }) => {
   const [games, setGames] = useState<OfflineGameSummary[] | null>(null);
+  /** Saved games of an older version (counted when the list is read). */
+  const [older, setOlder] = useState(0);
   const [busy, setBusy] = useState<Busy | null>(null);
   const [error, setError] = useState<string | null>(null);
   const abort = useRef<AbortController | null>(null);
@@ -38,6 +40,7 @@ export const OfflineHome: React.FC<{
   const refresh = useCallback(async () => {
     try {
       setGames(await launcher.list());
+      setOlder(launcher.storage?.status().unreadable ?? 0);
     } catch {
       setGames([]);
       setError("Could not read the saved games on this device.");
@@ -148,6 +151,15 @@ export const OfflineHome: React.FC<{
                   onExport={exportGame}
                   onDelete={async (id) => {
                     await launcher.remove(id);
+                    await refresh();
+                  }}
+                />
+              )}
+              {launcher.storage && (
+                <OlderSaves
+                  count={older}
+                  onDelete={async () => {
+                    await launcher.storage!.removeUnreadable();
                     await refresh();
                   }}
                 />

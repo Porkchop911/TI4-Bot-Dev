@@ -2559,7 +2559,7 @@ mod tests {
     }
 
     #[test]
-    fn scored_games_stay_legal_and_deterministic_across_nested_windows() {
+    fn slow_scored_games_stay_legal_and_deterministic_across_nested_windows() {
         // Every seat plays the authored bot through five rounds of real play: action-phase
         // scoring windows re-offer their scorer, combat pauses mid-fight for a OnePerPlayer
         // window, agendas vote and score. The table validates every answer, so an illegal choice

@@ -1,7 +1,7 @@
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import type { ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import type { ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import { ReadyPlanetsBar } from "./ReadyPlanetsBar.tsx";
 import {
   ReadyPlanetsDraftProvider,
@@ -12,7 +12,7 @@ const choice = (...ids: string[]): PendingChoiceDto => ({
   actor: "b",
   nonce: "n1",
   prompt: "ready which planet",
-  options: ids.map((id): ChoiceOptionDto => ({ id, kind: "ready", label: `ready ${id}` })),
+  options: ids.map((id): ChoiceOption => ({ id, kind: "ready", label: `ready ${id}`, payload: {} })),
   context: { subtype: "ready_planet" } as PendingChoiceDto["context"],
 });
 

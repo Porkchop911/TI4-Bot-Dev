@@ -63,7 +63,7 @@ fn main() {
             .map(|h| h.rng_marks.clone())
             .unwrap_or_default();
         let galaxy = seed.and_then(|seed| {
-            ti4_server::map::rebuild_galaxy(
+            ti4_host::map::rebuild_galaxy(
                 content,
                 &player_ids,
                 seed,
@@ -72,7 +72,7 @@ fn main() {
             )
             .ok()
         });
-        match ti4_server::session::replay::replay_session_forced(
+        match ti4_host::replay::replay_session_forced(
             &initial_state,
             galaxy.as_ref(),
             &decisions,
@@ -103,7 +103,7 @@ fn main() {
     }
 }
 
-fn report_rolls(report: &ti4_server::session::replay::ReplayReport) -> serde_json::Value {
+fn report_rolls(report: &ti4_host::replay::ReplayReport) -> serde_json::Value {
     let mut by_reason = std::collections::BTreeMap::<String, usize>::new();
     for roll in &report.rolls {
         *by_reason.entry(roll.reason.clone()).or_default() += 1;

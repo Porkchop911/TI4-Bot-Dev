@@ -2762,7 +2762,9 @@ mod card_tag_tests {
         let mut counts: BTreeMap<String, f64> = BTreeMap::new();
         for (kind, id) in cards {
             for tag in tags_of(kind, id) {
-                *counts.entry(format!("{CARD_TAG_FAMILY}:{tag}")).or_default() += 1.0;
+                *counts
+                    .entry(format!("{CARD_TAG_FAMILY}:{tag}"))
+                    .or_default() += 1.0;
             }
         }
         counts
@@ -2832,7 +2834,12 @@ mod card_tag_tests {
         ];
         assert_eq!(seat_tags(&state, &a), expected(&ralnel));
         // Out of scope the faction record itself is out: the seat gets nothing rather than a guess.
-        let seen = Observed::new(&state, ContentStore::embedded(), ti4_model::content_types::POK, None);
+        let seen = Observed::new(
+            &state,
+            ContentStore::embedded(),
+            ti4_model::content_types::POK,
+            None,
+        );
         assert!(card_tag_seat_facts(&seen, &a).is_empty());
     }
 
@@ -2863,10 +2870,7 @@ mod card_tag_tests {
         }
     }
 
-    fn input<'a>(
-        cards: &'a [ActionCardId],
-        notes: &'a [String],
-    ) -> CardTagInput<'a> {
+    fn input<'a>(cards: &'a [ActionCardId], notes: &'a [String]) -> CardTagInput<'a> {
         CardTagInput {
             held_action_cards: cards,
             held_promissory_notes: notes,
@@ -2894,7 +2898,12 @@ mod card_tag_tests {
         player: &PlayerId,
         held: &CardTagInput<'_>,
     ) -> Vec<FeatureVector> {
-        let seen = Observed::new(state, ContentStore::embedded(), ti4_model::content_types::POK, None);
+        let seen = Observed::new(
+            state,
+            ContentStore::embedded(),
+            ti4_model::content_types::POK,
+            None,
+        );
         mlp_choice_features_with(
             &seen,
             choice,
@@ -2919,7 +2928,10 @@ mod card_tag_tests {
             assert_eq!(opt_names(vector), want, "{}", option.id);
             checked += usize::from(!want.is_empty());
         }
-        assert!(checked >= 6, "most real strategy cards carry tags: {checked}");
+        assert!(
+            checked >= 6,
+            "most real strategy cards carry tags: {checked}"
+        );
     }
 
     #[test]
@@ -2927,7 +2939,8 @@ mod card_tag_tests {
         let content = ContentStore::embedded();
         let mut state = ti4_engine::fixtures::game(&["a"]);
         let player = PlayerId::new("a");
-        let (decider, seen) = ti4_engine::choice::Capturing::new(Box::new(ti4_engine::choice::FirstOption));
+        let (decider, seen) =
+            ti4_engine::choice::Capturing::new(Box::new(ti4_engine::choice::FirstOption));
         let mut table = ti4_engine::choice::Table::with_default(Box::new(decider));
         ti4_engine::strategy_cards::primary(
             &mut state,
@@ -2995,7 +3008,11 @@ mod card_tag_tests {
         let choice = Choice::new(a.clone(), "act", options.clone());
         let held = input(&hand, &[]);
         let vectors = projected(&state, &choice, &a, &held);
-        let index = choice.options.iter().position(|o| o.id == "action_card|1").unwrap();
+        let index = choice
+            .options
+            .iter()
+            .position(|o| o.id == "action_card|1")
+            .unwrap();
         let want = opt_expected(kind::ACTION_CARD, card.as_str());
         assert!(!want.is_empty());
         assert_eq!(opt_names(&vectors[index]), want);
@@ -3038,10 +3055,20 @@ mod card_tag_tests {
         let choice = Choice::new(a.clone(), "act", options);
         let held = input(&[], &[]);
         let vectors = projected(&state, &choice, &a, &held);
-        let index = choice.options.iter().position(|o| o.id == option.id).unwrap();
-        assert_eq!(opt_names(&vectors[index]), opt_expected(kind::LEADER, leader));
+        let index = choice
+            .options
+            .iter()
+            .position(|o| o.id == option.id)
+            .unwrap();
+        assert_eq!(
+            opt_names(&vectors[index]),
+            opt_expected(kind::LEADER, leader)
+        );
         // Ssruu's borrowed form has four segments and is deliberately not mapped.
-        let borrowed = ChoiceOption::new(format!("component|leader|yssarilagent|{leader}"), "component");
+        let borrowed = ChoiceOption::new(
+            format!("component|leader|yssarilagent|{leader}"),
+            "component",
+        );
         assert!(card_tag_option_facts(&borrowed, &held).is_empty());
     }
 
@@ -3067,7 +3094,10 @@ mod card_tag_tests {
             .iter()
             .filter(|o| o.kind == ITEM_KIND && o.id.starts_with("diplomacy|note|"))
             .collect();
-        assert!(!notes.is_empty(), "the dealt hand offers notes: {options:?}");
+        assert!(
+            !notes.is_empty(),
+            "the dealt hand offers notes: {options:?}"
+        );
         // The seat's real unplayed notes, as the engine-bound accessor would report them.
         let hand: Vec<String> = state
             .promissory_notes
@@ -3092,7 +3122,10 @@ mod card_tag_tests {
             assert_eq!(opt_names(vector), want, "{note}");
             tagged += usize::from(!want.is_empty());
         }
-        assert!(tagged >= 5, "generic and faction notes carry tags: {tagged}");
+        assert!(
+            tagged >= 5,
+            "generic and faction notes carry tags: {tagged}"
+        );
         // A note the seat does not hold resolves to nothing.
         let none = input(&[], &[]);
         let vectors = projected(&state, &choice, &a, &none);
@@ -3112,7 +3145,8 @@ mod card_tag_tests {
             .action_cards
             .clear();
         let hand = state.player(&a).unwrap().action_cards.clone();
-        let (decider, seen) = ti4_engine::choice::Capturing::new(Box::new(ti4_engine::choice::FirstOption));
+        let (decider, seen) =
+            ti4_engine::choice::Capturing::new(Box::new(ti4_engine::choice::FirstOption));
         let mut table = ti4_engine::choice::Table::with_default(Box::new(decider));
         let mut resolver = ti4_engine::timing::Resolver::new(
             vec![a.clone(), PlayerId::new("b")],
@@ -3136,8 +3170,13 @@ mod card_tag_tests {
         };
         let mut payload = std::collections::BTreeMap::new();
         payload.insert("player".to_owned(), "a".into());
-        let event = context.event_sequence.next("SYSTEM_ACTIVATED", payload).unwrap();
-        resolver.emit_with_context(&mut context, event, |_, _| {}).unwrap();
+        let event = context
+            .event_sequence
+            .next("SYSTEM_ACTIVATED", payload)
+            .unwrap();
+        resolver
+            .emit_with_context(&mut context, event, |_, _| {})
+            .unwrap();
         let asked = seen.borrow().clone();
         let choice = asked
             .iter()
@@ -3178,16 +3217,20 @@ mod card_tag_tests {
 
         // On, the vectors are the legacy ones plus card-tag names and nothing else.
         let held = input(&[], &[]);
-        let on = mlp_choice_features_with(&seen, &choice, &choice.player, &[], baseline, Some(&held));
+        let on =
+            mlp_choice_features_with(&seen, &choice, &choice.player, &[], baseline, Some(&held));
         let mut saw_seat = false;
         let mut saw_opt = false;
         for (legacy, on) in legacy.iter().zip(&on) {
-            let legacy_names: BTreeSet<String> = crate::features::names_of(legacy).into_iter().collect();
+            let legacy_names: BTreeSet<String> =
+                crate::features::names_of(legacy).into_iter().collect();
             let on_names: BTreeSet<String> = crate::features::names_of(on).into_iter().collect();
             let extra: BTreeSet<String> = on_names.difference(&legacy_names).cloned().collect();
             assert!(legacy_names.is_subset(&on_names));
             assert!(
-                extra.iter().all(|name| name.starts_with("card-tag:") || name.starts_with("card-tag-opt:")),
+                extra
+                    .iter()
+                    .all(|name| name.starts_with("card-tag:") || name.starts_with("card-tag-opt:")),
                 "{extra:?}"
             );
             saw_seat |= extra.iter().any(|name| name.starts_with("card-tag:"));

@@ -156,7 +156,7 @@
     },
     {
       "title": "Win-probability tooltips",
-      "text": "They need the odds service (POST /advisor/battle). The capture intercepts that request with Playwright route interception and answers a fixed simulation result (62% / 10% / 28%), so no advisor process is needed and the pixels are repeatable."
+      "text": "The odds are the engine's, computed in the page (the shots were taken with a fixed answer of the former odds service: 62% / 10% / 28%). The engine rolls from a fixed seed, so a new capture is repeatable."
     }
   ]
 }

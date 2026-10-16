@@ -8,8 +8,6 @@ export interface TransportCapabilities {
   splicePreview: boolean;
   /** Turn redo (`fetchTurnRedoStatus` / `turnRedoCommand`). */
   turnRedo: boolean;
-  /** The advisor service (win odds, ground-combat odds; `/advisor/*`). */
-  advisor: boolean;
   /** Lobby, other seats, spectators, presence: a game shared with other people. */
   multiplayer: boolean;
   /** The in-game feedback button (`POST /api/feedback`). */
@@ -19,7 +17,6 @@ export interface TransportCapabilities {
 export const SERVER_CAPABILITIES: TransportCapabilities = {
   splicePreview: true,
   turnRedo: true,
-  advisor: true,
   multiplayer: true,
   feedback: true,
 };
@@ -32,7 +29,6 @@ export const SERVER_CAPABILITIES: TransportCapabilities = {
  *                           components/MyGamesDialog.tsx (terminate)
  *  - maps:                  hooks/useMapCatalog.ts
  *  - feedback:              feedback/FeedbackSheet.tsx (/api/feedback)
- *  - advisor:               services/advisorService.ts (/advisor/*)
  *  - access / build info:   access/accessGate.ts (/api/access), buildInfo.ts (/health)
  *  - dev only:              dev/ScenarioLauncher.tsx (/api/dev/scenarios)
  *  - history/replay/redo/splice/snapshot: inside GameSessionClient (behind GameTransport)

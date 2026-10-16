@@ -59,9 +59,10 @@ describe("GroundCombatResultSummary", () => {
         current_planet: "jord", defender: null, ground_round: 2,
         last_step: {
           planet: "jord", kind: "ground_round", round: 2, harrow_hits: 0, dice: [], hits: { a: 1, d: 1 },
-          before: [{ owner: "a", unit_type: "infantry", planet: "jord", damaged: false }, { owner: "d", unit_type: "infantry", planet: "jord", damaged: false }],
-          after: [{ owner: "a", unit_type: "infantry", planet: "jord", damaged: false }],
+          before: [{ owner: "a", unit_type: "infantry", planet: "jord", damaged: false, galvanized: false }, { owner: "d", unit_type: "infantry", planet: "jord", damaged: false, galvanized: false }],
+          after: [{ owner: "a", unit_type: "infantry", planet: "jord", damaged: false, galvanized: false }],
         },
+        odds_context: {},
       },
     };
     render(<InvasionOverlay board={board} choice={null} viewerSeat={null} onSubmit={async () => {}} onClose={() => {}} />);

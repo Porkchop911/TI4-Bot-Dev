@@ -6,17 +6,18 @@ import {
   usePaymentDraftState,
 } from "../presentation/PaymentDraftContext.tsx";
 import type { PendingChoiceDto } from "../protocol/types.ts";
+import { partialContext } from "../test/wire.ts";
 
 const choice: PendingChoiceDto = {
   prompt: "pay 5 resources to produce",
   actor: "p1",
   nonce: "n1",
-  context: { subtype: "pay_resources", outstanding: [{ kind: "resources", amount: 5, paid: 0 }] },
+  context: partialContext({ subtype: "pay_resources", outstanding: [{ kind: "Resources", amount: 5, paid: 0 }] }),
   options: [
     { id: "exhaust|jord", label: "Jord", kind: "pay", payload: { worth: 4, kind: "resources", planet_name: "Jord" } },
     { id: "exhaust|lodor", label: "Lodor", kind: "pay", payload: { worth: 3, kind: "resources", planet_name: "Lodor" } },
     { id: "exhaust|quann", label: "Quann", kind: "pay", payload: { worth: 1, kind: "resources", planet_name: "Quann" } },
-    { id: "decline", label: "Cancel", kind: "decline" },
+    { id: "decline", label: "Cancel", kind: "decline", payload: {} },
   ],
 };
 

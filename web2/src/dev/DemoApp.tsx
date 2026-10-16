@@ -2,7 +2,7 @@ import { useEffect, useMemo } from "react";
 import { GameShell } from "../game/shell/GameShell";
 import { DemoBar } from "../mock/DemoBar";
 import { createMockStore, useMockSession } from "../mock/store";
-import { SINGLE_PLAYER } from "./defaultGame";
+import { LOCAL_GAME } from "./defaultGame";
 
 /**
  * The game shell on the mock session. `?example=draft-movement&viewer=hacan` opens one state directly.
@@ -39,7 +39,7 @@ export function DemoApp({ notice }: { notice?: string }) {
       )}
       {/* The demo bar is under the shell, so it has the bottom edge of the screen, not the shell. */}
       <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)_auto]">
-        <GameShell session={session} other={{ label: "Local game", href: SINGLE_PLAYER }} />
+        <GameShell session={session} other={{ label: "Local game", href: LOCAL_GAME }} />
         <DemoBar demo={demo} />
       </div>
     </div>

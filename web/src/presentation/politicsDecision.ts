@@ -1,4 +1,4 @@
-import type { ChoiceOptionDto, GameView, PendingChoiceDto, PlayerView } from "../protocol/types.ts";
+import type { ChoiceOption, GameView, PendingChoiceDto, PlayerView } from "../protocol/types.ts";
 import { findActionCardMeta, humanizeId } from "../protocol/contentCatalog.ts";
 
 /** What the client already knows about the table; enough to describe a candidate seat. */
@@ -99,7 +99,7 @@ export function seatStanding(table: DecisionTable, seat: string | undefined): Se
 /** The seat an option stands for: from `details.seats` (named options) or the id itself (Hacan). */
 export function optionSeat(
   choice: Pick<PendingChoiceDto, "context" | "details">,
-  option: ChoiceOptionDto,
+  option: ChoiceOption,
 ): string | undefined {
   const seats = choice.details?.seats;
   if (seats && typeof seats === "object") {
@@ -121,7 +121,7 @@ export const isPlayerPick = (choice: Pick<PendingChoiceDto, "context">): boolean
  * The player a pick option stands for: the option id is a seat id, or (Signal Jamming) the name
  * of the faction that seat plays.
  */
-export function playerPickSeat(option: ChoiceOptionDto, table: DecisionTable): PlayerView | undefined {
+export function playerPickSeat(option: Pick<ChoiceOption, "id" | "label">, table: DecisionTable): PlayerView | undefined {
   const id = option.id.toLowerCase();
   return (
     table.players.find((p) => p.id === option.id) ??
@@ -146,7 +146,7 @@ const count = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? on
 /** One line about a player the actor may pick: standing first, then what the card does to them. */
 function playerPickNote(
   choice: Pick<PendingChoiceDto, "context" | "actor">,
-  option: ChoiceOptionDto,
+  option: ChoiceOption,
   table: DecisionTable | null,
 ): OptionNote | null {
   const target = table ? playerPickSeat(option, table) : undefined;
@@ -172,7 +172,7 @@ export interface OptionNote {
 /** Display-only: a sub-line for one option of the three decisions; `null` elsewhere. */
 export function optionNote(
   choice: Pick<PendingChoiceDto, "context" | "details" | "actor">,
-  option: ChoiceOptionDto,
+  option: ChoiceOption,
   table: DecisionTable | null,
 ): OptionNote | null {
   const subtype = subtypeOf(choice);

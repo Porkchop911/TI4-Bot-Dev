@@ -1,4 +1,4 @@
-import type { ChoiceOptionDto, PlacedUnitView } from "../protocol/types.ts";
+import type { ChoiceOption, PlacedUnitView } from "../protocol/types.ts";
 import { getUnitBaseType } from "../components/UnitIcon.tsx";
 
 /** Standard base transport capacity per ship type in TI4. */
@@ -328,7 +328,7 @@ export function lostCapacity(rows: HitRow[], staging: HitStaging): number {
 
 /** (type, damaged) pairs an assign-casualty decision offers, or null when it lists none. */
 export function destroyableFromOptions(
-  options: ChoiceOptionDto[],
+  options: ChoiceOption[],
 ): Set<string> | null {
   const pairs = options
     .filter((o) => o.kind === "casualty" || o.kind === "ground_casualty")
@@ -346,7 +346,7 @@ export function destroyableFromOptions(
  * are left (Graviton Laser System), so a planned loss never names a fighter it will not offer.
  */
 export function sustainDestroyableFromOptions(
-  options: ChoiceOptionDto[],
+  options: ChoiceOption[],
   units: PlacedUnitView[],
 ): Set<string> | null {
   const bound = options.some(
@@ -367,7 +367,7 @@ export function sustainDestroyableFromOptions(
 
 /** Unit types a sustain decision offers. */
 export function sustainTypesFromOptions(
-  options: ChoiceOptionDto[],
+  options: ChoiceOption[],
 ): Set<string> {
   return new Set(
     options
@@ -379,7 +379,7 @@ export function sustainTypesFromOptions(
 }
 
 /** Whether every unit a casualty decision offers is a fighter (an anti-fighter barrage's hits). */
-export function onlyFighterOptions(options: ChoiceOptionDto[]): boolean {
+export function onlyFighterOptions(options: ChoiceOption[]): boolean {
   const units = options.flatMap((o) =>
     (o.kind === "casualty" || o.kind === "ground_casualty") &&
     typeof o.payload?.unit === "string"

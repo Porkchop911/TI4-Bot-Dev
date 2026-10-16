@@ -6,14 +6,14 @@
 
 use std::collections::BTreeMap;
 
+use crate::map::GalaxyLayout;
+use crate::view::secondary::SecondaryWatch;
 use ti4_content::ContentStore;
 use ti4_content::galaxy::Galaxy;
 use ti4_engine::choice::{Choice, DecisionRecord};
 use ti4_model::content_types::POK;
 use ti4_model::id::{PlayerId, SystemId};
 use ti4_model::state::{GameState, ReactionMode};
-use ti4_view::map::GalaxyLayout;
-use ti4_view::secondary::SecondaryWatch;
 
 use crate::PROTOCOL_VERSION;
 use crate::projection::project_state_update_with_map;

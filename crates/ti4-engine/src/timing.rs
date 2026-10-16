@@ -1185,7 +1185,7 @@ impl Resolver {
             options,
         );
         // Whose turn it is, for a seat that asked to be offered a reaction on its own turns only
-        // (`ti4_view::reaction_modes`). Display only, as every detail: not in a record or a replay.
+        // (`ti4_host::view::reaction_modes`). Display only, as every detail: not in a record or a replay.
         let choice = match &context.state.active {
             Some(active) if context.state.phase == ti4_model::state::Phase::Action => {
                 choice.detailed(ACTIVE_DETAIL, active.to_string())

@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import type { ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import type { ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import { productionTotal } from "../presentation/productionDraft.ts";
 import { productionTotalText } from "../presentation/productionTotalText.ts";
 import { ProductionBuilderDrawer } from "./ProductionBuilderDrawer.tsx";
+import { partialContext } from "../test/wire.ts";
 
-const offer = (unit: string, cost: number, printed = cost, extra: Record<string, unknown> = {}): ChoiceOptionDto => ({
+const offer = (unit: string, cost: number, printed = cost, extra: Record<string, unknown> = {}): ChoiceOption => ({
   id: `build|${unit}|1`,
   kind: "produce",
   label: `produce ${unit}`,
@@ -33,7 +34,7 @@ describe("productionTotal", () => {
   });
   it("is empty for an empty draft and null when a cost is unusable", () => {
     expect(productionTotal([cruiser], {})).toMatchObject({ builds: 0, total: 0 });
-    const broken = { ...cruiser, payload: { unit: "cruiser", count: 1 } } as ChoiceOptionDto;
+    const broken = { ...cruiser, payload: { unit: "cruiser", count: 1 } } as ChoiceOption;
     expect(productionTotal([broken], { [broken.id]: 1 }).total).toBeNull();
   });
   it("words the total, marking a partial one", () => {
@@ -47,7 +48,7 @@ const choice = (paid = 0): PendingChoiceDto => ({
   actor: "seat_1",
   nonce: "t",
   prompt: "produce",
-  context: { subtype: "produce_unit", target: { System: "18" }, outstanding: [{ amount: 6, paid }] },
+  context: partialContext({ subtype: "produce_unit", target: { System: "18" }, outstanding: [{ amount: 6, paid }] }),
   options: [offer("cruiser", 2), offer("carrier", 3), { id: "done_producing", kind: "decline", label: "Done", payload: {} }],
 });
 

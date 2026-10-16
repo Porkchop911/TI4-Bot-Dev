@@ -1,0 +1,7 @@
+{
+  "$schema": "../web2/node_modules/@biomejs/biome/configuration_schema.json",
+  "root": true,
+  "extends": ["../web2/biome.json"],
+  "vcs": { "root": ".." },
+  "files": { "includes": ["src/**", "test/**", "scripts/**", "*.ts", "!src/wire/generated"] }
+}

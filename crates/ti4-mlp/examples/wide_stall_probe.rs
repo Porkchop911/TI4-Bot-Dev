@@ -1,4 +1,4 @@
-﻿//! Play one evaluation game and log every decision as it is made, to find where a game stalls.
+//! Play one evaluation game and log every decision as it is made, to find where a game stalls.
 //!
 //! Same seating, map and bot settings as `clearance_eval` (BF-22 wide-roster diagnosis). Each
 //! decision prints `elapsed seat faction subtype options` to stderr before the bot answers, so a
@@ -88,8 +88,8 @@ fn number<T: std::str::FromStr>(name: &str, fallback: T) -> T {
 
 fn main() {
     let bundle_path = argument("--bundle").unwrap_or_else(|| refuse("--bundle is required"));
-    let pool_path = argument("--map-pool")
-        .unwrap_or_else(|| "out/pools/full_np8_12_holdout.json".to_owned());
+    let pool_path =
+        argument("--map-pool").unwrap_or_else(|| "out/pools/full_np8_12_holdout.json".to_owned());
     let seed: u64 = number("--seed", 900_000_000);
     let rotation: usize = number("--rotation", 0);
     let rounds: u32 = number("--rounds", 4);

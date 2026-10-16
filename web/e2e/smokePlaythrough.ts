@@ -628,10 +628,9 @@ export async function randomUiPlaythrough(
         }
         if (msg.type() !== "error") return;
         const url = msg.location().url ?? "";
-        // The optional battle advisor (/battle, /ground_odds) is not started for e2e runs.
         // The turn redo exercise records its own HTTP failures as findings.
         if (url.includes("/turn-redo")) return;
-        if (url.includes("favicon") || url.includes("/battle") || url.includes("/ground_odds")) return;
+        if (url.includes("favicon")) return;
         // A refused heartbeat or lobby poll is retried by the client on its next tick.
         if (tolerableConsoleError(msg.text(), url)) {
           log(`  [seat ${index + 1}] tolerated: ${msg.text()} (${url})`);

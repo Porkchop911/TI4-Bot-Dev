@@ -1,4 +1,4 @@
-import type { ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import type { ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import { findPlanetMeta, humanizeId } from "../protocol/contentCatalog.ts";
 
 /** Hacan's commander: spend trade goods for extra votes on the outcome you just voted for. */
@@ -13,8 +13,8 @@ export interface VoteGoodsView {
   goods: number;
   votesPerGood: number;
   /** The option that spends `n` trade goods, by n. */
-  spend: ReadonlyMap<number, ChoiceOptionDto>;
-  decline: ChoiceOptionDto;
+  spend: ReadonlyMap<number, ChoiceOption>;
+  decline: ChoiceOption;
 }
 
 const text = (value: unknown): string | null =>
@@ -24,7 +24,7 @@ const count = (value: unknown): number | null =>
   typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.floor(value) : null;
 
 /** "spend|3" -> 3 */
-const spentGoods = (option: ChoiceOptionDto): number | null => {
+const spentGoods = (option: ChoiceOption): number | null => {
   const match = /^spend\|(\d+)$/.exec(option.id);
   return match ? Number(match[1]) : null;
 };
@@ -47,7 +47,7 @@ export function describeVoteGoods(
   if (!outcomeId || votes === null || goods === null || votesPerGood === null || !decline) {
     return null;
   }
-  const spend = new Map<number, ChoiceOptionDto>();
+  const spend = new Map<number, ChoiceOption>();
   for (const option of choice.options) {
     const n = spentGoods(option);
     if (n !== null) spend.set(n, option);

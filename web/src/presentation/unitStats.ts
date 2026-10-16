@@ -81,7 +81,7 @@ const unitStatsOf = (u: UnitRecord, resolved: Pick<ResolvedUnit, "upgraded" | "f
     spaceCannon: spaceCannon && { ...spaceCannon, deep: !!u.deepSpaceCannon },
     planetaryShield: !!u.planetaryShield,
     disablesPlanetaryShield: !!u.disablesPlanetaryShield,
-    production: u.productionValue === undefined ? undefined : String(u.productionValue),
+    production: u.productionValue,
     hasSpecialText: !!u.ability && (resolved.factionSpecific || u.baseType === "flagship" || u.baseType === "mech"),
     upgraded: resolved.upgraded,
     factionSpecific: resolved.factionSpecific,

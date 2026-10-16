@@ -1,10 +1,23 @@
 import { expect, it } from "vitest";
-import menuUpdate from "../fixtures/update-menu.json";
+import menuUpdate from "../../../../fixtures/protocol/update-menu.json";
 import type { Catalog, SessionUpdate } from "../wire";
 import { selectActionCards } from "./cards";
 
-// Seat a holds `scuttle` and `rally` in this update of the real engine.
-const menu = menuUpdate as unknown as SessionUpdate;
+// An update of the real engine, with seat a holding `scuttle` and `rally`. Its facts are left out:
+// a test gives its own.
+const update = menuUpdate as unknown as SessionUpdate;
+const menu: SessionUpdate = {
+  ...update,
+  view: {
+    ...update.view,
+    players: update.view.players.map((player) =>
+      player.id === "a"
+        ? { ...player, held_action_cards: ["scuttle", "rally"], action_cards_count: 2 }
+        : player,
+    ),
+  },
+  action_cards: undefined,
+};
 const card = (id: string, name: string, window: string, group: string) => ({
   id,
   name,

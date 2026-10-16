@@ -46,6 +46,7 @@ describe("describeUnitAbilityOption", () => {
         id: "deploy|sol_mech|1",
         label: "deploy 1 sol_mech for 3 resources",
         payload: { unit: "sol_mech", count: 1, cost: 3, system: "20", planet: "hercant", orbital_drop_deploy: true },
+        kind: "",
       },
       board,
     )!;
@@ -59,6 +60,7 @@ describe("describeUnitAbilityOption", () => {
       id: "build|sol_carrier2|1",
       label: "produce 1x sol_carrier2 for 3",
       payload: { unit: "sol_carrier2", count: 1, cost: 3, system: "20" },
+      kind: "",
     };
     const info = describeUnitAbilityOption({ prompt: "produce one unit in 20" }, opt, board)!;
     expect(info.title).toBe("Produce Carrier II");
@@ -67,6 +69,6 @@ describe("describeUnitAbilityOption", () => {
   });
 
   it("ignores unrelated options", () => {
-    expect(describeUnitAbilityOption({ prompt: "x" }, { id: "a", label: "a" })).toBeNull();
+    expect(describeUnitAbilityOption({ prompt: "x" }, { id: "a", label: "a", payload: {}, kind: "" })).toBeNull();
   });
 });

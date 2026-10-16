@@ -3,12 +3,12 @@ import { resolve } from "node:path";
 import "fake-indexeddb/auto";
 import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vitest";
-import { openOfflineSaveStore, type OfflineSaveStore } from "../storage/index.ts";
+import { NOT_PLAYABLE_HERE, openOfflineSaveStore, type OfflineSaveStore } from "../storage/index.ts";
 import { OfflineGameDeletedError, type OfflineMismatchPrompt, type QueuedFeedbackItem } from "../types.ts";
 import { OFFLINE_FACTIONS, createLocalLauncher, engineSetup } from "./launcher.ts";
 import { FakePort, GAME, envelope, question, save, snapshot } from "./testKit.ts";
 import { LocalTransport } from "./LocalTransport.ts";
-import { Host, hasJspi } from "./hostApi.ts";
+import { Host, hasJspi } from "@ti4/shared/engine/host.ts";
 import type { OfflineSetup } from "../types.ts";
 
 const setup: OfflineSetup = { playerCount: 4, humanSeat: 2, humanFaction: "hacan", nickname: "Ada" };
@@ -35,11 +35,19 @@ const feedback = {
 
 const ENGINE = { module: {} as WebAssembly.Module, hash: "abc123", wasmSha256: "w".repeat(64) };
 
+const withPlayers = <T extends { view: object }>(message: T, players?: Array<{ id: string; faction: string }>): T =>
+  players ? { ...message, view: { ...message.view, players } } : message;
+
 /** A session module whose engine is a FakePort: no wasm, no worker. */
 function fakeSession(
   ports: FakePort[],
   saves: ReturnType<typeof save>[],
-  extra: { check?: { ok: boolean }; identity?: { build: string; contentDigest: string; wasmSha256: string } } = {},
+  extra: {
+    check?: { ok: boolean };
+    identity?: { build: string; contentDigest: string; wasmSha256: string };
+    /** The players of the first view, with their factions. */
+    players?: Array<{ id: string; faction: string }>;
+  } = {},
 ) {
   return async () =>
     ({
@@ -55,7 +63,7 @@ function fakeSession(
               port.emit({
                 t: "ask",
                 envelope: envelope("ask", {
-                  messages: [snapshot(1, "n1")],
+                  messages: [withPlayers(snapshot(1, "n1"), extra.players)],
                   ...(extra.check ? { resume_check: extra.check } : {}),
                 }),
                 save: saves[0],
@@ -69,8 +77,8 @@ function fakeSession(
 
 const stored = (answers: string[]) => ({
   ...save(answers),
-  human_seat: 1,
-  setup: { game_id: "ignored", seed: 7, players: 4, human_faction: "hacan" },
+  humans: 0b10,
+  game: { setup: { game_id: "ignored", seed: 7, players: 4, human_seat: 1, human_faction: "hacan" } },
 });
 
 /** A save store on its own IndexedDB; opening another on the same factory is a page reload. */
@@ -105,12 +113,46 @@ describe("the local launcher", () => {
 
     const file = await launcher.exportGame(handle.gameId);
     const body = JSON.parse(await file.blob.text());
-    expect(body).toMatchObject({ kind: "ti4-offline-game", version: 1 });
+    expect(body).toMatchObject({ kind: "ti4-offline-game", version: 2 });
     expect(JSON.stringify(body)).toContain(ENGINE.wasmSha256);
 
     await launcher.remove(handle.gameId);
     expect(await launcher.list()).toEqual([]);
     expect(ports[0].terminated).toBe(true);
+  });
+
+  it("keeps the faction of every seat that the board shows", async () => {
+    const store = await openStore();
+    const players = [
+      { id: "a", faction: "sol" },
+      { id: "b", faction: "hacan" },
+      { id: "c", faction: "xxcha" },
+    ];
+    const launcher = createLocalLauncher({ store, feedback, session: fakeSession([], [stored(["o1"])], { players }) });
+    await store.put(GAME, stored([]) as never, {
+      nickname: "Ada",
+      factions: [null, "hacan", null],
+      engine: { build: "b", contentDigest: "d", wasmSha256: ENGINE.wasmSha256 },
+    });
+    await launcher.resume(GAME, () => undefined, new AbortController().signal);
+    expect((await store.load(GAME))!.summary.factions).toEqual(["sol", "hacan", "xxcha"]);
+    const [summary] = await launcher.list();
+    expect(summary).toMatchObject({ humanSeats: [2], factions: ["sol", "hacan", "xxcha"], playable: true });
+  });
+
+  it("does not open a game that several people play at one screen", async () => {
+    const store = await openStore();
+    const ports: FakePort[] = [];
+    const launcher = createLocalLauncher({ store, feedback, session: fakeSession(ports, [stored([])]) });
+    await store.put(GAME, { ...stored(["o1"]), humans: 0b101 } as never, {
+      nickname: "Ada",
+      factions: ["sol", null, "xxcha"],
+      engine: { build: "b", contentDigest: "d", wasmSha256: ENGINE.wasmSha256 },
+    });
+    const [summary] = await launcher.list();
+    expect(summary).toMatchObject({ humanSeats: [1, 3], playable: false });
+    await expect(launcher.resume(GAME, () => undefined, new AbortController().signal)).rejects.toThrow(NOT_PLAYABLE_HERE);
+    expect(ports).toHaveLength(0);
   });
 
   it("stores the position before an answer goes to the engine (write-ahead)", async () => {
@@ -129,7 +171,7 @@ describe("the local launcher", () => {
     const launcher = createLocalLauncher({ store: slow, feedback, session: fakeSession(ports, [stored([])]) });
     await store.put(GAME, stored([]) as never, {
       nickname: "Ada",
-      humanFaction: "hacan",
+      factions: [null, "hacan", null],
       engine: { build: "b", contentDigest: "d", wasmSha256: ENGINE.wasmSha256 },
     });
     const handle = await launcher.resume(GAME, () => undefined, new AbortController().signal);
@@ -208,7 +250,7 @@ describe("a saved game of another engine", () => {
     const store = await openStore(factory);
     await store.put(GAME, stored(["a", "b"]) as never, {
       nickname: "Ada",
-      humanFaction: "hacan",
+      factions: [null, "hacan", null],
       engine: { build: "b", contentDigest: "d", wasmSha256: "old".repeat(20) },
     });
     return store;
@@ -269,7 +311,7 @@ describe("a saved game of another engine", () => {
     const store = await openStore();
     await store.put(GAME, stored(["a", "b"]) as never, {
       nickname: "Ada",
-      humanFaction: "hacan",
+      factions: [null, "hacan", null],
       engine: { build: "b", contentDigest: "d", wasmSha256: ENGINE.wasmSha256 },
     });
     const launcher = createLocalLauncher({

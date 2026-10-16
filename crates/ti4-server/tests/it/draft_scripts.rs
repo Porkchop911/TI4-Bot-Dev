@@ -1,6 +1,6 @@
 //! The two script messages: a draft that is run on a copy of the game (`RunDraft`), and a
 //! script that is sent to the live game (`ApplyDraft`). The scripts are those of the tests of
-//! `ti4_view::planning::draft`, played against a session.
+//! `ti4_host::planning::draft`, played against a session.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -11,17 +11,17 @@ use tokio_tungstenite::tungstenite::Message;
 
 use ti4_content::ContentStore;
 use ti4_engine::choice::Choice;
+use ti4_host::planning::audit::PlanScope;
+use ti4_host::planning::draft::{DraftOutcome, DraftStep, DraftStop};
+use ti4_host::planning::steps::PlanStep;
+use ti4_host::protocol::PROTOCOL_VERSION;
+use ti4_host::protocol::client::ClientMessage;
+use ti4_host::protocol::server::ServerMessage;
+use ti4_host::protocol::status::{RejectionReason, ViewerRole};
+use ti4_host::view::tactical::TacticalFacts;
 use ti4_model::content_types::POK;
 use ti4_model::id::{PlayerId, SystemId};
-use ti4_server::protocol::PROTOCOL_VERSION;
-use ti4_server::protocol::client::ClientMessage;
-use ti4_server::protocol::server::ServerMessage;
-use ti4_server::protocol::status::{RejectionReason, ViewerRole};
 use ti4_server::session::{GameRegistry, GameSession, MockClient, SeatController, SessionConfig};
-use ti4_view::planning::audit::PlanScope;
-use ti4_view::planning::draft::{DraftOutcome, DraftStep, DraftStop};
-use ti4_view::planning::steps::PlanStep;
-use ti4_view::tactical::TacticalFacts;
 
 const DEADLINE: Duration = Duration::from_secs(60);
 
@@ -32,13 +32,13 @@ pub(crate) fn config(game_id: &str, seed: u64) -> (SessionConfig, PlayerId) {
         .iter()
         .map(|name| PlayerId::new(*name))
         .collect();
-    let loader = ti4_server::maps::TemplateLoader::load().expect("the templates load");
-    let template = ti4_server::maps::default_template_for(content, &loader, 6, POK)
-        .expect("a template for six");
+    let loader = ti4_host::maps::TemplateLoader::load().expect("the templates load");
+    let template =
+        ti4_host::maps::default_template_for(content, &loader, 6, POK).expect("a template for six");
     let (state, galaxy) =
-        ti4_server::map::create_game_with_template(content, &ids, seed, Some(&template))
+        ti4_host::map::create_game_with_template(content, &ids, seed, Some(&template))
             .expect("a game");
-    let tiles = ti4_server::map::build_board_tiles(content, &galaxy);
+    let tiles = ti4_host::map::build_board_tiles(content, &galaxy);
     let mut config = SessionConfig::new(game_id, state)
         .with_seed(seed)
         .with_player_ids(ids.clone())
@@ -47,7 +47,7 @@ pub(crate) fn config(game_id: &str, seed: u64) -> (SessionConfig, PlayerId) {
         let controller = if index == 0 {
             SeatController::Human
         } else {
-            SeatController::BotRandom
+            SeatController::RANDOM
         };
         config = config.with_seat(seat.clone(), controller);
     }
@@ -155,7 +155,7 @@ pub(crate) fn movement_script(
 }
 
 /// What the seat is told of its script, once it is told.
-fn applied(client: &MockClient) -> ti4_server::protocol::server::DraftAppliedMsg {
+fn applied(client: &MockClient) -> ti4_host::protocol::server::DraftAppliedMsg {
     let deadline = Instant::now() + DEADLINE;
     loop {
         assert!(
@@ -387,9 +387,8 @@ async fn the_script_messages_are_answered_over_the_websocket() {
             "Host",
             None,
             None,
-            ti4_server::card_set::DEFAULT,
-            ti4_server::map::SpeakerOrder::Seat,
-            ti4_server::session::table::SeatOrder::Join,
+            ti4_host::setup::card_set::DEFAULT,
+            ti4_host::setup::SpeakerOrder::Seat,
             None,
         )
         .expect("a started game");

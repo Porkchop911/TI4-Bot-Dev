@@ -57,6 +57,7 @@ this host. Today they are two subdomains, `ti4.*` → :3000 and `web2.*` → :31
 and both proxy `/api` and `/ws` to `:8080`.
 
 **What exists already.** The server accepts several sockets per seat:
+
 - `connect_player` (`crates/ti4-server/src/session/registry.rs:2256`) keeps a map of
   connections for each seat.
 - `GameSession::subscribe` (`session/mod.rs:465`) and the planning runner `subscribe`
@@ -66,15 +67,16 @@ and both proxy `/api` and `/ws` to `:8080`.
   connection of the seat (Phase 1 below), and every connection of the seat gets the undone steps.
 
 **What breaks with two tabs of one seat:**
+
 1. **Staged work is per tab.** This is the staged movement, landings and production; the
    private tactical draft with its undo history; and the secondary draft. `useLiveSession`
    reads it from `localStorage` once, at mount (`readPlanOf`, `readFollowOf`,
    `useLiveSession.ts:131-146`, `366-384`), and writes it on every change
    (`useLiveSession.ts:576-624`). The keys come from `onlineKeys(gameId, playerId)`
    (`OnlineApp.tsx:118`). So two tabs overwrite each other's work and never see the other's
-   changes. Another device has none of it. *The server side is fixed by phase 1; the page still
-   does this until phase 2.*
-2. **The undone steps are told once.** *Fixed by phase 1:* `GameSession::undone_for` keeps them,
+   changes. Another device has none of it. _The server side is fixed by phase 1; the page still
+   does this until phase 2._
+2. **The undone steps are told once.** _Fixed by phase 1:_ `GameSession::undone_for` keeps them,
    and every first snapshot of a connection of the seat has them until the seat decides again.
 3. **A ready secondary is sent twice.** The page sends it when the game asks the seat
    (`useLiveSession.ts:703-722`). Both tabs send it, and one of them gets a "stale nonce" toast.
@@ -94,6 +96,7 @@ Built in `86406f6b` (branch `seat-staged-sync`), merged to `dev` in `6b5a36da` o
 The merge moved the wire types to `ti4-host`, where Felix's merge had put the protocol.
 
 **As built.**
+
 - **Protocol** (`crates/ti4-host/src/protocol/`): additive, opt-in, `PROTOCOL_VERSION` stays 3.
   - `ClientMessage::Subscribe { staged: bool }` (`client.rs`; `#[serde(default)]`, left out
     when false).
@@ -146,6 +149,7 @@ The merge moved the wire types to `ti4-host`, where Felix's merge had put the pr
   write to the replaced session is not lost.
 
 **Deviations from the plan.**
+
 - The wire types are in `ti4-host` (`protocol/staged.rs`), not `ti4-server/src/protocol`.
 - `SeatStagedMsg.connection` is new: the message after the snapshot tells the connection its
   own id, which is the `writer` of its writes. `writer` is absent after the snapshot and in the
@@ -158,6 +162,7 @@ The merge moved the wire types to `ti4-host`, where Felix's merge had put the pr
   oversized `"value"`), not a dedicated kind.
 
 **Gaps left.**
+
 - No test of the rate limit, and none of the carry-over across a redo or a batch (only undo).
 - "Both sockets get `undone`" is tested as two subscriptions one after the other, not two open
   sockets at once.
@@ -171,6 +176,7 @@ The merge moved the wire types to `ti4-host`, where Felix's merge had put the pr
 ## Phase 2 — web2: a seat store in place of `localStorage` for online games — DONE
 
 **As built** (2026-10-14).
+
 - `web2/src/session/seatStore.ts`: `SeatStore { get, set, subscribe }`; `localSeatStore(storage,
   keys)` for local games and single player; `seatSync(put, legacy)`, the online store, which
   `createWsTransport` holds and exposes as `Transport.staged` for a player (not for a
@@ -190,6 +196,7 @@ The merge moved the wire types to `ti4-host`, where Felix's merge had put the pr
   written back), `draft.test.ts` (`trimDraft`), e2e `online.spec.ts` "the same seat in two tabs".
 
 **Deviations and details.**
+
 - Values are compared with sorted keys (`sameStaged`): the server keeps a value as a
   `serde_json::Value` without `preserve_order`, so its echo has sorted keys. Without it the store
   would put an "equal" value, get no answer, and wait.
@@ -211,6 +218,7 @@ The merge moved the wire types to `ti4-host`, where Felix's merge had put the pr
   something for the seat (it is put only when the server has nothing).
 
 **Gaps left.**
+
 - No client test of the rate limit (the debounce keeps a slot under 4 writes a second) and no unit
   test of the flush on `pagehide` (the e2e reload covers it).
 - Two tabs can still both send the same answer ("Move fleet", a choice): phase 3.
@@ -261,6 +269,7 @@ The merge moved the wire types to `ti4-host`, where Felix's merge had put the pr
 
   Compare with `same()` (`useLiveSession.ts:129`) before setting, so an applied remote value
   does not write back (no echo loop).
+
 - **Migration.** On the first `seat_staged`, if the server's slots are empty and the old
   `onlineKeys` entries exist, put them once and then remove the local keys. This sits beside
   `moveLegacy` in `onlineKeys.ts:75`.
@@ -285,6 +294,7 @@ The merge moved the wire types to `ti4-host`, where Felix's merge had put the pr
 ## Phase 3 — One sender for answers of a seat — DONE
 
 **As built** (2026-10-14).
+
 - **The Rust type of the slot** (`session/staged.rs`): `SecondaryDraft { round, primary, card,
   answers: [DraftAnswer { id }], ready }`, read with `SecondaryDraft::of(value)`; other fields and
   the labels are ignored. `script()` makes the `DraftStep`s. Pinned by the unit test
@@ -333,6 +343,7 @@ The merge moved the wire types to `ti4-host`, where Felix's merge had put the pr
   the two tabs of Blair).
 
 **Deviations from the plan.**
+
 - The seat is reached in the decider, not by a check after the broadcast: the server answers
   before the seat is asked, as the scripts of the server do. So the page needs no "holding".
 - **The server clears the slot after it sent the draft** (phase 1 said that the server never
@@ -348,6 +359,7 @@ The merge moved the wire types to `ti4-host`, where Felix's merge had put the pr
   shows the question.
 
 **Gaps left.**
+
 - web (`web/`) was not run: it does not opt in and its messages did not change.
 - The e2e of phase 3 and the older "a secondary is drafted in one tab while a rule bot takes its
   time" fail now and then (about 2 in 10 here, 3 in 8 for the older one also without phase 3): a
@@ -397,6 +409,7 @@ The merge moved the wire types to `ti4-host`, where Felix's merge had put the pr
 ## Phase 4 — web2 under `/web2/` on the same origin as web
 
 **web2 build and dev:**
+
 - In `web2/vite.config.ts`, set `base: "/web2/"`.
 - Add the new host to `allowedHosts` (today only `web2.beckermann-zibert.com`). Keep the
   `CDN-Cache-Control` header and `cacheDir` while Cloudflare is in front.
@@ -408,6 +421,7 @@ The merge moved the wire types to `ti4-host`, where Felix's merge had put the pr
 
 **Links that assume `/`.** Grep for `href: "/"`, `"/?`, `` `/${ ``, `location.assign`,
 `location.href =`, and `location.origin`. Use `import.meta.env.BASE_URL`. Found on `dev`:
+
 - The "Start" links: `OnlineApp.tsx:36` and `SingleApp.tsx:23` (`START`).
 - The addresses built in `onlineStart.ts` (`onlineAddress`, `tableAddress`) and their users:
   `StartApp.tsx` (`` `/${onlineAddress()}` ``, `singlePlayer`), `defaultGame.ts`
@@ -422,6 +436,7 @@ The merge moved the wire types to `ti4-host`, where Felix's merge had put the pr
 - `web2/playwright.config.ts`: `baseURL` (line 64) and the `webServer` URL.
 
 **Server serves both clients.**
+
 - Add an optional `TI4_WEB2_DIR` in `crates/ti4-server/src/public/mod.rs` (`PublicConfig`,
   next to `web_dir` / `TI4_WEB_DIR`, line 74).
 - In `http/mod.rs`, route `/web2/*` to a second `ServeDir` with its own `index.html`
@@ -433,6 +448,7 @@ The merge moved the wire types to `ti4-host`, where Felix's merge had put the pr
 
 **Public mode** (only if the public server will serve web2; this was open question 1 of
 `plans/2026-10-12-LOBBY_PLAN.md`):
+
 - web2 needs the password screen. It uses `GET`/`POST /api/access`, as web does; reuse its
   flow.
 - The public server must refuse `&seed=` and the scenarios. The server already refuses the
@@ -459,6 +475,7 @@ web2.beckermann-zibert.com { redir https://ti4.beckermann-zibert.com/web2{uri} }
 
 **Production form** (`deploy/public/`): the server serves `/`, `/web2/`, `/api` and `/ws`,
 and Caddy keeps its single `reverse_proxy` as in `deploy/public/Caddyfile`.
+
 - `deploy.sh` (section "3. Build") also builds web2 in its temporary worktree:
   `npm ci && npm run build` in `web2/`, after web.
   - web2 needs `web2/src/session/ti4.wasm`, which is not in the repository. It is the same
@@ -476,6 +493,7 @@ and Caddy keeps its single `reverse_proxy` as in `deploy/public/Caddyfile`.
 - Update the README diagram and `docs/OFFLINE.md` if it names the paths of the server.
 
 **Shared storage on one origin.** The two clients do not clash:
+
 - web uses sessionStorage `ti4.player-session:<id>`; localStorage `ti4.my-games`,
   `ti4.layout.v1`, `ti4.map-picker-seen:<id>` and `ti4_*`; IndexedDB `ti4-offline`.
 - web2 uses `ti4.online.*`, `ti4.single`, `ti4.local.*`, `ti4.players`, …
@@ -484,6 +502,7 @@ and Caddy keeps its single `reverse_proxy` as in `deploy/public/Caddyfile`.
   there (`savedGame.ts`); after phase 2 the online staged work is on the server.
 
 **Optional: one seat in web and in web2.**
+
 - web keeps its player session in sessionStorage, per tab: a web2 tab cannot read it.
   `ti4.my-games` (localStorage, `web/src/protocol/myGames.ts`) has `gameId`, `token` and
   `playerId` of each game of the browser. web2 can copy a player from there into
@@ -496,6 +515,7 @@ and Caddy keeps its single `reverse_proxy` as in `deploy/public/Caddyfile`.
 ## Critical files
 
 **Server:**
+
 - `crates/ti4-server/src/ws/mod.rs`
 - `crates/ti4-host/src/protocol/{client,server,staged,status}.rs`,
   `crates/ti4-view/src/status.rs` (`RejectionReason`)
@@ -508,6 +528,7 @@ and Caddy keeps its single `reverse_proxy` as in `deploy/public/Caddyfile`.
 - `crates/ti4-server/tests/it/{staged,protocol_roundtrip,undo}.rs`
 
 **web2:**
+
 - `web2/src/session/{wsTransport.ts,wire.ts,transport.ts,useLiveSession.ts,onlineKeys.ts,
   draft.ts,secondaryDraft.ts,transportContract.test.ts}`
 - `web2/src/dev/{OnlineApp.tsx,LocalApp.tsx,SingleApp.tsx,onlineStart.ts,StartApp.tsx,
@@ -517,9 +538,11 @@ and Caddy keeps its single `reverse_proxy` as in `deploy/public/Caddyfile`.
 - `web2/AGENTS.md`
 
 **web** (phase 3 check, optional link of phase 4):
+
 - `web/src/protocol/{client.ts,decode.ts,myGames.ts}`, `web/src/App.tsx`
 
 **Deploy:**
+
 - `deploy/public/{Caddyfile,deploy.sh,check-headers.sh,env.example,README.md}`
 - The live Caddyfile: the owner edits this; nothing is installed by the repo. `deploy.sh`
   compares its CSP with the repo's (`TI4_LIVE_CADDYFILE`, default `/etc/caddy/Caddyfile`).
@@ -562,7 +585,7 @@ and Caddy keeps its single `reverse_proxy` as in `deploy/public/Caddyfile`.
   (checked from the worktree). The dev form above needs its real place.
 - Does the public server serve web2 (open question 1 of the lobby plan)? Phase 4's production
   form and the password screen depend on it.
-- web's offline single player and web2's single player both run `ti4-wasm` in the page, with
-  their own saves (IndexedDB `ti4-offline` vs localStorage `ti4.single`). On one origin a
-  player sees two "single player" entries; nothing in the decisions says whether that is
-  wanted. Not part of this plan.
+- web's offline single player and web2's single player both run `ti4-wasm` in the page. On one
+  origin they are two entries over one save list: both keep their games in IndexedDB
+  `ti4-offline` (`web-shared/src/storage/`, `2026-10-14-SHARED_TRANSPORT_PLAN.md`), so either
+  app lists and resumes every single player game of the browser.

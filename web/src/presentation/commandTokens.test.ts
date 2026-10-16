@@ -28,6 +28,7 @@ const poolOptions = ["tactic_tokens", "fleet_tokens", "strategic_tokens"].map((i
   id,
   kind: "pool",
   label: id,
+  payload: {},
 }));
 const gain = (toPlace = 2) => ({
   options: poolOptions,
@@ -40,7 +41,7 @@ const gain = (toPlace = 2) => ({
   },
 });
 const redistribute = (arrangements = ["3|4|2", "2|5|2", "4|4|1", "9|0|0"]) => ({
-  options: arrangements.map((id) => ({ id, kind: "redistribute", label: id })),
+  options: arrangements.map((id) => ({ id, kind: "redistribute", label: id, payload: {} })),
   details: {
     kind: "command_tokens",
     mode: "redistribute",
@@ -166,6 +167,48 @@ describe("redistribution staging", () => {
   });
 });
 
+describe("redistribution with gained tokens (status phase)", () => {
+  // Held 3|4|2 = 9, gained 2: the engine offers arrangements of 11.
+  const statusChoice = (details: Record<string, unknown> = { gained: 2 }) => ({
+    options: ["5|4|2", "3|6|2", "3|4|4"].map((id) => ({ id, kind: "redistribute", label: id, payload: {} })),
+    details: {
+      kind: "command_tokens",
+      mode: "redistribute",
+      pools: { tactic: 3, fleet: 4, strategic: 2 },
+      reinforcements: 5,
+      total: 11,
+      ...details,
+    },
+  });
+  const view = describeCommandTokens(statusChoice(), false)!;
+
+  it("reads the gained count, and 0 when the details leave it out", () => {
+    expect(view.gained).toBe(2);
+    expect(view.total).toBe(11);
+    expect(describeCommandTokens(statusChoice({}), false)!.gained).toBe(0);
+    expect(describeCommandTokens(redistribute(), false)!.gained).toBe(0);
+    expect(describeCommandTokens(gain(), true)!.gained).toBe(0);
+  });
+
+  it("starts at the held pools with the gained tokens still to place", () => {
+    const staging = initialStaging(view);
+    expect(staging).toEqual({ tactic: 3, fleet: 4, strategic: 2 });
+    expect(tokensRemaining(view, staging)).toBe(2);
+    expect(canConfirmTokens(view, staging)).toBe(false);
+    expect(confirmBlocker(view, staging)).toContain("2 more tokens");
+  });
+
+  it("confirms the matching arrangement once the gained tokens are placed", () => {
+    let staging = addToken(view, initialStaging(view), "fleet");
+    expect(tokensRemaining(view, staging)).toBe(1);
+    staging = addToken(view, staging, "fleet");
+    expect(tokensRemaining(view, staging)).toBe(0);
+    expect(addToken(view, staging, "tactic")).toEqual(staging);
+    expect(canConfirmTokens(view, staging)).toBe(true);
+    expect(tokenOutcome(view, staging)).toEqual({ kind: "option", optionId: "3|6|2" });
+  });
+});
+
 const purchaseDetails = (over: Record<string, unknown> = {}) => ({
   cost: 3,
   influence_available: 9,
@@ -181,8 +224,8 @@ const gainBuy = (toPlace = 3, purchase = purchaseDetails()) => ({
 });
 const buyQuestion = (purchase = purchaseDetails()) => ({
   options: [
-    { id: "no", kind: "strategy", label: "spend nothing further" },
-    { id: "yes", kind: "strategy", label: "spend 3 influence" },
+    { id: "no", kind: "strategy", label: "spend nothing further", payload: {} },
+    { id: "yes", kind: "strategy", label: "spend 3 influence", payload: {} },
   ],
   details: {
     kind: "command_tokens",
@@ -328,6 +371,7 @@ describe("payment override", () => {
     current: { tactic: 3, fleet: 4, strategic: 2 },
     reinforcements: 20,
     total: 0,
+    gained: 0,
     arrangements: new Set(),
     purchase: {
       cost: 3,
@@ -412,7 +456,7 @@ describe("payment override", () => {
 describe("restack (Predictive Intelligence)", () => {
   const moveIds = ["tactic|fleet", "tactic|strategy", "fleet|tactic", "fleet|strategy", "strategy|tactic", "strategy|fleet", "done"];
   const restack = () => ({
-    options: moveIds.map((id) => ({ id, kind: id === "done" ? "decline" : "redistribute", label: id })),
+    options: moveIds.map((id) => ({ id, kind: id === "done" ? "decline" : "redistribute", label: id, payload: {} })),
     details: {
       kind: "command_tokens",
       mode: "restack",
@@ -431,7 +475,7 @@ describe("restack (Predictive Intelligence)", () => {
   });
 
   it("is not offered without any move option", () => {
-    const none = { ...restack(), options: [{ id: "done", kind: "decline", label: "done" }] };
+    const none = { ...restack(), options: [{ id: "done", kind: "decline", label: "done", payload: {} }] };
     expect(describeCommandTokens(none, true)).toBeNull();
   });
 

@@ -6,7 +6,7 @@
 // It can be made from the moment the card is played (`secondary` of the update says when), and
 // it is sent when the game asks the seat, if the player marked it ready.
 import { stopText } from "./draft";
-import type { Choice, DraftOutcome, DraftScope, DraftStep, SecondaryFacts } from "./wire";
+import type { Choice, DraftOutcome, DraftStep, PlanScope, SecondaryFacts } from "./wire";
 
 export interface SecondaryDraft {
   /** The strategic action that the draft is of: its round, who played the card, and the card. */
@@ -31,7 +31,7 @@ export const newDraft = (round: number, action: SecondaryFacts): SecondaryDraft 
 export const isOf = (draft: SecondaryDraft, round: number, action: SecondaryFacts): boolean =>
   draft.round === round && draft.primary === action.primary && draft.card === action.card;
 
-export const scopeOf = (action: { primary: string; card: string }): DraftScope => ({
+export const scopeOf = (action: { primary: string; card: string }): PlanScope => ({
   kind: "secondary",
   primary: action.primary,
   card: action.card,

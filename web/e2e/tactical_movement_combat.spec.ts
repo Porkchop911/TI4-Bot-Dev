@@ -36,8 +36,9 @@ async function startMovement(page: Page, request: APIRequestContext) {
   expect(forward).toBeDefined();
 
   await openPlayerGame(page, gameId, session);
-  await page.locator('[data-testid="choice-option"][data-option-id="tactical"]').click();
-  await page.getByTestId("submit-choice-button").click();
+  await page.getByTestId("turn-bar-tactical").click();
+  // A click on the map before the activation question arrives only inspects the system.
+  await expect(page.getByTestId("system-activation-bar")).toBeVisible();
   await page.getByTestId(`system-hex-${border!.system_id}`).click();
   await page.getByTestId("confirm-activation-btn").click();
   const tray = page.getByTestId("tactical-movement-tray");
@@ -170,7 +171,10 @@ test.describe("Tactical fleet rally", () => {
     request,
   }) => {
     test.setTimeout(90_000);
-    const { gameId, players } = await createStartedGame(request, 3, 42);
+    // The lobby draws factions from the seed: seat P1 as Sol (two carriers at Jord, system 01).
+    const { gameId, players } = await createStartedGame(request, 3, 42, undefined, undefined, undefined, [
+      "sol",
+    ]);
     const [p1, p2, p3] = players;
 
     const contextP1 = await browser.newContext();
@@ -209,11 +213,8 @@ test.describe("Tactical fleet rally", () => {
     const p1Action = await gameSnapshot(request, gameId, p1.session);
     expect(p1Action.pending_choice?.choice.player).toBe(p1.id);
 
-    // Select tactical action
-    await expect(pageP1.getByTestId("pending-choice-dialog")).toBeVisible();
-    await pageP1.locator('[data-testid="choice-option"][data-option-id="tactical"]').click();
-    await expect(pageP1.getByTestId("submit-choice-button")).toBeEnabled();
-    await pageP1.getByTestId("submit-choice-button").click();
+    // Select tactical action on the turn bar
+    await pageP1.getByTestId("turn-bar-tactical").click();
 
     // Select an adjacent system at distance 1 from home system 01 to activate
     await expect
@@ -236,6 +237,7 @@ test.describe("Tactical fleet rally", () => {
         activateState.pending_choice!.choice.options.some((o) => o.id === t.system_id),
     )!;
     const targetSys = adjacent.system_id;
+    await expect(pageP1.getByTestId("system-activation-bar")).toBeVisible();
     await pageP1.getByTestId(`system-hex-${targetSys}`).click();
     await pageP1.getByTestId("confirm-activation-btn").click();
 

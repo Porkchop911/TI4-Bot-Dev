@@ -3,9 +3,9 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use ti4_server::dev::{available_scenarios, execute_launch_scenario};
-use ti4_server::protocol::server::ServerMessage;
-use ti4_server::protocol::status::ViewerRole;
+use ti4_host::protocol::server::ServerMessage;
+use ti4_host::protocol::status::ViewerRole;
+use ti4_server::dev::{LaunchScenarioResponse, available_scenarios, launch_scenario};
 use ti4_server::session::registry::HistoryAction;
 use ti4_server::session::{GameRegistry, MockClient};
 
@@ -17,22 +17,152 @@ fn test_available_scenarios_listing() {
             .iter()
             .map(|scenario| scenario.id.as_str())
             .collect::<Vec<_>>(),
+        ti4_host::view::scenario::SCENARIOS
+            .iter()
+            .map(|scenario| scenario.id)
+            .collect::<Vec<_>>()
+    );
+    let research = scenarios
+        .iter()
+        .find(|scenario| scenario.id == "research_tech_skips")
+        .unwrap();
+    assert_eq!(research.player_count, 3);
+    assert_eq!(research.human_faction, "The Federation of Sol");
+    assert_eq!(research.category, "Strategy");
+}
+
+/// The first question after a launch, and the opening that led to it: the seat (its place at the
+/// table), the subtype of the question and the answers of the seats by place.
+fn first_question(id: &str, seed: u64) -> (usize, String, Vec<String>) {
+    let registry = Arc::new(GameRegistry::new());
+    let launch = launch_scenario(&registry, id, Some(seed)).expect("the scenario launches");
+    let session = registry.get_game(&launch.game_id).unwrap();
+    let (seat, _, _) = session
+        .open_pending_decision()
+        .expect("the launch returns at a question");
+    assert_eq!(seat.as_str(), launch.player_id, "{id}: the caller is asked");
+    let state = session.current_state();
+    let place = |player: &ti4_model::id::PlayerId| {
+        state
+            .players
+            .iter()
+            .position(|seat| seat.id == *player)
+            .unwrap()
+    };
+    let snapshot = session.get_snapshot(&ViewerRole::Player(seat.clone()));
+    let subtype = snapshot
+        .pending_choice
+        .and_then(|pending| pending.choice.context)
+        .map(|context| context.subtype)
+        .unwrap_or_default();
+    let opening = session
+        .decision_log()
+        .iter()
+        .map(|record| format!("{}:{}", place(&record.player), record.chosen))
+        .collect();
+    session.stop();
+    (place(&seat), subtype, opening)
+}
+
+/// Each scenario of three seats opens at the question it opened at before it was a scenario of
+/// `ti4_host` (2026-10-15): the same seat and subtype on several seeds, and on seed 42 the same
+/// answers of the opening.
+macro_rules! opens_at {
+    ($($test:ident: $id:literal => $subtype:literal, [$($answer:literal),*];)*) => {$(
+        #[test]
+        fn $test() {
+            for seed in [42, 7, 12_345] {
+                let (place, subtype, opening) = first_question($id, seed);
+                assert_eq!((place, subtype.as_str()), (0, $subtype), "{} seed {seed}", $id);
+                if seed == 42 {
+                    let expected: Vec<&str> = vec![$($answer),*];
+                    assert_eq!(opening, expected, "{} seed 42", $id);
+                }
+            }
+        }
+    )*};
+}
+
+opens_at! {
+    research_opens_at_the_research: "research_tech_skips" => "research_technology", ["0:strategic"];
+    tactical_opens_at_the_action: "tactical_action" => "action_menu", [];
+    production_opens_at_the_production: "production_batch" => "produce_unit",
+        ["0:tactical", "0:01", "0:done_moving"];
+    production_payment_opens_at_the_production: "production_payment_batch" => "produce_unit",
+        ["0:tactical", "0:01", "0:done_moving"];
+    production_autospend_opens_at_the_production: "production_payment_autospend" => "produce_unit",
+        ["0:tactical", "0:01", "0:done_moving"];
+    space_combat_opens_at_the_action: "space_combat" => "action_menu", [];
+    ongoing_combat_opens_at_the_retreat: "ongoing_combat" => "announce_retreat",
+        ["0:tactical", "0:29", "0:move|01|0", "0:load|0", "0:done_loading", "0:move|01|0",
+         "0:load|0", "0:done_loading", "0:move|01|0", "0:move|01|1", "0:load|0", "0:done_moving"];
+    four_view_combat_opens_at_the_retreat: "ongoing_combat_four_views" => "announce_retreat",
+        ["0:tactical", "0:29", "0:move|01|0", "0:load|0", "0:done_loading", "0:move|01|0",
+         "0:load|0", "0:done_loading", "0:move|01|0", "0:move|01|1", "0:load|0", "0:move|01|0",
+         "0:move|01|0", "0:move|01|0", "0:done_moving"];
+    four_view_invasion_opens_at_the_invasion: "ongoing_invasion_four_views"
+        => "reaction_after_INVASION_BEGAN", ["0:tactical", "0:21", "0:done_moving", "0:destroy|0"];
+    coexistence_opens_at_the_invasion: "ongoing_invasion_coexistence"
+        => "reaction_after_INVASION_BEGAN",
+        ["0:tactical", "0:29", "0:done_moving", "0:destroy|0", "0:destroy|0"];
+    parley_opens_at_the_invasion: "ongoing_invasion_parley" => "reaction_after_INVASION_BEGAN",
+        ["0:tactical", "0:21", "0:done_moving", "0:destroy|0"];
+    endgame_opens_at_the_action: "endgame" => "action_menu", [];
+    status_score_opens_at_the_score: "score_objective_status" => "score_objective", [];
+    imperial_score_opens_at_the_score: "score_objective_imperial" => "imperial_score_objective",
+        ["0:strategic"];
+    full_game_opens_at_the_action: "full_game" => "action_menu", [];
+}
+
+/// The dice of the four-view battle on seed 42 (the e2e of `web/` reads them): every seat stays
+/// and declines, as before the scenario was one of `ti4_host`.
+#[test]
+fn the_four_view_battle_of_seed_42_keeps_its_dice() {
+    use ti4_host::protocol::server::GameEventKind;
+    let registry = Arc::new(GameRegistry::new());
+    let launch = launch_scenario(&registry, "ongoing_combat_four_views", Some(42)).unwrap();
+    let session = registry.get_game(&launch.game_id).unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    let rolls = loop {
+        let rolls: Vec<String> = session
+            .event_log()
+            .into_iter()
+            .filter(|event| matches!(event.event, GameEventKind::DiceRolled))
+            .map(|event| {
+                let roll = event.roll.unwrap();
+                format!("{} {:?}", roll.reason, roll.faces)
+            })
+            .collect();
+        if rolls.len() >= 4 {
+            break rolls;
+        }
+        if let Some((seat, _, _)) = session.open_pending_decision() {
+            let snapshot = session.get_snapshot(&ViewerRole::Player(seat.clone()));
+            if let Some(pending) = snapshot.pending_choice.as_ref() {
+                let option = pending
+                    .choice
+                    .options
+                    .iter()
+                    .find(|o| o.id == "decline" || o.id == "stay" || o.id == "fight")
+                    .unwrap_or(&pending.choice.options[0]);
+                let _ =
+                    session.submit_choice(&seat, &pending.nonce, snapshot.game_version, &option.id);
+            }
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{:?}",
+            session.error()
+        );
+        thread::sleep(Duration::from_millis(5));
+    };
+    assert_eq!(
+        rolls[..4],
         [
-            "research_tech_skips",
-            "tactical_action",
-            "production_batch",
-            "production_payment_batch",
-            "production_payment_autospend",
-            "space_combat",
-            "ongoing_combat",
-            "ongoing_combat_four_views",
-            "ongoing_invasion_four_views",
-            "ongoing_invasion_coexistence",
-            "ongoing_invasion_parley",
-            "endgame",
-            "score_objective_status",
-            "score_objective_imperial",
-            "full_game",
+            "anti-fighter barrage [5, 9]",
+            "anti-fighter barrage [8, 5]",
+            "anti-fighter barrage [5, 10]",
+            "space combat [7]",
         ]
     );
 }
@@ -45,9 +175,15 @@ fn invasion_scenarios_launch_with_public_boundary_and_dev_only_seat_tokens() {
         "ongoing_invasion_parley",
     ] {
         let registry = Arc::new(GameRegistry::new());
-        let launch =
-            execute_launch_scenario(&registry, scenario, Some(42)).expect("launch invasion");
-        assert_eq!(launch.test_seats.as_ref().map(BTreeMap::len), Some(3));
+        let launch = launch_scenario(&registry, scenario, Some(42)).expect("launch invasion");
+        assert_eq!(
+            launch.test_seats.as_ref().map(BTreeMap::len),
+            Some(if scenario.ends_with("coexistence") {
+                1
+            } else {
+                3
+            })
+        );
         let session = registry.get_game(&launch.game_id).expect("session");
         let view = session.get_snapshot(&ViewerRole::Spectator);
         let invasion = view.view.board.invasion.expect("active invasion");
@@ -99,8 +235,8 @@ fn invasion_scenarios_launch_with_public_boundary_and_dev_only_seat_tokens() {
 #[test]
 fn test_launch_tactical_scenario_and_flow() {
     let registry = Arc::new(GameRegistry::new());
-    let response = execute_launch_scenario(&registry, "tactical_action", Some(42))
-        .expect("launch tactical scenario");
+    let response =
+        launch_scenario(&registry, "tactical_action", Some(42)).expect("launch tactical scenario");
 
     assert!(response.game_id.starts_with("dev_tactical_"));
     let session = registry
@@ -121,7 +257,12 @@ fn test_launch_tactical_scenario_and_flow() {
         None
     };
 
-    let choice = wait_for_choice(&client).expect("choice for tactical action");
+    // The launch returns at the first question.
+    let choice = client
+        .snapshot()
+        .pending_choice
+        .expect("choice for tactical action")
+        .choice;
     assert_eq!(choice.player, p1);
     assert_eq!(choice.prompt, "action phase");
 
@@ -147,7 +288,7 @@ fn test_launch_tactical_scenario_and_flow() {
 #[test]
 fn dev_movement_history_rewinds_to_the_action_choice() {
     let registry = Arc::new(GameRegistry::new());
-    let launched = execute_launch_scenario(&registry, "tactical_action", Some(42)).unwrap();
+    let launched = launch_scenario(&registry, "tactical_action", Some(42)).unwrap();
     let session = registry.get_game(&launched.game_id).unwrap();
     let seat = ti4_model::id::PlayerId::new(&launched.player_id);
     let mut previous_nonce = None;
@@ -164,7 +305,7 @@ fn dev_movement_history_rewinds_to_the_action_choice() {
                     session.submit_choice(&seat, &pending.nonce, snapshot.game_version, &chosen.id);
                 if matches!(
                     result,
-                    Err(ti4_server::protocol::status::RejectionReason::NoPendingChoice)
+                    Err(ti4_host::protocol::status::RejectionReason::NoPendingChoice)
                 ) {
                     continue;
                 }
@@ -202,10 +343,10 @@ fn dev_movement_history_rewinds_to_the_action_choice() {
 #[test]
 fn test_launch_space_combat_scenario_has_hostile_units() {
     let registry = Arc::new(GameRegistry::new());
-    let response = execute_launch_scenario(&registry, "space_combat", Some(12345))
+    let response = launch_scenario(&registry, "space_combat", Some(12345))
         .expect("launch space combat scenario");
 
-    assert!(response.game_id.starts_with("dev_combat_"));
+    assert!(response.game_id.starts_with("dev_space_combat_"));
     let session = registry
         .get_game(&response.game_id)
         .expect("session in registry");
@@ -224,7 +365,11 @@ fn test_launch_space_combat_scenario_has_hostile_units() {
     };
 
     // 1. Initial action choice -> select "tactical"
-    let choice = wait_for_choice(&client).expect("initial choice");
+    let choice = client
+        .snapshot()
+        .pending_choice
+        .expect("initial choice")
+        .choice;
     assert_eq!(choice.player, p1);
     let (_, nonce_1, ver_1) = session.current_pending_decision().unwrap();
     client.submit(&nonce_1, ver_1, "tactical").unwrap();
@@ -384,10 +529,10 @@ async fn test_dev_scenarios_http_api() {
 #[test]
 fn test_launch_ongoing_combat_scenario_starts_in_combat() {
     let registry = Arc::new(GameRegistry::new());
-    let response = execute_launch_scenario(&registry, "ongoing_combat", Some(42))
+    let response = launch_scenario(&registry, "ongoing_combat", Some(42))
         .expect("launch ongoing combat scenario");
 
-    assert!(response.game_id.starts_with("dev_combat_"));
+    assert!(response.game_id.starts_with("dev_ongoing_combat_"));
     let session = registry
         .get_game(&response.game_id)
         .expect("session in registry");
@@ -461,10 +606,10 @@ fn test_launch_ongoing_combat_scenario_starts_in_combat() {
     );
 }
 
-#[test]
-fn ongoing_combat_can_undo_twice() {
-    let registry = Arc::new(GameRegistry::new());
-    let launched = execute_launch_scenario(&registry, "ongoing_combat", Some(42)).unwrap();
+/// Launches "ongoing_combat" on `seed` and plays Sol (stay, decline) until Letnev sustains
+/// damage, then plays Direct Hit. `None` when the combat of the seed ends without it.
+fn play_to_direct_hit(registry: &Arc<GameRegistry>, seed: u64) -> Option<LaunchScenarioResponse> {
+    let launched = launch_scenario(registry, "ongoing_combat", Some(seed)).unwrap();
     let seat = ti4_model::id::PlayerId::new(&launched.player_id);
     let session = registry.get_game(&launched.game_id).unwrap();
     let first = session.get_snapshot(&ViewerRole::Player(seat.clone()));
@@ -480,27 +625,58 @@ fn ongoing_combat_can_undo_twice() {
         .unwrap();
 
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    let mut answered = retreat.nonce.clone();
     loop {
         let snapshot = session.get_snapshot(&ViewerRole::Player(seat.clone()));
-        if let Some(reaction) = snapshot.pending_choice.as_ref()
-            && let Some(play) = reaction
+        if let Some(asked) = snapshot.pending_choice.as_ref()
+            && asked.nonce != answered
+        {
+            if let Some(play) = asked
                 .choice
                 .options
                 .iter()
                 .find(|o| o.id.ends_with(":SUSTAIN_DAMAGE_USED:after"))
-        {
-            let accepted = session
-                .submit_choice(&seat, &reaction.nonce, snapshot.game_version, &play.id)
-                .unwrap();
-            assert_eq!(accepted.option_id, play.id);
-            break;
+            {
+                let accepted = session
+                    .submit_choice(&seat, &asked.nonce, snapshot.game_version, &play.id)
+                    .unwrap();
+                assert_eq!(accepted.option_id, play.id);
+                return Some(launched);
+            }
+            if snapshot.view.board.combat.is_none() {
+                return None;
+            }
+            let option = asked
+                .choice
+                .options
+                .iter()
+                .find(|o| o.id == "decline" || o.id == "stay")
+                .unwrap_or(&asked.choice.options[0]);
+            if session
+                .submit_choice(&seat, &asked.nonce, snapshot.game_version, &option.id)
+                .is_ok()
+            {
+                answered.clone_from(&asked.nonce);
+            }
         }
         assert!(
             std::time::Instant::now() < deadline,
-            "waiting for Direct Hit reaction"
+            "waiting for Direct Hit reaction: {:?}",
+            session.error()
         );
         thread::sleep(Duration::from_millis(5));
     }
+}
+
+/// A seed of "ongoing_combat" on which Letnev sustains damage before the combat ends. The seats
+/// that the server plays decide by their place, so the seed tells the game.
+const SUSTAIN_SEED: u64 = 42;
+
+#[test]
+fn ongoing_combat_can_undo_twice() {
+    let registry = Arc::new(GameRegistry::new());
+    let launched = play_to_direct_hit(&registry, SUSTAIN_SEED).expect("Letnev sustains damage");
+    let seat = ti4_model::id::PlayerId::new(&launched.player_id);
 
     for attempt in 0..2 {
         let session = registry.get_game(&launched.game_id).unwrap();
@@ -527,7 +703,7 @@ fn ongoing_combat_can_undo_twice() {
 #[test]
 fn test_launch_research_tech_skips_scenario() {
     let registry = Arc::new(GameRegistry::new());
-    let launched = execute_launch_scenario(&registry, "research_tech_skips", Some(42))
+    let launched = launch_scenario(&registry, "research_tech_skips", Some(42))
         .expect("launch scenario succeeds");
 
     let session = registry.get_game(&launched.game_id).expect("game exists");
@@ -543,7 +719,7 @@ fn test_launch_research_tech_skips_scenario() {
 #[test]
 fn test_launch_score_objective_status_scenario() {
     let registry = Arc::new(GameRegistry::new());
-    let launched = execute_launch_scenario(&registry, "score_objective_status", Some(42))
+    let launched = launch_scenario(&registry, "score_objective_status", Some(42))
         .expect("launch scenario succeeds");
 
     let session = registry.get_game(&launched.game_id).expect("game exists");
@@ -601,7 +777,7 @@ fn test_launch_score_objective_status_scenario() {
 #[test]
 fn test_launch_score_objective_imperial_scenario() {
     let registry = Arc::new(GameRegistry::new());
-    let launched = execute_launch_scenario(&registry, "score_objective_imperial", Some(42))
+    let launched = launch_scenario(&registry, "score_objective_imperial", Some(42))
         .expect("launch scenario succeeds");
 
     let session = registry.get_game(&launched.game_id).expect("game exists");
@@ -657,9 +833,9 @@ fn test_launch_score_objective_imperial_scenario() {
 /// naming who rolled, what for, the faces and the outcome, and each roll appears once.
 #[test]
 fn combat_rolls_are_published_once_as_public_events() {
-    use ti4_server::protocol::server::{EventVisibility, GameEventKind};
+    use ti4_host::protocol::server::{EventVisibility, GameEventKind};
     let registry = Arc::new(GameRegistry::new());
-    let launched = execute_launch_scenario(&registry, "ongoing_combat", Some(42)).unwrap();
+    let launched = launch_scenario(&registry, "ongoing_combat", Some(42)).unwrap();
     let seat = ti4_model::id::PlayerId::new(&launched.player_id);
     let session = registry.get_game(&launched.game_id).unwrap();
     let deadline = std::time::Instant::now() + Duration::from_secs(20);

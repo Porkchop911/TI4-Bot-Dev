@@ -29,6 +29,7 @@ use crate::units::Unit;
 /// Game phase. Determines who resolves first in a window (LRR 1.19, 1.20).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum Phase {
     Strategy,
     Action,
@@ -59,6 +60,7 @@ pub const TOKENS_PER_FACTION: i32 = 16;
 /// The lifecycle state of a leader.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum LeaderStatus {
     Locked,
     Readied,
@@ -81,10 +83,12 @@ impl TokenPool {
     pub const ALL: [Self; 3] = [Self::Tactic, Self::Fleet, Self::Strategic];
 }
 
-/// How a player wants to handle a specific reaction card during a game (M06-016).
-/// Resets at the start of each new game.
+/// How a player wants to handle a specific reaction card during a game (M06-016): offered
+/// always, never, or only in the turns of the seat (of the action phase). Resets at the start
+/// of each new game.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum ReactionMode {
     /// Card is offered normally (default behavior).
     Always,
@@ -1083,6 +1087,7 @@ impl TransientFlags {
 
 /// Public invasion boundary, independent of whichever nested choice is currently offered.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct InvasionDie {
     pub planet: PlanetId,
     pub player: PlayerId,
@@ -3023,6 +3028,7 @@ fn is_zero_u32(value: &u32) -> bool {
 
 /// One exploration card drawn: who drew it, from which deck, for which planet, and the outcome.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ExplorationRecord {
     pub round: u32,
     pub player: PlayerId,

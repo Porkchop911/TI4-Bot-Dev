@@ -287,9 +287,8 @@ pub fn game_factions(
             Ok(fixed.iter().map(|alias| FactionId::new(*alias)).collect())
         }
         ti4_engine::seating::FactionRoster::Wide | ti4_engine::seating::FactionRoster::New => {
-            let drawn =
-                ti4_engine::seating::seat_roster(roster, content, players, sources, seed)
-                    .map_err(|error| format!("{roster:?} roster for seed {seed}: {error}"))?;
+            let drawn = ti4_engine::seating::seat_roster(roster, content, players, sources, seed)
+                .map_err(|error| format!("{roster:?} roster for seed {seed}: {error}"))?;
             players
                 .iter()
                 .map(|player| {
@@ -2535,8 +2534,7 @@ mod tests {
         let players = six_players();
         for seed in 0..12 {
             let drawn =
-                game_factions(content, FactionRoster::Wide, &SIX, &players, DEFAULT, seed)
-                    .unwrap();
+                game_factions(content, FactionRoster::Wide, &SIX, &players, DEFAULT, seed).unwrap();
             let assignments: BTreeMap<PlayerId, FactionId> = players
                 .iter()
                 .enumerate()

@@ -1,4 +1,4 @@
-import type { BoardView, ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import type { BoardView, ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import { getUnitDisplayName } from "../components/UnitIcon.tsx";
 import { getPlanetDetails } from "./planetSelection.ts";
 import { planetOccupants, systemTitle } from "./systemFacts.ts";
@@ -41,7 +41,7 @@ function occupants(system: string | null, planet: string | null, board?: BoardVi
  */
 export function describeUnitAbilityOption(
   choice: Pick<PendingChoiceDto, "prompt" | "context">,
-  option: ChoiceOptionDto,
+  option: ChoiceOption,
   board?: BoardView | null,
 ): UnitAbilityInfo | null {
   const p = option.payload ?? {};

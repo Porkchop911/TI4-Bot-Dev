@@ -56,6 +56,18 @@ fixtures/mlp-baselines/*
 fixtures/legacy_entropy/*
 !fixtures/legacy_entropy/bounded-v1/
 !fixtures/legacy_entropy/bounded-v1/**
+# The catalogue of the engine for the tests of web, written by `cargo wire-web`.
+!fixtures/catalog/
+!fixtures/catalog/**
+# The nicknames that the server and the pages take or refuse (`web-shared/src/identity/nickname.ts`).
+!fixtures/nickname/
+!fixtures/nickname/**
+# The logits of the synthetic MLP models, which the wasm build must give bit for bit (`cargo wire-web`).
+!fixtures/infer/
+!fixtures/infer/**
+# The models of the servers of web2's tests: the synthetic test model under three names (`cargo wire-web`).
+!fixtures/models/
+!fixtures/models/**
 
 # Local git worktrees. Gitlinks to them are meaningless to a clone.
 .worktrees/

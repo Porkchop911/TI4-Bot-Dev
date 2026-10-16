@@ -1,17 +1,17 @@
 import { act, renderHook } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import type { MovementView } from "../model";
-import battleUpdate from "./fixtures/update-battle.json";
+import battleUpdate from "../../../fixtures/protocol/update-battle.json";
 import type { Transport, TransportEvent } from "./transport";
 import { useLiveSession } from "./useLiveSession";
-import type { SessionUpdate, SpaceOddsRequest, SpaceOddsResponse } from "./wire";
+import type { BattleResponse, SessionUpdate, SpaceOddsRequest } from "./wire";
 
 // The odds of the space combat that the staged movement starts: the session asks the engine of
 // the page for each new movement, and shows the last answer as pending until the next one.
-//   cargo run -p ti4-wasm --example record -- late-game 8 1 3 tactical 32 > web2/src/session/fixtures/update-battle.json
+// `update-battle` is written by `crates/ti4-wasm/tests/it/protocol_fixtures.rs` (`cargo wire-web`).
 const battle = battleUpdate as unknown as SessionUpdate;
 
-const answer = (win: number): SpaceOddsResponse => ({
+const answer = (win: number): BattleResponse => ({
   simulations: 2000,
   attacker_win_rate: win,
   defender_win_rate: 1 - win,
@@ -27,7 +27,7 @@ const answer = (win: number): SpaceOddsResponse => ({
 function transport() {
   let listener: (event: TransportEvent) => void = () => {};
   /** The questions for the odds, each with the function that answers it. */
-  const asked: { request: SpaceOddsRequest; answer: (response: SpaceOddsResponse) => void }[] = [];
+  const asked: { request: SpaceOddsRequest; answer: (response: BattleResponse) => void }[] = [];
   const made = {
     catalog: null,
     capabilities: {},
@@ -37,7 +37,7 @@ function transport() {
     },
     odds: vi.fn(
       (request: SpaceOddsRequest) =>
-        new Promise<SpaceOddsResponse>((resolve) => asked.push({ request, answer: resolve })),
+        new Promise<BattleResponse>((resolve) => asked.push({ request, answer: resolve })),
     ),
   };
   const tell = (event: TransportEvent) => act(async () => listener(event));

@@ -16,11 +16,11 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use ti4_engine::timing::Relation;
+use ti4_host::protocol::PROTOCOL_VERSION;
+use ti4_host::protocol::server::{ReactionIntentStateMsg, ServerMessage};
+use ti4_host::protocol::status::ViewerRole;
 use ti4_model::id::PlayerId;
 
-use crate::protocol::PROTOCOL_VERSION;
-use crate::protocol::server::{ReactionIntentStateMsg, ServerMessage};
-use crate::protocol::status::ViewerRole;
 use crate::session::SeatController;
 use crate::session::worker::SessionShared;
 
@@ -423,7 +423,7 @@ mod tests {
         assert!(
             TRIGGER_GROUPS
                 .iter()
-                .all(|g| g.id.len() <= crate::protocol::client::MAX_TRIGGER_ID_BYTES)
+                .all(|g| g.id.len() <= ti4_host::protocol::client::MAX_TRIGGER_ID_BYTES)
         );
     }
 

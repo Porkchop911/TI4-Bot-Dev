@@ -68,6 +68,47 @@ async function expectShipHitPills(page: Page, state: InitialSnapshotMsg) {
   }
 }
 
+/**
+ * Launches "ongoing_combat" on `seed`, stays, and waits for Letnev to sustain damage so that Sol
+ * is offered Direct Hit. The seats that the server plays decide by their place, so the seed tells
+ * the game: Letnev sustains damage on the seeds of these tests.
+ */
+async function launchToDirectHit(page: Page, request: APIRequestContext, seed: number | string) {
+  const launch = await request.post(`${backend}/api/dev/scenarios/launch`, {
+    data: `{"scenario_id":"ongoing_combat","seed":${seed}}`,
+    headers: { "content-type": "application/json" },
+  });
+  expect(launch.ok(), `launch scenario: ${launch.status()} ${await launch.text()}`).toBe(true);
+  const launched = (await launch.json()) as {
+    game_id: string;
+    player_session: string;
+    player_id: string;
+  };
+  const { game_id: gameId, player_session: session, player_id: playerId } = launched;
+  const initial = await snapshot(request, gameId, session);
+  expect(initial.pending_choice?.choice.context?.subtype).toBe("announce_retreat");
+  expect(initial.pending_choice?.choice.player).toBe(playerId);
+  await openPlayerGame(page, gameId, session);
+  await expect(page.getByTestId("combat-resolution-modal")).toBeVisible();
+  const stay = initial.pending_choice!.choice.options.find(
+    (option) => option.id === "stay" || option.id === "decline",
+  );
+  expect(stay).toBeDefined();
+  await page.getByTestId(`retreat-opt-${stay!.id}`).click();
+  let offered: boolean | undefined;
+  await expect
+    .poll(async () => {
+      const state = await snapshot(request, gameId, session);
+      const choice = state.pending_choice?.choice;
+      if (state.game_version <= initial.game_version || choice?.player !== playerId) return false;
+      offered = choice.options.some((option) => option.id.endsWith(":SUSTAIN_DAMAGE_USED:after"));
+      return true;
+    })
+    .toBe(true);
+  expect(offered, `Letnev sustains damage on seed ${seed}`).toBe(true);
+  return { gameId, session, playerId, initial };
+}
+
 test.describe("Space Combat Overlay", () => {
   test("loads ongoing combat scenario, displays side-by-side fleets with dreadnoughts and odds, shows per-round hits, and supports docking and integrated decision execution", async ({
     page,
@@ -174,6 +215,10 @@ test.describe("Space Combat Overlay", () => {
     await expect(oddsCard).toBeVisible();
     await expect(oddsCard.getByText("Combat Odds · Fleets only")).toBeVisible();
     await expect(oddsCard.locator(".combat-odds-col__pct")).toHaveText([/\d+%/, /\d+%/]);
+    // The page's own engine simulates the combat (no server, no advisor).
+    await expect(page.getByTestId("combat-odds-tag")).toHaveText("Simulated (2,000 rollouts)", {
+      timeout: 30_000,
+    });
 
     // Verify round hits scorecard is visible
     const roundHits = page.getByTestId("combat-round-hits");
@@ -243,49 +288,27 @@ test.describe("Space Combat Overlay", () => {
 
   // This full-width seed rolls enough return-fire hits to open a nested reaction
   // before the Direct Hit engine step returns to the server worker.
-  for (const seed of [42, "11056244294849564155"])
+  for (const seed of [2, "11056244294849564155"])
     test(`can submit sustain damage after playing Direct Hit (seed ${seed})`, async ({
       page,
       request,
     }) => {
-      test.setTimeout(90_000);
-      const launch = await request.post(`${backend}/api/dev/scenarios/launch`, {
-        data: `{"scenario_id":"ongoing_combat","seed":${seed}}`,
-        headers: { "content-type": "application/json" },
-      });
-      expect(launch.ok(), `launch scenario: ${launch.status()} ${await launch.text()}`).toBe(true);
-      const { game_id: gameId, player_session: session, player_id: playerId } = await launch.json();
-      const initial = await snapshot(request, gameId, session);
+      test.setTimeout(120_000);
+      const { gameId, session, playerId, initial } = await launchToDirectHit(page, request, seed);
       const defender = initial.view.board.combat?.defender;
       expect(defender).toBeTruthy();
-      expect(initial.pending_choice?.choice.context?.subtype).toBe("announce_retreat");
       const systemId = initial.view.board.combat!.system_id;
       const dreadnoughts = (state: InitialSnapshotMsg) =>
         state.view.board.systems[systemId].units.filter(
           (unit) => unit.owner === defender && unit.unit_type === "dreadnought",
         ).length;
       expect(dreadnoughts(initial)).toBeGreaterThan(0);
-      await openPlayerGame(page, gameId, session);
-      expect(initial.pending_choice?.choice.player).toBe(playerId);
-      await expect(page.getByTestId("combat-resolution-modal")).toBeVisible();
-      const stay = initial.pending_choice!.choice.options.find(
-        (option) => option.id === "stay" || option.id === "decline",
-      );
-      expect(stay).toBeDefined();
-      await page.getByTestId(`retreat-opt-${stay!.id}`).click();
-      await expect
-        .poll(async () =>
-          (await snapshot(request, gameId, session)).pending_choice?.choice.options.some((option) =>
-            option.id.endsWith(":SUSTAIN_DAMAGE_USED:after"),
-          ),
-        )
-        .toBe(true);
       await page.getByTestId("play-direct-hit-btn").click();
       await expect
         .poll(async () => (await snapshot(request, gameId, session)).game_version)
         .toBeGreaterThan(initial.game_version);
       const after = await snapshot(request, gameId, session);
-      if (seed === 42) expect(dreadnoughts(after)).toBeLessThan(dreadnoughts(initial));
+      if (seed === 2) expect(dreadnoughts(after)).toBeLessThan(dreadnoughts(initial));
 
       await expect
         .poll(async () =>
@@ -321,9 +344,16 @@ test.describe("Space Combat Overlay", () => {
         (option) => option.id !== "decline" && option.kind !== "decline",
       );
       expect(sustain).toBeDefined();
-      const sustainButton = page.getByTestId(`sustain-opt-${sustain!.id}`);
+      // Hits are staged in the shared panel and sent as one plan: sustain on a ship, let the
+      // panel place any hit left, confirm.
+      const panel = page.getByTestId("hit-assignment-panel");
+      await expect(panel).toBeVisible();
+      const sustainButton = panel.locator('[data-testid^="hit-sustain-"]:enabled').first();
       await expect(sustainButton).toBeVisible();
       await sustainButton.click();
+      const autoAssign = panel.getByTestId("hit-auto-assign");
+      if (await autoAssign.isEnabled()) await autoAssign.click();
+      await panel.getByTestId("hit-confirm").click();
       await expect
         .poll(async () => (await snapshot(request, gameId, session)).game_version)
         .toBeGreaterThan(sustainChoice.game_version);
@@ -331,22 +361,12 @@ test.describe("Space Combat Overlay", () => {
     });
 
   test("plays Shields Holding to cancel incoming combat hits", async ({ page, request }) => {
-    test.setTimeout(90_000);
-    const launch = await request.post(`${backend}/api/dev/scenarios/launch`, {
-      data: { scenario_id: "ongoing_combat", seed: 42 },
-    });
-    expect(launch.ok()).toBe(true);
-    const { game_id: gameId, player_session: session, player_id: playerId } = await launch.json();
-    const initial = await snapshot(request, gameId, session);
+    test.setTimeout(120_000);
+    // On seed 7 the return fire is three hits: Shields Holding cancels two of them.
+    const { gameId, session, playerId, initial } = await launchToDirectHit(page, request, 7);
     expect(
       initial.view.players.find((player) => player.id === playerId)?.held_action_cards,
     ).toContain("sh1");
-    await openPlayerGame(page, gameId, session);
-    const stay = initial.pending_choice!.choice.options.find(
-      (option) => option.id === "stay" || option.id === "decline",
-    );
-    expect(stay).toBeDefined();
-    await page.getByTestId(`retreat-opt-${stay!.id}`).click();
 
     // Remove the defender's sustained dreadnought, then respond to its return fire.
     await expect(page.getByTestId("play-direct-hit-btn")).toBeVisible();
@@ -383,7 +403,9 @@ test.describe("Space Combat Overlay", () => {
     // The card has resolved this before-assignment window. The next action is to
     // absorb the one remaining hit, not to pass through the same window again.
     await expect(page.getByTestId("pass-combat-reaction-btn")).toHaveCount(0);
-    await expect(page.getByTestId("decline-sustain-btn")).toBeVisible();
+    const panel = page.getByTestId("hit-assignment-panel");
+    await expect(panel).toBeVisible();
+    await expect(panel.getByTestId("hit-assignment-remaining")).toHaveText("1 of 1 hit left to assign");
     await expect(page.getByTestId("choice-error-banner")).toBeHidden();
   });
 });

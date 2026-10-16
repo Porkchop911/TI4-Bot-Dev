@@ -56,7 +56,7 @@ fn slow_an_undo_goes_back_one_answer_and_the_game_goes_on_the_same() {
             );
             let version = question["game_version"].clone();
             page.script.push_front(Act::Cmd(json!({
-                "type": "undo", "protocol_version": 3, "game_id": GAME,
+                "type": "undo", "protocol_version": 4, "game_id": GAME,
                 "expected_version": version,
             })));
         })),
@@ -112,12 +112,15 @@ fn slow_a_save_plays_again_to_the_same_question() {
 
     let second = page(vec![Act::Leave]);
     install(&second, seed, "a");
-    let end = start(&save["setup"], Some(&save));
+    let end = crate::common::resume(&save);
     assert_eq!(end["end"]["left"], true);
     let second = second.lock().unwrap();
     // It was told how far it got, and checked that the game came back to the saved position.
     assert!(second.progress.len() >= 3, "{:?}", second.progress);
-    assert_eq!(second.progress.last().unwrap().1, 70);
+    assert_eq!(
+        second.progress.last().unwrap().1 as usize,
+        save["decisions"].as_array().unwrap().len()
+    );
     assert_eq!(
         second.asks[0]["resume_check"]["ok"], true,
         "{}",
@@ -134,6 +137,95 @@ fn slow_a_save_plays_again_to_the_same_question() {
     for (index, (ours, theirs)) in again.iter().zip(&events).enumerate() {
         assert_eq!(ours, theirs, "event {index} (with its time of day)");
     }
+}
+
+#[test]
+fn a_save_names_its_game_and_every_decision_and_plays_again_with_no_seat_deciding() {
+    let _serial = crate::common::serial();
+    let seed = 11;
+    // Fifteen answers, a save, an undo of the last answer, and a save again.
+    let first = page(vec![
+        Act::Answer(15),
+        Act::Cmd(json!({ "type": "save_state" })),
+        Act::Probe(Box::new(|page| {
+            let (_, version, _, _) = pending(&page.messages).unwrap();
+            page.script.push_front(Act::Cmd(json!({
+                "type": "undo", "protocol_version": 4, "game_id": GAME,
+                "expected_version": version,
+            })));
+        })),
+        Act::Cmd(json!({ "type": "save_state" })),
+        Act::Leave,
+    ]);
+    install(&first, seed, "a");
+    start(&setup(seed, 4), None);
+    let (before, save, question) = {
+        let first = first.lock().unwrap();
+        let saves: Vec<&Value> = first
+            .replies
+            .iter()
+            .filter(|reply| reply["save"].is_object())
+            .map(|reply| &reply["save"])
+            .collect();
+        (
+            saves[0].clone(),
+            saves[1].clone(),
+            last_question(&first.messages).clone(),
+        )
+    };
+    assert_eq!(save["format"], 2);
+    assert_eq!(save["seed"], seed);
+    assert_eq!(save["players"], 4);
+    assert_eq!(save["humans"], 1);
+    assert_eq!(save["game"]["setup"]["human_seat"], 0);
+    assert_eq!(save["table"]["player_count"], 4);
+    assert_eq!(save["finished"], false);
+    for gone in ["setup", "log", "human_seat", "game_id"] {
+        assert!(save.get(gone).is_none(), "{gone} is not in a save");
+    }
+    // The undo cuts the decisions at the answer that it takes back.
+    let cut = save["decisions"].as_array().unwrap();
+    let all = before["decisions"].as_array().unwrap();
+    assert!(cut.len() < all.len(), "{} of {}", cut.len(), all.len());
+    assert_eq!(cut[..], all[..cut.len()]);
+    assert!(
+        save["answers"].as_array().unwrap().len() < before["answers"].as_array().unwrap().len()
+    );
+
+    // The save alone plays the game again: every decision is given, and no seat decides.
+    let second = page(vec![Act::Leave]);
+    install(&second, seed, "a");
+    let picks = ti4_wasm::picks_native();
+    let end = crate::common::resume(&save);
+    assert_eq!(end["end"]["left"], true, "{end}");
+    assert_eq!(ti4_wasm::picks_native(), picks, "a seat decided again");
+    let second = second.lock().unwrap();
+    assert_eq!(
+        second.asks[0]["resume_check"]["ok"], true,
+        "{}",
+        second.asks[0]["resume_check"]
+    );
+    let snapshot = &second.messages[0];
+    assert_eq!(snapshot["type"], "initial_snapshot");
+    assert_eq!(snapshot["state"], question["state"]);
+    assert_eq!(snapshot["pending_choice"], question["pending_choice"]);
+    let again = send(&json!({ "type": "save_state" }))["save"].clone();
+    assert_eq!(again["decisions"], save["decisions"]);
+    assert_eq!(again["decisions_hash"], save["decisions_hash"]);
+}
+
+#[test]
+fn a_save_of_another_format_is_not_read() {
+    let _serial = crate::common::serial();
+    let request = json!({ "setup": setup(3, 3), "resume": { "format": 1, "log": [] } });
+    let len = host_api::put_input(&request.to_string());
+    let status = ti4_wasm::ti4_host_start(u32::try_from(len).unwrap());
+    assert!(status < 0);
+    assert!(
+        host_api::out_text().contains("format 1; this engine reads format 2"),
+        "{}",
+        host_api::out_text()
+    );
 }
 
 #[test]
@@ -220,20 +312,20 @@ fn slow_queries_and_settings_answer_in_the_servers_shapes() {
             }
         })),
         Act::Cmd(
-            json!({ "type": "query_reach", "protocol_version": 3, "game_id": GAME,
+            json!({ "type": "query_reach", "protocol_version": 4, "game_id": GAME,
                          "request_id": 9, "system_id": "18" }),
         ),
         Act::Cmd(
-            json!({ "type": "query_reach", "protocol_version": 3, "game_id": GAME,
+            json!({ "type": "query_reach", "protocol_version": 4, "game_id": GAME,
                          "request_id": 10, "system_id": "nowhere" }),
         ),
-        Act::Cmd(json!({ "type": "subscribe", "protocol_version": 3, "game_id": GAME })),
+        Act::Cmd(json!({ "type": "subscribe", "protocol_version": 4, "game_id": GAME })),
         Act::Cmd(
-            json!({ "type": "run_draft", "protocol_version": 3, "game_id": GAME,
+            json!({ "type": "run_draft", "protocol_version": 4, "game_id": GAME,
                          "request_id": "d1", "script": [] }),
         ),
         Act::Cmd(
-            json!({ "type": "set_reaction_mode", "protocol_version": 3, "game_id": GAME,
+            json!({ "type": "set_reaction_mode", "protocol_version": 4, "game_id": GAME,
                          "card": card, "mode": "never" }),
         ),
         Act::Leave,

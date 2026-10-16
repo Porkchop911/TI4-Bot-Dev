@@ -1,5 +1,5 @@
 import React from "react";
-import type { BoardTileView, MapSeatPreview } from "../protocol/types.ts";
+import type { BoardTileView, SeatPreview } from "../protocol/types.ts";
 import { deriveHexGeometry } from "../presentation/boardPresentation.ts";
 import { homeIdSet, mainTiles, tileKind, type TileKind } from "../presentation/mapPicker.ts";
 import { seatStyle } from "../presentation/playerDisplay.ts";
@@ -17,7 +17,7 @@ export const TILE_FILL: Record<TileKind, string> = {
 /** One hex per main-map tile, coloured by kind; homes carry their seat colour. */
 export const MapThumbnail: React.FC<{
   tiles: readonly BoardTileView[];
-  seats: readonly MapSeatPreview[];
+  seats: readonly SeatPreview[];
   label: string;
 }> = ({ tiles, seats, label }) => {
   const main = mainTiles(tiles);

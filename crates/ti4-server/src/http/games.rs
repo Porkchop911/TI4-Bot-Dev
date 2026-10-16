@@ -1,20 +1,21 @@
 //! HTTP endpoints for listing, creating, and inspecting game sessions.
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use serde::{Deserialize, Serialize};
 
+use ti4_host::maps::MapTemplateSummary;
+use ti4_host::maps::catalog::{self, MapChoice};
+use ti4_host::protocol::server::ServerMessage;
 use ti4_model::id::PlayerId;
 
-use crate::maps::MapTemplateSummary;
-use crate::protocol::server::ServerMessage;
 use crate::session::GameRegistry;
-use crate::session::batch::BatchRequest;
 use crate::session::registry::{GameSummary, LobbyError, PlayerLobbyView};
 use crate::session::registry::{HistoryAction, HistoryError};
+use ti4_host::batch::BatchRequest;
 
 #[allow(
     clippy::result_large_err,
@@ -76,21 +77,18 @@ pub struct CreateGameRequest {
     pub map_template: Option<String>,
     /// `"random"` asks for the seeded random board explicitly (no template).
     pub map: Option<String>,
-    /// Opening-state preset for smoke runs (see [`crate::preset`]); unknown names are a 400.
+    /// Opening-state preset for smoke runs (see [`ti4_host::preset`]); unknown names are a 400.
     /// Like the `/api/dev/scenarios` endpoints, this is not gated.
     pub start_preset: Option<String>,
     /// `"random"` fills every other seat with a random decider and starts the game in this
     /// request: there is no lobby to ready and start. The seats decide from the seed of the game.
     pub fill_seats: Option<String>,
     /// Strategy card set: `"te"` (default), `"pok"` or `"base_game_codex1"`; see
-    /// [`crate::card_set`]. Anything else is a 400.
+    /// [`ti4_host::setup::card_set`]. Anything else is a 400.
     pub strategy_card_set: Option<String>,
     /// Who opens as speaker: `"random"` (default; a seat drawn from the seed, so the same seed
     /// gives the same speaker) or `"seat"` (the first seat). Anything else is a 400.
     pub speaker_order: Option<String>,
-    /// How the seats are given at Start: `"random"` (default; drawn from the seed) or `"join"`
-    /// (the order in which the players came; tests and presets use it). Anything else is a 400.
-    pub seat_order: Option<String>,
     /// The wait before each answer of a seat that the server plays, in milliseconds (0 to
     /// 30 000). Without it the table waits as the process says, until the host sets a value.
     pub bot_delay_ms: Option<u64>,
@@ -150,7 +148,7 @@ pub async fn list_games(State(registry): State<Arc<GameRegistry>>) -> Json<Vec<G
 pub async fn list_maps(
     Query(query): Query<MapsQuery>,
 ) -> Result<Json<Vec<MapTemplateSummary>>, (StatusCode, String)> {
-    crate::maps::catalog::catalog(query.player_count)
+    catalog::catalog(query.player_count)
         .map(Json)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))
 }
@@ -171,29 +169,26 @@ pub struct MapPreviewQuery {
 pub async fn preview_map(
     Path(alias): Path<String>,
     Query(query): Query<MapPreviewQuery>,
-) -> Result<Json<crate::maps::MapPreview>, (StatusCode, String)> {
+) -> Result<Json<ti4_host::maps::MapPreview>, (StatusCode, String)> {
     let bad = |message: String| (StatusCode::BAD_REQUEST, message);
     let (choice, count) = if alias == "random" {
         let count = query
             .player_count
             .ok_or_else(|| bad("random needs player_count".to_owned()))?;
-        (crate::maps::MapChoice::Random, count)
+        (MapChoice::Random, count)
     } else {
-        let loader = crate::maps::TemplateLoader::load()
+        let loader = ti4_host::maps::TemplateLoader::load()
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
         let template = loader
             .get(&alias)
             .ok_or_else(|| (StatusCode::NOT_FOUND, format!("unknown map {alias:?}")))?;
-        (
-            crate::maps::MapChoice::Template { alias },
-            template.player_count,
-        )
+        (MapChoice::Template { alias }, template.player_count)
     };
     if !(2..=MAX_PLAYERS).contains(&count) {
         return Err(bad("player_count must be 2-8".to_owned()));
     }
-    let seed = crate::maps::catalog::variant_seed(&choice, count, query.variant.unwrap_or(0));
-    crate::maps::catalog::preview(&choice, count, seed)
+    let seed = variant_seed(&choice, count, query.variant.unwrap_or(0));
+    catalog::preview(&choice, count, seed)
         .map(Json)
         .map_err(bad)
 }
@@ -201,7 +196,7 @@ pub async fn preview_map(
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ChooseMapRequest {
-    pub map: crate::maps::MapChoice,
+    pub map: ti4_host::maps::MapChoice,
     /// Dev only (like `start_preset` at creation): `\"\"` clears it. Never shown to players.
     pub start_preset: Option<String>,
 }
@@ -233,7 +228,7 @@ pub async fn choose_lobby_map(
 pub async fn lobby_map_preview(
     Path(game_id): Path<String>,
     State(registry): State<Arc<GameRegistry>>,
-) -> Result<Json<crate::maps::MapPreview>, (StatusCode, String)> {
+) -> Result<Json<ti4_host::maps::MapPreview>, (StatusCode, String)> {
     tokio::task::spawn_blocking(move || registry.player_lobby_map_preview(&game_id))
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
@@ -260,8 +255,8 @@ pub async fn create_game(
         }
     };
 
-    let loader =
-        crate::maps::TemplateLoader::load().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    let loader = ti4_host::maps::TemplateLoader::load()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
     if let Some(map) = &payload.map
         && (map != "random" || payload.map_template.is_some())
     {
@@ -290,7 +285,7 @@ pub async fn create_game(
             }
             Some(alias)
         }
-        None => crate::maps::default_template_for(
+        None => ti4_host::maps::default_template_for(
             ti4_content::ContentStore::embedded(),
             &loader,
             payload.player_count,
@@ -305,7 +300,7 @@ pub async fn create_game(
         ));
     }
     if let Some(preset) = &payload.start_preset
-        && !crate::preset::is_known(preset)
+        && !ti4_host::preset::is_known(preset)
     {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -325,22 +320,17 @@ pub async fn create_game(
     };
 
     let strategy_card_set = match payload.strategy_card_set.as_deref() {
-        Some(name) => crate::card_set::validate(name)
+        Some(name) => ti4_host::setup::card_set::validate(name)
             .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?,
-        None => crate::card_set::DEFAULT,
+        None => ti4_host::setup::card_set::DEFAULT,
     };
 
     let speaker_order = match payload.speaker_order.as_deref() {
-        Some(name) => crate::map::SpeakerOrder::parse(name)
+        Some(name) => ti4_host::setup::SpeakerOrder::parse(name)
             .map_err(|error| (StatusCode::BAD_REQUEST, error))?,
-        None => crate::map::SpeakerOrder::default(),
+        None => ti4_host::setup::SpeakerOrder::default(),
     };
 
-    let seat_order = match payload.seat_order.as_deref() {
-        Some(name) => crate::session::table::SeatOrder::parse(name)
-            .map_err(|error| (StatusCode::BAD_REQUEST, error))?,
-        None => crate::session::table::SeatOrder::default(),
-    };
     let bot_delay_ms = payload.bot_delay_ms;
     if bot_delay_ms.is_some_and(|delay| delay > crate::session::table::MAX_BOT_DELAY_MS) {
         return Err((
@@ -367,7 +357,6 @@ pub async fn create_game(
                 payload.start_preset,
                 strategy_card_set,
                 speaker_order,
-                seat_order,
                 bot_delay_ms,
             )
         })
@@ -375,7 +364,7 @@ pub async fn create_game(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
     } else {
         registry
-            .create_player_lobby_with_seating(
+            .create_player_lobby_with_speaker(
                 game_id.clone(),
                 payload.player_count,
                 seed,
@@ -384,7 +373,6 @@ pub async fn create_game(
                 payload.start_preset,
                 strategy_card_set,
                 speaker_order,
-                seat_order,
             )
             .and_then(|(lobby, player, session)| {
                 let lobby = match bot_delay_ms {
@@ -592,14 +580,6 @@ pub async fn start_lobby(
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct AddBotRequest {
-    pub password: String,
-    pub nickname: Option<String>,
-    pub temperature: Option<f64>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct RemoveBotRequest {
     pub player_id: PlayerId,
 }
@@ -638,12 +618,13 @@ pub async fn add_bots_to_lobby(
     Json(payload): Json<AddBotsRequest>,
 ) -> Result<Json<PlayerLobbyView>, (StatusCode, String)> {
     let token = require_player_session(&headers)?;
-    if !crate::session::registry::IN_PROCESS_BOT_KINDS.contains(&payload.kind.as_str()) {
+    if !crate::session::registry::is_in_process_bot_kind(&payload.kind) {
         return Err((
             StatusCode::BAD_REQUEST,
             format!(
-                "Unknown bot kind '{}': only 'random' or 'smart' can be added here (MLP bots use /lobby/add-bot)",
-                payload.kind
+                "Unknown bot kind '{}': the kinds that can be added here are {}",
+                payload.kind,
+                crate::session::registry::in_process_bot_kinds().join(", ")
             ),
         ));
     }
@@ -668,37 +649,6 @@ pub async fn add_bots_to_lobby(
                 count,
                 payload.faction.as_deref(),
             )
-            .map_err(lobby_error)?,
-    ))
-}
-
-/// Handler for `POST /api/games/{game_id}/lobby/add-bot`.
-pub async fn add_bot_to_lobby(
-    Path(game_id): Path<String>,
-    headers: HeaderMap,
-    State(registry): State<Arc<GameRegistry>>,
-    Json(payload): Json<AddBotRequest>,
-) -> Result<Json<PlayerLobbyView>, (StatusCode, String)> {
-    let token = require_player_session(&headers)?;
-    if registry.public().is_public() {
-        return Err((
-            StatusCode::FORBIDDEN,
-            "ML bots are disabled on the public server; use the smart or random bots".to_owned(),
-        ));
-    }
-    if !registry.bot_service_enabled() {
-        return Err((
-            StatusCode::FORBIDDEN,
-            "Bot service is not enabled on this server".to_owned(),
-        ));
-    }
-    if !registry.verify_bot_password(&payload.password) {
-        return Err((StatusCode::UNAUTHORIZED, "Invalid bot password".to_owned()));
-    }
-    Ok(Json(
-        registry
-            .spawn_bot_for_lobby(&game_id, token, payload.nickname, payload.temperature)
-            .await
             .map_err(lobby_error)?,
     ))
 }
@@ -739,6 +689,21 @@ pub async fn set_lobby_seat_faction(
     ))
 }
 
+/// Handler for `POST /api/games/{game_id}/lobby/shuffle-seats`: the host puts the players of
+/// the table in another order of its rows, which are the seats of the game.
+pub async fn shuffle_lobby_seats(
+    Path(game_id): Path<String>,
+    headers: HeaderMap,
+    State(registry): State<Arc<GameRegistry>>,
+) -> Result<Json<PlayerLobbyView>, (StatusCode, String)> {
+    let token = require_player_session(&headers)?;
+    Ok(Json(
+        registry
+            .shuffle_seats(&game_id, token)
+            .map_err(lobby_error)?,
+    ))
+}
+
 fn player_session(headers: &HeaderMap) -> Result<Option<&str>, (StatusCode, String)> {
     headers
         .get("x-ti4-player-session")
@@ -760,11 +725,8 @@ fn lobby_error(error: LobbyError) -> (StatusCode, String) {
         LobbyError::NotFound => StatusCode::NOT_FOUND,
         LobbyError::FactionTaken(_) => StatusCode::CONFLICT,
         LobbyError::InvalidFaction(_) => StatusCode::BAD_REQUEST,
-        LobbyError::InvalidCapability
-        | LobbyError::HumanSeatRequired
-        | LobbyError::HostRequired => StatusCode::FORBIDDEN,
-        LobbyError::HumansNotReady
-        | LobbyError::SeatsOpen
+        LobbyError::InvalidCapability | LobbyError::HostRequired => StatusCode::FORBIDDEN,
+        LobbyError::SeatsOpen
         | LobbyError::SeatsTaken(_)
         | LobbyError::ScenarioTable(_)
         | LobbyError::AlreadyRunning
@@ -776,6 +738,7 @@ fn lobby_error(error: LobbyError) -> (StatusCode, String) {
         | LobbyError::InvalidSetting(_)
         | LobbyError::InvalidMap(_)
         | LobbyError::InvalidNickname => StatusCode::BAD_REQUEST,
+        LobbyError::ModelMissing(_) => StatusCode::CONFLICT,
         LobbyError::Map(_) | LobbyError::Storage(_) => StatusCode::INTERNAL_SERVER_ERROR,
     };
     (status, message)
@@ -785,7 +748,7 @@ fn lobby_error(error: LobbyError) -> (StatusCode, String) {
 pub async fn get_map(
     Path(game_id): Path<String>,
     State(registry): State<Arc<GameRegistry>>,
-) -> Result<Json<Vec<crate::protocol::view::BoardTileView>>, (StatusCode, String)> {
+) -> Result<Json<Vec<ti4_host::protocol::view::BoardTileView>>, (StatusCode, String)> {
     let session = registry
         .get_game(&game_id)
         .ok_or_else(|| (StatusCode::NOT_FOUND, format!("Game '{game_id}' not found")))?;
@@ -950,8 +913,8 @@ pub async fn splice_preview(
     Path(game_id): Path<String>,
     headers: HeaderMap,
     State(registry): State<Arc<GameRegistry>>,
-    Json(payload): Json<crate::protocol::splice::SplicePreviewRequest>,
-) -> Result<Json<crate::protocol::splice::SplicePreview>, (StatusCode, String)> {
+    Json(payload): Json<ti4_host::protocol::splice::SplicePreviewRequest>,
+) -> Result<Json<ti4_host::protocol::splice::SplicePreview>, (StatusCode, String)> {
     let token = require_player_session(&headers)?.to_owned();
     let preview = tokio::task::spawn_blocking(move || {
         registry.splice_preview(&game_id, &token, &payload.edit)
@@ -993,7 +956,7 @@ pub async fn turn_redo_status(
     Path(game_id): Path<String>,
     headers: HeaderMap,
     State(registry): State<Arc<GameRegistry>>,
-) -> Result<Json<crate::protocol::turn_redo::TurnRedoStatusResponse>, (StatusCode, String)> {
+) -> Result<Json<ti4_host::protocol::turn_redo::TurnRedoStatusResponse>, (StatusCode, String)> {
     let token = require_player_session(&headers)?.to_owned();
     let status = tokio::task::spawn_blocking(move || registry.turn_redo_status(&game_id, &token))
         .await
@@ -1004,9 +967,9 @@ pub async fn turn_redo_status(
             )
         })?
         .map_err(|error| (history_status_code(&error), error.message()))?;
-    Ok(Json(crate::protocol::turn_redo::TurnRedoStatusResponse {
-        status,
-    }))
+    Ok(Json(
+        ti4_host::protocol::turn_redo::TurnRedoStatusResponse { status },
+    ))
 }
 
 /// Turn redo: request (rewind my last turn), auto-play the round after the new turn, restore the
@@ -1019,9 +982,9 @@ pub async fn turn_redo(
     Path(game_id): Path<String>,
     headers: HeaderMap,
     State(registry): State<Arc<GameRegistry>>,
-    Json(payload): Json<crate::protocol::turn_redo::TurnRedoRequest>,
+    Json(payload): Json<ti4_host::protocol::turn_redo::TurnRedoRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    use crate::protocol::turn_redo::TurnRedoCommand;
+    use ti4_host::protocol::turn_redo::TurnRedoCommand;
     let token = require_player_session(&headers)?.to_owned();
     let version = payload.expected_version;
     let outcome = tokio::task::spawn_blocking(move || match payload.command {
@@ -1067,7 +1030,6 @@ mod template_request_tests {
             fill_seats: None,
             strategy_card_set: None,
             speaker_order: None,
-            seat_order: None,
             bot_delay_ms: None,
         })
     }
@@ -1083,7 +1045,6 @@ mod template_request_tests {
             fill_seats: None,
             strategy_card_set: None,
             speaker_order: None,
-            seat_order: None,
             bot_delay_ms: None,
         })
     }
@@ -1134,14 +1095,14 @@ mod template_request_tests {
             let expected = if *seat == created.player.id {
                 SeatController::Human
             } else {
-                SeatController::BotRandom
+                SeatController::RANDOM
             };
             assert_eq!(*controller, expected, "{seat}");
         }
         // The credential of the response is the one of the human seat.
         assert_eq!(
             session.viewer_for_seat_token(&created.player_session),
-            Some(crate::protocol::status::ViewerRole::Player(
+            Some(ti4_host::protocol::status::ViewerRole::Player(
                 created.player.id.clone()
             ))
         );
@@ -1166,7 +1127,7 @@ mod template_request_tests {
         let unknown = create_game(State(registry.clone()), preset_request(3, "nope")).await;
         assert_eq!(unknown.unwrap_err().0, StatusCode::BAD_REQUEST);
         assert!(
-            create_game(State(registry), preset_request(3, crate::preset::COMBAT))
+            create_game(State(registry), preset_request(3, ti4_host::preset::COMBAT))
                 .await
                 .is_ok()
         );
@@ -1191,4 +1152,12 @@ mod template_request_tests {
         );
         assert!(create_game(State(registry), request(6, None)).await.is_ok());
     }
+}
+
+/// A repeatable seed for the picture of variant `variant` of a card. Mixed with a per-process
+/// secret so the numbers cannot be walked to learn anything about a real game's seed.
+fn variant_seed(choice: &MapChoice, player_count: usize, variant: u32) -> u64 {
+    static SALT: OnceLock<u64> = OnceLock::new();
+    let salt = *SALT.get_or_init(rand::random);
+    catalog::variant_seed_salted(salt, choice, player_count, variant)
 }

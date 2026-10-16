@@ -8,7 +8,7 @@ type Size = keyof typeof SIZES;
 
 async function publicServer(page: Page) {
   await page.route("**/health", (route) =>
-    route.fulfill({ json: { status: "ok", protocol_version: 3, commit: "51390594", public: true } }),
+    route.fulfill({ json: { status: "ok", protocol_version: 4, commit: "51390594", public: true } }),
   );
   await page.route("**/api/access", (route) => route.fulfill({ json: { required: true, granted: true } }));
 }

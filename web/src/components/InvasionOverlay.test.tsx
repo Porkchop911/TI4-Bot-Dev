@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { galleryBoard } from "../dev/galleryBoard.ts";
 import { InvasionOverlay } from "./InvasionOverlay.tsx";
+import { partialContext } from "../test/wire.ts";
 
 it("shows the same planet-local resolved ground round without offering spectator controls", () => {
   const board = {
@@ -20,7 +21,7 @@ it("shows the same planet-local resolved ground round without offering spectator
         kind: "ground_round",
         round: 1,
         harrow_hits: 0,
-        before: [{ owner: "attacker", unit_type: "infantry", planet: "jord", damaged: false }],
+        before: [{ owner: "attacker", unit_type: "infantry", planet: "jord", damaged: false, galvanized: false }],
         after: [],
         hits: { attacker: 1, defender: 1 },
         dice: [
@@ -34,6 +35,7 @@ it("shows the same planet-local resolved ground round without offering spectator
           },
         ],
       },
+      odds_context: {},
     },
   };
   render(
@@ -67,19 +69,20 @@ it("renders planet exploration effect styling with trait badge, description, fla
       current_planet: "lisis",
       defender: null,
       ground_round: 0,
+      odds_context: {},
     },
   };
   const exploreChoice = {
     actor: "player_sol",
     nonce: "test-nonce-1",
     prompt: "Abandoned Warehouses",
-    context: {
+    context: partialContext({
       subtype: "abandoned_warehouses_choose_reward",
       target: { Planet: { system: "72", planet: "lisis" } },
-    },
+    }),
     options: [
-      { id: "gain", kind: "explore", label: "gain 2 commodities" },
-      { id: "convert", kind: "explore", label: "convert up to 2 commodities to trade goods" },
+      { id: "gain", kind: "explore", label: "gain 2 commodities", payload: {} },
+      { id: "convert", kind: "explore", label: "convert up to 2 commodities to trade goods", payload: {} },
     ],
   };
 
@@ -127,14 +130,15 @@ it("renders waiting state on the effect card for spectators and other players", 
       current_planet: "lisis",
       defender: null,
       ground_round: 0,
+      odds_context: {},
     },
   };
   const exploreChoice = {
     actor: "player_sol",
     nonce: "test-nonce-1",
     prompt: "Abandoned Warehouses",
-    context: { subtype: "abandoned_warehouses" },
-    options: [{ id: "gain", kind: "explore", label: "gain 2 commodities" }],
+    context: partialContext({ subtype: "abandoned_warehouses" }),
+    options: [{ id: "gain", kind: "explore", label: "gain 2 commodities", payload: {} }],
   };
 
   render(
@@ -164,13 +168,14 @@ it("renders action card effect styling for invasion reactions", () => {
       current_planet: "jord",
       defender: "player_letnev",
       ground_round: 0,
+      odds_context: {},
     },
   };
   const reactionChoice = {
     actor: "player_letnev",
     nonce: "test-nonce-2",
     prompt: "Play Parley or pass",
-    context: { subtype: "parley" },
+    context: partialContext({ subtype: "parley" }),
     options: [
       {
         id: "play_parley",
@@ -178,7 +183,7 @@ it("renders action card effect styling for invasion reactions", () => {
         label: "Parley",
         payload: { card: "parley" },
       },
-      { id: "pass", kind: "decline", label: "Pass" },
+      { id: "pass", kind: "decline", label: "Pass", payload: {} },
     ],
   };
 
@@ -214,14 +219,15 @@ it("renders embedded landing tray with planet cards and + / − steppers for the
       current_planet: null,
       defender: null,
       ground_round: 0,
+      odds_context: {},
     },
     systems: {
       ...galleryBoard.systems,
       "72": {
         ...galleryBoard.systems["72"],
         units: [
-          { owner: "player_sol", unit_type: "sol_infantry", damaged: false },
-          { owner: "player_sol", unit_type: "sol_infantry", damaged: false },
+          { owner: "player_sol", unit_type: "sol_infantry", damaged: false, planet: null, galvanized: false },
+          { owner: "player_sol", unit_type: "sol_infantry", damaged: false, planet: null, galvanized: false },
         ],
       },
     },
@@ -230,7 +236,7 @@ it("renders embedded landing tray with planet cards and + / − steppers for the
     actor: "player_sol",
     nonce: "test-nonce-landing",
     prompt: "commit ground forces in 72",
-    context: { subtype: "commit_ground_forces" },
+    context: partialContext({ subtype: "commit_ground_forces" }),
     options: [
       {
         id: "land_lisis",
@@ -302,16 +308,17 @@ it("shows a bombardment step with unit names, hit thresholds and the result, nev
         round: 0,
         harrow_hits: 0,
         before: [
-          { owner: "defender", unit_type: "infantry", planet: "jord", damaged: false },
-          { owner: "defender", unit_type: "infantry", planet: "jord", damaged: false },
+          { owner: "defender", unit_type: "infantry", planet: "jord", damaged: false, galvanized: false },
+          { owner: "defender", unit_type: "infantry", planet: "jord", damaged: false, galvanized: false },
         ],
-        after: [{ owner: "defender", unit_type: "infantry", planet: "jord", damaged: false }],
+        after: [{ owner: "defender", unit_type: "infantry", planet: "jord", damaged: false, galvanized: false }],
         hits: { attacker: 1 },
         dice: [
           { planet: "jord", player: "attacker", group: "dreadnought", face: 9, target: 5, hit: true },
           { planet: "jord", player: "attacker", group: "dreadnought", face: 2, target: 5, hit: false },
         ],
       },
+      odds_context: {},
     },
   };
   render(<InvasionOverlay board={board} choice={null} viewerSeat={null} onSubmit={vi.fn()} onClose={vi.fn()} />);

@@ -3,6 +3,7 @@ import { expect, it, vi } from "vitest";
 import { InvasionLandingTray } from "./InvasionLandingTray.tsx";
 import { galleryBoard } from "../dev/galleryBoard.ts";
 import { actor } from "../dev/decisionGalleryCases.ts";
+import { partialContext } from "../test/wire.ts";
 
 const splitBoard = (rivals: { planet: string; unit_type: string }[] = [], infantry = 6) =>
   ({
@@ -47,7 +48,7 @@ const choice = {
   actor,
   nonce: "landing-split",
   prompt: "Land",
-  context: { subtype: "commit_ground_forces", target: { System: "18" } },
+  context: partialContext({ subtype: "commit_ground_forces", target: { System: "18" } }),
   options: [
     ...["jord", "moll", "quann"].map((planet) => ({
       id: `land|${planet}|infantry`,
@@ -55,7 +56,7 @@ const choice = {
       kind: "land",
       payload: { planet, unit: "infantry" },
     })),
-    { id: "done_committing", label: "Done", kind: "decline" },
+    { id: "done_committing", label: "Done", kind: "decline", payload: {} },
   ],
 };
 

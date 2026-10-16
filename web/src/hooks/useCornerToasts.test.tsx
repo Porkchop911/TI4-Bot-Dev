@@ -186,7 +186,7 @@ describe("useCornerToasts", () => {
       prompt: "Strategy Card",
       actor: "p1",
       nonce: "n1",
-      options: [{ id: "tech", label: "Technology", kind: "strategy_card", auto_resolved: true }],
+      options: [{ id: "tech", label: "Technology", kind: "strategy_card", payload: {}, auto_resolved: true }],
     };
     const { result, rerender } = renderHook((p: Props) => useCornerToasts(p), {
       initialProps: { ...base, pendingChoice: choice },

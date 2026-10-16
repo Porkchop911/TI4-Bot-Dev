@@ -2,7 +2,11 @@
 // everything of a seat is kept for its player: two tabs of one browser can be two seats of one
 // game, and the address of a tab says which (`?online=<game_id>&seat=<player_id>`). What a seat
 // has staged is kept by the server (`Transport.staged`); a page of before kept it here.
+import { NICKNAME_KEY, validNickname } from "@ti4/shared/identity/nickname.ts";
 import type { LegacyStaged } from "./seatStore";
+
+/** The key of the name that the player gave last (as in web/), and the names the server takes. */
+export { NICKNAME_KEY, validNickname };
 
 /** The part of `Storage` that is used. */
 export interface KeyStorage {
@@ -11,8 +15,15 @@ export interface KeyStorage {
   removeItem(key: string): void;
 }
 
-/** The name that the player gave last. It is sent when a table is made or joined. */
-export const NICKNAME_KEY = "ti4.nickname";
+/**
+ * The name that the player gave last, trimmed, when the server takes it; else null. It is sent
+ * when a table is made or joined.
+ */
+export function keptNickname(storage: Pick<KeyStorage, "getItem">): string | null {
+  const name = storage.getItem(NICKNAME_KEY)?.trim();
+  return name && validNickname(name) ? name : null;
+}
+
 /** The number of seats of the table that this browser made last. */
 export const PLAYER_COUNT_KEY = "ti4.players";
 

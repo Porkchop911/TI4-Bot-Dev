@@ -8,9 +8,9 @@ use serde_json::{Value, json};
 use tokio::net::TcpListener;
 
 use ti4_content::ContentStore;
+use ti4_host::protocol::status::ViewerRole;
 use ti4_model::id::PlayerId;
 use ti4_server::create_app;
-use ti4_server::protocol::status::ViewerRole;
 use ti4_server::session::{GameRegistry, GameSession, SeatController, SessionConfig};
 
 async fn spawn(registry: Arc<GameRegistry>) -> String {
@@ -68,8 +68,9 @@ async fn only_the_host_gets_a_report_and_nothing_changes() {
     let guest = PlayerId::new("p2");
     let players = vec![host.clone(), guest.clone()];
     let (state, galaxy) =
-        ti4_server::map::create_game_with_map(ContentStore::embedded(), &players, 42).unwrap();
-    let tiles = ti4_server::map::build_board_tiles(ContentStore::embedded(), &galaxy);
+        ti4_host::map::create_game_with_template(ContentStore::embedded(), &players, 42, None)
+            .unwrap();
+    let tiles = ti4_host::map::build_board_tiles(ContentStore::embedded(), &galaxy);
     let config = SessionConfig::new("splice_http", state)
         .with_seed(42)
         .with_player_ids(players)

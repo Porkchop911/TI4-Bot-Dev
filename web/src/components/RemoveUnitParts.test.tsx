@@ -22,7 +22,7 @@ const choice: PendingChoiceDto = {
   actor: "a",
   nonce: "n1",
   details: { fleet_limit: 1, fleet_charged: 2 },
-  options: [{ id: "remove|0", label: "remove sol_carrier", kind: "remove" }],
+  options: [{ id: "remove|0", label: "remove sol_carrier", kind: "remove", payload: {} }],
 };
 
 describe("remove a unit", () => {

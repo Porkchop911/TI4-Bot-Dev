@@ -13,10 +13,10 @@ use ti4_model::id::{
 use ti4_model::state::{GameState, Phase, SystemState};
 use ti4_model::units::Unit;
 
-use crate::projection::project_initial_snapshot;
-use crate::protocol::PROTOCOL_VERSION;
-use crate::protocol::server::{ActionRejectedMsg, GameOverMsg, ServerMessage};
-use crate::protocol::status::{RejectionReason, ViewerRole};
+use ti4_host::projection::project_initial_snapshot;
+use ti4_host::protocol::PROTOCOL_VERSION;
+use ti4_host::protocol::server::{ActionRejectedMsg, GameOverMsg, ServerMessage};
+use ti4_host::protocol::status::{RejectionReason, ViewerRole};
 
 /// Creates a standard sample game state for fixture generation and testing.
 ///

@@ -21,8 +21,6 @@ const gain = (nonce: string, tokens: number, extra: object = {}) => ({
   details: { kind: "command_tokens", mode: "gain", pools, reinforcements: 8, tokens_to_place: tokens, ...extra },
 });
 
-/** Status phase: two tokens, no purchase. */
-export const statusChoice = () => gain("shots-bp-status", 2);
 /** Leadership primary: three free tokens and the purchase. */
 export const leadershipChoice = () =>
   gain("shots-bp-leadership", 3, {

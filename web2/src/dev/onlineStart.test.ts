@@ -17,6 +17,9 @@ it("a table has the seats and the name that the browser used last", () => {
     nickname: "Blair",
   });
   // What the browser kept may be anything.
+  expect(tableRequest(read("online"), { nickname: "a\u202eb", players: 4 }).nickname).toBe(
+    "Player",
+  );
   expect(tableRequest(read("online"), { nickname: "", players: 12 })).toEqual({
     playerCount: 4,
     nickname: "Player",
@@ -46,6 +49,7 @@ it("the address names the seed, the nickname, the seats and the map", () => {
 it("a seed or a count that is no number is left out", () => {
   expect(read("online&seed=abc")).toEqual({});
   expect(read("online&seed=-1&name=%20")).toEqual({});
+  expect(read(`online&name=${"%C3%A9".repeat(33)}`)).toEqual({});
   expect(read("online&seed=0").seed).toBe(0);
   expect(read("online&players=9")).toEqual({});
   expect(read("online&players=1")).toEqual({});

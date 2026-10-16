@@ -16,16 +16,14 @@ const board: BoardView = {
   systems: {
     "34": {
       system_id: "34",
-      coordinate: "<1, 0, -1>",
-      tile_type: "normal",
       planets: {
         abyz: { planet_id: "abyz", controlled_by: "p1", exhausted: false, attachments: ["dysonsphere"] },
       },
       units: [],
       command_tokens: [],
     },
-    "50": { system_id: "50", coordinate: "<2, 0, -2>", tile_type: "normal", planets: {}, units: [], command_tokens: [] },
-    "51": { system_id: "51", coordinate: "<3, 0, -3>", tile_type: "normal", planets: {}, units: [], command_tokens: [] },
+    "50": { system_id: "50", planets: {}, units: [], command_tokens: [] },
+    "51": { system_id: "51", planets: {}, units: [], command_tokens: [] },
   },
 };
 

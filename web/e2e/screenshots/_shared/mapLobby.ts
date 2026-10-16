@@ -2,8 +2,8 @@ import type { Page, Route } from "@playwright/test";
 import type {
   LobbyDto,
   MapChoice,
-  MapChoiceDto,
-  MapPreviewDto,
+  MapChoiceView,
+  MapPreview,
   MapTemplateSummary,
   StrategyCardSetId,
 } from "../../../src/protocol/types";
@@ -29,7 +29,7 @@ export interface MapLobbyOptions {
    * the preview of each alias (missing aliases fall back to the fixture board). The lobby's map
    * description is then taken from the catalog entry, as the server's `describe` does.
    */
-  real?: { templates: MapTemplateSummary[]; previews: Record<string, MapPreviewDto> };
+  real?: { templates: MapTemplateSummary[]; previews: Record<string, MapPreview> };
 }
 
 /** Moves the filler systems around the ring, so a re-roll draws a visibly different board. */
@@ -54,7 +54,7 @@ export async function openMapLobby(page: Page, options: MapLobbyOptions = {}) {
   const viewer = options.viewer ?? "host";
   let alias: string | null = options.alias === undefined ? `${players}pStandard` : options.alias;
   let revision = options.revision ?? 1;
-  const realChoice = (): MapChoiceDto | undefined => {
+  const realChoice = (): MapChoiceView | undefined => {
     const entry = options.real?.templates.find((t) => t.alias === alias);
     if (!entry) return undefined;
     const { name, author, systems, hyperlanes, recommended } = entry;

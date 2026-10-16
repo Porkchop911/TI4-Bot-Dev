@@ -9,7 +9,7 @@ import type {
   PlanetType,
 } from "../../model";
 import type { Catalog, ExplorationCatalog, PlanetMetaView, SessionUpdate } from "../wire";
-import { TECH_COLORS, factionName, titleCase } from "./names";
+import { TECH_COLORS, factionName, humanizeId } from "./names";
 
 /** The decks in the order of every screen, with the key of the engine. */
 export const DECKS: [key: string, deck: ExplorationDeck][] = [
@@ -30,7 +30,7 @@ const signed = (value: number) => (value < 0 ? `−${-value}` : `+${value}`);
 function attachment(id: string, catalog: ExplorationCatalog | null): AttachmentView {
   const card = catalog?.attachments.find((item) => item.id === id);
   if (!card) {
-    return { name: titleCase(id), effect: "", text: "" };
+    return { name: humanizeId(id), effect: "", text: "" };
   }
   const skips = (card.tech_specialties ?? []).flatMap((name) => {
     const color = TECH_COLORS[name];
@@ -95,9 +95,9 @@ export function exploringCard(
     .flatMap((tile) => tile.planets ?? [])
     .find((item) => item.id === record.planet);
   return {
-    name: card?.name ?? titleCase(record.card),
+    name: card?.name ?? humanizeId(record.card),
     type: [
-      `${titleCase(record.deck.toLowerCase())} exploration`,
+      `${humanizeId(record.deck.toLowerCase())} exploration`,
       ...(planet ? [planet.label] : []),
     ].join(" · "),
     text: card?.text ?? "",
@@ -134,7 +134,7 @@ export function selectExploration(
     const rows = new Map<string, ExplorationCardView>();
     for (const id of all) {
       const card = printed.get(id);
-      const name = card?.name ?? titleCase(id);
+      const name = card?.name ?? humanizeId(id);
       const row = rows.get(name) ?? {
         name,
         kind: card?.resolution ?? "",
@@ -147,14 +147,14 @@ export function selectExploration(
       rows.set(name, row);
     }
     for (const id of left) {
-      const row = rows.get(printed.get(id)?.name ?? titleCase(id));
+      const row = rows.get(printed.get(id)?.name ?? humanizeId(id));
       if (row) {
         row.left++;
       }
     }
     for (const record of drawn) {
       rows
-        .get(printed.get(record.card)?.name ?? titleCase(record.card))
+        .get(printed.get(record.card)?.name ?? humanizeId(record.card))
         ?.drawn.push(
           [
             `Round ${record.round}`,
@@ -165,7 +165,7 @@ export function selectExploration(
     }
     return {
       deck,
-      title: titleCase(deck),
+      title: humanizeId(deck),
       left: left.length,
       total: all.length,
       fragments: update.view.players.flatMap((player) => {

@@ -156,8 +156,8 @@ describe("PlayerSheet Component & Human Readable Metadata", () => {
             jord: { planet_id: "jord", controlled_by: "p1", exhausted: false },
           },
           units: [
-            { owner: "p1", unit_type: "carrier", damaged: false },
-            { owner: "p1", unit_type: "space_dock", planet: "jord", damaged: false },
+            { owner: "p1", unit_type: "carrier", damaged: false, planet: null, galvanized: false },
+            { owner: "p1", unit_type: "space_dock", planet: "jord", damaged: false, galvanized: false },
           ],
         },
       },
@@ -221,7 +221,7 @@ describe("PlayerSheet Component & Human Readable Metadata", () => {
           planets: {
             jord: { planet_id: "jord", controlled_by: "p1", exhausted: false },
           },
-          units: [{ owner: "p1", unit_type: "space_dock", planet: "jord", damaged: false }],
+          units: [{ owner: "p1", unit_type: "space_dock", planet: "jord", damaged: false, galvanized: false }],
         },
       },
     };

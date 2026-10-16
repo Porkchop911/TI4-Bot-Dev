@@ -3,7 +3,7 @@
 // printed names and texts, and says which cards are used.
 import type { ComponentCardView, OfferView, PlayerRowView } from "../../model";
 import type { Catalog, PlayerView, PrintedCard, ReactionModes, SessionUpdate } from "../wire";
-import { nameOfKey, titleCase } from "./names";
+import { nameOfKey, humanizeId } from "./names";
 
 const KINDS = ["agent", "commander", "hero"];
 const LEADER_STATES: Record<string, ComponentCardView["state"]> = {
@@ -59,7 +59,7 @@ export function componentCards(
     kind: string,
     exhausted: string[] | undefined,
   ): ComponentCardView => ({
-    name: card?.name ?? titleCase(id),
+    name: card?.name ?? humanizeId(id),
     kind,
     window: "",
     text: plain(card?.text),
@@ -67,7 +67,7 @@ export function componentCards(
     unlock: "",
     offer:
       kind === "Technology"
-        ? offer(`technology:${id}`, card?.name ?? titleCase(id), !!card && !isAction(card.text))
+        ? offer(`technology:${id}`, card?.name ?? humanizeId(id), !!card && !isAction(card.text))
         : null,
   });
 
@@ -90,14 +90,14 @@ export function componentCards(
     abilities: (printed?.factions[player.faction] ?? []).map((id) => {
       const card = abilities.get(id);
       return {
-        name: card?.name ?? titleCase(id),
+        name: card?.name ?? humanizeId(id),
         kind: "Faction ability",
         window: timing(card?.window),
         text: plain(card?.text),
         state: null,
         unlock: "",
         // An ability with a timing is used in a window.
-        offer: offer(`ability:${id}`, card?.name ?? titleCase(id), !!card?.window),
+        offer: offer(`ability:${id}`, card?.name ?? humanizeId(id), !!card?.window),
       };
     }),
     leaders: Object.entries(player.leaders)
@@ -106,15 +106,15 @@ export function componentCards(
         const card = leaders.get(id);
         const state = LEADER_STATES[status] ?? null;
         return {
-          name: card?.name ?? titleCase(kindOf(id) || id),
-          kind: [titleCase(kindOf(id)), card?.title].filter(Boolean).join(" · "),
+          name: card?.name ?? humanizeId(kindOf(id) || id),
+          kind: [humanizeId(kindOf(id)), card?.title].filter(Boolean).join(" · "),
           window: timing(card?.window),
           text: plain(card?.text),
           state,
           unlock: state === "locked" ? (card?.unlock ?? "") : "",
           offer: offer(
             `leader:${id}`,
-            card?.name ?? titleCase(id),
+            card?.name ?? humanizeId(id),
             !!card?.window && !isAction(card.window) && state !== "purged",
           ),
         };
@@ -126,7 +126,7 @@ export function componentCards(
         .map((id) => used(technologies.get(id), id, "Technology", player.exhausted_technologies)),
       ...player.relics.map((id) => used(relics.get(id), id, "Relic", player.exhausted_relics)),
       ...(player.exploration_cards ?? []).map((id) => ({
-        name: kept.get(id)?.name ?? titleCase(id),
+        name: kept.get(id)?.name ?? humanizeId(id),
         kind: "Exploration card",
         window: "",
         text: plain(kept.get(id)?.text),
@@ -137,7 +137,7 @@ export function componentCards(
         used(
           legendary.get(id),
           id,
-          `Legendary planet · ${labels.get(id)?.label ?? titleCase(id)}`,
+          `Legendary planet · ${labels.get(id)?.label ?? humanizeId(id)}`,
           player.exhausted_legendary,
         ),
       ),

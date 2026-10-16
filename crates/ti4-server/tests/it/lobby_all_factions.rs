@@ -8,9 +8,10 @@ use std::time::{Duration, Instant};
 
 use ti4_content::ContentStore;
 use ti4_engine::seating::LOBBY_FACTIONS;
+use ti4_host::maps::catalog::MapChoice;
+use ti4_host::setup::{self, SpeakerOrder, TableSetup};
 use ti4_model::id::PlayerId;
 use ti4_model::state::GameState;
-use ti4_server::map::{SpeakerOrder, create_game_with_factions};
 use ti4_server::session::{GameSession, SeatController, SessionConfig};
 
 fn ids(n: usize) -> Vec<PlayerId> {
@@ -23,16 +24,15 @@ fn build(
     template: Option<&str>,
     chosen: &[Option<String>],
 ) -> Result<(GameState, ti4_content::galaxy::Galaxy), String> {
-    create_game_with_factions(
-        ContentStore::embedded(),
-        players,
-        seed,
-        template,
-        None,
-        None,
-        SpeakerOrder::Random,
-        Some(chosen),
-    )
+    // The players sit in the order given: `chosen[i]` is the faction of seat `i`.
+    let table = TableSetup {
+        map: MapChoice::from_stored(template),
+        strategy_cards: setup::card_set::POK.to_owned(),
+        speaker_order: SpeakerOrder::Random,
+        ..TableSetup::new(players.len(), seed)
+    };
+    let drawn = setup::draw(&table, chosen)?;
+    setup::create(ContentStore::embedded(), &table, players, &drawn)
 }
 
 fn check_seated(state: &GameState, players: &[PlayerId], chosen: &[Option<String>], what: &str) {
@@ -81,14 +81,14 @@ fn play(
     decisions: usize,
     budget: Duration,
 ) -> (GameState, Option<String>, usize) {
-    let tiles = ti4_server::map::build_board_tiles(ContentStore::embedded(), &galaxy);
+    let tiles = ti4_host::map::build_board_tiles(ContentStore::embedded(), &galaxy);
     let mut config = SessionConfig::new(format!("allfac_{seed}"), state)
         .with_seed(seed)
         .with_player_ids(players.to_vec())
         .with_galaxy(galaxy, tiles)
         .with_random_bot_delay_ms(0);
     for id in players {
-        config = config.with_seat(id.clone(), SeatController::BotSmart);
+        config = config.with_seat(id.clone(), SeatController::SMART);
     }
     let session = GameSession::start(config);
     let start = Instant::now();
@@ -125,7 +125,7 @@ fn slow_every_faction_builds_as_a_chosen_seat_on_every_template_that_seats_the_t
         let players = ids(n);
         let mut maps: Vec<Option<String>> = vec![None];
         maps.extend(
-            ti4_server::maps::catalog::catalog(Some(n))
+            ti4_host::maps::catalog::catalog(Some(n))
                 .expect("catalog")
                 .into_iter()
                 .map(|t| Some(t.alias)),
@@ -239,13 +239,13 @@ fn slow_tricky_factions_play_a_longer_smart_game() {
 
 #[test]
 fn the_pool_is_the_survey_roster() {
-    let roster: BTreeSet<&str> = ti4_server::preset::ROSTER.iter().copied().collect();
+    let roster: BTreeSet<&str> = ti4_host::preset::ROSTER.iter().copied().collect();
     let pool: BTreeSet<&str> = LOBBY_FACTIONS.iter().copied().collect();
     assert_eq!(roster, pool);
     // Plans exist for every faction in the pool.
     for faction in LOBBY_FACTIONS {
         assert!(
-            ti4_server::session::smart_bot_faction_plans::plan_for(faction).is_some(),
+            ti4_rule_bot::faction_plans::plan_for(faction).is_some(),
             "{faction}"
         );
     }

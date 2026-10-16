@@ -1,6 +1,8 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { spawnTestServer, type TestServer } from "../../web-shared/test/server.ts";
 import { playUntil, startOfflineGame, storedAnswers, storedFeedback, storedRecord } from "./offlineDriver";
-import { startTestServer, type TestServer } from "./offlineServer";
 
 // The offline game, end to end, with the production build only (see offline.config.ts): the
 // engine runs in a Web Worker (JSPI), and nothing but the built static files is ever fetched.
@@ -11,7 +13,7 @@ const baseOrigin = (page: Page) => new URL(page.url() || "http://127.0.0.1").ori
 async function blockServer(context: BrowserContext, origin: string, requests: string[] = []) {
   await context.route("**/*", (route) => {
     const url = new URL(route.request().url());
-    if (url.origin !== origin || /^\/(api|ws|advisor|health)(\/|$)/.test(url.pathname)) return route.abort();
+    if (url.origin !== origin || /^\/(api|ws|health)(\/|$)/.test(url.pathname)) return route.abort();
     requests.push(`${route.request().method()} ${url.pathname}`);
     return route.continue();
   });
@@ -33,7 +35,7 @@ test("plays an offline game with the network blocked and resumes after a refresh
 
   const played = await playUntil(page, gameId, 20);
   expect(played).toBeGreaterThanOrEqual(20);
-  // Hidden offline: turn redo, advisor.
+  // Hidden offline: turn redo.
   await expect(page.getByTestId("turn-redo-btn")).toHaveCount(0);
   const record = await storedRecord(page, gameId);
   expect(record?.wasmSha256).toMatch(/^[0-9a-f]{64}$/);
@@ -92,6 +94,84 @@ test("closing the tab and opening the game later (same IndexedDB) resumes the sa
   // And it plays on.
   await playUntil(reopened, gameId, stored.answers + 3);
   await second.close();
+});
+
+test("exports a game, imports the file as a second game, and resumes the copy at the same position", async ({
+  page,
+  context,
+  baseURL,
+}) => {
+  await blockServer(context, new URL(baseURL!).origin);
+  const gameId = await startOfflineGame(page, 3);
+  await playUntil(page, gameId, 6);
+  await page.waitForTimeout(400);
+  const saved = (await storedRecord(page, gameId))!;
+
+  await page.goto("/offline");
+  const rows = page.getByTestId("offline-game-row");
+  await expect(rows).toHaveCount(1);
+  // The list names the faction of every seat, and marks the person's.
+  await expect(rows.getByTestId("offline-game-factions")).toContainText("(you)");
+  await expect(rows.getByTestId("offline-game-factions")).not.toContainText("?");
+
+  const download = page.waitForEvent("download");
+  await rows.getByTestId("offline-export").click();
+  const file = await (await download).path();
+  await page.getByTestId("import-game-file").setInputFiles(file);
+  await expect(page.getByTestId("offline-notice")).toHaveText("Game imported.");
+  await expect(rows).toHaveCount(2);
+
+  // The copy is the newest game: it opens under its own id, at the position of the file.
+  await rows.first().getByTestId("offline-resume").click();
+  await page.waitForSelector('[data-testid="offline-game"]', { timeout: 120_000 });
+  const copyId = /\/offline\/games\/([^/?#]+)/.exec(page.url())![1];
+  expect(copyId).not.toBe(gameId);
+  expect(await storedRecord(page, copyId)).toMatchObject({ answers: saved.answers, decisionsHash: saved.decisionsHash });
+  // It plays on, and the original stays as it was.
+  await playUntil(page, copyId, saved.answers + 2);
+  expect(await storedRecord(page, gameId)).toMatchObject({ answers: saved.answers, decisionsHash: saved.decisionsHash });
+});
+
+test("a save of an older version is not opened: the list offers to delete it", async ({ page, context, baseURL }) => {
+  await blockServer(context, new URL(baseURL!).origin);
+  await page.goto("/offline");
+  await expect(page.getByTestId("offline-games-empty")).toBeVisible();
+  // A record of the format before (record schema 1, save format 1).
+  await page.evaluate(
+    () =>
+      new Promise<void>((done, fail) => {
+        const open = indexedDB.open("ti4-offline");
+        open.onerror = () => fail(new Error("open"));
+        open.onsuccess = () => {
+          const db = open.result;
+          const tx = db.transaction("games", "readwrite");
+          tx.objectStore("games").put({
+            schema: 1,
+            id: "off_old",
+            nickname: "Tester",
+            createdAt: 1,
+            updatedAt: 1,
+            status: "in_progress",
+            save: { format: 1, seed: 7, answers: ["o1"] },
+          });
+          tx.oncomplete = () => {
+            db.close();
+            done();
+          };
+          tx.onerror = () => fail(new Error("write"));
+        };
+      }),
+  );
+  await page.reload();
+  const older = page.getByTestId("offline-older-saves");
+  await expect(older).toContainText("1 saved game from an older version");
+  await expect(page.getByTestId("offline-game-row")).toHaveCount(0);
+  await older.getByTestId("offline-older-delete").click();
+  await older.getByTestId("offline-older-delete-confirm").click();
+  await expect(older).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByTestId("offline-games-empty")).toBeVisible();
+  await expect(page.getByTestId("offline-older-saves")).toHaveCount(0);
 });
 
 test("a game saved with another engine file asks first: view only keeps it untouched, delete removes it", async ({
@@ -178,10 +258,24 @@ test("undo and history rewind work offline", async ({ page, context, baseURL }) 
   await expect(page.getByTestId("history-error")).toHaveCount(0);
 });
 
+/** Every report that the server stored (parsed JSON), the `.ids` markers of its idempotency check left out. */
+function storedReports(server: TestServer): Array<Record<string, unknown>> {
+  const walk = (dir: string): string[] =>
+    readdirSync(dir).flatMap((name) => {
+      if (name.startsWith(".")) return [];
+      const path = join(dir, name);
+      return statSync(path).isDirectory() ? walk(path) : path.endsWith(".json") ? [path] : [];
+    });
+  const root = join(server.dataDir, "feedback");
+  return existsSync(root) ? walk(root).map((file) => JSON.parse(readFileSync(file, "utf8"))) : [];
+}
+
+// A real ti4-server (TI4_E2E_SERVER_BIN, else the debug or release binary of the target dir), so
+// that a queued feedback report is proven to reach its feedback directory exactly once.
 test.describe("feedback written offline", () => {
   let server: TestServer;
   test.beforeAll(async () => {
-    server = await startTestServer();
+    server = await spawnTestServer();
   });
   test.afterAll(async () => {
     await server?.stop();
@@ -224,7 +318,7 @@ test.describe("feedback written offline", () => {
     await expect(page.getByTestId("feedback-queued")).toBeVisible();
     await page.getByTestId("feedback-done").dispatchEvent("click");
     await expect(page.getByTestId("offline-feedback-chip")).toContainText("will be sent");
-    expect(server.reports()).toHaveLength(0);
+    expect(storedReports(server)).toHaveLength(0);
     await playUntil(page, gameId, 8); // never blocked by the queue
 
     // The network returns, but the answer of the first send is lost on the way back.
@@ -232,7 +326,7 @@ test.describe("feedback written offline", () => {
     dropNextResponse = true;
     await context.setOffline(false);
     await expect.poll(() => forwarded, { timeout: 30_000 }).toBe(1);
-    expect(server.reports()).toHaveLength(1);
+    expect(storedReports(server)).toHaveLength(1);
     await expect(page.getByTestId("offline-feedback-chip")).toContainText("will be sent");
 
     // A second attempt (the browser says it is online again): the server answers duplicate.
@@ -243,7 +337,7 @@ test.describe("feedback written offline", () => {
     await expect(page.getByTestId("offline-feedback-chip")).toContainText("sent");
 
     // Exactly one file, with what a triage needs to replay the game.
-    const reports = server.reports();
+    const reports = storedReports(server);
     expect(reports).toHaveLength(1);
     const report = reports[0] as { report_id?: string; context: { local?: Record<string, any> } };
     const [queued] = await storedFeedback(page);

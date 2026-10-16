@@ -1,3 +1,4 @@
+import { validNickname } from "../session/onlineKeys";
 import type { TableRequest } from "../session/table";
 
 /**
@@ -6,7 +7,10 @@ import type { TableRequest } from "../session/table";
  * page has one seat, the other seats decide at random, and the game starts at once.
  */
 export interface OnlineStart {
-  /** The name of the player of this page. Without it: the name that this browser kept. */
+  /**
+   * The name of the player of this page. Without it (or with one that the server refuses): the
+   * name that this browser kept.
+   */
   nickname?: string;
   /** Without it the server chooses one. */
   seed?: number;
@@ -34,7 +38,7 @@ export function onlineStart(params: URLSearchParams): OnlineStart {
   const wait = Number(params.get("wait") || Number.NaN);
   const nickname = params.get("name")?.trim();
   return {
-    ...(nickname ? { nickname } : {}),
+    ...(validNickname(nickname) ? { nickname } : {}),
     ...(Number.isSafeInteger(seed) && seed >= 0 ? { seed } : {}),
     ...(map ? { map } : {}),
     ...(seats(players) ? { players } : {}),
@@ -68,13 +72,21 @@ export function onlineAddress(start: OnlineStart = {}): string {
   return rest ? `?online&${rest}` : "?online";
 }
 
+const keptName = (kept: string | null) => {
+  const name = kept?.trim();
+  return validNickname(name) ? name : DEFAULT_NICKNAME;
+};
+
 /** The address of a table, for a tab that is the player `seat`; without it, for a visitor. */
 export function tableAddress(gameId: string, seat?: string): string {
   const game = `?online=${encodeURIComponent(gameId)}`;
   return seat === undefined ? game : `${game}&seat=${encodeURIComponent(seat)}`;
 }
 
-/** What the table is made with. `kept` is what the browser kept of the tables before. */
+/**
+ * What the table is made with. `kept` is what the browser kept of the tables before; a kept name
+ * that the server would refuse is not sent.
+ */
 export function tableRequest(
   start: OnlineStart,
   kept: { nickname: string | null; players: number | null } = { nickname: null, players: null },
@@ -87,7 +99,7 @@ export function tableRequest(
         : kept.players !== null && seats(kept.players)
           ? kept.players
           : DEFAULT_PLAYERS),
-    nickname: start.nickname ?? (kept.nickname?.trim() || DEFAULT_NICKNAME),
+    nickname: start.nickname ?? keptName(kept.nickname),
     ...(start.seed === undefined ? {} : { seed: start.seed }),
     ...(start.map === undefined ? {} : { map: start.map }),
     ...(start.fill ? { fill: start.fill } : {}),

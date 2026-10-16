@@ -4,7 +4,7 @@
 import type { AgendasView, AgendaView, LawView } from "../../model";
 import type { Catalog, SessionUpdate } from "../wire";
 import { plain } from "./components";
-import { titleCase } from "./names";
+import { humanizeId } from "./names";
 
 /** The group of an agenda that the catalogue does not have. */
 const OTHER = "Other";
@@ -26,18 +26,18 @@ export function selectAgendas(update: SessionUpdate, catalog: Catalog | null): A
     const found = printed.get(id);
     const passed = laws[id] ?? "";
     return {
-      name: found?.name ?? titleCase(id),
+      name: found?.name ?? humanizeId(id),
       kind: kind(id),
       text: plain(passed === "against" ? found?.against : found?.text),
       outcome: seats.has(passed)
         ? { seat: passed }
-        : { text: secrets.get(passed) ?? titleCase(passed) },
+        : { text: secrets.get(passed) ?? humanizeId(passed) },
     };
   };
   const row = (id: string): AgendaView & { group: string } => {
     const found = printed.get(id);
     return {
-      name: found?.name ?? titleCase(id),
+      name: found?.name ?? humanizeId(id),
       kind: kind(id),
       text: plain([found?.text, found?.against].filter(Boolean).join("\n")),
       group: found?.group ?? OTHER,

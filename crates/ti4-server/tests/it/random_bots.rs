@@ -1,4 +1,4 @@
-//! Random bot seats: whole games played by `SeatController::BotRandom`, determinism, recovery,
+//! Random bot seats: whole games played by `SeatController::RANDOM`, determinism, recovery,
 //! undo/redo and the soak. Delay 0 everywhere (`with_random_bot_delay_ms`).
 
 use std::sync::Arc;
@@ -23,16 +23,16 @@ pub fn config_with(
     controllers: &[SeatController],
 ) -> SessionConfig {
     let ids = players(controllers.len());
-    let (state, galaxy) = ti4_server::map::create_game_with_options(
+    let (state, galaxy) = ti4_host::map::create_game_with_template_seated(
         ContentStore::embedded(),
         &ids,
         seed,
         None,
-        None,
+        &ti4_engine::seating::seat_in_scope(&ids),
         Some(card_set),
     )
     .expect("create game");
-    let tiles = ti4_server::map::build_board_tiles(ContentStore::embedded(), &galaxy);
+    let tiles = ti4_host::map::build_board_tiles(ContentStore::embedded(), &galaxy);
     let mut config = SessionConfig::new(id, state)
         .with_seed(seed)
         .with_player_ids(ids.clone())
@@ -44,9 +44,9 @@ pub fn config_with(
     config
 }
 
-/// An all-bot config (every seat `BotRandom`), delay 0.
+/// An all-bot config (every seat a random bot), delay 0.
 pub fn bot_config(id: &str, n: usize, seed: u64, card_set: &str) -> SessionConfig {
-    config_with(id, seed, card_set, &vec![SeatController::BotRandom; n])
+    config_with(id, seed, card_set, &vec![SeatController::RANDOM; n])
 }
 
 #[derive(Debug)]
@@ -247,8 +247,8 @@ fn the_same_game_with_a_wait_of_0_and_of_20_ms() {
 /// waits for, as when a person is asked.
 #[test]
 fn a_seat_that_waits_is_named_to_the_other_seats() {
-    use ti4_server::protocol::server::ServerMessage;
-    use ti4_server::protocol::status::{PublicTurnStatus, ViewerRole};
+    use ti4_host::protocol::server::ServerMessage;
+    use ti4_host::protocol::status::{PublicTurnStatus, ViewerRole};
 
     let config = bot_config("rb_wait_named", 3, 5, "te").with_random_bot_delay_ms(150);
     let session = GameSession::start(config);
@@ -289,8 +289,8 @@ fn host_table_with_delay(id: &str, seed: u64, delay_ms: u64) -> HostTable {
         "te",
         &[
             SeatController::Human,
-            SeatController::BotRandom,
-            SeatController::BotRandom,
+            SeatController::RANDOM,
+            SeatController::RANDOM,
         ],
     )
     .with_random_bot_delay_ms(delay_ms);
@@ -316,7 +316,7 @@ impl HostTable {
             if let Some((seat, nonce, version)) = session.current_pending_decision() {
                 assert_eq!(seat.as_str(), "p1", "only the host seat is a person");
                 let option = session
-                    .get_snapshot(&ti4_server::protocol::status::ViewerRole::Player(
+                    .get_snapshot(&ti4_host::protocol::status::ViewerRole::Player(
                         seat.clone(),
                     ))
                     .pending_choice
@@ -503,7 +503,7 @@ fn undo_while_a_bot_is_thinking_never_loses_a_bot_decision_or_errors_mid_rewind(
 fn the_host_can_redo_a_bot_seats_turn_and_the_bot_plays_the_new_turn_itself() {
     let t = host_table("rb_turn_redo", 5);
     let bot_turns_done = |log: &[DecisionRecord]| {
-        ti4_server::session::turn_redo::find_turns(log)
+        ti4_host::history::turn_redo::find_turns(log)
             .iter()
             .filter(|s| s.seat.as_str() == "p2" && s.complete)
             .count()
@@ -554,7 +554,7 @@ fn a_bot_seat_has_no_usable_credential() {
 
 #[test]
 fn a_movement_batch_commits_beside_bot_seats_and_undoes() {
-    use ti4_server::session::batch::{BatchKind, BatchRequest, MovementPlan, MovementStep};
+    use ti4_host::batch::{BatchKind, BatchRequest, MovementPlan, MovementStep};
     let t = host_table("rb_batch", 17);
     // Play the host's first options, preferring a tactical action, until it must move ships.
     let mut request = None;
@@ -563,7 +563,7 @@ fn a_movement_batch_commits_beside_bot_seats_and_undoes() {
         let session = t.session();
         let (seat, nonce, version) = session.current_pending_decision().expect("host asked");
         let choice = session
-            .get_snapshot(&ti4_server::protocol::status::ViewerRole::Player(
+            .get_snapshot(&ti4_host::protocol::status::ViewerRole::Player(
                 seat.clone(),
             ))
             .pending_choice

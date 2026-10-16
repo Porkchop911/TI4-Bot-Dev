@@ -1,9 +1,8 @@
 // What a seat has staged and not sent: the staged movement, landings and production, the
-// private draft of a tactical action, and the draft of a secondary. A game in this page keeps it
-// in `localStorage` (`localSeatStore`); a game on the server keeps it for the seat, so every tab
-// and every device of the seat has the same (`seatSync`, the part of `wsTransport.ts` that
-// speaks `ti4_host::protocol::staged`).
-import type { SaveStorage } from "./savedGame";
+// private draft of a tactical action, and the draft of a secondary. The game keeps it for the
+// seat (`ti4_host::staged`): the server for every tab and device of the seat, the engine of a
+// local game in its saved game. Both speak `ti4_host::protocol::staged` (`seatSync`, used by
+// `wsTransport.ts` and `wasmTransport.ts`).
 import type { StagedSlot, StagedValue } from "./wire";
 
 export type { StagedSlot } from "./wire";
@@ -44,28 +43,6 @@ function canonical(value: unknown): string {
 
 /** Two values of a slot are the same, whatever the order of their keys. */
 export const sameStaged = (a: unknown, b: unknown) => a === b || canonical(a) === canonical(b);
-
-/** The staged work of a game in this page: one key of `storage` for each slot. */
-export function localSeatStore(storage: SaveStorage, keys: Record<StagedSlot, string>): SeatStore {
-  return {
-    get(slot) {
-      try {
-        return JSON.parse(storage.getItem(keys[slot]) ?? "null");
-      } catch {
-        return null;
-      }
-    },
-    set(slot, value) {
-      if (value === null || value === undefined) {
-        storage.removeItem(keys[slot]);
-      } else {
-        storage.setItem(keys[slot], JSON.stringify(value));
-      }
-    },
-    // A game in this page is in one tab.
-    subscribe: () => () => {},
-  };
-}
 
 /** `SeatStagedMsg` of the server: the slots of the seat, after a change or after the snapshot. */
 export interface SeatStaged {
@@ -111,6 +88,9 @@ interface Slot {
  * - A message with a newer revision of a slot, from another connection or from none, is the
  *   server's value. It replaces the slot, also a value that was not sent yet. One from no
  *   connection (and not the first after the snapshot) is a write of the server itself.
+ * - The message after a snapshot (with `connection`) is what the seat has: it replaces every
+ *   slot whose revision differs. The engine of a local game sends it when the seat that the page
+ *   is shown as changes; its revisions count up for the whole page.
  * - A value over `MAX_STAGED_BYTES` stays in this page and is not written.
  */
 export function seatSync(
@@ -149,11 +129,17 @@ export function seatSync(
     if (sameStaged(at.local, at.server) || stagedBytes(at.local) > MAX_STAGED_BYTES) {
       return;
     }
+    // In flight before it is sent: the engine of a local game answers within `put`.
+    at.inFlight = true;
     if (!put(slot, at.revision, at.local ?? null)) {
+      at.inFlight = false;
       at.dirty = true;
       return;
     }
-    at.inFlight = true;
+    if (!at.inFlight) {
+      // The echo came already.
+      return;
+    }
     answer.set(
       slot,
       setTimeout(() => {
@@ -202,7 +188,10 @@ export function seatSync(
           settle(slot);
           at.revision = told.revision;
           at.server = told.value ?? null;
-        } else if (told.revision > at.revision) {
+        } else if (
+          told.revision > at.revision ||
+          (message.connection !== undefined && told.revision !== at.revision)
+        ) {
           settle(slot);
           at.revision = told.revision;
           at.server = told.value ?? null;

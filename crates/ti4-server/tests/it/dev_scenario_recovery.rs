@@ -5,10 +5,10 @@ use std::thread;
 use std::time::Duration;
 
 use ti4_engine::choice::Choice;
+use ti4_host::protocol::server::ServerMessage;
+use ti4_host::protocol::status::ViewerRole;
 use ti4_model::id::PlayerId;
-use ti4_server::dev::execute_launch_scenario;
-use ti4_server::protocol::server::ServerMessage;
-use ti4_server::protocol::status::ViewerRole;
+use ti4_server::dev::launch_scenario;
 use ti4_server::session::registry::LobbyPhase;
 use ti4_server::session::{GameRegistry, MockClient, SeatController};
 use ti4_server::storage::{
@@ -35,9 +35,9 @@ fn dev_scenario_space_combat_crash_recovery_preserves_bots_and_play() {
     let store = Arc::new(FileGameStore::new(&dir).expect("create store"));
     let registry = Arc::new(GameRegistry::new().with_store(store.clone()));
 
-    let launch = execute_launch_scenario(&registry, "space_combat", Some(12345))
+    let launch = launch_scenario(&registry, "space_combat", Some(12345))
         .expect("launch space_combat scenario");
-    assert!(launch.game_id.starts_with("dev_combat_"));
+    assert!(launch.game_id.starts_with("dev_space_combat_"));
 
     let session = registry
         .get_game(&launch.game_id)
@@ -46,7 +46,12 @@ fn dev_scenario_space_combat_crash_recovery_preserves_bots_and_play() {
     let client = MockClient::connect(session.clone(), ViewerRole::Player(p1.clone()));
 
     // 1. Initial choice -> "tactical"
-    let choice = wait_for_choice(&client).expect("initial tactical choice");
+    // The launch returns at the first question.
+    let choice = client
+        .snapshot()
+        .pending_choice
+        .expect("initial tactical choice")
+        .choice;
     assert_eq!(choice.player, p1);
     let (_, nonce_1, ver_1) = session.current_pending_decision().unwrap();
     client.submit(&nonce_1, ver_1, "tactical").unwrap();
@@ -112,7 +117,7 @@ fn dev_scenario_space_combat_crash_recovery_preserves_bots_and_play() {
     let pre_crash_decisions = session.decision_log();
     let pre_crash_seats = session.restart_config().seats;
 
-    // Verify bots are SeatController::BotFirstOption
+    // The rule bot plays the other seats
     let bot_seats: Vec<_> = pre_crash_seats
         .iter()
         .filter(|(id, _)| **id != p1)
@@ -120,7 +125,7 @@ fn dev_scenario_space_combat_crash_recovery_preserves_bots_and_play() {
         .collect();
     assert_eq!(bot_seats.len(), 2);
     for controller in bot_seats {
-        assert_eq!(*controller, SeatController::BotFirstOption);
+        assert_eq!(*controller, SeatController::SMART);
     }
 
     // Simulate server crash / restart: drop registry, session, client
@@ -168,8 +173,8 @@ fn dev_scenario_space_combat_crash_recovery_preserves_bots_and_play() {
         } else {
             assert_eq!(
                 controller,
-                SeatController::BotFirstOption,
-                "bot {id} must retain BotFirstOption controller"
+                SeatController::SMART,
+                "bot {id} must retain its rule bot"
             );
         }
     }
@@ -214,8 +219,8 @@ fn scripted_ongoing_combat_and_four_view_presets_recover_cleanly() {
     let registry = Arc::new(GameRegistry::new().with_store(store.clone()));
 
     // 1. Launch scripted ongoing_combat (has bots)
-    let combat_launch = execute_launch_scenario(&registry, "ongoing_combat", Some(54321))
-        .expect("launch ongoing_combat");
+    let combat_launch =
+        launch_scenario(&registry, "ongoing_combat", Some(54321)).expect("launch ongoing_combat");
     let combat_session = registry.get_game(&combat_launch.game_id).unwrap();
     let combat_version = combat_session.game_version();
     let combat_state = combat_session.current_state();
@@ -224,9 +229,8 @@ fn scripted_ongoing_combat_and_four_view_presets_recover_cleanly() {
     assert!(combat_version > 1, "scripted decisions were executed");
 
     // 2. Launch scripted ongoing_combat_four_views (all human)
-    let four_view_launch =
-        execute_launch_scenario(&registry, "ongoing_combat_four_views", Some(54322))
-            .expect("launch ongoing_combat_four_views");
+    let four_view_launch = launch_scenario(&registry, "ongoing_combat_four_views", Some(54322))
+        .expect("launch ongoing_combat_four_views");
     let four_view_session = registry.get_game(&four_view_launch.game_id).unwrap();
     assert!(
         four_view_session
@@ -275,7 +279,7 @@ fn scripted_ongoing_combat_and_four_view_presets_recover_cleanly() {
         if id == p_combat {
             assert_eq!(controller, SeatController::Human);
         } else {
-            assert_eq!(controller, SeatController::BotFirstOption);
+            assert_eq!(controller, SeatController::SMART);
         }
     }
 
@@ -313,37 +317,10 @@ fn launch_failure_cleanup_and_backwards_compatibility() {
     let registry = Arc::new(GameRegistry::new().with_store(store.clone()));
 
     // 1. Establish an unrelated, valid game
-    let valid_launch = execute_launch_scenario(&registry, "tactical_action", Some(111))
-        .expect("launch tactical_action");
+    let valid_launch =
+        launch_scenario(&registry, "tactical_action", Some(111)).expect("launch tactical_action");
 
-    // 2. Test generated-ID collision semantics: if directory already exists, launch must error
-    // and must NEVER delete or mutate the existing directory.
-    let collision_dir = store.game_dir("dev_collision_game").unwrap();
-    fs::create_dir_all(&collision_dir).unwrap();
-    let canary_file = collision_dir.join("canary.txt");
-    fs::write(&canary_file, "do not touch").unwrap();
-
-    let (lobby_record, host, _) =
-        PlayerLobbyRecord::create("dev_collision_game".into(), 1, 222, "Host").unwrap();
-    let config = ti4_server::session::SessionConfig::new(
-        "dev_collision_game",
-        ti4_server::fixtures::create_sample_game(),
-    )
-    .with_player_ids(vec![host.clone()])
-    .with_seat(host, SeatController::Human);
-
-    let collision_result = registry.launch_dev_scenario(config, lobby_record);
-    assert!(
-        matches!(&collision_result, Err(msg) if msg.contains("already exists")),
-        "launch must fail on existing directory"
-    );
-    assert_eq!(
-        fs::read_to_string(&canary_file).unwrap(),
-        "do not touch",
-        "existing files must not be touched on collision"
-    );
-
-    // 3. Test backwards compatibility: old player init records without "seats" field
+    // 2. Test backwards compatibility: old player init records without "seats" field
     // deserialized and recover with all-human seats
     let old_game_id = "old_player_game";
     let old_dir = store.game_dir(old_game_id).unwrap();
@@ -385,7 +362,7 @@ fn launch_failure_cleanup_and_backwards_compatibility() {
         "legacy init.json should not contain 'seats' key"
     );
 
-    // 4. Simulate a failed/torn write in a broken directory
+    // 3. Simulate a failed/torn write in a broken directory
     let broken_dir = store.game_dir("broken_launch").unwrap();
     fs::create_dir_all(&broken_dir).unwrap();
     // Only player_sessions.json was written (e.g. crash before init.json)

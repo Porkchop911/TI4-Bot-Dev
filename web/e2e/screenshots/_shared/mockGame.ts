@@ -2,7 +2,7 @@ import type { Page, WebSocketRoute } from "@playwright/test";
 import {
   PROTOCOL_VERSION,
   type BoardView,
-  type ChoiceOptionDto,
+  type ChoiceOption,
   type ClientMessage,
   type GameEvent,
   type GameView,
@@ -20,7 +20,7 @@ export const SESSION = "screenshot-session";
 export interface MockChoice {
   prompt: string;
   context?: Record<string, unknown>;
-  options: ChoiceOptionDto[];
+  options: ChoiceOption[];
   /** Seat that has to decide (default: the viewing seat). */
   player?: string;
   nonce?: string;

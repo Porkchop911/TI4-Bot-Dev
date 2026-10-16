@@ -7,10 +7,12 @@ import {
   PLAYER_COUNT_KEY,
   dropPlayer,
   keepPlayer,
+  keptNickname,
   legacySession,
   legacyStaged,
   moveLegacy,
   playersOf,
+  validNickname,
 } from "../session/onlineKeys";
 import { hostChange, nextNickname, selectLobby } from "../session/select/lobby";
 import {
@@ -71,7 +73,7 @@ function NewTable({ start }: { start: OnlineStart }) {
   const [failure, setFailure] = useState<string | null>(null);
   useEffect(() => {
     const request = tableRequest(start, {
-      nickname: localStorage.getItem(NICKNAME_KEY),
+      nickname: keptNickname(localStorage),
       players: Number(localStorage.getItem(PLAYER_COUNT_KEY) || Number.NaN),
     });
     created ??= createTable(request);
@@ -288,14 +290,19 @@ function TableApp({ gameId, asked }: { gameId: string; asked: string | null }) {
         return setInspected(intent.system);
       case "closeInspector":
         return setInspected(null);
-      case "join":
-        localStorage.setItem(NICKNAME_KEY, nickname.trim());
-        return void table?.join(nickname.trim()).then((joined) => {
+      case "join": {
+        const name = nickname.trim();
+        if (!validNickname(name)) {
+          return;
+        }
+        localStorage.setItem(NICKNAME_KEY, name);
+        return void table?.join(name).then((joined) => {
           if (joined) {
             keepPlayer(localStorage, gameId, joined.playerId, joined.playerSession);
             location.replace(tableAddress(gameId, joined.playerId));
           }
         });
+      }
       case "joinTab": {
         if (!table || state.viewer === null) {
           return;
@@ -324,6 +331,8 @@ function TableApp({ gameId, asked }: { gameId: string; asked: string | null }) {
         return table?.addBots(intent.kind, true);
       case "remove":
         return table?.removeSeat(intent.player);
+      case "shuffleSeats":
+        return table?.shuffleSeats();
       case "set":
         if (intent.change.players !== undefined) {
           // The next table of this browser has as many seats.
@@ -331,6 +340,9 @@ function TableApp({ gameId, asked }: { gameId: string; asked: string | null }) {
         }
         return table?.setSettings(intent.change);
       case "rename":
+        if (!validNickname(intent.name)) {
+          return;
+        }
         localStorage.setItem(NICKNAME_KEY, intent.name);
         return table?.rename(intent.name);
       case "faction":
@@ -352,6 +364,7 @@ function TableApp({ gameId, asked }: { gameId: string; asked: string | null }) {
           dispatch={dispatch}
           nickname={nickname}
           onNickname={setNickname}
+          validName={validNickname}
           link={`${location.origin}/${tableAddress(gameId)}`}
           toast={toast}
           other={START}

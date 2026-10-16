@@ -149,9 +149,10 @@ fn main() {
     let diplomacy = std::env::args().any(|a| a == "--diplomacy");
     // `wide` seats six distinct factions per seed from the whole implemented roster (BF-22);
     // `six`, the default, is the fixed FACTIONS rotation every earlier evaluation used.
-    let roster = argument("--roster").map_or(ti4_engine::seating::FactionRoster::InScope, |value| {
-        ti4_training::rollout::parse_roster(&value).unwrap_or_else(|error| refuse(&error))
-    });
+    let roster = argument("--roster")
+        .map_or(ti4_engine::seating::FactionRoster::InScope, |value| {
+            ti4_training::rollout::parse_roster(&value).unwrap_or_else(|error| refuse(&error))
+        });
     // Experiment: trade goods every seat gains at the start of each status phase (engine switch).
     if let Some(income) = argument("--status-income-tg") {
         let income: i32 = income

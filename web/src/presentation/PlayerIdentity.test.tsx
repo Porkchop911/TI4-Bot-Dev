@@ -7,6 +7,7 @@ import { EventLog } from "../components/EventLog.tsx";
 import { Board } from "../components/Board.tsx";
 import { TradeDeskModal } from "../components/TradeDeskModal.tsx";
 import type { LobbyDto, PlayerView, GameView } from "../protocol/types.ts";
+import { partialContext } from "../test/wire.ts";
 
 const slots: LobbyDto["slots"] = [
   {
@@ -59,7 +60,7 @@ const board: GameView["board"] = {
       system_id: "18",
       command_tokens: ["player_b"],
       planets: { mecatol: { planet_id: "mecatol", controlled_by: "player_a", exhausted: false } },
-      units: [{ unit_type: "infantry", owner: "player_a", damaged: false }],
+      units: [{ unit_type: "infantry", owner: "player_a", damaged: false, planet: null, galvanized: false }],
     },
   },
   map_tiles: [
@@ -87,6 +88,7 @@ const view: GameView = {
     laws: {},
   },
   finished: false,
+  turn: 0,
 };
 
 it("renders player and spectator surfaces with current names, seat shapes and no identity attributes; updates after takeover", () => {
@@ -167,8 +169,8 @@ it("keeps trade target and submitted choice IDs internal while displaying the cu
     actor: "player_b",
     nonce: "1",
     prompt: "Propose trade",
-    context: { subtype: "propose_transaction", target: { Player: "player_a" } },
-    options: [{ id: "offer-1", label: "Exchange commodities", kind: "offer" }],
+    context: partialContext({ subtype: "propose_transaction", target: { Player: "player_a" } }),
+    options: [{ id: "offer-1", label: "Exchange commodities", kind: "offer", payload: {} }],
   };
   const { container, rerender } = render(
     <PlayerIdentityProvider lobby={lobby} seatingOrder={view.seating_order}>

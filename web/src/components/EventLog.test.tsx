@@ -11,7 +11,7 @@ const decision = (cursor: number, stage = "movement", actor = "p1"): GameLogEntr
   visibility: { visibility: "public" as const },
   decision_count: cursor,
   round: 1,
-  phase: "action",
+  phase: "action" as const,
   action_id: "action_1",
   action_type: "tactical",
   actor,
@@ -35,7 +35,7 @@ const rolled = (cursor: number, faces: number[], hitsOn?: number): GameLogEntry 
   visibility: { visibility: "public" as const },
   decision_count: cursor,
   round: 1,
-  phase: "action",
+  phase: "action" as const,
   actor: "p1",
   detail: "p1 rolled Gravity rift in system 67: 2 (ship destroyed)",
   event: { kind: "dice_rolled" },
@@ -57,7 +57,7 @@ describe("dice rolls in the event log", () => {
     render(
       wrap(entries, {
         onRestore: vi.fn(),
-        currentPath: { round: 1, phase: "action", action_id: "action_1", stage: "movement" },
+        currentPath: { round: 1, phase: "action" as const, action_id: "action_1", stage: "movement" },
       }),
     );
     const row = screen.getByTestId("event-log-roll");
@@ -89,7 +89,7 @@ describe("hierarchical event log", () => {
       onRestore: vi.fn(),
       onChangeHistory: vi.fn(),
       redoCount: 2,
-      currentPath: { round: 1, phase: "action", action_id: "action_1", stage: "movement" },
+      currentPath: { round: 1, phase: "action" as const, action_id: "action_1", stage: "movement" },
     };
     const { rerender } = render(wrap(entries, { ...props, busy: false }));
     expect(screen.getByRole("button", { name: "Undo from decision 1" })).not.toBeDisabled();
@@ -131,7 +131,7 @@ describe("hierarchical event log", () => {
       {
         ...decision(0),
         id: "start",
-        event: { kind: "game_initialized" as const, round: 1, phase: "action", speaker: "p1" },
+        event: { kind: "game_initialized" as const, round: 1, phase: "action" as const, speaker: "p1" },
       },
       decision(1),
       decision(2, "combat", "p2"),
@@ -140,13 +140,13 @@ describe("hierarchical event log", () => {
         round: undefined,
         phase: undefined,
         id: "round2",
-        event: { kind: "phase_transition" as const, round: 2, phase: "strategy" },
+        event: { kind: "phase_transition" as const, round: 2, phase: "strategy" as const },
       },
-      { ...decision(3), round: 2, phase: "strategy", action_id: undefined, stage: undefined },
+      { ...decision(3), round: 2, phase: "strategy" as const, action_id: undefined, stage: undefined },
     ];
     render(
       wrap(entries, {
-        currentPath: { round: 1, phase: "action", action_id: "action_1", stage: "combat" },
+        currentPath: { round: 1, phase: "action" as const, action_id: "action_1", stage: "combat" },
         onRestore: restore,
       }),
     );
@@ -188,7 +188,7 @@ describe("hierarchical event log", () => {
       {
         ...decision(0),
         id: "start",
-        event: { kind: "game_initialized" as const, round: 1, phase: "action", speaker: a },
+        event: { kind: "game_initialized" as const, round: 1, phase: "action" as const, speaker: a },
       },
       { ...decision(1, "movement", a), detail: `${a} landed sol_infantry on kraag` },
       { ...decision(2, "movement", b), detail: `${b} supported ${a}` },
@@ -199,7 +199,7 @@ describe("hierarchical event log", () => {
           events={entries}
           isOpen
           onToggle={vi.fn()}
-          currentPath={{ round: 1, phase: "action", action_id: "action_1", stage: "movement" }}
+          currentPath={{ round: 1, phase: "action" as const, action_id: "action_1", stage: "movement" }}
         />
       </PlayerIdentityProvider>,
     );
@@ -272,7 +272,7 @@ describe("hierarchical event log", () => {
     ];
     render(
       wrap(entries, {
-        currentPath: { round: 1, phase: "action", action_id: "action_1", stage: "movement" },
+        currentPath: { round: 1, phase: "action" as const, action_id: "action_1", stage: "movement" },
       }),
     );
 
@@ -446,10 +446,10 @@ describe("event log scroll following (mocked layout)", () => {
   const init = {
     ...decision(0),
     id: "start",
-    event: { kind: "game_initialized" as const, round: 1, phase: "action", speaker: "p1" },
+    event: { kind: "game_initialized" as const, round: 1, phase: "action" as const, speaker: "p1" },
   };
   const many = (n: number) => [init, ...Array.from({ length: n }, (_, i) => decision(i + 1))];
-  const path = { round: 1, phase: "action" };
+  const path = { round: 1, phase: "action" as const };
   const list = () => screen.getByTestId("event-log-list");
   const gap = () => list().scrollHeight - list().clientHeight - list().scrollTop;
   const scrollTo = (top: number) => {
@@ -487,29 +487,29 @@ describe("event log scroll following (mocked layout)", () => {
         id: "round2",
         round: undefined,
         phase: undefined,
-        event: { kind: "phase_transition" as const, round: 2, phase: "strategy" },
+        event: { kind: "phase_transition" as const, round: 2, phase: "strategy" as const },
       },
-      { ...decision(42), round: 2, phase: "strategy" },
+      { ...decision(42), round: 2, phase: "strategy" as const },
     ];
-    rerender(wrap(next, { currentPath: { round: 2, phase: "strategy" } }));
+    rerender(wrap(next, { currentPath: { round: 2, phase: "strategy" as const } }));
     expect(screen.getByText("Choice 42")).toBeInTheDocument();
     expect(gap()).toBe(0);
   });
 
   it("keeps manual expansion across a reconnect (same history key) but drops it for a new one", () => {
     const events = [
-      { ...decision(0), id: "start", event: { kind: "game_initialized" as const, round: 1, phase: "action", speaker: "p1" } },
+      { ...decision(0), id: "start", event: { kind: "game_initialized" as const, round: 1, phase: "action" as const, speaker: "p1" } },
       { ...decision(1), round: 1 },
       {
         ...decision(2),
         id: "round2",
         round: undefined,
         phase: undefined,
-        event: { kind: "phase_transition" as const, round: 2, phase: "action" },
+        event: { kind: "phase_transition" as const, round: 2, phase: "action" as const },
       },
       { ...decision(3), round: 2 },
     ];
-    const props = { currentPath: { round: 2, phase: "action" } };
+    const props = { currentPath: { round: 2, phase: "action" as const } };
     const { rerender } = render(wrap(events, { ...props, historyKey: 7 }));
     fireEvent.click(screen.getByRole("button", { name: /Round 1/ }));
     fireEvent.click(screen.getAllByRole("button", { name: /Action phase/ })[0]);

@@ -2,13 +2,14 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { TacticalMovementOverlay } from "./TacticalMovementOverlay.tsx";
 import type { BoardView, PendingChoiceDto } from "../protocol/types.ts";
+import { partialContext } from "../test/wire.ts";
 
 // 95.1: a carrier also picks up from the systems it moves through. 24 (origin) - 30 - 18 (active).
 const choice: PendingChoiceDto = {
   prompt: "movement",
   actor: "p1",
   nonce: "n1",
-  context: { subtype: "movement_step", target: { System: "18" } },
+  context: partialContext({ subtype: "movement_step", target: { System: "18" } }),
   options: [
     {
       id: "move|24|0",
@@ -16,7 +17,7 @@ const choice: PendingChoiceDto = {
       kind: "move",
       payload: { origin: "24", unit: "carrier", capacity: 4 },
     },
-    { id: "done_moving", label: "Finish Movement", kind: "decline" },
+    { id: "done_moving", label: "Finish Movement", kind: "decline", payload: {} },
   ],
 };
 
@@ -40,7 +41,7 @@ const sys = (
 const board = (mid: BoardView["systems"][string]): BoardView => ({
   map_tiles: [tile("24", 0, 0), tile("30", 1, 0), tile("18", 2, 0)],
   systems: {
-    "24": sys("24", [{ owner: "p1", unit_type: "carrier", damaged: false }]),
+    "24": sys("24", [{ owner: "p1", unit_type: "carrier", damaged: false, planet: null, galvanized: false }]),
     "30": mid,
     "18": sys("18", []),
   },
@@ -51,8 +52,9 @@ const infantryOnPlanet = {
   unit_type: "infantry",
   planet: "mid",
   damaged: false,
+  galvanized: false,
 };
-const fighterInSpace = { owner: "p1", unit_type: "fighter", damaged: false };
+const fighterInSpace = { owner: "p1", unit_type: "fighter", damaged: false, planet: null, galvanized: false };
 
 const renderOverlay = (
   b: BoardView,
@@ -137,9 +139,9 @@ describe("TacticalMovementOverlay en-route pickups (95.1)", () => {
     b.systems["24"] = sys(
       "24",
       [
-        { owner: "p1", unit_type: "carrier", damaged: false },
-        { owner: "p1", unit_type: "fighter", damaged: false },
-        { owner: "p1", unit_type: "infantry", planet: "home", damaged: false },
+        { owner: "p1", unit_type: "carrier", damaged: false, planet: null, galvanized: false },
+        { owner: "p1", unit_type: "fighter", damaged: false, planet: null, galvanized: false },
+        { owner: "p1", unit_type: "infantry", planet: "home", damaged: false, galvanized: false },
       ],
       ["p1"],
     );
@@ -152,15 +154,15 @@ describe("TacticalMovementOverlay en-route pickups (95.1)", () => {
   it("still offers origin cargo without a token (control for the Dominus Orb case)", () => {
     const b = board(sys("30", []));
     b.systems["24"] = sys("24", [
-      { owner: "p1", unit_type: "carrier", damaged: false },
-      { owner: "p1", unit_type: "fighter", damaged: false },
+      { owner: "p1", unit_type: "carrier", damaged: false, planet: null, galvanized: false },
+      { owner: "p1", unit_type: "fighter", damaged: false, planet: null, galvanized: false },
     ]);
     renderOverlay(b);
     expect(screen.getByTestId("rally-row-cargo-24-fighter-space")).toBeInTheDocument();
   });
 
   it("offers nothing when the passed system has no own units", () => {
-    renderOverlay(board(sys("30", [{ ...infantryOnPlanet, owner: "p2" }])));
+    renderOverlay(board(sys("30", [{ ...infantryOnPlanet, owner: "p2", galvanized: false }])));
     expect(
       screen.queryByTestId("rally-row-cargo-24-infantry-mid-via-30"),
     ).toBeNull();
@@ -189,8 +191,9 @@ describe("TacticalMovementOverlay en-route pickups (95.1)", () => {
       unit_type: "mech",
       planet: "mid",
       damaged: false,
+      galvanized: false,
     };
-    const mechInSpace = { owner: "p1", unit_type: "mech", damaged: false };
+    const mechInSpace = { owner: "p1", unit_type: "mech", damaged: false, planet: null, galvanized: false };
     const stageCarrier = () =>
       fireEvent.click(screen.getByTestId("rally-inc-24-carrier"));
     const mechId = "cargo-24-mech-mid-via-30";
@@ -314,6 +317,7 @@ describe("TacticalMovementOverlay en-route pickups (95.1)", () => {
         unit_type: "argent_mech",
         planet: "mid",
         damaged: false,
+        galvanized: false,
       };
       const argentId = "cargo-24-argent_mech-mid-via-30";
 

@@ -1,9 +1,9 @@
 use std::thread;
 use std::time::Duration;
+use ti4_host::protocol::server::ServerMessage;
+use ti4_host::protocol::status::ViewerRole;
 use ti4_model::id::PlayerId;
 use ti4_server::fixtures::create_sample_game;
-use ti4_server::protocol::server::ServerMessage;
-use ti4_server::protocol::status::ViewerRole;
 use ti4_server::session::{GameSession, MockClient, SeatController, SessionConfig};
 
 #[test]

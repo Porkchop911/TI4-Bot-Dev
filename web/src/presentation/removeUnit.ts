@@ -1,4 +1,4 @@
-import type { BoardView, ChoiceOptionDto, PendingChoiceDto, PlayerView } from "../protocol/types.ts";
+import type { BoardView, ChoiceOption, PendingChoiceDto, PlayerView } from "../protocol/types.ts";
 import { getUnitBaseType, getUnitDisplayName, type UnitBaseType } from "../components/UnitIcon.tsx";
 
 /** What the seat is over: the fleet pool (ships) or the capacity of its ships (cargo). */
@@ -22,7 +22,7 @@ export interface RemoveUnitView {
   headline: string;
   /** Everything of the seat's in that space area, grouped: "2 Carriers, 4 Fighters". */
   present: string | null;
-  option(option: Pick<ChoiceOptionDto, "id" | "label">): RemoveUnitOption;
+  option(option: Pick<ChoiceOption, "id" | "label">): RemoveUnitOption;
 }
 
 const PROMPT = /^remove a unit: over (fleet supply|capacity) in (.+)$/;

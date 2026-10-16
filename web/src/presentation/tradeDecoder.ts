@@ -1,4 +1,4 @@
-import { ChoiceOptionDto } from "../protocol/types.ts";
+import { ChoiceOption } from "../protocol/types.ts";
 import { getTradePayload } from "./choiceModel.ts";
 import { replaceCardIds } from "./tradeNames.ts";
 
@@ -93,12 +93,12 @@ function decodeAskShape(
   return null;
 }
 
-export function decodeTradeOption(opt: ChoiceOptionDto): DecodedTradeOffer {
+export function decodeTradeOption(opt: ChoiceOption): DecodedTradeOffer {
   const deal = decodeTradeOptionRaw(opt);
   return { ...deal, label: dealLabel(deal), engineLabel: deal.label };
 }
 
-function decodeTradeOptionRaw(opt: ChoiceOptionDto): DecodedTradeOffer {
+function decodeTradeOptionRaw(opt: ChoiceOption): DecodedTradeOffer {
   const id = opt.id;
   const payload = getTradePayload(opt);
   const net = payload.net;

@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { usePipelineRunner, SemanticIntent } from "./usePipelineRunner.ts";
 import { PendingChoiceDto } from "../protocol/types.ts";
+import { partialContext } from "../test/wire.ts";
 
 describe("usePipelineRunner", () => {
   it("executes sequential intents and resets isRunning to false on completion", async () => {
@@ -12,8 +13,8 @@ describe("usePipelineRunner", () => {
       nonce: "n1",
       prompt: "Pay debt",
       options: [
-        { id: "exhaust|jord", label: "Jord" },
-        { id: "exhaust|mecatol", label: "Mecatol Rex" },
+        { id: "exhaust|jord", label: "Jord", payload: {}, kind: "" },
+        { id: "exhaust|mecatol", label: "Mecatol Rex", payload: {}, kind: "" },
       ],
     };
 
@@ -46,7 +47,7 @@ describe("usePipelineRunner", () => {
       actor: "p1",
       nonce: "n2",
       prompt: "Pay remaining debt",
-      options: [{ id: "exhaust|mecatol", label: "Mecatol Rex" }],
+      options: [{ id: "exhaust|mecatol", label: "Mecatol Rex", payload: {}, kind: "" }],
     };
 
     await act(async () => {
@@ -67,7 +68,7 @@ describe("usePipelineRunner", () => {
       actor: "p1",
       nonce: "n1",
       prompt: "Choose",
-      options: [{ id: "opt_1", label: "Option 1" }],
+      options: [{ id: "opt_1", label: "Option 1", payload: {}, kind: "" }],
     };
 
     const { result } = renderHook(() => usePipelineRunner(choice, onSubmit));
@@ -95,8 +96,8 @@ describe("usePipelineRunner", () => {
       nonce: "n1",
       prompt: "Choose",
       options: [
-        { id: "opt1", label: "First" },
-        { id: "opt2", label: "Second" },
+        { id: "opt1", label: "First", payload: {}, kind: "" },
+        { id: "opt2", label: "Second", payload: {}, kind: "" },
       ],
     };
     const { result, rerender } = renderHook(({ pending }) => usePipelineRunner(pending, onSubmit), {
@@ -125,8 +126,8 @@ describe("usePipelineRunner", () => {
       actor: "p1",
       nonce: "n1",
       prompt: "Pay",
-      context: { subtype: "pay_resources" },
-      options: [{ id: "trade_good", label: "Spend" }],
+      context: partialContext({ subtype: "pay_resources" }),
+      options: [{ id: "trade_good", label: "Spend", payload: {}, kind: "" }],
     };
     const { result, rerender } = renderHook(({ pending }) => usePipelineRunner(pending, onSubmit), {
       initialProps: { pending: choice as PendingChoiceDto | null },
@@ -153,7 +154,7 @@ describe("usePipelineRunner", () => {
       actor: "p1",
       nonce: "n1",
       prompt: "Choose",
-      options: [{ id: "opt1", label: "First" }],
+      options: [{ id: "opt1", label: "First", payload: {}, kind: "" }],
     };
     const { result, rerender } = renderHook(({ pending }) => usePipelineRunner(pending, onSubmit), {
       initialProps: { pending: choice },
@@ -166,7 +167,7 @@ describe("usePipelineRunner", () => {
     });
     await act(async () => {
       rerender({
-        pending: { ...choice, nonce: "n2", options: [{ id: "unexpected", label: "Other" }] },
+        pending: { ...choice, nonce: "n2", options: [{ id: "unexpected", label: "Other", payload: {}, kind: "" }] },
       });
     });
     expect(onSubmit).toHaveBeenCalledExactlyOnceWith("opt1");
@@ -181,8 +182,8 @@ describe("usePipelineRunner", () => {
       actor: "p1",
       nonce: "n1",
       prompt: "Pay",
-      context: { subtype: "pay_resources" },
-      options: [{ id: "trade_good", label: "Spend" }],
+      context: partialContext({ subtype: "pay_resources" }),
+      options: [{ id: "trade_good", label: "Spend", payload: {}, kind: "" }],
     };
     const { result, rerender } = renderHook(({ pending }) => usePipelineRunner(pending, onSubmit), {
       initialProps: { pending: choice },
@@ -195,7 +196,7 @@ describe("usePipelineRunner", () => {
     );
     await act(async () =>
       rerender({
-        pending: { ...choice, nonce: "n2", context: { subtype: "propose_transaction" } },
+        pending: { ...choice, nonce: "n2", context: partialContext({ subtype: "propose_transaction" }) },
       }),
     );
     expect(onSubmit).toHaveBeenCalledExactlyOnceWith("trade_good");
@@ -209,7 +210,7 @@ describe("usePipelineRunner", () => {
       actor: "p1",
       nonce: "n1",
       prompt: "Choose",
-      options: [{ id: "opt_1", label: "Option 1" }],
+      options: [{ id: "opt_1", label: "Option 1", payload: {}, kind: "" }],
     };
 
     const { result } = renderHook(() => usePipelineRunner(choice, onSubmit));
@@ -242,7 +243,7 @@ describe("usePipelineRunner", () => {
       actor: "p1",
       nonce: "n1",
       prompt: "Choose",
-      options: [{ id: "opt1", label: "Option 1" }],
+      options: [{ id: "opt1", label: "Option 1", payload: {}, kind: "" }],
     };
 
     const { result } = renderHook(() => usePipelineRunner(choice, onSubmit));

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { PreviewUnsupportedError } from "../../protocol/client.ts";
 import { LocalTransport } from "./LocalTransport.ts";
 import { GAME, FakePort, accepted, envelope, question, rejected, save, snapshot } from "./testKit.ts";
-import type { StartConfig } from "./hostApi.ts";
+import type { StartConfig } from "@ti4/shared/engine/host.ts";
 
 const config: StartConfig = { setup: { game_id: GAME, seed: 7, players: 3 } };
 
@@ -40,8 +40,27 @@ describe("LocalTransport", () => {
     expect(state.pendingChoice?.nonce).toBe("n1");
     expect(state.gameVersion).toBe(1);
     expect(saves).toHaveLength(1);
-    expect(transport.capabilities).toMatchObject({ turnRedo: false, advisor: false, multiplayer: false, splicePreview: false });
+    expect(transport.capabilities).toMatchObject({ turnRedo: false, multiplayer: false, splicePreview: false });
     expect(transport.nickname).toBe("Tester");
+  });
+
+  it("shows a game whose engine names it otherwise (an imported game, a game of web2)", async () => {
+    const ports: FakePort[] = [];
+    const transport = new LocalTransport({
+      gameId: "off_imported",
+      nickname: "Tester",
+      config,
+      createPort: async () => {
+        const port = new FakePort();
+        ports.push(port);
+        return port;
+      },
+    });
+    await transport.begin();
+    ports[0].emit({ t: "ask", envelope: envelope("ask", { messages: [snapshot(1, "n1")] }), save: save([]) });
+    await transport.ready;
+    expect(transport.getState().lastError).toBeNull();
+    expect(transport.getState().pendingChoice?.nonce).toBe("n1");
   });
 
   it("answers a choice with the nonce and version and settles at the next question", async () => {
@@ -57,7 +76,7 @@ describe("LocalTransport", () => {
     await Promise.resolve();
     expect(port.commands("submit_choice")[0]).toMatchObject({
       type: "submit_choice",
-      protocol_version: 3,
+      protocol_version: 4,
       game_id: GAME,
       nonce: "n1",
       expected_version: 1,
@@ -179,7 +198,7 @@ describe("LocalTransport", () => {
         messages: [
           {
             type: "reach_into",
-            protocol_version: 3,
+            protocol_version: 4,
             game_id: GAME,
             request_id: request.request_id as number,
             system_id: String(request.system_id),
@@ -262,7 +281,7 @@ describe("LocalTransport", () => {
     port.emit({
       t: "end",
       envelope: envelope("end", {
-        messages: [{ type: "game_over", protocol_version: 3, game_id: GAME, game_version: 9, winner: "a", final_scores: { a: 10 } }],
+        messages: [{ type: "game_over", protocol_version: 4, game_id: GAME, game_version: 9, winner: "a", final_scores: { a: 10 } }],
         end: { finished: true, left: false, error: null, decisions: 9, answers: 4 },
       }),
       save: save(["x"], true),

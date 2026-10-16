@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { ValueUnit } from "./PlanetValueIcons.tsx";
-import { ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import { ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import { Dialog } from "../primitives/index.ts";
 import { ChoiceRendererModel } from "../presentation/choiceModel.ts";
 import { WorkflowShell } from "./WorkflowShell.tsx";
@@ -52,11 +52,11 @@ const GROUP_OF: Record<string, OptionGroupKey> = {
   spacedock: "structures",
 };
 
-const unitKeyOf = (option: ChoiceOptionDto): string => String(option.payload?.unit ?? option.id);
+const unitKeyOf = (option: ChoiceOption): string => String(option.payload?.unit ?? option.id);
 
 /** Build options split into ships, ground forces and structures; each keeps the order the engine offered. */
-function groupOptions(options: ChoiceOptionDto[]) {
-  const groups = new Map<OptionGroupKey, ChoiceOptionDto[]>();
+function groupOptions(options: ChoiceOption[]) {
+  const groups = new Map<OptionGroupKey, ChoiceOption[]>();
   for (const option of options) {
     const key = GROUP_OF[getUnitBaseType(unitKeyOf(option))] ?? "ships";
     groups.set(key, [...(groups.get(key) ?? []), option]);
@@ -67,7 +67,7 @@ function groupOptions(options: ChoiceOptionDto[]) {
 }
 
 const BuildOptionCard: React.FC<{
-  option: ChoiceOptionDto;
+  option: ChoiceOption;
   seat: string;
   count: number;
   blockedReason: React.ReactNode;
@@ -235,9 +235,8 @@ export const ProductionBuilderDrawer: React.FC<ProductionBuilderDrawerProps> = (
         : "";
 
   // Extract fleet supply if available from context
-  // The server sends it as a display-only choice detail; context.details is the legacy spot.
-  const fleetSupply =
-    choice?.details?.fleet_supply ?? choice?.context?.details?.fleet_supply ?? null;
+  // The server sends it as a display-only choice detail.
+  const fleetSupply = choice?.details?.fleet_supply ?? null;
 
   const optionGroups = groupOptions(productionOptions);
   const multiGroup = optionGroups.length > 1;

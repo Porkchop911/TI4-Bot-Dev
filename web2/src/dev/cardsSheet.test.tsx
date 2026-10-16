@@ -3,13 +3,13 @@ import { expect, it, vi } from "vitest";
 import { GameProvider } from "../game/context";
 import { ReferenceDrawer } from "../game/shell/Reference";
 import type { Intent } from "../model";
-import menuUpdate from "../session/fixtures/update-menu.json";
+import menuUpdate from "../../../fixtures/protocol/update-menu.json";
 import type { CardSettings } from "../session/select/cards";
 import { selectShell } from "../session/select/shell";
 import type { Catalog, SessionUpdate } from "../session/wire";
 
-// The Cards sheet over an update of the real engine: seat a holds `scuttle` and `rally`. The test
-// is here because `dev` is the layer that may import both the session and the components.
+// The Cards sheet over an update of the real engine, with seat a holding `scuttle` and `rally`.
+// The test is here because `dev` is the layer that may import both the session and the components.
 const card = (id: string, name: string, window: string, group: string) => ({
   id,
   name,
@@ -19,10 +19,17 @@ const card = (id: string, name: string, window: string, group: string) => ({
   text: `The text of ${name}.`,
 });
 const catalog = {
+  content: "",
   exploration: { cards: [], decks: {}, attachments: [] },
   components: {
     abilities: [],
     factions: {},
+    faction_sheets: {},
+    strategy_cards: [],
+    public_objectives: [],
+    public_objective_groups: [],
+    agendas: [],
+    agenda_groups: [],
     leaders: [],
     technologies: [],
     relics: [],
@@ -38,9 +45,35 @@ const catalog = {
     secret_objectives: [],
     secret_objective_groups: [],
   },
+  records: {
+    strategy_cards: [],
+    secret_objectives: [],
+    public_objectives: [],
+    action_cards: [],
+    technologies: [],
+    explores: [],
+    planets: [],
+    attachments: [],
+    factions: [],
+    units: [],
+    leaders: [],
+    abilities: [],
+    promissory_notes: [],
+    relics: [],
+    breakthroughs: [],
+  },
 } as Catalog;
+const base = menuUpdate as unknown as SessionUpdate;
 const update: SessionUpdate = {
-  ...(menuUpdate as unknown as SessionUpdate),
+  ...base,
+  view: {
+    ...base.view,
+    players: base.view.players.map((player) =>
+      player.id === "a"
+        ? { ...player, held_action_cards: ["scuttle", "rally"], action_cards_count: 2 }
+        : player,
+    ),
+  },
   action_cards: { deck: 90, discard: ["mb2"], hand_limit: 7 },
 };
 const local = {

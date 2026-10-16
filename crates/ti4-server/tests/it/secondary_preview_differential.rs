@@ -22,10 +22,10 @@ use ti4_content::ContentStore;
 use ti4_engine::choice::{Capturing, Choice, DecisionRecord, Table};
 use ti4_engine::game::Game;
 use ti4_engine::secondary_preview::{SecondaryPreview, follow_up_subtypes, preview_secondary};
+use ti4_host::rng_force::RngForce;
 use ti4_model::content_types::POK;
 use ti4_model::id::{PlayerId, StrategyCardId};
 use ti4_model::state::GameState;
-use ti4_server::session::RngForce;
 
 use crate::support::{Source, forced_decider, generated, saved_games};
 

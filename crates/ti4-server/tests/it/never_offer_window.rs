@@ -43,18 +43,16 @@ fn asked_with_never(
     }
     let asked = Arc::new(Mutex::new(Vec::new()));
     let skipped = Arc::new(Mutex::new(Vec::new()));
-    let set: ti4_server::session::reaction_modes::NeverSet = Arc::new(Mutex::new(
+    let set: ti4_host::view::reaction_modes::NeverSet = Arc::new(Mutex::new(
         never
             .iter()
             .map(|name| ((*name).to_owned(), ti4_model::state::ReactionMode::Never))
             .collect(),
     ));
     let sink = skipped.clone();
-    let wrapper = ti4_server::session::reaction_modes::NeverOffer::new(
-        Box::new(Recorder(asked.clone())),
-        set,
-    )
-    .on_skip(move |_, cards| sink.lock().unwrap().push(cards.to_vec()));
+    let wrapper =
+        ti4_host::view::reaction_modes::NeverOffer::new(Box::new(Recorder(asked.clone())), set)
+            .on_skip(move |_, cards| sink.lock().unwrap().push(cards.to_vec()));
     let mut table = ti4_engine::choice::Table::with_default(Box::new(Recorder(asked.clone())));
     table.seat(PlayerId::new(reactor), Box::new(wrapper));
     let seats: Vec<PlayerId> = state.players.iter().map(|seat| seat.id.clone()).collect();

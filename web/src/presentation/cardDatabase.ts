@@ -1,4 +1,4 @@
-import { GENERATED_CONTENT_CATALOG } from "../protocol/generatedContentManifest.ts";
+import { CONTENT } from "../protocol/catalogStore.ts";
 
 /**
  * Card database with descriptions for Action Cards, Promissory Notes, and other tradeable items.
@@ -103,9 +103,9 @@ export function getCardInfo(cardName: string): CardInfo | null {
 }
 
 type CatalogRecord = { name: string; text?: string; description?: string; phase?: string; window?: string };
-const CATALOG_ACTION_CARDS = GENERATED_CONTENT_CATALOG.actionCards as unknown as Record<string, CatalogRecord>;
-const CATALOG_SECRETS = GENERATED_CONTENT_CATALOG.secretObjectives as unknown as Record<string, CatalogRecord>;
-const CATALOG_NOTES = GENERATED_CONTENT_CATALOG.promissoryNotes as unknown as Record<string, CatalogRecord>;
+const CATALOG_ACTION_CARDS = CONTENT.actionCards as unknown as Record<string, CatalogRecord>;
+const CATALOG_SECRETS = CONTENT.secretObjectives as unknown as Record<string, CatalogRecord>;
+const CATALOG_NOTES = CONTENT.promissoryNotes as unknown as Record<string, CatalogRecord>;
 
 /** Engine ids the local table lacks: note aliases (`cf`, generic notes are `<color>_cf`) and action cards (`sabo1`). */
 function catalogCardInfo(id: string): CardInfo | null {

@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ChoiceRendererDispatcher, GameShell } from "./GameShell.tsx";
 import { deriveChoiceRendererModel, type ChoiceWorkflowKind } from "../presentation/choiceModel.ts";
 import type { PendingChoiceDto, PlayerView } from "../protocol/types.ts";
+import { partialContext } from "../test/wire.ts";
 
 // These are explicitly synthetic protocol-shaped choices, not captured live sessions.
 // Producer references and the boundary each fixture exercises are in the INV-03 plan ledger.
@@ -48,8 +49,8 @@ const cases: Array<{
       actor,
       nonce: "empty-1",
       prompt: "movement",
-      context: { subtype: "movement_step", target: { System: "18" } },
-      options: [{ id: "done_moving", kind: "decline", label: "finish movement" }],
+      context: partialContext({ subtype: "movement_step", target: { System: "18" } }),
+      options: [{ id: "done_moving", kind: "decline", label: "finish movement", payload: {} }],
     },
   },
   {
@@ -63,7 +64,7 @@ const cases: Array<{
       actor,
       nonce: "move-1",
       prompt: "movement",
-      context: { subtype: "movement_step", target: { System: "18" } },
+      context: partialContext({ subtype: "movement_step", target: { System: "18" } }),
       options: [
         {
           id: "move|24|0",
@@ -71,7 +72,7 @@ const cases: Array<{
           label: "move cruiser from 24",
           payload: { origin: "24", unit: "cruiser", capacity: 0 },
         },
-        { id: "done_moving", kind: "decline", label: "finish movement" },
+        { id: "done_moving", kind: "decline", label: "finish movement", payload: {} },
       ],
     },
   },
@@ -86,10 +87,10 @@ const cases: Array<{
       actor,
       nonce: "pay-1",
       prompt: "pay 4 resources",
-      context: {
+      context: partialContext({
         subtype: "pay_resources",
-        outstanding: [{ kind: "resources", amount: 4, paid: 0 }],
-      },
+        outstanding: [{ kind: "Resources", amount: 4, paid: 0 }],
+      }),
       options: [
         {
           id: "exhaust|jord",
@@ -110,14 +111,14 @@ const cases: Array<{
       actor,
       nonce: "produce-1",
       prompt: "produce in 18 (3 left)",
-      context: {
+      context: partialContext({
         subtype: "produce_unit",
         target: { System: "18" },
-        outstanding: [{ kind: "production_capacity", amount: 3, paid: 0 }],
-      },
+        outstanding: [{ kind: "ProductionCapacity", amount: 3, paid: 0 }],
+      }),
       options: [
-        { id: "build|infantry|1", kind: "produce", label: "produce 1x infantry for 1" },
-        { id: "done_producing", kind: "decline", label: "produce nothing further" },
+        { id: "build|infantry|1", kind: "produce", label: "produce 1x infantry for 1", payload: {} },
+        { id: "done_producing", kind: "decline", label: "produce nothing further", payload: {} },
       ],
     },
   },
@@ -131,19 +132,19 @@ const cases: Array<{
       actor,
       nonce: "react-1",
       prompt: "play an action card (after ACTION_CARD_PLAYED)",
-      context: {
+      context: partialContext({
         subtype: "play_reaction_after_ACTION_CARD_PLAYED",
         optional: true,
         source: { Reaction: "ACTION_CARD_PLAYED" },
-      },
+      }),
       options: [
-        { id: "fs1", kind: "action_card", label: "play Sabotage" },
-        { id: "decline", kind: "decline", label: "pass" },
+        { id: "fs1", kind: "action_card", label: "play Sabotage", payload: {} },
+        { id: "decline", kind: "decline", label: "pass", payload: {} },
       ],
     },
   },
   {
-    name: "constrained generic choice",
+    name: "generic choice",
     workflow: "generic_selection",
     region: "pending-choice-dialog",
     prepare: "select-generic",
@@ -152,15 +153,12 @@ const cases: Array<{
     choice: {
       actor,
       nonce: "generic-1",
-      prompt: "select two cards",
-      context: {
-        subtype: "synthetic_bounded_selection",
-        outstanding: [{ min_selection: 2, max_selection: 2 }],
-      },
+      prompt: "select a card",
+      context: partialContext({ subtype: "synthetic_selection" }),
       options: [
-        { id: "card_a", label: "Card A" },
-        { id: "card_b", label: "Card B" },
-        { id: "card_c", label: "Card C" },
+        { id: "card_a", label: "Card A", payload: {}, kind: "" },
+        { id: "card_b", label: "Card B", payload: {}, kind: "" },
+        { id: "card_c", label: "Card C", payload: {}, kind: "" },
       ],
     },
   },
@@ -196,10 +194,7 @@ describe("INV-03 decision invariant matrix", () => {
       const { unmount } = render(dispatcher(choice, onSubmit));
       expect(screen.getByTestId(fixture.region)).toBeVisible();
       if (fixture.prepare === "select-generic") {
-        expect(screen.getByTestId("submit-choice-button")).toBeDisabled();
-        fireEvent.click(screen.getByRole("checkbox", { name: "Card A" }));
-        fireEvent.click(screen.getByRole("checkbox", { name: "Card B" }));
-        expect(screen.getByRole("checkbox", { name: "Card C" })).toBeDisabled();
+        fireEvent.click(screen.getByRole("radio", { name: "Card A" }));
       } else if (fixture.prepare?.startsWith("planet-card-")) {
         fireEvent.click(screen.getByTestId(fixture.prepare).querySelector("input")!);
       } else if (fixture.prepare) {
@@ -278,12 +273,12 @@ describe("INV-03 decision invariant matrix", () => {
   }> = [
     {
       subtype: "movement_step",
-      options: [{ id: "done_moving", kind: "decline", label: "Done" }],
+      options: [{ id: "done_moving", kind: "decline", label: "Done", payload: {} }],
       region: "decision-modal",
     },
     {
       subtype: "load_cargo",
-      options: [{ id: "done_loading", kind: "decline", label: "Done" }],
+      options: [{ id: "done_loading", kind: "decline", label: "Done", payload: {} }],
       region: "decision-modal",
     },
     {
@@ -298,62 +293,62 @@ describe("INV-03 decision invariant matrix", () => {
     },
     {
       subtype: "produce_unit",
-      options: [{ id: "done_producing", kind: "decline", label: "Done" }],
+      options: [{ id: "done_producing", kind: "decline", label: "Done", payload: {} }],
       region: "production-builder-drawer",
     },
     {
       subtype: "place_unit",
-      options: [{ id: "space", kind: "place", label: "Space" }],
+      options: [{ id: "space", kind: "place", label: "Space", payload: {} }],
       region: "production-builder-drawer",
     },
     {
       subtype: "sustain_damage",
-      options: [{ id: "decline", kind: "decline", label: "Pass" }],
+      options: [{ id: "decline", kind: "decline", label: "Pass", payload: {} }],
       region: "combat-resolution-modal",
     },
     {
       subtype: "assign_casualty",
-      options: [{ id: "destroy|fighter", kind: "casualty", label: "Fighter" }],
+      options: [{ id: "destroy|fighter", kind: "casualty", label: "Fighter", payload: {} }],
       region: "combat-resolution-modal",
     },
     {
       subtype: "retreat_to",
-      options: [{ id: "retreat|18", kind: "retreat", label: "System 18" }],
+      options: [{ id: "retreat|18", kind: "retreat", label: "System 18", payload: {} }],
       region: "combat-resolution-modal",
     },
     {
       subtype: "propose_transaction",
-      options: [{ id: "cc1", kind: "offer", label: "Swap" }],
+      options: [{ id: "cc1", kind: "offer", label: "Swap", payload: {} }],
       region: "trade-desk-modal",
     },
     {
       subtype: "answer_transaction",
-      options: [{ id: "refuse", kind: "decline", label: "Refuse" }],
+      options: [{ id: "refuse", kind: "decline", label: "Refuse", payload: {} }],
       region: "trade-desk-modal",
     },
     {
       subtype: "cast_vote",
-      options: [{ id: "FOR", kind: "outcome", label: "For" }],
+      options: [{ id: "FOR", kind: "outcome", label: "For", payload: {} }],
       region: "agenda-ballot-modal",
     },
     {
       subtype: "vote_exhaust_planet",
-      options: [{ id: "decline", kind: "decline", label: "Done" }],
+      options: [{ id: "decline", kind: "decline", label: "Done", payload: {} }],
       region: "agenda-ballot-modal",
     },
     {
       subtype: "play_reaction_after_ACTION_CARD_PLAYED",
-      options: [{ id: "decline", kind: "decline", label: "Pass" }],
+      options: [{ id: "decline", kind: "decline", label: "Pass", payload: {} }],
       region: "decision-modal",
     },
     {
       subtype: "score_objective",
-      options: [{ id: "objective", label: "Score" }],
+      options: [{ id: "objective", label: "Score", payload: {}, kind: "" }],
       region: "objectives-modal",
     },
     {
       subtype: "other_choice",
-      options: [{ id: "other", label: "Other" }],
+      options: [{ id: "other", label: "Other", payload: {}, kind: "" }],
       region: "pending-choice-dialog",
     },
   ];
@@ -364,7 +359,7 @@ describe("INV-03 decision invariant matrix", () => {
         actor,
         nonce: subtype,
         prompt: `Decide ${subtype}`,
-        context: { subtype },
+        context: partialContext({ subtype }),
         options,
       };
       render(
@@ -402,7 +397,7 @@ describe("INV-03 decision invariant matrix", () => {
       actor,
       nonce: "activate",
       prompt: "Decide activate_system",
-      context: { subtype: "activate_system" },
+      context: partialContext({ subtype: "activate_system" }),
       options: [{ id: "18", kind: "activate", label: "System 18", payload: { system: "18" } }],
     };
     render(
@@ -432,7 +427,7 @@ describe("INV-03 decision invariant matrix", () => {
       actor,
       nonce,
       prompt: "Pay 4 resources",
-      context: { subtype: "pay_resources", outstanding: [{ kind: "resources", amount: 4, paid }] },
+      context: partialContext({ subtype: "pay_resources", outstanding: [{ kind: "Resources", amount: 4, paid }] }),
       options,
     });
     const planet = {
@@ -479,18 +474,18 @@ describe("INV-03 decision invariant matrix", () => {
       actor,
       nonce: "pay-interrupted",
       prompt: "Pay 2 resources",
-      context: {
+      context: partialContext({
         subtype: "pay_resources",
-        outstanding: [{ kind: "resources", amount: 2, paid: 0 }],
-      },
+        outstanding: [{ kind: "Resources", amount: 2, paid: 0 }],
+      }),
       options: [{ id: "trade_good", kind: "pay", label: "Trade good", payload: { worth: 1 } }],
     };
     const reaction: PendingChoiceDto = {
       actor,
       nonce: "reaction-interrupted",
       prompt: "React",
-      context: { subtype: "play_reaction_after_ACTION_CARD_PLAYED" },
-      options: [{ id: "decline", kind: "decline", label: "Pass" }],
+      context: partialContext({ subtype: "play_reaction_after_ACTION_CARD_PLAYED" }),
+      options: [{ id: "decline", kind: "decline", label: "Pass", payload: {} }],
     };
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     const view = (choice: PendingChoiceDto) => (

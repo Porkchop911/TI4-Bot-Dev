@@ -545,7 +545,11 @@ pub fn survives_gravity_rifts(
         // For the public roll feed: which rift, and what the die did to the ship.
         dice.annotate_last(
             Some(&system),
-            Some(if destroyed { "ship destroyed" } else { "ship survives" }),
+            Some(if destroyed {
+                "ship destroyed"
+            } else {
+                "ship survives"
+            }),
         );
         if destroyed {
             return false;
@@ -1610,12 +1614,21 @@ mod tests {
             assert_eq!(roll.system.as_deref(), Some(rift.as_str()));
             assert_eq!(
                 roll.outcome.as_deref(),
-                Some(if survives { "ship survives" } else { "ship destroyed" })
+                Some(if survives {
+                    "ship survives"
+                } else {
+                    "ship destroyed"
+                })
             );
             // Notes are not draws: the same seed rolls the same faces without them.
             let mut plain = Dice::new();
             let mut plain_rng = GameRng::new(seed);
-            let bare = plain.roll(&mut plain_rng, 1, "gravity rift", Some(RIFT_DESTROYS_ON + 1));
+            let bare = plain.roll(
+                &mut plain_rng,
+                1,
+                "gravity rift",
+                Some(RIFT_DESTROYS_ON + 1),
+            );
             assert_eq!(bare.faces, roll.faces);
         }
     }

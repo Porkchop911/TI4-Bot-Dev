@@ -11,6 +11,15 @@
 //! model and is exactly what §7.1's legality smoke wants: proof that the MLP can *choose* legally
 //! before anything is trained.
 //!
+//! # The pipeline
+//!
+//! Everything between the observation and the drawn option but the forward pass is the shared
+//! decision pipeline of `ti4_policy::mlp` (features, columns, head, softmax, draw, fleet plan),
+//! the same that the hosts of the game run on `ti4-infer`. This bot scores its decisions on the
+//! actor on libtorch, on the actor packed for `ti4-infer` (`crate::infer`, the rollouts of
+//! training), or on the GPU batch client, and records the PPO steps between the calls of the
+//! pipeline.
+//!
 //! # Hidden information
 //!
 //! Features come from `projection::mlp_choice_features` against the bound `SeatObservation` the
@@ -20,14 +29,14 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use rand::{Rng, SeedableRng};
+use rand::SeedableRng;
 use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice, SeatObservation};
+use ti4_policy::mlp::{Features, ModelInfo, Pipeline, Prepared, Scorer};
 use ti4_policy::vocabulary::Vocabulary;
 
 use crate::{Actor, FactionRow, SparseOption};
 
-/// The option kind of a fleet decision's synthetic options.
-pub const PACKAGE_KIND: &str = "package";
+pub use ti4_policy::mlp::{PACKAGE_KIND, PackageOptionTrace, PlanTrace};
 
 /// A campaign's inference status, which cannot be discarded to obtain a success.
 ///
@@ -86,33 +95,14 @@ pub struct InferenceFailed {
 /// property of the API rather than of each caller remembering (F-M09-026-10): reporting a
 /// successful campaign without consuming the status is not something a caller can express.
 pub struct MlpBot {
-    actor: Option<std::rc::Rc<Actor>>,
-    /// Experimental bounded cross-game scorer. Absent in the ordinary CPU path.
-    gpu: Option<crate::gpu_batch::GpuInferenceClient>,
-    vocabulary: Vocabulary,
-    /// Whether the card-text families (`card-tag:*`, `card-tag-opt:*`) are part of this bot's input.
-    ///
-    /// Decided once, at construction, from the vocabulary alone: on iff it places **every** name of
-    /// both families ([`ti4_policy::projection::card_tags_enabled_for`]). A bundle trained before
-    /// the families places none of them and therefore sees exactly the vectors it always did; the
-    /// migrated bundle places all of them. Play and the PPO records both go through this bot, so
-    /// the features a step is trained on are the features it was played with.
-    card_tags: bool,
-    /// Resolved `FeatureKey -> (column, assigned)`, memoised for this bot.
-    ///
-    /// The same feature names recur constantly — across the options of one decision, across the
-    /// decisions of one game, and across every game this bot plays — while the answer for a given
-    /// key never changes, so the ordered-index walk is repeated work rather than a lookup that had
-    /// to happen.
-    ///
-    /// Safe because the vocabulary cannot move underneath it: `MlpBot` owns it by value, nothing
-    /// hands out `&mut` to it, and the MLP path never calls `Vocabulary::append` — a published
-    /// generation is immutable and a new one produces a new bundle and a new bot. If that ever
-    /// changes, this cache has to be cleared with it; that is the whole invariant.
-    ///
-    /// Counters are still incremented per *occurrence*, not per distinct key, so `assigned` and
-    /// `oov` read exactly as they did before.
-    resolved: std::collections::HashMap<ti4_policy::intern::FeatureKey, (usize, bool)>,
+    /// What scores the decisions: the actor on libtorch, the actor packed for `ti4-infer`, or the
+    /// GPU batch client.
+    inference: Inference,
+    /// The shared decision pipeline (`ti4_policy::mlp`): the features, the columns of the
+    /// vocabulary, the head, the softmax and the draw, and the seat's fleet plan and power maps.
+    /// Play and the PPO records both go through it, so the features a step is trained on are the
+    /// features it was played with.
+    pipeline: Pipeline,
     row: FactionRow,
     temperature: f64,
     rng: rand_chacha::ChaCha8Rng,
@@ -121,51 +111,52 @@ pub struct MlpBot {
     /// trajectory is: the bot is moved into the decision table and cannot be borrowed back out.
     records: std::rc::Rc<std::cell::RefCell<Vec<PpoRecord>>>,
     ppo_mode: Option<crate::bundle::CriticMode>,
-    baseline: ti4_policy::progress::Baseline,
     /// One note per recorded step, pushed with it: what the trainer charges wasted activations
     /// against. Kept here rather than rebuilt from the engine's prompts, because fleet decisions
     /// have no engine prompt and planned steps have no record.
     notes: std::rc::Rc<std::cell::RefCell<Vec<crate::positive_corpus::Note>>>,
-    /// The fleet this seat chose at its last activation (fact version 7), while it is being moved.
-    plan: Option<PlanSlot>,
     /// What the fleet decisions and plans did, for a reviewer.
     trace: std::rc::Rc<std::cell::RefCell<Vec<PlanTrace>>>,
-    /// This seat's power map, kept as state and refreshed only where the board changed.
-    power_cache: std::cell::RefCell<ti4_policy::power_map::PowerCache>,
-    /// Every seat's power map as it stood at this seat's latest activation decision.
-    last_table: std::cell::RefCell<Option<ti4_policy::power_facts::TablePower>>,
 }
 
-/// A fleet being carried out, tied to the activation it was chosen for.
-#[derive(Debug, Clone)]
-struct PlanSlot {
-    player: ti4_model::id::PlayerId,
-    system: ti4_model::id::SystemId,
-    execution: ti4_policy::tactical_plan::Execution,
+/// The model behind a bot.
+#[derive(Clone)]
+enum Inference {
+    /// The actor on libtorch, on this thread.
+    Tch(std::rc::Rc<Actor>),
+    /// The actor packed for `ti4-infer` ([`crate::infer::InferModel`]), shared across threads.
+    Infer(Arc<crate::infer::InferModel>),
+    /// Experimental bounded cross-game scorer on a GPU.
+    Gpu(crate::gpu_batch::GpuInferenceClient),
 }
 
-/// One fleet on a decision's menu, as a trace shows it: label, probability, facts.
-pub type PackageOptionTrace = (String, f64, Vec<(String, f64)>);
+impl Inference {
+    /// The model of the decision pipeline.
+    fn info(&self) -> &dyn ModelInfo {
+        match self {
+            Self::Tch(actor) => &**actor,
+            Self::Infer(model) => &**model,
+            Self::Gpu(client) => client,
+        }
+    }
 
-/// One entry of a bot's plan trace.
-#[derive(Debug, Clone)]
-pub enum PlanTrace {
-    /// A fleet decision: the menu, what the model made of it, and the pick.
-    Package {
-        player: String,
-        system: String,
-        /// The menu, the manual option last.
-        options: Vec<PackageOptionTrace>,
-        chosen: usize,
-    },
-    /// An engine prompt answered by the plan rather than the model.
-    Planned {
-        player: String,
-        prompt: String,
-        chosen: String,
-    },
-    /// The plan stopped before it was finished.
-    Stopped { player: String, reason: String },
+    /// What scores logits on this thread; the GPU client returns probabilities instead.
+    fn scorer(&self) -> Option<&dyn Scorer> {
+        match self {
+            Self::Tch(actor) => Some(&**actor),
+            Self::Infer(model) => Some(&**model),
+            Self::Gpu(_) => None,
+        }
+    }
+
+    /// `V(s)` of a recorded decision, on the CPU backends.
+    fn value(&self, critic: &crate::CriticInput, row: FactionRow) -> Result<f64, String> {
+        match self {
+            Self::Tch(actor) => actor.value(critic, row).map_err(|error| error.to_string()),
+            Self::Infer(model) => model.value(critic, row).map_err(|error| error.to_string()),
+            Self::Gpu(_) => Err("the GPU client records its own value".to_owned()),
+        }
+    }
 }
 
 /// One PPO decision and the progress snapshot taken at that exact decision.
@@ -229,25 +220,45 @@ impl MlpBot {
         row: FactionRow,
         stream: u64,
     ) -> Self {
-        let actor = std::rc::Rc::clone(actor);
-        Self {
-            actor: Some(actor),
-            gpu: None,
-            card_tags: ti4_policy::projection::card_tags_enabled_for(&vocabulary),
+        Self::with_inference(
+            Inference::Tch(std::rc::Rc::clone(actor)),
             vocabulary,
-            resolved: std::collections::HashMap::new(),
+            row,
+            stream,
+        )
+    }
+
+    /// A bot that scores on `ti4-infer`: the actor of a rollout packed in memory
+    /// ([`crate::infer::InferModel::from_actor`]). One model serves every seat on every thread.
+    /// It records the same PPO steps as a bot on the actor; their values come from the value head
+    /// of the model, so a separate critic cannot record (the rollouts refuse that pair up front).
+    #[must_use]
+    pub fn on_infer(
+        model: &Arc<crate::infer::InferModel>,
+        vocabulary: Vocabulary,
+        row: FactionRow,
+        stream: u64,
+    ) -> Self {
+        Self::with_inference(Inference::Infer(Arc::clone(model)), vocabulary, row, stream)
+    }
+
+    fn with_inference(
+        inference: Inference,
+        vocabulary: Vocabulary,
+        row: FactionRow,
+        stream: u64,
+    ) -> Self {
+        Self {
+            inference,
+            pipeline: Pipeline::new(Arc::new(vocabulary), row.index()),
             row,
             temperature: 1.0,
             rng: rand_chacha::ChaCha8Rng::seed_from_u64(stream),
             counters: Arc::new(Counters::default()),
             records: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
             ppo_mode: None,
-            baseline: ti4_policy::progress::Baseline::default(),
             notes: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
-            plan: None,
             trace: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
-            power_cache: std::cell::RefCell::new(ti4_policy::power_map::PowerCache::default()),
-            last_table: std::cell::RefCell::new(None),
         }
     }
 
@@ -263,25 +274,7 @@ impl MlpBot {
         row: FactionRow,
         stream: u64,
     ) -> Self {
-        Self {
-            actor: None,
-            gpu: Some(gpu),
-            card_tags: ti4_policy::projection::card_tags_enabled_for(&vocabulary),
-            vocabulary,
-            resolved: std::collections::HashMap::new(),
-            row,
-            temperature: 1.0,
-            rng: rand_chacha::ChaCha8Rng::seed_from_u64(stream),
-            counters: Arc::new(Counters::default()),
-            records: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
-            ppo_mode: None,
-            baseline: ti4_policy::progress::Baseline::default(),
-            notes: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
-            plan: None,
-            trace: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
-            power_cache: std::cell::RefCell::new(ti4_policy::power_map::PowerCache::default()),
-            last_table: std::cell::RefCell::new(None),
-        }
+        Self::with_inference(Inference::Gpu(gpu), vocabulary, row, stream)
     }
 
     /// Hand the bot to a table and keep the status that must be consumed.
@@ -315,48 +308,6 @@ impl MlpBot {
     pub const fn at_temperature(mut self, temperature: f64) -> Self {
         self.temperature = temperature;
         self
-    }
-
-    /// Turn one option's feature vector into dense columns.
-    ///
-    /// A name with no column of its own is **not dropped**: `column_of` routes it to its family's
-    /// out-of-vocabulary column, or the global one. Dropping would make an unknown option word
-    /// indistinguishable from its absence.
-    fn sparse_from(
-        &mut self,
-        vector: &ti4_policy::features::FeatureVector,
-    ) -> Result<SparseOption, String> {
-        let mut columns = Vec::with_capacity(vector.len());
-        let mut values = Vec::with_capacity(vector.len());
-        for (key, value) in vector {
-            // Keyed lookups throughout: resolving the name here cost a lock, an allocation and a
-            // re-hash per feature (M09-029). Both answers now come from one memoised probe rather
-            // than two walks of the ordered index -- see `resolved` and `Vocabulary::resolve_key`.
-            let (column, assigned) = match self.resolved.get(key) {
-                Some(hit) => *hit,
-                None => {
-                    let answer = self.vocabulary.resolve_key(*key);
-                    self.resolved.insert(*key, answer);
-                    answer
-                }
-            };
-            if assigned {
-                self.counters.assigned.fetch_add(1, Ordering::Relaxed);
-            } else {
-                self.counters.oov.fetch_add(1, Ordering::Relaxed);
-            }
-            columns.push(
-                i64::try_from(column)
-                    .map_err(|_| format!("feature column {column} does not fit i64"))?,
-            );
-            #[expect(clippy::cast_possible_truncation, reason = "features are f32-scale")]
-            let value = *value as f32;
-            if !value.is_finite() {
-                return Err("a projected feature is not finite f32".to_owned());
-            }
-            values.push(value);
-        }
-        Ok(SparseOption { columns, values })
     }
 }
 
@@ -400,8 +351,8 @@ impl MlpBot {
 
     /// Set the exact post-deployment progress baseline supplied by the rollout.
     #[must_use]
-    pub const fn from_setup(mut self, baseline: ti4_policy::progress::Baseline) -> Self {
-        self.baseline = baseline;
+    pub fn from_setup(mut self, baseline: ti4_policy::progress::Baseline) -> Self {
+        self.pipeline.set_baseline(baseline);
         self
     }
 
@@ -432,233 +383,72 @@ impl MlpBot {
         });
     }
 
-    /// Answer from the current plan when this prompt is the plan's; drop a plan that no longer
-    /// applies. `None` hands the prompt to the model.
-    fn planned(&mut self, choice: &Choice, seen: &SeatObservation<'_>) -> Option<ChoiceOption> {
-        let slot = self.plan.as_mut()?;
-        let starts_over = choice.options.iter().any(|option| {
-            option.kind == ti4_engine::tactical::ACTIVATE_KIND
-                || option.id == ti4_engine::game::TACTICAL_ACTION_ID
-        });
-        let elsewhere = seen.observed().active_system() != Some(&slot.system);
-        if starts_over || (elsewhere && choice.player == slot.player) {
-            self.plan = None;
-            return None;
-        }
-        if choice.player != slot.player || !ti4_policy::tactical_plan::Execution::handles(choice) {
-            return None;
-        }
-        let answer = slot.execution.answer(choice);
-        let player = slot.player.to_string();
-        match (&answer, &slot.execution.state) {
-            (Some(id), state) => {
-                let option = choice
-                    .options
-                    .iter()
-                    .find(|option| &option.id == id)?
-                    .clone();
-                self.counters.planned.fetch_add(1, Ordering::Relaxed);
-                self.trace.borrow_mut().push(PlanTrace::Planned {
-                    player,
-                    prompt: choice.prompt.clone(),
-                    chosen: option.id.clone(),
-                });
-                if *state == ti4_policy::tactical_plan::PlanState::Complete {
-                    self.plan = None;
-                }
-                Some(option)
-            }
-            (None, ti4_policy::tactical_plan::PlanState::NotOffered(reason)) => {
-                self.counters.plans_stopped.fetch_add(1, Ordering::Relaxed);
-                self.trace.borrow_mut().push(PlanTrace::Stopped {
-                    player,
-                    reason: reason.clone(),
-                });
-                self.plan = None;
-                None
-            }
-            (None, _) => None,
-        }
-    }
-
-    /// The MLP projection of a choice, with the card-text families when this bot's vocabulary
-    /// places them. The hands come from the bound seat's own observation, so no other seat's cards
-    /// are reachable.
-    fn project(
-        &self,
-        seen: &SeatObservation<'_>,
-        choice: &Choice,
-        held: &[ti4_engine::objectives::CardProgress],
-    ) -> Vec<ti4_policy::features::FeatureVector> {
-        if self.card_tags {
-            let cards = seen.held_action_cards();
-            let notes = seen.held_promissory_notes();
-            let input = ti4_policy::projection::CardTagInput {
-                held_action_cards: &cards,
-                held_promissory_notes: &notes,
-            };
-            ti4_policy::projection::mlp_choice_features_with(
-                seen.observed(),
-                choice,
-                &choice.player,
-                held,
-                self.baseline,
-                Some(&input),
-            )
-        } else {
-            ti4_policy::projection::mlp_choice_features(
-                seen.observed(),
-                choice,
-                &choice.player,
-                held,
-                self.baseline,
-            )
-        }
-    }
-
-    /// Fact version 7: after an activation, sample which candidate fleet to send and keep it as
-    /// the plan. A recorded step of the movement head, with its own options and probability.
-    #[expect(
-        clippy::too_many_lines,
-        reason = "one decision: menu, features, sampling, record, plan"
-    )]
+    /// The fleet decision after an activation (fact version 7): the pipeline's menu of candidate
+    /// fleets, scored by the actor and drawn from; the pick becomes the seat's plan. A recorded
+    /// step of the movement head, with its own options and probability.
     fn choose_package(
         &mut self,
+        scorer: &dyn Scorer,
         choice: &Choice,
         seen: &SeatObservation<'_>,
-        system: &ti4_model::id::SystemId,
+        fleet: Prepared,
         lap: &mut crate::perf::Lap,
     ) -> Result<(), IllegalChoice> {
-        let Some(actor) = self.actor.clone() else {
-            return Ok(());
-        };
-        let Some(predictor) = actor.battle_predictor() else {
-            return Ok(());
-        };
-        if !ti4_policy::battle::samples_packages(predictor.feature_version) {
-            return Ok(());
-        }
-        let menu = ti4_policy::tactical_plan::packages(
-            seen.observed(),
-            &choice.player,
-            system,
-            Some(predictor),
-        );
-        if menu.is_empty() {
-            return Ok(());
-        }
-        // The menu, then building the fleet step by step.
-        let mut options: Vec<ChoiceOption> = menu
-            .iter()
-            .enumerate()
-            .map(|(index, package)| {
-                ChoiceOption::labelled(
-                    format!("package|{index}"),
-                    PACKAGE_KIND,
-                    format!(
-                        "{}: {} ships, {} carried",
-                        package.strategy.label(),
-                        package.moves.len(),
-                        package.loads.len()
-                    ),
-                )
-            })
-            .collect();
-        options.push(ChoiceOption::labelled(
-            "package|manual",
-            PACKAGE_KIND,
-            "build the fleet step by step",
-        ));
-        let synthetic = Choice::new(choice.player.clone(), "movement", options);
-        let held = seen.held_secret_progress();
-        let vectors = self.project(seen, &synthetic, &held);
-        let facts: Vec<Vec<(&'static str, f64)>> = menu
-            .iter()
-            .map(|package| ti4_policy::battle::package_facts(Some(package)))
-            .chain(std::iter::once(ti4_policy::battle::package_facts(None)))
-            .collect();
-        let vectors = ti4_policy::battle::append_facts(vectors, &facts);
-        let sparse: Vec<SparseOption> = vectors
-            .iter()
-            .map(|vector| self.sparse_from(vector))
-            .collect::<Result<_, _>>()
-            .map_err(|reason| self.refuse(choice, reason))?;
-        let requested = ti4_policy::learned::decision_head(&synthetic);
-        let head = actor.resolve_layout_head(requested);
-        let head_index = actor
-            .layout_head_index(head)
+        self.count_columns(&fleet);
+        let head = fleet.head;
+        let probabilities = scorer
+            .logits(fleet.faction, fleet.head_index, &fleet.options)
+            .and_then(|logits| ti4_policy::mlp::probabilities(&logits, self.temperature))
             .map_err(|error| self.refuse(choice, format!("package head {head}: {error}")))?;
-        let head = head.to_owned();
-        let probabilities = actor
-            .probabilities(&sparse, &head, self.row, self.temperature)
-            .map_err(|error| self.refuse(choice, format!("package head {head}: {error}")))?;
-        if probabilities.len() != synthetic.options.len()
-            || probabilities.iter().any(|p| !p.is_finite() || *p < 0.0)
+        let picked = self
+            .pipeline
+            .pick_with(&fleet, probabilities, &mut self.rng)
+            .map_err(|_| self.refuse(choice, "malformed package distribution".to_owned()))?;
+        if let Some(mode) = self.ppo_mode
+            && fleet.choices.len() >= 2
         {
-            return Err(self.refuse(choice, "malformed package distribution".to_owned()));
-        }
-        self.counters
-            .package_decisions
-            .fetch_add(1, Ordering::Relaxed);
-        let chosen = self.sample(&probabilities);
-        let manual = chosen == menu.len();
-        self.trace.borrow_mut().push(PlanTrace::Package {
-            player: choice.player.to_string(),
-            system: system.to_string(),
-            options: synthetic
+            let synthetic = Choice::new(choice.player.clone(), "movement", fleet.choices.clone());
+            let options = fleet
                 .options
                 .iter()
-                .zip(&probabilities)
-                .zip(&facts)
-                .map(|((option, p), facts)| {
-                    (
-                        option.label.clone(),
-                        *p,
-                        facts.iter().map(|(n, v)| ((*n).to_owned(), *v)).collect(),
-                    )
-                })
-                .collect(),
-            chosen,
-        });
-        if let Some(mode) = self.ppo_mode
-            && synthetic.options.len() >= 2
-        {
+                .map(|columns| SparseOption::from_columns(columns))
+                .collect();
             self.record(
                 &synthetic,
                 seen,
                 mode,
-                &probabilities,
-                sparse,
-                head_index,
-                chosen,
+                &picked.probabilities,
+                options,
+                fleet.head_index,
+                picked.index,
                 lap,
             )?;
-            let moves_nothing = manual || menu[chosen].moves.is_empty();
-            let label = if manual {
-                "manual"
-            } else {
-                menu[chosen].strategy.label()
-            };
-            self.note(requested, label, moves_nothing);
+            self.note(fleet.requested_head, &picked.label, picked.declined);
         }
-        self.plan = (!manual).then(|| PlanSlot {
-            player: choice.player.clone(),
-            system: system.clone(),
-            execution: ti4_policy::tactical_plan::Execution::new(menu[chosen].clone()),
-        });
         Ok(())
     }
 
-    fn sample(&mut self, probabilities: &[f64]) -> usize {
-        let draw: f64 = self.rng.random_range(0.0..1.0);
-        let mut cumulative = 0.0;
-        for (index, probability) in probabilities.iter().enumerate() {
-            cumulative += *probability;
-            if draw < cumulative {
-                return index;
-            }
+    /// Count the feature names of a prepared decision that found a column, and those that fell
+    /// to an out-of-vocabulary one.
+    fn count_columns(&self, prepared: &Prepared) {
+        self.counters
+            .assigned
+            .fetch_add(prepared.assigned, Ordering::Relaxed);
+        self.counters.oov.fetch_add(prepared.oov, Ordering::Relaxed);
+    }
+
+    /// Move the pipeline's plan trace into the reviewer's, counting each entry.
+    fn sync_trace(&mut self) {
+        let entries = self.pipeline.take_trace();
+        for entry in &entries {
+            let counter = match entry {
+                PlanTrace::Package { .. } => &self.counters.package_decisions,
+                PlanTrace::Planned { .. } => &self.counters.planned,
+                PlanTrace::Stopped { .. } => &self.counters.plans_stopped,
+            };
+            counter.fetch_add(1, Ordering::Relaxed);
         }
-        probabilities.len() - 1
+        self.trace.borrow_mut().extend(entries);
     }
 
     fn refuse(&self, choice: &Choice, reason: String) -> IllegalChoice {
@@ -680,14 +470,11 @@ impl MlpBot {
     /// Every failure here refuses the decision rather than skipping the record. A skipped record is
     /// a batch that is quietly smaller and biased toward whichever states happened not to fail, and
     /// no downstream check could see it (F-M10-034-D2).
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "the behaviour quantities are only jointly meaningful; splitting them into a                   struct would move the coupling rather than remove it"
-    )]
     /// Whether this bundle's critic carries the power-projection facts: only when its vocabulary
     /// places them, so a bundle without them sees exactly the value input it always did.
     fn critic_wants_power(&self) -> bool {
-        self.vocabulary
+        self.pipeline
+            .vocabulary()
             .is_assigned(ti4_policy::critic::POWER_FACTS[0])
     }
 
@@ -699,11 +486,8 @@ impl MlpBot {
     ) -> Option<ti4_policy::power_map::Summary> {
         let reward =
             ti4_policy::progress::MEASURE_PROJECTION.load(std::sync::atomic::Ordering::Relaxed);
-        (reward || self.critic_wants_power()).then(|| {
-            self.power_cache
-                .borrow_mut()
-                .summary(seen.observed(), player)
-        })
+        (reward || self.critic_wants_power())
+            .then(|| self.pipeline.power_summary(seen.observed(), player))
     }
 
     /// The power summary for the critic alone.
@@ -712,11 +496,8 @@ impl MlpBot {
         seen: &SeatObservation<'_>,
         player: &ti4_model::id::PlayerId,
     ) -> Option<ti4_policy::power_map::Summary> {
-        self.critic_wants_power().then(|| {
-            self.power_cache
-                .borrow_mut()
-                .summary(seen.observed(), player)
-        })
+        self.critic_wants_power()
+            .then(|| self.pipeline.power_summary(seen.observed(), player))
     }
 
     /// The power summary for a projection reward alone.
@@ -727,11 +508,7 @@ impl MlpBot {
     ) -> Option<ti4_policy::power_map::Summary> {
         ti4_policy::progress::MEASURE_PROJECTION
             .load(std::sync::atomic::Ordering::Relaxed)
-            .then(|| {
-                self.power_cache
-                    .borrow_mut()
-                    .summary(seen.observed(), player)
-            })
+            .then(|| self.pipeline.power_summary(seen.observed(), player))
     }
 
     fn critic_vector(
@@ -752,7 +529,8 @@ impl MlpBot {
         player: &ti4_model::id::PlayerId,
         power: Option<&ti4_policy::power_map::Summary>,
     ) -> ti4_policy::progress::Progress {
-        let mut progress = ti4_policy::progress::measure(seen.observed(), player, self.baseline);
+        let mut progress =
+            ti4_policy::progress::measure(seen.observed(), player, self.pipeline.baseline());
         if ti4_policy::progress::MEASURE_PROJECTION.load(std::sync::atomic::Ordering::Relaxed) {
             if let Some(power) = power {
                 #[expect(
@@ -767,6 +545,10 @@ impl MlpBot {
         progress
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the behaviour quantities are only jointly meaningful; splitting them into a struct would move the coupling rather than remove it"
+    )]
     fn record(
         &mut self,
         choice: &Choice,
@@ -786,12 +568,10 @@ impl MlpBot {
             (None, None)
         } else {
             let vector = self.critic_vector(seen, power.as_ref());
-            let critic = crate::CriticInput::new(&vector, &self.vocabulary);
+            let critic = crate::CriticInput::new(&vector, self.pipeline.vocabulary());
             lap.mark(crate::perf::Stage::CriticFeatures);
             let value = self
-                .actor
-                .as_ref()
-                .ok_or_else(|| self.refuse(choice, "CPU MLP bot has no actor".to_owned()))?
+                .inference
                 .value(&critic, self.row)
                 .map_err(|error| self.refuse(choice, format!("critic inference: {error}")))?;
             if !value.is_finite() {
@@ -898,11 +678,21 @@ impl MlpBot {
         Ok(())
     }
 
+    fn decide(
+        &mut self,
+        choice: &Choice,
+        seen: &SeatObservation<'_>,
+    ) -> Result<ChoiceOption, IllegalChoice> {
+        let decided = self.decide_untraced(choice, seen);
+        self.sync_trace();
+        decided
+    }
+
     #[expect(
         clippy::too_many_lines,
         reason = "one decision, from features to the sampled option"
     )]
-    fn decide(
+    fn decide_untraced(
         &mut self,
         choice: &Choice,
         seen: &SeatObservation<'_>,
@@ -914,122 +704,31 @@ impl MlpBot {
             });
         }
         let mut lap = crate::perf::Lap::start();
-        if let Some(option) = self.planned(choice, seen) {
-            return Ok(option);
-        }
-        let held = seen.held_secret_progress();
-        // The seat's own setup baseline goes in with the features: the opening-progress facts are
-        // deltas against it, and a bot that passed a default would report absolute holdings as
-        // gains — wrong in the flattering direction, and invisible.
-        let vectors = self.project(seen, choice, &held);
-        // An arena-capable actor adds each movement option's battle facts; any other actor sees
-        // exactly the vectors it always did.
-        let vectors = match self
-            .actor
-            .as_ref()
-            .and_then(|actor| actor.battle_predictor())
-        {
-            Some(predictor) => {
-                let facts = ti4_policy::battle::decision_facts(
-                    seen.observed(),
-                    choice,
-                    &choice.player,
-                    predictor,
-                );
-                ti4_policy::battle::append_facts(vectors, &facts)
-            }
-            None => vectors,
+        // A handle (an `Rc`, an `Arc` or the client), so that the bot can be borrowed mutably
+        // while the model scores.
+        let inference = self.inference.clone();
+        let model = inference.info();
+        let scorer = inference.scorer();
+        let gpu = match &inference {
+            Inference::Gpu(client) => Some(client),
+            Inference::Tch(_) | Inference::Infer(_) => None,
         };
-        // Deal values on diplomacy options, for a bundle whose vocabulary places them (migrated
-        // with the names appended); any other bundle sees exactly the vectors it always did.
-        let vectors = if self
-            .vocabulary
-            .is_assigned(ti4_policy::deal_value::FACT_SCORE)
-        {
-            let facts = ti4_policy::deal_value::deal_facts(seen.observed(), choice);
-            ti4_policy::battle::append_facts(vectors, &facts)
-        } else {
-            vectors
-        };
-        // Power projection per option, for a bundle whose vocabulary places the names (migrated
-        // with them appended); any other bundle sees exactly the vectors it always did. The whole
-        // table's projection is computed at the activation decision and reused for the moves of
-        // that action, which see the board as it stood when the system was chosen.
-        let vectors = if self
-            .vocabulary
-            .is_assigned(ti4_policy::power_facts::NAMES[0])
-        {
-            let summary = self
-                .power_cache
-                .borrow_mut()
-                .summary(seen.observed(), &choice.player);
-            let needs_table = choice.options.iter().any(|option| {
-                option.kind == ti4_engine::tactical::ACTIVATE_KIND
-                    || option.kind == ti4_engine::tactical::MOVE_KIND
-            });
-            if needs_table && (seen.active_system().is_none() || self.last_table.borrow().is_none())
-            {
-                *self.last_table.borrow_mut() =
-                    Some(ti4_policy::power_facts::TablePower::of(seen.observed()));
-            }
-            let table = self.last_table.borrow();
-            let facts = ti4_policy::power_facts::decision_facts(
-                seen.observed(),
-                choice,
-                &choice.player,
-                &summary,
-                if needs_table { table.as_ref() } else { None },
-            );
-            ti4_policy::battle::append_facts(vectors, &facts)
-        } else {
-            vectors
+        // The features of the shared pipeline (`ti4_policy::mlp`), or the answer of the seat's
+        // fleet plan. The columns are resolved there too, so the vocabulary stage of a profile is
+        // counted with the features.
+        let prepared = match self.pipeline.features(model, choice, seen) {
+            Ok(Features::Planned(option)) => return Ok(option),
+            Ok(Features::Score(prepared)) => prepared,
+            Err(error) => return Err(self.refuse(choice, error.to_string())),
         };
         lap.mark(crate::perf::Stage::Features);
-        let options: Vec<SparseOption> = vectors
-            .iter()
-            .map(|vector| self.sparse_from(vector))
-            .collect::<Result<_, _>>()
-            .map_err(|reason| self.refuse(choice, reason))?;
+        self.count_columns(&prepared);
         lap.mark(crate::perf::Stage::Vocabulary);
-        if options.len() != choice.options.len() {
-            return Err(self.refuse(
-                choice,
-                format!(
-                    "MLP projection produced {} vectors for {} legal options",
-                    options.len(),
-                    choice.options.len()
-                ),
-            ));
-        }
-
-        let requested_head = ti4_policy::learned::decision_head(choice);
-        // `head_index` is fallible and returns `Result`; the schema is fixed, so a miss here is a
-        // build inconsistency rather than a runtime condition — but it refuses rather than
-        // defaulting to head 0, which would train the wrong readout (F-M10-034-D2).
-        let (head, head_index) = if let Some(actor) = &self.actor {
-            let head = actor.resolve_layout_head(requested_head);
-            let index = actor.layout_head_index(head).map_err(|error| {
-                self.refuse(
-                    choice,
-                    format!("resolved MLP head {head} is not in the schema: {error}"),
-                )
-            })?;
-            (head.to_owned(), index)
-        } else if let Some(gpu) = &self.gpu {
-            let head = gpu.resolve_layout_head(requested_head);
-            let index = gpu.layout_head_index(head).map_err(|error| {
-                self.refuse(
-                    choice,
-                    format!("resolved GPU MLP head {head} is not in the schema: {error}"),
-                )
-            })?;
-            (head.to_owned(), index)
-        } else {
-            return Err(self.refuse(choice, "MLP bot has no inference backend".to_owned()));
-        };
+        let head = prepared.head;
+        let head_index = prepared.head_index;
         // The CPU path intentionally retains its original ordering: it only builds a critic input
         // after sampling. The GPU service needs actor and critic inputs together to batch both.
-        let gpu_critic = if self.gpu.is_some()
+        let gpu_critic = if gpu.is_some()
             && self.ppo_mode.is_some()
             && choice.options.len() >= 2
             && !matches!(self.ppo_mode, Some(crate::bundle::CriticMode::BatchMean))
@@ -1037,13 +736,23 @@ impl MlpBot {
             let power = self.critic_power_summary(seen, &choice.player);
             let vector = self.critic_vector(seen, power.as_ref());
             lap.mark(crate::perf::Stage::CriticFeatures);
-            Some(crate::CriticInput::new(&vector, &self.vocabulary))
+            Some(crate::CriticInput::new(&vector, self.pipeline.vocabulary()))
         } else {
             None
         };
+        let sparse = || -> Vec<SparseOption> {
+            prepared
+                .options
+                .iter()
+                .map(|columns| SparseOption::from_columns(columns))
+                .collect()
+        };
         let mut gpu_value = None;
-        let probabilities = if let Some(actor) = &self.actor {
-            match actor.probabilities(&options, &head, self.row, self.temperature) {
+        let probabilities = if let Some(scorer) = scorer {
+            match scorer
+                .logits(prepared.faction, head_index, &prepared.options)
+                .and_then(|logits| ti4_policy::mlp::probabilities(&logits, self.temperature))
+            {
                 Ok(probabilities) => probabilities,
                 Err(error) => {
                     self.counters.fallbacks.fetch_add(1, Ordering::Relaxed);
@@ -1057,9 +766,9 @@ impl MlpBot {
                     });
                 }
             }
-        } else if let Some(gpu) = &self.gpu {
+        } else if let Some(gpu) = gpu {
             match gpu.score(
-                options.clone(),
+                sparse(),
                 head_index,
                 self.row,
                 self.temperature,
@@ -1077,21 +786,19 @@ impl MlpBot {
             return Err(self.refuse(choice, "MLP bot has no inference backend".to_owned()));
         };
         lap.mark(crate::perf::Stage::Forward);
-        if probabilities.len() != choice.options.len()
-            || probabilities
-                .iter()
-                .any(|probability| !probability.is_finite() || *probability < 0.0)
-        {
-            return Err(self.refuse(
-                choice,
-                "MLP returned a malformed probability distribution".to_owned(),
-            ));
-        }
-        self.counters.decisions.fetch_add(1, Ordering::Relaxed);
 
         // Sample. The cumulative walk is the same shape the linear bot uses, so a comparison
         // between them is about the policy rather than about the sampler.
-        let chosen = self.sample(&probabilities);
+        let picked = self
+            .pipeline
+            .pick_with(&prepared, probabilities, &mut self.rng)
+            .map_err(|_| {
+                self.refuse(
+                    choice,
+                    "MLP returned a malformed probability distribution".to_owned(),
+                )
+            })?;
+        self.counters.decisions.fetch_add(1, Ordering::Relaxed);
 
         lap.mark(crate::perf::Stage::Sampling);
 
@@ -1102,15 +809,15 @@ impl MlpBot {
         if let Some(mode) = self.ppo_mode
             && choice.options.len() >= 2
         {
-            if self.gpu.is_some() {
+            if gpu.is_some() {
                 self.record_gpu(
                     choice,
                     seen,
                     mode,
-                    &probabilities,
-                    options,
+                    &picked.probabilities,
+                    sparse(),
                     head_index,
-                    chosen,
+                    picked.index,
                     gpu_critic,
                     gpu_value,
                     &mut lap,
@@ -1120,24 +827,24 @@ impl MlpBot {
                     choice,
                     seen,
                     mode,
-                    &probabilities,
-                    options,
+                    &picked.probabilities,
+                    sparse(),
                     head_index,
-                    chosen,
+                    picked.index,
                     &mut lap,
                 )?;
             }
-            let taken = &choice.options[chosen];
-            self.note(requested_head, &taken.id, taken.is_decline());
+            self.note(prepared.requested_head, &picked.label, picked.declined);
         }
 
-        let taken = choice.options[chosen].clone();
-        if taken.kind == ti4_engine::tactical::ACTIVATE_KIND {
-            self.plan = None;
-            let system = ti4_model::id::SystemId::new(taken.id.clone());
-            self.choose_package(choice, seen, &system, &mut lap)?;
+        let fleet = self
+            .pipeline
+            .fleet(model, choice, seen, &picked)
+            .map_err(|error| self.refuse(choice, error.to_string()))?;
+        if let (Some(fleet), Some(scorer)) = (fleet, scorer) {
+            self.choose_package(scorer, choice, seen, fleet, &mut lap)?;
         }
-        Ok(taken)
+        Ok(picked.option)
     }
 }
 
@@ -1231,16 +938,28 @@ mod tests {
         assert!(!names.is_empty());
 
         let old = ti4_policy::vocabulary::Vocabulary::build(["seat-state:vp"]).expect("builds");
-        assert!(!MlpBot::sharing(&actor, old.clone(), row, 1).card_tags);
+        assert!(
+            !MlpBot::sharing(&actor, old.clone(), row, 1)
+                .pipeline
+                .card_tags()
+        );
 
         let mut partial = old.clone();
         partial
             .append_reallocating(names.iter().skip(1))
             .expect("appends");
-        assert!(!MlpBot::sharing(&actor, partial, row, 1).card_tags);
+        assert!(
+            !MlpBot::sharing(&actor, partial, row, 1)
+                .pipeline
+                .card_tags()
+        );
 
         let mut migrated = old;
         migrated.append_reallocating(names.iter()).expect("appends");
-        assert!(MlpBot::sharing(&actor, migrated, row, 1).card_tags);
+        assert!(
+            MlpBot::sharing(&actor, migrated, row, 1)
+                .pipeline
+                .card_tags()
+        );
     }
 }

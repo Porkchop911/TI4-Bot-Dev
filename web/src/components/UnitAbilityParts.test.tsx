@@ -2,12 +2,13 @@ import { describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { PendingChoiceModal } from "./PendingChoiceModal.tsx";
 import type { PendingChoiceDto } from "../protocol/types.ts";
+import { partialContext } from "../test/wire.ts";
 
 const choice: PendingChoiceDto = {
   prompt: "Orbital Drop: deploy a mech on jord",
   actor: "a",
   nonce: "n2",
-  context: { subtype: "orbital_drop_deploy_mech", optional: true },
+  context: partialContext({ subtype: "orbital_drop_deploy_mech", optional: true }),
   options: [
     {
       id: "deploy|sol_mech|1",
@@ -15,7 +16,7 @@ const choice: PendingChoiceDto = {
       kind: "produce",
       payload: { unit: "sol_mech", count: 1, cost: 3, system: "18", planet: "jord", orbital_drop_deploy: true },
     },
-    { id: "decline", label: "Pass", kind: "decline" },
+    { id: "decline", label: "Pass", kind: "decline", payload: {} },
   ],
 };
 

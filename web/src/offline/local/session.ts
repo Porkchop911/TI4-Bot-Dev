@@ -1,7 +1,7 @@
 import { engineHashOf, engineUrl } from "./engineAsset.ts";
-import type { FromWorker, HostPort, ToWorker } from "./hostProtocol.ts";
+import type { FromWorker, HostPort, ToWorker } from "@ti4/shared/engine/protocol.ts";
 import { LocalTransport, type LocalTransportOptions } from "./LocalTransport.ts";
-import { sha256Hex } from "./sha256.ts";
+import { type EngineIdentity, sha256Hex } from "@ti4/shared/engine/identity.ts";
 
 /**
  * The lazily loaded half of the launcher: the engine file, the Web Worker and the transport.
@@ -13,13 +13,6 @@ export interface LoadedEngine {
   /** Content hash of the engine file's name. */
   hash: string;
   /** sha-256 of the engine file itself (what saves and feedback name). */
-  wasmSha256: string;
-}
-
-/** Which engine this is: build and content digest as the engine says, the file hash as measured. */
-export interface EngineIdentity {
-  build: string;
-  contentDigest: string;
   wasmSha256: string;
 }
 
@@ -54,36 +47,46 @@ async function compile(url: string): Promise<{ module: WebAssembly.Module; wasmS
   return { module: await WebAssembly.compile(bytes), wasmSha256: await hashing };
 }
 
+/**
+ * A question of the engine that needs no game (`{"query": ...}`: `describe`), asked in a
+ * short-lived worker. The catalog and the odds ask the page's instance (`protocol/pageEngine.ts`).
+ */
+export async function engineQuery(engine: LoadedEngine, request: object): Promise<unknown> {
+  const port = await workerPort(engine);
+  try {
+    return await new Promise<unknown>((resolve, reject) => {
+      port.listen((message) => {
+        if (message.t === "reply" && message.id === 1) {
+          if (message.error !== undefined) reject(new Error(message.error));
+          else resolve(message.value);
+        }
+      });
+      port.post({ t: "query", id: 1, request });
+    });
+  } finally {
+    port.terminate();
+  }
+}
+
 const identity = new WeakMap<LoadedEngine, Promise<EngineIdentity>>();
 
 /**
  * What the engine says about itself (`describe`: build and content digest) plus the file hash.
- * Asked once per loaded engine, in a short-lived worker, so it is known before a saved game is
- * replayed.
+ * Asked once per loaded engine, so it is known before a saved game is replayed.
  */
 export function engineIdentity(engine: LoadedEngine): Promise<EngineIdentity> {
   let found = identity.get(engine);
   if (!found) {
     found = (async () => {
-      const port = await workerPort(engine);
-      try {
-        const described = await new Promise<{ engine_build?: string; content_digest?: string }>((resolve, reject) => {
-          port.listen((message) => {
-            if (message.t === "reply" && message.id === 1) {
-              if (message.error !== undefined) reject(new Error(message.error));
-              else resolve((message.value ?? {}) as { engine_build?: string; content_digest?: string });
-            }
-          });
-          port.post({ t: "query", id: 1, request: { query: "describe" } });
-        });
-        return {
-          build: described.engine_build ?? "unknown",
-          contentDigest: described.content_digest ?? "unknown",
-          wasmSha256: engine.wasmSha256,
-        };
-      } finally {
-        port.terminate();
-      }
+      const described = ((await engineQuery(engine, { query: "describe" })) ?? {}) as {
+        engine_build?: string;
+        content_digest?: string;
+      };
+      return {
+        build: described.engine_build ?? "unknown",
+        contentDigest: described.content_digest ?? "unknown",
+        wasmSha256: engine.wasmSha256,
+      };
     })();
     identity.set(engine, found);
     found.catch(() => identity.delete(engine));
@@ -93,7 +96,10 @@ export function engineIdentity(engine: LoadedEngine): Promise<EngineIdentity> {
 
 /** A new Web Worker with the engine module handed in; resolves when it is ready. */
 export function workerPort(engine: LoadedEngine): Promise<HostPort> {
-  const worker = new Worker(new URL("./hostWorker.ts", import.meta.url), { type: "module" });
+  // A relative path, not `@ti4/shared`: vite bundles a Worker only from a literal `new URL`.
+  const worker = new Worker(new URL("../../../../web-shared/src/engine/worker.ts", import.meta.url), {
+    type: "module",
+  });
   let listener: (message: FromWorker) => void = () => undefined;
   const port: HostPort = {
     post: (message: ToWorker) => worker.postMessage(message),

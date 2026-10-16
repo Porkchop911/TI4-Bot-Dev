@@ -86,9 +86,10 @@ fn main() {
     let temperature: f64 = number("--temperature", 0.001);
     let max_steps: usize = number("--max-steps", 40_000);
     let diplomacy = std::env::args().any(|a| a == "--diplomacy");
-    let roster = argument("--roster").map_or(ti4_engine::seating::FactionRoster::InScope, |value| {
-        ti4_training::rollout::parse_roster(&value).unwrap_or_else(|error| refuse(&error))
-    });
+    let roster = argument("--roster")
+        .map_or(ti4_engine::seating::FactionRoster::InScope, |value| {
+            ti4_training::rollout::parse_roster(&value).unwrap_or_else(|error| refuse(&error))
+        });
     let pool_path =
         argument("--map-pool").unwrap_or_else(|| "out/pools/full_np8_12_holdout.json".to_owned());
     let per_seat = argument("--per-seat");
@@ -181,12 +182,7 @@ fn main() {
                                 if is_rule(index) {
                                     deciders.insert(
                                         player.clone(),
-                                        Box::new(
-                                            ti4_server::session::random_bot::RuleBotDecider::new(
-                                                player.clone(),
-                                                seed,
-                                            ),
-                                        ),
+                                        Box::new(ti4_rule_bot::RuleBotDecider::new(index, seed)),
                                     );
                                     continue;
                                 }

@@ -1,12 +1,8 @@
-import { useCapability } from "../offline/capabilities.ts";
 import { useParticipantText } from "../presentation/PlayerIdentity.tsx";
 import React, { useEffect, useRef, useState } from "react";
-import type { BoardView, PendingChoiceDto, PlayerView } from "../protocol/types.ts";
-import {
-  fetchGroundOdds,
-  normalizeFaction,
-  type GroundOddsRequest,
-} from "../services/advisorService.ts";
+import type { BoardView, GroundOddsRequest, PendingChoiceDto, PlayerView } from "../protocol/types.ts";
+import { groundOdds } from "@ti4/shared/engine/odds.ts";
+import { useOddsEngine } from "./OddsEngine.tsx";
 import { getPlanetEffectiveValues } from "../presentation/playerStats.ts";
 import { DecisionHeader } from "./DecisionHeader.tsx";
 import { UnitIcon, getUnitDisplayName } from "./UnitIcon.tsx";
@@ -51,6 +47,8 @@ export const InvasionLandingTray: React.FC<{
   draft?: Landing[];
   onDraftChange?: (draft: Landing[]) => void;
   embedded?: boolean;
+  /** The live decision is not this landing offer (the tray keeps the last one while hidden). */
+  interrupted?: boolean;
 }> = ({
   choice,
   board,
@@ -62,9 +60,12 @@ export const InvasionLandingTray: React.FC<{
   draft: controlledDraft,
   onDraftChange,
   embedded = false,
+  interrupted = false,
 }) => {
   const present = useParticipantText();
-  const advisorOn = useCapability("advisor");
+  const oddsEngine = useOddsEngine();
+  const oddsQuery = oddsEngine.state === "ready" ? oddsEngine.query : null;
+  const oddsPending = oddsEngine.state === "loading";
   const system = board?.invasion?.system_id ?? board?.active_system ?? "";
   const [localDraft, setLocalDraft] = useState<Landing[]>([]);
   const draft = controlledDraft ?? localDraft;
@@ -198,7 +199,11 @@ export const InvasionLandingTray: React.FC<{
       setOdds({ key: previewKey, value: "unavailable" });
       return;
     }
-    if (!advisorOn || !players?.[choice.actor] || !players[opponent]) {
+    if (oddsPending) {
+      setOdds({ key: previewKey, value: "loading" });
+      return;
+    }
+    if (!oddsQuery || !players?.[choice.actor] || !players[opponent]) {
       setOdds({ key: previewKey, value: "unavailable" });
       return;
     }
@@ -219,32 +224,36 @@ export const InvasionLandingTray: React.FC<{
       ...planned.map((item) => ({ unit_type: item.unit, damaged: item.damaged })),
     ]);
     const request: GroundOddsRequest = {
-      attacker: { faction: normalizeFaction(players[choice.actor].faction), ...attack },
+      attacker: { faction: players[choice.actor].faction ?? "generic", ...attack },
       defender: {
-        faction: normalizeFaction(players[opponent].faction),
+        faction: players[opponent].faction ?? "generic",
         ...count(defenderForces),
         guns: context.additional_guns,
       },
       harrow: context.harrow_units,
       simulations: 2000,
     };
-    const controller = new AbortController();
+    let active = true;
     setOdds({ key: previewKey, value: "loading" });
-    void fetchGroundOdds(request, controller.signal)
+    groundOdds(oddsQuery, request)
       .then((result) => {
-        if (!controller.signal.aborted)
-          setOdds({ key: previewKey, value: result.attacker_win_rate });
+        if (active) setOdds({ key: previewKey, value: result.attacker_win_rate });
       })
-      .catch(() => {
-        if (!controller.signal.aborted) setOdds({ key: previewKey, value: "unavailable" });
+      .catch((error: unknown) => {
+        console.warn("The engine gave no odds for this landing:", error);
+        if (active) setOdds({ key: previewKey, value: "unavailable" });
       });
-    return () => controller.abort();
-  }, [previewKey, choice.actor, viewerSeat, advisorOn]);
+    return () => {
+      active = false;
+    };
+  }, [previewKey, choice.actor, viewerSeat, oddsQuery, oddsPending]);
 
   useEffect(() => {
-    if (!running || submitting.current || submittedNonce.current === choice.nonce || !draft.length)
-      return;
+    if (!running || submitting.current || !draft.length) return;
+    // A hidden tray still holds the last landing offer, whose nonce was answered: check the
+    // interruption before the nonce, or the draft resumes on the next offer instead of pausing.
     if (
+      interrupted ||
       choice.actor !== origin.current.actor ||
       system !== origin.current.system ||
       choice.context?.subtype !== "commit_ground_forces"
@@ -255,6 +264,7 @@ export const InvasionLandingTray: React.FC<{
       );
       return;
     }
+    if (submittedNonce.current === choice.nonce) return;
     const next = draft[0];
     const offered = options.find(({ landing }) => same(landing, next));
     if (!offered) {
@@ -277,7 +287,7 @@ export const InvasionLandingTray: React.FC<{
       .finally(() => {
         submitting.current = false;
       });
-  }, [running, draft, choice.nonce, choice.actor, choice.context?.subtype, system]);
+  }, [running, draft, interrupted, choice.nonce, choice.actor, choice.context?.subtype, system]);
 
   useEffect(() => {
     if (running && draft.length === 0) setRunning(false);

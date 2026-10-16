@@ -9,18 +9,20 @@ use std::time::{Duration, Instant};
 
 use ti4_content::ContentStore;
 use ti4_engine::choice::DecisionRecord;
+use ti4_host::protocol::server::GameEvent;
+use ti4_host::protocol::status::ViewerRole;
+use ti4_host::replay::{replay_session_forced, replay_session_with_copy};
+use ti4_host::rng_force::RngMarks;
 use ti4_model::id::PlayerId;
-use ti4_server::protocol::server::GameEvent;
-use ti4_server::protocol::status::ViewerRole;
-use ti4_server::session::replay::{replay_session_forced, replay_session_with_copy};
-use ti4_server::session::{GameSession, RngMarks, SeatController, SessionConfig};
+use ti4_server::session::{GameSession, SeatController, SessionConfig};
 
 fn base_config() -> SessionConfig {
     let players: Vec<PlayerId> = ["p1", "p2", "p3"].into_iter().map(PlayerId::new).collect();
     let content = ContentStore::embedded();
     let (state, galaxy) =
-        ti4_server::map::create_game_with_map(content, &players, 515_151).expect("create map");
-    let tiles = ti4_server::map::build_board_tiles(content, &galaxy);
+        ti4_host::map::create_game_with_template(content, &players, 515_151, None)
+            .expect("create map");
+    let tiles = ti4_host::map::build_board_tiles(content, &galaxy);
     SessionConfig::new("game_replay_copy", state)
         .with_galaxy(galaxy, tiles)
         .with_player_ids(players.clone())

@@ -229,7 +229,7 @@ test("production builder accepts a real pointer click on a unit", async ({ page 
   await expect(page.getByTestId("production-resources-counter")).toHaveText(
     "0 / 5 (5 Left)",
   );
-  await expect(page.getByText("1x carrier for 3")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add 1x carrier for 3" })).toBeVisible();
   await expect(page.getByText("produce 1x carrier for 3")).toHaveCount(0);
   await page.getByTestId("produce-unit-btn-build|carrier|1").click({ timeout: 3_000 });
   await expect(page.getByTestId("produce-count-build|carrier|1")).toHaveText("1");

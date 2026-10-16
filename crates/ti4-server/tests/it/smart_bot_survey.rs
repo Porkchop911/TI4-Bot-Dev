@@ -18,16 +18,16 @@ fn config_with(id: &str, seed: u64, controllers: &[SeatController]) -> SessionCo
     let ids: Vec<PlayerId> = (1..=controllers.len())
         .map(|i| PlayerId::new(format!("p{i}")))
         .collect();
-    let (state, galaxy) = ti4_server::map::create_game_with_options(
+    let (state, galaxy) = ti4_host::map::create_game_with_template_seated(
         ContentStore::embedded(),
         &ids,
         seed,
         None,
-        None,
+        &ti4_engine::seating::seat_in_scope(&ids),
         Some("te"),
     )
     .expect("create game");
-    let tiles = ti4_server::map::build_board_tiles(ContentStore::embedded(), &galaxy);
+    let tiles = ti4_host::map::build_board_tiles(ContentStore::embedded(), &galaxy);
     let mut config = SessionConfig::new(id, state)
         .with_seed(seed)
         .with_player_ids(ids.clone())
@@ -141,8 +141,8 @@ fn survey_smart_bot_games() {
         .ok()
         .and_then(|r| r.parse().ok())
         .unwrap_or(12);
-    let smart = SeatController::BotSmart;
-    let random = SeatController::BotRandom;
+    let smart = SeatController::SMART;
+    let random = SeatController::RANDOM;
     let mut tables: Vec<(String, u64, Vec<SeatController>)> = Vec::new();
     let seeds: Option<Vec<u64>> = std::env::var("SURVEY_SEEDS").ok().map(|list| {
         list.split(',')
@@ -209,7 +209,7 @@ fn survey_smart_bot_games() {
         eprintln!("RESULT {id} round {} best {best}", state.round);
         for (seat, controller) in state.players.iter().zip(&seats) {
             let won = state.finished && seat.victory_points == best;
-            if *controller == SeatController::BotSmart {
+            if *controller == SeatController::SMART {
                 smart_vp += seat.victory_points;
                 smart_seats += 1;
                 smart_wins += usize::from(won && id.starts_with("mixed"));
@@ -255,37 +255,31 @@ fn opening(seats: usize, seed: u64, roster: bool, rounds: u32) -> Vec<RoundRow> 
         .map(|i| PlayerId::new(format!("p{i}")))
         .collect();
     // Factions from the whole roster by seed (`+fac`), or the default in-scope seating.
-    let (mut initial, galaxy) = match ti4_server::preset::roster("explore+fac", seed, &ids) {
-        Some(assignments) if roster => ti4_server::map::create_game_with_template_seated(
-            ContentStore::embedded(),
-            &ids,
-            seed,
-            None,
-            &assignments,
-            Some("te"),
-        ),
-        _ => ti4_server::map::create_game_with_options(
-            ContentStore::embedded(),
-            &ids,
-            seed,
-            None,
-            None,
-            Some("te"),
-        ),
-    }
+    let assignments = match ti4_host::preset::roster("explore+fac", seed, &ids) {
+        Some(assignments) if roster => assignments,
+        _ => ti4_engine::seating::seat_in_scope(&ids),
+    };
+    let (mut initial, galaxy) = ti4_host::map::create_game_with_template_seated(
+        ContentStore::embedded(),
+        &ids,
+        seed,
+        None,
+        &assignments,
+        Some("te"),
+    )
     .expect("create game");
     // The speaker (first draft pick) rotates with the seed, so no seat always drafts first; only
     // this survey's tables, not the game setup.
     let speaker = usize::try_from(seed).unwrap_or(0) % seats;
     initial.speaker = ids[speaker].clone();
-    let tiles = ti4_server::map::build_board_tiles(ContentStore::embedded(), &galaxy);
+    let tiles = ti4_host::map::build_board_tiles(ContentStore::embedded(), &galaxy);
     let mut config = SessionConfig::new(format!("opening_{seats}_{seed}"), initial.clone())
         .with_seed(seed)
         .with_player_ids(ids.clone())
         .with_galaxy(galaxy.clone(), tiles)
         .with_random_bot_delay_ms(0);
     for id in &ids {
-        config = config.with_seat(id.clone(), SeatController::BotSmart);
+        config = config.with_seat(id.clone(), SeatController::SMART);
     }
     let session = GameSession::start(config);
     let start = Instant::now();
@@ -327,8 +321,7 @@ fn opening(seats: usize, seed: u64, roster: bool, rounds: u32) -> Vec<RoundRow> 
             std::fs::write(format!("{dir}/opening_{seats}_{seed}_r{round}.jsonl"), text)
                 .expect("write dump");
         }
-        let state = match ti4_server::session::replay_session(&initial, Some(&galaxy), &log[..end])
-        {
+        let state = match ti4_host::replay::replay_session(&initial, Some(&galaxy), &log[..end]) {
             Ok(report) => report.final_state,
             Err(error) => {
                 // A replay that diverges says nothing about the bot: the table is left out.
@@ -619,8 +612,8 @@ fn midgame(seats: usize, seed: u64, rounds: u32) -> (Vec<MidRow>, bool, u32) {
         .map(|i| PlayerId::new(format!("p{i}")))
         .collect();
     let assignments =
-        ti4_server::preset::roster("explore+fac", seed, &ids).expect("roster assignment");
-    let (mut initial, galaxy) = ti4_server::map::create_game_with_template_seated(
+        ti4_host::preset::roster("explore+fac", seed, &ids).expect("roster assignment");
+    let (mut initial, galaxy) = ti4_host::map::create_game_with_template_seated(
         ContentStore::embedded(),
         &ids,
         seed,
@@ -631,14 +624,14 @@ fn midgame(seats: usize, seed: u64, rounds: u32) -> (Vec<MidRow>, bool, u32) {
     .expect("create game");
     let speaker = usize::try_from(seed).unwrap_or(0) % seats;
     initial.speaker = ids[speaker].clone();
-    let tiles = ti4_server::map::build_board_tiles(ContentStore::embedded(), &galaxy);
+    let tiles = ti4_host::map::build_board_tiles(ContentStore::embedded(), &galaxy);
     let mut config = SessionConfig::new(format!("midgame_{seats}_{seed}"), initial)
         .with_seed(seed)
         .with_player_ids(ids.clone())
         .with_galaxy(galaxy, tiles)
         .with_random_bot_delay_ms(0);
     for id in &ids {
-        config = config.with_seat(id.clone(), SeatController::BotSmart);
+        config = config.with_seat(id.clone(), SeatController::SMART);
     }
     let session = GameSession::start(config);
     let mut rows = Vec::new();

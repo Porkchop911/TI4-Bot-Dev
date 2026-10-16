@@ -6,14 +6,15 @@ import {
   illegalTargetReason,
   isBarrageWindow,
 } from "./hitKind.ts";
+import { partialContext } from "../test/wire.ts";
 
 describe("deriveHitKind", () => {
   it("Assault Cannon is a destroy that only non-fighter ships can take", () => {
     const model = deriveHitKind(
-      {
+      partialContext({
         subtype: "assault_cannon_destroy",
         hit: { cause: "assault_cannon", destroy: true, restriction: "non_fighter" },
-      },
+      }),
       { producer: "Ann" },
     )!;
     expect(model.source).toBe("Assault Cannon");
@@ -31,7 +32,7 @@ describe("deriveHitKind", () => {
 
   it("Courageous to the End destroys any ship and cannot be sustained", () => {
     const model = deriveHitKind(
-      { subtype: "courageous_to_the_end_assign_casualty" },
+      partialContext({ subtype: "courageous_to_the_end_assign_casualty" }),
       { producer: "Bo" },
     )!;
     expect(model.headline).toContain("Courageous to the End");
@@ -42,10 +43,10 @@ describe("deriveHitKind", () => {
 
   it("a Waylay-widened barrage hit is a normal hit on any ship, counted", () => {
     const model = deriveHitKind(
-      {
+      partialContext({
         subtype: "assign_casualty",
         hit: { cause: "anti_fighter_barrage", destroy: false, restriction: "any" },
-      },
+      }),
       { producer: "Cy", hits: 2 },
     )!;
     expect(model.headline).toBe("Anti-Fighter Barrage: 2 hits from Cy to assign");
@@ -55,10 +56,10 @@ describe("deriveHitKind", () => {
 
   it("Space Cannon hits bound to non-fighters (Graviton) say so", () => {
     const model = deriveHitKind(
-      {
+      partialContext({
         subtype: "assign_casualty",
         hit: { cause: "space_cannon", destroy: false, restriction: "non_fighter" },
-      },
+      }),
       { hits: 1 },
     )!;
     expect(model.headline).toBe("Space Cannon: 1 hit from your opponent to assign");
@@ -66,7 +67,7 @@ describe("deriveHitKind", () => {
   });
 
   it("says nothing about an ordinary decision with no hit detail", () => {
-    expect(deriveHitKind({ subtype: "assign_casualty" }, {})).toBeNull();
+    expect(deriveHitKind(partialContext({ subtype: "assign_casualty" }), {})).toBeNull();
     expect(hitDetailOf(null)).toBeNull();
   });
 });
@@ -74,18 +75,18 @@ describe("deriveHitKind", () => {
 describe("deriveBarrageWindow", () => {
   it("recognises the window by trigger or subtype", () => {
     expect(
-      isBarrageWindow({
+      isBarrageWindow(partialContext({
         subtype: "x",
         trigger: { kind: "anti_fighter_barrage", event_type: "", event_id: 1, relation: "when" },
-      }),
+      })),
     ).toBe(true);
-    expect(isBarrageWindow({ subtype: "reaction_when_ANTI_FIGHTER_BARRAGE_STARTED" })).toBe(true);
-    expect(isBarrageWindow({ subtype: "reaction_after_SPACE_COMBAT_WON" })).toBe(false);
+    expect(isBarrageWindow(partialContext({ subtype: "reaction_when_ANTI_FIGHTER_BARRAGE_STARTED" }))).toBe(true);
+    expect(isBarrageWindow(partialContext({ subtype: "reaction_after_SPACE_COMBAT_WON" }))).toBe(false);
   });
 
   it("names the roller and says the hits are automatic fighter kills", () => {
     const model = deriveBarrageWindow(
-      { subtype: "reaction_when_ANTI_FIGHTER_BARRAGE_STARTED" },
+      partialContext({ subtype: "reaction_when_ANTI_FIGHTER_BARRAGE_STARTED" }),
       "Ann",
     )!;
     expect(model.headline).toBe("Anti-Fighter Barrage: before Ann rolls");
