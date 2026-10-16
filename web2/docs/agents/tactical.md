@@ -46,7 +46,7 @@ The owner chose this design on 2026-10-10, from three that were compared.
 - The tab of the step says the round ("Round 2"). The other steps are as in the action: the Movement tab is read while the combat is open, with "Continue to space combat".
 - The step has one battle table, of the round as the engine started it (`CombatView.round_start`): the attacker and the defender, each printed unit with its count, what it hits on, and "1 damaged" for the damaged ones. The header of the table has the round and its stage ("Before the roll", "Anti-fighter barrage", "Hits to assign", "Retreat"), and once someone owes hits, "3 hits for … to assign".
 - Before the roll a row has the dice that the units roll and the hits that they score on average ("≈0.6"), and the value is the printed one. After the roll the value is what the dice of the engine needed, in the accent colour with the printed value on hover when it differs, and the hits of each side are in its header. The engine rolls the ships of one value together, so the dice are not shown on the rows yet.
-- Whom the game waits for is the pill of the step ("Waiting for Letnev") and the note of the footer. The open question of the viewer is the pill "Your decision".
+- Whom the game waits for is the pill of the step ("Waiting for Letnev") and the note of the footer. The open question of the viewer is "Your decision" in the bar of the game; the pill of the step says only what the bar does not ("Movement goes on").
 - The question of the viewer that has no place on the rows is the list of a decision, with its prompt, above the table; the footer sends it. A reaction window is the band on top of the panel, as on every screen.
 
 ## Invasion

@@ -108,6 +108,22 @@ export function ActionFooter({ view: footer }: { view: FooterView }) {
   );
 }
 
+/**
+ * The pill of the heading, less what the bar of the game already says: "Your decision" is gone, and
+ * "Your decision · Reaction" is "Reaction". A pill that says something else stays as it is.
+ */
+export function pillBeyond(pill: PillView | null, status: string): PillView | null {
+  if (!pill || pill.label === status) {
+    return null;
+  }
+  const prefix = `${status} · `;
+  if (!pill.label.startsWith(prefix)) {
+    return pill;
+  }
+  const rest = pill.label.slice(prefix.length);
+  return { ...pill, label: rest.charAt(0).toUpperCase() + rest.slice(1) };
+}
+
 /** The footer of the open action, whatever its kind. */
 export const footerOf = (view: ActionView): FooterView =>
   view.kind === "tactical" ? view.task.footer : view.footer;
@@ -167,24 +183,42 @@ function TaskPanel({
       className="flex min-h-0 min-w-0 flex-1 flex-col outline-none"
     >
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-b border-line px-5 py-[9px] phone:px-3">
-        <h2 className="text-lg font-semibold tracking-[-.2px]">{heading}</h2>
-        {context && (
-          <span className="min-w-0 truncate text-sm text-muted" title={context}>
-            {context}
-          </span>
-        )}
-        {pill && <Badge tone={pill.tone}>{pill.label}</Badge>}
-        {badge && <Badge tone={badge.tone}>{badge.label}</Badge>}
-        {help.length > 0 && (
-          <Hint label={`Rules: ${heading}`}>
-            {help.map((item) => (
-              <p key={item.title}>
-                <strong className="block">{item.title}</strong>
-                {item.text}
-              </p>
-            ))}
-          </Hint>
-        )}
+        {/* One line: the context gives way with "…" before the pill, "Not sent" or "?" wrap. */}
+        <span className="flex min-w-0 max-w-full items-center gap-x-2.5 gap-y-1.5 phone:flex-wrap">
+          <h2
+            className="min-w-0 truncate text-lg font-semibold tracking-[-.2px] phone:whitespace-normal"
+            title={heading}
+          >
+            {heading}
+          </h2>
+          {context && (
+            <span className="min-w-0 shrink-[2] truncate text-sm text-muted" title={context}>
+              {context}
+            </span>
+          )}
+          {pill && (
+            <Badge tone={pill.tone} className="shrink-0">
+              {pill.label}
+            </Badge>
+          )}
+          {badge && (
+            <Badge tone={badge.tone} className="shrink-0">
+              {badge.label}
+            </Badge>
+          )}
+          {help.length > 0 && (
+            <span className="shrink-0">
+              <Hint label={`Rules: ${heading}`}>
+                {help.map((item) => (
+                  <p key={item.title}>
+                    <strong className="block">{item.title}</strong>
+                    {item.text}
+                  </p>
+                ))}
+              </Hint>
+            </span>
+          )}
+        </span>
         <Trail items={trail} />
         {edit && (
           <Button
@@ -220,10 +254,13 @@ function TaskPanel({
  */
 export function ActionPanel({
   view,
+  status,
   reveal,
   footer = true,
 }: {
   view: ActionView;
+  /** The status in the bar of the game. The pill of the heading does not say it again. */
+  status: string;
   reveal: string | null;
   /** False when the shell shows `ActionFooter` itself, under every pane. */
   footer?: boolean;
@@ -281,7 +318,7 @@ export function ActionPanel({
           heading={view.task.title}
           context={view.context}
           interrupt={view.interrupt}
-          pill={view.task.pill}
+          pill={pillBeyond(view.task.pill, status)}
           badge={view.badge}
           trail={view.task.trail}
           edit={view.task.edit}
@@ -300,7 +337,7 @@ export function ActionPanel({
           heading={view.heading}
           context={view.context}
           interrupt={view.interrupt}
-          pill={view.pill}
+          pill={pillBeyond(view.pill, status)}
           badge={view.badge}
           trail={view.trail}
           help={view.help}

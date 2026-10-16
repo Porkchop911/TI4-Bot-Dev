@@ -15,7 +15,7 @@ import type {
 import type { Catalog, CombatView as CombatState, PlacedUnitView, SessionUpdate } from "../wire";
 import { systemLabel, tilesOf } from "./movement";
 import { expected } from "./movementRolls";
-import { byUnitOrder, seatLabel, unitKey, unitLabel, unitRecord, unitType } from "./names";
+import { byUnitOrder, unitKey, unitLabel, unitRecord, unitType } from "./names";
 
 /** The stage of the round in words, from the phase of the engine. */
 const STAGES: Record<string, string> = {
@@ -140,22 +140,6 @@ export function roundTable(
   };
 }
 
-/** Whom the game waits for, when it is not the viewer: "Letnev", or the reactions of the seats. */
-export function waitingFor(
-  update: SessionUpdate,
-  combat: CombatState,
-  printed: Catalog | null,
-): string | null {
-  const status = update.turn_status;
-  if (status.kind === "waiting_for_decision") {
-    return seatLabel(update, status.seat, printed);
-  }
-  if (status.kind === "waiting_for_reactions") {
-    return "reactions";
-  }
-  return combat.active_player ? seatLabel(update, combat.active_player, printed) : null;
-}
-
 /**
  * The space combat step: the table of the round, and the open question of the viewer as a list
  * (`flow`, the decision of `selectAction`). A reaction window is the band on top of the panel
@@ -168,7 +152,6 @@ export function selectCombat(
   asked: boolean,
   printed: Catalog | null,
 ): { content: CombatView; footer: FooterView; pill: PillView; target: string } {
-  const waiting = asked ? null : waitingFor(update, combat, printed);
   const decision = asked && !flow.interrupt ? { prompt: flow.heading, blocks: flow.blocks } : null;
   return {
     target: systemLabel(tilesOf(update), combat.system_id),
@@ -189,15 +172,7 @@ export function selectCombat(
     },
     pill: asked
       ? (flow.pill ?? { tone: "live", label: "Your decision" })
-      : {
-          tone: "quiet",
-          label: waiting ? `Waiting for ${waiting}` : stageOf(combat),
-        },
-    footer: asked
-      ? flow.footer
-      : {
-          ...flow.footer,
-          note: flow.footer.note || (waiting ? `Waiting for ${waiting}.` : ""),
-        },
+      : { tone: "quiet", label: stageOf(combat) },
+    footer: flow.footer,
   };
 }

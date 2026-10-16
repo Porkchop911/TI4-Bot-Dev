@@ -78,19 +78,17 @@ test("phone: a game of eight is played through the decision list @slow", async (
       await pane("Action").click();
       await page.getByRole("button", { name: "Undo" }).click();
       await expect(send).toHaveText(/Move/);
-      // The pane stays where the player is; the tab of the map is marked.
-      await expect(pane("Action")).toHaveAttribute("aria-pressed", "true");
-      await expect(pane("Map")).toHaveAccessibleName(/choice open/);
-      await pane("Map").click();
+      // The undo takes the player back to a step on the map: the map opens.
+      await expect(pane("Map")).toHaveAttribute("aria-pressed", "true");
+      await expect(pane("Map")).not.toHaveAccessibleName(/choice open/);
       await expect(send).toHaveText(/Move fleet/);
       await expect(page.locator(".galaxy .t-staged")).toHaveCount(1);
       await page.screenshot({ path: "shots/phone/local/undo.png", animations: "disabled" });
-      // An undo of the activation marks the map too.
+      // An undo of the activation opens the map too.
       await pane("Action").click();
       await page.getByRole("button", { name: "Undo" }).click();
       await expect(send).toHaveText(/Activate system/);
-      await expect(pane("Map")).toHaveAccessibleName(/choice open/);
-      await pane("Map").click();
+      await expect(pane("Map")).toHaveAttribute("aria-pressed", "true");
       await system.filter({ hasText: "#23" }).first().click();
       await send.click();
       // The movement opens again, with what is kept staged for it.
@@ -126,7 +124,7 @@ test("phone: a draft is staged on the map and applied from the toolbar", async (
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
   await expect(send).toBeDisabled();
   await pane("Action").click();
-  await row("8. Imperial").click();
+  await row(/^8\. Imperial$/).click();
   await send.click();
   await expect(row(/^Activate a system$/)).toBeVisible();
 
@@ -135,9 +133,8 @@ test("phone: a draft is staged on the map and applied from the toolbar", async (
     .getByRole("button", { name: "Draft" })
     .click();
   // The system is chosen on the map, and the main button records it.
-  // The choice is on the map: its tab is marked, and the pane stays until the tab is tapped.
-  await expect(pane("Map")).toHaveAccessibleName(/choice open/);
-  await pane("Map").click();
+  // The choice is on the map: the draft of the player opens it.
+  await expect(pane("Map")).toHaveAttribute("aria-pressed", "true");
   await system("23").click();
   await expect(send).toHaveText(/Activate system/);
   await expect(send).toBeInViewport({ ratio: 1 });
@@ -190,7 +187,7 @@ test("phone: the recorded activation of a draft is edited in the width", async (
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
   await expect(send).toBeDisabled();
   await pane("Action").click();
-  await row("8. Imperial").click();
+  await row(/^8\. Imperial$/).click();
   await send.click();
   await row(/^Activate a system$/).click();
   await pane("Map").click();
@@ -240,7 +237,7 @@ test("phone: a draft entry that no longer fits is marked in its step and removed
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
   await expect(send).toBeDisabled();
   await pane("Action").click();
-  await row("8. Imperial").click();
+  await row(/^8\. Imperial$/).click();
   await send.click();
   await row(/^Activate a system$/).click();
   await pane("Map").click();
@@ -440,6 +437,9 @@ test("phone: the rolls of the gravity rift and the space cannon offense are in t
   await expect(panel.getByRole("heading").first()).toHaveText(/^Cancel a hit/);
   await panel.getByRole("button", { name: /^Sustain damage/ }).click();
   await send.click();
+  // The landings are on the board: the choice of the player opens the map.
+  await expect(pane("Map")).toHaveAttribute("aria-pressed", "true");
+  await pane("Action").click();
   await expect(panel.getByRole("heading").first()).toHaveText("Invasion");
   await page.getByRole("tab", { name: /^\S* ?Movement/ }).click();
   await expect(panel.getByRole("heading", { name: "Gravity rift" })).toBeVisible();
@@ -598,8 +598,8 @@ test("phone: a production is a sheet on the map, then the map is the payment", a
   await activateInLive(page, system("72"));
   // Nothing moves, and AI Development Algorithm is kept: a question of the list.
   await send.click();
-  await expect(pane("Action")).toHaveAccessibleName(/choice open/);
-  await pane("Action").click();
+  // The next question of the player is a list: the Action pane opens.
+  await expect(pane("Action")).toHaveAttribute("aria-pressed", "true");
   await row(/^Decline/i).click();
   await send.click();
   await pane("Map").click();
@@ -899,6 +899,9 @@ test("phone: Leadership has the purchase and the pools in the width, and the pay
   await page.locator('footer button[aria-keyshortcuts="Enter"]').click();
   await expect(panel.getByRole("heading", { name: "Command pools" })).toBeVisible();
   await panel.getByRole("button", { name: "Add bought token" }).click();
+  // The bought token is paid on the map: the choice of the player opens it.
+  await expect(panes.getByRole("button", { name: "Map" })).toHaveAttribute("aria-pressed", "true");
+  await panes.getByRole("button", { name: "Action" }).click();
   for (const pool of ["tactic", "fleet", "strategy", "strategy"]) {
     await panel.getByRole("button", { name: `Add ${pool} pool token` }).click();
   }
@@ -1018,6 +1021,9 @@ test("phone: Diplomacy has the system and the planets in the width, chosen on th
   await panes.getByRole("button", { name: "Action" }).click();
   await panel.getByRole("button", { name: /^2 Diplomacy/ }).click();
   await page.locator('footer button[aria-keyshortcuts="Enter"]').click();
+  // The choice is in the map: the choice of the player opens it.
+  await expect(panes.getByRole("button", { name: "Map" })).toHaveAttribute("aria-pressed", "true");
+  await panes.getByRole("button", { name: "Action" }).click();
   await expect(panel.getByRole("heading", { name: "Ready planets" })).toBeVisible();
   expect(await width()).toBe(page.viewportSize()!.width);
   await panes.getByRole("button", { name: "Map" }).click();
@@ -1044,6 +1050,9 @@ test("phone: Warfare has the token on the map and the pools in the width", async
   await panes.getByRole("button", { name: "Action" }).click();
   await panel.getByRole("button", { name: /^6 Warfare/ }).click();
   await send.click();
+  // The choice is in the map: the choice of the player opens it.
+  await expect(panes.getByRole("button", { name: "Map" })).toHaveAttribute("aria-pressed", "true");
+  await panes.getByRole("button", { name: "Action" }).click();
   await expect(panel.getByRole("heading", { name: "Command pools" })).toBeVisible();
   expect(await width()).toBe(page.viewportSize()!.width);
   await panes.getByRole("button", { name: "Map" }).click();
@@ -1138,6 +1147,12 @@ test("phone: Politics has the speaker in the player table and the agenda deck in
   await panes.getByRole("button", { name: "Action" }).click();
   await panel.getByRole("button", { name: /^3 Politics/ }).click();
   await send.click();
+  // The choice is in the player table: the choice of the player opens it.
+  await expect(panes.getByRole("button", { name: "Players" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await panes.getByRole("button", { name: "Action" }).click();
   await expect(panel.getByRole("heading", { name: "Speaker" })).toBeVisible();
   expect(await width()).toBe(page.viewportSize()!.width);
   await panes.getByRole("button", { name: "Players" }).click();
@@ -1167,7 +1182,7 @@ test("phone: Politics has the speaker in the player table and the agenda deck in
   await page.screenshot({ path: "shots/phone/local/politics.png", animations: "disabled" });
 });
 
-test("phone: Construction has the structures in the width, the planets chosen on the map", async ({
+test("phone: Construction has the structures in the width, the systems chosen on the map", async ({
   page,
 }) => {
   await page.goto("/?scenario=strategy_construction&humans=1");
@@ -1177,15 +1192,31 @@ test("phone: Construction has the structures in the width, the planets chosen on
   await panes.getByRole("button", { name: "Action" }).click();
   await panel.getByRole("button", { name: /^4 Construction/ }).click();
   await page.locator('footer button[aria-keyshortcuts="Enter"]').click();
+  const pane = (name: string) => panes.getByRole("button", { name });
+  const open = (name: string) => panel.getByRole("heading", { name, exact: true }).locator("../..");
+  const system = open("System");
+  // The system is chosen on the map, which opens; its planets and structures are in the panel,
+  // which opens then.
+  await expect(pane("Map")).toHaveAttribute("aria-pressed", "true");
+  await mapPlanet(page, "Rarron").tap();
+  await expect(pane("Action")).toHaveAttribute("aria-pressed", "true");
   await expect(panel.getByRole("heading", { name: "Structures" })).toBeVisible();
   expect(await width()).toBe(page.viewportSize()!.width);
-  await panel.getByRole("button", { name: /PDS/ }).first().tap();
-  await panes.getByRole("button", { name: "Map" }).click();
-  await mapPlanet(page, "Rarron").tap();
+  // #29: Qucen'n, then Rarron, each with a space dock and a PDS.
+  await open("Structure 1 of 2 · space dock or PDS")
+    .getByRole("button", { name: "PDS", exact: true })
+    .nth(1)
+    .tap();
+  // "Change" of the system: the map opens for the second.
+  await system.getByRole("button", { name: "Change" }).tap();
+  await expect(pane("Map")).toHaveAttribute("aria-pressed", "true");
+  // The details of #29 are a sheet over the map.
+  await page.getByRole("button", { name: "Close system details" }).tap();
   await mapPlanet(page, "Jord").tap();
+  await expect(pane("Action")).toHaveAttribute("aria-pressed", "true");
+  await open("Structure 2 of 2 · PDS only").getByRole("button", { name: "PDS", exact: true }).tap();
   await expect(page.locator("footer")).toContainText("PDS on Rarron · PDS on Jord");
   expect(await width()).toBe(page.viewportSize()!.width);
-  await panes.getByRole("button", { name: "Action" }).click();
   await expect(panel.getByRole("heading", { name: "Structures" }).locator("../..")).toContainText(
     "Jord · #01PDS 0 → 1",
   );
@@ -1203,19 +1234,26 @@ test("phone: Construction of Thunder's Edge has the ability and the structures i
   await panes.getByRole("button", { name: "Action" }).click();
   await panel.getByRole("button", { name: /^4 Construction/ }).click();
   await page.locator('footer button[aria-keyshortcuts="Enter"]').click();
-  await panel.getByRole("button", { name: /Place a structure/ }).tap();
-  await expect(panel.getByRole("heading", { name: "Structures" })).toBeVisible();
   expect(await width()).toBe(page.viewportSize()!.width);
-  await panel
-    .getByRole("button", { name: /Space dock/ })
-    .first()
-    .tap();
-  await panes.getByRole("button", { name: "Map" }).click();
+  // A structure: the system on the map, which opens, then the structure of a planet in the
+  // panel, which opens then.
+  await panel.getByRole("button", { name: /Place a structure/ }).tap();
+  await expect(panes.getByRole("button", { name: "Map" })).toHaveAttribute("aria-pressed", "true");
   await mapPlanet(page, "Rarron").tap();
+  await expect(panes.getByRole("button", { name: "Action" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(panel.getByRole("heading", { name: "Structures" })).toBeVisible();
+  const open = (name: string) => panel.getByRole("heading", { name, exact: true }).locator("../..");
+  // #29: Qucen'n, then Rarron, each with a space dock and a PDS.
+  await open("Structure 1 of 2 · space dock or PDS")
+    .getByRole("button", { name: "Space dock", exact: true })
+    .nth(1)
+    .tap();
   await expect(page.locator("footer")).toContainText("Space dock on Rarron");
   expect(await width()).toBe(page.viewportSize()!.width);
-  await panes.getByRole("button", { name: "Action" }).click();
-  await expect(panel.getByText("Structure 2 of 2")).toBeVisible();
+  await expect(open("Structure 2 of 2 · space dock or PDS")).toBeVisible();
   expect(await width()).toBe(page.viewportSize()!.width);
   await page.screenshot({ path: "shots/phone/local/construction-te.png", animations: "disabled" });
 });
@@ -1233,6 +1271,12 @@ test("phone: Trade has the other players in the player table, and its screen in 
   await panes.getByRole("button", { name: "Action" }).click();
   await panel.getByRole("button", { name: /^5 Trade/ }).click();
   await send.click();
+  // The choice is in the player table: the choice of the player opens it.
+  await expect(panes.getByRole("button", { name: "Players" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await panes.getByRole("button", { name: "Action" }).click();
   await expect(panel.getByRole("heading", { name: "Other players" })).toBeVisible();
   await expect(panel).toContainText("Trade goods 4 → 7");
   expect(await width()).toBe(page.viewportSize()!.width);
@@ -1316,7 +1360,7 @@ test("phone: the draft of a secondary is the row of the viewer in the list of th
     page.getByRole("navigation", { name: "Panes" }).getByRole("button", { name });
   const width = page.viewportSize()!.width;
   await pane("Action").click();
-  await panel.getByRole("button", { name: "8. Imperial" }).click();
+  await panel.getByRole("button", { name: "8. Imperial", exact: true }).click();
   await send.click();
   // Another seat plays Politics after some steps of the seats before it.
   const draft = panel.getByText("✎ Private draft");
@@ -1430,7 +1474,7 @@ test("phone: single player is set up on the panes of the lobby, with the long na
   await fits();
 });
 
-test("phone: the turn menu and its lists fit the width; a choice of a player marks its tab", async ({
+test("phone: the turn menu and its lists fit the width; a choice of a player opens its pane", async ({
   page,
 }) => {
   await page.goto("/?scenario=late-game&humans=16");
@@ -1453,8 +1497,8 @@ test("phone: the turn menu and its lists fit the width; a choice of a player mar
   await fits();
   await page.screenshot({ path: "shots/phone/local/picker.png", animations: "disabled" });
   // A phone has no keys: a row is tapped, and "Back to actions" goes back.
-  await row(/^Play an action card$/).tap();
-  await expect(heading).toHaveText("Play an action card");
+  await row(/^Play an action card or use a component$/).tap();
+  await expect(heading).toHaveText("Play an action card or use a component");
   await fits();
   await page.screenshot({ path: "shots/phone/local/picker-cards.png", animations: "disabled" });
   await page.getByRole("button", { name: "Back to actions" }).tap();
@@ -1462,15 +1506,8 @@ test("phone: the turn menu and its lists fit the width; a choice of a player mar
   await expect(send).toHaveText(/Use Trade/);
   await fits();
   await send.tap();
-  // The choice of a player is made in the player table: its tab is marked, and the pane stays.
-  await expect(pane("Players")).toHaveAccessibleName(/choice open/);
-  await expect(pane("Action")).toHaveAttribute("aria-pressed", "true");
-  await fits();
-  await page.screenshot({
-    path: "shots/phone/local/pick-player-marked.png",
-    animations: "disabled",
-  });
-  await pane("Players").tap();
+  // The choice of a player is made in the player table: the choice of the player opens it.
+  await expect(pane("Players")).toHaveAttribute("aria-pressed", "true");
   await expect(pane("Players")).not.toHaveAccessibleName(/choice open/);
   await page
     .getByRole("region", { name: "Players" })
@@ -1501,23 +1538,23 @@ test("phone: a component action chooses its planet on the Map pane, then the tur
       await content.evaluate((element) => element.scrollWidth - element.clientWidth),
     ).toBeLessThanOrEqual(0);
   };
-  await row(/^Use another component$/).tap();
+  await row(/^Play an action card or use a component$/).tap();
   await row(/^Orbital Drop$/).tap();
+  await expect(heading).toHaveText("Orbital Drop");
   await fits();
   await send.tap();
-  // The planet is chosen on the map: its tab is marked.
-  await expect(heading).toHaveText("Orbital Drop");
-  await expect(pane("Map")).toHaveAccessibleName(/choice open/);
+  // The planet is chosen on the map: the map opens.
+  await expect(pane("Map")).toHaveAttribute("aria-pressed", "true");
   await fits();
   await page.screenshot({ path: "shots/phone/local/component.png", animations: "disabled" });
-  await pane("Map").tap();
   await page.getByRole("button", { name: /^Choose Jord,/ }).tap();
   await expect(send).toBeEnabled();
   await expect(send).toBeInViewport({ ratio: 1 });
   await fits();
   await page.screenshot({ path: "shots/phone/local/component-planet.png", animations: "disabled" });
   await send.tap();
-  await pane("Action").tap();
+  // The turn closes in the list: the Action pane opens.
+  await expect(pane("Action")).toHaveAttribute("aria-pressed", "true");
   await expect(heading).toHaveText("End your turn");
   await expect(send).toHaveText(/End turn/);
   await fits();

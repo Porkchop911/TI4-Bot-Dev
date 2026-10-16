@@ -257,7 +257,7 @@ test("a tactical action: the system and the movement are staged on the map", asy
   await page.goto("/?local=3&players=8&humans=1");
   await expect(send(page)).toBeDisabled();
   const row = (name: string | RegExp) => panel(page).getByRole("button", { name });
-  await row("8. Imperial").click();
+  await row(/^8\. Imperial$/).click();
   await send(page).click();
   // The picker opens the tactical action as the private draft, at its activation.
   await row(/^Activate a system$/).click();
@@ -636,8 +636,10 @@ test("a space combat is the step of its tactical action, and a seat that does no
     .click();
   await expect(settings(page)).toBeHidden();
   await expect(heading(page)).toHaveText("Space combat");
-  await expect(panel(page).getByText("Waiting for Sol", { exact: true })).toBeVisible();
-  await expect(page.locator("footer")).toContainText("Waiting for Sol.");
+  // Whom the game waits for is the status of the bar, not a pill or a note of the panel.
+  await expect(page.locator("header strong")).toHaveText("Waiting for Sol");
+  await expect(panel(page).getByText("Waiting for Sol")).toHaveCount(0);
+  await expect(page.locator("footer")).not.toContainText("Waiting for");
   await expect(attacker).toContainText(/Seat A\s*Sol/);
   await expect(attacker).not.toContainText("You");
   await expect(panel(page).getByRole("button", { name: /Stay and fight/ })).toHaveCount(0);
@@ -648,7 +650,9 @@ test("a space combat is the step of its tactical action, and a seat that does no
   await send(page).click();
   await expect(send(page)).toHaveText(/^Step/);
   await send(page).click();
-  await expect(panel(page).getByText("Hits to assign")).toBeVisible();
+  // The stage is the pill of the heading (the bar says whom the game waits for) and the score
+  // of the round table.
+  await expect(panel(page).getByText("Hits to assign")).toHaveCount(2);
   await expect(panel(page).getByText(/\d+ hits? for Seat [AC] to assign/)).toBeVisible();
   await expect(attacker).toContainText(/\d+ hits?/);
   await fitsHeight(page);
@@ -835,7 +839,7 @@ test("a draft of a tactical action is private, is kept, and is applied as one re
   await expect(heading(page)).toHaveText("Activation");
   await expect(apply).toBeDisabled();
   await workspace("Live").click();
-  await row("8. Imperial").click();
+  await row(/^8\. Imperial$/).click();
   await send(page).click();
   await expect(row(/^Activate a system$/)).toBeVisible();
 
@@ -904,7 +908,7 @@ test("a recorded activation of a draft is edited: the movement follows what stil
   const tab = (name: string) => page.getByRole("tab", { name: new RegExp(name) });
   const edit = panel(page).getByRole("button", { name: "Edit activation" });
   const apply = page.getByRole("button", { name: "Apply to Live" });
-  await row("8. Imperial").click();
+  await row(/^8\. Imperial$/).click();
   await send(page).click();
   await row(/^Activate a system$/).click();
   await expect(page.locator("g.system.target:not(.plain)")).not.toHaveCount(0);
@@ -1139,7 +1143,7 @@ test("the other seats wait for a step when the Dev sheet says so", async ({ page
   await expect(seats.getByRole("button", { name: "Run" })).toHaveAttribute("aria-pressed", "true");
   await seats.getByRole("button", { name: "Step" }).click();
   await page.keyboard.press("Escape");
-  await panel(page).getByRole("button", { name: "8. Imperial" }).click();
+  await panel(page).getByRole("button", { name: "8. Imperial", exact: true }).click();
   await send(page).click();
   // The next seat has not chosen: the game waits, and the main button lets it decide.
   await expect(send(page)).toHaveText(/^Step/);
@@ -1169,7 +1173,7 @@ test("a secondary is drafted while the primary is resolved, and sent when the se
   // In the game of this seed Leadership and Politics are played before the seat has its turn, and
   // seats follow Politics after this one, so the list is still in view when the draft is sent.
   await page.goto("/?local=4&players=8&humans=1");
-  await panel(page).getByRole("button", { name: "8. Imperial" }).click();
+  await panel(page).getByRole("button", { name: "8. Imperial", exact: true }).click();
   await send(page).click();
   const step = page.getByRole("button", { name: /^Step/ });
   const status = page.locator("header strong");
@@ -1645,7 +1649,7 @@ test("Politics: another seat follows as the game asks it, and does not see the a
   expect(errors).toEqual([]);
 });
 
-test("Construction: the structure in the panel, the planet on the map; both are sent at once", async ({
+test("Construction: the system on the map, the planet and the structure in the panel; both are sent at once", async ({
   page,
 }) => {
   test.setTimeout(10_000);
@@ -1659,10 +1663,11 @@ test("Construction: the structure in the panel, the planet on the map; both are 
   const structures = panel(page).getByRole("heading", { name: "Structures" }).locator("../..");
   await expect(panel(page)).toContainText("PDS on the board");
   await expect(panel(page)).toContainText("1 / 6");
-  await expect(panel(page).getByText("Structure 1 of 2")).toBeVisible();
   await expect(structures).toContainText("1 of 2 · space dock or PDS");
   await expect(structures).toContainText("2 of 2 · PDS only");
-  await expect(page.locator("footer")).toContainText("Choose a structure, then a planet");
+  const system = panel(page).getByRole("heading", { name: "System" }).locator("../..");
+  await expect(system).toContainText("No system chosen");
+  await expect(page.locator("footer")).toContainText("Choose a system on the map.");
   // The printed card of this set is behind the hover of the heading.
   await panel(page).getByRole("button", { name: "Rules: Construction" }).hover();
   await expect(
@@ -1670,30 +1675,36 @@ test("Construction: the structure in the panel, the planet on the map; both are 
   ).toBeVisible();
   await page.mouse.move(0, 0);
 
-  // A PDS on Qucen'n fills it: the PDS of the second structure goes elsewhere.
+  // The map offers the systems of the first structure: #01, #29 and #37.
+  await expect(page.locator("g.system.target")).toHaveCount(3);
+  // A planet of the map chooses its system; the panel lists its planets, each with both kinds.
+  await mapPlanet(page, "Qucen'n").click();
+  await expect(system).toContainText("#29");
+  const open = (name: string) => panel(page).getByRole("heading", { name, exact: true });
+  await expect(open("Structure 1 of 2 · space dock or PDS")).toBeVisible();
+  await expect(page.locator("footer")).toContainText("Choose a planet and a structure.");
+  // A PDS on Qucen'n (key 2); the system stays, and the second PDS is offered on Rarron.
   await page.keyboard.press("2");
-  await mapPlanet(page, "Qucen'n").click();
   await expect(structures).toContainText("Qucen'n · #29PDS 1 → 2");
-  // Jord, Rarron and the two planets of #37, with the chosen Qucen'n marked.
-  await expect(page.locator("g.planet.payable")).toHaveCount(5);
-  await expect(page.locator("g.planet.chosen")).toHaveCount(1);
-  await mapPlanet(page, "Qucen'n").click();
-  await expect(structures).toContainText("2 of 2 · PDS only");
-  // "Change" gives the planet back, and the kind is chosen again.
-  await structures.getByRole("button", { name: "Change" }).click();
-  await page.keyboard.press("1");
-  await expect(panel(page)).toContainText("Space dock");
-  await mapPlanet(page, "Rarron").click();
-  await mapPlanet(page, "Qucen'n").click();
+  await expect(open("Structure 2 of 2 · PDS only")).toBeVisible();
+  // The staged row takes it back.
+  await page.keyboard.press("2");
+  await expect(structures).toContainText("1 of 2 · space dock or PDS");
+  // A space dock on Rarron (key 3), then the PDS on Qucen'n.
+  await page.keyboard.press("3");
+  await page.keyboard.press("2");
   await expect(structures).toContainText("Rarron · #29Space dock 0 → 1");
   await expect(structures).toContainText("Qucen'n · #29PDS 1 → 2");
   await expect(panel(page)).toContainText("2 / 3");
   await expect(page.locator("footer")).toContainText("Space dock on Rarron · PDS on Qucen'n");
   await expect(send(page)).toHaveText(/Resolve primary/);
-  // Esc clears the last planet.
+  // Esc clears the last structure; "Change" of the system is the map again.
   await page.keyboard.press("Escape");
   await expect(send(page)).toHaveText(/Resolve primary · 1 structure/);
+  await system.getByRole("button", { name: "Change" }).click();
+  await expect(system).toContainText("No system chosen");
   await mapPlanet(page, "Qucen'n").click();
+  await page.keyboard.press("2");
   await fitsHeight(page);
   await page.screenshot({ path: "shots/local/construction.png", animations: "disabled" });
 
@@ -1711,19 +1722,25 @@ test("Construction: the secondary places one structure on the map; nothing chose
   // Sol and Hacan are played here.
   await page.goto("/?scenario=strategy_construction&humans=3");
   await playStrategyCard(page, "4 Construction");
-  await page.keyboard.press("1");
+  // Sol places a space dock on Rarron (#29: Qucen'n, then Rarron) and no PDS.
   await mapPlanet(page, "Rarron").click();
+  await page.keyboard.press("3");
   await send(page).click();
 
   // Hacan's row opens into the structure, with what the secondary costs.
-  const planet = panel(page).getByRole("heading", { name: "Planet" }).locator("../..");
-  await expect(planet).toContainText("Choose on the map · Strategy pool 2 → 1");
-  await expect(planet).toContainText("Space dock or PDS");
+  const structure = panel(page)
+    .getByRole("heading", { name: "Structure", exact: true })
+    .first()
+    .locator("../..");
+  await expect(structure).toContainText("Strategy pool 2 → 1");
+  await expect(structure).toContainText("Space dock or PDS");
+  await expect(page.locator("footer")).toContainText("Nothing chosen: you pass.");
   await expect(send(page)).toHaveText(/^Pass/);
-  await page.keyboard.press("2");
-  await expect(page.locator("g.planet.payable")).toHaveCount(3);
+  // The home system is the only one; its planets are Hercant, Arretze and Kamdorn.
+  await expect(page.locator("g.system.target")).toHaveCount(1);
   await mapPlanet(page, "Hercant").click();
-  await expect(planet).toContainText("PDS 0 → 1");
+  await page.keyboard.press("2");
+  await expect(structure).toContainText("PDS 0 → 1");
   await expect(send(page)).toHaveText(/Follow · place PDS/);
   await fitsHeight(page);
   await page.screenshot({ path: "shots/local/construction-secondary.png", animations: "disabled" });
@@ -1757,11 +1774,20 @@ test("Construction of Thunder's Edge: the ability first, then two structures of 
   const structures = panel(page).getByRole("heading", { name: "Structures" }).locator("../..");
   await expect(structures).toContainText("1 of 2 · space dock or PDS");
   await expect(structures).toContainText("2 of 2 · space dock or PDS");
-  await page.keyboard.press("3");
+  // The keys of the planets go on after the ability: in #29 Qucen'n 3 and 4, Rarron 5 and 6.
   await mapPlanet(page, "Rarron").click();
-  await expect(panel(page).getByText("Structure 2 of 2")).toBeVisible();
-  await page.keyboard.press("4");
+  await page.keyboard.press("5");
+  await expect(
+    panel(page).getByRole("heading", { name: "Structure 2 of 2 · space dock or PDS" }),
+  ).toBeVisible();
+  // The second goes to another system: "Change" of the system, then Jord on the map.
+  const system = panel(page).getByRole("heading", { name: "System" }).locator("../..");
+  await system.getByRole("button", { name: "Change" }).click();
+  // The details of #29 cover Jord at the corner of the map.
+  await page.getByRole("button", { name: "Close system details" }).click();
   await mapPlanet(page, "Jord").click();
+  await expect(system).toContainText("#01");
+  await page.keyboard.press("4");
   await expect(page.locator("footer")).toContainText("Space dock on Rarron · PDS on Jord");
   await fitsHeight(page);
   await page.screenshot({ path: "shots/local/construction-te.png", animations: "disabled" });
@@ -2098,7 +2124,7 @@ test("the turn menu is the action picker: a key for each group, the lists of car
     panel(page)
       .locator("button[aria-keyshortcuts]")
       .evaluateAll((all) => all.map((button) => button.getAttribute("aria-keyshortcuts"))),
-  ).resolves.toEqual(["t", "1", "a", "c", "r", "p"]);
+  ).resolves.toEqual(["t", "1", "c", "r", "p"]);
   await expect(panel(page).getByText("7 tactic tokens")).toBeVisible();
   await expect(row(/^Take no more actions in this round$/)).toBeDisabled();
   await expect(panel(page).getByText("Use 1 Leadership first")).toBeVisible();
@@ -2109,21 +2135,18 @@ test("the turn menu is the action picker: a key for each group, the lists of car
   await fitsHeight(page);
   await page.screenshot({ path: "shots/local/picker.png", animations: "disabled" });
 
-  // A: the action cards that can be played now, each with its printed text.
-  await page.keyboard.press("a");
-  await expect(heading(page)).toHaveText("Play an action card");
+  // C: every component action in one list: the action cards that can be played now, each with
+  // its printed text, then the other components. A key stages one, as printed; nothing is sent.
+  await page.keyboard.press("c");
+  await expect(heading(page)).toHaveText("Play an action card or use a component");
+  await expect(panel(page).getByText("Action cards", { exact: true })).toBeVisible();
+  await expect(panel(page).getByText("Other components", { exact: true })).toBeVisible();
   await expect(
     panel(page).getByText("Choose 1 planet. Destroy each PDS on that planet."),
   ).toBeVisible();
   await fitsHeight(page);
   await page.screenshot({ path: "shots/local/picker-cards.png", animations: "disabled" });
-  await page.keyboard.press("Escape");
-  await expect(heading(page)).toHaveText("Choose an action");
-
-  // C: the other components. A key stages one, as printed; nothing is sent.
-  await page.keyboard.press("c");
-  await expect(heading(page)).toHaveText("Use a component");
-  await page.keyboard.press("3");
+  await page.keyboard.press((await row(/^Orbital Drop/).getAttribute("aria-keyshortcuts")) ?? "");
   await expect(heading(page)).toHaveText("Orbital Drop");
   await expect(page.getByText("Not sent")).toBeVisible();
   await expect(panel(page).getByText(/^Spend 1 token from your strategy pool/)).toBeVisible();
@@ -2131,7 +2154,7 @@ test("the turn menu is the action picker: a key for each group, the lists of car
   await page.screenshot({ path: "shots/local/picker-staged.png", animations: "disabled" });
   // Esc goes one level back at a time: the list, then the picker.
   await page.keyboard.press("Escape");
-  await expect(heading(page)).toHaveText("Use a component");
+  await expect(heading(page)).toHaveText("Play an action card or use a component");
   await page.keyboard.press("Escape");
   await expect(heading(page)).toHaveText("Choose an action");
 
@@ -2226,12 +2249,15 @@ test("a component action: the planet of Orbital Drop is chosen on the map, then 
   await page.goto("/?scenario=late-game&humans=1");
   await expect(heading(page)).toHaveText("Choose an action");
   await page.keyboard.press("c");
-  await page.keyboard.press("3");
+  await panel(page)
+    .getByRole("button", { name: /^Orbital Drop/ })
+    .click();
   await page.keyboard.press("Enter");
 
   // The ability asks for a planet: the map is the choice, the panel has what is chosen.
   await expect(heading(page)).toHaveText("Orbital Drop");
-  await expect(panel(page).getByText("Your decision · Choose a planet")).toBeVisible();
+  // The pill does not say again the status of the bar ("Your decision").
+  await expect(panel(page).getByText("Choose a planet", { exact: true })).toBeVisible();
   await expect(panel(page).getByText("No planet chosen")).toBeVisible();
   expect(await page.locator("g.planet.payable").count()).toBeGreaterThan(3);
   // The printed ability is behind "?" of the heading.
@@ -2404,8 +2430,8 @@ test("Warfare of Thunder's Edge: the pools before, a tactical action in any syst
   // The activation: any system, with no command token, also #29 with Sol's token.
   await expect(heading(page)).toHaveText("Activation");
   await expect(panel(page)).toContainText("No command token · Choose on the map");
-  await expect(page.getByText("Tactical action").first()).toBeVisible();
-  await expect(page.locator("aside").getByText(/^Warfare · /)).toBeVisible();
+  // The heading row says the kind of action and the card beside the heading.
+  await expect(panel(page).getByText(/^Tactical action · Warfare · /)).toBeVisible();
   await page.locator("g.system.target").filter({ hasText: "#29" }).click();
   await expect(page.locator("footer")).toContainText("Selected:");
   await fitsHeight(page);

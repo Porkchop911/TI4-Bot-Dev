@@ -107,15 +107,15 @@ const during = (combat: CombatView, viewer = "a", asked = false): SessionUpdate 
 });
 const tactical = (update: SessionUpdate, state = local) => {
   // The shell without the catalogue: a faction is named by its id ("Letnev").
-  const { action } = selectShell(update, state);
+  const { action, toolbar } = selectShell(update, state);
   if (action.kind !== "tactical" || action.task.content.kind !== "combat") {
     throw new Error("no space combat");
   }
-  return { action, content: action.task.content };
+  return { action, content: action.task.content, status: toolbar.status };
 };
 
 it("is the step of the tactical action at a seat that watches, with the sides of the round", () => {
-  const { action, content } = tactical(during(COMBAT, "b"));
+  const { action, content, status } = tactical(during(COMBAT, "b"));
   expect(action.tabs.map((tab) => tab.status)).toEqual([
     "done",
     "done",
@@ -125,8 +125,10 @@ it("is the step of the tactical action at a seat that watches, with the sides of
   ]);
   expect(action.tabs[2].caption).toBe("Round 2");
   expect(action.selected).toBe(2);
-  expect(action.task.pill).toEqual({ tone: "quiet", label: "Waiting for Letnev" });
-  expect(action.task.footer.note).toBe("Waiting for Letnev.");
+  // Whom the game waits for is the status of the bar; the pill is the stage of the round.
+  expect(status).toBe("Waiting for Letnev");
+  expect(action.task.pill).toEqual({ tone: "quiet", label: "Before the roll" });
+  expect(action.task.footer.note).toBe("");
   expect(content.decision).toBeNull();
   expect(content.records[0].table.label).toBe("Round 2");
   const table = roundTable(during(COMBAT, "b"), COMBAT, printed);

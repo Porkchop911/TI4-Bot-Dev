@@ -32,6 +32,7 @@ import type {
 import { exploringCard } from "./exploration";
 import { systemLabel, tilesOf } from "./movement";
 import { humanizeId, seatLabel, sentence } from "./names";
+import { optionWords, promptWords } from "./notes";
 import { printedSource, strategyCardHelp } from "./printed";
 import { interruptOf, reactedAction, selectReaction } from "./reaction";
 import { type EditorSlot, hintFieldsOf } from "./editor";
@@ -409,6 +410,9 @@ export function selectAction(
   if (isTurnMenu(choice) && !local.draft && !local.follow?.editing) {
     return selectTurn(update, local, choice, printed, undo);
   }
+  // The question in the names of the page: the deal of a transaction as the engine says it
+  // (`details.transaction`), else its notes and factions (`promptWords`).
+  const prompt = promptWords(choice, update, printed);
   // A reaction window has its trigger and its cards as printed. A draft has none: a window is
   // of the game as it runs.
   const window =
@@ -458,15 +462,24 @@ export function selectAction(
   const listed = (choice?.options ?? []).filter(
     (option) => !(onBoard?.of[option.id] ?? seats?.[option.id]),
   );
-  const rows: MenuRowView[] = listed.map((option, index) => ({
-    key: KEYS[index] ?? "",
-    title: sentence(option.label || option.id),
-    // A strategy card of the strategy phase has its primary and its secondary behind "?".
-    ...(option.kind === "strategy_card" ? { help: strategyCardHelp(option.id, printed) } : {}),
-    selected: option.id === staged?.id,
-    disabled: false,
-    intent: { type: "chooseOption", option: option.id },
-  }));
+  const rows: MenuRowView[] = listed.map((option, index) => {
+    // A deal, a note and a faction are named as the page names them, a card with its printed
+    // text behind "?".
+    const named = optionWords(choice, option, update, printed);
+    const help =
+      option.kind === "strategy_card"
+        ? // A strategy card of the strategy phase has its primary and its secondary behind "?".
+          strategyCardHelp(option.id, printed)
+        : named.help;
+    return {
+      key: KEYS[index] ?? "",
+      title: named.text,
+      ...(help.length ? { help } : {}),
+      selected: option.id === staged?.id,
+      disabled: false,
+      intent: { type: "chooseOption", option: option.id },
+    };
+  });
   const selected: RowView["control"] = {
     kind: "badge",
     pill: { tone: "draft", label: "Selected" },
@@ -598,12 +611,6 @@ export function selectAction(
     update.view.active_player !== viewer
       ? update.view.active_player
       : null;
-  const waitingFor =
-    status.kind === "waiting_for_decision"
-      ? faction(status.seat)
-      : status.kind === "active_turn"
-        ? faction(status.player)
-        : null;
   const idle = local.draft
     ? (local.draft.problem ??
       (local.draft.waiting
@@ -716,7 +723,7 @@ export function selectAction(
         : own && what
           ? what.name
           : choice
-            ? sentence(choice.prompt)
+            ? prompt.text
             : turnOf
               ? `${faction(turnOf)}’s turn`
               : "Waiting",
@@ -729,9 +736,7 @@ export function selectAction(
               ? `Your decision · ${pickWord}`
               : "Your decision",
         }
-      : turnOf && waitingFor
-        ? { tone: "quiet", label: `Waiting for ${waitingFor}` }
-        : null,
+      : null,
     trail:
       own && what
         ? [
@@ -742,15 +747,14 @@ export function selectAction(
             },
           ]
         : [],
-    help: own && what?.text ? [{ title: `${what.type} · ${what.name}`, text: what.text }] : [],
+    help:
+      own && what?.text ? [{ title: `${what.type} · ${what.name}`, text: what.text }] : prompt.help,
     blocks,
     footer: {
       note: local.planNote
         ? local.planNote.text
         : !choice
-          ? turnOf && waitingFor
-            ? `Waiting for ${waitingFor}.`
-            : ""
+          ? ""
           : several
             ? several.note
             : tokens
@@ -760,7 +764,7 @@ export function selectAction(
                 : staged && research?.change
                   ? `Selected: ${research.name(staged.id)} · ${research.change}`
                   : staged
-                    ? `Selected: ${window?.rows.find((row) => row.selected)?.title ?? (research ? research.name(staged.id) : optionText(update, staged, onBoard, seats, printed))}`
+                    ? `Selected: ${window?.rows.find((row) => row.selected)?.title ?? (research ? research.name(staged.id) : optionText(update, choice, staged, onBoard, seats, printed))}`
                     : window
                       ? ""
                       : research
@@ -852,6 +856,7 @@ export function selectAction(
 /** What a staged option is, in words: the thing on the board or the player that it stands for. */
 function optionText(
   update: SessionUpdate,
+  choice: Choice | null,
   option: ChoiceOption,
   onBoard: ReturnType<typeof boardPick>,
   seats: Record<string, string> | null,
@@ -869,5 +874,7 @@ function optionText(
     return planet?.label ?? humanizeId(thing);
   }
   const seat = seats?.[option.id];
-  return seat ? seatLabel(update, seat, printed) : sentence(option.label || option.id);
+  return seat
+    ? seatLabel(update, seat, printed)
+    : optionWords(choice, option, update, printed).text;
 }

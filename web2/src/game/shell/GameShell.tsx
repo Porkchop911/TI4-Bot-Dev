@@ -81,18 +81,20 @@ export function GameShell({
   };
   const phone = usePhone();
   // The pane where the open choice is made: the board, the player table, or the action.
-  const choiceOn: Pane | null = view.players.pick
+  const asked: Pane | null = view.players.pick
     ? "players"
     : view.board.task?.interactive || view.board.targeting
       ? "map"
       : view.asked
         ? "action"
         : null;
+  const lastChoice = useRef(asked);
+  // A sent answer is not a step: the pane of the choice is the one before, until the game answers.
+  const choiceOn = view.answered && acted.current ? lastChoice.current : asked;
   // The game opens on the pane of its choice. After that the pane changes with a tap on a tab, and
   // when a choice of the viewer opens the next step of the viewer in another pane. Anything else
   // (another player, a bot, a window that opens) only marks the tab of the choice.
   const [pane, setPane] = useState<Pane>(() => choiceOn ?? "action");
-  const lastChoice = useRef(choiceOn);
   // The game moved on: an entry of the log for each event.
   const events = view.reference.log.reduce((sum, round) => sum + round.entries.length, 0);
   const lastEvents = useRef(events);
@@ -232,7 +234,7 @@ export function GameShell({
           column={
             <>
               {players}
-              <ActionPanel view={view.action} reveal={view.reveal} />
+              <ActionPanel view={view.action} status={view.toolbar.status} reveal={view.reveal} />
             </>
           }
           panes={[
@@ -241,7 +243,14 @@ export function GameShell({
             {
               id: "action",
               label: "Action",
-              content: <ActionPanel view={view.action} reveal={view.reveal} footer={false} />,
+              content: (
+                <ActionPanel
+                  view={view.action}
+                  status={view.toolbar.status}
+                  reveal={view.reveal}
+                  footer={false}
+                />
+              ),
             },
           ]}
           pane={pane}

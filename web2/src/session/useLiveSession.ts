@@ -856,6 +856,9 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
       ? run.outcome
       : ((run && !run.wanted.scope ? run.outcome : null) ?? unanswered);
   const waiting = tactical && !settled;
+  /** The draft is shorter than the one of the answer on the screen: a step of it was taken back. */
+  const shrunk =
+    tactical && !!run && !run.wanted.scope && wanted.script.length < run.wanted.script.length;
   /** What the game made of the draft of the secondary. Until the answer, of the draft before. */
   const followOutcome = wanted?.scope && run?.wanted.scope ? run.outcome : null;
   const followChecked = !!wanted?.scope && settled;
@@ -1624,9 +1627,13 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         view: {
           ...selectShell(shown, state, transport.catalog, cards),
           toast,
+          // Until the game answers the draft, its screen has nothing to decide; and a draft that
+          // was taken back ("Start over", an undo) does not fit the answer before, which stays on
+          // the screen meanwhile.
           settling:
-            (!!drafted && waiting && outcome === unanswered) ||
+            (!!drafted && waiting && (outcome === unanswered || shrunk)) ||
             (!!followInfo?.waiting && !followOutcome),
+          answered: !!shown.pending_choice && state.sent === shown.pending_choice.nonce,
         },
         dispatch,
         capabilities: {
@@ -1655,6 +1662,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
     outcome,
     unanswered,
     waiting,
+    shrunk,
     locked,
     cards,
     toast,

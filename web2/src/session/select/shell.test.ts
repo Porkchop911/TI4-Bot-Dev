@@ -82,9 +82,15 @@ const flow = (update: SessionUpdate, state: LocalState) => {
 const rows = (update: SessionUpdate, state: LocalState) =>
   flow(update, state).blocks.flatMap((block) => (block.kind === "menu" ? block.rows : []));
 
-it("shows eight seats with different marks, in seat order", () => {
+it("shows eight seats with different marks, in the order of the turns in the action phase", () => {
   const view = selectShell(menu, local());
-  expect(view.players.rows.map((row) => row.seat)).toEqual(menu.view.seating_order);
+  expect(menu.view.phase).toBe("action");
+  // The rows are ranked by the lowest initiative of each seat.
+  const initiative = view.players.rows.map((row) => row.strategyCards[0]?.number ?? 99);
+  expect(initiative).toEqual([...initiative].sort((a, b) => a - b));
+  expect(new Set(view.players.rows.map((row) => row.seat))).toEqual(
+    new Set(menu.view.seating_order),
+  );
   expect(view.players.rows).toHaveLength(8);
   const marks = Object.values(view.seats).map((seat) => seat.symbol + seat.color);
   expect(new Set(marks).size).toBe(8);
@@ -93,6 +99,23 @@ it("shows eight seats with different marks, in seat order", () => {
   expect(view.players.rows.filter((row) => row.turn === "now").map((row) => row.seat)).toEqual([
     "a",
   ]);
+});
+
+it("ranks the seats by victory points out of the action phase, a tie in the seat order", () => {
+  const scored: SessionUpdate = {
+    ...menu,
+    view: {
+      ...menu.view,
+      phase: "status",
+      players: menu.view.players.map((player) => ({
+        ...player,
+        victory_points: player.id === "c" ? 5 : 1,
+      })),
+    },
+  };
+  const seats = selectShell(scored, local()).players.rows.map((row) => row.seat);
+  expect(seats[0]).toBe("c");
+  expect(seats.slice(1)).toEqual(menu.view.seating_order.filter((seat) => seat !== "c"));
 });
 
 it("a seat has the name of its player, and the sign of a seat that no person plays", () => {
@@ -161,15 +184,13 @@ it("shows the turn menu as the picker: the fixed groups, with what the engine of
   expect(picker.map((row) => [row.key, row.title, row.disabled])).toEqual([
     ["t", "Activate a system", false],
     ["6", "6 Warfare", false],
-    ["a", "Play an action card", true],
-    ["c", "Use another component", true],
+    ["c", "Play an action card or use a component", true],
     ["r", "Transaction", false],
     ["p", "Take no more actions in this round", true],
   ]);
   expect(picker.map((row) => row.state)).toEqual([
     "5 tactic tokens",
     undefined,
-    "None is playable",
     "None is ready",
     "2 of 7 players",
     "Use 6 Warfare first",
@@ -326,7 +347,9 @@ it("lists the exploration decks: what is left of each card, who drew it, who has
     { name: "Paradise World", kind: "Attach", text: "+2.", left: 1, total: 1, drawn: [] },
   ]);
   expect(hazardous).toMatchObject({ left: 0, total: 0, cards: [] });
-  expect(view.players.rows[0].fragments).toEqual([{ deck: "cultural", count: 1 }]);
+  expect(view.players.rows.find((row) => row.seat === "a")!.fragments).toEqual([
+    { deck: "cultural", count: 1 },
+  ]);
 });
 
 it("says why the game stopped", () => {
@@ -370,8 +393,10 @@ it("says whose turn it is after the turn of the viewer, and that the viewer pass
   };
   const waiting = flow(theirs, local());
   expect([waiting.context, waiting.heading]).toEqual(["Turn ended", "Hacan’s turn"]);
-  expect(waiting.pill).toEqual({ tone: "quiet", label: "Waiting for Hacan" });
-  expect(waiting.footer.note).toBe("Waiting for Hacan.");
+  // Whom the game waits for is the status of the bar, not a pill or a note of the panel.
+  expect(selectShell(theirs, local()).toolbar.status).toBe("Waiting for Hacan");
+  expect(waiting.pill).toBeNull();
+  expect(waiting.footer.note).toBe("");
   const passed: SessionUpdate = {
     ...theirs,
     view: {
@@ -427,8 +452,21 @@ it("chooses a planet of a component action on the board, with the ability behind
   expect(shell.board.task).toMatchObject({ target: "planet", kind: "pick" });
   expect(Object.keys(shell.board.task!.values)).toEqual(["jord", "saudor"]);
   expect(shell.board.taskSystems).toEqual(expect.arrayContaining(["01", "23"]));
+  // With the catalogue the heading is the ability, and the context says that it is a component.
+  const printed = {
+    content: "",
+    exploration: { cards: [], decks: {}, attachments: [] },
+    components: {
+      ...NO_COMPONENTS,
+      abilities: [{ id: "orbital_drop", name: "Orbital Drop", text: "Place 2 infantry." }],
+    },
+    records: NO_RECORDS,
+  };
+  const named = selectShell(drop, local(), printed).action;
+  expect(named).toMatchObject({ context: "Component action", heading: "Orbital Drop" });
   const view = flow(drop, local());
-  expect(view.context).toBe("Component action");
+  // Without it the heading is the question, and it says the rest.
+  expect(view.context).toBeNull();
   expect(view.pill?.label).toBe("Your decision · Choose a planet");
   expect(view.blocks).toEqual([
     expect.objectContaining({
@@ -612,7 +650,7 @@ it("puts a reaction window on top of the action of another seat: Pass, or play t
     printed,
   ).action;
   expect(tactical).toMatchObject({
-    title: "Tactical action",
+    context: "Jord - Sol · #01",
     heading: "Hacan’s tactical action",
     interrupt: { link: ["sys:01"] },
   });

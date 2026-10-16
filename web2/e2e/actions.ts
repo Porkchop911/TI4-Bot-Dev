@@ -23,8 +23,8 @@ export const mapPlanet = (page: Page, name: string) =>
 /**
  * Takes a tactical action in Live, as a player does: the picker opens it as the private draft,
  * the system is chosen on the map and recorded there, and "Apply to Live" sends the action and
- * the system. The steps after the activation are then open in Live. On a phone the system is
- * chosen on the Map pane, which stays in view.
+ * the system. The steps after the activation are then open in Live. On a phone the picker opens
+ * the Map pane, where the system is chosen.
  */
 export async function activateInLive(page: Page, target: Locator) {
   const panel = page.locator("#step-panel");
@@ -36,9 +36,14 @@ export async function activateInLive(page: Page, target: Locator) {
     await panes.getByRole("button", { name: "Action" }).click();
   }
   await panel.getByRole("button", { name: /^(Activate a system|Open your draft)$/ }).click();
-  await expect(heading).toHaveText("Activation");
   if (phone) {
-    await panes.getByRole("button", { name: "Map" }).click();
+    // The activation is on the board: the choice of the player opens the map.
+    await expect(panes.getByRole("button", { name: "Map" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  } else {
+    await expect(heading).toHaveText("Activation");
   }
   // The systems are the choice once the engine answered the draft.
   await expect(page.locator("g.system.target:not(.plain)")).not.toHaveCount(0);

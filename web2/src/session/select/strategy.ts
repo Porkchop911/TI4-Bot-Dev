@@ -2,6 +2,7 @@
 // which they are asked. The row of the viewer opens into its choice, or into the private draft
 // of its secondary. The choice is that of every decision (`selectAction`): the editor of its
 // shape (`editors.ts`), else the list of the game.
+import { namedText } from "./notes";
 import type { ActionButtonView, BlockView, FlowActionView, SeatRowView } from "../../model";
 import type { Catalog, ExplorationCatalog, SecondaryFacts, SessionUpdate } from "../wire";
 import { type LocalState, openChoice, openEditor, selectAction } from "./action";
@@ -79,7 +80,7 @@ export function selectStrategy(
                   secondary?.costs_token === true
                     ? (secondaryCost(secondary) ?? undefined)
                     : undefined,
-                text: sentence(choice.prompt),
+                text: sentence(namedText(choice.prompt, update, printed).text),
               },
             ]),
         ...inner.blocks,
@@ -231,7 +232,7 @@ export function selectStrategy(
         ? { tone: "draft", label: follow.ready ? "Draft ready" : "Private draft" }
         : done
           ? { tone: "done", label: "Resolved" }
-          : { tone: "quiet", label: `Waiting for ${name(deciding ?? action.primary)}` },
+          : null,
     contentKey: `strategy:${action.primary}:${action.card}`,
     blocks: [{ kind: "seats", rows: [primary, ...followers] }],
     footer,

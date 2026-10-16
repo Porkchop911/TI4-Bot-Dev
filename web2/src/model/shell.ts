@@ -320,6 +320,11 @@ export interface ShellView {
    * screen has nothing to decide, and the next step of the viewer is not known.
    */
   settling?: boolean;
+  /**
+   * The viewer's answer to the open question is sent, and the game has not answered it yet: the
+   * question on the screen is no longer open, and the next step of the viewer is not known.
+   */
+  answered?: boolean;
 }
 
 /**

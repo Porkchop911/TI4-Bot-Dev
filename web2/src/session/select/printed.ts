@@ -3,6 +3,7 @@
 // which one; the catalogue has its name and its text. No rule text is written here.
 import type { Catalog, ChoiceOption, DecisionSource, SessionUpdate } from "../wire";
 import { plain } from "./components";
+import { namedText } from "./notes";
 import { humanizeId, sentence, strategyCard } from "./names";
 
 /** A printed component: the `source` block of a decision, the row of a list of cards. */
@@ -90,7 +91,9 @@ export function printedOption(
   catalog: Catalog | null,
 ): Printed {
   const id = option.id;
-  const label = sentence((option.label || id).replace(/^play /, ""));
+  const label = sentence(
+    namedText((option.label || id).replace(/^play /, ""), update, catalog).text,
+  );
   const tail = (prefix: string) => id.slice(prefix.length);
   const card = heldCardOf(update, option);
   const found =

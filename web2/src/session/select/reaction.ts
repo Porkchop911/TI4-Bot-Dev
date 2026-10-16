@@ -1,6 +1,7 @@
 // A reaction window: what opened it, in game values, and what the viewer can use now, as printed.
 // The engine says both (`reaction` of the update); this file words the trigger and the rows.
 // No rule is decided here, and no rule text is written here.
+import { namedText } from "./notes";
 import type { BlockView, InterruptView, MenuRowView, OfferMode, OfferView } from "../../model";
 import type {
   Catalog,
@@ -145,7 +146,7 @@ export function selectReaction(
     ...choice.options
       .filter((option) => option.kind !== "decline" && !offered.has(option.id))
       .map((option) => ({
-        title: option.label || option.id,
+        title: namedText(option.label || option.id, update, catalog).text,
         selected: option.id === staged,
         disabled: false,
         intent: { type: "chooseOption" as const, option: option.id },
