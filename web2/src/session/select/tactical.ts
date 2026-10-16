@@ -321,7 +321,14 @@ function production(
   printed: Catalog | null,
 ): { content: StepContentView; footer: FooterView; target: string } {
   const stage = local.productionStage;
-  const content = selectProduction(update, facts, local.production, stage, printed);
+  const content = selectProduction(
+    update,
+    facts,
+    local.production,
+    stage,
+    printed,
+    local.standing?.response ?? null,
+  );
   const { units, cost, paid } = totals(facts, local.production);
   // The limits are soft in the sheet. A build over one blocks the main button, as a payment
   // that is short does: the game would refuse it.

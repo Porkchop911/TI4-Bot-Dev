@@ -82,11 +82,14 @@ export function selectPlayers(
           continue;
         }
         planets++;
-        resources[1] += value.resources;
-        influence[1] += value.influence;
+        // The values now, with the attachments and the laws on the planet, when they differ.
+        const res = planet.resources ?? value.resources;
+        const inf = planet.influence ?? value.influence;
+        resources[1] += res;
+        influence[1] += inf;
         if (!planet.exhausted) {
-          resources[0] += value.resources;
-          influence[0] += value.influence;
+          resources[0] += res;
+          influence[0] += inf;
         }
       }
     }

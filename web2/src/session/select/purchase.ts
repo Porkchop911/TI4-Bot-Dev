@@ -28,9 +28,16 @@ export interface PurchaseDraft {
   /** The planets that pay, in the order that they were chosen. */
   planets: string[];
   goods: number;
+  commodities?: number;
 }
 
-export const NO_PURCHASE: PurchaseDraft = { buy: 0, pools: null, planets: [], goods: 0 };
+export const NO_PURCHASE: PurchaseDraft = {
+  buy: 0,
+  pools: null,
+  planets: [],
+  goods: 0,
+  commodities: 0,
+};
 
 interface Offer extends PayOffer {
   cost: number;
@@ -195,7 +202,8 @@ export function selectPurchase(
       (staging.buy > 0 ||
         staging.pools !== null ||
         staging.planets.length > 0 ||
-        staging.goods > 0),
+        staging.goods > 0 ||
+        (staging.commodities ?? 0) > 0),
   };
 }
 
@@ -222,7 +230,7 @@ export function countPurchase(
       ...staging,
       buy,
       pools,
-      ...(buy ? {} : { planets: [], goods: 0 }),
+      ...(buy ? {} : { planets: [], goods: 0, commodities: 0 }),
     };
   }
   const pool = POOLS.find(([name]) => `pools.${name[0]}` === key)?.[0];
@@ -245,15 +253,18 @@ export function togglePurchasePlanet(
   return paying ? { ...staging, ...paying } : null;
 }
 
-/** The trade goods of the payment. */
+/** The trade goods of the payment, or its commodities. */
 export function setPurchaseGoods(
   choice: Choice,
   draft: PurchaseDraft | null,
   value: number,
+  source?: string,
 ): PurchaseDraft | null {
   const offer = questionOf(choice)?.offer;
   const staging = draft ?? NO_PURCHASE;
-  return offer && staging.buy ? { ...staging, ...goodsPaying(offer, staging, value) } : null;
+  return offer && staging.buy
+    ? { ...staging, ...goodsPaying(offer, staging, value, source) }
+    : null;
 }
 
 /**
@@ -271,7 +282,7 @@ export function payPurchase(
     return null;
   }
   if (how === "reset") {
-    return { ...staging, planets: [], goods: 0 };
+    return { ...staging, planets: [], goods: 0, commodities: 0 };
   }
   const pick = autoPaying(offer, staging.buy * offer.cost);
   return pick ? { ...staging, ...pick } : staging;
@@ -305,7 +316,7 @@ export function purchasePlan(choice: Choice, draft: PurchaseDraft | null): PlanS
       { kind: "pool", pool },
     ]),
     ...(offer ? [{ kind: "purchase", buy: false } as PlanStep] : []),
-    ...paySteps(staging),
+    ...(offer ? paySteps(offer, staging) : []),
   ];
   return steps;
 }

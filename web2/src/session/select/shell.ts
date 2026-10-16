@@ -122,6 +122,7 @@ export function selectShell(
           facts,
           draft: local.production,
           stage: local.productionStage,
+          standing: local.standing?.response ?? null,
         }
       : null;
   const action = facts

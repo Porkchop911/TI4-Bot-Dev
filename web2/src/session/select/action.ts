@@ -18,7 +18,7 @@ import type { MovementDraft } from "../movementDraft";
 import type { KeptOdds } from "../movementOdds";
 import type { GroundOddsKept } from "./invasion";
 import type { MovementPlan } from "../movementPlan";
-import type { ProductionDraft } from "../productionDraft";
+import type { KeptStanding, ProductionDraft } from "../productionDraft";
 import type {
   Catalog,
   Choice,
@@ -171,6 +171,11 @@ export interface LocalState {
    * start, by planet. Of other landings while the answer for these is on its way.
    */
   groundOdds?: GroundOddsKept;
+  /**
+   * The last answer of the engine for the fleet supply and the capacity after the staged build
+   * of a production. Of another build while the answer for this one is on its way.
+   */
+  standing?: KeptStanding | null;
   /** The list of the turn menu that the player opened. Null: the picker. */
   menu?: TurnMenu | null;
   /** The private draft of a tactical action that the seat keeps, while it is not in view. */
@@ -300,7 +305,14 @@ export function boardTask(update: SessionUpdate, local: LocalState): BoardTaskVi
   if (pick.target === "planet") {
     const values = new Map(
       (update.view.board.map_tiles ?? []).flatMap((tile) =>
-        (tile.planets ?? []).map((planet) => [planet.id, planet.resources] as const),
+        (tile.planets ?? []).map(
+          (planet) =>
+            [
+              planet.id,
+              update.view.board.systems[tile.system_id]?.planets[planet.id]?.resources ??
+                planet.resources,
+            ] as const,
+        ),
       ),
     );
     return {
@@ -464,6 +476,9 @@ export function selectAction(
     choice.options.every((option) => option.kind === "speaker" || option.kind === "decline");
   // The choice of a thing on the board, or of a player: the panel has the choice, not the
   // candidates, which are on the board or in the player table.
+  /** A planet as it is now: its values with the attachments, when they differ from the printed ones. */
+  const now = (system: string, planet: string) =>
+    update.view.board.systems[system]?.planets[planet];
   const chosenBlock = (): BlockView | null => {
     if (onBoard?.target === "planet") {
       const found = staged && onBoard.of[staged.id] ? planetOf(onBoard.of[staged.id]) : null;
@@ -476,7 +491,7 @@ export function selectAction(
               {
                 icon: "planet",
                 title: [`${found.planet.label} · #${found.tile.system_id}`],
-                subtitle: `${found.planet.resources} / ${found.planet.influence}`,
+                subtitle: `${now(found.tile.system_id, found.planet.id)?.resources ?? found.planet.resources} / ${now(found.tile.system_id, found.planet.id)?.influence ?? found.planet.influence}`,
                 link: [`pl:${found.planet.id}`, `sys:${found.tile.system_id}`],
                 control: selected,
               },

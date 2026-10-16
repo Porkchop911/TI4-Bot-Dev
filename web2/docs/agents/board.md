@@ -25,7 +25,9 @@ Part of `web2/AGENTS.md`: the Patterns and the rules of Screen size and Text the
 
 - Every control of an open payment is on the board, in one bar on top of the map: how the payment stands ("Paying 4 / 6 resources", then "2 more" red, "✓ Paid" green or "⚠ 1 wasted" orange), the trade goods, "Auto-pay" and "Clear payment".
 - Trade goods are not on the map. The bar has a counter for them, in steps of one, and "Pay rest": it sets the trade goods to what the planets leave, so the payment is exact. It is disabled when the trade goods cannot do that.
-- Auto-pay stages the payment with the least waste, with planets before trade goods. The player can change it; nothing is sent.
+- Commodities that the engine lets pay as trade goods (the Keleres agent, `commodities` of the payment) have a counter of their own in the bar, next to the trade goods. It is not there otherwise.
+- A planet pays with the face that the engine names: its own value, or the other one (`face`: Archon's Gift, Freelancers). The value that pays is the large one on the map, and the payment line names the face ("Mecatol Rex 6 influence").
+- Auto-pay stages the payment with the least waste, with planets before commodities and trade goods. The player can change it; nothing is sent.
 - The panel has no payment block while a payment is open. The footer has one line for it, left of the note: what pays and the total ("Payment Jord 4 + Vefut 2 · 6 / 6"). It uses no vertical space.
 - A recorded or planned payment is a read-only line in the content. The board has no bar for it.
 
@@ -37,7 +39,7 @@ The owner chose on 2026-10-10 where it shows: in the landing sheet and the syste
 - The type is the control of its deck: it opens the reference sheet "Exploration" at that deck. The sheet is in the toolbar too, as the other reference sheets.
 - The sheet has the four decks. A deck says how many cards are left and who has its relic fragments. A card is one row for all cards of that name: the printed text, "left / total", and who drew one, when and where. A card with none left is dimmed; "0 / 1" is its sign, with no "–" before it (owner, 2026-10-11).
 - Exception to "rule text is behind hover": the deck sheet shows the printed text of each card, as a list of cards does. The reason: the player opens the sheet to read what the deck can still give.
-- `res/inf` is the printed value of a planet. The attachment says what it adds, next to it.
+- `res/inf` is the value of a planet now, from the engine: the printed value with its attachments and the laws on it (`PlanetView.resources`/`influence`, sent when they differ). The attachment line says what each adds.
 - A decision that an exploration card asks has the card on top, as printed (the `source` block), with the deck and the planet.
 - The facts come from the engine: which planets are explored, what the decks hold, what was drawn (`exploration` of the update). The names and texts are the catalogue of the engine (`Transport.catalog`); without it a card is shown by its id.
 - The relic fragments and the relics of a player are in the sheet of that player.

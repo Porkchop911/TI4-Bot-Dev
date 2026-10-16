@@ -238,8 +238,8 @@ export function selectLanding(
     return {
       id: planet,
       name: info?.label ?? planet,
-      resources: info?.resources ?? 0,
-      influence: info?.influence ?? 0,
+      resources: system?.planets[planet]?.resources ?? info?.resources ?? 0,
+      influence: system?.planets[planet]?.influence ?? info?.influence ?? 0,
       owner: system?.planets[planet]?.controlled_by ?? null,
       traits: info ? traits(info) : NO_TRAITS,
       there: [...new Set(units.map((unit) => unit.owner))].map((seat) => ({

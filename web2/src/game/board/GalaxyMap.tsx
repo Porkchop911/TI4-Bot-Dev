@@ -105,7 +105,8 @@ function Planet({
   );
   // A planet that the task can use shows resources and influence, so the player sees what the
   // payment gives up. The value that pays is large. A ring and a check mark show the choice.
-  const pays = task?.unit === "influence" ? "influence" : "resources";
+  const face = onPlanets?.faces?.[planet.id] ?? task?.unit;
+  const pays = face === "influence" ? "influence" : "resources";
   const value = (kind: "resources" | "influence") => (
     <tspan className={kind === pays ? "v-on" : "v-off"}>{planet[kind]}</tspan>
   );
@@ -161,7 +162,7 @@ function Planet({
           role: "button",
           tabIndex: 0,
           "aria-pressed": chosen,
-          "aria-label": `${onPlanets.verb} ${planet.name}, ${onPlanets.values[planet.id]} ${onPlanets.unit}, ${planet.resources} resources / ${planet.influence} influence${planet.exhausted ? ", exhausted" : ""}`,
+          "aria-label": `${onPlanets.verb} ${planet.name}, ${onPlanets.values[planet.id]} ${face}, ${planet.resources} resources / ${planet.influence} influence${planet.exhausted ? ", exhausted" : ""}`,
           onKeyDown: pressOnKey,
           onClick: (event: React.MouseEvent) => {
             event.stopPropagation();

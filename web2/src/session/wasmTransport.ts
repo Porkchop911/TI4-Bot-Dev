@@ -9,6 +9,7 @@ import { loadCatalog } from "@ti4/shared/content/catalog.ts";
 import { type HostSave as EngineSave, Host, type StartConfig } from "@ti4/shared/engine/host.ts";
 import { sha256Hex } from "@ti4/shared/engine/identity.ts";
 import { hasJspi } from "@ti4/shared/engine/jspi.ts";
+import { fleetStanding } from "@ti4/shared/engine/fleet.ts";
 import { groundOdds, spaceOdds } from "@ti4/shared/engine/odds.ts";
 import { inlinePort, workerPort } from "@ti4/shared/engine/port.ts";
 import type { HostPort, ModelFile } from "@ti4/shared/engine/protocol.ts";
@@ -474,6 +475,7 @@ export function createWasmTransport(
     // The odds are asked of the Worker: of the instance of the game, also while it waits.
     odds: (request) => spaceOdds(link.query, request),
     groundOdds: (request) => groundOdds(link.query, request),
+    fleetStanding: (counts) => fleetStanding(link.query, counts),
     capabilities,
     player: true,
     ready: () => parked || ended,

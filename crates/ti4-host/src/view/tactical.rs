@@ -314,6 +314,10 @@ pub struct BuildFact {
     /// The unit uses capacity while it is in a space area: a fighter, a ground force.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub cargo: bool,
+    /// The unit is a fighter: in the space area it counts as a fighter of
+    /// [`FleetCountsFact`], else as a ground force that is carried.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub fighter: bool,
     /// Where the unit can be placed: `space`, or a planet of the system.
     pub places: Vec<String>,
     /// What the unit hits on in a combat, and with how many dice. `None`: it does not fight.
@@ -359,6 +363,14 @@ pub enum Unavailable {
     Blockade,
     /// The system has no place for the unit.
     NoPlace,
+    /// This use of PRODUCTION makes another unit only (Minister of Industry, Freelancers).
+    OnlyAnother,
+    /// This use of PRODUCTION makes units up to a cost that this unit is above.
+    TooCostly,
+    /// An ability of the seat bars the unit from a production by an ability.
+    Banned,
+    /// An ability of the seat bars the producers in the system from making this unit (Mitosis).
+    Barred,
     /// The game does not offer the unit, for a reason that these facts do not know.
     NotOffered,
 }
@@ -370,6 +382,98 @@ pub enum Unavailable {
 pub struct PayingPlanet {
     pub planet: String,
     pub worth: i64,
+    /// The kind of value that the planet pays with, when it is not the kind of the bill: its
+    /// influence for resources (Archon's Gift, Freelancers). The payment option of the planet is
+    /// then `exhaust|<planet>|<face>`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub face: Option<String>,
+}
+
+/// The numbers that the fleet supply and the capacity of a seat in a system are read from
+/// (`ti4_engine::fleet::FleetCounts`). A client adds the units that it stages and asks the engine
+/// for the standing ([`fleet_standing`]), so the rules of 16 and 37 stay in the engine: the
+/// fighters that a space dock holds, and the fighters over capacity that Fighter II puts on the
+/// fleet pool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct FleetCountsFact {
+    pub fleet_limit: i64,
+    /// Ships that count against the fleet pool.
+    pub ships: i64,
+    /// Capacity of the ships in the space area.
+    pub transport: i64,
+    /// Capacity that ground forces in the space area use.
+    pub carried: i64,
+    /// Capacity that fighters in the space area use.
+    pub fighters: i64,
+    /// Fighters that the structures of the seat in the system hold without capacity.
+    #[serde(default)]
+    pub fighter_support: i64,
+    /// Fighters that the capacity cannot hold count against the fleet pool (Fighter II).
+    #[serde(default)]
+    pub fighters_to_fleet_pool: bool,
+    /// Such a fighter counts as half a ship.
+    #[serde(default)]
+    pub half_fighters: bool,
+}
+
+/// The fleet supply and the capacity of some counts, as the engine reads them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct FleetStandingFact {
+    pub fleet_limit: i64,
+    /// Ships that count against the fleet pool, with the fighters that it carries.
+    pub fleet_charged: i64,
+    /// Capacity of the ships in the space area.
+    pub transport: i64,
+    /// Capacity that is used, after the fighters that structures hold.
+    pub consumed: i64,
+    /// Fighters that the fleet pool carries in place of capacity.
+    pub fighters_charged: i64,
+    /// Units that use capacity and cannot stay (16.3).
+    pub capacity_excess: i64,
+}
+
+impl From<ti4_engine::fleet::FleetCounts> for FleetCountsFact {
+    fn from(counts: ti4_engine::fleet::FleetCounts) -> Self {
+        Self {
+            fleet_limit: counts.fleet_limit,
+            ships: counts.ships,
+            transport: counts.transport,
+            carried: counts.carried,
+            fighters: counts.fighters,
+            fighter_support: counts.fighter_support,
+            fighters_to_fleet_pool: counts.fighters_to_fleet_pool,
+            half_fighters: counts.half_fighters,
+        }
+    }
+}
+
+/// The standing of some counts: the arithmetic of `ti4_engine::fleet`, for a client that stages
+/// units before it sends them. Nothing of a game is read.
+#[must_use]
+pub fn fleet_standing(counts: &FleetCountsFact) -> FleetStandingFact {
+    let standing = ti4_engine::fleet::FleetCounts {
+        fleet_limit: counts.fleet_limit,
+        ships: counts.ships,
+        transport: counts.transport,
+        carried: counts.carried,
+        fighters: counts.fighters,
+        fighter_support: counts.fighter_support,
+        fighters_to_fleet_pool: counts.fighters_to_fleet_pool,
+        half_fighters: counts.half_fighters,
+    }
+    .standing();
+    FleetStandingFact {
+        fleet_limit: standing.fleet_limit,
+        fleet_charged: standing.fleet_charged,
+        transport: standing.transport,
+        consumed: standing.consumed,
+        fighters_charged: standing.fighters_charged,
+        capacity_excess: standing.capacity_excess,
+    }
 }
 
 /// A limit and what already counts against it.
@@ -397,14 +501,20 @@ pub struct ProductionFacts {
     /// Every unit of this use costs nothing.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub free: bool,
-    /// The ready planets of the seat that pay resources.
+    /// The ready planets of the seat that pay resources, each with its best face.
     pub planets: Vec<PayingPlanet>,
     pub trade_goods: i64,
+    /// Commodities that the seat may spend as trade goods in this payment (the Keleres agent).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub commodities: i64,
     /// What one trade good pays.
     pub trade_good_worth: i64,
     pub fleet_supply: FleetSupplyFact,
     /// The capacity of the ships of the seat in the system, and what uses it.
     pub transport: LimitFact,
+    /// What the fleet supply and the capacity in the system are read from, before the build.
+    /// A fighter that the seat produces counts as its own kind (Fighter II).
+    pub fleet: FleetCountsFact,
 }
 
 /// The facts of the pending choice of a tactical action.
@@ -1045,6 +1155,7 @@ fn build_fact(
         }),
         fleet: kind.is_ship() && !kind.is_fighter(),
         cargo: kind.consumes_capacity(),
+        fighter: kind.is_fighter(),
         places,
         combat: kind.combat_hits_on().map(|hits_on| CombatFact {
             hits_on,
@@ -1162,6 +1273,14 @@ fn production(
             player,
             &ti4_model::id::UnitTypeId::new(kind.id()),
         );
+        let detail = |key: &str| choice.details.get(key);
+        let only_another = detail("only_unit")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|only| only != kind.id());
+        let too_costly = detail("max_unit_cost")
+            .and_then(serde_json::Value::as_i64)
+            .is_some_and(|max| cost > max);
+        let by_ability = detail("by_ability").and_then(serde_json::Value::as_bool) == Some(true);
         let unavailable = if owned.is_none() {
             Some(Unavailable::Technology)
         } else if places.is_empty() {
@@ -1172,6 +1291,20 @@ fn production(
             })
         } else if left == 0 {
             Some(Unavailable::Supply)
+        } else if only_another {
+            Some(Unavailable::OnlyAnother)
+        } else if too_costly {
+            Some(Unavailable::TooCostly)
+        } else if by_ability
+            && ti4_engine::production::banned_from_ability_production(state, content, player, kind)
+        {
+            Some(Unavailable::Banned)
+        } else if !by_ability
+            && ti4_engine::production::barred_capacity(
+                state, content, sources, player, system, kind,
+            ) >= limit.amount
+        {
+            Some(Unavailable::Barred)
         } else if cost - discount > funds || limit.paid >= limit.amount {
             None
         } else {
@@ -1200,6 +1333,18 @@ fn production(
     };
     units.sort_by_key(rank);
     let standing = ti4_engine::fleet::standing(state, content, sources, player, system, None);
+    let mut fleet = ti4_engine::fleet::counts(state, content, sources, player, system);
+    // A fighter that the seat produces brings its own rule (Fighter II) to the fighters there.
+    for unit in &units {
+        if let Some(kind) = types
+            .get(unit.unit.as_str())
+            .filter(|kind| kind.is_fighter())
+        {
+            let (to_pool, half) = ti4_engine::fleet::fighter_rules(state, content, player, kind);
+            fleet.fighters_to_fleet_pool |= to_pool;
+            fleet.half_fighters |= half;
+        }
+    }
     Some(ProductionFacts {
         system: system.to_string(),
         capacity: LimitFact {
@@ -1216,7 +1361,7 @@ fn production(
                 .and_then(serde_json::Value::as_bool)
                 == Some(true)
         }),
-        planets: ti4_engine::production::native_payment_planets(
+        planets: ti4_engine::production::best_payment_faces(
             state,
             content,
             sources,
@@ -1224,11 +1369,14 @@ fn production(
             Spend::Resources,
         )
         .into_iter()
-        .map(|(planet, worth)| PayingPlanet {
+        .map(|(planet, worth, face)| PayingPlanet {
             planet: planet.to_string(),
             worth,
+            face: (face != Spend::Resources)
+                .then(|| ti4_engine::production::spend_label(face).to_owned()),
         })
         .collect(),
+        commodities: ti4_engine::production::spendable_commodities(state, player),
         trade_goods: state
             .player(player)
             .map_or(0, |seat| i64::from(seat.trade_goods)),
@@ -1241,6 +1389,7 @@ fn production(
             limit: standing.transport,
             used: standing.consumed,
         },
+        fleet: fleet.into(),
     })
 }
 

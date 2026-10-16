@@ -1,13 +1,7 @@
 // The examples of the demo, in the groups of the example list. This file has no imports: the
 // demo bar and the screenshot tests both read it.
 export const EXAMPLE_GROUPS: [string, [string, string][]][] = [
-  [
-    "Private draft",
-    [
-      ["draft-combat", "Draft · Space combat boundary"],
-      ["draft-production", "Draft · Choose production"],
-    ],
-  ],
+  ["Private draft", [["draft-combat", "Draft · Space combat boundary"]]],
   [
     "Live action",
     [

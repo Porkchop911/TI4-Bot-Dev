@@ -62,6 +62,8 @@ export type { FactionId } from "./FactionId.ts";
 export type { FactionOption } from "./FactionOption.ts";
 export type { FactionRecord } from "./FactionRecord.ts";
 export type { FactionSheet } from "./FactionSheet.ts";
+export type { FleetCountsFact } from "./FleetCountsFact.ts";
+export type { FleetStandingFact } from "./FleetStandingFact.ts";
 export type { FleetSupplyFact } from "./FleetSupplyFact.ts";
 export type { FollowerFact } from "./FollowerFact.ts";
 export type { FollowerState } from "./FollowerState.ts";

@@ -226,9 +226,10 @@ export function setResearchGoods(
   staged: string | null,
   paying: Paying | null,
   value: number,
+  source?: string,
 ): Paying | null {
   const offer = chosenOffer(choice, staged);
-  return offer ? goodsPaying(offer, paying ?? NO_PAYMENT, value) : null;
+  return offer ? goodsPaying(offer, paying ?? NO_PAYMENT, value, source) : null;
 }
 
 /** Auto-pay of a research, or "Clear payment" (`reset`). */
@@ -261,5 +262,5 @@ export function researchPlan(
     return null;
   }
   const staging = payingFor(offer, paying ?? NO_PAYMENT);
-  return paidBy(offer, staging) >= bill.cost ? paySteps(staging) : null;
+  return paidBy(offer, staging) >= bill.cost ? paySteps(offer, staging) : null;
 }

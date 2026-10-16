@@ -43,8 +43,8 @@ import { type KeptOdds, type OddsRequest, oddsRequest } from "./movementOdds";
 import { type GroundOddsAsk, type KeptGroundOdds, groundAsks } from "./groundOdds";
 import { type MovementPlan, type PlanStep, draftOf, stageOf, stepsOf } from "./movementPlan";
 import {
-  GOODS,
   EMPTY as NO_PRODUCTION,
+  type KeptStanding,
   type ProductionDraft,
   autoPay,
   clearPayment,
@@ -54,6 +54,7 @@ import {
   stepsOf as productionSteps,
   setGoods,
   setCount as setProductionCount,
+  stagedCounts,
   togglePlanet,
   totals,
 } from "./productionDraft";
@@ -99,7 +100,14 @@ import {
 } from "./select/research";
 import { countPools, selectTokens } from "./select/tokens";
 import type { Transport } from "./transport";
-import type { DraftOutcome, DraftStep, PlanScope, ReactionModes, SessionUpdate } from "./wire";
+import type {
+  DraftOutcome,
+  DraftStep,
+  FleetCountsFact,
+  PlanScope,
+  ReactionModes,
+  SessionUpdate,
+} from "./wire";
 
 const NOTHING: LocalState = {
   inspected: null,
@@ -641,6 +649,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           rolls: event.rolls ?? [],
           odds: null,
           groundOdds: {},
+          standing: null,
           menu: null,
         };
       });
@@ -875,6 +884,8 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
     session: GameSession;
     odds: OddsRequest | null;
     ground: GroundOddsAsk[];
+    /** The counts of the staged build of a production, for the fleet supply and the capacity. */
+    standing: FleetCountsFact | null;
   } | null => {
     if (!update || !transport) {
       return null;
@@ -1376,16 +1387,15 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
               local.staged,
               local.researchPay ?? null,
               intent.value,
+              intent.source,
             );
             return goods && setLocal((now) => ({ ...now, researchPay: goods }));
           }
           if (editor) {
-            return void restaged(editor.goods(intent.value));
+            return void restaged(editor.goods(intent.value, intent.source));
           }
           return (
-            producing &&
-            intent.source === GOODS &&
-            produce((now) => setGoods(producing, now, intent.value))
+            producing && produce((now) => setGoods(producing, now, intent.value, intent.source))
           );
         case "payment":
           if (researching) {
@@ -1627,6 +1637,8 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             item.kind === "ask" ? [item.ask] : [],
           )
         : [],
+      // The fleet supply and the capacity after the build in view, Live or in a draft.
+      standing: producing ? stagedCounts(producing, state.production) : null,
     };
   }, [
     update,
@@ -1689,6 +1701,22 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
       current = false;
     };
   }, [transport, groundKey]);
+
+  // The engine of the page reads the fleet supply and the capacity of each new build. Until it
+  // answers, the gauges keep the last answer.
+  const standingKey = built?.standing ? JSON.stringify(built.standing) : null;
+  useEffect(() => {
+    if (!transport || standingKey === null) {
+      return;
+    }
+    let current = true;
+    const keep = (response: KeptStanding["response"]) =>
+      current && setLocal((now) => ({ ...now, standing: { key: standingKey, response } }));
+    transport.fleetStanding(JSON.parse(standingKey)).then(keep, () => keep(null));
+    return () => {
+      current = false;
+    };
+  }, [transport, standingKey]);
 
   return { session: built?.session ?? null, error: local.error, replaying: local.replaying };
 }

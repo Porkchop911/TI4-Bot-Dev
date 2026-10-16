@@ -462,6 +462,8 @@ export interface PaymentView {
    * that pays exactly what the planets leave; null when the trade goods cannot do that.
    */
   goods: { id: string; value: number; max: number; rest: number | null } | null;
+  /** Commodities that pay as trade goods (the Keleres agent): a counter next to the trade goods. */
+  commodities?: { id: string; value: number; max: number } | null;
   /** Auto-pay and "Clear payment". They change the staged payment on the map; nothing is sent. */
   actions: ActionButtonView[];
 }

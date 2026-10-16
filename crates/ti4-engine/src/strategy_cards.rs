@@ -222,16 +222,7 @@ pub(crate) fn purchase_details(
     if available < INFLUENCE_PER_TOKEN {
         return None;
     }
-    let planets: Vec<serde_json::Value> = crate::production::native_payment_planets(
-        state,
-        content,
-        sources,
-        player,
-        Spend::Influence,
-    )
-    .into_iter()
-    .map(|(planet, worth)| serde_json::json!({ "id": planet.to_string(), "worth": worth }))
-    .collect();
+    let planets = payment_planets(state, content, sources, player, Spend::Influence);
     let goods = state
         .player(player)
         .map_or(0, |seat| i64::from(seat.trade_goods));
@@ -241,6 +232,7 @@ pub(crate) fn purchase_details(
         "max": available / INFLUENCE_PER_TOKEN,
         "trade_goods": goods,
         "trade_good_worth": crate::production::trade_good_worth(state, player),
+        "commodities": crate::production::spendable_commodities(state, player),
         "planets": planets,
     }))
 }
@@ -1550,11 +1542,33 @@ fn research_payable(
     crate::payment::affordable(&trial, content, sources, player, cost, Spend::Resources)
 }
 
+/// The ready planets that pay a bill of `kind`, for the details of a payment (display only): each
+/// with the worth of its best face, and `face` when that face spends the other kind (Archon's
+/// Gift); its payment option is then `exhaust|<planet>|<face>`.
+fn payment_planets(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    kind: Spend,
+) -> Vec<serde_json::Value> {
+    crate::production::best_payment_faces(state, content, sources, player, kind)
+        .into_iter()
+        .map(|(planet, worth, face)| {
+            let mut entry = serde_json::json!({ "id": planet.to_string(), "worth": worth });
+            if face != kind {
+                entry["face"] = serde_json::Value::from(crate::production::spend_label(face));
+            }
+            entry
+        })
+        .collect()
+}
+
 /// What a client needs to stage the payment of a paid research with its choice (display only).
 ///
-/// `planets` are the ready planets that pay in resources themselves, with their face worth, and
-/// `trade_goods` can be spent one at a time at `trade_good_worth` each; Archon's Gift faces and
-/// The Triad are not listed. `kept` names, for each offered technology whose prerequisites
+/// `planets` are the ready planets that pay, with the worth of their best face (`face` names an
+/// Archon's Gift face), `trade_goods` can be spent one at a time at `trade_good_worth` each, and
+/// so can `commodities` (the Keleres agent); The Triad is not listed. `kept` names, for each offered technology whose prerequisites
 /// exhaust specialty planets, those planets: the payment of that research does not offer them.
 /// The payment questions after the research ask which of the rest to spend.
 fn research_payment_details(
@@ -1565,16 +1579,7 @@ fn research_payment_details(
     cost: i64,
     open: &[TechnologyId],
 ) -> serde_json::Value {
-    let planets: Vec<serde_json::Value> = crate::production::native_payment_planets(
-        state,
-        content,
-        sources,
-        player,
-        Spend::Resources,
-    )
-    .into_iter()
-    .map(|(planet, worth)| serde_json::json!({ "id": planet.to_string(), "worth": worth }))
-    .collect();
+    let planets = payment_planets(state, content, sources, player, Spend::Resources);
     let kept: serde_json::Map<String, serde_json::Value> = open
         .iter()
         .filter_map(|technology| {
@@ -1595,6 +1600,7 @@ fn research_payment_details(
         "cost": cost,
         "trade_goods": state.player(player).map_or(0, |seat| seat.trade_goods),
         "trade_good_worth": crate::production::trade_good_worth(state, player),
+        "commodities": crate::production::spendable_commodities(state, player),
         "planets": planets,
         "kept": kept,
     })

@@ -9,6 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use ti4_content::ContentStore;
 use ti4_content::galaxy::Galaxy;
 use ti4_engine::choice::Choice;
+use ti4_engine::production::Spend;
 use ti4_model::content_types::{ContentType, POK, SourceSet};
 use ti4_model::id::{ObjectiveId, PlanetId, PlayerId};
 use ti4_model::state::{GameState, Player};
@@ -221,6 +222,25 @@ pub fn project_board_view_with_map(state: &GameState, map_tiles: &[BoardTileView
     project_board_view_full(state, map_tiles, None, &[], None)
 }
 
+/// A value of a planet now, when it differs from the printed one.
+fn value_now(state: &GameState, planet: &PlanetId, kind: Spend) -> Option<i64> {
+    let content = ContentStore::embedded();
+    let now = ti4_engine::production::planet_value_now(
+        state,
+        content,
+        ti4_model::content_types::FULL,
+        planet,
+        kind,
+    );
+    (now != ti4_engine::production::planet_value(
+        content,
+        ti4_model::content_types::FULL,
+        planet,
+        kind,
+    ))
+    .then_some(now)
+}
+
 /// Projects the full board view with combat and dice information.
 #[must_use]
 pub fn project_board_view_full(
@@ -250,6 +270,8 @@ pub fn project_board_view_full(
                         .get(&planet_id)
                         .cloned()
                         .unwrap_or_default(),
+                    resources: value_now(state, &planet_id, Spend::Resources),
+                    influence: value_now(state, &planet_id, Spend::Influence),
                 },
             );
         }

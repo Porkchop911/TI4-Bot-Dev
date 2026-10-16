@@ -5,6 +5,8 @@ import type {
   Catalog,
   DraftOutcome,
   DraftStep,
+  FleetCountsFact,
+  FleetStandingFact,
   GroundOddsRequest,
   GroundOddsResponse,
   PlanScope,
@@ -173,6 +175,11 @@ export interface Transport {
   odds(request: SpaceOddsRequest): Promise<BattleResponse>;
   /** The odds of a ground combat, from the engine of this page as `odds` is. */
   groundOdds(request: GroundOddsRequest): Promise<GroundOddsResponse>;
+  /**
+   * The fleet supply and the capacity of some counts (a production with the staged units), from
+   * the engine of this page as `odds` is.
+   */
+  fleetStanding(counts: FleetCountsFact): Promise<FleetStandingFact>;
   /** Ends the game on this side. */
   close(): void;
 }

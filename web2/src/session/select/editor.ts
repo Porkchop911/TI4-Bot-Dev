@@ -57,8 +57,8 @@ export interface Editor<D> {
   last?(choice: Choice, draft: D | null): D | null;
   /** A counter of the panel. */
   count?(choice: Choice, draft: D | null, key: string, value: number): D | null;
-  /** The trade goods of the payment. */
-  goods?(choice: Choice, draft: D | null, value: number): D | null;
+  /** The trade goods of the payment, or its commodities (`source`, the id of the counter). */
+  goods?(choice: Choice, draft: D | null, value: number, source: string): D | null;
   /** Auto-pay, or "Clear payment". */
   pay?(choice: Choice, draft: D | null, how: "auto" | "reset"): D | null;
 }

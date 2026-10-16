@@ -120,7 +120,11 @@ it("auto-pays with the least waste, then clears", () => {
   const choice = research(PAYMENT);
   const auto = payResearch(choice, "gd", null, "auto")!;
   expect(selectResearch(update, choice, "gd", null, auto)?.payment?.paid).toBe(6);
-  expect(payResearch(choice, "gd", auto, "reset")).toEqual({ planets: [], goods: 0 });
+  expect(payResearch(choice, "gd", auto, "reset")).toEqual({
+    planets: [],
+    goods: 0,
+    commodities: 0,
+  });
 });
 
 it("has no payment for a free research, nor in a draft", () => {

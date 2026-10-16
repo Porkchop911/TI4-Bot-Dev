@@ -6,7 +6,8 @@ import { payState, payUnit } from "../steps/PaymentList";
 /**
  * The open payment, on the board where the player chooses the planets: how it stands, and every
  * control of it. Trade goods are not on the board, so they have a counter here, and one button
- * that pays what the planets leave.
+ * that pays what the planets leave. Commodities that pay as trade goods (the Keleres agent) have
+ * a counter of their own.
  */
 export function PaymentBar({ view }: { view: PaymentView }) {
   const dispatch = useDispatch();
@@ -49,6 +50,20 @@ export function PaymentBar({ view }: { view: PaymentView }) {
           >
             Pay rest
           </Button>
+        </span>
+      )}
+      {view.commodities && (
+        <span className="flex items-center gap-2 border-l border-line pl-2.5 text-xs text-muted phone:order-last phone:w-full phone:border-l-0 phone:pl-0">
+          Commodities
+          <Counter
+            value={view.commodities.value}
+            max={view.commodities.max}
+            label="commodity"
+            onChange={(value) =>
+              view.commodities &&
+              dispatch({ type: "setPayment", source: view.commodities.id, value })
+            }
+          />
         </span>
       )}
       <span className="flex items-center gap-1.5 border-l border-line pl-2.5 phone:ml-auto phone:border-l-0 phone:pl-0">

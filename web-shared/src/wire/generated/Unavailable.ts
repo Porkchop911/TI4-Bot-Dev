@@ -3,4 +3,4 @@
 /**
  * Why a unit cannot be produced.
  */
-export type Unavailable = "technology" | "supply" | "blockade" | "no_place" | "not_offered";
+export type Unavailable = "technology" | "supply" | "blockade" | "no_place" | "only_another" | "too_costly" | "banned" | "barred" | "not_offered";

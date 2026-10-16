@@ -74,6 +74,13 @@ pub struct PlanetView {
     pub exhausted: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attachments: Vec<String>,
+    /// The resources of the planet now, when they differ from the printed value: with its
+    /// attachments and the laws on it (`ti4_engine::production::planet_value_now`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resources: Option<i64>,
+    /// The influence of the planet now, when it differs from the printed value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub influence: Option<i64>,
 }
 
 /// Redacted view of a unit placed on the board.

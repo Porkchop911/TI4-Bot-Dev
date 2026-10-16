@@ -727,13 +727,6 @@ export const examples: Record<string, any> = {
     until: 0,
     tip: "Click any system on the board, or use Find system. The demo scripts Starpoint and Wellon. Wellon is reached through the gravity rift or the α wormhole.",
   },
-  "draft-production": {
-    mode: "draft",
-    route: "friendly",
-    until: 4,
-    movement: { "j-cruiser": 0 },
-    tip: "Build a cart, pay, and place. Pay on the map: click the bright planets.",
-  },
   "live-combat": {
     mode: "live",
     route: "hostile",

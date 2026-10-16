@@ -21,8 +21,15 @@ import {
   sizes,
   totals,
 } from "../productionDraft";
-import type { BuildFact, Catalog, ProductionFacts, SessionUpdate } from "../wire";
+import type {
+  BuildFact,
+  Catalog,
+  FleetStandingFact,
+  ProductionFacts,
+  SessionUpdate,
+} from "../wire";
 import { systemLabel, tilesOf } from "./movement";
+import { COMMODITY, facesOf, planetPays } from "./payment";
 import { isShip, unitLabel, unitType } from "./names";
 
 export type Stage = "build" | "pay";
@@ -44,7 +51,11 @@ const UNAVAILABLE_WORD: Record<NonNullable<BuildFact["unavailable"]>, string> = 
   supply: "None left",
   blockade: "Blockaded",
   no_place: "No place",
-  not_offered: "Not here",
+  only_another: "Other unit only",
+  too_costly: "Too costly",
+  banned: "Barred",
+  barred: "Barred here",
+  not_offered: "Not offered",
 };
 
 const placeName = (names: Map<string, string>, place: string) =>
@@ -58,6 +69,11 @@ export function selectBuild(
   stage: Stage,
   /** The printed names of the units. */
   printed: Catalog | null = null,
+  /**
+   * The fleet supply and the capacity after the staged build, as the engine reads them. Null
+   * before the engine answered: the gauges show the system before the build.
+   */
+  standing: FleetStandingFact | null = null,
 ): BuildSheetView {
   const tiles = tilesOf(update);
   const names = planetNames(update);
@@ -140,20 +156,35 @@ export function selectBuild(
     gauges: [
       { label: "Production capacity", used: total.units, total: total.capacity },
       { label: "Resources", used: total.cost, total: total.available },
-      { label: "Fleet supply after", used: total.fleet, total: facts.fleet_supply.limit },
-      { label: "Fighters and cargo in space", used: total.cargo, total: total.transport },
+      {
+        label: "Fleet supply after",
+        used: standing?.fleet_charged ?? facts.fleet_supply.charged,
+        total: facts.fleet_supply.limit,
+      },
+      {
+        label: "Fighters and cargo in space",
+        used: standing?.consumed ?? facts.transport.used,
+        total: standing?.transport ?? facts.transport.limit,
+      },
     ],
     stage,
   };
 }
 
-/** What pays now: "Jord 4 + Lisis 2 + 1 trade good". */
+/** What pays now: "Jord 4 + Lisis 2 + 1 trade good", "Mecatol Rex 6 influence". */
 function paySummary(update: SessionUpdate, facts: ProductionFacts, draft: ProductionDraft) {
   const names = planetNames(update);
-  const worth = new Map(facts.planets.map((planet) => [planet.planet, planet.worth]));
+  const paying = new Map(facts.planets.map((planet) => [planet.planet, planet]));
   return [
-    ...draft.planets.map((planet) => `${names.get(planet) ?? planet} ${worth.get(planet) ?? 0}`),
+    ...draft.planets.map((planet) =>
+      planetPays(
+        names.get(planet) ?? planet,
+        paying.get(planet)?.worth ?? 0,
+        paying.get(planet)?.face,
+      ),
+    ),
     ...(draft.goods ? [plural(draft.goods, "trade good")] : []),
+    ...(draft.commodities ? [plural(draft.commodities, "commodity", "commodities")] : []),
   ].join(" + ");
 }
 
@@ -189,12 +220,15 @@ export function selectPayment(
           rest: rest !== null && rest !== draft.goods && rest <= facts.trade_goods ? rest : null,
         }
       : null,
+    commodities: facts.commodities
+      ? { id: COMMODITY, value: draft.commodities ?? 0, max: facts.commodities }
+      : null,
     actions: [
       action("Auto-pay", { type: "payment", action: "auto" }, cost <= 0),
       action(
         "Clear payment",
         { type: "payment", action: "reset" },
-        draft.planets.length === 0 && draft.goods === 0,
+        draft.planets.length === 0 && draft.goods === 0 && !draft.commodities,
       ),
     ],
   };
@@ -207,9 +241,10 @@ export const selectProduction = (
   draft: ProductionDraft,
   stage: Stage,
   printed: Catalog | null = null,
+  standing: FleetStandingFact | null = null,
 ): ProductionView => ({
   kind: "production",
-  sheet: selectBuild(update, facts, draft, stage, printed),
+  sheet: selectBuild(update, facts, draft, stage, printed, standing),
   skipped: null,
   title: "",
   subtitle: "",
@@ -250,6 +285,7 @@ export function productionTask(
     verb: "Exhaust",
     unit: "resources",
     payment: selectPayment(update, facts, draft, true),
+    ...facesOf(facts.planets),
   };
 }
 

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import { examples } from "./data";
 import { EXAMPLE_IDS } from "./exampleList";
 import { selectShell } from "./select/shell";
-import { E } from "./loose";
 import { createWorld, currentState, loadExample, reduce, setViewer } from "./world";
 
 /**
@@ -194,14 +193,5 @@ describe("mock engine", () => {
     });
     collect();
     expect(toasts).toContain("Direct Hit was not offered: it is set to Never offer.");
-  });
-
-  it("stages a payment of a production with the least waste", () => {
-    const world = createWorld();
-    loadExample(world, "draft-production");
-    reduce(world, { type: "payment", action: "auto" });
-    const state = currentState(world);
-    const total = E.productionTotals(state, state.edit.value);
-    expect(total.paid).toBeGreaterThanOrEqual(total.cost);
   });
 });

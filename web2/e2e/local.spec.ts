@@ -2895,6 +2895,8 @@ test("a production: the build is staged on the map, then paid on the map, and se
     sheet.getByText(label, { exact: true }).locator("xpath=following-sibling::strong");
   await expect(gauge("Resources")).toHaveText("0 / 26");
   const cargo = Number((await gauge("Fighters and cargo in space").innerText()).split("/")[1]);
+  // The two fighters there are held by the space docks: the engine counts no capacity for them.
+  await expect(gauge("Fighters and cargo in space")).toHaveText(/^0 \//);
   expect(await sheet.evaluate((node) => node.scrollHeight <= node.clientHeight)).toBe(true);
   await expect(panel(page).getByRole("spinbutton")).toHaveCount(0);
   // No planet pays while the build is chosen, and there is no payment bar.
@@ -2905,6 +2907,8 @@ test("a production: the build is staged on the map, then paid on the map, and se
 
   // A counter buys in its place: two fighters, a cruiser, infantry on each planet.
   await ships.getByRole("button", { name: "Add Fighter II" }).click();
+  // The space docks hold up to six fighters, so the two staged ones still use no capacity.
+  await expect(gauge("Fighters and cargo in space")).toHaveText(new RegExp(`^0 / ${cargo}$`));
   // One purchase is one token, with the two fighters that it makes.
   await expect(ships.getByRole("button", { name: "Remove Fighter II" })).toHaveCount(1);
   await expect(ships.getByRole("button", { name: "Remove Fighter II" }).locator("svg")).toHaveCount(
@@ -2930,6 +2934,7 @@ test("a production: the build is staged on the map, then paid on the map, and se
   await expect(sheet.getByRole("status").first()).toHaveText("5 units · 3 resources · discount 1");
   await expect(row(/^Planet Lisis Nothing is produced$/)).toBeVisible();
   await expect(send(page)).toHaveText(/Pay 3 resources/);
+  await fitsHeight(page);
   await page.screenshot({ path: "shots/local/production-build.png", animations: "disabled" });
 
   // Then the payment, on the map: the sheet closes, the bar opens, the ready planets pay.
@@ -2940,12 +2945,19 @@ test("a production: the build is staged on the map, then paid on the map, and se
   await expect(send(page)).toHaveText(/Produce units/);
   await expect(send(page)).toBeDisabled();
   await expect(page.locator("g.planet.payable")).toHaveCount(8);
+  // A planet pays what the engine says, and the map shows its values with its attachments:
+  // the Cybernetic Research Station of Velnor adds one to its printed 2 / 1.
+  await expect(mapPlanet(page, "Velnor")).toHaveAttribute(
+    "aria-label",
+    /^Exhaust Velnor, 3 resources, 3 resources \/ 2 influence/,
+  );
   await mapPlanet(page, "Lisis").click();
   await expect(bar.getByRole("status").first()).toHaveText(/2 \/ 3\s*resources\s*1 more/);
   await bar.getByRole("button", { name: "Pay rest" }).click();
   await expect(bar.getByRole("status").first()).toHaveText(/3 \/ 3\s*resources\s*✓ Paid/);
   await expect(page.locator("footer").getByText("Lisis 2 + 1 trade good")).toBeVisible();
   await expect(send(page)).toBeEnabled();
+  await fitsHeight(page);
   await page.screenshot({ path: "shots/local/production-pay.png", animations: "disabled" });
   // Auto-pay finds the payment with the least waste: one planet of 3.
   await bar.getByRole("button", { name: "Clear payment" }).click();

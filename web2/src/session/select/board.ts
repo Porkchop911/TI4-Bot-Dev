@@ -16,6 +16,7 @@ import type {
   BoardTileView,
   Catalog,
   ExplorationCatalog,
+  FleetStandingFact,
   InvasionFacts,
   MovementFacts,
   PlacedUnitView,
@@ -93,8 +94,8 @@ function tileView(
       return {
         id: planet.id,
         name: planet.label,
-        resources: planet.resources,
-        influence: planet.influence,
+        resources: system?.planets[planet.id]?.resources ?? planet.resources,
+        influence: system?.planets[planet.id]?.influence ?? planet.influence,
         owner: system?.planets[planet.id]?.controlled_by ?? null,
         tech: TECH_COLORS[planet.tech_specialties?.[0] ?? ""] ?? null,
         groundForces: types.filter((type) => type && isGroundForce(type)).length,
@@ -130,8 +131,8 @@ function inspector(
     return {
       planet: {
         name: planet.label,
-        resources: planet.resources,
-        influence: planet.influence,
+        resources: system?.planets[planet.id]?.resources ?? planet.resources,
+        influence: system?.planets[planet.id]?.influence ?? planet.influence,
         owner: system?.planets[planet.id]?.controlled_by ?? null,
         traits: traits(planet),
       },
@@ -227,6 +228,8 @@ export function selectBoard(
     facts: ProductionFacts;
     draft: ProductionDraft;
     stage: Stage;
+    /** The fleet supply and the capacity after the build, as the engine read them. */
+    standing?: FleetStandingFact | null;
   } | null = null,
   /** The viewer can start a tactical action now: a system in the inspector can be activated. */
   activates = false,
@@ -291,7 +294,14 @@ export function selectBoard(
   const build =
     production && production.stage === "build" && open?.system_id === production.facts.system
       ? {
-          ...selectBuild(update, production.facts, production.draft, "build", printed),
+          ...selectBuild(
+            update,
+            production.facts,
+            production.draft,
+            "build",
+            printed,
+            production.standing ?? null,
+          ),
           details: details(open),
         }
       : null;

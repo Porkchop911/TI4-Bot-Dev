@@ -2,7 +2,10 @@
 // made them, and what pays for them. Nothing of it is sent before "Produce units". The prices,
 // the places and the limits are facts of the engine; this file only adds up what is staged.
 import type { PlanStep, ProductionStep } from "./movementPlan";
-import type { ProductionFacts } from "./wire";
+import { COMMODITY, GOODS, exhaustId, leastWaste } from "./select/payment";
+import type { FleetCountsFact, FleetStandingFact, ProductionFacts } from "./wire";
+
+export { GOODS } from "./select/payment";
 
 export interface ProductionDraft {
   /** One purchase each: a unit of the facts, and the place of what it makes. */
@@ -11,12 +14,17 @@ export interface ProductionDraft {
   planets: string[];
   /** The trade goods that are spent. */
   goods: number;
+  /** The commodities that are spent as trade goods (the Keleres agent). */
+  commodities?: number;
 }
 
-export const EMPTY: ProductionDraft = { builds: [], planets: [], goods: 0 };
+export const EMPTY: ProductionDraft = { builds: [], planets: [], goods: 0, commodities: 0 };
 
 export const isEmpty = (draft: ProductionDraft) =>
-  draft.builds.length === 0 && draft.planets.length === 0 && draft.goods === 0;
+  draft.builds.length === 0 &&
+  draft.planets.length === 0 &&
+  draft.goods === 0 &&
+  !draft.commodities;
 
 /** The production limit that is left before any staged purchase. */
 const room = (facts: ProductionFacts) => Math.max(0, facts.capacity.limit - facts.capacity.used);
@@ -48,14 +56,8 @@ export interface Totals {
   cost: number;
   /** What the staged planets and trade goods pay. */
   paid: number;
-  /** What the ready planets and the trade goods of the seat can pay. */
+  /** What the ready planets, the trade goods and the commodities of the seat can pay. */
   available: number;
-  /** The ships that count against the fleet pool, with the staged ones. */
-  fleet: number;
-  /** What uses capacity in the space area, with the staged units there. */
-  cargo: number;
-  /** The capacity of the ships in the space area, with the staged ships. */
-  transport: number;
   /** The staged units of each unit of the facts. */
   made: number[];
 }
@@ -64,9 +66,6 @@ export function totals(facts: ProductionFacts, draft: ProductionDraft): Totals {
   const size = sizes(facts, draft);
   const made = facts.units.map(() => 0);
   let printed = 0;
-  let fleet = facts.fleet_supply.charged;
-  let cargo = facts.transport.used;
-  let transport = facts.transport.limit;
   draft.builds.forEach((build, index) => {
     const unit = facts.units[build.unit];
     if (!unit) {
@@ -74,9 +73,6 @@ export function totals(facts: ProductionFacts, draft: ProductionDraft): Totals {
     }
     made[build.unit] += size[index];
     printed += unit.cost;
-    fleet += unit.fleet ? size[index] : 0;
-    cargo += unit.cargo && build.place === "space" ? size[index] : 0;
-    transport += build.place === "space" ? unit.capacity * size[index] : 0;
   });
   const worth = new Map(facts.planets.map((planet) => [planet.planet, planet.worth]));
   return {
@@ -85,15 +81,43 @@ export function totals(facts: ProductionFacts, draft: ProductionDraft): Totals {
     cost: facts.free ? 0 : Math.max(0, Math.max(0, printed - facts.discount) - facts.credit),
     paid:
       draft.planets.reduce((sum, planet) => sum + (worth.get(planet) ?? 0), 0) +
-      draft.goods * facts.trade_good_worth,
+      (draft.goods + (draft.commodities ?? 0)) * facts.trade_good_worth,
     available:
       facts.planets.reduce((sum, planet) => sum + planet.worth, 0) +
-      facts.trade_goods * facts.trade_good_worth,
-    fleet,
-    cargo,
-    transport,
+      (facts.trade_goods + (facts.commodities ?? 0)) * facts.trade_good_worth,
     made,
   };
+}
+
+/**
+ * The counts of the fleet supply and the capacity in the system with the staged units added: a
+ * ship that counts against the fleet pool, the capacity of a ship, and a fighter or a ground
+ * force in the space area. The engine reads them (`Transport.fleetStanding`).
+ */
+export function stagedCounts(facts: ProductionFacts, draft: ProductionDraft): FleetCountsFact {
+  const size = sizes(facts, draft);
+  const counts = { ...facts.fleet };
+  draft.builds.forEach((build, index) => {
+    const unit = facts.units[build.unit];
+    if (!unit || build.place !== "space") {
+      return;
+    }
+    const made = size[index];
+    counts.ships += unit.fleet ? made : 0;
+    counts.transport += unit.capacity * made;
+    if (unit.fighter) {
+      counts.fighters += made;
+    } else if (unit.cargo) {
+      counts.carried += made;
+    }
+  });
+  return counts;
+}
+
+/** The last answer of the engine for the counts of a build, with the key of its question. */
+export interface KeptStanding {
+  key: string;
+  response: FleetStandingFact | null;
 }
 
 /** Why a unit cannot be produced in this use, in words. */
@@ -105,7 +129,11 @@ export const UNAVAILABLE: Record<
   supply: "None left in supply",
   blockade: "Ships of another player are here",
   no_place: "No place for it here",
-  not_offered: "Cannot be produced here",
+  only_another: "This use of PRODUCTION makes another unit only",
+  too_costly: "This use of PRODUCTION makes cheaper units only",
+  banned: "An ability of yours bars it from a production by an ability",
+  barred: "An ability of yours bars your producers here from making it",
+  not_offered: "The game does not offer it here",
 };
 
 /**
@@ -185,16 +213,24 @@ export function togglePlanet(
     : draft;
 }
 
+/** The trade goods that pay, or the commodities (`source` is the id of their counter). */
 export const setGoods = (
   facts: ProductionFacts,
   draft: ProductionDraft,
-  goods: number,
-): ProductionDraft => ({ ...draft, goods: Math.max(0, Math.min(goods, facts.trade_goods)) });
+  value: number,
+  source: string = GOODS,
+): ProductionDraft =>
+  source === COMMODITY
+    ? { ...draft, commodities: Math.max(0, Math.min(value, facts.commodities ?? 0)) }
+    : source === GOODS
+      ? { ...draft, goods: Math.max(0, Math.min(value, facts.trade_goods)) }
+      : draft;
 
 export const clearPayment = (draft: ProductionDraft): ProductionDraft => ({
   ...draft,
   planets: [],
   goods: 0,
+  commodities: 0,
 });
 
 /**
@@ -202,41 +238,17 @@ export const clearPayment = (draft: ProductionDraft): ProductionDraft => ({
  * same waste the one with fewer planets.
  */
 export function autoPay(facts: ProductionFacts, draft: ProductionDraft): ProductionDraft {
-  const { cost } = totals(facts, draft);
-  const planets = facts.planets;
-  const goods = facts.trade_goods * facts.trade_good_worth;
-  // The best set of planets for each sum that planets can pay, up to the cost and one planet over.
-  const top = cost + Math.max(0, ...planets.map((planet) => planet.worth));
-  const best: (string[] | null)[] = Array.from({ length: top + 1 }, () => null);
-  best[0] = [];
-  for (const planet of planets) {
-    for (let sum = top; sum >= planet.worth; sum--) {
-      const before = best[sum - planet.worth];
-      const now = best[sum];
-      if (before && sum - planet.worth < cost && (!now || now.length > before.length + 1)) {
-        best[sum] = [...before, planet.planet];
-      }
-    }
-  }
-  let pick: { planets: string[]; goods: number; waste: number } | null = null;
-  for (let sum = 0; sum <= top; sum++) {
-    const chosen = best[sum];
-    const rest = Math.max(0, cost - sum);
-    if (!chosen || rest > goods) {
-      continue;
-    }
-    const spent = Math.ceil(rest / Math.max(1, facts.trade_good_worth));
-    const waste = sum + spent * facts.trade_good_worth - cost;
-    // Less waste first, then fewer trade goods: the planets are readied again, the goods are gone.
-    if (!pick || waste < pick.waste || (waste === pick.waste && spent < pick.goods)) {
-      pick = { planets: chosen, goods: spent, waste };
-    }
-  }
-  return pick ? { ...draft, planets: pick.planets, goods: pick.goods } : draft;
+  const pick = leastWaste(
+    facts.planets.map((planet) => ({ id: planet.planet, worth: planet.worth })),
+    facts.trade_goods,
+    facts.commodities ?? 0,
+    facts.trade_good_worth,
+    totals(facts, draft).cost,
+  );
+  return pick ? { ...draft, ...pick } : draft;
 }
 
 // The ids of the staged values, as the sheet sends them back in `setCount`.
-export const GOODS = "trade_good";
 export const buildKey = (unit: number, place: string) => `build:${unit}:${place}`;
 
 /** The staged purchases of a unit at one of its places. */
@@ -293,10 +305,14 @@ export function stepsOf(facts: ProductionFacts, draft: ProductionDraft): Product
     }
   }
   for (const planet of draft.planets) {
-    steps.push({ kind: "pay", source: `exhaust|${planet}` });
+    const face = facts.planets.find((item) => item.planet === planet)?.face;
+    steps.push({ kind: "pay", source: exhaustId(planet, face) });
   }
   for (let good = 0; good < draft.goods; good++) {
     steps.push({ kind: "pay", source: GOODS });
+  }
+  for (let commodity = 0; commodity < (draft.commodities ?? 0); commodity++) {
+    steps.push({ kind: "pay", source: COMMODITY });
   }
   steps.push({ kind: "done_producing" });
   return steps;
@@ -325,12 +341,18 @@ export function draftOf(facts: ProductionFacts, steps: PlanStep[]): ProductionDr
         };
       }
     } else if (step.kind === "pay") {
+      // A planet is named by the option of the game that exhausts it, with its face.
+      const planet = facts.planets.find(
+        (item) => exhaustId(item.planet, item.face) === step.source,
+      )?.planet;
       draft =
         step.source === GOODS
           ? setGoods(facts, draft, draft.goods + 1)
-          : draft.planets.includes(step.source.slice(8))
-            ? draft
-            : togglePlanet(facts, draft, step.source.slice(8));
+          : step.source === COMMODITY
+            ? setGoods(facts, draft, (draft.commodities ?? 0) + 1, COMMODITY)
+            : planet === undefined || draft.planets.includes(planet)
+              ? draft
+              : togglePlanet(facts, draft, planet);
     }
   }
   return draft;

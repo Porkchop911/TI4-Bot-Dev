@@ -108,6 +108,8 @@ export interface BoardTaskView {
   context?: SystemId[];
   /** A payment that is open: the board has its state and its controls, where the player chooses. */
   payment?: PaymentView;
+  /** The planets that pay with their other value (Archon's Gift): the kind that they pay with. */
+  faces?: Record<PlanetId, string>;
 }
 
 export interface InspectorRowView {

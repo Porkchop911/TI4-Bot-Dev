@@ -3,7 +3,7 @@ import { EXAMPLE_IDS as EXAMPLES } from "../src/mock/exampleList";
 
 // Screenshots of every example.
 // Run all: `npm run shots` (the projects "shots" and "shots-phone"; not part of `npm run e2e`).
-// Run some: `npm run shots -- -g draft-production`.
+// Run some: `npm run shots -- -g draft-combat`.
 // One size: the design target is 1920×1080 or larger. Narrower screens are a non-goal (AGENTS.md).
 const SIZE = { width: 1920, height: 1080 };
 
@@ -81,12 +81,6 @@ test.describe("flows", () => {
     await shot(page, "web2/flow/combat-assign");
   });
 
-  test("pay for production on the board", async ({ page }) => {
-    await page.goto("/?example=draft-production");
-    await page.getByRole("button", { name: /Exhaust Jord/ }).click();
-    await shot(page, "web2/flow/production-pay");
-  });
-
   test("apply a draft", async ({ page }) => {
     await page.goto("/?example=draft-combat");
     await page.locator("header").getByRole("button", { name: "Apply to Live" }).click();
@@ -131,15 +125,6 @@ test.describe("flows", () => {
     await shot(page, "web2/flow/reaction-direct-hit");
     await page.keyboard.press("Enter");
     await expect(window).toHaveCount(0);
-  });
-
-  test("auto-pay stages a payment of a production on the map", async ({ page }) => {
-    const panel = page.locator("#step-panel");
-    const bar = page.getByRole("group", { name: "Payment" });
-    await page.goto("/?example=draft-production");
-    await bar.getByRole("button", { name: "Auto-pay" }).click();
-    await expect(panel.locator("footer")).toContainText("Payment");
-    await shot(page, "web2/flow/auto-pay-production");
   });
 
   for (const viewer of ["hacan", "observer"]) {

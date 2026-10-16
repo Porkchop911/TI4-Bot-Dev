@@ -27,6 +27,11 @@ fleet?: boolean,
  */
 cargo?: boolean, 
 /**
+ * The unit is a fighter: in the space area it counts as a fighter of
+ * [`FleetCountsFact`], else as a ground force that is carried.
+ */
+fighter?: boolean, 
+/**
  * Where the unit can be placed: `space`, or a planet of the system.
  */
 places: Array<string>, 

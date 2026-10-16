@@ -1801,6 +1801,127 @@ mod tests {
         assert_eq!(find(&facts, "warsun").unavailable, None);
     }
 
+    /// A use of PRODUCTION that makes one unit only, or units up to a cost, says so for the rest.
+    #[test]
+    fn a_production_of_one_unit_or_up_to_a_cost_says_why_for_the_others() {
+        let content = ContentStore::embedded();
+        let (state, galaxy) = game(LATE_GAME);
+        let mut state = state.clone();
+        let system = SystemId::new(at::DOCK);
+        state.active_system = Some(system.clone());
+        let facts = |window: ProductionWindow| {
+            let mut window = window;
+            window.refresh(&state, content, POK);
+            let choice = window
+                .pending_choice(&state, content, POK)
+                .expect("the seat can produce");
+            match project_tactical_facts(&state, content, POK, &galaxy, &choice) {
+                Some(TacticalFacts::Production(facts)) => facts,
+                other => panic!("no production facts: {other:?}"),
+            }
+        };
+        let reason = |facts: &ProductionFacts, id: &str| {
+            facts
+                .units
+                .iter()
+                .find(|unit| unit.unit == id)
+                .unwrap_or_else(|| panic!("no {id}"))
+                .unavailable
+        };
+        let only = facts(
+            ProductionWindow::new(&state, content, POK, &seat(), &system)
+                .with_only_unit(Some("cruiser2".to_owned())),
+        );
+        assert_eq!(reason(&only, "cruiser2"), None);
+        assert_eq!(reason(&only, "warsun"), Some(Unavailable::OnlyAnother));
+        let cheap = facts(
+            ProductionWindow::new(&state, content, POK, &seat(), &system)
+                .with_max_unit_cost(Some(2)),
+        );
+        assert_eq!(reason(&cheap, "cruiser2"), None);
+        assert_eq!(reason(&cheap, "dreadnought2"), Some(Unavailable::TooCostly));
+    }
+
+    /// What pays and what counts comes from the engine: Archon's Gift pays a planet with its
+    /// influence, and the space docks hold fighters that Fighter II would put on the fleet pool.
+    #[test]
+    fn the_production_facts_have_the_faces_and_the_counts_of_the_engine() {
+        let (state, galaxy) = game(LATE_GAME);
+        let (_, facts) = production(&state, &galaxy, at::DOCK);
+        assert!(facts.planets.iter().all(|planet| planet.face.is_none()));
+        assert_eq!(facts.commodities, 0);
+        assert!(facts.fleet.fighter_support > 0, "{:?}", facts.fleet);
+        assert!(facts.fleet.fighters_to_fleet_pool, "Fighter II");
+        assert_eq!(facts.fleet.fleet_limit, facts.fleet_supply.limit);
+        let standing = crate::view::tactical::fleet_standing(&facts.fleet);
+        assert_eq!(
+            (
+                standing.fleet_charged,
+                standing.consumed,
+                standing.transport
+            ),
+            (
+                facts.fleet_supply.charged,
+                facts.transport.used,
+                facts.transport.limit
+            )
+        );
+
+        let mut gifted = state.clone();
+        gifted.player_mut(&seat()).expect("seat A").breakthrough =
+            Some(ti4_model::id::BreakthroughId::new("xxchabt"));
+        let (_, facts) = production(&gifted, &galaxy, at::DOCK);
+        let content = ContentStore::embedded();
+        let influence = |planet: &str| {
+            ti4_engine::production::planet_value_now(
+                &gifted,
+                content,
+                POK,
+                &ti4_model::id::PlanetId::new(planet),
+                ti4_engine::production::Spend::Influence,
+            )
+        };
+        let faced: Vec<_> = facts
+            .planets
+            .iter()
+            .filter(|planet| planet.face.is_some())
+            .collect();
+        assert!(!faced.is_empty(), "{:?}", facts.planets);
+        // The board has the values of a planet with its attachments, where they differ.
+        let board = crate::projection::project_board_view_with_map(&state, &[]);
+        let attached: Vec<_> = board
+            .systems
+            .values()
+            .flat_map(|system| system.planets.values())
+            .filter(|planet| !planet.attachments.is_empty())
+            .collect();
+        assert!(!attached.is_empty());
+        assert!(
+            attached
+                .iter()
+                .any(|planet| planet.resources.is_some() || planet.influence.is_some()),
+            "{attached:?}"
+        );
+        for planet in &attached {
+            if let Some(resources) = planet.resources {
+                assert_eq!(
+                    resources,
+                    ti4_engine::production::planet_value_now(
+                        &state,
+                        content,
+                        ti4_model::content_types::FULL,
+                        &planet.planet_id,
+                        ti4_engine::production::Spend::Resources,
+                    )
+                );
+            }
+        }
+        for planet in faced {
+            assert_eq!(planet.face.as_deref(), Some("influence"));
+            assert_eq!(planet.worth, influence(&planet.planet));
+        }
+    }
+
     #[test]
     fn every_scenario_of_three_seats_deals_cards_that_the_engine_knows() {
         let content = ContentStore::embedded();

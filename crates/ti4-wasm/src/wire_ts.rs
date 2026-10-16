@@ -60,6 +60,7 @@ pub fn files() -> BTreeMap<String, String> {
     collect.visit::<ti4_calc::odds::BattleResponse>();
     collect.visit::<ti4_calc::odds::GroundOddsRequest>();
     collect.visit::<ti4_calc::odds::GroundOddsResponse>();
+    collect.visit::<ti4_host::view::tactical::FleetStandingFact>();
     collect.visit::<crate::host_session::HostSave>();
     let mut index = format!("{NOTE}\n");
     for name in collect.names.keys() {

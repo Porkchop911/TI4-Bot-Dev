@@ -23,7 +23,7 @@ export interface OpenEditor {
   part(part: string): EditorSlot | null;
   last(): EditorSlot | null;
   count(key: string, value: number): EditorSlot | null;
-  goods(value: number): EditorSlot | null;
+  goods(value: number, source: string): EditorSlot | null;
   pay(how: "auto" | "reset"): EditorSlot | null;
 }
 
@@ -53,7 +53,7 @@ function opener<D>(id: string, editor: Editor<D>): Opener {
         part: (part) => slotOf(editor.part?.(choice, draft, part)),
         last: () => slotOf(editor.last?.(choice, draft)),
         count: (key, value) => slotOf(editor.count?.(choice, draft, key, value)),
-        goods: (value) => slotOf(editor.goods?.(choice, draft, value)),
+        goods: (value, source) => slotOf(editor.goods?.(choice, draft, value, source)),
         pay: (how) => slotOf(editor.pay?.(choice, draft, how)),
       }
     );

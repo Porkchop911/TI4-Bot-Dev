@@ -56,6 +56,7 @@ src/engine/  host.ts      Host: one wasm instance plays one game (JSPI), Envelop
              identity.ts  sha256Hex/sha256 of the engine file, EngineIdentity {build, contentDigest, wasmSha256}
              odds.ts      spaceOdds, groundOdds (queries of the engine of the page), pageQuery (an engine on the
                           main thread)
+             fleet.ts     fleetStanding (a query of the engine of the page: fleet supply and capacity of counts)
 src/net/     socket.ts    Socket, openSocket, pageSocket, connect (reopens a lost socket), backoff, HEARTBEAT_MS
              api.ts       the HTTP API of the server: the paths, PLAYER_SESSION_HEADER, postJson, lobbyPost,
                           joinLobby, playerOf, createTable (ApiError), isGone/gameGone

@@ -11,12 +11,24 @@ import { num } from "./editor";
 
 /** The id of the trade goods of the payment (the option of the game). */
 export const GOODS = "trade_good";
+/** The id of a commodity spent as a trade good (the option of the game, the Keleres agent). */
+export const COMMODITY = "commodity";
+
+/** A planet that pays, with the worth of its best face as the engine gives it. */
+export interface PayingPlanet {
+  id: string;
+  worth: number;
+  /** The kind of value that the planet pays with, when it is not that of the bill (Archon's Gift). */
+  face?: string;
+}
 
 /** What can pay, as the engine lists it in the details of the question. */
 export interface PayOffer {
-  planets: { id: string; worth: number }[];
+  planets: PayingPlanet[];
   goods: number;
   goodWorth: number;
+  /** Commodities that pay as trade goods (the Keleres agent). */
+  commodities: number;
 }
 
 /** What the player staged to pay with. */
@@ -24,9 +36,72 @@ export interface Paying {
   /** The planets that pay, in the order that they were chosen. */
   planets: string[];
   goods: number;
+  commodities?: number;
 }
 
-export const NO_PAYMENT: Paying = { planets: [], goods: 0 };
+export const NO_PAYMENT: Paying = { planets: [], goods: 0, commodities: 0 };
+
+/** The payment option of the game that exhausts a planet: `exhaust|<planet>`, with its face. */
+export const exhaustId = (planet: string, face?: string | null) =>
+  face ? `exhaust|${planet}|${face}` : `exhaust|${planet}`;
+
+/** The `faces` of a task on the map: the planets that pay with their other value. */
+export function facesOf(planets: { planet: string; face?: string | null }[]): {
+  faces?: Record<string, string>;
+} {
+  const faces = planets.flatMap(({ planet, face }) => (face ? [[planet, face] as const] : []));
+  return faces.length ? { faces: Object.fromEntries(faces) } : {};
+}
+
+/** "Jord 4", and "Jord 3 influence" for a planet that pays with its other value. */
+export const planetPays = (name: string, worth: number, face?: string | null) =>
+  face ? `${name} ${worth} ${face}` : `${name} ${worth}`;
+
+/**
+ * Auto-pay over planets, trade goods and commodities: the payment of `cost` with the least
+ * waste, then with the fewest trade goods. Commodities are spent before trade goods. Null when
+ * nothing can pay it.
+ */
+export function leastWaste(
+  planets: { id: string; worth: number }[],
+  goods: number,
+  commodities: number,
+  goodWorth: number,
+  cost: number,
+): Paying | null {
+  const top = cost + Math.max(0, ...planets.map((planet) => planet.worth));
+  const best: (string[] | null)[] = Array.from({ length: top + 1 }, () => null);
+  best[0] = [];
+  for (const planet of planets) {
+    for (let total = top; total >= planet.worth; total--) {
+      const before = best[total - planet.worth];
+      const now = best[total];
+      if (before && total - planet.worth < cost && (!now || now.length > before.length + 1)) {
+        best[total] = [...before, planet.id];
+      }
+    }
+  }
+  const worth = Math.max(1, goodWorth);
+  let pick: { planets: string[]; tokens: number; waste: number } | null = null;
+  for (let total = 0; total <= top; total++) {
+    const chosen = best[total];
+    const rest = Math.max(0, cost - total);
+    if (!chosen || rest > (goods + commodities) * goodWorth) {
+      continue;
+    }
+    const tokens = Math.ceil(rest / worth);
+    const waste = total + tokens * goodWorth - cost;
+    // Less waste first, then fewer tokens: the planets are readied again, the goods are gone.
+    if (!pick || waste < pick.waste || (waste === pick.waste && tokens < pick.tokens)) {
+      pick = { planets: chosen, tokens, waste };
+    }
+  }
+  if (!pick) {
+    return null;
+  }
+  const spent = Math.min(commodities, pick.tokens);
+  return { planets: pick.planets, goods: pick.tokens - spent, commodities: spent };
+}
 
 /** The planets and trade goods of a payment of the engine (`planets`, `trade_goods`, `trade_good_worth`). */
 export function payOfferOf(value: unknown): PayOffer | null {
@@ -35,13 +110,21 @@ export function payOfferOf(value: unknown): PayOffer | null {
     return null;
   }
   return {
-    planets: (offer.planets as { id?: unknown; worth?: unknown }[]).flatMap((planet) =>
-      typeof planet.id === "string" && typeof planet.worth === "number"
-        ? [{ id: planet.id, worth: planet.worth }]
-        : [],
+    planets: (offer.planets as { id?: unknown; worth?: unknown; face?: unknown }[]).flatMap(
+      (planet) =>
+        typeof planet.id === "string" && typeof planet.worth === "number"
+          ? [
+              {
+                id: planet.id,
+                worth: planet.worth,
+                ...(typeof planet.face === "string" ? { face: planet.face } : {}),
+              },
+            ]
+          : [],
     ),
     goods: num(offer.trade_goods) ?? 0,
     goodWorth: num(offer.trade_good_worth) ?? 1,
+    commodities: num(offer.commodities) ?? 0,
   };
 }
 
@@ -51,7 +134,7 @@ export const paidBy = (offer: PayOffer, paying: Paying) =>
     (total, id) => total + (offer.planets.find((planet) => planet.id === id)?.worth ?? 0),
     0,
   ) +
-  paying.goods * offer.goodWorth;
+  (paying.goods + (paying.commodities ?? 0)) * offer.goodWorth;
 
 /** The planets of the map by id, with their names. */
 export const planetNames = (update: SessionUpdate) =>
@@ -75,11 +158,12 @@ export function paymentOf(
   const names = planetNames(update);
   const paid = paidBy(offer, paying);
   const summary = [
-    ...paying.planets.map(
-      (id) =>
-        `${names.get(id) ?? id} ${offer.planets.find((planet) => planet.id === id)?.worth ?? 0}`,
-    ),
+    ...paying.planets.map((id) => {
+      const planet = offer.planets.find((item) => item.id === id);
+      return planetPays(names.get(id) ?? id, planet?.worth ?? 0, planet?.face);
+    }),
     ...(paying.goods ? [plural(paying.goods, "trade good")] : []),
+    ...(paying.commodities ? [plural(paying.commodities, "commodity", "commodities")] : []),
   ].join(" + ");
   const short = cost - (paid - paying.goods * offer.goodWorth);
   const worth = Math.max(1, offer.goodWorth);
@@ -104,12 +188,15 @@ export function paymentOf(
           rest: rest !== null && rest !== paying.goods && rest <= offer.goods ? rest : null,
         }
       : null,
+    commodities: offer.commodities
+      ? { id: COMMODITY, value: paying.commodities ?? 0, max: offer.commodities }
+      : null,
     actions: [
       action("Auto-pay", { type: "payment", action: "auto" }, false),
       action(
         "Clear payment",
         { type: "payment", action: "reset" },
-        !paying.planets.length && !paying.goods,
+        !paying.planets.length && !paying.goods && !paying.commodities,
       ),
     ],
   };
@@ -124,6 +211,7 @@ export function paymentOf(
       verb: "Exhaust",
       unit,
       payment,
+      ...facesOf(offer.planets.map(({ id, face }) => ({ planet: id, face }))),
     },
   };
 }
@@ -141,47 +229,36 @@ export function togglePaying(offer: PayOffer, paying: Paying, planet: string): P
   };
 }
 
-/** The trade goods of the payment. */
-export const goodsPaying = (offer: PayOffer, paying: Paying, value: number): Paying => ({
-  ...paying,
-  goods: Math.max(0, Math.min(value, offer.goods)),
-});
+/** The trade goods of the payment, or its commodities (`source` is `COMMODITY`). */
+export const goodsPaying = (
+  offer: PayOffer,
+  paying: Paying,
+  value: number,
+  source: string = GOODS,
+): Paying =>
+  source === COMMODITY
+    ? { ...paying, commodities: Math.max(0, Math.min(value, offer.commodities)) }
+    : { ...paying, goods: Math.max(0, Math.min(value, offer.goods)) };
 
 /**
- * Auto-pay: the planets and trade goods that pay `cost` with the least waste, then with the
- * fewest trade goods. Null when nothing can pay it.
+ * Auto-pay: the planets, trade goods and commodities that pay `cost` with the least waste, then
+ * with the fewest trade goods. Null when nothing can pay it.
  */
-export function autoPaying(offer: PayOffer, cost: number): Paying | null {
-  const top = cost + Math.max(0, ...offer.planets.map((planet) => planet.worth));
-  const best: (string[] | null)[] = Array.from({ length: top + 1 }, () => null);
-  best[0] = [];
-  for (const planet of offer.planets) {
-    for (let total = top; total >= planet.worth; total--) {
-      const before = best[total - planet.worth];
-      const now = best[total];
-      if (before && total - planet.worth < cost && (!now || now.length > before.length + 1)) {
-        best[total] = [...before, planet.id];
-      }
-    }
-  }
-  let pick: { planets: string[]; goods: number; waste: number } | null = null;
-  for (let total = 0; total <= top; total++) {
-    const chosen = best[total];
-    const rest = Math.max(0, cost - total);
-    if (!chosen || rest > offer.goods * offer.goodWorth) {
-      continue;
-    }
-    const goods = Math.ceil(rest / Math.max(1, offer.goodWorth));
-    const waste = total + goods * offer.goodWorth - cost;
-    if (!pick || waste < pick.waste || (waste === pick.waste && goods < pick.goods)) {
-      pick = { planets: chosen, goods, waste };
-    }
-  }
-  return pick ? { planets: pick.planets, goods: pick.goods } : null;
-}
+export const autoPaying = (offer: PayOffer, cost: number): Paying | null =>
+  leastWaste(offer.planets, offer.goods, offer.commodities, offer.goodWorth, cost);
 
-/** The `pay` steps of a staged payment: the planets in the order chosen, then the trade goods. */
-export const paySteps = (paying: Paying): PlanStep[] => [
-  ...paying.planets.map((planet): PlanStep => ({ kind: "pay", source: `exhaust|${planet}` })),
+/**
+ * The `pay` steps of a staged payment: the planets in the order chosen, each with its face, then
+ * the trade goods, then the commodities.
+ */
+export const paySteps = (offer: PayOffer, paying: Paying): PlanStep[] => [
+  ...paying.planets.map((planet): PlanStep => ({
+    kind: "pay",
+    source: exhaustId(planet, offer.planets.find((item) => item.id === planet)?.face),
+  })),
   ...Array.from({ length: paying.goods }, (): PlanStep => ({ kind: "pay", source: GOODS })),
+  ...Array.from({ length: paying.commodities ?? 0 }, (): PlanStep => ({
+    kind: "pay",
+    source: COMMODITY,
+  })),
 ];
