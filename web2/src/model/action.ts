@@ -530,7 +530,8 @@ export interface ReviewView {
 export interface TaskView {
   step: number;
   title: string;
-  pill: PillView;
+  /** The state of the step; null when the content says it already (the stage of a watched round). */
+  pill: PillView | null;
   trail: TrailView;
   edit: { label: string; step: number; disabled: boolean; hint?: string } | null;
   /** The entry of a draft that no longer fits, when it is of this step. */

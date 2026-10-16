@@ -487,7 +487,7 @@ export function selectTactical(
     content: StepContentView;
     footer: FooterView;
     target: string | null;
-    pill?: PillView;
+    pill?: PillView | null;
   } = reading
     ? movementResult(update, local, update.view.board.active_system!, current, printed)
     : facts.kind === "combat"
@@ -604,7 +604,7 @@ export function selectTactical(
                 : { tone: "draft", label: "Preparing" }
         : selected !== current
           ? { tone: "done", label: "Resolved" }
-          : view.pill
+          : view.pill !== undefined
             ? view.pill
             : local.remaining === null && local.planNote && !local.planNote.error
               ? {

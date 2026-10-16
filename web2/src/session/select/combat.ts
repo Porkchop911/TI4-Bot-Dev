@@ -146,7 +146,7 @@ export function selectCombat(
   flow: FlowActionView,
   asked: boolean,
   printed: Catalog | null,
-): { content: CombatView; footer: FooterView; pill: PillView; target: string } {
+): { content: CombatView; footer: FooterView; pill: PillView | null; target: string } {
   const decision = asked && !flow.interrupt ? { prompt: flow.heading, blocks: flow.blocks } : null;
   return {
     target: systemLabel(tilesOf(update), combat.system_id),
@@ -162,9 +162,8 @@ export function selectCombat(
       ],
       revision: `${combat.battle_seq}:${combat.round}:${combat.phase}`,
     },
-    pill: asked
-      ? (flow.pill ?? { tone: "live", label: "Your decision" })
-      : { tone: "quiet", label: stageOf(combat) },
+    // The stage of the round is the score of the round table; a watching seat has no pill.
+    pill: asked ? (flow.pill ?? { tone: "live", label: "Your decision" }) : null,
     footer: flow.footer,
   };
 }
