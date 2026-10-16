@@ -1,5 +1,14 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import type { ActionView, BlockView, HelpView, LogView, PillView, StepTabView } from "../../model";
+import {
+  informs,
+  type ActionView,
+  type BlockView,
+  type HelpView,
+  type LogItemView,
+  type LogView,
+  type PillView,
+  type StepTabView,
+} from "../../model";
 import { Badge, GroupHeading, Hint, Trail, cx } from "../../ui";
 import { Interrupt, Review, StepContent, pillBeyond } from "../action/ActionPanel";
 import { ReadOnly } from "../context";
@@ -11,30 +20,49 @@ const AT_END = 24;
 
 /**
  * The log: what the others are doing and what they did, so that the viewer can decide. The
- * turns since the viewer's last turn come first, one row each, which opens to its details; then
- * the action that is played now, last and open: what the action panel shows, read-only, its
- * parts in groups that open and close. The decision of the viewer is the step sheet on the map;
- * the Log only reads it. Desktop has it under the player table, where it fills the column and
- * scrolls inside itself; a phone has it as the pane Log, which scrolls the same way. The newest
- * is at the end: the Log starts there, and follows what is new while it is at its end; else it
- * stays where the viewer scrolled.
+ * turns since the viewer's last turn come first, one row each, which opens to its details. The
+ * action that is played now is the content of the live entry (the turn that is played now, or
+ * the phase in play), under its details and open: what the action panel shows, read-only, its
+ * parts in groups that open and close. With no live entry it is an entry of its own, last. While
+ * the viewer decides, the decision is the step sheet on the map, and the Log has only what
+ * informs (`BlockRole`): the other seats, what happened. Desktop has it under the player table,
+ * where it fills the column and scrolls inside itself; a phone has it as the pane Log, which
+ * scrolls the same way. The newest is at the end: the Log starts there, and follows what is new
+ * while it is at its end; else it stays where the viewer scrolled.
  */
 export function LogPanel({
   log,
   action,
   status,
+  asked,
 }: {
   log: LogView;
   action: ActionView;
   /** The status in the bar of the game. The pill of the heading does not say it again. */
   status: string;
+  /** The viewer has a decision open: the step sheet has it, and the Log what only informs. */
+  asked: boolean;
 }) {
   const scroller = useRef<HTMLElement>(null);
   const atEnd = useRef(true);
-  // The rows that the viewer opened. An entry that left the Log takes its row with it.
-  const [opened, setOpened] = useState<ReadonlySet<string>>(new Set());
-  const ids = new Set(log.entries.map((entry) => entry.id));
-  const open = new Set([...opened].filter((id) => ids.has(id)));
+  // The rows that the viewer opened or closed; an entry that left the Log takes its row with it.
+  const [toggled, setToggled] = useState<ReadonlyMap<string, boolean>>(new Map());
+  const isOpen = (entry: LogItemView) => toggled.get(entry.id) ?? entry.live;
+  const last = log.entries.at(-1);
+  const live = last?.live ? last : null;
+  const parts = partsOf(action, asked, !!live);
+  const now = parts && (
+    <ReadOnly>
+      <CurrentAction
+        // Another action starts with its own groups open.
+        key={action.kind === "tactical" ? action.context : `${action.heading}·${action.context}`}
+        view={action}
+        status={status}
+        parts={parts}
+        framed={!live}
+      />
+    </ReadOnly>
+  );
   // biome-ignore lint/correctness/useExhaustiveDependencies: what is new is the trigger; a row that the viewer opens is not
   useLayoutEffect(() => {
     const element = scroller.current;
@@ -54,32 +82,61 @@ export function LogPanel({
     >
       <LogHistory
         view={log}
-        open={open}
-        onToggle={(id) =>
-          setOpened(() => {
-            const next = new Set(open);
-            if (!next.delete(id)) {
-              next.add(id);
-            }
+        isOpen={isOpen}
+        now={live ? now : null}
+        onToggle={(entry) =>
+          setToggled((before) => {
+            const ids = new Set(log.entries.map((item) => item.id));
+            const next = new Map([...before].filter(([id]) => ids.has(id)));
+            next.set(entry.id, !isOpen(entry));
             return next;
           })
         }
       />
-      <div className="px-3">
-        <ReadOnly>
-          <CurrentAction
-            // Another action starts with its own groups open.
-            key={
-              action.kind === "tactical" ? action.context : `${action.heading}·${action.context}`
-            }
-            view={action}
-            status={status}
-          />
-        </ReadOnly>
-      </div>
+      {!live && now && <div className="px-3">{now}</div>}
     </section>
   );
 }
+
+/** What the Log shows of the action that is played now. Null: nothing. */
+interface NowParts {
+  /** The heading line: the heading, its context, its state, its rules. */
+  heading: boolean;
+  /** The band of a window. */
+  window: boolean;
+  /** The blocks of a strategic or component action, a turn or a wait. */
+  blocks: BlockView[];
+  /** The step of a tactical action that is in view. */
+  step: boolean;
+}
+
+/**
+ * The parts of the action that the Log has. While the viewer decides, the step sheet has the
+ * heading, the band, the decision and its rules: the Log has the blocks and the step that only
+ * inform. With no decision of the viewer open, it has everything, read-only.
+ */
+function partsOf(view: ActionView, asked: boolean, merged: boolean): NowParts | null {
+  if (!asked) {
+    return {
+      heading: true,
+      window: !!view.interrupt,
+      blocks: view.kind === "flow" ? [...view.blocks, ...view.closing] : [],
+      step: view.kind === "tactical",
+    };
+  }
+  const blocks = view.kind === "flow" ? view.blocks.filter(informs) : [];
+  const step = view.kind === "tactical" && view.task.role === "inform";
+  // An entry of its own says what it is; in the live entry the row says it.
+  return blocks.length || step ? { heading: !merged, window: false, blocks, step } : null;
+}
+
+/** A part of the action: a group that opens and closes, open at first or not. */
+type Part = (
+  id: string,
+  name: ReactNode,
+  count: ReactNode,
+  initially: boolean,
+) => { open: boolean; heading: ReactNode };
 
 /** The name of a part of the action: the group that holds a block. Null: the block is one line. */
 function partName(block: BlockView): string | null {
@@ -140,9 +197,21 @@ const STEP_TONE: Record<StepTabView["status"], string> = {
 /**
  * The action that is played now, read-only: its heading with the state, then its parts. A part
  * opens and closes; the part in progress is open. A decision list and the technology tree are
- * closed: they are the decision of a seat, and the viewer's own is in the step sheet.
+ * closed: they are the decision of a seat, and the viewer's own is in the step sheet. An entry of
+ * its own (`framed`) is a card, and a tactical action has a line for each step; in the live entry
+ * of the history, whose details tell the steps that were played, it has the step in view only.
  */
-function CurrentAction({ view, status }: { view: ActionView; status: string }) {
+function CurrentAction({
+  view,
+  status,
+  parts,
+  framed,
+}: {
+  view: ActionView;
+  status: string;
+  parts: NowParts;
+  framed: boolean;
+}) {
   // What the viewer opened or closed; every other part has its default.
   const [toggled, setToggled] = useState<Record<string, boolean>>({});
   const part = (id: string, name: ReactNode, count: ReactNode, initially: boolean) => {
@@ -168,14 +237,18 @@ function CurrentAction({ view, status }: { view: ActionView; status: string }) {
   const help = tactical ? view.task.help : view.help;
   const trail = tactical ? [] : view.trail;
 
-  const window = view.interrupt && part("window", view.interrupt.label, null, true);
+  const window = parts.window && view.interrupt && part("window", view.interrupt.label, null, true);
   return (
     <article
       aria-label="Current action"
-      className="mt-2.5 overflow-hidden rounded-lg border border-line bg-surface/40"
+      className={
+        framed
+          ? "mt-2.5 overflow-hidden rounded-lg border border-line bg-surface/40"
+          : "bg-well/40 pl-5 phone:pl-3"
+      }
     >
-      <Heading heading={heading} context={context} pill={pill} help={help} />
-      {trail.length > 0 && (
+      {parts.heading && <Heading heading={heading} context={context} pill={pill} help={help} />}
+      {parts.heading && trail.length > 0 && (
         <div className="border-b border-line px-3 py-1.5">
           <Trail items={trail} />
         </div>
@@ -187,7 +260,10 @@ function CurrentAction({ view, status }: { view: ActionView; status: string }) {
         </div>
       )}
       {tactical ? (
-        view.tabs.length ? (
+        !parts.step ? null : view.tabs.length && !framed ? (
+          // The details of the live entry tell the steps that were played: the step in view.
+          <StepPart view={view} status={status} part={part} />
+        ) : view.tabs.length ? (
           view.tabs.map((tab, index) => {
             const sign = (
               <span className={cx("w-3 text-center", STEP_TONE[tab.status])}>
@@ -234,9 +310,34 @@ function CurrentAction({ view, status }: { view: ActionView; status: string }) {
           <StepBody view={view} />
         )
       ) : (
-        <Parts blocks={[...view.blocks, ...view.closing]} part={part} />
+        <Parts blocks={parts.blocks} part={part} />
       )}
     </article>
+  );
+}
+
+/** The step of a tactical action that is in view, as one part. */
+function StepPart({
+  view,
+  status,
+  part,
+}: {
+  view: Extract<ActionView, { kind: "tactical" }>;
+  status: string;
+  part: Part;
+}) {
+  const tab = view.tabs[view.selected];
+  const step = part(
+    "step",
+    tab?.name ?? view.task.title,
+    [tab?.caption, pillBeyond(view.task.pill, status)?.label].filter(Boolean).join(" · "),
+    true,
+  );
+  return (
+    <div>
+      {step.heading}
+      {step.open && <StepBody view={view} />}
+    </div>
   );
 }
 
@@ -251,18 +352,7 @@ function StepBody({ view }: { view: Extract<ActionView, { kind: "tactical" }> })
 }
 
 /** The blocks of an action: a block of one line as it is, any other in a group of its own. */
-function Parts({
-  blocks,
-  part,
-}: {
-  blocks: BlockView[];
-  part: (
-    id: string,
-    name: ReactNode,
-    count: ReactNode,
-    initially: boolean,
-  ) => { open: boolean; heading: ReactNode };
-}) {
+function Parts({ blocks, part }: { blocks: BlockView[]; part: Part }) {
   return blocks.map((block, index) => {
     const name = partName(block);
     if (name === null) {

@@ -249,17 +249,15 @@ it("opens the activation of a tactical action that places no command token", () 
   expect(tactical(activation, local()).task.content).toMatchObject({ costsToken: true });
 });
 
-it("shows the recorded activation from its tab, and goes back", () => {
+it("opens no resolved step in Live: its tab is locked, and the staged movement decides", () => {
+  // The result of the activation is in the live turn of the Log.
   const view = tactical(movement, local({ step: 0, movement: fleet }));
-  expect(view.selected).toBe(0);
+  expect(view.selected).toBe(1);
   expect(view.current).toBe(1);
-  expect(view.task.content).toMatchObject({
-    kind: "activation",
-    editing: false,
-    active: { system: "23" },
-    tacticPool: [3, 2],
-  });
-  expect(labels(movement, local({ step: 0 }))).toEqual(["Continue to movement"]);
+  expect(view.tabs.map((tab) => !!tab.locked)).toEqual([true, false, false, false, false]);
+  expect(view.task.role).toBe("decide");
+  expect(view.task.content).toMatchObject({ kind: "movement", editing: true });
+  expect(labels(movement, local({ step: 0, movement: fleet }))).toContain("Move fleet");
 });
 
 it("says in the footer why a plan was refused", () => {

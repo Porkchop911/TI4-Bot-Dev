@@ -1352,7 +1352,7 @@ function summaryOf(
   return parts.slice(0, 3).join(" · ");
 }
 
-function phaseView(phase: RawPhase, names: Names): LogPhaseView {
+function phaseView(phase: RawPhase, names: Names, live: boolean): LogPhaseView {
   const { groups, facts } = detailsOf(phase.events, names, {
     actor: null,
     strategic: false,
@@ -1395,6 +1395,7 @@ function phaseView(phase: RawPhase, names: Names): LogPhaseView {
     label: `${phaseName(phase.phase)} · Round ${phase.round}`,
     summary,
     groups,
+    live,
   };
 }
 
@@ -1416,7 +1417,15 @@ export function selectLog(
   const counts = new Map<number, number>();
   const entries: LogItemView[] = raw.map((item) => {
     if (item.kind === "phase") {
-      return phaseView(item, names);
+      // A phase that is no action phase is played now while it is the last entry; the turns
+      // of an action phase are its entries.
+      const live =
+        raw.at(-1) === item &&
+        !finished &&
+        item.phase !== "action" &&
+        item.phase === update.view.phase &&
+        item.round === update.view.round;
+      return phaseView(item, names, live);
     }
     const round = item.round ?? update.view.round;
     const number = (counts.get(round) ?? 0) + 1;

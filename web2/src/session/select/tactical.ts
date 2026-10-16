@@ -29,13 +29,7 @@ import { type LocalState, openChoice } from "./action";
 import { selectCombat } from "./combat";
 import { selectInvasion } from "./invasion";
 import { selectProduction } from "./production";
-import {
-  movementTrail,
-  selectMovement,
-  selectMovementResult,
-  systemLabel,
-  tilesOf,
-} from "./movement";
+import { movementTrail, selectMovement, systemLabel, tilesOf } from "./movement";
 import { ANOMALIES, WORMHOLES, factionName } from "./names";
 import { strategyCardHelp } from "./printed";
 import { reviewRow } from "./review";
@@ -208,8 +202,9 @@ function movement(
 ): { content: StepContentView; footer: FooterView; target: string } {
   const tiles = tilesOf(update);
   const target = systemLabel(tiles, facts.active);
-  if (local.step === 0) {
-    // The recorded activation, read-only. The token of this activation is already spent.
+  if (local.draft && local.step === 0) {
+    // The recorded activation of a draft, read-only until it is edited. A resolved step of the
+    // live game is not opened: its result is in the live turn of the Log.
     const pool =
       update.view.players.find((player) => player.id === update.pending_choice?.choice.player)
         ?.tactic_tokens ?? 0;
@@ -218,7 +213,7 @@ function movement(
       content: {
         kind: "activation",
         editing: false,
-        draft: !!local.draft,
+        draft: true,
         chosen: null,
         systems: [],
         active: { system: facts.active, name: tiles.get(facts.active)?.label ?? "System" },
@@ -439,37 +434,6 @@ function production(
 
 const CURRENT = { activation: 0, movement: 1, combat: 2, invasion: 3, production: 4 };
 
-/**
- * The movement of the action in Live, read-only, while a later step is open: what the dice of
- * the movement did.
- */
-function movementResult(
-  update: SessionUpdate,
-  local: LocalState,
-  active: string,
-  current: number,
-  printed: Catalog | null,
-): { content: StepContentView; footer: FooterView; target: string } {
-  const next = STEPS[current].toLowerCase();
-  return {
-    target: systemLabel(tilesOf(update), active),
-    content: selectMovementResult(update, active, local.rolls ?? [], printed),
-    footer: {
-      note: `Viewing movement. The action is at ${next}.`,
-      error: false,
-      actions: [
-        {
-          label: `Continue to ${next}`,
-          tone: "primary",
-          key: "Enter",
-          arrow: true,
-          intent: { type: "returnToCurrent" },
-        },
-      ],
-    },
-  };
-}
-
 export function selectTactical(
   update: SessionUpdate,
   local: LocalState,
@@ -479,18 +443,15 @@ export function selectTactical(
   printed: Catalog | null = null,
 ): TacticalActionView {
   const current = CURRENT[facts.kind];
-  // In Live the movement of the action stays open to read while a later step is open.
-  const reading =
-    !local.draft && local.step === 1 && current > 1 && !!update.view.board.active_system;
-  const selected = facts.kind === "movement" && local.step === 0 ? 0 : reading ? 1 : current;
+  // A draft opens its recorded activation; the live game opens no resolved step.
+  const selected = facts.kind === "movement" && local.draft && local.step === 0 ? 0 : current;
   const view: {
     content: StepContentView;
     footer: FooterView;
     target: string | null;
     pill?: PillView | null;
-  } = reading
-    ? movementResult(update, local, update.view.board.active_system!, current, printed)
-    : facts.kind === "combat"
+  } =
+    facts.kind === "combat"
       ? selectCombat(update, facts.combat, facts.flow, facts.asked, printed)
       : facts.kind === "activation"
         ? activation(update, local, facts)
@@ -556,6 +517,8 @@ export function selectTactical(
     return {
       name,
       status,
+      // A resolved step of the live game is read in the live turn of the Log.
+      ...(!local.draft && step < current ? { locked: true } : {}),
       caption:
         step === reviewTab
           ? // The pill of the step says it while the step is in view.
@@ -615,11 +578,9 @@ export function selectTactical(
       trail:
         selected !== 1
           ? []
-          : reading
-            ? movementTrail(local.rolls ?? [], false, 0, null)
-            : facts.kind === "movement" && view.content.kind === "movement"
-              ? movementTrail(local.rolls ?? [], true, view.content.riftRolls, facts.cannon ?? [])
-              : [],
+          : facts.kind === "movement" && view.content.kind === "movement"
+            ? movementTrail(local.rolls ?? [], true, view.content.riftRolls, facts.cannon ?? [])
+            : [],
       // The recorded activation of a draft can be changed; the game checks the later steps again.
       edit:
         local.draft && facts.kind === "movement" && selected === 0
@@ -642,6 +603,9 @@ export function selectTactical(
           : null,
       // The primary and the secondary of the card, as printed, as on the list of the seats.
       help: card ? strategyCardHelp(card.id, printed) : [],
+      // A combat that the viewer watches informs: it is of the Log. Every other step is the
+      // viewer's decision.
+      role: facts.kind === "combat" && !facts.asked ? "inform" : "decide",
       content: view.content,
       footer: view.footer,
     },

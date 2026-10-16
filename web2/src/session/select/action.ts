@@ -709,8 +709,10 @@ export function selectAction(
         ? turnOf
           ? [
               {
+                // With no question of the viewer, what happens informs: it is of the Log.
                 kind: "note",
                 tone: "quiet",
+                role: "inform",
                 strong: passed ? "You passed." : `${faction(turnOf)} has the turn.`,
                 text: passed
                   ? "No more actions for you in this round."
@@ -721,7 +723,18 @@ export function selectAction(
                       : "You can prepare your next tactical action in Draft.",
               },
             ]
-          : [{ kind: "note", tone: local.error ? "accent" : "quiet", text: idle }]
+          : [
+              {
+                kind: "note",
+                tone: local.error ? "accent" : "quiet",
+                // What the other seats do informs; the state of a draft, an error, a lost
+                // connection or a replay are of the viewer's decision.
+                ...(local.draft || local.error || local.offline || local.replaying
+                  ? {}
+                  : { role: "inform" as const }),
+                text: idle,
+              },
+            ]
         : research
           ? [research.block]
           : several

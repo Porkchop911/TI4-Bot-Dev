@@ -71,6 +71,10 @@ test("desktop: the right column is the players and the log, and the open step is
   }
   await fits();
   await page.screenshot({ path: `${SHOTS}/picker.png`, animations: "disabled" });
+  // The picker is the viewer's decision: the Log has no copy of it, and no second "?".
+  await expect(log.getByRole("article", { name: "Current action" })).toHaveCount(0);
+  await expect(log).not.toContainText("Activate a system");
+  await expect(log.getByRole("button", { name: /^Rules/ })).toHaveCount(0);
 
   // The shortcut keys of the open step work as before: they read the step, not the screen.
   await page.keyboard.press("t");
@@ -82,17 +86,12 @@ test("desktop: the right column is the players and the log, and the open step is
   await expect(heading).toHaveText("Movement");
   await fits();
   await page.screenshot({ path: `${SHOTS}/movement.png`, animations: "disabled" });
-  // The Log has the action too, read-only: each step is a line with its state, and the step in
-  // view is a group that is open.
-  const now = log.getByRole("article", { name: "Current action" });
-  await expect(now.getByRole("heading").first()).toHaveText(/^Tactical action · /);
-  const movement = now.getByRole("button", { name: /Movement/ });
-  await expect(movement).toHaveAttribute("aria-expanded", "true");
-  await expect(now).toContainText("✓Activation");
+  // The movement of the draft is the viewer's decision, and private: the Log has no copy of it,
+  // and no turn of the viewer that is played now.
+  await expect(log.getByRole("article", { name: "Current action" })).toHaveCount(0);
+  await expect(log.getByRole("list", { name: "Turns" })).not.toContainText("▶");
+  await expect(log).not.toContainText("Movement");
   await readOnly(log);
-  await movement.click();
-  await expect(movement).toHaveAttribute("aria-expanded", "false");
-  await movement.click();
   // An open fleet has the room of the step sheet, and its check mark gives it back.
   await page.locator("g.system").filter({ hasText: "#01" }).click();
   const fleet = page.getByRole("group", { name: /^Move from / });
@@ -124,9 +123,11 @@ test("desktop: with no decision of the viewer open there is no step sheet, the f
   await expect(page.locator("#step-panel")).toHaveCount(0);
   // The footer alone stays over the board while it has a button: here the undo and the step.
   await expect(page.locator("footer").getByRole("button", { name: "Undo" })).toBeVisible();
-  // The Log has the action that is played now, read-only.
+  // The Log has the action that is played now, read-only, once: in the entry that is played now
+  // (the phase in play), or as an entry of its own.
   const log = page.getByRole("region", { name: "Log" });
   const now = log.getByRole("article", { name: "Current action" });
+  await expect(now).toHaveCount(1);
   await expect(now.getByRole("heading").first()).toHaveText("Waiting");
   await expect(now).toContainText("Hacan decides next.");
   await readOnly(log);
@@ -168,7 +169,13 @@ test("desktop: while the other seats follow a strategy card of the viewer, the L
   await expect(page.locator("header strong")).toHaveText(/^Waiting for /);
 
   const log = page.getByRole("region", { name: "Log" });
-  const now = log.getByRole("article", { name: "Current action" });
+  // The action is one entry: the turn of the viewer that is played now, its last row, open, with
+  // what was played (Primary) and the action as it is now.
+  const live = log.getByRole("list", { name: "Turns" }).locator(":scope > li").last();
+  await expect(live.locator("button[aria-expanded]").first()).toContainText("▶");
+  await expect(live.getByRole("region", { name: "Primary" })).toBeVisible();
+  const now = live.getByRole("article", { name: "Current action" });
+  await expect(log.getByRole("article", { name: "Current action" })).toHaveCount(1);
   await expect(now.getByRole("heading").first()).toHaveText("Leadership");
   // The seats are a group that is open, with the seats that wait in one line.
   const seats = now.getByRole("button", { name: "Seats" });
@@ -182,6 +189,53 @@ test("desktop: while the other seats follow a strategy card of the viewer, the L
   await expect(now).not.toContainText("✓ Resolved");
   await seats.click();
   await expect(now).toContainText("✓ Resolved");
+  expect(errors).toEqual([]);
+});
+
+test("desktop: while the viewer decides a secondary, the sheet has its row and its choice, and the Log the other seats, once", async ({
+  page,
+}) => {
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // Sol and Hacan are played here: Sol plays Leadership, then Hacan is asked its secondary.
+  await page.goto("/?scenario=strategy_leadership&humans=3");
+  const sheet = page.getByRole("region", { name: "Open step" });
+  const send = sheet.locator('footer button[aria-keyshortcuts="Enter"]');
+  await sheet
+    .locator("#step-panel")
+    .getByRole("button", { name: /Leadership/ })
+    .first()
+    .click();
+  await send.click();
+  for (let at = 0; at < 3; at++) {
+    await sheet.getByRole("button", { name: "Add tactic pool token" }).click();
+  }
+  await send.click();
+  await expect(sheet.locator("#step-panel")).toContainText("Strategic action · Sol");
+
+  // The sheet: the row of the viewer with its choice, and no row of another seat.
+  await expect(sheet).toContainText("Your decision");
+  await expect(sheet.getByRole("button", { name: "Add bought token" })).toBeVisible();
+  await expect(sheet).not.toContainText("Resolved");
+  await expect(sheet).not.toContainText("Then: ");
+  await expect(sheet.getByRole("button", { name: /^Rules/ })).toHaveCount(1);
+
+  // The Log: the turn of Sol is one entry, live and open, with what Sol did and the seats now.
+  const log = page.getByRole("region", { name: "Log" });
+  const live = log.getByRole("list", { name: "Turns" }).locator(":scope > li").last();
+  await expect(live.locator("button[aria-expanded]").first()).toContainText("▶");
+  await expect(live.getByRole("region", { name: "Primary" })).toBeVisible();
+  const now = live.getByRole("article", { name: "Current action" });
+  await expect(log.getByRole("article", { name: "Current action" })).toHaveCount(1);
+  await expect(now).toContainText("✓ Resolved");
+  await expect(now).toContainText("Then: Letnev");
+  // No copy of the choice, and no second "?" or heading of the action.
+  await expect(now).not.toContainText("Command pools");
+  await expect(now.getByRole("heading", { name: "Leadership" })).toHaveCount(0);
+  await expect(log.getByRole("button", { name: /^Rules/ })).toHaveCount(0);
+  await readOnly(log);
+  await page.screenshot({ path: `${SHOTS}/secondary.png`, animations: "disabled" });
   expect(errors).toEqual([]);
 });
 

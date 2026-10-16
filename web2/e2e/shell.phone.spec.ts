@@ -66,6 +66,11 @@ test("phone: the panes are Map, Players and Log, and the open step is a sheet ov
   const log = page.getByRole("region", { name: "Log" });
   const rows = log.getByRole("list", { name: "Turns" }).getByRole("article");
   await expect(rows).toHaveCount(7);
+  // The staged action of the picker is the viewer's decision: the Log has no copy of it, and no
+  // second "?".
+  await expect(log.getByRole("article", { name: "Current action" })).toHaveCount(0);
+  await expect(log).not.toContainText("Activate a system");
+  await expect(log.getByRole("button", { name: /^Rules/ })).toHaveCount(0);
   // A row opens to its details in groups.
   const strategic = rows.filter({ hasText: "Strategic · Trade" });
   await strategic.getByRole("button").click();
@@ -140,7 +145,11 @@ test("phone: the Log pane has the strategic action that the other seats follow, 
     .getByRole("button", { name: "Log" })
     .click();
   const log = page.getByRole("region", { name: "Log" });
-  const now = log.getByRole("article", { name: "Current action" });
+  // The action is one entry: the turn of the viewer that is played now, open.
+  const live = log.getByRole("list", { name: "Turns" }).locator(":scope > li").last();
+  await expect(live.locator("button[aria-expanded]").first()).toContainText("▶");
+  const now = live.getByRole("article", { name: "Current action" });
+  await expect(log.getByRole("article", { name: "Current action" })).toHaveCount(1);
   await expect(now.getByRole("heading").first()).toHaveText("Leadership");
   const seats = now.getByRole("button", { name: "Seats" });
   await expect(seats).toHaveAttribute("aria-expanded", "true");
@@ -153,6 +162,53 @@ test("phone: the Log pane has the strategic action that the other seats follow, 
   await seats.click();
   await expect(seats).toHaveAttribute("aria-expanded", "false");
   await expect(now).not.toContainText("✓ Resolved");
+  expect(errors).toEqual([]);
+});
+
+test("phone: while the viewer decides a secondary, the sheet on the map has its row and its choice, and the Log pane the other seats, once", async ({
+  page,
+}) => {
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // Sol and Hacan are played here: Sol plays Leadership, then Hacan is asked its secondary.
+  await page.goto("/?scenario=strategy_leadership&humans=3");
+  const sheet = page.getByRole("region", { name: "Open step" });
+  const send = page.locator('footer button[aria-keyshortcuts="Enter"]');
+  await sheet
+    .locator("#step-panel")
+    .getByRole("button", { name: /Leadership/ })
+    .first()
+    .click();
+  await send.click();
+  for (let at = 0; at < 3; at++) {
+    await sheet.getByRole("button", { name: "Add tactic pool token" }).click();
+  }
+  await send.click();
+  await expect(sheet.locator("#step-panel")).toContainText("Strategic action · Sol");
+  await expect(sheet.getByRole("button", { name: "Add bought token" })).toBeVisible();
+  await expect(sheet).not.toContainText("Resolved");
+  await expect(sheet).not.toContainText("Then: ");
+  await page.screenshot({ path: `${SHOTS}/secondary.png`, animations: "disabled" });
+
+  await page
+    .getByRole("navigation", { name: "Panes" })
+    .getByRole("button", { name: "Log" })
+    .click();
+  const log = page.getByRole("region", { name: "Log" });
+  const live = log.getByRole("list", { name: "Turns" }).locator(":scope > li").last();
+  await expect(live.locator("button[aria-expanded]").first()).toContainText("▶");
+  const now = live.getByRole("article", { name: "Current action" });
+  await expect(log.getByRole("article", { name: "Current action" })).toHaveCount(1);
+  await expect(now).toContainText("✓ Resolved");
+  await expect(now).toContainText("Then: Letnev");
+  await expect(now).not.toContainText("Command pools");
+  await expect(log.getByRole("button", { name: /^Rules/ })).toHaveCount(0);
+  await readOnly(log);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
+    page.viewportSize()!.width,
+  );
+  await page.screenshot({ path: `${SHOTS}/secondary-log.png`, animations: "disabled" });
   expect(errors).toEqual([]);
 });
 

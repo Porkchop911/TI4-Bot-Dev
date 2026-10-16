@@ -35,18 +35,33 @@ export function showsStrategy(update: SessionUpdate, local: LocalState): boolean
 
 /**
  * The seats of the action: the seats that did something or decide, and the viewer, as rows; the
- * other seats that wait, in their order, as one line.
+ * other seats that wait, in their order, as one line. They inform: the Log has them. While the
+ * viewer decides (`sheet`), the row of the viewer with its editor is a block of its own, the
+ * decision of the step sheet; the list of the Log has that row too, with nothing open.
  */
-function waitingInShort(primary: SeatRowView, followers: SeatRowView[]): BlockView[] {
+function waitingInShort(
+  primary: SeatRowView,
+  followers: SeatRowView[],
+  sheet: boolean,
+): BlockView[] {
   const waits = (row: SeatRowView) => row.status.sign === "·" && !row.you;
   const waiting = followers.filter(waits);
+  const mine = sheet ? [primary, ...followers].find((row) => row.open) : undefined;
   return [
-    { kind: "seats", rows: [primary, ...followers.filter((row) => !waits(row))] },
+    ...(mine ? [{ kind: "seats" as const, role: "decide" as const, rows: [mine] }] : []),
+    {
+      kind: "seats",
+      role: "inform",
+      rows: [primary, ...followers.filter((row) => !waits(row))].map((row) =>
+        row === mine ? { ...row, open: undefined } : row,
+      ),
+    },
     ...(waiting.length
       ? [
           {
             kind: "note" as const,
             tone: "quiet" as const,
+            role: "inform" as const,
             text: `Then: ${waiting.map((row) => row.name).join(", ")}`,
           },
         ]
@@ -260,7 +275,8 @@ export function selectStrategy(
           ? { tone: "done", label: "Resolved" }
           : null,
     contentKey: `strategy:${action.primary}:${action.card}`,
-    blocks: waitingInShort(primary, followers),
+    // The step sheet is over the board while the game asks the viewer (`ShellView.asked`).
+    blocks: waitingInShort(primary, followers, !!update.pending_choice),
     footer,
   };
 }

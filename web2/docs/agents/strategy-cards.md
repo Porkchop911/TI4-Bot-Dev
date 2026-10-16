@@ -11,7 +11,7 @@ All eight cards use one frame: one list of seats. There are no tabs, no seat col
 - A state has a sign: "▶ Deciding", "✎ Private draft", "✎ Draft ready", "✓ Resolved", "✓ Followed", "– Passed"; the row of the viewer while it waits, "· Waits for Blair".
 - Only the row of the viewer opens: into the editor, in place, while the viewer has a choice or an open draft there. After it resolves the row closes and shows its result like any other row. A ready draft is closed and says what it will do.
 - Other rows are not controls. A choice of another player is visible when it is resolved, never before.
-- The same list, with no open row, is the read-only view of a strategy card in the event log.
+- The list and "Then: …" inform (`BlockRole`, `log.md`): they are in the live entry of the Log, with the row of the viewer closed. While the viewer decides, the step sheet has only the row of the viewer, open into its editor (a list of one row); with no decision of the viewer open the list is only in the Log.
 - The list is dense (24px rows) so that the largest editor, the technology tree with a payment, fits with all eight seats.
 
 - The whole primary is one screen. Every part is staged; "Resolve primary" sends all of it. It is split only where the game reveals hidden information (Politics: the agenda cards are a second screen, sent again).

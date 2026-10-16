@@ -550,46 +550,6 @@ export function movementTrail(
   ];
 }
 
-/**
- * The movement of the action after it was made, read-only: the fleet of the viewer in the active
- * system now, and what the dice of the movement did. What moved from where is not told yet.
- */
-export function selectMovementResult(
-  update: SessionUpdate,
-  active: string,
-  rolls: readonly PublicRoll[],
-  printed: Catalog | null = null,
-): MovementView {
-  const tiles = tilesOf(update);
-  const viewer = update.viewer.role === "player" ? update.viewer.seat : "";
-  const there = countUnits(
-    (update.view.board.systems[active]?.units ?? [])
-      .filter((unit) => unit.owner === viewer && unit.planet === null)
-      .map((unit) => [unit.unit_type, 1]),
-    printed,
-  );
-  return {
-    kind: "movement",
-    editing: false,
-    target: { system: active, label: systemLabel(tiles, active) },
-    origins: [],
-    unreachable: null,
-    arrival: fleetRows(there, new Map(), printed).map(({ unit, name, now, after }) => ({
-      unit,
-      name,
-      now,
-      after,
-    })),
-    gauges: [],
-    excessShips: 0,
-    riftRolls: 0,
-    rift: riftRows(rolls, (id) => systemLabel(tiles, id), printed),
-    removed: removedUnits(rolls, printed),
-    cannon: cannonOf(update, active, viewer, rolls, printed, []),
-    odds: null,
-  };
-}
-
 /** The fleet of one system with its controls, for the board. Null when nothing can leave it. */
 export const selectOrigin = (
   update: SessionUpdate,

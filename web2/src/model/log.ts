@@ -65,6 +65,11 @@ export interface LogPhaseView {
   summary: string;
   /** What the seats did in it: the picks, the scored objectives, the votes of each agenda. */
   groups: LogGroupView[];
+  /**
+   * The phase is played now (a strategy, status or agenda phase that is the last entry): the
+   * action that is played now is its content.
+   */
+  live: boolean;
 }
 
 export type LogItemView = LogTurnView | LogPhaseView;

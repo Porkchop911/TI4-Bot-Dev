@@ -483,6 +483,19 @@ describe("the scope of the Log", () => {
     expect(log.entries.at(-1)).toMatchObject({ seat: "a", live: true, mine: true });
   });
 
+  it("has the phase in play live while it is the last entry: the action of now is its content", () => {
+    // The strategy phase of round 4, before the action phase: its band is live.
+    const strategy = game().slice(0, -2);
+    const log = selectLog(update({ round: 4, phase: "strategy" }), eventsOf(strategy), printed);
+    expect(log.entries.at(-1)).toMatchObject({ kind: "phase", phase: "strategy", live: true });
+    expect(log.entries.filter((entry) => entry.live)).toHaveLength(1);
+    // Once the game is in another phase it is not; nor is the divider of an action phase.
+    const later = selectLog(update({ round: 4, phase: "action" }), eventsOf(strategy), printed);
+    expect(later.entries.at(-1)).toMatchObject({ phase: "strategy", live: false });
+    const action = selectLog(update({ round: 4 }), eventsOf(game().slice(0, -1)), printed);
+    expect(action.entries.at(-1)).toMatchObject({ phase: "action", live: false });
+  });
+
   it("is the round in play for a spectator, and before the first turn of the viewer", () => {
     const spectator = selectLog(update({ viewer: null, round: 4 }), eventsOf(game()), printed);
     expect(spectator.scope).toBe("round");

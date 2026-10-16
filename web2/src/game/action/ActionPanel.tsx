@@ -10,6 +10,7 @@ import type {
   StepContentView,
   TaskView,
 } from "../../model";
+import { informs } from "../../model";
 import { Badge, Button, Card, Hint, ListRow, StepTabs, Trail, cx, type TrailItem } from "../../ui";
 import { ActionButton, useDispatch } from "../context";
 import { Blocks } from "../flows/Blocks";
@@ -262,7 +263,8 @@ function TaskPanel({
 /**
  * The action panel: one frame for every action. A tactical action has five steps, a strategic action
  * has two, a component action has none. Live and Draft use the same frame.
- * The panel has one width for every step.
+ * The panel has one width for every step. It is the viewer's decision (the step sheet): a block or a
+ * step that only informs (`BlockRole`) is not in it, but in the live turn of the Log.
  */
 export function ActionPanel({
   view,
@@ -319,7 +321,8 @@ export function ActionPanel({
           onMinimize={onMinimize}
         >
           {view.task.review && <Review view={view.task.review} />}
-          <StepContent view={view.task.content} />
+          {/* A step that only informs (a combat that the viewer watches) is of the Log. */}
+          {view.task.role === "decide" && <StepContent view={view.task.content} />}
           <Blocks blocks={view.closing} />
         </TaskPanel>
       ) : (
@@ -335,7 +338,8 @@ export function ActionPanel({
           contentKey={view.contentKey}
           onMinimize={onMinimize}
         >
-          <Blocks blocks={view.blocks} />
+          {/* The blocks that only inform (the other seats, what happened) are of the Log. */}
+          <Blocks blocks={view.blocks.filter((block) => !informs(block))} />
           <Blocks blocks={view.closing} />
         </TaskPanel>
       )}

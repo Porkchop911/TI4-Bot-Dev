@@ -31,7 +31,24 @@ export interface StepTabView {
   name: string;
   status: StepStatus;
   caption: string;
+  /**
+   * The tab is no control: a resolved step of the live game, whose result is in the live turn of
+   * the Log.
+   */
+  locked?: boolean;
 }
+
+/**
+ * Whom a part of the open action serves. "decide": what the viewer needs for the choice that is
+ * open now (the question, the source that asks, the options, the costs, what is staged, the odds):
+ * the step sheet on the map. "inform": what happened, or what the other seats do (their rows in a
+ * strategic action, "Then: …", the turn of another seat, a combat that the viewer watches): the
+ * live turn of the Log. The selectors set it; a block without it decides.
+ */
+export type BlockRole = "decide" | "inform";
+
+/** A block informs: it is of the Log while the viewer decides, never of the step sheet. */
+export const informs = (block: { role?: BlockRole }): boolean => block.role === "inform";
 
 /** A button that the data source offers. Compare `ChoiceOptionDto`. */
 export interface ActionButtonView {
@@ -538,6 +555,8 @@ export interface TaskView {
   review?: ReviewView | null;
   /** Rules and explanations of this step. */
   help: HelpView[];
+  /** Whom the content of the step serves: a combat that the viewer watches informs. */
+  role: BlockRole;
   content: StepContentView;
   footer: FooterView;
 }
@@ -648,7 +667,7 @@ export interface DealSideView {
   items: DealItemView[];
 }
 
-export type BlockView =
+export type BlockView = (
   | { kind: "note"; tone: "accent" | "success" | "quiet"; strong?: string; text: string }
   | { kind: "menu"; title?: string; rows: MenuRowView[] }
   /**
@@ -688,7 +707,11 @@ export type BlockView =
       text?: string;
       hint?: string;
       blocks: BlockView[];
-    };
+    }
+) & {
+  /** Whom the block serves. Absent: it decides. */
+  role?: BlockRole;
+};
 
 /**
  * A window on top of the open action: a reaction window (the viewer may play a card now, or pass)

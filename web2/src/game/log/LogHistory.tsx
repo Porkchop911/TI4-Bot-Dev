@@ -1,5 +1,7 @@
+import type { ReactNode } from "react";
 import type {
   LogDiceView,
+  LogItemView,
   LogGroupView,
   LogLineView,
   LogPhaseView,
@@ -11,17 +13,21 @@ import { SeatSymbol, useSeats } from "../context";
 
 /**
  * The turns since the viewer's last turn, oldest first: one dense row for each turn and each
- * phase, the overview. A row opens to the details of its entry, in groups. `open` is what the
- * viewer opened, by the id of an entry.
+ * phase, the overview. A row opens to the details of its entry, in groups. The live entry (the
+ * turn that is played now, or the phase in play) has the action that is played now (`now`) under
+ * its details, and is open at first.
  */
 export function LogHistory({
   view,
-  open,
+  isOpen,
+  now,
   onToggle,
 }: {
   view: LogView;
-  open: ReadonlySet<string>;
-  onToggle: (id: string) => void;
+  isOpen: (entry: LogItemView) => boolean;
+  /** The action that is played now: the content of the live entry. */
+  now: ReactNode;
+  onToggle: (entry: LogItemView) => void;
 }) {
   if (view.entries.length === 0) {
     return (
@@ -32,15 +38,22 @@ export function LogHistory({
   }
   return (
     <ol aria-label="Turns" className="border-t border-line">
-      {view.entries.map((entry) => (
-        <li key={entry.id}>
-          {entry.kind === "turn" ? (
-            <TurnRow view={entry} open={open.has(entry.id)} onToggle={() => onToggle(entry.id)} />
-          ) : (
-            <PhaseRow view={entry} open={open.has(entry.id)} onToggle={() => onToggle(entry.id)} />
-          )}
-        </li>
-      ))}
+      {view.entries.map((entry) => {
+        const props = {
+          open: isOpen(entry),
+          onToggle: () => onToggle(entry),
+          now: entry.live ? now : null,
+        };
+        return (
+          <li key={entry.id}>
+            {entry.kind === "turn" ? (
+              <TurnRow view={entry} {...props} />
+            ) : (
+              <PhaseRow view={entry} {...props} />
+            )}
+          </li>
+        );
+      })}
     </ol>
   );
 }
@@ -57,10 +70,12 @@ function TurnRow({
   view,
   open,
   onToggle,
+  now,
 }: {
   view: LogTurnView;
   open: boolean;
   onToggle: () => void;
+  now: ReactNode;
 }) {
   const seat = useSeats()[view.seat];
   const name = seat ? seat.name || seat.faction : view.seat;
@@ -68,7 +83,7 @@ function TurnRow({
   const faction = seat?.name && seat.name !== seat.faction ? seat.faction : null;
   const full = faction ? `${name} · ${faction}` : name;
   // A pass has nothing to open.
-  const details = view.groups.length > 0;
+  const details = view.groups.length > 0 || !!now;
   const row = (
     <>
       {details ? <Toggle open={open} /> : <span aria-hidden="true" />}
@@ -123,6 +138,7 @@ function TurnRow({
         <div className={grid}>{row}</div>
       )}
       {open && details && <Groups groups={view.groups} />}
+      {open && now}
     </article>
   );
 }
@@ -135,18 +151,25 @@ function PhaseRow({
   view,
   open,
   onToggle,
+  now,
 }: {
   view: LogPhaseView;
   open: boolean;
   onToggle: () => void;
+  now: ReactNode;
 }) {
-  const details = view.groups.length > 0;
+  const details = view.groups.length > 0 || !!now;
   const band = cx(
     "flex w-full min-w-0 items-baseline gap-2 border-b border-line bg-surface/60 px-3 py-1 text-left text-xs",
   );
   const content = (
     <>
       {details && <Toggle open={open} />}
+      {view.live && (
+        <span className="text-accent" title="Played now">
+          ▶
+        </span>
+      )}
       <span className="shrink-0 font-strong">{view.label}</span>
       {view.summary && (
         <span className="min-w-0 truncate text-muted phone:whitespace-normal" title={view.summary}>
@@ -170,12 +193,16 @@ function PhaseRow({
         <div className={band}>{content}</div>
       )}
       {open && details && <Groups groups={view.groups} />}
+      {open && now}
     </section>
   );
 }
 
 /** The details of an entry: each group is its title and its lines, dense. */
 function Groups({ groups }: { groups: LogGroupView[] }) {
+  if (!groups.length) {
+    return null;
+  }
   return (
     <div className="space-y-1.5 border-b border-line bg-well/40 py-1.5 pr-3 pl-8 phone:pl-6">
       {groups.map((group, index) => (

@@ -125,6 +125,9 @@ it("is the step of the tactical action at a seat that watches, with the sides of
   ]);
   expect(action.tabs[2].caption).toBe("Round 2");
   expect(action.selected).toBe(2);
+  // A combat that the viewer watches informs: it is of the Log, and the steps before it are read there.
+  expect(action.task.role).toBe("inform");
+  expect(action.tabs.map((tab) => !!tab.locked)).toEqual([true, true, false, false, false]);
   // Whom the game waits for is the status of the bar; the stage is the score of the round table only.
   expect(status).toBe("Waiting for Letnev");
   expect(action.task.pill).toBeNull();
@@ -151,6 +154,8 @@ it("is the step of the tactical action at a seat that watches, with the sides of
 it("keeps the question of the viewer as its list, and the footer sends it", () => {
   const { action, content } = tactical(during(COMBAT, "a", true));
   expect(action.task.pill?.label).toBe("Your decision");
+  // The table of the round is what the question needs: it decides, with the question.
+  expect(action.task.role).toBe("decide");
   expect(content.decision?.prompt).toBe("Announce a retreat from 23");
   expect(content.decision?.blocks.at(-1)).toMatchObject({
     kind: "menu",
