@@ -62,6 +62,8 @@ export interface CounterView {
   /** Id of the staged value. It goes back unchanged in a `setCount` intent. */
   id: string;
   value: number;
+  /** The least value, when it is not 0. */
+  min?: number;
   max: number;
   label: string;
 }

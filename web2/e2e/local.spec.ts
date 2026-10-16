@@ -925,6 +925,54 @@ test("a research is chosen in the technology tree, and the second one can resear
   expect(errors).toEqual([]);
 });
 
+test("the status phase gains the command tokens in the one redistribution, in the pool editor", async ({
+  page,
+}) => {
+  // The load of the scenario, an answer, the editor and a second answer.
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // Sol is in the status phase with 2 · 3 · 2 on its sheet. It gains 2 tokens, and 1 more for
+  // Versatile.
+  await page.goto("/?scenario=score_objective_status&humans=1");
+  const seat = page.getByRole("region", { name: "Players" }).getByRole("row").filter({
+    hasText: "Seat A",
+  });
+  await expect(seat).toContainText("2 · 3 · 2");
+  await expect(heading(page)).toHaveText("Score an objective");
+  await panel(page).getByRole("button", { name: "Decline" }).click();
+  await send(page).click();
+
+  // No question of a pool for each gained token: the gain is placed in the pools.
+  await expect(heading(page)).toHaveText("Redistribute your command tokens");
+  await expect(page.getByText(/into which pool/i)).toHaveCount(0);
+  const pools = panel(page).getByRole("heading", { name: "Command pools" }).locator("..");
+  await expect(pools).toContainText("7 / 10 placed");
+  await expect(page.locator("footer")).toContainText("Place 3 more tokens");
+  await expect(send(page)).toBeDisabled();
+  await page.screenshot({ path: "shots/local/command-pools.png", animations: "disabled" });
+  // The fleet pool keeps the least that the game offers: 2. Esc puts the pools back.
+  const fewer = panel(page).getByRole("button", { name: "Remove fleet pool token" });
+  await fewer.click();
+  await expect(fewer).toBeDisabled();
+  await expect(pools).toContainText("6 / 10 placed");
+  await page.keyboard.press("Escape");
+  await expect(pools).toContainText("7 / 10 placed");
+
+  for (const pool of ["tactic", "fleet", "strategy"]) {
+    await panel(page)
+      .getByRole("button", { name: `Add ${pool} pool token` })
+      .click();
+  }
+  await expect(pools).toContainText("10 / 10 placed");
+  await expect(panel(page).getByRole("button", { name: "Add tactic pool token" })).toBeDisabled();
+  await expect(page.locator("footer")).toContainText("Tactic 2 → 3 · Fleet 3 → 4 · Strategy 2 → 3");
+  await expect(send(page)).toBeEnabled();
+  await send(page).click();
+  await expect(seat).toContainText("3 · 4 · 3");
+  expect(errors).toEqual([]);
+});
+
 test("the Dev sheet leads to a game on the server, on the seed of the page", async ({ page }) => {
   await page.goto("/?local=3&players=8&humans=1");
   await expect(send(page)).toBeDisabled();

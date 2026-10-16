@@ -78,12 +78,14 @@ import type { CardSettings } from "./select/cards";
 import { systemLabel } from "./select/movement";
 import { selectShell } from "./select/shell";
 import { tacticalFacts } from "./select/tactical";
+import { countPools, selectTokens } from "./select/tokens";
 import type { Transport } from "./transport";
 import type { DraftOutcome, DraftStep, PlanScope, ReactionModes, SessionUpdate } from "./wire";
 
 const NOTHING: LocalState = {
   inspected: null,
   staged: null,
+  pools: null,
   sent: null,
   error: null,
   replaying: null,
@@ -574,6 +576,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           ...now,
           inspected,
           staged: null,
+          pools: null,
           sent: null,
           error: null,
           offline: false,
@@ -861,7 +864,14 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
     /** Opens or closes the draft. What was staged for the other workspace is dropped. */
     const workspace = (open: boolean, draft: Draft | null) => {
       setPlan({ open, draft, stage: null });
-      setLocal((now) => ({ ...now, staged: null, inspected: null, handled: [], step: null }));
+      setLocal((now) => ({
+        ...now,
+        staged: null,
+        pools: null,
+        inspected: null,
+        handled: [],
+        step: null,
+      }));
     };
     /** A change of the draft: one step of its undo. */
     const redraft = (change: (now: Draft) => Draft) =>
@@ -985,12 +995,15 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         shown.research && !state.staged
           ? (pending.choice.options.find((item) => item.kind === "decline")?.id ?? null)
           : null;
+      // A redistribution of command tokens answers with the arrangement of its pools.
+      const pools = selectTokens(pending.choice, state.pools ?? null);
       if (followInfo?.editing) {
         // Nothing of a draft is sent: the answer is recorded, and the game is asked again.
-        const option = pending.choice.options.find((item) => item.id === (state.staged ?? pass));
+        const chosen = pools ? pools.staged : (state.staged ?? pass);
+        const option = pending.choice.options.find((item) => item.id === chosen);
         if (option && drafted0 && followChecked) {
           setFollow(record(drafted0, { id: option.id, label: option.label || option.id }));
-          setLocal((now) => ({ ...now, staged: null }));
+          setLocal((now) => ({ ...now, staged: null, pools: null }));
         }
         return;
       }
@@ -1052,8 +1065,9 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         );
         return setLocal((now) => ({ ...now, sent: pending.nonce, planNote: null }));
       }
-      if (local.staged || pass) {
-        transport.submitChoice(pending.nonce, local.staged ?? pass!);
+      const chosen = pools ? pools.staged : (local.staged ?? pass);
+      if (chosen) {
+        transport.submitChoice(pending.nonce, chosen);
         // The details that the choice of the system opened close with it: the movement starts
         // with the whole map in view, as in a draft.
         const opened = facts?.kind === "activation" ? local.staged : null;
@@ -1185,7 +1199,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           // Esc in the payment of a production goes back to its build.
           return producing && local.productionStage === "pay"
             ? toBuild(producing.system)
-            : setLocal((now) => ({ ...now, staged: null }));
+            : setLocal((now) => ({ ...now, staged: null, pools: null }));
         case "undo":
           if (drafted) {
             return redraft(undo);
@@ -1296,6 +1310,14 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           }
           transport.submitChoice(pending.nonce, decline.id);
           return setLocal((now) => ({ ...now, staged: null, sent: pending.nonce }));
+        }
+        case "flowCount": {
+          // A counter of a pool of command tokens: the arrangement is staged when it is offered.
+          const counted =
+            pending && countPools(pending.choice, state.pools ?? null, intent.key, intent.value);
+          return (
+            counted && setLocal((now) => ({ ...now, pools: counted.pools, staged: counted.staged }))
+          );
         }
         case "setCardFake": {
           const { card } = intent;

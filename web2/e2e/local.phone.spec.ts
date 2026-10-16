@@ -626,6 +626,47 @@ test("phone: the technology tree has its columns in the width, and a cell stages
   await page.screenshot({ path: "shots/phone/local/research-tree.png", animations: "disabled" });
 });
 
+test("phone: the command pools of the status phase fit the width, and Send is in view", async ({
+  page,
+}) => {
+  // The load of the scenario, an answer, the editor and a second answer.
+  test.setTimeout(10_000);
+  // Sol is in the status phase with 2 · 3 · 2 on its sheet, and gains 3 tokens.
+  await page.goto("/?scenario=score_objective_status&humans=1");
+  const panel = page.locator("#step-panel");
+  const send = page.locator('footer button[aria-keyshortcuts="Enter"]');
+  const pane = (name: string) =>
+    page.getByRole("navigation", { name: "Panes" }).getByRole("button", { name });
+  await pane("Action").click();
+  await panel.getByRole("button", { name: "Decline" }).click();
+  await send.click();
+  await expect(panel.getByRole("heading").first()).toHaveText("Redistribute your command tokens");
+  await expect(page.getByText(/into which pool/i)).toHaveCount(0);
+  const pools = panel.getByRole("heading", { name: "Command pools" }).locator("..");
+  await expect(pools).toContainText("7 / 10 placed");
+  for (const pool of ["tactic", "fleet", "strategy"]) {
+    await panel.getByRole("button", { name: `Add ${pool} pool token` }).click();
+  }
+  await expect(pools).toContainText("10 / 10 placed");
+  // The three rows are in the width: the counter at the right edge of each is in view.
+  for (const pool of ["tactic", "fleet", "strategy"]) {
+    await expect(panel.getByRole("button", { name: `Add ${pool} pool token` })).toBeInViewport({
+      ratio: 1,
+    });
+  }
+  await expect(send).toBeEnabled();
+  await expect(send).toBeInViewport({ ratio: 1 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
+    page.viewportSize()!.width,
+  );
+  await page.screenshot({ path: "shots/phone/local/command-pools.png", animations: "disabled" });
+  await send.click();
+  await pane("Players").click();
+  await expect(
+    page.getByRole("region", { name: "Players" }).getByRole("row").filter({ hasText: "Seat A" }),
+  ).toContainText("3 · 4 · 3");
+});
+
 test("phone: the Agendas sheet has the laws and the open groups in its width", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));

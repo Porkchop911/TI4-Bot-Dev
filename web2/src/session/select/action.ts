@@ -11,6 +11,7 @@ import { exploringCard } from "./exploration";
 import { seatLabel, sentence } from "./names";
 import { selectReaction } from "./reaction";
 import { selectResearch } from "./research";
+import { type Pools, selectTokens } from "./tokens";
 
 /** The private draft that is in view: what its toolbar and its screens say. */
 export interface DraftInfo {
@@ -65,6 +66,8 @@ export interface LocalState {
   inspected: string | null;
   /** The staged option of the pending choice, by id. */
   staged: string | null;
+  /** The staged pools of a redistribution of command tokens. Null: the pools of now. */
+  pools?: Pools | null;
   /** The nonce of the choice that was answered. Its update is still the latest one. */
   sent: string | null;
   /** Why the game stopped, if it did. */
@@ -173,7 +176,10 @@ export function selectAction(
   // The source is on top: an exploration card that asks is shown as printed.
   const card = choice ? exploringCard(update, catalog) : null;
   const onBoard = boardTask(update, local) !== null;
-  const staged = choice?.options.find((option) => option.id === local.staged) ?? null;
+  // A redistribution of command tokens is staged in the pools of the command sheet.
+  const tokens = choice && !window ? selectTokens(choice, local.pools ?? null) : null;
+  const stagedId = tokens ? tokens.staged : local.staged;
+  const staged = choice?.options.find((option) => option.id === stagedId) ?? null;
   // A research is chosen in the technology tree.
   const research = choice && !window ? selectResearch(update, choice, local.staged, printed) : null;
   /** A draft records the answer; the live game sends it. */
@@ -246,22 +252,26 @@ export function selectAction(
           ]
         : research
           ? [research.block]
-          : [
-              ...(card ? [{ kind: "source" as const, ...card }] : []),
-              { kind: "menu", rows: window?.rows ?? rows },
-            ],
+          : tokens
+            ? [tokens.block]
+            : [
+                ...(card ? [{ kind: "source" as const, ...card }] : []),
+                { kind: "menu", rows: window?.rows ?? rows },
+              ],
     footer: {
       note: local.planNote
         ? local.planNote.text
         : !choice
           ? ""
-          : staged
-            ? `Selected: ${window?.rows.find((row) => row.selected)?.title ?? (research ? research.name(staged.id) : sentence(staged.label || staged.id))}`
-            : window
-              ? ""
-              : research
-                ? `${research.open} ${research.open === 1 ? "technology can" : "technologies can"} be researched.`
-                : `Choose one of ${choice.options.length}.`,
+          : tokens
+            ? tokens.note
+            : staged
+              ? `Selected: ${window?.rows.find((row) => row.selected)?.title ?? (research ? research.name(staged.id) : sentence(staged.label || staged.id))}`
+              : window
+                ? ""
+                : research
+                  ? `${research.open} ${research.open === 1 ? "technology can" : "technologies can"} be researched.`
+                  : `Choose one of ${choice.options.length}.`,
       error: !!local.planNote?.error,
       actions: [
         ...(stepping
@@ -285,7 +295,8 @@ export function selectAction(
           : []),
         ...(choice
           ? [
-              ...(staged
+              // The pools are cleared when the player changed them.
+              ...((tokens ? local.pools : staged)
                 ? [
                     {
                       label: "Clear",
