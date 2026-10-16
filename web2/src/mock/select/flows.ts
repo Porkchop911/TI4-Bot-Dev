@@ -4,7 +4,6 @@ import type {
   FlowActionView,
   FooterView,
   HelpView,
-  InterruptView,
   PaymentView,
   PillView,
   SeatRowView,
@@ -13,7 +12,7 @@ import { ACTION_CARDS, SEATS } from "../data";
 import { E } from "../loose";
 import { STRATEGY_TEXT, strategyEditor } from "../strategy";
 import type { State, World } from "../world";
-import { END_TURN, button, closingBlocks, reactionParts, withKeys } from "./shared";
+import { END_TURN, button, closingBlocks, withKeys } from "./shared";
 
 type Parts = {
   title: [string, string];
@@ -23,7 +22,6 @@ type Parts = {
   help: HelpView[];
   blocks: BlockView[];
   footer: FooterView;
-  interrupt?: InterruptView;
 };
 
 function flowParts(world: World, state: State): Parts {
@@ -42,36 +40,6 @@ function flowParts(world: World, state: State): Parts {
   const viewer: string = E.env.viewer;
   if (!E.own() && state.kind !== "strategic") {
     return publicParts(state, foot);
-  }
-  if (state.kind === "component" && flow.stage === "reaction") {
-    // Another player's action card, and the viewer holds a card that reacts to it. The panel
-    // keeps that player's action; the reaction window is on top of it.
-    const owner = SEATS[flow.owner];
-    const reaction = reactionParts(
-      `After ${owner.name} plays ${flow.card}`,
-      [],
-      flow.reaction.cards,
-      flow.reaction.pick,
-    );
-    return {
-      title: ["Component action", `${flow.card} · ${owner.name} (${owner.faction})`],
-      heading: flow.card,
-      pill: flow.reaction.pick
-        ? { tone: "draft", label: "Not sent" }
-        : { tone: "live", label: "Your decision · Reaction" },
-      help: [],
-      blocks: [
-        { kind: "source", name: flow.card, type: "Action card", text: ACTION_CARDS[flow.card] },
-        {
-          kind: "note",
-          tone: "quiet",
-          strong: `${owner.name} plays ${flow.card}.`,
-          text: "It resolves when every player has passed.",
-        },
-      ],
-      footer: foot(reaction.note, reaction.actions),
-      interrupt: reaction.interrupt,
-    };
   }
   // A resolved card of another player: its result.
   if (state.kind === "component") {
@@ -204,18 +172,15 @@ function publicParts(
   foot: (note: string, actions?: FooterView["actions"]) => FooterView,
 ): Parts {
   const flow = state.flow;
-  const reaction = state.kind === "component" && flow.stage === "reaction";
   const seat: string = flow.owner ?? "sol";
   const name: string = SEATS[seat].name;
   const who = `${name} (${SEATS[seat].faction})`;
   const card: string | undefined = flow.card;
-  if (reaction || (card && flow.stage === "done")) {
+  if (card && flow.stage === "done") {
     return {
       title: ["Component action", `${card} · ${who}`],
       heading: card!,
-      pill: reaction
-        ? { tone: "quiet", label: "Waiting for reactions" }
-        : { tone: "done", label: "Resolved" },
+      pill: { tone: "done", label: "Resolved" },
       help: [],
       blocks: [
         {
@@ -224,16 +189,9 @@ function publicParts(
           type: "Action card",
           text: ACTION_CARDS[card!] ?? "",
         },
-        reaction
-          ? {
-              kind: "note",
-              tone: "quiet",
-              strong: `${name} plays ${card}.`,
-              text: "It resolves when every player has passed.",
-            }
-          : { kind: "note", tone: "success", strong: "Resolved.", text: flow.result },
+        { kind: "note", tone: "success", strong: "Resolved.", text: flow.result },
       ],
-      footer: foot(reaction ? "Waiting for the other players." : "Action complete."),
+      footer: foot("Action complete."),
     };
   }
   return {
@@ -317,7 +275,7 @@ export function selectFlow(world: World, state: State): FlowActionView {
     trail: parts.trail ?? [],
     help: parts.help,
     blocks: parts.blocks,
-    interrupt: world.mode === "history" ? null : (parts.interrupt ?? null),
+    interrupt: null,
     closing,
     footer: parts.footer,
   };

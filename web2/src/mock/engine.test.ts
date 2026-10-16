@@ -359,36 +359,7 @@ describe("mock engine", () => {
     expect(selectShell(world).action.closing).toHaveLength(0);
   });
 
-  const footerOf = (world: ReturnType<typeof createWorld>) => {
-    const action = selectShell(world).action;
-    if (action.kind !== "flow") {
-      throw new Error("not a flow");
-    }
-    return action.footer.actions;
-  };
-  const main = (world: ReturnType<typeof createWorld>) =>
-    footerOf(world).find((action) => action.tone === "primary")!;
-  // Reaction windows: the same block and the same footer inside and outside a battle.
-  it("answers a reaction to another player's card: Pass is the main button", () => {
-    const world = createWorld();
-    loadExample(world, "live-reaction");
-    const view = selectShell(world).action;
-    expect(view.interrupt?.eyebrow).toBe("Reaction · After Blair plays Mining Initiative");
-    expect(shortcuts(view).get("enter")).toEqual({ type: "reaction", action: "pass" });
-    reduce(world, shortcuts(view).get("1")!);
-    const staged = selectShell(world);
-    expect(staged.accent).toBe("draft");
-    expect(main(world)).toMatchObject({ label: "Play Sabotage" });
-    expect(shortcuts(staged.action).get("escape")).toEqual({ type: "clearChoice" });
-    reduce(world, { type: "clearChoice" });
-    expect(main(world)).toMatchObject({ label: "Pass" });
-    reduce(world, { type: "stageReaction", card: "Sabotage" });
-    reduce(world, main(world).intent);
-    expect(currentState(world).flow.result).toContain("was cancelled");
-    expect(currentState(world).hands.sol).not.toContain("Sabotage");
-    expect(selectShell(world).action.interrupt).toBe(null);
-  });
-
+  // Reaction windows of a battle.
   const toDirectHit = (world: ReturnType<typeof createWorld>) => {
     loadExample(world, "draft-combat");
     reduce(world, { type: "confirmApply" });

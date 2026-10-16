@@ -15,7 +15,6 @@ export const EXAMPLE_GROUPS: [string, [string, string][]][] = [
       ["draft-cannon", "Draft · Space cannon boundary"],
     ],
   ],
-  ["Game shell", [["live-reaction", "Live · Reaction to another player's card"]]],
   [
     "Strategy cards",
     [

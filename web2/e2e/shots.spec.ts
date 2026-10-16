@@ -226,30 +226,6 @@ test.describe("flows", () => {
     await shot(page, "web2/flow/history");
   });
 
-  test("reaction to another player's card: Pass, or stage a card and play it", async ({ page }) => {
-    await page.goto("/?example=live-reaction");
-    const panel = page.locator("#step-panel");
-    const window = panel.getByRole("group", { name: /^Reaction · After Blair plays/ });
-    await expect(window).toBeVisible();
-    await expect(panel.getByRole("button", { name: "Pass" })).toBeVisible();
-    await shot(page, "web2/flow/reaction-window");
-    await page.keyboard.press("1");
-    await expect(panel.getByRole("button", { name: "Play Sabotage" })).toBeVisible();
-    await shot(page, "web2/flow/reaction-staged");
-    await page.keyboard.press("Escape");
-    await expect(panel.getByRole("button", { name: "Pass" })).toBeVisible();
-    // The setting of a card is in the Cards sheet; the window links to it.
-    await window.getByRole("button", { name: "Offer settings" }).click();
-    const sheet = page.getByRole("complementary", { name: "Cards" });
-    const setting = sheet.getByRole("combobox", { name: "Offer Sabotage" });
-    await setting.selectOption("never");
-    await expect(setting).toHaveValue("never");
-    await shot(page, "web2/flow/never-offer");
-    await page.keyboard.press("Escape");
-    await page.keyboard.press("Enter");
-    await expect(panel).toContainText("Blair gained 3 trade goods");
-  });
-
   test("a retreat: the destination is chosen on the board", async ({ page }) => {
     await page.goto("/?example=live-combat");
     const panel = page.locator("#step-panel");

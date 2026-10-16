@@ -951,18 +951,6 @@ export const examples: Record<string, any> = {
     show: 3,
     tip: "Ground combat waits for Alex. Earlier results stay one click away in the stepper.",
   },
-  "live-reaction": {
-    mode: "live",
-    kind: "component",
-    flow: {
-      card: "Mining Initiative",
-      owner: "xxcha",
-      stage: "reaction",
-      pending: "Blair gained 3 trade goods for Archon Ren. Trade goods 1 → 4.",
-      reaction: { cards: ["Sabotage"], pick: null },
-    },
-    tip: "Blair plays an action card and you hold Sabotage. Enter passes. Press 1 to stage Sabotage; Enter then plays it.",
-  },
   "live-strategic": {
     mode: "live",
     kind: "strategic",

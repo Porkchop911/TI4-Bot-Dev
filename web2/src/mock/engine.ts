@@ -1469,9 +1469,6 @@ export function flowNeed(state) {
   if (!own() && state.kind !== "strategic") {
     return flow.stage !== "done" ? { mine: false, seat: "sol", text: "their turn" } : null;
   }
-  if (state.kind === "component" && flow.stage === "reaction") {
-    return { mine: true, text: `Reaction to ${flow.card}` };
-  }
   if (state.kind === "component") {
     return null;
   }
@@ -1529,9 +1526,7 @@ export const reactionPick = (state) =>
       : startWindow(state, activeBattle(state))
         ? activeBattle(state).start.pick
         : null
-    : state.flow?.stage === "reaction"
-      ? state.flow.reaction.pick
-      : null;
+    : null;
 /** The trade goods of the viewer: the source of a payment that is not on the board. */
 export const GOODS = PAY.find((source) => !source.system);
 /** What one source pays now. A planet pays its value; trade goods pay one each, as many as staged. */

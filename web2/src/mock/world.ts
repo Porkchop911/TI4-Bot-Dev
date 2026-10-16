@@ -72,7 +72,7 @@ function tableOf(example: string): World["table"] {
   };
 }
 
-/** The reaction window that the viewer must answer, in a battle or outside one. */
+/** The reaction window of a battle that the viewer must answer. */
 function openReaction(state: State): { pick: string | null } | null {
   if (state.kind === "tactical") {
     const open = E.activeBattle(state);
@@ -83,7 +83,7 @@ function openReaction(state: State): { pick: string | null } | null {
       ? open.reaction
       : null;
   }
-  return state.flow?.stage === "reaction" ? state.flow.reaction : null;
+  return null;
 }
 
 /** The strategy cards of the viewer, by number. */
@@ -560,23 +560,7 @@ export function reduce(world: World, intent: Intent) {
       if (!open || (intent.action === "play" && !open.pick)) {
         break;
       }
-      if (state.kind === "tactical") {
-        battle(intent.action === "play" ? "playReaction" : "passReaction");
-        break;
-      }
-      // Another player's action card: it resolves, or the viewer's card cancels it.
-      const flow = state.flow;
-      if (intent.action === "play") {
-        state.hands.sol = state.hands.sol.filter((card: string) => card !== open.pick);
-      }
-      Object.assign(flow, {
-        stage: "done",
-        result:
-          intent.action === "play"
-            ? `Jamie played ${open.pick}. ${flow.card} was cancelled.`
-            : flow.pending,
-      });
-      toast(intent.action === "play" ? `${open.pick} played.` : "You passed.");
+      battle(intent.action === "play" ? "playReaction" : "passReaction");
       break;
     }
     case "setOffer":
