@@ -1,6 +1,6 @@
 // Generated from the Rust types by `cargo wire-web` (ti4_wasm::wire_ts). Do not edit.
 import type { BuildFact } from "./BuildFact.ts";
-import type { FleetCountsFact } from "./FleetCountsFact.ts";
+import type { FleetCounts } from "./FleetCounts.ts";
 import type { FleetSupplyFact } from "./FleetSupplyFact.ts";
 import type { LimitFact } from "./LimitFact.ts";
 import type { PayingPlanet } from "./PayingPlanet.ts";
@@ -46,4 +46,4 @@ transport: LimitFact,
  * What the fleet supply and the capacity in the system are read from, before the build.
  * A fighter that the seat produces counts as its own kind (Fighter II).
  */
-fleet: FleetCountsFact, };
+fleet: FleetCounts, };

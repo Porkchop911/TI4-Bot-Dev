@@ -3,7 +3,7 @@
 // the places and the limits are facts of the engine; this file only adds up what is staged.
 import type { PlanStep, ProductionStep } from "./movementPlan";
 import { COMMODITY, GOODS, exhaustId, leastWaste } from "./select/payment";
-import type { FleetCountsFact, FleetStandingFact, ProductionFacts } from "./wire";
+import type { FleetCounts, FleetStanding, ProductionFacts } from "./wire";
 
 export { GOODS } from "./select/payment";
 
@@ -94,7 +94,7 @@ export function totals(facts: ProductionFacts, draft: ProductionDraft): Totals {
  * ship that counts against the fleet pool, the capacity of a ship, and a fighter or a ground
  * force in the space area. The engine reads them (`Transport.fleetStanding`).
  */
-export function stagedCounts(facts: ProductionFacts, draft: ProductionDraft): FleetCountsFact {
+export function stagedCounts(facts: ProductionFacts, draft: ProductionDraft): FleetCounts {
   const size = sizes(facts, draft);
   const counts = { ...facts.fleet };
   draft.builds.forEach((build, index) => {
@@ -117,7 +117,7 @@ export function stagedCounts(facts: ProductionFacts, draft: ProductionDraft): Fl
 /** The last answer of the engine for the counts of a build, with the key of its question. */
 export interface KeptStanding {
   key: string;
-  response: FleetStandingFact | null;
+  response: FleetStanding | null;
 }
 
 /** Why a unit cannot be produced in this use, in words. */

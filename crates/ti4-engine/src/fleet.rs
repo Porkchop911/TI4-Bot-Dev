@@ -5,6 +5,7 @@
 
 use std::collections::BTreeMap;
 
+use serde::{Deserialize, Serialize};
 use ti4_content::ContentStore;
 use ti4_content::units::{UnitType, catalogue};
 use ti4_model::content_types::SourceSet;
@@ -70,7 +71,12 @@ pub struct Arrival<'a> {
 /// cannot hold onto the fleet pool, so a ground force placed in a space area can push fighters out
 /// of capacity and consume fleet supply without a single ship being produced. Answering either
 /// question on its own gets that case wrong.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// On the wire it is the answer of the `fleet_standing` query of the engine of the page, named
+/// `FleetStanding` there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "FleetStanding"))]
 pub struct Standing {
     /// Non-fighter ships this seat may keep here (37.1).
     pub fleet_limit: i64,
@@ -191,7 +197,9 @@ fn never_half(_: &str) -> bool {
 /// limits is answered by building these counts and reading them there. A client that stages units
 /// before it sends them (a production) adds what it stages to the counts of the engine and asks
 /// the engine for the standing, so it never repeats the rule.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct FleetCounts {
     /// Non-fighter ships this seat may keep here (37.1).
     pub fleet_limit: i64,
@@ -204,10 +212,13 @@ pub struct FleetCounts {
     /// Capacity that fighters in the space area use.
     pub fighters: i64,
     /// Fighters that the seat's structures in the system hold without capacity (Space Dock).
+    #[serde(default)]
     pub fighter_support: i64,
     /// Fighters that the capacity cannot hold count against the fleet pool (Fighter II).
+    #[serde(default)]
     pub fighters_to_fleet_pool: bool,
     /// Such a fighter counts as half a ship (Naalu Hybrid Crystal Fighter II).
+    #[serde(default)]
     pub half_fighters: bool,
 }
 

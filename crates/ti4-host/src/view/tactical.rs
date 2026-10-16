@@ -315,7 +315,7 @@ pub struct BuildFact {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub cargo: bool,
     /// The unit is a fighter: in the space area it counts as a fighter of
-    /// [`FleetCountsFact`], else as a ground force that is carried.
+    /// [`ti4_engine::fleet::FleetCounts`], else as a ground force that is carried.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub fighter: bool,
     /// Where the unit can be placed: `space`, or a planet of the system.
@@ -389,93 +389,6 @@ pub struct PayingPlanet {
     pub face: Option<String>,
 }
 
-/// The numbers that the fleet supply and the capacity of a seat in a system are read from
-/// (`ti4_engine::fleet::FleetCounts`). A client adds the units that it stages and asks the engine
-/// for the standing ([`fleet_standing`]), so the rules of 16 and 37 stay in the engine: the
-/// fighters that a space dock holds, and the fighters over capacity that Fighter II puts on the
-/// fleet pool.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct FleetCountsFact {
-    pub fleet_limit: i64,
-    /// Ships that count against the fleet pool.
-    pub ships: i64,
-    /// Capacity of the ships in the space area.
-    pub transport: i64,
-    /// Capacity that ground forces in the space area use.
-    pub carried: i64,
-    /// Capacity that fighters in the space area use.
-    pub fighters: i64,
-    /// Fighters that the structures of the seat in the system hold without capacity.
-    #[serde(default)]
-    pub fighter_support: i64,
-    /// Fighters that the capacity cannot hold count against the fleet pool (Fighter II).
-    #[serde(default)]
-    pub fighters_to_fleet_pool: bool,
-    /// Such a fighter counts as half a ship.
-    #[serde(default)]
-    pub half_fighters: bool,
-}
-
-/// The fleet supply and the capacity of some counts, as the engine reads them.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct FleetStandingFact {
-    pub fleet_limit: i64,
-    /// Ships that count against the fleet pool, with the fighters that it carries.
-    pub fleet_charged: i64,
-    /// Capacity of the ships in the space area.
-    pub transport: i64,
-    /// Capacity that is used, after the fighters that structures hold.
-    pub consumed: i64,
-    /// Fighters that the fleet pool carries in place of capacity.
-    pub fighters_charged: i64,
-    /// Units that use capacity and cannot stay (16.3).
-    pub capacity_excess: i64,
-}
-
-impl From<ti4_engine::fleet::FleetCounts> for FleetCountsFact {
-    fn from(counts: ti4_engine::fleet::FleetCounts) -> Self {
-        Self {
-            fleet_limit: counts.fleet_limit,
-            ships: counts.ships,
-            transport: counts.transport,
-            carried: counts.carried,
-            fighters: counts.fighters,
-            fighter_support: counts.fighter_support,
-            fighters_to_fleet_pool: counts.fighters_to_fleet_pool,
-            half_fighters: counts.half_fighters,
-        }
-    }
-}
-
-/// The standing of some counts: the arithmetic of `ti4_engine::fleet`, for a client that stages
-/// units before it sends them. Nothing of a game is read.
-#[must_use]
-pub fn fleet_standing(counts: &FleetCountsFact) -> FleetStandingFact {
-    let standing = ti4_engine::fleet::FleetCounts {
-        fleet_limit: counts.fleet_limit,
-        ships: counts.ships,
-        transport: counts.transport,
-        carried: counts.carried,
-        fighters: counts.fighters,
-        fighter_support: counts.fighter_support,
-        fighters_to_fleet_pool: counts.fighters_to_fleet_pool,
-        half_fighters: counts.half_fighters,
-    }
-    .standing();
-    FleetStandingFact {
-        fleet_limit: standing.fleet_limit,
-        fleet_charged: standing.fleet_charged,
-        transport: standing.transport,
-        consumed: standing.consumed,
-        fighters_charged: standing.fighters_charged,
-        capacity_excess: standing.capacity_excess,
-    }
-}
-
 /// A limit and what already counts against it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -514,7 +427,7 @@ pub struct ProductionFacts {
     pub transport: LimitFact,
     /// What the fleet supply and the capacity in the system are read from, before the build.
     /// A fighter that the seat produces counts as its own kind (Fighter II).
-    pub fleet: FleetCountsFact,
+    pub fleet: ti4_engine::fleet::FleetCounts,
 }
 
 /// The facts of the pending choice of a tactical action.
@@ -1389,7 +1302,7 @@ fn production(
             limit: standing.transport,
             used: standing.consumed,
         },
-        fleet: fleet.into(),
+        fleet,
     })
 }
 

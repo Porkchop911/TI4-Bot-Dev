@@ -28,7 +28,7 @@ fleet?: boolean,
 cargo?: boolean, 
 /**
  * The unit is a fighter: in the space area it counts as a fighter of
- * [`FleetCountsFact`], else as a ground force that is carried.
+ * [`ti4_engine::fleet::FleetCounts`], else as a ground force that is carried.
  */
 fighter?: boolean, 
 /**

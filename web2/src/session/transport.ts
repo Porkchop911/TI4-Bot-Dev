@@ -5,8 +5,8 @@ import type {
   Catalog,
   DraftOutcome,
   DraftStep,
-  FleetCountsFact,
-  FleetStandingFact,
+  FleetCounts,
+  FleetStanding,
   GroundOddsRequest,
   GroundOddsResponse,
   PlanScope,
@@ -179,7 +179,7 @@ export interface Transport {
    * The fleet supply and the capacity of some counts (a production with the staged units), from
    * the engine of this page as `odds` is.
    */
-  fleetStanding(counts: FleetCountsFact): Promise<FleetStandingFact>;
+  fleetStanding(counts: FleetCounts): Promise<FleetStanding>;
   /** Ends the game on this side. */
   close(): void;
 }

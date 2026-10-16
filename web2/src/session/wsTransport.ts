@@ -8,7 +8,7 @@ import type { LegacyStaged } from "./seatStore";
 import type { Transport } from "./transport";
 import {
   type Catalog,
-  type FleetCountsFact,
+  type FleetCounts,
   type GroundOddsRequest,
   PROTOCOL_VERSION,
   type SpaceOddsRequest,
@@ -116,7 +116,7 @@ export function createWsTransport(
       engine.module
         ? groundOdds(pageQuery(engine.module), request)
         : Promise.reject(new Error("This page has no engine for the odds.")),
-    fleetStanding: (counts: FleetCountsFact) =>
+    fleetStanding: (counts: FleetCounts) =>
       engine.module
         ? fleetStanding(pageQuery(engine.module), counts)
         : Promise.reject(new Error("This page has no engine for the fleet supply.")),

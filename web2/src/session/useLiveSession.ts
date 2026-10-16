@@ -103,7 +103,7 @@ import type { Transport } from "./transport";
 import type {
   DraftOutcome,
   DraftStep,
-  FleetCountsFact,
+  FleetCounts,
   PlanScope,
   ReactionModes,
   SessionUpdate,
@@ -885,7 +885,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
     odds: OddsRequest | null;
     ground: GroundOddsAsk[];
     /** The counts of the staged build of a production, for the fleet supply and the capacity. */
-    standing: FleetCountsFact | null;
+    standing: FleetCounts | null;
   } | null => {
     if (!update || !transport) {
       return null;

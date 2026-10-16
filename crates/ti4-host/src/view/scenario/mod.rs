@@ -1853,7 +1853,7 @@ mod tests {
         assert!(facts.fleet.fighter_support > 0, "{:?}", facts.fleet);
         assert!(facts.fleet.fighters_to_fleet_pool, "Fighter II");
         assert_eq!(facts.fleet.fleet_limit, facts.fleet_supply.limit);
-        let standing = crate::view::tactical::fleet_standing(&facts.fleet);
+        let standing = facts.fleet.standing();
         assert_eq!(
             (
                 standing.fleet_charged,

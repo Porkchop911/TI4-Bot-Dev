@@ -21,13 +21,7 @@ import {
   sizes,
   totals,
 } from "../productionDraft";
-import type {
-  BuildFact,
-  Catalog,
-  FleetStandingFact,
-  ProductionFacts,
-  SessionUpdate,
-} from "../wire";
+import type { BuildFact, Catalog, FleetStanding, ProductionFacts, SessionUpdate } from "../wire";
 import { systemLabel, tilesOf } from "./movement";
 import { COMMODITY, facesOf, planetPays } from "./payment";
 import { isShip, unitLabel, unitType } from "./names";
@@ -73,7 +67,7 @@ export function selectBuild(
    * The fleet supply and the capacity after the staged build, as the engine reads them. Null
    * before the engine answered: the gauges show the system before the build.
    */
-  standing: FleetStandingFact | null = null,
+  standing: FleetStanding | null = null,
 ): BuildSheetView {
   const tiles = tilesOf(update);
   const names = planetNames(update);
@@ -241,7 +235,7 @@ export const selectProduction = (
   draft: ProductionDraft,
   stage: Stage,
   printed: Catalog | null = null,
-  standing: FleetStandingFact | null = null,
+  standing: FleetStanding | null = null,
 ): ProductionView => ({
   kind: "production",
   sheet: selectBuild(update, facts, draft, stage, printed, standing),

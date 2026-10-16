@@ -13,8 +13,8 @@ import {
   type Catalog,
   type ClientRequest,
   type DraftStep,
-  type FleetCountsFact,
-  type FleetStandingFact,
+  type FleetCounts,
+  type FleetStanding,
   type GroundOddsRequest,
   type GroundOddsResponse,
   type PlanScope,
@@ -35,7 +35,7 @@ export interface MessagePlay {
   catalog: Catalog | null;
   odds(request: SpaceOddsRequest): Promise<BattleResponse>;
   groundOdds(request: GroundOddsRequest): Promise<GroundOddsResponse>;
-  fleetStanding(counts: FleetCountsFact): Promise<FleetStandingFact>;
+  fleetStanding(counts: FleetCounts): Promise<FleetStanding>;
   capabilities?: Capabilities;
   /** The side plays a seat, and has staged work. A spectator has none. */
   player: boolean;

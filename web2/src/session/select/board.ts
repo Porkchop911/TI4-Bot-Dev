@@ -16,7 +16,7 @@ import type {
   BoardTileView,
   Catalog,
   ExplorationCatalog,
-  FleetStandingFact,
+  FleetStanding,
   InvasionFacts,
   MovementFacts,
   PlacedUnitView,
@@ -229,7 +229,7 @@ export function selectBoard(
     draft: ProductionDraft;
     stage: Stage;
     /** The fleet supply and the capacity after the build, as the engine read them. */
-    standing?: FleetStandingFact | null;
+    standing?: FleetStanding | null;
   } | null = null,
   /** The viewer can start a tactical action now: a system in the inspector can be activated. */
   activates = false,
