@@ -3,6 +3,7 @@ import type { BoardView, InspectorView } from "../../model";
 import { Button, CloseButton, Hint, Icon, Segmented, cx, usePhone, type IconName } from "../../ui";
 import { useDispatch } from "../context";
 import { SpaceOdds } from "../combat/SpaceOdds";
+import { Blocks } from "../flows/Blocks";
 import { GalaxyMap, type MapViewId } from "./GalaxyMap";
 import { LandingSheet } from "../steps/invasion/LandingSheet";
 import { ProductionSheet } from "../steps/production/ProductionSheet";
@@ -132,7 +133,7 @@ export function Board({ view, children }: { view: BoardView; children?: ReactNod
   return (
     <section
       aria-label="Galaxy board"
-      className="relative flex min-h-0 min-w-0 overflow-hidden bg-board"
+      className="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-board"
     >
       <div className="pointer-events-none absolute inset-x-2.5 top-2 z-2 flex flex-wrap items-center gap-x-3 gap-y-1 phone:flex-nowrap phone:gap-x-2">
         <Segmented
@@ -195,6 +196,17 @@ export function Board({ view, children }: { view: BoardView; children?: ReactNod
       {view.origin && <OriginSheet key={view.origin.system} view={view.origin} />}
       {view.landing && <LandingSheet view={view.landing} />}
       {view.production && <ProductionSheet view={view.production} />}
+      {/* A phone has the choice that goes with the payment on the map, in one pane with it, under
+          the map so that the planets that pay stay in view. */}
+      {phone && view.blocks && (
+        <div
+          role="group"
+          aria-label="Choice with the payment"
+          className="relative z-2 flex max-h-[55%] flex-none flex-col gap-2 overflow-auto border-t border-line bg-surface p-2"
+        >
+          <Blocks blocks={view.blocks} />
+        </div>
+      )}
       {children}
     </section>
   );

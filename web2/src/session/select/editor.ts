@@ -20,6 +20,8 @@ export interface EditorView {
   pick?: PlayerPickView | null;
   /** The payment bar and the payment line of the footer. */
   payment?: PaymentView | null;
+  /** The blocks go with the payment on the map: a phone shows them on the map pane (`BoardView.blocks`). */
+  onMap?: boolean;
   note: string;
   /** Why nothing can be sent yet. Null: the main button sends. */
   problem: string | null;

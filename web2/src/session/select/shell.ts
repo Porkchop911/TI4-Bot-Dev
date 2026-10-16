@@ -1,7 +1,14 @@
 // The whole screen from one update of the game and what the player staged in this page.
 import type { ActionView, FooterView, ShellView } from "../../model";
 import type { Catalog, SessionUpdate } from "../wire";
-import { type LocalState, boardTask, openChoice, seatTask, selectAction } from "./action";
+import {
+  type LocalState,
+  boardTask,
+  openChoice,
+  openEditor,
+  seatTask,
+  selectAction,
+} from "./action";
 import { selectBoard } from "./board";
 import { type CardSettings, NO_CARD_SETTINGS, selectActionCards } from "./cards";
 import { selectExploration } from "./exploration";
@@ -146,6 +153,8 @@ export function selectShell(
       : showsStrategy(update, local)
         ? selectStrategy(update, local, catalog, printed)
         : selectAction(update, local, catalog, printed, cards.modes);
+  const editing = openEditor(update, local, printed)?.view;
+  const onMap = editing?.onMap ? editing.blocks : null;
   return {
     seats: selectSeats(update, printed),
     accent:
@@ -171,18 +180,22 @@ export function selectShell(
       },
     },
     players: { ...selectPlayers(update, printed, cards.modes), pick: seatTask(update, local) },
-    board: selectBoard(
-      update,
-      local.inspected,
-      boardTask(update, local),
-      movement,
-      landing,
-      catalog,
-      production,
-      !local.draft &&
-        !!openChoice(update, local)?.options.some((option) => option.id === "tactical"),
-      printed,
-    ),
+    board: {
+      ...selectBoard(
+        update,
+        local.inspected,
+        boardTask(update, local),
+        movement,
+        landing,
+        catalog,
+        production,
+        !local.draft &&
+          !!openChoice(update, local)?.options.some((option) => option.id === "tactical"),
+        printed,
+      ),
+      // An editor whose payment is on the map: a phone has its blocks there too.
+      ...(onMap ? { blocks: onMap } : {}),
+    },
     action: withBack(
       local.draft?.waiting || local.follow?.waiting ? waitingFor(action) : action,
       local,

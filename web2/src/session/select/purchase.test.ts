@@ -87,6 +87,8 @@ describe("selectPurchase", () => {
     });
     expect(view.problem).toBe("Place 3 more tokens.");
     expect(view.task).toBeNull();
+    // The tokens can be bought: a phone has the screen on the map, with the payment.
+    expect(view.onMap).toBe(true);
     expect(purchasePlan(gain(3), null)).toBeNull();
   });
 
@@ -147,6 +149,7 @@ describe("selectPurchase", () => {
     const choice = gain(1, null);
     const view = selectPurchase(update, choice, null)!;
     expect(view.blocks).toHaveLength(1);
+    expect(view.onMap).toBe(false);
     const draft = countPurchase(choice, null, "pools.s", 3)!;
     expect(purchasePlan(choice, draft)).toEqual([{ kind: "pool", pool: "strategic_tokens" }]);
     expect(countPurchase(choice, null, "buy", 1)).toBeNull();

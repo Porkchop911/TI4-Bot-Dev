@@ -1,4 +1,11 @@
-import type { BuildSheetView, LandingView, OriginView, PaymentView, SpaceOddsView } from "./action";
+import type {
+  BlockView,
+  BuildSheetView,
+  LandingView,
+  OriginView,
+  PaymentView,
+  SpaceOddsView,
+} from "./action";
 import type { Force, PlanetId, SeatId, SystemId } from "./core";
 
 export type Anomaly = "asteroid" | "supernova" | "nebula" | "rift";
@@ -163,6 +170,12 @@ export interface BoardView {
   landing: LandingView | null;
   /** The build of the active system, with its controls, while it is staged and open. */
   production: BuildSheetView | null;
+  /**
+   * The blocks of an open decision whose payment is on the map (the command pools of
+   * Leadership): a phone shows them on the map with the payment, so that the whole choice is in
+   * one pane. Desktop has them in the action panel next to the map.
+   */
+  blocks?: BlockView[];
   /** The systems of the open task, for "Fit task". */
   taskSystems: SystemId[];
   /** Changes when the board must be framed again, for example for a new action. */

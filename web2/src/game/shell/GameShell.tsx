@@ -103,7 +103,7 @@ export function GameShell({
   // The pane where the open choice is made: the board, the player table, or the action.
   const asked: Pane | null = view.players.pick
     ? "players"
-    : view.board.task?.interactive || view.board.targeting
+    : view.board.task?.interactive || view.board.targeting || view.board.blocks
       ? "map"
       : view.asked
         ? "action"

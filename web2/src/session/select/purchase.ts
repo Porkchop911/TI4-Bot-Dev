@@ -113,6 +113,8 @@ export interface PurchaseView {
   label: string;
   /** Something is staged: Esc clears it. */
   changed: boolean;
+  /** The tokens can be bought: the screen goes with its payment on the map. */
+  onMap: boolean;
 }
 
 /** The gain and the purchase of command tokens. Null for any other question. */
@@ -182,6 +184,7 @@ export function selectPurchase(
   const change = poolChange(now, after);
   return {
     blocks,
+    onMap: !!offer,
     task,
     payment,
     note: problem ?? change,

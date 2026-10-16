@@ -1,5 +1,6 @@
 import type {
   BlockView,
+  CounterView,
   DealItemView,
   DealSideView,
   MenuRowView,
@@ -25,65 +26,120 @@ import { ActionButton, RichText, SeatSymbol, TECH_COLOR, useDispatch } from "../
 import { OfferSelect } from "../OfferSelect";
 import { useLink } from "../link";
 
-/**
- * A pool of command tokens, one triangle for each token. The fleet pool points up and the other
- * pools point down, as on the command sheet. A token that stays is filled, a token that is added
- * has "+", a token that is removed is an empty outline with "−": the shape tells them apart, not
- * only the colour.
- */
-function TokenPool({ now, after, up }: { now: number; after: number; up?: boolean }) {
-  const kept = Math.min(now, after);
+/** One command token: a triangle, as on the command sheet. The fleet pool points up. */
+function Triangle({ up, state }: { up?: boolean; state: "kept" | "added" | "removed" | "ghost" }) {
   const points = up ? "10,1.5 18.5,16.5 1.5,16.5" : "1.5,1.5 18.5,1.5 10,16.5";
-  // The centre of the triangle, where the sign is.
+  // The centre of the triangle, where the sign of a removed token is.
   const y = up ? 11.5 : 6.5;
   return (
-    <span
-      className="inline-flex items-center gap-2.5"
-      role="img"
-      aria-label={now === after ? `${now} tokens` : `${now} tokens now, ${after} after`}
-    >
-      <span className="inline-flex min-w-[216px] items-center gap-1 phone:min-w-0 phone:flex-wrap">
-        {Array.from({ length: Math.max(now, after) }, (_, index) => {
-          const added = index >= kept && after > now;
-          const removed = index >= kept && !added;
-          return (
-            <svg
-              key={index}
-              viewBox="0 0 20 18"
-              className="h-[18px] w-5 flex-none"
-              aria-hidden="true"
-            >
-              <polygon
-                points={points}
-                strokeLinejoin="round"
-                strokeWidth={1.5}
-                className={
-                  removed
-                    ? "fill-none stroke-muted"
-                    : added
-                      ? "fill-accent stroke-accent"
-                      : "fill-muted stroke-muted"
-                }
-              />
-              {(added || removed) && (
-                <path
-                  d={`M7,${y}h6${added ? `M10,${y - 3}v6` : ""}`}
-                  strokeWidth={1.75}
-                  strokeLinecap="round"
-                  className={added ? "stroke-canvas" : "stroke-muted"}
-                />
-              )}
-            </svg>
-          );
-        })}
+    <svg viewBox="0 0 20 18" className="h-[18px] w-5 flex-none" aria-hidden="true">
+      <polygon
+        points={points}
+        strokeLinejoin="round"
+        strokeWidth={1.5}
+        strokeDasharray={state === "ghost" ? "3 2" : undefined}
+        className={
+          state === "kept"
+            ? "fill-muted stroke-muted"
+            : state === "added"
+              ? "fill-accent stroke-accent"
+              : "fill-none stroke-muted"
+        }
+      />
+      {state === "removed" && (
+        <path d={`M7,${y}h6`} strokeWidth={1.75} strokeLinecap="round" className="stroke-muted" />
+      )}
+    </svg>
+  );
+}
+
+/**
+ * A pool of command tokens: the count ("3 → 5") first, in a fixed width, then one triangle for
+ * each token. The fleet pool points up and the other pools point down, as on the command sheet.
+ * A token that stays is filled, an added token is filled in the accent, a removed token is an
+ * empty outline with "−": the shape tells them apart, not only the colour.
+ *
+ * With a counter the tokens are the control, as the tokens of a production are: a token in a
+ * solid box takes one back, a dashed box adds one (a dashed slot with "+", or a removed token
+ * that comes back). The slot is not shown when nothing more can be added.
+ */
+function TokenPool({
+  now,
+  after,
+  up,
+  counter,
+}: {
+  now: number;
+  after: number;
+  up?: boolean;
+  counter?: CounterView;
+}) {
+  const dispatch = useDispatch();
+  const kept = Math.min(now, after);
+  const fewer = !!counter && after > (counter.min ?? 0);
+  const more = !!counter && after < counter.max;
+  const step = (value: number) =>
+    counter && dispatch({ type: "flowCount", key: counter.id, value });
+  const box = "inline-flex h-7 items-center gap-0.5 rounded-md border px-1 touch:h-9 touch:px-1.5";
+  const said = now === after ? `${now} tokens` : `${now} tokens now, ${after} after`;
+  const tokens = Array.from({ length: Math.max(now, after) }, (_, index) => {
+    const state = index < kept ? "kept" : after > now ? "added" : "removed";
+    // A token is taken back above the least that the pool keeps; one that stays only while no
+    // token is added.
+    const takes =
+      fewer &&
+      index >= (counter?.min ?? 0) &&
+      (state === "added" || (state === "kept" && after <= now));
+    const gives = more && state === "removed";
+    return takes || gives ? (
+      <button
+        key={index}
+        type="button"
+        aria-label={`${takes ? "Remove" : "Add"} ${counter!.label}`}
+        className={cx(
+          box,
+          takes
+            ? "border-line-strong bg-raised hover:border-text"
+            : "border-dashed border-line hover:bg-raised",
+        )}
+        onClick={() => step(after + (takes ? -1 : 1))}
+      >
+        <Triangle up={up} state={state} />
+      </button>
+    ) : (
+      <span key={index} className={cx(counter && box, "border-transparent")}>
+        <Triangle up={up} state={state} />
       </span>
-      <span className="text-xs text-muted tabular-nums">
+    );
+  });
+  return (
+    <span className="inline-flex items-center gap-2.5" role="group" aria-label={said}>
+      <span className="w-12 flex-none text-xs text-muted tabular-nums">
         {now}
         {now !== after && (
           <>
             {" → "}
             <strong className="text-base font-semibold text-text">{after}</strong>
           </>
+        )}
+      </span>
+      <span
+        className={cx(
+          "inline-flex min-w-0 flex-wrap items-center",
+          counter ? "gap-0.5" : "min-w-[216px] gap-1 phone:min-w-0",
+        )}
+      >
+        {tokens}
+        {more && after >= now && (
+          <button
+            type="button"
+            aria-label={`Add ${counter!.label}`}
+            className={cx(box, "border-dashed border-line text-muted hover:bg-raised")}
+            onClick={() => step(after + 1)}
+          >
+            <span className="text-sm leading-none">+</span>
+            <Triangle up={up} state="ghost" />
+          </button>
         )}
       </span>
     </span>
@@ -93,7 +149,9 @@ function TokenPool({ now, after, up }: { now: number; after: number; up?: boolea
 function Row({ row }: { row: RowView }) {
   const dispatch = useDispatch();
   const { linked, props } = useLink(row.link);
-  const control = row.control;
+  // A pool of command tokens with a counter: its tokens are the control.
+  const pool = row.tokens && row.control?.kind === "counter" ? row.control.counter : undefined;
+  const control = pool ? undefined : row.control;
   return (
     <ListRow
       icon={row.icon}
@@ -114,7 +172,7 @@ function Row({ row }: { row: RowView }) {
         </span>
       }
       subtitle={row.subtitle}
-      extra={row.tokens && <TokenPool {...row.tokens} />}
+      extra={row.tokens && <TokenPool {...row.tokens} counter={pool} />}
       linked={linked}
       {...props}
       controls={

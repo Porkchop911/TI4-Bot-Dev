@@ -1306,10 +1306,11 @@ test("the status phase gains the command tokens in the one redistribution, in th
   await expect(page.locator("footer")).toContainText("Place 3 more tokens");
   await expect(send(page)).toBeDisabled();
   await page.screenshot({ path: "shots/local/command-pools.png", animations: "disabled" });
-  // The fleet pool keeps the least that the game offers: 2. Esc puts the pools back.
+  // The fleet pool keeps the least that the game offers: 2, so one token of 3 can be taken. Esc
+  // puts the pools back.
   const fewer = panel(page).getByRole("button", { name: "Remove fleet pool token" });
   await fewer.click();
-  await expect(fewer).toBeDisabled();
+  await expect(fewer).toHaveCount(0);
   await expect(pools).toContainText("6 / 10 placed");
   await page.keyboard.press("Escape");
   await expect(pools).toContainText("7 / 10 placed");
@@ -1320,7 +1321,7 @@ test("the status phase gains the command tokens in the one redistribution, in th
       .click();
   }
   await expect(pools).toContainText("10 / 10 placed");
-  await expect(panel(page).getByRole("button", { name: "Add tactic pool token" })).toBeDisabled();
+  await expect(panel(page).getByRole("button", { name: "Add tactic pool token" })).toHaveCount(0);
   await expect(page.locator("footer")).toContainText("Tactic 2 → 3 · Fleet 3 → 4 · Strategy 2 → 3");
   await expect(send(page)).toBeEnabled();
   await send(page).click();
@@ -1368,7 +1369,7 @@ test("Leadership: the gained and the bought tokens are placed in the pools, paid
       .click();
   }
   await expect(pools).toContainText("5 / 5 placed");
-  await expect(panel(page).getByRole("button", { name: "Add fleet pool token" })).toBeDisabled();
+  await expect(panel(page).getByRole("button", { name: "Add fleet pool token" })).toHaveCount(0);
   await expect(page.locator("footer")).toContainText("Pay 6 more influence.");
   const bar = page.getByRole("group", { name: "Payment" });
   await expect(bar.getByRole("status").first()).toHaveText(/0 \/ 6\s*influence\s*6 more/);
