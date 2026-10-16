@@ -1,0 +1,61 @@
+# Caddy reverse proxy for the TI4 public playtest. Not installed by the repo.
+#
+# Replace play.example.org with your domain, or with <ip-with-dashes>.sslip.io
+# (for 203.0.113.7 that is 203-0-113-7.sslip.io). Caddy fetches a Let's Encrypt
+# certificate by itself; ports 80 and 443 must be reachable from the internet.
+#
+#   sudo cp deploy/public/Caddyfile /etc/caddy/Caddyfile
+#   sudo systemctl reload caddy
+
+play.example.org {
+	# Caddy has no built-in brotli. The server itself serves ti4_wasm-*.wasm.br / .wasm.gz when the
+	# release has them (deploy.sh writes both) and the client accepts them; Caddy leaves responses
+	# that already carry a Content-Encoding alone. Everything else is compressed here (zstd, gzip).
+	# Caddy 2.6 does not compress application/wasm by default, so .wasm gets its own rule (a wasm
+	# the server has no precompressed file for, e.g. in a dev build); the two rules never overlap.
+	@wasm path *.wasm
+	@notwasm not path *.wasm
+	encode @notwasm zstd gzip
+	encode @wasm zstd gzip {
+		match {
+			header Content-Type application/wasm*
+		}
+	}
+
+	# Keep the real client address out of the hands of the client: our own X-Forwarded-For
+	# and nothing the visitor sent. The server (TI4_TRUST_PROXY=1) reads the rightmost entry.
+	# Remove CF-Connecting-IP so nobody can spoof it (only keep it behind Cloudflare).
+	reverse_proxy 127.0.0.1:18200 {
+		header_up -CF-Connecting-IP
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+		# WebSockets (/ws/games/<id>) pass through reverse_proxy without extra settings.
+		# Seat games stay open for hours: no idle cut-off from the proxy side.
+		transport http {
+			read_timeout 0
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		# The client is a Vite bundle with inline styles; sockets are same-origin.
+		# Offline play (docs/OFFLINE.md) runs the engine as WebAssembly in a module worker:
+		#   script-src 'wasm-unsafe-eval'  WebAssembly.compile / compileStreaming (not plain eval)
+		#   worker-src 'self'              the worker is a same-origin file; no blob: workers
+		# No COOP/COEP: the engine suspends with JSPI, not with SharedArrayBuffer + Atomics.
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' wss://{host}; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+		-Server
+	}
+
+	# Caddy writes its own access log; the app logs neither tokens nor IPs.
+	log {
+		output file /var/log/caddy/ti4-public.log {
+			roll_size 20MiB
+			roll_keep 5
+		}
+	}
+}

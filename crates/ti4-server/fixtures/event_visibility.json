@@ -1,0 +1,5 @@
+[
+  {"id":"e1","timestamp":"","visibility":{"visibility":"public"},"event":{"kind":"decision_resolved"}},
+  {"id":"e2","timestamp":"","visibility":{"visibility":"seat","seat":"p1"},"event":{"kind":"decision_resolved"}},
+  {"id":"e3","timestamp":"","visibility":{"visibility":"referee"},"event":{"kind":"decision_resolved"}}
+]

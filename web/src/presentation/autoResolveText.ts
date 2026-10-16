@@ -7,6 +7,7 @@
 const KNOWN: Array<{ match: RegExp; text: (chosen: string) => string }> = [
   // The last card of the strategy draft (prompt "choose a strategy card" / "Strategy Card").
   { match: /strategy card/i, text: (c) => `Only one strategy card was left: you took ${c}` },
+  { match: /^production payment plan/i, text: (c) => `Paid from your payment plan: ${c}` },
   { match: /^pay \d+ more /i, text: (c) => `Only one way left to pay: ${c}` },
   { match: /^discard an action card/i, text: (c) => `Only one action card to discard: ${c}` },
   { match: /^discard a secret objective/i, text: (c) => `Only one secret objective to discard: ${c}` },

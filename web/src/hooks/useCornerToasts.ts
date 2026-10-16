@@ -1,14 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AutoResolveNotification } from "../components/AutoResolveToast.tsx";
-import type { AutoResolvedNote, GameEvent, PendingChoiceDto, PlayerView } from "../protocol/types.ts";
+import type { AutoResolvedNote, BoardView, GameEvent, PendingChoiceDto, PlayerView, TableView } from "../protocol/types.ts";
+import { imperialNoScoreNotice, ownImperialPlay } from "../presentation/publicScoringBlock.ts";
 import {
   ActionToast,
   actionToastFromEvent,
+  isCardOrScore,
   actionToastText,
   autoResolvedToast,
   mergeActionToast,
   victoryPointToasts,
 } from "../presentation/actionToasts.ts";
+import { mergeRollToasts, rollToasts, type RollToast } from "../presentation/rollToasts.ts";
+import { explorationToasts, type ExplorationRecordDto } from "../presentation/explorationToasts.ts";
+import { breakthroughToasts } from "../presentation/breakthroughs.ts";
+import { agendaToasts, type AgendaRecordDto, type AgendaToast } from "../presentation/agendaToasts.ts";
+import { buildTurnRecap, trackTurns, type OpenTurn, type TurnRecap } from "../presentation/turnRecap.ts";
+import { isTurnMenuChoice } from "../presentation/turnBar.ts";
+import { trackInvasion, type InvasionToast, type InvasionTracker } from "../presentation/invasionToasts.ts";
+import { usePlayerIdentity } from "../presentation/PlayerIdentity.tsx";
+import { recordToasts, type ToastHistoryEntry } from "../presentation/toastHistory.ts";
+import { useTurnRecapSetting } from "./useTurnRecapSetting.ts";
 import { useAutoResolveToasts } from "./useAutoResolveToasts.ts";
 import { useToastMute } from "./useToastMute.ts";
 
@@ -21,9 +33,38 @@ export interface CornerToastsInput {
   pendingChoice?: PendingChoiceDto | null;
   /** The server's notes for decisions it settled for this seat (state updates only). */
   autoResolved?: readonly AutoResolvedNote[];
+  /** The history generation of the session; a new one replaces the timeline (undo/redo, rewind). */
+  historyGeneration?: number;
+  /** Decisions this client answered for the viewer (lone strategic action / activation). */
+  localNotes?: readonly { id: string; text: string; prompt?: string }[];
+  /** The board of the latest snapshot: bombardment, Space Cannon Defense and invasion results are read from it. */
+  board?: BoardView | null;
+  /** The engine's public exploration log: every finished exploration toasts, for every seat. */
+  explorations?: readonly ExplorationRecordDto[];
+  /** Each seat's earned breakthrough alias; a new one toasts for every seat. */
+  breakthroughs?: Readonly<Record<string, string | null>>;
+  /** The engine's public agenda log: every finished vote toasts, for every seat (voters too). */
+  agendas?: readonly AgendaRecordDto[];
+  /** The table of the latest snapshot: why the viewer's Imperial scored nothing is read from it. */
+  table?: TableView | null;
   /** False until the first snapshot arrived: what is already in the log is history, not news. */
   ready: boolean;
 }
+
+const MAX_RECAPS = 2;
+const MAX_INVASION_TOASTS = 3;
+const MAX_AGENDA_TOASTS = 2;
+const MAX_ROLL_TOASTS = 3;
+
+// What a player gains from an exploration or a breakthrough is read, not glanced at: it stays longer.
+const LINGERING_CATEGORIES: ReadonlySet<ActionToast["category"]> = new Set(["explore", "breakthrough"]);
+const LINGER_MS = 10000;
+
+const INVASION_TAGS: Record<InvasionToast["kind"], string> = {
+  bombardment: "Bombardment",
+  space_cannon_defense: "Space Cannon",
+  summary: "Invasion",
+};
 
 type Shown = ActionToast & { revision: number };
 
@@ -38,11 +79,37 @@ export function useCornerToasts({
   viewerSeat,
   pendingChoice,
   autoResolved,
+  historyGeneration,
+  localNotes,
+  board,
+  explorations,
+  breakthroughs,
+  agendas,
+  table,
   ready,
 }: CornerToastsInput) {
   const { muted } = useToastMute();
+  const display = usePlayerIdentity();
+  const displayRef = useRef(display);
+  displayRef.current = display;
+  const { enabled: recapOn } = useTurnRecapSetting();
+  const recapRef = useRef(recapOn);
+  recapRef.current = recapOn;
+  const openTurn = useRef<OpenTurn | null>(null);
+  const [recaps, setRecaps] = useState<TurnRecap[]>([]);
   const auto = useAutoResolveToasts();
   const [actions, setActions] = useState<Shown[]>([]);
+  const [invasionToasts, setInvasionToasts] = useState<InvasionToast[]>([]);
+  const [agendaToastList, setAgendaToasts] = useState<AgendaToast[]>([]);
+  const [rollToastList, setRollToasts] = useState<RollToast[]>([]);
+  const [notices, setNotices] = useState<{ id: string; text: string; tag: string }[]>([]);
+  const tableRef = useRef(table);
+  tableRef.current = table;
+  const pendingRef = useRef(pendingChoice);
+  pendingRef.current = pendingChoice;
+  const invasionTracker = useRef<InvasionTracker | null>(null);
+  // The first board a client sees (load, undo) shows history, not news.
+  const invasionQuiet = useRef(true);
   const seen = useRef<Set<string> | null>(null);
   const lastVp = useRef<Map<string, number> | null>(null);
   const lastAutoNonce = useRef<string | null>(null);
@@ -63,18 +130,91 @@ export function useCornerToasts({
     });
   }, []);
 
+  // One recap per call, and only the latest when several turns closed at once (a reconnect that
+  // catches up on missed entries must not replay the game).
+  const emitRecap = useCallback((closed: readonly OpenTurn[]) => {
+    if (!recapRef.current || mutedRef.current) return;
+    const recap = closed.length ? buildTurnRecap(closed[closed.length - 1]) : null;
+    if (!recap) return;
+    setRecaps((prev) => [...prev.filter((r) => r.id !== recap.id), recap].slice(-MAX_RECAPS));
+  }, []);
+
+  // A new history generation replaced the timeline: nothing open belongs to it.
+  const lastGeneration = useRef(historyGeneration);
+  useEffect(() => {
+    if (lastGeneration.current !== historyGeneration) {
+      lastGeneration.current = historyGeneration;
+      openTurn.current = null;
+      invasionTracker.current = null;
+      invasionQuiet.current = true;
+    }
+  }, [historyGeneration]);
+
+  // Bombardment, Space Cannon Defense and the whole invasion, from the board's last invasion step.
+  useEffect(() => {
+    if (!ready || !board) return;
+    const quiet = invasionQuiet.current;
+    invasionQuiet.current = false;
+    const result = trackInvasion(invasionTracker.current, board, quiet, (seat) => displayRef.current(seat).label);
+    invasionTracker.current = result.tracker;
+    if (result.toasts.length === 0 || mutedRef.current) return;
+    setInvasionToasts((prev) => [
+      ...prev.filter((t) => !result.toasts.some((n) => n.id === t.id)),
+      ...result.toasts,
+    ].slice(-MAX_INVASION_TOASTS));
+  }, [board, ready]);
+
   useEffect(() => {
     if (!ready) return;
     if (seen.current === null) {
       seen.current = new Set(events.map((e) => e.id));
       return;
     }
+    // Undo removed entries of the open turn: forget it.
+    if (openTurn.current) {
+      const present = new Set(events.map((e) => e.id));
+      if (openTurn.current.entries.some((e) => !present.has(e.id))) openTurn.current = null;
+    }
     const fresh = events.filter((e) => !seen.current!.has(e.id));
     if (fresh.length === 0) return;
     for (const e of fresh) seen.current.add(e.id);
+    const turns = trackTurns(openTurn.current, fresh, viewerSeat);
+    openTurn.current = turns.open;
+    emitRecap(turns.closed);
     if (mutedRef.current) return;
-    push(fresh.flatMap((e) => actionToastFromEvent(e, viewerSeat) ?? []));
-  }, [events, ready, viewerSeat, push]);
+    // Dice are rolled in the open: everyone is told, the roller included.
+    const rolled = rollToasts(fresh, (seat) => displayRef.current(seat).label, board);
+    if (rolled.length > 0)
+      setRollToasts((prev) => mergeRollToasts(prev, rolled, MAX_ROLL_TOASTS, board));
+    // With the recap on, the acting player's own steps are summed up at the end of their turn.
+    // Card plays and scoring always toast at once: the recap only names the acting player's own,
+    // so another seat's Sabotage inside the turn would otherwise vanish.
+    const live = recapRef.current
+      ? fresh.filter((e) => !turns.tracked.has(e.id) || isCardOrScore(e))
+      : fresh;
+    push(live.flatMap((e) => actionToastFromEvent(e, viewerSeat, board) ?? []));
+    // The viewer's own Imperial with nothing scoreable: the engine asks nothing, so say why.
+    const imperial = ownImperialPlay(fresh, viewerSeat);
+    if (imperial && viewerSeat) {
+      const text = imperialNoScoreNotice({
+        viewerSeat,
+        table: tableRef.current,
+        board,
+        pendingChoice: pendingRef.current,
+        label: (seat) => displayRef.current(seat).label,
+      });
+      if (text) setNotices((prev) => [...prev.filter((n) => n.id !== imperial.id), { id: imperial.id, text, tag: "Imperial" }].slice(-2));
+    }
+  }, [events, ready, viewerSeat, push, emitRecap, board]);
+
+  // The viewer's own action menu means the previous player's turn is over.
+  useEffect(() => {
+    const open = openTurn.current;
+    if (!open || !viewerSeat || !pendingChoice) return;
+    if (pendingChoice.actor !== viewerSeat || !isTurnMenuChoice(pendingChoice)) return;
+    openTurn.current = null;
+    emitRecap([open]);
+  }, [pendingChoice, viewerSeat, emitRecap]);
 
   useEffect(() => {
     if (!ready || !players) return;
@@ -90,6 +230,58 @@ export function useCornerToasts({
       ),
     );
   }, [players, ready, viewerSeat, push]);
+
+  // Exploration results come from the state's log (they are not decisions, so the event log has
+  // no entry for them). What is there at load, or reappears after undo/redo, is history.
+  const exploredCursor = useRef<number | null>(null);
+  const exploredGeneration = useRef(historyGeneration);
+  useEffect(() => {
+    if (!ready || !explorations) return;
+    if (exploredCursor.current === null || exploredGeneration.current !== historyGeneration) {
+      exploredGeneration.current = historyGeneration;
+      exploredCursor.current = explorations.length;
+      return;
+    }
+    const { toasts, next } = explorationToasts(explorations, exploredCursor.current);
+    exploredCursor.current = next;
+    if (!mutedRef.current) push(toasts);
+  }, [explorations, ready, historyGeneration, push]);
+
+  // A breakthrough is earned from an expedition slice; it is not in the event log. What seats held
+  // at load, or after undo/redo, is history.
+  const lastBreakthroughs = useRef<Readonly<Record<string, string | null>> | null>(null);
+  const breakthroughGeneration = useRef(historyGeneration);
+  useEffect(() => {
+    if (!ready || !breakthroughs) return;
+    const before =
+      breakthroughGeneration.current === historyGeneration ? lastBreakthroughs.current : null;
+    breakthroughGeneration.current = historyGeneration;
+    lastBreakthroughs.current = breakthroughs;
+    if (!mutedRef.current) push(breakthroughToasts(before ? { ...before } : null, { ...breakthroughs }));
+  }, [breakthroughs, ready, historyGeneration, push]);
+
+  // Agenda results come from the state's agenda log, like explorations: what is there at load, or
+  // reappears after undo/redo, is history. The voter is told too: the result is news to all.
+  const agendaCursor = useRef<number | null>(null);
+  const agendaGeneration = useRef(historyGeneration);
+  useEffect(() => {
+    if (!ready || !agendas) return;
+    if (agendaCursor.current === null || agendaGeneration.current !== historyGeneration) {
+      agendaGeneration.current = historyGeneration;
+      agendaCursor.current = agendas.length;
+      return;
+    }
+    const seatName = (id: string) => {
+      const seat = displayRef.current(id);
+      return seat.position === null ? null : seat.label;
+    };
+    const { toasts, next } = agendaToasts(agendas, agendaCursor.current, seatName);
+    agendaCursor.current = next;
+    if (toasts.length === 0 || mutedRef.current) return;
+    setAgendaToasts((prev) =>
+      [...prev.filter((t) => !toasts.some((n) => n.id === t.id)), ...toasts].slice(-MAX_AGENDA_TOASTS),
+    );
+  }, [agendas, ready, historyGeneration]);
 
   const { showToast } = auto;
   useEffect(() => {
@@ -109,10 +301,28 @@ export function useCornerToasts({
     }
   }, [autoResolved, showToast]);
 
+  useEffect(() => {
+    if (!localNotes) return;
+    for (const note of localNotes) {
+      if (shownNotes.current.has(note.id)) continue;
+      shownNotes.current.add(note.id);
+      showToast(note.prompt ?? "action phase", note.text);
+    }
+  }, [localNotes, showToast]);
+
   // Muting also clears what is on screen.
   useEffect(() => {
-    if (muted) setActions([]);
+    if (muted) {
+      setActions([]);
+      setInvasionToasts([]);
+      setAgendaToasts([]);
+      setRollToasts([]);
+      setNotices([]);
+    }
   }, [muted]);
+  useEffect(() => {
+    if (muted || !recapOn) setRecaps([]);
+  }, [muted, recapOn]);
 
   const dismissAction = useCallback(
     (id: string) => setActions((prev) => prev.filter((t) => t.id !== id)),
@@ -121,6 +331,11 @@ export function useCornerToasts({
   const { dismissToast } = auto;
   const dismiss = useCallback(
     (id: string) => {
+      setRecaps((prev) => prev.filter((r) => r.id !== id));
+      setInvasionToasts((prev) => prev.filter((t) => t.id !== id));
+      setAgendaToasts((prev) => prev.filter((t) => t.id !== id));
+      setRollToasts((prev) => prev.filter((t) => t.id !== id));
+      setNotices((prev) => prev.filter((t) => t.id !== id));
       dismissAction(id);
       dismissToast(id);
     },
@@ -130,6 +345,57 @@ export function useCornerToasts({
   const notifications = useMemo<AutoResolveNotification[]>(
     () => [
       ...auto.toasts,
+      ...recaps.map(
+        (r): AutoResolveNotification => ({
+          id: r.id,
+          kind: "recap",
+          decisionType: "",
+          selectedValue: "",
+          actor: r.actor,
+          text: r.text,
+        }),
+      ),
+      ...invasionToasts.map(
+        (t): AutoResolveNotification => ({
+          id: t.id,
+          kind: "invasion",
+          decisionType: "",
+          selectedValue: "",
+          actor: t.actor,
+          text: t.text,
+          tag: INVASION_TAGS[t.kind],
+        }),
+      ),
+      ...agendaToastList.map(
+        (t): AutoResolveNotification => ({
+          id: t.id,
+          kind: "agenda",
+          decisionType: "",
+          selectedValue: "",
+          text: t.text,
+          tag: "Agenda",
+        }),
+      ),
+      ...rollToastList.map(
+        (t): AutoResolveNotification => ({
+          id: t.id,
+          kind: "notice",
+          decisionType: "",
+          selectedValue: "",
+          text: t.text,
+          tag: "Dice",
+        }),
+      ),
+      ...notices.map(
+        (t): AutoResolveNotification => ({
+          id: t.id,
+          kind: "notice",
+          decisionType: "",
+          selectedValue: "",
+          text: t.text,
+          tag: t.tag,
+        }),
+      ),
       ...actions.map(
         (t): AutoResolveNotification => ({
           id: t.id,
@@ -139,11 +405,18 @@ export function useCornerToasts({
           actor: t.actor,
           text: actionToastText(t),
           revision: t.revision,
+          durationMs: LINGERING_CATEGORIES.has(t.category) ? LINGER_MS : undefined,
         }),
       ),
     ],
-    [auto.toasts, actions],
+    [auto.toasts, actions, recaps, invasionToasts, agendaToastList, rollToastList, notices],
   );
 
-  return { notifications, dismiss, muted };
+  // Everything that was shown, kept so a toast that faded can be read again.
+  const [history, setHistory] = useState<ToastHistoryEntry[]>([]);
+  useEffect(() => {
+    setHistory((prev) => recordToasts(prev, notifications));
+  }, [notifications]);
+
+  return { notifications, dismiss, muted, history };
 }

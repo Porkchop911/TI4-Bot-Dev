@@ -1,0 +1,27 @@
+{
+  "title": "Objective Progress: Push Boundaries and Learn the Secrets",
+  "description": "Push Boundaries now shows, in every seat's column of the Objectives dialog, that seat's planet count against each neighbor as ours/theirs (12/10), blue with ▲ when ahead, red with = when tied or ▼ when behind, the neighbor's seat number in its seat color, and 'Ahead of N of M neighbors · need 2'. On a phone the viewer's own comparison is repeated in the card column ('You:'), since the player columns scroll sideways. Learn the Secrets of the Cosmos shows its holder n / 3 and names the systems that count. Mocked fixtures; regenerate with npm run screenshots -- CU.",
+  "tag": "web/e2e/screenshots/CU-objective-progress",
+  "shots": [
+    { "file": "out/1-push-ahead-2-desktop.png", "heading": "Push Boundaries, ahead of 2 (desktop)", "caption": "You 12 planets against 10, 9 and 13: two blue, one red; Ready (2/2). Each rival's column shows its own comparison (Player 3 and Player 4 are not neighbors of each other, so they have two rows)." },
+    { "file": "out/1-push-ahead-2-390x844.png", "heading": "Push Boundaries, ahead of 2 (390x844)", "caption": "On the phone the viewer's rows sit under the card text, on screen although the player columns scroll sideways." },
+    { "file": "out/1-push-ahead-1-desktop.png", "heading": "Push Boundaries, ahead of 1 (desktop)", "caption": "12/10 ahead, 12/13 behind, 12/12 tied: a tie is not 'more planets than', so it is red with '='. 1 / 2." },
+    { "file": "out/1-push-ahead-1-390x844.png", "heading": "Push Boundaries, ahead of 1 (390x844)", "caption": "Same on a phone." },
+    { "file": "out/1-push-tied-desktop.png", "heading": "Push Boundaries, tied (desktop)", "caption": "12/12, 12/12, 12/14: ahead of none; Player 2 and Player 3, also tied with you, show red '=' from their side too." },
+    { "file": "out/1-push-tied-390x844.png", "heading": "Push Boundaries, tied (390x844)", "caption": "Same on a phone." },
+    { "file": "out/2-lsc-0-desktop.png", "heading": "Learn the Secrets, 0 systems (desktop)", "caption": "0 / 3 systems adjacent to an anomaly with your ships; no system list." },
+    { "file": "out/2-lsc-0-390x844.png", "heading": "Learn the Secrets, 0 systems (390x844)", "caption": "Same on a phone." },
+    { "file": "out/2-lsc-1-desktop.png", "heading": "Learn the Secrets, 1 system (desktop)", "caption": "1 / 3, Counting: #26 [Lodor]." },
+    { "file": "out/2-lsc-1-390x844.png", "heading": "Learn the Secrets, 1 system (390x844)", "caption": "Same on a phone." },
+    { "file": "out/2-lsc-2-desktop.png", "heading": "Learn the Secrets, 2 systems (desktop)", "caption": "2 / 3, Counting: #26 [Lodor], #25 [Quann]." },
+    { "file": "out/2-lsc-2-390x844.png", "heading": "Learn the Secrets, 2 systems (390x844)", "caption": "Same on a phone." },
+    { "file": "out/2-lsc-3-desktop.png", "heading": "Learn the Secrets, 3 systems (desktop)", "caption": "3 / 3 · met, green bar; the three counted systems are listed." },
+    { "file": "out/2-lsc-3-390x844.png", "heading": "Learn the Secrets, 3 systems (390x844)", "caption": "Same on a phone." },
+    { "file": "out/3-lsc-player-sheet-desktop.png", "heading": "Player sheet", "caption": "The private hand in the player sheet shows the same line and system list." }
+  ],
+  "notes": [
+    { "title": "Where the numbers come from", "text": "Push Boundaries: ti4_engine::objectives::neighbour_planet_counts, the exact comparison the requirement makes (neighbors by transactions::neighbours, planets through the scoring view on both sides; 'ahead' is strictly more). The server adds the rows to table.objective_progress[seat].push_boundaries.neighbours. Learn the Secrets: ti4_engine::secrets::ship_systems_beside_anomaly, whose length is the count the requirement checks, sent as secret_objective_progress.lsc.systems. Display-only: not in canonical() or the fingerprint; no option id changed." },
+    { "title": "Privacy", "text": "Planet control is public, so every viewer gets every seat's Push Boundaries rows. Learn the Secrets' systems ride on the holder's own secret progress, which only that seat receives (projection_redaction.rs covers both)." },
+    { "title": "Map-shaped progress was missing in real games", "text": "The server rebuilt the galaxy for these counts from the board tiles, which include the Fracture (not in the PoK catalogue) and a parked Wormhole Nexus at Mecatol's hex. The rebuild failed, so every map-shaped count (Push Boundaries, Intimidate Council, Distant Lands, Learn the Secrets, Threaten Enemies, Foster Cohesion) silently had no progress. placed_galaxy now skips off-grid tiles." }
+  ]
+}

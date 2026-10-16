@@ -51,4 +51,24 @@ describe("describeStrategySecondary", () => {
       describeStrategySecondary({ ...choice, options: [...options, { id: "x", label: "x" }] }),
     ).toBeNull();
   });
+
+  it("carries the Trade follower's commodities when the engine sent them", () => {
+    const trade = describeStrategySecondary({
+      prompt: "spend a strategy token to replenish commodities",
+      options: [
+        { id: "no", label: "decline", kind: "strategy" },
+        { id: "yes", label: "replenish", kind: "strategy" },
+      ],
+      details: {
+        kind: "strategy_secondary",
+        card: "pok5trade",
+        played_by: "seat_b",
+        tokens_left: 2,
+        costs_token: true,
+        commodities: { have: 1, max: 4, trade_goods: 0 },
+      },
+    });
+    expect(trade?.commodities).toEqual({ have: 1, max: 4, tradeGoods: 0 });
+    expect(describeStrategySecondary(choice)?.commodities).toBeNull();
+  });
 });

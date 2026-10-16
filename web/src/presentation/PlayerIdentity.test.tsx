@@ -14,7 +14,6 @@ const slots: LobbyDto["slots"] = [
     position: 1,
     occupant: "player_b",
     nickname: "Sam",
-    ready: true,
     connected: true,
     can_take_over: false,
   },
@@ -23,7 +22,6 @@ const slots: LobbyDto["slots"] = [
     position: 2,
     occupant: "player_a",
     nickname: "Sam",
-    ready: true,
     connected: true,
     can_take_over: false,
   },
@@ -107,7 +105,7 @@ it("renders player and spectator surfaces with current names, seat shapes and no
           {
             id: "e1",
             timestamp: "",
-            visibility: "public",
+            visibility: { visibility: "public" as const },
             event: { kind: "game_finished", winner: "player_a" },
           },
         ]}
@@ -153,13 +151,13 @@ it("renders player and spectator surfaces with current names, seat shapes and no
       <PlayerSheet players={players} />
     </PlayerIdentityProvider>,
   );
-  expect(screen.getByText(/Waiting for Robin/)).toBeInTheDocument();
+  expect(screen.getByText(/Waiting for Robin \(Choice\)/)).toBeInTheDocument();
   expect(spectator.container.querySelector("[data-private-card]")).toBeNull();
   expect(spectator.container.outerHTML).not.toContain("player_a");
-  // The black eighth position has a bright outline and white glyph even on a dark canvas.
+  // The eighth position (purple) takes dark ink like every other seat.
   const { container: badge } = render(<SeatBadge position={8} />);
-  expect(badge.querySelector("circle")).toHaveAttribute("fill", "#000000");
-  expect(badge.querySelector("text")).toHaveAttribute("fill", "#fff");
+  expect(badge.querySelector("circle")).toHaveAttribute("fill", "#A855F7");
+  expect(badge.querySelector("text")).toHaveAttribute("fill", "#0b1220");
   fireEvent.click(screen.getByTestId("event-log-toggle"));
 });
 
@@ -211,4 +209,24 @@ it("keeps trade target and submitted choice IDs internal while displaying the cu
     fireEvent.click(screen.getByTestId("propose-trade-btn"));
   });
   expect(onSubmit).toHaveBeenCalledWith("offer-1");
+});
+
+it("marks the viewer's own card with (You) only when the label is not already You", () => {
+  const named = render(
+    <PlayerIdentityProvider lobby={lobby} seatingOrder={["player_b", "player_a"]}>
+      <PlayerSheet players={players} userSeat="player_b" />
+    </PlayerIdentityProvider>,
+  );
+  expect(named.container.textContent).toContain("(You)");
+  named.unmount();
+  const youLobby: LobbyDto = {
+    ...lobby,
+    slots: slots.map((slot) => (slot.occupant === "player_b" ? { ...slot, nickname: "You" } : slot)),
+  };
+  const you = render(
+    <PlayerIdentityProvider lobby={youLobby} seatingOrder={["player_b", "player_a"]}>
+      <PlayerSheet players={players} userSeat="player_b" />
+    </PlayerIdentityProvider>,
+  );
+  expect(you.container.textContent).not.toContain("(You)");
 });

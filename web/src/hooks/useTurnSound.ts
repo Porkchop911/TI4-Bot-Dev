@@ -2,6 +2,11 @@ import { useCallback, useRef } from 'react';
 
 const STORAGE_KEY = 'player_sound_muted';
 
+/** The sound is for the moment a decision passes to the viewer; the following ones of the same run stay quiet. */
+export function shouldPlayTurnSound(wasViewerDecision: boolean, isViewerDecision: boolean): boolean {
+  return isViewerDecision && !wasViewerDecision;
+}
+
 /**
  * Hook to manage turn sound notifications using Web Audio API.
  * Generates a simple beep sound when it's the player's turn.

@@ -1,0 +1,64 @@
+{
+  "title": "Unit and faction info cards",
+  "description": "One shared info card for units (build options, mech) and factions (player sheet). The text is read from the game content the engine plays; where the content has nothing, the card says so.",
+  "tag": "web/e2e/screenshots/U-unit-faction-info",
+  "shots": [
+    {
+      "file": "out/1-production-dreadnought.png",
+      "heading": "Build option, desktop",
+      "caption": "The info mark beside each build option opens on hover or keyboard focus (a click pins it, Escape closes). It lists cost, combat value and dice, move, capacity and abilities. Sol owns Dreadnought II here, so the card is the II."
+    },
+    {
+      "file": "out/2-production-flagship.png",
+      "heading": "Faction flagship",
+      "caption": "The flagship option shows the viewing seat's own flagship, with its printed ability."
+    },
+    {
+      "file": "out/3-production-phone.png",
+      "heading": "Build option, phone",
+      "caption": "A tap opens the card as a sheet at the bottom of the screen. The Sol Advanced Carrier II is the faction's own carrier."
+    },
+    {
+      "file": "out/4-mech-info.png",
+      "heading": "Mech abilities",
+      "caption": "The seat's mech is named above the build options; its card carries the printed ability."
+    },
+    {
+      "file": "out/5-faction-card-own.png",
+      "heading": "Faction button, own sheet",
+      "caption": "Abilities, promissory note, flagship, mech, starting and faction technologies and the three leaders' text. Leaders show the state the server reports for that seat."
+    },
+    {
+      "file": "out/5b-faction-card-leaders.png",
+      "heading": "Faction card, scrolled",
+      "caption": "The lower half of the same card: faction technologies and the agent, commander and hero, each with its printed window and text and the state the server reports for that seat (readied, locked)."
+    },
+    {
+      "file": "out/6-faction-card-other-seat.png",
+      "heading": "Faction button, another seat",
+      "caption": "The same card for another seat's faction (Hacan)."
+    },
+    {
+      "file": "out/7-faction-card-phone.png",
+      "heading": "Faction card, phone",
+      "caption": "The faction card as a scrolling sheet on a phone."
+    },
+    {
+      "file": "out/8-no-data-unit.png",
+      "heading": "No data: unit",
+      "caption": "A unit the content does not know opens a plain no-information card."
+    },
+    {
+      "file": "out/9-no-data-faction.png",
+      "heading": "No data: faction",
+      "caption": "A faction the content does not know does the same."
+    }
+  ],
+  "notesHeading": "Notes",
+  "notes": [
+    {
+      "title": "Fixtures. ",
+      "text": "Synthetic mocked game (Sol and Hacan), not an engine capture. The card text itself comes from the real content catalog."
+    }
+  ]
+}

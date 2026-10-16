@@ -10,6 +10,7 @@ import {
   TriggerKindDto,
   TriggerUnitsDto,
 } from "./types.ts";
+import { isStrategyCardSetId } from "../presentation/strategyCardSet.ts";
 import { validNickname } from "./nickname.ts";
 import { decodeMapChoice } from "./mapDecode.ts";
 
@@ -50,11 +51,10 @@ export function decodeLobby(value: unknown, expectedGameId: string): LobbyDto {
       slots.has(entry.slot_id) ||
       entry.position !== index + 1 ||
       (entry.occupant !== null && !isPlayerId(entry.occupant)) ||
-      typeof entry.ready !== "boolean" ||
       typeof entry.connected !== "boolean" ||
       typeof entry.can_take_over !== "boolean" ||
       (entry.occupant === null
-        ? entry.nickname !== null || entry.ready || entry.connected || entry.can_take_over
+        ? entry.nickname !== null || entry.connected || entry.can_take_over
         : !validNickname(entry.nickname)) ||
       (entry.occupant !== null && players.has(entry.occupant))
     )
@@ -73,11 +73,27 @@ export function decodeLobby(value: unknown, expectedGameId: string): LobbyDto {
       position: entry.position,
       occupant: entry.occupant,
       nickname: entry.nickname,
-      ready: entry.ready,
       connected: entry.connected,
       can_take_over: entry.can_take_over,
+      ...(typeof entry.bot === "string" && entry.occupant !== null ? { bot: entry.bot } : {}),
+      ...(typeof entry.faction === "string" && entry.occupant !== null
+        ? { faction: entry.faction }
+        : {}),
     })),
     bot_service_enabled: Boolean(value.bot_service_enabled),
+    bot_kinds: Array.isArray(value.bot_kinds)
+      ? value.bot_kinds.filter((kind: unknown): kind is string => typeof kind === "string")
+      : [],
+    ...(Array.isArray(value.factions)
+      ? {
+          factions: value.factions.filter(
+            (faction: unknown): faction is string => typeof faction === "string",
+          ),
+        }
+      : {}),
+    ...(isStrategyCardSetId(value.strategy_card_set)
+      ? { strategy_card_set: value.strategy_card_set }
+      : {}),
     ...(value.map === undefined
       ? {}
       : {
@@ -276,6 +292,18 @@ export function decodeServerMessage(value: unknown, expectedGameId: string): Ser
         typeof value.entry.private_detail !== "string"
       )
         fail("invalid private event detail");
+      if (value.entry.roll !== undefined) {
+        const roll = value.entry.roll;
+        if (
+          !isRecord(roll) ||
+          !isNonNegativeInteger(roll.index) ||
+          typeof roll.reason !== "string" ||
+          typeof roll.label !== "string" ||
+          !Array.isArray(roll.faces) ||
+          !roll.faces.every(isNonNegativeInteger)
+        )
+          fail("invalid dice roll");
+      }
       for (const field of ["batch_start_cursor", "batch_end_cursor", "action_start_cursor"]) {
         if (value.entry[field] !== undefined && !isNonNegativeInteger(value.entry[field]))
           fail(`invalid ${field}`);
@@ -296,6 +324,67 @@ export function decodeServerMessage(value: unknown, expectedGameId: string): Ser
       return value as unknown as ServerMessage;
     case "pong":
       if (!isNonNegativeInteger(value.sequence)) fail("invalid pong");
+      return value as unknown as ServerMessage;
+    case "reaction_intent_state":
+      if (
+        !Array.isArray(value.triggers) ||
+        !value.triggers.every((id) => typeof id === "string") ||
+        typeof value.eligible !== "boolean" ||
+        typeof value.budget_used_up !== "boolean" ||
+        typeof value.holding !== "boolean" ||
+        (value.locked_until_round !== undefined && !isNonNegativeInteger(value.locked_until_round))
+      )
+        fail("invalid reaction intent state");
+      return value as unknown as ServerMessage;
+    case "secondary_preview": {
+      const outcome = value.outcome;
+      if (
+        !isNonNegativeInteger(value.request_id) ||
+        !isNonNegativeInteger(value.as_of_version) ||
+        !isRecord(outcome) ||
+        (outcome.result !== "preview" && outcome.result !== "refused")
+      )
+        fail("invalid secondary preview");
+      if (outcome.result === "refused") {
+        if (typeof outcome.reason !== "string") fail("invalid secondary preview refusal");
+      } else {
+        const preview = outcome.preview;
+        if (!isRecord(preview) || typeof preview.status !== "string")
+          fail("invalid secondary preview body");
+        if (preview.status === "question") {
+          const choice = preview.choice;
+          if (
+            !isRecord(choice) ||
+            typeof choice.player !== "string" ||
+            typeof choice.prompt !== "string" ||
+            !Array.isArray(choice.options)
+          )
+            fail("invalid previewed choice");
+        }
+      }
+      return value as unknown as ServerMessage;
+    }
+    case "reach_into":
+      if (
+        !isNonNegativeInteger(value.request_id) ||
+        !isNonNegativeInteger(value.as_of_version) ||
+        typeof value.system_id !== "string" ||
+        !Array.isArray(value.origins) ||
+        !value.origins.every(
+          (origin) =>
+            isRecord(origin) &&
+            typeof origin.owner === "string" &&
+            typeof origin.origin === "string" &&
+            Array.isArray(origin.ships) &&
+            origin.ships.every(
+              (ship) =>
+                isRecord(ship) &&
+                typeof ship.type_id === "string" &&
+                isNonNegativeInteger(ship.count),
+            ),
+        )
+      )
+        fail("invalid reach answer");
       return value as unknown as ServerMessage;
     default:
       return fail("unknown message type");

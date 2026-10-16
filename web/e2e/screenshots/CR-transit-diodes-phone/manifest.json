@@ -1,0 +1,102 @@
+{
+  "title": "Transit Diodes on a phone",
+  "description": "Transit Diodes redeploys up to four ground forces at the start of a turn; the engine asks one option per source place x ground force type x controlled planet (here 13 planets, 7 places, 150+ options). It used to render as a planet selection that grouped moves by destination and showed them in a clipped row, so on a phone the wanted move could not be picked. It now has its own stepwise panel: what moves, where to, Confirm, with system tags, planet values and troops, 44 px targets and a list that scrolls inside the panel. Option ids are unchanged. Before shots were taken with TI4_SHOT_PREFIX=before on the base commit (e6c3cd1d); npm run screenshots -- CR regenerates the after shots. Synthetic fixtures through the mocked server, options generated exactly like the engine's transit_options.",
+  "tag": "web/e2e/screenshots/CR-transit-diodes-phone",
+  "shots": [
+    {
+      "file": "before/before-1-initial-390x844.png",
+      "heading": "Before, 390x844: the question",
+      "caption": "Transit Diodes was a planet selection: one chip per destination planet in a box that cuts off after three rows (Rarron, Sol's Jord and Finish redeployment below the fold), with no system, no source and nothing saying what moves."
+    },
+    {
+      "file": "before/before-2-destination-jord-390x844.png",
+      "heading": "Before, 390x844: after tapping Jord",
+      "caption": "Every source x unit for that destination becomes a button in one non-wrapping row, wider than the panel and clipped on both sides, labelled with raw ids ('Move infantry from tarmann to jord'). The prompt line overflows too. The wanted move cannot be reached."
+    },
+    {
+      "file": "before/before-3-destination-sol-jord-390x844.png",
+      "heading": "Before, 390x844: after tapping Sol's Jord",
+      "caption": "Two different planets are both called Jord; the row of moves is still clipped."
+    },
+    {
+      "file": "before/before-1-initial-360x740.png",
+      "heading": "Before, 360x740: the question",
+      "caption": "Transit Diodes was a planet selection: one chip per destination planet in a box that cuts off after three rows (Rarron, Sol's Jord and Finish redeployment below the fold), with no system, no source and nothing saying what moves."
+    },
+    {
+      "file": "before/before-2-destination-jord-360x740.png",
+      "heading": "Before, 360x740: after tapping Jord",
+      "caption": "Every source x unit for that destination becomes a button in one non-wrapping row, wider than the panel and clipped on both sides, labelled with raw ids ('Move infantry from tarmann to jord'). The prompt line overflows too. The wanted move cannot be reached."
+    },
+    {
+      "file": "before/before-3-destination-sol-jord-360x740.png",
+      "heading": "Before, 360x740: after tapping Sol's Jord",
+      "caption": "Two different planets are both called Jord; the row of moves is still clipped."
+    },
+    {
+      "file": "out/after-1-what-moves-390x844.png",
+      "heading": "After, 390x844: step 1, what moves",
+      "caption": "Places your ground forces can leave from, grouped by system ('#18 [Mecatol Rex]'), each with its resource and influence values, what you have there and one 44 px button per ground force type (with a count). The list scrolls inside the panel; summary, Confirm and Finish redeployment stay visible."
+    },
+    {
+      "file": "out/after-2-scrolled-390x844.png",
+      "heading": "After, 390x844: list scrolled",
+      "caption": "Scrolling inside the panel reaches every place; the system header sticks to the top."
+    },
+    {
+      "file": "out/after-3-where-to-390x844.png",
+      "heading": "After, 390x844: step 2, where to",
+      "caption": "After tapping Mech on Sol's Jord: 'Moving 1 Mech from Jord in #01 [Sol Home]' with Change, then every planet it may go to, grouped by system, with values and what already stands there. Map taps on a destination pick it too."
+    },
+    {
+      "file": "out/after-4-confirm-390x844.png",
+      "heading": "After, 390x844: step 3, confirm",
+      "caption": "Lodor picked (green): the footer reads 'Move 1 Mech: Jord (#01 [Sol Home]) → Lodor (#26 [Lodor])', Confirm is enabled, Back returns to step 1."
+    },
+    {
+      "file": "out/after-5-hidden-390x844.png",
+      "heading": "After, 390x844: hidden",
+      "caption": "Hide folds the list away to free the map; the summary and Confirm stay. Confirm sends the engine's own id transit|1|sol_jord|mech|26|lodor (asserted)."
+    },
+    {
+      "file": "out/after-1-what-moves-360x740.png",
+      "heading": "After, 360x740: step 1, what moves",
+      "caption": "Places your ground forces can leave from, grouped by system ('#18 [Mecatol Rex]'), each with its resource and influence values, what you have there and one 44 px button per ground force type (with a count). The list scrolls inside the panel; summary, Confirm and Finish redeployment stay visible."
+    },
+    {
+      "file": "out/after-2-scrolled-360x740.png",
+      "heading": "After, 360x740: list scrolled",
+      "caption": "Scrolling inside the panel reaches every place; the system header sticks to the top."
+    },
+    {
+      "file": "out/after-3-where-to-360x740.png",
+      "heading": "After, 360x740: step 2, where to",
+      "caption": "After tapping Mech on Sol's Jord: 'Moving 1 Mech from Jord in #01 [Sol Home]' with Change, then every planet it may go to, grouped by system, with values and what already stands there. Map taps on a destination pick it too."
+    },
+    {
+      "file": "out/after-4-confirm-360x740.png",
+      "heading": "After, 360x740: step 3, confirm",
+      "caption": "Lodor picked (green): the footer reads 'Move 1 Mech: Jord (#01 [Sol Home]) → Lodor (#26 [Lodor])', Confirm is enabled, Back returns to step 1."
+    },
+    {
+      "file": "out/after-5-hidden-360x740.png",
+      "heading": "After, 360x740: hidden",
+      "caption": "Hide folds the list away to free the map; the summary and Confirm stay. Confirm sends the engine's own id transit|1|sol_jord|mech|26|lodor (asserted)."
+    },
+    {
+      "file": "out/after-6-desktop.png",
+      "heading": "After, desktop",
+      "caption": "The same panel centred over the map on a desktop."
+    }
+  ],
+  "notes": [
+    {
+      "title": "Engine",
+      "text": "No engine change: the client reads source_system, source, unit, destination_system and planet from each option's payload and only ever submits one of the offered ids. Nothing added to canonical() or the fingerprint."
+    },
+    {
+      "title": "Asserted",
+      "text": "Panel inside the viewport, no horizontal scroll, the list scrolls, Confirm and Finish redeployment visible at every step, every force, destination and action button at least 44 px tall, the summary text, and the submitted option id."
+    }
+  ]
+}

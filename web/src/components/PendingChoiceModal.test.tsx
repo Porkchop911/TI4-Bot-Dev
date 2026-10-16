@@ -29,6 +29,33 @@ describe("PendingChoiceModal Component", () => {
     expect(screen.getByText(/Gain 3 command tokens/)).toBeInTheDocument();
     expect(screen.getByText("Secondary")).toBeInTheDocument();
   });
+  it("shows the text of the cards the game's set deals, whichever version that is", () => {
+    const draftOf = (ids: string[]): PendingChoiceDto => ({
+      ...mockChoice,
+      context: { subtype: "draft_strategy_card" },
+      options: ids.map((id) => ({ id, kind: "strategy_card", label: id })),
+    });
+    const { unmount } = render(
+      <PendingChoiceModal
+        choice={draftOf(["te4construction", "te6warfare"])}
+        onSubmit={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("4. Construction")).toBeInTheDocument();
+    expect(screen.getByText(/Either place 1 structure on a planet you control/)).toBeInTheDocument();
+    expect(screen.getByText(/You may redistribute your command tokens before and after/)).toBeInTheDocument();
+    expect(screen.queryByText(/Remove 1 of your command tokens from the game board/)).toBeNull();
+    unmount();
+    render(
+      <PendingChoiceModal
+        choice={draftOf(["pok4construction", "pok6warfare"])}
+        onSubmit={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/Remove 1 of your command tokens from the game board/)).toBeInTheDocument();
+    expect(screen.queryByText(/Either place 1 structure on a planet you control/)).toBeNull();
+  });
+
   it("does not render when choice is null", () => {
     const { container } = render(<PendingChoiceModal choice={null} onSubmit={vi.fn()} />);
     expect(container.firstChild).toBeNull();

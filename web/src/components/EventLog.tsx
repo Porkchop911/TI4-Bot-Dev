@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { isPublicEvent, visibilityKind } from "../protocol/eventVisibility.ts";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { GameLogEntry, HistoryChange } from "../protocol/client.ts";
 import { CurrentLogPath } from "../protocol/types.ts";
 import {
@@ -13,6 +14,7 @@ import {
   replayCopyMessage,
   type ReplayCopyState,
 } from "../presentation/replayCopy.ts";
+import { followTarget, isPinned, nextUnseen, restoreTarget } from "./eventLogScroll.ts";
 
 export interface EventLogProps {
   events: GameLogEntry[];
@@ -27,11 +29,25 @@ export interface EventLogProps {
   historyKey?: unknown;
   /** Any seated player: loads the replay JSON so it can be copied out of the log drawer. */
   onFetchReplay?: () => Promise<{ text: string; filename: string }>;
+  /** Turn redo: lets a seated player rewind their own last turn(s); the host may pick any seat. */
+  turnRedo?: TurnRedoRequestControls;
+}
+
+/** Tooltip on the undo/redo buttons while a history change is still running. */
+export const HISTORY_BUSY_REASON = "A history change is still running; wait for it to finish";
+
+export interface TurnRedoRequestControls {
+  onRequest: (options: { turns?: 1 | 2; seat?: string }) => void;
+  /** A request is running, or a redo is already in flight: the button waits. */
+  disabled: boolean;
+  /** Host only: the seats whose turn may be redone (the viewer's own seat first). */
+  seats?: { id: string; label: string }[];
+  viewerSeat?: string | null;
 }
 
 export interface LogNode {
   id: string;
-  kind: "round" | "phase" | "event" | "decision" | "marker";
+  kind: "round" | "phase" | "event" | "decision" | "marker" | "roll";
   label: string;
   children: LogNode[];
   entry?: GameLogEntry;
@@ -141,10 +157,9 @@ export function buildEventTree(events: readonly GameLogEntry[]): LogNode[] {
       boundaryRound = event.round;
       boundaryPhase = event.phase;
     }
-    const round =
-      event.kind === "decision_resolved" ? (entry.round ?? boundaryRound) : boundaryRound;
-    const phase =
-      event.kind === "decision_resolved" ? (entry.phase ?? boundaryPhase) : boundaryPhase;
+    const stamped = event.kind === "decision_resolved" || event.kind === "dice_rolled";
+    const round = stamped ? (entry.round ?? boundaryRound) : boundaryRound;
+    const phase = stamped ? (entry.phase ?? boundaryPhase) : boundaryPhase;
     const roundKey = round === undefined ? "unknown" : String(round);
     let roundNode = roundByKey.get(roundKey);
     if (!roundNode) {
@@ -168,6 +183,18 @@ export function buildEventTree(events: readonly GameLogEntry[]): LogNode[] {
     // Get and increment event index for this phase
     const eventIndex = phaseEventIndices.get(phaseKey)!;
     phaseEventIndices.set(phaseKey, eventIndex + 1);
+
+    // A die roll is one line in the stream, where it happened; it does not start or end an
+    // action or a stage, and there is nothing to undo to.
+    if (event.kind === "dice_rolled") {
+      phaseNode.children.push({
+        ...node(`${phaseKey}:event:${eventIndex}`, "roll", ""),
+        entry,
+        actor: entry.actor,
+        eventIndex,
+      });
+      continue;
+    }
 
     if (event.kind !== "decision_resolved") {
       const label =
@@ -277,7 +304,10 @@ export const EventLog: React.FC<EventLogProps> = ({
   currentPath,
   historyKey,
   onFetchReplay,
+  turnRedo,
 }) => {
+  const [redoTurns, setRedoTurns] = useState<1 | 2>(1);
+  const [redoSeat, setRedoSeat] = useState<string | undefined>(undefined);
   const [replayState, setReplayState] = useState<ReplayCopyState>({ kind: "idle" });
   const copyReplayToClipboard = async () => {
     if (!onFetchReplay || replayState.kind === "busy") return;
@@ -319,7 +349,58 @@ export const EventLog: React.FC<EventLogProps> = ({
     tree,
     manual,
   ]);
+  // Scroll-follow: a reader at the bottom keeps following new events (and a newly opened round or
+  // phase); a reader who scrolled up is never moved. The list starts pinned, so it opens at the
+  // newest entry. The list unmounts while hidden, so the position is remembered and restored.
+  const listRef = useRef<HTMLDivElement | null>(null);
+  const pinned = useRef(true);
+  const savedTop = useRef(0);
+  const manualToggle = useRef(false);
+  const lastLength = useRef(events.length);
+  const [unseen, setUnseen] = useState(0);
+  const measure = (el: HTMLDivElement) => ({
+    scrollTop: el.scrollTop,
+    scrollHeight: el.scrollHeight,
+    clientHeight: el.clientHeight,
+  });
+  const onListScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    const el = event.currentTarget;
+    pinned.current = isPinned(measure(el));
+    savedTop.current = el.scrollTop;
+    if (pinned.current) setUnseen(0);
+  };
+  const jumpToLatest = () => {
+    const el = listRef.current;
+    if (!el) return;
+    pinned.current = true;
+    el.scrollTop = followTarget(true, measure(el)) ?? 0;
+    setUnseen(0);
+  };
+  // Shown again: back to the bottom if the reader was pinned, else to where they were.
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    if (!isOpen || !el) return;
+    el.scrollTop = restoreTarget(pinned.current, savedTop.current, measure(el));
+  }, [isOpen]);
+  // Content grew (new events, a new round/phase node opening, a new history generation).
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    const previous = lastLength.current;
+    lastLength.current = events.length;
+    if (!isOpen || !el) return;
+    if (manualToggle.current) {
+      // The reader's own expand/collapse: never move them, just re-read where they are.
+      manualToggle.current = false;
+      pinned.current = isPinned(measure(el));
+      return;
+    }
+    const target = followTarget(pinned.current, measure(el));
+    if (target !== undefined) el.scrollTop = target;
+    else savedTop.current = el.scrollTop;
+    setUnseen((old) => nextUnseen(old, pinned.current, previous, events.length));
+  }, [tree, expanded, isOpen, events.length]);
   const toggle = (id: string) => {
+    manualToggle.current = true;
     setManual((old) => new Set(old).add(id));
     setExpanded((old) => {
       const next = new Set(old);
@@ -329,8 +410,9 @@ export const EventLog: React.FC<EventLogProps> = ({
     });
   };
   const renderNode = (item: LogNode, depth: number): React.ReactNode => {
-    if (item.kind === "decision") {
+    if (item.kind === "decision" || item.kind === "roll") {
       const entry = item.entry!;
+      const roll = item.kind === "roll" ? entry.roll : undefined;
       const actor = entry.actor ? display(entry.actor) : null;
       const actorTitle = actor
         ? actor.position && !/\bposition \d+\b/i.test(actor.label)
@@ -347,8 +429,8 @@ export const EventLog: React.FC<EventLogProps> = ({
       return (
         <div
           key={item.id}
-          className="event-log__entry"
-          data-testid="event-log-entry"
+          className={roll ? "event-log__entry event-log__entry--roll" : "event-log__entry"}
+          data-testid={roll ? "event-log-roll" : "event-log-entry"}
           style={{ paddingLeft: depth * 14 }}
         >
           <span className="event-log__index">
@@ -388,20 +470,36 @@ export const EventLog: React.FC<EventLogProps> = ({
               );
             })}
           </span>
-          {entry.visibility !== "public" && (
+          {roll && (
+            <span className="event-log__dice" aria-label={`Dice: ${roll.faces.join(", ")}`}>
+              {roll.faces.map((face, at) => (
+                <span
+                  key={at}
+                  className="event-log__die"
+                  data-hit={roll.hits_on === undefined ? undefined : face >= roll.hits_on ? "yes" : "no"}
+                  data-reroll={roll.rerolled?.includes(at) ? "yes" : undefined}
+                >
+                  {face}
+                </span>
+              ))}
+            </span>
+          )}
+          {!isPublicEvent(entry) && (
             <span className="event-log__private">
-              {entry.visibility === "seat" ? "Private" : "Referee"}
+              {visibilityKind(entry.visibility) === "seat" ? "Private" : "Referee"}
             </span>
           )}
           {entry.timestamp && <time className="event-log__meta">{entry.timestamp}</time>}
           {entry.version !== undefined && <span className="event-log__meta">v{entry.version}</span>}
           {onRestore &&
+            !roll &&
             entry.decision_count !== undefined &&
             entry.decision_count <= cursor && (
               <button
                 type="button"
                 className="event-log__undo"
                 disabled={busy}
+                title={busy ? HISTORY_BUSY_REASON : undefined}
                 aria-label={`Undo from decision ${entry.decision_count}`}
                 onClick={() => onRestore(entry.decision_count! - 1)}
               >
@@ -506,6 +604,17 @@ export const EventLog: React.FC<EventLogProps> = ({
       </button>
       {isOpen && (
         <>
+          {unseen > 0 && (
+            // Right under the toggle: on a phone the turn bar and drawer buttons cover the rest.
+            <button
+              type="button"
+              className="button button--secondary button--sm event-log__jump"
+              data-testid="event-log-jump"
+              onClick={jumpToLatest}
+            >
+              {unseen} new {unseen === 1 ? "event" : "events"} ↓ Jump to latest
+            </button>
+          )}
           {onFetchReplay && (
             <div className="event-log__replay" data-testid="event-log-replay">
               <button
@@ -532,6 +641,55 @@ export const EventLog: React.FC<EventLogProps> = ({
               </span>
             </div>
           )}
+          {turnRedo && (
+            <div className="event-log__turn-redo" data-testid="event-log-turn-redo">
+              {turnRedo.seats && turnRedo.seats.length > 1 && (
+                <label className="event-log__turn-redo-field">
+                  <span>Whose turn</span>
+                  <select
+                    data-testid="turn-redo-seat"
+                    value={redoSeat ?? turnRedo.viewerSeat ?? turnRedo.seats[0].id}
+                    onChange={(event) => setRedoSeat(event.target.value)}
+                  >
+                    {turnRedo.seats.map((seat) => (
+                      <option key={seat.id} value={seat.id}>
+                        {seat.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <label className="event-log__turn-redo-field">
+                <span>Go back over</span>
+                <select
+                  data-testid="turn-redo-turns"
+                  value={redoTurns}
+                  onChange={(event) => setRedoTurns(event.target.value === "2" ? 2 : 1)}
+                >
+                  <option value="1">the last turn</option>
+                  <option value="2">the last two turns</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                className="button button--secondary button--sm"
+                data-testid="turn-redo-btn"
+                disabled={turnRedo.disabled}
+                title="Rewinds the game for everyone to the start of that turn. After the new turn, the recorded decisions that followed replay (same dice, same cards) until that seat's next turn begins. The original timeline is kept and can be restored."
+                onClick={() =>
+                  turnRedo.onRequest({
+                    turns: redoTurns,
+                    seat:
+                      redoSeat && redoSeat !== turnRedo.viewerSeat ? redoSeat : undefined,
+                  })
+                }
+              >
+                {!redoSeat || redoSeat === turnRedo.viewerSeat
+                  ? "Redo my last turn"
+                  : "Redo their last turn"}
+              </button>
+            </div>
+          )}
           {onChangeHistory && redoCount > 0 && (
             <div className="event-log__redo" aria-label="Redo history">
               <span>
@@ -543,6 +701,7 @@ export const EventLog: React.FC<EventLogProps> = ({
                   type="button"
                   className="button button--secondary button--sm"
                   disabled={busy}
+                  title={busy ? HISTORY_BUSY_REASON : undefined}
                   onClick={() => onChangeHistory(action)}
                 >
                   Redo {["one", "batch", "action"][index]}
@@ -556,6 +715,8 @@ export const EventLog: React.FC<EventLogProps> = ({
             aria-labelledby="event-log-toggle"
             data-testid="event-log-list"
             className="event-log__list"
+            ref={listRef}
+            onScroll={onListScroll}
           >
             {tree.length ? (
               tree.map((item) => renderNode(item, 0))

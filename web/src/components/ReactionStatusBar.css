@@ -133,3 +133,15 @@
   font-size: 12px;
   cursor: pointer;
 }
+.reaction-status-bar__effect {
+  margin: 4px 0 0;
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.reaction-status-bar__targets {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}

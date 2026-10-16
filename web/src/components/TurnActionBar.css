@@ -64,9 +64,13 @@
   gap: 6px;
   align-items: stretch;
 }
+/* Pass and End turn sit right after the other buttons, set off by a thin rule (they used to be
+   pushed to the far edge of a wide bar, away from the rest). */
 .turn-bar__spacer {
-  flex: 1 1 0;
+  flex: 0 0 1px;
   min-width: 0;
+  margin: 4px 6px;
+  background: var(--color-border, #334155);
 }
 .turn-bar__wrap {
   position: relative;
@@ -164,14 +168,18 @@
   color: var(--color-text-strong, #e2e8f0);
 }
 
-/* menus open upward from the bar */
+/* menus open upward from the bar; the sheet head (title, Close) is for phones only */
+.turn-bar__menu-head {
+  display: none;
+}
 .turn-bar__menu {
   position: absolute;
   bottom: calc(100% + 6px);
   left: 0;
   z-index: var(--layer-popover);
   width: min(420px, calc(100vw - 32px));
-  max-height: min(340px, 50vh);
+  /* --turn-bar-menu-room: the room between the bar and the game header, measured while open */
+  max-height: min(340px, 50vh, var(--turn-bar-menu-room, 50vh));
   overflow: auto;
   display: flex;
   flex-direction: column;
@@ -220,6 +228,33 @@
 .turn-bar__row-detail {
   color: var(--color-text-muted, #94a3b8);
   font-size: 12.5px;
+}
+/* a component's printed rules text, in full */
+.turn-bar__row-detail--full {
+  color: var(--color-text-strong, #e2e8f0);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.turn-bar__row-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 6px;
+  margin: 1px 0 2px;
+}
+.turn-bar__row-fact {
+  font-size: 11.5px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-muted, #475569);
+  color: var(--color-text-muted, #94a3b8);
+}
+.turn-bar__row-fact:first-child {
+  border-color: rgba(56, 189, 248, 0.6);
+  color: #7dd3fc;
+}
+.turn-bar__row-note {
+  font-size: 12px;
+  color: #fbbf24;
 }
 
 /* trade partner picker */
@@ -369,12 +404,56 @@
   .turn-bar__spacer {
     display: none;
   }
+  /* An open menu is a sheet from just below the game header down to the bar's bottom edge, over
+     the bar's buttons: its top (the first partner, the first components) can never leave the
+     screen, and it has the whole height to list several entries with their text. */
   .turn-bar__menu,
   .turn-bar__menu--trade {
+    position: fixed;
+    top: var(--turn-bar-menu-top, 48px);
+    bottom: var(--turn-bar-menu-bottom, 52px);
     left: 8px;
     right: 8px;
     width: auto;
-    max-height: 55vh;
+    max-height: none;
+    overscroll-behavior: contain;
+    padding-top: 0;
+  }
+  .turn-bar__menu-head {
+    display: flex;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 0 -6px;
+    padding: 6px 6px 6px 14px;
+    background: var(--color-surface, #0f172a);
+    border-bottom: 1px solid var(--color-border-strong, #334155);
+    font-weight: 700;
+  }
+  .turn-bar__menu-close {
+    min-height: 44px;
+    min-width: 72px;
+    font: inherit;
+    font-weight: 600;
+    color: var(--color-text, #f8fafc);
+    background: var(--color-surface-raised, #1e293b);
+    border: 1px solid var(--color-border-muted, #475569);
+    border-radius: var(--radius-sm, 6px);
+    cursor: pointer;
+  }
+  /* the rows spell their text out; the hover panel would only push the bar (and the menu) up */
+  .turn-bar[data-menu-open] .turn-bar__info {
+    display: none;
+  }
+  .turn-bar__row,
+  .turn-bar__open {
+    min-height: 44px;
+  }
+  .turn-bar__open {
+    min-width: 64px;
   }
   .turn-bar__info {
     position: static;
@@ -402,4 +481,115 @@
   .turn-bar__btn[data-bar-key="strategic"] {
     max-width: none;
   }
+}
+
+/* Minimize control. Phones only (portrait, or a short landscape screen, where the bar took about half of
+   the 390 px height and left no map): the desktop bar looks exactly as before. */
+.turn-bar__minimize,
+.turn-bar__mini-text {
+  display: none;
+}
+@media screen and (max-width: 720px), screen and (max-height: 500px) {
+  .turn-bar__head {
+    position: relative;
+    padding-right: 48px;
+    min-height: 44px;
+    align-items: center;
+  }
+  .turn-bar__minimize {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 44px;
+    height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    color: var(--color-text, #f8fafc);
+    background: var(--color-surface-raised, #1e293b);
+    border: 1px solid var(--color-border-muted, #475569);
+    border-radius: var(--radius-md, 8px);
+    cursor: pointer;
+  }
+  .turn-bar__minimize:focus-visible {
+    outline: 2px solid var(--color-accent, #38bdf8);
+    outline-offset: 2px;
+  }
+  .turn-bar__minimize svg {
+    transition: transform 0.15s;
+  }
+  .turn-bar[data-minimized="true"] .turn-bar__minimize svg {
+    transform: rotate(180deg);
+  }
+
+  /* Collapsed: one slim line (48 px at most) with the heading and the expand button. */
+  .turn-bar[data-minimized="true"] {
+    box-sizing: border-box;
+    height: 48px;
+    padding: 2px max(8px, env(safe-area-inset-right)) 2px max(8px, env(safe-area-inset-left));
+    gap: 0;
+    justify-content: center;
+  }
+  .turn-bar[data-minimized="true"] .turn-bar__head {
+    flex-wrap: nowrap;
+    min-height: 44px;
+  }
+  .turn-bar[data-minimized="true"] .turn-bar__head > strong,
+  .turn-bar[data-minimized="true"] .turn-bar__pools,
+  .turn-bar[data-minimized="true"] .turn-bar__body,
+  .turn-bar[data-minimized="true"] .turn-bar__info,
+  .turn-bar[data-minimized="true"] .turn-bar__hints {
+    display: none;
+  }
+  .turn-bar[data-minimized="true"] .turn-bar__mini-text {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--color-text, #f8fafc);
+    font-weight: 600;
+  }
+}
+
+/* Planets a hovered action card would touch (Economic Initiative's cultural planets). */
+.turn-bar__planets {
+  margin-top: 6px;
+  font-size: 13px;
+}
+.turn-bar__planets-title {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+.turn-bar__planets ul {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+}
+.turn-bar__planets li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  align-items: center;
+  padding: 2px 0;
+}
+.turn-bar__planets li > span:first-child {
+  font-weight: 600;
+}
+.turn-bar__planet-trait {
+  font-size: 11px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(56, 189, 248, 0.6);
+  color: #7dd3fc;
+}
+.turn-bar__planet-state {
+  opacity: 0.75;
+}
+.turn-bar__planet-state--changes {
+  color: #fbbf24;
+  opacity: 1;
 }

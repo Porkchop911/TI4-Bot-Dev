@@ -1,0 +1,25 @@
+{
+  "title": "Bigger Planets on the Map",
+  "description": "Planet discs on the map tiles are larger (r15 to r24 for one planet, r21 for two, r17 for three), the resource and influence values moved out of the disc into a pill on its lower edge with 12-unit numbers (were 8), planet abbreviations are 10-11.5 units (were 8.5), legendary planets get a gold ring and a star, and the payment badge takes the pill's place. Wormholes moved to the tile's left edge. The before-* PNGs were taken with TI4_SHOT_PREFIX=before on the commit without the change; npm run screenshots -- DE regenerates the after-* PNGs from mocked fixtures.",
+  "tag": "web/e2e/screenshots/DE-bigger-planets",
+  "shots": [
+    { "file": "out/before-map-desktop.png", "heading": "Before: desktop map", "caption": "Discs r15, values 8 units inside the disc." },
+    { "file": "out/after-map-desktop.png", "heading": "After: desktop map", "caption": "Bigger discs, 12-unit values in pills; tiles, ship badges and command tokens keep their places." },
+    { "file": "out/before-map-phone.png", "heading": "Before: phone map (390x844)", "caption": "Whole map fitted into the phone; values are unreadable until you pinch." },
+    { "file": "out/after-map-phone.png", "heading": "After: phone map (390x844)", "caption": "Same fit, larger discs and values; pan and pinch unchanged." },
+    { "file": "out/before-tile-two-planets.png", "heading": "Before: two planets (Mecatol Rex)", "caption": "" },
+    { "file": "out/after-tile-two-planets.png", "heading": "After: two planets (Mecatol Rex)", "caption": "Discs r21 side by side, a value pill under each." },
+    { "file": "out/before-tile-three-planets.png", "heading": "Before: three planets", "caption": "" },
+    { "file": "out/after-tile-three-planets.png", "heading": "After: three planets", "caption": "One disc on top (r17), two below; pills stay inside the hex and do not touch each other." },
+    { "file": "out/before-tile-legendary.png", "heading": "Before: legendary planet (Primor)", "caption": "" },
+    { "file": "out/after-tile-legendary.png", "heading": "After: legendary planet (Primor)", "caption": "Gold ring and star mark a legendary planet." },
+    { "file": "out/before-tile-wormhole.png", "heading": "Before: wormhole tile", "caption": "" },
+    { "file": "out/after-tile-wormhole.png", "heading": "After: wormhole tile", "caption": "The wormhole badge sits on the left edge, clear of the bigger disc." },
+    { "file": "out/before-tile-units-and-tokens.png", "heading": "Before: units badge and command token", "caption": "" },
+    { "file": "out/after-tile-units-and-tokens.png", "heading": "After: units badge and command token", "caption": "Control glyph 20 (was 17), command token r11 (was r9), units badge 11-unit text (was 9); badge and token do not overlap the value pill." },
+    { "file": "out/before-payment-desktop.png", "heading": "Before: paying on the map", "caption": "" },
+    { "file": "out/after-payment-desktop.png", "heading": "After: paying on the map", "caption": "The staged/payable badge replaces the value pill under the disc; reticle and tap target are larger." },
+    { "file": "out/before-payment-phone.png", "heading": "Before: paying on the map, phone", "caption": "" },
+    { "file": "out/after-payment-phone.png", "heading": "After: paying on the map, phone", "caption": "" }
+  ]
+}

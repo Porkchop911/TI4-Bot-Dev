@@ -1,9 +1,10 @@
 import { describe, it, expect } from "vitest";
-import type { GameEvent } from "../protocol/types.ts";
+import type { BoardView, GameEvent } from "../protocol/types.ts";
 import {
   actionToastFromEvent,
   actionToastText,
   autoResolvedToast,
+  isCardOrScore,
   mergeActionToast,
   victoryPointToasts,
 } from "./actionToasts.ts";
@@ -12,7 +13,7 @@ const entry = (over: Partial<GameEvent> & { detail?: string }): GameEvent =>
   ({
     id: over.id ?? "e1",
     timestamp: "10:00",
-    visibility: "public",
+    visibility: { visibility: "public" as const },
     event: { kind: "decision_resolved" },
     actor: "p2",
     ...over,
@@ -26,7 +27,7 @@ describe("actionToastFromEvent", () => {
       parts: ["played Sabotage"],
     });
     expect(actionToastFromEvent(entry({ detail: "p2 activated #22" }), "p1")?.parts).toEqual([
-      "activated system 22",
+      "activated system #22",
     ]);
     expect(actionToastFromEvent(entry({ detail: "p2 researched Neural Motivator" }), "p1")?.category).toBe(
       "tech",
@@ -35,6 +36,21 @@ describe("actionToastFromEvent", () => {
       actionToastFromEvent(entry({ detail: "p2 scored public objective Corner the Market with Imperial" }), "p1")
         ?.category,
     ).toBe("score");
+  });
+
+  it("names activated and moved-between systems with tile number and name when the board knows them", () => {
+    const board = {
+      map_tiles: [
+        { system_id: "1", label: "Jord - Sol", q: 0, r: 0, planets: [{ id: "jord" }] },
+        { system_id: "18", label: "Mecatol Rex", q: 1, r: 0, planets: [{ id: "mecatol_rex" }] },
+      ],
+    } as unknown as BoardView;
+    expect(actionToastFromEvent(entry({ detail: "p2 activated #18" }), "p1", board)?.parts).toEqual([
+      "activated system #18 [Mecatol Rex]",
+    ]);
+    expect(
+      actionToastFromEvent(entry({ detail: "p2 moved cruiser from #1 to #18" }), "p1", board)?.parts,
+    ).toEqual(["moved cruiser from #01 [Sol home system] to #18 [Mecatol Rex]"]);
   });
 
   it("maps the action selection to a turn toast", () => {
@@ -56,9 +72,9 @@ describe("actionToastFromEvent", () => {
 
   it("ignores private, referee, non-decision and bookkeeping entries", () => {
     expect(
-      actionToastFromEvent(entry({ visibility: "seat", seat: "p1", detail: "p2 played Sabotage" } as never), "p1"),
+      actionToastFromEvent(entry({ visibility: { visibility: "seat", seat: "p1" }, detail: "p2 played Sabotage" } as never), "p1"),
     ).toBeNull();
-    expect(actionToastFromEvent(entry({ visibility: "referee", detail: "p2 played X" } as never), "p1")).toBeNull();
+    expect(actionToastFromEvent(entry({ visibility: { visibility: "referee" }, detail: "p2 played X" } as never), "p1")).toBeNull();
     expect(
       actionToastFromEvent(entry({ event: { kind: "phase_transition", phase: "status", round: 2 } as never }), "p1"),
     ).toBeNull();
@@ -155,5 +171,20 @@ describe("autoResolvedToast", () => {
     expect(autoResolvedToast(choice(true, 1), "p1")).toBeNull();
     expect(autoResolvedToast(choice(false), "p1")).toBeNull();
     expect(autoResolvedToast(null, "p1")).toBeNull();
+  });
+});
+
+describe("scoring and card toasts", () => {
+  it("says a scored objective by its name rather than its id", () => {
+    const toast = actionToastFromEvent(entry({ detail: "p2 scored objective expand_borders" }), "p1");
+    expect(toast?.category).toBe("score");
+    expect(toast?.parts[0]).not.toContain("expand_borders");
+  });
+
+  it("recognises card plays and scoring for the always-immediate path, but not the turn's own selection", () => {
+    expect(isCardOrScore(entry({ detail: "p2 played Sabotage", stage: "reactions" }))).toBe(true);
+    expect(isCardOrScore(entry({ detail: "p2 scored objective te", stage: "status" }))).toBe(true);
+    expect(isCardOrScore(entry({ detail: "p2 played Construction", stage: "action selection" }))).toBe(false);
+    expect(isCardOrScore(entry({ detail: "p2 moved carrier from #1 to #2" }))).toBe(false);
   });
 });

@@ -1,0 +1,14 @@
+{
+  "title": "Game over reaches open tabs",
+  "description": "When the game ends the server pushes a game_over message. The web client used to ignore it, so every open tab stayed on the last phase banner until it was reloaded (found by the endgame smoke preset: all four tabs stale). The status bar now switches to the game-over banner on the push. Synthetic mocked game, not a captured engine state.",
+  "tag": "web/e2e/screenshots/O-game-over",
+  "shots": [
+    { "file": "out/1-before.png", "heading": "Before: the game is in the status phase", "caption": "Round 5, status phase. The banner names the phase." },
+    { "file": "out/2-you-won.png", "heading": "After the push: the viewer won", "caption": "The same tab, with no reload, after game_over with the viewer as winner." },
+    { "file": "out/3-opponent-won.png", "heading": "After the push: an opponent won", "caption": "The winner is named by the seat's display name." },
+    { "file": "out/4-draw.png", "heading": "After the push: no winner", "caption": "A game_over without a winner reads as a draw." }
+  ],
+  "notes": [
+    "Checked end to end by the smoke playthrough: TI4_SMOKE_PRESET=endgame now ends with game over and the harness asserts every tab's banner says so."
+  ]
+}

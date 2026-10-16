@@ -1,0 +1,17 @@
+{
+  "title": "Command token gain: headline names the count",
+  "description": "A command-token gain showed the engine's one-token prompt ('gain a command token into which pool') as its headline even when the player gains two or three tokens at once. The distribution panel itself was already one screen for all tokens and is unchanged; only the headline (dialog title, aria title, minimised banner, shell prompt) now reads 'Gain N command tokens — assign them to pools' (or 'Gain 1 command token — choose its pool'), derived from the engine's display-only tokens_to_place. Web only; no engine or server change. Before shots are taken with the change reverted and committed under before/; after shots come from npm run screenshots -- BP. Synthetic fixtures through a mocked server.",
+  "tag": "web/e2e/screenshots/BP-gain-tokens",
+  "shots": [
+    { "file": "before/1-status-desktop.png", "heading": "Before: status phase, desktop", "caption": "Two tokens to place, headline says 'gain a command token into which pool'." },
+    { "file": "out/after-1-status-desktop.png", "heading": "After: status phase, desktop", "caption": "'Gain 2 command tokens — assign them to pools'." },
+    { "file": "before/2-status-phone.png", "heading": "Before: status phase, phone (390 x 844)", "caption": "Same one-token headline on a phone." },
+    { "file": "out/after-2-status-phone.png", "heading": "After: status phase, phone", "caption": "The headline names the two tokens." },
+    { "file": "before/3-leadership-desktop.png", "heading": "Before: Leadership primary, desktop", "caption": "Three free tokens plus the purchase; the headline still names one token." },
+    { "file": "out/after-3-leadership-desktop.png", "heading": "After: Leadership primary, desktop", "caption": "'Gain 3 command tokens — assign them to pools'." },
+    { "file": "before/4-leadership-phone.png", "heading": "Before: Leadership primary, phone", "caption": "One-token headline above a three-token panel." },
+    { "file": "out/after-4-leadership-phone.png", "heading": "After: Leadership primary, phone", "caption": "Headline says three." },
+    { "file": "before/5-single-desktop.png", "heading": "Before: a single token", "caption": "One token to place: the old prompt." },
+    { "file": "out/after-5-single-desktop.png", "heading": "After: a single token", "caption": "'Gain 1 command token — choose its pool' (singular)." }
+  ]
+}

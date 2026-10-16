@@ -39,11 +39,21 @@ export interface MockGameOptions {
   /** Pending decision; omit for a game that is just waiting. */
   choice?: MockChoice | null;
   events?: GameEvent[];
+  /** Engine `GameState` fields the page reads (e.g. `exploration_log`); default `{}`. */
+  state?: Record<string, unknown>;
+  /** Undo/redo position; with log entries that carry decision_count it enables the log Undo buttons. */
+  history?: { cursor: number; redo_count: number; generation?: number };
   turnStatus?: PublicTurnStatus;
   view?: Partial<GameView>;
   version?: number;
   /** Watch as a spectator: no seat, no private data, every public action visible. */
   spectator?: boolean;
+  /** Lobby nicknames by seat id; seats without an entry keep "You" / "Player N". */
+  nicknames?: Record<string, string>;
+  /** The lobby host (default: the viewing seat, who then sees the host-only controls). */
+  host?: string;
+  /** Sees every client message the mocked server does not answer itself; `reply` pushes one back. */
+  onClientMessage?: (message: ClientMessage, reply: (message: unknown) => void) => void;
 }
 
 export interface MockedGame {
@@ -65,7 +75,7 @@ export function buildSnapshot(options: MockGameOptions = {}) {
     game_id: GAME_ID,
     game_version: options.version ?? 40,
     viewer: options.spectator ? { role: "spectator" } : { role: "player", seat },
-    state: {},
+    state: options.state ?? {},
     galaxy_layout: { version: 1, active_sources: [], placements: [] },
     view: {
       round,
@@ -109,6 +119,7 @@ export function buildSnapshot(options: MockGameOptions = {}) {
         }
       : null,
     events: options.events ?? [],
+    ...(options.history ? { history: options.history } : {}),
   };
   return snapshot;
 }
@@ -124,12 +135,12 @@ export async function openMockedGame(page: Page, options: MockGameOptions = {}):
     game_id: GAME_ID,
     phase: "running",
     lobby_version: 1,
-    host_player_id: seat,
+    host_player_id: options.host ?? seat,
     slots: snapshot.view.players.map((p, index) => ({
       slot_id: `slot-${index + 1}`,
       position: index + 1,
       occupant: p.id,
-      nickname: p.id === seat ? "You" : `Player ${index + 1}`,
+      nickname: options.nicknames?.[p.id] ?? (p.id === seat ? "You" : `Player ${index + 1}`),
       ready: true,
       connected: true,
       can_take_over: false,
@@ -163,6 +174,8 @@ export async function openMockedGame(page: Page, options: MockGameOptions = {}):
         socket.send(
           JSON.stringify({ ...update, type: "state_update", reaction_modes: { ...reactionModes } }),
         );
+      } else {
+        options.onClientMessage?.(message, (reply) => socket.send(JSON.stringify(reply)));
       }
     });
   });

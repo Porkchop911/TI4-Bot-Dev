@@ -254,6 +254,13 @@ describe("Frontend Invariants & Property-based Checks", () => {
       explorationCards: 80,
       planets: 159,
       attachments: 22,
+      factions: 34,
+      units: 136,
+      leaders: 103,
+      factionAbilities: 73,
+      promissoryNotes: 40,
+      relics: 24,
+      breakthroughs: 31,
     });
 
     // Strategy-card names are not lookup aliases: a malformed ID must not select a card.
@@ -278,22 +285,21 @@ describe("Frontend Invariants & Property-based Checks", () => {
         id: "game_1-1",
         timestamp: "10:00:00",
         version: 1,
-        visibility: "public",
+        visibility: { visibility: "public" as const },
         event: { kind: "game_initialized", round: 1, phase: "strategy", speaker: "p1" },
       },
       {
         id: "game_1-2",
         timestamp: "10:00:01",
         version: 2,
-        visibility: "seat",
-        seat: "p1",
+        visibility: { visibility: "seat", seat: "p1" },
         event: { kind: "decision_resolved" },
       },
       {
         id: "game_1-3",
         timestamp: "10:00:05",
         version: 2,
-        visibility: "public",
+        visibility: { visibility: "public" as const },
         event: { kind: "phase_transition", phase: "action", round: 1 },
       },
     ];

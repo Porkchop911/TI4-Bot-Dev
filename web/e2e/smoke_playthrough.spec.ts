@@ -1,6 +1,6 @@
 import { test } from "@playwright/test";
 import { randomUiPlaythrough } from "./smokePlaythrough";
-import { presetFromEnv } from "./smokePreset";
+import { cardSetFromEnv, mapTemplateFromEnv, parseExpect, presetFromEnv } from "./smokePreset";
 
 const envInt = (name: string, fallback: number) => {
   const value = process.env[name];
@@ -16,6 +16,9 @@ test("random UI playthrough keeps the game advancing", async ({ browser, request
     gameSeed: envInt("TI4_SMOKE_GAME_SEED", 42),
     clickSeed: envInt("TI4_SMOKE_CLICK_SEED", 1),
     startPreset: presetFromEnv(process.env.TI4_SMOKE_PRESET),
+    cardSet: cardSetFromEnv(process.env.TI4_SMOKE_CARD_SET),
+    mapTemplate: mapTemplateFromEnv(process.env.TI4_SMOKE_MAP_TEMPLATE),
+    expect: parseExpect(process.env.TI4_SMOKE_EXPECT, presetFromEnv(process.env.TI4_SMOKE_PRESET)),
     maxDecisions: envInt("TI4_SMOKE_DECISIONS", 200),
     maxClicksPerDecision: envInt("TI4_SMOKE_CLICKS_PER_DECISION", 40),
     policy: process.env.TI4_SMOKE_POLICY === "steer" ? ("steer" as const) : ("random" as const),

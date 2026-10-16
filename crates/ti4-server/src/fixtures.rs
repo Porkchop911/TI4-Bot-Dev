@@ -132,6 +132,7 @@ pub fn create_sample_pending_choice() -> Choice {
         options,
         context: Some(context),
         details: serde_json::Map::new(),
+        free_form: None,
     }
 }
 

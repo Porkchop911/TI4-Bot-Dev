@@ -1,8 +1,14 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
+import compactLayout from "./postcss-compact-layout.mjs";
+
 export default defineConfig({
+  css: { postcss: { plugins: [compactLayout()] } },
   plugins: [react()],
+  // One React per page even if node_modules holds a nested node_modules link to another checkout
+  // (pre-bundled react-dom with a second React = "Invalid hook call").
+  resolve: { dedupe: ["react", "react-dom"] },
   server: {
     host: "127.0.0.1",
     port: 3000,

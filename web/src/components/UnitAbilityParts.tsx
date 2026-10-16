@@ -1,6 +1,7 @@
 import React from "react";
 import type { BoardView, ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
 import { describeUnitAbilityOption } from "../presentation/unitAbilityOptions.ts";
+import { ValueText } from "./PlanetValueIcons.tsx";
 import { UnitIcon } from "./UnitIcon.tsx";
 
 /** Inside an option row: the unit's icon and where it comes from, goes to and what it costs. */
@@ -15,7 +16,9 @@ export const UnitAbilityOptionNote: React.FC<{
     <div className="text-muted" data-testid="unit-ability-note" style={{ fontSize: 12 }}>
       {info.iconType && <UnitIcon type={info.iconType} size={16} />}
       {info.lines.map((line) => (
-        <div key={line}>{line}</div>
+        <div key={line}>
+          <ValueText text={line} />
+        </div>
       ))}
     </div>
   );

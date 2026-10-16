@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use ti4_content::ContentStore;
 use ti4_model::content_types::FULL;
-use ti4_model::id::{FactionId, PlayerId};
+use ti4_model::id::FactionId;
 use ti4_policy::learned::Profile;
 use ti4_training::rollout::{Horizon, play_rotated_save54_pool_batch};
 

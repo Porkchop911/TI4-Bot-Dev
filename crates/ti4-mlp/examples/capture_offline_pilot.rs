@@ -16,8 +16,10 @@
 //! game is checked against the retention rule (`RETENTION_RULE`): retained games pass a
 //! loss-alignment gate and then write their parts into the folder of their reason bucket (see
 //! `bucket_for`: high-VP games go to `good/`, low-VP slogs to `bad/`, the seeded 5% control to
-//! `random/`, engine failures to `failed/`); discarded games write nothing at all. The main thread
-//! concatenates each bucket's retained frames in game order and proves every published shard is
+//! `random/`, engine failures to `failed/`); discarded games write nothing at all. Once gameplay
+//! finishes, each bucket's retained frames are concatenated in game order (buckets assemble
+//! concurrently with each other; within a bucket, reads run in a bounded parallel window but are
+//! always hashed and written back in that original order) and every published shard is proved
 //! byte-identical to those validated frames via a running sha256. Each training bucket folder is a
 //! self-contained corpus (its own shards plus a scoped manifest), so downstream tooling can consume
 //! any quality class directly. The shards are therefore byte-identical for a given seed base at any
@@ -679,6 +681,7 @@ impl BiasedBot {
             options: preferred,
             context: choice.context.clone(),
             details: choice.details.clone(),
+            free_form: choice.free_form.clone(),
         })
     }
 }
@@ -1315,6 +1318,12 @@ fn diplomacy_part(game_index: usize) -> String {
 /// `keep_parts` leaves the per-game frames in place for a caller that must stay retryable (a
 /// killed run's staging is the only copy of those games); otherwise each part is removed as it is
 /// consumed.
+/// How many parts to have in flight at once. A mechanical disk's queue depth lets its controller
+/// reorder concurrent reads into fewer seeks, and an SSD serves them outright in parallel; either
+/// way the window stays small enough that a bucket's resident frames never threaten memory even
+/// when parts are large. Reading stays windowed (not fully parallel) for exactly that reason.
+const CONCAT_READ_AHEAD: usize = 128;
+
 fn concatenate_parts(
     parts: &[PathBuf],
     final_path: &Path,
@@ -1332,16 +1341,25 @@ fn concatenate_parts(
             .write_all(&frame)
             .map_err(|error| format!("writing {}: {error}", final_path.display()))?;
     } else {
-        for part in parts {
-            let frame = std::fs::read(part)
-                .map_err(|error| format!("reading {}: {error}", part.display()))?;
-            hasher.update(&frame);
-            writer
-                .write_all(&frame)
-                .map_err(|error| format!("writing {}: {error}", final_path.display()))?;
-            if !keep_parts {
-                std::fs::remove_file(part)
-                    .map_err(|error| format!("removing {}: {error}", part.display()))?;
+        // Each window's reads run concurrently, but every frame is still hashed and written in
+        // its original position, so the shard's bytes never depend on which read finished first.
+        for window in parts.chunks(CONCAT_READ_AHEAD) {
+            let frames: Vec<Vec<u8>> = window
+                .par_iter()
+                .map(|part| {
+                    std::fs::read(part)
+                        .map_err(|error| format!("reading {}: {error}", part.display()))
+                })
+                .collect::<Result<_, _>>()?;
+            for (part, frame) in window.iter().zip(frames) {
+                hasher.update(&frame);
+                writer
+                    .write_all(&frame)
+                    .map_err(|error| format!("writing {}: {error}", final_path.display()))?;
+                if !keep_parts {
+                    std::fs::remove_file(part)
+                        .map_err(|error| format!("removing {}: {error}", part.display()))?;
+                }
             }
         }
     }
@@ -1364,8 +1382,9 @@ fn play_game(
     shared: &SharedAssets,
     ctx: &PlayContext<'_>,
 ) -> Result<GameOutcome, String> {
-    let handles: Rc<RefCell<BTreeMap<PlayerId, Rc<RefCell<Vec<CapturedDecision>>>>>> =
-        Rc::new(RefCell::new(BTreeMap::new()));
+    type CapturedLog = Rc<RefCell<Vec<CapturedDecision>>>;
+    type CaptureHandles = Rc<RefCell<BTreeMap<PlayerId, CapturedLog>>>;
+    let handles: CaptureHandles = Rc::new(RefCell::new(BTreeMap::new()));
     let policies: Rc<RefCell<BTreeMap<PlayerId, PolicyMetadata>>> =
         Rc::new(RefCell::new(BTreeMap::new()));
     let baselines: Rc<RefCell<BTreeMap<PlayerId, Baseline>>> =
@@ -2071,98 +2090,110 @@ fn assemble_and_publish(
     } else {
         &[BUCKET_GOOD, BUCKET_BAD, BUCKET_RANDOM]
     };
+    // Buckets are independent corpora (each gets its own shards and manifest), so they assemble
+    // concurrently: the tiny `bad`/`random` buckets no longer wait behind `good`, which is where
+    // nearly all the games are. Order is preserved within each bucket regardless.
+    let bucket_results: Vec<(&str, [String; 3], BucketStats)> = published_buckets
+        .par_iter()
+        .copied()
+        .map(
+            |bucket| -> Result<(&str, [String; 3], BucketStats), String> {
+                // A normal run creates the training buckets at staging setup; a killed run's staging
+                // has them too, but create_dir_all keeps this total over any directory shape.
+                std::fs::create_dir_all(publish_staging.join(bucket)).map_err(|error| {
+                    format!(
+                        "creating {}: {error}",
+                        publish_staging.join(bucket).display()
+                    )
+                })?;
+                let in_bucket = |outcome: &GameOutcome| {
+                    outcome.retained
+                        && outcome
+                            .retention_reason
+                            .is_some_and(|reason| bucket_for(reason) == bucket)
+                };
+                let decision_parts: Vec<PathBuf> = outcomes
+                    .iter()
+                    .filter(|outcome| in_bucket(outcome))
+                    .map(|outcome| {
+                        parts_root
+                            .join(bucket)
+                            .join(decisions_part(outcome.game_index))
+                    })
+                    .collect();
+                let game_parts: Vec<PathBuf> = outcomes
+                    .iter()
+                    .filter(|outcome| in_bucket(outcome))
+                    .map(|outcome| parts_root.join(bucket).join(games_part(outcome.game_index)))
+                    .collect();
+                let diplomacy_parts: Vec<PathBuf> = outcomes
+                    .iter()
+                    .filter(|outcome| in_bucket(outcome))
+                    .map(|outcome| {
+                        parts_root
+                            .join(bucket)
+                            .join(diplomacy_part(outcome.game_index))
+                    })
+                    .collect();
+
+                let decisions_path = publish_staging.join(bucket).join(DECISIONS_FILE);
+                let games_path = publish_staging.join(bucket).join(GAMES_FILE);
+                let diplomacy_path = publish_staging.join(bucket).join(DIPLOMACY_FILE);
+                let expected_decisions_sha =
+                    concatenate_parts(&decision_parts, &decisions_path, preserve_source_parts)?;
+                let expected_games_sha =
+                    concatenate_parts(&game_parts, &games_path, preserve_source_parts)?;
+                let expected_diplomacy_sha =
+                    concatenate_parts(&diplomacy_parts, &diplomacy_path, preserve_source_parts)?;
+
+                // Byte-exactness: each published shard must hold exactly the frames whose records
+                // passed the loss-alignment gate before writing. A mismatch means corruption between
+                // write and publish, which refuses the run instead of publishing a corpus nobody can
+                // trust.
+                let decisions_sha = file_sha(&decisions_path)?;
+                if decisions_sha != expected_decisions_sha {
+                    return Err(format!(
+                        "{bucket}/{DECISIONS_FILE} does not match its validated frames"
+                    ));
+                }
+                let games_sha = file_sha(&games_path)?;
+                if games_sha != expected_games_sha {
+                    return Err(format!(
+                        "{bucket}/{GAMES_FILE} does not match its validated frames"
+                    ));
+                }
+                let diplomacy_sha = file_sha(&diplomacy_path)?;
+                if diplomacy_sha != expected_diplomacy_sha {
+                    return Err(format!(
+                        "{bucket}/{DIPLOMACY_FILE} does not match its validated frames"
+                    ));
+                }
+
+                let stats = BucketStats {
+                    games: outcomes.iter().filter(|outcome| in_bucket(outcome)).count(),
+                    decisions: outcomes
+                        .iter()
+                        .filter(|outcome| in_bucket(outcome))
+                        .map(|outcome| outcome.decision_count)
+                        .sum(),
+                    diplomacy_deals: outcomes
+                        .iter()
+                        .filter(|outcome| in_bucket(outcome))
+                        .map(|outcome| outcome.diplomacy_deal_count)
+                        .sum(),
+                };
+                Ok((bucket, [decisions_sha, games_sha, diplomacy_sha], stats))
+            },
+        )
+        .collect::<Result<_, _>>()?;
+
     let mut shards: BTreeMap<String, String> = BTreeMap::new();
     let mut bucket_stats: BTreeMap<String, BucketStats> = BTreeMap::new();
-    for bucket in published_buckets.iter().copied() {
-        // A normal run creates the training buckets at staging setup; a killed run's staging has
-        // them too, but create_dir_all keeps this total over any directory shape.
-        std::fs::create_dir_all(publish_staging.join(bucket)).map_err(|error| {
-            format!(
-                "creating {}: {error}",
-                publish_staging.join(bucket).display()
-            )
-        })?;
-        let in_bucket = |outcome: &GameOutcome| {
-            outcome.retained
-                && outcome
-                    .retention_reason
-                    .is_some_and(|reason| bucket_for(reason) == bucket)
-        };
-        let decision_parts: Vec<PathBuf> = outcomes
-            .iter()
-            .filter(|outcome| in_bucket(outcome))
-            .map(|outcome| {
-                parts_root
-                    .join(bucket)
-                    .join(decisions_part(outcome.game_index))
-            })
-            .collect();
-        let game_parts: Vec<PathBuf> = outcomes
-            .iter()
-            .filter(|outcome| in_bucket(outcome))
-            .map(|outcome| parts_root.join(bucket).join(games_part(outcome.game_index)))
-            .collect();
-        let diplomacy_parts: Vec<PathBuf> = outcomes
-            .iter()
-            .filter(|outcome| in_bucket(outcome))
-            .map(|outcome| {
-                parts_root
-                    .join(bucket)
-                    .join(diplomacy_part(outcome.game_index))
-            })
-            .collect();
-
-        let decisions_path = publish_staging.join(bucket).join(DECISIONS_FILE);
-        let games_path = publish_staging.join(bucket).join(GAMES_FILE);
-        let diplomacy_path = publish_staging.join(bucket).join(DIPLOMACY_FILE);
-        let expected_decisions_sha =
-            concatenate_parts(&decision_parts, &decisions_path, preserve_source_parts)?;
-        let expected_games_sha =
-            concatenate_parts(&game_parts, &games_path, preserve_source_parts)?;
-        let expected_diplomacy_sha =
-            concatenate_parts(&diplomacy_parts, &diplomacy_path, preserve_source_parts)?;
-
-        // Byte-exactness: each published shard must hold exactly the frames whose records passed
-        // the loss-alignment gate before writing. A mismatch means corruption between write and
-        // publish, which refuses the run instead of publishing a corpus nobody can trust.
-        let decisions_sha = file_sha(&decisions_path)?;
-        if decisions_sha != expected_decisions_sha {
-            return Err(format!(
-                "{bucket}/{DECISIONS_FILE} does not match its validated frames"
-            ));
-        }
-        let games_sha = file_sha(&games_path)?;
-        if games_sha != expected_games_sha {
-            return Err(format!(
-                "{bucket}/{GAMES_FILE} does not match its validated frames"
-            ));
-        }
-        let diplomacy_sha = file_sha(&diplomacy_path)?;
-        if diplomacy_sha != expected_diplomacy_sha {
-            return Err(format!(
-                "{bucket}/{DIPLOMACY_FILE} does not match its validated frames"
-            ));
-        }
-
+    for (bucket, [decisions_sha, games_sha, diplomacy_sha], stats) in bucket_results {
         shards.insert(format!("{bucket}/{DECISIONS_FILE}"), decisions_sha);
         shards.insert(format!("{bucket}/{GAMES_FILE}"), games_sha);
         shards.insert(format!("{bucket}/{DIPLOMACY_FILE}"), diplomacy_sha);
-        bucket_stats.insert(
-            bucket.to_owned(),
-            BucketStats {
-                games: outcomes.iter().filter(|outcome| in_bucket(outcome)).count(),
-                decisions: outcomes
-                    .iter()
-                    .filter(|outcome| in_bucket(outcome))
-                    .map(|outcome| outcome.decision_count)
-                    .sum(),
-                diplomacy_deals: outcomes
-                    .iter()
-                    .filter(|outcome| in_bucket(outcome))
-                    .map(|outcome| outcome.diplomacy_deal_count)
-                    .sum(),
-            },
-        );
+        bucket_stats.insert(bucket.to_owned(), stats);
     }
 
     // Retention sidecar: one line per known outcome (a completed run knows every played game, a
@@ -2556,8 +2587,8 @@ fn scan_staging(staging: &Path) -> Result<Vec<StagedGame>, String> {
         if !dir.is_dir() {
             continue;
         }
-        let mut by_index: BTreeMap<usize, (Option<PathBuf>, Option<PathBuf>, Option<PathBuf>)> =
-            BTreeMap::new();
+        type StagedParts = (Option<PathBuf>, Option<PathBuf>, Option<PathBuf>);
+        let mut by_index: BTreeMap<usize, StagedParts> = BTreeMap::new();
         for entry in std::fs::read_dir(&dir)
             .map_err(|error| format!("reading {}: {error}", dir.display()))?
         {

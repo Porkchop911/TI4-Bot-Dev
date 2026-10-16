@@ -985,12 +985,33 @@ mod tests {
         put(&mut state, &system, "destroyer", &player, 1);
         let seen = std::sync::Arc::new(std::sync::Mutex::new(None));
         let mut table = Table::with_default(Box::new(Peek(seen.clone())));
-        enforce(&mut state, ContentStore::embedded(), POK, &mut table, &player, &system).unwrap();
+        enforce(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut table,
+            &player,
+            &system,
+        )
+        .unwrap();
         let first = seen.lock().unwrap().clone().expect("asked");
         // The first question: four ships against a pool of two.
-        assert_eq!(first.details.get("reason").and_then(|v| v.as_str()), Some("fleet supply"));
-        assert_eq!(first.details.get("fleet_limit").and_then(|v| v.as_i64()), Some(2));
-        assert!(first.details.get("fleet_charged").and_then(|v| v.as_i64()).unwrap() >= 3);
+        assert_eq!(
+            first.details.get("reason").and_then(|v| v.as_str()),
+            Some("fleet supply")
+        );
+        assert_eq!(
+            first.details.get("fleet_limit").and_then(|v| v.as_i64()),
+            Some(2)
+        );
+        assert!(
+            first
+                .details
+                .get("fleet_charged")
+                .and_then(|v| v.as_i64())
+                .unwrap()
+                >= 3
+        );
     }
 
     #[test]

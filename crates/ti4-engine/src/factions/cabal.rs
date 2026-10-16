@@ -3190,8 +3190,8 @@ mod tests {
 
     #[test]
     fn the_cabal_flagship_is_registered_and_devour_is_claimed() {
-        assert!(MODULE.units.iter().any(|unit| *unit == FLAGSHIP));
-        assert!(MODULE.abilities.iter().any(|ability| *ability == "devour"));
+        assert!(MODULE.units.contains(&FLAGSHIP));
+        assert!(MODULE.abilities.contains(&"devour"));
         let content = ContentStore::embedded();
         let kind = ti4_content::units::unit_type(&content, FLAGSHIP, DEFAULT)
             .expect("the corpus defines the Cabal flagship");

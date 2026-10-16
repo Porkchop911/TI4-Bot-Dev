@@ -1,6 +1,6 @@
 import React, { createContext, useContext } from "react";
 import type { LobbyDto } from "../protocol/types.ts";
-import { playerDisplay, seatStyle } from "./playerDisplay.ts";
+import { playerDisplay, seatInk, seatStyle } from "./playerDisplay.ts";
 import { participantReferences, participantText } from "./participantText.ts";
 
 const PlayerContext = createContext<{ lobby: LobbyDto | null; seatingOrder: readonly string[] }>({
@@ -35,19 +35,22 @@ export function useParticipantParts() {
     );
 }
 
+/** Badge glyph size in px: 40% over the old 20, and never under 18 so the seat shape stays readable. */
+export const SEAT_BADGE_SIZE = 28;
+
 /** The visible number and shape remain readable when color cannot be perceived. */
 export const SeatBadge: React.FC<{ position: number }> = ({ position }) => {
   const { color, symbol } = seatStyle(position);
   return (
     <span className="seat-badge" style={{ borderColor: color }} aria-label={`Position ${position}`}>
-      <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" focusable="false">
-        <circle cx="12" cy="12" r="10" fill={color} stroke="#f8fafc" strokeWidth="1.5" />
+      <svg aria-hidden="true" viewBox="0 0 24 24" width={SEAT_BADGE_SIZE} height={SEAT_BADGE_SIZE} focusable="false">
+        <circle cx="12" cy="12" r="10" fill={color} stroke="#f8fafc" strokeWidth="2" />
         <text
           x="12"
-          y="16"
+          y="17"
           textAnchor="middle"
-          fill={position === 8 ? "#fff" : "#0b1220"}
-          fontSize="12"
+          fill={seatInk(color)}
+          fontSize="15"
           fontWeight="bold"
         >
           {symbol}

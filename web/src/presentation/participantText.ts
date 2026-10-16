@@ -28,12 +28,21 @@ export function participantReferences(
   return parts;
 }
 
+// An engine event type that leaked into prose ("after TACTICAL_ACTION_ENDED"): two or more
+// UPPER_SNAKE words. Composite machine ids are lower case or carry `:`/`|`, so they never match.
+const EVENT_TYPE = /(?<![\w:/|.-])[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+(?![\w:/|-])/g;
+
+/** "TACTICAL_ACTION_ENDED" -> "tactical action ended". */
+export function readableEventTypes(text: string): string {
+  return text.replace(EVENT_TYPE, (type) => type.toLowerCase().replaceAll("_", " "));
+}
+
 export function participantText(
   text: string,
   lobby: LobbyDto | null,
   seatingOrder: readonly string[],
 ): string {
-  return participantReferences(text, lobby)
+  return participantReferences(readableEventTypes(text), lobby)
     .map((part) =>
       typeof part === "string" ? part : playerDisplay(lobby, seatingOrder, part.id).label,
     )

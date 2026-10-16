@@ -150,6 +150,10 @@ struct Category {
     /// Identity to position. `BTreeMap` so that iterating the index is deterministic;
     /// empty for `franken_errata`, which has no single-field key.
     by_id: BTreeMap<String, usize>,
+    /// For an id that has newer printings (`{id}{suffix}` with a suffix of [`NEWER_PRINTINGS`]):
+    /// their record indices, in suffix order. Spares [`ContentStore::resolve_id`] building every
+    /// candidate id.
+    newer: BTreeMap<String, Vec<usize>>,
 }
 
 /// The loaded content corpus.
@@ -172,6 +176,12 @@ impl ContentStore {
         STORE.get_or_init(|| {
             Self::parse_embedded().expect("the compiled-in content corpus must be well formed")
         })
+    }
+
+    /// Whether this is the compiled-in corpus of [`Self::embedded`] (never initializes it).
+    #[must_use]
+    pub fn is_embedded(&self) -> bool {
+        STORE.get().is_some_and(|store| std::ptr::eq(store, self))
     }
 
     /// Parse the compiled-in corpus without caching.
@@ -248,7 +258,32 @@ impl ContentStore {
                 }
                 records.push(record);
             }
-            loaded.insert(category, Category { records, by_id });
+            let mut newer: BTreeMap<String, Vec<(usize, usize)>> = BTreeMap::new();
+            for (id, &index) in &by_id {
+                for (order, suffix) in NEWER_PRINTINGS.iter().enumerate() {
+                    if let Some(base) = id.strip_suffix(suffix) {
+                        newer
+                            .entry(base.to_owned())
+                            .or_default()
+                            .push((order, index));
+                    }
+                }
+            }
+            let newer = newer
+                .into_iter()
+                .map(|(base, mut found)| {
+                    found.sort_unstable();
+                    (base, found.into_iter().map(|(_, index)| index).collect())
+                })
+                .collect();
+            loaded.insert(
+                category,
+                Category {
+                    records,
+                    by_id,
+                    newer,
+                },
+            );
         }
 
         let store = Self {
@@ -376,9 +411,30 @@ impl ContentStore {
     /// repeats in `units.py`, `factions.py`, `leaders.py`, and the rest.
     #[must_use]
     pub fn catalogue(&self, category: ContentType, sources: SourceSet) -> BTreeMap<&str, &Record> {
-        self.from_sources(category, sources)
-            .filter_map(|r| r.id().map(|id| (id, r)))
-            .collect()
+        self.by_id_in_sources(category, sources).collect()
+    }
+
+    /// The records of a category within a source scope that have an identity, in identity order.
+    ///
+    /// Identities are unique within a category (the loader refuses a duplicate), so collecting
+    /// this into a map gives the same map as collecting [`Self::from_sources`] by identity; it
+    /// comes already sorted, which spares the map its sort (the engine builds unit catalogues
+    /// many times per step).
+    pub fn by_id_in_sources(
+        &self,
+        category: ContentType,
+        sources: SourceSet,
+    ) -> impl Iterator<Item = (&str, &Record)> {
+        self.categories
+            .get(&category)
+            .into_iter()
+            .flat_map(|category| {
+                category
+                    .by_id
+                    .iter()
+                    .map(|(id, &index)| (id.as_str(), &category.records[index]))
+            })
+            .filter(move |(_, record)| record.in_sources(sources))
     }
 
     /// Resolve an id within a source scope, falling back to the base record of a
@@ -400,11 +456,11 @@ impl ContentStore {
         // before the plain id: asking for `xxchahero` in a Thunder's Edge game should find the
         // Thunder's Edge hero, not the one it replaced.
         if !NEWER_PRINTINGS.iter().any(|suffix| id.ends_with(suffix))
-            && let Some(newer) = NEWER_PRINTINGS.iter().find_map(|suffix| {
-                let candidate = format!("{id}{suffix}");
-                self.get(category, &candidate)
-                    .filter(|record| record.in_sources(sources))
-                    .and_then(Record::id)
+            && let Some(newer) = self.categories.get(&category).and_then(|entry| {
+                entry.newer.get(id)?.iter().find_map(|&index| {
+                    let record = &entry.records[index];
+                    record.in_sources(sources).then(|| record.id()).flatten()
+                })
             })
         {
             return Some(newer);

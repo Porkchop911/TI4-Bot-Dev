@@ -72,7 +72,7 @@ test.describe("Objective Scoring Dev Scenarios", () => {
 
     // Wait for Status Phase to advance to the next step (gain command token)
     await expect(page.getByTestId("choice-prompt")).toContainText(
-      "gain a command token into which pool",
+      /Gain \d+ command tokens?/,
     );
 
     // Minimize subsequent choice to clear modal backdrop and view board/tables

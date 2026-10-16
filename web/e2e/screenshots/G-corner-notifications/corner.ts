@@ -16,7 +16,7 @@ export function publicEntry(id: string, seat: string, what: string, extra: Parti
   return {
     id,
     timestamp: "10:05",
-    visibility: "public",
+    visibility: { visibility: "public" as const },
     event: { kind: "decision_resolved" },
     round: 2,
     phase: "action",

@@ -1,0 +1,14 @@
+{
+  "title": "Trade desk: free-form amounts",
+  "description": "The trade desk used to propose only the closed menu the engine lists (give 0 to 3 trade goods for 0 to 3, commodity swaps up to 3, one asset plus a price). Now the proposer can stage any amounts either purse covers, equal or not, and the engine accepts the deal as a free-form id. Both purses are public, so the steppers stop there.",
+  "tag": "web/e2e/screenshots/DB-free-form-trade",
+  "shots": [
+    { "file": "out/1-unequal-amounts.png", "heading": "Unequal amounts, desktop", "caption": "Give 3 trade goods, receive 5 trade goods and 1 commodity: no listed deal, yet Propose is enabled. The status says the deal is custom and not rated; the steppers read 'any amount up to N' for each purse." },
+    { "file": "out/2-commodities-4-for-2.png", "heading": "Commodities, 4 for 2", "caption": "An unequal commodity trade (4 of ours for the partner's 2). Commodities become trade goods on arrival as usual." },
+    { "file": "out/3-phone.png", "heading": "Phone 390x844", "caption": "The same desk on a phone." },
+    { "file": "out/4-closed-list.png", "heading": "Before: a server without the flag", "caption": "A decision without details.free_form keeps the closed list: a combination off the list (2 trade goods for 1 commodity) is refused with the reason and nearest listed deals." }
+  ],
+  "notes": [
+    { "title": "How it is sent", "text": "A free-form deal is submitted as an option id such as x;gt=3;rt=5;rc=1; (g = what the proposer gives, r = what they receive; t trade goods, c commodities, n note, a action card, s secret, f fragments). The server accepts ids with the prefix the decision announces (details.free_form); the engine parses and checks legality exactly as for listed deals (neighbours, holdings, Hubris, action-card rule). Listed shapes still go as their own id and keep their net rating." }
+  ]
+}

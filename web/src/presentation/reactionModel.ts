@@ -5,6 +5,7 @@ import type {
   PendingChoiceDto,
 } from "../protocol/types.ts";
 import { decodeDecisionTrigger } from "../protocol/decode.ts";
+import { GENERATED_CONTENT_CATALOG } from "../protocol/generatedContentManifest.ts";
 import {
   findActionCardByName,
   findActionCardMeta,
@@ -42,6 +43,8 @@ export interface ReactionRow {
   card: ReactionCard | null;
   /** The printed window or ability text for a non-card option. */
   note: string | null;
+  /** What playing it would do right now, from public state ("You would gain 3 commodities"). */
+  effect: string | null;
 }
 
 export interface ReactionTriggerFacts {
@@ -92,6 +95,8 @@ export interface ReactionModelInput {
   systemLabel?: (id: string) => string;
   /** The public board, to say how many of the viewer's units stand in the system involved. */
   board?: BoardView;
+  /** Each seat's commodities (public), to say what Salvage would take. */
+  commodities?: (seat: string) => number | null;
 }
 
 const SUBTYPE = /^(?:play_)?reaction_(when|after)_(.+)$/;
@@ -443,16 +448,45 @@ function stripPlay(label: string): string {
   return label.replace(/^play\s+/i, "").trim();
 }
 
-/** Non-card abilities (`technology:<faction>:<id>:<EVENT>:<rel>`, `leader:...`). */
+interface CatalogNamed {
+  name: string;
+  text?: string;
+  abilityText?: string;
+  ability?: string;
+}
+
+const CATALOG_NOTES = GENERATED_CONTENT_CATALOG.promissoryNotes as unknown as Record<string, CatalogNamed>;
+const CATALOG_UNITS = GENERATED_CONTENT_CATALOG.units as unknown as Record<string, CatalogNamed>;
+const CATALOG_LEADERS = GENERATED_CONTENT_CATALOG.leaders as unknown as Record<string, CatalogNamed>;
+
+/**
+ * Non-card abilities (`technology:<faction>:<id>:<EVENT>:<rel>`, `leader:...`, and the faction's
+ * `promissory:<owner>:<alias>:...` note and `unit:<owner>:<unit>:...` card): the printed name and
+ * text from the content catalog, never the raw engine id.
+ */
 function abilityName(optionId: string): { name: string; note: string | null; text: string } | null {
-  const match = /^(technology|leader):[^:]*:([^:]+):/.exec(optionId);
+  const match = /^(technology|leader|promissory|unit):[^:]*:([^:]+):/.exec(optionId);
   if (!match) return null;
   const [, family, id] = match;
   if (family === "technology") {
     const tech = findTechnologyMeta(id);
     return { name: tech?.name ?? humanizeId(id), note: null, text: tech?.description ?? "" };
   }
-  const name = humanizeId(id.replace(/agent$/, " agent").trim());
+  if (family === "promissory") {
+    const note = CATALOG_NOTES[id] ?? CATALOG_NOTES[`<color>_${id}`];
+    return {
+      name: note?.name ?? humanizeId(id),
+      note: null,
+      text: (note?.text ?? "").replace(/<color>/g, "issuing"),
+    };
+  }
+  if (family === "unit") {
+    const unit = CATALOG_UNITS[id];
+    return { name: unit?.name ?? humanizeId(id), note: null, text: unit?.ability ?? "" };
+  }
+  const leader = CATALOG_LEADERS[id];
+  if (leader) return { name: leader.name, note: null, text: leader.abilityText ?? "" };
+  const name = humanizeId(id.replace(/(agent|commander|hero)$/, " $1").trim());
   return { name, note: null, text: "" };
 }
 
@@ -470,6 +504,7 @@ function abilityStepRow(
       name: tech?.name ?? "Instinct Training",
       buttonLabel: `Use ${tech?.name ?? "Instinct Training"}`,
       card: null,
+      effect: null,
       note: tech?.description || "Exhaust this card and spend 1 token from your strategy pool: cancel that action card.",
     };
   }
@@ -479,6 +514,7 @@ function abilityStepRow(
     name: "L1Z1X agent",
     buttonLabel: "Use L1Z1X agent",
     card: null,
+    effect: null,
     note: "Exhaust this card to let that player replace 1 of their infantry in the active system with 1 mech from their reinforcements.",
   };
 }
@@ -497,6 +533,7 @@ function rowFor(option: PendingChoiceDto["options"][number]): ReactionRow {
       name,
       buttonLabel: `Play ${name}`,
       card,
+      effect: null,
       note: null,
     };
   }
@@ -508,6 +545,7 @@ function rowFor(option: PendingChoiceDto["options"][number]): ReactionRow {
       name: ability.name,
       buttonLabel: `Use ${ability.name}`,
       card: null,
+      effect: null,
       note: ability.text || null,
     };
   }
@@ -517,7 +555,7 @@ function rowFor(option: PendingChoiceDto["options"][number]): ReactionRow {
   const meta = findActionCardByName(label);
   if (meta) {
     const card = cardFromId(meta.id, meta.name);
-    return { optionId: option.id, kind, name: meta.name, buttonLabel: `Play ${meta.name}`, card, note: null };
+    return { optionId: option.id, kind, name: meta.name, buttonLabel: `Play ${meta.name}`, card, effect: null, note: null };
   }
   const choosing = /^choose\b/i.test(label);
   return {
@@ -526,12 +564,45 @@ function rowFor(option: PendingChoiceDto["options"][number]): ReactionRow {
     name: label,
     buttonLabel: choosing ? label : `Play ${label}`,
     card: null,
+    effect: null,
     note: null,
   };
 }
 
 export function isDeclineOption(option: { id: string; kind?: string }): boolean {
   return option.id === "decline" || option.kind === "decline";
+}
+
+/**
+ * Salvage ("Your opponent gives you all of their commodities"): the opponents are the sides of the
+ * combat the board still names (the losers' ships are gone), and their commodities are public.
+ */
+export function salvageEffect(
+  winner: string | null,
+  board: BoardView | undefined,
+  commodities: ReactionModelInput["commodities"],
+  playerLabel: (id: string) => string,
+): string | null {
+  const combat = board?.combat;
+  if (!winner || !combat || !commodities) return null;
+  const opponents = [combat.attacker, combat.defender].filter((seat) => seat && seat !== winner);
+  if (opponents.length === 0) return null;
+  const parts: { seat: string; count: number }[] = [];
+  for (const seat of opponents) {
+    const count = commodities(seat);
+    if (count === null) return null;
+    parts.push({ seat, count });
+  }
+  const total = parts.reduce((sum, part) => sum + part.count, 0);
+  if (total === 0) {
+    return `${parts.map((part) => playerLabel(part.seat)).join(" and ")} hold no commodities, so you would gain nothing.`;
+  }
+  const noun = `${total} commodit${total === 1 ? "y" : "ies"}`;
+  const detail =
+    parts.length > 1
+      ? ` (${parts.map((part) => `${playerLabel(part.seat)} ${part.count}`).join(", ")})`
+      : ` from ${playerLabel(parts[0].seat)}`;
+  return `You would gain ${noun}${detail}, as trade goods.`;
 }
 
 function joinNames(names: string[]): string {
@@ -571,6 +642,16 @@ export function describeReaction(input: ReactionModelInput): ReactionModel {
     .map((option) =>
       subtype in ABILITY_SUBTYPES ? abilityStepRow(option, subtype) : rowFor(option),
     );
+  for (const row of reactions) {
+    if (row.card?.id === "salvage") {
+      row.effect = salvageEffect(
+        trigger?.actor ?? input.viewerSeat ?? null,
+        input.board,
+        input.commodities,
+        input.playerLabel,
+      );
+    }
+  }
   const declineOptionId = choice.options.find(isDeclineOption)?.id ?? null;
   // Level 3: nothing is known beyond the window, so say only that.
   const sentence =

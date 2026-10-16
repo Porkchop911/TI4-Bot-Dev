@@ -13,7 +13,6 @@ const lobby = (phase: "lobby" | "running" = "lobby", canTakeOver = false) => ({
       position: 1,
       occupant: "player_a",
       nickname: "Host",
-      ready: false,
       connected: false,
       can_take_over: canTakeOver,
     },
@@ -22,7 +21,6 @@ const lobby = (phase: "lobby" | "running" = "lobby", canTakeOver = false) => ({
       position: 2,
       occupant: null,
       nickname: null,
-      ready: false,
       connected: false,
       can_take_over: false,
     },
@@ -155,29 +153,35 @@ describe("App lobby routing", () => {
     expect(screen.getByText(/Position 1: New host/)).toBeInTheDocument();
   });
 
-  it("reconnects with its stored credential and sends a complete slot permutation as host", async () => {
+  it("reconnects with its stored credential and acts as host with it", async () => {
     localStorage.setItem("ti4.nickname", "Different preference");
     sessionStorage.setItem("ti4.player-session:game-1", "private");
     history.replaceState({}, "", "/games/game-1");
+    // A full table: the host can start.
+    const full = () => {
+      const table = lobby();
+      table.slots[1] = { ...table.slots[1], occupant: "player_b", nickname: "Guest" };
+      return table;
+    };
     const fetchMock = vi.fn().mockImplementation((url: string) =>
       Promise.resolve({
         ok: true,
         json: async () =>
           url.endsWith("/join")
-            ? { player_session: null, player: { id: "player_a" }, lobby: lobby() }
-            : lobby(),
+            ? { player_session: null, player: { id: "player_a" }, lobby: full() }
+            : full(),
       }),
     );
     vi.stubGlobal("fetch", fetchMock);
     render(<App />);
-    fireEvent.click(await screen.findByLabelText("Move position 2 up"));
+    fireEvent.click(await screen.findByTestId("start-game-button"));
     await waitFor(() =>
-      expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/reorder"))).toBe(true),
+      expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/start"))).toBe(true),
     );
-    const reorder = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/reorder"))![1];
-    expect(reorder.headers["x-ti4-player-session"]).toBe("private");
-    expect(JSON.parse(reorder.body)).toEqual({ slot_ids: ["slot_2", "slot_1"] });
+    const start = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/start"))![1];
+    expect(start.headers["x-ti4-player-session"]).toBe("private");
     expect(screen.getByText(/Position 1: Host/)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Move position/)).toBeNull();
     expect(localStorage.getItem("ti4.nickname")).toBe("Different preference");
     expect(
       JSON.parse(fetchMock.mock.calls.find(([url]) => String(url).endsWith("/join"))![1].body),

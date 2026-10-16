@@ -75,6 +75,10 @@ pub struct SetupDefaults {
     pub profile_table: String,
     pub temperature: f64,
     pub diplomacy: bool,
+    /// The six factions last seated, in order. Empty means nothing remembered (the standard six).
+    pub lineup: Vec<String>,
+    /// Seats the rule bot played at the last table. Empty means every seat on the policy.
+    pub rule_seats: Vec<usize>,
 }
 
 impl Default for SetupDefaults {
@@ -87,6 +91,8 @@ impl Default for SetupDefaults {
             profile_table: "Learner".to_owned(),
             temperature: 0.5,
             diplomacy: false,
+            lineup: Vec::new(),
+            rule_seats: Vec::new(),
         }
     }
 }

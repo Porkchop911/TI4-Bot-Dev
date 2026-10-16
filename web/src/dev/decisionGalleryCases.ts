@@ -113,6 +113,15 @@ const cases = {
     ],
     note: "Pick a highlighted planet on the map (or a chip in the bar); the bar names the card and the action before you confirm.",
   },
+  ready_planets: {
+    subtype: "ready_planet",
+    options: [
+      option("lodor", "ready lodor", "ready", { planet: "lodor", system: "26" }),
+      option("quann", "ready quann", "ready", { planet: "quann" }),
+      option("corneeq", "ready corneeq", "ready", { planet: "corneeq", system: "33" }),
+    ],
+    note: "Diplomacy: tick up to two exhausted planets here or on the map, then one Confirm readies them together.",
+  },
   tactical_movement: {
     subtype: "movement_step",
     target: system,
@@ -313,6 +322,7 @@ export const galleryCases: GalleryCase[] = (
         {
           system_activation: "Choose a system to activate",
           planet_selection: "Mining Initiative: mine which planet",
+          ready_planets: "ready which planet",
           tactical_movement: "Move units to Mecatol Rex",
           tactical_cargo: "Load units into your fleet",
           tactical_invasion: "Land ground forces on Jord",

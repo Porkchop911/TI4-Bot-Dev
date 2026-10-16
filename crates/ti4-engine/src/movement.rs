@@ -98,10 +98,6 @@ impl Board {
 /// what the rules *are*, and a caller that gains Nav Suite later should find the rule already
 /// written rather than have to reopen this search.
 #[derive(Debug, Clone)]
-#[allow(
-    clippy::struct_excessive_bools,
-    reason = "one field per printed ability, as the oracle has"
-)]
 pub struct MovementRules<'a> {
     /// Borrowed, unless a faction module put wormholes on the map (Creuss flagship), in which case
     /// an owned copy carrying them.
@@ -313,6 +309,10 @@ impl<'a> MovementRules<'a> {
         let Some(mover) = self.board.mover.clone() else {
             return;
         };
+        // Antimass Deflectors: the mover's ships may move into and through asteroid fields.
+        if crate::technology::has_technology_text(state, &mover, "amd") {
+            self.asteroid_fields_open = true;
+        }
         for (a, b) in hooks::linked_systems(state, content, sources, &self.galaxy, &mover) {
             self.extra_adjacency
                 .entry(a.clone())
@@ -466,6 +466,12 @@ impl<'a> MovementRules<'a> {
     /// [`Self::can_enter`] for a step that is only passed through when `passing`: Gashlai
     /// Physiology opens supernovas to those and to nothing else.
     fn enterable(&self, system_id: &str, passing: bool) -> bool {
+        // A hyperlane tile is not a system: no ship may end a step there, whatever else is
+        // ignored. Passing through it is allowed (its connections are not modelled; see
+        // `Galaxy::is_hyperlane`).
+        if !passing && self.galaxy.is_hyperlane(system_id) {
+            return false;
+        }
         if self.anomalies_ignored {
             return true;
         }
@@ -557,6 +563,15 @@ impl<'a> MovementRules<'a> {
             || ship_type.is_some_and(|kind| self.token_free_types.contains(kind))
     }
 
+    /// 59.2: a ship that starts in the nebula `origin` moves with a value of 1 — unless anomalies
+    /// are being ignored, in which case the nebula is not there to cap it.
+    #[must_use]
+    pub fn nebula_caps(&self, origin: &str) -> bool {
+        self.system(origin).is_some_and(System::is_nebula)
+            && !self.anomalies_ignored
+            && !self.nebulae_ignored
+    }
+
     #[must_use]
     pub fn can_reach(&self, origin: &str, move_value: i32) -> bool {
         self.path_from(origin, move_value).is_some()
@@ -590,11 +605,12 @@ impl<'a> MovementRules<'a> {
     ) -> Option<Vec<String>> {
         // Myru Vos: an unladen ship may also go through other players' ships, but only when no
         // route avoids them, so a ship that can sail clear is never denied its cargo for it.
-        self.search_path(origin, move_value, ship_type, false).or_else(|| {
-            self.unladen_pass
-                .then(|| self.search_path(origin, move_value, ship_type, true))
-                .flatten()
-        })
+        self.search_path(origin, move_value, ship_type, false)
+            .or_else(|| {
+                self.unladen_pass
+                    .then(|| self.search_path(origin, move_value, ship_type, true))
+                    .flatten()
+            })
     }
 
     fn search_path(
@@ -608,24 +624,35 @@ impl<'a> MovementRules<'a> {
             return None;
         }
 
-        // 59.2: starting inside a nebula caps the move value at 1 — unless anomalies are being
-        // ignored, in which case the nebula is not there to cap it.
-        let in_nebula = self.system(origin).is_some_and(System::is_nebula)
-            && !self.anomalies_ignored
-            && !self.nebulae_ignored;
-        let budget = if in_nebula { 1 } else { move_value };
+        let budget = if self.nebula_caps(origin) {
+            1
+        } else {
+            move_value
+        };
         if budget <= 0 {
             return None;
         }
 
-        // The last field is whether this route has already taken the Crucible bonus: it is worth
-        // +1 in total however many rifts the route passes, so it is carried per route.
-        let mut queue: VecDeque<(String, i32, i32, Vec<String>, bool)> =
-            VecDeque::from([(origin.to_owned(), 0, budget, vec![origin.to_owned()], false)]);
+        // The fifth field is whether this route has already taken the Crucible bonus: it is worth
+        // +1 in total however many rifts the route passes, so it is carried per route. The sixth is
+        // the own-unit systems whose Luminous step this route has already earned: "+1 for each of
+        // those systems" counts a system once, however often the route passes it.
+        let mut queue: VecDeque<(String, i32, i32, Vec<String>, bool, BTreeSet<String>)> =
+            VecDeque::from([(
+                origin.to_owned(),
+                0,
+                budget,
+                vec![origin.to_owned()],
+                false,
+                BTreeSet::new(),
+            )]);
         // Revisiting is only worthwhile with a larger budget left over (and the same bonus state).
-        let mut best: BTreeMap<(String, bool), i32> = BTreeMap::new();
+        // The earned Luminous systems are part of that state: a route that has not yet passed an
+        // own-unit system can still earn its step, so it is not dominated by one that has.
+        let mut best: BTreeMap<(String, bool, BTreeSet<String>), i32> = BTreeMap::new();
 
-        while let Some((current, entered, mut allowance, route, mut bonus_used)) = queue.pop_front()
+        while let Some((current, entered, mut allowance, route, mut bonus_used, mut earned)) =
+            queue.pop_front()
         {
             // 41.1: leaving a rift is worth an extra step, and 41.3 allows that to happen more
             // than once in one movement. The bonus must land *before* the budget is judged,
@@ -642,15 +669,20 @@ impl<'a> MovementRules<'a> {
             // Moving through a system that holds the mover's own units earns a step for ships that
             // may (Deepwrought Luminous). Only an intermediate system is "moved through": the
             // origin is entered at 0 and the active system ends the route before it is queued.
+            //
+            // Once per system: earning the step again on every pass let a route loop through a
+            // rift and an own-unit system for more steps than the loop cost, so the search never
+            // ended (BF-22 wide-roster trade teacher, a Deepwrought seat).
             if entered > 0
                 && ship_type.is_some_and(|kind| self.own_passage_types.contains(kind))
                 && self.own_unit_systems.contains(&current)
+                && earned.insert(current.clone())
             {
                 allowance += 1;
             }
 
             let remaining = allowance - entered;
-            let key = (current.clone(), bonus_used);
+            let key = (current.clone(), bonus_used, earned.clone());
             if best.get(&key).is_some_and(|seen| *seen >= remaining) {
                 continue;
             }
@@ -714,7 +746,14 @@ impl<'a> MovementRules<'a> {
                 if !self.passes(&neighbour, Some(origin), ship_type, past_ships) {
                     continue;
                 }
-                queue.push_back((neighbour, entered + 1, allowance, arrived, bonus_used));
+                queue.push_back((
+                    neighbour,
+                    entered + 1,
+                    allowance,
+                    arrived,
+                    bonus_used,
+                    earned.clone(),
+                ));
             }
         }
 
@@ -731,7 +770,7 @@ impl<'a> MovementRules<'a> {
         let pool: Vec<String> = candidates.map_or_else(
             || {
                 self.galaxy
-                    .system_ids()
+                    .system_ids_holding_things()
                     .into_iter()
                     .map(ToOwned::to_owned)
                     .collect()
@@ -872,6 +911,13 @@ impl MapEdit {
 }
 
 const MAP_EDIT_PREFIX: &str = "map_edit|";
+
+/// The map edits this state records, oldest first: what a viewer applies to the setup board to
+/// show the tiles where they stand in this frame.
+#[must_use]
+pub fn recorded_map_edits(state: &GameState) -> Vec<MapEdit> {
+    recorded_edits(state)
+}
 
 /// The recorded edits, oldest first.
 fn recorded_edits(state: &GameState) -> Vec<MapEdit> {
@@ -1093,6 +1139,58 @@ mod tests {
 
     fn movement_rules<'a>(hub: &'a Hub, active: &str, board: Board) -> MovementRules<'a> {
         MovementRules::new(&hub.galaxy, ContentStore::embedded(), POK, active, board)
+    }
+
+    /// A hub with a hyperlane tile on its first ring seat (the centre and the rest ordinary).
+    fn hub_with_hyperlane() -> (Hub, String) {
+        let lane = ti4_content::galaxy::all_systems(ContentStore::embedded(), POK)
+            .iter()
+            .find(|(_, system)| system.is_hyperlane())
+            .map(|(id, _)| (*id).to_owned())
+            .expect("the corpus has hyperlane tiles");
+        (hub_with_outer(&lane), lane)
+    }
+
+    #[test]
+    fn a_ship_cannot_end_its_move_in_a_hyperlane_tile() {
+        let (hub, lane) = hub_with_hyperlane();
+        assert!(hub.galaxy.is_hyperlane(&lane));
+        let origin = hub.centre.clone(); // adjacent to every ring seat
+        let rules = movement_rules(&hub, &lane, Board::default());
+
+        assert!(!rules.can_enter(&lane));
+        assert!(
+            !rules.can_reach(&origin, 3),
+            "a hyperlane is no destination at any range"
+        );
+        assert!(rules.path_from(&origin, 3).is_none());
+        // Not even with every anomaly ignored.
+        let mut ignoring = movement_rules(&hub, &lane, Board::default());
+        ignoring.anomalies_ignored = true;
+        assert!(!ignoring.can_enter(&lane));
+    }
+
+    #[test]
+    fn a_ship_may_still_pass_through_a_hyperlane_tile_as_the_model_stands() {
+        // Hyperlane connections are not modelled, so the tile is an empty hex in the adjacency
+        // graph and a ship may route through it. Closing the centre leaves only the lane (or the
+        // ring) between its two neighbours; with move 2 the lane is the only way.
+        let (hub, lane) = hub_with_hyperlane();
+        let lane_neighbours: Vec<String> = hub
+            .outer
+            .iter()
+            .filter(|id| *id != &lane && hub.galaxy.are_adjacent(&lane, id))
+            .cloned()
+            .collect();
+        let (a, b) = (lane_neighbours[0].clone(), lane_neighbours[1].clone());
+        let mut rules = movement_rules(&hub, &b, Board::default());
+        rules.barred_transit.insert(hub.centre.clone());
+
+        assert_eq!(
+            rules.path_from(&a, 2),
+            Some(vec![a.clone(), lane.clone(), b.clone()])
+        );
+        assert!(rules.can_pass_through(&lane, Some(&a)));
     }
 
     #[test]
@@ -1493,6 +1591,50 @@ mod tests {
         assert!(rules.can_enter(&asteroid));
         assert!(rules.can_reach(&near_a, 2));
         assert!(!rules.can_enter(&supernova), "supernovae are still barred");
+    }
+
+    #[test]
+    fn owning_antimass_deflectors_opens_asteroid_fields_for_the_mover() {
+        // The flag existed but nothing ever set it from the technology, so a player who owned
+        // Antimass Deflectors was still barred from asteroid fields.
+        let asteroid = a_system_where("asteroid field");
+        let hub = hub_with_centre(&asteroid);
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        let mover = PlayerId::new("a");
+        let near = hub.outer[0].clone();
+        let rules = |state: &GameState| {
+            MovementRules::with_laws(
+                &hub.galaxy,
+                ContentStore::embedded(),
+                POK,
+                &hub.across(&near),
+                Board::for_player(state, ContentStore::embedded(), POK, &mover),
+                Some(state),
+            )
+        };
+        assert!(
+            !rules(&state).can_enter(&asteroid),
+            "without the technology"
+        );
+        state
+            .player_mut(&mover)
+            .expect("seat")
+            .technologies
+            .insert(ti4_model::TechnologyId::new("amd"));
+        let with = rules(&state);
+        assert!(with.can_enter(&asteroid), "with Antimass Deflectors");
+        assert!(with.can_reach(&near, 2), "and through it");
+        let other = PlayerId::new("b");
+        let board = Board::for_player(&state, ContentStore::embedded(), POK, &other);
+        let theirs = MovementRules::with_laws(
+            &hub.galaxy,
+            ContentStore::embedded(),
+            POK,
+            &hub.across(&near),
+            board,
+            Some(&state),
+        );
+        assert!(!theirs.can_enter(&asteroid), "only the owner's ships");
     }
 
     #[test]

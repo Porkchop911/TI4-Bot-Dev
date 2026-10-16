@@ -225,7 +225,9 @@ pub fn attachment_cannons(
         })
         .collect();
     // Custodian's Favour (Custodia Vigilia): Mecatol Rex gains SPACE CANNON 5 for its controller.
-    found.extend(crate::factions::keleres::custodian_cannon(state, planet, owner));
+    found.extend(crate::factions::keleres::custodian_cannon(
+        state, planet, owner,
+    ));
     found
 }
 

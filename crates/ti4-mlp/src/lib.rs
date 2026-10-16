@@ -329,6 +329,19 @@ impl CriticInput {
         Self { sparse }
     }
 
+    /// Diagnostics: this input with `delta` added to the value already at `column`.
+    ///
+    /// `None` when the input has no such column. Only existing columns move, so this cannot
+    /// introduce an option-derived column the way a public [`Self::from_sparse`] could; it answers
+    /// "how does `V` respond to more of something the critic already sees".
+    #[must_use]
+    pub fn with_shifted_value(&self, column: i64, delta: f32) -> Option<Self> {
+        let index = self.sparse.columns.iter().position(|c| *c == column)?;
+        let mut sparse = self.sparse.clone();
+        sparse.values[index] += delta;
+        Some(Self { sparse })
+    }
+
     /// How many distinct columns this input actually occupies.
     ///
     /// Exposed because it is the difference between a critic and a rank-1 sum: when every
@@ -455,6 +468,34 @@ impl SeparateCritic {
             bias: self.bias.detach().copy(),
         }
     }
+}
+
+fn grown_input_table(
+    table: &Tensor,
+    growth: ti4_policy::vocabulary::CapacityGrowth,
+) -> Result<Tensor, ActorError> {
+    let rows = table.size().first().copied().unwrap_or(-1);
+    let old = i64::try_from(growth.old_capacity).unwrap_or(-1);
+    let new = i64::try_from(growth.new_capacity).unwrap_or(-1);
+    if rows != old || new < old || table.size().len() != 2 {
+        return Err(ActorError::NotUsable {
+            what: "capacity growth",
+            detail: format!(
+                "table {:?} against growth {} -> {} rows",
+                table.size(),
+                growth.old_capacity,
+                growth.new_capacity
+            ),
+        });
+    }
+    let width = table.size()[1];
+    let grown = Tensor::zeros([new, width], (table.kind(), table.device()));
+    tch::no_grad(|| {
+        if old > 0 {
+            grown.narrow(0, 0, old).copy_(table);
+        }
+    });
+    Ok(grown.set_requires_grad(table.requires_grad()))
 }
 
 fn migrated_input_table(
@@ -744,6 +785,43 @@ impl Actor {
         masks
     }
 
+    /// Gradient masks (for [`crate::ppo::Adam::restrict`]) that train only the per-faction rows of
+    /// `rows` -- each one's readout residual, readout bias and identity embedding -- and freeze
+    /// everything shared: the trunk, the input table, the shared readout, and the value head when
+    /// `include_value` lists it. For giving untrained factions their own rows without moving what
+    /// every other faction plays with (BF-22).
+    #[must_use]
+    pub fn faction_rows_masks(&self, rows: &[FactionRow], include_value: bool) -> Vec<Tensor> {
+        let delta = self.delta.zeros_like();
+        let b_delta = self.b_delta.zeros_like();
+        let embedding = self.embedding.zeros_like();
+        for row in rows {
+            let at = i64::try_from(row.index()).unwrap_or(0);
+            let _ = delta.get(at).fill_(1.0);
+            let _ = b_delta.get(at).fill_(1.0);
+            let _ = embedding.get(at).fill_(1.0);
+        }
+        let mut masks = vec![
+            self.input.zeros_like(),
+            self.b1.zeros_like(),
+            self.hidden.zeros_like(),
+            self.b2.zeros_like(),
+            self.w_shared.zeros_like(),
+            self.b_shared.zeros_like(),
+            delta,
+            b_delta,
+            embedding,
+        ];
+        for block in &self.blocks {
+            masks.extend(block.tensors().map(Tensor::zeros_like));
+        }
+        if include_value {
+            masks.push(self.w_value.zeros_like());
+            masks.push(self.b_value.zeros_like());
+        }
+        masks
+    }
+
     pub(crate) fn main_parameters(&self, include_value: bool) -> Vec<Tensor> {
         let mut parameters = vec![
             self.input.shallow_clone(),
@@ -883,6 +961,71 @@ impl Actor {
             })?;
         if let (Some(critic), Some(input)) = (&mut self.separate_critic, critic_input) {
             critic.input = input;
+        }
+        Ok(())
+    }
+
+    /// Pad the input tables to a vocabulary grown by
+    /// [`ti4_policy::vocabulary::Vocabulary::append_reallocating`] (BF-22).
+    ///
+    /// Rows `0..old_capacity` are copied unchanged and the new rows are zero, in the policy input
+    /// and the separate critic's input alike, so every existing column scores exactly as before and
+    /// a new column contributes nothing until training moves it. Atomic: both tables are built
+    /// before either is replaced.
+    ///
+    /// # Errors
+    /// [`ActorError::NotUsable`] when a table does not have `old_capacity` rows or the new capacity
+    /// is smaller.
+    pub fn grow_input_capacity(
+        &mut self,
+        growth: ti4_policy::vocabulary::CapacityGrowth,
+    ) -> Result<(), ActorError> {
+        let input = grown_input_table(&self.input, growth)?;
+        let critic_input = if let Some(critic) = &self.separate_critic {
+            Some(grown_input_table(&critic.input, growth)?)
+        } else {
+            None
+        };
+        self.input = input;
+        self.capacity = i64::try_from(growth.new_capacity).map_err(|_| ActorError::NotUsable {
+            what: "capacity growth",
+            detail: "new capacity does not fit i64".to_owned(),
+        })?;
+        if let (Some(critic), Some(input)) = (&mut self.separate_critic, critic_input) {
+            critic.input = input;
+        }
+        Ok(())
+    }
+
+    /// Copy input rows `from -> to`, in the policy input and the separate critic's input alike.
+    ///
+    /// For a vocabulary append that must not change play: a name that used to resolve to its
+    /// family's out-of-vocabulary column starts its own row as a copy of that column, so every
+    /// option scores exactly as before the append (BF-22). Atomic: every pair is checked first.
+    ///
+    /// # Errors
+    /// [`ActorError::NotUsable`] for a row outside the table.
+    pub fn copy_input_rows(&mut self, pairs: &[(i64, i64)]) -> Result<(), ActorError> {
+        if let Some((from, to)) = pairs
+            .iter()
+            .find(|(from, to)| !(0..self.capacity).contains(from) || !(0..self.capacity).contains(to))
+        {
+            return Err(ActorError::NotUsable {
+                what: "row copy",
+                detail: format!("{from} -> {to} outside capacity {}", self.capacity),
+            });
+        }
+        let copy = |table: &mut Tensor| {
+            tch::no_grad(|| {
+                for (from, to) in pairs {
+                    let source = table.get(*from).copy();
+                    table.get(*to).copy_(&source);
+                }
+            });
+        };
+        copy(&mut self.input);
+        if let Some(critic) = &mut self.separate_critic {
+            copy(&mut critic.input);
         }
         Ok(())
     }
@@ -2072,6 +2215,84 @@ mod tests {
         assert_eq!(before, after);
         let inserted: Vec<f32> = ti4_tensor::to_vec(&actor.input().get(48)).expect("row");
         assert!(inserted.iter().all(|value| *value == 0.0));
+    }
+
+    #[test]
+    fn capacity_growth_keeps_every_logit_and_adds_zero_rows() {
+        // BF-22: growing the vocabulary pads W1 with zero rows; an option over existing columns
+        // scores exactly as before, and a new column contributes nothing.
+        let mut actor = actor(Width::W128);
+        let row = row("sol");
+        let old = option(&[3, 48, 79], &[0.25, 1.0, -0.5]);
+        let score = |actor: &Actor, option: SparseOption| {
+            ti4_tensor::to_vec(&actor.logits(&[option], "trade", row).expect("logits"))
+                .expect("vec")
+        };
+        let before = score(&actor, old.clone());
+        let old_capacity = usize::try_from(CAPACITY).unwrap();
+        let growth = ti4_policy::vocabulary::CapacityGrowth {
+            added: 40,
+            old_slot_count: old_capacity - 10,
+            old_capacity,
+            new_capacity: old_capacity * 2,
+        };
+        let wrong = ti4_policy::vocabulary::CapacityGrowth {
+            old_capacity: old_capacity + 1,
+            ..growth
+        };
+        assert!(actor.grow_input_capacity(wrong).is_err());
+        assert_eq!(actor.capacity(), CAPACITY, "a refused growth changed the actor");
+
+        actor.grow_input_capacity(growth).expect("grows");
+        assert_eq!(actor.capacity(), CAPACITY * 2);
+        assert_eq!(actor.input().size(), vec![CAPACITY * 2, 128]);
+        assert_eq!(score(&actor, old), before);
+        let new_column = CAPACITY + 5;
+        let with_new = option(&[3, 48, 79, new_column], &[0.25, 1.0, -0.5, 1.0]);
+        assert_eq!(score(&actor, with_new), before, "a new row is not zero");
+        let padded = actor.input().narrow(0, CAPACITY, CAPACITY).abs().sum(Kind::Float);
+        assert!(padded.double_value(&[]) == 0.0);
+    }
+
+    #[test]
+    fn copying_a_fallback_row_keeps_the_logit_of_a_moved_name() {
+        // BF-22 --init-from-oov: a name that resolved to column 7 (its OOV column) now has its own
+        // column 300; copying row 7 to 300 leaves the option's score unchanged.
+        let mut actor = actor(Width::W128);
+        let row = row("sol");
+        let score = |actor: &Actor, option: SparseOption| {
+            ti4_tensor::to_vec(&actor.logits(&[option], "trade", row).expect("logits"))
+                .expect("vec")
+        };
+        let before = score(&actor, option(&[3, 7], &[0.25, 1.0]));
+        assert!(actor.copy_input_rows(&[(7, CAPACITY)]).is_err(), "out of range is refused");
+        actor.copy_input_rows(&[(7, 300)]).expect("copies");
+        assert_eq!(score(&actor, option(&[3, 300], &[0.25, 1.0])), before);
+    }
+
+    #[test]
+    fn faction_rows_masks_open_only_the_named_factions_rows() {
+        let actor = actor(Width::W128);
+        let rows = [row("sardakk"), row("naalu")];
+        let masks = actor.faction_rows_masks(&rows, true);
+        assert_eq!(masks.len(), actor.main_parameters(true).len());
+        let total = |t: &Tensor| t.sum(Kind::Float).double_value(&[]);
+        for (index, mask) in masks.iter().enumerate() {
+            // delta, b_delta and embedding are parameters 6, 7 and 8.
+            if matches!(index, 6..=8) {
+                assert!(total(mask) > 0.0, "parameter {index} opens the named rows");
+            } else {
+                assert!(total(mask).abs() < f64::EPSILON, "parameter {index} is shared");
+            }
+        }
+        let opened = |mask: &Tensor, faction: &str| {
+            let at = i64::try_from(row(faction).index()).unwrap();
+            total(&mask.get(at)) > 0.0
+        };
+        for parameter in 6..=8 {
+            assert!(opened(&masks[parameter], "sardakk") && opened(&masks[parameter], "naalu"));
+            assert!(!opened(&masks[parameter], "sol"), "a trained faction stays frozen");
+        }
     }
 
     #[test]

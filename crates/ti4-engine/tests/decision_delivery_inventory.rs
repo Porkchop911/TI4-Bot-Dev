@@ -28,10 +28,28 @@ enum Operation {
 fn production_source(path: &Path) -> String {
     let source =
         fs::read_to_string(path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
-    source
-        .split_once("\n#[cfg(test)]")
-        .map_or(source.as_str(), |(production, _)| production)
-        .to_owned()
+    source[..test_modules_start(&source)].to_owned()
+}
+
+/// Where the test modules of a file start: the first `#[cfg(test)]` that is on a `mod`. A
+/// `#[cfg(test)]` on another item (a helper that only tests call) does not end the production
+/// source, or every decision site below it would leave the audit unseen.
+fn test_modules_start(source: &str) -> usize {
+    const MARKER: &str = "\n#[cfg(test)]\n";
+    let mut from = 0;
+    while let Some(found) = source[from..].find(MARKER) {
+        let at = from + found;
+        let item = source[at + MARKER.len()..]
+            .lines()
+            .find(|line| !line.starts_with("#[") && !line.starts_with("//"))
+            .unwrap_or("");
+        let item = item.strip_prefix("pub(crate) ").unwrap_or(item);
+        if item.starts_with("mod ") {
+            return at;
+        }
+        from = at + MARKER.len();
+    }
+    source.len()
 }
 
 /// Enough of Rust's lexical grammar for structural call-site discovery.
@@ -888,7 +906,13 @@ const PRODUCERS: &[Producer] = &[
     },
     Producer {
         module: "exploration.rs",
-        function: "ask",
+        function: "ask_decorated",
+        count: 1,
+        delivery: Delivery::ObservedHere,
+    },
+    Producer {
+        module: "exploration.rs",
+        function: "ask_device_technology",
         count: 1,
         delivery: Delivery::ObservedHere,
     },
@@ -1019,6 +1043,13 @@ const PRODUCERS: &[Producer] = &[
         // Political Favor and Political Secret: whether the holder uses the note at its window.
         module: "game.rs",
         function: "ask_to_use_note",
+        count: 1,
+        delivery: Delivery::ObservedHere,
+    },
+    Producer {
+        // Z'eu (the Naalu's Prophecy of Kings agent): which non-home system to act in.
+        module: "game.rs",
+        function: "perform_zeu",
         count: 1,
         delivery: Delivery::ObservedHere,
     },
@@ -1173,7 +1204,7 @@ const PRODUCERS: &[Producer] = &[
     },
     Producer {
         module: "production.rs",
-        function: "produce_one",
+        function: "produce_one_from",
         count: 2,
         delivery: Delivery::ObservedHere,
     },
@@ -1476,7 +1507,7 @@ const PRODUCERS: &[Producer] = &[
     },
     Producer {
         module: "vote.rs",
-        function: "pending_choice",
+        function: "pending_choice_bare",
         // Outcome, planets, Gila's trade goods (hacancommander), tiebreak, Mahact's Recombine
         // and Tribute stages.
         count: 6,
@@ -1593,7 +1624,8 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("combat.rs", "offer_sustain", 1),
     ("combat.rs", "roll_round", 1),
     ("combat.rs", "wrath_of_kenara_buy", 1),
-    ("exploration.rs", "ask", 1),
+    ("exploration.rs", "ask_decorated", 1),
+    ("exploration.rs", "ask_device_technology", 1),
     ("faction_abilities.rs", "munitions_offer", 1),
     ("faction_abilities.rs", "perform_component", 2),
     ("faction_abilities.rs", "production_biomes", 1),
@@ -1615,6 +1647,7 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("game.rs", "step_agenda_talks", 1),
     ("game.rs", "step_vote", 1),
     ("game.rs", "ask_to_use_note", 1),
+    ("game.rs", "perform_zeu", 1),
     ("game.rs", "committee_formation", 1),
     ("game.rs", "imperial_arbiter", 2),
     ("game.rs", "minister_of_war", 1),
@@ -1623,7 +1656,7 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("invasion.rs", "drive", 1),
     ("production.rs", "integrated_economy", 1),
     ("production.rs", "pay_with_observation_credit", 1),
-    ("production.rs", "produce_one", 2),
+    ("production.rs", "produce_one_from", 2),
     // BF-00b: ability-driven production delivers `ProductionWindow::pending_choice` itself.
     ("production.rs", "produce_by_ability_capped", 1),
     ("production.rs", "resolve_timed", 1),

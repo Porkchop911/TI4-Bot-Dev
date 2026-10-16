@@ -47,9 +47,9 @@ it("shows the same planet-local resolved ground round without offering spectator
   );
   expect(screen.getByTestId("invasion-step")).toHaveTextContent("jord · ground round · round 1");
   expect(screen.getByTestId("invasion-step")).toHaveTextContent(
-    "attacker · combat value 8: 9 / 8 hit",
+    "Unknown participant · combat value 8: 9 / 8 hit",
   );
-  expect(screen.getByTestId("invasion-step")).toHaveTextContent("Before: attacker infantry");
+  expect(screen.getByTestId("invasion-step")).toHaveTextContent("Before: Unknown participant Infantry");
   expect(screen.getByTestId("invasion-step")).toHaveTextContent("After: None");
   expect(screen.queryByRole("button", { name: "Fight next round" })).not.toBeInTheDocument();
 });
@@ -282,4 +282,42 @@ it("renders embedded landing tray with planet cards and + / − steppers for the
   });
   // M20 auto-populates with highest-value planet (lisis)
   expect(onSubmit).toHaveBeenCalledWith("land_lisis");
+});
+
+it("shows a bombardment step with unit names, hit thresholds and the result, never raw ids", () => {
+  const board = {
+    ...galleryBoard,
+    invasion: {
+      system_id: "18",
+      invasion_seq: 4,
+      invader: "attacker",
+      phase: "commit_ground_forces",
+      planets: ["jord"],
+      current_planet: "jord",
+      defender: "defender",
+      ground_round: 0,
+      last_step: {
+        planet: "jord",
+        kind: "bombardment",
+        round: 0,
+        harrow_hits: 0,
+        before: [
+          { owner: "defender", unit_type: "infantry", planet: "jord", damaged: false },
+          { owner: "defender", unit_type: "infantry", planet: "jord", damaged: false },
+        ],
+        after: [{ owner: "defender", unit_type: "infantry", planet: "jord", damaged: false }],
+        hits: { attacker: 1 },
+        dice: [
+          { planet: "jord", player: "attacker", group: "dreadnought", face: 9, target: 5, hit: true },
+          { planet: "jord", player: "attacker", group: "dreadnought", face: 2, target: 5, hit: false },
+        ],
+      },
+    },
+  };
+  render(<InvasionOverlay board={board} choice={null} viewerSeat={null} onSubmit={vi.fn()} onClose={vi.fn()} />);
+  const step = screen.getByTestId("invasion-step");
+  expect(step).toHaveAttribute("data-step-kind", "bombardment");
+  expect(step).toHaveTextContent("Dreadnought, Bombardment 5 x2");
+  expect(step).toHaveTextContent("1 hit from 2 dice");
+  expect(step).toHaveTextContent("destroyed 1 Infantry");
 });

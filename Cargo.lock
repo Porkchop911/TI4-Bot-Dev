@@ -1598,12 +1598,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cd417de3d1d015fc3bfd2b1ea46dfc7bab72ef86f1cc7cc9c78e728b34a6d1fd"
 
 [[package]]
-name = "futures-timer"
-version = "3.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af43fadb8a98512d547e37b4e92e0ced13e205c061b87b4623eff01d918d6968"
-
-[[package]]
 name = "futures-util"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1697,12 +1691,6 @@ dependencies = [
  "smallvec",
  "vello_common",
 ]
-
-[[package]]
-name = "glob"
-version = "0.3.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4eba85ea1d0a966a983acd07deee566e67395d2d96b6fb39e62b5a833f1eb0b"
 
 [[package]]
 name = "globset"
@@ -1903,6 +1891,12 @@ dependencies = [
  "http-body",
  "pin-project-lite",
 ]
+
+[[package]]
+name = "http-range-header"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9171a2ea8a68358193d15dd5d70c1c10a2afc3e7e4c5bc92bc9f025cebd7359c"
 
 [[package]]
 name = "httparse"
@@ -2474,6 +2468,16 @@ name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
+
+[[package]]
+name = "mime_guess"
+version = "2.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f7c44f8e672c00fe5308fa235f821cb4198414e1c77935c1ab6948d3fd78550e"
+dependencies = [
+ "mime",
+ "unicase",
+]
 
 [[package]]
 name = "miniz_oxide"
@@ -3217,6 +3221,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "pollster"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2f3a9f18d041e6d0e102a0a46750538147e5e8992d3b4873aaafee2520b00ce3"
+
+[[package]]
 name = "polycool"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3493,18 +3503,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "regex"
-version = "1.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f020237b6c8eed93db2e2cb53c00c60a8e1bc73da7d073199a1180401450218d"
-dependencies = [
- "aho-corasick",
- "memchr",
- "regex-automata",
- "regex-syntax",
-]
-
-[[package]]
 name = "regex-automata"
 version = "0.4.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3520,12 +3518,6 @@ name = "regex-syntax"
 version = "0.8.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
-
-[[package]]
-name = "relative-path"
-version = "1.9.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba39f3699c378cd8970968dcbff9c43159ea4cfbd88d43c00b22f2ef10a435d2"
 
 [[package]]
 name = "reqwest"
@@ -3575,40 +3567,12 @@ dependencies = [
  "objc2-core-foundation",
  "objc2-foundation 0.3.2",
  "percent-encoding",
+ "pollster",
  "raw-window-handle",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
  "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "rstest"
-version = "0.26.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5a3193c063baaa2a95a33f03035c8a72b83d97a54916055ba22d35ed3839d49"
-dependencies = [
- "futures-timer",
- "futures-util",
- "rstest_macros",
-]
-
-[[package]]
-name = "rstest_macros"
-version = "0.26.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c845311f0ff7951c5506121a9ad75aec44d083c31583b2ea5a30bcb0b0abba0"
-dependencies = [
- "cfg-if",
- "glob",
- "proc-macro-crate",
- "proc-macro2",
- "quote",
- "regex",
- "relative-path",
- "rustc_version",
- "syn 2.0.119",
- "unicode-ident",
 ]
 
 [[package]]
@@ -4168,6 +4132,7 @@ dependencies = [
  "axum",
  "serde",
  "serde_json",
+ "ti4-calc",
  "ti4-content",
  "ti4-engine",
  "ti4-mlp",
@@ -4175,7 +4140,6 @@ dependencies = [
  "ti4-policy",
  "ti4-server",
  "ti4-tensor",
- "ti4-training",
  "tokio",
 ]
 
@@ -4206,7 +4170,6 @@ dependencies = [
  "anyhow",
  "chrono",
  "itertools",
- "rstest",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
@@ -4214,6 +4177,17 @@ dependencies = [
  "ti4-engine",
  "ti4-model",
  "tracing",
+]
+
+[[package]]
+name = "ti4-calc"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "ti4-content",
+ "ti4-engine",
+ "ti4-model",
 ]
 
 [[package]]
@@ -4245,7 +4219,6 @@ dependencies = [
  "globset",
  "hex",
  "itertools",
- "rstest",
  "serde",
  "serde_json",
  "sha2",
@@ -4266,7 +4239,6 @@ dependencies = [
  "proptest",
  "rand 0.9.5",
  "rand_chacha 0.9.0",
- "rstest",
  "serde",
  "serde_json",
  "sha2",
@@ -4279,6 +4251,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ti4-host"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "ti4-content",
+ "ti4-engine",
+ "ti4-model",
+ "ti4-view",
+]
+
+[[package]]
 name = "ti4-legacy"
 version = "0.1.0"
 dependencies = [
@@ -4287,7 +4272,6 @@ dependencies = [
  "chrono",
  "itertools",
  "parquet",
- "rstest",
  "serde",
  "serde_json",
  "sha2",
@@ -4316,6 +4300,7 @@ dependencies = [
  "ti4-engine",
  "ti4-model",
  "ti4-policy",
+ "ti4-server",
  "ti4-sim",
  "ti4-tensor",
  "ti4-training",
@@ -4351,7 +4336,6 @@ dependencies = [
  "itertools",
  "rand 0.9.5",
  "rand_chacha 0.9.0",
- "rstest",
  "serde",
  "serde_json",
  "sha2",
@@ -4395,10 +4379,23 @@ dependencies = [
  "ti4-mlp",
  "ti4-model",
  "ti4-policy",
+ "ti4-server",
  "ti4-sim",
  "ti4-tensor",
  "ti4-training",
  "zstd 0.13.3",
+]
+
+[[package]]
+name = "ti4-rule-bot"
+version = "0.1.0"
+dependencies = [
+ "rand 0.9.5",
+ "rand_chacha 0.9.0",
+ "serde_json",
+ "ti4-content",
+ "ti4-engine",
+ "ti4-model",
 ]
 
 [[package]]
@@ -4407,18 +4404,25 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "futures-util",
+ "hex",
  "rand 0.9.5",
+ "rand_chacha 0.9.0",
  "reqwest",
- "rstest",
  "serde",
  "serde_json",
  "sha2",
  "thiserror 2.0.20",
  "ti4-content",
  "ti4-engine",
+ "ti4-host",
  "ti4-model",
+ "ti4-policy",
+ "ti4-rule-bot",
+ "ti4-view",
+ "ti4-wasm",
  "tokio",
  "tokio-tungstenite 0.26.2",
+ "tower",
  "tower-http",
  "tracing",
  "tracing-subscriber",
@@ -4434,7 +4438,6 @@ dependencies = [
  "itertools",
  "rand 0.9.5",
  "rand_chacha 0.9.0",
- "rstest",
  "serde",
  "serde_json",
  "sha2",
@@ -4469,11 +4472,11 @@ dependencies = [
  "mimalloc",
  "parquet",
  "rayon",
- "rstest",
  "serde",
  "serde_json",
  "sha2",
  "thiserror 2.0.20",
+ "ti4-calc",
  "ti4-content",
  "ti4-engine",
  "ti4-model",
@@ -4481,6 +4484,37 @@ dependencies = [
  "ti4-sim",
  "tracing",
  "zstd 0.13.3",
+]
+
+[[package]]
+name = "ti4-view"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "ti4-calc",
+ "ti4-content",
+ "ti4-engine",
+ "ti4-model",
+]
+
+[[package]]
+name = "ti4-wasm"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "ti4-calc",
+ "ti4-content",
+ "ti4-engine",
+ "ti4-host",
+ "ti4-model",
+ "ti4-rule-bot",
+ "ti4-server",
+ "ti4-view",
 ]
 
 [[package]]
@@ -4587,6 +4621,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-util"
+version = "0.7.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e464cf451ba96ebfc6f9b6542f17ee8b8956e33f1e40d9690624e59d7a7f8a4b"
+dependencies = [
+ "bytes",
+ "futures-core",
+ "futures-sink",
+ "pin-project-lite",
+ "tokio",
+]
+
+[[package]]
 name = "toml_datetime"
 version = "1.1.1+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4652,10 +4699,19 @@ checksum = "4cfcf7e2740e6fc6d4d688b4ef00650406bb94adf4731e43c096c3a19fe40840"
 dependencies = [
  "bitflags 2.13.1",
  "bytes",
+ "futures-core",
  "futures-util",
  "http",
  "http-body",
+ "http-body-util",
+ "http-range-header",
+ "httpdate",
+ "mime",
+ "mime_guess",
+ "percent-encoding",
  "pin-project-lite",
+ "tokio",
+ "tokio-util",
  "tower",
  "tower-layer",
  "tower-service",
@@ -4804,6 +4860,12 @@ name = "unarray"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eaea85b334db583fe3274d12b4cd1880032beab409c0d774be044d4480ab9a94"
+
+[[package]]
+name = "unicase"
+version = "2.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "357cc3acc6a036009fd6c973ed009037c732d60d0b4f6c673e9041497482a28f"
 
 [[package]]
 name = "unicode-general-category"

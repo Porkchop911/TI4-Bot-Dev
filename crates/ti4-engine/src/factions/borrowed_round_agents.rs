@@ -375,7 +375,11 @@ fn resolve_copy(
         options,
     )
     .offered(
-        crate::strategy_cards::leader_card(context.content, source_agent, "agent (copied by Ssruu)"),
+        crate::strategy_cards::leader_card(
+            context.content,
+            source_agent,
+            "agent (copied by Ssruu)",
+        ),
         Vec::new(),
         &captions
             .iter()
@@ -772,9 +776,11 @@ mod tests {
             crate::choice::Table::new(),
         );
         resolver.register(abilities(&state));
-        let (decider, seen) = crate::choice::Capturing::new(Box::new(crate::choice::Scripted::new(
-            [ability_id, target.clone()],
-        )));
+        let (decider, seen) =
+            crate::choice::Capturing::new(Box::new(crate::choice::Scripted::new([
+                ability_id,
+                target.clone(),
+            ])));
         let mut table = crate::choice::Table::with_default(Box::new(decider));
         let mut dice = crate::dice::Dice::new();
         let mut rng = crate::rng::GameRng::new(0);

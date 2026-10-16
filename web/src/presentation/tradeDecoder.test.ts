@@ -172,4 +172,65 @@ describe("tradeDecoder", () => {
     const decoded = decodeTradeOption(opt);
     expect(decoded.category).toBe("mutual_support");
   });
+  // --- ask shapes (the partner's notes: Hacan's Trade Convoys deals) ---
+
+  it("decodes paying trade goods for the partner's note (np)", () => {
+    const decoded = decodeTradeOption({
+      id: "npconvoys:hacan:3",
+      kind: "offer",
+      label: "pay 3 trade goods for the note convoys:hacan",
+      payload: { received_promissory: "convoys:hacan", net: 0, their_net: 0 },
+    });
+    expect(decoded.category).toBe("promissory");
+    expect(decoded.details.receivedNote).toBe("convoys:hacan");
+    expect(decoded.details.giveTradeGoods).toBe(3);
+    expect(decoded.details.giveCommodities).toBeUndefined();
+  });
+
+  it("decodes paying commodities for the partner's note (cp), not as a commodity gift", () => {
+    const decoded = decodeTradeOption({
+      id: "cpcf:hacan:2",
+      kind: "offer",
+      label: "pay 2 commodities for the note cf:hacan",
+      payload: { received_promissory: "cf:hacan" },
+    });
+    expect(decoded.category).toBe("promissory");
+    expect(decoded.details.receivedNote).toBe("cf:hacan");
+    expect(decoded.details.giveCommodities).toBe(2);
+  });
+
+  it("decodes our note for their commodities (pc)", () => {
+    const decoded = decodeTradeOption({
+      id: "pcra:jolnar:4",
+      kind: "offer",
+      label: "give the note ra:jolnar for 4 commodity",
+      payload: { promissory: "ra:jolnar", alias: "ra" },
+    });
+    expect(decoded.category).toBe("promissory");
+    expect(decoded.details.givenNote).toBe("ra:jolnar");
+    expect(decoded.details.receiveCommodities).toBe(4);
+  });
+
+  it("decodes note for note (nn) and action card for note (cn, Arbiters)", () => {
+    const nn = decodeTradeOption({
+      id: "nnps:sol>convoys:hacan",
+      kind: "offer",
+      label: "give the note ps:sol for the note convoys:hacan",
+      payload: { promissory: "ps:sol", received_promissory: "convoys:hacan" },
+    });
+    expect(nn.category).toBe("promissory");
+    expect(nn.details.givenNote).toBe("ps:sol");
+    expect(nn.details.receivedNote).toBe("convoys:hacan");
+
+    const cn = decodeTradeOption({
+      id: "cnrally>cf:hacan",
+      kind: "offer",
+      label: "give the action card rally for the note cf:hacan",
+      payload: { action_card: "rally", promissory: "cf:hacan" },
+    });
+    expect(cn.category).toBe("promissory");
+    expect(cn.details.givenActionCard).toBe("rally");
+    expect(cn.details.receivedNote).toBe("cf:hacan");
+    expect(cn.details.actionCard).toBeUndefined();
+  });
 });

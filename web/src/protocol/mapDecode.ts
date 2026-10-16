@@ -27,6 +27,7 @@ export function decodeMapChoice(value: unknown): MapChoiceDto {
     !isRecord(value) ||
     (value.kind !== "template" && value.kind !== "random") ||
     (value.alias !== undefined && !text(value.alias)) ||
+    (value.name !== undefined && !text(value.name)) ||
     (value.author !== undefined && typeof value.author !== "string") ||
     !count(value.systems) ||
     typeof value.hyperlanes !== "boolean" ||
@@ -37,6 +38,7 @@ export function decodeMapChoice(value: unknown): MapChoiceDto {
   return {
     kind: value.kind,
     ...(value.alias === undefined ? {} : { alias: value.alias as string }),
+    ...(value.name === undefined ? {} : { name: value.name as string }),
     ...(value.author === undefined ? {} : { author: value.author as string }),
     systems: value.systems,
     hyperlanes: value.hyperlanes,
@@ -53,11 +55,13 @@ export function decodeMapList(value: unknown): MapTemplateSummary[] {
         !isRecord(entry) ||
         !text(entry.alias) ||
         typeof entry.author !== "string" ||
+        (entry.name !== undefined && !text(entry.name)) ||
         !count(entry.player_count)
       )
         fail("map list entry");
       return {
         alias: entry.alias,
+        ...(entry.name === undefined ? {} : { name: entry.name as string }),
         author: entry.author,
         player_count: entry.player_count,
         buildable: entry.buildable === true,
@@ -87,15 +91,11 @@ function decodeSeat(entry: unknown): MapSeatPreview {
   if (
     !isRecord(entry) ||
     !count(entry.seat) ||
-    !text(entry.faction) ||
-    !text(entry.faction_name) ||
     !text(entry.home_system_id)
   )
     fail("map seat");
   return {
     seat: entry.seat,
-    faction: entry.faction,
-    faction_name: entry.faction_name,
     home_system_id: entry.home_system_id,
   };
 }

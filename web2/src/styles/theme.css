@@ -1,0 +1,138 @@
+@import "tailwindcss";
+@import "./board.css";
+
+/* The phone shell: a portrait phone shows one pane at a time (see AGENTS.md, "Screen size").
+   `phone:` is for layout, `touch:` is for the size of a control under a finger. */
+@custom-variant phone (@media (max-width: 720px));
+@custom-variant touch (@media (pointer: coarse));
+
+/* Design tokens. Taken from the tactical-action click dummy; every component uses these names. */
+@theme {
+  --color-*: initial;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+  --color-white: #fff;
+  --color-black: #000;
+
+  --color-canvas: #0b1017;
+  --color-well: #080d14;
+  --color-board: #0e151f;
+  --color-surface: #121a25;
+  --color-raised: #192331;
+  --color-hover: #233247;
+  --color-line: #283446;
+  --color-line-strong: #4b5c72;
+
+  --color-text: #eef2f6;
+  --color-icon: #b6c6d7;
+  --color-muted: #9aaac0;
+  --color-faint: #73849a;
+
+  --color-gold: #edbd7b;
+  --color-cyan: #8cd5ef;
+  --color-green: #8dd2b0;
+  --color-red: #f3a098;
+  --color-orange: #d69a75;
+
+  --font-sans:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-weight-mid: 550;
+  --font-weight-strong: 650;
+
+  --text-*: initial;
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-md: 16px;
+  --text-lg: 18px;
+
+  --radius-*: initial;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius: 7px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 999px;
+
+  --shadow-pop: 0 12px 30px #0006;
+
+  /* The mark of a phone tab whose pane has the open choice. */
+  --animate-blink: blink 1.4s ease-in-out infinite;
+  @keyframes blink {
+    50% {
+      opacity: 0.25;
+      transform: scale(0.7);
+    }
+  }
+}
+
+/* Follows the workspace: gold in a draft, cyan in live, green when the action is complete.
+   Inline, so that a subtree which sets --accent changes every accent utility inside it. */
+@theme inline {
+  --color-accent: var(--accent);
+}
+
+@layer base {
+  :root {
+    --accent: var(--color-gold);
+    /* Technology colours: the tree and the board use the same four. */
+    --tech-b: #6fb1f0;
+    --tech-g: #7fcf8f;
+    --tech-y: #e6cf6a;
+    --tech-r: #ee8a80;
+    color-scheme: dark;
+    font-synthesis: none;
+  }
+
+  *,
+  ::before,
+  ::after {
+    border-color: var(--color-line);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    overflow: hidden;
+    /* An installed app has no browser bars: a drag down must not reload the page. */
+    overscroll-behavior: none;
+    background: var(--color-canvas);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.45;
+  }
+
+  button,
+  select,
+  summary {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-cyan);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition: none !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}

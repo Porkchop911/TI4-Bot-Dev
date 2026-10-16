@@ -58,6 +58,13 @@ async function generate() {
     explores,
     planets,
     attachments,
+    factions,
+    units,
+    leaders,
+    factionAbilities,
+    promissoryNotes,
+    relics,
+    breakthroughs,
   ] = await Promise.all([
     readJson("manifest.json"),
     readJson("strategy_cards.json"),
@@ -68,6 +75,13 @@ async function generate() {
     readJson("explores.json"),
     readJson("planets.json"),
     readJson("attachments.json"),
+    readJson("factions.json"),
+    readJson("units.json"),
+    readJson("leaders.json"),
+    readJson("abilities.json"),
+    readJson("promissory_notes.json"),
+    readJson("relics.json"),
+    readJson("breakthroughs.json"),
   ]);
 
   const strategyCatalog = {};
@@ -204,6 +218,161 @@ async function generate() {
     );
   }
 
+  // Unit, faction and leader text for the info cards: printed rules text and numbers only. The
+  // card-art URLs and Twilight's Fall variants stay in the corpus.
+  const defined = (entries) =>
+    Object.fromEntries(entries.filter(([, value]) => value !== undefined && value !== null));
+
+  const unitCatalog = {};
+  for (const unit of units) {
+    const id = requiredString(unit, "id", "units");
+    addEntry(
+      unitCatalog,
+      id,
+      defined([
+        ["id", id],
+        ["baseType", requiredString(unit, "baseType", "units")],
+        ["name", requiredString(unit, "name", "units")],
+        ["subtitle", optionalString(unit, "subtitle") || undefined],
+        ["faction", optionalString(unit, "faction") || undefined],
+        ["source", optionalString(unit, "source") || undefined],
+        ["cost", unit.cost],
+        ["moveValue", unit.moveValue],
+        ["capacityValue", unit.capacityValue],
+        ["combatHitsOn", unit.combatHitsOn],
+        ["combatDieCount", unit.combatDieCount],
+        ["sustainDamage", unit.sustainDamage || undefined],
+        ["afbHitsOn", unit.afbHitsOn],
+        ["afbDieCount", unit.afbDieCount],
+        ["bombardHitsOn", unit.bombardHitsOn],
+        ["bombardDieCount", unit.bombardDieCount],
+        ["spaceCannonHitsOn", unit.spaceCannonHitsOn],
+        ["spaceCannonDieCount", unit.spaceCannonDieCount],
+        ["deepSpaceCannon", unit.deepSpaceCannon || undefined],
+        ["planetaryShield", unit.planetaryShield || undefined],
+        ["disablesPlanetaryShield", unit.disablesPlanetaryShield || undefined],
+        ["productionValue", unit.productionValue],
+        ["requiredTechId", optionalString(unit, "requiredTechId") || undefined],
+        ["upgradesFromUnitId", optionalString(unit, "upgradesFromUnitId") || undefined],
+        ["upgradesToUnitId", optionalString(unit, "upgradesToUnitId") || undefined],
+        ["ability", optionalString(unit, "ability") || undefined],
+      ]),
+      "units",
+    );
+  }
+
+  const leaderCatalog = {};
+  for (const leader of leaders) {
+    const id = requiredString(leader, "id", "leaders");
+    addEntry(
+      leaderCatalog,
+      id,
+      defined([
+        ["id", id],
+        ["faction", requiredString(leader, "faction", "leaders")],
+        ["type", requiredString(leader, "type", "leaders")],
+        ["name", requiredString(leader, "name", "leaders")],
+        ["title", optionalString(leader, "title") || undefined],
+        ["abilityName", optionalString(leader, "abilityName") || undefined],
+        ["abilityWindow", optionalString(leader, "abilityWindow") || undefined],
+        ["abilityText", optionalString(leader, "abilityText") || undefined],
+        ["unlockCondition", optionalString(leader, "unlockCondition") || undefined],
+        ["source", optionalString(leader, "source") || undefined],
+      ]),
+      "leaders",
+    );
+  }
+
+  const factionAbilityCatalog = {};
+  for (const ability of factionAbilities) {
+    const id = requiredString(ability, "id", "abilities");
+    addEntry(
+      factionAbilityCatalog,
+      id,
+      defined([
+        ["id", id],
+        ["name", requiredString(ability, "name", "abilities")],
+        ["faction", optionalString(ability, "faction") || undefined],
+        ["permanentEffect", optionalString(ability, "permanentEffect") || undefined],
+        ["window", optionalString(ability, "window") || undefined],
+        ["windowEffect", optionalString(ability, "windowEffect") || undefined],
+      ]),
+      "abilities",
+    );
+  }
+
+  const promissoryNoteCatalog = {};
+  for (const note of promissoryNotes) {
+    const id = requiredString(note, "alias", "promissory_notes");
+    addEntry(
+      promissoryNoteCatalog,
+      id,
+      defined([
+        ["id", id],
+        ["name", requiredString(note, "name", "promissory_notes")],
+        ["faction", optionalString(note, "faction") || undefined],
+        ["text", optionalString(note, "text") || undefined],
+      ]),
+      "promissory_notes",
+    );
+  }
+
+  const relicCatalog = {};
+  for (const relic of relics) {
+    const id = requiredString(relic, "alias", "relics");
+    addEntry(
+      relicCatalog,
+      id,
+      defined([
+        ["id", id],
+        ["name", requiredString(relic, "name", "relics")],
+        ["text", optionalString(relic, "text") || undefined],
+        ["source", optionalString(relic, "source") || undefined],
+      ]),
+      "relics",
+    );
+  }
+
+  const breakthroughCatalog = {};
+  for (const breakthrough of breakthroughs) {
+    const id = requiredString(breakthrough, "alias", "breakthroughs");
+    addEntry(
+      breakthroughCatalog,
+      id,
+      defined([
+        ["id", id],
+        ["name", requiredString(breakthrough, "name", "breakthroughs")],
+        ["faction", optionalString(breakthrough, "faction") || undefined],
+        ["synergy", Array.isArray(breakthrough.synergy) ? breakthrough.synergy : []],
+        ["text", optionalString(breakthrough, "text") || undefined],
+      ]),
+      "breakthroughs",
+    );
+  }
+
+  const factionCatalog = {};
+  for (const faction of factions) {
+    const id = requiredString(faction, "alias", "factions");
+    const list = (field) => (Array.isArray(faction[field]) ? faction[field] : []);
+    addEntry(
+      factionCatalog,
+      id,
+      defined([
+        ["id", id],
+        ["name", requiredString(faction, "factionName", "factions")],
+        ["commodities", faction.commodities],
+        ["startingTech", list("startingTech")],
+        ["factionTech", list("factionTech")],
+        ["abilities", list("abilities")],
+        ["leaders", list("leaders")],
+        ["promissoryNotes", list("promissoryNotes")],
+        ["units", list("units")],
+        ["source", optionalString(faction, "source") || undefined],
+      ]),
+      "factions",
+    );
+  }
+
   const catalogs = {
     strategyCards: sortedCatalog(strategyCatalog),
     secretObjectives: sortedCatalog(objectiveCatalog(secretObjectives, "secret_objectives")),
@@ -213,6 +382,13 @@ async function generate() {
     explorationCards: sortedCatalog(exploreCatalog),
     planets: sortedCatalog(planetCatalog),
     attachments: sortedCatalog(attachmentCatalog),
+    factions: sortedCatalog(factionCatalog),
+    units: sortedCatalog(unitCatalog),
+    leaders: sortedCatalog(leaderCatalog),
+    factionAbilities: sortedCatalog(factionAbilityCatalog),
+    promissoryNotes: sortedCatalog(promissoryNoteCatalog),
+    relics: sortedCatalog(relicCatalog),
+    breakthroughs: sortedCatalog(breakthroughCatalog),
   };
   const source = JSON.stringify(catalogs);
   const sourceDigest = createHash("sha256").update(source).digest("hex");
@@ -231,6 +407,13 @@ async function generate() {
         explorationCards: explores.length,
         planets: planets.length,
         attachments: attachments.length,
+        factions: factions.length,
+        units: units.length,
+        leaders: leaders.length,
+        factionAbilities: factionAbilities.length,
+        promissoryNotes: promissoryNotes.length,
+        relics: relics.length,
+        breakthroughs: breakthroughs.length,
       },
     },
     null,

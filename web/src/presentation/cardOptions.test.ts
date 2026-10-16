@@ -67,3 +67,17 @@ describe("handDecisionNote", () => {
     expect(handDecisionConfirmLabel("discard_over_hand_limit")).toBe("Discard card");
   });
 });
+
+describe("promissory note picks (Diplomatic Pressure)", () => {
+  it("shows the printed name, text and owner instead of the note id", () => {
+    const info = describeCardOption("dp1_pick_promissory note", { id: "cf:Xxcha Kingdom", label: "cf:Xxcha Kingdom" });
+    expect(info?.title).toBe("Ceasefire");
+    expect(info?.text).toContain("the Xxcha Kingdom player activates a system");
+    expect(info?.text).not.toContain("<color>");
+    expect(info?.badge).toBe("Promissory note · Xxcha Kingdom");
+  });
+  it("names Support for the Throne from its support: id", () => {
+    const info = describeCardOption("dp2_pick_promissory note", { id: "support:Hacan", label: "support:Hacan" });
+    expect(info?.title).toBe("Support for the Throne");
+  });
+});

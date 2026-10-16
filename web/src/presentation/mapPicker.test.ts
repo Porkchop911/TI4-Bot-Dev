@@ -11,7 +11,6 @@ import {
   templateBadges,
   templateTitle,
   tileKind,
-  viewerSeat,
 } from "./mapPicker.ts";
 
 describe("map picker model", () => {
@@ -51,13 +50,36 @@ describe("map picker model", () => {
       ...fixtureMapChoice("6pStandard"),
       author: "Someone",
     });
-    expect(line).toBe("6pStandard by Someone · 37 systems · no hyperlanes");
+    expect(line).toBe("6 players · Standard by Someone · 37 systems · no hyperlanes");
     expect(mapSummaryLine(fixtureMapChoice(null))).toBe("Random map · 36 systems · no hyperlanes");
     expect(`${line}${mapName(fixtureMapChoice(null))}`.toLowerCase()).not.toContain("seed");
     expect(choiceOf(fixtureMapChoice("6pStandard"))).toEqual({
       kind: "template",
       alias: "6pStandard",
     });
+  });
+
+  it("titles a community layout by the name the server sends", () => {
+    const community = {
+      ...fixtureTemplates(6)[0],
+      alias: "6pWontYouBeMyNeighbor",
+      name: "Won't You Be My Neighbor?",
+      author: "Chart the Galaxy entry",
+      recommended: false,
+    };
+    const card = mapCards([community], undefined)[0];
+    expect(card.title).toBe("Won't You Be My Neighbor?");
+    expect(card.detail).toContain("Chart the Galaxy entry");
+    const choice = {
+      ...fixtureMapChoice("6pScpt2021Final"),
+      name: "SCPT 2021 Final",
+      author: "SCPT",
+    };
+    expect(mapSummaryLine(choice)).toBe(
+      "6 players · SCPT 2021 Final by SCPT · 37 systems · no hyperlanes",
+    );
+    expect(mapName(choice)).toBe("SCPT 2021 Final");
+    expect(mapName(fixtureMapChoice("6pStandard"))).toBe("6pStandard");
   });
 
   it("classifies tiles for the pictures", () => {
@@ -72,13 +94,6 @@ describe("map picker model", () => {
     expect(tileKind({ system_id: "83a", label: "", q: 0, r: 0, hyperlane: true }, homes)).toBe(
       "hyperlane",
     );
-  });
-
-  it("finds the viewer's own seat", () => {
-    const { seats } = fixturePreview(4);
-    expect(viewerSeat(seats, 2)?.seat).toBe(2);
-    expect(viewerSeat(seats, null)).toBeUndefined();
-    expect(viewerSeat(seats, 7)).toBeUndefined();
   });
 
   it("announces a change only when the revision moves", () => {

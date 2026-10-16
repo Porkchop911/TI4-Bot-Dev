@@ -29,6 +29,8 @@ chrono.workspace = true
 # trainer depend on the bridge would drag TTS wire formats into every training build.
 ti4-bridge.workspace = true
 ti4-sim.workspace = true
+# Only the `rule_vs_mlp` example seats the server's rule bot.
+ti4-server.workspace = true
 ti4-training.workspace = true
 sha2.workspace = true
 serde_json.workspace = true

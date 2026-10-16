@@ -26,7 +26,6 @@ function stubServer(overrides: { list?: Reply; preview?: Reply } = {}) {
 
 const props = {
   lobby: fixtureLobby(6, "6pStandard", 1),
-  viewerPosition: 1,
   saving: false,
   onChoose: vi.fn(),
   onClose: vi.fn(),
@@ -56,9 +55,10 @@ describe("MapPicker (host)", () => {
     );
     await screen.findByTestId("map-preview-board");
     expect(screen.getByTestId("map-picker-summary")).toHaveTextContent(
-      "6pStandard by Community · 37 systems · no hyperlanes",
+      "6 players · Standard by Community · 37 systems · no hyperlanes",
     );
-    expect(screen.getByLabelText("Seats")).toHaveTextContent("Seat 1: Federation of Sol (you)");
+    expect(screen.getByLabelText("Seats")).toHaveTextContent("Seat 1");
+    expect(screen.getByLabelText("Seats")).not.toHaveTextContent("(you)");
   });
 
   it("picks another card, re-rolls the current one, and closes with Done", async () => {
@@ -163,9 +163,9 @@ describe("MapPicker (host)", () => {
 });
 
 describe("MapPicker (everyone else)", () => {
-  it("shows only the picture, read-only, with the viewer's own seat ringed", async () => {
+  it("shows only the picture, read-only, with the places of the seats and no faction", async () => {
     const fetchMock = stubServer();
-    render(<MapPicker {...props} editable={false} viewerPosition={2} />);
+    render(<MapPicker {...props} editable={false} />);
     expect(screen.getByRole("dialog", { name: "Map" })).toBeInTheDocument();
     await screen.findByTestId("map-preview-board");
     expect(screen.queryByTestId("map-picker-choices")).toBeNull();
@@ -173,19 +173,18 @@ describe("MapPicker (everyone else)", () => {
     expect(screen.queryByTestId("map-picker-done")).toBeNull();
     // It never even asks for the list of choices.
     expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith("/api/maps?"))).toBe(false);
-    const mine = document.querySelectorAll('[data-mine="true"]');
-    expect(mine).toHaveLength(1);
-    expect(mine[0]).toHaveAttribute("data-testid", "map-tile-home-hacan");
-    expect(screen.getByLabelText("Seats")).toHaveTextContent("Seat 2: Emirates of Hacan (you)");
+    // Nobody knows before Start who sits where: a place has its number only.
+    expect(screen.getByTestId("map-tile-seat_2")).toBeInTheDocument();
+    expect(screen.getByLabelText("Seats")).toHaveTextContent("Seat 2");
+    expect(screen.getByLabelText("Seats")).not.toHaveTextContent(/Hacan|\(you\)/);
     fireEvent.click(screen.getByTestId("map-picker-close"));
     expect(props.onClose).toHaveBeenCalled();
   });
 
-  it("closes on Escape and shows no seat marker to a spectator", async () => {
+  it("closes on Escape", async () => {
     stubServer();
-    render(<MapPicker {...props} editable={false} viewerPosition={null} />);
+    render(<MapPicker {...props} editable={false} />);
     await screen.findByTestId("map-preview-board");
-    expect(document.querySelectorAll('[data-mine="true"]')).toHaveLength(0);
     await act(async () => {
       fireEvent.keyDown(window, { key: "Escape" });
     });

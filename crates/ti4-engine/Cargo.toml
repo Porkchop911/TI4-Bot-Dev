@@ -9,7 +9,9 @@ ti4-model.workspace = true
 ti4-content.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-rand.workspace = true
+# No default features: they pull `getrandom`, which has no `wasm32-unknown-unknown` backend, and
+# the engine only ever draws from seeded streams.
+rand = { version = "0.9", default-features = false }
 rand_chacha.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
@@ -24,7 +26,6 @@ itertools.workspace = true
 
 [dev-dependencies]
 strum.workspace = true
-rstest.workspace = true
 proptest.workspace = true
 
 [lints]

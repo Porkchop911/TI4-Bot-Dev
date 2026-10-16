@@ -12,10 +12,8 @@ thiserror.workspace = true
 cc = "1"
 sha2.workspace = true
 
-# The workspace lints, restated because one module needs `unsafe`: `cuda_cache` calls two C
-# functions from a C++ shim over libtorch's CUDA caching allocator (operator approval, 2026-09-22,
-# "just this module"). `forbid` cannot be lifted locally, so this crate `deny`s instead and that
-# module alone carries `#[allow(unsafe_code)]`. Keep in step with [workspace.lints] in Cargo.toml.
+# Cargo requires this crate to restate workspace lints when overriding `unsafe_code` from `forbid`
+# to `deny`, so the approved `cuda_cache` module can carry `#[allow(unsafe_code)]`.
 [lints.rust]
 unsafe_code = "deny"
 dead_code = "warn"
@@ -25,10 +23,9 @@ duplicate_macro_attributes = "deny"
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(ti4_cuda_cache)"] }
 
 [lints.clippy]
-all = { level = "warn", priority = -1 }
-pedantic = { level = "warn", priority = -1 }
-cargo = { level = "allow", priority = -1 }
-too_many_arguments = "allow"
-similar_names = "allow"
-many_single_char_names = "allow"
-must_use_candidate = "allow"
+# These groups mirror [workspace.lints.clippy]; Cargo does not allow inheriting and overriding
+# workspace lints in the same package manifest.
+all = { level = "allow", priority = -2 }
+correctness = { level = "deny", priority = -1 }
+perf = { level = "warn", priority = -1 }
+type_complexity = "warn"

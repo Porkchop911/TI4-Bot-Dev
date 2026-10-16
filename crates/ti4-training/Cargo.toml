@@ -10,6 +10,7 @@ ti4-content.workspace = true
 ti4-engine.workspace = true
 ti4-policy.workspace = true
 ti4-sim.workspace = true
+ti4-calc.workspace = true
 flate2.workspace = true
 zstd.workspace = true
 serde.workspace = true
@@ -24,9 +25,6 @@ anyhow.workspace = true
 itertools.workspace = true
 rayon.workspace = true
 mimalloc.workspace = true
-
-[dev-dependencies]
-rstest.workspace = true
 
 [lints]
 workspace = true

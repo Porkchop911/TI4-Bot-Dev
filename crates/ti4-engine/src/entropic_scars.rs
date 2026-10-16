@@ -175,6 +175,7 @@ pub fn grant(
         return Err(ScarError::NothingToGrant);
     }
     seat.technologies.insert(wanted.clone());
+    crate::technology::apply_unit_upgrades(state, content, sources, player);
     crate::supply::note_strategy_token_spent(state, player, "entropic_scar");
     Ok(())
 }

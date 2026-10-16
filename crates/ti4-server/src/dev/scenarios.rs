@@ -403,10 +403,10 @@ fn build_research_scenario(
         .unclaimed_strategy_cards
         .push(StrategyCardId::new("leadership"));
 
+    // One ready Biotic skip (Sol's Spec Ops II needs a second green prerequisite)
+    // and one exhausted skip of any colour, whichever planets this map carries.
     let all_planets = ti4_content::galaxy::all_planets(content, POK);
-    let mut ready_assigned = false;
-    let mut exhausted_assigned = false;
-
+    let mut skips = Vec::new();
     for system_id in galaxy.system_ids() {
         if system_id == "01" {
             continue;
@@ -414,26 +414,32 @@ fn build_research_scenario(
         if let Some(tile) = ti4_content::galaxy::system(content, system_id, POK) {
             for planet in tile.planets() {
                 if let Some(rec) = all_planets.get(planet) {
-                    if !rec.tech_specialties().is_empty() {
-                        let pid = PlanetId::new(planet);
-                        config
-                            .state
-                            .system_mut(&SystemId::new(system_id))
-                            .set_control(pid.clone(), player.clone());
-                        if !ready_assigned {
-                            ready_assigned = true;
-                        } else if !exhausted_assigned {
-                            config.state.exhaust_planet(pid);
-                            exhausted_assigned = true;
-                            break;
-                        }
+                    let specialties = rec.tech_specialties();
+                    if !specialties.is_empty() {
+                        let biotic = specialties
+                            .iter()
+                            .any(|specialty| specialty.eq_ignore_ascii_case("biotic"));
+                        skips.push((system_id.to_owned(), PlanetId::new(planet), biotic));
                     }
                 }
             }
         }
-        if ready_assigned && exhausted_assigned {
-            break;
-        }
+    }
+    let ready = skips
+        .iter()
+        .position(|(_, _, biotic)| *biotic)
+        .ok_or("this map has no Biotic technology specialty")?;
+    let (system, planet, _) = skips.remove(ready);
+    config
+        .state
+        .system_mut(&SystemId::new(&system))
+        .set_control(planet, player.clone());
+    if let Some((system, planet, _)) = skips.into_iter().next() {
+        config
+            .state
+            .system_mut(&SystemId::new(&system))
+            .set_control(planet.clone(), player.clone());
+        config.state.exhaust_planet(planet);
     }
 
     Ok((config, lobby, player, token))
@@ -1035,21 +1041,17 @@ fn advance_into_space_combat(
     Ok(())
 }
 
-fn setup_base_3p_game(
-    seed: u64,
-    game_prefix: &str,
-) -> Result<
-    (
-        SessionConfig,
-        PlayerLobbyRecord,
-        PlayerId,
-        String,
-        ti4_content::galaxy::Galaxy,
-        PlayerId,
-        PlayerId,
-    ),
+type Base3pGameSetup = (
+    SessionConfig,
+    PlayerLobbyRecord,
+    PlayerId,
     String,
-> {
+    ti4_content::galaxy::Galaxy,
+    PlayerId,
+    PlayerId,
+);
+
+fn setup_base_3p_game(seed: u64, game_prefix: &str) -> Result<Base3pGameSetup, String> {
     let content = ContentStore::embedded();
 
     let mut existing_players = BTreeMap::new();
@@ -1058,7 +1060,9 @@ fn setup_base_3p_game(
     existing_players.insert(
         p1.clone(),
         PlayerLobbyMember {
-            ready: true,
+            legacy_ready: None,
+            bot: None,
+            faction: None,
             session: session1.clone(),
             nickname: "Player 1 (Sol)".to_owned(),
         },
@@ -1069,7 +1073,9 @@ fn setup_base_3p_game(
     existing_players.insert(
         p2.clone(),
         PlayerLobbyMember {
-            ready: true,
+            legacy_ready: None,
+            bot: None,
+            faction: None,
             session: session2.clone(),
             nickname: "Bot (Hacan)".to_owned(),
         },
@@ -1080,7 +1086,9 @@ fn setup_base_3p_game(
     existing_players.insert(
         p3.clone(),
         PlayerLobbyMember {
-            ready: true,
+            legacy_ready: None,
+            bot: None,
+            faction: None,
             session: session3.clone(),
             nickname: "Bot (Letnev)".to_owned(),
         },
@@ -1156,7 +1164,12 @@ fn setup_base_3p_game(
         seed,
         map_template: None,
         start_preset: None,
+        strategy_card_set: None,
+        speaker_order: None,
         map_revision: 0,
+        seat_order: None,
+        bot_delay_ms: None,
+        start_from: None,
         lobby_version: 1,
     };
 
@@ -1230,7 +1243,7 @@ fn build_tactical_scenario(
         .push(Unit::new(UnitTypeId::new("fighter"), p2.clone()));
 
     // If there are planets in border_system, place 1 Hacan Infantry on the first planet
-    if let Some(first_planet) = border_state.planet_units.keys().cloned().next() {
+    if let Some(first_planet) = border_state.planet_units.keys().next().cloned() {
         border_state.land(
             &first_planet,
             &[Unit::new(UnitTypeId::new("infantry"), p2.clone())],
@@ -1257,7 +1270,7 @@ fn build_tactical_scenario(
         Unit::new(UnitTypeId::new("infantry"), p1.clone()),
     ];
 
-    if let Some(first_planet) = second_state.planet_units.keys().cloned().next() {
+    if let Some(first_planet) = second_state.planet_units.keys().next().cloned() {
         second_state.land(&first_planet, &sol_infantry);
         second_state.set_control(first_planet, p1.clone());
     } else {

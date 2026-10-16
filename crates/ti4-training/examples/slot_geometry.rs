@@ -29,9 +29,9 @@ fn main() {
     let borrowed: Vec<&str> = names.iter().map(String::as_str).collect();
 
     let boards = 60;
-    let mut within1 = vec![0.0_f64; 6];
-    let mut within2 = vec![0.0_f64; 6];
-    let mut anomalies = vec![0.0_f64; 6];
+    let mut within1 = [0.0_f64; 6];
+    let mut within2 = [0.0_f64; 6];
+    let mut anomalies = [0.0_f64; 6];
     for seed in 98_000_000_u64..98_000_000 + boards {
         let galaxy = pool
             .galaxy(store, FULL, seed + 20_000_000, &borrowed)

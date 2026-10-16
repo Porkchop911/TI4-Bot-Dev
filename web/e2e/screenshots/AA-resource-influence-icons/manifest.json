@@ -1,0 +1,35 @@
+{
+  "title": "One icon for resources, one for influence, everywhere",
+  "description": "Every place the web UI showed resources or influence as text (Res / Inf, 3R/1I, '4 Resources', '2 influence', '3 v') now uses the two shared icons with the number. Screen readers and tooltips still get the full word (aria-label and title: '1 resource', '6 influence', '2 of 5 resources'). Synthetic fixtures, not captured engine states. The production builder budget and Leadership payment are the versions that exist on this branch.",
+  "tag": "web/e2e/screenshots/AA-resource-influence-icons",
+  "shots": [
+    { "file": "out/1a-economy-overlay.png", "heading": "Economy overlay on the map", "caption": "Each system's ready resources (gold diamond) and influence (blue crown) as icon + number; a planet exhausted shows ready/total (Mecatol Rex 2/3, 2/5). Each card has an aria-label such as '2 resources ready of 3 total'." },
+    { "file": "out/1b-economy-tooltip.png", "heading": "Economy tooltip", "caption": "Hovering a system with the overlay on lists Ready and Total (and Exhausted, in red, when there is any) with the same icons instead of 'Res / Inf'; the planet line above uses the pair too." },
+    { "file": "out/1c-toolbar-button.png", "heading": "Overlay toolbar button", "caption": "The overlay button is now the two icons; its accessible name is 'Resources and influence overlay' and the tooltip keeps the full description." },
+    { "file": "out/2a-payment-bar-map.png", "heading": "Payment: bar and planets on the map", "caption": "'Pay [diamond] 5', 'Paid 0 / 5 [diamond]', the shortfall sentence and each payable planet's worth ([diamond] 4, 3, 1) all use the resource icon." },
+    { "file": "out/2b-payment-bar.png", "heading": "Payment bar, nothing staged", "caption": "The bar alone at desktop width." },
+    { "file": "out/2c-payment-bar-staged.png", "heading": "Payment bar, covered", "caption": "After Auto-pay: paid 5 / 5, covered. The text equivalent reads 'Paid 5 / 5 resources'." },
+    { "file": "out/2d-payment-map-staged.png", "heading": "Payment on the map, staged", "caption": "Staged planets turn green with a check; their worth keeps the icon." },
+    { "file": "out/2e-payment-drawer.png", "heading": "Payment list", "caption": "Total owed, staged and each planet's '+ worth' as icon + number; 1 TG = [icon] 1." },
+    { "file": "out/2f-payment-bar-phone.png", "heading": "Payment bar at phone width (390 px)", "caption": "The bar wraps; the icons stay at least 12 px." },
+    { "file": "out/3a-planet-chips.png", "heading": "Planet selection: candidate chips", "caption": "Chips show name + resource and influence icons instead of '3R/1I'." },
+    { "file": "out/3b-planet-chosen.png", "heading": "Planet selection: chosen planet", "caption": "The action line reads 'Mining Initiative - mine Lodor ([diamond] 3 [crown] 1)'. A 0 value (Resculon influence) is dimmed." },
+    { "file": "out/3c-planet-chosen-phone.png", "heading": "Planet selection at phone width", "caption": "Same bar at 390 px." },
+    { "file": "out/4a-leadership-staged.png", "heading": "Leadership: purchase staged", "caption": "'[crown] 3 each, up to 3' and '[crown] available 12 - spent 3'; the account line ends with the influence icon." },
+    { "file": "out/4b-leadership-change-payment.png", "heading": "Leadership: change payment", "caption": "Each ready planet shows 'jord - [crown] 2 - ready'; trade goods show '[crown] 1 each'." },
+    { "file": "out/4c-leadership-phone.png", "heading": "Leadership at phone width", "caption": "Same panel at 390 px." },
+    { "file": "out/5a-agenda-planets.png", "heading": "Agenda ballot: spend influence", "caption": "Each planet card shows its influence as icon + number (the votes it adds). The title 'Spend influence to vote' and the sentence above stay as words on purpose." },
+    { "file": "out/5b-agenda-phone.png", "heading": "Agenda ballot at phone width", "caption": "Same list at 390 px." },
+    { "file": "out/6a-system-inspector.png", "heading": "System inspector", "caption": "The planet row shows the pair instead of '3 Res / 1 Inf'." },
+    { "file": "out/6b-tile-tooltip.png", "heading": "Board tile tooltip", "caption": "Planet lines use the pair at the tooltip size (12 px)." },
+    { "file": "out/6c-player-stats.png", "heading": "Player sheet badges", "caption": "Ready/total for resources and influence now come from the shared component (same look as before, aria-label 'Resources: 4 ready / 4 total')." },
+    { "file": "out/6d-inspector-phone.png", "heading": "System inspector at phone width", "caption": "Same panel at 390 px." },
+    { "file": "out/7a-production-budget.png", "heading": "Production builder budget", "caption": "'[diamond] budget' and '3 / 5 [diamond] (2 Left)' replace 'Resources: 3 / 5 Resources'." },
+    { "file": "out/7b-production-phone.png", "heading": "Production builder at phone width", "caption": "Same drawer at 390 px." }
+  ],
+  "notes": [
+    { "title": "Text equivalent", "text": "Every icon sits in an element with role=img, aria-label and title carrying the full word with the right plural ('1 resource', '0 resources', '6 influence', '2 of 5 resources'). The number is visible; the word is not." },
+    { "title": "Left as words", "text": "Sentences from the engine or content (card rules text, event-log lines, prompts and option labels), and short sentences where the word carries the meaning ('Spend influence to vote'). The full list is docs/ICON_USAGE.md." },
+    { "title": "Colours", "text": "Gold diamond (resources) and blue crown (influence) come from --value-resource / --value-influence tokens; a dimmed variant marks spent or zero values. The app has no light theme, so only the dark values are shown." }
+  ]
+}

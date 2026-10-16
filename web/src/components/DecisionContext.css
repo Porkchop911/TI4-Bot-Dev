@@ -284,6 +284,11 @@
   font-weight: 700;
   color: #e2e8f0;
 }
+.politics-panel__eyebrow {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
 .politics-panel__tag {
   margin-left: 8px;
   padding: 1px 8px;
@@ -359,4 +364,111 @@
 .trade-panel__actions {
   display: flex;
   gap: 10px;
+}
+
+/* A prepared answer, shown already picked in the real secondary question. */
+.secondary-panel__actions .button[data-prepared] {
+  outline: 2px solid #16a34a;
+  outline-offset: 2px;
+}
+.secondary-panel__prepared {
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+/* Leadership purchase, planet first: step headings, planet rows (44 px targets), tally, actions. */
+.token-panel__step {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  align-items: baseline;
+  margin: 0;
+  font-size: 1rem;
+  grid-column: 1 / -1;
+}
+.token-panel__step .token-panel__purpose {
+  display: inline;
+}
+.token-panel__buy {
+  grid-template-columns: 1fr;
+}
+.token-panel__planets {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+.token-panel__planets li {
+  flex: 1 1 200px;
+}
+.token-panel__planet {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-start;
+  text-align: left;
+}
+.token-panel__planet[aria-pressed="true"] {
+  border-color: #4ade80;
+  background: rgba(22, 101, 52, 0.45);
+}
+.token-panel__planet-name {
+  flex: 1 1 auto;
+  font-weight: 600;
+}
+.token-panel__planet-state {
+  font-size: 0.75rem;
+  opacity: 0.85;
+}
+.token-panel__tally {
+  margin: 0;
+  color: #e2e8f0;
+  font-size: 0.95rem;
+}
+.token-panel__note--quiet {
+  color: var(--color-text-muted, #94a3b8);
+  font-size: 0.78rem;
+}
+.token-panel__buy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.token-panel__action {
+  min-height: 44px;
+}
+.token-panel__quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--color-text-muted, #94a3b8);
+  font-size: 0.85rem;
+}
+.token-panel__stepper .button--sm {
+  min-width: 44px;
+  min-height: 44px;
+}
+.commodity-standing {
+  margin-top: 8px;
+}
+.commodity-standing__full {
+  color: var(--color-warning, #fbbf24);
+  font-size: 0.8rem;
+  margin-left: 4px;
+}
+.decision-context__card {
+  margin: 8px 0 0;
+  padding: 6px 10px;
+  border-left: 3px solid #f59e0b;
+  background: rgba(245, 158, 11, 0.08);
+  font-size: 0.85rem;
+}
+.decision-context__card-text {
+  margin: 4px 0 0;
+  max-width: 62ch;
+  color: #cbd5e1;
+  line-height: 1.45;
+  white-space: pre-line;
 }

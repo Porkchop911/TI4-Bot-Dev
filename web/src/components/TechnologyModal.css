@@ -542,6 +542,18 @@
   border: 1px solid rgba(250, 204, 21, 0.4);
 }
 
+.technology-modal__second-hint {
+  flex: 1 1 100%;
+  min-width: 0;
+  font-size: 13px;
+  color: #fbbf24;
+  line-height: 1.35;
+}
+
+.technology-modal__clear-second {
+  min-height: 44px;
+}
+
 .technology-modal__actions {
   display: flex;
   align-items: center;
@@ -559,4 +571,251 @@
   grid-template-columns: repeat(2, 1fr);
   gap: 14px;
   align-items: stretch;
+}
+
+/* ---- Phones -------------------------------------------------------------------------------
+   Portrait phones (<= 720 px wide) and landscape phones (<= 500 px tall). Desktop is untouched.
+   Before: the panel kept `height: 90vh` (the generic mobile rule's `100dvh` loses to the
+   `.technology-dialog .technology-modal-panel` specificity), the content had `min-width: 900px`
+   (a 948 px wide grid panned sideways inside a 360 px screen, track headers scrolled away), the
+   research panel (skips, resources, Decline / Confirm) took 60-90 % of the height so the grid
+   had 55-208 px, and the pills / buttons were 30-38 px high. */
+@media (max-width: 720px) and (min-height: 501px), (max-height: 500px) {
+  .technology-dialog .technology-modal-panel {
+    width: 100%;
+    max-width: none;
+    height: 100dvh;
+    max-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+  }
+  .technology-modal__header {
+    padding: 8px 12px;
+    gap: 4px 8px;
+    flex-wrap: wrap;
+  }
+  .technology-modal__title-group {
+    min-width: 0;
+    flex: 1;
+  }
+  .technology-modal__title {
+    font-size: 17px;
+  }
+  .technology-modal__roster {
+    flex: 1 1 100%;
+    order: 3;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+  .technology-modal__roster > * {
+    flex-shrink: 0;
+  }
+  .technology-modal__header .button,
+  .technology-modal__research-panel .button,
+  .tech-skip-pill {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .technology-modal__header > .button {
+    flex-shrink: 0;
+  }
+  .technology-modal__scroll-body {
+    padding: 12px 12px 24px;
+    gap: 16px;
+    overflow-x: hidden;
+    min-height: 0;
+  }
+  .technology-modal__content-container {
+    min-width: 0;
+    gap: 16px;
+  }
+  /* The "Preparing your secondary" banner floats at the bottom of the screen; leave room to scroll past it. */
+  :root:has(.secondary-prep--preparing) .technology-modal__scroll-body {
+    padding-bottom: 300px;
+  }
+  .technology-modal__research-panel {
+    margin: 0;
+    padding: 8px 12px;
+    gap: 8px;
+    border-width: 0 0 1px;
+    border-radius: 0;
+    max-height: 48dvh;
+    overflow-y: auto;
+  }
+  .technology-modal__skips-row {
+    gap: 8px;
+    flex-wrap: nowrap;
+  }
+  .technology-modal__skips-header {
+    flex-shrink: 0;
+  }
+  .technology-modal__skips-hint {
+    display: none;
+  }
+  .technology-modal__skips-list {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    min-width: 0;
+  }
+  .tech-skip-pill {
+    flex-shrink: 0;
+    white-space: nowrap;
+    font-size: 13px;
+  }
+  .technology-modal__research-footer {
+    gap: 8px;
+    padding-top: 8px;
+  }
+  .technology-modal__selection-status {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .technology-modal__actions {
+    width: 100%;
+  }
+  .technology-modal__actions .button {
+    flex: 1;
+  }
+  .technology-modal__actions .button--primary {
+    flex: 2;
+  }
+  .technology-card__researched-label,
+  .tech-skip-pill__status,
+  .technology-modal__roster-label,
+  .prereq-badge,
+  .technology-tier-badge,
+  .tech-skip-pill__badge,
+  .technology-column__badge,
+  .player-tech-marker__symbol-wrap,
+  .technology-modal__skips-empty,
+  .tech-cost-badge {
+    font-size: 12px;
+  }
+}
+
+/* Portrait: the four tracks stack; a track label on each card replaces the header row. */
+@media (max-width: 720px) and (min-height: 501px), (max-height: 500px) {
+  .technology-track-headers {
+    display: none;
+  }
+  .technology-grid-row,
+  .technology-modal__unit-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+  .technology-card[data-track]::before {
+    content: attr(data-track);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #94a3b8;
+  }
+}
+@media (max-width: 520px) and (min-height: 501px) {
+  .technology-grid-row,
+  .technology-modal__unit-grid,
+  .technology-modal__faction-grid {
+    grid-template-columns: 1fr;
+  }
+  .technology-modal__research-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .technology-modal__second-hint {
+    flex: 0 0 auto;
+  }
+}
+
+/* Landscape: info and decision controls on the left, the technology grid on the right. */
+@media (max-height: 500px) {
+  .technology-dialog .technology-modal-panel {
+    display: grid;
+    grid-template-columns: minmax(260px, 34%) 1fr;
+    grid-template-rows: max-content minmax(0, 1fr);
+  }
+  .technology-modal__header {
+    grid-column: 1;
+    grid-row: 1;
+    flex-wrap: wrap;
+    border-right: 1px solid #1e293b;
+  }
+  .technology-modal__research-panel,
+  .technology-dialog .technology-modal-panel > .session-error {
+    grid-column: 1;
+    grid-row: 2;
+    max-height: none;
+    border-right: 1px solid #1e293b;
+    border-bottom: 0;
+    overflow-y: auto;
+    min-height: 0;
+  }
+  .technology-modal__scroll-body {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+  .technology-modal__skips-row {
+    flex-wrap: wrap;
+  }
+  .technology-modal__skips-list {
+    flex-wrap: wrap;
+  }
+  .technology-modal__research-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* ---- Filter: colour chips and "can research now" ------------------------------------------- */
+.technology-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 24px 0;
+}
+.technology-filter__chip {
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 22px;
+  border: 1px solid var(--chip-accent, #475569);
+  background: transparent;
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.technology-filter__chip[aria-pressed="true"] {
+  background: var(--chip-accent, var(--color-accent));
+  color: #0f172a;
+}
+.technology-filter__chip--available {
+  margin-left: auto;
+  --chip-accent: #4ade80;
+}
+.technology-filter__empty {
+  color: #94a3b8;
+  text-align: center;
+  padding: 24px 0;
+}
+/* A filtered grid is a plain list: the four-column alignment under the headers no longer holds. */
+.technology-grid-row[data-filtered] {
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+.technology-grid-row[data-filtered] .technology-card[data-track]::before {
+  content: attr(data-track);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+@media (max-width: 720px) and (min-height: 501px), (max-height: 500px) {
+  .technology-filter {
+    padding: 8px 12px 0;
+    gap: 6px;
+  }
+  .technology-filter__chip--available {
+    margin-left: 0;
+  }
 }

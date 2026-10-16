@@ -9,6 +9,7 @@
   },
   "view": {
     "round": 2,
+    "turn": 0,
     "phase": "action",
     "speaker": "seat_a",
     "seating_order": [
@@ -106,13 +107,15 @@
               "unit_type": "carrier",
               "owner": "seat_a",
               "planet": null,
-              "damaged": false
+              "damaged": false,
+              "galvanized": false
             },
             {
               "unit_type": "fighter",
               "owner": "seat_a",
               "planet": null,
-              "damaged": false
+              "damaged": false,
+              "galvanized": false
             }
           ]
         }
@@ -161,6 +164,20 @@
             "satisfied": false
           }
         }
+      },
+      "home_system_lost": {
+        "seat_a": [
+          "jord"
+        ],
+        "seat_b": [
+          "arretze",
+          "hercant",
+          "kamdorn"
+        ],
+        "seat_c": [
+          "arcprime",
+          "wrenterra"
+        ]
       },
       "unclaimed_strategy_cards": [],
       "strategy_card_goods": {},
@@ -533,6 +550,7 @@
     "agenda_seq": 0,
     "transactions_this_round": [],
     "turn_seq": 0,
+    "action_turn": 0,
     "feat_occurrence_seq": 0,
     "scored_feat_occurrences": [],
     "vp_ledger": [],
@@ -630,5 +648,65 @@
     "phase": "action",
     "round": 2,
     "stage": "Waiting for player"
-  }
+  },
+  "action_cards": {
+    "deck": 0,
+    "discard": [],
+    "hand_limit": 7
+  },
+  "secret_objectives": {
+    "deck": 0,
+    "scored": {},
+    "hand_limit": 3
+  },
+  "score": {
+    "target": 10,
+    "public": [
+      {
+        "id": "corner_the_market",
+        "name": "corner_the_market",
+        "points": 1,
+        "text": "",
+        "scored": []
+      },
+      {
+        "id": "develop_weaponry",
+        "name": "develop_weaponry",
+        "points": 1,
+        "text": "",
+        "scored": []
+      }
+    ],
+    "sources": [
+      {
+        "kind": "secrets",
+        "name": "",
+        "points": {}
+      },
+      {
+        "kind": "custodians",
+        "name": "",
+        "points": {}
+      },
+      {
+        "kind": "imperial",
+        "name": "",
+        "points": {}
+      },
+      {
+        "kind": "support",
+        "name": "",
+        "points": {}
+      }
+    ],
+    "unexplained": {
+      "seat_a": 3,
+      "seat_b": 2,
+      "seat_c": 1
+    }
+  },
+  "agendas": {
+    "deck": 0
+  },
+  "content": "4d7207bf475e956d588e74056c5941704bfbb2a84f3b317812b9aa7c1f60e388"
 }

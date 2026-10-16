@@ -83,7 +83,14 @@ pub fn draw(
         if state.action_card_deck.is_empty() {
             break;
         }
-        let top = state.action_card_deck.remove(0);
+        let Some(top) = ti4_model::deck_reserve::take_top(
+            &mut state.deck_reserve,
+            "action_card",
+            &mut state.action_card_deck,
+            Some(player.as_str()),
+        ) else {
+            break;
+        };
         if let Some(seat) = state.player_mut(player) {
             seat.action_cards.push(top.clone());
         }
@@ -129,6 +136,17 @@ pub fn draw_announced(
     Ok(drawn)
 }
 
+/// 2.4: how many action cards `player` may hold now. `usize::MAX` when there is no limit.
+#[must_use]
+pub fn hand_limit(state: &GameState, content: &ContentStore, player: &PlayerId) -> usize {
+    crate::factions::hooks_economy::action_card_limit(
+        state,
+        content,
+        player,
+        crate::laws::action_card_limit(state, HAND_LIMIT),
+    )
+}
+
 /// 2.4: over the limit, the player chooses which to discard.
 ///
 /// # Errors
@@ -149,12 +167,7 @@ pub fn enforce_hand_limit(
         // Faction modules adjust the limit last, after the law cap: Yssaril Crafty ("any number of
         // action cards ... Game effects cannot prevent you from using this ability") must beat
         // Sanctions, which a module run before the law could not.
-        let limit = crate::factions::hooks_economy::action_card_limit(
-            state,
-            content,
-            player,
-            crate::laws::action_card_limit(state, HAND_LIMIT),
-        );
+        let limit = hand_limit(state, content, player);
         if hand.len() <= limit {
             return Ok(());
         }
@@ -318,6 +331,8 @@ pub fn show_action_card(
     else {
         return Ok(None);
     };
+    // A seat is shown a card of another seat: what follows is not known before.
+    context.rng.observe_hidden_information();
     Ok(crate::factions::hooks_cards::reveal(
         context.state,
         viewer,
@@ -413,6 +428,8 @@ pub fn look_at_hand_and_take(
     if reveal_hand(context.state, taker, owner, RevealScope::Choice, source) == 0 {
         return Ok(None);
     }
+    // The taker sees the hand of another seat: what follows is not known before.
+    context.rng.observe_hidden_information();
     let taken = take_from_revealed_hand(context, taker, owner, source, optional);
     clear_reveal_between(context.state, source, taker, owner);
     let taken = taken?;
@@ -428,7 +445,7 @@ pub fn look_at_hand_and_take(
 pub const ACTION_KIND: &str = "component";
 
 /// The prefix of an option that plays an action card as a turn action.
-const PLAY_PREFIX: &str = "action_card|";
+pub(crate) const PLAY_PREFIX: &str = "action_card|";
 
 /// Playing a card off Garbozia rather than out of hand.
 ///
@@ -470,6 +487,106 @@ pub fn is_playable(
             && state.players.len() > 1;
     }
     true
+}
+
+/// 22.3 for reaction cards: whether this card's effect could act on anything in the window
+/// `event` opened, for `player`.
+///
+/// The window table decides whether a card speaks to an event at all; several cards share one
+/// printed window ("At the start of an invasion" is both Bunker's and Blitz's), so what each
+/// card needs beyond the window is answered here, per card. A card not listed has no further
+/// requirement.
+#[must_use]
+pub fn reaction_can_matter(
+    state: &GameState,
+    content: &ContentStore,
+    player: &PlayerId,
+    alias: &ActionCardId,
+    event: &crate::event::Event,
+) -> bool {
+    let unit_kind = |unit: &Unit| {
+        content
+            .get(ContentType::Units, unit.type_id.as_str())
+            .map(UnitType::new)
+    };
+    let actor = event.text("player");
+    let is_actor = actor == Some(player.as_str());
+    let Some(system) = event.text("system").map(ti4_model::id::SystemId::new) else {
+        return true;
+    };
+    let board = state.system_state(&system);
+    let has_own_ship = board
+        .units_of(player)
+        .into_iter()
+        .any(|unit| unit_kind(unit).is_some_and(|kind| kind.is_ship()));
+    match alias.as_str() {
+        // Bunker: "-4 to each BOMBARDMENT roll against planets you control". Only the invader
+        // bombards, so the holder must not be the invader and must control a planet here.
+        "bunker" => actor.is_some() && !is_actor && board.controls_a_planet(player),
+        // Blitz: "Each of your non-fighter ships in the active system that do not have
+        // BOMBARDMENT gain BOMBARDMENT 6". Only the invader bombards, and only a ship that
+        // lacks BOMBARDMENT gains anything.
+        "blitz" => {
+            is_actor
+                && board.units_of(player).into_iter().any(|unit| {
+                    unit_kind(unit).is_some_and(|kind| {
+                        kind.is_ship() && !kind.is_fighter() && kind.bombard_hits_on().is_none()
+                    })
+                })
+        }
+        // Disable: "Your opponents' PDS units lose PLANETARY SHIELD and SPACE CANNON during
+        // this invasion" -- the printed window promises opponents' PDS in the system, and it
+        // only helps the invader.
+        "disable" => {
+            is_actor
+                && board
+                    .planet_units
+                    .values()
+                    .flatten()
+                    .chain(&board.units)
+                    .any(|unit| {
+                        &unit.owner != player
+                            && unit_kind(unit).is_some_and(|kind| kind.base_type() == "pds")
+                    })
+        }
+        // Fighter Prototype: "+2 to each of your fighters' combat rolls" -- a combatant with
+        // fighters in the combat.
+        "f_prototype" => board
+            .units_of(player)
+            .into_iter()
+            .any(|unit| unit_kind(unit).is_some_and(|kind| kind.is_fighter())),
+        // Upgrade: "replace 1 of your cruisers in that system with 1 dreadnought".
+        "upgrade" => board
+            .units_of(player)
+            .into_iter()
+            .any(|unit| unit_kind(unit).is_some_and(|kind| kind.base_type() == "cruiser")),
+        // Rally: the printed window needs another player's ships in the activated system.
+        "rally" => board.units.iter().any(|unit| {
+            &unit.owner != player && unit_kind(unit).is_some_and(|kind| kind.is_ship())
+        }),
+        // Harness Energy: "After you activate an anomaly".
+        "harness" => {
+            ti4_content::galaxy::system(content, system.as_str(), ti4_model::content_types::FULL)
+                .is_some_and(|tile| tile.is_anomaly())
+                || crate::factions::hooks_movement::extra_gravity_rifts(state)
+                    .contains(system.as_str())
+        }
+        // Rescue: "After a player moves ships into a system that contains your ships" -- another
+        // player's move (the effect refuses the holder's own), into a system holding the
+        // holder's ships.
+        "rescue" => !is_actor && has_own_ship,
+        // Intercept: "After your opponent declares a retreat" -- the holder fights in that
+        // combat, so has ships in the system.
+        "intercept" => !is_actor && has_own_ship,
+        // Emergency Repairs: "Repair all of your units that have SUSTAIN DAMAGE in the active
+        // system" -- only a damaged unit gains anything.
+        "emergency" => board
+            .units
+            .iter()
+            .chain(board.planet_units.values().flatten())
+            .any(|unit| &unit.owner == player && unit.sustained_damage),
+        _ => true,
+    }
 }
 
 /// Component actions this player could take with the cards in hand (22.1).
@@ -704,10 +821,14 @@ fn sabotage(_: &mut crate::timing::TimingContext<'_>, _: &PlayerId) {}
 /// An empty agenda deck has nothing to reveal, and the card then does nothing: a corner that
 /// cannot arise in a full game, where the 63-card deck sheds two agendas a phase.
 fn veto(context: &mut crate::timing::TimingContext<'_>, _: &PlayerId) {
-    let Some(replacement) = context.state.agenda_deck.first().cloned() else {
+    let Some(replacement) = ti4_model::deck_reserve::take_top(
+        &mut context.state.deck_reserve,
+        "agenda",
+        &mut context.state.agenda_deck,
+        None,
+    ) else {
         return;
     };
-    context.state.agenda_deck.remove(0);
     context.state.agenda_veto_replacement = Some(replacement);
 }
 
@@ -1340,17 +1461,38 @@ fn direct_hit(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId)
     }
     if crate::supply::staging_enabled(context.state) {
         let Some(ship) = crate::combat::ships_of(
-            context.state, context.content, context.sources, &victim, &system,
-        ).into_iter().find(|unit| unit.type_id == unit_type && unit.sustained_damage) else {
+            context.state,
+            context.content,
+            context.sources,
+            &victim,
+            &system,
+        )
+        .into_iter()
+        .find(|unit| unit.type_id == unit_type && unit.sustained_damage) else {
             return;
         };
-        let exact = context.state.faction_marks.get("combat:sustain_target")
+        let exact = context
+            .state
+            .faction_marks
+            .get("combat:sustain_target")
             .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
-            .filter(|record| record.get("system").and_then(serde_json::Value::as_str) == Some(system.as_str()))
+            .filter(|record| {
+                record.get("system").and_then(serde_json::Value::as_str) == Some(system.as_str())
+            })
             .and_then(|record| {
-                let unit: ti4_model::units::Unit = serde_json::from_value(record.get("unit")?.clone()).ok()?;
-                (unit.owner == victim && unit.type_id == unit_type && unit.sustained_damage)
-                    .then(|| (unit, record.get("planet").and_then(serde_json::Value::as_str).map(ti4_model::id::PlanetId::new)))
+                let unit: ti4_model::units::Unit =
+                    serde_json::from_value(record.get("unit")?.clone()).ok()?;
+                (unit.owner == victim && unit.type_id == unit_type && unit.sustained_damage).then(
+                    || {
+                        (
+                            unit,
+                            record
+                                .get("planet")
+                                .and_then(serde_json::Value::as_str)
+                                .map(ti4_model::id::PlanetId::new),
+                        )
+                    },
+                )
             });
         if let Some((unit, planet)) = exact {
             let board = context.state.system_mut(&system);
@@ -1358,8 +1500,12 @@ fn direct_hit(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId)
                 Some(planet) => board.planet_units.get_mut(&planet),
                 None => Some(&mut board.units),
             };
-            let Some(units) = units else { return; };
-            let Some(index) = units.iter().position(|candidate| candidate == &unit) else { return; };
+            let Some(units) = units else {
+                return;
+            };
+            let Some(index) = units.iter().position(|candidate| candidate == &unit) else {
+                return;
+            };
             units.remove(index);
         } else {
             crate::combat::remove_combat_ship(context.state, &system, &ship);
@@ -1368,8 +1514,11 @@ fn direct_hit(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId)
     } else {
         // Preserve the accepted original-six route until its own compatibility correction.
         let board = context.state.system_mut(&system);
-        let Some(index) = board.units.iter()
-            .position(|unit| unit.owner == victim && unit.type_id == unit_type) else {
+        let Some(index) = board
+            .units
+            .iter()
+            .position(|unit| unit.owner == victim && unit.type_id == unit_type)
+        else {
             return;
         };
         board.units.remove(index);
@@ -1463,7 +1612,7 @@ fn courageous(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId)
         if alive.is_empty() {
             break;
         }
-        let Ok(casualty) = crate::combat::choose_casualty(
+        let Ok(casualty) = crate::combat::choose_casualty_as(
             context.state,
             context.content,
             context.sources,
@@ -1474,6 +1623,12 @@ fn courageous(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId)
             &played_card_source("courageous"),
             "courageous_to_the_end_assign_casualty",
             Some(&system),
+            crate::decision_context::HitDetail {
+                cause: crate::decision_context::HitCause::CourageousToTheEnd,
+                destroy: true,
+                restriction: crate::decision_context::HitRestriction::Any,
+                producer: Some(player.clone()),
+            },
         ) else {
             break; // the decider refused to choose a loss; the card stops where it is
         };
@@ -2185,10 +2340,14 @@ fn rider_payoff(
                 let _ = draw(state, content, table, player, 3);
             } else {
                 for _ in 0..3 {
-                    if state.action_card_deck.is_empty() {
+                    let Some(top) = ti4_model::deck_reserve::take_top(
+                        &mut state.deck_reserve,
+                        "action_card",
+                        &mut state.action_card_deck,
+                        Some(player.as_str()),
+                    ) else {
                         break;
-                    }
-                    let top = state.action_card_deck.remove(0);
+                    };
                     if let Some(seat) = state.player_mut(player) {
                         seat.action_cards.push(top);
                     }
@@ -2296,8 +2455,12 @@ fn rider_payoff(
         Some(crate::factions::keleres_units::RIDER_ALIAS) => {
             if let Some((content, table)) = table {
                 let _ = draw(state, content, table, player, 1);
-            } else if !state.action_card_deck.is_empty() {
-                let top = state.action_card_deck.remove(0);
+            } else if let Some(top) = ti4_model::deck_reserve::take_top(
+                &mut state.deck_reserve,
+                "action_card",
+                &mut state.action_card_deck,
+                Some(player.as_str()),
+            ) {
                 if let Some(seat) = state.player_mut(player) {
                     seat.action_cards.push(top);
                 }
@@ -2517,8 +2680,8 @@ fn bribery(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
 }
 
 fn bribery_spend(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
-    let held = i32::try_from(crate::supply::spendable_goods(context.state, player))
-        .unwrap_or(i32::MAX);
+    let held =
+        i32::try_from(crate::supply::spendable_goods(context.state, player)).unwrap_or(i32::MAX);
     if held == 0 {
         return; // "any number" includes zero, and zero buys nothing
     }
@@ -3461,6 +3624,36 @@ fn harness_energy(context: &mut crate::timing::TimingContext<'_>, player: &Playe
     crate::promissory::trade_agreement_on_replenish(context.state, player);
 }
 
+/// Display only: the cultural planets `player` controls, which Economic Initiative readies, with
+/// whether each is exhausted now (so whether the card will actually change it). Never read by the
+/// engine; shown beside the card in the turn menu.
+#[must_use]
+pub fn cultural_planets_preview(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+) -> Vec<serde_json::Value> {
+    state
+        .controlled_planets(player)
+        .into_iter()
+        .filter_map(|(_, planet)| {
+            let record = ti4_content::galaxy::planet(content, planet.as_str(), sources)?;
+            record
+                .planet_type()
+                .is_some_and(|kind| kind.eq_ignore_ascii_case("cultural"))
+                .then(|| {
+                    serde_json::json!({
+                        "id": planet.as_str(),
+                        "name": record.name().unwrap_or_else(|| planet.as_str()),
+                        "trait": "cultural",
+                        "exhausted": state.exhausted_planets.contains(planet),
+                    })
+                })
+        })
+        .collect()
+}
+
 /// Economic Initiative: "Ready each cultural planet you control."
 fn economic_initiative(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
     let owned: Vec<ti4_model::id::PlanetId> = context
@@ -3674,7 +3867,7 @@ fn plagiarize(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId)
     else {
         return; // the answer named nothing on offer
     };
-    crate::technology::grant(context.state, player, &tech);
+    crate::technology::gain(context.state, context.content, context.sources, player, &tech);
     if let Some(seat) = context.state.player_mut(&owner) {
         seat.technologies.remove(&tech);
     }
@@ -3941,9 +4134,15 @@ fn unit_pick_details(
 fn refit_troops(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId) {
     let types = ti4_content::units::catalogue(context.content, context.sources);
     let mech = ti4_model::id::UnitTypeId::new(
-        if context.state.player(player).is_some_and(|seat| seat.faction.as_str() == "naaz") {
+        if context
+            .state
+            .player(player)
+            .is_some_and(|seat| seat.faction.as_str() == "naaz")
+        {
             "naaz_mech"
-        } else { "mech" },
+        } else {
+            "mech"
+        },
     );
     if crate::supply::allowed(
         context.state,
@@ -3957,8 +4156,17 @@ fn refit_troops(context: &mut crate::timing::TimingContext<'_>, player: &PlayerI
         return; // the box holds no more mechs
     }
     let max_replacements = if mech.as_str() == "naaz_mech" {
-        crate::supply::allowed(context.state, context.content, context.sources, player, &mech, 2)
-    } else { 2 };
+        crate::supply::allowed(
+            context.state,
+            context.content,
+            context.sources,
+            player,
+            &mech,
+            2,
+        )
+    } else {
+        2
+    };
     // `system|planet|index`, the index into that planet's unit list.
     let mut found: Vec<(String, String, ti4_model::units::Unit)> = Vec::new();
     for (system, board) in &context.state.board {
@@ -4016,28 +4224,28 @@ fn refit_troops(context: &mut crate::timing::TimingContext<'_>, player: &PlayerI
             )))
             .collect();
         if max_replacements > 1 {
-        let Some(second) = pick_detailed(
-            context,
-            player,
-            "Refit Troops: another infantry or stop",
-            "infantry",
-            &rest,
-            &[("units", units)],
-        ) else {
-            return;
-        };
-        if second != "stop" {
-            let Some(second_index) = found
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| *i != first_index)
-                .find(|(_, (id, _, _))| id == &second)
-                .map(|(i, _)| i)
-            else {
+            let Some(second) = pick_detailed(
+                context,
+                player,
+                "Refit Troops: another infantry or stop",
+                "infantry",
+                &rest,
+                &[("units", units)],
+            ) else {
                 return;
             };
-            taken.push(second_index);
-        }
+            if second != "stop" {
+                let Some(second_index) = found
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| *i != first_index)
+                    .find(|(_, (id, _, _))| id == &second)
+                    .map(|(i, _)| i)
+                else {
+                    return;
+                };
+                taken.push(second_index);
+            }
         }
     }
     let mut by_source: BTreeMap<String, Vec<usize>> = BTreeMap::new();
@@ -4084,7 +4292,10 @@ fn refit_troops(context: &mut crate::timing::TimingContext<'_>, player: &PlayerI
             units.remove(index);
             units.push(ti4_model::units::Unit::new(mech.clone(), player.clone()));
             crate::supply::stage_naaz_mech_placed(
-                context.state, player, &ti4_model::id::SystemId::new(&source_system), &mech,
+                context.state,
+                player,
+                &ti4_model::id::SystemId::new(&source_system),
+                &mech,
             );
         }
     }
@@ -4822,9 +5033,9 @@ fn pick_detailed(
                     })
                     .collect(),
             );
-            let choice = details
-                .iter()
-                .fold(choice, |choice, (key, value)| choice.detailed(key, value.clone()));
+            let choice = details.iter().fold(choice, |choice, (key, value)| {
+                choice.detailed(key, value.clone())
+            });
             let action_card = active_action_card();
             let source = action_card.as_ref().map_or_else(
                 || DecisionSource::Rule("2".to_owned()),
@@ -4889,22 +5100,15 @@ pub fn place_units(
     base_type: &str,
     count: usize,
 ) {
-    let faction = context
-        .state
-        .player(player)
-        .map(|seat| seat.faction.to_string())
-        .unwrap_or_default();
-    let generic = ti4_content::units::catalogue(context.content, context.sources)
-        .get(base_type)
-        .map(|unit| unit.id().to_owned());
-    let Some(id) =
-        ti4_content::units::faction_unit(context.content, &faction, base_type, context.sources)
-            .map(|unit| unit.id().to_owned())
-            .or(generic)
-    else {
+    let Some(type_id) = placed_unit_id(
+        context.state,
+        context.content,
+        context.sources,
+        player,
+        base_type,
+    ) else {
         return;
     };
-    let type_id = ti4_model::id::UnitTypeId::new(id);
     if crate::factions::hooks_economy::effect_placement_forbidden(
         context.state,
         context.content,
@@ -5525,12 +5729,41 @@ fn manipulate_investments(context: &mut crate::timing::TimingContext<'_>, player
     const DISTINCT: usize = 3;
 
     // Strategy cards key on `id`, not `alias` -- the one content category that does.
-    let cards: Vec<String> = context
+    let mut cards: Vec<String> = context
         .content
         .from_sources(ContentType::StrategyCards, context.sources)
         .filter_map(|record| record.text("id"))
         .map(std::borrow::ToOwned::to_owned)
         .collect();
+    // A game whose card set is wider than its source scope (a Thunder's Edge set in a PoK-scoped
+    // server game) must offer the cards on its own table, not the scope's. Games whose cards are
+    // all in the scope-derived list keep that list unchanged, so recorded games replay as before.
+    let in_play: std::collections::BTreeSet<&str> = context
+        .state
+        .unclaimed_strategy_cards
+        .iter()
+        .chain(
+            context
+                .state
+                .players
+                .iter()
+                .flat_map(|p| p.strategy_cards.iter()),
+        )
+        .map(ti4_model::id::StrategyCardId::as_str)
+        .collect();
+    if in_play
+        .iter()
+        .any(|id| !cards.iter().any(|card| card == id))
+    {
+        cards = context
+            .content
+            .records(ContentType::StrategyCards)
+            .iter()
+            .filter_map(|record| record.text("id"))
+            .filter(|id| in_play.contains(id))
+            .map(std::borrow::ToOwned::to_owned)
+            .collect();
+    }
     if cards.len() < DISTINCT {
         return; // 22.3: a card that cannot fully resolve is not played
     }
@@ -6933,25 +7166,44 @@ mod tests {
     fn direct_hit_removes_a_damaged_maximum_from_its_planet() {
         let content = ContentStore::embedded();
         let mut state = crate::fixtures::seated_game(
-            &[("a", "sol"), ("b", "naaz")], ti4_model::content_types::DEFAULT,
+            &[("a", "sol"), ("b", "naaz")],
+            ti4_model::content_types::DEFAULT,
         );
         let (system, planet) = crate::fixtures::a_placed_planet();
         let player = PlayerId::new("a");
         let victim = PlayerId::new("b");
         crate::fixtures::put(&mut state, &system, "cruiser", &victim, 1);
-        let mut maximum = ti4_model::units::Unit::new(ti4_model::id::UnitTypeId::new("naaz_voltron"), victim.clone());
+        let mut maximum = ti4_model::units::Unit::new(
+            ti4_model::id::UnitTypeId::new("naaz_voltron"),
+            victim.clone(),
+        );
         maximum.sustained_damage = true;
-        state.system_mut(&system).planet_units.entry(planet.clone()).or_default().push(maximum);
-        state.last_sustain = Some((system.clone(), victim.clone(),
-            ti4_model::id::UnitTypeId::new("naaz_voltron"), player.clone(), true));
+        state
+            .system_mut(&system)
+            .planet_units
+            .entry(planet.clone())
+            .or_default()
+            .push(maximum);
+        state.last_sustain = Some((
+            system.clone(),
+            victim.clone(),
+            ti4_model::id::UnitTypeId::new("naaz_voltron"),
+            player.clone(),
+            true,
+        ));
         let mut table = Table::new();
         let mut dice = crate::dice::Dice::new();
         let mut rng = crate::rng::GameRng::new(1);
         let mut sequence = crate::event::EventSequence::new();
         let mut context = crate::timing::TimingContext {
-            state: &mut state, content, sources: ti4_model::content_types::DEFAULT,
-            table: &mut table, dice: &mut dice, rng: &mut rng,
-            event_sequence: &mut sequence, galaxy: None,
+            state: &mut state,
+            content,
+            sources: ti4_model::content_types::DEFAULT,
+            table: &mut table,
+            dice: &mut dice,
+            rng: &mut rng,
+            event_sequence: &mut sequence,
+            galaxy: None,
         };
         direct_hit(&mut context, &player);
         assert!(state.system_state(&system).on_planet(&planet).is_empty());
@@ -7004,7 +7256,11 @@ mod tests {
                 galaxy: None,
             };
             direct_hit(&mut context, &player);
-            assert_eq!(state.pending_destructions.len(), usize::from(destroyed), "{unit}");
+            assert_eq!(
+                state.pending_destructions.len(),
+                usize::from(destroyed),
+                "{unit}"
+            );
             assert_eq!(
                 state
                     .system_state(&system)
@@ -9133,6 +9389,43 @@ mod tests {
         );
     }
 
+    /// A game on the Thunder's Edge set offers its own eight cards even though the source scope
+    /// (PoK, as server games use) would list the PoK Construction and Warfare instead.
+    #[test]
+    fn manipulate_investments_offers_the_cards_on_this_games_table() {
+        let player = PlayerId::new("a");
+        let ids = [player.clone(), PlayerId::new("b")];
+        let offered = |set: &str| {
+            let mut state = crate::setup::start_game_seeded_with_card_set(
+                ContentStore::embedded(),
+                &ids,
+                ti4_model::content_types::POK,
+                None,
+                1,
+                Some(set),
+            )
+            .unwrap();
+            let seen = resolve_card_capturing(&mut state, "investments", &player, &[]);
+            let mut ids: Vec<String> = seen.borrow()[0]
+                .options
+                .iter()
+                .map(|option| option.id.clone())
+                .collect();
+            ids.sort();
+            ids
+        };
+        let te = offered("te");
+        assert_eq!(te.len(), 8, "{te:?}");
+        assert!(
+            te.contains(&"te6warfare".to_owned()) && te.contains(&"te4construction".to_owned())
+        );
+        assert!(!te.contains(&"pok6warfare".to_owned()));
+        // Recorded PoK games keep the scope-derived list they were recorded with.
+        let pok = offered("pok");
+        assert!(pok.contains(&"pok6warfare".to_owned()));
+        assert!(!pok.contains(&"te6warfare".to_owned()));
+    }
+
     /// Each placement question says which of the five it is and how many different cards are
     /// still owed, so a client can show the progress (display only).
     #[test]
@@ -10487,6 +10780,36 @@ mod tests {
     }
 
     #[test]
+    fn economic_initiative_preview_lists_cultural_planets_and_their_state() {
+        let player = PlayerId::new("a");
+        let store = ContentStore::embedded();
+        let cultural = ti4_content::galaxy::all_planets(store, POK)
+            .iter()
+            .find(|(_, p)| {
+                p.planet_type()
+                    .is_some_and(|kind| kind.eq_ignore_ascii_case("cultural"))
+            })
+            .map(|(id, _)| id.to_string())
+            .expect("the corpus has a cultural planet");
+        let planet = planet(&cultural);
+        let system = system_of(store, &cultural);
+        let mut state = crate::fixtures::game(&["a"]);
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player.clone());
+        assert_eq!(
+            cultural_planets_preview(&state, store, POK, &player)[0]["exhausted"],
+            false
+        );
+        state.exhausted_planets.insert(planet);
+        let preview = cultural_planets_preview(&state, store, POK, &player);
+        assert_eq!(preview.len(), 1);
+        assert_eq!(preview[0]["id"], cultural.as_str());
+        assert_eq!(preview[0]["exhausted"], true);
+        assert_eq!(preview[0]["trait"], "cultural");
+    }
+
+    #[test]
     fn industrial_initiative_pays_one_good_per_industrial_planet() {
         let player = PlayerId::new("a");
         let store = ContentStore::embedded();
@@ -11291,11 +11614,20 @@ mod tests {
         crate::fixtures::put(&mut state, &system, "cruiser", &owner, 1);
         let points_with_support = state.player(&me).unwrap().victory_points;
 
+        // Thunder's Edge Warfare first offers a redistribution of command tokens; keep them.
+        let keep = {
+            let seat = state.player(&me).unwrap();
+            format!(
+                "{}|{}|{}",
+                seat.tactic_tokens, seat.fleet_tokens, seat.strategic_tokens
+            )
+        };
         {
             let effect = effect_for(&ActionCardId::new("overrule")).expect("a registered effect");
             let mut table =
                 crate::choice::Table::with_default(Box::new(crate::choice::Scripted::new([
                     "te6warfare".to_owned(),
+                    keep,
                     hub.centre.clone(),
                 ])));
             let mut dice = crate::dice::Dice::new();
@@ -11788,9 +12120,8 @@ mod economy_hooks {
     #[test]
     fn the_placement_question_is_an_offer_card_with_a_caption_per_spot() {
         let (mut state, system, planet) = planet_and_ship();
-        let (decider, seen) = crate::choice::Capturing::new(Box::new(Scripted::new([
-            format!("{system}|{planet}"),
-        ])));
+        let (decider, seen) =
+            crate::choice::Capturing::new(Box::new(Scripted::new([format!("{system}|{planet}")])));
         let mut table = Table::with_default(Box::new(decider));
         with_context(&mut state, POK, None, &mut table, |context| {
             place_units_choosing(
@@ -11820,9 +12151,11 @@ mod economy_hooks {
         assert_eq!(planet_caption["hint"], "Place 2 infantry here");
         // Infantry cannot be placed in space, so the ship space is not a spot: the planet and the
         // optional decline are the only captions.
-        assert!(offer.details["captions"]
-            .as_object()
-            .is_some_and(|captions| captions.len() == 2));
+        assert!(
+            offer.details["captions"]
+                .as_object()
+                .is_some_and(|captions| captions.len() == 2)
+        );
         assert_eq!(offer.details["captions"]["decline"]["label"], "Place none");
     }
 
@@ -12430,7 +12763,6 @@ mod hidden_hands {
         let chosen = with_context(&mut state, POK, None, &mut table, |ctx| {
             choose_from_own_hand(
                 ctx,
-
                 &pid("a"),
                 "stall_tactics",
                 "stall_tactics_discard",
@@ -12491,33 +12823,53 @@ mod hidden_hands {
     #[test]
     fn refit_troops_places_naaz_mech_and_announces_synergy_placement() {
         let mut state = crate::fixtures::seated_game(
-            &[("a", "naaz"), ("b", "sol")], ti4_model::content_types::DEFAULT,
+            &[("a", "naaz"), ("b", "sol")],
+            ti4_model::content_types::DEFAULT,
         );
         let a = PlayerId::new("a");
         let (system, planet) = crate::fixtures::a_placed_planet();
         state.board.clear();
         crate::fixtures::put_on_planet(&mut state, &system, &planet, "infantry", &a, 1);
         let mut table = crate::choice::Table::new();
-        crate::fixtures::with_context(&mut state, ti4_model::content_types::DEFAULT, None, &mut table, |ctx| {
-            refit_troops(ctx, &a);
-        });
+        crate::fixtures::with_context(
+            &mut state,
+            ti4_model::content_types::DEFAULT,
+            None,
+            &mut table,
+            |ctx| {
+                refit_troops(ctx, &a);
+            },
+        );
         let board = state.system_state(&system);
         assert_eq!(board.on_planet(&planet)[0].type_id.as_str(), "naaz_mech");
-        assert!(crate::supply::staged_event_types(&state).iter().any(|kind| kind == "NAAZ_MECH_PLACED"));
+        assert!(
+            crate::supply::staged_event_types(&state)
+                .iter()
+                .any(|kind| kind == "NAAZ_MECH_PLACED")
+        );
     }
 
     #[test]
     fn refit_troops_cannot_replace_an_infantry_while_maximum_stands() {
-        let mut state = crate::fixtures::seated_game(&[("a", "naaz"), ("b", "sol")], ti4_model::content_types::DEFAULT);
+        let mut state = crate::fixtures::seated_game(
+            &[("a", "naaz"), ("b", "sol")],
+            ti4_model::content_types::DEFAULT,
+        );
         let a = PlayerId::new("a");
         let (system, planet) = crate::fixtures::a_placed_planet();
         crate::fixtures::put_on_planet(&mut state, &system, &planet, "naaz_voltron", &a, 1);
         crate::fixtures::put_on_planet(&mut state, &system, &planet, "infantry", &a, 1);
         let board = state.board.clone();
         let mut table = crate::choice::Table::new();
-        crate::fixtures::with_context(&mut state, ti4_model::content_types::DEFAULT, None, &mut table, |ctx| {
-            refit_troops(ctx, &a);
-        });
+        crate::fixtures::with_context(
+            &mut state,
+            ti4_model::content_types::DEFAULT,
+            None,
+            &mut table,
+            |ctx| {
+                refit_troops(ctx, &a);
+            },
+        );
         assert_eq!(state.board, board);
         assert!(table.log.records.is_empty());
     }

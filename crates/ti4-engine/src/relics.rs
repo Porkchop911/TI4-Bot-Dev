@@ -932,8 +932,13 @@ pub const SHARD: &str = "shard";
 /// point the moment it arrives: the Shard was worth nothing when exploration drew it straight
 /// off the deck, and would have been worth nothing again for the next path written.
 pub fn gain(state: &mut GameState, player: &PlayerId) -> Option<RelicId> {
-    let top = state.relic_deck.first().cloned()?; // 73.2a: an empty deck yields nothing
-    state.relic_deck.remove(0);
+    // 73.2a: an empty deck yields nothing
+    let top = ti4_model::deck_reserve::take_top(
+        &mut state.deck_reserve,
+        "relic",
+        &mut state.relic_deck,
+        Some(player.as_str()),
+    )?;
     if let Some(seat) = state.player_mut(player) {
         seat.relics.push(top.clone());
     }

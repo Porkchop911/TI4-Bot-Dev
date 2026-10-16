@@ -203,14 +203,13 @@ fn main() {
 
     for seed in seed_base..seed_base + seeds {
         for rotation in 0..FACTIONS.len() {
-            let logs: std::rc::Rc<
-                std::cell::RefCell<
-                    BTreeMap<PlayerId, std::rc::Rc<std::cell::RefCell<Vec<Activation>>>>,
-                >,
-            > = std::rc::Rc::new(std::cell::RefCell::new(BTreeMap::new()));
+            type ActivationLog = std::rc::Rc<std::cell::RefCell<Vec<Activation>>>;
+            type ActivationLogs =
+                std::rc::Rc<std::cell::RefCell<BTreeMap<PlayerId, ActivationLog>>>;
+            let logs: ActivationLogs = std::rc::Rc::new(std::cell::RefCell::new(BTreeMap::new()));
             let seated_logs = std::rc::Rc::clone(&logs);
 
-            let (_events, _picks, assignments, openings, final_state) =
+            let (_events, _picks, assignments, openings, _final_state) =
                 ti4_training::rollout::audit_game_with_deciders(
                     content,
                     &factions,

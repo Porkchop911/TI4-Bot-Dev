@@ -37,6 +37,8 @@ fn played() -> (ReviewSession, ReviewFrame) {
         table: ProfileTable::Learner,
         temperature: 0.5,
         diplomacy: false,
+        lineup: None,
+        rule_seats: Vec::new(),
     };
     let mut review = LiveReview::start(&config).expect("the committed inputs start a review");
     review.advance(ti4_review::AdvanceUnit::Step, 40);

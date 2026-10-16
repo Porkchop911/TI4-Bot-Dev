@@ -1,15 +1,35 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { ValueUnit } from "./PlanetValueIcons.tsx";
 import { ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
 import { Dialog } from "../primitives/index.ts";
 import { ChoiceRendererModel } from "../presentation/choiceModel.ts";
 import { WorkflowShell } from "./WorkflowShell.tsx";
 import { usePlayerIdentity } from "../presentation/PlayerIdentity.tsx";
 import { DecisionHeader } from "./DecisionHeader.tsx";
+import { MechInfoRow, UnitInfoButton } from "./UnitInfo.tsx";
+import { UnitIcon, getUnitBaseType } from "./UnitIcon.tsx";
+import { UnitBuildStats, useBuildUnit } from "./UnitBuildStats.tsx";
+import {
+  draftResourceCost,
+  productionTotal,
+  isExchangeOption,
+  optionUnit,
+  optionCapacity,
+  planBuilds,
+  produceStep,
+} from "../presentation/productionDraft.ts";
+import { usePreparedHint } from "../presentation/PreparedHint.tsx";
+import { useSinglePaymentSetting } from "../hooks/useSinglePaymentSetting.ts";
+import { ProductionTotal } from "./ProductionTotal.tsx";
+import { isDryNonce } from "../presentation/dryChoice.ts";
+import { TradeGoodSources } from "./TradeGoodSources.tsx";
 
 export interface ProductionBuilderDrawerProps {
   choice: PendingChoiceDto | null;
   model?: ChoiceRendererModel | null;
   viewerSeat?: string | null;
+  /** The producing seat's trade goods: the part of the resource budget that is not from planets. */
+  tradeGoods?: number;
   onSubmit: (optionId: string) => Promise<void>;
   isOpen: boolean;
   onClose: () => void;
@@ -19,39 +39,126 @@ export interface ProductionBuilderDrawerProps {
   onSubmitBatch?: (plan: import("../protocol/client.ts").BasketPlan) => Promise<void>;
 }
 
-function draftResourceCost(options: ChoiceOptionDto[], draft: Record<string, number>): number {
-  let printedTotal = 0;
-  let discountOnce = 0;
+type OptionGroupKey = "ships" | "ground" | "structures";
+const GROUP_TITLES: Record<OptionGroupKey, string> = {
+  ships: "Ships",
+  ground: "Ground forces",
+  structures: "Structures",
+};
+const GROUP_OF: Record<string, OptionGroupKey> = {
+  infantry: "ground",
+  mech: "ground",
+  pds: "structures",
+  spacedock: "structures",
+};
+
+const unitKeyOf = (option: ChoiceOptionDto): string => String(option.payload?.unit ?? option.id);
+
+/** Build options split into ships, ground forces and structures; each keeps the order the engine offered. */
+function groupOptions(options: ChoiceOptionDto[]) {
+  const groups = new Map<OptionGroupKey, ChoiceOptionDto[]>();
   for (const option of options) {
-    const batches = draft[option.id] ?? 0;
-    if (!batches) continue;
-    if (option.payload?.free_this_use === true) continue;
-    const cost = option.payload?.cost;
-    if (typeof cost !== "number" || !Number.isSafeInteger(cost) || cost < 0) return Infinity;
-    const printed = option.payload?.printed_cost;
-    const discount = option.payload?.discount;
-    if (
-      typeof printed === "number" &&
-      Number.isSafeInteger(printed) &&
-      printed >= cost &&
-      typeof discount === "number" &&
-      Number.isSafeInteger(discount) &&
-      discount >= 0
-    ) {
-      printedTotal += batches * printed;
-      // Every offered option previews the same one-time discount. Count it once, not per batch.
-      discountOnce = Math.max(discountOnce, Math.min(discount, printed));
-    } else {
-      printedTotal += batches * cost;
-    }
+    const key = GROUP_OF[getUnitBaseType(unitKeyOf(option))] ?? "ships";
+    groups.set(key, [...(groups.get(key) ?? []), option]);
   }
-  return Math.max(0, printedTotal - discountOnce);
+  return (["ships", "ground", "structures"] as const)
+    .filter((key) => groups.has(key))
+    .map((key) => ({ key, title: GROUP_TITLES[key], options: groups.get(key)! }));
 }
+
+const BuildOptionCard: React.FC<{
+  option: ChoiceOptionDto;
+  seat: string;
+  count: number;
+  blockedReason: React.ReactNode;
+  disabledAdd: boolean;
+  disabledRemove: boolean;
+  onAdd: () => void;
+  onRemove: () => void;
+}> = ({ option, seat, count, blockedReason, disabledAdd, disabledRemove, onAdd, onRemove }) => {
+  const unit = unitKeyOf(option);
+  const built = useBuildUnit(unit, seat);
+  // The Amalgamation exchange is the same unit bought another way: no resources, one captured
+  // model of the type returned. It sits beside the paid build of that type, never replaces it.
+  const exchange = isExchangeOption(option);
+  const label = exchange ? `${built?.name ?? unit} (exchange)` : option.label.replace(/^produce\s+/i, "");
+  const name = built?.name ?? label;
+  const payload = option.payload ?? {};
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
+  return (
+    <div
+      className="workflow-card production-drawer__unit"
+      data-testid={`produce-option-${option.id}`}
+      data-blocked={blockedReason ? "true" : undefined}
+      data-exchange={exchange ? "true" : undefined}
+    >
+      <div className="production-drawer__unit-head">
+        <span className="production-drawer__unit-name">
+          <UnitIcon type={unit} size={22} className="production-drawer__unit-icon" aria-hidden="true" />
+          {name}
+          {exchange && (
+            <span className="production-drawer__exchange-tag" data-testid={`produce-exchange-tag-${option.id}`}>
+              Exchange
+            </span>
+          )}
+          <UnitInfoButton unit={unit} seat={seat} name={name} />
+        </span>
+        <div className="workflow-row">
+          <button
+            type="button"
+            className="button button--secondary button--icon"
+            aria-label={`Remove ${label}`}
+            disabled={disabledRemove}
+            onClick={onRemove}
+          >
+            −
+          </button>
+          <span className="workflow-count" data-testid={`produce-count-${option.id}`}>
+            {count}
+          </span>
+          <button
+            type="button"
+            className="button button--secondary button--icon"
+            data-testid={`produce-unit-btn-${option.id}`}
+            aria-label={`Add ${label}`}
+            disabled={disabledAdd}
+            onClick={onAdd}
+          >
+            +
+          </button>
+        </div>
+      </div>
+      {exchange && (
+        <p className="production-drawer__exchange-note" data-testid={`produce-exchange-note-${option.id}`}>
+          Return a captured {built?.name ?? unit} to produce it for no resources (Amalgamation). It still
+          uses production capacity.
+        </p>
+      )}
+      <UnitBuildStats
+        unit={unit}
+        seat={seat}
+        name={name}
+        price={{
+          cost: num(payload.cost),
+          printedCost: num(payload.printed_cost),
+          count: num(payload.count),
+          free: payload.free_this_use === true || exchange,
+        }}
+      />
+      {blockedReason && (
+        <p className="production-drawer__blocked" data-testid="produce-blocked">
+          {blockedReason}
+        </p>
+      )}
+    </div>
+  );
+};
 
 export const ProductionBuilderDrawer: React.FC<ProductionBuilderDrawerProps> = ({
   choice,
   model,
   viewerSeat,
+  tradeGoods,
   onSubmit,
   isOpen,
   onClose,
@@ -61,10 +168,21 @@ export const ProductionBuilderDrawer: React.FC<ProductionBuilderDrawerProps> = (
   onSubmitBatch,
 }) => {
   const display = usePlayerIdentity();
+  const { enabled: singlePayment, setEnabled: setSinglePayment } = useSinglePaymentSetting();
   const [draft, setDraft] = useState<Record<string, number>>({});
   const [batchRunning, setBatchRunning] = useState(false);
   const [batchError, setBatchError] = useState<string | null>(null);
-  useEffect(() => setDraft({}), [choice?.nonce]);
+  // A prepared Warfare secondary opens the real builder with its planned builds already staged;
+  // the confirm stays the player's (or Auto's, which sends the same batch).
+  const prepared = usePreparedHint();
+  useEffect(() => {
+    const planned =
+      choice && prepared?.builds?.length ? planBuilds(choice, prepared.builds) : null;
+    setDraft(planned?.ok ? planned.draft : {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [choice?.nonce, prepared?.builds?.join(",")]);
+  // While preparing, the stand-in is answered into the plan: there is no build queue to run.
+  const preparing = isDryNonce(choice?.nonce);
   const subtype = choice?.context?.subtype ?? "";
   const isPlaceUnit = subtype === "place_unit";
   const isProduceUnit = subtype === "produce_unit" || !isPlaceUnit;
@@ -85,17 +203,11 @@ export const ProductionBuilderDrawer: React.FC<ProductionBuilderDrawerProps> = (
   const stagedCapacity = productionOptions.reduce(
     (sum, opt) =>
       sum +
-      (draft[opt.id] ?? 0) *
-        (typeof opt.payload?.production_spent === "number"
-          ? opt.payload.production_spent
-          : typeof opt.payload?.placed === "number"
-            ? opt.payload.placed
-            : typeof opt.payload?.count === "number"
-              ? opt.payload.count
-              : 1),
+      (draft[opt.id] ?? 0) * optionCapacity(opt),
     0,
   );
   const stagedCost = draftResourceCost(productionOptions, draft);
+  const total = productionTotal(productionOptions, draft);
   const availableResources = productionOptions.find(
     (opt) => typeof opt.payload?.available_resources === "number",
   )?.payload?.available_resources;
@@ -123,8 +235,12 @@ export const ProductionBuilderDrawer: React.FC<ProductionBuilderDrawerProps> = (
         : "";
 
   // Extract fleet supply if available from context
-  const fleetSupply = choice?.context?.details?.fleet_supply ||
-    choice?.context?.details?.["fleet_supply"] || null;
+  // The server sends it as a display-only choice detail; context.details is the legacy spot.
+  const fleetSupply =
+    choice?.details?.fleet_supply ?? choice?.context?.details?.fleet_supply ?? null;
+
+  const optionGroups = groupOptions(productionOptions);
+  const multiGroup = optionGroups.length > 1;
 
   if (!isOpen || !choice) return null;
 
@@ -172,7 +288,9 @@ export const ProductionBuilderDrawer: React.FC<ProductionBuilderDrawerProps> = (
                         <span className="text-muted">Fleet Supply:</span>
                         <span data-testid="fleet-supply-counter" className="text-success">
                           {fleetSupply && typeof fleetSupply === "object" && "used" in fleetSupply && "limit" in fleetSupply
-                            ? `${fleetSupply.used} / ${fleetSupply.limit}`
+                            ? "unlimited" in fleetSupply && fleetSupply.unlimited === true
+                              ? `${fleetSupply.used} / unlimited`
+                              : `${fleetSupply.used} / ${fleetSupply.limit}`
                             : "Data unavailable"}
                         </span>
                       </div>
@@ -199,11 +317,18 @@ export const ProductionBuilderDrawer: React.FC<ProductionBuilderDrawerProps> = (
                     )}
                     <div className="workflow-card production-drawer__meter">
                       <div className="workflow-card--row">
-                        <span className="text-muted">Resources:</span>
+                        <span className="text-muted">
+                          <ValueUnit kind="resources" size="bar" /> budget
+                        </span>
                         <span data-testid="production-resources-counter" className="text-success">
                           {resourceLimit === null
                             ? "Unavailable"
-                            : `${stagedCost} / ${resourceLimit} Resources (${Math.max(0, resourceLimit - stagedCost)} Left)`}
+                            : (
+                              <>
+                                {stagedCost} / {resourceLimit} <ValueUnit kind="resources" /> (
+                                {Math.max(0, resourceLimit - stagedCost)} Left)
+                              </>
+                            )}
                         </span>
                       </div>
                       {resourceLimit !== null && (
@@ -213,77 +338,113 @@ export const ProductionBuilderDrawer: React.FC<ProductionBuilderDrawerProps> = (
                           value={stagedCost}
                         />
                       )}
+                      {resourceLimit !== null && typeof tradeGoods === "number" && (
+                        // The budget is planets plus trade goods; the engine sends only the sum.
+                        <>
+                          <p className="production-drawer__split" data-testid="production-resources-split">
+                            <span>
+                              Planets:{" "}
+                              <strong data-testid="production-split-planets">
+                                {Math.max(0, resourceLimit - tradeGoods)}
+                              </strong>{" "}
+                              <ValueUnit kind="resources" />
+                            </span>
+                            <span>
+                              Trade goods: <strong data-testid="production-split-tg">{Math.min(tradeGoods, resourceLimit)}</strong>
+                            </span>
+                          </p>
+                          <TradeGoodSources seat={choice.actor} />
+                        </>
+                      )}
                     </div>
 
-                    {/* Units Grid */}
-                    <div data-testid="production-options-grid" className="production-drawer__grid">
-                      {productionOptions.map((opt) => {
-                        const capacity =
-                          typeof opt.payload?.production_spent === "number"
-                            ? opt.payload.production_spent
-                            : typeof opt.payload?.placed === "number"
-                              ? opt.payload.placed
-                              : typeof opt.payload?.count === "number"
-                                ? opt.payload.count
-                                : 1;
-                        const count = draft[opt.id] ?? 0;
-                        const label = opt.label.replace(/^produce\s+/i, "");
-                        const nextCost = draftResourceCost(productionOptions, {
-                          ...draft,
-                          [opt.id]: count + 1,
-                        });
-                        return (
-                          <div key={opt.id} className="workflow-card production-drawer__unit">
-                            <span>{label}</span>
-                            <div className="workflow-row">
-                              <button
-                                type="button"
-                                className="button button--secondary button--icon"
-                                aria-label={`Remove ${label}`}
-                                disabled={!count || queued || isSubmitting}
-                                onClick={() =>
-                                  setDraft((prev) => ({ ...prev, [opt.id]: count - 1 }))
-                                }
-                              >
-                                −
-                              </button>
-                              <span
-                                className="workflow-count"
-                                data-testid={`produce-count-${opt.id}`}
-                              >
-                                {count}
-                              </span>
-                              <button
-                                type="button"
-                                className="button button--secondary button--icon"
-                                data-testid={`produce-unit-btn-${opt.id}`}
-                                aria-label={`Add ${label}`}
-                                disabled={
-                                  queued ||
-                                  isSubmitting ||
-                                  capacity < 0 ||
-                                  stagedCapacity + capacity > capacityRemaining ||
-                                  resourceLimit === null ||
-                                  nextCost > resourceLimit
-                                }
-                                onClick={() =>
-                                  setDraft((prev) => ({ ...prev, [opt.id]: count + 1 }))
-                                }
-                              >
-                                +
-                              </button>
-                            </div>
+                    <MechInfoRow seat={choice.actor} />
+
+                    {/* Build options, grouped by where the unit fights */}
+                    <div data-testid="production-options-grid" className="production-drawer__groups">
+                      {optionGroups.map((group) => (
+                        <section
+                          key={group.key}
+                          aria-label={multiGroup ? group.title : undefined}
+                          data-testid={`production-group-${group.key}`}
+                        >
+                          {multiGroup && (
+                            <h3 className="production-drawer__group-title">{group.title}</h3>
+                          )}
+                          <div className="production-drawer__group">
+                            {group.options.map((opt) => {
+                              const capacity = optionCapacity(opt);
+                              const count = draft[opt.id] ?? 0;
+                              const nextCost = draftResourceCost(productionOptions, {
+                                ...draft,
+                                [opt.id]: count + 1,
+                              });
+                              const capacityBlocked =
+                                capacity < 0 || stagedCapacity + capacity > capacityRemaining;
+                              const resourceBlocked =
+                                resourceLimit !== null && nextCost > resourceLimit;
+                              const blocked = capacityBlocked
+                                ? "No production capacity left"
+                                : resourceBlocked
+                                  ? (
+                                      <>
+                                        Needs {nextCost - (resourceLimit ?? 0)} more <ValueUnit kind="resources" />
+                                      </>
+                                    )
+                                  : null;
+                              return (
+                                <BuildOptionCard
+                                  key={opt.id}
+                                  option={opt}
+                                  seat={choice.actor}
+                                  count={count}
+                                  blockedReason={blocked}
+                                  disabledAdd={
+                                    queued ||
+                                    isSubmitting ||
+                                    capacityBlocked ||
+                                    resourceLimit === null ||
+                                    resourceBlocked
+                                  }
+                                  disabledRemove={!count || queued || isSubmitting}
+                                  onAdd={() =>
+                                    setDraft((prev) => ({ ...prev, [opt.id]: count + 1 }))
+                                  }
+                                  onRemove={() =>
+                                    setDraft((prev) => ({ ...prev, [opt.id]: count - 1 }))
+                                  }
+                                />
+                              );
+                            })}
                           </div>
-                        );
-                      })}
+                        </section>
+                      ))}
                     </div>
 
                     <div className="production-drawer__footer">
-                      {stagedBatches > 1 && (
-                        <p className="text-muted">
-                          Staged builds submit one decision at a time. The queue pauses for payment
-                          or placement and stops if a later offer changes.
+                      <ProductionTotal
+                        total={total}
+                        available={resourceLimit}
+                        singlePayment={singlePayment && !preparing}
+                        partial={capacitySpent > 0}
+                      />
+                      {stagedBatches > 1 && !preparing && (
+                        <p className="text-muted" data-testid="production-queue-note">
+                          {singlePayment
+                            ? `You pay once for all ${stagedBatches} builds (${stagedCost} resources); the later payments follow your choice. Placement is still asked per unit, and anything unexpected stops the queue.`
+                            : "Staged builds submit one decision at a time. The queue pauses for payment or placement and stops if a later offer changes."}
                         </p>
+                      )}
+                      {!preparing && (
+                        <label className="production-drawer__setting" data-testid="ask-each-payment-setting">
+                          <input
+                            type="checkbox"
+                            data-testid="ask-each-payment-toggle"
+                            checked={!singlePayment}
+                            onChange={(event) => setSinglePayment(!event.target.checked)}
+                          />{" "}
+                          Ask for each payment
+                        </label>
                       )}
                       <button
                         type="button"
@@ -296,12 +457,13 @@ export const ProductionBuilderDrawer: React.FC<ProductionBuilderDrawerProps> = (
                       <button
                         type="button"
                         className="button button--primary"
+                        aria-label={queued || preparing ? undefined : "Confirm builds"}
                         disabled={!stagedBatches || queued || isSubmitting || batchRunning}
                         onClick={async () => {
                           // A build can open a payment or placement decision before
                           // another build is offered. The shell's queue waits for that choice
                           // to resolve instead of sending an invalid produce-only batch.
-                          const needsQueue = stagedBatches > 1 && onQueueProduction;
+                          const needsQueue = stagedBatches > 1 && onQueueProduction && !preparing;
                           if (onSubmitBatch && !needsQueue) {
                             setBatchRunning(true);
                             setBatchError(null);
@@ -310,11 +472,7 @@ export const ProductionBuilderDrawer: React.FC<ProductionBuilderDrawerProps> = (
                                 kind: "production",
                                 destination: systemId,
                                 steps: productionOptions.flatMap((opt) =>
-                                  Array.from({ length: draft[opt.id] ?? 0 }, () => ({
-                                    kind: "produce" as const,
-                                    unit: String(opt.payload?.unit ?? opt.id),
-                                    count: Number(opt.payload?.count ?? 1),
-                                  })),
+                                  Array.from({ length: draft[opt.id] ?? 0 }, () => produceStep(opt)),
                                 ),
                               });
                               setDraft({});
@@ -327,7 +485,7 @@ export const ProductionBuilderDrawer: React.FC<ProductionBuilderDrawerProps> = (
                           }
                           const units = productionOptions.flatMap((opt) =>
                             Array.from({ length: draft[opt.id] ?? 0 }, () =>
-                              typeof opt.payload?.unit === "string" ? opt.payload.unit : opt.id,
+                              optionUnit(opt),
                             ),
                           );
                           if (onQueueProduction) onQueueProduction(units);
@@ -338,7 +496,13 @@ export const ProductionBuilderDrawer: React.FC<ProductionBuilderDrawerProps> = (
                           setDraft({});
                         }}
                       >
-                        {queued ? `Building (${queuedUnits.length} remaining)…` : "Confirm builds"}
+                        {queued
+                          ? `Building (${queuedUnits.length} remaining)…`
+                          : preparing
+                            ? "Save these builds"
+                            : total.total !== null && stagedBatches > 0
+                              ? `Build (${total.total})`
+                              : "Confirm builds"}
                       </button>
                       {declineOption && (
                         <button

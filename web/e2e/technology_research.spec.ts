@@ -64,7 +64,7 @@ test.describe("Technology Research with Tech Skips", () => {
     // Available resources display
     const resourcesBar = page.getByTestId("tech-available-resources");
     await expect(resourcesBar).toBeVisible();
-    await expect(resourcesBar).toContainText("Available Resources:");
+    await expect(resourcesBar.getByRole("img", { name: /resources available/ })).toBeVisible();
     await expect(resourcesBar).toContainText("6 TG");
 
     // Tech skips row: Rigel III (ready, Biotic) and Tar'mann (exhausted, Propulsion)
@@ -165,12 +165,13 @@ test.describe("Technology Research with Tech Skips", () => {
 
     // Status shows 2 / 2 and Cost: 6 Resources
     await expect(page.getByText(/Selected:/)).toContainText("2 / 2");
-    await expect(page.getByText("Cost: 6 Resources")).toBeVisible();
+    await expect(page.getByText(/Cost:/).getByRole("img", { name: "6 resources" })).toBeVisible();
 
     // Confirm button displays 2 Techs - 6 Resources
     const confirmBtn = page.getByTestId("confirm-research-btn");
     await expect(confirmBtn).toBeEnabled();
-    await expect(confirmBtn).toContainText("Confirm Research (2 Techs - 6 Resources)");
+    await expect(confirmBtn).toContainText("Confirm Research (2 Techs - 6)");
+    await expect(confirmBtn.getByRole("img", { name: "6 resources" })).toBeVisible();
 
     // Click confirm
     await confirmBtn.click();

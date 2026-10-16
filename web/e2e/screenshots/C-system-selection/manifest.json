@@ -5,11 +5,11 @@
   "shots": [
     { "file": "out/1-prompt.png", "heading": "The prompt", "caption": "Every system the player may activate is outlined and marked TARGET. Systems that already hold the player's command token are dimmed and marked ACTIVATED. The bar at the bottom says what is being decided." },
     { "file": "out/2-system-selected.png", "heading": "A system is selected", "caption": "Clicking a hex opens the inspector (here Lodor #26: wormhole, planets, units present) and a confirm bar. Nothing is activated until Confirm Activation." },
-    { "file": "out/3-overlay-resources.png", "heading": "Resources and influence overlay", "caption": "The Res / Inf overlay replaces the unit tokens with each system's resources (gold) and influence (blue), so economy-driven choices can be made from the map alone." },
+    { "file": "out/3-overlay-resources.png", "heading": "Resources and influence overlay", "caption": "The resource/influence overlay replaces the unit tokens with each system's resources (gold) and influence (blue), so economy-driven choices can be made from the map alone." },
     { "file": "out/4-overlay-space-combat.png", "heading": "Space combat overlay", "caption": "The Space Combat overlay highlights where fleets would meet, to check what an activation runs into before confirming." }
   ],
   "notes": [
-    { "title": "Overlays", "text": "Standard, Res / Inf, Space Combat, Ground Combat and Tech Skips can be switched at any time while choosing." },
+    { "title": "Overlays", "text": "Standard, Economy (resource and influence icons), Space Combat, Ground Combat and Tech Skips can be switched at any time while choosing." },
     { "title": "Fixture", "text": "The board is the synthetic gallery board used by the dev decision gallery, not a captured game." }
   ]
 }

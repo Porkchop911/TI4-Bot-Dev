@@ -1,0 +1,17 @@
+{
+  "title": "Undo and redo while bots play",
+  "description": "A history change can lose a race against a bot decision. The server now holds bots back during the change; when the game still moves, the client retries with a fresh version and says so in plain words. The history buttons say why they are disabled while a change runs. Before: the raw text 'History change failed (409): History change conflicts with the game: ...' (the old client cannot be re-rendered from this branch, so there is no before picture).",
+  "tag": "web/e2e/screenshots/BR-undo-races",
+  "shots": [
+    {
+      "file": "out/1-game-moved-on.png",
+      "heading": "The game moved on",
+      "caption": "After the retries run out the banner reads 'The game moved on while redoing — try again'."
+    },
+    {
+      "file": "out/2-buttons-busy.png",
+      "heading": "Buttons wait for a running change",
+      "caption": "The redo buttons are disabled while the request runs; hovering shows why (title tooltip, drawn by the capture helper)."
+    }
+  ]
+}

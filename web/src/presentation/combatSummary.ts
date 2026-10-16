@@ -31,7 +31,7 @@ export interface CombatSummary {
 const spaceUnits = (units: readonly PlacedUnitView[], seat: string) =>
   units.filter((u) => u.owner === seat && !u.planet);
 
-function countBy(units: readonly PlacedUnitView[]) {
+export function countBy(units: readonly PlacedUnitView[]) {
   const counts = new Map<string, number>();
   for (const u of units) {
     const key = u.unit_type.toLowerCase();

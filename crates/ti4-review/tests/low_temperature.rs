@@ -38,6 +38,8 @@ fn rounds_finish(diplomacy: bool, seed: u64) {
         table: ProfileTable::Learner,
         temperature: 0.01,
         diplomacy,
+        lineup: None,
+        rule_seats: Vec::new(),
     };
     let mut review = LiveReview::start(&config).expect("the example table starts");
     for round in 0..2 {
@@ -93,6 +95,8 @@ fn greedy_loop_probe() {
         table: ProfileTable::Learner,
         temperature: 0.01,
         diplomacy: true,
+        lineup: None,
+        rule_seats: Vec::new(),
     };
     let mut review = LiveReview::start(&config).expect("the example table starts");
     for chunk in 0..8 {
@@ -142,6 +146,8 @@ fn traced_choices_match_the_greedy_option() {
         table: ProfileTable::Learner,
         temperature: 0.01,
         diplomacy: true,
+        lineup: None,
+        rule_seats: Vec::new(),
     };
     let mut review = LiveReview::start(&config).expect("the table starts");
     review.advance(ti4_review::AdvanceUnit::Step, 1500);
@@ -198,14 +204,17 @@ fn agenda_phase_probe() {
         table: ProfileTable::Learner,
         temperature: 0.01,
         diplomacy: true,
+        lineup: None,
+        rule_seats: Vec::new(),
     };
     let mut review = LiveReview::start(&config).expect("the table starts");
-    let mut last: Option<(
+    type StateSignature = (
         ti4_model::state::Phase,
         u32,
         Vec<(String, i32, i32, i32)>,
         usize,
-    )> = None;
+    );
+    let mut last: Option<StateSignature> = None;
     let mut seen_agenda = false;
     for _ in 0..60_000 {
         let frame = review.step_once().clone();

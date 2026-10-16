@@ -49,14 +49,14 @@ pub mod bastion_units;
 mod borrowed_commanders;
 pub(crate) mod borrowed_commanders_b;
 pub mod borrowed_round_agents;
-pub mod empyrean;
-pub mod empyrean_units;
 pub mod cabal;
 pub mod crimson;
 pub(crate) mod crimson_cards;
 pub mod deepwrought;
 mod deepwrought_cards;
 pub(crate) mod deepwrought_research;
+pub mod empyrean;
+pub mod empyrean_units;
 pub mod firmament;
 mod firmament_flip;
 pub mod firmament_plots;
@@ -181,14 +181,9 @@ pub fn has_flagship_text_in(
     system: &ti4_model::id::SystemId,
     flagship_id: &str,
 ) -> bool {
-    state
-        .system_state(system)
-        .units
-        .iter()
-        .any(|unit| {
-            &unit.owner == owner
-                && flagship_has_text(state, owner, unit.type_id.as_str(), flagship_id)
-        })
+    state.system_state(system).units.iter().any(|unit| {
+        &unit.owner == owner && flagship_has_text(state, owner, unit.type_id.as_str(), flagship_id)
+    })
 }
 
 /// Engine entry points. Each mirrors the shared hook of the same name and is optional; a module
@@ -805,8 +800,11 @@ pub fn assets(content: &ContentStore, sources: SourceSet, alias: &str) -> Vec<As
     // which includes the unit upgrades) count, plus official Thunder's Edge reprints. Cards that
     // merely carry the faction's tag from an obscure variant (Nekro's `nekroc4y`, `nekroc4r`) are
     // not part of the game and are not ledger assets.
-    let sheet_technologies: std::collections::BTreeSet<&str> =
-        faction.record().strings("factionTech").into_iter().collect();
+    let sheet_technologies: std::collections::BTreeSet<&str> = faction
+        .record()
+        .strings("factionTech")
+        .into_iter()
+        .collect();
     for record in content.from_sources(ContentType::Technologies, sources) {
         if record
             .text("faction")

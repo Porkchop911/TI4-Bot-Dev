@@ -343,3 +343,16 @@ describe("deriveReadOnlyTurnBar", () => {
     expect(model.tactical.reason).toBe("You have passed");
   });
 });
+
+import { planetsSummary as econSummary } from "./turnBar.ts";
+describe("planetsSummary", () => {
+  it("counts the exhausted cultural planets", () => {
+    expect(
+      econSummary([
+        { id: "a", name: "A", trait: "cultural", exhausted: true },
+        { id: "b", name: "B", trait: "cultural", exhausted: false },
+      ]),
+    ).toBe("Cultural: A, B (ready); readies 1 of 2");
+    expect(econSummary([])).toContain("nothing to ready");
+  });
+});

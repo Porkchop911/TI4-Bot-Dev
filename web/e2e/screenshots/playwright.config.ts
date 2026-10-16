@@ -10,7 +10,7 @@ process.env.TI4_SHOT_PORT = port;
 export default defineConfig({
   testDir: ".",
   testMatch: /capture-.*\.ts$/,
-  outputDir: "/tmp/ti4-screenshot-runs",
+  outputDir: process.env.TI4_SHOT_OUT ?? "/tmp/ti4-screenshot-runs",
   timeout: 60_000,
   workers: 1,
   fullyParallel: false,

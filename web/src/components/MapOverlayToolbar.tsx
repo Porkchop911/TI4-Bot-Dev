@@ -1,4 +1,5 @@
 import React from "react";
+import { InfluenceIcon, ResourceIcon } from "./PlanetValueIcons.tsx";
 import { Tooltip } from "../primitives/index.ts";
 import { MapOverlayMode } from "../presentation/mapOverlays.ts";
 
@@ -20,7 +21,7 @@ interface OverlayOption {
 const OVERLAY_OPTIONS: OverlayOption[] = [
   {
     mode: "economy",
-    label: "Res / Inf",
+    label: "Resources and influence",
     icon: "💰",
     description: "Resources & Influence (Ready vs Exhausted)",
     testId: "overlay-btn-economy",
@@ -115,6 +116,7 @@ export const MapOverlayToolbar: React.FC<MapOverlayToolbarProps> = ({
               onClick={() => onSelectMode(isActive ? "none" : opt.mode)}
               disabled={disabled}
               aria-pressed={isActive}
+              aria-label={opt.mode === "economy" ? "Resources and influence overlay" : undefined}
               className={`button ${isActive ? "button--primary" : "button--secondary"}`}
               style={{
                 fontSize: 12,
@@ -127,8 +129,17 @@ export const MapOverlayToolbar: React.FC<MapOverlayToolbarProps> = ({
                 fontWeight: isActive ? 600 : 400,
               }}
             >
-              <span aria-hidden="true">{opt.icon}</span>
-              <span>{opt.label}</span>
+              {opt.mode === "economy" ? (
+                <>
+                  <ResourceIcon />
+                  <InfluenceIcon />
+                </>
+              ) : (
+                <>
+                  <span aria-hidden="true">{opt.icon}</span>
+                  <span>{opt.label}</span>
+                </>
+              )}
             </button>
           </Tooltip>
         );

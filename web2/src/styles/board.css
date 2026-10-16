@@ -1,0 +1,335 @@
+/* Galaxy board. These rules depend on SVG structure and state classes, so they stay as selectors. */
+.galaxy svg {
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+
+.galaxy svg.dragging {
+  cursor: grabbing;
+}
+
+.galaxy [role="button"] {
+  cursor: pointer;
+  outline: none;
+}
+
+.galaxy .hex {
+  fill: #131c28;
+  stroke: #2a384a;
+  stroke-width: 1;
+}
+
+/* A home system has a tint of its seat. The outline is free for control. */
+.galaxy .system.home .hex {
+  fill: color-mix(in srgb, var(--seat) 10%, #131c28);
+}
+
+/* Who has ships in the system. */
+.galaxy .control {
+  fill: none;
+  stroke-width: 1.8;
+  stroke-opacity: 0.85;
+  pointer-events: none;
+}
+
+.galaxy .control.contested {
+  stroke: #ff5d4d;
+  stroke-opacity: 1;
+  stroke-width: 2.6;
+  stroke-dasharray: 7 3;
+}
+
+.galaxy .system.inspected .hex {
+  stroke: #4b6f86;
+}
+
+.galaxy .system.active .hex {
+  fill: #212228;
+  stroke: #b18e60;
+  stroke-width: 1.8;
+}
+
+.galaxy .system.blocked .hex {
+  stroke-dasharray: 2 3;
+}
+
+.galaxy .system:focus-visible > .hex {
+  stroke: var(--color-cyan);
+  stroke-width: 2;
+}
+
+.galaxy .system.linked .hex {
+  stroke: var(--color-accent);
+  stroke-width: 2.4;
+}
+
+.galaxy text {
+  text-anchor: middle;
+}
+
+.galaxy .t-id {
+  fill: #6f8198;
+  font-size: 8px;
+}
+
+.galaxy .t-mark text {
+  font-size: 11px;
+  font-weight: 700;
+  text-anchor: start;
+}
+
+.galaxy .t-pick {
+  fill: var(--color-gold);
+  font-size: 9px;
+  font-weight: 700;
+  text-anchor: start;
+}
+
+/* Far away, the system number is hidden. Marks and task values stay. */
+.galaxy.far .t-id {
+  display: none;
+}
+
+.galaxy.far .t-mark text {
+  font-size: 12.5px;
+}
+
+.galaxy .planet circle {
+  fill: var(--seat, var(--color-faint));
+  fill-opacity: 0.2;
+  stroke: var(--seat, var(--color-faint));
+  stroke-opacity: 0.75;
+}
+
+.galaxy .planet.free circle {
+  fill-opacity: 0.12;
+}
+
+.galaxy .planet text {
+  fill: var(--color-text);
+  font-weight: 600;
+}
+
+.galaxy .planet.linked circle,
+.galaxy .planet:focus-visible circle {
+  stroke: var(--color-text);
+  stroke-opacity: 1;
+  stroke-width: 2.4;
+}
+
+/* A planet that the open task can use. It must be the first thing the player sees on the board. */
+.galaxy .planet.payable > circle {
+  fill-opacity: 0.6;
+  stroke: var(--color-text);
+  stroke-opacity: 1;
+  stroke-width: 2;
+  filter: drop-shadow(0 0 4px var(--seat, var(--color-text)));
+}
+
+.galaxy .planet.payable > text {
+  font-weight: 800;
+}
+
+/* The value that does not pay: smaller and quiet, but readable. */
+.galaxy .planet.payable .v-off {
+  font-size: 0.72em;
+  font-weight: 600;
+  fill-opacity: 0.7;
+}
+
+.galaxy .planet.payable:focus-visible > circle {
+  stroke: var(--color-gold);
+  stroke-width: 3;
+}
+
+/* Only where a pointer can hover: after a tap, the hover state would stay. */
+@media (hover: hover) {
+  .galaxy .system:hover > .hex {
+    stroke: var(--color-cyan);
+    stroke-width: 2;
+  }
+
+  .galaxy .planet.payable:hover > circle {
+    stroke: var(--color-gold);
+    stroke-width: 3;
+  }
+}
+
+.galaxy svg[data-tasking] .control,
+.galaxy svg[data-tasking] .planet:not(.payable),
+.galaxy svg[data-tasking] .t-mark,
+.galaxy svg[data-tasking] .t-id,
+.galaxy svg[data-tasking] .anomaly,
+.galaxy svg[data-tasking] .wormhole {
+  opacity: 0.28;
+}
+
+/* A system that the open task can use, and the chosen one. A system that cannot be chosen is
+   dimmed. A system that can be chosen and where the task does nothing (.plain) is as always. */
+.galaxy .system.target:not(.plain) > .hex {
+  stroke: var(--color-text);
+  stroke-width: 2.4;
+  filter: drop-shadow(0 0 5px var(--color-text));
+}
+
+.galaxy .system.target.chosen > .hex {
+  fill: color-mix(in srgb, var(--color-gold) 22%, #131c28);
+  stroke: var(--color-gold);
+  stroke-width: 3;
+  filter: drop-shadow(0 0 6px var(--color-gold));
+}
+
+.galaxy svg[data-targeting] .system:not(.target):not(.context) {
+  opacity: 0.3;
+}
+
+.galaxy .planet.exhausted circle {
+  fill-opacity: 0.35;
+  stroke-dasharray: 2 2;
+}
+
+.galaxy .planet.chosen > circle {
+  fill: var(--color-gold);
+  fill-opacity: 0.32;
+  stroke: var(--color-gold);
+  stroke-opacity: 1;
+  stroke-width: 2.4;
+}
+
+.galaxy .planet.payable.chosen > circle {
+  fill-opacity: 0.9;
+  stroke-width: 3;
+  filter: drop-shadow(0 0 5px var(--color-gold));
+}
+
+.galaxy .planet.payable.chosen > text {
+  fill: var(--color-canvas);
+}
+
+.galaxy .planet.chosen.picked > circle {
+  fill: var(--color-green);
+  stroke: var(--color-green);
+}
+
+.galaxy .planet .chosen-badge circle {
+  fill: var(--color-gold);
+  fill-opacity: 1;
+  stroke: var(--color-canvas);
+  stroke-width: 1;
+  stroke-dasharray: none;
+}
+
+.galaxy .planet.picked .chosen-badge circle {
+  fill: var(--color-green);
+}
+
+.galaxy .chosen-badge path {
+  fill: none;
+  stroke: var(--color-canvas);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.galaxy .wormhole circle {
+  fill: var(--color-canvas);
+  stroke: #e6c15c;
+  stroke-dasharray: 2 2;
+}
+
+.galaxy .wormhole text {
+  fill: #e6c15c;
+  font-size: 9px;
+}
+
+.galaxy .route,
+.galaxy .wormhole-arc {
+  fill: none;
+  pointer-events: none;
+}
+
+.galaxy .route {
+  stroke: var(--color-cyan);
+  stroke-width: 1.6;
+  stroke-dasharray: 5 4;
+  opacity: 0.75;
+}
+
+.galaxy .route.idle {
+  opacity: 0;
+}
+
+.galaxy .route.linked {
+  opacity: 1;
+  stroke-width: 3;
+}
+
+.galaxy .wormhole-arc {
+  stroke: #e6c15c;
+  stroke-width: 1;
+  stroke-dasharray: 1 5;
+  opacity: 0.55;
+}
+
+/* The staged movement on the board: a check mark on a system that it takes something from, a
+   die where a ship leaves a gravity rift, and a sign on a system whose ships or cargo cannot move. */
+.galaxy .t-staged {
+  pointer-events: none;
+}
+
+.galaxy .t-staged circle {
+  fill: var(--color-accent);
+  stroke: var(--color-canvas);
+  stroke-width: 1;
+}
+
+.galaxy .t-staged path {
+  fill: none;
+  stroke: var(--color-canvas);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.galaxy .route-die,
+.galaxy .route-plus,
+.galaxy .t-note {
+  pointer-events: none;
+}
+
+.galaxy .route-die rect {
+  fill: var(--color-surface);
+  stroke: var(--color-red);
+  stroke-width: 1;
+}
+
+.galaxy .route-die circle {
+  fill: var(--color-red);
+}
+
+.galaxy .t-note circle {
+  fill: var(--color-surface);
+  stroke: var(--color-orange);
+  stroke-width: 1;
+}
+
+.galaxy .t-note path {
+  fill: none;
+  stroke: var(--color-orange);
+  stroke-width: 1.2;
+}
+
+.galaxy .route-plus rect {
+  fill: var(--color-surface);
+  stroke: var(--color-gold);
+  stroke-width: 1;
+}
+
+.galaxy .route-plus text {
+  fill: var(--color-gold);
+  font-size: 8.5px;
+  font-weight: 700;
+  text-anchor: middle;
+}

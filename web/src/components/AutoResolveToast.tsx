@@ -6,8 +6,8 @@ import "./AutoResolveToast.css";
 
 export interface AutoResolveNotification {
   id: string;
-  /** "auto-resolve" (default): the game took the only legal option. "action": another player acted. */
-  kind?: "auto-resolve" | "action";
+  /** "auto-resolve" (default): the game took the only legal option. "action": another player acted. "recap": a summary of another player's finished turn. "agenda": the result of an agenda vote, for every seat. "invasion": the result of a bombardment, Space Cannon Defense or a whole invasion. "notice": something the viewer's own play did not do and why (Imperial scored nothing). */
+  kind?: "auto-resolve" | "action" | "recap" | "invasion" | "agenda" | "notice";
   decisionType: string;
   selectedValue: string;
   /** Auto-resolve toasts: why there was only one choice (default "the only legal option"). */
@@ -15,12 +15,16 @@ export interface AutoResolveNotification {
   /** Action toasts: the acting seat and what they did, without their name. */
   actor?: string;
   text?: string;
+  /** Invasion toasts: the small heading ("Bombardment", "Invasion"). */
+  tag?: string;
+  /** Overrides how long the toast stays (ms). */
+  durationMs?: number;
   /** Bumped when a toast absorbs another action, so its timer starts over. */
   revision?: number;
 }
 
 /** How long a toast stays, in ms. */
-export const TOAST_DURATION_MS = { "auto-resolve": 3500, action: 5000 } as const;
+export const TOAST_DURATION_MS = { "auto-resolve": 3500, action: 5000, recap: 8000, invasion: 10000, agenda: 10000, notice: 12000 } as const;
 
 interface AutoResolveToastProps {
   notification: AutoResolveNotification;
@@ -46,9 +50,9 @@ export const AutoResolveToast: React.FC<AutoResolveToastProps> = ({
       const animationTimer = setTimeout(() => onDismiss(notification.id), 300);
       return () => clearTimeout(animationTimer);
     }
-    const timer = setTimeout(() => setIsDismissing(true), TOAST_DURATION_MS[kind]);
+    const timer = setTimeout(() => setIsDismissing(true), notification.durationMs ?? TOAST_DURATION_MS[kind]);
     return () => clearTimeout(timer);
-  }, [notification.id, notification.revision, isDismissing, kind, onDismiss]);
+  }, [notification.id, notification.revision, notification.durationMs, isDismissing, kind, onDismiss]);
 
   const actor = notification.actor ? display(notification.actor) : null;
 
@@ -62,8 +66,16 @@ export const AutoResolveToast: React.FC<AutoResolveToastProps> = ({
       style={actor ? ({ "--toast-accent": actor.color } as React.CSSProperties) : undefined}
       onClick={() => setIsDismissing(true)}
     >
-      {kind === "action" && actor ? (
+      {kind === "invasion" || kind === "agenda" || kind === "notice" ? (
         <>
+          <span className="toast-recap-tag" data-testid={`toast-${kind}-tag`}>
+            {notification.tag ?? (kind === "agenda" ? "Agenda" : kind === "notice" ? "Note" : "Invasion")}
+          </span>
+          <span className="toast-value toast-value--lines">{present(notification.text ?? "")}</span>
+        </>
+      ) : (kind === "action" || kind === "recap") && actor ? (
+        <>
+          {kind === "recap" && <span className="toast-recap-tag">Turn</span>}
           <span className="toast-actor" data-testid="toast-actor">
             <span aria-hidden="true" className="toast-actor__symbol">
               {actor.symbol}
@@ -88,6 +100,8 @@ interface AutoResolveToastContainerProps {
   onDismiss: (id: string) => void;
   /** Extra space above the bottom edge, so toasts clear bars and overlays down there. */
   bottomOffset?: number;
+  /** Rendered below the toasts (the notification history button). */
+  footer?: React.ReactNode;
 }
 
 /**
@@ -96,7 +110,7 @@ interface AutoResolveToastContainerProps {
  */
 export const AutoResolveToastContainer: React.FC<
   AutoResolveToastContainerProps
-> = ({ notifications, onDismiss, bottomOffset }) => (
+> = ({ notifications, onDismiss, bottomOffset, footer }) => (
   <div
     className="auto-resolve-toast-container"
     data-testid="corner-toasts"
@@ -113,5 +127,6 @@ export const AutoResolveToastContainer: React.FC<
         onDismiss={onDismiss}
       />
     ))}
+    {footer}
   </div>
 );

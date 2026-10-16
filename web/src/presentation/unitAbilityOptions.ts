@@ -79,7 +79,7 @@ export function describeUnitAbilityOption(
     };
   }
 
-  if (option.id.startsWith("build|") && unit && /^produce one unit in /.test(choice.prompt)) {
+  if (option.id.startsWith("build|") && unit && /(^|: )produce one unit in /.test(choice.prompt)) {
     const cost = num(p.cost);
     const count = num(p.count) ?? 1;
     return {

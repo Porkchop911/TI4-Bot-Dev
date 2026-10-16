@@ -258,7 +258,10 @@ fn every_action_card_decision_source_names_an_action_card() {
             }
         }
     }
-    assert!(checked > 0, "no action-card decision sources found to check");
+    assert!(
+        checked > 0,
+        "no action-card decision sources found to check"
+    );
     assert!(
         wrong.is_empty(),
         "action-card decision sources that are not action_cards.json ids:\n  {}",

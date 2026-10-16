@@ -1,7 +1,8 @@
 import { act } from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { PendingChoiceModal } from "./PendingChoiceModal.tsx";
+import { PlanetResourcesContext } from "../presentation/PlanetResourcesContext.tsx";
 import type { PendingChoiceDto } from "../protocol/types.ts";
 
 const pool = (id: string) => ({ id, kind: "pool", label: id });
@@ -150,45 +151,113 @@ const gainBuyChoice = (): PendingChoiceDto => {
   return { ...choice, nonce: "gain-buy-1", details: { ...choice.details, purchase } };
 };
 
-describe("command token panel (gain and buy)", () => {
-  it("plans the free tokens, the purchases and every pool on one screen", async () => {
-    const onSubmitBatch = vi.fn().mockResolvedValue(undefined);
-    render(<PendingChoiceModal choice={gainBuyChoice()} onSubmit={vi.fn()} onSubmitBatch={onSubmitBatch} />);
+const resourcesOf = new Map([
+  ["jord", 2],
+  ["arcturus", 0],
+  ["lodor", 3],
+]);
+const renderModal = (choice: PendingChoiceDto, onSubmitBatch = vi.fn().mockResolvedValue(undefined)) => {
+  render(
+    <PlanetResourcesContext.Provider value={resourcesOf}>
+      <PendingChoiceModal choice={choice} onSubmit={vi.fn()} onSubmitBatch={onSubmitBatch} />
+    </PlanetResourcesContext.Provider>,
+  );
+  return onSubmitBatch;
+};
+const assign = async (pools: string[]) => {
+  for (const pool of pools) await click(`token-plus-${pool}`);
+};
+
+describe("command token panel (planet first: gain and buy)", () => {
+  it("starts from the planets: nothing staged, the suggestion offered as one tap", async () => {
+    const onSubmitBatch = renderModal(gainBuyChoice());
     expect(screen.getByTestId("token-total")).toHaveTextContent("3");
-    expect(screen.getByTestId("token-buy")).toHaveTextContent("3 influence each");
-    expect(screen.getByTestId("token-influence")).toHaveTextContent("Influence available 9");
+    expect(screen.getByTestId("token-buy")).toHaveTextContent("per command token");
+    expect(within(screen.getByTestId("token-buy")).getByLabelText("3 influence")).toBeInTheDocument();
+    expect(screen.getByTestId("token-payment-planet-jord")).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByTestId("token-purchase-summary")).toHaveTextContent("Influence selected 0");
+    expect(screen.getByTestId("token-purchase-summary")).toHaveTextContent("buys 0 tokens");
     expect(screen.getByTestId("token-buy-minus")).toBeDisabled();
-
-    await click("token-buy-plus");
-    await click("token-buy-plus");
-    expect(screen.getByTestId("token-total")).toHaveTextContent("5");
-    expect(screen.getByTestId("token-split")).toHaveTextContent("3 free + 2 bought");
-    expect(screen.getByTestId("token-influence-spent")).toHaveTextContent("6");
-    expect(screen.getByTestId("token-payment")).toHaveTextContent("jord (2) + 4 trade goods");
-    expect(screen.getByTestId("token-remaining")).toHaveTextContent("5");
-    expect(screen.getByTestId("token-confirm")).toBeDisabled();
-
-    for (const pool of ["tactic", "tactic", "fleet", "fleet", "strategic"]) {
-      await click(`token-plus-${pool}`);
-    }
-    expect(screen.getByTestId("token-remaining")).toHaveTextContent("0");
-    await click("token-confirm");
-    const sent = onSubmitBatch.mock.calls[0][0];
-    expect(sent.kind).toBe("tokens");
-    expect(sent.steps.filter((step: { kind: string }) => step.kind === "purchase")).toEqual([
-      { kind: "purchase", buy: true },
-      { kind: "purchase", buy: true },
-      { kind: "purchase", buy: false },
-    ]);
-    expect(sent.steps).toHaveLength(3 + 2 * 2 + 5 + 1);
+    expect(screen.getByTestId("token-payment-auto")).toHaveTextContent("Use suggested planets (buys 3)");
+    // The planet block comes before the pool assignment in the document.
+    const buy = screen.getByTestId("token-buy");
+    const pools = screen.getByTestId("token-pool-tactic");
+    expect(buy.compareDocumentPosition(pools) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(onSubmitBatch).not.toHaveBeenCalled();
   });
 
-  it("stops the stepper at what is affordable and drops staged tokens when buying fewer", async () => {
-    render(<PendingChoiceModal choice={gainBuyChoice()} onSubmit={vi.fn()} onSubmitBatch={vi.fn()} />);
+  it("the suggestion tap scrolls down to the assignment part", async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    renderModal(gainBuyChoice());
+    expect(scroll).not.toHaveBeenCalled();
+    await click("token-payment-auto");
+    expect(scroll).toHaveBeenCalledTimes(1);
+    expect(scroll.mock.instances[0]).toBe(screen.getByTestId("token-assign-heading"));
+  });
+
+  it("one tap on the suggestion stages the planets and trade goods for the most that can be bought", async () => {
+    const onSubmitBatch = renderModal(gainBuyChoice());
+    await click("token-payment-auto");
+    expect(screen.getByTestId("token-buy-count")).toHaveTextContent("3");
+    expect(screen.getByTestId("token-total")).toHaveTextContent("6");
+    expect(screen.getByTestId("token-payment-planet-jord")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("token-payment-goods-count")).toHaveTextContent("7");
+    expect(screen.getByTestId("token-purchase-summary")).toHaveTextContent("Influence selected 9");
+    await assign(["tactic", "tactic", "fleet", "fleet", "strategic", "strategic"]);
+    await click("token-confirm");
+    const steps = onSubmitBatch.mock.calls[0][0].steps;
+    expect(steps.filter((s: { kind: string }) => s.kind === "purchase")).toHaveLength(3);
+    expect(steps.filter((s: { kind: string }) => s.kind === "trade_good")).toHaveLength(7);
+  });
+
+  it("the token count follows the selection: selecting planets then assigning pools sends the old wire format", async () => {
+    const onSubmitBatch = renderModal(gainBuyChoice());
+    await click("token-payment-planet-jord");
+    expect(screen.getByTestId("token-purchase-summary")).toHaveAttribute("data-bought", "0");
+    expect(screen.getByTestId("token-payment-problem")).toHaveTextContent("buys no token");
+    await click("token-payment-goods-plus");
+    expect(screen.getByTestId("token-buy-count")).toHaveTextContent("1");
+    expect(screen.getByTestId("token-total")).toHaveTextContent("4");
+    expect(screen.getByTestId("token-split")).toHaveTextContent("3 free + 1 bought");
+    expect(screen.getByTestId("token-confirm")).toBeDisabled();
+    await assign(["tactic", "tactic", "fleet", "strategic"]);
+    await click("token-confirm");
+    expect(onSubmitBatch).toHaveBeenCalledWith({
+      kind: "tokens",
+      steps: [
+        { kind: "pool", pool: "tactic_tokens" },
+        { kind: "pool", pool: "tactic_tokens" },
+        { kind: "pool", pool: "fleet_tokens" },
+        { kind: "purchase", buy: true },
+        { kind: "exhaust", planet: "jord" },
+        { kind: "trade_good" },
+        { kind: "pool", pool: "strategic_tokens" },
+        { kind: "purchase", buy: false },
+      ],
+    });
+  });
+
+  it("'Buy N tokens' still works first: it pre-stages the cheapest payment and the selection stays editable", async () => {
+    renderModal(gainBuyChoice());
+    await click("token-buy-plus");
+    await click("token-buy-plus");
+    expect(screen.getByTestId("token-split")).toHaveTextContent("3 free + 2 bought");
+    expect(screen.getByTestId("token-payment-planet-jord")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("token-influence-spent")).toHaveTextContent("6");
+    // Taking jord out leaves 4 trade goods = 1 token; the count follows.
+    await click("token-payment-planet-jord");
+    expect(screen.getByTestId("token-buy-count")).toHaveTextContent("1");
+    await click("token-payment-clear");
+    expect(screen.getByTestId("token-buy-count")).toHaveTextContent("0");
+    expect(screen.getByTestId("token-total")).toHaveTextContent("3");
+  });
+
+  it("stops the quick selector at what is affordable and drops staged tokens when buying fewer", async () => {
+    renderModal(gainBuyChoice());
     for (let i = 0; i < 5; i += 1) await click("token-buy-plus");
     expect(screen.getByTestId("token-buy-count")).toHaveTextContent("3");
     expect(screen.getByTestId("token-buy-plus")).toBeDisabled();
-    expect(screen.getByTestId("token-influence-spent")).toHaveTextContent("9");
     for (let i = 0; i < 6; i += 1) await click("token-plus-fleet");
     await click("token-buy-minus");
     expect(screen.getByTestId("token-remaining")).toHaveTextContent("0");
@@ -227,7 +296,8 @@ describe("command token panel (gain and buy)", () => {
     };
     render(<PendingChoiceModal choice={window} onSubmit={vi.fn()} onSubmitBatch={onSubmitBatch} />);
     expect(screen.getByTestId("token-confirm")).toHaveTextContent("No purchase");
-    await click("token-buy-plus");
+    await click("token-payment-planet-jord");
+    await click("token-payment-goods-plus");
     await click("token-plus-strategic");
     expect(screen.getByTestId("token-confirm")).toHaveTextContent("Confirm tokens and purchase");
     await click("token-confirm");
@@ -242,9 +312,19 @@ describe("command token panel (gain and buy)", () => {
       ],
     });
   });
+
+  it("a selection that buys no token cannot be confirmed as 'no purchase'", async () => {
+    renderModal(gainBuyChoice());
+    await assign(["tactic", "tactic", "fleet"]);
+    expect(screen.getByTestId("token-confirm")).toBeEnabled();
+    await click("token-payment-planet-jord");
+    expect(screen.getByTestId("token-confirm")).toBeDisabled();
+    await click("token-payment-clear");
+    expect(screen.getByTestId("token-confirm")).toBeEnabled();
+  });
 });
 
-describe("command token panel (change payment)", () => {
+describe("command token panel (planet first: credit, overpay and limits)", () => {
   const rich = {
     cost: 3,
     influence_available: 14,
@@ -257,88 +337,138 @@ describe("command token panel (change payment)", () => {
       { id: "lodor", worth: 3 },
     ],
   };
-  const richChoice = (): PendingChoiceDto => {
+  const richChoice = (reinforcements = 7): PendingChoiceDto => {
     const choice = gainChoice(1);
-    return { ...choice, nonce: "gain-rich", details: { ...choice.details, purchase: rich } };
+    return {
+      ...choice,
+      nonce: `gain-rich-${reinforcements}`,
+      details: { ...choice.details, reinforcements, purchase: rich },
+    };
   };
-  const stage = async () => {
-    await click("token-buy-plus");
-    for (const pool of ["tactic", "tactic"]) await click(`token-plus-${pool}`);
-  };
+  const summary = () => screen.getByTestId("token-purchase-summary");
 
-  it("keeps Auto-pay as the default and offers Change payment only once something is bought", async () => {
-    render(<PendingChoiceModal choice={richChoice()} onSubmit={vi.fn()} onSubmitBatch={vi.fn()} />);
-    expect(screen.queryByTestId("token-payment-change")).not.toBeInTheDocument();
-    await click("token-buy-plus");
-    expect(screen.getByTestId("token-payment")).toHaveTextContent("Chosen like Auto-pay");
-    expect(screen.getByTestId("token-payment-change")).toBeInTheDocument();
-    expect(screen.queryByTestId("token-payment-editor")).not.toBeInTheDocument();
+  it("3 influence buys 1 token with nothing wasted", async () => {
+    renderModal(richChoice());
+    await click("token-payment-planet-lodor");
+    expect(summary()).toHaveAttribute("data-bought", "1");
+    expect(summary()).toHaveAttribute("data-wasted", "0");
+    expect(screen.queryByTestId("token-payment-problem")).not.toBeInTheDocument();
   });
 
-  it("lets the player pick other planets, shows the account and sends their steps", async () => {
-    const onSubmitBatch = vi.fn().mockResolvedValue(undefined);
-    render(<PendingChoiceModal choice={richChoice()} onSubmit={vi.fn()} onSubmitBatch={onSubmitBatch} />);
-    await stage();
-    await click("token-payment-change");
-    const jord = screen.getByTestId("token-payment-planet-jord");
-    expect(jord).toHaveTextContent("jord · 2 influence · ready");
-    // Auto-pay picked lodor (3, no waste); switch to jord + one trade good.
-    expect(screen.getByTestId("token-payment-planet-lodor")).toHaveAttribute("aria-pressed", "true");
+  it("5 influence from two planets is one token with a spare planet: Confirm is blocked and says which to take out", async () => {
+    renderModal(richChoice());
     await click("token-payment-planet-lodor");
-    expect(screen.getByTestId("token-confirm")).toBeDisabled();
-    expect(screen.getByTestId("token-payment-problem")).toHaveTextContent("Short by 3");
     await click("token-payment-planet-jord");
-    await click("token-payment-goods-plus");
-    expect(screen.getByTestId("token-payment-account")).toHaveTextContent(
-      "Paid 3 · owed 3 · remainder 0 · waste 0",
-    );
-    expect(screen.queryByTestId("token-payment-problem")).not.toBeInTheDocument();
-    expect(screen.getByTestId("token-payment")).toHaveTextContent("Your own choice");
+    expect(summary()).toHaveAttribute("data-bought", "1");
+    expect(summary()).toHaveAttribute("data-wasted", "2");
+    await assign(["tactic", "tactic"]);
+    expect(screen.getByTestId("token-confirm")).toBeDisabled();
+    expect(screen.getByTestId("token-payment-problem")).toHaveTextContent("take out jord");
+  });
+
+  it("4 influence from one planet buys 1 token and wastes 1", async () => {
+    const onSubmitBatch = renderModal(richChoice());
+    await click("token-payment-planet-arcturus");
+    expect(summary()).toHaveAttribute("data-bought", "1");
+    expect(summary()).toHaveAttribute("data-wasted", "1");
+    await assign(["tactic", "tactic"]);
     await click("token-confirm");
-    const steps = onSubmitBatch.mock.calls[0][0].steps;
-    expect(steps).toEqual([
+    expect(onSubmitBatch.mock.calls[0][0].steps).toEqual([
       { kind: "pool", pool: "tactic_tokens" },
       { kind: "purchase", buy: true },
-      { kind: "exhaust", planet: "jord" },
-      { kind: "trade_good" },
+      { kind: "exhaust", planet: "arcturus" },
       { kind: "pool", pool: "tactic_tokens" },
       { kind: "purchase", buy: false },
     ]);
   });
 
-  it("blocks Confirm for a payment with an unneeded planet and explains it", async () => {
-    render(<PendingChoiceModal choice={richChoice()} onSubmit={vi.fn()} onSubmitBatch={vi.fn()} />);
-    await stage();
-    await click("token-payment-change");
-    expect(screen.getByTestId("token-confirm")).toBeEnabled();
-    await click("token-payment-planet-jord");
-    expect(screen.getByTestId("token-confirm")).toBeDisabled();
-    expect(screen.getByTestId("token-payment-problem")).toHaveTextContent("take out jord");
-  });
-
-  it("Use Auto-pay resets the choice", async () => {
-    render(<PendingChoiceModal choice={richChoice()} onSubmit={vi.fn()} onSubmitBatch={vi.fn()} />);
-    await stage();
-    await click("token-payment-change");
-    await click("token-payment-planet-lodor");
-    expect(screen.getByTestId("token-confirm")).toBeDisabled();
-    await click("token-payment-auto");
-    expect(screen.getByTestId("token-confirm")).toBeEnabled();
-    expect(screen.getByTestId("token-payment")).toHaveTextContent("Chosen like Auto-pay");
-    expect(screen.queryByTestId("token-payment-editor")).not.toBeInTheDocument();
-  });
-
-  it("falls back to Auto-pay with a visible note when the count makes the override illegal", async () => {
-    render(<PendingChoiceModal choice={richChoice()} onSubmit={vi.fn()} onSubmitBatch={vi.fn()} />);
-    await click("token-buy-plus");
-    await click("token-payment-change");
-    // Pay token 1 with arcturus (4, one carried over): at two tokens 4 is short, so it falls back.
-    await click("token-payment-planet-lodor");
+  it("6 influence buys 2 tokens exactly; 7 buys 2 and wastes 1 (the credit is lost after the last token)", async () => {
+    const onSubmitBatch = renderModal(richChoice());
     await click("token-payment-planet-arcturus");
-    expect(screen.getByTestId("token-payment-account")).toHaveTextContent("waste 1");
+    await click("token-payment-planet-jord");
+    expect(summary()).toHaveAttribute("data-bought", "2");
+    expect(summary()).toHaveAttribute("data-wasted", "0");
+    await click("token-payment-planet-jord");
+    await click("token-payment-planet-lodor");
+    expect(summary()).toHaveAttribute("data-bought", "2");
+    expect(summary()).toHaveAttribute("data-wasted", "1");
+    await assign(["tactic", "tactic", "fleet"]);
+    await click("token-confirm");
+    // The first token is covered by arcturus (4, 1 carried); the second by the carried 1 plus lodor.
+    expect(onSubmitBatch.mock.calls[0][0].steps).toEqual([
+      { kind: "pool", pool: "tactic_tokens" },
+      { kind: "purchase", buy: true },
+      { kind: "exhaust", planet: "arcturus" },
+      { kind: "pool", pool: "tactic_tokens" },
+      { kind: "purchase", buy: true },
+      { kind: "exhaust", planet: "lodor" },
+      { kind: "pool", pool: "fleet_tokens" },
+      { kind: "purchase", buy: false },
+    ]);
+  });
+
+  it("trade goods count toward the influence and are spent last", async () => {
+    renderModal(richChoice());
+    await click("token-payment-planet-jord");
+    await click("token-payment-goods-plus");
+    expect(summary()).toHaveAttribute("data-bought", "1");
+    expect(screen.getByTestId("token-payment-goods-count")).toHaveTextContent("1");
+  });
+
+  it("the token count is capped by what the reinforcements can hold", async () => {
+    // 1 free token + reinforcements 3 leaves room for 2 bought tokens, but 9 influence is selected.
+    renderModal(richChoice(3));
+    await click("token-payment-planet-arcturus");
+    await click("token-payment-planet-lodor");
+    await click("token-payment-planet-jord");
+    expect(summary()).toHaveAttribute("data-bought", "2");
+    expect(screen.getByTestId("token-limit-note")).toHaveTextContent("most you can buy is 2");
+    await assign(["tactic", "tactic", "fleet"]);
+    expect(screen.getByTestId("token-confirm")).toBeDisabled();
+    await click("token-payment-planet-jord");
+    expect(screen.queryByTestId("token-limit-note")).not.toBeInTheDocument();
+    expect(screen.getByTestId("token-confirm")).toBeEnabled();
+  });
+});
+
+describe("command token panel (resource values)", () => {
+  const rich = {
+    cost: 3,
+    influence_available: 9,
+    max: 3,
+    trade_goods: 0,
+    trade_good_worth: 1,
+    planets: [
+      { id: "jord", worth: 2 },
+      { id: "arcturus", worth: 2 },
+      { id: "lodor", worth: 3 },
+    ],
+  };
+  const choice = (): PendingChoiceDto => {
+    const base = gainChoice(1);
+    return { ...base, nonce: "gain-res", details: { ...base.details, purchase: rich } };
+  };
+
+  it("shows each planet's influence AND resources in the list, with the words as labels", () => {
+    renderModal(choice());
+    const lodor = screen.getByTestId("token-payment-planet-lodor");
+    expect(within(lodor).getByLabelText("Pays 3 influence")).toBeInTheDocument();
+    expect(within(lodor).getByLabelText("Exhausting it loses 3 resources")).toBeInTheDocument();
+    const arcturus = screen.getByTestId("token-payment-planet-arcturus");
+    expect(within(arcturus).getByLabelText("Exhausting it loses 0 resources")).toBeInTheDocument();
+  });
+
+  it("the suggestion prefers planets with no resources and shows their resources too", async () => {
+    renderModal(choice());
     await click("token-buy-plus");
-    expect(screen.getByTestId("token-payment-fallback")).toHaveTextContent("back to Auto-pay");
-    expect(screen.getByTestId("token-payment")).toHaveTextContent("Chosen like Auto-pay");
+    // 3 influence: lodor (3, 3 resources) pays it exactly, but arcturus + jord (2 + 2, 0 + 2 resources) costs
+    // fewer resources only if jord had none; here lodor 3R vs arcturus+jord 2R, so the two win.
+    expect(screen.getByTestId("token-payment-planet-lodor")).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByTestId("token-payment-planet-arcturus")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("token-payment-planet-jord")).toHaveAttribute("aria-pressed", "true");
+    const suggestion = screen.getByTestId("token-suggestion");
+    expect(within(suggestion).getByLabelText("Exhausting it loses 0 resources")).toBeInTheDocument();
+    expect(within(screen.getByTestId("token-resources-lost")).getByLabelText("2 resources lost this round")).toBeInTheDocument();
   });
 });
 

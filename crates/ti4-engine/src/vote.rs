@@ -9,6 +9,9 @@
 
 use std::collections::BTreeMap;
 
+/// Key of the display-only `details` entry that names the agenda being voted on.
+const AGENDA_DETAIL: &str = "agenda";
+
 use ti4_content::ContentStore;
 use ti4_content::galaxy::all_planets;
 use ti4_model::content_types::{ContentType, SourceSet};
@@ -471,6 +474,12 @@ impl VoteWindow {
         &self.alias
     }
 
+    /// The outcomes this agenda offered.
+    #[must_use]
+    pub fn choices(&self) -> &[String] {
+        &self.choices
+    }
+
     #[must_use]
     pub const fn is_complete(&self) -> bool {
         matches!(self.stage, Stage::Done(_))
@@ -508,9 +517,24 @@ impl VoteWindow {
         }
     }
 
-    /// The decision currently owed, or `None` once the vote is finished.
+    /// The decision currently owed, or `None` once the vote is finished. Every vote decision
+    /// carries the agenda being voted on as display-only `details.agenda` (name, type, text) so a
+    /// client can keep it on screen for the whole vote; option ids and kinds are untouched.
     #[must_use]
     pub fn pending_choice(
+        &self,
+        state: &GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+    ) -> Option<Choice> {
+        self.pending_choice_bare(state, content, sources)
+            .map(|choice| {
+                let agenda = crate::strategy_cards::agenda_details(content, &self.alias);
+                choice.detailed(AGENDA_DETAIL, agenda)
+            })
+    }
+
+    fn pending_choice_bare(
         &self,
         state: &GameState,
         content: &ContentStore,

@@ -463,7 +463,7 @@ describe("INV-03 decision invariant matrix", () => {
     fireEvent.click(screen.getByRole("button", { name: "Minimize decision" }));
     expect(screen.getByRole("button", { name: "Inspect board" })).toBeEnabled();
     fireEvent.click(screen.getByTestId("resume-decision-btn"));
-    expect(screen.getByTestId("committed-amount")).toHaveTextContent("4 Resources");
+    expect(screen.getByTestId("committed-amount").querySelector("[aria-label]")).toHaveAttribute("aria-label", "4 resources");
     fireEvent.click(screen.getByTestId("confirm-payment-btn"));
     await waitFor(() => expect(onSubmit).toHaveBeenCalledExactlyOnceWith(planet.id));
     rerender(view(pay("pay-second", 2, [tg])));

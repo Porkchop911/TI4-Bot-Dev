@@ -1625,6 +1625,24 @@ mod tests {
     }
 
     #[test]
+    fn muaat_can_produce_its_war_sun_from_the_start_and_with_its_upgrade() {
+        // The war sun is on Muaat's sheet: no War Sun technology is needed (and `ws` cannot be
+        // researched by the Muaat, whose `pws2` replaces it).
+        let mut state = muaat_game();
+        let built = crate::production::buildable_for(&state, content(), DEFAULT, &a());
+        assert!(built.contains(&"muaat_warsun".to_owned()), "{built:?}");
+        give_technology(&mut state, &a(), "pws2");
+        let built = crate::production::buildable_for(&state, content(), DEFAULT, &a());
+        assert!(built.contains(&"muaat_warsun2".to_owned()), "{built:?}");
+        // Everybody else still needs the technology.
+        let others = crate::production::buildable_for(&state, content(), DEFAULT, &b());
+        assert!(
+            !others.iter().any(|unit| unit.contains("warsun")),
+            "{others:?}"
+        );
+    }
+
+    #[test]
     fn prototype_war_sun_ii_upgrades_the_war_sun_and_keeps_its_shield_breaking() {
         let mut state = muaat_game();
         let home = home_of(&state, &a());

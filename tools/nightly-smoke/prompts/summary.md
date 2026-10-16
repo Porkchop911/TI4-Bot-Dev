@@ -19,7 +19,13 @@ Your job (read-only — do NOT modify, create or delete any file, do NOT commit,
 4. Briefly summarise game coverage: how many runs, rounds reached, notable events (action cards
    played, Mecatol Rex taken, technologies, agendas), and decision subtypes never reached.
 
+Agenda coverage (counted mechanically from the runs' decision counters; the line is also put on top of
+your output, so do not repeat it there, but do act on it): {{AGENDA_LINE}}
+If it says no agenda phase happened, make that the first finding of the TL;DR: the `+agenda` preset
+suffix and the custodians are the first suspects. In "## Coverage" add an "agenda phase: N runs"
+line, and name which runs had votes and with which preset.
+
 Output only the morning summary in markdown, starting with a 3–5 line TL;DR, then
 "## Findings" (ranked), "## Suggested fixes", "## Coverage", "## Harness / sweep issues".
 
-Proctors may have committed minor repairs to the branch `{{FIX_BRANCH}}` (see `git log --oneline` on it; its first commit is the pre-sweep snapshot of the working tree). Two Opus fix rounds also ran: round 1 at 23:59 (earlier if a proctor asked, see the report) while the sweep continued, round 2 after the sweep. Their branches are `{{FIXER1_BRANCH}}` and `{{FIXER2_BRANCH}}` (they may not exist if a round was skipped), their reports `{{NIGHT_ROOT}}/fixer-1.md` and `{{NIGHT_ROOT}}/fixer-2.md`, and the report lists whether each was merged into `{{FIX_BRANCH}}` (marker files `{{NIGHT_ROOT}}/.fixer-N.merged`, `.rejected`, `.conflict`, `fixer-N.ready` = not merged yet). Add a "## Overnight fixes" section: every proctor and fixer commit with a one-line judgement, which findings they address, which findings remain open (including the fixers' "needs the user's decision" items), and say all of it is unreviewed and unpushed.
+Proctors may have committed minor repairs to the branch `{{FIX_BRANCH}}` (see `git log --oneline` on it; its first commit is the pre-sweep snapshot of the working tree). Two Opus fix rounds also ran: round 1 at 23:59 (earlier if a proctor asked, see the report) while the sweep continued, round 2 after the sweep. Their branches are `{{FIXER1_BRANCH}}` and `{{FIXER2_BRANCH}}` (they may not exist if a round was skipped), their reports `{{NIGHT_ROOT}}/fixer-1.md` and `{{NIGHT_ROOT}}/fixer-2.md`, and the report lists whether each was merged into `{{FIX_BRANCH}}` (marker files `{{NIGHT_ROOT}}/.fixer-N.merged`, `.rejected`, `.conflict`, `fixer-N.ready` = not merged yet). Add a "## Overnight fixes" section: every proctor and fixer commit with a one-line judgement, which findings they address, which findings remain open (including the fixers' "needs the user's decision" items), and say all of it is unreviewed and unpushed.{{SLOTS_NOTE}}

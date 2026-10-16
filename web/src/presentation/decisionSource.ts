@@ -1,6 +1,7 @@
 import type { PendingChoiceDto } from "../protocol/types.ts";
 import {
   findActionCardMeta,
+  findBreakthroughMeta,
   findStrategyCardMeta,
   findTechnologyMeta,
   humanizeId,
@@ -11,6 +12,7 @@ function contentName(alias: string): string {
     findTechnologyMeta(alias)?.name ??
     findActionCardMeta(alias)?.name ??
     findStrategyCardMeta(alias)?.name ??
+    findBreakthroughMeta(alias)?.name ??
     humanizeId(alias)
   );
 }
@@ -36,7 +38,7 @@ export function formatDecisionSource(source: Record<string, unknown> | undefined
     case "FactionAbility":
     case "Agenda":
     case "Reaction":
-      return humanizeId(value);
+      return findBreakthroughMeta(value)?.name ?? humanizeId(value);
     default:
       return contentName(value);
   }
@@ -114,4 +116,18 @@ export function describeDecisionHeader(
   if (rule) chips.push(rule);
   if (context.optional) chips.push("Optional");
   return { eyebrow: eyebrow.length ? eyebrow.join(" · ") : null, chips };
+}
+
+/**
+ * The breakthrough a decision was raised by, if any: its structured `context.source` names the
+ * card's alias (`Content`, `FactionAbility` or `Reaction`), and the card's printed text belongs on
+ * the decision so the player is not asked about a card they cannot read.
+ */
+export function decisionBreakthrough(
+  choice: Pick<PendingChoiceDto, "context">,
+): ReturnType<typeof findBreakthroughMeta> {
+  const source = choice.context?.source;
+  if (!source || typeof source !== "object") return undefined;
+  const value = Object.values(source)[0];
+  return typeof value === "string" ? findBreakthroughMeta(value) : undefined;
 }

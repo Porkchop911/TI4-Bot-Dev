@@ -136,10 +136,14 @@ pub fn resolve_before_token_gain_with(
         let mut drawn_count = 0;
         let mut drawn = Vec::new();
         for _ in 0..requested_draws {
-            let Some(card) = state.action_card_deck.first().cloned() else {
+            let Some(card) = ti4_model::deck_reserve::take_top(
+                &mut state.deck_reserve,
+                "action_card",
+                &mut state.action_card_deck,
+                Some(player_id.as_str()),
+            ) else {
                 break;
             };
-            state.action_card_deck.remove(0);
             if let Some(player) = state.player_mut(&player_id) {
                 player.action_cards.push(card.clone());
                 drawn.push(card);
@@ -510,6 +514,43 @@ mod tests {
             state.initiative_order(),
             report.initiative_order,
             "after 81.8 the live order has degraded to seating order"
+        );
+    }
+
+    #[test]
+    fn a_tie_at_the_end_of_the_game_goes_to_the_card_holder_first_in_initiative() {
+        // Nightly 2026-10-08 run 58: three seats tied on 3 VP and the winner looked wrong. The game
+        // ends at 81.2, before 81.8 returns the cards, so the held cards still decide the tie
+        // (seating order would have given it to "a" instead).
+        let players = [PlayerId::new("a"), PlayerId::new("b"), PlayerId::new("c")];
+        let mut state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+        state.phase = Phase::Status;
+        state.objective_deck.clear();
+        for (who, card) in [
+            ("a", "pok8imperial"),
+            ("b", "pok5trade"),
+            ("c", "pok1leadership"),
+        ] {
+            state.deal_strategy_card(
+                &PlayerId::new(who),
+                ti4_model::id::StrategyCardId::new(card),
+            );
+        }
+        for who in ["a", "b", "c"] {
+            state
+                .player_mut(&PlayerId::new(who))
+                .unwrap()
+                .victory_points = 3;
+        }
+
+        let report = resolve_status_phase(&mut state).unwrap();
+
+        assert!(report.game_ended);
+        assert!(report.returned_strategy_cards.is_empty());
+        assert_eq!(
+            crate::objectives::leader(&state),
+            Some(PlayerId::new("c")),
+            "Leadership (1) outranks Trade (5) and Imperial (8)"
         );
     }
 

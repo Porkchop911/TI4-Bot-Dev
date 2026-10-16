@@ -1,6 +1,6 @@
 import React from "react";
 import type { ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
-import { goodsNote, investmentsProgress } from "../presentation/strategyGoods.ts";
+import { goodsNote, goodsOnCard, investmentsProgress } from "../presentation/strategyGoods.ts";
 import { useDecisionTable } from "./PoliticsDecisionParts.tsx";
 
 /** Above the card grid of Manipulate Investments: which good this is and what is still owed. */
@@ -38,5 +38,22 @@ export const StrategyGoodsNote: React.FC<{ choice: PendingChoiceDto; option: Cho
     <div className="politics-option-note" data-testid="strategy-goods-note">
       {note}
     </div>
+  );
+};
+
+/** In the card's title row, so it stays in view however long the card text is: the goods on it. */
+export const StrategyGoodsBadge: React.FC<{ option: ChoiceOptionDto }> = ({ option }) => {
+  const table = useDecisionTable();
+  const goods = goodsOnCard(table, option.id);
+  if (goods === null) return null;
+  return (
+    <span
+      className="strategy-goods-badge"
+      data-testid="strategy-goods-badge"
+      data-empty={goods === 0 ? "true" : undefined}
+      title={`${goods} trade good${goods === 1 ? "" : "s"} on this card`}
+    >
+      {goods} TG
+    </span>
   );
 };

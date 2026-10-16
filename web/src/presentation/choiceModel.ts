@@ -21,6 +21,7 @@ export type SelectionMode =
 export type ChoiceWorkflowKind =
   | "system_activation"
   | "planet_selection"
+  | "ready_planets"
   | "tactical_movement"
   | "tactical_cargo"
   | "tactical_invasion"
@@ -206,6 +207,16 @@ export function isPlanetSelectionChoice(choice: PendingChoiceDto | null): boolea
   if (offered.some((o) => o.payload?.to !== undefined || o.payload?.origin !== undefined))
     return false;
   return offered.every((o) => optionPlanetId(o) !== null || isExtraPlanetSelectionOption(o));
+}
+
+/** Diplomacy's "ready which planet": every option readies one exhausted planet. */
+export function isReadyPlanetChoice(choice: PendingChoiceDto | null | undefined): boolean {
+  return Boolean(
+    choice &&
+      choice.context?.subtype === "ready_planet" &&
+      choice.options.length > 0 &&
+      choice.options.every((option) => option.kind === "ready"),
+  );
 }
 
 export function deriveChoiceRendererModel(
@@ -539,6 +550,25 @@ export function deriveChoiceRendererModel(
       options: choice.options,
       outstanding: [],
       declineOption,
+      optionsByKind,
+      optionsByTarget,
+    };
+  }
+
+  // Diplomacy readies its planets together: one list and one Confirm for the whole question.
+  if (isReadyPlanetChoice(choice)) {
+    const required = Math.min(2, choice.options.length);
+    return {
+      workflow: "ready_planets",
+      selectionMode: { mode: "multi", min: required, max: required },
+      prompt: choice.prompt,
+      actor: choice.actor,
+      nonce: choice.nonce,
+      isOptional: false,
+      contextTarget: choice.context?.target ?? null,
+      options: choice.options,
+      outstanding: choice.context?.outstanding ?? [],
+      declineOption: null,
       optionsByKind,
       optionsByTarget,
     };

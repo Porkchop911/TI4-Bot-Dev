@@ -32,9 +32,19 @@ export async function createStartedGame(
   playerCount: number,
   seed: number,
   startPreset?: string,
+  cardSet?: string,
+  mapTemplate?: string,
 ) {
   const created = await request.post(`${backend}/api/games`, {
-    data: createGameBody(playerCount, seed, startPreset),
+    // The server draws the opening speaker from the seed by default; these specs drive the host
+    // as the first picker, so they pin the first seat. TI4_SMOKE_SPEAKER=random opts back in.
+    // The seats are drawn from the seed too; `players` below is in seat order, so the seats keep
+    // the order of the join. TI4_SMOKE_SEATS=random opts back in.
+    data: {
+      ...createGameBody(playerCount, seed, startPreset, cardSet, mapTemplate),
+      speaker_order: process.env.TI4_SMOKE_SPEAKER?.trim() || "seat",
+      seat_order: process.env.TI4_SMOKE_SEATS?.trim() || "join",
+    },
   });
   expect(created.ok()).toBeTruthy();
   const host = await created.json();
@@ -66,13 +76,6 @@ export async function createStartedGame(
     expect(joined.ok()).toBeTruthy();
     const result = await joined.json();
     players.push({ id: result.player.id, session: result.player_session });
-  }
-  for (const player of players) {
-    const ready = await request.post(`${backend}/api/games/${gameId}/lobby/ready`, {
-      data: { ready: true },
-      headers: { "x-ti4-player-session": player.session },
-    });
-    expect(ready.ok()).toBeTruthy();
   }
   const started = await request.post(`${backend}/api/games/${gameId}/lobby/start`, {
     headers: { "x-ti4-player-session": players[0].session },

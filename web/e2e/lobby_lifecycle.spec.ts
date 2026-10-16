@@ -27,7 +27,6 @@ test("creates, joins, leaves, rejoins, starts, and restores using the real serve
   const hostUrl = host.url();
   expect(hostUrl).not.toContain("#");
   await expect(host.getByTestId("start-game-button")).toBeDisabled();
-  await host.getByTestId("ready-button").click();
   await host.getByRole("button", { name: "Copy game URL" }).click();
   const gameUrl = await host.evaluate(() => navigator.clipboard.readText());
   const gameId = new URL(hostUrl).pathname.split("/").pop()!;
@@ -45,15 +44,15 @@ test("creates, joins, leaves, rejoins, starts, and restores using the real serve
   await expect(guest.getByText("Watching as spectator")).toBeVisible();
   await guest.getByLabel("Nickname").fill("Player 2");
   await guest.getByRole("button", { name: "Join game" }).click();
-  await expect(guest.getByTestId("ready-button")).toBeVisible();
+  await expect(guest.getByRole("button", { name: "Leave lobby" })).toBeVisible();
   await expect(guest.getByText(/Position 2: Player 2/)).toBeVisible();
   await guest.getByRole("button", { name: "Leave lobby" }).click();
   await expect(guest).toHaveURL(new URL("/", gameUrl).href);
   await expect(host.getByText(/Position 2: Open/)).toBeVisible();
   await guest.goto(gameUrl);
   await guest.getByRole("button", { name: "Join game" }).click();
-  await expect(guest.getByTestId("ready-button")).toBeVisible();
-  await guest.getByTestId("ready-button").click();
+  await expect(guest.getByRole("button", { name: "Leave lobby" })).toBeVisible();
+  // Nobody says Ready: the host starts when every seat is filled.
   await expect(host.getByTestId("start-game-button")).toBeEnabled();
   await host.getByTestId("start-game-button").click();
   await expect(host.getByTestId("turn-status-bar")).toBeVisible();
@@ -65,7 +64,7 @@ test("creates, joins, leaves, rejoins, starts, and restores using the real serve
   await guestContext.close();
 });
 
-test("reorders open positions, watches a running game, and revokes a disconnected player on takeover", async ({
+test("watches a running game, and revokes a disconnected player on takeover", async ({
   browser,
   request,
 }) => {
@@ -86,23 +85,21 @@ test("reorders open positions, watches a running game, and revokes a disconnecte
     gameId,
   );
   expect(hostSession).toBeTruthy();
-  await host.getByRole("button", { name: "Move position 1 down" }).click();
-  await expect(host.getByText(/Position 2: Player 1 \(Host\)/)).toBeVisible();
+  // No host moves a seat: the seats are drawn when the game starts.
+  await expect(host.getByRole("button", { name: /Move position/ })).toHaveCount(0);
+  await expect(host.getByText(/Position 1: Player 1 \(Host\)/)).toBeVisible();
   const guestContext = await browser.newContext();
   const guest = await guestContext.newPage();
   failOnBrowserErrors(guest);
   await guest.goto(gameUrl);
   await guest.getByLabel("Nickname").fill("Player 2");
   await guest.getByRole("button", { name: "Join game" }).click();
-  await expect(guest.getByText(/Position 1: Player 2/)).toBeVisible();
-  await expect(guest.getByTestId("ready-button")).toBeVisible();
+  await expect(guest.getByText(/Position 2: Player 2/)).toBeVisible();
   const guestSession = await guest.evaluate(
     (id) => sessionStorage.getItem(`ti4.player-session:${id}`),
     gameId,
   );
   expect(guestSession).toBeTruthy();
-  await host.getByTestId("ready-button").click();
-  await guest.getByTestId("ready-button").click();
   await host.getByTestId("start-game-button").click();
   await expect(host.getByTestId("turn-status-bar")).toBeVisible();
   const spectatorContext = await browser.newContext();
@@ -123,8 +120,11 @@ test("reorders open positions, watches a running game, and revokes a disconnecte
           `http://127.0.0.1:${process.env.TI4_E2E_BACKEND_PORT ?? "8080"}/api/games/${gameId}/lobby`,
         );
         const lobby = await response.json();
-        expect(lobby.slots[1].connected).toBe(true);
-        return lobby.slots[0].can_take_over;
+        // The seats were drawn at Start: a player is found by its name, not by its place.
+        const named = (nickname: string) =>
+          lobby.slots.find((slot: { nickname: string }) => slot.nickname === nickname);
+        expect(named("Player 1").connected).toBe(true);
+        return named("Player 2").can_take_over;
       },
       { timeout: 10_000, intervals: [250] },
     )
@@ -155,7 +155,9 @@ test("reorders open positions, watches a running game, and revokes a disconnecte
   });
   expect(resumed.ok()).toBeTruthy();
   expect((await resumed.json()).player.id).toBe(
-    (await request.get(`${base}/lobby`).then((r) => r.json())).slots[0].occupant,
+    (await request.get(`${base}/lobby`).then((r) => r.json())).slots.find(
+      (slot: { nickname: string }) => slot.nickname === "Player 2",
+    ).occupant,
   );
   await takeoverContext.close();
   await spectatorContext.close();
@@ -238,20 +240,14 @@ test("the host picks a map, a guest sees it within seconds, and the started boar
   const before = await serverPreviewIds();
   await host.getByTestId("map-picker-done").click();
 
-  // Guest opens the read-only view: no host controls, own seat marked.
+  // Guest opens the read-only view: no host controls, and no seat is marked as anybody's.
   await guest.getByTestId("lobby-map-button").click();
   const readonly = guest.getByRole("dialog", { name: "Map" });
   await expect(readonly.getByTestId("map-reroll")).toHaveCount(0);
-  await expect(readonly.locator('[data-mine="true"]')).toHaveCount(1);
+  await expect(readonly.locator('[data-mine="true"]')).toHaveCount(0);
   await readonly.getByTestId("map-picker-close").click();
 
-  // Ready up and start: the real board has the previewed systems.
-  await host.getByTestId("ready-button").click();
-  await guest.getByTestId("ready-button").click();
-  await request.post(`${backend}/api/games/${gameIdForThird}/lobby/ready`, {
-    data: { ready: true },
-    headers: { "x-ti4-player-session": third.player_session },
-  });
+  // Start: the real board has the previewed systems.
   await expect(host.getByTestId("start-game-button")).toBeEnabled();
   await host.getByTestId("start-game-button").click();
   await expect(host.getByTestId("turn-status-bar")).toBeVisible();
@@ -262,7 +258,13 @@ test("the host picks a map, a guest sees it within seconds, and the started boar
     .filter((tile) => !tile.special_area)
     .map((tile) => tile.system_id)
     .sort();
-  expect(actual).toEqual(before);
+  // The preview is the board of the game but for its homes: a home of the preview is the place of
+  // a seat (`seat_1`, …), and the game puts the home of the faction that was drawn there.
+  const places = before.filter((id) => id.startsWith("seat_"));
+  const systems = before.filter((id) => !id.startsWith("seat_"));
+  expect(places).toHaveLength(3);
+  expect(actual).toEqual(expect.arrayContaining(systems));
+  expect(actual.length).toBeLessThanOrEqual(before.length);
   await hostContext.close();
   await guestContext.close();
 });

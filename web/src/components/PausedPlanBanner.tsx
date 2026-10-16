@@ -17,6 +17,7 @@ const WHAT: Record<BatchResume["plan"]["kind"], string> = {
   production: "production plan",
   casualties: "hit assignment",
   tokens: "token plan",
+  ready_planets: "planets to ready",
 };
 
 /**

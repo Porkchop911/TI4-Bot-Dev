@@ -110,4 +110,45 @@ describe("CargoLoadingTray", () => {
     await waitFor(() => expect(onSubmit).toHaveBeenCalledWith("load|2"));
     expect(onSubmit).toHaveBeenCalledTimes(2); // A full hold closes without a done option.
   });
+
+  it("counts a pickup from a system the ship passes through where the unit stands (95.1)", () => {
+    const enRouteBoard: BoardView = {
+      systems: {
+        ...board.systems,
+        "30": {
+          system_id: "30",
+          command_tokens: [],
+          planets: {},
+          units: [
+            { owner: "p1", unit_type: "infantry", planet: "mid", damaged: false },
+            { owner: "p1", unit_type: "infantry", planet: "mid", damaged: false },
+          ],
+        },
+      },
+    };
+    const enRoute: PendingChoiceDto = {
+      ...choice,
+      nonce: "load-2",
+      options: [
+        {
+          id: "load|3",
+          kind: "load",
+          label: "load infantry from mid",
+          payload: { unit: "infantry", source: "mid", system: "42", capacity_remaining: 2 },
+        },
+        choice.options[2],
+      ],
+    };
+    render(
+      <CargoLoadingTray
+        choice={enRoute}
+        board={enRouteBoard}
+        onSubmit={vi.fn()}
+        isOpen
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/on the way, #30/)).toBeInTheDocument();
+    expect(screen.getByText(/Have: 2/)).toBeInTheDocument();
+  });
 });

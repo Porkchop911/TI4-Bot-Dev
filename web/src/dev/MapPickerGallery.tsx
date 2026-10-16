@@ -56,7 +56,6 @@ export const MapPickerGallery: React.FC = () => {
       <MapPicker
         lobby={lobby}
         editable={view === "host"}
-        viewerPosition={view === "readonly" ? 2 : 1}
         saving={state === "saving"}
         onChoose={choose}
         onClose={() => undefined}

@@ -77,6 +77,8 @@ fn config() -> SimulationConfig {
         table: ProfileTable::Learner,
         temperature: TEMPERATURE,
         diplomacy: false,
+        lineup: None,
+        rule_seats: Vec::new(),
     }
 }
 

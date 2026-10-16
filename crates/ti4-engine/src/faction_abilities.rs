@@ -227,10 +227,6 @@ pub fn control_gained(
     if !has(state, content, player, "assimilate") {
         return;
     }
-    let faction = state
-        .player(player)
-        .map(|seat| seat.faction.to_string())
-        .unwrap_or_default();
     let types = ti4_content::units::catalogue(content, sources);
     let standing = state
         .system_state(system)
@@ -259,8 +255,9 @@ pub fn control_gained(
                 &ti4_model::id::UnitTypeId::new(&base),
             ) - i64::try_from(already).unwrap_or(i64::MAX);
             if room > 0 {
-                let own = ti4_content::units::faction_unit(content, &faction, &base, sources)
-                    .map_or(base.clone(), |unit| unit.id().to_owned());
+                let own =
+                    crate::action_cards::placed_unit_id(state, content, sources, player, &base)
+                        .map_or(base.clone(), |unit| unit.as_str().to_owned());
                 *taken.entry(base).or_default() += 1;
                 converted.push(ti4_model::units::Unit::new(
                     ti4_model::id::UnitTypeId::new(own),
@@ -1874,8 +1871,7 @@ mod tests {
         let content = ContentStore::embedded();
         let (mut state, player) = seated(&letnev);
         state.player_mut(&player).unwrap().trade_goods = 5;
-        let (decider, seen) =
-            crate::choice::Capturing::new(Box::new(crate::choice::AlwaysDecline));
+        let (decider, seen) = crate::choice::Capturing::new(Box::new(crate::choice::AlwaysDecline));
         let mut table = crate::choice::Table::with_default(Box::new(decider));
 
         space_combat_round_started(&mut state, content, POK, &mut table, &player);

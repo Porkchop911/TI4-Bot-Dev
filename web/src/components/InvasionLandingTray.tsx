@@ -1,3 +1,5 @@
+import { useCapability } from "../offline/capabilities.ts";
+import { useParticipantText } from "../presentation/PlayerIdentity.tsx";
 import React, { useEffect, useRef, useState } from "react";
 import type { BoardView, PendingChoiceDto, PlayerView } from "../protocol/types.ts";
 import {
@@ -8,9 +10,21 @@ import {
 import { getPlanetEffectiveValues } from "../presentation/playerStats.ts";
 import { DecisionHeader } from "./DecisionHeader.tsx";
 import { UnitIcon, getUnitDisplayName } from "./UnitIcon.tsx";
+import { PlanetValue } from "./PlanetValueIcons.tsx";
 import { WorkflowShell } from "./WorkflowShell.tsx";
+import { InfoPopover } from "./InfoPopover.tsx";
+import {
+  formatDefenderUnits,
+  planDefaultLanding,
+  planetDefense,
+  planetInvasionInfo,
+  planetStanding,
+  sameDraft,
+  type Landing,
+  type PlanPlanet,
+} from "../presentation/landingPlan.ts";
 
-export type Landing = { planet: string; unit: string; damaged: boolean };
+export type { Landing };
 const same = (a: Landing, b: Landing) =>
   a.planet === b.planet && a.unit === b.unit && a.damaged === b.damaged;
 const fromOption = (option: PendingChoiceDto["options"][number]): Landing | null =>
@@ -49,6 +63,8 @@ export const InvasionLandingTray: React.FC<{
   onDraftChange,
   embedded = false,
 }) => {
+  const present = useParticipantText();
+  const advisorOn = useCapability("advisor");
   const system = board?.invasion?.system_id ?? board?.active_system ?? "";
   const [localDraft, setLocalDraft] = useState<Landing[]>([]);
   const draft = controlledDraft ?? localDraft;
@@ -81,24 +97,60 @@ export const InvasionLandingTray: React.FC<{
 
   const units = board?.systems[system]?.units ?? [];
 
-  // M20: Calculate default target planet (highest value by resources + influence)
-  const getDefaultTargetPlanet = (): string | null => {
-    if (planets.length === 0) return null;
-    const mapTiles = board?.map_tiles;
-    let highestValuePlanet = planets[0];
-    let highestValue = -1;
-    for (const planetId of planets) {
-      const values = getPlanetEffectiveValues(planetId, undefined, mapTiles);
-      const totalValue = values.resources + values.influence;
-      if (totalValue > highestValue) {
-        highestValue = totalValue;
-        highestValuePlanet = planetId;
-      }
-    }
-    return highestValuePlanet;
+  /** Resources/influence with attachment modifiers (map tile data, catalog fallback), plus trait. */
+  const planetInfo = (planetId: string) => {
+    const attachments = Object.values(board?.systems[system]?.planets ?? {}).find(
+      (view) => view.planet_id === planetId,
+    )?.attachments;
+    const meta = board?.map_tiles
+      ?.flatMap((tile) => tile.planets ?? [])
+      .find((entry) => entry.id === planetId);
+    return {
+      ...getPlanetEffectiveValues(planetId, attachments, board?.map_tiles),
+      traits: meta?.traits ?? [],
+      attachments: attachments ?? [],
+    };
   };
 
-  const defaultTargetPlanet = getDefaultTargetPlanet();
+  const stock = (unit: string, damaged: boolean) =>
+    board?.systems[system]?.units.filter(
+      (piece) =>
+        piece.owner === choice.actor &&
+        !piece.planet &&
+        piece.unit_type === unit &&
+        piece.damaged === damaged,
+    ).length ?? 1;
+
+  // Default plan (see presentation/landingPlan.ts): uninhabited planets share the forces, a
+  // defended planet keeps the main force. Deterministic: depends only on the offers and the board.
+  const computeDefaultPlan = () => {
+    const planPlanets: PlanPlanet[] = planets.map((id) => {
+      const info = planetInfo(id);
+      const meta = board?.map_tiles?.flatMap((tile) => tile.planets ?? []).find((e) => e.id === id);
+      const standing = planetStanding(board, system, id, choice.actor).standing;
+      return {
+        id,
+        value: info.resources + info.influence,
+        extra: (meta?.legendary ? 10 : 0) + info.attachments.length + (info.traits.length ? 0.5 : 0),
+        defended: standing === "defended",
+        held: standing === "held",
+      };
+    });
+    const seen = new Set<string>();
+    const stocks = options.flatMap(({ landing }) => {
+      const key = `${landing.unit}|${landing.damaged}`;
+      if (seen.has(key)) return [];
+      seen.add(key);
+      return [{ unit: landing.unit, damaged: landing.damaged, count: stock(landing.unit, landing.damaged) }];
+    });
+    return planDefaultLanding(planPlanets, stocks, (planet, unit, damaged) =>
+      options.some(
+        ({ landing }) => landing.planet === planet && landing.unit === unit && landing.damaged === damaged,
+      ),
+    );
+  };
+  const defaultPlan = computeDefaultPlan();
+  const defaultTargetPlanet: string | null = defaultPlan.landings[0]?.planet ?? planets[0] ?? null;
   const [planet, setPlanet] = useState<string | null>(defaultTargetPlanet);
   const [hasAutoPopulated, setHasAutoPopulated] = useState(false);
   useEffect(() => {
@@ -146,7 +198,7 @@ export const InvasionLandingTray: React.FC<{
       setOdds({ key: previewKey, value: "unavailable" });
       return;
     }
-    if (!players?.[choice.actor] || !players[opponent]) {
+    if (!advisorOn || !players?.[choice.actor] || !players[opponent]) {
       setOdds({ key: previewKey, value: "unavailable" });
       return;
     }
@@ -187,7 +239,7 @@ export const InvasionLandingTray: React.FC<{
         if (!controller.signal.aborted) setOdds({ key: previewKey, value: "unavailable" });
       });
     return () => controller.abort();
-  }, [previewKey, choice.actor, viewerSeat]);
+  }, [previewKey, choice.actor, viewerSeat, advisorOn]);
 
   useEffect(() => {
     if (!running || submitting.current || submittedNonce.current === choice.nonce || !draft.length)
@@ -231,16 +283,7 @@ export const InvasionLandingTray: React.FC<{
     if (running && draft.length === 0) setRunning(false);
   }, [running, draft.length]);
 
-  const stock = (unit: string, damaged: boolean) =>
-    board?.systems[system]?.units.filter(
-      (piece) =>
-        piece.owner === choice.actor &&
-        !piece.planet &&
-        piece.unit_type === unit &&
-        piece.damaged === damaged,
-    ).length ?? 1;
-
-  // M20: Auto-populate default troop draft on first load
+  // Auto-populate the default plan on first load
   useEffect(() => {
     if (
       !hasAutoPopulated &&
@@ -249,31 +292,22 @@ export const InvasionLandingTray: React.FC<{
       localDraft.length === 0 &&
       !controlledDraft?.length
     ) {
-      const groundForceOptions = options.filter(
-        ({ landing }) => landing.planet === defaultTargetPlanet
-      );
-      const defaultDraft: Landing[] = [];
-      for (const { landing } of groundForceOptions) {
-        const availableCount = stock(landing.unit, landing.damaged);
-        for (let i = 0; i < availableCount; i++) {
-          defaultDraft.push(landing);
-        }
-      }
-      if (defaultDraft.length > 0) {
-        setDraft(defaultDraft);
+      if (defaultPlan.landings.length > 0) {
+        setDraft(defaultPlan.landings);
         setPlanet(defaultTargetPlanet);
       }
       setHasAutoPopulated(true);
     }
   }, [defaultTargetPlanet, hasAutoPopulated, draft.length, localDraft.length, controlledDraft?.length]);
 
-  // M20: Reset to default selections
+  // Reset restores the default plan (including the split)
   const resetToDefaults = () => {
-    setDraft([]);
+    setDraft(defaultPlan.landings);
     setPlanet(defaultTargetPlanet);
     setError(null);
-    setHasAutoPopulated(false);
+    setHasAutoPopulated(true);
   };
+  const showSplitHint = defaultPlan.split && sameDraft(draft, defaultPlan.landings);
 
   const visibleOdds = odds?.key === previewKey ? odds.value : "loading";
   const available = (landing: Landing) =>
@@ -295,6 +329,22 @@ export const InvasionLandingTray: React.FC<{
               Stage forces to planets with + and −. Only confirmed landings are public.
             </p>
 
+            {showSplitHint && (
+              <p className="invasion-split-hint" data-testid="invasion-split-hint">
+                Split across uninhabited planets — adjust below
+                <span className="invasion-split-hint__counts">
+                  {" "}
+                  (
+                  {planets
+                    .map((name) => [name, draft.filter((item) => item.planet === name).length] as const)
+                    .filter(([, count]) => count > 0)
+                    .map(([name, count]) => `${name} ${count}`)
+                    .join(", ")}
+                  )
+                </span>
+              </p>
+            )}
+
             <div className="invasion-landing-planets-container">
               {planets.map((name) => {
                 const planetUnitsAlready =
@@ -302,8 +352,10 @@ export const InvasionLandingTray: React.FC<{
                     (piece) => piece.owner === choice.actor && piece.planet === name,
                   ).length ?? 0;
                 const planetDraftCount = draft.filter((item) => item.planet === name).length;
+                const info = planetInfo(name);
                 const isCurrentSelected = planet === name;
                 const planetOptions = options.filter(({ landing }) => landing.planet === name);
+                const defense = planetDefense(board, system, name, choice.actor, players);
 
                 return (
                   <div
@@ -320,7 +372,7 @@ export const InvasionLandingTray: React.FC<{
                         >
                           <span aria-hidden="true">🪐 </span>
                           {name}
-                          {name === defaultTargetPlanet && (
+                          {name === defaultTargetPlanet && !defaultPlan.split && (
                             <span
                               className="invasion-default-badge"
                               title="Pre-selected as default target"
@@ -343,6 +395,102 @@ export const InvasionLandingTray: React.FC<{
                           Already on planet: {planetUnitsAlready} · Staged: {planetDraftCount}
                         </span>
                       </div>
+
+                      {defense.forces.length > 0 && (
+                        <div className="invasion-defenders" data-testid="invasion-defenders">
+                          {defense.forces.map((force) => (
+                            <div
+                              key={force.owner}
+                              className="invasion-defenders__row"
+                              data-testid="invasion-defender-force"
+                            >
+                              <span className="invasion-defenders__owner">
+                                {players?.[force.owner]?.faction ?? force.owner}:
+                              </span>
+                              {force.ground.map((entry) => (
+                                <span
+                                  key={entry.unit}
+                                  className="invasion-defenders__unit invasion-defenders__unit--ground"
+                                >
+                                  <UnitIcon type={entry.unit} size={14} aria-hidden="true" />
+                                  {formatDefenderUnits([entry])}
+                                </span>
+                              ))}
+                              {force.groundTotal === 0 && (
+                                <span className="invasion-defenders__unit invasion-defenders__none">
+                                  no ground forces
+                                </span>
+                              )}
+                              {force.pds > 0 && (
+                                <span className="invasion-defenders__unit invasion-defenders__unit--pds">
+                                  <UnitIcon type="pds" size={14} aria-hidden="true" />
+                                  {force.pds} PDS
+                                </span>
+                              )}
+                              {force.otherStructures.length > 0 && (
+                                <span className="invasion-defenders__unit invasion-defenders__unit--structure">
+                                  {formatDefenderUnits(force.otherStructures)}
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                          {defense.spaceCannonDefense && (
+                            <p
+                              className={`invasion-defenders__scd${defense.spaceCannonDefense.silencedBy ? " invasion-defenders__scd--silenced" : ""}`}
+                              data-testid="invasion-scd"
+                            >
+                              {defense.spaceCannonDefense.silencedBy
+                                ? `Space Cannon Defense silenced by your ${defense.spaceCannonDefense.silencedBy}`
+                                : `Space Cannon Defense: ${defense.spaceCannonDefense.dice} ${defense.spaceCannonDefense.dice === 1 ? "die" : "dice"} (${defense.forces
+                                    .flatMap((force) => force.guns)
+                                    .map((gun) => `${gun.count > 1 ? `${gun.count}× ` : ""}${getUnitDisplayName(gun.unit)} hits on ${gun.hitsOn}`)
+                                    .join(", ")}) ${defense.spaceCannonDefense.dice === 1 ? "fires" : "fire"} at forces you land here, ~${defense.spaceCannonDefense.expectedHits} hits`}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      <div
+                        className="invasion-planet-landing-card__values"
+                        data-testid="invasion-planet-values"
+                      >
+                        <PlanetValue kind="resources" value={info.resources} />
+                        <span aria-hidden="true">·</span>
+                        <PlanetValue kind="influence" value={info.influence} />
+                        {info.traits.length > 0 && (
+                          <span className="invasion-planet-trait" title={`Trait: ${info.traits.join(", ")}`}>
+                            {info.traits.join(" / ")}
+                          </span>
+                        )}
+                        {info.attachments.length > 0 && (
+                          <span
+                            className="invasion-planet-trait"
+                            title={`Attachments: ${info.attachments.join(", ")}`}
+                          >
+                            + {info.attachments.join(", ")}
+                          </span>
+                        )}
+                      </div>
+
+                      <ul className="invasion-planet-effects" data-testid="invasion-planet-effects">
+                        {planetInvasionInfo(
+                          board,
+                          system,
+                          name,
+                          choice.actor,
+                          planetDraftCount,
+                          (id) => players?.[id]?.faction ?? id,
+                        ).effects.map((effect, index) => (
+                          <li key={index} className={`invasion-effect invasion-effect--${effect.kind}`}>
+                            <span>{effect.text}</span>
+                            {effect.detail && (
+                              <InfoPopover label={`About: ${effect.text}`} data-testid="planet-effect-info" position="bottom">
+                                <p style={{ margin: 0, maxWidth: 280 }}>{effect.detail}</p>
+                              </InfoPopover>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
 
                       {isCurrentSelected && board?.invasion?.phase === "landing" && (
                         <div
@@ -469,7 +617,7 @@ export const InvasionLandingTray: React.FC<{
                 className="button button--secondary"
                 disabled={running}
                 onClick={resetToDefaults}
-                title="Reset to default planet and all available troops"
+                title="Reset to the default plan: forces split across uninhabited planets, the rest on the contested planet"
               >
                 Reset to Defaults
               </button>
@@ -525,7 +673,7 @@ export const InvasionLandingTray: React.FC<{
       <DecisionHeader
         actor={choice.actor}
         title="Plan landings"
-        instruction={choice.prompt}
+        instruction={present(choice.prompt)}
         progress={system ? `Active system: ${system}` : undefined}
         onMinimize={onClose}
       />

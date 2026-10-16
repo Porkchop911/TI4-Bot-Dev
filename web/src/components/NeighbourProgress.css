@@ -1,0 +1,86 @@
+.neighbour-progress {
+  --neighbour-ahead: var(--color-accent, #38bdf8);
+  --neighbour-behind: var(--color-danger, #ef4444);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 4px;
+  width: 100%;
+}
+
+.neighbour-progress__rows {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.neighbour-progress__row {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: 11px;
+  line-height: 1.4;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  background: rgba(15, 23, 42, 0.6);
+}
+
+.neighbour-progress__row--ahead {
+  color: var(--neighbour-ahead);
+}
+
+.neighbour-progress__row--tied,
+.neighbour-progress__row--behind {
+  color: var(--neighbour-behind);
+}
+
+.neighbour-progress__who {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid #f8fafc;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.neighbour-progress__glyph {
+  font-size: 9px;
+}
+
+.neighbour-progress__summary {
+  font-size: 10px;
+  color: #94a3b8;
+}
+
+.neighbour-progress__summary--met {
+  color: #34d399;
+}
+
+.neighbour-progress__heading {
+  font-size: 10px;
+  font-weight: 700;
+  color: #cbd5e1;
+}
+
+/* The viewer's own comparison in the card column: on a phone the player columns scroll sideways
+   and may start off screen; on wider screens the viewer's column already shows it. */
+.neighbour-progress--card {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .neighbour-progress--card {
+    display: flex;
+  }
+}

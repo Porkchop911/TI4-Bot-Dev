@@ -8,7 +8,7 @@
   --color-text: #f8fafc;
   --color-text-strong: #e2e8f0;
   --color-text-muted: #94a3b8;
-  --color-text-faint: #64748b;
+  --color-text-faint: #8393aa;
   --color-accent: #38bdf8;
   --color-accent-strong: #0284c7;
   --color-success: #10b981;
@@ -76,6 +76,35 @@ html,
 
 .game-header > :first-child {
   flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+
+.game-header__actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+  align-items: center;
+  padding: 0 12px;
+  background: #0f172a;
+  border-bottom: 1px solid #1e293b;
+}
+
+/* Phones: the status column and the Technologies / Objectives buttons do not fit side by side (the
+   turn banner wrapped into five lines and pushed the map into the prompt), so the buttons take their
+   own row under the status. */
+@media screen and (max-width: 600px) {
+  .game-header {
+    flex-wrap: wrap;
+  }
+  .game-header > :first-child {
+    flex: 1 1 100%;
+  }
+  .game-header__actions {
+    flex: 1 1 100%;
+    padding: 6px 12px;
+  }
 }
 
 .game-header__exit {
@@ -108,6 +137,15 @@ html,
 .app-shell__player-sheet .player-sheet-panel {
   width: 100% !important;
   height: 100% !important;
+  /* The turn action bar (its height is published as --bottom-bar-offset) is drawn over the lower
+     edge of the column; the room under the last player sheet lets it scroll out from behind. */
+  padding-bottom: calc(12px + var(--bottom-bar-offset, 0px)) !important;
+  overscroll-behavior: contain;
+}
+
+/* Only the phone drawers have a close button; the desktop column is always there. */
+.app-shell__drawer-close {
+  display: none;
 }
 
 .app-shell__event-log {
@@ -142,6 +180,34 @@ html,
   border-bottom: 1px solid var(--color-border);
 }
 
+.event-log__turn-redo {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 16px;
+  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.event-log__turn-redo-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.75rem;
+}
+
+.event-log__turn-redo-field select {
+  min-height: 32px;
+  padding: 2px 6px;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 0.85rem;
+}
+
 .event-log__toggle {
   display: flex;
   justify-content: space-between;
@@ -157,6 +223,11 @@ html,
   overflow-y: auto;
   padding: 6px 12px;
   background: var(--color-surface);
+}
+.event-log__jump {
+  display: block;
+  width: calc(100% - 24px);
+  margin: 6px 12px;
 }
 .event-log__heading {
   display: flex;
@@ -189,7 +260,7 @@ html,
 .event-log__owner,
 .event-log__meta {
   color: var(--color-text-faint);
-  font-size: 11px;
+  font-size: 12px;
 }
 .event-log__count {
   margin-left: 4px;
@@ -221,12 +292,12 @@ html,
   border-radius: 4px;
   background: #1e293b;
   color: #f8fafc;
-  font-size: 11px;
+  font-size: 12px;
   text-shadow: none;
 }
 .event-log__private {
   color: #f59e0b;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .event-log__entry {
@@ -244,6 +315,37 @@ html,
   opacity: 0.7;
 }
 
+/* A die roll: the same line as a decision, with its faces as small chips (hits filled). */
+.event-log__entry--roll {
+  border-left: 2px solid var(--color-border-faint);
+}
+.event-log__dice {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-left: auto;
+}
+.event-log__die {
+  min-width: 20px;
+  padding: 0 4px;
+  border: 1px solid var(--color-border-faint);
+  border-radius: 4px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.event-log__die[data-hit="yes"] {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-on-accent, #0b1020);
+}
+.event-log__die[data-hit="no"] {
+  opacity: 0.6;
+}
+.event-log__die[data-reroll="yes"] {
+  border-style: dashed;
+}
+
 .event-log__action-marker {
   display: flex;
   align-items: center;
@@ -252,7 +354,7 @@ html,
   padding-bottom: 3px;
   padding-left: 20px;
   background: transparent;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--color-text-muted);
   margin-top: 4px;
@@ -264,7 +366,7 @@ html,
 }
 
 .event-log__action-actor {
-  font-size: 10px;
+  font-size: 12px;
   opacity: 0.7;
 }
 
@@ -276,7 +378,7 @@ html,
   padding-bottom: 3px;
   padding-left: 20px;
   background: transparent;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-faint);
   font-style: italic;
 }
@@ -302,7 +404,7 @@ html,
 
 .event-log__index {
   color: var(--color-text-faint);
-  font-size: 11px;
+  font-size: 12px;
 }
 .event-log__undo {
   margin-left: auto;
@@ -316,7 +418,7 @@ html,
   cursor: pointer;
   text-align: left;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: 12px;
   padding: 4px 8px;
 }
 .event-log__undo:hover,
@@ -341,6 +443,20 @@ html,
   pointer-events: none;
 }
 
+/* The overlays container is its own stacking context at --layer-modal, below the header
+   (--layer-header), so a dialog inside it at --layer-dialog still slid under the top bar and its
+   first lines (eyebrow labels) were clipped at 1280x720. While a backdrop dialog is open the
+   whole container rises above the header. Non-modal children (banners, prompts, status bars)
+   keep the lower layer, so the header stays usable for them. */
+.app-shell__overlays:has(
+    .choice-dialog,
+    .choice-workflow-dialog,
+    .decision-modal,
+    .invasion-overlay
+  ) {
+  z-index: var(--layer-dialog);
+}
+
 .paused-plan {
   position: absolute;
   top: 8px;
@@ -358,6 +474,320 @@ html,
   color: inherit;
   font-size: 0.9rem;
   pointer-events: auto;
+}
+
+.turn-redo {
+  position: absolute;
+  /* Below the game header, which sits above the overlay layer. */
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  width: max-content;
+  max-width: min(720px, calc(100% - 32px));
+  padding: 8px 12px;
+  border: 1px solid var(--border-strong, #8886);
+  border-left-width: 4px;
+  border-radius: 8px;
+  background: var(--surface-raised, #1c2230);
+  color: inherit;
+  font-size: 0.9rem;
+  pointer-events: auto;
+}
+
+.turn-redo[data-state="conflict"] {
+  border-left-color: var(--color-warning, #f59e0b);
+}
+
+.turn-redo[data-state="replaying"],
+.turn-redo[data-state="rewinding"],
+.turn-redo[data-state="restoring"] {
+  border-left-color: var(--color-accent, #38bdf8);
+}
+
+.turn-redo[data-state="handoff"],
+.turn-redo[data-state="complete"] {
+  border-left-color: var(--color-success, #22c55e);
+}
+
+.turn-redo__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 280px;
+}
+
+.turn-redo__detail,
+.turn-redo__note {
+  color: var(--color-text-muted, #94a3b8);
+  font-size: 0.85rem;
+}
+
+.turn-redo__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.turn-redo[data-state="replaying"] .turn-redo__title::after {
+  content: "";
+  display: inline-block;
+  width: 0.9em;
+  height: 0.9em;
+  margin-left: 8px;
+  vertical-align: -0.1em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: turn-redo-spin 0.8s linear infinite;
+}
+
+/* Phones (and short landscape screens): the redo status is one docked pill in the board's toolbar
+   strip (the slot the secondary-prep chip uses), so it takes part in the layout and covers nothing.
+   The details open as a sheet right under the strip, capped at 40% of the viewport height; the body
+   scrolls and the buttons stay below it. The desktop strip above is unchanged. */
+.turn-redo--compact {
+  position: relative;
+  top: auto;
+  left: auto;
+  transform: none;
+  display: block;
+  width: auto;
+  max-width: none;
+  padding: 0;
+  border-left-width: 4px;
+  font-size: 0.85rem;
+}
+
+.turn-redo--floating {
+  position: absolute;
+  top: calc(var(--board-chrome-bottom, 56px) + 6px);
+  left: 12px;
+  right: 12px;
+  z-index: var(--layer-banner);
+}
+
+/* A short landscape screen (wider than 720px): docked at the bottom of the side column, above the
+   turn action bar, clear of the board's toolbar and of the event log toggle. */
+.turn-redo--dock {
+  position: fixed;
+  top: auto;
+  left: auto;
+  right: 8px;
+  bottom: calc(var(--bottom-bar-offset, 0px) + 8px);
+  width: min(320px, calc(100vw - 16px));
+}
+
+.turn-redo--dock .turn-redo__sheet {
+  position: absolute;
+  top: auto;
+  left: -4px;
+  right: -1px;
+  bottom: calc(100% + 4px);
+  /* 40% of the height, and never up into the game header; where that leaves little room (a 390px tall
+     screen under a two-row action bar) the whole sheet scrolls, with its head and its buttons pinned. */
+  max-height: min(40vh, calc(100vh - var(--bottom-bar-offset, 0px) - 60px - var(--turn-redo-top-limit, 0px)));
+  max-height: min(40dvh, calc(100dvh - var(--bottom-bar-offset, 0px) - 60px - var(--turn-redo-top-limit, 0px)));
+  overflow-y: auto;
+}
+
+.turn-redo--dock .turn-redo__sheet-head {
+  position: sticky;
+  top: 0;
+  background: var(--surface-raised, #1c2230);
+}
+
+.turn-redo--dock .turn-redo__close {
+  min-height: 32px;
+}
+
+.turn-redo--dock .turn-redo__sheet-body {
+  flex: none;
+  overflow: visible;
+}
+
+.turn-redo--dock.turn-redo--compact .turn-redo__actions {
+  position: sticky;
+  bottom: 0;
+  padding: 4px 8px;
+  background: var(--surface-raised, #1c2230);
+}
+
+.turn-redo__pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  height: 44px;
+  padding: 0 4px 0 10px;
+}
+
+.turn-redo__pill-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.turn-redo--compact[data-state="replaying"] .turn-redo__pill-label::after {
+  content: "";
+  display: inline-block;
+  width: 0.9em;
+  height: 0.9em;
+  margin-left: 8px;
+  vertical-align: -0.1em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: turn-redo-spin 0.8s linear infinite;
+}
+
+.turn-redo__toggle {
+  flex: none;
+  min-height: 36px;
+  min-width: 64px;
+}
+
+.turn-redo__sheet {
+  /* Docked above the turn action bar (its height is published as --bottom-bar-offset) and the
+     Players / Events buttons, so it covers neither; it only ever lies over the lower map. */
+  position: fixed;
+  --turn-redo-gap: 52px;
+  bottom: calc(var(--bottom-bar-offset, 0px) + var(--turn-redo-gap));
+  left: 8px;
+  right: 8px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  /* At most 40% of the viewport, and no taller than the room between the strip and the bar below
+     (--turn-redo-pill-bottom is the strip's bottom edge); where that room is smaller than a
+     readable sheet (156px) the sheet grows upward over the map's own toolbar rather than behind the bar. */
+  max-height: min(40vh, max(156px, calc(100vh - var(--bottom-bar-offset, 0px) - var(--turn-redo-gap) - var(--turn-redo-pill-bottom, 0px))), calc(100vh - var(--bottom-bar-offset, 0px) - var(--turn-redo-gap) - var(--turn-redo-top-limit, 0px) - 4px));
+  max-height: min(40dvh, max(156px, calc(100dvh - var(--bottom-bar-offset, 0px) - var(--turn-redo-gap) - var(--turn-redo-pill-bottom, 0px))), calc(100dvh - var(--bottom-bar-offset, 0px) - var(--turn-redo-gap) - var(--turn-redo-top-limit, 0px) - 4px));
+  padding: 0 env(safe-area-inset-right, 0px) 0 env(safe-area-inset-left, 0px);
+  border: 1px solid var(--border-strong, #8886);
+  border-left-width: 4px;
+  border-left-color: inherit;
+  border-radius: 8px;
+  background: var(--surface-raised, #1c2230);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+}
+
+.turn-redo__sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex: none;
+  padding: 4px 6px 0 12px;
+}
+
+.turn-redo__close {
+  flex: none;
+  min-height: 36px;
+  min-width: 64px;
+}
+
+.turn-redo__sheet-body > * {
+  flex: none;
+}
+
+.turn-redo__sheet-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 12px;
+}
+
+.turn-redo__detail--clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.turn-redo__more {
+  min-height: 44px;
+  padding: 0 4px;
+  background: none;
+  border: 0;
+  color: var(--color-accent, #38bdf8);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.turn-redo--compact .turn-redo__actions {
+  flex: none;
+  flex-wrap: nowrap;
+  gap: 8px;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--color-border);
+}
+
+.turn-redo--compact .turn-redo__actions .button {
+  flex: 1 1 0;
+  min-height: 44px;
+  min-width: 0;
+}
+
+@keyframes turn-redo-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The phone event log drawer: an open drawer rises above the overlay layer (the turn action bar was
+   drawn over it and hid its entries, including "Redo my last turn"; the Players / Events buttons
+   stay above it) and the redo controls shrink to one row. */
+@media (max-width: 720px) {
+  .app-shell__event-log.app-shell__drawer--open,
+  .app-shell__player-sheet.app-shell__drawer--open {
+    z-index: calc(var(--layer-modal) + 1);
+  }
+
+  /* The turn action bar sits 52px above the bottom edge here (the Players / Events buttons float
+     below it), and with no bar the buttons still need that room. */
+  .turn-redo__sheet {
+    --turn-redo-gap: 60px;
+  }
+
+  .event-log__turn-redo {
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    padding: 6px 12px;
+  }
+
+  .event-log__turn-redo-field {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .event-log__turn-redo .button {
+    min-height: 40px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turn-redo--compact[data-state="replaying"] .turn-redo__pill-label::after,
+  .turn-redo[data-state="replaying"] .turn-redo__title::after {
+    animation: none;
+  }
 }
 
 .invasion-overlay {
@@ -411,7 +841,7 @@ html,
 }
 
 .invasion-badge {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -521,7 +951,7 @@ html,
 }
 
 .invasion-planet-chip__target-tag {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -566,7 +996,7 @@ html,
 }
 
 .invasion-step-card__badge {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -612,6 +1042,55 @@ html,
   color: #94a3b8;
 }
 
+.invasion-step-card__what {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.invasion-shooters {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.invasion-shooter__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  font-size: 13px;
+  color: #e2e8f0;
+}
+
+.invasion-shooter__hits {
+  margin-left: auto;
+  font-weight: 700;
+  color: #fca5a5;
+}
+
+.invasion-step-card__result {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(234, 179, 8, 0.12);
+  border: 1px solid rgba(234, 179, 8, 0.35);
+  font-size: 13px;
+  line-height: 1.45;
+  color: #f8fafc;
+}
+
+.invasion-step-card__effects {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #cbd5e1;
+}
+
 .invasion-planets-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -643,7 +1122,7 @@ html,
 }
 
 .invasion-planet-card__count {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-text-muted);
 }
 
@@ -673,7 +1152,7 @@ html,
 }
 
 .invasion-unit-chip__damaged {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   color: #ef4444;
   background: rgba(239, 68, 68, 0.15);
@@ -789,7 +1268,7 @@ html,
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -1022,6 +1501,52 @@ html,
   padding: 4px 12px;
 }
 
+.invasion-planet-landing-card__values {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #cbd5e1;
+}
+.invasion-planet-trait {
+  font-weight: 400;
+  font-size: 11px;
+  color: #94a3b8;
+  text-transform: capitalize;
+}
+.invasion-split-hint {
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 13px;
+  border-radius: 6px;
+  background: rgba(255, 193, 7, 0.14);
+  color: #e2e8f0;
+}
+.invasion-split-hint__counts {
+  font-variant-numeric: tabular-nums;
+  color: #cbd5e1;
+}
+.invasion-planet-effects {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.invasion-effect {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #cbd5e1;
+  overflow-wrap: anywhere;
+}
+.invasion-effect--explore { color: #86efac; }
+.invasion-effect--legendary { color: #fcd34d; }
 .invasion-planet-landing-card__meta {
   font-size: 12px;
   color: var(--color-text-muted);
@@ -1038,7 +1563,7 @@ html,
   display: inline-flex;
   align-items: center;
   align-self: flex-start;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   padding: 3px 8px;
   border-radius: 4px;
@@ -1071,7 +1596,7 @@ html,
 }
 
 .invasion-landing-row__avail {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-text-muted);
   margin-top: 1px;
 }
@@ -1176,11 +1701,19 @@ html,
   pointer-events: auto;
 }
 
-.board-controls {
-  position: absolute;
-  top: 14px;
-  left: 14px;
+.board-chrome {
+  position: relative;
   z-index: var(--layer-board-chrome);
+  flex: none;
+  min-height: 56px;
+  box-sizing: border-box;
+  padding: 10px 14px 6px;
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+.board-controls {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1216,7 +1749,7 @@ html,
   position: fixed !important;
   top: 90px !important;
   right: 346px !important;
-  bottom: 250px !important;
+  bottom: max(250px, var(--bar-clear, 0px)) !important;
   z-index: calc(var(--layer-drawer) + 1) !important;
   width: min(360px, calc(100vw - 370px));
   min-height: 160px;
@@ -1288,9 +1821,34 @@ html,
 }
 .strategy-draft-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* The grid scrolls (max-height); without this the rows are squeezed to fit it and the card
+     text, with the trade goods note at its end, spills out of the card and under the next one. */
+  grid-auto-rows: max-content;
+  align-content: start;
 }
 .strategy-draft-card {
   min-height: 160px;
+}
+.strategy-draft-card__title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.strategy-goods-badge {
+  flex: none;
+  padding: 1px 8px;
+  border: 1px solid var(--color-warning);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-warning);
+  white-space: nowrap;
+}
+.strategy-goods-badge[data-empty="true"] {
+  border-color: var(--color-border, #334155);
+  color: var(--color-text-muted);
+  font-weight: 500;
 }
 .strategy-draft-card__text {
   margin-top: 8px;
@@ -1301,7 +1859,7 @@ html,
 .strategy-draft-card__text strong {
   color: var(--color-accent);
   text-transform: uppercase;
-  font-size: 10px;
+  font-size: 12px;
 }
 .strategy-draft-card__text p {
   margin: 3px 0 10px;
@@ -1425,14 +1983,6 @@ html,
   flex-wrap: wrap;
   gap: 4px 10px;
 }
-.lobby-list__status .lobby-readiness--ready {
-  color: #6ee7b7;
-  font-weight: 700;
-}
-.lobby-list__status .lobby-readiness--waiting {
-  color: #fcd34d;
-  border-bottom: 1px dashed currentColor;
-}
 .lobby-list__status .lobby-presence--connected {
   color: #7dd3fc;
   font-weight: 700;
@@ -1453,17 +2003,13 @@ html,
 .lobby-actions .field-label {
   margin: 0;
 }
-.lobby-unready-button {
-  border-style: dashed;
-  font-weight: 600;
-}
 .seat-badge {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
-  padding: 2px 5px;
+  gap: 4px;
+  padding: 2px 6px 2px 3px;
   border: 2px solid;
-  border-radius: 6px;
+  border-radius: 8px;
   background: #172236;
   color: #fff;
   font-weight: 700;
@@ -1474,25 +2020,27 @@ html,
   flex: none;
 }
 .board-seat-legend {
-  position: absolute;
-  z-index: 2;
-  top: 52px;
-  left: 14px;
-  max-width: min(270px, 50%);
-  max-height: 35%;
-  overflow: auto;
+  max-width: 100%;
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
   pointer-events: none;
 }
 .board-seat-legend > span {
-  padding: 2px 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px 2px 4px;
   background: #172236;
-  border-left: 3px solid;
+  border-left: 4px solid;
   border-radius: 4px;
   color: #fff;
-  font-size: 11px;
+  font-size: 15px;
+}
+@media (max-width: 600px) {
+  .board-seat-legend > span {
+    font-size: 14px;
+  }
 }
 .session-error {
   position: fixed;
@@ -1599,10 +2147,14 @@ html,
 }
 
 @media (max-width: 720px) {
+  /* Stacked layout: the prompt banner sits below the map, so no bottom inset is needed. */
+  .board-stage {
+    padding-bottom: 0 !important;
+  }
   .detail-panel {
     top: 55px !important;
     right: 8px !important;
-    bottom: 85px !important;
+    bottom: max(85px, var(--bar-clear, 0px)) !important;
     width: min(340px, calc(100vw - 16px));
   }
   .board-tooltip {
@@ -1681,6 +2233,21 @@ html,
     min-height: 35vh;
     border-top: 1px solid var(--color-border);
     border-left: none !important;
+    /* Clear the floating Players / Objectives / Events buttons so the last sheet is fully
+       reachable; the drawer itself is the one scroller. */
+    padding-bottom: 72px !important;
+    height: auto !important;
+    overflow-y: visible !important;
+  }
+
+  .app-shell__drawer-close {
+    display: block;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    margin: 0 0 0 auto;
+    padding: 6px 14px;
+    min-height: 36px;
   }
 
   .app-shell__mobile-actions {
@@ -1843,7 +2410,7 @@ select:focus-visible,
 }
 .choice-workflow-eyebrow {
   color: var(--workflow-accent, var(--color-accent));
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -2019,6 +2586,40 @@ select:focus-visible,
 .agenda-dialog__planet[data-staged="true"] {
   background: rgba(168, 85, 247, 0.2);
   border: 2px solid #a855f7;
+  font-weight: 600;
+}
+.undo-confirm {
+  width: min(440px, calc(100vw - 32px));
+}
+.undo-confirm__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.agenda-dialog .agenda-dialog__actions {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 12px;
+}
+.agenda-dialog__reset {
+  margin-right: auto;
+  padding: 4px 8px;
+  background: none;
+  border: none;
+  color: var(--color-text-muted, #94a3b8);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.agenda-dialog__staged {
+  margin: 0;
+  font-size: 15px;
+}
+.agenda-dialog__staged strong {
+  color: #e9d5ff;
 }
 .agenda-dialog__grid {
   display: grid;
@@ -2223,7 +2824,7 @@ select:focus-visible,
 }
 
 .combat-fleet-card__role {
-  font-size: 10px;
+  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   padding: 2px 6px;
@@ -2249,7 +2850,7 @@ select:focus-visible,
 }
 
 .combat-fleet-card__hits {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   padding: 2px 6px;
   border-radius: 3px;
@@ -2297,7 +2898,7 @@ select:focus-visible,
   border-radius: 4px;
   color: #4ade80;
   background: #163a33;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
   cursor: help;
@@ -2402,6 +3003,17 @@ select:focus-visible,
   border-color: var(--color-danger);
 }
 
+.combat-unit-row--illegal {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.combat-unit-row__illegal-note {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
 .combat-unit-row__name {
   flex: 1;
 }
@@ -2411,7 +3023,7 @@ select:focus-visible,
 }
 
 .combat-unit-row__damaged-badge {
-  font-size: 11px;
+  font-size: 12px;
   color: #f0e442;
   background: rgba(240, 228, 66, 0.12);
   padding: 2px 6px;
@@ -2462,7 +3074,7 @@ select:focus-visible,
 .combat-card-offer__eyebrow {
   display: block;
   color: #e69f00;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.1em;
   margin-bottom: 6px;
@@ -2491,7 +3103,7 @@ select:focus-visible,
 
 .combat-unit-row__action-btn {
   padding: 3px 8px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   border-radius: 3px;
   cursor: pointer;
@@ -2511,7 +3123,7 @@ select:focus-visible,
 
 .combat-unit-row__sustain-btn {
   padding: 3px 8px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   border-radius: 3px;
   cursor: pointer;
@@ -2546,7 +3158,7 @@ select:focus-visible,
 }
 
 .combat-round-hits__header {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -2584,7 +3196,7 @@ select:focus-visible,
 }
 
 .combat-round-hits__label {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-text-muted);
   text-align: center;
   white-space: nowrap;
@@ -2594,7 +3206,7 @@ select:focus-visible,
 }
 
 .combat-round-hits__divider {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--color-text-muted);
   text-transform: uppercase;
@@ -2627,14 +3239,14 @@ select:focus-visible,
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   color: var(--color-text-muted);
 }
 
 .combat-odds-card__tag {
-  font-size: 9px;
+  font-size: 12px;
   background: rgba(99, 102, 241, 0.15);
   color: #818cf8;
   padding: 1px 5px;
@@ -2663,7 +3275,7 @@ select:focus-visible,
 }
 
 .combat-odds-col__exp {
-  font-size: 9px;
+  font-size: 12px;
   color: var(--color-text-muted);
 }
 
@@ -2692,7 +3304,7 @@ select:focus-visible,
 }
 
 .combat-odds-card__sub-detail {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--color-text-muted);
   text-align: center;
 }
@@ -2732,7 +3344,7 @@ select:focus-visible,
 }
 
 .combat-hits-callout__label {
-  font-size: 11px;
+  font-size: 12px;
   text-transform: uppercase;
   font-weight: 700;
   letter-spacing: 0.05em;
@@ -2780,7 +3392,7 @@ select:focus-visible,
 }
 
 .combat-btn-sub {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--color-text-muted);
 }
 
@@ -2820,7 +3432,7 @@ select:focus-visible,
 }
 
 .combat-arena-dock__badge {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
   color: var(--color-danger);
@@ -2836,7 +3448,7 @@ select:focus-visible,
 }
 
 .combat-arena-dock__alert-pill {
-  font-size: 11px;
+  font-size: 12px;
   background: var(--color-danger);
   color: white;
   padding: 2px 8px;
@@ -2960,12 +3572,15 @@ select:focus-visible,
   gap: 10px;
   padding: 10px;
 }
+/* Rendered inside .app-shell__overlays (pointer-events: none): the standalone landing tray (no
+   board invasion, e.g. Sardakk's hero skipping to Commit Ground Forces) was unclickable. */
 .decision-frame {
   position: relative;
   margin: 16px;
   padding: 20px;
   max-width: 480px;
   z-index: var(--layer-modal);
+  pointer-events: auto;
 }
 .decision-modal__panel,
 .choice-dialog__panel,
@@ -3062,6 +3677,15 @@ select:focus-visible,
 .system-activation-bar__error {
   font-size: 13px;
   color: #f87171;
+}
+/* The chips carry resource / influence icons, which made them wide enough to wrap into a second row
+   inside the half-width shrink-to-fit pill. Let the pill grow to its content (up to 720px) so the
+   usual handful of planets stays on one row and the reserved inset still covers the pill. */
+@media (min-width: 721px) {
+  .choice-banner.planet-selection-bar {
+    width: max-content;
+    max-width: min(720px, calc(100vw - 48px));
+  }
 }
 .planet-selection-bar__chips {
   display: flex;
@@ -3162,7 +3786,7 @@ select:focus-visible,
 }
 .production-drawer__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   min-height: 0;
   max-height: min(55dvh, 500px);
   gap: 8px;
@@ -3180,6 +3804,14 @@ select:focus-visible,
 }
 .production-drawer__unit .workflow-row {
   flex-shrink: 0;
+}
+.production-drawer__setting {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 100%;
+  font-size: 13px;
+  color: var(--color-text-muted, inherit);
 }
 .production-drawer__footer {
   display: flex;
@@ -3242,14 +3874,31 @@ select:focus-visible,
 }
 .origin-system-group__header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 6px 10px;
   padding-bottom: 6px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 .origin-system-group__title {
   font-weight: 600;
   font-size: 0.95rem;
+}
+.origin-system-group__header .origin-system-group__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.origin-system-group__all {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  min-height: 32px;
+}
+.origin-system-group__header .fleet-rally-tray__status {
+  flex: 1 0 100%;
+  font-size: 0.8rem;
 }
 .origin-system-group__section-title {
   font-size: 0.75rem;
@@ -3305,7 +3954,7 @@ select:focus-visible,
 }
 .reaction-status-bar__title {
   color: #fef08a;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.5px;
   text-transform: uppercase;
@@ -3346,13 +3995,20 @@ select:focus-visible,
   font-size: 12px;
 }
 .reaction-status-bar__pin {
+  min-height: 24px;
   display: flex;
   align-items: center;
   gap: 4px;
   color: var(--color-text-muted);
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
   user-select: none;
+}
+.reaction-status-bar__pin input {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  cursor: pointer;
 }
 .reaction-status-bar__error {
   position: absolute;
@@ -3362,7 +4018,7 @@ select:focus-visible,
   border-radius: 4px;
   background: var(--color-danger);
   color: #fff;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -3379,7 +4035,7 @@ select:focus-visible,
 }
 
 .reaction-status-bar__trigger-context-title {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   color: #0d6efd;
   letter-spacing: 0.5px;
@@ -3817,4 +4473,883 @@ select:focus-visible,
 .payment-bar__actions {
   flex-wrap: wrap;
   justify-content: center;
+}
+
+/* Two-column trade staging desk */
+.trade-desk {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.trade-desk__columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.trade-column {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  border-left: 4px solid;
+}
+.trade-column--offer {
+  background: rgba(59, 130, 246, 0.08);
+  border-left-color: #3b82f6;
+}
+.trade-column--receive {
+  background: rgba(16, 185, 129, 0.08);
+  border-left-color: #10b981;
+}
+.trade-column .trade-section__title {
+  margin: 0;
+}
+.trade-column__subtitle,
+.trade-column__held,
+.trade-column__none {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+}
+.trade-stepper {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.trade-stepper__label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-text-strong);
+}
+.trade-stepper__controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.trade-stepper__btn {
+  min-width: 40px;
+  min-height: 40px;
+  font-size: 1.1rem;
+}
+.trade-stepper__value {
+  min-width: 2ch;
+  text-align: center;
+  font-family: "Monaco", "Courier New", monospace;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+.trade-stepper__hint {
+  font-size: 0.75rem;
+  color: var(--color-text-faint);
+}
+.trade-toggle {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.trade-toggle .trade-item {
+  flex: 1;
+  min-width: 0;
+}
+.trade-toggle[aria-pressed="true"] {
+  border-color: var(--color-accent);
+  background: rgba(56, 189, 248, 0.12);
+}
+.trade-toggle:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.trade-toggle__state {
+  align-self: center;
+  padding-right: 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.trade-desk__status,
+.trade-desk__note {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: rgba(15, 23, 42, 0.5);
+  font-size: 0.875rem;
+}
+.trade-desk__status p,
+.trade-desk__status ul {
+  margin: 0 0 6px;
+}
+.trade-desk__valid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: #6ee7b7;
+}
+.trade-desk__invalid {
+  color: #fbbf24;
+}
+.trade-desk__suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0;
+  list-style: none;
+}
+.trade-desk__suggestion {
+  width: 100%;
+  min-height: 40px;
+  text-align: left;
+  font-size: 0.875rem;
+}
+.trade-desk-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.trade-quick > summary {
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 600;
+  padding: 8px 0;
+}
+.trade-desk__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  position: sticky;
+  /* flush with the dialog's bottom edge (its 24px padding), so no desk content shows below the bar */
+  bottom: -24px;
+  margin-bottom: -24px;
+  padding: 10px 0 24px;
+  background: var(--color-surface);
+  box-shadow: 0 -1px 0 var(--color-border), 0 -10px 8px -8px rgba(0, 0, 0, 0.5);
+  z-index: 1;
+}
+.trade-desk__actions .button {
+  min-height: 44px;
+}
+@media (max-width: 720px) {
+  .trade-desk__columns {
+    grid-template-columns: 1fr;
+  }
+  /* The primary action takes its own row; the secondary ones share the row under it. */
+  .trade-desk__actions {
+    justify-content: stretch;
+    /* the dialog's padding is 12px here; the padding keeps the buttons clear of the floating Players / Events buttons */
+    bottom: -12px;
+    margin-bottom: -12px;
+    padding-bottom: 64px;
+  }
+  .trade-desk__actions .button {
+    flex: 1 1 40%;
+  }
+  .trade-desk__actions .button--primary {
+    order: -1;
+    flex-basis: 100%;
+  }
+}
+
+.lobby-bot-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+}
+.lobby-bot-actions .button {
+  flex: 1 1 200px;
+  min-height: 44px;
+}
+.lobby-bot-actions__hint {
+  flex: 1 1 100%;
+  margin: 0;
+}
+.lobby-bot-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+}
+
+/* Leadership payment bar (planet-first): compact, the map above it stays tappable. */
+.token-bar {
+  padding: 8px 12px;
+}
+.token-bar__body {
+  gap: 6px;
+  width: 100%;
+}
+.token-bar__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: #f8fafc;
+}
+.token-bar__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+.token-bar__pools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+}
+.token-bar__pool,
+.token-bar__toggle,
+.token-bar__actions .button {
+  min-height: 44px;
+}
+.token-bar__actions {
+  flex-wrap: wrap;
+  justify-content: center;
+}
+@media (max-width: 720px) {
+  .choice-banner.token-bar {
+    bottom: 56px;
+    padding: 6px 8px;
+  }
+  .token-bar__actions .button {
+    padding-inline: 10px;
+    font-size: 13px;
+  }
+}
+
+.token-bar__problem {
+  max-width: 100%;
+  min-height: 1.3em;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Phone: three short rows (summary, pools, actions), buttons share the width, 44 px tall. */
+@media (max-width: 720px) {
+  .choice-banner.token-bar {
+    left: 8px;
+    right: 8px;
+    max-width: none;
+  }
+  .token-bar__body {
+    gap: 4px;
+    align-items: stretch;
+  }
+  .token-bar__summary {
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    gap: 6px;
+    font-size: 12px;
+  }
+  .token-bar__summary > span {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: normal;
+    text-align: left;
+  }
+  .token-bar__summary .button {
+    flex: 0 0 auto;
+    min-width: 44px;
+    padding-inline: 8px;
+    font-size: 12px;
+  }
+  .token-bar__pools {
+    flex-wrap: nowrap;
+    gap: 4px;
+  }
+  .token-bar__pools-label {
+    flex: 0 0 auto;
+    font-size: 11px;
+    max-width: 72px;
+  }
+  .token-bar__pool,
+  .token-bar__actions .button {
+    flex: 1 1 0;
+    min-width: 0;
+    padding-inline: 4px;
+    font-size: 12px;
+    white-space: normal;
+    line-height: 1.1;
+  }
+  .token-bar__actions {
+    flex-wrap: nowrap;
+    gap: 4px;
+  }
+}
+
+/* An error toast with a Dismiss button (a refused history change used to stay until the next try, over the
+   Players / Events buttons). On a phone it floats above those buttons. */
+.session-error--dismissable {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.session-error--dismissable .button {
+  flex: 0 0 auto;
+}
+@media (max-width: 720px) {
+  .session-error {
+    bottom: 64px;
+  }
+  .session-error--dismissable .button {
+    min-height: 44px;
+  }
+}
+
+/* The detail / system inspector panel folds to a slim bar on a phone, so the map stays tappable. The fold
+   control exists only there. The bar sits bottom left, next to the Players / Events buttons. */
+.detail-panel__fold {
+  display: none;
+}
+.detail-panel__header h2 {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+@media (max-width: 720px), (max-height: 500px) {
+  .detail-panel__fold {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 44px;
+    height: 44px;
+  }
+  .undo-confirm__actions .button {
+    min-height: 44px;
+  }
+  /* The payment confirm bar (shown while the payment list is minimized and the planets on the map pay) is
+     the one overlay the player works the map through: drop its hint and the per-source detail line, and
+     keep its buttons on as few 44 px rows as possible, so more of the map shows. */
+  .payment-bar {
+    padding: 8px 12px;
+  }
+  .payment-bar .system-activation-bar__body {
+    gap: 4px;
+  }
+  .payment-bar .system-activation-bar__hint,
+  .payment-bar .payment-bar__tally .text-muted {
+    display: none;
+  }
+  .payment-bar__actions {
+    gap: 6px;
+  }
+  .payment-bar__actions .button {
+    flex: 1 1 auto;
+    min-height: 44px;
+    padding-inline: 10px;
+  }
+  /* The minimize / close controls of the overlays: 32 px squares are hard to hit with a thumb. */
+  .detail-panel__header .button--icon,
+  .decision-frame__header .button--icon,
+  .invasion-overlay__close-btn,
+  .choice-workflow-close {
+    width: 44px;
+    height: 44px;
+  }
+  .detail-panel.detail-panel--folded {
+    top: auto !important;
+    right: auto !important;
+    bottom: 12px !important;
+    left: 12px !important;
+    width: min(194px, calc(100vw - 24px)) !important;
+    min-height: 0 !important;
+    padding: 4px 8px !important;
+    overflow: hidden !important;
+  }
+  .detail-panel--folded .detail-panel__body {
+    display: none;
+  }
+  .detail-panel--folded .detail-panel__header {
+    align-items: center;
+    gap: 4px;
+  }
+  .detail-panel--folded .detail-panel__header h2 {
+    overflow: hidden;
+    font-size: 13px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* Collapsed decision / combat pills on a phone. The desktop pill is centred at the bottom; on a phone it
+   stretched from the middle to the right edge (the choice-banner insets), truncated its label and lay
+   over the Players / Events buttons. It now spans the width above those buttons, and above a docked
+   "Preparing" banner (--prep-dock is that banner's height from the bottom edge, set by the banner). */
+@media (max-width: 720px) {
+  /* Every bottom banner of a decision (the minimized choice, the activation / planet bars) clears a docked prepare banner. */
+  .choice-banner {
+    bottom: max(60px, calc(var(--prep-dock, 0px) + 8px));
+  }
+  .choice-minimized-pill,
+  .combat-arena-dock {
+    right: 12px;
+    bottom: max(60px, calc(var(--prep-dock, 0px) + 8px));
+    left: 12px;
+    width: auto;
+    transform: none;
+    border-radius: var(--radius-md);
+    justify-content: space-between;
+  }
+  .choice-minimized-pill__prompt,
+  .combat-arena-dock__info {
+    min-width: 0;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+  }
+  .choice-minimized-pill .button,
+  .combat-arena-dock .button {
+    flex: 0 0 auto;
+    min-height: 44px;
+  }
+}
+/* A landscape phone has no Players / Events buttons and the "Preparing" banner docks bottom right, so
+   the pill moves to the bottom left. */
+@media (max-height: 500px) and (min-width: 721px) {
+  :root:has(.secondary-prep--preparing) .choice-banner,
+  .choice-minimized-pill,
+  .combat-arena-dock {
+    right: auto;
+    bottom: 8px;
+    left: 12px;
+    max-width: min(420px, calc(55vw - 24px));
+    transform: none;
+  }
+  .choice-minimized-pill .button,
+  .combat-arena-dock .button {
+    min-height: 44px;
+  }
+}
+
+/* Persistent background-poll failure: a small, non-blocking chip at the top corner, never over the bottom controls. */
+.connection-indicator {
+  position: fixed;
+  z-index: calc(var(--layer-dialog) + 10); /* above decision dialogs */
+  top: 8px;
+  right: 8px;
+  max-width: calc(100vw - 16px);
+  padding: 4px 10px;
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+  background: #2a1d05;
+  color: #fde68a;
+  font-size: 0.8125rem;
+  pointer-events: none;
+}
+
+/* Names the source and the kind of a hit decision (Assault Cannon, barrage, Courageous ...). */
+.hit-kind-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border-strong);
+  border-left: 4px solid var(--color-accent);
+  border-radius: var(--radius-md);
+  background: #142035;
+}
+
+.hit-kind-banner--destroy {
+  border-left-color: var(--color-danger);
+}
+
+.hit-kind-banner--barrage {
+  border-left-color: #e69f00;
+}
+
+.hit-kind-banner__badge {
+  align-self: flex-start;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.16);
+  color: var(--color-text-strong);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.hit-kind-banner__headline {
+  color: var(--color-text);
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+.hit-kind-banner__line {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.hit-kind-banner__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hit-kind-chip {
+  padding: 3px 9px;
+  border: 1px solid var(--color-border-muted);
+  border-radius: 999px;
+  color: var(--color-text-strong);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.hit-kind-chip--danger {
+  border-color: var(--color-danger);
+  background: rgba(239, 68, 68, 0.14);
+  color: #fecaca;
+}
+
+.hit-kind-chip--info {
+  border-color: var(--color-accent-strong);
+  background: rgba(56, 189, 248, 0.12);
+  color: #bae6fd;
+}
+
+@media (max-width: 700px) {
+  /* Below the slim top bar, so the menu button stays visible. */
+  .connection-indicator {
+    top: 46px;
+  }
+}
+
+/* Reconnecting gave up (or the game is gone): a card over the dimmed page with Retry and a way out. */
+.connection-problem {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--layer-dialog) + 10); /* above decision dialogs */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(9, 13, 22, 0.82);
+}
+.connection-problem__card {
+  width: min(420px, 100%);
+  padding: 20px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-panel);
+}
+.connection-problem__title {
+  margin: 0 0 8px;
+  font-size: 1.125rem;
+}
+.connection-problem__card p {
+  margin: 0 0 16px;
+  color: var(--color-text-muted);
+}
+.connection-problem__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.connection-problem__actions .button {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
+/* Defenders of a planet in the landing tray: owner, ground forces, PDS, Space Cannon Defense. */
+.invasion-defenders {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  background: rgba(127, 29, 29, 0.25);
+  font-size: 12px;
+}
+.invasion-defenders__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.invasion-defenders__owner {
+  font-weight: 700;
+  color: #fecaca;
+  text-transform: capitalize;
+}
+.invasion-defenders__unit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+  color: #f1f5f9;
+  font-variant-numeric: tabular-nums;
+}
+.invasion-defenders__unit--pds {
+  color: #fdba74;
+}
+.invasion-defenders__unit--structure,
+.invasion-defenders__none {
+  font-weight: 400;
+  color: #94a3b8;
+}
+.invasion-defenders__scd {
+  margin: 0;
+  font-size: 11px;
+  color: #fdba74;
+}
+.invasion-defenders__scd--silenced {
+  color: #94a3b8;
+}
+
+/* Faction choice for bot seats in the lobby. */
+.lobby-bot-actions__faction {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.faction-picker {
+  position: relative;
+  display: inline-block;
+}
+.lobby-bot-actions .faction-picker__button {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 200px;
+  justify-content: space-between;
+}
+.faction-picker .faction-picker__button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.faction-picker .faction-picker__option > span:not(.faction-picker__taken):not(.faction-sigil),
+.faction-picker .faction-picker__name {
+  color: var(--color-text);
+  font-size: 13px;
+}
+.lobby-list__item:has(.lobby-list__faction) .lobby-reorder {
+  margin-left: auto;
+}
+.faction-picker--compact .faction-picker__button {
+  min-width: 0;
+  min-height: 32px;
+  padding: 2px 8px;
+  font-size: 12px;
+  gap: 6px;
+}
+.faction-picker__name {
+  flex: 1 1 auto;
+  text-align: left;
+}
+.faction-picker__list {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 240px;
+  max-width: calc(100vw - 32px);
+  margin: 0;
+  padding: 4px;
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.faction-picker__options {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: min(52vh, 420px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.faction-picker__search {
+  width: 100%;
+  margin-bottom: 4px;
+  min-height: 36px;
+}
+.faction-picker__group {
+  position: sticky;
+  top: 0;
+  padding: 6px 8px 2px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-faint);
+  background: var(--color-surface-raised);
+}
+.faction-picker__option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.faction-picker__option:hover,
+.faction-picker__option:focus-visible {
+  background: var(--color-surface);
+}
+.faction-picker__option.is-selected {
+  outline: 1px solid var(--color-accent);
+}
+.faction-picker__option.is-taken {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.faction-picker__taken {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--color-text-faint);
+}
+.faction-sigil {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--color-border-strong);
+  color: #0b1220;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+.lobby-list__item:has(.lobby-list__faction) {
+  flex-wrap: wrap;
+}
+.lobby-list__item .lobby-list__faction {
+  flex: 1 1 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 4px;
+}
+.lobby-list__item .faction-sigil {
+  color: #0b1220;
+  font-size: 10px;
+}
+.lobby-list__item .faction-picker__button,
+.lobby-list__item .faction-picker__name {
+  white-space: nowrap;
+}
+
+/* "My games" / too-many-games dialog. */
+.button--danger {
+  background: var(--color-danger);
+  color: #fff;
+  font-weight: 700;
+}
+.button--danger-outline {
+  background: transparent;
+  border: 1px solid var(--color-danger);
+  color: var(--color-danger);
+}
+.mygames-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--layer-modal) + 5);
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+}
+.mygames {
+  width: min(100%, 560px);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.mygames h2 {
+  margin: 0;
+  color: var(--color-accent);
+  font-size: 20px;
+}
+.mygames__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.mygames__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+.mygames__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.mygames__actions,
+.mygames__footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.mygames__footer {
+  justify-content: flex-end;
+}
+.mygames__actions .button,
+.mygames__footer .button {
+  min-height: 40px;
+}
+.mygames__ask {
+  font-weight: 700;
+}
+.mygames__error {
+  margin: 0;
+  color: var(--color-danger);
 }

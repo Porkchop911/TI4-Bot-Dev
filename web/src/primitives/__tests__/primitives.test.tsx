@@ -209,6 +209,35 @@ describe("Accessible Primitives Suite", () => {
     });
   });
 
+  describe("Popover portal placement", () => {
+    it("keeps a tall card inside the viewport when neither side has room", () => {
+      const rect = (top: number, height: number, width: number) =>
+        ({ top, bottom: top + height, left: 500, right: 500 + width, width, height, x: 500, y: top, toJSON() {} }) as DOMRect;
+      const spy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+        return this.getAttribute("role") === "dialog" ? rect(0, 576, 340) : rect(211, 28, 28);
+      });
+      const innerHeight = window.innerHeight;
+      Object.defineProperty(window, "innerHeight", { configurable: true, value: 720 });
+      try {
+        render(
+          <Popover portal content={<p>Tall card</p>}>
+            <button type="button" data-testid="tall-trigger">Open</button>
+          </Popover>,
+        );
+        fireEvent.click(screen.getByTestId("tall-trigger"));
+        const card = screen.getByTestId("accessible-popover");
+        const top = parseFloat(card.style.top);
+        expect(top).toBeGreaterThanOrEqual(8);
+        expect(top + 576).toBeLessThanOrEqual(720 - 8);
+        // Beside the trigger (right edge 528), not over it.
+        expect(parseFloat(card.style.left)).toBeGreaterThanOrEqual(528);
+      } finally {
+        spy.mockRestore();
+        Object.defineProperty(window, "innerHeight", { configurable: true, value: innerHeight });
+      }
+    });
+  });
+
   describe("SvgButton Primitive", () => {
     it('provides accessible role="button", tabIndex, aria-label, and keyboard activation', () => {
       const onActivate = vi.fn();

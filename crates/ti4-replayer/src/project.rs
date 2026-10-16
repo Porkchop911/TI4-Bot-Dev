@@ -190,6 +190,13 @@ pub struct ReplayInputs {
     pub profile_table: String,
     pub temperature: f64,
     pub diplomacy: bool,
+    /// The six factions rotated, when not the standard lineup. Projects written before this
+    /// existed played the standard lineup.
+    #[serde(default)]
+    pub lineup: Option<Vec<String>>,
+    /// Seats the rule bot answers. Projects written before this existed had none.
+    #[serde(default)]
+    pub rule_seats: Vec<usize>,
 }
 
 impl ReplayInputs {
@@ -208,6 +215,8 @@ impl ReplayInputs {
             .to_owned(),
             temperature: config.temperature,
             diplomacy: config.diplomacy,
+            lineup: config.lineup.clone(),
+            rule_seats: config.rule_seats.clone(),
         }
     }
 
@@ -231,6 +240,8 @@ impl ReplayInputs {
             .to_owned(),
             temperature: manifest.temperature,
             diplomacy: manifest.diplomacy,
+            lineup: manifest.lineup.clone(),
+            rule_seats: manifest.rule_seats.clone(),
         }
     }
 
@@ -251,6 +262,8 @@ impl ReplayInputs {
             table,
             temperature: self.temperature,
             diplomacy: self.diplomacy,
+            lineup: self.lineup.clone(),
+            rule_seats: self.rule_seats.clone(),
         })
     }
 

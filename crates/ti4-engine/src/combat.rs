@@ -18,7 +18,8 @@ use ti4_model::units::Unit;
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Resolving, Table, Window};
 use crate::decision_context::{
-    ConstraintKind, DecisionContext, DecisionSource, DecisionTarget, OutstandingConstraint,
+    ConstraintKind, DecisionContext, DecisionSource, DecisionTarget, HitCause, HitDetail,
+    HitRestriction, OutstandingConstraint,
 };
 use crate::dice::Dice;
 use crate::factions::hooks_combat::{AfbExcess, CombatMoment, HitSite, ProducedHits};
@@ -39,6 +40,17 @@ pub const CASUALTY_KIND: &str = "casualty";
 pub enum HitOrigin {
     CombatRoll,
     UnitAbility,
+}
+
+/// The display cause of hits whose engine `cause` string is given (see `absorb_hits_seeing_with_context`).
+fn hit_cause_of(cause: &str) -> HitCause {
+    if cause.contains("anti_fighter_barrage") {
+        HitCause::AntiFighterBarrage
+    } else if cause.contains("space_cannon") {
+        HitCause::SpaceCannon
+    } else {
+        HitCause::Other
+    }
 }
 
 /// A combat could not be resolved.
@@ -566,6 +578,8 @@ pub fn apply_reroll_dice(
             hits_on: entry.hits_on,
             rerolled: std::collections::BTreeSet::new(),
             by: None,
+            system: None,
+            outcome: None,
         };
         let again = dice.reroll(rng, &original, [*die], Some(reason));
         entry.faces = again.faces;
@@ -1971,16 +1985,25 @@ fn cannon_barred(
     })
 }
 
-pub fn space_cannon_offense(
-    state: &mut GameState,
+/// The guns that roll in the space cannon offense of `system`, when `active` activates it.
+pub struct CannonGuns {
+    /// The units, in the order in which they roll.
+    pub units: Vec<Unit>,
+    /// SPACE CANNON of an attachment: the owner, the planet, the value and the number of dice.
+    pub attachments: Vec<(PlayerId, ti4_model::id::PlanetId, u32, usize)>,
+}
+
+/// Who may fire in the space cannon offense of `system`. It rolls nothing and changes nothing:
+/// [`space_cannon_offense`] rolls for these guns, and a client asks it before the activation.
+#[must_use]
+pub fn space_cannon_guns(
+    state: &GameState,
     content: &ContentStore,
     sources: SourceSet,
-    dice: &mut Dice,
-    rng: &mut GameRng,
     system: &SystemId,
     active: &PlayerId,
     galaxy: Option<&ti4_content::galaxy::Galaxy>,
-) -> Vec<(PlayerId, usize, Vec<RerollEntry>)> {
+) -> CannonGuns {
     // Solar Flare: during the named tactical action, other players cannot use SPACE CANNON
     // against the active player's ships. Every other player's gun fires at the active player, so
     // the card silences all of them; the active player's own guns are untouched. The marker is
@@ -2073,6 +2096,29 @@ pub fn space_cannon_offense(
         })
         .filter(|(owner, ..)| may_fire(owner))
         .collect();
+    CannonGuns {
+        units: guns,
+        attachments: attachment_guns,
+    }
+}
+
+pub fn space_cannon_offense(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    dice: &mut Dice,
+    rng: &mut GameRng,
+    system: &SystemId,
+    active: &PlayerId,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
+) -> Vec<(PlayerId, usize, Vec<RerollEntry>)> {
+    let CannonGuns {
+        units: guns,
+        attachments: attachment_guns,
+    } = space_cannon_guns(state, content, sources, system, active, galaxy);
+    let types = catalogue(content, sources);
+    // The player the active player's guns fire at (Assail reads it below).
+    let opponent = opponent_with_ships(state, content, sources, active, system);
 
     let mut by_player: std::collections::BTreeMap<PlayerId, (usize, Vec<RerollEntry>)> =
         std::collections::BTreeMap::new();
@@ -2867,6 +2913,16 @@ fn absorb_hits_seeing_with_context(
             "assign_casualty",
             Some(system),
             Some(remaining),
+            Some(HitDetail {
+                cause: hit_cause_of(cause),
+                destroy: false,
+                restriction: if non_fighters_first {
+                    HitRestriction::NonFighter
+                } else {
+                    HitRestriction::Any
+                },
+                producer: Some(producer.clone()),
+            }),
         )?;
         remove_combat_ship(state, system, &casualty);
         if crate::supply::staging_enabled(state) {
@@ -3390,6 +3446,7 @@ pub fn announce_staged_destructions(state: &mut GameState, ctx: &mut Resolving<'
 }
 
 /// 78.6: the owning player chooses which of their own units dies.
+#[cfg(test)]
 pub(crate) fn choose_casualty(
     state: &GameState,
     content: &ContentStore,
@@ -3403,7 +3460,42 @@ pub(crate) fn choose_casualty(
     target: Option<&SystemId>,
 ) -> Result<Unit, CombatError> {
     choose_casualty_owing(
-        state, content, sources, galaxy, table, player, units, source, subtype, target, None,
+        state, content, sources, galaxy, table, player, units, source, subtype, target, None, None,
+    )
+}
+
+/// [`choose_casualty`], telling the decision what kind of hit it assigns (display only), for the
+/// one-off losses whose kind a client cannot read from the subtype alone.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "choose_casualty's inputs plus the hit's description"
+)]
+pub(crate) fn choose_casualty_as(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
+    table: &mut Table,
+    player: &PlayerId,
+    units: &[Unit],
+    source: &DecisionSource,
+    subtype: &str,
+    target: Option<&SystemId>,
+    hit: HitDetail,
+) -> Result<Unit, CombatError> {
+    choose_casualty_owing(
+        state,
+        content,
+        sources,
+        galaxy,
+        table,
+        player,
+        units,
+        source,
+        subtype,
+        target,
+        None,
+        Some(hit),
     )
 }
 
@@ -3421,6 +3513,7 @@ pub(crate) fn choose_casualty_owing(
     subtype: &str,
     target: Option<&SystemId>,
     owed: Option<usize>,
+    hit: Option<HitDetail>,
 ) -> Result<Unit, CombatError> {
     if let [only] = units {
         return Ok(only.clone());
@@ -3480,6 +3573,9 @@ pub(crate) fn choose_casualty_owing(
             0,
         ));
     }
+    if let Some(hit) = hit {
+        context = context.with_hit(hit);
+    }
     let choice = Choice::new(player.clone(), "assign a hit", options).contextualized(context);
     let answer = table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
     let index = answer
@@ -3512,6 +3608,7 @@ pub fn eligible_retreats(
     galaxy
         .adjacent(system.as_str())
         .into_iter()
+        .filter(|adjacent| !galaxy.is_hyperlane(adjacent)) // not a system: never a retreat
         .map(SystemId::new)
         .filter(|adjacent| {
             let board = state.system_state(adjacent);
@@ -3562,6 +3659,7 @@ pub fn skilled_retreat_destinations(
     galaxy
         .adjacent(system.as_str())
         .into_iter()
+        .filter(|adjacent| !galaxy.is_hyperlane(adjacent)) // not a system: never a retreat
         .map(SystemId::new)
         .filter(|adjacent| {
             !state.system_state(adjacent).units.iter().any(|unit| {
@@ -3592,6 +3690,7 @@ pub fn det_retreat_destinations(
     galaxy
         .adjacent(system.as_str())
         .into_iter()
+        .filter(|adjacent| !galaxy.is_hyperlane(adjacent)) // not a system: never a retreat
         .map(SystemId::new)
         .filter(|adjacent| {
             let board = state.system_state(adjacent);
@@ -3672,12 +3771,8 @@ pub fn retreat_to(
         if leaving.contains(unit) {
             remove_combat_ship(state, system, unit);
             // Leaving is not destroying: forget the galvanized-loss note the removal made.
-            let _ = crate::factions::bastion::take_ship_lost(
-                state,
-                system,
-                &unit.owner,
-                &unit.type_id,
-            );
+            let _ =
+                crate::factions::bastion::take_ship_lost(state, system, &unit.owner, &unit.type_id);
         }
     }
     let ships_leaving: Vec<Unit> = leaving
@@ -4606,12 +4701,12 @@ impl CombatWindow {
                         >= 3
                 })
                 .collect();
-                for (_, victim) in firing {
+                for (holder, victim) in firing {
                     let targets = non_fighter_ships(state, content, sources, &victim, &self.system);
                     if targets.is_empty() {
                         continue;
                     }
-                    let casualty = choose_casualty(
+                    let casualty = choose_casualty_as(
                         state,
                         content,
                         sources,
@@ -4622,6 +4717,12 @@ impl CombatWindow {
                         &DecisionSource::Content("asc".to_owned()),
                         "assault_cannon_destroy",
                         Some(&self.system),
+                        HitDetail {
+                            cause: HitCause::AssaultCannon,
+                            destroy: true,
+                            restriction: HitRestriction::NonFighter,
+                            producer: Some(holder),
+                        },
                     )?;
                     remove_combat_ship(state, &self.system, &casualty);
                     announce_ship_destroyed_type(
@@ -6339,8 +6440,7 @@ mod tests {
         put(&mut state, &system, "cruiser", &player, 2);
         put(&mut state, &system, "fighter", &player, 2);
 
-        let (capturing, seen) =
-            crate::choice::Capturing::new(Box::new(crate::choice::FirstOption));
+        let (capturing, seen) = crate::choice::Capturing::new(Box::new(crate::choice::FirstOption));
         let mut table = Table::with_default(Box::new(capturing));
         let mut dice = Dice::new();
         let mut rng = GameRng::new(1);
@@ -7308,6 +7408,52 @@ mod tests {
     }
 
     #[test]
+    fn assault_cannon_choice_says_it_is_a_destroy_of_a_non_fighter_ship() {
+        let (mut state, system) = arena();
+        put(&mut state, &system, "cruiser", &attacker(), 3);
+        put(&mut state, &system, "destroyer", &defender(), 1);
+        put(&mut state, &system, "dreadnought", &defender(), 1);
+        put(&mut state, &system, "fighter", &defender(), 2);
+        state
+            .player_mut(&attacker())
+            .unwrap()
+            .technologies
+            .insert(ti4_model::id::TechnologyId::new("asc"));
+        let (decider, seen) = crate::choice::Capturing::new(Box::new(crate::choice::FirstOption));
+        let mut table = Table::with_default(Box::new(decider));
+        let mut dice = Dice::new();
+        let mut rng = GameRng::new(3);
+        resolve(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut table,
+            &mut dice,
+            &mut rng,
+            &system,
+        )
+        .unwrap();
+        let asked = seen.borrow();
+        let cannon = asked
+            .iter()
+            .filter_map(|choice| choice.context.as_ref())
+            .find(|context| context.subtype == "assault_cannon_destroy")
+            .expect("the cannon asked the victim which ship goes");
+        let hit = cannon.hit.as_ref().expect("the kind of hit is stated");
+        assert_eq!(hit.cause, HitCause::AssaultCannon);
+        assert!(
+            hit.destroy,
+            "a destroy, not a hit that sustain could cancel"
+        );
+        assert_eq!(hit.restriction, HitRestriction::NonFighter);
+        assert_eq!(hit.producer, Some(attacker()));
+        assert_eq!(cannon.actor, defender(), "the victim chooses the ship");
+        // Display only: the replay fingerprint and recorded decisions do not carry it.
+        assert!(cannon.without_display_fields().hit.is_none());
+        assert!(!cannon.canonical().contains("AssaultCannon"));
+    }
+
+    #[test]
     fn wrath_of_kenara_buys_a_hit_for_a_trade_good() {
         let (mut state, system) = arena();
         put(&mut state, &system, "hacan_flagship", &attacker(), 1);
@@ -7366,6 +7512,8 @@ mod tests {
             hits_on: Some(7),
             rerolled: std::collections::BTreeSet::new(),
             by: None,
+            system: None,
+            outcome: None,
         };
         let rerolled = reroll_munitions_misses(&state, &mut dice, &mut rng, &attacker(), &original);
 

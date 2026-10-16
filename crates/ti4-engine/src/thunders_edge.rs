@@ -3,7 +3,7 @@
 use ti4_content::ContentStore;
 use ti4_content::galaxy::Galaxy;
 use ti4_model::content_types::{ContentType, SourceSet};
-use ti4_model::id::{BreakthroughId, PlanetId, PlayerId, SystemId, UnitTypeId};
+use ti4_model::id::{BreakthroughId, PlanetId, PlayerId, SystemId};
 use ti4_model::state::GameState;
 use ti4_model::units::Unit;
 
@@ -337,7 +337,7 @@ pub fn perform(
 /// Fracture").
 fn eligible_systems(content: &ContentStore, sources: SourceSet, galaxy: &Galaxy) -> Vec<SystemId> {
     let mut systems: Vec<SystemId> = galaxy
-        .system_ids()
+        .system_ids_holding_things()
         .into_iter()
         .filter(|id| {
             ti4_content::galaxy::system(content, id, sources).is_some_and(|record| {
@@ -455,20 +455,11 @@ fn place_infantry(
     if count == 0 {
         return;
     }
-    let faction = state
-        .player(player)
-        .map(|seat| seat.faction.to_string())
-        .unwrap_or_default();
-    let generic = ti4_content::units::catalogue(content, sources)
-        .get("infantry")
-        .map(|unit| unit.id().to_owned());
-    let Some(id) = ti4_content::units::faction_unit(content, &faction, "infantry", sources)
-        .map(|unit| unit.id().to_owned())
-        .or(generic)
+    let Some(type_id) =
+        crate::action_cards::placed_unit_id(state, content, sources, player, "infantry")
     else {
         return;
     };
-    let type_id = UnitTypeId::new(id);
     // 31.4: infantry is cardboard and effectively uncapped, but the door is the same one every
     // other placement in this engine goes through.
     let placeable = crate::supply::allowed(state, content, sources, player, &type_id, count);

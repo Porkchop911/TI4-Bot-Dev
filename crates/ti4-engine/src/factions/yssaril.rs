@@ -780,7 +780,7 @@ fn commander_look(owner_name: &str, seat: &PlayerId) -> Ability {
                     })
                     .unwrap_or_default(),
             };
-            hooks_cards::reveal(
+            if hooks_cards::reveal(
                 context.state,
                 &owner,
                 &target,
@@ -788,7 +788,9 @@ fn commander_look(owner_name: &str, seat: &PlayerId) -> Ability {
                 &ids,
                 RevealScope::Action,
                 "yssarilcommander",
-            );
+            ) {
+                context.rng.observe_hidden_information();
+            }
             Ok(())
         }),
     )

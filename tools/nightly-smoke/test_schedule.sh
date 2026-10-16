@@ -6,6 +6,8 @@
 #
 #   tools/nightly-smoke/test_schedule.sh
 set -uo pipefail
+export NIGHTLY_PREFLIGHT=0 # the fake repos have no node_modules
+export MAX_ZERO_DECISION_RUNS=0 # the stub games write no harness report
 HERE=$(cd "$(dirname "$0")" && pwd)
 TMP=$(mktemp -d)
 trap 'kill $(jobs -p) 2>/dev/null; rm -rf "$TMP"' EXIT
@@ -133,15 +135,43 @@ check "request after END: nothing" "$(decide '2026-10-08 06:05')" ""
 touch "$RR/$N/.fixer-1-started"
 check "round 1 started: not due again" "$(decide '2026-10-07 21:15')" ""
 rm -f "${RR:?}/${N:?}/fix-requested"
-out=$(request '2026-10-07 21:20' "too late"); rc=$?
-check "request refused after round 1 started (exit status)" "$rc" 1
-check_true "refusal says so" bash -c "echo '$out' | grep -q 'already started'"
-check "no marker written after refusal" "$([ -e "$RR/$N/fix-requested" ] && echo yes || echo no)" no
+# Once round 1 has started a request is kept for round 2 (second early round), not refused.
+out=$(request '2026-10-07 21:20' "second problem: reaction dialog stuck (seed 5)"); rc=$?
+check "request after round 1 started is accepted for round 2 (exit status)" "$rc" 0
+check_true "message says it is recorded for round 2" bash -c "echo '$out' | grep -q 'recorded for round 2'"
+check "round 1 marker is not rewritten" "$([ -e "$RR/$N/fix-requested" ] && echo yes || echo no)" no
+check_true "round 2 marker holds the reason and the run" bash -c "grep -q '^reason: second problem: reaction dialog stuck (seed 5)' '$RR/$N/fix-requested-2' && grep -q '^run: 03-2100' '$RR/$N/fix-requested-2'"
+check "round 1 still running: round 2 waits" "$(decide '2026-10-07 21:25')" ""
+touch "$RR/$N/.fixer-1.done"
+check "round 1 finished: round 2 is due early (sweep still running)" "$(decide '2026-10-07 21:30')" "fix $N 2"
+check "round 2 early request does not bypass FIXERS=1" "$(decide '2026-10-07 21:30' NIGHTLY_FIXERS=1)" ""
+check "round 2 early request: nothing after END" "$(decide '2026-10-08 06:05')" ""
+touch "$RR/$N/.fixer-2-started"
+check "round 2 started: not due again" "$(decide '2026-10-07 21:35')" ""
+out=$(request '2026-10-07 21:40' "third problem"); rc=$?
+check "request refused after round 2 started (exit status)" "$rc" 1
+check_true "refusal says round 2 already started" bash -c "echo '$out' | grep -q 'round 2 has already started'"
+rm "${RR:?}/${N:?}/.fixer-2-started" "${RR:?}/${N:?}/.fixer-1.done"
+out=$(request '2026-10-07 21:41' "another"); rc=$?
+check "a second round 2 request is a no-op (exit status)" "$rc" 0
+check "the first round 2 reason is kept" "$(grep -c 'another' "$RR/$N/fix-requested-2")" 0
+check_true "a no-op request says to use the report" bash -c "echo '$out' | grep -q 'report entry'"
+rm -f "${RR:?}/${N:?}/fix-requested-2"
+REQ_ENV="NIGHTLY_FIXERS=1"
+out=$(request '2026-10-07 21:42' "round 2 disabled"); rc=$?
+check "after round 1 started and round 2 disabled: refused (exit status)" "$rc" 1
+check "no round 2 marker when round 2 is disabled" "$([ -e "$RR/$N/fix-requested-2" ] && echo yes || echo no)" no
 rm "${RR:?}/${N:?}/.fixer-1-started"
 REQ_ENV="NIGHTLY_FIXERS=2"
+out=$(request '2026-10-07 21:43' "only round 2 is enabled"); rc=$?
+check "FIXERS=2: a request goes to round 2 (exit status)" "$rc" 0
+check_true "FIXERS=2: marker written for round 2" test -s "$RR/$N/fix-requested-2"
+check "FIXERS=2: round 2 due at once" "$(decide '2026-10-07 21:45' NIGHTLY_FIXERS=2)" "fix $N 2"
+rm -f "${RR:?}/${N:?}/fix-requested-2"
+REQ_ENV="NIGHTLY_FIXERS="
 out=$(request '2026-10-07 21:20' "disabled"); rc=$?
 check "request refused when fixers are disabled (exit status)" "$rc" 1
-check_true "refusal says disabled" bash -c "echo '$out' | grep -q 'disabled'"
+check_true "refusal says disabled" bash -c "echo '$out' | grep -q 'no fix round is enabled'"
 check "no marker when disabled" "$([ -e "$RR/$N/fix-requested" ] && echo yes || echo no)" no
 REQ_ENV=""
 out=$(request '2026-10-07 21:20'); rc=$?
@@ -365,6 +395,12 @@ check "early: no unreplaced placeholder in the prompt" "$(grep -c '{{' "$TMP/ear
 check_true "early: the report notes the early start with the reason" grep -q "^## Fixer round 1 started early on a proctor's request (run 01-2030): the game cannot start & every run dies" "$ND/report.md"
 check "early: round 1 merged as usual" "$([ -e "$ND/.fixer-1.merged" ] && echo yes || echo no)" yes
 unset STUB_REQUEST
+# A request made once round 1 had started is kept for round 2 and reaches its prompt and the report.
+printf 'time: x\nrun: 02-2200\nreason: second early problem (seed 9)\n' > "$ND/fix-requested-2"
+echo "$(epoch '2026-10-08 06:00')" > "$NIGHTLY_NOW_FILE"
+bash "$NIGHTLY_SH" fix 2 "$NIGHT" > "$TMP/early/fix2.out" 2>&1
+check "early round 2: the reason reaches the fixer prompt" "$(grep -c 'asked for this round because: second early problem (seed 9)' "$TMP/early/prompt-fixer2.txt")" 1
+check_true "early round 2: the report notes the request" grep -q "^## Fixer round 2 started on a proctor's request (run 02-2200): second early problem (seed 9)" "$ND/report.md"
 
 # No free disk: no run directory, no phantom run, a report line; fixer rounds fail visibly and are
 # retried once, then given up.
@@ -425,6 +461,87 @@ bash "$NIGHTLY_SH" fix 2 "$NIGHT" > "$TMP/lowdisk/fix2b.out" 2>&1
 check "worktree retry ran the fixer" "$(grep -c '^fixer2' "$STUB_LOG")" 1
 check "worktree retry finished: done marker" "$([ -e "$ND/.fixer-2.done" ] && echo yes || echo no)" yes
 unset NIGHTLY_MIN_FREE_GB NIGHTLY_DF_CMD NIGHTLY_DISK_WAIT_SECONDS NIGHTLY_MAX_DISK_WAITS NIGHTLY_FIXERS NIGHTLY_FIX_RETRY_SECONDS
+
+# A sweep killed mid-run: the trap stops the proctor and the game, files a digest-only entry marked
+# as terminated, leaves no process behind; a restart continues the numbering after the highest
+# existing run (gaps and foreign directories ignored).
+echo "== sweep terminated mid-run, numbering after a restart"
+BUILD_CMD=true setup_env "$TMP/term"
+cat > "$NIGHTLY_CLAUDE" <<'STUB'
+#!/usr/bin/env bash
+prompt=""; while [ $# -gt 0 ]; do case "$1" in --) shift; prompt="$1"; break ;; *) shift ;; esac; done
+rd=$(printf '%s' "$prompt" | sed -n 's/^Run directory: //p' | head -1)
+mkdir -p "$rd/trace"
+echo "proctor $(basename "$rd")" >> "$STUB_LOG"
+if [ -n "${STUB_HANG:-}" ]; then
+  port=34567
+  echo "{\"backend_port\": $port, \"preset\": \"stub\", \"players\": 3, \"policy\": \"steer\"}" > "$rd/meta.json"
+  echo '{"decision": 41, "round": 3, "phase": "action", "player": "p1", "subtype": "x"}' > "$rd/trace/trace.jsonl"
+  setsid env TI4_E2E_BACKEND_PORT=$port sleep 300 < /dev/null > /dev/null 2>&1 &
+  echo $! > "$rd/run.pid"; echo $! > "$STUB_DIR/fake-game.pid"
+  sleep 300 & echo $! > "$STUB_DIR/proctor-child.pid"
+  echo started > "$STUB_DIR/hang.ready"
+  wait
+  exit 0
+fi
+echo '{"preset":"stub"}' > "$rd/meta.json"
+echo $(( $(cat "$NIGHTLY_NOW_FILE") + ${STUB_RUN_SECONDS:-3000} )) > "$NIGHTLY_NOW_FILE"
+printf '## Run %s — clean (stub)\n' "$(basename "$rd")"
+STUB
+NIGHT=2026-10-07; ND="$NIGHTLY_REPORT_ROOT/$NIGHT"
+echo "$(epoch '2026-10-07 20:30')" > "$NIGHTLY_NOW_FILE"
+mkdir -p "$ND/runs/01-2030" "$ND/runs/05-2100" "$ND/runs/notes" "$ND/runs/xx-1234" "$ND/runs/03-99"
+export NIGHTLY_FIXERS= STUB_HANG=1
+bash "$NIGHTLY_SH" loop "$NIGHT" > "$TMP/term/loop.out" 2>&1 &
+LOOP=$!
+check_true "term: the proctor and its game started" wait_for "$TMP/term/hang.ready"
+check "term: first run continues after the highest existing number (gaps, foreign dirs ignored)" "$(ls "$ND/runs" | grep -c '^06-2030$')" 1
+gamepid=$(cat "$TMP/term/fake-game.pid"); childpid=$(cat "$TMP/term/proctor-child.pid")
+check_true "term: game and proctor child are alive before the signal" bash -c "kill -0 $gamepid && kill -0 $childpid"
+kill -TERM "$LOOP"
+t0=$SECONDS
+wait "$LOOP"; rc=$?
+check "term: the loop exits with 143" "$rc" 143
+check_true "term: the cleanup did not hang (under 30 s)" test $((SECONDS - t0)) -lt 30
+check_true "term: the game process is gone" bash -c "! kill -0 $gamepid 2>/dev/null"
+check_true "term: the proctor's child is gone" bash -c "! kill -0 $childpid 2>/dev/null"
+check "term: no process carries the run's port" "$(grep -lsz '^TI4_E2E_BACKEND_PORT=34567$' /proc/[0-9]*/environ 2>/dev/null | wc -l)" 0
+check "term: exit_code says killed" "$(cat "$ND/runs/06-2030/exit_code" 2>/dev/null)" killed
+check_true "term: digest.md was written" test -s "$ND/runs/06-2030/digest.md"
+check "term: one terminated-mid-run entry in the report" "$(grep -c '^## Run 06-2030 — sweep terminated mid-run (SIGTERM)' "$ND/report.md")" 1
+check_true "term: the entry names the last decision and the evidence path" bash -c "grep -q 'Last decision: #41, round 3. Evidence: .$ND/runs/06-2030.' '$ND/report.md'"
+check "term: no sweep.done (cron restarts the sweep)" "$([ -e "$ND/sweep.done" ] && echo yes || echo no)" no
+check_true "term: the log shows the exit" grep -q 'sweep exited on signal or exit' "$TMP/term/loop.out"
+check "term: the EXIT trap after the signal added no second entry" "$(grep -c 'sweep terminated mid-run' "$ND/report.md")" 1
+# Restart: the next run is 07, names stay unique.
+unset STUB_HANG
+export STUB_RUN_SECONDS=34000
+timeout 120 bash "$NIGHTLY_SH" loop "$NIGHT" > "$TMP/term/loop2.out" 2>&1
+check "restart: the next run is 07" "$(ls "$ND/runs" | grep -c '^07-')" 1
+check "restart: no second 01- or 06- run was made" "$(ls "$ND/runs" | grep -c '^0[16]-')" 2
+check "restart: the loop finished normally" "$([ -e "$ND/sweep.done" ] && echo yes || echo no)" yes
+# A signal while no run is active (waiting for disk) adds no entry and does not hang.
+rm -f "$ND/sweep.done"
+echo "$(epoch '2026-10-07 20:30')" > "$NIGHTLY_NOW_FILE"
+export NIGHTLY_MIN_FREE_GB=999999 NIGHTLY_DISK_WAIT_SECONDS=100 NIGHTLY_MAX_DISK_WAITS=5
+before=$(grep -c '^## ' "$ND/report.md")
+bash "$NIGHTLY_SH" loop "$NIGHT" > "$TMP/term/loop3.out" 2>&1 &
+LOOP=$!
+sleep 2
+kill -TERM "$LOOP"; t0=$SECONDS; wait "$LOOP"; rc=$?
+check "idle signal: exits with 143 promptly" "$rc $([ $((SECONDS - t0)) -lt 10 ] && echo fast)" "143 fast"
+check "idle signal: only the disk note was added (no run entry)" "$(( $(grep -c '^## ' "$ND/report.md") - before ))" 1
+unset NIGHTLY_MIN_FREE_GB NIGHTLY_DISK_WAIT_SECONDS NIGHTLY_MAX_DISK_WAITS STUB_RUN_SECONDS NIGHTLY_FIXERS
+
+# the numbering rule on its own
+mk="$TMP/numbering"
+mkdir -p "$mk/empty" "$mk/gaps/02-2100" "$mk/gaps/11-0100" "$mk/gaps/7-0100" "$mk/gaps/09-0010" "$mk/gaps/readme" "$mk/gaps/10-12345" "$mk/hundred/99-0100" "$mk/hundred/100-0200"
+touch "$mk/gaps/99-0000" # a file, not a run directory
+hr() { NIGHTLY_REPO=/nonexistent bash "$HERE/nightly.sh" highest-run-number "$1"; }
+check "numbering: no runs directory" "$(hr "$mk/missing")" 0
+check "numbering: empty runs directory" "$(hr "$mk/empty")" 0
+check "numbering: gaps, one-digit, long suffix, files and foreign names" "$(hr "$mk/gaps")" 11
+check "numbering: past 99" "$(hr "$mk/hundred")" 100
 
 
 echo

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { PlayerSheet, calculateVPBreakdown, VPBreakdownTooltip } from "./PlayerSheet.tsx";
 import { CardDetails } from "./CardDetails.tsx";
 import { PlayerView, TableView } from "../protocol/types.ts";
@@ -94,6 +94,25 @@ describe("PlayerSheet Component & Human Readable Metadata", () => {
     // Invariant: p2 must not have private-hand-section
     const p2Card = privateCards[1];
     expect(p2Card.querySelector('[data-testid="private-hand-section"]')).toBeNull();
+  });
+
+  it("shows progress toward the viewer's own countable secrets", () => {
+    const players: PlayerView[] = [
+      {
+        ...mockPlayers[0],
+        held_secret_objectives: ["ctr", "pe"],
+        secret_objective_progress: { ctr: { have: 4, threshold: 6, satisfied: false } },
+      },
+      mockPlayers[1],
+    ];
+    render(<PlayerSheet players={players} userSeat="p1" />);
+    const ctr = screen.getByTestId("secret-objective-item-ctr");
+    expect(ctr).toHaveTextContent("4 / 6 systems with at least one of your ships");
+    expect(ctr.querySelector(".secret-progress__fill")).toHaveStyle({ width: "67%" });
+    // Prove Endurance is met by an event: no bar, a note instead.
+    const pe = screen.getByTestId("secret-objective-item-pe");
+    expect(pe.querySelector('[data-testid="secret-progress-pe"]')).toBeNull();
+    expect(pe).toHaveTextContent("offered the moment it happens");
   });
 
   it("renders zero private cards when viewer is spectator", () => {
@@ -311,6 +330,22 @@ describe("PlayerSheet toast mute", () => {
   });
 });
 
+describe("PlayerSheet turn recap toggle", () => {
+  it("starts off, turns on and remembers it", async () => {
+    const { TURN_RECAP_KEY } = await import("../hooks/useTurnRecapSetting.ts");
+    localStorage.clear();
+    render(<PlayerSheet players={mockPlayers} />);
+    const button = screen.getByTestId("turn-recap-btn");
+    expect(button).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(button);
+    expect(button).toHaveAttribute("aria-pressed", "true");
+    expect(localStorage.getItem(TURN_RECAP_KEY)).toBe("true");
+    fireEvent.click(button);
+    expect(localStorage.getItem(TURN_RECAP_KEY)).toBe("false");
+    localStorage.clear();
+  });
+});
+
 describe("PlayerSheet reaction mode toggle", () => {
   const name = getActionCardMeta("direct_hit").name;
 
@@ -349,3 +384,58 @@ describe("PlayerSheet reaction mode toggle", () => {
     expect(screen.queryByTestId("reaction-inspect-mode-direct_hit")).toBeNull();
   });
 });
+
+describe("PlayerSheet economy and token line", () => {
+  it("shows bare token numbers separated by diamonds, without the old label", () => {
+    render(<PlayerSheet players={mockPlayers} userSeat="p1" />);
+    const tokens = screen.getAllByTestId("player-command-tokens");
+    expect(tokens[0].textContent).toBe("3 ◆ 3 ◆ 2");
+    expect(tokens[1].textContent).toBe("2 ◆ 4 ◆ 1");
+    expect(screen.queryByText(/Tokens:/)).toBeNull();
+  });
+
+  it("names the numbers in aria-labels and hover tooltips", () => {
+    vi.useFakeTimers();
+    try {
+      render(<PlayerSheet players={mockPlayers} userSeat="p1" />);
+      const tokens = screen.getAllByTestId("player-command-tokens")[0];
+      expect(tokens.getAttribute("aria-label")).toBe("Command tokens: tactic 3, fleet 3, strategy 2");
+      expect(tokens.tabIndex).toBe(0);
+      fireEvent.pointerEnter(tokens);
+      act(() => void vi.advanceTimersByTime(300));
+      expect(screen.getByRole("tooltip").textContent).toBe("Tactic 3 · Fleet 3 · Strategy 2");
+      fireEvent.pointerLeave(tokens);
+
+      const tg = screen.getAllByTestId("player-trade-goods")[0];
+      expect(tg.getAttribute("aria-label")).toBe("Trade goods: 2");
+      fireEvent.pointerEnter(tg);
+      act(() => void vi.advanceTimersByTime(300));
+      expect(screen.getByRole("tooltip").textContent).toBe("Trade goods");
+      fireEvent.pointerLeave(tg);
+
+      const comm = screen.getAllByTestId("player-commodities")[0];
+      expect(comm.getAttribute("aria-label")).toBe("Commodities: 4");
+      fireEvent.focus(comm);
+      act(() => void vi.advanceTimersByTime(300));
+      expect(screen.getByRole("tooltip").textContent).toBe("Commodities");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("PlayerSheet held foreign command tokens", () => {
+  it("shows one chip per foreign token in the fleet pool and nothing for other seats", () => {
+    const players = [
+      { ...mockPlayers[0], held_foreign_tokens: ["p2", "p3"] },
+      mockPlayers[1],
+    ];
+    render(<PlayerSheet players={players} userSeat="p1" />);
+    expect(screen.getAllByTestId("player-held-tokens")).toHaveLength(1);
+    expect(screen.getAllByTestId("player-held-token")).toHaveLength(2);
+    expect(screen.getByTestId("player-held-tokens").getAttribute("aria-label")).toContain(
+      "Holds 2 other players' command tokens in the fleet pool",
+    );
+  });
+});
+

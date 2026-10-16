@@ -4,7 +4,15 @@ param(
     [string]$CorpusOutput = 'E:\ti4-corpus\vponly-single-236464-20260914-partial',
     [string]$Checkpoint = 'D:\Projects\ti4-engine-rs\out\offline-bc-v2-20260913-from-318956',
     [string]$TrainingOutput = 'D:\Projects\ti4-engine-rs\out\offline-bc-v3-20260914-from-bcv2',
-    [int]$Workers = 32
+    [int]$Workers = 32,
+    # Publication reads/writes hundreds of thousands of small per-game part files; on a spinning
+    # disk that becomes a random-seek workload (observed ~28 MB/s vs. ~150-200 MB/s sequential).
+    # Set this to skip the preflight warning once a run is deliberately pointed at an HDD anyway.
+    [switch]$SkipStorageCheck,
+    # Opt-in: excludes $Staging and the parent of $CorpusOutput from Windows Defender real-time
+    # scanning, which otherwise scans every one of those small part files individually. Requires
+    # an elevated (Administrator) PowerShell; failures are warned, not fatal.
+    [switch]$ExcludeFromDefender
 )
 
 $ErrorActionPreference = 'Stop'
@@ -15,6 +23,26 @@ $pool = Join-Path $repo 'out\pools\full_np8_12_train.json'
 $cpuRoot = Join-Path $repo 'out\libtorch-2.9.1-cpu'
 $cudaRoot = Join-Path $repo 'out\libtorch-2.9.1-cu128'
 $publishLog = "$CorpusOutput.publish.log"
+
+function Test-FastStorage {
+    param([string]$Path)
+    $driveLetter = ([System.IO.Path]::GetPathRoot((Resolve-Path -LiteralPath $Path).Path)).TrimEnd('\', ':')
+    try {
+        $partition = Get-Partition -DriveLetter $driveLetter -ErrorAction Stop
+        $disk = Get-PhysicalDisk -DeviceNumber $partition.DiskNumber -ErrorAction Stop
+        if ($disk.MediaType -eq 'HDD') {
+            Write-Warning (
+                "$Path is on drive ${driveLetter}: (" + $disk.FriendlyName + ", a spinning disk). " +
+                'Publication assembly reads/writes one file per game (hundreds of thousands of ' +
+                'small files); on an HDD this runs at random-seek speed, not sequential speed. ' +
+                'Point -Staging/-CorpusOutput at an SSD if one has room, or pass -SkipStorageCheck ' +
+                'to proceed anyway.'
+            )
+        }
+    } catch {
+        Write-Warning "Could not determine media type for drive ${driveLetter}: $_"
+    }
+}
 
 if ($Workers -lt 1) {
     throw 'Workers must be positive.'
@@ -33,6 +61,19 @@ if (-not (Test-Path -LiteralPath $capture -PathType Leaf)) {
 }
 if (-not (Test-Path -LiteralPath $trainer -PathType Leaf)) {
     throw "Verified CUDA trainer executable is missing: $trainer"
+}
+if (-not $SkipStorageCheck) {
+    Test-FastStorage -Path $Staging
+    Test-FastStorage -Path (Split-Path -Parent $CorpusOutput)
+}
+if ($ExcludeFromDefender) {
+    foreach ($path in @($Staging, (Split-Path -Parent $CorpusOutput))) {
+        try {
+            Add-MpPreference -ExclusionPath $path -ErrorAction Stop
+        } catch {
+            Write-Warning "Could not add Defender exclusion for ${path}: $_ (run elevated to enable this)"
+        }
+    }
 }
 
 Push-Location $repo

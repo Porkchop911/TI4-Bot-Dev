@@ -1,5 +1,12 @@
 import type { Page, Route } from "@playwright/test";
-import type { LobbyDto, MapChoice } from "../../../src/protocol/types";
+import type {
+  LobbyDto,
+  MapChoice,
+  MapChoiceDto,
+  MapPreviewDto,
+  MapTemplateSummary,
+  StrategyCardSetId,
+} from "../../../src/protocol/types";
 import { fixtureLobby, fixturePreview, fixtureTemplates } from "../../../src/dev/mapPickerFixtures";
 import { GAME_ID, SESSION } from "./mockGame";
 
@@ -15,6 +22,14 @@ export interface MapLobbyOptions {
   preview?: "ready" | "loading" | "error";
   /** Reject a Random choice, as the server does when no layout fits. */
   rejectRandom?: boolean;
+  /** The strategy card set the lobby reports (default: omitted, as an older server would). */
+  strategyCardSet?: StrategyCardSetId;
+  /**
+   * Real server answers instead of the synthetic fixtures: the catalog for this player count and
+   * the preview of each alias (missing aliases fall back to the fixture board). The lobby's map
+   * description is then taken from the catalog entry, as the server's `describe` does.
+   */
+  real?: { templates: MapTemplateSummary[]; previews: Record<string, MapPreviewDto> };
 }
 
 /** Moves the filler systems around the ring, so a re-roll draws a visibly different board. */
@@ -39,7 +54,20 @@ export async function openMapLobby(page: Page, options: MapLobbyOptions = {}) {
   const viewer = options.viewer ?? "host";
   let alias: string | null = options.alias === undefined ? `${players}pStandard` : options.alias;
   let revision = options.revision ?? 1;
-  const lobby = (): LobbyDto => ({ ...fixtureLobby(players, alias, revision), game_id: GAME_ID });
+  const realChoice = (): MapChoiceDto | undefined => {
+    const entry = options.real?.templates.find((t) => t.alias === alias);
+    if (!entry) return undefined;
+    const { name, author, systems, hyperlanes, recommended } = entry;
+    return { kind: "template", alias: entry.alias, ...(name ? { name } : {}), author, systems, hyperlanes, recommended };
+  };
+  const previewOf = (name: string | null) =>
+    (name && options.real?.previews[name]) || fixturePreview(players, name);
+  const lobby = (): LobbyDto => ({
+    ...fixtureLobby(players, alias, revision),
+    ...(realChoice() ? { map: realChoice() } : {}),
+    game_id: GAME_ID,
+    ...(options.strategyCardSet ? { strategy_card_set: options.strategyCardSet } : {}),
+  });
   const hang = () => new Promise<void>(() => undefined);
   const fail = (route: Route) => route.fulfill({ status: 503, json: { error: "server unavailable" } });
 
@@ -47,16 +75,18 @@ export async function openMapLobby(page: Page, options: MapLobbyOptions = {}) {
     if (options.catalog === "loading") return hang();
     if (options.catalog === "error") return fail(route);
     // Seven seats: no ready-made layout fits.
+    if (options.real) return route.fulfill({ json: options.real.templates });
     return route.fulfill({ json: players > 6 ? [] : fixtureTemplates(players) });
   });
   // The small picture on each choice card.
   await page.route("**/api/maps/*/preview?*", (route) => {
     const name = /\/api\/maps\/([^/?]+)\/preview/.exec(route.request().url())?.[1] ?? "random";
-    return route.fulfill({ json: fixturePreview(players, name === "random" ? null : decodeURIComponent(name)) });
+    return route.fulfill({ json: previewOf(name === "random" ? null : decodeURIComponent(name)) });
   });
   await page.route(`**/api/games/${GAME_ID}/lobby/map-preview`, async (route) => {
     if (options.preview === "loading") return hang();
     if (options.preview === "error") return fail(route);
+    if (alias && options.real?.previews[alias]) return route.fulfill({ json: options.real.previews[alias] });
     return route.fulfill({ json: shuffled(fixturePreview(players, alias), revision) });
   });
   await page.route(`**/api/games/${GAME_ID}/lobby/map`, async (route) => {

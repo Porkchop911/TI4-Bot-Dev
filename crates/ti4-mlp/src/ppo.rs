@@ -1407,10 +1407,6 @@ type Auxiliary<'a> = (
     f64,
 );
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "the public PPO update signature plus its optional, tightly coupled loss"
-)]
 fn update_inner(
     actor: &mut Actor,
     batch: &Batch,
@@ -2808,10 +2804,6 @@ mod device_tests {
     }
 
     #[test]
-    #[expect(
-        clippy::too_many_lines,
-        reason = "one frozen batch, then every array and output compared for three minibatches"
-    )]
     fn a_device_resident_batch_assembles_exactly_the_host_arrays() {
         let steps = vec![
             step(2, 1, vec![vec![9, 4, 4], vec![1], vec![300, 2]], vec![7, 3]),

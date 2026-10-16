@@ -2113,7 +2113,14 @@ mod tests {
         crate::fixtures::put_on_planet(&mut spent, &elsewhere, &spot, MECH, &a(), 4);
         assert!(!commit_offer(&spent, &a(), &system).contains(&offer));
         assert_eq!(
-            deploy_planets(&state, content(), DEFAULT, &a(), &system, &[planet.clone()]),
+            deploy_planets(
+                &state,
+                content(),
+                DEFAULT,
+                &a(),
+                &system,
+                std::slice::from_ref(&planet)
+            ),
             vec![planet]
         );
     }

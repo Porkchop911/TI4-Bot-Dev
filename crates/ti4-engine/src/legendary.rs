@@ -712,17 +712,7 @@ fn unit_of(
     player: &PlayerId,
     base: &str,
 ) -> Option<ti4_model::id::UnitTypeId> {
-    let faction = state
-        .player(player)
-        .map(|seat| seat.faction.to_string())
-        .unwrap_or_default();
-    let generic = ti4_content::units::catalogue(content, sources)
-        .get(base)
-        .map(|unit| unit.id().to_owned());
-    ti4_content::units::faction_unit(content, &faction, base, sources)
-        .map(|unit| unit.id().to_owned())
-        .or(generic)
-        .map(ti4_model::id::UnitTypeId::new)
+    crate::action_cards::placed_unit_id(state, content, sources, player, base)
 }
 
 /// Ask which of this seat's planets to place on, then put `count` of `base` there.
@@ -780,7 +770,12 @@ fn place_on_own_planet(
     for _ in 0..placeable {
         held.push(ti4_model::units::Unit::new(type_id.clone(), player.clone()));
     }
-    crate::supply::stage_naaz_mech_placed(state, player, &ti4_model::id::SystemId::new(system), &type_id);
+    crate::supply::stage_naaz_mech_placed(
+        state,
+        player,
+        &ti4_model::id::SystemId::new(system),
+        &type_id,
+    );
     Ok(())
 }
 
@@ -914,7 +909,11 @@ fn resolve(
                 ChoiceOption::labelled("card", "legendary", "draw 1 action card"),
             ];
             if crate::factions::hooks_economy::effect_placement_forbidden(
-                state, content, sources, player, &ti4_model::id::UnitTypeId::new("mech"),
+                state,
+                content,
+                sources,
+                player,
+                &ti4_model::id::UnitTypeId::new("mech"),
             ) {
                 options.retain(|option| option.id != "mech");
             }
@@ -1771,11 +1770,26 @@ mod tests {
         let before = state.player(&a).unwrap().action_cards.len();
         let (decider, seen) = crate::choice::Capturing::new(Box::new(crate::choice::FirstOption));
         let mut table = crate::choice::Table::with_default(Box::new(decider));
-        resolve(&mut state, content, sources, None, &mut table, &a, &PlanetId::new("hopesend")).unwrap();
+        resolve(
+            &mut state,
+            content,
+            sources,
+            None,
+            &mut table,
+            &a,
+            &PlanetId::new("hopesend"),
+        )
+        .unwrap();
         assert_eq!(state.board, board);
         assert_eq!(state.player(&a).unwrap().action_cards.len(), before + 1);
         let seen = seen.borrow();
-        assert_eq!(seen[0].options.iter().map(|o| o.id.as_str()).collect::<Vec<_>>(), vec!["card"]);
+        assert_eq!(
+            seen[0]
+                .options
+                .iter()
+                .map(|o| o.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["card"]
+        );
     }
-
 }

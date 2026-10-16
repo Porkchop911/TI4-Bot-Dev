@@ -85,8 +85,9 @@ describe("PaymentDrawer Component", () => {
       />,
     );
 
-    expect(screen.getByTestId("payment-drawer-title")).toHaveTextContent("Pay 4 Resources");
-    expect(screen.getByTestId("committed-amount")).toHaveTextContent("0 Resources");
+    expect(screen.getByTestId("payment-drawer-title").querySelector("[aria-label]")).toHaveAttribute("aria-label", "4 resources");
+    expect(screen.getByTestId("payment-drawer-title")).toHaveTextContent("Pay");
+    expect(screen.getByTestId("committed-amount").querySelector("[aria-label]")).toHaveAttribute("aria-label", "0 resources");
     expect(screen.getByTestId("planet-card-exhaust|jord")).toBeInTheDocument();
     expect(screen.getByTestId("planet-card-exhaust|arinam")).toBeInTheDocument();
     expect(screen.getByTestId("trade-goods-stepper")).toBeInTheDocument();
@@ -158,7 +159,7 @@ describe("PaymentDrawer Component", () => {
     fireEvent.click(arinam.querySelector('input[type="checkbox"]')!);
 
     const confirmBtn = screen.getByTestId("confirm-payment-btn");
-    expect(screen.getByTestId("committed-amount")).toHaveTextContent("1 Resources");
+    expect(screen.getByTestId("committed-amount").querySelector("[aria-label]")).toHaveAttribute("aria-label", "1 resource");
     expect(confirmBtn).toBeDisabled();
     expect(confirmBtn).toHaveTextContent("Stage 3 more to pay");
   });
@@ -181,7 +182,7 @@ describe("PaymentDrawer Component", () => {
     // Select Jord (+4)
     fireEvent.click(jordCheckbox);
 
-    expect(screen.getByTestId("committed-amount")).toHaveTextContent("4 Resources");
+    expect(screen.getByTestId("committed-amount").querySelector("[aria-label]")).toHaveAttribute("aria-label", "4 resources");
     const confirmBtn = screen.getByTestId("confirm-payment-btn");
     expect(confirmBtn).not.toBeDisabled();
 
@@ -207,21 +208,21 @@ describe("PaymentDrawer Component", () => {
     // Select Arinam (+1)
     const arinamCard = screen.getByTestId("planet-card-exhaust|arinam");
     fireEvent.click(arinamCard.querySelector('input[type="checkbox"]')!);
-    expect(screen.getByTestId("committed-amount")).toHaveTextContent("1 Resources");
+    expect(screen.getByTestId("committed-amount").querySelector("[aria-label]")).toHaveAttribute("aria-label", "1 resource");
 
     // Increment Trade Goods twice (+2)
     const tgIncBtn = screen.getByTestId("tg-increment-btn");
     fireEvent.click(tgIncBtn);
     fireEvent.click(tgIncBtn);
     expect(screen.getByTestId("tg-count")).toHaveTextContent("2");
-    expect(screen.getByTestId("committed-amount")).toHaveTextContent("3 Resources");
+    expect(screen.getByTestId("committed-amount").querySelector("[aria-label]")).toHaveAttribute("aria-label", "3 resources");
 
     // Also select Jord (+4), bringing total to 7 (overpayment: 3 credit)
     const jordCard = screen.getByTestId("planet-card-exhaust|jord");
     fireEvent.click(jordCard.querySelector('input[type="checkbox"]')!);
-    expect(screen.getByTestId("committed-amount")).toHaveTextContent("7 Resources");
+    expect(screen.getByTestId("committed-amount").querySelector("[aria-label]")).toHaveAttribute("aria-label", "7 resources");
     expect(screen.getByText(/Potential overpayment/)).toBeInTheDocument();
-    expect(screen.getByText(/\+3 Resources/)).toBeInTheDocument();
+    expect(screen.getByLabelText("plus 3 resources")).toBeInTheDocument();
   });
 
   it("calls onSubmit with decline option when cancel is clicked", async () => {
@@ -297,7 +298,7 @@ describe("PaymentDrawer Component", () => {
     );
     expect(screen.getByTestId("payment-problem")).toHaveTextContent(/Short by 4/);
     fireEvent.click(screen.getByTestId("auto-pay-btn"));
-    expect(screen.getByTestId("committed-amount")).toHaveTextContent("4 Resources");
+    expect(screen.getByTestId("committed-amount").querySelector("[aria-label]")).toHaveAttribute("aria-label", "4 resources");
     expect(screen.getByTestId("planet-card-exhaust|jord")).toHaveAttribute("data-selected", "true");
     expect(screen.getByTestId("confirm-payment-btn")).toBeEnabled();
     expect(screen.queryByTestId("payment-problem")).not.toBeInTheDocument();
@@ -327,7 +328,7 @@ describe("PaymentDrawer Component", () => {
       </PaymentDraftProvider>,
     );
     expect(screen.getByTestId("planet-card-exhaust|arinam")).toHaveAttribute("data-selected", "true");
-    expect(screen.getByTestId("committed-amount")).toHaveTextContent("1 Resources");
+    expect(screen.getByTestId("committed-amount").querySelector("[aria-label]")).toHaveAttribute("aria-label", "1 resource");
     fireEvent.click(screen.getByTestId("planet-card-exhaust|jord").querySelector("input")!);
     expect(togglePlanet).toHaveBeenCalledWith("exhaust|jord");
   });

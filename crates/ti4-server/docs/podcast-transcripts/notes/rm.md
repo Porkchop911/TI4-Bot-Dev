@@ -1,0 +1,56 @@
+# Radio Mecatol (Kalle — two-time TI champion — and Ola, game designer; Swedish, ~30-min episodes) — own transcription base.en, full episodes
+
+## "Fleet composition" (2026-02-13)
+- Combat is a grind: low hit chances, so every HP and sustain damage matters; most battles decided by 1-2 hits.
+- Limits: resources, PRODUCTION capacity (key), fleet supply, plastic count. Without production limits you'd just build fighters (8 fighters beat a dreadnought).
+- Forward dock on a 1-resource planet near Rex: rarely worth it unless low mobility (no Gravity Drive); action economy: build as much as possible per command token; extra dock in a multi-planet home system (Hacan) can beat a forward dock if you have Carrier II/mobility.
+- Dreadnought debate: dread for defence (immobile without upgrade) vs carrier+4 fighters (cheaper, more HP but needs 5 production). Dreads bombard.
+- Destroyer > cruiser (cheaper fast ship for empty-system/edge objectives; anti-fighter barrage); cruiser only with a spare resource. Unit upgrade ranking (vacuum): Carrier II > Dreadnought II > Destroyer II; Fighter II best when you have hit bonuses (Sardakk, Naalu). Rarely upgrade infantry, cruiser, space dock.
+- Assault Cannon (auto-hit pre-combat) often better than a unit upgrade; auto-hit abilities (Yin, Sardakk Exotrireme) very strong.
+- Build ships EVERY round; R2-R3 fleets fight the major battles; classic mistake = mega fleet built in the last round that never moves (except home defence). Rock-paper-scissors: opponent builds fighters -> build destroyers; big ships -> build many damage dice (fighters).
+- Invasion: a dreadnought's bombardment can beat a carrier of ground troops. War suns only if filthy rich (Assault Cannon usually preferred) — TE breakthroughs make them more feasible.
+
+## "Over-the-top vs Pop-off" (2026-01-16)
+- Over-the-top = score as early as possible (get table heat, eke out last points); pop-off = stay under radar, big final round. Kalle prefers over-the-top; teaches beginners: score every point you can, sacrifice board position for VP. Always score every round; failing to score a round is a failure.
+- Hero unlock rewards early scoring (3 objectives).
+- Score the INSECURE objectives first (control/holding planets); save secure ones (tech) for later.
+- Imperial: ideal use = extra public + holding Mecatol (3-point swing); ask "can I hold Rex for a round?" before taking it (taking Rex and immediately losing the fleet is bad). If behind, take Imperial to catch up. If you can double-score + Rex, take Imperial even R2-R3 (might not be offered later). Ola: consider holding back to avoid heat. People attack the points leader more than the board-position leader (and that is usually correct).
+- 10 VP: 5 stage I + 3 secrets + Rex point + 1 more (support). 14 VP needs stage IIs.
+
+## "Last round" (2025-12-19)
+- Async game example (Kalle as Firmament with Crimson alliance — money engine): round-6 analysis of 4 contenders; initiative order decides who can win in status phase. Ola: with a status-phase win plan you should pick the LOWEST initiative card available (Diplomacy over Construction) — otherwise you must stop everyone ahead of you. Prefer objectives that aren't about claiming territory (harder to stop); with redundancy (one structure spare) go for the safe objective, pull back and defend; hold the needed strategy card until the very end of the round so the table forgets you can score (but announce when you play it). Use your actions to block the likeliest winner (defend neutral tech-spec planets from Muaat). Book of Latvinia can steal speaker at the critical round.
+
+## "Secret objectives" (2025-09-12)
+- Prefer ACTION-phase secrets almost always (score outside the scoring order, several per round; can carry 7->10). Kalle ranks difficulty by controllability: secrets you can force regardless of opponents/slice are easy (discard 5 action cards, 4 PDS if drawn early, 5 dreadnoughts — "easiest of all, and hidden because everyone builds dreads"), those relying on opponents' choices are hard (destroy flagship/war sun, turn fleets to dust via space cannon — hated). Easy: ships in 3 systems adjacent to anomalies; another player's promissory note in play area (buy a useless commander); win combat vs VP leader (someone reachable is usually tied for lead). Hard: control 4 planets of one trait (look like publics), become a martyr (home must fall), occupy seat (3 ships on Rex at status — Rex changes hands), 3 laws (agenda-phase; Politics lets you choose laws), relic fragments (gone by R3).
+- Secret draws are random; Imperial rarely picked early -> you get ~3 draws total. "Win with what you're dealt."
+- Kalle drafts resources over influence -> influence-12 secret hard for him.
+
+## "Trade" (2025-08-15)
+- Trade is "in a vacuum the obvious R1 pick" (both hosts): flexible money (TG = resources AND influence, storable), lets you build a fleet AND follow Technology, negotiation power.
+- STRONG DISAGREEMENT with the community/tournament "X-1 / wash everyone" meta (SCPT-style): hosts consider refreshing/washing everyone a gift to opponents; prefer forcing others to spend a strategy token to replenish (tokens are what they most want opponents not to have). Be stingiest in ROUND 1 (an opponent's R1 trade goods = second carrier or a tech) and more generous later. Refresh: players with you as only neighbour, loyal/weak allies you want to boost against others; avoid refreshing neighbours you're in conflict with or strong economies. Two neighbours wanting to trade with each other -> charge 1 TG to allow refresh. Commodities enable small bribes. Watch for TG hoarders who can bank resource/trade-good objectives (unstoppable).
+
+## "Hacan in Thunder's Edge" (2026-03-13) — Kalle won 2 of 3 TE Hacan games
+- Make fair deals spread across the table (not greedy); agent deal "2 for you, 2 for me" (3/2 for 5-commodity factions) almost never refused. Counter-Hacan: tables refusing to trade cripple them.
+- Breakthrough Auto-Factories (+1 fleet supply when producing 3+ non-fighter ships): Kalle spreads 3 docks across systems (vs Ola's classic triple dock at home) and builds 3 cheap ships per dock per round -> up to 8 extra tokens by R4; cheap destroyers/cruisers; Space Dock II helps fit fighters/ground forces.
+- Tech: AI Dev + Sarween (start) + 1 red/yellow -> War Suns R3; unlock hero (3 objectives by R3) and build war suns/flagship/dreads for free; Quantum Datahub Node later (Imperial in final rounds); Mageon (ground force per dock activation); Assault Cannon late; Scanlink when tech-planet objectives; Production Biomes poor. Hacan TE win rate ~14% (below average) despite this — home has 3 planets hard to defend from ground attacks (Sardakk commander); two useless promissories are handy to pay Deepwrought/Naalu/Empyrean "tax".
+
+## "Sardakk revisited" (2026-01-02) — Ola won with Sardakk in TE
+- Breakthrough (win combat -> command token or free unit-upgrade research) "rescues" Sardakk: incentive to fight constantly; essential tech AI Development Algorithm (with red/blue synergy unlocks almost all unit upgrades: Carrier II, Destroyer II, Fighter II, PDS II, then War Suns). Counter: Deepwrought hero purging AI Dev.
+- Want planet-heavy slices (3-planet system early for commander unlock), neighbours with shared planet borders; slow faction; +1 combat best on cheap units (fighters, ground forces) — fighter/ground-force faction despite Exotrireme; mechs auto-hit when sustaining.
+
+## "The problem with Mentak" (2026-07-03)
+- Pillage creates analysis paralysis; Mentak improved a lot in TE (TE win rate ~16% = average). Best case: draft a slice with an Entropic Scar -> Salvage Operations then Mirror Computing (doubles TG) by R2-R3; breakthrough (yellow-green synergy) lets them get Cruiser II while moving toward Mirror Computing; AI Dev path -> war suns. Sell Promise of Protection expensively (Deepwrought bought it happily). Commander (4 cruisers) steals promissory notes after won combats — skirmish style. Better in longer games.
+
+## "The problem with Jol-Nar" (2025-02-14, PoK era)
+- Hosts call Jol-Nar (PoK) the best/overpowered faction (they ban it): E-Res Siphons (attacking Jol-Nar pays them 4 TG — removes their weakness), commander rerolls on unit abilities (PDS/bombardment/AFB; unlocks ~R3 with 8 techs), hero respecs tech for endgame (Light/Wave, War Suns, Fleet Logistics, Assault Cannon, Duranium). -1 combat matters on ground/fighters, barely on war suns.
+- COUNTER-JOL-NAR: attack them EARLY (few ground forces, Sol infantry ~1.4x Jol-Nar infantry); refuse to take the Technology card (Jol-Nar won't take it themselves) or make them pay you to take it. General: players are too focused on own success and too little on hindering snowballing factions (but other host disagrees: attacking without VP purpose is a cost; someone else should do it — "free rider" problem).
+
+## "Mahact" (2025-01-31, PoK era)
+- Radio Mecatol meta rates Mahact LOW (disagreement with SCPT who rank them #1): best last turn in the game (commander reactivates systems; hero; mechs as ceasefire) but nothing in the early game; must WIN combats (Skilled Retreat denies the token) to take tokens; don't "collect them all" — 3 tokens is good, 4 great; Edict/agent: plan each round whom you'll use the agent on and sell it in advance (people play strategy cards early, so find a pointless token). Agent+Construction trick: build a dock using construction player's token. Tech: blue then Gravity Drive; Cruiser II easy (2 of 3 prereqs) for opportunistic attacks; AI Dev + Bio-Stims. Save command tokens in the second-to-last round for the final-round burst. Mahact thrives in chaos (fleets everywhere). Counter: make Mahact pay dearly to win a combat against you; two-pronged attacks beat mech-ceasefire.
+
+## "Mechs" (2025-01-17, PoK era) — mech tier list
+- S: Naaz-Rokha (2 dice, fights in space), Mahact (regainable ceasefire); A: Xxcha (space cannon), Empyrean (cancel action card, e.g. Flank Speed); Letnev mech (deploy at start of each ground-combat round for 2 resources, with NES/Duranium) one host's S; Sardakk (auto-hit when sustaining) A; Argent (doesn't count vs capacity) S/A; B: Yin, Arborec (production; planetary shield); C/D: Jol-Nar, Hacan (trade planet), Nekro, Sol, L1Z1X (bombard while not in combat). Lessons: in small ground combats each die/HP is decisive; mechs stuck in place — deploy abilities valuable; 4 infantry beat 1 mech but need capacity.
+
+## "Factions we hate to face" (2025-07-18)
+- Naalu (Neuroglaive + initiative 0 + Fighter II everywhere; "about half of games decided in last round by initiative order" — initiative 0 always scores first; their promissory 0 swaps initiative), Yssaril (Mageon + Bio-Stims stealing; worse in 4-player — host bans them below 6 players), Jol-Nar (E-Res + rerolls), Saar (counter: take planets in their wake, Diplomacy-lock their mega fleet). Mentak/Nekro not hated (counter Nekro by making every victory costly).
+- Stats from a large online database: worst NEIGHBOUR = Mahact (-13% win rate for you), then Yssaril, Nekro, Yin; "best" neighbours are weak combat factions (L1Z1X, Muaat, Sardakk) and, among strong factions, negotiators (Nomad, Hacan, Saar). Muaat hero: use at first good opportunity (block path/economy), don't wait for the perfect fleet.

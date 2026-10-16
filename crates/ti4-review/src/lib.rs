@@ -60,6 +60,8 @@ pub mod diplomacy;
 #[cfg(feature = "simulate")]
 pub mod gui;
 pub mod panels;
+#[cfg(feature = "simulate")]
+pub mod power;
 pub mod view;
 
 /// The `ti4-engine` commit this reviewer build was compiled against. Recorded in every session and
@@ -134,6 +136,14 @@ pub struct SimulationConfig {
     pub temperature: f64,
     /// Play with structured diplomacy (deals, promises, signals, relationships) switched on.
     pub diplomacy: bool,
+    /// Six factions to seat instead of the standard lineup, rotated across the seats exactly as the
+    /// standard six are. `None` is the standard lineup. Factions outside the trained six are still
+    /// being implemented in the engine and are played by an untrained policy row.
+    pub lineup: Option<Vec<String>>,
+    /// Seat indices (0 through 5) answered by the hand-written rule bot instead of the checkpoint's
+    /// policy. Empty is every seat on the policy. The trace still shows the policy's scores for
+    /// those seats, exactly as it does for a seat a person answers.
+    pub rule_seats: Vec<usize>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -169,6 +179,12 @@ pub struct SessionManifest {
     /// existed were not.
     #[serde(default)]
     pub diplomacy: bool,
+    /// The six factions this table rotated, when it was not the standard lineup.
+    #[serde(default)]
+    pub lineup: Option<Vec<String>>,
+    /// Seats the rule bot answered. Sessions written before the option existed had none.
+    #[serde(default)]
+    pub rule_seats: Vec<usize>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -206,6 +222,74 @@ pub struct PlanetMeta {
     pub space_station: bool,
 }
 
+/// Every faction a table can seat: each one choosable at setup under the game's sources, with the
+/// three Council Keleres variants listed separately. Canonical order (the standard six first).
+#[must_use]
+pub fn seatable_factions(content: &ContentStore) -> Vec<&'static str> {
+    let mut out = Vec::new();
+    for entry in ti4_engine::seating::wide_roster(content, ti4_model::content_types::DEFAULT) {
+        if entry == ti4_engine::seating::KELERES_FAMILY {
+            out.extend(ti4_engine::factions::keleres::VARIANTS);
+        } else {
+            out.push(entry);
+        }
+    }
+    out
+}
+
+/// Whether `lineup` is a table the engine can seat: six different factions, each choosable at
+/// setup ([`seatable_factions`]: the Obsidian is not), and at most one Council Keleres whose
+/// Tribuni faction (Mentak, Xxcha or Argent) nobody else plays.
+///
+/// # Errors
+/// The first reason it is not, in words the replayer shows.
+pub fn check_lineup(content: &ContentStore, lineup: &[String]) -> std::result::Result<(), String> {
+    if lineup.len() != FACTIONS.len() {
+        return Err(format!(
+            "a lineup names {} factions, not {}",
+            FACTIONS.len(),
+            lineup.len()
+        ));
+    }
+    let mut distinct: Vec<&String> = lineup.iter().collect();
+    distinct.sort();
+    distinct.dedup();
+    if distinct.len() != lineup.len() {
+        return Err("a lineup names six different factions".to_owned());
+    }
+    let seatable = seatable_factions(content);
+    if let Some(faction) = lineup.iter().find(|f| !seatable.contains(&f.as_str())) {
+        return Err(if ti4_content::factions::get(content, faction).is_none() {
+            format!("unknown faction {faction}")
+        } else {
+            format!("{faction} cannot be chosen at setup")
+        });
+    }
+    ti4_engine::seating::validate_tribuni(lineup.iter().map(String::as_str))
+        .map_err(|error| error.to_string())
+}
+
+/// A seeded draw of six from [`seatable_factions`], exactly as a `--roster wide` trainer seats a
+/// table for `seed` (`ti4_engine::seating::seat_wide`).
+///
+/// # Errors
+/// When the roster cannot seat six.
+pub fn drawn_lineup(content: &ContentStore, seed: u64) -> std::result::Result<Vec<String>, String> {
+    let players: Vec<PlayerId> = (0..FACTIONS.len())
+        .map(|index| PlayerId::new(format!("seat{index}")))
+        .collect();
+    let drawn =
+        ti4_engine::seating::seat_wide(content, &players, ti4_model::content_types::DEFAULT, seed)
+            .map_err(|error| error.to_string())?;
+    Ok(players
+        .iter()
+        .filter_map(|player| drawn.get(player).map(ToString::to_string))
+        .collect())
+}
+
+/// [`BoardTile::special_area`] for a system in play with no hex of its own (an off-map home).
+pub const OFF_MAP_AREA: &str = "off-map";
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BoardTile {
     pub system: String,
@@ -213,7 +297,8 @@ pub struct BoardTile {
     pub q: i32,
     pub r: i32,
     pub hyperlane: bool,
-    /// `fracture` or `nexus` for systems drawn outside the ordinary galaxy geometry.
+    /// `fracture`, `nexus` or [`OFF_MAP_AREA`] for systems drawn outside the ordinary galaxy
+    /// geometry.
     #[serde(default)]
     pub special_area: Option<String>,
     /// Printed anomaly kinds retained from the content corpus for renderer-independent display.
@@ -372,11 +457,15 @@ impl ReviewSession {
         }
         let mut session_factions = self.manifest.factions.clone();
         session_factions.sort();
-        let mut standard_factions = FACTIONS.map(str::to_owned).to_vec();
-        standard_factions.sort();
-        if session_factions != standard_factions {
+        let mut expected = self
+            .manifest
+            .lineup
+            .clone()
+            .unwrap_or_else(|| FACTIONS.map(str::to_owned).to_vec());
+        expected.sort();
+        if session_factions != expected {
             return Err(ReviewError::Invalid(
-                "session does not carry the standard six-faction lineup".to_owned(),
+                "session does not carry the lineup its manifest names".to_owned(),
             ));
         }
         if !self.manifest.temperature.is_finite() || self.manifest.temperature <= 0.0 {
@@ -859,6 +948,11 @@ impl LiveReview {
                 "temperature must be a finite number greater than zero".to_owned(),
             ));
         }
+        if config.rule_seats.iter().any(|seat| *seat >= FACTIONS.len()) {
+            return Err(ReviewError::Invalid(
+                "rule seats must be 0 through 5".to_owned(),
+            ));
+        }
         let (checkpoint_path, checkpoint_bytes, policy, policy_summary) =
             load_policy(&config.checkpoint, config.table)?;
         let pool_bytes = read_bounded(&config.map_pool)?;
@@ -881,7 +975,13 @@ impl LiveReview {
         let players: Vec<PlayerId> = (0..FACTIONS.len())
             .map(|index| PlayerId::new(format!("seat{index}")))
             .collect();
-        let faction_roster = FACTIONS.map(FactionId::new);
+        let faction_roster: Vec<FactionId> = match &config.lineup {
+            None => FACTIONS.map(FactionId::new).to_vec(),
+            Some(lineup) => {
+                check_lineup(content, lineup).map_err(ReviewError::Invalid)?;
+                lineup.iter().map(FactionId::new).collect()
+            }
+        };
         let factions: BTreeMap<PlayerId, FactionId> = players
             .iter()
             .enumerate()
@@ -925,6 +1025,18 @@ impl LiveReview {
                         .wrapping_mul(1_000_003)
                         .wrapping_add(index as u64);
                     let baseline = baselines.get(player).copied().unwrap_or_default();
+                    // A rule seat keeps its trace (the policy's scores are still shown) but the rule bot
+                    // answers under the hook, so manual control and replay work as for any seat.
+                    let seat_policy = |learned: Box<dyn Decider>| -> Box<dyn Decider> {
+                        if config.rule_seats.contains(&index) {
+                            Box::new(ti4_server::session::random_bot::RuleBotDecider::new(
+                                player.clone(),
+                                config.seed,
+                            ))
+                        } else {
+                            learned
+                        }
+                    };
                     let decider: Box<dyn Decider> = match &policy {
                         LoadedPolicy::Linear(profiles) => {
                             let mut profile = profiles
@@ -938,7 +1050,7 @@ impl LiveReview {
                             let bot = LearnedBot::from_shared(Arc::clone(&profile), stream)
                                 .from_setup(baseline);
                             Box::new(TraceBot {
-                                inner: hook(player, Box::new(bot)),
+                                inner: hook(player, seat_policy(Box::new(bot))),
                                 profile,
                                 faction,
                                 log: Rc::clone(&decision_sink),
@@ -953,7 +1065,7 @@ impl LiveReview {
                             let plans = bot.plan_trace();
                             let (bot_inner, status) = bot.seat();
                             status_sink.borrow_mut().push(status);
-                            let inner = hook(player, bot_inner);
+                            let inner = hook(player, seat_policy(bot_inner));
                             Box::new(MlpTraceBot {
                                 inner,
                                 plans,
@@ -1001,6 +1113,8 @@ impl LiveReview {
             content_sha256: Some(content_sha256),
             source_scope: Some("FULL (base + PoK + codices + Thunder's Edge)".to_owned()),
             diplomacy: config.diplomacy,
+            lineup: config.lineup.clone(),
+            rule_seats: config.rule_seats.clone(),
         };
         let initial = ReviewFrame {
             index: 0,
@@ -2039,6 +2153,26 @@ fn board_metadata(content: &ContentStore, galaxy: &ti4_content::galaxy::Galaxy) 
             }
         }
     }
+    // Every other system in play beside the board: an off-map home (the Creuss beside its Gate,
+    // the Crimson Rebellion), whatever the lineup. Found from the map rather than by faction, so a
+    // faction added later is drawn too. Its hex is the frame's to choose (`view::board_view` puts it
+    // beside the on-grid system its wormholes reach), so the stored coordinates are only an order.
+    for (index, id) in galaxy
+        .off_map_systems()
+        .into_iter()
+        .filter(|id| !matches!(*id, "82a" | "82b"))
+        .enumerate()
+    {
+        if let Some(tile) = system_metadata(
+            content,
+            id,
+            i32::try_from(index).unwrap_or(0),
+            0,
+            Some(OFF_MAP_AREA),
+        ) {
+            board.push(tile);
+        }
+    }
     board.extend(
         ti4_engine::fracture::systems(content, FULL)
             .into_iter()
@@ -2056,8 +2190,8 @@ fn board_metadata(content: &ContentStore, galaxy: &ti4_content::galaxy::Galaxy) 
     board
 }
 
-#[cfg(feature = "simulate")]
-fn system_metadata(
+/// One system's board metadata from the content corpus, at `(q, r)` in `special_area`.
+pub(crate) fn system_metadata(
     content: &ContentStore,
     id: &str,
     q: i32,
@@ -2583,6 +2717,8 @@ mod tests {
                 content_sha256: None,
                 source_scope: None,
                 diplomacy: false,
+                lineup: None,
+                rule_seats: Vec::new(),
             },
             board: vec![],
             planet_catalog: vec![],
@@ -2799,6 +2935,8 @@ mod tests {
             table: ProfileTable::Learner,
             temperature: 0.0,
             diplomacy: false,
+            lineup: None,
+            rule_seats: Vec::new(),
         };
 
         let error = match LiveReview::start(&config) {
@@ -3146,6 +3284,40 @@ mod tests {
                 .filter(|tile| tile.special_area.as_deref() == Some("fracture"))
                 .count(),
             7
+        );
+    }
+
+    #[test]
+    fn metadata_lists_an_off_map_home_once_as_off_map() {
+        // The Creuss home sits beside the board, reached through the Gate. It used to be dropped
+        // from the session because it has no hex, so a Creuss table had no home on its board.
+        let content = ContentStore::embedded();
+        let mut galaxy = ti4_content::galaxy::Galaxy::placed(
+            content,
+            &[
+                ("18", ti4_model::hex::Hex::ORIGIN),
+                ("17", ti4_model::hex::Hex::new(0, -1)),
+            ],
+            FULL,
+        )
+        .unwrap();
+        galaxy
+            .place_off_map(content, "51", FULL)
+            .expect("Creuss home");
+        let board = board_metadata(content, &galaxy);
+        let homes: Vec<&BoardTile> = board.iter().filter(|tile| tile.system == "51").collect();
+        assert_eq!(homes.len(), 1);
+        assert_eq!(homes[0].special_area.as_deref(), Some(OFF_MAP_AREA));
+        assert!(
+            !homes[0].planets.is_empty(),
+            "the home's planets are carried"
+        );
+        assert!(
+            board
+                .iter()
+                .filter(|tile| tile.special_area.as_deref() == Some(OFF_MAP_AREA))
+                .all(|tile| !matches!(tile.system.as_str(), "82a" | "82b")),
+            "the Nexus keeps its own area"
         );
     }
 

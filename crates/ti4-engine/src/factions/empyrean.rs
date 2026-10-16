@@ -1087,6 +1087,41 @@ mod tests {
     }
 
     #[test]
+    fn aetherpassage_is_offered_under_its_printed_name() {
+        struct Capture(std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>);
+        impl crate::choice::Decider for Capture {
+            fn choose(
+                &mut self,
+                choice: &Choice,
+            ) -> Result<ChoiceOption, crate::choice::IllegalChoice> {
+                let mut seen = self.0.lock().unwrap();
+                seen.extend(
+                    choice
+                        .options
+                        .iter()
+                        .map(|o| (o.id.clone(), o.label.clone())),
+                );
+                Ok(choice
+                    .options
+                    .iter()
+                    .find(|o| o.is_decline())
+                    .unwrap()
+                    .clone())
+            }
+        }
+        let (mut state, hub, _, target, _) = blockade_board();
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mut table = crate::choice::Table::with_default(Box::new(Capture(seen.clone())));
+        activate(&mut state, &hub.galaxy, &mut table, &b(), target.as_str());
+        let seen = seen.lock().unwrap();
+        let passage = seen
+            .iter()
+            .find(|(id, _)| id == PASSAGE_ID)
+            .expect("offered");
+        assert_eq!(passage.1, "Aetherpassage (after system activated)");
+    }
+
+    #[test]
     fn aetherpassage_is_optional_and_does_not_lift_a_third_players_blockade() {
         let (mut state, hub, origin, target, centre) = blockade_board();
         let mut declined = scripted(&["decline"]);

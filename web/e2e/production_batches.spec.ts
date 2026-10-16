@@ -152,7 +152,7 @@ test("paid infantry builds pause for payment and resume without a second-step re
   await add.click();
   await page.getByRole("button", { name: "Confirm builds" }).click();
   await expect(page.getByTestId("confirm-payment-btn")).toBeVisible();
-  await expect(page.getByTestId("payment-drawer")).toContainText("Resources");
+  await expect(page.getByTestId("payment-drawer").getByRole("img", { name: /resources?$/ }).first()).toBeVisible();
   expect(before.pending_choice?.choice.context?.subtype).toBe("produce_unit");
   await page.getByTestId("planet-card-exhaust|jord").click();
   await page.getByTestId("confirm-payment-btn").click();

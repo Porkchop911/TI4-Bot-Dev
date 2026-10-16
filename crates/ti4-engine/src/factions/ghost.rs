@@ -1013,7 +1013,7 @@ fn hero_swap(context: &mut TimingContext<'_>, player: &PlayerId) -> bool {
         return false;
     };
     let candidates: Vec<SystemId> = galaxy
-        .system_ids()
+        .system_ids_holding_things()
         .into_iter()
         .map(SystemId::new)
         .filter(|system| hero_eligible(context.state, system, player))

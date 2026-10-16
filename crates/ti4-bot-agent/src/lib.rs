@@ -340,22 +340,10 @@ async fn wait_for_start_with_interval(
     if admission.phase == "running" {
         return Ok(());
     }
-    let ready = request_lobby(
-        client
-            .post(config.lobby_url("/ready"))
-            .header("x-ti4-player-session", &admission.session)
-            .json(&serde_json::json!({"ready": true}))
-            .send()
-            .await,
-    )
-    .await?;
-    let mut lobby: LobbyView = ready
-        .json()
-        .await
-        .map_err(|e| BotError::Lobby(e.to_string()))?;
-    while lobby.phase == "lobby" {
-        tokio::time::sleep(heartbeat_interval).await;
-        lobby = request_lobby(
+    // A table has no "Ready": the host starts it when every seat is filled. The heartbeat says
+    // that the agent is there, and its answer says when the game runs.
+    loop {
+        let lobby: LobbyView = request_lobby(
             client
                 .post(config.lobby_url("/heartbeat"))
                 .header("x-ti4-player-session", &admission.session)
@@ -366,11 +354,12 @@ async fn wait_for_start_with_interval(
         .json()
         .await
         .map_err(|e| BotError::Lobby(e.to_string()))?;
+        match lobby.phase.as_str() {
+            "lobby" => tokio::time::sleep(heartbeat_interval).await,
+            "running" => return Ok(()),
+            _ => return Err(BotError::Protocol("unknown lobby phase".to_owned())),
+        }
     }
-    if lobby.phase != "running" {
-        return Err(BotError::Protocol("unknown lobby phase".to_owned()));
-    }
-    Ok(())
 }
 
 /// Runs until the game ends or a bounded transport/protocol failure occurs.
@@ -438,6 +427,7 @@ async fn run_connection(
             protocol_version: PROTOCOL_VERSION,
             game_id: config.game_id.clone(),
             player_session: Some(admission.session.clone()),
+            staged: false,
         },
         config.timeout,
     )
@@ -796,7 +786,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn real_lobby_join_ready_and_heartbeat_survive_the_presence_grace() {
+    async fn real_lobby_join_and_heartbeat_survive_the_presence_grace() {
         use std::sync::Arc;
         const GRACE: Duration = Duration::from_millis(500);
         const TEST_HEARTBEAT: Duration = Duration::from_millis(100);
@@ -891,19 +881,9 @@ mod tests {
                     .iter()
                     .find(|slot| slot["occupant"] == admitted.player.as_str())
                     .unwrap();
-                assert_eq!(seat["ready"], true);
+                assert_eq!(seat["connected"], true);
                 assert_eq!(seat["can_take_over"], false);
             }
-            request_lobby(
-                client
-                    .post(config.lobby_url("/ready"))
-                    .header("x-ti4-player-session", host_session)
-                    .json(&serde_json::json!({"ready": true}))
-                    .send()
-                    .await,
-            )
-            .await
-            .unwrap();
             request_lobby(
                 client
                     .post(config.lobby_url("/start"))
@@ -925,6 +905,7 @@ mod tests {
                     protocol_version: PROTOCOL_VERSION,
                     game_id: game.to_owned(),
                     player_session: Some(admitted.session.clone()),
+                    staged: false,
                 },
                 Duration::from_secs(2),
             )

@@ -1473,10 +1473,7 @@ mod tests {
         use crate::choice::{Resolving, TimingHandle, Window};
         for seed in 0..80_u64 {
             let hub = crate::fixtures::plain_hub();
-            let (system, outer) = (
-                SystemId::new(&hub.centre),
-                SystemId::new(&hub.outer[0]),
-            );
+            let (system, outer) = (SystemId::new(&hub.centre), SystemId::new(&hub.outer[0]));
             let mut state = game();
             for id in std::iter::once(&hub.centre).chain(hub.outer.iter().take(1)) {
                 state.board.entry(SystemId::new(id)).or_default();
@@ -1521,11 +1518,9 @@ mod tests {
                 .units
                 .iter()
                 .all(|unit| unit.owner.as_str() != retreater);
-            let arrived = state
-                .system_state(&outer)
-                .units
-                .iter()
-                .any(|unit| unit.owner.as_str() == retreater && unit.type_id.as_str() == "dreadnought");
+            let arrived = state.system_state(&outer).units.iter().any(|unit| {
+                unit.owner.as_str() == retreater && unit.type_id.as_str() == "dreadnought"
+            });
             if left && arrived {
                 return (state, system, outer);
             }
@@ -1545,10 +1540,16 @@ mod tests {
             .iter()
             .filter(|unit| unit.owner == a() && unit.galvanized)
             .count();
-        assert_eq!(retreated, 1, "Phoenix Standard galvanized one retreated ship");
+        assert_eq!(
+            retreated, 1,
+            "Phoenix Standard galvanized one retreated ship"
+        );
         assert_eq!(galvanized_on_board(&state), 1);
         assert!(
-            state.faction_marks.keys().all(|key| !key.starts_with("bastion:retreated:")),
+            state
+                .faction_marks
+                .keys()
+                .all(|key| !key.starts_with("bastion:retreated:")),
             "the retreat note goes with the combat: {:?} (system {system})",
             state.faction_marks
         );
@@ -1603,8 +1604,7 @@ mod tests {
     fn a_game_without_a_last_bastion_keeps_no_retreat_note() {
         let (system, _) = arena();
         let destination = SystemId::new("1");
-        let mut state =
-            crate::fixtures::seated_game(&[("a", "sol"), ("b", "hacan")], DEFAULT);
+        let mut state = crate::fixtures::seated_game(&[("a", "sol"), ("b", "hacan")], DEFAULT);
         state.board.entry(destination.clone()).or_default();
         crate::fixtures::put(&mut state, &system, "cruiser", &a(), 1);
         crate::combat::retreat_to(&mut state, content(), DEFAULT, &a(), &system, &destination);

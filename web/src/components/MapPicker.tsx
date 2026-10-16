@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import "./MapPicker.css";
 import { useMapCatalog, useMapPreview } from "../hooks/useMapCatalog.ts";
-import { choiceOf, mapCards, mapSummaryLine, viewerSeat } from "../presentation/mapPicker.ts";
+import { choiceOf, mapCards, mapSummaryLine } from "../presentation/mapPicker.ts";
 import type { LobbyDto, MapChoice } from "../protocol/types.ts";
 import { seatStyle } from "../presentation/playerDisplay.ts";
 import { MapCard } from "./MapCard.tsx";
@@ -14,8 +14,6 @@ interface MapPickerProps {
   lobby: LobbyDto;
   /** Host before Start: the strip of choices and Re-roll are shown. Everyone else gets the picture. */
   editable: boolean;
-  /** The viewer's lobby position (1-based), to ring their own seat. */
-  viewerPosition: number | null;
   /** A choice is being saved. */
   saving: boolean;
   /** `startPreset` is the dev opening-state preset ("" clears it); undefined leaves it alone. */
@@ -31,7 +29,6 @@ interface MapPickerProps {
 export const MapPicker: React.FC<MapPickerProps> = ({
   lobby,
   editable,
-  viewerPosition,
   saving,
   onChoose,
   onClose,
@@ -61,10 +58,6 @@ export const MapPicker: React.FC<MapPickerProps> = ({
   const current = choiceOf(map);
   const templates = catalog.state.status === "ready" ? catalog.state.value : [];
   const cards = mapCards(templates, map);
-  const seat =
-    preview.state.status === "ready"
-      ? viewerSeat(preview.state.value.seats, viewerPosition)
-      : undefined;
   return (
     <div className="map-picker-backdrop" data-testid="map-picker">
       <section
@@ -151,12 +144,11 @@ export const MapPicker: React.FC<MapPickerProps> = ({
           )}
           {preview.state.status === "ready" && (
             <>
-              <MapPreviewBoard preview={preview.state.value} viewerPosition={viewerPosition} />
+              <MapPreviewBoard preview={preview.state.value} />
               <ul className="map-picker__seats" aria-label="Seats">
                 {preview.state.value.seats.map((s) => (
                   <li key={s.seat} style={{ borderColor: seatStyle(s.seat).color }}>
-                    Seat {s.seat}: {s.faction_name}
-                    {seat?.seat === s.seat ? " (you)" : ""}
+                    Seat {s.seat}
                   </li>
                 ))}
               </ul>

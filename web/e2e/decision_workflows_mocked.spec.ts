@@ -227,7 +227,7 @@ test("production builder accepts a real pointer click on a unit", async ({ page 
   });
   await expect(page.getByTestId("production-builder-drawer")).toBeVisible();
   await expect(page.getByTestId("production-resources-counter")).toHaveText(
-    "0 / 5 Resources (5 Left)",
+    "0 / 5 (5 Left)",
   );
   await expect(page.getByText("1x carrier for 3")).toBeVisible();
   await expect(page.getByText("produce 1x carrier for 3")).toHaveCount(0);
@@ -235,7 +235,7 @@ test("production builder accepts a real pointer click on a unit", async ({ page 
   await expect(page.getByTestId("produce-count-build|carrier|1")).toHaveText("1");
   await expect(page.getByTestId("production-capacity-counter")).toHaveText("1 / 3 Units (2 Left)");
   await expect(page.getByTestId("production-resources-counter")).toHaveText(
-    "3 / 5 Resources (2 Left)",
+    "3 / 5 (2 Left)",
   );
   await expect(page.getByTestId("produce-unit-btn-build|carrier|1")).toBeDisabled();
   expect(submissions).toHaveLength(0);
@@ -334,11 +334,11 @@ test("resource payment accepts real pointer clicks, retains draft on minimize, a
   });
   await expect(page.getByTestId("decision-modal")).toBeVisible();
   await page.getByTestId("planet-card-exhaust|jord").click();
-  await expect(page.getByTestId("committed-amount")).toHaveText("4 Resources");
+  await expect(page.getByTestId("committed-amount").getByRole("img", { name: "4 resources" })).toBeVisible();
   await page.getByRole("button", { name: "Minimize decision" }).click();
   await expect(page.getByTestId("resume-decision-btn")).toBeVisible();
   await page.getByTestId("resume-decision-btn").click();
-  await expect(page.getByTestId("committed-amount")).toHaveText("4 Resources");
+  await expect(page.getByTestId("committed-amount").getByRole("img", { name: "4 resources" })).toBeVisible();
   await page.getByTestId("confirm-payment-btn").click();
   await expect.poll(() => batches.length).toBe(1);
   expect(batches[0]).toMatchObject({

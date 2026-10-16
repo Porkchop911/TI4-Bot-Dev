@@ -78,11 +78,15 @@ pub fn activatable_with(
     let mut seen: std::collections::BTreeSet<SystemId> = std::collections::BTreeSet::new();
     let mut found = Vec::new();
     for system in galaxy
-        .system_ids()
+        .system_ids_holding_things()
         .into_iter()
         .map(SystemId::new)
         .chain(state.board.keys().cloned())
     {
+        // A hyperlane tile is not a system: it is never offered (ruling: may not be moved into).
+        if galaxy.is_hyperlane(system.as_str()) {
+            continue;
+        }
         // Mahact's commander: "During your tactical actions: you can activate systems that contain
         // your command tokens." (The driver then returns both tokens and ends the turn.)
         if (held.contains(&system) && !mahact) || !seen.insert(system.clone()) {
@@ -552,6 +556,11 @@ pub fn preview_moves(
             .get("gravity_drive")
             .and_then(serde_json::Value::as_bool)
             .unwrap_or(false);
+        let ionian = option
+            .payload
+            .get("ionian")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false);
         let kind_id = option
             .payload
             .get("unit")
@@ -569,12 +578,13 @@ pub fn preview_moves(
             crate::action_cards::apply_movement_effects(&mut rules, state, player);
             let path = rules.path_from_ship(
                 origin,
-                effective_move_value_with_gravity(
+                effective_move_value_with_boosts(
                     state,
                     &kind,
                     player,
                     &SystemId::new(origin),
                     gravity_drive,
+                    ionian,
                 ),
                 Some(kind_id),
             );
@@ -874,6 +884,49 @@ mod tests {
         );
     }
 
+    #[test]
+    fn an_ionian_boost_does_not_hide_a_gravity_rift_in_the_route_preview() {
+        let content = ContentStore::embedded();
+        let rift = crate::fixtures::a_system_where("gravity rift");
+        let plain = crate::fixtures::plain_systems(3);
+        let galaxy = Galaxy::placed(
+            content,
+            &[
+                (rift.as_str(), ti4_model::hex::Hex::new(0, 0)),
+                (plain[0].as_str(), ti4_model::hex::Hex::new(1, 0)),
+                (plain[1].as_str(), ti4_model::hex::Hex::new(2, 0)),
+                (plain[2].as_str(), ti4_model::hex::Hex::new(3, 0)),
+            ],
+            POK,
+        )
+        .unwrap();
+        let player = player();
+        let origin = SystemId::new(rift);
+        let destination = SystemId::new(&plain[2]);
+        let mut state = crate::fixtures::game(&["a"]);
+        crate::fixtures::put(&mut state, &origin, "carrier", &player, 1);
+        state
+            .system_mut(&origin)
+            .set_control(ti4_model::id::PlanetId::new("tempesta"), player.clone());
+        activate(&mut state, &player, &destination).unwrap();
+        let moves = movable(&state, content, POK, &galaxy, &player);
+        assert_eq!(moves.len(), 1);
+        assert!(moves[0].ionian);
+        let choice = preview_moves(
+            &state,
+            content,
+            POK,
+            &galaxy,
+            &player,
+            &destination,
+            movement_options(&player, &moves),
+        );
+        assert!(matches!(
+            choice.options[0].preview.as_ref().unwrap().outcome,
+            crate::preview::Outcome::Unknown { .. }
+        ));
+    }
+
     use ti4_model::content_types::POK;
     use ti4_model::id::UnitTypeId;
 
@@ -922,6 +975,38 @@ mod tests {
             "an opponent's token does not - that is the attack"
         );
         assert_eq!(options.len(), 6, "seven tiles, one of them yours");
+    }
+
+    fn a_hyperlane_id() -> String {
+        ti4_content::galaxy::all_systems(ContentStore::embedded(), POK)
+            .iter()
+            .find(|(_, system)| system.is_hyperlane())
+            .map(|(id, _)| (*id).to_owned())
+            .expect("the corpus has hyperlane tiles")
+    }
+
+    #[test]
+    fn a_hyperlane_tile_is_never_offered_for_activation() {
+        // Ruling: hyperlanes may not be moved into, so they cannot be activated either.
+        let mut ids = plain_systems(6);
+        let lane = a_hyperlane_id();
+        ids.push(lane.clone());
+        let refs: Vec<&str> = ids.iter().map(String::as_str).collect();
+        let galaxy = Galaxy::build(ContentStore::embedded(), &refs, POK, 1).unwrap();
+        let state = start_game(
+            ContentStore::embedded(),
+            &[player(), PlayerId::new("b")],
+            POK,
+            None,
+        )
+        .unwrap();
+
+        let options = activatable(&state, &galaxy, &player());
+
+        assert!(!options.contains(&SystemId::new(&lane)), "{options:?}");
+        assert_eq!(options.len(), 6, "the six real systems stay offered");
+        let choice = activation_options(&state, &galaxy, &player()).unwrap();
+        assert!(choice.options.iter().all(|option| option.id != lane));
     }
 
     #[test]

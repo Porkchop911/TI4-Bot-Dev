@@ -92,6 +92,8 @@ pub fn stock_unclaimed_cards(state: &mut GameState) {
 /// against. Start-of-turn ability hooks (Military Support, technology triggers) are not
 /// wired up yet.
 pub fn begin_action_turn(state: &mut GameState, player: &PlayerId) {
+    // LRR 3: every player's turn is the next turn of the phase, in initiative order.
+    state.action_turn += 1;
     state.active = Some(player.clone());
     state.turn_seq += 1;
 }
@@ -153,6 +155,7 @@ pub fn begin_next_round(state: &mut GameState, strategy_cards: Vec<ti4_model::id
         .expect("validated diplomacy state settles deterministically");
     crate::diplomacy::decay_relationships(state);
     state.round += 1;
+    state.action_turn = 0;
     state.active = None;
     // The Naalu "0" token (and Gift of Prescience's transfer of it) lasts one game round.
     crate::strategy::clear_initiative_overrides(state);
@@ -221,6 +224,7 @@ pub fn advance_phase(state: &mut GameState) -> PhaseOutcome {
             crate::factions::hooks_strategy::strategy_phase_ended(state);
             let order = state.initiative_order();
             state.phase = Phase::Action;
+            state.action_turn = 0;
             state.active = None;
             let first = order.first().cloned().unwrap_or_else(|| PlayerId::new(""));
             begin_action_turn(state, &first);

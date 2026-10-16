@@ -1,0 +1,17 @@
+{
+  "title": "Ground Combat Result",
+  "description": "The closing card of a ground combat in the invasion panel: who invaded and who defended which planet, each side's ground forces before and after the last round, hits scored, losses, the winner and what happens to the planet.",
+  "tag": "web/e2e/screenshots/T-ground-combat-summary",
+  "shots": [
+    { "file": "out/1-attacker-win.png", "heading": "Attacker conquers the planet", "caption": "The invader's infantry and mech wipe out the defending infantry. The card names the conqueror, shows both sides' forces before and after, hits scored and units lost (the sustained mech is listed), and says the invader takes control of the planet." },
+    { "file": "out/2-defender-holds.png", "heading": "Defender holds", "caption": "The invasion force is destroyed and the defender keeps the planet. The defender's PDS is a structure, so it is not counted as a ground force." },
+    { "file": "out/3-mutual-destruction.png", "heading": "Mutual destruction", "caption": "Both sides lose every ground force. The card says no forces remain and control of the planet does not change." },
+    { "file": "out/4-phone.png", "heading": "Phone width", "caption": "At 390 px the two sides stack, same as the space combat summary." },
+    { "file": "out/5-spectator.png", "heading": "Spectator", "caption": "A spectator without a seat sees the same card, because it is derived from the public last invasion step." }
+  ],
+  "notes": [
+    { "title": "Scope of the numbers", "text": "The server sends the planet's forces at the start and end of the last ground round only, so the card covers the final round, not a whole multi-round battle. No per-round log is shown." },
+    { "title": "Lifetime", "text": "The card appears as soon as one side has no ground forces left and stays while the invasion panel shows that planet's last step." },
+    { "title": "Fixture", "text": "A synthetic invasion state on system 18 rendered through the mocked game, not a captured engine state." }
+  ]
+}

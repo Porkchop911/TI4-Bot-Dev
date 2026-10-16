@@ -485,3 +485,84 @@
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
+
+.objectives-matrix__progress-label--bought {
+  font-weight: 500;
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+/* Secret objectives (the asked seat's own hand) */
+.objectives-matrix__stage-badge--secret {
+  background: rgba(220, 38, 38, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(220, 38, 38, 0.35);
+}
+
+.objectives-matrix__point-pill--secret {
+  background: #b91c1c;
+  color: #ffffff;
+}
+
+.objectives-matrix__secret-phase {
+  font-size: 11px;
+  color: #94a3b8;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
+.objectives-matrix__row--held .objectives-matrix__card-name-btn,
+.objectives-matrix__row--held .objectives-matrix__card-desc {
+  opacity: 0.7;
+}
+
+.objectives-matrix__secret-status {
+  vertical-align: middle;
+}
+
+.objectives-matrix__plot-note {
+  font-size: 12px;
+  color: #fbbf24;
+}
+
+.objectives-matrix__secret-held .objectives-matrix__status-empty {
+  font-size: 12px;
+}
+
+.objectives-matrix__card-content .secret-progress {
+  max-width: 420px;
+}
+
+/* Rule 61.16: a home planet is lost, so no public objective can be scored. */
+.objectives-modal__home-lost {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 12px 24px 0;
+  padding: 10px 14px;
+  border: 1px solid var(--color-warning, #f59e0b);
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.1);
+}
+
+/* Met, but not scoreable while the home system is lost: amber, no pulse. */
+.objectives-matrix__status-blocked {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.14);
+  border: 1px solid var(--color-warning, #f59e0b);
+  color: #fcd34d;
+  font-weight: 600;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.objectives-matrix__icon-blocked {
+  font-weight: 800;
+}

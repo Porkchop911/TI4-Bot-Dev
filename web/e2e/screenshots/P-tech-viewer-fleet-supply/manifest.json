@@ -1,0 +1,15 @@
+{
+  "title": "Technologies viewer and fleet supply",
+  "description": "Two fixes: the header Technologies modal shows the viewer's own faction techs (it used to show Player 1's to everyone), and the production builder gets real fleet supply numbers from the server. Synthetic mocked games, not captured engine states.",
+  "tag": "web/e2e/screenshots/P-tech-viewer-fleet-supply",
+  "shots": [
+    { "file": "out/1-tech-seat1.png", "heading": "Technologies: seat 1 (Sol)", "caption": "Opened from the header button by the first seat: Sol's faction technologies sit at the top." },
+    { "file": "out/2-tech-seat2.png", "heading": "Technologies: seat 2 (Hacan)", "caption": "The second seat now sees its own faction technologies. Before, the header-opened modal fell back to the first player and showed Sol's." },
+    { "file": "out/3-tech-spectator.png", "heading": "Technologies: spectator", "caption": "A spectator has no faction, so there is no faction-technology section; the shared tech tree and every player's markers are still shown." },
+    { "file": "out/4-fleet-supply.png", "heading": "Production: fleet supply", "caption": "Fleet Supply shows non-fighter ships in the producing system against the fleet pool limit (after laws such as Fleet Regulations and faction abilities such as Letnev's Armada). Here 2 / 4." },
+    { "file": "out/5-fleet-supply-unlimited.png", "heading": "Production: unlimited", "caption": "During Letnev's hero round the pool does not limit ships; the counter reads 'N / unlimited' instead of a made-up number." }
+  ],
+  "notes": [
+    "Fleet supply is per system (LRR 37): the counter covers the system being produced in, not the whole board. Fighters are not charged, except Naalu's Hybrid Crystal Fighter II halves, which the engine's standing() accounts for."
+  ]
+}

@@ -16,7 +16,7 @@ const ev = (id: string, actor: string, detail: string): GameEvent =>
   ({
     id,
     timestamp: "1",
-    visibility: "public",
+    visibility: { visibility: "public" as const },
     event: { kind: "decision_resolved" },
     actor,
     detail: `${actor} ${detail}`,
@@ -51,13 +51,13 @@ describe("CornerToastLayer", () => {
     expect(toasts).toHaveLength(1);
     expect(toasts[0]).toHaveTextContent("Blair played Sabotage");
     expect(screen.getByTestId("toast-actor")).toHaveTextContent("Blair");
-    expect(toasts[0].style.getPropertyValue("--toast-accent")).toBe("#56B4E9");
+    expect(toasts[0].style.getPropertyValue("--toast-accent")).toBe("#4ADE80");
   });
 
   it("hides on its own after a few seconds", () => {
     const { rerender } = render(layer([]));
     rerender(layer([ev("1", "p2", "activated #22")]));
-    expect(screen.getByText(/activated system 22/)).toBeInTheDocument();
+    expect(screen.getByText(/activated system #22/)).toBeInTheDocument();
     act(() => vi.advanceTimersByTime(TOAST_DURATION_MS.action + 10));
     expect(screen.getByTestId("corner-toast")).toHaveClass("dismissing");
     act(() => vi.advanceTimersByTime(400));

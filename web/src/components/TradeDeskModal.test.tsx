@@ -75,9 +75,13 @@ describe("TradeDeskModal", () => {
 
     // Select the promissory note offer
     fireEvent.click(pnOpt);
-    expect(screen.getByTestId("selected-trade-summary")).toHaveTextContent(
-      "Military Support for 3 TG",
+    // The quick deal stages both sides on the desk and the combination is recognised.
+    expect(screen.getByTestId("stage-status-valid")).toHaveTextContent("Military Support for 3 TG");
+    expect(screen.getByTestId("stage-give-note-military_support:sol")).toHaveAttribute(
+      "aria-pressed",
+      "true",
     );
+    expect(screen.getByTestId("stage-receive-tg-value")).toHaveTextContent("3");
     expect(proposeBtn).not.toBeDisabled();
 
     // Click propose deal
@@ -225,5 +229,42 @@ describe("TradeDeskModal", () => {
     );
 
     expect(screen.getByTestId("trade-error-banner")).toHaveTextContent("Cannot afford transaction");
+  });
+  it("files a purchase of the partner's note under promissory notes and says what is paid", () => {
+    const choice: PendingChoiceDto = {
+      actor: "seat_1",
+      nonce: "25",
+      prompt: "Propose a transaction",
+      context: { subtype: "propose_transaction", target: { Player: "seat_2" } },
+      options: [
+        {
+          id: "cpconvoys:hacan:3",
+          label: "pay 3 commodities for the note convoys:hacan",
+          kind: "offer",
+          payload: { received_promissory: "convoys:hacan", net: 0, their_net: 3 },
+        },
+        { id: "decline", label: "Offer nothing", kind: "decline" },
+      ],
+    };
+
+    render(
+      <TradeDeskModal
+        isOpen={true}
+        choice={choice}
+        viewerSeat="seat_1"
+        onSubmit={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByTestId("trade-tab-commodity_swap")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("trade-opt-cpconvoys:hacan:3"));
+    // Staged: 3 commodities on the give side, the partner's note on the receive side.
+    expect(screen.getByTestId("stage-give-cm-value")).toHaveTextContent("3");
+    expect(screen.getByTestId("stage-receive-note-convoys:hacan")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByTestId("stage-status-valid")).not.toHaveTextContent("Gift");
   });
 });

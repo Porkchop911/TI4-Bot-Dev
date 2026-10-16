@@ -31,6 +31,14 @@ pub struct Roll {
     /// bombardment and ground rolls say; a roll with no owner (a card's own die) leaves it `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub by: Option<String>,
+    /// The system the roll belongs to, when it is not simply the active one (a gravity rift
+    /// exited on the way). Presentation only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system: Option<String>,
+    /// What the roll did, in a few words ("ship destroyed"), when the roller said. Presentation
+    /// only: nothing reads it back.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<String>,
 }
 
 impl Roll {
@@ -64,6 +72,9 @@ impl Roll {
 pub struct Dice {
     sides: u32,
     history: Vec<Roll>,
+    /// The system being fought over or moved into, stamped on each roll for presentation. Set by
+    /// the game; never read by a rule.
+    scene: Option<String>,
     /// Pre-loaded faces for tests. Drained left-to-right; exhausted slots fall through
     /// to the RNG. Only populated when constructed via [`Dice::from_faces`].
     #[cfg(test)]
@@ -82,6 +93,7 @@ impl Dice {
         Self {
             sides: SIDES,
             history: Vec::new(),
+            scene: None,
             #[cfg(test)]
             preload: None,
         }
@@ -93,6 +105,7 @@ impl Dice {
         Self {
             sides,
             history: Vec::new(),
+            scene: None,
             #[cfg(test)]
             preload: None,
         }
@@ -111,6 +124,7 @@ impl Dice {
         Self {
             sides: SIDES,
             history: Vec::new(),
+            scene: None,
             preload: Some(faces.into_iter().collect()),
         }
     }
@@ -129,6 +143,7 @@ impl Dice {
         let faces = if count == 0 {
             Vec::new()
         } else {
+            rng.observe_randomness();
             self.roll_with_rng(rng, count)
         };
         let record = Roll {
@@ -137,9 +152,16 @@ impl Dice {
             hits_on,
             rerolled: BTreeSet::new(),
             by: None,
+            system: self.scene.clone(),
+            outcome: None,
         };
         self.history.push(record.clone());
         record
+    }
+
+    /// Say which system the following rolls belong to (`None` outside one).
+    pub fn set_scene(&mut self, system: Option<&str>) {
+        self.scene = system.map(str::to_owned);
     }
 
     /// [`Dice::roll`], recording whose dice they are. The draw is identical; only the record
@@ -206,6 +228,7 @@ impl Dice {
         let mut replaced = BTreeSet::new();
         for index in positions {
             if index < faces.len() {
+                rng.observe_randomness();
                 faces[index] = rng.die(domain::DICE, self.sides);
                 replaced.insert(index);
             }
@@ -217,9 +240,20 @@ impl Dice {
             hits_on: roll.hits_on,
             rerolled: replaced,
             by: roll.by.clone(),
+            system: roll.system.clone(),
+            outcome: None,
         };
         self.history.push(record.clone());
         record
+    }
+
+    /// Say where the latest roll happened and what it did. Presentation only: the draw is
+    /// already made, so this cannot change any later one.
+    pub fn annotate_last(&mut self, system: Option<&str>, outcome: Option<&str>) {
+        if let Some(last) = self.history.last_mut() {
+            last.system = system.map(str::to_owned);
+            last.outcome = outcome.map(str::to_owned);
+        }
     }
 
     /// Name the seat behind every roll recorded since `start` (a [`Dice::count`] taken before the
@@ -258,6 +292,26 @@ mod tests {
     }
 
     #[test]
+    fn preloaded_faces_mark_uncertainty_but_zero_dice_and_invalid_rerolls_do_not() {
+        let observation = crate::observation::ExecutionObservation::default();
+        let mut rng = GameRng::new(7);
+        rng.bind_observation(Some(observation.clone()));
+        let mut dice = Dice::from_faces([10]);
+        dice.roll(&mut rng, 0, "zero", None);
+        assert!(!observation.activity().randomness);
+        let roll = dice.roll(&mut rng, 1, "preloaded", None);
+        assert!(observation.activity().randomness);
+        assert!(rng.active_domains().is_empty());
+
+        let rerolls = crate::observation::ExecutionObservation::default();
+        rng.bind_observation(Some(rerolls.clone()));
+        dice.reroll(&mut rng, &roll, [4], None);
+        assert!(!rerolls.activity().randomness);
+        dice.reroll(&mut rng, &roll, [0], None);
+        assert!(rerolls.activity().randomness);
+    }
+
+    #[test]
     fn a_roll_records_its_reason_and_faces() {
         let (mut dice, mut rng) = roller();
         let roll = dice.roll(&mut rng, 3, "space combat", Some(7));
@@ -268,6 +322,22 @@ mod tests {
     }
 
     #[test]
+    fn annotating_a_roll_leaves_the_stream_alone() {
+        let (mut plain, mut plain_rng) = (Dice::new(), GameRng::new(11));
+        let (mut noted, mut noted_rng) = (Dice::new(), GameRng::new(11));
+        plain.roll(&mut plain_rng, 1, "gravity rift", Some(4));
+        noted.roll(&mut noted_rng, 1, "gravity rift", Some(4));
+        noted.annotate_last(Some("25"), Some("ship destroyed"));
+        assert_eq!(noted.history()[0].system.as_deref(), Some("25"));
+        assert_eq!(noted.history()[0].outcome.as_deref(), Some("ship destroyed"));
+        assert_eq!(
+            plain.roll(&mut plain_rng, 3, "next", None).faces,
+            noted.roll(&mut noted_rng, 3, "next", None).faces,
+            "a note is not a draw"
+        );
+    }
+
+    #[test]
     fn hits_count_faces_at_or_above_the_threshold() {
         let roll = Roll {
             reason: "x".into(),
@@ -275,6 +345,8 @@ mod tests {
             hits_on: Some(7),
             rerolled: BTreeSet::new(),
             by: None,
+            system: None,
+            outcome: None,
         };
         assert_eq!(roll.hits(), 2, "7 and 10");
         assert_eq!(roll.missed(None), vec![0, 1]);
@@ -289,6 +361,8 @@ mod tests {
             hits_on: None,
             rerolled: BTreeSet::new(),
             by: None,
+            system: None,
+            outcome: None,
         };
         assert_eq!(roll.hits(), 0);
         assert!(roll.missed(None).is_empty());
@@ -302,6 +376,8 @@ mod tests {
             hits_on: Some(7),
             rerolled: BTreeSet::new(),
             by: None,
+            system: None,
+            outcome: None,
         };
         assert_eq!(roll.missed(Some(&BTreeSet::from([0, 1]))), vec![0]);
     }

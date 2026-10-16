@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { ValueText } from "./PlanetValueIcons.tsx";
 import { BoardView, ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
 import {
   ChoiceRendererModel,
@@ -21,6 +22,8 @@ import { useParticipantText } from "../presentation/PlayerIdentity.tsx";
 import { StructureInfo } from "./SystemFactsView.tsx";
 import { UnitAbilityOptionNote } from "./UnitAbilityParts.tsx";
 import { describeUnitAbilityOption } from "../presentation/unitAbilityOptions.ts";
+import { isTransitDiodesChoice } from "../presentation/transitDiodes.ts";
+import { TransitDiodesPanel } from "./TransitDiodesPanel.tsx";
 import "./SystemFacts.css";
 
 export interface PlanetSelectionBarProps {
@@ -72,7 +75,11 @@ function PlanetFacts({ planet }: { planet: PlanetDetails }) {
   ];
   return (
     <span className="planet-selection-bar__facts" data-testid="planet-selection-facts">
-      {stats && <span className="planet-selection-bar__stats">({stats})</span>}
+      {stats && (
+        <span className="planet-selection-bar__stats">
+          (<ValueText text={stats} />)
+        </span>
+      )}
       {facts.length > 0 && <span className="text-muted"> · {facts.join(" · ")}</span>}
     </span>
   );
@@ -113,6 +120,21 @@ export const PlanetSelectionBar: React.FC<PlanetSelectionBarProps> = ({
           </span>
         </div>
       </aside>
+    );
+  }
+
+  // Transit Diodes offers source x ground force x destination: its own stepwise panel.
+  if (isTransitDiodesChoice(choice)) {
+    return (
+      <TransitDiodesPanel
+        choice={choice}
+        boardView={boardView}
+        selectedOptionId={selectedOptionId}
+        selectedPlanetId={selectedPlanetId}
+        onSelectOption={onSelectOption}
+        onSubmit={onSubmit}
+        lastError={lastError}
+      />
     );
   }
 
@@ -308,7 +330,12 @@ export const PlanetSelectionBar: React.FC<PlanetSelectionBarProps> = ({
                 onClick={() => pickPlanet(candidate.planetId)}
               >
                 {planet.name}
-                {stats && <span className="text-muted"> {stats}</span>}
+                {stats && (
+                  <span className="text-muted">
+                    {" "}
+                    <ValueText text={stats} />
+                  </span>
+                )}
                 {votes !== null && <span className="text-muted"> · {votes} votes</span>}
               </button>
             );

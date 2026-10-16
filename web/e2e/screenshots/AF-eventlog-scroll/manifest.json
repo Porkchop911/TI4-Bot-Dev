@@ -1,0 +1,28 @@
+{
+  "title": "Event log scrolling",
+  "description": "The event log opens at the newest entry and follows new events while the reader is at the bottom; a reader who scrolled up is left alone and gets a jump row; manual expansion survives a reconnect; the position survives hide/show. Synthetic mocked game (70 decisions over 2 rounds), 1440x900 desktop and 390x844 phone.",
+  "tag": "web/e2e/screenshots/AF-eventlog-scroll",
+  "shots": [
+    { "file": "out/desktop-a-pinned.png", "heading": "Desktop: pinned, a new event arrives", "caption": "The log opens at the newest entry. After a new event the list is still at the bottom (gap 0 px; before the fix the gap grew 26 px per event, so the newest entries sat below the fold)." },
+    { "file": "out/phone-a-pinned.png", "heading": "Phone drawer: pinned, a new event arrives", "caption": "Same on the phone drawer: opened at the newest entry, still at the bottom after a new event (gap 0 px)." },
+    { "file": "out/desktop-e-new-round.png", "heading": "Desktop: a new round opens while pinned", "caption": "A phase_transition into round 3 plus its first decision, then current_path moves to round 3: the new node auto-opens and the pinned list follows it (gap 0 px; before: 604 px, the new node was below the viewport)." },
+    { "file": "out/phone-e-new-round.png", "heading": "Phone drawer: a new round opens while pinned", "caption": "Same on the phone drawer (gap 0 px)." },
+    { "file": "out/desktop-b-jump.png", "heading": "Desktop: scrolled to the top, a new event arrives", "caption": "A reader who scrolled up is not moved (scrollTop stays 0). A 'N new events - Jump to latest' row appears above the list and counts what arrived; clicking it goes to the newest entry and the row disappears. Existing behaviour, plus the new row." },
+    { "file": "out/phone-b-jump.png", "heading": "Phone drawer: scrolled to the top, a new event arrives", "caption": "Same on the phone drawer." },
+    { "file": "out/desktop-f-reconnect.png", "heading": "Desktop: reconnect keeps the reader's place", "caption": "A fresh initial_snapshot with the same history generation (reconnect) keeps the manually opened Round 1 and scrollTop 200 (before: Round 1 collapsed and the scroll position lost, 200 to 173). A new generation (undo/redo/restore) still resets the expansion; the scroll position is clamped into the shorter list and a pinned reader stays pinned." },
+    { "file": "out/phone-f-reconnect.png", "heading": "Phone drawer: reconnect keeps the reader's place", "caption": "Same on the phone drawer." },
+    { "file": "out/desktop-h-reopened.png", "heading": "Desktop: hide, events arrive, show", "caption": "The list unmounts while the log is hidden; its position is remembered. Reopened after two events arrived while hidden: scrollTop 150 restored (before: 0). A reader who was at the bottom reopens at the newest entry." },
+    { "file": "out/phone-h-reopened.png", "heading": "Phone drawer: close, events arrive, open", "caption": "Same for the Events drawer: scrollTop 150 restored, and a pinned reader reopens at the newest entry." }
+  ],
+  "notesHeading": "Measurements (bottom gap = scrollHeight - clientHeight - scrollTop, px)",
+  "notes": [
+    { "title": "Pinned, one new event: ", "text": "before 26 px, after 0 (desktop and phone)." },
+    { "title": "Pinned, burst of 8 events: ", "text": "before 208 px, after 0." },
+    { "title": "Pinned, new round and phase opens: ", "text": "before 604 px (new node below the viewport), after 0." },
+    { "title": "Reconnect (same generation) with a manually opened Round 1: ", "text": "before Round 1 collapsed and scrollTop 200 became 173; after Round 1 stays open and scrollTop stays 200." },
+    { "title": "Hide, then show at scrollTop 150: ", "text": "before 0; after 150. Pinned readers reopen at gap 0." },
+    { "title": "Undo (new generation, shorter log): ", "text": "expansion resets, scrollTop is clamped into the shorter list (173 of max 447), a pinned reader stays at gap 0." },
+    { "title": "Unchanged guards: ", "text": "scrolled to top or middle plus a new event keeps scrollTop; a manually expanded older node stays open with no jump; another player's event toast does not move or resize the log box." },
+    { "title": "Not covered: ", "text": "the fixtures are synthetic; no real engine states and no screen reader pass. The log still has no aria-live (no new announcements were added)." }
+  ]
+}

@@ -1,4 +1,5 @@
 import React from "react";
+import { ValueText } from "./PlanetValueIcons.tsx";
 import type { ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
 import { describePrediction, describeRider } from "../presentation/predictOutcome.ts";
 import { useDecisionTable } from "./PoliticsDecisionParts.tsx";
@@ -31,7 +32,9 @@ export const PredictOutcomeNote: React.FC<{ choice: PendingChoiceDto; option: Ch
   if (!outcome) return null;
   return (
     <div className="politics-option-note" data-testid="predict-outcome-note">
-      Predicted outcome: <strong>{outcome}</strong>
+      Predicted outcome: <strong>
+        <ValueText text={outcome} />
+      </strong>
     </div>
   );
 };

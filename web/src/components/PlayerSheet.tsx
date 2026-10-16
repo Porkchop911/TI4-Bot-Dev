@@ -1,5 +1,7 @@
 import React, { useState } from "react";
+import { PlanetValue } from "./PlanetValueIcons.tsx";
 import { BoardView, PlayerView, ReactionModes, ReactionModeSetting, TableView } from "../protocol/types.ts";
+import { BluffSelector, useBluffControls } from "./BluffSelector.tsx";
 import {
   getStrategyCardMeta,
   getSecretObjectiveMeta,
@@ -8,12 +10,72 @@ import {
   SECRET_OBJECTIVES,
 } from "../protocol/contentCatalog.ts";
 import { CardSubject } from "./CardDetails.tsx";
+import { FactionInfoButton } from "./UnitInfo.tsx";
+import { describeBreakthrough } from "../presentation/breakthroughs.ts";
+import { usePublicState } from "../presentation/PublicStateContext.tsx";
+import { SecondaryPrepModeToggle } from "./SecondaryPrepModeToggle.tsx";
 import { SeatBadge, usePlayerIdentity } from "../presentation/PlayerIdentity.tsx";
 import { computePlayerStats } from "../presentation/playerStats.ts";
 import { Tooltip } from "../primitives/index.ts";
 import { useTurnSound } from "../hooks/useTurnSound.ts";
 import { useToastMute } from "../hooks/useToastMute.ts";
+import { useTurnRecapSetting } from "../hooks/useTurnRecapSetting.ts";
+import { useAutoSubmitSetting } from "../hooks/useAutoSubmitSetting.ts";
+import { SecretObjectiveProgress } from "./SecretObjectiveProgress.tsx";
+import { secretProgressOf } from "../presentation/secretProgress.ts";
 
+
+/**
+ * "Holds: [owner] [owner]": one chip per foreign command token in the fleet pool, in the owner's
+ * seat colour. They count toward the fleet supply but are not part of the sheet's fleet count.
+ */
+export const HeldForeignTokens: React.FC<{ owners: readonly string[] }> = ({ owners }) => {
+  const display = usePlayerIdentity();
+  const names = owners.map((owner) => display(owner).label).join(", ");
+  const summary = `Holds ${owners.length} other ${owners.length === 1 ? "player's" : "players'"} command ${
+    owners.length === 1 ? "token" : "tokens"
+  } in the fleet pool (${names}). They raise the fleet supply and cannot be redistributed.`;
+  return (
+    <div
+      data-testid="player-held-tokens"
+      aria-label={summary}
+      title={summary}
+      style={{
+        display: "flex",
+        flexWrap: "wrap",
+        alignItems: "center",
+        gap: "3px 6px",
+        fontSize: 12,
+        color: "#cbd5e1",
+      }}
+    >
+      <span>Holds:</span>
+      {owners.map((owner, index) => {
+        const identity = display(owner);
+        return (
+          <span
+            key={`${owner}-${index}`}
+            data-testid="player-held-token"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              padding: "1px 6px",
+              borderRadius: 10,
+              border: `1px solid ${identity.color}`,
+              background: "rgba(15, 23, 42, 0.6)",
+            }}
+          >
+            <span aria-hidden="true" style={{ color: identity.color }}>
+              ◆
+            </span>
+            {identity.label}
+          </span>
+        );
+      })}
+    </div>
+  );
+};
 
 export interface VPBreakdown {
   publicObjectives: number;
@@ -102,32 +164,6 @@ export const VPBreakdownTooltip: React.FC<{ breakdown: VPBreakdown }> = ({ break
   </div>
 );
 
-const ResourceIcon: React.FC<{ style?: React.CSSProperties }> = ({ style }) => (
-  <svg
-    viewBox="0 0 16 16"
-    width="13"
-    height="13"
-    fill="currentColor"
-    aria-hidden="true"
-    style={{ display: "inline-block", verticalAlign: "-2px", color: "#fbbf24", ...style }}
-  >
-    <path d="M8 1 L14 7 L8 15 L2 7 Z" />
-  </svg>
-);
-
-const InfluenceIcon: React.FC<{ style?: React.CSSProperties }> = ({ style }) => (
-  <svg
-    viewBox="0 0 16 16"
-    width="13"
-    height="13"
-    fill="currentColor"
-    aria-hidden="true"
-    style={{ display: "inline-block", verticalAlign: "-2px", color: "#38bdf8", ...style }}
-  >
-    <path d="M2 13h12v1.5H2zm1.5-2l2-6 2.5 3 2.5-3 2 6H3.5z" />
-  </svg>
-);
-
 const SystemIcon: React.FC<{ style?: React.CSSProperties }> = ({ style }) => (
   <svg
     viewBox="0 0 16 16"
@@ -184,6 +220,43 @@ export interface PlayerSheetProps {
   onSetReactionMode?: (card: string, mode: ReactionModeSetting) => void;
 }
 
+/**
+ * A seat's Thunder's Edge breakthrough: unlocked (printed text in full) or still locked (name only,
+ * the text on hover; the card is public). Nothing shows for a faction with no printed breakthrough.
+ */
+const BreakthroughRow: React.FC<{ faction: string; held: string | null }> = ({ faction, held }) => {
+  const line = describeBreakthrough(faction, held);
+  if (!line) return null;
+  const detail = `${line.name} (synergy ${line.synergy})${line.text ? `\n\n${line.text}` : ""}`;
+  return (
+    <div
+      data-testid="player-breakthrough"
+      data-unlocked={line.unlocked ? "true" : "false"}
+      title={detail}
+      style={{
+        fontSize: 11,
+        padding: "3px 6px",
+        borderRadius: 4,
+        border: `1px solid ${line.unlocked ? "#f59e0b" : "rgba(255, 255, 255, 0.12)"}`,
+        background: line.unlocked ? "rgba(245, 158, 11, 0.1)" : "transparent",
+        color: line.unlocked ? "#fde68a" : "#94a3b8",
+      }}
+    >
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "baseline" }}>
+        <span style={{ fontWeight: 600 }}>Breakthrough:</span>
+        <strong data-testid="player-breakthrough-name">{line.name}</strong>
+        <span data-testid="player-breakthrough-state">{line.unlocked ? "unlocked" : "locked"}</span>
+        <span>Synergy: {line.synergy}</span>
+      </div>
+      {line.unlocked && line.text && (
+        <div data-testid="player-breakthrough-text" style={{ marginTop: 3, whiteSpace: "pre-line", color: "#e2e8f0" }}>
+          {line.text}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const PlayerSheet: React.FC<PlayerSheetProps> = ({
   players,
   userSeat,
@@ -196,9 +269,13 @@ export const PlayerSheet: React.FC<PlayerSheetProps> = ({
   onSetReactionMode,
 }) => {
   const display = usePlayerIdentity();
+  const publicState = usePublicState();
+  const bluff = useBluffControls();
   const { isMuted, toggleMute } = useTurnSound();
   const [isMutedState, setIsMutedState] = useState(isMuted);
   const { muted: toastsMuted, toggleMute: toggleToastMute } = useToastMute();
+  const { enabled: recapOn, toggle: toggleRecap } = useTurnRecapSetting();
+  const { enabled: autoSubmit, toggle: toggleAutoSubmit } = useAutoSubmitSetting();
 
   // Sort players: current player first, then by turn order
   const sortedPlayers = React.useMemo(() => {
@@ -254,11 +331,14 @@ export const PlayerSheet: React.FC<PlayerSheetProps> = ({
       >
         <h2 style={{ fontSize: 16, fontWeight: "bold", margin: 0, color: "#94a3b8" }}>Players</h2>
 
-        <div style={{ display: "flex", gap: 6 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 6 }}>
+        {userSeat && <SecondaryPrepModeToggle />}
         {/* Sound Settings Toggle */}
         <button
           type="button"
-          title={isMutedState ? "Turn sound on" : "Mute turn sound"}
+          data-testid="turn-sound-btn"
+          aria-pressed={isMutedState}
+          title={isMutedState ? "Turn the beep for your decisions back on" : "Turn off the beep for your decisions"}
           onClick={() => {
             const newMutedState = toggleMute();
             setIsMutedState(newMutedState);
@@ -284,7 +364,7 @@ export const PlayerSheet: React.FC<PlayerSheetProps> = ({
               : "transparent";
           }}
         >
-          {isMutedState ? "🔇 Muted" : "🔊 Sound"}
+          {isMutedState ? "🔇 Sound off" : "🔊 Sound on"}
         </button>
         <button
           type="button"
@@ -309,6 +389,54 @@ export const PlayerSheet: React.FC<PlayerSheetProps> = ({
         >
           {toastsMuted ? "🔕 Toasts off" : "🔔 Toasts"}
         </button>
+        <button
+          type="button"
+          data-testid="turn-recap-btn"
+          aria-pressed={recapOn}
+          title={
+            recapOn
+              ? "Stop the recap after other players' turns"
+              : "Show a short recap after each other player's turn"
+          }
+          onClick={toggleRecap}
+          style={{
+            background: recapOn ? "rgba(34, 197, 94, 0.14)" : "transparent",
+            border: `1px solid ${recapOn ? "#22c55e" : "#94a3b8"}`,
+            color: recapOn ? "#22c55e" : "#94a3b8",
+            borderRadius: 4,
+            padding: "4px 8px",
+            cursor: "pointer",
+            fontSize: 12,
+            fontWeight: "500",
+          }}
+        >
+          {recapOn ? "📝 Recap on" : "📝 Recap"}
+        </button>
+        {userSeat && (
+          <button
+            type="button"
+            data-testid="auto-submit-btn"
+            aria-pressed={autoSubmit}
+            title={
+              autoSubmit
+                ? "Your only move (a lone strategic action, a lone system to activate) is taken for you. Click to be asked every time."
+                : "You are asked even when there is only one move. Click to take lone moves automatically."
+            }
+            onClick={toggleAutoSubmit}
+            style={{
+              background: autoSubmit ? "transparent" : "rgba(148, 163, 184, 0.1)",
+              border: "1px solid #94a3b8",
+              color: "#94a3b8",
+              borderRadius: 4,
+              padding: "4px 8px",
+              cursor: "pointer",
+              fontSize: 12,
+              fontWeight: "500",
+            }}
+          >
+            {autoSubmit ? "⚡ Auto" : "⚡ Auto off"}
+          </button>
+        )}
         </div>
       </div>
 
@@ -336,9 +464,19 @@ export const PlayerSheet: React.FC<PlayerSheetProps> = ({
               <div>
                 <strong style={{ fontSize: 15, color: "#f8fafc" }}>
                   {identity.position && <SeatBadge position={identity.position} />} {identity.label}{" "}
-                  {isSelf && "(You)"}
+                  {isSelf && identity.label.trim().toLowerCase() !== "you" && "(You)"}
                 </strong>
-                <div style={{ fontSize: 12, color: "#94a3b8" }}>{player.faction}</div>
+                <div
+                  style={{ fontSize: 12, color: "#94a3b8", display: "flex", alignItems: "center", gap: 6 }}
+                >
+                  {player.faction}
+                  <FactionInfoButton
+                    faction={player.faction}
+                    breakthroughHeld={publicState.breakthroughs[player.id] ?? null}
+                    technologies={player.technologies}
+                    leaders={player.leaders}
+                  />
+                </div>
               </div>
               <Tooltip
                 content={<VPBreakdownTooltip breakdown={calculateVPBreakdown(player, board, table)} />}
@@ -373,16 +511,50 @@ export const PlayerSheet: React.FC<PlayerSheetProps> = ({
               }}
             >
               <div>
-                TG: <strong>{player.trade_goods}</strong> | Comm:{" "}
-                <strong>{player.commodities}</strong>
+                <Tooltip content="Trade goods" as="span" position="bottom">
+                  <span
+                    data-testid="player-trade-goods"
+                    aria-label={`Trade goods: ${player.trade_goods}`}
+                    tabIndex={0}
+                    style={{ cursor: "help" }}
+                  >
+                    TG: <strong>{player.trade_goods}</strong>
+                  </span>
+                </Tooltip>{" "}
+                |{" "}
+                <Tooltip content="Commodities" as="span" position="bottom">
+                  <span
+                    data-testid="player-commodities"
+                    aria-label={`Commodities: ${player.commodities}`}
+                    tabIndex={0}
+                    style={{ cursor: "help" }}
+                  >
+                    Comm: <strong>{player.commodities}</strong>
+                  </span>
+                </Tooltip>
               </div>
               <div>
-                Tokens:{" "}
-                <strong>
-                  {player.tactic_tokens}/{player.fleet_tokens}/{player.strategic_tokens}
-                </strong>
+                <Tooltip
+                  content={`Tactic ${player.tactic_tokens} · Fleet ${player.fleet_tokens} · Strategy ${player.strategic_tokens}`}
+                  as="span"
+                  position="bottom"
+                >
+                  <strong
+                    data-testid="player-command-tokens"
+                    aria-label={`Command tokens: tactic ${player.tactic_tokens}, fleet ${player.fleet_tokens}, strategy ${player.strategic_tokens}`}
+                    tabIndex={0}
+                    style={{ cursor: "help" }}
+                  >
+                    {player.tactic_tokens} ◆ {player.fleet_tokens} ◆ {player.strategic_tokens}
+                  </strong>
+                </Tooltip>
               </div>
             </div>
+
+            {/* Other players' command tokens in this seat's fleet pool (Mahact's Edict). */}
+            {(player.held_foreign_tokens ?? []).length > 0 && (
+              <HeldForeignTokens owners={player.held_foreign_tokens ?? []} />
+            )}
 
             {/* Additional Player Stats (Resources, Influence, Systems, Planets, Production) */}
             <div
@@ -415,14 +587,14 @@ export const PlayerSheet: React.FC<PlayerSheetProps> = ({
                     cursor: "default",
                   }}
                 >
-                  <ResourceIcon />
-                  <span style={{ fontWeight: 600 }}>
-                    <span style={{ color: stats.remainingResources > 0 ? "#f8fafc" : "#94a3b8" }}>
-                      {stats.remainingResources}
-                    </span>
-                    <span style={{ color: "#64748b" }}>/</span>
-                    <span style={{ color: "#94a3b8" }}>{stats.totalResources}</span>
-                  </span>
+                  <PlanetValue
+                    kind="resources"
+                    value={stats.remainingResources}
+                    total={stats.totalResources}
+                    alwaysTotal
+                    state={stats.remainingResources > 0 ? "ready" : "muted"}
+                    label={`Resources: ${stats.remainingResources} ready / ${stats.totalResources} total`}
+                  />
                 </div>
               </Tooltip>
 
@@ -441,14 +613,14 @@ export const PlayerSheet: React.FC<PlayerSheetProps> = ({
                     cursor: "default",
                   }}
                 >
-                  <InfluenceIcon />
-                  <span style={{ fontWeight: 600 }}>
-                    <span style={{ color: stats.remainingInfluence > 0 ? "#f8fafc" : "#94a3b8" }}>
-                      {stats.remainingInfluence}
-                    </span>
-                    <span style={{ color: "#64748b" }}>/</span>
-                    <span style={{ color: "#94a3b8" }}>{stats.totalInfluence}</span>
-                  </span>
+                  <PlanetValue
+                    kind="influence"
+                    value={stats.remainingInfluence}
+                    total={stats.totalInfluence}
+                    alwaysTotal
+                    state={stats.remainingInfluence > 0 ? "ready" : "muted"}
+                    label={`Influence: ${stats.remainingInfluence} ready / ${stats.totalInfluence} total`}
+                  />
                 </div>
               </Tooltip>
 
@@ -570,6 +742,8 @@ export const PlayerSheet: React.FC<PlayerSheetProps> = ({
               </span>
             </div>
 
+            <BreakthroughRow faction={player.faction} held={publicState.breakthroughs[player.id] ?? null} />
+
             {player.scored_secret_objectives && player.scored_secret_objectives.length > 0 && (
               <div style={{ display: "grid", gap: 4 }}>
                 <span className="text-muted">Scored Secret Objectives:</span>
@@ -603,6 +777,14 @@ export const PlayerSheet: React.FC<PlayerSheetProps> = ({
                 <div style={{ fontSize: 12, fontWeight: "bold", color: "#38bdf8" }}>
                   Private Hand
                 </div>
+
+                {bluff && (
+                  <BluffSelector
+                    controls={bluff}
+                    cardsCount={player.action_cards_count}
+                    neverMode={Object.values(reactionModes ?? {}).some((mode) => mode === "never")}
+                  />
+                )}
 
                 {/* Held Action Cards */}
                 {player.held_action_cards && player.held_action_cards.length > 0 ? (
@@ -813,6 +995,11 @@ export const PlayerSheet: React.FC<PlayerSheetProps> = ({
                                 >
                                   {meta.description}
                                 </div>
+                                <SecretObjectiveProgress
+                                  alias={objId}
+                                  progress={secretProgressOf(player, objId)}
+                                  board={board}
+                                />
                               </div>
                             </button>
                           </li>

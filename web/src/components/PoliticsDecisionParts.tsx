@@ -3,6 +3,7 @@ import type { ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
 import { usePlayerIdentity } from "../presentation/PlayerIdentity.tsx";
 import {
   describeAgendaPlacement,
+  describeDecisionAgenda,
   describePickCard,
   optionNote,
   replenishReason,
@@ -27,7 +28,8 @@ export const PoliticsContextPanel: React.FC<{ choice: PendingChoiceDto }> = ({ c
   const agenda = describeAgendaPlacement(choice);
   const reason = replenishReason(choice, table);
   const pickCard = describePickCard(choice);
-  if (!agenda && !reason && !pickCard) return null;
+  const about = describeDecisionAgenda(choice);
+  if (!agenda && !reason && !pickCard && !about) return null;
   return (
     <div className="politics-panel" data-testid="politics-context-panel">
       {pickCard && (
@@ -41,6 +43,21 @@ export const PoliticsContextPanel: React.FC<{ choice: PendingChoiceDto }> = ({ c
               {pickCard.text}
             </p>
           )}
+        </div>
+      )}
+      {about && (
+        <div data-testid="decision-agenda-card">
+          <div className="text-muted politics-panel__eyebrow">{about.revealed ? "Revealed agenda" : "Agenda"}</div>
+          <div className="politics-panel__title" data-testid="decision-agenda-name">
+            {about.name}
+            {about.kind && <span className="politics-panel__tag">{about.kind}</span>}
+            {about.target && <span className="politics-panel__tag">{about.target}</span>}
+          </div>
+          {about.text.map((line) => (
+            <p key={line} className="politics-panel__text" data-testid="decision-agenda-text">
+              {line}
+            </p>
+          ))}
         </div>
       )}
       {agenda && (

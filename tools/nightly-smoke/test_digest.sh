@@ -79,6 +79,13 @@ for planet in mr mrte; do
   check_has "[$planet] ground casualty counts as combat" "$out" 'combat decisions: 1'
 done
 
+# Run directories of parallel slots are named sK-NN-HHMM; nothing in the digest depends on the name.
+run="$TMP/s2-03-2215"
+make_run "$run" mr 112
+out=$(python3 "$HERE/digest.py" "$run")
+check_has "[slot run name] digest reads a run named s2-03-2215" "$out" 'controlled by: hacan'
+check_has "[slot run name] decisions are read" "$out" 'combat decisions: 1'
+
 if [ -n "${1:-}" ]; then
   out=$(python3 "$HERE/digest.py" "$1")
   check_lacks "real run: no ECONNREFUSED in suspicious lines" "$out" 'ECONNREFUSED'

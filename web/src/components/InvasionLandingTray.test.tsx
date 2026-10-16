@@ -76,20 +76,19 @@ it("uses the engine's classified defender, all standing guns and legal Harrow in
       onClose={vi.fn()}
     />,
   );
-  // M20: Auto-populates draft (spec_ops), which triggers odds calculation
-  await waitFor(() => expect(fetch).toHaveBeenCalled());
-  const callCount = fetch.mock.calls.length;
+  // The default plan stages the spec ops already on the planet first, then the loose infantry
+  // from space; each staging is one odds request keyed to the draft.
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
   const first = JSON.parse(fetch.mock.calls[0][1].body);
   expect(first.attacker.units).toEqual({ spec_ops: 1 });
   expect(first.defender.guns).toEqual({ pds: 1 });
   expect(first.harrow).toEqual({ dreadnought: 1 });
-  fireEvent.click(screen.getByRole("button", { name: /Land infantry on Jord/ }));
-  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(callCount + 1));
-  const lastCall = fetch.mock.calls[fetch.mock.calls.length - 1][1].body;
-  expect(JSON.parse(lastCall).attacker.units).toEqual({
-    spec_ops: 1,
-    infantry: 1,
-  });
+  const staged = JSON.parse(fetch.mock.calls[1][1].body);
+  expect(staged.attacker.units).toEqual({ spec_ops: 1, infantry: 1 });
+  expect(staged.defender.guns).toEqual({ pds: 1 });
+  expect(staged.harrow).toEqual({ dreadnought: 1 });
+  // Everything available is staged, so there is nothing left to add.
+  expect(screen.getByRole("button", { name: /Land infantry on Jord/ })).toBeDisabled();
   expect(screen.getByTestId("invasion-odds")).toHaveTextContent("defender: 40%");
 });
 
@@ -177,4 +176,122 @@ it("uses a fresh option for each staged copy and keeps the remainder when interr
     />,
   );
   await waitFor(() => expect(onSubmit).toHaveBeenNthCalledWith(2, "fresh-offer"));
+});
+
+it("shows each planet's resources, influence, trait and attachment-modified values", () => {
+  const sys = galleryBoard.systems["18"];
+  const board = {
+    ...galleryBoard,
+    active_system: "18",
+    map_tiles: [
+      {
+        system_id: "18",
+        label: "18",
+        q: 0,
+        r: 0,
+        planets: [
+          { id: "jord", label: "Jord", resources: 4, influence: 2, traits: ["cultural"] },
+          { id: "moll", label: "Moll", resources: 1, influence: 1 },
+        ],
+      },
+    ],
+    invasion: undefined,
+    systems: {
+      ...galleryBoard.systems,
+      "18": {
+        ...sys,
+        planets: {
+          jord: { planet_id: "jord", exhausted: false, attachments: ["dmz"] },
+          moll: { planet_id: "moll", exhausted: false },
+        },
+      },
+    },
+  } as unknown as typeof galleryBoard;
+  const twoPlanets = {
+    ...choice,
+    options: [
+      choice.options[0],
+      {
+        id: "land|moll|infantry",
+        label: "Land",
+        kind: "land",
+        payload: { planet: "moll", unit: "infantry" },
+      },
+    ],
+  };
+  render(
+    <InvasionLandingTray
+      choice={twoPlanets}
+      board={board}
+      viewerSeat={actor}
+      onSubmit={vi.fn()}
+      onClose={vi.fn()}
+    />,
+  );
+  const rows = screen.getAllByTestId("invasion-planet-values");
+  expect(rows).toHaveLength(2);
+  expect(rows[1]).toHaveTextContent("1");
+  expect(rows[0]).toHaveTextContent("cultural");
+  expect(rows[0]).toHaveTextContent("dmz");
+  expect(rows[1].querySelector('[aria-label="1 resource"]')).not.toBeNull();
+  expect(rows[1].querySelector('[aria-label="1 influence"]')).not.toBeNull();
+});
+
+it("shows the defender's ground forces, PDS and Space Cannon Defense beside the planet being landed on", () => {
+  const board = {
+    ...galleryBoard,
+    invasion: undefined,
+    active_system: "18",
+    systems: {
+      ...galleryBoard.systems,
+      "18": {
+        ...galleryBoard.systems["18"],
+        units: [
+          { owner: actor, unit_type: "infantry", damaged: false },
+          { owner: "defender", unit_type: "infantry", damaged: false, planet: "jord" },
+          { owner: "defender", unit_type: "infantry", damaged: false, planet: "jord" },
+          { owner: "defender", unit_type: "infantry", damaged: false, planet: "jord" },
+          { owner: "defender", unit_type: "mech", damaged: false, planet: "jord" },
+          { owner: "defender", unit_type: "pds", damaged: false, planet: "jord" },
+          { owner: "defender", unit_type: "space_dock", damaged: false, planet: "jord" },
+        ],
+      },
+    },
+  };
+  const players = {
+    [actor]: galleryPlayers[0],
+    defender: { ...galleryPlayers[1], id: "defender", faction: "letnev" },
+  };
+  render(
+    <InvasionLandingTray
+      choice={choice}
+      board={board}
+      players={players}
+      viewerSeat={actor}
+      onSubmit={vi.fn()}
+      onClose={vi.fn()}
+    />,
+  );
+  const defenders = screen.getByTestId("invasion-defenders");
+  expect(defenders).toHaveTextContent("letnev:");
+  expect(defenders).toHaveTextContent("1 Mech");
+  expect(defenders).toHaveTextContent("3 Infantry");
+  expect(defenders).toHaveTextContent("1 PDS");
+  expect(defenders).toHaveTextContent("1 Space Dock");
+  expect(screen.getByTestId("invasion-scd")).toHaveTextContent(
+    "Space Cannon Defense: 1 die (PDS hits on 6) fires at forces you land here, ~0.5 hits",
+  );
+});
+
+it("shows no defender block for a planet nobody else has units on", () => {
+  render(
+    <InvasionLandingTray
+      choice={choice}
+      board={galleryBoard}
+      viewerSeat={actor}
+      onSubmit={vi.fn()}
+      onClose={vi.fn()}
+    />,
+  );
+  expect(screen.queryByTestId("invasion-defenders")).toBeNull();
 });

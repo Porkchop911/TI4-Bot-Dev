@@ -1,0 +1,141 @@
+{
+  "title": "Combat decision dialogs",
+  "description": "The real web UI for Assault Cannon, anti-fighter barrage, Courageous to the End, the bombardment target, Vortex and the Cabal agent capture, taken from real engine games at desktop and phone size, before and right after answering.",
+  "tag": "web/e2e/screenshots/BJ-combat-decisions",
+  "shots": [
+    {
+      "file": "out/siege/assault_cannon_destroy-seat2-before-desktop.png",
+      "heading": "Assault Cannon: before answering, desktop",
+      "caption": "[assault_cannon_destroy, seat 2, 1440x900] Seat 2 (Hacan, attacker) is asked which ship the Assault Cannon destroys: the fleet rows show \"Click to assign\" on the legal targets (Carrier and Dreadnought)."
+    },
+    {
+      "file": "out/siege/assault_cannon_destroy-seat2-before-phone.png",
+      "heading": "Assault Cannon: before answering, phone",
+      "caption": "[assault_cannon_destroy, seat 2, 390x844] Seat 2 (Hacan, attacker) is asked which ship the Assault Cannon destroys: the fleet rows show \"Click to assign\" on the legal targets (Carrier and Dreadnought)."
+    },
+    {
+      "file": "out/siege/assault_cannon_destroy-seat2-after-desktop.png",
+      "heading": "Assault Cannon: after answering, desktop",
+      "caption": "[assault_cannon_destroy, seat 2, 1440x900] The result: the Dreadnought is gone (x0, -1) and the next question, the anti-fighter barrage window, is on screen."
+    },
+    {
+      "file": "out/siege/assault_cannon_destroy-seat2-after-phone.png",
+      "heading": "Assault Cannon: after answering, phone",
+      "caption": "[assault_cannon_destroy, seat 2, 390x844] The result: the Dreadnought is gone (x0, -1) and the next question, the anti-fighter barrage window, is on screen."
+    },
+    {
+      "file": "out/siege/reaction_when_ANTI_FIGHTER_BARRAGE_STARTED-seat2-before-desktop.png",
+      "heading": "Anti-fighter barrage window: before answering, desktop",
+      "caption": "[reaction_when_ANTI_FIGHTER_BARRAGE_STARTED, seat 2, 1440x900] Seat 2 (Hacan) holds a reaction window \"when anti-fighter barrage started\" before the rolls: play Waylay (barrage hits count against all ships) or Pass."
+    },
+    {
+      "file": "out/siege/reaction_when_ANTI_FIGHTER_BARRAGE_STARTED-seat2-before-phone.png",
+      "heading": "Anti-fighter barrage window: before answering, phone",
+      "caption": "[reaction_when_ANTI_FIGHTER_BARRAGE_STARTED, seat 2, 390x844] Seat 2 (Hacan) holds a reaction window \"when anti-fighter barrage started\" before the rolls: play Waylay (barrage hits count against all ships) or Pass."
+    },
+    {
+      "file": "out/siege/reaction_when_ANTI_FIGHTER_BARRAGE_STARTED-seat2-after-desktop.png",
+      "heading": "Anti-fighter barrage window: after answering, desktop",
+      "caption": "[reaction_when_ANTI_FIGHTER_BARRAGE_STARTED, seat 2, 1440x900] After the answer (Pass): the next reaction window, \"after unit ability rolled\" (Scramble Frequency), is shown."
+    },
+    {
+      "file": "out/siege/reaction_when_ANTI_FIGHTER_BARRAGE_STARTED-seat2-after-phone.png",
+      "heading": "Anti-fighter barrage window: after answering, phone",
+      "caption": "[reaction_when_ANTI_FIGHTER_BARRAGE_STARTED, seat 2, 390x844] After the answer (Pass): the next reaction window, \"after unit ability rolled\" (Scramble Frequency), is shown."
+    },
+    {
+      "file": "out/siege/courageous_to_the_end_assign_casualty-seat2-before-desktop.png",
+      "heading": "Courageous to the End: before answering, desktop",
+      "caption": "[courageous_to_the_end_assign_casualty, seat 2, 1440x900] Seat 2 (Hacan) assigns the Courageous to the End hit: Carrier or Fighters can be clicked."
+    },
+    {
+      "file": "out/siege/courageous_to_the_end_assign_casualty-seat2-before-phone.png",
+      "heading": "Courageous to the End: before answering, phone",
+      "caption": "[courageous_to_the_end_assign_casualty, seat 2, 390x844] Seat 2 (Hacan) assigns the Courageous to the End hit: Carrier or Fighters can be clicked."
+    },
+    {
+      "file": "out/siege/courageous_to_the_end_assign_casualty-seat2-after-desktop.png",
+      "heading": "Courageous to the End: after answering, desktop",
+      "caption": "[courageous_to_the_end_assign_casualty, seat 2, 1440x900] After the answer: combat has moved on to round 2 and seat 3 is the one being asked."
+    },
+    {
+      "file": "out/siege/courageous_to_the_end_assign_casualty-seat2-after-phone.png",
+      "heading": "Courageous to the End: after answering, phone",
+      "caption": "[courageous_to_the_end_assign_casualty, seat 2, 390x844] After the answer: combat has moved on to round 2 and seat 3 is the one being asked."
+    },
+    {
+      "file": "out/bombard/bombardment_target-seat3-before-desktop.png",
+      "heading": "Bombardment target choice: before answering, desktop",
+      "caption": "[bombardment_target, seat 3, 1440x900] Invasion of system 32: the bombarding player is asked whose units on the planet take the next hits. The two options read as raw player ids."
+    },
+    {
+      "file": "out/bombard/bombardment_target-seat3-before-phone.png",
+      "heading": "Bombardment target choice: before answering, phone",
+      "caption": "[bombardment_target, seat 3, 390x844] Invasion of system 32: the bombarding player is asked whose units on the planet take the next hits. The two options read as raw player ids."
+    },
+    {
+      "file": "out/bombard/bombardment_target-seat3-after-desktop.png",
+      "heading": "Bombardment target choice: after answering, desktop",
+      "caption": "[bombardment_target, seat 3, 1440x900] After the answer: the invasion continues."
+    },
+    {
+      "file": "out/bombard/bombardment_target-seat3-after-phone.png",
+      "heading": "Bombardment target choice: after answering, phone",
+      "caption": "[bombardment_target, seat 3, 390x844] After the answer: the invasion continues."
+    },
+    {
+      "file": "out/capture/vortex_target-seat3-before-desktop.png",
+      "heading": "Vortex: before answering, desktop",
+      "caption": "[vortex_target, seat 3, 1440x900] Seat 3 (Cabal) picks the unit type Vortex captures from a player's reinforcements. The dialog title and source read as raw ids (VTX)."
+    },
+    {
+      "file": "out/capture/vortex_target-seat3-before-phone.png",
+      "heading": "Vortex: before answering, phone",
+      "caption": "[vortex_target, seat 3, 390x844] Seat 3 (Cabal) picks the unit type Vortex captures from a player's reinforcements. The dialog title and source read as raw ids (VTX)."
+    },
+    {
+      "file": "out/capture/vortex_target-seat3-after-desktop.png",
+      "heading": "Vortex: after answering, desktop",
+      "caption": "[vortex_target, seat 3, 1440x900] After the answer: the captured unit is recorded and the turn continues."
+    },
+    {
+      "file": "out/capture/vortex_target-seat3-after-phone.png",
+      "heading": "Vortex: after answering, phone",
+      "caption": "[vortex_target, seat 3, 390x844] After the answer: the captured unit is recorded and the turn continues."
+    },
+    {
+      "file": "out/capture/stillness_target-seat3-before-desktop.png",
+      "heading": "Cabal agent capture (The Stillness of Stars): before answering, desktop",
+      "caption": "[stillness_target, seat 3, 1440x900] Seat 3 (Cabal) picks which unit the agent captures from E2E Host's reinforcements. The source tag reads CABALAGENT and unit names such as sol_infantry are raw ids."
+    },
+    {
+      "file": "out/capture/stillness_target-seat3-before-phone.png",
+      "heading": "Cabal agent capture (The Stillness of Stars): before answering, phone",
+      "caption": "[stillness_target, seat 3, 390x844] Seat 3 (Cabal) picks which unit the agent captures from E2E Host's reinforcements. The source tag reads CABALAGENT and unit names such as sol_infantry are raw ids."
+    },
+    {
+      "file": "out/capture/stillness_target-seat3-after-desktop.png",
+      "heading": "Cabal agent capture (The Stillness of Stars): after answering, desktop",
+      "caption": "[stillness_target, seat 3, 1440x900] After the answer: the agent is exhausted and the turn continues."
+    },
+    {
+      "file": "out/capture/stillness_target-seat3-after-phone.png",
+      "heading": "Cabal agent capture (The Stillness of Stars): after answering, phone",
+      "caption": "[stillness_target, seat 3, 390x844] After the answer: the agent is exhausted and the turn continues."
+    }
+  ],
+  "notes": [
+    {
+      "title": "Source",
+      "text": "Real engine games driven by the Playwright smoke run (presets siege, bombard, capture; game seeds 11, 21, 32; click seeds 4, 4, 6 and 4 for the second Cabal capture). Nothing is mocked or edited. Reproduce with web/e2e/screenshots/BJ-combat-decisions/capture-real.sh."
+    },
+    {
+      "title": "What after means",
+      "text": "The after shot is the same seat's page right after its answer landed, so it shows the next state or question (the result), not the old dialog."
+    },
+    {
+      "title": "Rough edges visible in these shots",
+      "text": "Raw ids show in the bombardment options (player_...), the reaction titles (when ANTI FIGHTER BARRAGE STARTED), Vortex (VTX) and the Cabal agent (CABALAGENT, sol_infantry, hacan_mech). The Courageous to the End and Assault Cannon dialogs are the generic combat view with no card name."
+    }
+  ]
+}

@@ -106,6 +106,9 @@ export interface MovementVector {
   toCenter: { x: number; y: number };
   unitCount: number;
   optionIds: string[];
+  /** "Who can go here" arrows: whose ships (own = the viewer's), and de-emphasised when another entry is picked. */
+  tone?: "own" | "enemy";
+  dimmed?: boolean;
 }
 
 export interface TargetHighlightModel {
@@ -210,16 +213,21 @@ export function deriveHexGeometry(
   };
 }
 
-export function deriveAnomalyVisual(anomalies?: string[]): { color: string; label: string } | null {
+export function deriveAnomalyVisual(
+  anomalies?: string[],
+): { color: string; label: string } | null {
   if (!anomalies || anomalies.length === 0) return null;
   const lower = anomalies.map((a) => a.toLowerCase());
-  if (lower.some((a) => a.includes("supernova"))) return { color: "#6b271a", label: "SUPERNOVA" };
+  if (lower.some((a) => a.includes("supernova")))
+    return { color: "#6b271a", label: "SUPERNOVA" };
   if (lower.some((a) => a.includes("gravity rift")))
     return { color: "#38235f", label: "GRAVITY RIFT" };
-  if (lower.some((a) => a.includes("nebula"))) return { color: "#173f57", label: "NEBULA" };
+  if (lower.some((a) => a.includes("nebula")))
+    return { color: "#173f57", label: "NEBULA" };
   if (lower.some((a) => a.includes("asteroid")))
     return { color: "#3f3b35", label: "ASTEROID FIELD" };
-  if (lower.some((a) => a.includes("scar"))) return { color: "#4a2025", label: "CORRUPTED SCAR" };
+  if (lower.some((a) => a.includes("scar")))
+    return { color: "#4a2025", label: "CORRUPTED SCAR" };
   return { color: "#1e293b", label: anomalies[0].toUpperCase() };
 }
 
@@ -244,6 +252,8 @@ export function deriveActorTargetHighlights(
   pendingChoice: PendingChoiceDto | null,
   viewerSeat?: string | null,
   board?: BoardView,
+  /** Planets that can pay a purchase staged on a panel (Leadership's command tokens). */
+  paymentPlanetIds?: readonly string[],
 ): TargetHighlightModel {
   const empty: TargetHighlightModel = {
     targetableSystemIds: new Set(),
@@ -267,7 +277,15 @@ export function deriveActorTargetHighlights(
   const systemOptionMap = new Map<string, string[]>();
   const planetOptionMap = new Map<string, string[]>();
 
+  // A hyperlane tile is not a system: it is never a target, whatever an option names (the engine
+  // does not offer one; this keeps a stray option from lighting the tile up).
+  const hyperlaneIds = new Set(
+    (board?.map_tiles ?? [])
+      .filter((tile) => tile.hyperlane)
+      .map((tile) => tile.system_id),
+  );
   const addSystemOption = (sysId: string, optId: string) => {
+    if (hyperlaneIds.has(sysId)) return;
     targetableSystemIds.add(sysId);
     const list = systemOptionMap.get(sysId) || [];
     if (!list.includes(optId)) {
@@ -303,20 +321,28 @@ export function deriveActorTargetHighlights(
 
   const isActivationMode = Boolean(
     pendingChoice.context?.subtype === "activate_system" ||
-    (pendingChoice.options.length > 0 && pendingChoice.options.every((o) => o.kind === "activate")),
+    (pendingChoice.options.length > 0 &&
+      pendingChoice.options.every((o) => o.kind === "activate")),
   );
   // Invasion decisions keep their own overlay even when they carry planet payloads.
   const isPlanetMode =
-    !isActivationMode && !board?.invasion && isPlanetSelectionChoice(pendingChoice);
+    !isActivationMode &&
+    !board?.invasion &&
+    isPlanetSelectionChoice(pendingChoice);
   // Paying: payable planets are ringed with their worth and toggle in and out of the payment.
-  const isPaymentMode = !isActivationMode && !board?.invasion && isPaymentChoice(pendingChoice);
+  // A payment inside an invasion (custodians, Dunlain Reaper, Freelancers) is paid the same way.
+  const isPanelPaymentMode = !isActivationMode && Boolean(paymentPlanetIds);
+  const isPaymentMode =
+    isPanelPaymentMode || (!isActivationMode && isPaymentChoice(pendingChoice));
   const targetMode: MapTargetMode = isActivationMode
     ? "system"
-    : isPlanetMode
-      ? "planet"
-      : isPaymentMode
-        ? "payment"
-        : null;
+    : isPanelPaymentMode
+      ? "payment"
+      : isPlanetMode
+        ? "planet"
+        : isPaymentMode
+          ? "payment"
+          : null;
 
   // Bare system-id picks (diplomacy, warfare recall, ...) highlight their systems on the map.
   const isSystemPick = isSystemPickChoice(pendingChoice, board);
@@ -340,7 +366,9 @@ export function deriveActorTargetHighlights(
         : subtype === "vote_exhaust_planet" && opt.kind === "vote_planet"
           ? opt.id
           : null;
-    const planet = offeredPlanet ?? (typeof payload?.planet === "string" ? payload.planet : null);
+    const planet =
+      offeredPlanet ??
+      (typeof payload?.planet === "string" ? payload.planet : null);
     const readyOwnedPlanet =
       planet &&
       Object.values(board?.systems ?? {}).some(
@@ -348,7 +376,8 @@ export function deriveActorTargetHighlights(
           system.planets[planet]?.controlled_by === pendingChoice.actor &&
           !system.planets[planet].exhausted,
       );
-    if (isPaymentPlanet && planet && readyOwnedPlanet) addPlanetOption(planet, opt.id);
+    if (isPaymentPlanet && planet && readyOwnedPlanet)
+      addPlanetOption(planet, opt.id);
     if (payload) {
       // In planet mode the system only locates the planet: the hex itself is not an answer, so a
       // hex click can't pick an arbitrary one of the system's planet options.
@@ -376,6 +405,17 @@ export function deriveActorTargetHighlights(
       if (sys) {
         addSystemOption(String(sys), opt.id);
       }
+    }
+  }
+
+  if (isPanelPaymentMode) {
+    for (const planet of paymentPlanetIds ?? []) {
+      const ready = Object.values(board?.systems ?? {}).some(
+        (system) =>
+          system.planets[planet]?.controlled_by === pendingChoice.actor &&
+          !system.planets[planet].exhausted,
+      );
+      if (ready) addPlanetOption(planet, `exhaust|${planet}`);
     }
   }
 
@@ -408,13 +448,16 @@ export function deriveSelectedSystemDetails(
   viewerSeat?: string | null,
 ): SelectedSystemDetails | null {
   const dynamicSys = board.systems?.[systemId];
-  const staticTile = (board.map_tiles || []).find((t) => t.system_id === systemId);
+  const staticTile = (board.map_tiles || []).find(
+    (t) => t.system_id === systemId,
+  );
 
   if (!dynamicSys && !staticTile) {
     return null;
   }
 
-  const label = staticTile?.label || (systemId === "18" ? "Mecatol Rex" : `#${systemId}`);
+  const label =
+    staticTile?.label || (systemId === "18" ? "Mecatol Rex" : `#${systemId}`);
   const anomalies = staticTile?.anomalies || [];
   const wormholes = staticTile?.wormholes || [];
   const specialArea = staticTile?.special_area || null;
@@ -496,14 +539,17 @@ export function deriveSelectedSystemDetails(
   }));
 
   // Derive available actions for this system
-  const availableActions: { optionId: string; label: string; kind?: string }[] = [];
+  const availableActions: { optionId: string; label: string; kind?: string }[] =
+    [];
   if (pendingChoice && viewerSeat && pendingChoice.actor === viewerSeat) {
     for (const opt of pendingChoice.options) {
       const payload = opt.payload;
       const targetsThisSystem =
-        (payload?.system !== undefined && String(payload.system) === systemId) ||
+        (payload?.system !== undefined &&
+          String(payload.system) === systemId) ||
         (payload?.to !== undefined && String(payload.to) === systemId) ||
-        (opt.kind === "activate" && String(payload?.system || opt.id) === systemId);
+        (opt.kind === "activate" &&
+          String(payload?.system || opt.id) === systemId);
 
       if (targetsThisSystem) {
         availableActions.push({
@@ -540,9 +586,15 @@ export function buildBoardPresentationModel(
   pendingChoice: PendingChoiceDto | null = null,
   viewerSeat?: string | null,
   selectedSystemId?: string | null,
+  paymentPlanetIds?: readonly string[],
 ): BoardPresentationModel {
   const ownershipMap = deriveOwnershipPalette(seatingOrder, players);
-  const targets = deriveActorTargetHighlights(pendingChoice, viewerSeat, board);
+  const targets = deriveActorTargetHighlights(
+    pendingChoice,
+    viewerSeat,
+    board,
+    paymentPlanetIds,
+  );
   const systemsMap = board.systems || {};
 
   // Build unified tile list from map_tiles, or fallback deterministic spiral coordinates
@@ -573,8 +625,12 @@ export function buildBoardPresentationModel(
   const regularCenters = rawTiles
     .filter((t) => !t.special_area)
     .map((t) => deriveHexGeometry(t.q, t.r).center);
-  const maxY = regularCenters.length ? Math.max(...regularCenters.map((p) => p.y)) : 0;
-  const minX = regularCenters.length ? Math.min(...regularCenters.map((p) => p.x)) : 0;
+  const maxY = regularCenters.length
+    ? Math.max(...regularCenters.map((p) => p.y))
+    : 0;
+  const minX = regularCenters.length
+    ? Math.min(...regularCenters.map((p) => p.x))
+    : 0;
   const fractureTiles = rawTiles.filter((t) => t.special_area === "fracture");
   const fractureStartX = -((fractureTiles.length - 1) / 2) * 150;
   const offMapY = maxY + 190; // 2 hex radii plus a clear gap from the bottom galaxy row
@@ -587,7 +643,10 @@ export function buildBoardPresentationModel(
       tile.special_area === "fracture"
         ? { x: fractureStartX + fractureTiles.indexOf(tile) * 150, y: offMapY }
         : tile.special_area === "nexus"
-          ? { x: fractureTiles.length ? fractureStartX - 180 : minX - 180, y: offMapY }
+          ? {
+              x: fractureTiles.length ? fractureStartX - 180 : minX - 180,
+              y: offMapY,
+            }
           : geometry.center;
     const { center, points, innerPoints } = tile.special_area
       ? {
@@ -642,10 +701,12 @@ export function buildBoardPresentationModel(
     }));
 
     // Command tokens
-    const commandTokens = (dynamicSystem?.command_tokens || []).map((owner) => ({
-      owner,
-      color: getPlayerColor(owner, seatingOrder),
-    }));
+    const commandTokens = (dynamicSystem?.command_tokens || []).map(
+      (owner) => ({
+        owner,
+        color: getPlayerColor(owner, seatingOrder),
+      }),
+    );
 
     // Target state
     const isCandidateTarget = targets.targetableSystemIds.has(sysId);
@@ -750,15 +811,23 @@ export function buildBoardPresentationModel(
     centerMap.set(t.systemId, t.center);
   }
 
-  const destinationSystemId = targets.contextSubjectSystemId || board.active_system || null;
+  const destinationSystemId =
+    targets.contextSubjectSystemId || board.active_system || null;
   const movementVectors: MovementVector[] = [];
 
-  if (destinationSystemId && centerMap.has(destinationSystemId) && pendingChoice) {
+  if (
+    destinationSystemId &&
+    centerMap.has(destinationSystemId) &&
+    pendingChoice
+  ) {
     const toCenter = centerMap.get(destinationSystemId)!;
     const originOptionMap = new Map<string, string[]>();
 
     for (const opt of pendingChoice.options) {
-      if ((opt.kind === "move" || opt.id.startsWith("move|")) && opt.payload?.origin) {
+      if (
+        (opt.kind === "move" || opt.id.startsWith("move|")) &&
+        opt.payload?.origin
+      ) {
         const origin = String(opt.payload.origin);
         const list = originOptionMap.get(origin) || [];
         list.push(opt.id);

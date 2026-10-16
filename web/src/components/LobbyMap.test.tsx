@@ -83,7 +83,8 @@ describe("lobby map row", () => {
     expect(within(dialog).queryByTestId("map-reroll")).toBeNull();
     expect(within(dialog).queryByTestId("map-picker-choices")).toBeNull();
     await screen.findByTestId("map-preview-board");
-    expect(screen.getByLabelText("Seats")).toHaveTextContent("Seat 2: Emirates of Hacan (you)");
+    expect(screen.getByLabelText("Seats")).toHaveTextContent("Seat 2");
+    expect(screen.getByLabelText("Seats")).not.toHaveTextContent("(you)");
   });
 
   it("lets spectators watch too, and a host-only edit is not offered once the game runs", () => {

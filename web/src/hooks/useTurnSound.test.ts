@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useTurnSound } from './useTurnSound';
+import { shouldPlayTurnSound, useTurnSound } from './useTurnSound';
 
 describe('useTurnSound', () => {
   beforeEach(() => {
@@ -80,5 +80,20 @@ describe('useTurnSound', () => {
         result.current.playTurnNotification();
       });
     }).not.toThrow();
+  });
+});
+
+describe('shouldPlayTurnSound', () => {
+  it('plays once when the decision passes to the viewer', () => {
+    expect(shouldPlayTurnSound(false, true)).toBe(true);
+  });
+
+  it('stays quiet for the next decisions of the same turn', () => {
+    expect(shouldPlayTurnSound(true, true)).toBe(false);
+  });
+
+  it('stays quiet while someone else decides', () => {
+    expect(shouldPlayTurnSound(false, false)).toBe(false);
+    expect(shouldPlayTurnSound(true, false)).toBe(false);
   });
 });

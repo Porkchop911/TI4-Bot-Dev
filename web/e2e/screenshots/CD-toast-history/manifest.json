@@ -1,0 +1,16 @@
+{
+  "title": "Toast history and card toasts",
+  "description": "Corner toasts can be read again from a notification history; another seat's action card plays and objective scores always toast; the reaction window shows the card and its targets. All shots are the real app against a mocked game.",
+  "tag": "web/e2e/screenshots/CD-toast-history",
+  "shots": [
+    { "file": "out/1a-toast-shown.png", "heading": "A toast, as before", "caption": "Another player's card play toasts for a few seconds." },
+    { "file": "out/1b-toast-gone-button-left.png", "heading": "Gone, but revisitable", "caption": "Once the toast is dismissed or has faded, a small \"Recent notifications (n)\" button stays at the bottom of the toast column." },
+    { "file": "out/2-history-open.png", "heading": "The history", "caption": "The button opens the list of this session's toasts, newest first, with the player name and seat colour. Objective ids are shown by name." },
+    { "file": "out/3-card-in-recapped-turn.png", "heading": "Card plays inside a recapped turn", "caption": "With the turn recap on, a third seat's Sabotage and objective score inside another player's action toast immediately instead of being folded away." },
+    { "file": "out/4a-sabotage-window.png", "heading": "Reaction window: card and targets", "caption": "The reaction window itself, when you are asked to react to another player's action card, names the card with its full text and every target the engine's public trigger carries (system, planet, player)." },
+    { "file": "out/4b-reverse-engineer-window.png", "heading": "Reaction window: Reverse Engineer", "caption": "The window that opens Reverse Engineer shows the discarded card and its text." }
+  ],
+  "notes": [
+    { "title": "Not covered", "text": "Gravity rift rolls: the engine does not put them in the public event log or the view, so there is nothing to display yet. Targets of an action card are chosen after the Sabotage window, so the trigger cannot carry them; that needs an engine change. A component action card played from the action menu is logged as \"began a component action\" without its name." }
+  ]
+}

@@ -3,6 +3,7 @@ import { BoardView } from "../protocol/types.ts";
 import { describeSystem, planetOccupants } from "../presentation/systemFacts.ts";
 import { getPlanetDetails } from "../presentation/planetSelection.ts";
 import { useParticipantText } from "../presentation/PlayerIdentity.tsx";
+import { PlanetValuePair } from "./PlanetValueIcons.tsx";
 
 /** One system as a short fact sheet: planets (R/I), ships present, whose command tokens sit there. */
 export const SystemFactsView: React.FC<{ systemId: string; board?: BoardView | null }> = ({
@@ -17,12 +18,20 @@ export const SystemFactsView: React.FC<{ systemId: string; board?: BoardView | n
       <div className="system-facts__line text-muted">
         {facts.planets.length === 0
           ? "No planets"
-          : facts.planets
-              .map(
-                (p) =>
-                  `${p.name}${p.resources !== null && p.influence !== null ? ` (${p.resources}R/${p.influence}I)` : ""}${p.controlledBy ? ` - ${present(p.controlledBy)}` : ""}`,
-              )
-              .join(", ")}
+          : facts.planets.map((p, i) => (
+              <React.Fragment key={p.name}>
+                {i > 0 && ", "}
+                {p.name}
+                {p.resources !== null && p.influence !== null && (
+                  <>
+                    {" ("}
+                    <PlanetValuePair resources={p.resources} influence={p.influence} />
+                    {")"}
+                  </>
+                )}
+                {p.controlledBy ? ` - ${present(p.controlledBy)}` : ""}
+              </React.Fragment>
+            ))}
       </div>
       <div className="system-facts__line text-muted">
         {facts.ships.length === 0

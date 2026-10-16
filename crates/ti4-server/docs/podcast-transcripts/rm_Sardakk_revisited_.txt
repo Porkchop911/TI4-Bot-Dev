@@ -1,0 +1,398 @@
+### range 0-1200s
+[0:00:00] Hello and welcome to Radio Mecatol. My name is Kaleh and I think about Twilight Imperium every day.
+[0:00:09] And my name is Ul-la and I recently played Twilight Imperium. That's amazing. And what's also amazing is that when we're recording this,
+[0:00:20] then Radio Mecatol has been live for one year and that was my actually last year's New Year's resolution.
+[0:00:27] I'm so happy that the resolution worked.
+[0:00:31] Mine was to eat more cheese, it also worked.
+[0:00:35] Great.
+[0:00:36] And I think we should celebrate for sure.
+[0:00:46] And I'm very happy that we managed to...
+[0:00:50] Yeah, we're drinking strong stuff here.
+[0:00:52] It's Swedish celebration.
+[0:00:56] And I'm very happy that we managed to keep up with our update schedule.
+[0:01:00] We didn't miss a single deadline.
+[0:01:02] No, that's kind of remarkable.
+[0:01:04] Yeah, and we managed to record so many episodes.
+[0:01:08] And today's episode is about the Sardak Knorr.
+[0:01:14] And why are we talking about that today, Ola?
+[0:01:17] I mean, two reasons, I think.
+[0:01:20] One is that I tend to think about them a lot, generally speaking,
+[0:01:24] the course of the design conundrum that they pose. We probably mentioned them on the
+[0:01:31] on the plot before but the thing is that they have been solidly in the bottom tier of what
+[0:01:37] I think very for two editions now. Both third and fourth which is fascinating to me right?
+[0:01:45] But also because a few days ago I played them and I won.
+[0:01:50] I have one with them too, but in Prophecy of Kings, but you won a
+[0:01:58] thunder's edge game with them. Yeah I would argue that it's more hardcore
+[0:02:02] winning with them in Prophecy of Kings, for reasons that we get to.
+[0:02:08] But I'm still very proud. Yeah and I mean, Sonic North's thing has always been
+[0:02:13] that they have plus one in all combat and that has meant very different things
+[0:02:18] over the additions, like in third edition,
+[0:02:21] Sarekno was often played as a PDF faction
+[0:02:24] because the plus one was applied to PDFs as well.
+[0:02:27] So it was weird to have this war-like insectoid faction
+[0:02:32] that just focused on building a lot of PDFs.
+[0:02:35] Yeah, it felt like an unintended design.
+[0:02:37] Yes.
+[0:02:38] As something I've encountered millions of times
+[0:02:41] in my game design career, right?
+[0:02:44] Like you design a feature,
+[0:02:46] and only to then discover that players find better ways to use it,
+[0:02:51] or more optimal ways, but that feel of compared to your design intent.
+[0:02:56] Yeah, yeah. It's a classic issue.
+[0:02:59] And of course, it can be mitigated by Reguva's playtesting,
+[0:03:03] but playtesting is expensive.
+[0:03:07] And Salat-Moor is also one of the oldest factions.
+[0:03:12] They were in the original six in the first edition of Twilight Imperium.
+[0:03:16] It's one of the founding members of the Galactic Council together with the
+[0:03:21] Letner of the soul and your na
+[0:03:27] X-X-X-X
+[0:03:28] X-X-X-X
+[0:03:28] And I can, yeah, that's them
+[0:03:31] They're also the O.G. self-fality period
+[0:03:34] Yes
+[0:03:34] And I do find myself liking Sadak Loh
+[0:03:37] a little bit extra because of that
+[0:03:40] because as you read the planet cards and stuff
+[0:03:44] They tend to appear quite a lot because they are a classic T.I. faction.
+[0:03:49] So there's a lot of lore about them and playing them a few days ago, right?
+[0:03:53] I had this super funarity moment where I discovered that the planet I went into to Terraform
+[0:03:58] using the Titan of Ull Promissary Note was actually a planet that had been a hotly contested
+[0:04:06] the Terp only target and suffered a yellow side
+[0:04:09] perpetrated by the Sarvac.
+[0:04:13] Yeah, that was amazing.
+[0:04:15] That was just perfect.
+[0:04:16] Yeah, yeah, yeah.
+[0:04:18] So, yeah, amazing, amazing stuff, yeah.
+[0:04:21] And you said that they have been very lowly ranked.
+[0:04:25] And I mean, it's because their ability has always
+[0:04:27] been plus one to all roles.
+[0:04:29] But it had meant a little different things
+[0:04:32] among the addition.
+[0:04:32] Now, for example, it's plus one of our combat roles.
+[0:04:35] So not on unit abilities like space cannon or anti-fight the barrage or something like that.
+[0:04:43] But what they did in fourth edition was to say that they start with no tech.
+[0:04:48] Yeah, I mean they've always been kind of a low tech faction, but they made this,
+[0:04:53] and it's an interesting decision, right? But yeah, it's probably part of the reason why they are,
+[0:05:01] So all used to be, we'll get back to that.
+[0:05:04] So, low tier.
+[0:05:06] Absolutely, I mean, before the Prophet of King's expansion,
+[0:05:10] when we were just playing base game,
+[0:05:12] then the objective deck was very skewed against tech
+[0:05:16] objectives, and those were brutal for us.
+[0:05:18] And not only that, we also need to think about tech
+[0:05:21] in terms of opportunity cost, right?
+[0:05:24] Most factions have a, like, who coined me for longer.
+[0:05:27] You see, do they have two star techs?
+[0:05:29] most factors. I actually half of them have two have one
+[0:05:34] approximately. Yeah but still right that's a whole round of taking and
+[0:05:39] sometimes technology does not isn't play the first round. In some games maybe
+[0:05:46] not another round I don't know right. So you actually in an average game
+[0:05:50] mortality period you do not have that many opportunities to take. So to be one
+[0:05:57] or two texts behind everyone else is significant.
+[0:06:01] Yeah, but I think I have to disagree with you there because we played a five-player game
+[0:06:06] a couple of days ago and then Tech might not appear but I would say in a normal six-player game
+[0:06:12] it's very rare that Tech doesn't know you're special in one. Yes, true. Nevertheless though,
+[0:06:18] it's you take a few times each game. Yeah, and if it's not that much, so you'll basically,
+[0:06:26] you will never get to the... unless you have normal situations, right?
+[0:06:35] Getting to end-tier tech is very hard for the sad, I can worry.
+[0:06:40] Yes, and I mean if they want to have stuff like a lightweight deflector,
+[0:06:45] they have to sacrifice a lot of things.
+[0:06:47] On a personal note, the most frustrating thing with this, the sign choice for me,
+[0:06:53] was that they have an amazing race tag, the Drednought, the X-O-Trivium II, which is arguably
+[0:07:01] maybe the best or second best chip in the game, but it was so hard for them to get it.
+[0:07:08] Yeah, I think I never saw it before Thunderzatch.
+[0:07:11] No, and it was such a bummer, right? Because the designers showed you this amazing thing that you
+[0:07:17] you can use it if you play them, but in practice you won't get it. And that's bad design. That's
+[0:07:25] actually honestly bad design. I think the game I played with SADAC NORA that I won, then I got
+[0:07:32] EXOTRA RIM and I got it as my last tech on the very last round. And usually that means that you
+[0:07:40] don't get to use it in any way or form. But for me, I had two dreadnoughts in my home system and
+[0:07:47] getting exotirime meant that suddenly my home system was completely unassailable.
+[0:07:52] Yeah. I mean, it's not pointless. That's not what I'm saying. I'm not saying that if you
+[0:07:58] sell something as a feature or playing a faction, right, there's going to be some disappointment
+[0:08:05] when people can't experience that content. Yeah, absolutely. And I think that's one of
+[0:08:10] the great things with Thunderzedge, with the anthropic scores, especially if you happen
+[0:08:14] to have a map where there are more than one of them, that a lot of faction texts that normally
+[0:08:18] don't see play or they see play very late get to come into play very hard.
+[0:08:22] Yeah, I think it's a good design. I think I feel like the sign has realized that a lot of the
+[0:08:28] race texts simply never see play and now maybe they can increase that a bit.
+[0:08:33] Yeah, and I mean the game we played, we had two entropic scores and we were only five players
+[0:08:39] So there was not super much contention about them and that meant that
+[0:08:43] tech was very rarely played. I mean, it wasn't played the first round and it wasn't even played the second round.
+[0:08:49] So it was a very tech-light game but still people got tech thanks to the Entrombist cars.
+[0:08:54] Though of course another reason for that was that the SADAC managed to push through the anti-tech revolution law.
+[0:09:04] So you had to destroy a ship each time you researched that technology.
+[0:09:08] that I think that played a part in people kind of not...
+[0:09:12] It made the technology card just slightly less appealing.
+[0:09:16] That also played a part I think.
+[0:09:17] Yeah, and I played the Titans of Ull,
+[0:09:19] and the Titans of Ull with just their two faction texts,
+[0:09:23] I discovered just fine.
+[0:09:25] Yeah, I don't need anything.
+[0:09:26] And I managed to score the secret objective
+[0:09:30] to have your two faction texts.
+[0:09:33] With Sartakno!
+[0:09:34] That would never happen otherwise, because Valk, in a particle we even exaltriven to,
+[0:09:42] or into completely different ends of the tech tree, it would never happen.
+[0:09:50] No, and that was fun.
+[0:09:52] Yeah, and I think that with the SADAC-NOAR breakthrough that this introduced with Thunder
+[0:10:00] research that whenever they win a combat they get either a command token or a unit upgrade
+[0:10:09] that they have the prerequisites for it makes them...
+[0:10:12] Well they have to research it, so meaning that loss that affect that will affect them.
+[0:10:18] Yeah, yeah, but they so they research it they don't gain it so they have to have the prerequisites.
+[0:10:22] But no it's free, no resources.
+[0:10:24] And I think that makes them more fun in many ways.
+[0:10:28] I mean, it makes them a lot better.
+[0:10:30] I would say that it is one of the best breakthroughs,
+[0:10:33] if not the best breakthrough.
+[0:10:36] But it also makes them more fun in a sense,
+[0:10:40] because the edge that Sarak had before,
+[0:10:44] I mean, one part of it was just that they're better at combat,
+[0:10:46] but they also had their commander saying that you can attack
+[0:10:50] directly from planet to planet without using ships.
+[0:10:53] And to me, it didn't feel very sad at all, a little bit maybe, but now they have more incentives to actually make space combat.
+[0:11:05] Yeah, I mean, I'm on well, I'm prepared to declare them rescued from mediocre to it.
+[0:11:12] Absolutely.
+[0:11:13] I think this breakthrough saves them.
+[0:11:16] Whether it will mean in the end of the many games,
+[0:11:22] whether they are in the tier ranking now, I have no clue about.
+[0:11:28] But I feel that it was immensely fun to play them.
+[0:11:35] And the breakthrough directly addresses some of the fundamental design problems.
+[0:11:44] So, in an interesting way, they are still bad at getting tech, but they're great at getting unit upgrades.
+[0:11:53] A particular kind of tech that's really flavorful. Yes.
+[0:11:57] And it incentivizes them to do exactly what they're good at, to be in combat all the time.
+[0:12:04] Which is exactly what they should be doing, right?
+[0:12:08] Yeah, before their breakthrough they had no incentive to fight.
+[0:12:12] It was rather the strength of them was the threat, the silent threat.
+[0:12:18] I found myself going into combat just to trigger this.
+[0:12:21] I mean worst case, as long as you will, importantly, you get the command counter back.
+[0:12:27] Yeah, then you basically lost nothing, you just moved your fleet.
+[0:12:31] Of course, it does have the important caveat, which I like, that you have to win the combat.
+[0:12:36] So it's not like the Necrovirus, where you can just get your tech, just by destroying
+[0:12:41] a ship, right?
+[0:12:42] You have to win the fight.
+[0:12:44] But still, I think that's good design.
+[0:12:47] It made it challenging and fascinating to play them.
+[0:12:50] The drawback is that it does require an extremely specific strategy when you take.
+[0:12:58] that is not immediately apparent, so it's like you bathe your mastery of these ways,
+[0:13:05] hinges completely on you understanding this synergy immediately.
+[0:13:09] And that is that there is only one tech that you care about in the entire tech,
+[0:13:14] and that is AI development algorithm.
+[0:13:18] Because with that tech, you'll be able to get almost all the unit upgrades that you need.
+[0:13:26] That single tech.
+[0:13:27] have so little compulsive for them, which also means that if you are the faction, I
+[0:13:33] forgot their name, they are from their new expansion, that can banish attack from the
+[0:13:38] game and the sadak nobi simply remove that attack and you have absolutely utterly ruin
+[0:13:45] them, which I have mixed feelings about.
+[0:13:48] Yeah, the deep-roats tolerate removing AI development algorithm. I don't think it's unfair
+[0:13:57] against Psyduck because it is their hero so they won't activate that very early.
+[0:14:05] So they will already have a couple of unit upgrades and if you're playing
+[0:14:11] against Psyduck and they have let's say two unit upgrades and you manage to
+[0:14:15] shut down AI development algorithm I think that could be a very viable and fair
+[0:14:20] strategy against them.
+[0:14:22] Do, do, do, do, yeah.
+[0:14:25] Yeah, I mean, it's no different from other kind of hard
+[0:14:28] or optimized counters against other factions, I guess.
+[0:14:31] And also, when you use the Brod's cholerates hero,
+[0:14:36] you purge the technology,
+[0:14:37] but everyone who has that technology
+[0:14:38] gets to research a new technology.
+[0:14:41] So they could get like a new camera and start a new.
+[0:14:46] Oh, I see.
+[0:14:47] Okay, then it's not as disastrous.
+[0:14:49] No. No, fair.
+[0:14:50] But still, this breakthrough is amazing.
+[0:14:53] It's really, really fun,
+[0:14:55] but I don't think it's wildly overpowered.
+[0:14:58] It fits the faction law-wise
+[0:15:01] and in the feeling of the gameplay,
+[0:15:04] they become kind of a miniature necrovirus
+[0:15:07] and how you approach playing them.
+[0:15:09] And I mean, I won the game without ever using the hero,
+[0:15:13] which we have discussed before, highly situational hero.
+[0:15:17] And I basically didn't.
+[0:15:19] I used a commander a tiny bit, but I might just as well have taken my troops in carriers.
+[0:15:24] It didn't really matter.
+[0:15:25] I never attacked a planet just with, but of course my neighbors knew about this commander
+[0:15:32] and defended the planets accordingly.
+[0:15:36] But the radian who gives them two ground troops each were they activate the system once per
+[0:15:42] that's a pretty decent agent, not great, but if he fits their particular playstyle, because
+[0:15:49] they are going to want a lot of ground troops.
+[0:15:53] Yeah, and also to get them in the front line.
+[0:15:56] Yeah, exactly.
+[0:15:57] And especially, again, if they have a tropic scar, so that they have a chance of getting
+[0:16:04] their very particular waist tag, which gives the ground troops a direct hit, if the enemy
+[0:16:10] hits you.
+[0:16:11] Yeah, but that's incredible.
+[0:16:13] So like, this is a faction that does benefit from a kind of draft play, where you have
+[0:16:19] an opportunity to pick a slice or a position where you do an accessible access to an entropic
+[0:16:28] score.
+[0:16:30] It's not necessary, they can get those upgrades and they can get the exotriene anyhow.
+[0:16:37] But it's because the waste ticks are pretty good, not especially the extra time, of course.
+[0:16:43] It's like they do benefit from having that.
+[0:16:46] I'd say when I pick a slice for the Sarlachnore, and my greatest priority is that I want to be
+[0:16:55] planet heavy.
+[0:16:56] It doesn't have to be like three planet systems or stuff like that.
+[0:16:59] It doesn't have to be planet heavy in the sense that like, what are they called, the Nasroka
+[0:17:06] Alliance they want to have like a lot of planets just to explore them and to get a lot of relics and stuff
+[0:17:12] But the Sareknoir don't want empty systems. They want planets basically everywhere
+[0:17:18] Yes, so that they can move around and easily. Yeah, I mean they all they are slow faction
+[0:17:25] the
+[0:17:26] Eventually with the with the breakthrough
+[0:17:29] If they are gonna get some speed as they up Kado ships
+[0:17:33] But it takes us, takes a little while.
+[0:17:36] And she, okay sure, they can take gravity drive,
+[0:17:40] but it's not an ideal take for them, I would say.
+[0:17:43] So it's like you have to count on them being sluggish in the beginning,
+[0:17:49] and it's, yeah, they like neighbors that they have planet borders with,
+[0:17:56] so that they can utilize the commander or the threat of the commander
+[0:18:00] to keep the enemy on the toes.
+[0:18:02] And I would also like to correct myself there that maybe I am actually looking for a three-planet system
+[0:18:08] because I want to be to be able to activate the commander as early as possible and to require five planets outside your home system.
+[0:18:16] And a three-planet system significantly helps with that.
+[0:18:19] Yes, especially if it's on the border with an enemy because then you can use the commander to launch one ground troop from each of those planets.
+[0:18:28] Yes.
+[0:18:29] Which is a tremendous benefit.
+[0:18:31] So yeah, the plan, this is actually interesting.
+[0:18:35] There are very few factions in the game, with a specific composition of systems, metal.
+[0:18:41] But it does to the sadak noir.
+[0:18:44] And I like that they aren't fast. I mean, all factions can't be fast.
+[0:18:47] No, I agree. I agree. No, no, no, no.
+[0:18:49] No, no, no, no. It's just something you need to be aware of, right?
+[0:18:52] And for one of my neighbors, I was separated by two empty spaces.
+[0:18:58] That's a problem for Sadaknore.
+[0:19:00] They want to have Naples that they can attack.
+[0:19:03] They want to have Naples that they have systems bordering.
+[0:19:07] Yeah.
+[0:19:08] And of course they do benefit.
+[0:19:11] More than many other facts. I mean, everyone does.
+[0:19:15] But for Sadaknore I would be very interested in a tech skip.
+[0:19:20] Yes.
+[0:19:21] Because probably a red one.
+[0:19:22] Oh, red? I would say blue.
+[0:19:23] Blue is good too.
+[0:19:25] No, but once they get a breakthrough, that color doesn't matter.
+[0:19:29] Ah, okay.
+[0:19:30] Because it makes blue and red interchangeable, right?
+[0:19:34] It's... So I know those would be fine.
+[0:19:36] But that tech skip will possibly allow them to ventiligate the war zone.
+[0:19:43] Yeah, and...
+[0:19:44] I could tech war zones at the end of our game.
+[0:19:46] I think I want to clarify for the listeners,
+[0:19:49] for just for those who don't find it obvious how the breakthrough works
+[0:19:54] with the that you have to have AI development,
+[0:19:56] I'll go into a man so on.
+[0:19:57] So you take an AI and go.
+[0:19:59] Dev.
+### range 1200-2400s
+[0:20:00] Development algorithm as your first tech, and it allows you to skip one tech. So how does that
+[0:20:05] skip one prerequisite skip one prerequisite and how when you buy a unit of weight and how does that work with them all the stuff well
+[0:20:14] Their breakthrough also has synergy red and blue
+[0:20:18] So that means that red and blue are interchangeable and that means that you have basically two red or two blue
+[0:20:23] And then that means you can get carrier to which is to read
+[0:20:27] To blue, sorry, and you can get the destroyer to which is too red
+[0:20:32] You can get to fighter to is
+[0:20:34] red blue and green. Blue and green so so so a I dev which is red counts as blue
+[0:20:42] and then you can use the skip for the green. Yeah and they can also with one
+[0:20:46] more they can get PDS to which is red and yellow and then they have to get
+[0:20:53] one more tech to get stuff like the only one they struggle with is the
+[0:21:01] Space Lock and a little bit ironically, the ground troop.
+[0:21:06] But this is still that aside, right?
+[0:21:11] The with this with only two non-unit upgrade texts, a developer's upgrade and one more,
+[0:21:19] they can get almost all unit upgrades.
+[0:21:23] And add one more and you can get worse ones.
+[0:21:27] It's like it's pretty great.
+[0:21:30] And this is the synergy, right?
+[0:21:32] And that's why losing air, development algorithm kind of would suck for them.
+[0:21:39] But, ultimately, it's just fun.
+[0:21:46] It was a fun factor now.
+[0:21:48] And that's what I've been struggling with with them, right?
+[0:21:50] Because I wanted to do all these cool things that those sheet promised.
+[0:21:55] But I felt like they were so hampered in achieving any of them.
+[0:21:59] But this break through your single handedly saves them.
+[0:22:02] It's so great.
+[0:22:05] I like that you're saying that they're fun because my problem with select nor has always
+[0:22:09] been that I found a bit unfun.
+[0:22:10] Yes.
+[0:22:11] Because just plus one it's still, in some sense it's not very good because it's not economic
+[0:22:18] and stuff but in some sense it is good because people underestimate how much plus one changes
+[0:22:24] comets.
+[0:22:25] Aye.
+[0:22:26] Yes.
+[0:22:27] So this is the thing, right?
+[0:22:28] We have discussed this at length before.
+[0:22:31] Why are they always in the bottom, right?
+[0:22:35] Obviously there is something about this ability, plus one to combat, that the designers overestimate
+[0:22:40] the value of when they decide this faction.
+[0:22:43] That being said, when you do get those synergies up, it's insane.
+[0:22:49] My fighters, I had taken fighter too.
+[0:22:53] They hit on 7s. I had 5 of them in my home system. That's like having 5 Closers.
+[0:23:02] And then I played a Mulhalf boost. So then they hit on 6s.
+[0:23:07] And I could have had 10 fighters in that system.
+[0:23:11] Like it's the same. It's so good. But it's only as good.
+[0:23:18] Like it's a common, of course, classic game, the sign optimization, right?
+[0:23:22] you need to take advantage of this bonus by stacking it.
+[0:23:28] You need to... it's good on its own, yes.
+[0:23:31] But it gets better than more things you can stack on top of it.
+[0:23:34] Yeah, I would also say that it gets relatively better for cheap units.
+[0:23:39] And that has always been the starting factor.
+[0:23:41] Very important factor, right?
+[0:23:44] Despite them having a custom dreadnought, they are fundamentally a fighter in ground tube
+[0:23:51] perfection. Well, okay, the mix of fantastic, we get back to them as well. But there are
+[0:23:56] factors and ground troops because that's what a bonus is, matters by far the most.
+[0:24:02] Yeah, I would say that when you talk about like statistics and quality Imperium, the two
+[0:24:08] things that people underestimate is that I've seen a lot of discussions about how HP matters.
+[0:24:15] And I think people have gotten that, that it's important to have as much HP in a compact as
+[0:24:19] possible, but also that a plus one or a minus one in the case of Joe not really
+[0:24:26] changes combats when you have like destroyers, fighters, stuff like that. I mean
+[0:24:31] plus one doesn't change too much on a destroyer but for the factions that hit
+[0:24:35] on a nine going to eight I mean that is 50% increase of hits.
+[0:24:39] What did you want to say about the mix? Well I mean we mentioned the mix before
+[0:24:45] in a mech discussion but their mechs cause an automatic hit to the enemy when they sustain
+[0:24:51] that much, when the mechs listen to them much and the kit's great and like basically at that
+[0:24:57] point you want to win ground combat. It's not like letting the mech levels have been
+[0:25:03] sanded to you but it's really good. Yeah I mean you have to win the ground combat against
+[0:25:09] that. I know you have to go in with a lot more than they have. Because almost all
+[0:25:14] losing round combat, R on 8. So getting that an automatic hit is very impactful.
+[0:25:22] Yes. I mean if you count that an 8 is a hit that's 8, 9, or 10, those are 3 rolls of 10.
+[0:25:29] So that means that's an equivalent of more than 3 ground horses rolling.
+[0:25:33] And of course you tend to sustain damage which makes the first thing you do in a
+[0:25:37] ground combat. So if you have 2 mechs and your enemy gives you 2 hits, you sustain those and
+[0:25:43] and you cause two extra hits to the enemy in that critical first round of combat,
+[0:25:48] which will most likely tip the entire balance in your favor.
+[0:25:52] Yes, and especially with the Valkyrie particle, we only get a third hit.
+[0:25:55] And suddenly...
+[0:25:57] Yeah, it's insane.
+[0:25:59] Of course we've discussed this before as well,
+[0:26:03] like so many topics, ground combat isn't always that decisive,
+[0:26:07] but it can be right.
+[0:26:08] And they're like, no, we're really good at it.
+[0:26:11] And you need to leverage that, we're playing them.
+[0:26:15] The commander, the agent, the hero, they are fun, but they are not spectacular.
+[0:26:23] I would say the commander, the hero, I don't...
+[0:26:26] No, he's bottomed here, absolutely.
+[0:26:28] He's extremely sensational and basically useless.
+[0:26:31] So to reiterate briefly, he allows you to take your fleet into a system, skip the space combat,
+[0:26:39] loosely but do their landings with all the troops you carry.
+[0:26:45] Yeah and I think that I mean with the breakthrough
+[0:26:48] Select North has been a huge bump in power level
+[0:26:52] so I don't think that they need any buffs but let's say they weren't buffed
+[0:26:57] as much in Thunder's Edge and needed a buff then I think I would change the
+[0:27:01] hero to say that you don't require any ships at all
+[0:27:05] so that you could make a massive invasion just via a ground force.
+[0:27:10] The previous fix we discussed was to give them a starting tech.
+[0:27:16] But now I've been played them.
+[0:27:18] I do feel that maybe not because it's so flavorful to not have any tech.
+[0:27:26] So yeah, it would have been better to sign, I fully agree, to buff their hero.
+[0:27:31] Now it's not needed because of the amazing breakthrough.
+[0:27:35] But if you play them without Tando Sedge,
+[0:27:38] they might need a little bit of a house or a bath
+[0:27:40] because they are really poor.
+[0:27:42] And whether you improve the hero or give them a starting tech,
+[0:27:46] I don't know if those things could work.
+[0:27:48] But with Tando Sedge, I will the Cladam fixed.
+[0:27:51] They are strong, they are fun, and they are flavorful.
+[0:27:55] And I think that's a good summary of Star Lake Nore.
+[0:27:58] Yeah.
+[0:27:59] The show is over, but if you want to discuss the episode, please find our channel on Discord.
+[0:28:10] Or if you love Radio Mecatol and want to support us, please go to buymeacoffee.com.com.
+[0:28:18] Radio Mecatol.

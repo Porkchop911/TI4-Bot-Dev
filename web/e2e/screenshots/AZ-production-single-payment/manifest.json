@@ -1,0 +1,29 @@
+{
+  "title": "Single Production Payment",
+  "description": "Producing several units used to ask how to pay for every build. Now the player confirms the staged builds, is asked once how to pay for the whole production, and the engine's later payment questions are answered from that single choice. Anything unexpected stops the automatic payments and the normal payment is asked.",
+  "tag": "web/e2e/screenshots/AZ-production-single-payment",
+  "shots": [
+    { "file": "out/before-1-staged.png", "heading": "Before: three cruisers staged", "caption": "The builder with three Cruisers staged (2 resources each, 6 in total) in Mecatol Rex. Confirm builds sends them one at a time." },
+    { "file": "out/before-2-prompt-1.png", "heading": "Before: payment prompt 1 of 3", "caption": "The engine asks Pay 2 for the first cruiser. Auto-pay was pressed and Jord is staged; the player confirms." },
+    { "file": "out/before-2-prompt-2.png", "heading": "Before: payment prompt 2 of 3", "caption": "The same drawer again for the second cruiser (Lodor staged)." },
+    { "file": "out/before-2-prompt-3.png", "heading": "Before: payment prompt 3 of 3", "caption": "And once more for the third (Quann). Three builds, three payment prompts." },
+    { "file": "out/before-3-result.png", "heading": "Before: result", "caption": "Production is back at the builder with 3 / 6 capacity used." },
+    { "file": "out/before-5-prompt-phone.png", "heading": "Before: prompt at phone width", "caption": "One of the three prompts at 390 px." },
+    { "file": "out/after-1-staged.png", "heading": "After: three cruisers staged", "caption": "The same builder. The note now says the player pays once for all 3 builds (6 resources), and the checkbox Ask for each payment turns the new behaviour off." },
+    { "file": "out/after-2-panel.png", "heading": "After: one payment panel for the whole production", "caption": "The first payment question opens one panel: Pay for 3 units: total 6, over the planets and trade goods the engine offers, with Auto-pay's suggestion already staged (Jord 2 + Lodor 3 + Quann 2 = 7, overpaying by 1 as the least-waste choice for a bill of 6). Total, staged and overpayment are shown; nothing is sent until Pay." },
+    { "file": "out/after-3-result.png", "heading": "After: the later payments follow without a prompt", "caption": "After the single confirm, the other two builds were paid from the plan (Jord for build 1, Lodor for build 2, with the 1 of credit the engine kept, Quann for build 3). No further payment panel appeared; the builder is back with 3 / 6 capacity used." },
+    { "file": "out/after-4-board.png", "heading": "After: board and toasts", "caption": "Three cruisers in Mecatol Rex, Jord, Lodor and Quann exhausted. The corner toasts say which planet paid for the builds that were answered from the plan." },
+    { "file": "out/after-5-prompt-phone.png", "heading": "After: the panel at phone width", "caption": "390 px: the same panel, one column." },
+    { "file": "out/after-5b-prompt-phone-lower.png", "heading": "After: phone, scrolled", "caption": "The planets, the overpayment line and the buttons (Auto-pay, Pick on map, Reset, Ask for each build, Pay)." },
+    { "file": "out/after-6-map-bar.png", "heading": "After: paying on the map", "caption": "Pick on map minimises the panel; payable planets are ringed on the map like the Leadership map payment, and the payment bar shows Pay for 3 units: total 6, Paid 7 / 6, Overpaying by 1." },
+    { "file": "out/after-7-interruption.png", "heading": "Interruption: a reaction window", "caption": "After the first payment, build 2 is started and another decision arrives (a reaction window). Nothing is paid automatically; the window is shown as usual." },
+    { "file": "out/after-8-resumed.png", "heading": "Resumed after the interruption", "caption": "Once the window is answered the next payment questions still match the plan and are paid from it without a panel." },
+    { "file": "out/after-9-mismatch.png", "heading": "A payment that does not match the plan", "caption": "The engine offers only Quann for build 2, not the planned Lodor. Automatic payment stops; the normal payment is asked with a note, and the suggestion (Quann) is staged." }
+  ],
+  "notesHeading": "Notes",
+  "notes": [
+    { "title": "Before shots. ", "text": "Taken with TI4_SHOT_PREFIX=before, which turns the new behaviour off through the Ask for each payment setting. That is the old flow: the same code path minus the plan, so one payment prompt per build." },
+    { "title": "Fixtures. ", "text": "A synthetic mocked game with a small scripted engine (a cruiser costs 2, one payment question per build, overpayment kept as credit, placement left out), not an engine capture. The page sends real batches (production, payment) to the routed server." },
+    { "title": "Interruption rule. ", "text": "A reaction window or another seat's decision pauses the plan; a payment question that is not the plan's (another system, another currency, a planet that is no longer offered, trade goods short) or a rejected answer stops it. The player is then asked normally, with the suggestion staged." }
+  ]
+}

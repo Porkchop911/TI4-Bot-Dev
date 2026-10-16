@@ -1,15 +1,43 @@
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ViewerRole } from "./protocol/types.ts";
 import { useGameSession } from "./hooks/useGameSession.ts";
 import { useLobbySession } from "./hooks/useLobbySession.ts";
-import { useTurnSound } from "./hooks/useTurnSound.ts";
+import { shouldPlayTurnSound, useTurnSound } from "./hooks/useTurnSound.ts";
+import { useTurnRedo } from "./hooks/useTurnRedo.ts";
+import { playerDisplay } from "./presentation/playerDisplay.ts";
 import { Board } from "./components/Board.tsx";
-import { TurnStatusBar } from "./components/TurnStatusBar.tsx";
+import { TurnStatusBar, TurnStatusDetails } from "./components/TurnStatusBar.tsx";
+import { useBuildInfo } from "./buildInfo.ts";
+import { PasswordScreen } from "./access/PasswordScreen.tsx";
+import { probeAccess, useAccessRequired } from "./access/accessGate.ts";
+import { FeedbackLauncher, openFeedback } from "./feedback/FeedbackLauncher.tsx";
+import { useRegisterFeedbackSource } from "./feedback/source.ts";
+import { MobileTopMenu, menuAttention } from "./components/MobileTopMenu.tsx";
+import { MobileMenuSlotContext } from "./presentation/MobileMenuSlot.tsx";
+import { useCompactLayout } from "./hooks/useCompactLayout.ts";
 import { PlayerSheet } from "./components/PlayerSheet.tsx";
+import { rememberMyGame } from "./protocol/myGames.ts";
 import { CreateLobby, LobbyStatus } from "./components/Lobby.tsx";
+import { OfflineRoutes, isOfflinePath } from "./offline/OfflineRoutes.tsx";
+import { useOfflineLauncher } from "./offline/useOfflineLauncher.ts";
+import { registerLocalLauncher } from "./offline/local/register.ts";
+import { useCapability } from "./offline/capabilities.ts";
+import type { GameTransport } from "./protocol/transport.ts";
 import { GameShell } from "./components/GameShell.tsx";
 import { usePresence } from "./hooks/usePresence.ts";
+import { logHistoryKey as logHistoryKeyFor } from "./components/eventLogScroll.ts";
 import { PlayerIdentityProvider } from "./presentation/PlayerIdentity.tsx";
+import {
+  advanceAgendaMemory,
+  agendaInfoFromChoice,
+  agendaPillLabel,
+  deriveAgendaStrip,
+  EMPTY_AGENDA_MEMORY,
+  isAgendaDecision,
+  type AgendaMemory,
+} from "./presentation/agendaStrip.ts";
+import { SeatInfoProvider } from "./presentation/SeatInfoContext.tsx";
+import { PublicStateProvider } from "./presentation/PublicStateContext.tsx";
 import { DecisionTableProvider } from "./components/PoliticsDecisionParts.tsx";
 import { participantText } from "./presentation/participantText.ts";
 import { CardDetails, CardSubject } from "./components/CardDetails.tsx";
@@ -23,8 +51,24 @@ import {
   paymentOptionForPlanet,
   paymentPlanetKey,
 } from "./presentation/paymentDraft.ts";
+import { UndoConfirmDialog } from "./components/UndoConfirmDialog.tsx";
+import { PlanetInfluenceContext, PlanetResourcesContext, planetInfluenceMap, planetResourceMap } from "./presentation/PlanetResourcesContext.tsx";
+import { useSecondaryPrepare, useTokenPrefill, useReadyPrefill } from "./hooks/useSecondaryPrepare.ts";
+import { SecondaryPrepHost } from "./components/SecondaryPrepHost.tsx";
+import { BluffHoldBar, BluffProvider } from "./components/BluffSelector.tsx";
+import { PreparedHintProvider } from "./presentation/PreparedHint.tsx";
+import { GONE_MESSAGE, UNREACHABLE_MESSAGE } from "./protocol/resilience.ts";
+import { ConnectionProblem, ReconnectingChip, useAfterDelay } from "./components/ConnectionNotice.tsx";
+import { readBreakthroughs } from "./presentation/breakthroughs.ts";
+import { readExplorationLog } from "./presentation/explorationToasts.ts";
+import { readAgendaLog } from "./presentation/agendaToasts.ts";
 import { CornerToastLayer } from "./components/CornerToastLayer.tsx";
 import { PaymentDraftProvider, usePaymentDraftState } from "./presentation/PaymentDraftContext.tsx";
+import {
+  CommandTokenDraftProvider,
+  useCommandTokenDraft,
+} from "./presentation/CommandTokenDraftContext.tsx";
+import { ReadyPlanetsDraftProvider, useReadyPlanetsDraft } from "./presentation/ReadyPlanetsDraftContext.tsx";
 
 const DevDecisionGallery = import.meta.env.DEV
   ? React.lazy(() =>
@@ -57,14 +101,40 @@ const DevToastGallery = import.meta.env.DEV
     )
   : null;
 
+const OfflineGameScreen = React.lazy(() =>
+  import("./offline/local/OfflineGameScreen.tsx").then((m) => ({ default: m.OfflineGameScreen })),
+);
+
+// The real offline launcher, when this build has the engine file (otherwise "Play offline" is absent).
+registerLocalLauncher();
+// Dev builds can register the in-memory offline launcher (screenshots, local work).
+if (import.meta.env.DEV) void import("./offline/devMock.ts");
+
 const storageKey = (gameId: string) => `ti4.player-session:${gameId}`;
 const pathGameId = () =>
   /^\/games\/([^/]+)$/.exec(window.location.pathname)?.[1]
     ? decodeURIComponent(/^\/games\/([^/]+)$/.exec(window.location.pathname)![1])
     : null;
 
+/** The app, behind the playtest password screen and with the Feedback button on top. */
 export const App: React.FC = () => {
+  const accessRequired = useAccessRequired();
+  useEffect(() => {
+    void probeAccess();
+  }, []);
+  if (accessRequired) return <PasswordScreen />;
+  return (
+    <>
+      <AppRoutes />
+      <FeedbackLauncher />
+    </>
+  );
+};
+
+const AppRoutes: React.FC = () => {
   const [gameId, setGameId] = useState(pathGameId);
+  const [offline, setOffline] = useState(() => isOfflinePath(window.location.pathname));
+  const offlineLauncher = useOfflineLauncher();
   const [error, setError] = useState<string | null>(null);
   const [token, setToken] = useState(() =>
     gameId ? (sessionStorage.getItem(storageKey(gameId)) ?? undefined) : undefined,
@@ -80,6 +150,7 @@ export const App: React.FC = () => {
   useLayoutEffect(() => {
     const receive = () => {
       const id = pathGameId();
+      setOffline(isOfflinePath(window.location.pathname));
       setGameId(id);
       setToken(id ? (sessionStorage.getItem(storageKey(id)) ?? undefined) : undefined);
     };
@@ -110,12 +181,39 @@ export const App: React.FC = () => {
         <DevScenarioLauncher />
       </React.Suspense>
     );
+  if (offline)
+    return (
+      <OfflineRoutes
+        onExit={() => {
+          history.pushState({}, "", "/");
+          setOffline(false);
+        }}
+        renderGame={(handle, banner) => (
+          <React.Suspense fallback={<main className="lobby-page">Loading the game…</main>}>
+            <OfflineGameScreen
+              handle={handle}
+              banner={banner}
+              renderGame={(props) => <GameViewContainer {...props} />}
+            />
+          </React.Suspense>
+        )}
+      />
+    );
   if (!gameId)
     return (
       <>
         <CreateLobby
+          onPlayOffline={
+            offlineLauncher
+              ? () => {
+                  history.pushState({}, "", "/offline");
+                  setOffline(true);
+                }
+              : undefined
+          }
           onError={setError}
           onCreated={(created) => navigate(created.game_id, created.player_session)}
+          onOpenGame={(id, openToken) => navigate(id, openToken)}
         />
         {error && (
           <div className="session-error" role="alert">
@@ -131,6 +229,7 @@ export const App: React.FC = () => {
       token={token}
       onCredential={(credential) => {
         sessionStorage.setItem(storageKey(gameId), credential);
+        rememberMyGame({ gameId, token: credential });
         setToken(credential);
       }}
       onCredentialInvalid={() => {
@@ -156,21 +255,30 @@ const GameRoute: React.FC<{
     lobby,
     playerId,
     error,
+    connectionLost,
+    gone,
+    retry,
+    dismissError,
     loading,
     invalidCredential,
     pendingAction,
-    setReady,
     start,
-    reorder,
     chooseMap,
     join,
     leave,
     addBot,
     removeBot,
+    addRandomBots,
+    setSeatFaction,
   } = useLobbySession(gameId, token);
   const [watching, setWatching] = useState(false);
   const invalidate = useCallback(() => onCredentialInvalid(), [onCredentialInvalid]);
   usePresence(gameId, token, invalidate);
+  useRegisterFeedbackSource("lobby", () => ({
+    gameId,
+    viewer: token && playerId ? { role: "player", seat: playerId, playerSession: token } : { role: "spectator" },
+    lobby,
+  }));
   useEffect(() => {
     if (invalidCredential) onCredentialInvalid();
   }, [invalidCredential, onCredentialInvalid]);
@@ -178,8 +286,13 @@ const GameRoute: React.FC<{
     return (
       <main className="lobby-page">
         <div className="panel lobby-panel">
-          {loading ? "Loading lobby..." : "Unable to load lobby."}
+          {loading && !gone ? "Loading lobby..." : null}
         </div>
+        {gone ? (
+          <ConnectionProblem kind="gone" message={GONE_MESSAGE} onRetry={retry} />
+        ) : !loading ? (
+          <ConnectionProblem kind="unreachable" message={UNREACHABLE_MESSAGE} onRetry={retry} />
+        ) : null}
       </main>
     );
   const viewer: ViewerRole =
@@ -199,12 +312,24 @@ const GameRoute: React.FC<{
   return (
     <>
       {error && (
-        <div className="session-error" role="alert">
-          {participantText(error, lobby, [])} Check the lobby and try again.
+        <div className="session-error session-error--dismissable" role="alert" data-testid="lobby-error">
+          <span>{participantText(error, lobby, [])}</span>
+          <button
+            type="button"
+            className="button button--secondary button--sm"
+            data-testid="lobby-error-dismiss"
+            onClick={dismissError}
+          >
+            Dismiss
+          </button>
         </div>
+      )}
+      {lobby.phase === "running" && (playerId || watching) ? null : (
+        <ReconnectingChip visible={connectionLost} />
       )}
       {lobby.phase === "running" && (playerId || watching) ? (
         <GameViewContainer
+          lobbyConnectionLost={connectionLost}
           key={`${gameId}:${token ?? "watch"}`}
           gameId={gameId}
           lobby={lobby}
@@ -217,65 +342,127 @@ const GameRoute: React.FC<{
           playerId={playerId}
           watching={watching}
           pendingAction={pendingAction}
-          onReady={(ready) => void setReady(ready)}
           onStart={() => void start()}
           onLeave={() => void leaveLobby()}
           onJoin={(name) => void enter(name)}
           onTakeover={(id, name) => void enter(name, id)}
-          onReorder={(ids) => void reorder(ids)}
           onChooseMap={chooseMap}
           onWatch={() => setWatching(true)}
           onAddBot={(password, name) => addBot(password, name)}
           onRemoveBot={(targetId) => removeBot(targetId)}
+          onAddRandomBots={(options) => addRandomBots(options)}
+          onSetSeatFaction={(targetId, faction) => setSeatFaction(targetId, faction)}
         />
       )}
     </>
   );
 };
 
+/** Gives a seated player the bluff selector on the player mat; a spectator gets none. */
+const BluffScope: React.FC<{
+  gameId: string;
+  seat: string | undefined;
+  intent: import("./protocol/types.ts").ReactionIntentStateMsg | null;
+  round: number;
+  onChange: (triggers: string[]) => void;
+  children: React.ReactNode;
+}> = ({ gameId, seat, intent, round, onChange, children }) =>
+  seat ? (
+    <BluffProvider gameId={gameId} seat={seat} intent={intent} round={round} onChange={onChange}>
+      {children}
+    </BluffProvider>
+  ) : (
+    <>{children}</>
+  );
+
 const GameViewContainer: React.FC<{
+  lobbyConnectionLost?: boolean;
   gameId: string;
   lobby: import("./protocol/types.ts").LobbyDto;
   viewer: ViewerRole;
   onLeave?: () => void;
-}> = ({ gameId, lobby, viewer }) => {
+  /** An offline game passes its local transport; online games use the server client. */
+  createTransport?: () => GameTransport;
+}> = ({ gameId, lobby, viewer, lobbyConnectionLost, createTransport }) => {
   const {
+    capabilities,
     status,
     gameVersion,
     snapshot,
-    pendingChoice,
+    pendingChoice: realPendingChoice,
     turnStatus,
     lastError,
+    fatal,
+    reconnecting: reconnectingState,
+    retryConnection,
     events,
     history: gameHistory,
     submitChoice,
     setReactionMode,
+    reactionIntent,
+    setReactionIntent,
+    passReactionHold,
     changeHistory,
     fetchReplay,
+    fetchTurnRedoStatus,
+    turnRedoCommand,
     submitMovementBatch,
     submitBatch,
+    previewSecondary,
+    queryReach,
     batchResume,
     resumeBatch,
     dismissBatchResume,
-  } = useGameSession({ gameId, viewer });
+  } = useGameSession({ gameId, viewer, createTransport });
+  const buildInfo = useBuildInfo();
+  // What this session can do: the transport says what it offers, the offline shell's context what
+  // the product offers. Features that are off are hidden, not disabled.
+  const shellTurnRedo = useCapability("turnRedo");
+  const shellMultiplayer = useCapability("multiplayer");
+  const turnRedoOn = capabilities.turnRedo && shellTurnRedo;
+  const multiplayerOn = capabilities.multiplayer && shellMultiplayer;
+  useRegisterFeedbackSource("game", () => ({
+    gameId,
+    viewer,
+    snapshot,
+    pendingChoice: realPendingChoice,
+    lobby,
+    events,
+  }));
+  const reconnecting = useAfterDelay(
+    (status !== "connected" || Boolean(reconnectingState) || Boolean(lobbyConnectionLost)) && !fatal,
+    1_200,
+  );
   const { playTurnNotification } = useTurnSound();
+  // The event log drops the reader's manual expansion only for a new history generation (undo,
+  // redo, restore). A reconnect re-sends the same generation with a fresh events array and keeps
+  // the reader's place; servers without a generation fall back to the array identity.
   const logHistoryKey = useRef<unknown>(null);
+  const logEventsIdentity = useRef<unknown>(null);
   if (
     snapshot?.type === "initial_snapshot" &&
     snapshot.events &&
-    logHistoryKey.current !== snapshot.events
+    logEventsIdentity.current !== snapshot.events
   )
-    logHistoryKey.current = snapshot.events;
+    logEventsIdentity.current = snapshot.events;
+  logHistoryKey.current = logHistoryKeyFor(gameHistory?.generation, logEventsIdentity.current);
+  const [localNotes, setLocalNotes] = useState<{ id: string; text: string; prompt?: string }[]>([]);
   const [historyBusy, setHistoryBusy] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [undoRequest, setUndoRequest] = useState<{
+    action: import("./protocol/client.ts").HistoryChange;
+    steps: number;
+  } | null>(null);
   const onChangeHistory = (action: import("./protocol/client.ts").HistoryChange, steps = 1) => {
-    if (
-      historyBusy ||
-      (action === "undo_pipeline" &&
-        !window.confirm("Undo the latest action and its follow-up decisions for everyone?")) ||
-      (steps > 1 && !window.confirm(`Undo ${steps} decisions for everyone in this game?`))
-    )
+    if (historyBusy) return;
+    // Undo rewinds shared history, so ask once in a styled dialog before running it.
+    if (action === "undo_pipeline" || steps > 1) {
+      setUndoRequest({ action, steps });
       return;
+    }
+    runHistoryChange(action);
+  };
+  const runHistoryChange = (action: import("./protocol/client.ts").HistoryChange) => {
     setHistoryBusy(true);
     setHistoryError(null);
     void changeHistory(action)
@@ -291,31 +478,124 @@ const GameViewContainer: React.FC<{
       .finally(() => setHistoryBusy(false));
   };
   const userSeat = viewer.role === "player" ? viewer.seat : undefined;
+  const turnRedo = useTurnRedo({
+    enabled: viewer.role === "player" && turnRedoOn,
+    fetchStatus: fetchTurnRedoStatus,
+    command: turnRedoCommand,
+    gameVersion,
+    generation: gameHistory.generation ?? 0,
+    viewerSeat: userSeat,
+    onTimelineChanged: () => {
+      setSelectedOptionId(undefined);
+      setSelectedPlanetId(null);
+      setSelectedSystemId(null);
+      setCardSubject(null);
+    },
+  });
+  // Strategy-card secondary preparation: while another seat resolves a card the viewer may prepare
+  // an answer with the usual UI. `pendingChoice` is then a client-made stand-in for the question
+  // (answered into the local plan, never submitted), or nothing while an auto-played answer is
+  // being sent. The engine's own decision is `realPendingChoice`.
+  const productionSubmitRef = useRef<
+    | ((units: string[], destination: string, real: import("./protocol/types.ts").PendingChoiceDto) => Promise<void>)
+    | null
+  >(null);
+  const prep = useSecondaryPrepare({
+    gameId,
+    viewerSeat: userSeat,
+    players: snapshot?.view.players ?? [],
+    events,
+    board: snapshot?.view.board,
+    phase: snapshot?.view.phase,
+    history: gameHistory,
+    realChoice: realPendingChoice,
+    busy: historyBusy,
+    submitChoice,
+    submitBatch,
+    previewSecondary: userSeat ? previewSecondary : undefined,
+    refreshKey: `${events.length}:${events[events.length - 1]?.id ?? ""}:${gameHistory.generation ?? 0}`,
+    submitProduction: (units, destination, real) =>
+      productionSubmitRef.current
+        ? productionSubmitRef.current(units, destination, real)
+        : Promise.reject(new Error("The production builder is not available")),
+  });
+  const pendingChoice = prep.shownChoice;
   const paymentDraft = usePaymentDraftState(pendingChoice?.nonce);
+  const explorationLog = useMemo(() => readExplorationLog(snapshot?.state), [snapshot?.state]);
+  const breakthroughs = useMemo(() => readBreakthroughs(snapshot?.state), [snapshot?.state]);
+  const agendaLog = useMemo(() => readAgendaLog(snapshot?.state), [snapshot?.state]);
+  const planetResources = useMemo(() => planetResourceMap(snapshot?.view.board), [snapshot?.view.board]);
+  const planetInfluence = useMemo(() => planetInfluenceMap(snapshot?.view.board), [snapshot?.view.board]);
+  const tokenDraft = useCommandTokenDraft(pendingChoice, planetResources);
+  // Diplomacy: the planets picked for its ready question (bar, list and map share them).
+  const readyDraft = useReadyPlanetsDraft(
+    pendingChoice && pendingChoice.actor === userSeat ? pendingChoice : null,
+    snapshot?.view.board,
+  );
   const [selectedOptionId, setSelectedOptionId] = useState<string>();
   const [selectedPlanetId, setSelectedPlanetId] = useState<string | null>(null);
   const [selectedSystemId, setSelectedSystemId] = useState<string | null>(null);
   const [cardSubject, setCardSubject] = useState<CardSubject | null>(null);
   const [isTechModalOpen, setIsTechModalOpen] = useState(false);
   const [isObjectivesModalOpen, setIsObjectivesModalOpen] = useState(false);
+  // Phones: one slim top bar and a menu sheet; the board portals its controls into the sheet.
+  const compactLayout = useCompactLayout();
+  const [menuSlotElement, setMenuSlotElement] = useState<HTMLElement | null>(null);
+  const menuSlotValue = useMemo(
+    () => ({ slot: menuSlotElement, setSlot: setMenuSlotElement }),
+    [menuSlotElement],
+  );
 
-  // Play sound notification when it becomes the player's turn
-  const previousPendingChoiceRef = useRef<string | null>(null);
+  // The agenda being decided stays on screen for the whole agenda phase: the strip under the top bar
+  // and the minimized pill. The phase's memory carries the agenda through waiting states and
+  // decisions that do not name it, and is dropped when the phase ends.
+  const agendaMemoryRef = useRef<AgendaMemory>(EMPTY_AGENDA_MEMORY);
+  const agendaPhase = snapshot?.view.phase;
+  agendaMemoryRef.current = advanceAgendaMemory(agendaMemoryRef.current, {
+    phase: agendaPhase,
+    round: snapshot?.view.round,
+    info: agendaInfoFromChoice(realPendingChoice),
+    decision: isAgendaDecision(realPendingChoice),
+  });
+  const agendaStrip = snapshot
+    ? deriveAgendaStrip({
+        phase: agendaPhase,
+        choice: realPendingChoice,
+        memory: agendaMemoryRef.current,
+        viewerSeat: userSeat,
+        speaker: snapshot.view.speaker,
+        label: (seat) => playerDisplay(lobby, snapshot.view.seating_order, seat).label,
+        waitingForReactions: turnStatus?.kind === "waiting_for_reactions",
+      })
+    : null;
+  const agendaPill = agendaStrip ? agendaPillLabel(agendaStrip, realPendingChoice) : null;
+
+  // One sound when the decision passes to the viewer, not one per decision: a turn is a run of
+  // questions for the same seat (menu, system, moves, production, ...) and only the first beeps.
+  const wasViewerDecisionRef = useRef(false);
   useEffect(() => {
-    const isPendingChoiceForViewer =
-      pendingChoice && userSeat && pendingChoice.actor === userSeat;
-
-    if (isPendingChoiceForViewer && previousPendingChoiceRef.current !== pendingChoice.nonce) {
-      playTurnNotification();
-    }
-
-    previousPendingChoiceRef.current = pendingChoice?.nonce ?? null;
-  }, [pendingChoice?.nonce, userSeat, pendingChoice?.actor, playTurnNotification]);
+    const isViewerDecision = Boolean(
+      realPendingChoice && userSeat && realPendingChoice.actor === userSeat,
+    );
+    if (shouldPlayTurnSound(wasViewerDecisionRef.current, isViewerDecision)) playTurnNotification();
+    wasViewerDecisionRef.current = isViewerDecision;
+  }, [realPendingChoice?.nonce, userSeat, realPendingChoice?.actor, playTurnNotification]);
 
   useEffect(() => {
     setSelectedOptionId(undefined);
     setSelectedPlanetId(null);
   }, [pendingChoice?.nonce]);
+  // The usual UI shows the prepared answer already selected (the confirm stays the player's).
+  const prefillId = prep.resolution.kind === "option" ? prep.resolution.optionId : null;
+  const prefillNonce = prep.realChoice?.nonce;
+  useEffect(() => {
+    if (prefillId && prefillNonce && !prep.holding) setSelectedOptionId(prefillId);
+  }, [prefillId, prefillNonce, pendingChoice?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Leadership: the usual token panel opens with the prepared purchase already staged (tokens, their
+  // pools and the payment on the map). Once per question, so the player's own changes stay.
+  useTokenPrefill(prep, pendingChoice?.nonce, tokenDraft);
+  // Diplomacy: the ready bar opens with the prepared planets already picked.
+  useReadyPrefill(prep, pendingChoice?.nonce, readyDraft);
   const cardIsVisible =
     cardSubject &&
     snapshot &&
@@ -335,6 +615,18 @@ const GameViewContainer: React.FC<{
             ));
   const handleSelectTarget = (systemId: string, planetId?: string) => {
     if (!pendingChoice || pendingChoice.actor !== userSeat) return;
+    // Diplomacy: a click on an exhausted planet picks or drops it (Confirm sends them together).
+    if (readyDraft.view) {
+      if (planetId) readyDraft.toggle(planetId);
+      return;
+    }
+    // Leadership purchase: a click on a planet that can pay flips it in the staged payment.
+    if (tokenDraft.mapPayment) {
+      if (planetId && tokenDraft.mapPayment.offer.planets.some((p) => p.planetId === planetId)) {
+        tokenDraft.togglePlanet(planetId);
+      }
+      return;
+    }
     // Paying: a click on a payable planet stages or unstages it (shared with the payment list).
     if (isPaymentChoice(pendingChoice)) {
       if (!planetId) return;
@@ -356,33 +648,121 @@ const GameViewContainer: React.FC<{
   };
   return (
     <PlayerIdentityProvider lobby={lobby} seatingOrder={snapshot?.view.seating_order ?? []}>
+    <SeatInfoProvider players={snapshot?.view.players} viewerSeat={userSeat}>
+    <PublicStateProvider state={snapshot?.state}>
     <DecisionTableProvider table={snapshot?.view ?? null}>
+    <BluffScope
+      gameId={gameId}
+      seat={multiplayerOn ? userSeat : undefined}
+      intent={reactionIntent}
+      round={snapshot?.view.round ?? 0}
+      onChange={setReactionIntent}
+    >
+    <PreparedHintProvider
+      value={
+        !prep.preparing && prep.realChoice
+          ? prep.resolution.kind === "option"
+            ? { optionId: prep.resolution.optionId, text: prep.resolution.text }
+            : prep.resolution.kind === "production"
+              ? { optionId: "", text: prep.resolution.text, builds: prep.resolution.units }
+              : null
+          : null
+      }
+    >
       {/* The provider wraps the rest unindented to keep this diff small. */}
       <PaymentDraftProvider value={paymentDraft}>
+      <PlanetResourcesContext.Provider value={planetResources}>
+      <PlanetInfluenceContext.Provider value={planetInfluence}>
+      <CommandTokenDraftProvider value={tokenDraft}>
+      <ReadyPlanetsDraftProvider value={readyDraft}>
+      {undoRequest && (
+        <UndoConfirmDialog
+          steps={undoRequest.steps}
+          onCancel={() => setUndoRequest(null)}
+          onConfirm={() => {
+            const { action } = undoRequest;
+            setUndoRequest(null);
+            runHistoryChange(action);
+          }}
+        />
+      )}
       {historyError && (
-        <div className="session-error" role="alert">
-          {historyError}
+        <div className="session-error session-error--dismissable" role="alert" data-testid="history-error">
+          <span>{historyError}</span>
+          <button
+            type="button"
+            className="button button--secondary button--sm"
+            data-testid="history-error-dismiss"
+            onClick={() => setHistoryError(null)}
+          >
+            Dismiss
+          </button>
         </div>
+      )}
+      <ReconnectingChip visible={reconnecting} />
+      {fatal && (
+        <ConnectionProblem kind={fatal.kind} message={fatal.message} onRetry={retryConnection} />
       )}
       <CornerToastLayer
         events={events}
+        board={snapshot?.view.board}
         players={snapshot?.view.players}
         viewerSeat={userSeat}
-        pendingChoice={pendingChoice}
+        pendingChoice={realPendingChoice}
+        historyGeneration={gameHistory.generation}
         autoResolved={snapshot?.type === "state_update" ? snapshot.auto_resolved : undefined}
         ready={Boolean(snapshot)}
+        localNotes={localNotes}
+        explorations={explorationLog}
+        breakthroughs={breakthroughs}
+        agendas={agendaLog}
+        table={snapshot?.view.table}
       />
+      <MobileMenuSlotContext.Provider value={compactLayout ? menuSlotValue : null}>
       <GameShell
         header={
-          <div className="game-header">
+          <div className={`game-header${compactLayout ? " game-header--compact" : ""}`}>
             <TurnStatusBar
               status={turnStatus}
               view={snapshot?.view ?? null}
               gameVersion={gameVersion}
               connectionStatus={status}
               userSeat={userSeat}
+              compact={compactLayout}
+              trailing={
+                compactLayout ? (
+                  <MobileTopMenu
+                    onOpenFeedback={buildInfo.isPublic || createTransport ? openFeedback : undefined}
+                    attention={menuAttention({
+                      connected: status === "connected",
+                      yourDecision: Boolean(
+                        userSeat && realPendingChoice && realPendingChoice.actor === userSeat,
+                      ),
+                      yourTurn: Boolean(
+                        userSeat &&
+                          turnStatus &&
+                          ((turnStatus.kind === "waiting_for_decision" && turnStatus.seat === userSeat) ||
+                            (turnStatus.kind === "active_turn" && turnStatus.player === userSeat)),
+                      ),
+                    })}
+                    status={
+                      <TurnStatusDetails
+                        status={turnStatus}
+                        view={snapshot?.view ?? null}
+                        gameVersion={gameVersion}
+                        connectionStatus={status}
+                        userSeat={userSeat}
+                      />
+                    }
+                    onOpenTechnologies={() => setIsTechModalOpen(true)}
+                    onOpenObjectives={() => setIsObjectivesModalOpen(true)}
+                  />
+                ) : undefined
+              }
             />
-            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            <BluffHoldBar holding={Boolean(reactionIntent?.holding)} onPass={passReactionHold} />
+            {!compactLayout && (
+            <div className="game-header__actions">
               <button
                 type="button"
                 data-testid="technology-modal-button"
@@ -400,6 +780,7 @@ const GameViewContainer: React.FC<{
                 Objectives
               </button>
             </div>
+            )}
           </div>
         }
         board={
@@ -411,6 +792,7 @@ const GameViewContainer: React.FC<{
               pendingChoice={pendingChoice}
               viewerSeat={userSeat}
               selectedSystemId={selectedSystemId}
+              queryReach={queryReach}
               onSelectSystem={(id) => {
                 setSelectedSystemId(id);
                 setCardSubject(null);
@@ -462,6 +844,7 @@ const GameViewContainer: React.FC<{
             />
           ) : null
         }
+        onOpenObjectives={() => setIsObjectivesModalOpen(true)}
         detail={
           cardSubject &&
           cardIsVisible && (
@@ -473,9 +856,35 @@ const GameViewContainer: React.FC<{
         logHistoryKey={logHistoryKey.current}
         history={gameHistory}
         historyBusy={historyBusy}
+        onAutoSubmitNotice={(note) => setLocalNotes((prev) => [...prev, note])}
         onChangeHistory={userSeat === lobby.host_player_id ? onChangeHistory : undefined}
         onFetchReplay={userSeat ? fetchReplay : undefined}
+        turnRedo={
+          userSeat && turnRedoOn
+            ? {
+                status: turnRedo.status,
+                busy: turnRedo.busy,
+                error: turnRedo.error,
+                onRequest: turnRedo.request,
+                onAutoplay: turnRedo.autoplay,
+                onRestore: turnRedo.restore,
+                onKeep: turnRedo.keep,
+                viewerSeat: userSeat,
+                seats:
+                  userSeat === lobby.host_player_id && snapshot
+                    ? [userSeat, ...snapshot.view.seating_order.filter((id) => id !== userSeat)].map(
+                        (id) => ({
+                          id,
+                          label: playerDisplay(lobby, snapshot.view.seating_order, id).label,
+                        }),
+                      )
+                    : undefined,
+              }
+            : undefined
+        }
         choice={pendingChoice}
+        agenda={agendaStrip}
+        agendaPill={agendaPill}
         viewerSeat={userSeat}
         players={snapshot?.view.players}
         turn={
@@ -489,11 +898,16 @@ const GameViewContainer: React.FC<{
         revealedObjectives={snapshot?.view.table.revealed_objectives}
         scoredObjectives={snapshot?.view.table.scored_objectives}
         objectiveProgress={snapshot?.view.table.objective_progress}
-        onSubmitChoice={submitChoice}
+        homeSystemLost={snapshot?.view.table.home_system_lost}
+        onSubmitChoice={prep.preparing ? prep.prepareSubmit : submitChoice}
+        prepOverlay={
+          <SecondaryPrepHost prep={prep} busy={historyBusy} />
+        }
         reactionModes={snapshot?.reaction_modes}
         onSetReactionMode={userSeat ? setReactionMode : undefined}
         onSubmitMovementBatch={submitMovementBatch}
-        onSubmitBasketBatch={submitBatch}
+        onSubmitBasketBatch={prep.preparing ? prep.prepareBatch : submitBatch}
+        productionSubmitRef={productionSubmitRef}
         batchResume={batchResume}
         onResumeBatch={resumeBatch}
         onDismissBatchResume={dismissBatchResume}
@@ -504,10 +918,12 @@ const GameViewContainer: React.FC<{
         onSelectPlanet={setSelectedPlanetId}
         onShowSystem={setSelectedSystemId}
       />
+      </MobileMenuSlotContext.Provider>
       <TechnologyModal
         isOpen={isTechModalOpen}
         onClose={() => setIsTechModalOpen(false)}
         players={snapshot?.view.players}
+        viewerSeat={userSeat}
       />
       <ObjectivesModal
         isOpen={
@@ -519,15 +935,25 @@ const GameViewContainer: React.FC<{
         revealedObjectives={snapshot?.view.table.revealed_objectives}
         scoredObjectives={snapshot?.view.table.scored_objectives}
         objectiveProgress={snapshot?.view.table.objective_progress}
+        homeSystemLost={snapshot?.view.table.home_system_lost}
         players={snapshot?.view.players}
         viewerSeat={userSeat}
+        board={snapshot?.view.board}
         onInspectCard={(subject) => {
           setSelectedSystemId(null);
           setCardSubject(subject);
         }}
       />
+      </ReadyPlanetsDraftProvider>
+      </CommandTokenDraftProvider>
+      </PlanetInfluenceContext.Provider>
+      </PlanetResourcesContext.Provider>
       </PaymentDraftProvider>
+    </PreparedHintProvider>
+    </BluffScope>
     </DecisionTableProvider>
+    </PublicStateProvider>
+    </SeatInfoProvider>
     </PlayerIdentityProvider>
   );
 };

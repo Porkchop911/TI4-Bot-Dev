@@ -11,7 +11,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const web = resolve(root, "../..");
 const arg = process.argv[2] ?? "all";
 const folders = readdirSync(root, { withFileTypes: true })
-  .filter((d) => d.isDirectory() && /^[A-Z]-/.test(d.name))
+  .filter((d) => d.isDirectory() && /^[A-Z]{1,2}-/.test(d.name))
   .map((d) => d.name)
   .filter((name) => arg === "all" || name === arg || name.startsWith(`${arg}-`) || basename(arg) === name);
 if (!folders.length) {

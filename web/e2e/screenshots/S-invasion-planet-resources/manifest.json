@@ -1,0 +1,12 @@
+{
+  "title": "Invasion landing: planet resources and influence",
+  "description": "Each planet card in the landing tray now shows its resources and influence (existing icons, tooltips and aria-labels), plus its trait and attachments when the board data has them. Synthetic fixtures, not captured engine states.",
+  "tag": "web/e2e/screenshots/S-invasion-planet-resources",
+  "shots": [
+    { "file": "out/1-one-planet.png", "heading": "One planet", "caption": "R 2 · I 2 under the planet name, with the trait." },
+    { "file": "out/2-several-planets.png", "heading": "Several planets", "caption": "Every landable planet shows its values so the target can be chosen by worth. Attachments appear after the trait and their resource/influence modifiers are included in the numbers (the default-target star uses the same numbers)." },
+    { "file": "out/3-phone.png", "heading": "Phone width (390 px)", "caption": "The line wraps instead of overflowing." },
+    { "file": "out/4-no-trait.png", "heading": "No trait or attachments", "caption": "Planets without a trait (or a 0/0 planet) show just the values." }
+  ],
+  "notes": []
+}

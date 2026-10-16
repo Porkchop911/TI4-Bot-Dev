@@ -6,15 +6,6 @@ import type {
   MapTemplateSummary,
 } from "../protocol/types.ts";
 
-const FACTIONS: [id: string, name: string][] = [
-  ["sol", "Federation of Sol"],
-  ["hacan", "Emirates of Hacan"],
-  ["letnev", "Barony of Letnev"],
-  ["xxcha", "Xxcha Kingdom"],
-  ["jolnar", "Universities of Jol-Nar"],
-  ["l1z1x", "L1Z1X Mindnet"],
-];
-
 /** Axial coordinates of ring `k` around the origin. */
 function ring(k: number): [number, number][] {
   if (k === 0) return [[0, 0]];
@@ -57,21 +48,10 @@ export function fixturePreview(
     for (const [q, r] of ring(k)) {
       const seat = homeAt.get(`${q},${r}`);
       if (seat !== undefined) {
-        const [faction, name] = FACTIONS[seat % FACTIONS.length];
-        const id = `home-${faction}`;
-        seats.push({
-          seat: seat + 1,
-          faction,
-          faction_name: name,
-          home_system_id: id,
-        });
-        tiles.push({
-          system_id: id,
-          label: name,
-          q,
-          r,
-          planets: [{ id: `${id}-1`, label: name, resources: 2, influence: 0 }],
-        });
+        // A home is the place of a seat: no faction sits there before the game starts.
+        const id = `seat_${seat + 1}`;
+        seats.push({ seat: seat + 1, home_system_id: id });
+        tiles.push({ system_id: id, label: `Seat ${seat + 1}`, q, r });
         continue;
       }
       if (k === 0) {
@@ -185,7 +165,6 @@ export function fixtureLobby(
       position: index + 1,
       occupant: index < 3 ? (index === 0 ? "host" : `guest_${index}`) : null,
       nickname: index < 3 ? ["Alex", "Blair", "Casey"][index] : null,
-      ready: index === 1,
       connected: index < 3,
       can_take_over: false,
     })),

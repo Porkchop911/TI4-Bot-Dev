@@ -8,7 +8,7 @@ export const galleryEventLog: GameEvent[] = [
   {
     id: "start",
     timestamp: "10:00",
-    visibility: "public",
+    visibility: { visibility: "public" as const },
     event: {
       kind: "game_initialized",
       round: 1,
@@ -31,7 +31,7 @@ export const galleryEventLog: GameEvent[] = [
     id: `choice-${index + 1}`,
     timestamp: `10:0${index + 1}`,
     version: index + 1,
-    visibility: "public",
+    visibility: { visibility: "public" as const },
     event: { kind: "decision_resolved" },
     round: 1,
     phase: "action",
@@ -47,13 +47,13 @@ export const galleryEventLog: GameEvent[] = [
   {
     id: "second-round",
     timestamp: "11:00",
-    visibility: "public",
+    visibility: { visibility: "public" as const },
     event: { kind: "phase_transition", round: 2, phase: "strategy" },
   },
   {
     id: "strategy",
     timestamp: "11:01",
-    visibility: "public",
+    visibility: { visibility: "public" as const },
     event: { kind: "decision_resolved" },
     round: 2,
     phase: "strategy",

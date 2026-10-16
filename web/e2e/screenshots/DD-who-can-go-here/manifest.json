@@ -1,0 +1,25 @@
+{
+  "title": "Who can go here, and units per owner",
+  "description": "The system overview has a second tab, Who can go here: right now, which systems and which ships could move INTO the selected system, split into your own ships and everybody else's (owner nickname and colour), straight from the engine's movement search (move values, anomalies, gravity rifts, blockades, wormholes, extra links, Gravity Drive, command-token pins). The tab says what it assumes (as if the system were activated now, whose turn it is ignored) and draws one arrow per origin on the map: green dashed for your ships, red dotted for other players'. Picking an entry fades the other arrows. The Details tab now lists units strictly per owner. Regenerate with npm run screenshots -- DD.",
+  "tag": "web/e2e/screenshots/DD-who-can-go-here",
+  "shots": [
+    { "file": "out/1-own-desktop.png", "heading": "Own ships only, desktop", "caption": "Only your carrier and two destroyers in #01 can reach Mecatol Rex; one green arrow labelled 3." },
+    { "file": "out/1-own-390x844.png", "heading": "Own ships only, 390x844", "caption": "Same on a phone: the panel is a sheet, tabs are 44 px tall." },
+    { "file": "out/1-enemy-desktop.png", "heading": "Other players only, desktop", "caption": "Hacan Fox (dreadnought, plus a cruiser that needs Gravity Drive) from #27 and Letnev Lee (carrier) from #41: red dotted arrows." },
+    { "file": "out/1-enemy-390x844.png", "heading": "Other players only, 390x844", "caption": "Same on a phone." },
+    { "file": "out/1-mixed-desktop.png", "heading": "Mixed, desktop", "caption": "Your ships on top, the other players below, with the legend for the arrow styles." },
+    { "file": "out/1-mixed-390x844.png", "heading": "Mixed, 390x844", "caption": "Same on a phone." },
+    { "file": "out/2-picked-desktop.png", "heading": "One origin picked, desktop", "caption": "Tapping an entry fades the other arrows." },
+    { "file": "out/2-picked-390x844.png", "heading": "One origin picked, 390x844", "caption": "Same on a phone." },
+    { "file": "out/3-folded-390x844.png", "heading": "Panel folded, 390x844", "caption": "Folding the panel on a phone shows the whole map with the arrows; map pan and pinch are unchanged." },
+    { "file": "out/1-empty-desktop.png", "heading": "Nothing can reach, desktop", "caption": "No arrows, and the tab says so." },
+    { "file": "out/1-empty-390x844.png", "heading": "Nothing can reach, 390x844", "caption": "Same on a phone." },
+    { "file": "out/4-units-per-owner-desktop.png", "heading": "Units per owner, desktop", "caption": "Mecatol Rex holds units of three players. Each owner has one block: you first, then the others in table order; ships in space and, per planet, ground forces and structures." },
+    { "file": "out/4-units-per-owner-390x844.png", "heading": "Units per owner, 390x844", "caption": "Same on a phone." }
+  ],
+  "notes": [
+    { "title": "Where the answer comes from", "text": "A new read-only websocket message query_reach / reach_into asks ti4_engine::reach_query, which runs the engine's own tactical::movable_into once per seat. Computed on demand, not part of any snapshot (a mixed answer is a few hundred bytes), only public board units are read, nothing is logged, persisted or hashed. An older server answers with a malformed-message error and the tab says it is unavailable." },
+    { "title": "Assumptions shown in the UI", "text": "If the system were activated now: every seat is asked as if it were its turn, tactic tokens ignored; ships in a system with their owner's own command token cannot leave and are not listed; capacity and cargo are not checked." },
+    { "title": "Fixtures", "text": "The map and the engine's answer are synthetic (mocked websocket); the engine side is covered by cargo tests (reach_query, reach_query_ws)." }
+  ]
+}

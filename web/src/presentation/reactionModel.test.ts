@@ -23,7 +23,7 @@ const sabotageOffer = (subtype = "reaction_when_ACTION_CARD_PLAYED"): PendingCho
 });
 
 const logEntry = (actor: string, detail: string): GameEvent => ({
-  visibility: "public",
+  visibility: { visibility: "public" as const },
   id: "e1",
   timestamp: "t",
   actor,
@@ -115,6 +115,26 @@ describe("describeReaction", () => {
     expect(model.eventType).toBe("ACTION_CARD_PLAYED");
     expect(model.reactions[0].buttonLabel).toBe("Use Instinct Training");
     expect(model.reactions[0].note).toMatch(/cancel/i);
+  });
+
+  it("names faction notes, unit cards and leaders from the catalog instead of their engine ids", () => {
+    const offer = (id: string): PendingChoiceDto => ({
+      actor: "p2",
+      nonce: "3",
+      prompt: "when SYSTEM_ACTIVATED",
+      context: { subtype: "reaction_after_SYSTEM_ACTIVATED", optional: true, source: { Reaction: "SYSTEM_ACTIVATED" } },
+      options: [
+        { id, kind: "ability", label: `Play ${id}` },
+        { id: "decline", kind: "decline", label: "Pass" },
+      ],
+    });
+    const label = (id: string) =>
+      describeReaction({ choice: offer(id), ...labels, viewerSeat: "p2" }).reactions[0];
+    expect(label("promissory:empyrean:iff:TURN_BEGAN:after").buttonLabel).toBe("Use Creuss Iff");
+    expect(label("promissory:empyrean:iff:TURN_BEGAN:after").note).toMatch(/wormhole/i);
+    expect(label("unit:arborec:arborec_flagship:SYSTEM_ACTIVATED:after").buttonLabel).toBe("Use Duha Menaimon");
+    expect(label("leader:argent:argentcommander:UNIT_ABILITY_ROLLED:").buttonLabel).toBe("Use Trrakan Aun Zulok");
+    expect(label("promissory:xxcha:cf:SYSTEM_ACTIVATED:after").buttonLabel).toBe("Use Ceasefire");
   });
 
   it("keeps the engine label for an unnamed multi-card outer offer", () => {
@@ -265,5 +285,62 @@ describe("describeReaction", () => {
     });
     expect(model.source).toBe("log");
     expect(model.sentence).toBe("Anna played the action card Plague.");
+  });
+});
+
+describe("Salvage effect", () => {
+  const salvageOffer = (): PendingChoiceDto => ({
+    actor: "p1",
+    nonce: "1",
+    prompt: "after SPACE_COMBAT_WON",
+    context: {
+      subtype: "reaction_after_SPACE_COMBAT_WON",
+      optional: true,
+      trigger: {
+        kind: "space_combat_won",
+        event_type: "SPACE_COMBAT_WON",
+        event_id: 7,
+        relation: "after",
+        actor: "p1",
+        system: "27",
+      },
+    },
+    options: [
+      {
+        id: "reaction:Sol:SPACE_COMBAT_WON:after",
+        kind: "ability",
+        label: "Play Salvage",
+        payload: { card: "salvage", card_name: "Salvage" },
+      },
+      { id: "decline", kind: "decline", label: "Pass" },
+    ],
+  });
+  const board = {
+    systems: {},
+    combat: { system_id: "27", round: 2, attacker: "p1", defender: "p2" },
+  } as never;
+
+  it("says how many commodities the opponent would hand over", () => {
+    const model = describeReaction({
+      choice: salvageOffer(),
+      ...labels,
+      viewerSeat: "p1",
+      board,
+      commodities: (seat) => ({ p1: 1, p2: 3 })[seat] ?? null,
+    });
+    expect(model.reactions[0].effect).toBe("You would gain 3 commodities from Bob, as trade goods.");
+  });
+
+  it("says so when there is nothing to take, and stays silent when the opponent is unknown", () => {
+    const empty = describeReaction({
+      choice: salvageOffer(),
+      ...labels,
+      viewerSeat: "p1",
+      board,
+      commodities: () => 0,
+    });
+    expect(empty.reactions[0].effect).toContain("would gain nothing");
+    const unknown = describeReaction({ choice: salvageOffer(), ...labels, viewerSeat: "p1" });
+    expect(unknown.reactions[0].effect).toBeNull();
   });
 });

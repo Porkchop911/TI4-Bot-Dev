@@ -146,7 +146,53 @@
   }
 }
 
-.auto-resolve-toast--action .toast-value {
+.auto-resolve-toast--action .toast-value,
+.auto-resolve-toast--recap .toast-value {
   color: inherit;
   font-weight: 400;
+}
+
+/* The closing recap of another player's turn: like an action toast, with a small "Turn" tag. */
+.toast-recap-tag {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 5px;
+  border-radius: 3px;
+  border: 1px solid currentColor;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+/* An invasion result: one line per fact, the text in the reading colour (it is a report, not a status). */
+.auto-resolve-toast--invasion,
+.auto-resolve-toast--agenda,
+.auto-resolve-toast--notice {
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.toast-value--lines {
+  display: block;
+  margin-top: 4px;
+  white-space: pre-line;
+  color: #e5e7eb;
+}
+
+.auto-resolve-toast-container:has(.auto-resolve-toast--invasion),
+.auto-resolve-toast-container:has(.auto-resolve-toast--agenda),
+.auto-resolve-toast-container:has(.auto-resolve-toast--notice) {
+  width: min(340px, calc(100vw - 24px));
+}
+
+/* An agenda result: the politics gold, so it reads as the table's news rather than one player's. */
+.auto-resolve-toast.auto-resolve-toast--agenda {
+  border-left-color: #eab308;
+}
+
+/* A notice about the viewer's own play (Imperial scored nothing): amber, a warning, not news. */
+.auto-resolve-toast.auto-resolve-toast--notice {
+  border-left-color: #f59e0b;
 }

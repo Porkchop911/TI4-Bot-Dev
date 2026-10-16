@@ -1,0 +1,17 @@
+{
+  "title": "Auto-submit for lone moves",
+  "description": "When the engine asks a seat a question with exactly one possible answer (a strategic action it must take, or a single system to activate), the web client now answers it for the player and shows a corner toast. The engine still asks; the answer is an ordinary recorded choice. All shots are the real app against a mocked game.",
+  "tag": "web/e2e/screenshots/Z-auto-submit-lone-cases",
+  "shots": [
+    { "file": "out/1-lone-strategic.png", "heading": "Lone strategic action", "caption": "The turn menu held only the bare strategic option (no pass, tactical, component or trade). The client sent it and the toast reads \"Only one choice: take your strategic action\"." },
+    { "file": "out/2-lone-activation.png", "heading": "Lone system activation", "caption": "The tactical action was open and exactly one system could be activated. The client activated it; the toast reads \"Only one choice: activate system 37\"." },
+    { "file": "out/3-setting-on.png", "heading": "Setting, on (default)", "caption": "The player sheet header has a new toggle next to Sound and Toasts: \"Auto\" (lone moves are taken for you). It is remembered in this browser only." },
+    { "file": "out/4-setting-off.png", "heading": "Setting, off", "caption": "With the toggle off (\"Auto off\") the same lone decision stays on the turn bar and nothing is sent." },
+    { "file": "out/5-normal-menu.png", "heading": "A normal menu still asks", "caption": "Strategic plus tactical and pass is a real choice: nothing is sent and there is no toast." },
+    { "file": "out/6-after-undo.png", "heading": "After an undo", "caption": "An undo that lands on the lone decision (there is something to redo) is asked, never answered again, so the player can keep undoing." }
+  ],
+  "notes": [
+    { "title": "When it acts", "text": "Only for the seat's own client, only when the game moved forward to the decision (the history cursor grew with nothing to redo). A page load, a reconnect without progress, an undo, a redo and a restore never trigger it. Each decision is evaluated once, after a 0.4 s pause, and a second tab of the same seat is held back by a claim in localStorage; the server's nonce and version checks still apply." },
+    { "title": "Not changed", "text": "No engine or server change: histories, replay, bots and undo are unaffected. The server's own auto-resolve notes are separate." }
+  ]
+}

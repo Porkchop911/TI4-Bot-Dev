@@ -178,9 +178,8 @@ pub struct EconomyHooks {
     /// Amalgamation). Consulted while the production window builds its options, so the exchange is
     /// offered beside the paid build and is never a late rejection. Matched by unit type, like every
     /// other capture in the engine. Pure: ask nothing, mutate nothing.
-    pub production_unit_exchange: Option<
-        fn(&GameState, &ContentStore, SourceSet, &PlayerId, &SystemId, &str) -> bool,
-    >,
+    pub production_unit_exchange:
+        Option<fn(&GameState, &ContentStore, SourceSet, &PlayerId, &SystemId, &str) -> bool>,
     /// Carry out that exchange for one unit of `unit`: return one captured unit of that type to its
     /// owner's reinforcements. Atomic: re-check everything, return `false` and leave the state
     /// untouched when it cannot happen; `true` once it has. No resources are spent; the production
@@ -500,11 +499,7 @@ pub(crate) fn extra_production_planet(
 }
 
 /// Combined-cost reduction for production in `system` (see [`EconomyHooks::production_cost_reduction`]).
-pub(crate) fn production_cost_reduction(
-    state: &GameState,
-    player: &PlayerId,
-    system: &SystemId,
-) -> i64 {
+pub fn production_cost_reduction(state: &GameState, player: &PlayerId, system: &SystemId) -> i64 {
     hooks()
         .filter_map(|h| h.production_cost_reduction)
         .map(|f| f(state, player, system))

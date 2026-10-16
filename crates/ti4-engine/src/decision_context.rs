@@ -171,6 +171,56 @@ pub struct DecisionContext {
     /// old saves and old clients are unaffected.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub trigger: Option<DecisionTrigger>,
+    /// What kind of hit a casualty decision assigns, for display only (public facts).
+    ///
+    /// Like [`DecisionContext::trigger`], deliberately not part of [`DecisionContext::canonical`]
+    /// or the replay fingerprint, stripped from recorded decisions, additive and optional: it
+    /// restates rules the engine already enforces, so a client need not guess them from labels.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hit: Option<HitDetail>,
+}
+
+/// What produced the hits a casualty decision assigns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HitCause {
+    /// Assault Cannon (technology): the opponent destroys one of their non-fighter ships.
+    AssaultCannon,
+    /// Courageous to the End (action card): hits from its two dice.
+    CourageousToTheEnd,
+    /// Anti-fighter barrage hits widened to every ship by Waylay.
+    AntiFighterBarrage,
+    /// Space cannon (offense or defense) hits.
+    SpaceCannon,
+    /// The ordinary dice hits of a combat round.
+    CombatRoll,
+    /// Hits a card or module produced at the start of a combat.
+    StartOfCombat,
+    /// Hits a card or module produced after a combat round.
+    EndOfRound,
+    /// Anything else (an effect's hit).
+    Other,
+}
+
+/// Which of the target's ships a hit may be assigned to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HitRestriction {
+    Any,
+    /// Non-fighter ships only (Assault Cannon; Graviton Laser System while one is left).
+    NonFighter,
+}
+
+/// The kind of hit a casualty decision assigns (see [`DecisionContext::hit`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HitDetail {
+    pub cause: HitCause,
+    /// `true` for a destroy effect: not a hit, so SUSTAIN DAMAGE does not apply to it.
+    pub destroy: bool,
+    pub restriction: HitRestriction,
+    /// The seat whose ability or roll produced it, when public.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub producer: Option<PlayerId>,
 }
 
 /// The family of event a reaction decision answers, in the words a client switches on.
@@ -284,7 +334,15 @@ impl DecisionContext {
             invasion_seq: None,
             outstanding: Vec::new(),
             trigger: None,
+            hit: None,
         }
+    }
+
+    /// Say what kind of hit this casualty decision assigns (display only).
+    #[must_use]
+    pub fn with_hit(mut self, hit: HitDetail) -> Self {
+        self.hit = Some(hit);
+        self
     }
 
     /// Attach the public event that opened this reaction window.
@@ -299,6 +357,7 @@ impl DecisionContext {
     pub fn without_display_fields(&self) -> Self {
         Self {
             trigger: None,
+            hit: None,
             ..self.clone()
         }
     }
@@ -417,6 +476,7 @@ impl DecisionContext {
             ("outstanding", Visibility::ActorOnly),
             // Public by construction: only facts that already happened at the table.
             ("trigger", Visibility::Public),
+            ("hit", Visibility::Public),
         ])
     }
 }
@@ -609,6 +669,6 @@ mod tests {
             .iter()
             .filter(|(_, v)| **v == Visibility::Public)
             .count();
-        assert_eq!(public, 11, "every other field describes a public question");
+        assert_eq!(public, 12, "every other field describes a public question");
     }
 }

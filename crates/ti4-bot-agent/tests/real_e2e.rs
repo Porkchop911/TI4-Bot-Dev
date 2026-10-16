@@ -168,7 +168,7 @@ async fn exercise_game_prefix(
     let client = reqwest::Client::new();
     let created = client
         .post(format!("{http_base}/api/games"))
-        .json(&serde_json::json!({ "player_count": 3, "seed": 4_242, "nickname": "Host" }))
+        .json(&serde_json::json!({ "player_count": 3, "seed": 4_242, "nickname": "Host", "seat_order": "join" }))
         .send()
         .await
         .map_err(|error| error.to_string())?
@@ -179,15 +179,6 @@ async fn exercise_game_prefix(
         .map_err(|error| error.to_string())?;
     let game_id = required_string(&created, "game_id")?;
     let p1_token = required_string(&created, "player_session")?;
-    client
-        .post(format!("{http_base}/api/games/{game_id}/lobby/ready"))
-        .header("x-ti4-player-session", &p1_token)
-        .json(&serde_json::json!({ "ready": true }))
-        .send()
-        .await
-        .map_err(|error| error.to_string())?
-        .error_for_status()
-        .map_err(|error| error.to_string())?;
     let mut p2 = BotConfig::new(
         websocket_base.clone(),
         game_id.clone(),
@@ -225,7 +216,7 @@ async fn exercise_game_prefix(
         .0
         .slots
         .iter()
-        .all(|s| s.occupant.is_some() && s.ready)
+        .all(|s| s.occupant.is_some())
     {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
@@ -416,6 +407,7 @@ async fn scripted_first_option(
             protocol_version: ti4_server::protocol::PROTOCOL_VERSION,
             game_id: game_id.clone(),
             player_session: Some(token),
+            staged: false,
         },
     )
     .await?;

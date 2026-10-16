@@ -923,7 +923,12 @@ fn stymie_systems(
 ) -> Vec<SystemId> {
     let mut all: BTreeSet<SystemId> = state.board.keys().cloned().collect();
     if let Some(galaxy) = galaxy {
-        all.extend(galaxy.system_ids().into_iter().map(SystemId::new));
+        all.extend(
+            galaxy
+                .system_ids_holding_things()
+                .into_iter()
+                .map(SystemId::new),
+        );
     }
     all.into_iter()
         .filter(|system| !ti4_content::galaxy::is_home_system(content, system.as_str(), sources))

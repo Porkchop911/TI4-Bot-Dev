@@ -63,6 +63,62 @@ export function systemTitle(systemId: string, board?: BoardView | null): string 
   return named && named !== `#${systemId}` ? `${named} (#${systemId})` : `System #${systemId}`;
 }
 
+/** The printed tile number: "1" -> "01", "18" -> "18", "82a" -> "82a". */
+export function systemTileNumber(systemId: string): string {
+  return /^\d$/.test(systemId) ? `0${systemId}` : systemId;
+}
+
+function capitalize(text: string): string {
+  return text ? text[0].toUpperCase() + text.slice(1) : text;
+}
+
+/**
+ * What a player calls the system: "Mecatol Rex", "Sol home system", "Gravity rift",
+ * "Starpoint/New Albion". Null when the board does not know the tile.
+ */
+export function systemCommonName(systemId: string, board?: BoardView | null): string | null {
+  const tile = board?.map_tiles?.find((t) => t.system_id === systemId);
+  const label = tile?.label?.trim() ?? "";
+  if (!label || label === systemId || label === `#${systemId}`) {
+    return systemId === "18" ? "Mecatol Rex" : null;
+  }
+  const planets = tile?.planets?.length ?? 0;
+  // Home tiles are named "<planets> - <faction>" ("Jord - Sol"); the Nexus "Mallice - Nexus" and
+  // the planetless Creuss Gate ("Creuss Gate - Creuss") keep their own name.
+  const split = label.match(/^(.+?) - (.+)$/);
+  if (split) {
+    const [, place, owner] = split;
+    if (planets === 0 || /nexus/i.test(owner)) return place;
+    return `${owner} home system`;
+  }
+  // Planetless anomalies and empty tiles read by their kind ("Gravity Rift" -> "Gravity rift").
+  if (planets === 0) return capitalize(label.toLowerCase());
+  const anomaly = tile?.anomalies?.[0];
+  return anomaly ? `${label}, ${anomaly}` : label;
+}
+
+/**
+ * "Lodor (System 27)", "Sol home system (System 1)", "System 41": the system by name, for dialog
+ * titles. A tile the board has no name for falls back to its planets, then to the bare number.
+ */
+export function systemNamedLabel(systemId: string, board?: BoardView | null): string {
+  const bare = `System ${systemId}`;
+  const name =
+    systemCommonName(systemId, board) ??
+    ((board?.map_tiles?.find((t) => t.system_id === systemId)?.planets ?? [])
+      .map((planet) => humanizeId(planet.id))
+      .join(" / ") ||
+      null);
+  return name ? `${name} (${bare})` : bare;
+}
+
+/** "#18 [Mecatol Rex]", "#01 [Sol home system]", "#41 [Gravity rift]"; "#99" when unknown. */
+export function systemTag(systemId: string, board?: BoardView | null): string {
+  const name = systemCommonName(systemId, board);
+  const number = `#${systemTileNumber(systemId)}`;
+  return name ? `${number} [${name}]` : number;
+}
+
 export function describeSystem(systemId: string, board?: BoardView | null): SystemFacts {
   const tile = board?.map_tiles?.find((t) => t.system_id === systemId);
   const dyn = board?.systems?.[systemId];

@@ -1,0 +1,51 @@
+{
+  "title": "Production and trade goods",
+  "description": "The production dialog splits its resource budget into planets and trade goods, says where the trade goods came from, and lists its unit cards in one column; the strategy draft shows the trade goods on each card in the title row. Mocked fixtures; regenerate with npm run screenshots -- CE. The one-unit production question now lists why units are not offered.",
+  "tag": "web/e2e/screenshots/CE-production-economy",
+  "shots": [
+    {
+      "file": "out/1-production-split-desktop.png",
+      "heading": "Production dialog, desktop",
+      "caption": "The budget line is followed by Planets: 2 and Trade goods: 7, then the recent changes (+3 from the Trade strategy card, now 7). The unit cards are one column."
+    },
+    {
+      "file": "out/1-production-split-390x844.png",
+      "heading": "Production dialog, 390x844",
+      "caption": "The same breakdown and sources on a phone."
+    },
+    {
+      "file": "out/2-strategy-goods-desktop.png",
+      "heading": "Strategy draft, desktop",
+      "caption": "Each card's title row carries its trade goods (3 TG on Trade, 0 TG elsewhere), so the count is not lost when the card text runs past the edge of the list."
+    },
+    {
+      "file": "out/2-strategy-goods-390x844.png",
+      "heading": "Strategy draft, 390x844",
+      "caption": "One column on a phone; the badge stays beside the card name."
+    },
+    {
+      "file": "out/3-not-offered-desktop.png",
+      "heading": "Freelancers with the fleet full, desktop",
+      "caption": "Only the fighter is offered. A Not available here box names the cruiser, destroyer and dreadnought (fleet supply in this system is full) and the infantry (no planet you control). Engine details.not_offered, display only."
+    },
+    {
+      "file": "out/3-not-offered-390x844.png",
+      "heading": "Same, 390x844",
+      "caption": "The reasons wrap above the option list on a phone."
+    }
+  ],
+  "notes": [
+    {
+      "title": "Trade good sources",
+      "text": "The table only sends the current amount, so the list is built in the client from changes seen since the page opened, each with the public log line that arrived with it. It is empty (and says so) on a fresh load."
+    },
+    {
+      "title": "Planets vs trade goods",
+      "text": "The engine sends the budget as one sum; planets = budget minus the player's trade goods (each trade good is worth one resource)."
+    },
+    {
+      "title": "Not offered reasons",
+      "text": "produce_one_from (Freelancers, Chaos Mapping, Minister of Industry) adds details.not_offered: [{unit, reason}] to the question. Options and ids are unchanged, so saved games and decision hashes are unaffected."
+    }
+  ]
+}

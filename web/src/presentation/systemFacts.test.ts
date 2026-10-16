@@ -5,6 +5,7 @@ import {
   isSystemPickChoice,
   planetOccupants,
   summarizeUnits,
+  systemTag,
 } from "./systemFacts.ts";
 import { buildBoardPresentationModel } from "./boardPresentation.ts";
 import { resolveMapTargetSelection } from "./planetSelection.ts";
@@ -85,5 +86,48 @@ describe("system facts", () => {
       optionId: "14",
       planetId: null,
     });
+  });
+});
+
+describe("systemTag", () => {
+  const tile = (system_id: string, label: string, planets: string[] = [], anomalies: string[] = []) => ({
+    system_id,
+    label,
+    q: 0,
+    r: 0,
+    anomalies,
+    planets: planets.map((id) => ({ id, label: id, resources: 1, influence: 1, traits: [], tech_specialties: [] })),
+  });
+  const tagged = {
+    systems: {},
+    map_tiles: [
+      tile("18", "Mecatol Rex", ["mr"]),
+      tile("01", "Jord - Sol", ["jord"]),
+      tile("10", "Arc Prime/Wren Terra - Letnev", ["arcprime", "wrenterra"]),
+      tile("17", "Creuss Gate - Creuss"),
+      tile("82b", "Mallice - Nexus", ["mallice"]),
+      tile("41", "Gravity Rift", [], ["gravity rift"]),
+      tile("46", "Empty System"),
+      tile("67", "Cormund", ["cormund"], ["gravity rift"]),
+      tile("27", "Starpoint/New Albion", ["starpoint", "newalbion"]),
+    ],
+  } as unknown as BoardView;
+
+  it("names planet systems, home systems and anomalies with their tile number", () => {
+    expect(systemTag("18", tagged)).toBe("#18 [Mecatol Rex]");
+    expect(systemTag("01", tagged)).toBe("#01 [Sol home system]");
+    expect(systemTag("10", tagged)).toBe("#10 [Letnev home system]");
+    expect(systemTag("17", tagged)).toBe("#17 [Creuss Gate]");
+    expect(systemTag("82b", tagged)).toBe("#82b [Mallice]");
+    expect(systemTag("41", tagged)).toBe("#41 [Gravity rift]");
+    expect(systemTag("46", tagged)).toBe("#46 [Empty system]");
+    expect(systemTag("67", tagged)).toBe("#67 [Cormund, gravity rift]");
+    expect(systemTag("27", tagged)).toBe("#27 [Starpoint/New Albion]");
+  });
+
+  it("falls back to the bare tile number when the board does not know the tile", () => {
+    expect(systemTag("5", null)).toBe("#05");
+    expect(systemTag("99", tagged)).toBe("#99");
+    expect(systemTag("18", null)).toBe("#18 [Mecatol Rex]");
   });
 });

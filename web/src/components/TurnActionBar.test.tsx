@@ -163,6 +163,34 @@ describe("TurnActionBar", () => {
     expect(onSubmit).toHaveBeenLastCalledWith("faction|orbital_drop");
   });
 
+  it("spells out what each component does in its row: kind, owner, timing, cost and rules text", async () => {
+    render(<TurnActionBar model={modelOf(fullMenu())} onSubmit={vi.fn()} />);
+    await click(screen.getByTestId("turn-bar-components"));
+    const row = screen.getByTestId("turn-bar-item-faction|orbital_drop");
+    expect(row).toHaveTextContent("Orbital Drop");
+    expect(row).toHaveTextContent("Faction ability · The Federation of Sol");
+    expect(row).toHaveTextContent("Cost: 1 strategy token");
+    expect(row.querySelector('[data-testid="turn-bar-row-text"]')).toHaveTextContent(
+      /place 2 infantry from your reinforcements on 1 planet you control/,
+    );
+  });
+
+  it("sizes an open menu to the room above the bar and closes it with Close", async () => {
+    render(<TurnActionBar model={modelOf(fullMenu())} onSubmit={vi.fn()} />);
+    const bar = screen.getByTestId("turn-action-bar");
+    expect(bar.style.getPropertyValue("--turn-bar-menu-room")).toBe("");
+    await click(screen.getByTestId("turn-bar-trade"));
+    expect(bar).toHaveAttribute("data-menu-open", "trade");
+    expect(bar.style.getPropertyValue("--turn-bar-menu-room")).toMatch(/^\d+px$/);
+    expect(bar.style.getPropertyValue("--turn-bar-menu-top")).toMatch(/^\d+px$/);
+    expect(bar.style.getPropertyValue("--turn-bar-menu-bottom")).toMatch(/^\d+px$/);
+    expect(screen.getByTestId("turn-bar-partner-hacan")).toHaveTextContent("Hacan");
+    await click(screen.getByTestId("turn-bar-menu-close"));
+    expect(screen.queryByTestId("turn-bar-menu-trade")).toBeNull();
+    expect(bar).not.toHaveAttribute("data-menu-open");
+    expect(bar.style.getPropertyValue("--turn-bar-menu-room")).toBe("");
+  });
+
   it("shows the card text in the side panel on hover and focus, and clears it after", async () => {
     render(<TurnActionBar model={modelOf(fullMenu())} onSubmit={vi.fn()} />);
     const imperial = screen.getByTestId("turn-bar-strategic-pok8imperial");

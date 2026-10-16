@@ -671,6 +671,9 @@ describe("SpaceCombatOverlay", () => {
         onMinimize={onMinimize}
       />,
     );
+    // "Combat complete" is stated once (the phase line), not in the title or a footer as well.
+    expect(screen.getAllByText(/Combat complete/)).toHaveLength(1);
+    expect(screen.getByTestId("combat-stage-title")).toHaveTextContent(/^Space Combat · Mecatol Rex \(System 18\)$/);
     const close = screen.getByRole("button", { name: "Close combat" });
     expect(close).toHaveTextContent("×");
     fireEvent.click(close);
@@ -739,7 +742,7 @@ describe("SpaceCombatOverlay", () => {
 
     expect(screen.getByTestId("combat-round-hits")).toBeInTheDocument();
     expect(screen.getByTestId("combat-stage-title")).toHaveTextContent(
-      "Space Combat · System 18 · Round 2",
+      "Space Combat · Mecatol Rex (System 18) · Round 2",
     );
     expect(screen.getByText("Round 2 Hits Produced")).toBeInTheDocument();
     expect(screen.getByTestId("attacker-round-hits")).toHaveTextContent("3");
@@ -1005,6 +1008,150 @@ describe("SpaceCombatOverlay", () => {
       expect(
         screen.getAllByRole("button").some((b) => /take the hit|sustain/i.test(b.textContent ?? "")),
       ).toBe(true);
+    });
+  });
+  describe("one-off destroy decisions", () => {
+    it.each(["assault_cannon_destroy", "courageous_to_the_end_assign_casualty"])(
+      "%s is answered by a single click, not the staged hit panel",
+      (subtype) => {
+        const choice: PendingChoiceDto = {
+          nonce: "n-oneoff",
+          actor: "seat_1",
+          prompt: "choose a casualty",
+          context: { subtype, target: { System: "18" } },
+          options: [
+            { id: "destroy|0", label: "destroy dreadnought", kind: "casualty", payload: { unit: "dreadnought", damaged: false } },
+            { id: "destroy|1", label: "destroy cruiser", kind: "casualty", payload: { unit: "cruiser", damaged: false } },
+          ],
+        } as PendingChoiceDto;
+        const onSubmit = vi.fn();
+        render(
+          <SpaceCombatOverlay
+            isOpen={true}
+            choice={choice}
+            model={deriveChoiceRendererModel(choice, "seat_1")}
+            viewerSeat="seat_1"
+            board={sampleBoard}
+            players={samplePlayers}
+            onSubmit={onSubmit}
+            onClose={vi.fn()}
+            onSubmitBatch={vi.fn().mockResolvedValue(undefined)}
+          />,
+        );
+        expect(screen.queryByTestId("hit-assignment-panel")).not.toBeInTheDocument();
+        fireEvent.click(screen.getByTestId("casualty-opt-destroy|1"));
+        expect(onSubmit).toHaveBeenCalled();
+      },
+    );
+  });
+
+  describe("what kind of hit it is", () => {
+    const assaultCannon = (hit?: unknown): PendingChoiceDto =>
+      ({
+        nonce: "n-ac",
+        actor: "seat_1",
+        prompt: "assign a hit",
+        context: {
+          subtype: "assault_cannon_destroy",
+          target: { System: "18" },
+          ...(hit ? { hit } : {}),
+        },
+        options: [
+          { id: "destroy|0", label: "destroy dreadnought", kind: "casualty", payload: { unit: "dreadnought", damaged: false } },
+          { id: "destroy|1", label: "destroy carrier", kind: "casualty", payload: { unit: "carrier", damaged: true } },
+        ],
+      }) as PendingChoiceDto;
+
+    it("Assault Cannon names its source, says destroy-not-a-hit and dims the fighters", () => {
+      const choice = assaultCannon({
+        cause: "assault_cannon",
+        destroy: true,
+        restriction: "non_fighter",
+        producer: "seat_2",
+      });
+      render(
+        <SpaceCombatOverlay
+          isOpen={true}
+          choice={choice}
+          model={deriveChoiceRendererModel(choice, "seat_1")}
+          viewerSeat="seat_1"
+          board={sampleBoard}
+          players={samplePlayers}
+          onSubmit={vi.fn()}
+          onClose={vi.fn()}
+        />,
+      );
+      const banner = screen.getByTestId("hit-kind-banner");
+      expect(banner).toHaveAttribute("data-cause", "assault_cannon");
+      expect(banner).toHaveTextContent("Assault Cannon");
+      expect(banner).toHaveTextContent("destroys 1 of your non-fighter ships");
+      expect(banner).toHaveTextContent("Destroy, not a hit");
+      expect(banner).toHaveTextContent("Cannot be sustained");
+      expect(banner).toHaveTextContent("Non-fighter ships only");
+      const fighters = screen.getByTestId("unit-row-fighter");
+      expect(fighters).toHaveAttribute("data-illegal-target", "true");
+      expect(fighters.getAttribute("title")).toMatch(/cannot be assigned/i);
+      expect(screen.getByTestId("unit-row-carrier")).not.toHaveAttribute("data-illegal-target");
+      expect(screen.getByTestId("unit-row-dreadnought")).toHaveTextContent("Click to destroy");
+      // The harness ids stay.
+      expect(screen.getByTestId("casualty-opt-destroy|0")).toBeInTheDocument();
+    });
+
+    it("an older payload without context.hit still gets the Assault Cannon banner from the subtype", () => {
+      const choice = assaultCannon();
+      render(
+        <SpaceCombatOverlay
+          isOpen={true}
+          choice={choice}
+          model={deriveChoiceRendererModel(choice, "seat_1")}
+          viewerSeat="seat_1"
+          board={sampleBoard}
+          players={samplePlayers}
+          onSubmit={vi.fn()}
+          onClose={vi.fn()}
+        />,
+      );
+      expect(screen.getByTestId("hit-kind-banner")).toHaveAttribute("data-cause", "assault_cannon");
+    });
+
+    it("the anti-fighter barrage window explains what the barrage does and who rolls", () => {
+      const choice = {
+        nonce: "n-afb",
+        actor: "seat_1",
+        prompt: "when ANTI_FIGHTER_BARRAGE_STARTED",
+        context: {
+          subtype: "reaction_when_ANTI_FIGHTER_BARRAGE_STARTED",
+          target: { System: "18" },
+          trigger: {
+            kind: "anti_fighter_barrage",
+            event_type: "ANTI_FIGHTER_BARRAGE_STARTED",
+            event_id: 1,
+            relation: "when",
+            actor: "seat_1",
+          },
+        },
+        options: [
+          { id: "play|waylay", label: "Waylay", kind: "reaction", payload: { card: "waylay" } },
+          { id: "decline", label: "Pass", kind: "decline" },
+        ],
+      } as PendingChoiceDto;
+      render(
+        <SpaceCombatOverlay
+          isOpen={true}
+          choice={choice}
+          model={deriveChoiceRendererModel(choice, "seat_1")}
+          viewerSeat="seat_1"
+          board={sampleBoard}
+          players={samplePlayers}
+          onSubmit={vi.fn()}
+          onClose={vi.fn()}
+        />,
+      );
+      const banner = screen.getByTestId("barrage-window-banner");
+      expect(banner).toHaveTextContent("Anti-Fighter Barrage: before");
+      expect(banner).toHaveTextContent("destroys one of the opposing fighters");
+      expect(banner).toHaveTextContent("Waylay");
+      expect(screen.queryByText(/when ANTI.FIGHTER.BARRAGE.STARTED/)).not.toBeInTheDocument();
     });
   });
 });

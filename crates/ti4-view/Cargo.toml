@@ -1,0 +1,17 @@
+[package]
+name = "ti4-view"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+ti4-model = { workspace = true }
+ti4-content = { workspace = true }
+ti4-calc = { workspace = true }
+ti4-engine = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

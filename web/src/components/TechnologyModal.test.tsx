@@ -1,6 +1,6 @@
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { TechnologyModal } from "./TechnologyModal.tsx";
 import { PlayerIdentityProvider } from "../presentation/PlayerIdentity.tsx";
 import type { LobbyDto, PlayerView, BoardView, PendingChoiceDto } from "../protocol/types.ts";
@@ -16,7 +16,6 @@ const mockLobby: LobbyDto = {
       position: 1,
       occupant: "player1",
       nickname: "Alice",
-      ready: true,
       connected: true,
       can_take_over: false,
     },
@@ -25,7 +24,6 @@ const mockLobby: LobbyDto = {
       position: 2,
       occupant: "player2",
       nickname: "Bob",
-      ready: true,
       connected: true,
       can_take_over: false,
     },
@@ -87,6 +85,12 @@ describe("TechnologyModal", () => {
   it("does not render when isOpen is false", () => {
     renderWithIdentity(<TechnologyModal isOpen={false} onClose={vi.fn()} players={mockPlayers} />);
     expect(screen.queryByTestId("technology-modal")).not.toBeInTheDocument();
+  });
+
+  it("labels each standard technology card with its track (shown on phones, where the header row is hidden)", () => {
+    renderWithIdentity(<TechnologyModal isOpen={true} onClose={vi.fn()} players={mockPlayers} />);
+    expect(screen.getByTestId("tech-card-amd")).toHaveAttribute("data-track", "Propulsion");
+    expect(screen.getByTestId("tech-card-nm")).toHaveAttribute("data-track", "Biotic");
   });
 
   it("renders modal with header, roster, and close button when isOpen is true", () => {
@@ -164,7 +168,7 @@ describe("TechnologyModal", () => {
     // Player 1 researched AMD
     const amdP1Marker = screen.getByTestId("player-tech-marker-player1-amd");
     expect(amdP1Marker).toBeInTheDocument();
-    // Position 1 color in SEAT_COLORS is #E69F00, symbol is ●
+    // Position 1 color in SEAT_COLORS is #3B82F6, symbol is ●
     expect(amdP1Marker.textContent).toBe("●");
     expect(amdP1Marker).toHaveAttribute("title", "Alice (sol)");
 
@@ -209,6 +213,7 @@ describe("TechnologyModal", () => {
         isOpen={true}
         onClose={vi.fn()}
         players={researchPlayers}
+        viewerSeat="player1"
         selectableTechIds={["gd", "sr"]}
         selectedTechId={null}
         onSelectTech={onSelectTech}
@@ -242,6 +247,7 @@ describe("TechnologyModal", () => {
           isOpen={true}
           onClose={vi.fn()}
           players={researchPlayers}
+          viewerSeat="player1"
           selectableTechIds={["gd", "sr"]}
           selectedTechId="gd"
           onSelectTech={onSelectTech}
@@ -292,6 +298,22 @@ describe("TechnologyModal", () => {
     expect(
       factionSection.compareDocumentPosition(propulsionHeader) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+  });
+
+  it("shows the viewing seat's own faction technologies, not player 1's", () => {
+    renderWithIdentity(
+      <TechnologyModal isOpen={true} onClose={vi.fn()} players={mockPlayers} viewerSeat="player2" />,
+    );
+    const section = screen.getByTestId("faction-technologies-section");
+    expect(section).toHaveTextContent(/Hacan/i);
+    expect(screen.queryByTestId("tech-card-so2")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("tech-card-ac2")).not.toBeInTheDocument();
+  });
+
+  it("shows no faction technologies section for a spectator (no seat)", () => {
+    renderWithIdentity(<TechnologyModal isOpen={true} onClose={vi.fn()} players={mockPlayers} />);
+    expect(screen.queryByTestId("faction-technologies-section")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("tech-card-so2")).not.toBeInTheDocument();
   });
 
   it("shows tech skips, handles exhausted vs ready, and toggling unlocks higher tier techs", () => {
@@ -429,8 +451,10 @@ describe("TechnologyModal", () => {
     const psCard = screen.getByTestId("tech-card-ps");
     fireEvent.click(psCard);
     expect(screen.getByText(/Selected:/)).toHaveTextContent("2 / 2");
-    expect(screen.getByText("Cost: 6 Resources")).toBeInTheDocument();
-    expect(confirmBtn).toHaveTextContent("Confirm Research (2 Techs - 6 Resources)");
+    expect(screen.getAllByLabelText("6 resources").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText(/Cost:/)).toBeInTheDocument();
+    expect(confirmBtn).toHaveTextContent("Confirm Research (2 Techs - 6)");
+    expect(within(confirmBtn).getByLabelText("6 resources")).toBeInTheDocument();
 
     // Click confirm -> executes Option B two-step research pipeline
     fireEvent.click(confirmBtn);
@@ -510,5 +534,119 @@ describe("TechnologyModal", () => {
     expect(glsCard).toHaveAttribute("data-selected", "false");
     expect(glsCard).toHaveAttribute("data-researchable", "false");
     expect(screen.queryByTestId("first-tech-prereq-bonus")).not.toBeInTheDocument();
+  });
+
+  describe("Technology primary: the second technology costs 6 resources", () => {
+    const primaryChoice = (ids: string[]): PendingChoiceDto => ({
+      actor: "player1",
+      nonce: "dec-tech-primary-afford",
+      prompt: "Research a technology",
+      context: {
+        subtype: "research_technology",
+        source: { StrategyCard: { card: "Technology", secondary: false } },
+      },
+      options: ids.map((id) => ({ id, label: id, kind: "research" })),
+    });
+    const renderPrimary = (tradeGoods: number, owned: string[], ids: string[]) =>
+      renderWithIdentity(
+        <TechnologyModal
+          isOpen={true}
+          onClose={vi.fn()}
+          players={[
+            { ...mockPlayers[0], faction: "sol", trade_goods: tradeGoods, technologies: owned },
+            mockPlayers[1],
+          ]}
+          viewerSeat="player1"
+          choice={primaryChoice(ids)}
+          onSubmit={vi.fn().mockResolvedValue(undefined)}
+          isResearchMode={true}
+        />,
+      );
+
+    it("with 4 resources no other card can be the second pick, and Confirm stays enabled for the single pick", () => {
+      renderPrimary(4, [], ["amd", "ps", "nm"]);
+      fireEvent.click(screen.getByTestId("tech-card-amd"));
+      expect(screen.getByTestId("tech-card-amd")).toHaveAttribute("data-selected", "true");
+      for (const id of ["ps", "nm", "st"]) {
+        const card = screen.getByTestId(`tech-card-${id}`);
+        expect(card).toHaveAttribute("data-selectable", "false");
+        expect(card).toHaveAttribute(
+          "data-blocked-reason",
+          "Second technology costs 6 resources, you have 4",
+        );
+      }
+      // Clicking a blocked card changes nothing.
+      fireEvent.click(screen.getByTestId("tech-card-ps"));
+      expect(screen.getByText(/Selected:/)).toHaveTextContent("1 / 2");
+      expect(screen.getByTestId("tech-second-pick-hint")).toHaveTextContent(
+        "A second technology costs 6 (you have 4). Pick one technology or gain resources.",
+      );
+      expect(screen.getByTestId("confirm-research-btn")).not.toBeDisabled();
+      expect(screen.queryByTestId("tech-clear-second")).not.toBeInTheDocument();
+    });
+
+    it("with 6 resources two picks are allowed, no hint shows, and the second pick can be cleared", () => {
+      renderPrimary(6, [], ["amd", "ps", "nm"]);
+      fireEvent.click(screen.getByTestId("tech-card-amd"));
+      expect(screen.getByTestId("tech-card-ps")).toHaveAttribute("data-selectable", "true");
+      expect(screen.queryByTestId("tech-second-pick-hint")).not.toBeInTheDocument();
+      fireEvent.click(screen.getByTestId("tech-card-ps"));
+      expect(screen.getByText(/Selected:/)).toHaveTextContent("2 / 2");
+      expect(screen.getByTestId("confirm-research-btn")).not.toBeDisabled();
+      fireEvent.click(screen.getByTestId("tech-clear-second"));
+      expect(screen.getByText(/Selected:/)).toHaveTextContent("1 / 2");
+      expect(screen.getByTestId("tech-card-amd")).toHaveAttribute("data-selected", "true");
+      // Clicking the selected second card also takes it back.
+      fireEvent.click(screen.getByTestId("tech-card-ps"));
+      fireEvent.click(screen.getByTestId("tech-card-ps"));
+      expect(screen.getByText(/Selected:/)).toHaveTextContent("1 / 2");
+    });
+
+    it("Hyper Metabolism becomes a valid second pick through the first pick's track, though it is not offered", () => {
+      renderPrimary(6, ["nm"], ["pa", "amd"]);
+      const hm = screen.getByTestId("tech-card-hm");
+      expect(hm).toHaveAttribute("data-selectable", "false");
+      fireEvent.click(screen.getByTestId("tech-card-pa"));
+      expect(hm).toHaveAttribute("data-selectable", "true");
+      fireEvent.click(hm);
+      expect(hm).toHaveAttribute("data-selected", "true");
+    });
+
+    it("a technology left out of the engine's list that was already valid is not a second pick", () => {
+      renderPrimary(6, [], ["amd"]);
+      fireEvent.click(screen.getByTestId("tech-card-amd"));
+      const ps = screen.getByTestId("tech-card-ps");
+      expect(ps).toHaveAttribute("data-selectable", "false");
+      expect(ps).toHaveAttribute("data-blocked-reason", "Not available to research");
+    });
+  });
+
+  describe("filter", () => {
+    it("narrows the cards to one colour and back", () => {
+      renderWithIdentity(
+        <TechnologyModal isOpen={true} onClose={vi.fn()} players={mockPlayers} viewerSeat="player1" />,
+      );
+      fireEvent.click(screen.getByTestId("tech-filter-biotic"));
+      expect(screen.getByTestId("tech-card-nm")).toBeInTheDocument();
+      expect(screen.queryByTestId("tech-card-amd")).toBeNull();
+      expect(screen.queryByTestId("tech-card-cr2")).toBeNull();
+      fireEvent.click(screen.getByTestId("tech-filter-unit_upgrade"));
+      expect(screen.getByTestId("tech-card-cr2")).toBeInTheDocument();
+      expect(screen.queryByTestId("tech-card-nm")).toBeNull();
+      fireEvent.click(screen.getByTestId("tech-filter-all"));
+      expect(screen.getByTestId("tech-card-amd")).toBeInTheDocument();
+    });
+
+    it("can show only what the viewer can research now", () => {
+      renderWithIdentity(
+        <TechnologyModal isOpen={true} onClose={vi.fn()} players={mockPlayers} viewerSeat="player1" />,
+      );
+      fireEvent.click(screen.getByTestId("tech-filter-available"));
+      // Already researched (amd) and out of reach (War Sun, four prerequisites) are hidden.
+      expect(screen.queryByTestId("tech-card-amd")).toBeNull();
+      expect(screen.queryByTestId("tech-card-ws")).toBeNull();
+      // A prerequisite-free technology the viewer lacks stays.
+      expect(screen.getByTestId("tech-card-nm")).toBeInTheDocument();
+    });
   });
 });

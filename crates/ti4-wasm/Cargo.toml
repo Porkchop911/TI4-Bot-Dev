@@ -1,0 +1,33 @@
+[package]
+name = "ti4-wasm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ti4-model.workspace = true
+ti4-content.workspace = true
+ti4-calc.workspace = true
+ti4-engine.workspace = true
+ti4-rule-bot.workspace = true
+ti4-view.workspace = true
+ti4-host.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+# Not the workspace lints: the wasm boundary passes raw pointers, which `unsafe_code = "forbid"`
+# rules out.
+[lints.rust]
+dead_code = "warn"
+unused_imports = "warn"
+unused_variables = "warn"
+
+[dev-dependencies]
+sha2.workspace = true
+hex.workspace = true
+serde_json.workspace = true
+# The parity test plays the same game through the server's own session.
+ti4-server.workspace = true

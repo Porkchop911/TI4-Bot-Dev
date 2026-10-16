@@ -634,8 +634,15 @@ pub(crate) fn use_leader(
     let before_rng = context.rng.clone();
     let mut revealed_rest = Vec::new();
     let mut found = Vec::new();
-    while found.len() < HARKA_CARDS && !context.state.action_card_deck.is_empty() {
-        let card = context.state.action_card_deck.remove(0);
+    while found.len() < HARKA_CARDS {
+        let Some(card) = ti4_model::deck_reserve::take_top(
+            &mut context.state.deck_reserve,
+            "action_card",
+            &mut context.state.action_card_deck,
+            Some(player.as_str()),
+        ) else {
+            break;
+        };
         if crate::action_cards::is_component_action(context.content, &card) {
             found.push(card);
         } else {
@@ -1126,7 +1133,7 @@ mod tests {
             &system,
         )
         .expect("commits");
-        assert_eq!(planets, [planet.clone()]);
+        assert_eq!(planets, std::slice::from_ref(&planet));
         assert_eq!(landed(&state, &system, &planet), 2, "both landed");
         assert_eq!(
             exhausted_count(&state),

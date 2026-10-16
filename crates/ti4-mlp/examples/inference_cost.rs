@@ -21,8 +21,11 @@ use ti4_tensor::{Kind, Tensor};
 mod gather;
 #[path = "inference_cost_support/micro.rs"]
 mod micro;
+// These shared helpers expose additional diagnostic paths used by sibling example binaries.
+#[allow(dead_code)]
 #[path = "inference_cost_support/bot.rs"]
 mod profile_bot;
+#[allow(dead_code)]
 #[path = "inference_cost_support/projection.rs"]
 mod projection;
 const FACTIONS: [&str; 6] = ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"];

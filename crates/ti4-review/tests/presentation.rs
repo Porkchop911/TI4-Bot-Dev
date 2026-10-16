@@ -361,6 +361,8 @@ fn started_session() -> ReviewSession {
         table: ProfileTable::Learner,
         temperature: 0.5,
         diplomacy: false,
+        lineup: None,
+        rule_seats: Vec::new(),
     };
     let review = LiveReview::start(&config).expect("the committed example inputs start a review");
     let session = review.session;
@@ -777,6 +779,8 @@ fn combat_dice_reach_the_frames_with_their_roller() {
         table: ProfileTable::Learner,
         temperature: 0.5,
         diplomacy: false,
+        lineup: None,
+        rule_seats: Vec::new(),
     };
     let mut review = LiveReview::start(&config).expect("the example table starts");
     let content = ContentStore::embedded();
@@ -844,6 +848,10 @@ fn exploration_draws_are_listed_for_the_round() {
             card: "mw".to_owned(),
             planet: Some(planet),
             outcome: "attached:miningworld".to_owned(),
+            system: None,
+            result: String::new(),
+            gains: Default::default(),
+            placed: Vec::new(),
         },
         ti4_model::state::ExplorationRecord {
             round: frame.state.round.saturating_sub(1),
@@ -852,6 +860,10 @@ fn exploration_draws_are_listed_for_the_round() {
             card: "ds".to_owned(),
             planet: None,
             outcome: "discarded".to_owned(),
+            system: None,
+            result: String::new(),
+            gains: Default::default(),
+            placed: Vec::new(),
         },
     ];
     let lines = view::exploration_lines(&session, &frame, content);
@@ -896,6 +908,8 @@ fn a_rift_die_says_whether_the_ship_survived() {
         table: ProfileTable::Learner,
         temperature: 0.5,
         diplomacy: false,
+        lineup: None,
+        rule_seats: Vec::new(),
     };
     let review = LiveReview::start(&config).expect("the example table starts");
     let frame = review.session.frames.last().expect("a first frame");
@@ -906,6 +920,8 @@ fn a_rift_die_says_whether_the_ship_survived() {
         hits_on: Some(4),
         rerolled: std::collections::BTreeSet::new(),
         by: None,
+        system: None,
+        outcome: None,
     };
     let survived = view::roll_line(frame, &rift(7), content);
     assert!(
@@ -929,6 +945,8 @@ fn the_agenda_under_vote_is_found_and_shown() {
         table: ProfileTable::Learner,
         temperature: 0.5,
         diplomacy: false,
+        lineup: None,
+        rule_seats: Vec::new(),
     };
     let review = LiveReview::start(&config).expect("the example table starts");
     let base = review.session.frames.last().expect("a first frame").clone();

@@ -99,7 +99,7 @@ pub const V2_CONTEXT_FIELDS: [&str; 10] = [
 /// Context fields that are display metadata only and never enter a fingerprint (stripped by
 /// `decision_hash` and by `DecisionLog::record`). `trigger` is derived from the event that opened
 /// a reaction window, so it adds nothing a replay needs.
-pub const V2_CONTEXT_DISPLAY_ONLY: [&str; 1] = ["trigger"];
+pub const V2_CONTEXT_DISPLAY_ONLY: [&str; 2] = ["trigger", "hit"];
 
 /// The one context field carrying values rather than identity, bound alongside the fields above.
 pub const V2_CONTEXT_QUANTITIES: &str = "outstanding";

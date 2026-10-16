@@ -8,7 +8,7 @@ Run evidence (trace/, run.log, digest.md, proctor-entry.md per run): {{RUNS_DIR}
 Your working directory is a private git worktree on branch `{{FIXER_BRANCH}}`, created from the
 night's branch. The games run from a different checkout; nothing you do here disturbs them. When you
 finish, your commits are merged into the night branch between games (round 1) or after the sweep
-(round 2), and the next builds include them.
+(round 2), and the next builds include them.{{SLOTS_NOTE}}
 
 {{REQUEST}}
 If the line above is not empty, start with exactly that problem (verify it against the evidence first), then continue with the procedure.

@@ -16,7 +16,6 @@ const roster: LobbyDto = {
       position: 1,
       occupant: alice,
       nickname: "Alex",
-      ready: true,
       connected: false,
       can_take_over: false,
     },
@@ -25,7 +24,6 @@ const roster: LobbyDto = {
       position: 2,
       occupant: bob,
       nickname: "Alex",
-      ready: true,
       connected: false,
       can_take_over: false,
     },
@@ -33,6 +31,16 @@ const roster: LobbyDto = {
 };
 
 describe("participant prose boundary", () => {
+  it("reads an engine event type in a prompt as plain words", () => {
+    expect(participantText("after TACTICAL_ACTION_ENDED", roster, [alice, bob])).toBe(
+      "after tactical action ended",
+    );
+    // Machine ids and single words are left alone.
+    expect(participantText("ability:mahact:edict:SPACE_COMBAT_WON:when OK", roster, [])).toBe(
+      "ability:mahact:edict:SPACE_COMBAT_WON:when OK",
+    );
+  });
+
   it("resolves standalone references in prompts, option labels and errors, including unknown IDs", () => {
     const text = `${alice}'s offer to ${bob} -- accept? Unknown ${missing}.`;
     expect(participantText(text, roster, [alice, bob])).toBe(

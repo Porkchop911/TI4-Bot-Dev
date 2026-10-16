@@ -1,4 +1,11 @@
+import { HitKindBanner, BarrageWindowBanner } from "./HitKindBanner.tsx";
+import {
+  deriveBarrageWindow,
+  deriveHitKind,
+  illegalTargetReason,
+} from "../presentation/hitKind.ts";
 import React, { useMemo, useState, useEffect, useRef } from "react";
+import { useCapability } from "../offline/capabilities.ts";
 import {
   PendingChoiceDto,
   PlayerView,
@@ -14,6 +21,7 @@ import { Dialog } from "../primitives/index.ts";
 import { WorkflowShell } from "./WorkflowShell.tsx";
 import { usePlayerIdentity } from "../presentation/PlayerIdentity.tsx";
 import { DecisionHeader } from "./DecisionHeader.tsx";
+import { UnitStatsTip } from "./UnitInfo.tsx";
 import { UnitIcon, getUnitBaseType, getUnitDisplayName } from "./UnitIcon.tsx";
 import { CombatResultSummary } from "./CombatResultSummary.tsx";
 import { summarizeCombat } from "../presentation/combatSummary.ts";
@@ -41,6 +49,8 @@ import {
 } from "../presentation/hitAssignment.ts";
 import type { BasketPlan } from "../protocol/client.ts";
 import { HitAssignmentPanel } from "./HitAssignmentPanel.tsx";
+import { salvageEffect } from "../presentation/reactionModel.ts";
+import { systemNamedLabel, systemTag } from "../presentation/systemFacts.ts";
 
 export interface SpaceCombatOverlayProps {
   choice: PendingChoiceDto | null;
@@ -178,6 +188,8 @@ export const SpaceCombatOverlay: React.FC<SpaceCombatOverlayProps> = ({
   advisorUrl,
   onSubmitBatch,
 }) => {
+  // The advisor is a server service: offline there is nothing to ask, so only the rough estimate shows.
+  const advisorOn = useCapability("advisor");
   const display = usePlayerIdentity();
 
   // Normalize players map
@@ -217,10 +229,37 @@ export const SpaceCombatOverlay: React.FC<SpaceCombatOverlayProps> = ({
     choice?.context?.subtype.startsWith("reaction_") ||
     choice?.context?.subtype.startsWith("play_reaction_"),
   );
+  const hitKind =
+    (isCasualtyStage || isSustainStage) && choice?.context
+      ? deriveHitKind(choice.context, {
+          producer: choice.context.hit?.producer
+            ? display(choice.context.hit.producer).label
+            : undefined,
+          hits: hitsOwed,
+        })
+      : null;
+  const barrageWindow =
+    isReactionStage && choice
+      ? deriveBarrageWindow(
+          choice.context,
+          choice.context?.trigger?.actor
+            ? display(choice.context.trigger.actor).label
+            : null,
+        )
+      : null;
   // Sustains and casualties are staged in one panel and sent together as a plan.
+  // Only the hit-pool decisions go through the staged panel (its `casualties` plan is accepted for
+  // exactly these subtypes). One-off losses (Assault Cannon, Courageous to the End, ...) are a single
+  // destroy choice and are answered with the plain casualty buttons.
+  const isHitPoolSubtype =
+    subtype === "" ||
+    subtype === "sustain_damage" ||
+    subtype === "assign_casualty" ||
+    subtype === "assign_ground_casualty";
   const stagedStage =
     Boolean(onSubmitBatch) &&
     (isSustainStage || isCasualtyStage) &&
+    isHitPoolSubtype &&
     !isReactionStage;
   const phase =
     board?.combat?.phase ??
@@ -236,19 +275,21 @@ export const SpaceCombatOverlay: React.FC<SpaceCombatOverlayProps> = ({
     board?.combat?.round === 1 &&
     Object.keys(board.combat.barrage_hits ?? {}).length > 0;
   const showAssignment = isResolving || showBarrageRecap;
-  const reactionTiming = subtype.includes("SUSTAIN_DAMAGE_USED")
-    ? "Your opponent sustained damage to cancel your hit."
-    : subtype.includes("HITS_TO_ASSIGN")
-      ? "Before assigning incoming hits"
-      : subtype.includes("ACTION_CARD_PLAYED")
-        ? "In response to an action card"
-        : subtype.includes("SPACE_COMBAT_WON")
-          ? "After winning space combat"
-          : subtype.includes("SPACE_COMBAT_STARTED")
-            ? "At the start of space combat"
-            : subtype.includes("COMBAT_ROUND_STARTED")
-              ? "At the start of this combat round"
-              : (choice?.prompt.replaceAll("_", " ") ?? "Choose a reaction");
+  const reactionTiming = barrageWindow
+    ? "Before the barrage dice are rolled"
+    : subtype.includes("SUSTAIN_DAMAGE_USED")
+      ? "Your opponent sustained damage to cancel your hit."
+      : subtype.includes("HITS_TO_ASSIGN")
+        ? "Before assigning incoming hits"
+        : subtype.includes("ACTION_CARD_PLAYED")
+          ? "In response to an action card"
+          : subtype.includes("SPACE_COMBAT_WON")
+            ? "After winning space combat"
+            : subtype.includes("SPACE_COMBAT_STARTED")
+              ? "At the start of space combat"
+              : subtype.includes("COMBAT_ROUND_STARTED")
+                ? "At the start of this combat round"
+                : (choice?.prompt.replaceAll("_", " ") ?? "Choose a reaction");
 
   // Identify system where combat is taking place
   const combatSystemId =
@@ -259,6 +300,8 @@ export const SpaceCombatOverlay: React.FC<SpaceCombatOverlayProps> = ({
     activeSystemId ??
     board?.active_system ??
     "Combat";
+  const combatSystemLabel =
+    combatSystemId === "Combat" ? "System" : systemNamedLabel(combatSystemId, board);
 
   // Identify units in combat system
   const systemUnits = useMemo(() => {
@@ -285,9 +328,7 @@ export const SpaceCombatOverlay: React.FC<SpaceCombatOverlayProps> = ({
     onlyFighters:
       phase === "barrage" && onlyFighterOptions(choice?.options ?? []),
   };
-  const stagedHits =
-    stagedStage &&
-    canStageHits(hitPanelContext);
+  const stagedHits = stagedStage && canStageHits(hitPanelContext);
 
   // Discover sides
   const { attackerSeat, defenderSeat } = useMemo(() => {
@@ -414,13 +455,13 @@ export const SpaceCombatOverlay: React.FC<SpaceCombatOverlayProps> = ({
       attSub: "",
       defSub: "",
       avgRounds: "",
-      tag: "Rough fleet estimate · simulation pending",
+      tag: advisorOn ? "Rough fleet estimate · simulation pending" : "Rough fleet estimate",
       tagClass: "combat-odds-card__tag--offline",
     };
-  }, [attackerStats, defenderStats]);
+  }, [attackerStats, defenderStats, advisorOn]);
 
   useEffect(() => {
-    if (!battleKey || (!isOpen && !choice)) return;
+    if (!advisorOn || !battleKey || (!isOpen && !choice)) return;
 
     const hasAttackerUnits = Object.keys(battleParams.attackerUnits).length > 0;
     const hasDefenderUnits = Object.keys(battleParams.defenderUnits).length > 0;
@@ -451,7 +492,7 @@ export const SpaceCombatOverlay: React.FC<SpaceCombatOverlayProps> = ({
       active = false;
       controller.abort();
     };
-  }, [isOpen, Boolean(choice), battleKey, advisorUrl]);
+  }, [advisorOn, isOpen, Boolean(choice), battleKey, advisorUrl]);
 
   // Merged odds for rendering
   const displayedOdds = useMemo(() => {
@@ -754,6 +795,12 @@ export const SpaceCombatOverlay: React.FC<SpaceCombatOverlayProps> = ({
       }
 
       const isCasualtyInteractive = matchingCasualties.length > 0;
+      // With the kind of hit known, a ship this decision does not offer is dimmed and says why.
+      const illegalReason =
+        hitKind && isCurrentDecider && isCasualtyStage && !isCasualtyInteractive
+          ? (illegalTargetReason(hitKind, group.unitType) ??
+            "Cannot be assigned: not a legal target for this hit")
+          : null;
       const isSustainInteractive = matchingSustains.length > 0;
 
       const handleRowClick = () => {
@@ -773,8 +820,11 @@ export const SpaceCombatOverlay: React.FC<SpaceCombatOverlayProps> = ({
       return (
         <div
           key={group.unitType}
-          className={`combat-unit-row ${isCasualtyInteractive ? "combat-unit-row--interactive combat-unit-row--casualty" : ""}`}
+          className={`combat-unit-row ${isCasualtyInteractive ? "combat-unit-row--interactive combat-unit-row--casualty" : ""} ${illegalReason ? "combat-unit-row--illegal" : ""}`}
           data-testid={`unit-row-${group.unitType}`}
+          title={illegalReason ?? undefined}
+          aria-disabled={illegalReason ? true : undefined}
+          data-illegal-target={illegalReason ? "true" : undefined}
           role={isCasualtyInteractive ? "button" : undefined}
           tabIndex={isCasualtyInteractive ? 0 : undefined}
           onClick={isCasualtyInteractive ? handleRowClick : undefined}
@@ -786,11 +836,18 @@ export const SpaceCombatOverlay: React.FC<SpaceCombatOverlayProps> = ({
               : undefined
           }
         >
-          <UnitIcon type={group.unitType} size={20} />
-          <span className="combat-unit-row__name">
-            {getUnitDisplayName(group.unitType, group.count)}
-          </span>
+          <UnitStatsTip unit={group.unitType} seat={seat}>
+            <UnitIcon type={group.unitType} size={20} />
+            <span className="combat-unit-row__name">
+              {getUnitDisplayName(group.unitType, group.count)}
+            </span>
+          </UnitStatsTip>
           <span className="combat-unit-row__count">×{group.count}</span>
+          {illegalReason && (
+            <span className="combat-unit-row__illegal-note">
+              Not a legal target
+            </span>
+          )}
           {showAssignment && destroyed > 0 && (
             <span
               className="combat-unit-row__loss"
@@ -827,7 +884,9 @@ export const SpaceCombatOverlay: React.FC<SpaceCombatOverlayProps> = ({
                   className="combat-unit-row__click-hint"
                   data-testid={`casualty-opt-${matchingCasualties[0].id}`}
                 >
-                  💥 Click to assign
+                  {hitKind?.tone === "destroy"
+                    ? "💥 Click to destroy"
+                    : "💥 Click to assign"}
                 </span>
               ) : (
                 matchingCasualties.map((opt) => {
@@ -889,10 +948,12 @@ export const SpaceCombatOverlay: React.FC<SpaceCombatOverlayProps> = ({
           className="combat-unit-row combat-unit-row--lost"
           data-testid={`unit-row-lost-${type}`}
         >
-          <UnitIcon type={type} size={20} />
-          <span className="combat-unit-row__name">
-            {getUnitDisplayName(type)}
-          </span>
+          <UnitStatsTip unit={type} seat={seat}>
+            <UnitIcon type={type} size={20} />
+            <span className="combat-unit-row__name">
+              {getUnitDisplayName(type)}
+            </span>
+          </UnitStatsTip>
           <span className="combat-unit-row__count" title="No ships remaining">
             ×0
           </span>
@@ -939,7 +1000,7 @@ export const SpaceCombatOverlay: React.FC<SpaceCombatOverlayProps> = ({
         <div className="combat-arena-dock__info">
           <span className="combat-arena-dock__badge">⚔️ SPACE COMBAT</span>
           <span className="combat-arena-dock__system">
-            System {combatSystemId} — {display(attackerSeat).label} vs{" "}
+            {combatSystemLabel} — {display(attackerSeat).label} vs{" "}
             {display(defenderSeat).label}
           </span>
           {hitsOwed != null && (
@@ -987,10 +1048,14 @@ export const SpaceCombatOverlay: React.FC<SpaceCombatOverlayProps> = ({
         <div className="panel choice-workflow-modal combat-arena-panel">
           {/* Header */}
           <Dialog.Title as="h2" className="visually-hidden">
-            Space Combat — System {combatSystemId}
+            Space Combat — {combatSystemLabel}
           </Dialog.Title>
           <DecisionHeader
-            title={`Space Combat · System ${combatSystemId} · Round ${board?.combat?.round ?? 1} · ${phase === "pre_roll" ? "Before rolls" : phase === "barrage" ? "Anti-fighter barrage" : phase === "resolving_hits" ? "Resolve hits" : phase === "retreating" ? "Retreat / next round" : "Combat complete"}`}
+            title={
+              phase === "complete"
+                ? `Space Combat · ${combatSystemLabel}`
+                : `Space Combat · ${combatSystemLabel} · Round ${board?.combat?.round ?? 1} · ${hitKind?.cause === "assault_cannon" ? "Assault Cannon" : barrageWindow ? "Anti-fighter barrage" : phase === "pre_roll" ? "Before rolls" : phase === "barrage" ? "Anti-fighter barrage" : phase === "resolving_hits" ? "Resolve hits" : "Retreat / next round"}`
+            }
             onMinimize={() =>
               phase === "complete"
                 ? onClose()
@@ -1010,28 +1075,36 @@ export const SpaceCombatOverlay: React.FC<SpaceCombatOverlayProps> = ({
             data-phase={phase}
             className="combat-action-prompt"
           >
-            {phase === "pre_roll"
-              ? "Before rolls"
-              : phase === "barrage"
-                ? "Anti-fighter barrage"
-                : phase === "resolving_hits"
-                  ? "Roll results · Resolve hits"
-                  : phase === "retreating"
-                    ? "Retreat / next round"
-                    : "Combat complete"}
+            {hitKind?.cause === "assault_cannon"
+              ? "Start of combat"
+              : barrageWindow
+                ? "Start of combat"
+                : phase === "pre_roll"
+                  ? "Before rolls"
+                  : phase === "barrage"
+                    ? "Anti-fighter barrage"
+                    : phase === "resolving_hits"
+                      ? "Roll results · Resolve hits"
+                      : phase === "retreating"
+                        ? "Retreat / next round"
+                        : "Combat complete"}
           </div>
-          {(phase === "barrage" || showBarrageRecap) && (
-            <div
-              className="combat-barrage-note"
-              data-testid="combat-barrage-results"
-            >
-              <strong>Anti-fighter barrage</strong>
-              <span>
-                Hits automatically destroy opposing fighters. Waylay lets the
-                defender assign hits to other ships instead.
-              </span>
-            </div>
-          )}
+          {hitKind && <HitKindBanner model={hitKind} />}
+          {barrageWindow && <BarrageWindowBanner model={barrageWindow} />}
+          {(phase === "barrage" || showBarrageRecap) &&
+            !barrageWindow &&
+            !hitKind && (
+              <div
+                className="combat-barrage-note"
+                data-testid="combat-barrage-results"
+              >
+                <strong>Anti-fighter barrage</strong>
+                <span>
+                  Hits automatically destroy opposing fighters. Waylay lets the
+                  defender assign hits to other ships instead.
+                </span>
+              </div>
+            )}
 
           {choice ? (
             <WorkflowShell
@@ -1381,6 +1454,21 @@ export const SpaceCombatOverlay: React.FC<SpaceCombatOverlayProps> = ({
                                       {card.description}
                                     </p>
                                   )}
+                                  {alias === "salvage" && (
+                                    <p
+                                      className="combat-card-offer__description"
+                                      data-testid="combat-salvage-effect"
+                                    >
+                                      <strong>
+                                        {salvageEffect(
+                                          choice.context?.trigger?.actor ?? viewerSeat ?? null,
+                                          board ?? undefined,
+                                          (seat) => playersMap[seat]?.commodities ?? null,
+                                          (seat) => display(seat).label,
+                                        )}
+                                      </strong>
+                                    </p>
+                                  )}
                                 </div>
                                 <button
                                   type="button"
@@ -1410,7 +1498,9 @@ export const SpaceCombatOverlay: React.FC<SpaceCombatOverlayProps> = ({
                             disabled={isDirectSubmitting}
                             onClick={() => void submitDirect(declineOption.id)}
                           >
-                            Pass
+                            {subtype.startsWith("play_reaction_")
+                              ? "Back, do not play a card"
+                              : "Pass"}
                           </button>
                         )}
                       </div>
@@ -1587,7 +1677,7 @@ export const SpaceCombatOverlay: React.FC<SpaceCombatOverlayProps> = ({
                               disabled={isDirectSubmitting}
                               className="button button--secondary"
                             >
-                              {opt.label}
+                              {opt.kind === "retreat_to" ? `Retreat to ${systemTag(opt.id, board)}` : opt.label}
                             </button>
                           ))}
                         </div>
@@ -1767,26 +1857,26 @@ export const SpaceCombatOverlay: React.FC<SpaceCombatOverlayProps> = ({
                 </div>
               </div>
 
-              {phase === "complete" && board?.combat && (() => {
-                const summary = summarizeCombat(
-                  board.combat,
-                  board.systems[combatSystemId]?.units ?? [],
-                );
-                return summary ? <CombatResultSummary summary={summary} /> : null;
-              })()}
+              {phase === "complete" &&
+                board?.combat &&
+                (() => {
+                  const summary = summarizeCombat(
+                    board.combat,
+                    board.systems[combatSystemId]?.units ?? [],
+                  );
+                  return summary ? (
+                    <CombatResultSummary summary={summary} />
+                  ) : null;
+                })()}
 
-              <div
-                className="combat-spectator-waiting"
-                data-testid={
-                  phase === "complete"
-                    ? "combat-complete-notice"
-                    : "spectator-combat-notice"
-                }
-              >
-                {phase === "complete"
-                  ? "Combat complete"
-                  : `Observing space combat in System ${combatSystemId}...`}
-              </div>
+              {phase !== "complete" && (
+                <div
+                  className="combat-spectator-waiting"
+                  data-testid="spectator-combat-notice"
+                >
+                  {`Observing space combat in ${combatSystemLabel}...`}
+                </div>
+              )}
             </>
           )}
         </div>

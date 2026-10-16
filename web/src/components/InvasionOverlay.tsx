@@ -16,8 +16,15 @@ import {
 } from "../presentation/hitAssignment.ts";
 import type { BasketPlan } from "../protocol/client.ts";
 import { HitAssignmentPanel } from "./HitAssignmentPanel.tsx";
+import { GroundCombatResultSummary } from "./GroundCombatResultSummary.tsx";
+import { summarizeGroundCombat } from "../presentation/groundCombatSummary.ts";
 import { InvasionLandingTray, type Landing } from "./InvasionLandingTray.tsx";
+import { UnitStatsTip } from "./UnitInfo.tsx";
 import { UnitIcon, getUnitDisplayName } from "./UnitIcon.tsx";
+import { InvasionStepCard } from "./InvasionStepCard.tsx";
+import { isDefenseStep } from "../presentation/invasionSteps.ts";
+import { describeOfferCard } from "../presentation/offerCard.ts";
+import { OfferCardPanel } from "./OfferCardPanel.tsx";
 import { WorkflowShell } from "./WorkflowShell.tsx";
 
 export interface InvasionEffectInfo {
@@ -92,6 +99,19 @@ export function getInvasionEffectInfo(
     };
   }
 
+  // Bombardment: several players have ground forces on the planet, so the bombarding player picks
+  // whose forces take the next hits.
+  if (choice.context?.subtype === "bombardment_target") {
+    return {
+      typeClass: "combat",
+      icon: "☄️",
+      categoryLabel: "Bombardment · choose a target",
+      title: choice.prompt,
+      description:
+        "Bombardment hits can only be assigned to ground forces on the planet (never ships or structures). Pick which player's ground forces take them; each hit destroys one ground force, and a Mech may sustain damage to cancel one.",
+    };
+  }
+
   // 4. Fallback general invasion choice
   return {
     typeClass: "general",
@@ -118,6 +138,24 @@ export const InvasionEffectCard: React.FC<{
   waitingFor,
 }) => {
   const info = getInvasionEffectInfo(choice, currentPlanet, groundRound);
+  // The engine presented this decision as an offer card (bombardment target): facts and a caption
+  // per answer instead of raw option labels.
+  const offer = describeOfferCard(choice);
+  if (offer && !waitingFor) {
+    return (
+      <div
+        className={`invasion-effect-card invasion-effect-card--${info.typeClass}`}
+        data-testid="invasion-effect-card"
+      >
+        <OfferCardPanel
+          view={offer}
+          disabled={Boolean(isDirectSubmitting)}
+          onChoose={(id) => void onSubmit?.(id)}
+        />
+      </div>
+    );
+  }
+  if (offer && waitingFor) info.description = offer.text ?? info.description;
 
   return (
     <div
@@ -172,19 +210,35 @@ export const InvasionEffectCard: React.FC<{
               option.id === "decline" ||
               option.id === "pass";
             const isPrimary = index === 0 && !isDecline;
+            // A unit offered for production (Freelancers): its name and cost, not the raw label.
+            const unit =
+              option.kind === "produce" && typeof option.payload?.unit === "string"
+                ? option.payload.unit
+                : null;
+            const cost = typeof option.payload?.cost === "number" ? option.payload.cost : null;
+            const builds = choice.options.some((o) => o.kind === "produce");
             return (
               <button
                 key={option.id}
                 type="button"
                 className={`button ${isPrimary ? "button--primary invasion-effect-btn--primary" : "button--secondary invasion-effect-btn--secondary"} invasion-effect-btn`}
                 disabled={isDirectSubmitting}
+                data-testid={isDecline ? "invasion-effect-decline" : undefined}
                 onClick={() => void onSubmit?.(option.id)}
               >
+                {unit && <UnitIcon type={unit} />}
                 <span className="invasion-effect-btn__label">
                   {choice.context?.subtype === "fight_ground_combat_round"
                     ? "Fight next round"
-                    : option.label}
+                    : unit
+                      ? `Produce ${getUnitDisplayName(unit)}`
+                      : isDecline && builds
+                        ? "Decline: build nothing"
+                        : option.label}
                 </span>
+                {unit && cost !== null && (
+                  <small className="invasion-effect-btn__sub"> · cost {cost}</small>
+                )}
                 {option.description && (
                   <small className="invasion-effect-btn__sub">
                     {" "}
@@ -239,12 +293,13 @@ export const InvasionOverlay: React.FC<{
   const system = board.systems[invasion.system_id];
   const step = invasion.last_step;
   const invaderDisplay = display(invasion.invader);
+  const groundSummary = summarizeGroundCombat(step, invasion.invader);
 
   const describe = (units: PlacedUnitView[]) =>
     units
       .map(
         (unit) =>
-          `${unit.owner} ${unit.unit_type}${unit.damaged ? " (damaged)" : ""}`,
+          `${display(unit.owner).label} ${getUnitDisplayName(unit.unit_type)}${unit.damaged ? " (damaged)" : ""}`,
       )
       .join(", ") || "None";
 
@@ -359,7 +414,11 @@ export const InvasionOverlay: React.FC<{
         </div>
       )}
 
-      {step && (
+      {groundSummary && <GroundCombatResultSummary summary={groundSummary} />}
+
+      {step && isDefenseStep(step.kind) && <InvasionStepCard step={step} invader={invasion.invader} />}
+
+      {step && !isDefenseStep(step.kind) && (
         <section
           aria-label={`${step.planet} ${step.kind} result`}
           data-testid="invasion-step"
@@ -399,7 +458,7 @@ export const InvasionOverlay: React.FC<{
                       {die.hit ? "💥" : "⚪"}
                     </span>
                     <span className="invasion-die-chip__text">
-                      {die.player} · {die.group}: {die.face} / {die.target}{" "}
+                      {display(die.player).label} · {die.group}: {die.face} / {die.target}{" "}
                       {die.hit ? "hit" : "miss"}
                     </span>
                   </span>
@@ -441,11 +500,13 @@ export const InvasionOverlay: React.FC<{
                                   ownerDisplay.color ?? undefined,
                               }}
                             />
-                            <UnitIcon type={unit.unit_type} />
-                            <span className="invasion-unit-chip__name">
-                              {ownerDisplay.label}{" "}
-                              {getUnitDisplayName(unit.unit_type)}
-                            </span>
+                            <UnitStatsTip unit={unit.unit_type} seat={unit.owner}>
+                              <UnitIcon type={unit.unit_type} />
+                              <span className="invasion-unit-chip__name">
+                                {ownerDisplay.label}{" "}
+                                {getUnitDisplayName(unit.unit_type)}
+                              </span>
+                            </UnitStatsTip>
                             {unit.damaged && (
                               <span className="invasion-unit-chip__damaged">
                                 damaged

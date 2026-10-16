@@ -121,7 +121,6 @@ fn main() {
                 &mut failed
             };
             tally.seats += 1;
-            #[expect(clippy::cast_precision_loss, reason = "counts are small")]
             let progress = seat.episode.final_progress;
             tally.planets += progress.planets_gained as f64;
             tally.systems += progress.systems as f64;
@@ -201,7 +200,8 @@ fn main() {
         "per seat", "cleared", "FAILED", "diff"
     );
     println!("{}", "-".repeat(60));
-    let rows: [(&str, fn(&Tally) -> f64); 17] = [
+    type MetricRow = (&'static str, fn(&Tally) -> f64);
+    let rows: [MetricRow; 17] = [
         ("planets gained", |t| t.mean(t.planets)),
         ("systems held", |t| t.mean(t.systems)),
         ("units gained", |t| t.mean(t.units)),

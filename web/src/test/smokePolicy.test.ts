@@ -3,17 +3,23 @@ import {
   activationWeight,
   preferHitConfirm,
   preferTokenConfirm,
+  preferTradeDesk,
   preferPayment,
+  preferReadyConfirm,
   steerWeight,
   strongUnselected,
   isUnstage,
   classifyControl,
+  serverProgressed,
+  classifyCandidate,
   turnBarPool,
   isBarControl,
   pausedBatch,
   EXCLUDED_CONTROLS,
   isReactionSubtype,
   reactionTextProblem,
+  preferTechWindowUse,
+  CHAOS_FREE_OFFERS,
 } from "../../e2e/smokePolicy.ts";
 
 const c = (desc: string, checked = false) => ({ desc, checked });
@@ -90,8 +96,17 @@ describe("steerWeight (smoke harness steering)", () => {
 describe("activationWeight (smoke harness steering)", () => {
   it("favours Mecatol and enemy systems, and avoids unreachable ones", () => {
     expect(activationWeight("18", true, false, false)).toBe(40);
+    // An unclaimed trait planet with the landing party in place, or a frontier ship, is worth a lot.
+    expect(activationWeight("69", true, false, false, false, true)).toBe(1500);
+    expect(activationWeight("69", true, false, false, false, false)).toBe(5);
     expect(activationWeight("35", true, true, false)).toBe(30);
     expect(activationWeight("35", true, false, false)).toBe(5);
+    // A defended planet outranks a bare enemy fleet, but an unreachable one is still skipped.
+    expect(activationWeight("35", true, true, false, true)).toBe(60);
+    expect(activationWeight("35", false, true, false, true)).toBe(0.2);
+    // Own ground forces waiting beside a defended planet: activate in place, ahead of everything.
+    expect(activationWeight("35", false, true, true, true)).toBe(2000);
+    expect(activationWeight("35", true, true, true, false)).toBe(30);
     expect(activationWeight("35", false, true, false)).toBe(0.2);
   });
 
@@ -154,6 +169,19 @@ describe("isUnstage (smoke harness)", () => {
   });
 });
 
+describe("classifyCandidate (staged technology cards)", () => {
+  it("treats a selected technology card as a take-back control, not a submit", () => {
+    const desc = "tech-card-gls | Graviton Laser System";
+    expect(classifyCandidate(desc, true)).toEqual({ unstage: true, commit: false });
+    expect(classifyCandidate(desc, false)).toEqual({ unstage: false, commit: false });
+  });
+
+  it("treats the clear-second-pick control as take-back", () => {
+    expect(isUnstage("tech-clear-second | Clear second pick")).toBe(true);
+    expect(classifyCandidate("tech-clear-second | Clear second pick", false).unstage).toBe(true);
+  });
+});
+
 describe("preferHitConfirm", () => {
   it("confirms the staged hits once every hit is assigned", () => {
     const confirm = c("hit-confirm | Confirm hits");
@@ -180,6 +208,26 @@ describe("preferHitConfirm", () => {
     expect(isUnstage("hit-destroy-fighter|intact | Destroy Fighters | +")).toBe(
       false,
     );
+  });
+});
+
+describe("preferReadyConfirm (Diplomacy ready bar)", () => {
+  it("confirms once the bar allows it", () => {
+    const confirm = c("ready-bar-confirm | Confirm: ready 2 planets | Confirm");
+    expect(preferReadyConfirm([c("ready-planet-chip-jord | ✓ Jord"), confirm])).toEqual([confirm]);
+  });
+
+  it("taps only planets that are not picked yet, so picking cannot loop", () => {
+    const open = c("ready-planet-chip-lodor | Lodor");
+    expect(preferReadyConfirm([c("ready-planet-chip-jord | ✓ Jord"), open])).toEqual([open]);
+  });
+
+  it("never clicks the bar's Hide or Clear, and leaves other decisions alone", () => {
+    expect(EXCLUDED_CONTROLS.test("ready-bar-collapse")).toBe(true);
+    expect(EXCLUDED_CONTROLS.test("ready-bar-clear")).toBe(true);
+    expect(EXCLUDED_CONTROLS.test("ready-bar-confirm")).toBe(false);
+    const other = [c("choice-option | x")];
+    expect(preferReadyConfirm(other)).toBe(other);
   });
 });
 
@@ -255,6 +303,15 @@ describe("preferTokenConfirm", () => {
   });
 });
 
+describe("choice rows (smoke harness)", () => {
+  it("never reads a choice-option label as a submit", () => {
+    expect(classifyControl("choice-option | commit infantry to lor in 36").commit).toBe(false);
+    expect(classifyControl("choice-option | Decline").commit).toBe(false);
+    expect(classifyControl("choice-option | Pass").commit).toBe(false);
+    expect(classifyControl("submit-choice | Confirm").commit).toBe(true);
+  });
+});
+
 describe("turn bar controls (smoke harness)", () => {
   const tactical = c("turn-bar-tactical | Tactical action 3 tactic tokens left T");
   const imperial = c(
@@ -317,7 +374,14 @@ describe("turn bar controls (smoke harness)", () => {
     expect(steerWeight("turn-bar-pass | Pass")).toBeLessThan(1);
     expect(steerWeight(end.desc)).toBeGreaterThan(steerWeight(components.desc));
     // The test id decides, not the words in a card's text.
-    expect(steerWeight("turn-bar-components | Components take a tactical action")).toBe(1);
+    expect(steerWeight("turn-bar-components | Components take a tactical action")).toBe(6);
+    expect(steerWeight("turn-bar-cards | Action cards 2 A")).toBeGreaterThan(steerWeight(trade.desc));
+  });
+
+  it("prefers playing a reaction over passing it", () => {
+    expect(steerWeight("play-reaction-btn-reaction:sol:SHIP_MOVED:after | Play Rescue")).toBeGreaterThan(
+      steerWeight("pass-reaction-btn | Pass (Spacebar)"),
+    );
   });
 
   it("gives every split strategic button the same weight so each card gets played", () => {
@@ -398,5 +462,140 @@ describe("system pick controls", () => {
     // The list stays the path: option rows are choice-option, the submit is a commit.
     expect(classifyControl("choice-option | 14").unstage).toBe(false);
     expect(classifyControl("submit-choice-button | Confirm choice").commit).toBe(true);
+  });
+});
+
+describe("Leadership map payment (Pay on the map)", () => {
+  const payOnMap = c("token-pay-on-map | Pay on the map");
+  const confirm = c("token-confirm | Confirm tokens and purchase");
+  const plus = c("token-plus-fleet | Add a token to Fleet | +");
+  const mapPlanet = c("planet-jord | Exhaust planet Jord for 2 influence");
+
+  it("takes the map route only now and then, and only once everything is assigned", () => {
+    expect(preferTokenConfirm([payOnMap, confirm, mapPlanet], () => 0)).toEqual([payOnMap]);
+    expect(preferTokenConfirm([payOnMap, confirm, mapPlanet], () => 0.99)).toEqual([confirm]);
+    expect(preferTokenConfirm([payOnMap, plus, mapPlanet], () => 0)).toEqual([plus]);
+    expect(preferTokenConfirm([payOnMap, confirm])).toEqual([confirm]);
+  });
+
+  it("never toggles the map's payable planets while the token panel is up", () => {
+    expect(preferTokenConfirm([mapPlanet, plus])).toEqual([plus]);
+    // A payment dialog without token controls keeps its map targets.
+    expect(preferTokenConfirm([mapPlanet])).toEqual([mapPlanet]);
+  });
+
+  describe("the payment bar", () => {
+    const barConfirm = c("token-bar-confirm | Confirm tokens and purchase");
+    const barAuto = c("token-bar-auto | Auto-pay");
+    const goods = c("token-bar-goods-plus | Spend one trade good more | +");
+    const resume = c("resume-choice-button | Open token panel");
+
+    it("confirms when enabled, else restores Auto-pay, else goes back to the panel", () => {
+      expect(preferTokenConfirm([mapPlanet, goods, barAuto, resume, barConfirm])).toEqual([barConfirm]);
+      expect(preferTokenConfirm([mapPlanet, goods, barAuto, resume])).toEqual([barAuto]);
+      expect(preferTokenConfirm([mapPlanet, goods, resume, c("token-bar-tally")])).toEqual([resume]);
+    });
+  });
+});
+
+describe("preferTradeDesk", () => {
+  const propose = c("propose-trade-btn | Propose Deal");
+  const decline = c("decline-trade-btn | Offer Nothing");
+  const suggest = c("stage-suggest-offer_1 | Give 1 trade good, receive 1 commodity");
+  const stage = c("stage-give-trade_goods-inc | Increase Trade goods | +");
+
+  it("proposes once the staged combination is a listed deal", () => {
+    expect(preferTradeDesk([stage, decline, propose])).toEqual([propose]);
+    expect(preferTradeDesk([stage, decline, propose], () => 0.5)).toEqual([propose]);
+  });
+
+  it("takes a suggested listed deal while the staged one is not available", () => {
+    expect(preferTradeDesk([stage, decline, suggest])).toEqual([suggest]);
+  });
+
+  it("now and then offers nothing instead, and leaves other screens alone", () => {
+    expect(preferTradeDesk([stage, decline, propose], () => 0)).toEqual([decline]);
+    const answer = [c("answer-opt-accept | Accept"), c("answer-opt-refuse | Refuse")];
+    expect(preferTradeDesk(answer, () => 0)).toEqual(answer);
+    expect(preferTradeDesk([stage, decline], () => 0)).toEqual([stage, decline]);
+  });
+});
+
+describe("controls the harness never clicks as decisions", () => {
+  it("excludes the info buttons and the secondary-prep chrome", () => {
+    for (const desc of [
+      "unit-info-cruiser",
+      "Cruiser: unit details",
+      "faction-info-button",
+      "secondary-prep-chip",
+      "prepare-banner",
+      "prep-save",
+      "top-menu-button | Menu",
+      "top-menu-close | Close",
+      "agenda-strip-toggle | Agenda 1/2: Minister of Peace · For/Against · Your vote",
+      "prep-fold | Hide details",
+      "detail-panel-fold | Fold Politics details",
+      "history-error-dismiss | Dismiss",
+    ]) {
+      expect(EXCLUDED_CONTROLS.test(desc), desc).toBe(true);
+    }
+    for (const desc of ["produce-unit-btn-cruiser", "confirm-builds", "done-producing-btn", "trade-opt-1", "answer-opt-accept", "token-bar-confirm"]) {
+      expect(EXCLUDED_CONTROLS.test(desc), desc).toBe(false);
+    }
+  });
+});
+
+describe("preferTechWindowUse (optional technology windows)", () => {
+  const options = [
+    c("choice-option | exhaust tarmann"),
+    c("choice-option | exhaust semlore"),
+    c("choice-option | Decline"),
+    c("submit-choice-button | Submit"),
+  ];
+  const transit = [
+    c("choice-option | move infantry from 70 to 01"),
+    c("choice-option | finish redeployment"),
+    c("submit-choice-button | Submit"),
+  ];
+  const descs = (cs: { desc: string }[]) => cs.map((x) => x.desc);
+
+  it("moves a unit at the first Transit Diodes prompt and finishes at the next", () => {
+    const first = preferTechWindowUse("transit_diodes_redeploy", "Transit Diodes: redeploy ground forces (4 left)", transit, 0);
+    expect(descs(first)).toEqual(["choice-option | move infantry from 70 to 01", "submit-choice-button | Submit"]);
+    const next = preferTechWindowUse("transit_diodes_redeploy", "Transit Diodes: redeploy ground forces (3 left)", transit, 5);
+    expect(descs(next)).toEqual(["choice-option | finish redeployment", "submit-choice-button | Submit"]);
+  });
+
+  it("finishes Transit Diodes through its own panel's button", () => {
+    const panel = [c("planet-archonvail | Target planet Archon Vail"), c("decline-planet-btn | Finish redeployment")];
+    expect(descs(preferTechWindowUse("transit_diodes_redeploy", "x (4 left)", panel, 0))).toEqual(["planet-archonvail | Target planet Archon Vail"]);
+    expect(descs(preferTechWindowUse("transit_diodes_redeploy", "x (3 left)", panel, 0))).toEqual(["decline-planet-btn | Finish redeployment"]);
+  });
+
+  it("never declines Psychoarchaeology or Bio-Stims while a candidate is offered", () => {
+    for (const subtype of ["psychoarchaeology_exhaust_specialty", "bio_stims_ready"]) {
+      expect(descs(preferTechWindowUse(subtype, "", options, 9))).not.toContain("choice-option | Decline");
+    }
+  });
+
+  it("answers the first Chaos Mapping offers freely and declines later ones", () => {
+    expect(preferTechWindowUse("chaos_mapping_choose_system", "Chaos Mapping", options, CHAOS_FREE_OFFERS - 1)).toBe(options);
+    expect(descs(preferTechWindowUse("chaos_mapping_choose_system", "Chaos Mapping", options, CHAOS_FREE_OFFERS))).toEqual([
+      "choice-option | Decline",
+      "submit-choice-button | Submit",
+    ]);
+  });
+
+  it("leaves other subtypes and a disabled policy alone", () => {
+    expect(preferTechWindowUse("draft_strategy_card", "", options, 99)).toBe(options);
+    expect(preferTechWindowUse("chaos_mapping_choose_system", "", options, 99, false)).toBe(options);
+  });
+});
+
+describe("serverProgressed (smoke harness)", () => {
+  it("counts a version bump and a game-over push without one", () => {
+    expect(serverProgressed({ game_version: 5, turn_status: { kind: "active_turn" } }, 5)).toBe(false);
+    expect(serverProgressed({ game_version: 6, turn_status: { kind: "active_turn" } }, 5)).toBe(true);
+    expect(serverProgressed({ game_version: 5, turn_status: { kind: "game_over" } }, 5)).toBe(true);
   });
 });

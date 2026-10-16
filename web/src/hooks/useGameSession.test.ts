@@ -5,7 +5,7 @@ const entry = (id: string): GameLogEntry => ({
   id,
   timestamp: "12:00:00",
   version: 1,
-  visibility: "public",
+  visibility: { visibility: "public" as const },
   event: { kind: "decision_resolved" },
 });
 

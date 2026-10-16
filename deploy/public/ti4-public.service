@@ -1,0 +1,66 @@
+# /etc/systemd/system/ti4-public.service  -- not installed by the repo.
+#
+# The public playtest runs as its own user in its own slice so a runaway build or the nightly
+# sweep on the same box cannot starve it (higher CPUWeight) and it cannot take the box down
+# (MemoryMax, TasksMax).
+#
+#   sudo useradd --system --home /var/lib/ti4-public --shell /usr/sbin/nologin ti4
+#   sudo install -d -o ti4 -g ti4 -m 750 /var/lib/ti4-public /var/backups/ti4-public
+#   sudo install -d -o root -g root -m 755 /opt/ti4-public
+#   sudo cp deploy/public/ti4-public.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now ti4-public
+
+[Unit]
+Description=TI4 public playtest server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ti4
+Group=ti4
+Slice=ti4-public.slice
+EnvironmentFile=/etc/ti4-public/env
+WorkingDirectory=/var/lib/ti4-public
+ExecStart=/opt/ti4-public/current/server
+Restart=on-failure
+RestartSec=3
+# Replaying many games on start-up can take a while.
+TimeoutStartSec=300
+
+# Resource limits and priority (the box also runs builds and the nightly sweep).
+MemoryMax=6G
+MemoryHigh=5G
+TasksMax=2048
+LimitNOFILE=8192
+Nice=-5
+CPUWeight=400
+IOWeight=200
+
+# Hardening.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/ti4-public
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

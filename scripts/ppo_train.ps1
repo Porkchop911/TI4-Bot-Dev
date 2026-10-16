@@ -47,14 +47,15 @@ if ($diplomacy) {
 
 $allowed = @(
     'clear-bonus', 'clearance-weight', 'conjunctive-weight', 'curriculum-seeds',
-    'demo-corpus', 'demo-per-update', 'device', 'entropy-final', 'expansion-weight',
-    'fleet-hoard-penalty', 'fleet-weight', 'fracture-entry-bonus', 'fracture-planet-bonus',
+    'demo-corpus', 'demo-per-update', 'device', 'entropy-final', 'entropy-start', 'expansion-weight',
+    'fleet-hoard-penalty', 'fleet-weight', 'projection-weight', 'status-income-tg', 'fracture-entry-bonus', 'fracture-planet-bonus',
     'high-vp-bonus', 'learning-rate', 'movement-entropy', 'objective-weight', 'r1-bonus',
     'r1-shaping', 'report-every', 'rounds', 'secret-weight', 'seed-base', 'stage',
     'strategy-diversity-weight', 'styx-bonus', 'tech-weight', 'temperature',
     'opponent', 'trade-goods-hoard-weight', 'unit-weight', 'updates', 'vp-weight',
     'waste-penalties',
-    'waste-penalty', 'zero-fleet-penalty', 'diag', 'capture-batch', 'seeds-per-update', 'rotations'
+    'waste-penalty', 'zero-fleet-penalty', 'diag', 'capture-batch', 'seeds-per-update', 'rotations',
+    'roster', 'self-imitation', 'sil-margin', 'sil-keep'
 )
 
 $unknown = @($flags.Keys | Where-Object { $_ -notin $allowed })
@@ -68,6 +69,10 @@ if ($flags.ContainsKey('waste-penalty') -and $flags.ContainsKey('waste-penalties
 $arguments = @('--bundle', $bundle, '--map-pool', $pool, '--out', (Join-Path $run 'checkpoints'))
 if ($diplomacy) {
     $arguments += '--diplomacy'
+}
+# Train only the per-faction rows of the factions outside the six (BF-22).
+if ($settings.ContainsKey('FactionRowsOnly') -and [bool]$settings.FactionRowsOnly) {
+    $arguments += '--faction-rows-only'
 }
 foreach ($name in ($flags.Keys | Sort-Object)) {
     $arguments += "--$name"

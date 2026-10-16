@@ -249,6 +249,60 @@ pub fn scrambled_seated_faction(
     order[(seat + rotation) % count].clone()
 }
 
+/// Read a `--roster` value: `six` (the default, [`FactionRoster::InScope`]), `wide` or `new` (the
+/// wide roster without the six).
+///
+/// # Errors
+/// Any other value.
+pub fn parse_roster(value: &str) -> Result<ti4_engine::seating::FactionRoster, String> {
+    match value {
+        "six" => Ok(ti4_engine::seating::FactionRoster::InScope),
+        "wide" => Ok(ti4_engine::seating::FactionRoster::Wide),
+        "new" => Ok(ti4_engine::seating::FactionRoster::New),
+        other => Err(format!("--roster expects six, wide or new, not {other:?}")),
+    }
+}
+
+/// The factions one game draws, as the list [`seated_faction`] scrambles over the seats (BF-22).
+///
+/// [`FactionRoster::InScope`](ti4_engine::seating::FactionRoster::InScope) returns `fixed` as
+/// given: the caller's historical six, in the order its rotations and per-faction settings index,
+/// so a six-faction run is unchanged. [`FactionRoster::Wide`](ti4_engine::seating::FactionRoster::Wide)
+/// draws one distinct faction per player with [`ti4_engine::seating::seat_wide`] on its own seating
+/// stream for `seed`, in player order: every rotation of a seed sees the same six, and no map, dice
+/// or deck stream moves.
+///
+/// # Errors
+/// A wide draw that cannot seat every player.
+pub fn game_factions(
+    content: &ContentStore,
+    roster: ti4_engine::seating::FactionRoster,
+    fixed: &[&str],
+    players: &[PlayerId],
+    sources: SourceSet,
+    seed: u64,
+) -> Result<Vec<FactionId>, String> {
+    match roster {
+        ti4_engine::seating::FactionRoster::InScope => {
+            Ok(fixed.iter().map(|alias| FactionId::new(*alias)).collect())
+        }
+        ti4_engine::seating::FactionRoster::Wide | ti4_engine::seating::FactionRoster::New => {
+            let drawn =
+                ti4_engine::seating::seat_roster(roster, content, players, sources, seed)
+                    .map_err(|error| format!("{roster:?} roster for seed {seed}: {error}"))?;
+            players
+                .iter()
+                .map(|player| {
+                    drawn
+                        .get(player)
+                        .cloned()
+                        .ok_or_else(|| format!("wide roster seated no faction for {player}"))
+                })
+                .collect()
+        }
+    }
+}
+
 /// Board family used by a parity rollout.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OpeningMap {
@@ -808,6 +862,92 @@ where
         &BTreeMap<PlayerId, Baseline>,
     ) -> Result<BTreeMap<PlayerId, Box<dyn Decider>>, String>,
 {
+    play_with_capabilities_income_digest(
+        content,
+        players,
+        factions,
+        sources,
+        seed,
+        horizon,
+        requirement,
+        map,
+        capabilities,
+        digest,
+        (0, false, None),
+        factory,
+    )
+}
+
+/// [`play_with_capabilities_and_decider_factory_digest`] with an experimental per-round income:
+/// every seat gains `round_income` trade goods as each round begins, round one included unless
+/// `skip_round_one` is set, and only `income_seat` when one is named.
+///
+/// Not a rule of the game. It exists to measure how a policy's economy responds to more money;
+/// `0` is exactly the ordinary game.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the capability-aware rollout's inputs plus the income"
+)]
+pub fn play_with_round_income_and_decider_factory<F>(
+    content: &ContentStore,
+    players: &[PlayerId],
+    factions: &BTreeMap<PlayerId, FactionId>,
+    sources: SourceSet,
+    seed: u64,
+    horizon: Horizon,
+    requirement: Requirement,
+    map: &OpeningMap,
+    capabilities: SimulationCapabilities,
+    round_income: i32,
+    skip_round_one: bool,
+    income_seat: Option<PlayerId>,
+    factory: F,
+) -> Rollout
+where
+    F: FnOnce(
+        &BTreeMap<PlayerId, Baseline>,
+    ) -> Result<BTreeMap<PlayerId, Box<dyn Decider>>, String>,
+{
+    play_with_capabilities_income_digest(
+        content,
+        players,
+        factions,
+        sources,
+        seed,
+        horizon,
+        requirement,
+        map,
+        capabilities,
+        false,
+        (round_income, !skip_round_one, income_seat),
+        factory,
+    )
+    .0
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "every rollout input plus digest and income"
+)]
+fn play_with_capabilities_income_digest<F>(
+    content: &ContentStore,
+    players: &[PlayerId],
+    factions: &BTreeMap<PlayerId, FactionId>,
+    sources: SourceSet,
+    seed: u64,
+    horizon: Horizon,
+    requirement: Requirement,
+    map: &OpeningMap,
+    capabilities: SimulationCapabilities,
+    digest: bool,
+    round_income: (i32, bool, Option<PlayerId>),
+    factory: F,
+) -> (Rollout, Option<GameDigest>)
+where
+    F: FnOnce(
+        &BTreeMap<PlayerId, Baseline>,
+    ) -> Result<BTreeMap<PlayerId, Box<dyn Decider>>, String>,
+{
     let (mut state, galaxy, factions) = match seated(content, players, factions, sources, seed, map)
     {
         Ok(seated) => seated,
@@ -839,6 +979,7 @@ where
         deciders,
         None,
         digest,
+        round_income,
     )
 }
 
@@ -1065,6 +1206,7 @@ fn finish_game(
         deciders,
         handles,
         false,
+        (0, false, None),
     )
     .0
 }
@@ -1087,8 +1229,19 @@ fn finish_game_with(
     mut deciders: BTreeMap<PlayerId, Box<dyn Decider>>,
     handles: Option<&BTreeMap<PlayerId, std::rc::Rc<std::cell::RefCell<Vec<TrajectoryStep>>>>>,
     digest: bool,
+    (round_income, in_round_one, income_seat): (i32, bool, Option<PlayerId>),
 ) -> (Rollout, Option<GameDigest>) {
     let baselines = opening_baselines(&state, content, sources, Some(&galaxy), players);
+    // Experiment only: round one's income is granted here, after the setup baselines, so the
+    // opening is still measured against the position the game was dealt.
+    let mut state = state;
+    if round_income != 0 && in_round_one {
+        for player in &mut state.players {
+            if income_seat.as_ref().is_none_or(|only| *only == player.id) {
+                player.trade_goods += round_income;
+            }
+        }
+    }
 
     let mut table = Table::with_default(Box::new(SeededRandom::new(seed)));
     for player in players {
@@ -1105,7 +1258,9 @@ fn finish_game_with(
 
     let mut game = Game::with_table(state, content, table)
         .with_sources(sources)
-        .with_galaxy(galaxy);
+        .with_galaxy(galaxy)
+        .with_round_income(round_income)
+        .with_round_income_seat(income_seat);
 
     // Round one is run on its own so the opening can be measured where the opening ends.
     //
@@ -2285,6 +2440,118 @@ mod tests {
 
     fn seats(names: &[&str]) -> Vec<PlayerId> {
         names.iter().map(|name| PlayerId::new(*name)).collect()
+    }
+
+    const SIX: [&str; 6] = ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"];
+
+    fn six_players() -> Vec<PlayerId> {
+        seats(&["p0", "p1", "p2", "p3", "p4", "p5"])
+    }
+
+    #[test]
+    fn the_six_roster_returns_the_callers_list_in_its_order() {
+        use ti4_engine::seating::FactionRoster;
+        for seed in [0, 7, 991] {
+            let drawn = game_factions(
+                ContentStore::embedded(),
+                FactionRoster::InScope,
+                &SIX,
+                &six_players(),
+                DEFAULT,
+                seed,
+            )
+            .unwrap();
+            assert_eq!(drawn, SIX.map(FactionId::new).to_vec());
+        }
+        assert_eq!(parse_roster("six"), Ok(FactionRoster::InScope));
+        assert_eq!(parse_roster("wide"), Ok(FactionRoster::Wide));
+        assert!(parse_roster("eighteen").is_err());
+    }
+
+    #[test]
+    fn the_wide_roster_draws_six_distinct_factions_by_seed_and_reaches_new_ones() {
+        use ti4_engine::seating::FactionRoster;
+        let content = ContentStore::embedded();
+        let players = six_players();
+        let mut seen: BTreeSet<String> = BTreeSet::new();
+        for seed in 0..120 {
+            let draw = |seed| {
+                game_factions(content, FactionRoster::Wide, &SIX, &players, DEFAULT, seed).unwrap()
+            };
+            let drawn = draw(seed);
+            assert_eq!(drawn, draw(seed), "same seed, same factions");
+            let distinct: BTreeSet<&str> = drawn.iter().map(FactionId::as_str).collect();
+            assert_eq!(distinct.len(), players.len(), "seed {seed}: {drawn:?}");
+            // Every drawn table passes the seating checks a board build applies.
+            let assignments: BTreeMap<PlayerId, FactionId> =
+                players.iter().cloned().zip(drawn.iter().cloned()).collect();
+            ti4_engine::seating::home_systems(content, &assignments)
+                .unwrap_or_else(|error| panic!("seed {seed}: {error}"));
+            seen.extend(distinct.into_iter().map(str::to_owned));
+        }
+        let new: Vec<&String> = seen
+            .iter()
+            .filter(|alias| !SIX.contains(&alias.as_str()))
+            .collect();
+        assert!(new.len() >= 20, "120 wide tables reached only {seen:?}");
+    }
+
+    #[test]
+    fn the_new_roster_seats_only_factions_outside_the_six() {
+        use ti4_engine::seating::FactionRoster;
+        let content = ContentStore::embedded();
+        let players = six_players();
+        let mut seen: BTreeSet<String> = BTreeSet::new();
+        for seed in 0..120 {
+            let drawn =
+                game_factions(content, FactionRoster::New, &SIX, &players, DEFAULT, seed).unwrap();
+            assert_eq!(
+                drawn,
+                game_factions(content, FactionRoster::New, &SIX, &players, DEFAULT, seed).unwrap()
+            );
+            let distinct: BTreeSet<&str> = drawn.iter().map(FactionId::as_str).collect();
+            assert_eq!(distinct.len(), players.len(), "seed {seed}: {drawn:?}");
+            assert!(
+                drawn.iter().all(|f| !SIX.contains(&f.as_str())),
+                "seed {seed}: {drawn:?}"
+            );
+            seen.extend(distinct.into_iter().map(str::to_owned));
+        }
+        assert!(seen.len() >= 24, "120 tables reached only {seen:?}");
+        assert_eq!(parse_roster("new"), Ok(FactionRoster::New));
+    }
+
+    #[test]
+    fn wide_tables_set_up_and_play_a_bounded_game() {
+        use ti4_engine::seating::FactionRoster;
+        let content = ContentStore::embedded();
+        let players = six_players();
+        for seed in 0..12 {
+            let drawn =
+                game_factions(content, FactionRoster::Wide, &SIX, &players, DEFAULT, seed)
+                    .unwrap();
+            let assignments: BTreeMap<PlayerId, FactionId> = players
+                .iter()
+                .enumerate()
+                .map(|(seat, player)| (player.clone(), seated_faction(&drawn, seed, 0, seat)))
+                .collect();
+            let played = play_assigned_on_map(
+                content,
+                &players,
+                &assignments,
+                &BTreeMap::new(),
+                DEFAULT,
+                seed,
+                Horizon {
+                    rounds: 1,
+                    steps: 400,
+                },
+                DEFAULT_REQUIREMENT,
+                &OpeningMap::RustVaried,
+            );
+            assert_eq!(played.error, None, "seed {seed} {drawn:?}");
+            assert_eq!(played.seats.len(), players.len());
+        }
     }
 
     fn rollout(seed: u64, horizon: Horizon) -> Rollout {

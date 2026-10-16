@@ -64,6 +64,10 @@ pub type StatefulAbilityEffect = Arc<
 /// A rule-specific eligibility predicate.
 pub type AbilityCondition = Arc<dyn Fn(&Event, &Resolver) -> bool + Send + Sync>;
 
+/// Decide participation before either eligibility predicate reads private state.
+/// Returning false skips the ability; callers may latch a stop outside the rules.
+pub type Participation = Arc<dyn Fn(&Ability) -> bool + Send + Sync>;
+
 /// A state-aware eligibility predicate for a timing ability.
 pub type StatefulAbilityCondition =
     Arc<dyn for<'a> Fn(&Event, &Resolver, &TimingContext<'a>) -> bool + Send + Sync>;
@@ -146,6 +150,58 @@ pub struct Ability {
     pub repeatable_in_window: bool,
     /// Optional factual choice payload supplied by the rule.
     pub option_payload: Option<OptionPayload>,
+}
+
+/// The key of [`Choice::details`] that names the active player of a reaction window in the
+/// action phase.
+pub const ACTIVE_DETAIL: &str = "active";
+
+/// The label of a reaction option for the player: the printed name of the faction ability or the
+/// leader behind an ability id such as `ability:empyrean:aetherpassage:SYSTEM_ACTIVATED:after`
+/// or `leader:mentak:mentakagent:PILLAGE_USED:after`, plus the window in words ("after system
+/// activated"). The option's id is never changed; ids that are neither (rules, `reaction:` cards)
+/// keep their id as the label, and a card play replaces it afterwards. Without `content` the
+/// name is the id's own key, capitalised.
+pub(crate) fn ability_label(content: Option<&ti4_content::ContentStore>, id: &str) -> String {
+    let parts: Vec<&str> = id.split(':').collect();
+    let kind = parts.first().copied().unwrap_or("");
+    if parts.len() < 4 || !matches!(kind, "ability" | "leader") {
+        return id.to_owned();
+    }
+    // The last two segments are the window: EVENT_TYPE and when/after.
+    let relation = parts[parts.len() - 1];
+    let event = parts[parts.len() - 2];
+    let window = format!("{relation} {}", event.to_lowercase().replace('_', " "));
+    let keys = &parts[1..parts.len() - 2];
+    let content_type = if kind == "leader" {
+        ti4_model::content_types::ContentType::Leaders
+    } else {
+        ti4_model::content_types::ContentType::Abilities
+    };
+    // The key is the last segment that names a record (a copied leader names the owner first).
+    let named = content.and_then(|content| {
+        keys.iter().rev().find_map(|key| {
+            let record = content.get(content_type, key)?;
+            let name = record.text("name")?.to_owned();
+            Some(match (kind, record.text("type")) {
+                ("leader", Some(role)) => format!("{} {name}", capitalised(role)),
+                _ => name,
+            })
+        })
+    });
+    let name = named.unwrap_or_else(|| {
+        let key = keys.last().copied().unwrap_or(id);
+        capitalised(&key.replace('_', " "))
+    });
+    format!("{name} ({window})")
+}
+
+fn capitalised(text: &str) -> String {
+    let mut chars = text.chars();
+    chars
+        .next()
+        .map(|first| first.to_uppercase().chain(chars).collect())
+        .unwrap_or_default()
 }
 
 impl Ability {
@@ -300,9 +356,160 @@ pub struct Resolver {
     used: BTreeSet<(String, FrequencyScope)>,
     round_number: u64,
     turn_number: u64,
+    participation: Option<Participation>,
+}
+
+/// Everything a [`Resolver`] needs to continue identically, minus its decider input, so it can
+/// move between threads (see [`Resolver::snapshot`]).
+///
+/// FORK RULE: every field of `Resolver` is destructured without `..` in `snapshot` and
+/// `instantiate`; adding a field is a compile error until it is copied here or explicitly
+/// listed as not copied.
+#[derive(Clone)]
+pub struct ResolverSnapshot {
+    registry: AbilityRegistry,
+    initiative_order: Vec<PlayerId>,
+    seating_order: Vec<PlayerId>,
+    active_player: Option<PlayerId>,
+    speaker: Option<PlayerId>,
+    phase: Phase,
+    table: crate::choice::TableState,
+    log: Vec<String>,
+    applied_events: Vec<Event>,
+    relation_being_resolved: Option<Relation>,
+    emission_stack: Vec<(String, u64)>,
+    maximum_depth: usize,
+    used: BTreeSet<(String, FrequencyScope)>,
+    round_number: u64,
+    turn_number: u64,
+}
+
+impl ResolverSnapshot {
+    pub(crate) fn instantiate(&self) -> Resolver {
+        let Self {
+            registry,
+            initiative_order,
+            seating_order,
+            active_player,
+            speaker,
+            phase,
+            table,
+            log,
+            applied_events,
+            relation_being_resolved,
+            emission_stack,
+            maximum_depth,
+            used,
+            round_number,
+            turn_number,
+        } = self;
+        Resolver {
+            registry: registry.clone(),
+            initiative_order: initiative_order.clone(),
+            seating_order: seating_order.clone(),
+            active_player: active_player.clone(),
+            speaker: speaker.clone(),
+            phase: *phase,
+            table: crate::choice::Table::from_state(table.clone()),
+            log: log.clone(),
+            applied_events: applied_events.clone(),
+            relation_being_resolved: *relation_being_resolved,
+            emission_stack: emission_stack.clone(),
+            maximum_depth: *maximum_depth,
+            used: used.clone(),
+            round_number: *round_number,
+            turn_number: *turn_number,
+            // A fork starts without the participation binding.
+            participation: None,
+        }
+    }
+
+    pub(crate) fn into_resolver(self) -> Resolver {
+        let Self {
+            registry,
+            initiative_order,
+            seating_order,
+            active_player,
+            speaker,
+            phase,
+            table,
+            log,
+            applied_events,
+            relation_being_resolved,
+            emission_stack,
+            maximum_depth,
+            used,
+            round_number,
+            turn_number,
+        } = self;
+        Resolver {
+            registry,
+            initiative_order,
+            seating_order,
+            active_player,
+            speaker,
+            phase,
+            table: crate::choice::Table::from_state(table),
+            log,
+            applied_events,
+            relation_being_resolved,
+            emission_stack,
+            maximum_depth,
+            used,
+            round_number,
+            turn_number,
+            participation: None,
+        }
+    }
 }
 
 impl Resolver {
+    /// Copy this resolver's rules state. Decider input (who answers) is NOT copied: the copy's
+    /// table has first-option deciders, no observation callbacks, but the same decision log
+    /// and counters. Registered abilities are shared functions (their captures must not hold
+    /// mutable rules state).
+    pub(crate) fn snapshot_with(&self, keep_table_log: bool) -> ResolverSnapshot {
+        let Self {
+            registry,
+            initiative_order,
+            seating_order,
+            active_player,
+            speaker,
+            phase,
+            table,
+            log,
+            applied_events,
+            relation_being_resolved,
+            emission_stack,
+            maximum_depth,
+            used,
+            round_number,
+            turn_number,
+            participation: _,
+        } = self;
+        ResolverSnapshot {
+            registry: registry.clone(),
+            initiative_order: initiative_order.clone(),
+            seating_order: seating_order.clone(),
+            active_player: active_player.clone(),
+            speaker: speaker.clone(),
+            phase: *phase,
+            table: if keep_table_log {
+                table.state()
+            } else {
+                table.state_unlogged()
+            },
+            log: log.clone(),
+            applied_events: applied_events.clone(),
+            relation_being_resolved: *relation_being_resolved,
+            emission_stack: emission_stack.clone(),
+            maximum_depth: *maximum_depth,
+            used: used.clone(),
+            round_number: *round_number,
+            turn_number: *turn_number,
+        }
+    }
+
     pub(crate) fn checkpoint(&self) -> ResolverCheckpoint {
         ResolverCheckpoint {
             table_log: self.table.log.clone(),
@@ -364,12 +571,82 @@ impl Resolver {
             used: BTreeSet::new(),
             round_number: 1,
             turn_number: 1,
+            participation: None,
+        }
+    }
+
+    /// Copy resolver state and shared rule functions, with fresh decision routing.
+    #[cfg(test)]
+    pub(crate) fn fork(&self) -> Self {
+        Self {
+            registry: self.registry.clone(),
+            initiative_order: self.initiative_order.clone(),
+            seating_order: self.seating_order.clone(),
+            active_player: self.active_player.clone(),
+            speaker: self.speaker.clone(),
+            phase: self.phase,
+            table: Table::new(),
+            log: self.log.clone(),
+            applied_events: self.applied_events.clone(),
+            relation_being_resolved: self.relation_being_resolved,
+            emission_stack: self.emission_stack.clone(),
+            maximum_depth: self.maximum_depth,
+            used: self.used.clone(),
+            round_number: self.round_number,
+            turn_number: self.turn_number,
+            participation: None,
+        }
+    }
+
+    /// Carry rules state to a worker without carrying its thread-local deciders.
+    pub(crate) fn into_worker(self) -> impl FnOnce() -> Self + Send {
+        let Self {
+            registry,
+            initiative_order,
+            seating_order,
+            active_player,
+            speaker,
+            phase,
+            table: _,
+            log,
+            applied_events,
+            relation_being_resolved,
+            emission_stack,
+            maximum_depth,
+            used,
+            round_number,
+            turn_number,
+            participation: _,
+        } = self;
+        move || Self {
+            registry,
+            initiative_order,
+            seating_order,
+            active_player,
+            speaker,
+            phase,
+            table: Table::new(),
+            log,
+            applied_events,
+            relation_being_resolved,
+            emission_stack,
+            maximum_depth,
+            used,
+            round_number,
+            turn_number,
+            participation: None,
         }
     }
 
     /// Configure the game phase used to select window priority order.
     pub fn set_phase(&mut self, phase: Phase) {
         self.phase = phase;
+    }
+
+    /// Filter both eligibility paths before either kind of condition runs.
+    /// Ordinary live resolution has no filter; a fork starts without this binding.
+    pub fn set_participation(&mut self, participation: Participation) {
+        self.participation = Some(participation);
     }
 
     /// Configure clockwise seating order for strategy and agenda timing windows.
@@ -673,6 +950,8 @@ impl Resolver {
         let mut resolved_here = BTreeSet::<String>::new();
         let result = (|| {
             let mut passed = BTreeSet::<PlayerId>::new();
+            // Seats already looked at once in this window (see `Table::window_skipped`).
+            let mut announced = BTreeSet::<PlayerId>::new();
             loop {
                 let mut resolved_this_pass = false;
                 for player in self.player_order() {
@@ -687,8 +966,17 @@ impl Resolver {
                         context,
                     );
                     if eligible.is_empty() {
+                        if announced.insert(player.clone()) {
+                            context.table.window_skipped(
+                                &player,
+                                &event.event_type,
+                                relation,
+                                context.state,
+                            );
+                        }
                         continue;
                     }
+                    announced.insert(player.clone());
                     let Some(ability) =
                         self.pick_with_context(eligible, event, &player, relation, context)?
                     else {
@@ -733,6 +1021,10 @@ impl Resolver {
         self.for_event(&event.event_type, relation)
             .filter(|ability| {
                 ability.owner == *player
+                    && self
+                        .participation
+                        .as_ref()
+                        .is_none_or(|policy| policy(ability))
                     && (ability.repeatable_in_window || !resolved_here.contains(&ability.id))
                     && !self.is_used(ability, event)
                     && ability
@@ -755,6 +1047,10 @@ impl Resolver {
         self.for_event(&event.event_type, relation)
             .filter(|ability| {
                 ability.owner == *player
+                    && self
+                        .participation
+                        .as_ref()
+                        .is_none_or(|policy| policy(ability))
                     && (ability.repeatable_in_window || !resolved_here.contains(&ability.id))
                     && !self.is_used(ability, event)
                     && ability
@@ -784,8 +1080,12 @@ impl Resolver {
         let mut options = eligible
             .iter()
             .map(|ability| {
-                let mut option = ChoiceOption::labelled(&ability.id, "ability", &ability.id)
-                    .with("event", event.event_type.clone());
+                let mut option = ChoiceOption::labelled(
+                    &ability.id,
+                    "ability",
+                    ability_label(None, &ability.id),
+                )
+                .with("event", event.event_type.clone());
                 if let Some(payload) = &ability.option_payload {
                     option.payload.extend(payload(event, self));
                 }
@@ -830,8 +1130,12 @@ impl Resolver {
         let mut options = eligible
             .iter()
             .map(|ability| {
-                let mut option = ChoiceOption::labelled(&ability.id, "ability", &ability.id)
-                    .with("event", event.event_type.clone());
+                let mut option = ChoiceOption::labelled(
+                    &ability.id,
+                    "ability",
+                    ability_label(Some(context.content), &ability.id),
+                )
+                .with("event", event.event_type.clone());
                 if ability.id.starts_with("reaction:") {
                     let cards = crate::reactions::playable_now(
                         context.state,
@@ -880,6 +1184,14 @@ impl Resolver {
             format!("{} {}", relation_name(relation), event.event_type),
             options,
         );
+        // Whose turn it is, for a seat that asked to be offered a reaction on its own turns only
+        // (`ti4_view::reaction_modes`). Display only, as every detail: not in a record or a replay.
+        let choice = match &context.state.active {
+            Some(active) if context.state.phase == ti4_model::state::Phase::Action => {
+                choice.detailed(ACTIVE_DETAIL, active.to_string())
+            }
+            _ => choice,
+        };
         let choice = choice.contextualized(
             crate::decision_context::DecisionContext::new(
                 player.clone(),
@@ -1068,6 +1380,47 @@ impl AbilityRegistry {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn reaction_options_get_the_printed_name_instead_of_the_raw_id() {
+        let content = ContentStore::embedded();
+        let passage = ability_label(
+            Some(content),
+            "ability:empyrean:aetherpassage:SYSTEM_ACTIVATED:after",
+        );
+        assert_eq!(passage, "Aetherpassage (after system activated)");
+        let pillage = ability_label(
+            Some(content),
+            "ability:mentak:pillage:TRADE_GOODS_GAINED:after",
+        );
+        assert_eq!(pillage, "Pillage (after trade goods gained)");
+        let agent = ability_label(
+            Some(content),
+            "leader:mentak:mentakagent:PILLAGE_USED:after",
+        );
+        assert_eq!(agent, "Agent Suffi An (after pillage used)");
+        // A copied leader names the copy's owner first; the label is still the leader.
+        let copy = ability_label(
+            Some(content),
+            "leader:ssruu-copy:a:l1z1xagent:b:SYSTEM_ACTIVATED:after",
+        );
+        assert_eq!(copy, "Agent I48S (after system activated)");
+        // Without content the key is capitalised; a rule id stays as it is.
+        assert_eq!(
+            ability_label(
+                None,
+                "ability:empyrean:aetherpassage:SYSTEM_ACTIVATED:after"
+            ),
+            "Aetherpassage (after system activated)"
+        );
+        assert_eq!(ability_label(Some(content), "reaction:x"), "reaction:x");
+        for label in [&passage, &pillage, &agent, &copy] {
+            assert!(
+                !label.contains("SYSTEM_ACTIVATED") && !label.contains(':'),
+                "{label}"
+            );
+        }
+    }
+
     use std::sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -1115,6 +1468,126 @@ mod tests {
     }
 
     type GeneratedAbility = (u8, bool, bool, bool, u8, bool);
+
+    #[test]
+    fn participation_runs_before_both_kinds_of_condition_and_forks_reset_it() {
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut timing = resolver(&["sol", "letnev"], "sol");
+        let condition_calls = calls.clone();
+        let stateful_calls = calls.clone();
+        timing.register([Ability::new(
+            "optional",
+            player("letnev"),
+            "E",
+            Relation::When,
+            Arc::new(|_, _| Ok(())),
+        )
+        .with_optional(true)
+        .with_condition(Arc::new(move |_, _| {
+            condition_calls.fetch_add(1, Ordering::SeqCst);
+            true
+        }))
+        .with_stateful_condition(Arc::new(move |_, _, _| {
+            stateful_calls.fetch_add(1, Ordering::SeqCst);
+            true
+        }))]);
+        timing.set_participation(Arc::new(|_| false));
+        let mut live = timing.fork();
+        timing
+            .emit(Event::new(1, "E", BTreeMap::new()), |_| {})
+            .unwrap();
+
+        let mut state = crate::fixtures::game(&["sol", "letnev"]);
+        let mut table = Table::with_default(Box::new(AlwaysDecline));
+        let mut dice = Dice::new();
+        let mut rng = GameRng::new(7);
+        let mut sequence = EventSequence::new();
+        let mut context =
+            stateful_context(&mut state, &mut table, &mut dice, &mut rng, &mut sequence);
+        timing
+            .emit_with_context(&mut context, Event::new(2, "E", BTreeMap::new()), |_, _| {})
+            .unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        live.emit_with_context(&mut context, Event::new(2, "E", BTreeMap::new()), |_, _| {})
+            .unwrap();
+        assert!(calls.load(Ordering::SeqCst) >= 2);
+    }
+
+    #[test]
+    fn fork_preserves_frequency_usage_and_resets_its_decision_table() {
+        let mut timing = resolver(&["sol"], "sol");
+        timing.sync_lifecycle(3, 7);
+        timing.table = Table::with_default(Box::new(AlwaysDecline));
+        timing.register([
+            Ability::new(
+                "turn",
+                player("sol"),
+                "E",
+                Relation::When,
+                Arc::new(|event, _| {
+                    event.payload.insert("turn".to_owned(), true.into());
+                    Ok(())
+                }),
+            )
+            .with_frequency(Frequency::OncePerTurn),
+            Ability::new(
+                "round",
+                player("sol"),
+                "E",
+                Relation::When,
+                Arc::new(|event, _| {
+                    event.payload.insert("round".to_owned(), true.into());
+                    Ok(())
+                }),
+            )
+            .with_frequency(Frequency::OncePerRound),
+            Ability::new(
+                "optional",
+                player("sol"),
+                "OPTIONAL",
+                Relation::When,
+                Arc::new(|event, _| {
+                    event.cancel();
+                    Ok(())
+                }),
+            )
+            .with_optional(true),
+        ]);
+        let event = |id, kind| Event::new(id, kind, BTreeMap::new());
+        assert_eq!(timing.emit(event(1, "E"), |_| {}).unwrap().payload.len(), 2);
+        assert!(!timing.emit(event(2, "OPTIONAL"), |_| {}).unwrap().cancelled);
+
+        let mut fork = timing.fork();
+        assert_eq!(fork.log(), timing.log());
+        assert_eq!(fork.applied_events(), timing.applied_events());
+        assert!(fork.table.log.is_empty());
+        assert!(fork.emit(event(3, "E"), |_| {}).unwrap().payload.is_empty());
+        assert!(
+            timing
+                .emit(event(3, "E"), |_| {})
+                .unwrap()
+                .payload
+                .is_empty()
+        );
+
+        // Fresh first-option input takes the optional ability; the original still declines it.
+        assert!(fork.emit(event(4, "OPTIONAL"), |_| {}).unwrap().cancelled);
+        assert!(!timing.emit(event(4, "OPTIONAL"), |_| {}).unwrap().cancelled);
+
+        fork.begin_turn(player("sol")).unwrap();
+        let next_turn = fork.emit(event(5, "E"), |_| {}).unwrap();
+        assert_eq!(next_turn.payload.len(), 1);
+        assert_eq!(next_turn.payload["turn"], true);
+        fork.begin_round().unwrap();
+        assert_eq!(fork.emit(event(6, "E"), |_| {}).unwrap().payload.len(), 2);
+        assert!(
+            timing
+                .emit(event(6, "E"), |_| {})
+                .unwrap()
+                .payload
+                .is_empty()
+        );
+    }
 
     fn generated_registry() -> impl Strategy<Value = Vec<GeneratedAbility>> {
         prop::collection::vec(

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { PlanetSelectionBar } from "./PlanetSelectionBar.tsx";
 import { BoardView, PendingChoiceDto } from "../protocol/types.ts";
@@ -132,7 +132,9 @@ describe("PlanetSelectionBar", () => {
     expect(screen.getByTestId("planet-selection-source")).toHaveTextContent("Mining Initiative");
     expect(screen.getByTestId("planet-selection-prompt")).toHaveTextContent("Mine which planet");
     expect(screen.getByText(/Click a highlighted planet/)).toBeInTheDocument();
-    expect(screen.getByTestId("planet-chip-lodor")).toHaveTextContent("Lodor 3R/1I");
+    expect(screen.getByTestId("planet-chip-lodor")).toHaveTextContent("Lodor");
+    expect(within(screen.getByTestId("planet-chip-lodor")).getByLabelText("3 resources")).toBeInTheDocument();
+    expect(within(screen.getByTestId("planet-chip-lodor")).getByLabelText("1 influence")).toBeInTheDocument();
     expect(screen.getByTestId("planet-chip-gral")).toBeInTheDocument();
     expect(screen.queryByTestId("confirm-planet-btn")).not.toBeInTheDocument();
     expect(screen.queryByTestId("decline-planet-btn")).not.toBeInTheDocument();
@@ -142,7 +144,9 @@ describe("PlanetSelectionBar", () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     render(<Host choice={mining} onSubmit={onSubmit} initialOption="lodor" />);
     const action = screen.getByTestId("planet-selection-action");
-    expect(action).toHaveTextContent("Mining Initiative — mine Lodor (3R/1I) · cultural");
+    expect(action).toHaveTextContent("Mining Initiative — mine Lodor (31) · cultural");
+    expect(within(action).getByLabelText("3 resources")).toBeInTheDocument();
+    expect(within(action).getByLabelText("1 influence")).toBeInTheDocument();
     expect(action.querySelector("strong")).toHaveTextContent("Lodor");
     // The source and prompt stay visible in the confirm state.
     expect(screen.getByTestId("planet-selection-source")).toHaveTextContent("Mining Initiative");
@@ -155,8 +159,11 @@ describe("PlanetSelectionBar", () => {
     fireEvent.click(screen.getByTestId("planet-chip-gral"));
     expect(screen.getByTestId("planet-chip-gral")).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByTestId("planet-selection-action")).toHaveTextContent(
-      "mine Gral (1R/1I) · propulsion skip",
+      "mine Gral (11) · propulsion skip",
     );
+    expect(
+      within(screen.getByTestId("planet-selection-action")).getByLabelText("1 resource"),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("cancel-planet-btn"));
     expect(screen.queryByTestId("planet-selection-action")).not.toBeInTheDocument();
   });
@@ -230,7 +237,7 @@ describe("PlanetSelectionBar", () => {
   it("uses a specific option label for the planet action", () => {
     render(<Host choice={bioStims} onSubmit={vi.fn()} initialOption="ready|planet|gral" />);
     expect(screen.getByTestId("planet-selection-action")).toHaveTextContent(
-      "Bio-Stims — ready Gral (1R/1I)",
+      "Bio-Stims — ready Gral (11)",
     );
   });
 
@@ -295,7 +302,8 @@ describe("PlanetSelectionBar", () => {
     expect(bar).toHaveTextContent("Deploy Mech");
     expect(bar).toHaveTextContent("Lodor");
     expect(bar).not.toHaveTextContent("sol_mech");
-    expect(screen.getByTestId("unit-ability-note")).toHaveTextContent("Cost: 3 resources");
+    expect(screen.getByTestId("unit-ability-note")).toHaveTextContent("Cost: 3");
+    expect(within(screen.getByTestId("unit-ability-note")).getByLabelText("3 resources")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("confirm-planet-btn"));
     await waitFor(() => expect(onSubmit).toHaveBeenCalledWith("deploy|sol_mech|1"));
   });

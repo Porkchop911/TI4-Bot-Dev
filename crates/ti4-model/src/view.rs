@@ -336,10 +336,7 @@ mod tests {
 
         // The tokens are public, the identity is hidden, and the count survives.
         let for_a = view_for(&g, &pid("a"));
-        assert_eq!(
-            for_a.player(&pid("b")).unwrap().plots,
-            ["d:?:a", "d:?:a,c"]
-        );
+        assert_eq!(for_a.player(&pid("b")).unwrap().plots, ["d:?:a", "d:?:a,c"]);
         assert!(leaks(&for_a, &pid("a")).is_empty());
         // The owner sees their own cards.
         let for_b = view_for(&g, &pid("b"));

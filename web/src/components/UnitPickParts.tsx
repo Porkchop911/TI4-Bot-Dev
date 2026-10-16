@@ -2,6 +2,7 @@ import React from "react";
 import type { ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
 import { describeUnitPickCard, describeUnitPickOption } from "../presentation/unitPick.ts";
 import { UnitIcon } from "./UnitIcon.tsx";
+import { MechInfoRow, UnitInfoButton } from "./UnitInfo.tsx";
 
 /** Above the options of Refit Troops or Scuttle: the printed card. */
 export const UnitPickPanel: React.FC<{ choice: PendingChoiceDto }> = ({ choice }) => {
@@ -31,8 +32,12 @@ export const UnitPickOptionNote: React.FC<{ choice: PendingChoiceDto; option: Ch
   if (!info) return null;
   return (
     <div className="text-muted" data-testid="unit-pick-note" style={{ fontSize: 12 }}>
-      <UnitIcon type={info.iconType} size={16} /> <strong>{info.title}</strong> · {info.where}
+      <UnitIcon type={info.iconType} size={16} /> <strong>{info.title}</strong>{" "}
+      <UnitInfoButton unit={info.iconType} name={info.title} /> · {info.where}
       <div>{info.effect}</div>
+      {choice.context?.subtype?.endsWith("_pick_infantry") && (
+        <MechInfoRow />
+      )}
     </div>
   );
 };

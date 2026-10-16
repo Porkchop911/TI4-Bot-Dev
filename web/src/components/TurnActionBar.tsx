@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ValueText } from "./PlanetValueIcons.tsx";
 import { humanizeId } from "../protocol/contentCatalog.ts";
 import {
   type BarAction,
@@ -22,6 +23,42 @@ export interface TurnActionBarProps {
 type MenuKey = "components" | "cards" | "trade";
 
 const MAX_PIPS = 12;
+
+/** The height left above the bar for an open menu (set while a menu is open). */
+export const MENU_ROOM_VAR = "--turn-bar-menu-room";
+/** Phone sheet edges while a menu is open: just below the game header, and the bar's bottom edge. */
+export const MENU_TOP_VAR = "--turn-bar-menu-top";
+export const MENU_BOTTOM_VAR = "--turn-bar-menu-bottom";
+
+/** The viewer's single preference for the phone layout: is the action pane minimized to a slim bar. */
+export const MINIMIZED_KEY = "ti4_action_pane_minimized";
+
+function readMinimized(): boolean {
+  try {
+    return window.localStorage.getItem(MINIMIZED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeMinimized(value: boolean): void {
+  try {
+    window.localStorage.setItem(MINIMIZED_KEY, value ? "1" : "0");
+  } catch {
+    /* storage blocked: the choice lasts until the page reloads */
+  }
+}
+
+/**
+ * Whether the bar was last shown read-only (another seat's turn). Module level so a remount between
+ * the read-only and the active bar does not forget it. Rule: the pane expands once when it turns
+ * from another seat's turn into the viewer's own, so the viewer notices; every other render, and
+ * a pane the viewer minimized during this decision, is left as it is.
+ */
+let lastShownReadOnly = false;
+export function resetActionPaneMemory(): void {
+  lastShownReadOnly = false;
+}
 
 const Pips: React.FC<{ count: number }> = ({ count }) => (
   <span className="turn-bar__pips" aria-hidden="true">
@@ -124,10 +161,28 @@ export const TurnActionBar: React.FC<TurnActionBarProps> = ({ model, onSubmit, l
   const rootRef = useRef<HTMLElement | null>(null);
   useBottomBarOffset(rootRef);
   const [open, setOpen] = useState<MenuKey | null>(null);
+  const [minimized, setMinimized] = useState<boolean>(readMinimized);
+  const bodyId = React.useId();
   const [info, setInfo] = useState<BarInfo | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const readOnly = model.mode === "readonly";
+
+  // Minimizing only changes how the phone layout looks (CSS); the buttons stay mounted so the keys work.
+  const setPaneMinimized = useCallback((value: boolean) => {
+    setMinimized(value);
+    writeMinimized(value);
+  }, []);
+  useEffect(() => {
+    if (readOnly) {
+      lastShownReadOnly = true;
+      return;
+    }
+    if (lastShownReadOnly) {
+      lastShownReadOnly = false;
+      setPaneMinimized(false);
+    }
+  }, [readOnly, setPaneMinimized]);
 
   const submit = useCallback(
     async (optionId: string | null) => {
@@ -232,6 +287,36 @@ export const TurnActionBar: React.FC<TurnActionBarProps> = ({ model, onSubmit, l
     return () => document.removeEventListener("keydown", onKey);
   }, [model, open, readOnly, submit]);
 
+  // A menu opens upward from the bar: never taller than the room between the bar and the game header,
+  // or its top (the first partner, the first components) ends up off screen on a phone.
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!open || !root) return;
+    const place = () => {
+      const header = document.querySelector(".app-shell__header");
+      const top = Math.max(0, Math.ceil(header?.getBoundingClientRect().bottom ?? 0));
+      const bar = root.getBoundingClientRect();
+      root.style.setProperty(MENU_ROOM_VAR, `${Math.max(120, Math.floor(bar.top - top - 6 - 8))}px`);
+      // Phone sheet: from below the header down to the bar's bottom edge (over the bar's buttons).
+      root.style.setProperty(MENU_TOP_VAR, `${top + 6}px`);
+      root.style.setProperty(
+        MENU_BOTTOM_VAR,
+        `${Math.max(0, Math.floor(window.innerHeight - bar.bottom))}px`,
+      );
+    };
+    place();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(place);
+    observer?.observe(root);
+    window.addEventListener("resize", place);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", place);
+      root.style.removeProperty(MENU_ROOM_VAR);
+      root.style.removeProperty(MENU_TOP_VAR);
+      root.style.removeProperty(MENU_BOTTOM_VAR);
+    };
+  }, [open]);
+
   // The first row of a freshly opened menu takes focus so the arrows work at once.
   useEffect(() => {
     if (!open) return;
@@ -329,8 +414,43 @@ export const TurnActionBar: React.FC<TurnActionBarProps> = ({ model, onSubmit, l
       {...infoHandlers(item.info)}
     >
       <span className="turn-bar__row-label">{item.label}</span>
-      {item.detail && <span className="turn-bar__row-detail">{item.detail}</span>}
+      {item.facts && item.facts.length > 0 && (
+        <span className="turn-bar__row-facts" data-testid="turn-bar-row-facts">
+          {item.facts.map((fact) => (
+            <span key={fact} className="turn-bar__row-fact">
+              {fact}
+            </span>
+          ))}
+        </span>
+      )}
+      {item.detail && (
+        <span
+          className={item.facts ? "turn-bar__row-detail turn-bar__row-detail--full" : "turn-bar__row-detail"}
+          data-testid="turn-bar-row-text"
+        >
+          {item.detail}
+        </span>
+      )}
+      {item.note && <span className="turn-bar__row-note">{item.note}</span>}
     </button>
+  );
+
+  /** Title and Close for the phone sheet (hidden on wider screens, where the menu is a popover). */
+  const menuHead = (title: string) => (
+    <div className="turn-bar__menu-head">
+      <span>{title}</span>
+      <button
+        type="button"
+        className="turn-bar__menu-close"
+        data-testid="turn-bar-menu-close"
+        onClick={() => {
+          setOpen(null);
+          setInfo(null);
+        }}
+      >
+        Close
+      </button>
+    </div>
   );
 
   const partnerName = (p: TradePartnerView) => {
@@ -349,6 +469,15 @@ export const TurnActionBar: React.FC<TurnActionBarProps> = ({ model, onSubmit, l
 
   const tokens = model.tokens;
   const errorText = error ?? lastError ?? null;
+  // A rejected action must be seen: the error lives in the full pane.
+  useEffect(() => {
+    if (errorText) setMinimized(false);
+  }, [errorText]);
+  // A menu opened by key press needs the full pane too.
+  useEffect(() => {
+    if (open) setMinimized(false);
+  }, [open]);
+  const miniText = readOnly ? heading : `Your turn \u2014 ${heading.charAt(0).toLowerCase()}${heading.slice(1)}`;
   const tradeSub =
     model.trade.partners.length > 0
       ? `${model.trade.partners.length} partners · ${model.trade.available} in contact`
@@ -361,6 +490,8 @@ export const TurnActionBar: React.FC<TurnActionBarProps> = ({ model, onSubmit, l
       className="turn-bar"
       data-testid="turn-action-bar"
       data-mode={model.mode}
+      data-minimized={minimized ? "true" : "false"}
+      data-menu-open={open ?? undefined}
       aria-label="Turn actions"
     >
       {info && (
@@ -369,11 +500,43 @@ export const TurnActionBar: React.FC<TurnActionBarProps> = ({ model, onSubmit, l
           <h3>{info.title}</h3>
           {info.text && <p>{info.text}</p>}
           {info.secondary && <p className="turn-bar__info-secondary">{info.secondary}</p>}
+          {info.planets && (
+            <div className="turn-bar__planets" data-testid="turn-bar-info-planets">
+              <div className="turn-bar__planets-title">
+                Cultural planets you control (readied by this card)
+              </div>
+              {info.planets.length === 0 ? (
+                <div className="turn-bar__planets-empty">None: the card would do nothing</div>
+              ) : (
+                <ul>
+                  {info.planets.map((planet) => (
+                    <li
+                      key={planet.id}
+                      data-testid={`turn-bar-info-planet-${planet.id}`}
+                      data-exhausted={planet.exhausted}
+                    >
+                      <span>{planet.name}</span>
+                      <span className="turn-bar__planet-trait">{planet.trait}</span>
+                      <span
+                        className={
+                          planet.exhausted
+                            ? "turn-bar__planet-state turn-bar__planet-state--changes"
+                            : "turn-bar__planet-state"
+                        }
+                      >
+                        {planet.exhausted ? "exhausted, will ready" : "already ready"}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
           {info.chips.length > 0 && (
             <div className="turn-bar__chips">
               {info.chips.map((chip) => (
                 <span key={chip.label} className={`turn-bar__chip turn-bar__chip--${chip.tone}`}>
-                  {chip.label}
+                  <ValueText text={chip.label} />
                 </span>
               ))}
             </div>
@@ -383,6 +546,23 @@ export const TurnActionBar: React.FC<TurnActionBarProps> = ({ model, onSubmit, l
 
       <div className="turn-bar__head">
         <strong data-testid="turn-bar-heading">{heading}</strong>
+        <span className="turn-bar__mini-text" data-testid="turn-bar-mini-text">
+          {miniText}
+        </span>
+        <button
+          type="button"
+          className="turn-bar__minimize"
+          data-testid="turn-bar-minimize"
+          aria-expanded={!minimized}
+          aria-controls={bodyId}
+          aria-label={minimized ? "Show actions" : "Minimize actions"}
+          title={minimized ? "Show actions" : "Minimize actions"}
+          onClick={() => setPaneMinimized(!minimized)}
+        >
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+            <path d="M3 6l5 5 5-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
         {tokens && (
           <span className="turn-bar__pools" data-testid="turn-bar-pools">
             <span className="turn-bar__pool" data-testid="turn-bar-pool-tactic">
@@ -398,6 +578,7 @@ export const TurnActionBar: React.FC<TurnActionBarProps> = ({ model, onSubmit, l
         )}
       </div>
 
+      <div id={bodyId} className="turn-bar__body">
       <div className="turn-bar__actions" role="group" aria-label={`Actions: ${cardWord}`}>
         {actionBtn(model.tactical, "T")}
         {model.strategic.length === 0 ? (
@@ -439,6 +620,7 @@ export const TurnActionBar: React.FC<TurnActionBarProps> = ({ model, onSubmit, l
               data-testid="turn-bar-menu-components"
               onKeyDown={onMenuKey}
             >
+              {menuHead(`Components (${model.components.count})`)}
               {model.components.groups.map((group) => (
                 <div key={group.title} role="group" aria-label={group.title}>
                   <h4>{group.title}</h4>
@@ -473,6 +655,7 @@ export const TurnActionBar: React.FC<TurnActionBarProps> = ({ model, onSubmit, l
               data-testid="turn-bar-menu-cards"
               onKeyDown={onMenuKey}
             >
+              {menuHead(`Action cards (${model.actionCards.count})`)}
               <h4>Action cards with an Action window</h4>
               {model.actionCards.items.map(row)}
             </div>
@@ -502,6 +685,7 @@ export const TurnActionBar: React.FC<TurnActionBarProps> = ({ model, onSubmit, l
               data-testid="turn-bar-menu-trade"
               onKeyDown={onMenuKey}
             >
+              {menuHead("Trade")}
               <h4>Open a transaction with&hellip;</h4>
               {model.trade.partners.map((p) => {
                 const who = partnerName(p);
@@ -572,6 +756,8 @@ export const TurnActionBar: React.FC<TurnActionBarProps> = ({ model, onSubmit, l
           {notice}
         </div>
       )}
+
+      </div>
 
       {!readOnly && (
         <div className="turn-bar__hints" aria-label="Keyboard shortcuts">

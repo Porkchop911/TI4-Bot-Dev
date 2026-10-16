@@ -1,0 +1,19 @@
+{
+  "title": "Agenda Result Toast",
+  "description": "When an agenda vote finishes, every seat (the voters included, and spectators) gets one corner toast: the agenda, the winning outcome or the elected player/planet, the vote totals, a tie or a silent table decided by the speaker, and whether a law enters play or a directive is resolved. The real app fed by a mocked game; the toast reads the engine's public agenda_log in the state.",
+  "tag": "web/e2e/screenshots/CS-agenda-result-toast",
+  "shots": [
+    { "file": "out/for-wins-desktop.png", "heading": "For wins (a law)", "caption": "Anti-Intellectual Revolution: For wins, votes For 9 · Against 4, the law enters play." },
+    { "file": "out/against-wins-desktop.png", "heading": "Against wins (a directive)", "caption": "Economic Equality: Against wins, votes Against 7 · For 3, directive resolved." },
+    { "file": "out/election-desktop.png", "heading": "An election", "caption": "Minister of Peace elects the viewer, who voted on it: the toast still shows for them. Elected players are named, planets and objectives by their printed names." },
+    { "file": "out/tie-desktop.png", "heading": "A tie", "caption": "4 to 4: the speaker decided, and the toast says so with the tied totals." },
+    { "file": "out/no-votes-desktop.png", "heading": "Nobody voted", "caption": "No votes cast: the speaker decided." },
+    { "file": "out/for-wins-390x844.png", "heading": "Phone: For wins", "caption": "At 390 px the toast wraps inside the corner box like the invasion results." },
+    { "file": "out/election-390x844.png", "heading": "Phone: election", "caption": "The election result on a phone." }
+  ],
+  "notes": [
+    { "title": "Where it comes from", "text": "The engine appends a display-only record to state.agenda_log when a vote closes (after a Deadly Plot discard is known, before the agenda's effect is asked), and when Committee Formation elects a player without a vote. No rule reads it; it is skipped from the JSON while empty, and decision records and option ids are unchanged." },
+    { "title": "Once, and never history", "text": "Like exploration results, records present when the game loads or that reappear after undo/redo (a new history generation) never toast, and a later state with the same log does not toast again. The Toasts mute silences it." },
+    { "title": "Hidden information", "text": "The record is written only once the outcome is decided, so votes in progress are never shown early." }
+  ]
+}

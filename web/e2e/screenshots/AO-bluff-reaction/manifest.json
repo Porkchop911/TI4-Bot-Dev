@@ -1,0 +1,62 @@
+{
+  "title": "Bluffing a reaction card",
+  "description": "A player can declare, ahead of time, the moments at which they want to look like they may react with an action card. When such a moment opens and the engine asks them nothing, the live game waits 2 to 4 seconds (the bluffer can press Pass), and everyone else sees the same 'Waiting for ...' status a real question puts up. Limits: at most 3 moments, a change only once per round, no bluffing with an empty hand or after setting a card to Never offer, and a stall budget per round and per game.",
+  "tag": "web/e2e/screenshots/AO-bluff-reaction",
+  "shots": [
+    {
+      "file": "out/1-selector-open.png",
+      "heading": "Selector on the player mat",
+      "caption": "'Bluff a reaction' sits in the viewer's own Private Hand block. The moments are the kinds of window the action cards use (when a card is played, after an activation, during a space combat, in the agenda phase ...). Nothing is sent until Declare is pressed, because a declaration can change only once per round."
+    },
+    {
+      "file": "out/2-selector-declared.png",
+      "heading": "Three moments declared, locked until round 3",
+      "caption": "After Declare the server answers with this seat's own state: the set is locked until the next round ('can change again in round 3'). Three is the limit, so the other boxes are off. Only this player sees any of it; Clear stays available."
+    },
+    {
+      "file": "out/3-selector-no-cards.png",
+      "heading": "Disabled with no action cards",
+      "caption": "Hand size is public, so a seat with 0 action cards cannot credibly bluff: every box is off and the reason is shown (the server refuses the declaration too)."
+    },
+    {
+      "file": "out/4-selector-never-mode.png",
+      "heading": "Disabled in Never mode",
+      "caption": "A seat that set a card to 'Never offer' (the check mark on the card turned into a cross) wants a faster game, so it cannot also stall one. Same reason shown, same refusal on the server."
+    },
+    {
+      "file": "out/5-budget-used-up.png",
+      "heading": "Bluff budget used up",
+      "caption": "Stalls are capped per seat and round (60 s), per seat and game (5 min) and per table (10 min). Once a budget is gone, further bluff waits are skipped without any stall or banner, and only the bluffer is told, here."
+    },
+    {
+      "file": "out/6-banner-real-wait.png",
+      "heading": "Another client: the game really waits for the seat",
+      "caption": "What a second player sees while the seat holds a card that fits the window and is being asked."
+    },
+    {
+      "file": "out/7-banner-bluff-hold.png",
+      "heading": "Another client: a bluff hold",
+      "caption": "What the same player sees during a bluff stall. The capture asserts that the two banners have identical text and identical markup: the server sends the very same turn status (built by one shared function) and the page has no extra element for it."
+    },
+    {
+      "file": "out/8-bluffer-pass-bar.png",
+      "heading": "The bluffer during the stall",
+      "caption": "The bluffer gets the usual status for a seat being waited for, plus a bar to end the wait early with Pass. Nobody else gets the bar. The hold also ends by itself after 2 to 4 seconds (never more than 8), or at once if the game is undone, restarted or redone."
+    },
+    {
+      "file": "out/9-phone-selector.png",
+      "heading": "Phone: the selector",
+      "caption": "At 390 px the player sheet is the drawer behind Players; the selector is the same, with one moment picked and Declare below the list."
+    },
+    {
+      "file": "out/10-phone-banner.png",
+      "heading": "Phone: another client's banner",
+      "caption": "The banner during a stall at 390 px, the ordinary 'Waiting for ...' status."
+    },
+    {
+      "file": "out/11-phone-pass-bar.png",
+      "heading": "Phone: the bluffer's Pass bar",
+      "caption": "The header on a phone for the bluffer: status, the Pass bar and the header buttons."
+    }
+  ]
+}

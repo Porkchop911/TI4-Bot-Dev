@@ -57,6 +57,27 @@ pub enum StrategySecondaryError {
     IllegalChoice(#[from] IllegalChoice),
 }
 
+/// Why a follower is not asked a card's secondary (see [`StrategySecondaryWindow::blocker`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SecondaryBlocker {
+    /// The secondary costs a strategy token and the seat has none (and no waiver).
+    NoStrategyToken,
+    /// Leadership: the seat cannot afford one command token.
+    CannotAffordInfluence,
+    /// Technology: the seat cannot pay the 4 resources.
+    CannotPayResources,
+    /// Technology: nothing is researchable.
+    NothingToResearch,
+    /// Diplomacy: no controlled planet is exhausted.
+    NoExhaustedPlanet,
+    /// Trade: commodities are already at the limit.
+    CommoditiesFull,
+    /// Warfare: the home system has no production.
+    NoProduction,
+    Other,
+}
+
 /// The follower's secondary question with the facts a client needs to present it: which card
 /// was played, by whom, and how many strategy tokens the follower has left.
 fn secondary_choice(
@@ -86,6 +107,19 @@ fn secondary_choice(
             question = crate::tokens::with_pool_details(question, state, "buy", Some(0))
                 .detailed("purchase", purchase);
         }
+    }
+    if crate::strategy_cards::card_name(content, card.as_str()).as_deref() == Some("Diplomacy") {
+        question = question.detailed(
+            "ready_hints",
+            crate::strategy_cards::ready_hints(state, content, sources, player),
+        );
+    }
+    if crate::strategy_cards::card_name(content, card.as_str()).as_deref() == Some("Trade") {
+        // Display only: the follower's commodities now and at the limit the replenish fills to.
+        question = question.detailed(
+            "commodities",
+            crate::strategy_cards::commodity_standing(state, content, player),
+        );
     }
     question
         .detailed("kind", "strategy_secondary")
@@ -274,6 +308,8 @@ pub struct StrategySecondaryWindow {
     /// Whether finishing the window exhausts the primary player's copy of the card. False for
     /// a card resolved by an effect rather than held (see [`StrategySecondaryWindow::foreign`]).
     exhausts_card: bool,
+    /// A disposable one-follower window on a planning fork (see [`StrategySecondaryWindow::preview`]).
+    preview: bool,
 }
 
 impl StrategySecondaryWindow {
@@ -299,7 +335,97 @@ impl StrategySecondaryWindow {
             next_follower: 0,
             resolutions: Vec::new(),
             exhausts_card: false,
+            preview: false,
         }
+    }
+
+    /// One follower's secondary in isolation, for a disposable planning fork.
+    ///
+    /// The window offers `follower` the ordinary question at the ordinary cost. Completing it
+    /// exhausts no card, and the driver neither finishes the action nor advances the turn: the
+    /// fork only previews this seat's own secondary and is then discarded.
+    #[must_use]
+    pub fn preview(primary_player: PlayerId, card: StrategyCardId, follower: PlayerId) -> Self {
+        Self {
+            preview: true,
+            ..Self::foreign(primary_player, card, vec![follower])
+        }
+    }
+
+    /// Whether this is a [`StrategySecondaryWindow::preview`] window.
+    #[must_use]
+    pub const fn is_preview(&self) -> bool {
+        self.preview
+    }
+
+    /// Followers not yet recorded, in resolution order.
+    #[must_use]
+    pub fn unresolved_followers(&self) -> &[PlayerId] {
+        &self.followers[self.next_follower..]
+    }
+
+    /// A window with `follower` alone in it, for the read-only secondary preview
+    /// ([`crate::secondary_preview`]): it asks the same eligibility and builds the same question
+    /// the real window would for that seat, without the followers before it.
+    #[must_use]
+    pub(crate) fn preview_for(
+        primary_player: PlayerId,
+        card: StrategyCardId,
+        follower: PlayerId,
+    ) -> Self {
+        Self {
+            primary_player,
+            card,
+            followers: vec![follower],
+            next_follower: 0,
+            resolutions: Vec::new(),
+            exhausts_card: false,
+            preview: false,
+        }
+    }
+
+    /// Why `follower` would not be asked this window's question, or `None` when it would be.
+    ///
+    /// Derived from the same predicates as [`Self::pending_choice`] (`eligible`), so the two
+    /// cannot disagree: this returns `Some` exactly when `pending_choice` returns `None` for a
+    /// window with this follower first in line. Inspection only.
+    #[must_use]
+    pub fn blocker(
+        &self,
+        state: &GameState,
+        content: &ContentStore,
+        sources: SourceSet,
+        follower: &PlayerId,
+    ) -> Option<SecondaryBlocker> {
+        if self.eligible(state, content, sources, follower) {
+            return None;
+        }
+        let name = crate::strategy_cards::card_name(content, self.card.as_str())
+            .unwrap_or_else(|| self.card.to_string());
+        if name == "Leadership" {
+            return Some(SecondaryBlocker::CannotAffordInfluence);
+        }
+        let paid = state.player(follower).is_some_and(|seat| {
+            !secondary_costs_token(content, &self.card)
+                || secondary_is_free(state, content, follower, &self.card)
+                || seat.strategic_tokens > 0
+        });
+        if !paid {
+            return Some(SecondaryBlocker::NoStrategyToken);
+        }
+        Some(match name.as_str() {
+            "Technology" => {
+                if crate::technology::researchable(state, content, sources, follower).is_empty() {
+                    SecondaryBlocker::NothingToResearch
+                } else {
+                    SecondaryBlocker::CannotPayResources
+                }
+            }
+            "Diplomacy" => SecondaryBlocker::NoExhaustedPlanet,
+            "Trade" => SecondaryBlocker::CommoditiesFull,
+            "Warfare" => SecondaryBlocker::NoProduction,
+            _ => SecondaryBlocker::Other,
+        })
     }
 
     /// The player resolving the primary.
@@ -722,6 +848,7 @@ pub fn begin_strategic_action(
         next_follower: 0,
         resolutions: Vec::new(),
         exhausts_card: true,
+        preview: false,
     })
 }
 
@@ -971,6 +1098,7 @@ mod tests {
             next_follower: 0,
             resolutions: Vec::new(),
             exhausts_card: false,
+            preview: false,
         };
         let choice = window
             .pending_choice(&state, ContentStore::embedded(), POK)
@@ -984,6 +1112,37 @@ mod tests {
     }
 
     #[test]
+    fn the_trade_secondary_states_the_followers_commodities() {
+        let (mut state, card) = drafted_with_first_pick("Trade");
+        if let Some(seat) = state.player_mut(&PlayerId::new("b")) {
+            seat.faction = ti4_model::id::FactionId::new("sol");
+            seat.strategic_tokens = 2;
+            seat.commodities = 1;
+            seat.trade_goods = 2;
+        }
+        let limit = crate::strategy_cards::commodity_limit(
+            &state,
+            ContentStore::embedded(),
+            &PlayerId::new("b"),
+        );
+        let window = StrategySecondaryWindow {
+            primary_player: PlayerId::new("a"),
+            card,
+            followers: vec![PlayerId::new("b")],
+            next_follower: 0,
+            resolutions: Vec::new(),
+            exhausts_card: false,
+            preview: false,
+        };
+        let choice = window
+            .pending_choice(&state, ContentStore::embedded(), POK)
+            .expect("the follower is offered the secondary");
+        assert_eq!(choice.details["commodities"]["have"], 1);
+        assert_eq!(choice.details["commodities"]["max"], limit);
+        assert_eq!(choice.details["commodities"]["trade_goods"], 2);
+    }
+
+    #[test]
     fn display_details_never_change_which_decision_is_recorded() {
         let (state, card) = drafted_with_first_pick("Politics");
         let window = StrategySecondaryWindow {
@@ -993,6 +1152,7 @@ mod tests {
             next_follower: 0,
             resolutions: Vec::new(),
             exhausts_card: false,
+            preview: false,
         };
         let with = window
             .pending_choice(&state, ContentStore::embedded(), POK)

@@ -209,3 +209,39 @@ export function getActionCardDescription(cardName: string): string {
   const meta = getActionCardMeta(cardName);
   return meta.description || `Action Card: ${meta.name}`;
 }
+
+/** A Thunder's Edge breakthrough: a faction card a player earns, with a synergy. */
+export interface BreakthroughMeta {
+  id: string;
+  name: string;
+  faction?: string;
+  /** The two technology colours its synergy ability reads ("BIOTIC", "WARFARE"). */
+  synergy: readonly string[];
+  text?: string;
+}
+
+export const BREAKTHROUGHS = GENERATED_CONTENT_CATALOG.breakthroughs as unknown as Record<
+  string,
+  BreakthroughMeta
+>;
+
+export function findBreakthroughMeta(id: string | null | undefined): BreakthroughMeta | undefined {
+  return id ? exactLookup(BREAKTHROUGHS, id) : undefined;
+}
+
+const squash = (text: string): string =>
+  text.toLowerCase().replace(/^the\s+/, "").replace(/[^a-z0-9]/g, "");
+
+/** The breakthrough printed for a faction, by id ("sol") or printed name; earned or not. */
+export function findBreakthroughForFaction(faction: string | null | undefined): BreakthroughMeta | undefined {
+  if (!faction) return undefined;
+  const cards = Object.values(BREAKTHROUGHS);
+  const lower = faction.toLowerCase();
+  const byId = cards.find((card) => card.faction === lower);
+  if (byId) return byId;
+  const wanted = squash(faction);
+  const record = Object.values(
+    GENERATED_CONTENT_CATALOG.factions as unknown as Record<string, { id: string; name: string }>,
+  ).find((f) => squash(f.id) === wanted || squash(f.name) === wanted);
+  return record ? cards.find((card) => card.faction === record.id) : undefined;
+}

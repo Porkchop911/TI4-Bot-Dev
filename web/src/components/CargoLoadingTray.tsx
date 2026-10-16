@@ -37,10 +37,21 @@ export const CargoLoadingTray: React.FC<{
           const source = typeof option.payload?.source === "string" ? option.payload.source : null;
           const damaged = option.payload?.damaged === true;
           const key = JSON.stringify([unit, source, damaged, option.payload?.galvanized === true]);
-          const origin =
+          const shipOrigin =
             choice.context?.target && "System" in choice.context.target
               ? choice.context.target.System
               : String(option.payload?.system ?? "");
+          // 95.1: the hold also offers units from the systems the ship moves through. A planet
+          // names its system; an explicit pickup_system (newer engines) names any system.
+          const pickup =
+            typeof option.payload?.pickup_system === "string"
+              ? option.payload.pickup_system
+              : source
+                ? (Object.values(board?.systems ?? {}).find((system) =>
+                    system.units.some((u) => u.planet === source && u.owner === choice.actor),
+                  )?.system_id ?? shipOrigin)
+                : shipOrigin;
+          const origin = pickup;
           const onBoard =
             board?.systems?.[origin]?.units.filter(
               (u) =>
@@ -49,7 +60,16 @@ export const CargoLoadingTray: React.FC<{
                 (u.planet ?? null) === source &&
                 Boolean(u.damaged) === damaged,
             ).length ?? 0;
-          return { key, unit, source, damaged, option, onBoard };
+          return {
+            key,
+            unit,
+            source,
+            damaged,
+            option,
+            onBoard,
+            pickup,
+            shipOrigin,
+          };
         }),
     [choice, board],
   );
@@ -158,8 +178,9 @@ export const CargoLoadingTray: React.FC<{
                   {group.damaged ? " (damaged)" : ""}
                 </strong>
                 <div className="text-muted">
-                  From {group.source ?? "space"} · Have: {group.onBoard || "unknown"} · Available:{" "}
-                  {max} · Staged: {count}
+                  From {group.source ?? "space"}
+                  {group.pickup !== group.shipOrigin ? ` (on the way, #${group.pickup})` : ""} ·
+                  Have: {group.onBoard || "unknown"} · Available: {max} · Staged: {count}
                 </div>
               </div>
               <div className="workflow-row">

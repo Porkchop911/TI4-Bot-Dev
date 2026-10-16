@@ -55,8 +55,14 @@ fn crimson_ask(
     context: &mut crate::timing::TimingContext<'_>,
     owner: &PlayerId,
 ) -> Result<bool, crate::choice::IllegalChoice> {
-    let held = context.state.player(owner).map_or(0, |seat| seat.commodities);
-    let goods = context.state.player(owner).map_or(0, |seat| seat.trade_goods);
+    let held = context
+        .state
+        .player(owner)
+        .map_or(0, |seat| seat.commodities);
+    let goods = context
+        .state
+        .player(owner)
+        .map_or(0, |seat| seat.trade_goods);
     let limit = crate::strategy_cards::commodity_limit(context.state, context.content, owner);
     let choice = crate::strategy_cards::commander_payment_offer(
         crate::choice::Choice::new(
@@ -758,7 +764,11 @@ mod tests {
             "Commodities 1 → 0, trade goods 4 → 5"
         );
         assert_eq!(
-            offer.options.iter().map(|o| o.id.as_str()).collect::<Vec<_>>(),
+            offer
+                .options
+                .iter()
+                .map(|o| o.id.as_str())
+                .collect::<Vec<_>>(),
             ["gain", "convert"]
         );
     }

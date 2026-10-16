@@ -527,7 +527,7 @@ pub fn wormhole_generator_destinations(
     let types = ti4_content::units::catalogue(content, sources);
     let homes = ti4_content::galaxy::home_systems(content, sources);
     let mut systems = Vec::new();
-    for id in galaxy.system_ids() {
+    for id in galaxy.system_ids_holding_things() {
         let here = state.board.get(&SystemId::new(id));
         let controls = here.is_some_and(|system| system.controls_a_planet(player));
         let others_ships = here.is_some_and(|system| {

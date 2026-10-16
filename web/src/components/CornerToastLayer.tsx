@@ -1,5 +1,6 @@
 import React, { useLayoutEffect, useState } from "react";
 import { AutoResolveToastContainer } from "./AutoResolveToast.tsx";
+import { ToastHistory } from "./ToastHistory.tsx";
 import { CornerToastsInput, useCornerToasts } from "../hooks/useCornerToasts.ts";
 
 // Fixed bars at the bottom edge the toasts must clear: the turn action bar, the event log toggle
@@ -25,7 +26,7 @@ export function measureBottomOffset(): number {
  * lifted above the turn action bar and the other bottom overlays.
  */
 export const CornerToastLayer: React.FC<CornerToastsInput> = (props) => {
-  const { notifications, dismiss } = useCornerToasts(props);
+  const { notifications, dismiss, history } = useCornerToasts(props);
   const [offset, setOffset] = useState(GAP);
   const count = notifications.length;
 
@@ -41,5 +42,12 @@ export const CornerToastLayer: React.FC<CornerToastsInput> = (props) => {
     };
   }, [count]);
 
-  return <AutoResolveToastContainer notifications={notifications} onDismiss={dismiss} bottomOffset={offset} />;
+  return (
+    <AutoResolveToastContainer
+      notifications={notifications}
+      onDismiss={dismiss}
+      bottomOffset={offset}
+      footer={<ToastHistory history={history} />}
+    />
+  );
 };

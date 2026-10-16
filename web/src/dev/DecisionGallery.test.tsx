@@ -9,8 +9,8 @@ import { fallbackCases, galleryCases } from "./decisionGalleryCases.ts";
 
 describe("development decision gallery", () => {
   it("has a correctly classified synthetic preview for every workflow and labels fallbacks", () => {
-    expect(galleryCases).toHaveLength(19);
-    expect(new Set(galleryCases.map(({ workflow }) => workflow)).size).toBe(19);
+    expect(galleryCases).toHaveLength(20);
+    expect(new Set(galleryCases.map(({ workflow }) => workflow)).size).toBe(20);
     for (const item of [...galleryCases, ...fallbackCases]) {
       expect(
         deriveChoiceRendererModel(item.choice, item.choice.actor)?.workflow,
@@ -22,7 +22,7 @@ describe("development decision gallery", () => {
 
   it("previews the real renderer, offered IDs, local submissions and the other-seat boundary", async () => {
     render(<DecisionGallery />);
-    expect(screen.getByText(/Workflow kinds \(19\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Workflow kinds \(20\)/)).toBeInTheDocument();
     expect(
       screen.getByText(
         `Fallbacks and boundary states (${fallbackCases.length})`,
@@ -226,7 +226,7 @@ describe("development decision gallery", () => {
     // Quann's option has no payload.system: the planet is still found on the map.
     fireEvent.click(screen.getByTestId("planet-quann"));
     expect(screen.getByTestId("planet-selection-action")).toHaveTextContent(
-      "Mining Initiative — mine Quann (2R/1I)",
+      "Mining Initiative — mine Quann (21)",
     );
     fireEvent.click(screen.getByTestId("confirm-planet-btn"));
     await waitFor(() =>
@@ -260,7 +260,7 @@ describe("development decision gallery", () => {
     expect(screen.queryByTestId("agenda-ballot-modal")).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId("planet-lodor"));
     expect(screen.getByTestId("planet-selection-action")).toHaveTextContent(
-      "Agenda Vote — vote for Lodor (3R/1I) · 3 votes cast",
+      "Agenda Vote — vote for Lodor (31) · 3 votes cast",
     );
     fireEvent.click(screen.getByTestId("confirm-planet-btn"));
     await waitFor(() =>

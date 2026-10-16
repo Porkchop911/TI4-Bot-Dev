@@ -48,6 +48,8 @@ fn played_session(steps: usize) -> ReviewSession {
         table: ProfileTable::Learner,
         temperature: 0.5,
         diplomacy: false,
+        lineup: None,
+        rule_seats: Vec::new(),
     };
     let mut review =
         LiveReview::start(&config).expect("the committed example inputs start a review");
@@ -569,6 +571,8 @@ fn warfare_asks_the_strategy_spend_before_production() {
         table: ProfileTable::Learner,
         temperature: 0.5,
         diplomacy: false,
+        lineup: None,
+        rule_seats: Vec::new(),
     };
     let mut review = LiveReview::start(&config).expect("the example table starts");
     let mut decisions = Vec::new();

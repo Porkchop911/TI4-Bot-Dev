@@ -1,0 +1,20 @@
+[package]
+name = "ti4-host"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+# Tokio-free and thread-free where it matters: this crate is compiled for the server and for
+# `wasm32-unknown-unknown` (`cargo check -p ti4-host --target wasm32-unknown-unknown`). Time and
+# nonces come in through the traits of `clock`; nothing here reads the system clock.
+[dependencies]
+ti4-model = { workspace = true }
+ti4-content = { workspace = true }
+ti4-engine = { workspace = true }
+ti4-view = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

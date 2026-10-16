@@ -539,6 +539,11 @@ fn migrate(
     reason: &'static str,
 ) -> bool {
     let mut moved = false;
+    // Ships that have already moved in this migration, by where they arrived: "move any number of
+    // your ships" moves each ship once. Re-offering an arrived ship let a bot shuttle one ship
+    // between two systems for ever (BF-22 wide-roster evaluation). Ships carry no identity, so a
+    // stack is offered while it holds more copies than have arrived there.
+    let mut arrived: Vec<(SystemId, Unit)> = Vec::new();
     loop {
         let mut destinations =
             hero_destinations(context.state, context.content, context.sources, player);
@@ -550,6 +555,20 @@ fn migrate(
                 .into_iter()
                 .filter(|(from, _)| scope.is_none_or(|scope| scope.contains(from)))
                 .filter(|(from, _)| destinations.iter().any(|to| to != from))
+                .filter(|(from, unit)| {
+                    let here = context
+                        .state
+                        .system_state(from)
+                        .units_of(player)
+                        .into_iter()
+                        .filter(|other| *other == unit)
+                        .count();
+                    let came = arrived
+                        .iter()
+                        .filter(|(at, other)| at == from && other == unit)
+                        .count();
+                    here > came
+                })
                 .collect();
         if ships.is_empty() {
             break;
@@ -684,6 +703,7 @@ fn migrate(
         if done.is_err() {
             break;
         }
+        arrived.push((to, ships[0].clone()));
         moved = true;
     }
     moved
@@ -2392,6 +2412,44 @@ mod tests {
             "the cargo came along, in space"
         );
         assert_eq!(count(&state, &held, &a(), "carrier"), 0);
+    }
+
+    #[test]
+    fn flock_migration_moves_each_ship_once() {
+        // Two tokened, empty systems: after the carrier moves to the first, it is not offered
+        // again, so it cannot shuttle back and forth and the migration ends.
+        let (mut state, galaxy, [from, safe, _]) = hero_board();
+        let other = galaxy
+            .system_ids()
+            .into_iter()
+            .map(SystemId::new)
+            .find(|id| *id != from && *id != safe && !state.board.contains_key(id))
+            .expect("a third system");
+        state.system_mut(&other).command_tokens.insert(a());
+        // The carrier is Argent's only ship, so the second "ship|0" could only be it again.
+        let content = ContentStore::embedded();
+        for (system, board) in &mut state.board {
+            if *system != from {
+                board.units.retain(|unit| {
+                    unit.owner != a()
+                        || !ti4_content::units::unit_type(content, unit.type_id.as_str(), DEFAULT)
+                            .is_some_and(|kind| kind.is_ship())
+                });
+            }
+        }
+        let done = fly(
+            &mut state,
+            &galaxy,
+            &["ship|0", &format!("to|{safe}"), "decline", "ship|0"],
+        );
+        assert_eq!(done, Some(true));
+        assert_eq!(
+            count(&state, &safe, &a(), "carrier"),
+            1,
+            "moved once, and stayed"
+        );
+        assert_eq!(count(&state, &other, &a(), "carrier"), 0);
+        assert_eq!(count(&state, &from, &a(), "carrier"), 0);
     }
 
     #[test]

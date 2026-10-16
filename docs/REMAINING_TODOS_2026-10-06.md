@@ -27,9 +27,11 @@ while the sweep runs: games are built and served from it.
    is behind the dialog. Proposed fix: show it in the dialog. Not yet approved.
 3. `SHIP_MOVED` reaction timing (parked): the engine emits the typed event only when a cargo hold
    opens, so reactions "after a ship moves" are not offered for ships without capacity. Rules call.
-4. More auto-resolved decisions (parked): a lone strategic action and a lone system activation are
-   not auto-resolved (the player can still pass or decline). The last strategy card is auto-resolved,
-   which only happens in 4-player drafts.
+4. More auto-resolved decisions (decided 2026-10-07, UI only): a lone strategic action and a lone system
+   activation are answered by the web client for the player (engine unchanged, answer journaled as a
+   normal choice, toast "Only one choice: ...", per-player setting, never after undo/redo/load). See
+   `docs/AUTO_RESOLVE_CASES.md`. The last strategy card is auto-resolved by the server, which only
+   happens in 4-player drafts.
 5. Standard UI review (`docs/STANDARD_UI_REVIEW.md`, parked): which items to build first (game-over
    screen, units on map tiles, other seats following play), whether phones are a target, whether the
    server view may grow (promissory notes, commodity cap, VP sources, objective deck counts, bot

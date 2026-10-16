@@ -18,6 +18,36 @@ export interface AgendaView {
   text: string[];
 }
 
+const printedAgenda = (choice: Pick<PendingChoiceDto, "details">) => {
+  const agenda = choice.details?.agenda;
+  const record = agenda && typeof agenda === "object" && !Array.isArray(agenda) ? (agenda as Record<string, unknown>) : null;
+  return (key: string) =>
+    typeof record?.[key] === "string" && (record[key] as string).trim() ? (record[key] as string).trim() : null;
+};
+
+/**
+ * The agenda a decision is about, as printed (`details.agenda`): the one just revealed for Quash,
+ * Political Favor, Veto and the other "when an agenda is revealed" windows, the one being resolved
+ * for Confusing Legal Text and the like, the one voted on for a tie-break. `null` when the decision
+ * carries none, and for the Politics placement, which has its own card.
+ */
+export function describeDecisionAgenda(
+  choice: Pick<PendingChoiceDto, "context" | "details">,
+): (AgendaView & { revealed: boolean }) | null {
+  if (subtypeOf(choice) === "politics_place_agenda") return null;
+  const text = printedAgenda(choice);
+  const name = text("name") ?? (text("id") ? humanizeId(text("id") as string) : null);
+  if (!name) return null;
+  const trigger = choice.context?.trigger?.kind ?? "";
+  return {
+    name,
+    kind: text("type"),
+    target: text("target"),
+    text: [text("text1"), text("text2")].filter((line): line is string => line !== null),
+    revealed: trigger !== "agenda_resolved" && trigger !== "votes_cast" && !/vote|tiebreak|recombination/.test(subtypeOf(choice)),
+  };
+}
+
 /** The agenda being placed on top of or below the deck; `null` for any other decision. */
 export function describeAgendaPlacement(
   choice: Pick<PendingChoiceDto, "prompt" | "context" | "details">,

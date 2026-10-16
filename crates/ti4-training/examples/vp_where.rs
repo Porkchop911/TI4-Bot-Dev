@@ -162,8 +162,8 @@ fn main() {
                 );
             }
             let mut deciders: BTreeMap<PlayerId, Box<dyn Decider>> = BTreeMap::new();
-            let mut sinks: BTreeMap<PlayerId, Rc<RefCell<(BTreeSet<String>, i32, usize)>>> =
-                BTreeMap::new();
+            type OwnedFacts = Rc<RefCell<(BTreeSet<String>, i32, usize)>>;
+            let mut sinks: BTreeMap<PlayerId, OwnedFacts> = BTreeMap::new();
             for (index, player) in players.iter().enumerate() {
                 let faction = factions[player].to_string();
                 let profile = loaded[&faction].clone();

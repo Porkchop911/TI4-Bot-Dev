@@ -12,6 +12,11 @@ export interface PayablePlanet {
   worth: number;
   label: string;
   sourceKind?: string;
+  /**
+   * The planet's own resource value (what exhausting it takes away from production this round).
+   * Unknown (`undefined`) counts as 0 in the influence policy, which then reduces to least waste.
+   */
+  resources?: number;
 }
 
 export interface PaymentOffer {
@@ -52,6 +57,8 @@ export function isPaymentChoice(choice: PendingChoiceDto | null | undefined): bo
 export function derivePaymentOffer(
   choice: PendingChoiceDto,
   model?: ChoiceRendererModel | null,
+  /** Resource value per planet id, when known (feeds the influence Auto-pay policy). */
+  resourcesOf?: ReadonlyMap<string, number>,
 ): PaymentOffer {
   const constraints = model?.outstanding?.[0] ?? choice.context?.outstanding?.[0];
   const totalAmount =
@@ -90,6 +97,7 @@ export function derivePaymentOffer(
         worth: p.worth > 0 ? p.worth : 0,
         label: opt.label,
         sourceKind: p.source,
+        resources: resourcesOf?.get(paymentPlanetKey(opt.id)),
       });
     }
   }
@@ -163,9 +171,76 @@ function bestPayableTotal(offer: PaymentOffer, tradeGoodsAvailable: number): num
   return total + (offer.hasTradeGoodOption ? tradeGoodsAvailable * offer.tradeGoodWorth : 0);
 }
 
+/** Resource payments: least overshoot, then the fewest planets (unchanged). */
+function pickLeastWaste(planets: PayablePlanet[], owed: number): string[] | null {
+  // Subset search with a per-sum table: least overshoot, then fewest planets.
+  const cap = owed + Math.max(0, ...planets.map((p) => p.worth));
+  const best = new Map<number, string[]>([[0, []]]);
+  for (const p of planets) {
+    for (const [sum, ids] of [...best.entries()]) {
+      const next = Math.min(sum + p.worth, cap);
+      const existing = best.get(next);
+      if (!existing || ids.length + 1 < existing.length) best.set(next, [...ids, p.id]);
+    }
+  }
+  let pick: { sum: number; ids: string[] } | null = null;
+  for (const [sum, ids] of best) {
+    if (sum < owed) continue;
+    if (!pick || sum < pick.sum || (sum === pick.sum && ids.length < pick.ids.length))
+      pick = { sum, ids };
+  }
+  return pick ? pick.ids : null;
+}
+
+const MAX_EXACT_PLANETS = 18;
+
 /**
- * Suggests what to exhaust: the planets that cover the bill with the least waste (then the fewest
- * planets), spending trade goods only when the planets cannot cover it. It only stages the
+ * Influence payments: "first use planets with no resources, then do not waste resources".
+ * Among the planet sets that cover the bill, pick the one that, in this order,
+ *  1. exhausts the fewest RESOURCES in total (so pure-influence planets, 0 resources, come first
+ *     and are used even when that overpays more than a resource planet would),
+ *  2. then wastes the least influence (overpay),
+ *  3. then uses the fewest planets,
+ *  4. then the lexicographically smallest planet ids (deterministic).
+ * Sets with a spare item are never best (dropping it lowers waste at no resource cost), so the
+ * engine's "stops asking once covered" rule holds. Returns the option ids, or null when the planets
+ * cannot cover the bill. Unknown resources count as 0.
+ */
+export function pickInfluencePlanets(planets: PayablePlanet[], owed: number): string[] | null {
+  const sorted = [...planets].sort((a, b) => a.planetId.localeCompare(b.planetId));
+  if (sorted.length > MAX_EXACT_PLANETS) return pickLeastWaste(sorted, owed);
+  let best: { resources: number; waste: number; count: number; key: string; ids: string[] } | null = null;
+  for (let mask = 1; mask < 1 << sorted.length; mask += 1) {
+    let sum = 0;
+    let resources = 0;
+    let count = 0;
+    for (let i = 0; i < sorted.length; i += 1) {
+      if (mask & (1 << i)) {
+        sum += sorted[i].worth;
+        resources += sorted[i].resources ?? 0;
+        count += 1;
+      }
+    }
+    if (sum < owed) continue;
+    const waste = sum - owed;
+    const ids = sorted.filter((_, i) => mask & (1 << i)).map((p) => p.id);
+    const key = ids.join("\u0000");
+    if (
+      !best ||
+      resources < best.resources ||
+      (resources === best.resources &&
+        (waste < best.waste ||
+          (waste === best.waste && (count < best.count || (count === best.count && key < best.key)))))
+    )
+      best = { resources, waste, count, key, ids };
+  }
+  return best ? best.ids : null;
+}
+
+/**
+ * Suggests what to exhaust. Resource payments: the planets that cover the bill with the least waste
+ * (then the fewest planets). Influence payments: see `pickInfluencePlanets` (planets with no
+ * resources first, then not wasting resources). Trade goods only when the planets cannot cover it. It only stages the
  * suggestion; nothing is paid until the player confirms. When the bill cannot be covered the
  * result is the best effort and `settled` is false.
  */
@@ -188,23 +263,11 @@ export function suggestAutoPay(
   const tgMax = offer.hasTradeGoodOption ? Math.max(0, tradeGoodsAvailable) : 0;
   if (owed <= 0) return { planetIds: [], tradeGoods: 0, settled: false };
 
-  // Subset search with a per-sum table: least overshoot, then fewest planets.
-  const cap = owed + Math.max(0, ...planets.map((p) => p.worth));
-  const best = new Map<number, string[]>([[0, []]]);
-  for (const p of planets) {
-    for (const [sum, ids] of [...best.entries()]) {
-      const next = Math.min(sum + p.worth, cap);
-      const existing = best.get(next);
-      if (!existing || ids.length + 1 < existing.length) best.set(next, [...ids, p.id]);
-    }
-  }
-  let pick: { sum: number; ids: string[] } | null = null;
-  for (const [sum, ids] of best) {
-    if (sum < owed) continue;
-    if (!pick || sum < pick.sum || (sum === pick.sum && ids.length < pick.ids.length))
-      pick = { sum, ids };
-  }
-  if (pick) return { planetIds: pick.ids, tradeGoods: 0, settled: true };
+  const pick =
+    offer.currency === "Influence"
+      ? pickInfluencePlanets(planets, owed)
+      : pickLeastWaste(planets, owed);
+  if (pick) return { planetIds: pick, tradeGoods: 0, settled: true };
 
   // Planets alone fall short: take them all, top up with trade goods.
   const all = planets.map((p) => p.id);
@@ -232,6 +295,10 @@ export interface PaymentMark {
   worth: number;
   unit: "R" | "I";
   staged: boolean;
+  /** The planet's own resource value, when known (shown beside the payment worth). */
+  resources?: number;
+  /** Diplomacy: the planet is picked to be readied, not exhausted (worth is its influence). */
+  readies?: boolean;
 }
 
 export function derivePaymentMarks(offer: PaymentOffer, draft: PaymentDraft): Map<string, PaymentMark> {
@@ -247,6 +314,7 @@ export function derivePaymentMarks(offer: PaymentOffer, draft: PaymentDraft): Ma
       worth: shown.worth,
       unit: offer.currency === "Influence" ? "I" : "R",
       staged: Boolean(stagedVariant),
+      resources: shown.resources,
     });
   }
   return marks;

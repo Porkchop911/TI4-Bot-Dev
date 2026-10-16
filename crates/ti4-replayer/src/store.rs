@@ -292,6 +292,8 @@ mod tests {
                 content_sha256: None,
                 source_scope: None,
                 diplomacy: false,
+                lineup: None,
+                rule_seats: Vec::new(),
             },
             board: vec![ti4_review::BoardTile {
                 system: "sol".to_owned(),
@@ -334,6 +336,8 @@ mod tests {
                     table: ti4_review::ProfileTable::Learner,
                     temperature: 0.5,
                     diplomacy: false,
+                    lineup: None,
+                    rule_seats: Vec::new(),
                 };
                 let review = ti4_review::LiveReview::start(&config)
                     .expect("a real starting table to take frames from");

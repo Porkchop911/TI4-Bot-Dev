@@ -402,7 +402,7 @@ describe("TacticalMovementOverlay Component", () => {
     );
 
     expect(screen.getByTestId("tactical-movement-tray")).toBeInTheDocument();
-    expect(screen.getByText("Destination: system 18")).toBeInTheDocument();
+    expect(screen.getByText("Destination: #18 [Mecatol Rex]")).toBeInTheDocument();
     expect(screen.getByTestId("origin-group-24")).toBeInTheDocument();
     expect(screen.getByTestId("rally-row-24-cruiser")).toBeInTheDocument();
     expect(screen.getByTestId("rally-row-24-carrier")).toBeInTheDocument();
@@ -576,7 +576,7 @@ describe("TacticalMovementOverlay Component", () => {
     expect(icons.length).toBeGreaterThan(0);
 
     // Cruisers count derived from boardView: 3 available instead of 1
-    expect(screen.getByText(/Origin: #24 • Available: 3/)).toBeInTheDocument();
+    expect(screen.getByText(/^Available: 3/)).toBeInTheDocument();
 
     // Can increment cruiser up to 3
     const cruiserInc = screen.getByTestId("rally-inc-24-cruiser");
@@ -979,5 +979,175 @@ describe("TacticalMovementOverlay Component", () => {
     expect(cruiser).toBeDisabled();
     fireEvent.click(cruiser);
     expect(screen.getByTestId("rally-count-17-cruiser")).toHaveTextContent("0");
+  });
+
+  // The engine offers one option per distinct (type, damage, origin), so the count of a row is the
+  // number of board units of that exact type: a variant ship must not borrow its base ship's count.
+  describe.each([
+    ["carrier", "sol_carrier"],
+    ["carrier", "carrier2"],
+    ["destroyer", "destroyer2"],
+    ["dreadnought", "dreadnought2"],
+    ["cruiser", "cruiser2"],
+    ["flagship", "letnev_flagship"],
+    ["destroyer", "argent_strike_wing_alpha"],
+  ])("variant ships %s next to %s", (base, variant) => {
+    it("counts each type separately and disables + at the true count", () => {
+      const choice: PendingChoiceDto = {
+        prompt: "movement",
+        actor: "p1",
+        nonce: "nonce_variant",
+        context: { subtype: "movement_step", target: { System: "18" } },
+        options: [
+          { id: "move|20|0", label: base, kind: "move", payload: { origin: "20", unit: base, capacity: 1 } },
+          { id: "move|20|1", label: variant, kind: "move", payload: { origin: "20", unit: variant, capacity: 1 } },
+          { id: "done_moving", label: "Finish Movement", kind: "decline" },
+        ],
+      };
+      render(
+        <TacticalMovementOverlay
+          choice={choice}
+          board={
+            {
+              systems: {
+                "20": {
+                  system_id: "20",
+                  command_tokens: [],
+                  planets: {},
+                  units: [
+                    { owner: "p1", unit_type: base, damaged: false },
+                    { owner: "p1", unit_type: variant, damaged: false },
+                  ],
+                },
+              },
+            } as any
+          }
+          activeSystemId="18"
+          player={mockPlayer}
+          onSubmit={vi.fn()}
+          isOpen
+          onClose={vi.fn()}
+        />,
+      );
+      for (const type of [base, variant]) {
+        const inc = screen.getByTestId(`rally-inc-20-${type}`);
+        expect(inc).toBeEnabled();
+        fireEvent.click(inc);
+        expect(screen.getByTestId(`rally-count-20-${type}`)).toHaveTextContent("1");
+        expect(inc).toBeDisabled();
+      }
+    });
+  });
+
+  describe("All from here", () => {
+    const allBoard = {
+      systems: {
+        "24": {
+          system_id: "24",
+          command_tokens: [],
+          planets: {},
+          units: [
+            { owner: "p1", unit_type: "carrier", damaged: false },
+            { owner: "p1", unit_type: "cruiser", damaged: false },
+            { owner: "p1", unit_type: "fighter", damaged: false },
+            { owner: "p1", unit_type: "fighter", damaged: false },
+            { owner: "p1", unit_type: "infantry", damaged: false },
+            { owner: "p1", unit_type: "infantry", planet: "meharxull", damaged: false },
+            { owner: "p1", unit_type: "infantry", planet: "meharxull", damaged: false },
+            { owner: "p1", unit_type: "infantry", planet: "meharxull", damaged: false },
+          ],
+        },
+      },
+      map_tiles: [
+        { system_id: "18", label: "Mecatol Rex", q: 0, r: 0, planets: [{ id: "mr" }] },
+        { system_id: "24", label: "Mehar Xull", q: 1, r: 0, planets: [{ id: "meharxull" }] },
+      ],
+    } as any;
+
+    const renderTray = () => {
+      const onSubmit = vi.fn().mockResolvedValue(undefined);
+      const onSubmitBatch = vi.fn().mockResolvedValue(undefined);
+      const view = render(
+        <TacticalMovementOverlay
+          choice={mockMoveChoice}
+          board={allBoard}
+          activeSystemId="18"
+          player={mockPlayer}
+          onSubmit={onSubmit}
+          onSubmitBatch={onSubmitBatch}
+          isOpen
+          onClose={vi.fn()}
+        />,
+      );
+      return { onSubmit, onSubmitBatch, view };
+    };
+
+    it("names origin and destination by tile number and system name", () => {
+      renderTray();
+      expect(screen.getByText("Destination: #18 [Mecatol Rex]")).toBeInTheDocument();
+      expect(screen.getByTestId("origin-title-24")).toHaveTextContent("From #24 [Mehar Xull]");
+    });
+
+    it("only stages every ship and the cargo their capacity allows, without sending anything", () => {
+      const { onSubmit, onSubmitBatch } = renderTray();
+      fireEvent.click(screen.getByTestId("rally-all-24"));
+      expect(screen.getByTestId("rally-count-24-carrier")).toHaveTextContent("1");
+      expect(screen.getByTestId("rally-count-24-cruiser")).toHaveTextContent("1");
+      // Capacity 4: both fighters, the infantry in space, then one from the planet.
+      expect(screen.getByTestId("rally-count-cargo-24-fighter-space")).toHaveTextContent("2");
+      expect(screen.getByTestId("rally-count-cargo-24-infantry-space")).toHaveTextContent("1");
+      expect(screen.getByTestId("rally-count-cargo-24-infantry-meharxull")).toHaveTextContent("1");
+      expect(screen.getByTestId("cargo-capacity-gauge-24")).toHaveTextContent("4 loaded / 4 capacity");
+      expect(screen.getByTestId("commit-moves-btn")).toHaveTextContent("Commit Moves (6)");
+      expect(screen.getByTestId("rally-all-24")).toBeDisabled();
+      expect(onSubmit).not.toHaveBeenCalled();
+      expect(onSubmitBatch).not.toHaveBeenCalled();
+    });
+
+    it("commits exactly the plan the same manual clicks would", async () => {
+      const manual = renderTray();
+      for (const id of [
+        "rally-inc-24-carrier",
+        "rally-inc-24-cruiser",
+        "rally-inc-cargo-24-fighter-space",
+        "rally-inc-cargo-24-fighter-space",
+        "rally-inc-cargo-24-infantry-space",
+        "rally-inc-cargo-24-infantry-meharxull",
+      ]) {
+        fireEvent.click(screen.getByTestId(id));
+      }
+      fireEvent.click(screen.getByTestId("commit-moves-btn"));
+      await waitFor(() => expect(manual.onSubmitBatch).toHaveBeenCalledTimes(1));
+      manual.view.unmount();
+
+      const quick = renderTray();
+      fireEvent.click(screen.getByTestId("rally-all-24"));
+      fireEvent.click(screen.getByTestId("commit-moves-btn"));
+      await waitFor(() => expect(quick.onSubmitBatch).toHaveBeenCalledTimes(1));
+      expect(quick.onSubmitBatch.mock.calls[0]).toEqual(manual.onSubmitBatch.mock.calls[0]);
+      expect(quick.onSubmit).not.toHaveBeenCalled();
+    });
+
+    it("leaves ground forces behind when no ship with capacity can move", () => {
+      const choice: PendingChoiceDto = {
+        ...mockMoveChoice,
+        options: mockMoveChoice.options.filter((o) => o.id !== "move|24|1"),
+      };
+      render(
+        <TacticalMovementOverlay
+          choice={choice}
+          board={allBoard}
+          activeSystemId="18"
+          player={mockPlayer}
+          onSubmit={vi.fn()}
+          isOpen
+          onClose={vi.fn()}
+        />,
+      );
+      fireEvent.click(screen.getByTestId("rally-all-24"));
+      expect(screen.getByTestId("rally-count-24-cruiser")).toHaveTextContent("1");
+      expect(screen.getByTestId("rally-count-cargo-24-infantry-space")).toHaveTextContent("0");
+      expect(screen.getByTestId("rally-count-cargo-24-fighter-space")).toHaveTextContent("0");
+    });
   });
 });

@@ -14,6 +14,27 @@ describe("map protocol decoding", () => {
     expect(() => decodeMapList({})).toThrow(/map list/);
   });
 
+  it("keeps a template's display name and rejects a blank one", () => {
+    const entry = {
+      ...fixtureTemplates(6)[0],
+      alias: "6pBalancedSpiral",
+      name: "Balanced Spiral",
+    };
+    expect(decodeMapList([entry])[0].name).toBe("Balanced Spiral");
+    expect(decodeMapList([fixtureTemplates(6)[0]])[0]).not.toHaveProperty("name");
+    expect(() => decodeMapList([{ ...entry, name: "" }])).toThrow(/map list entry/);
+    const choice = {
+      kind: "template",
+      alias: "6pBalancedSpiral",
+      name: "Balanced Spiral",
+      systems: 31,
+      hyperlanes: false,
+      recommended: false,
+    };
+    expect(decodeMapChoice(choice).name).toBe("Balanced Spiral");
+    expect(() => decodeMapChoice({ ...choice, name: 3 })).toThrow(/map choice/);
+  });
+
   it("round-trips a preview and rejects a broken one", () => {
     const preview = fixturePreview(4);
     expect(decodeMapPreview(JSON.parse(JSON.stringify(preview)))).toEqual(preview);
@@ -51,5 +72,25 @@ describe("map protocol decoding", () => {
     const legacy = decodeLobby(old, "gallery-map");
     expect(legacy.map).toBeUndefined();
     expect(legacy.map_revision).toBeUndefined();
+  });
+
+  it("reads the strategy card set and ignores one it does not know or none at all", () => {
+    const raw = (set: unknown) =>
+      JSON.parse(JSON.stringify({ ...fixtureLobby(3), strategy_card_set: set }));
+    expect(decodeLobby(raw("te"), "gallery-map").strategy_card_set).toBe("te");
+    expect(decodeLobby(raw("pok"), "gallery-map").strategy_card_set).toBe("pok");
+    expect(decodeLobby(raw("base_game"), "gallery-map").strategy_card_set).toBeUndefined();
+    expect(decodeLobby(raw(undefined), "gallery-map").strategy_card_set).toBeUndefined();
+  });
+
+  it("reads the faction pool and a bot seat's chosen faction, and tolerates their absence", () => {
+    const base = JSON.parse(JSON.stringify(fixtureLobby(3)));
+    base.slots[1] = { ...base.slots[1], occupant: base.slots[1].occupant ?? "player_x", bot: "smart", faction: "sol" };
+    const decoded = decodeLobby({ ...base, factions: ["sol", "hacan", 3] }, "gallery-map");
+    expect(decoded.factions).toEqual(["sol", "hacan"]);
+    expect(decoded.slots[1].faction).toBe("sol");
+    const old = decodeLobby(JSON.parse(JSON.stringify(fixtureLobby(3))), "gallery-map");
+    expect(old.factions).toBeUndefined();
+    expect(old.slots[0]).not.toHaveProperty("faction");
   });
 });

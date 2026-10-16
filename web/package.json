@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "build:wasm": "node scripts/build-wasm.mjs",
     "build": "npm run verify:content && tsc && vite build",
     "preview": "vite preview",
     "test": "npm run verify:content && vitest run",
@@ -13,7 +14,10 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "screenshots": "node e2e/screenshots/_shared/run.mjs",
-    "test:e2e:smoke": "TI4_SMOKE=1 playwright test e2e/smoke_playthrough.spec.ts --global-timeout=0 --reporter=line"
+    "test:e2e:resume": "playwright test -c e2e/resume.config.ts",
+    "test:e2e:offline": "playwright test -c e2e/offline.config.ts",
+    "test:e2e:smoke": "TI4_SMOKE=1 playwright test e2e/smoke_playthrough.spec.ts --global-timeout=0 --reporter=line",
+    "prebuild": "node scripts/build-wasm.mjs"
   },
   "dependencies": {
     "react": "^19.3.0",
@@ -27,6 +31,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
+    "fake-indexeddb": "6.2.5",
     "jsdom": "^30.1.1",
     "oxfmt": "^0.70.0",
     "typescript": "^7.0.2",

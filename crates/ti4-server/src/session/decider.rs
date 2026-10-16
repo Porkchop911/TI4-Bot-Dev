@@ -2,10 +2,12 @@
 
 use std::sync::{Arc, Mutex, mpsc};
 use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice, SeatObservation};
+use ti4_host::clock::NonceSource as _;
 use ti4_model::id::PlayerId;
 
 use crate::protocol::server::ActionAcceptedMsg;
 use crate::protocol::status::RejectionReason;
+use crate::session::ready_secondary;
 use crate::session::worker::{PendingDecision, PendingSubmissionState, SessionShared};
 
 /// Incoming choice submission from a client.
@@ -45,11 +47,22 @@ impl RemoteHumanDecider {
     }
 }
 
+/// The nonces of a server: random, so no other player can guess the token of a pending choice.
+/// (`ti4-host` leaves the source of nonces to its host.)
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RandomNonce;
+
+impl ti4_host::clock::NonceSource for RandomNonce {
+    fn next_nonce(&self) -> String {
+        format!("{:016x}", rand::random::<u64>())
+    }
+}
+
 impl Decider for RemoteHumanDecider {
     fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
-        let nonce = format!("{:016x}", rand::random::<u64>());
+        let nonce = RandomNonce.next_nonce();
 
-        {
+        let reached = {
             let mut shared = self.shared.lock().expect("session shared lock");
             shared.game_version += 1;
             if let Some(previous) = shared.pending_decision.take()
@@ -66,8 +79,70 @@ impl Decider for RemoteHumanDecider {
                 submitted_option_id: None,
                 reply_tx: None,
             });
-            shared.broadcast_state_update();
-            shared.broadcast_pending_decision(choice, &nonce);
+            // A script that the seat sent answers before the seat is asked.
+            if let Some(option) = shared.script_option(choice) {
+                let (reply_tx, _reply_rx) = mpsc::channel();
+                let pending = shared.pending_decision.as_mut().expect("pending decision");
+                pending.submission_state = PendingSubmissionState::Reserved;
+                pending.submitted_option_id = Some(option.id.clone());
+                pending.reply_tx = Some(reply_tx);
+                return Ok(option);
+            }
+            shared.planning.begin_secondary_application(choice);
+            if let Some(option) = shared.planning.application_option(choice) {
+                let (reply_tx, _reply_rx) = mpsc::channel();
+                let pending = shared.pending_decision.as_mut().expect("pending decision");
+                pending.submission_state = PendingSubmissionState::Reserved;
+                pending.submitted_option_id = Some(option.id.clone());
+                pending.reply_tx = Some(reply_tx);
+                shared.planning.application_answered(choice, &option);
+                return Ok(option);
+            }
+            // A ready draft of the secondary that the seat is asked is sent by the server. The
+            // choice is reserved while the draft is checked on a copy, which needs no lock.
+            if ready_secondary::may_send(&shared, &self.seat, choice) {
+                let pending = shared.pending_decision.as_mut().expect("pending decision");
+                pending.submission_state = PendingSubmissionState::Reserved;
+                Some(shared.latest_state.round)
+            } else {
+                shared.broadcast_state_update();
+                shared.broadcast_pending_decision(choice, &nonce);
+                None
+            }
+        };
+        if let Some(round) = reached {
+            let send = ready_secondary::on_reach(&self.shared, &self.seat, choice, round);
+            let mut shared = self.shared.lock().expect("session shared lock");
+            let ours = !shared.stopped
+                && shared
+                    .pending_decision
+                    .as_ref()
+                    .is_some_and(|pending| pending.nonce == nonce);
+            match send {
+                Some(send) if ours => {
+                    let (reply_tx, _reply_rx) = mpsc::channel();
+                    let pending = shared.pending_decision.as_mut().expect("pending decision");
+                    pending.submitted_option_id = Some(send.option.id.clone());
+                    pending.reply_tx = Some(reply_tx);
+                    shared.note_answer(&self.seat, &nonce);
+                    shared.begin_script(&self.seat, &nonce, send.script, send.next);
+                    let book = shared.staged.clone();
+                    drop(shared);
+                    ready_secondary::spent(&self.shared, &book, &self.seat, send.revision);
+                    return Ok(send.option);
+                }
+                _ => {
+                    if ours {
+                        shared
+                            .pending_decision
+                            .as_mut()
+                            .expect("pending decision")
+                            .submission_state = PendingSubmissionState::AwaitingSubmission;
+                    }
+                    shared.broadcast_state_update();
+                    shared.broadcast_pending_decision(choice, &nonce);
+                }
+            }
         }
 
         while let Ok(submission) = self.inbox_rx.recv() {
@@ -81,7 +156,7 @@ impl Decider for RemoteHumanDecider {
             }
 
             // Submission identity and option validity were atomically reserved by GameSession.
-            if let Some(opt) = choice.options.iter().find(|o| o.id == submission.option_id) {
+            if let Some(opt) = choice.answer_for(&submission.option_id) {
                 let mut shared = self.shared.lock().expect("shared lock");
                 let pending = shared
                     .pending_decision
@@ -89,8 +164,9 @@ impl Decider for RemoteHumanDecider {
                     .expect("reserved pending decision");
                 pending.submitted_option_id = Some(submission.option_id);
                 pending.reply_tx = Some(submission.reply_tx);
+                shared.planning.application_answered(choice, &opt);
 
-                return Ok(opt.clone());
+                return Ok(opt);
             }
 
             // Option ID not in the offered set

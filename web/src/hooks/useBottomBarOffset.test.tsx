@@ -46,6 +46,31 @@ describe("useBottomBarOffset", () => {
     vi.unstubAllGlobals();
   });
 
+  it("publishes the slim height when a bar is minimized and the full height when shown again", () => {
+    let notify: () => void = () => {};
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(cb: () => void) {
+          notify = cb;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    const rect = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect");
+    rect.mockReturnValue({ height: 190 } as DOMRect);
+    render(<Bar />);
+    expect(offset()).toBe("190px");
+    rect.mockReturnValue({ height: 48 } as DOMRect);
+    notify();
+    expect(offset()).toBe("48px");
+    rect.mockReturnValue({ height: 190 } as DOMRect);
+    notify();
+    expect(offset()).toBe("190px");
+    vi.unstubAllGlobals();
+  });
+
   it("is what the desktop event log docks above, and the phone drawer ignores", () => {
     const desktop = indexCss.match(/\.app-shell__event-log \{[^}]*\}/)?.[0] ?? "";
     expect(desktop).toContain(`bottom: var(${BOTTOM_BAR_OFFSET_VAR}, 0px)`);

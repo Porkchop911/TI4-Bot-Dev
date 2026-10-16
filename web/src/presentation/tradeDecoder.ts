@@ -1,5 +1,6 @@
 import { ChoiceOptionDto } from "../protocol/types.ts";
 import { getTradePayload } from "./choiceModel.ts";
+import { replaceCardIds } from "./tradeNames.ts";
 
 export type TradeCategory =
   | "commodity_swap"
@@ -11,7 +12,10 @@ export type TradeCategory =
 export interface DecodedTradeOffer {
   id: string;
   category: TradeCategory;
+  /** Shown text: the engine label with card ids replaced by printed names. */
   label: string;
+  /** The label as the engine wrote it (ids included); set by `decodeTradeOption`. */
+  engineLabel?: string;
   net?: number;
   their_net?: number;
   details: {
@@ -20,6 +24,12 @@ export interface DecodedTradeOffer {
     giveTradeGoods?: number;
     receiveTradeGoods?: number;
     promissoryNote?: string;
+    /** A note the proposer hands over in a note-for-X shape (`pc`, `nn`, `cn` ask shapes). */
+    givenNote?: string;
+    /** A note the proposer asks the partner for (`np`, `cp`, `nn`, `cn` ask shapes). */
+    receivedNote?: string;
+    /** An action card the proposer hands over in exchange for a note (`cn`). */
+    givenActionCard?: string;
     actionCard?: string;
     secretObjective?: string;
     fragment?: string;
@@ -27,7 +37,68 @@ export interface DecodedTradeOffer {
   };
 }
 
+/** The note id and price of `{prefix}{note}:{price}`; note ids contain colons, so split on the last. */
+function noteAndPrice(rest: string): { note: string; price: number } | null {
+  const cut = rest.lastIndexOf(":");
+  if (cut <= 0) return null;
+  const price = parseInt(rest.slice(cut + 1), 10);
+  return Number.isFinite(price) ? { note: rest.slice(0, cut), price } : null;
+}
+
+function decodeAskShape(
+  id: string,
+  payload: Record<string, unknown>,
+): { label: string; details: DecodedTradeOffer["details"] } | null {
+  const text = (key: string): string | undefined =>
+    typeof payload[key] === "string" ? (payload[key] as string) : undefined;
+  const prefix = id.slice(0, 2);
+  if (prefix === "np" || prefix === "cp") {
+    const parsed = noteAndPrice(id.slice(2));
+    if (!parsed) return null;
+    const note = text("received_promissory") ?? parsed.note;
+    return prefix === "np"
+      ? {
+          label: `Pay ${parsed.price} trade goods for the note ${note}`,
+          details: { giveTradeGoods: parsed.price, receivedNote: note, price: parsed.price },
+        }
+      : {
+          label: `Pay ${parsed.price} commodities for the note ${note}`,
+          details: { giveCommodities: parsed.price, receivedNote: note, price: parsed.price },
+        };
+  }
+  if (prefix === "pc") {
+    const parsed = noteAndPrice(id.slice(2));
+    if (!parsed) return null;
+    const note = text("promissory") ?? parsed.note;
+    return {
+      label: `Give the note ${note} for ${parsed.price} commodities`,
+      details: { givenNote: note, receiveCommodities: parsed.price, price: parsed.price },
+    };
+  }
+  if (prefix === "nn" || prefix === "cn") {
+    const cut = id.indexOf(">");
+    if (cut < 0) return null;
+    const given = id.slice(2, cut);
+    const wanted = text("received_promissory") ?? id.slice(cut + 1);
+    return prefix === "nn"
+      ? {
+          label: `Give the note ${text("promissory") ?? given} for the note ${wanted}`,
+          details: { givenNote: text("promissory") ?? given, receivedNote: wanted },
+        }
+      : {
+          label: `Give the action card ${text("action_card") ?? given} for the note ${wanted}`,
+          details: { givenActionCard: text("action_card") ?? given, receivedNote: wanted },
+        };
+  }
+  return null;
+}
+
 export function decodeTradeOption(opt: ChoiceOptionDto): DecodedTradeOffer {
+  const deal = decodeTradeOptionRaw(opt);
+  return { ...deal, label: dealLabel(deal), engineLabel: deal.label };
+}
+
+function decodeTradeOptionRaw(opt: ChoiceOptionDto): DecodedTradeOffer {
   const id = opt.id;
   const payload = getTradePayload(opt);
   const net = payload.net;
@@ -43,6 +114,16 @@ export function decodeTradeOption(opt: ChoiceOptionDto): DecodedTradeOffer {
       their_net,
       details: {},
     };
+  }
+
+  // 0. Ask shapes: the partner's note for goods or commodities (`np`, `cp`), our note for their
+  // commodities (`pc`), note for note (`nn`) or an action card for a note (`cn`). Note ids carry a
+  // colon themselves, so none of these may fall through to the generic "{N}:{M}" branches below,
+  // which read them as zero-for-zero trades (or, for `cp`/`cn`, as a gift of 0 commodities). They
+  // belong on the promissory tab: Hacan's note deals (Trade Convoys, Arbiters) are all of this kind.
+  const ask = decodeAskShape(id, rawPayload);
+  if (ask) {
+    return { id, category: "promissory", label: opt.label || ask.label, net, their_net, details: ask.details };
   }
 
   // 1. Promissory Notes: prioritize payload.note, payload.price, payload.gift
@@ -297,4 +378,21 @@ export function decodeTradeOption(opt: ChoiceOptionDto): DecodedTradeOffer {
     their_net,
     details: {},
   };
+}
+
+/**
+ * A deal's label from its decoded terms: the engine label with every note, action card and secret
+ * objective id the deal carries replaced by its printed name. Ids the label does not contain leave
+ * it as it was, so an option that cannot be decoded keeps the engine's own words.
+ */
+export function dealLabel(deal: DecodedTradeOffer): string {
+  const d = deal.details;
+  return replaceCardIds(deal.label, [
+    { kind: "note", id: d.promissoryNote },
+    { kind: "note", id: d.givenNote },
+    { kind: "note", id: d.receivedNote },
+    { kind: "action", id: d.actionCard },
+    { kind: "action", id: d.givenActionCard },
+    { kind: "secret", id: d.secretObjective },
+  ]);
 }

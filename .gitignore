@@ -85,3 +85,4 @@ fixtures/legacy_entropy/*
 /nightly-reports/
 /nightly-reports-test/
 node_modules/
+web/.e2e-dist/

@@ -1,0 +1,17 @@
+{
+  "title": "What Mahact holds, and readable prompts",
+  "description": "The Mahact player sheet now lists the other players' command tokens held in its fleet pool (Edict), so the effect can be seen. The Jae Mir Kan waiver names the system by its planets, and a leaked engine event type in a prompt ('after TACTICAL_ACTION_ENDED') reads as words. Mocked fixtures. Regenerate with npm run screenshots -- CJ.",
+  "tag": "web/e2e/screenshots/CJ-mahact-held-tokens",
+  "shots": [
+    { "file": "out/desktop-sheet.png", "heading": "Mahact sheet, desktop", "caption": "np (Mahact) shows 'Holds: Alex, Casey': one chip per foreign token, in that player's seat colour. Other seats show no such row." },
+    { "file": "out/desktop-sheet-crop.png", "heading": "The sheet up close", "caption": "The chips explain themselves on hover: the tokens raise the fleet supply and cannot be redistributed." },
+    { "file": "out/desktop-empty-pool.png", "heading": "Empty pool", "caption": "No row at all while Mahact holds no token." },
+    { "file": "out/phone-drawer.png", "heading": "Phone drawer", "caption": "Same row in the player drawer." },
+    { "file": "out/desktop-event-type.png", "heading": "Event type as words", "caption": "The prompt 'after TACTICAL_ACTION_ENDED' now reads 'after tactical action ended'." },
+    { "file": "out/desktop-waiver.png", "heading": "Jae Mir Kan option", "caption": "The option names the system by its planets (Mecatol Rex, system 18) and the player by nickname where the id is known." }
+  ],
+  "notes": [
+    { "title": "Protocol", "text": "PlayerView.held_foreign_tokens: owner ids, one per token, sorted; omitted when empty, so old clients and saved games are unaffected. Public information." },
+    { "title": "Decision", "text": "Mahact's own tokens on the board are already visible on the map; the new row shows only what Mahact holds that is not its own." }
+  ]
+}

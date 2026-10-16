@@ -14,7 +14,7 @@ required-features = ["simulate"]
 # is all a remote online client needs -- and it builds and runs with no libtorch at all.
 [features]
 default = ["simulate"]
-simulate = ["dep:ti4-mlp", "dep:ti4-policy", "dep:ti4-sim", "dep:ti4-tensor", "dep:ti4-training"]
+simulate = ["dep:ti4-mlp", "dep:ti4-policy", "dep:ti4-server", "dep:ti4-sim", "dep:ti4-tensor", "dep:ti4-training"]
 
 [dependencies]
 eframe.workspace = true
@@ -29,6 +29,7 @@ ti4-engine.workspace = true
 ti4-mlp = { workspace = true, optional = true }
 ti4-model.workspace = true
 ti4-policy = { workspace = true, optional = true }
+ti4-server = { workspace = true, optional = true }
 ti4-sim = { workspace = true, optional = true }
 ti4-tensor = { workspace = true, optional = true }
 ti4-training = { workspace = true, optional = true }

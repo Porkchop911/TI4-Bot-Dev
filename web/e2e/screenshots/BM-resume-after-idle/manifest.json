@@ -1,0 +1,26 @@
+{
+  "title": "Resume after a long idle: reconnect silently",
+  "description": "A phone tab that slept for minutes or hours, behind an SSH tunnel that may have dropped, used to come back to 'TypeError: Failed to fetch. Check the lobby and try again.', a blank 'Loading game state...' and a websocket that only retried on a fixed 2 s timer. Now the page reconnects by itself the moment it is visible again (backoff with jitter), keeps the last known game on screen, shows a small 'Reconnecting...' chip, adopts the fresh server state (including what other seats did meanwhile), and only after a long outage asks for a Retry in plain words. 'Before' is the base commit phone-play-2026-10-08, 'after' the current branch; same mocked server, same steps (hidden, 30 minutes on the page clock, the tunnel down, a state change on the server, visible again). Regenerate with npm run screenshots -- BM; the before shots with TI4_SHOT_PREFIX=before on the base commit.",
+  "tag": "web/e2e/screenshots/BM-resume-after-idle",
+  "shots": [
+    { "file": "out/after-phone-1-normal.png", "heading": "Phone, before the sleep", "caption": "Reference: the game at version 40, connected, waiting for the activation choice." },
+    { "file": "out/before-phone-2-reconnecting.png", "heading": "Phone, back from sleep, tunnel still down: before", "caption": "The board is wiped and replaced by 'Loading game state...' while the socket retries on a fixed 2 s timer." },
+    { "file": "out/after-phone-2-reconnecting.png", "heading": "Phone, back from sleep, tunnel still down: after", "caption": "The last known game stays on screen; a small 'Reconnecting...' chip sits under the top bar (it ignores pointer input, the menu button stays usable). No red banner, no error text." },
+    { "file": "out/before-phone-3-resumed.png", "heading": "Phone, network back: before", "caption": "The state is fresh again, with no hint of what happened." },
+    { "file": "out/after-phone-3-resumed.png", "heading": "Phone, network back: after", "caption": "The chip is gone by itself and the decision another seat created while the phone slept ('Opponent acted: pick the next system', version 47) is shown." },
+    { "file": "out/after-phone-4-gave-up.png", "heading": "Phone, server gone for minutes", "caption": "After about two minutes of failed attempts the page stops retrying and says, in plain words, 'Cannot reach the server. Check your connection; your game is not lost.' with Retry and a link to the start page. Never 'TypeError: Failed to fetch'." },
+    { "file": "out/after-phone-5-game-gone.png", "heading": "Phone, the server no longer knows the game", "caption": "A 404 for the game (data wiped, or a different server) reads 'This game was not found on the server...' with the same two buttons." },
+    { "file": "out/before-desktop-2-reconnecting.png", "heading": "Desktop, tunnel down: before", "caption": "Same as the phone: the whole game view is replaced by a loading line." },
+    { "file": "out/after-desktop-2-reconnecting.png", "heading": "Desktop, tunnel down: after", "caption": "The game stays; the amber chip at the top right is the only sign." },
+    { "file": "out/after-desktop-3-resumed.png", "heading": "Desktop, resumed", "caption": "Fresh state, no chip, no banner." },
+    { "file": "out/after-desktop-4-gave-up.png", "heading": "Desktop, gave up", "caption": "The panel sits above the decision dialogs and the dimmed game, so Retry is always clickable." },
+    { "file": "out/after-desktop-5-game-gone.png", "heading": "Desktop, game gone", "caption": "Actionable message for a game the server does not know." }
+  ],
+  "notesHeading": "What the page does now",
+  "notes": [
+    { "title": "Triggers. ", "text": "visibilitychange (visible), pageshow (bfcache), online and focus; a socket that is open and was away less than 3 s is left alone, a longer absence replaces the socket (a phone's socket often looks open but is dead)." },
+    { "title": "Retries. ", "text": "Only GETs and polls are retried (snapshot, replay, turn-redo status, lobby poll, heartbeat), and only for network errors and 502/503/504 (and the dev proxy's body-less 500). 4xx, 409 and ordinary 500s are shown as the server's answer." },
+    { "title": "Submits. ", "text": "A batch POST that dies on the network is never re-sent blindly: the page reads the server state, treats the decision as applied if it is gone, and otherwise says 'Nothing was applied; confirm again' (the request id is kept so the server can deduplicate)." },
+    { "title": "Backoff. ", "text": "1 s, 2 s, 4 s ... capped at 15 s, each with 50-100 % jitter; 8 failed attempts in a row end in the Retry panel." }
+  ]
+}

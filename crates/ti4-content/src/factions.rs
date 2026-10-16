@@ -87,6 +87,36 @@ pub enum FleetError {
     UnknownFaction(String),
 }
 
+/// The short names of the factions of the base game and of Prophecy of Kings, written by hand:
+/// the corpus has a short name for a few factions only, and the printed name is too long for a
+/// row of a table. A test keeps the list complete.
+const SHORT_NAMES: [(&str, &str); 24] = [
+    ("sol", "Sol"),
+    ("hacan", "Hacan"),
+    ("letnev", "Letnev"),
+    ("xxcha", "Xxcha"),
+    ("jolnar", "Jol-Nar"),
+    ("l1z1x", "L1Z1X"),
+    ("arborec", "Arborec"),
+    ("mentak", "Mentak"),
+    ("muaat", "Muaat"),
+    ("naalu", "Naalu"),
+    ("nekro", "Nekro"),
+    ("saar", "Saar"),
+    ("sardakk", "Sardakk N'orr"),
+    ("winnu", "Winnu"),
+    ("yin", "Yin"),
+    ("yssaril", "Yssaril"),
+    ("ghost", "Creuss"),
+    ("argent", "Argent"),
+    ("cabal", "Vuil'raith"),
+    ("empyrean", "Empyrean"),
+    ("mahact", "Mahact"),
+    ("naaz", "Naaz-Rokha"),
+    ("nomad", "Nomad"),
+    ("titans", "Titans"),
+];
+
 /// A typed view over a faction record.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Faction<'a> {
@@ -112,6 +142,21 @@ impl<'a> Faction<'a> {
     #[must_use]
     pub fn name(&self) -> Option<&'a str> {
         self.record.text("factionName")
+    }
+
+    /// The name that a table calls the faction by ("Sol" for "The Federation of Sol"): of
+    /// [`SHORT_NAMES`], else the short name of the corpus, else the printed name without its
+    /// article.
+    #[must_use]
+    pub fn short_name(&self) -> &'a str {
+        let alias = self.alias();
+        SHORT_NAMES
+            .iter()
+            .find(|(known, _)| *known == alias)
+            .map(|(_, name)| *name)
+            .or_else(|| self.record.text("shortName").filter(|s| !s.is_empty()))
+            .or_else(|| self.name().map(|name| name.trim_start_matches("The ")))
+            .unwrap_or(alias)
     }
 
     #[must_use]
@@ -359,6 +404,40 @@ mod tests {
     }
 
     // -- the catalogue ---------------------------------------------------------
+
+    #[test]
+    fn every_faction_of_the_base_game_and_of_prophecy_of_kings_has_a_short_name() {
+        // The Council Keleres is of a codex: its three sheets have the name of the corpus.
+        let printed = catalogue(store(), POK)
+            .into_iter()
+            .filter(|(alias, _)| !alias.starts_with("keleres"));
+        for (alias, faction) in printed {
+            assert!(
+                SHORT_NAMES.iter().any(|(known, _)| *known == alias),
+                "{alias} has no short name"
+            );
+            assert!(
+                faction.name().is_some_and(|name| name.contains(
+                    faction
+                        .short_name()
+                        .split([' ', '\''])
+                        .next()
+                        .unwrap_or_default()
+                )),
+                "{alias}: {:?} is not a part of {:?}",
+                faction.short_name(),
+                faction.name()
+            );
+        }
+        assert_eq!(faction("sol").short_name(), "Sol");
+        assert_eq!(faction("ghost").short_name(), "Creuss");
+        // A faction that the list does not have: the short name of the corpus, or the printed
+        // name without its article.
+        for (alias, faction) in catalogue(store(), FULL) {
+            assert!(!faction.short_name().is_empty(), "{alias}");
+            assert!(!faction.short_name().starts_with("The "), "{alias}");
+        }
+    }
 
     #[test]
     fn the_base_game_has_seventeen_factions() {

@@ -1,13 +1,19 @@
+import { useParticipantText } from "../presentation/PlayerIdentity.tsx";
 import React, { useState, useEffect, useMemo } from "react";
+import { usePlanetInfluence, usePlanetResources } from "../presentation/PlanetResourcesContext.tsx";
 import { PendingChoiceDto, PlayerView } from "../protocol/types.ts";
 import { ChoiceRendererModel } from "../presentation/choiceModel.ts";
 import { usePipelineRunner, SemanticIntent } from "../hooks/usePipelineRunner.ts";
 import { WorkflowShell } from "./WorkflowShell.tsx";
+import { useProductionPaymentPanel } from "../presentation/ProductionPaymentContext.tsx";
 import { usePlayerIdentity } from "../presentation/PlayerIdentity.tsx";
 import { DecisionHeader } from "./DecisionHeader.tsx";
+import { PlanetValue, ValueUnit, valueKind } from "./PlanetValueIcons.tsx";
+import { productionTotalText } from "../presentation/productionTotalText.ts";
 import {
   buildPaymentSteps,
   derivePaymentOffer,
+  paymentPlanetKey,
   paymentProblem,
   summarizePayment,
   suggestAutoPay,
@@ -52,7 +58,10 @@ export const PaymentDrawer: React.FC<PaymentDrawerProps> = ({
   selectedOptionId,
 }) => {
   const display = usePlayerIdentity();
+  const present = useParticipantText();
   const shared = useSharedPaymentDraft();
+  const resourcesOf = usePlanetResources();
+  const influenceOf = usePlanetInfluence();
   const local = usePaymentDraftState(choice?.nonce);
   const { draft, togglePlanet, setTradeGoods, setDraft, reset } = shared ?? local;
   const selectedPlanetIds = draft.planetIds;
@@ -66,15 +75,20 @@ export const PaymentDrawer: React.FC<PaymentDrawerProps> = ({
     lastError: pipelineError,
   } = usePipelineRunner(choice, onSubmit);
 
-  const offer = useMemo(
-    () => (choice ? derivePaymentOffer(choice, model) : null),
-    [choice, model],
+  const baseOffer = useMemo(
+    () => (choice ? derivePaymentOffer(choice, model, resourcesOf) : null),
+    [choice, model, resourcesOf],
   );
+  const baseTradeGoods = player?.trade_goods ?? (baseOffer?.hasTradeGoodOption ? 1 : 0);
+  // Staged builds are paid for once: the first question's panel is the whole production's bill.
+  const production = useProductionPaymentPanel(choice, baseOffer, baseTradeGoods, draft, setDraft);
+  const offer = baseOffer ? production.offer : null;
   const constraints = model?.outstanding?.[0] ?? choice?.context?.outstanding?.[0];
   const totalAmount = offer?.totalAmount ?? 0;
   const alreadyPaid = offer?.alreadyPaid ?? 0;
   const owed = offer?.owed ?? 0;
   const currency = offer?.currency ?? "Resources";
+  const kind = valueKind(currency);
   const availablePlanets: DraftPlanet[] = offer?.planets ?? [];
   const hasTradeGoodOption = offer?.hasTradeGoodOption ?? false;
   const tradeGoodWorth = offer?.tradeGoodWorth ?? 1;
@@ -122,18 +136,25 @@ export const PaymentDrawer: React.FC<PaymentDrawerProps> = ({
   ) => {
     if (!isSettled || isPipelineRunning || isDirectSubmitting || batchRunning || !choice) return;
 
+    // The one payment for a whole production: this question takes its part, the rest is kept.
+    const part = production.split(draft);
+    if (!part) {
+      setBatchError("The staged payment does not fit this question. Reset and stage again.");
+      return;
+    }
+
     // Build execution list
     const intents: SemanticIntent[] = [];
 
     // 1. Planets to exhaust
-    for (const planetId of selectedPlanetIds) {
+    for (const planetId of part.planetIds) {
       intents.push({
         predicate: (opt) => opt.id === planetId,
       });
     }
 
     // 2. Trade goods to spend
-    for (let i = 0; i < tradeGoodsToSpend; i++) {
+    for (let i = 0; i < part.tradeGoods; i++) {
       intents.push({
         predicate: (opt) => opt.id === "trade_good",
       });
@@ -145,9 +166,10 @@ export const PaymentDrawer: React.FC<PaymentDrawerProps> = ({
       try {
         await onSubmitBatch({
           kind: "payment",
-          steps: buildPaymentSteps(choice, offer!, draft),
+          steps: buildPaymentSteps(choice, baseOffer!, part),
         });
       } catch (error) {
+        if (production.panel) production.revert();
         setBatchError(error instanceof Error ? error.message : String(error));
       } finally {
         setBatchRunning(false);
@@ -177,12 +199,25 @@ export const PaymentDrawer: React.FC<PaymentDrawerProps> = ({
         <DecisionHeader
           actor={choice.actor}
           choice={choice}
-          title={`Pay ${owed} ${currency}`}
-          instruction={choice.prompt}
+          title={
+            <>
+              {production.panel ? `Pay for ${production.panel.builds} units: total ` : "Pay "}
+              <PlanetValue kind={kind} value={owed} size="bar" state="ready" />
+            </>
+          }
+          instruction={
+            production.panel
+              ? `You pay once: the engine asks for ${production.panel.builds} builds one after another and the later payments follow this choice.`
+              : present(choice.prompt)
+          }
           progress={
             constraints?.amount === undefined
               ? undefined
-              : `${alreadyPaid} / ${totalAmount} ${currency} already paid`
+              : (
+                  <>
+                    {alreadyPaid} / {totalAmount} <ValueUnit kind={kind} /> already paid
+                  </>
+                )
           }
           onMinimize={onClose}
           titleTestId="payment-drawer-title"
@@ -207,11 +242,14 @@ export const PaymentDrawer: React.FC<PaymentDrawerProps> = ({
                   data-testid="payment-tally-card"
                   className="workflow-card payment-drawer__tally"
                 >
+                  {production.panel && (
+                    <strong className="production-total__sum" data-testid="payment-total-line">
+                      {productionTotalText(production.panel.total, production.panel.builds)}
+                    </strong>
+                  )}
                   <div className="workflow-card--row">
                     <span className="text-muted">Total Owed:</span>
-                    <span>
-                      {owed} {currency}
-                    </span>
+                    <PlanetValue kind={kind} value={owed} state="ready" />
                   </div>
                   <div className="workflow-card--row">
                     <span className="text-muted">Staged (not yet paid):</span>
@@ -219,15 +257,17 @@ export const PaymentDrawer: React.FC<PaymentDrawerProps> = ({
                       data-testid="committed-amount"
                       className={isSettled ? "text-success" : "text-accent"}
                     >
-                      {totalCommitted} {currency}
+                      <PlanetValue
+                        kind={kind}
+                        value={totalCommitted}
+                        state={totalCommitted === 0 ? "muted" : "ready"}
+                      />
                     </span>
                   </div>
                   {credit > 0 && (
                     <div className="workflow-card--row text-warning">
                       <span>Potential overpayment (server determines credit):</span>
-                      <span>
-                        +{credit} {currency}
-                      </span>
+                      <PlanetValue kind={kind} value={credit} sign="+" state="ready" />
                     </div>
                   )}
 
@@ -278,10 +318,26 @@ export const PaymentDrawer: React.FC<PaymentDrawerProps> = ({
                                 )}
                             </div>
                           </div>
-                          <span className="workflow-badge">
-                            {planet.worth
-                              ? `+${planet.worth} ${currency.slice(0, 3)}`
-                              : "Value unknown"}
+                          <span className="workflow-badge" data-testid={`planet-card-${planet.id}-values`}>
+                            {/* Both values sit beside the planet; the one being paid with is marked. */}
+                            {resourcesOf.has(paymentPlanetKey(planet.id)) || influenceOf.has(paymentPlanetKey(planet.id)) ? (
+                              <>
+                                <PlanetValue
+                                  kind="resources"
+                                  value={resourcesOf.get(paymentPlanetKey(planet.id)) ?? 0}
+                                  state={kind === "resources" ? "ready" : "muted"}
+                                />{" "}
+                                <PlanetValue
+                                  kind="influence"
+                                  value={influenceOf.get(paymentPlanetKey(planet.id)) ?? 0}
+                                  state={kind === "influence" ? "ready" : "muted"}
+                                />
+                              </>
+                            ) : planet.worth ? (
+                              <PlanetValue kind={kind} value={planet.worth} sign="+" />
+                            ) : (
+                              "Value unknown"
+                            )}
                           </span>
                         </label>
                       );
@@ -297,7 +353,7 @@ export const PaymentDrawer: React.FC<PaymentDrawerProps> = ({
                       <div>
                         <div>Trade Goods</div>
                         <div className="text-muted">
-                          1 TG = {tradeGoodWorth} {currency.slice(0, 3)} (Available:{" "}
+                          1 TG = <PlanetValue kind={kind} value={tradeGoodWorth} /> (Available:{" "}
                           {maxTradeGoodsAvailable})
                         </div>
                       </div>
@@ -348,10 +404,16 @@ export const PaymentDrawer: React.FC<PaymentDrawerProps> = ({
                   </div>
                 )}
 
-                {selectedPlanetIds.length + tradeGoodsToSpend > 1 && (
+                {!production.panel && selectedPlanetIds.length + tradeGoodsToSpend > 1 && (
                   <p className="text-muted">
                     Pay submits one decision at a time. Later spends are unverified until the next
                     authoritative offer; the sequence stops if it changes or is rejected.
+                  </p>
+                )}
+
+                {production.note && (
+                  <p role="status" data-testid="production-pay-note" className="payment-drawer__problem text-warning">
+                    {production.note}
                   </p>
                 )}
 
@@ -399,6 +461,21 @@ export const PaymentDrawer: React.FC<PaymentDrawerProps> = ({
                       }}
                     >
                       Reset selection
+                    </button>
+                  )}
+                  {production.panel && (
+                    <button
+                      type="button"
+                      data-testid="ask-each-payment-btn"
+                      className="button button--secondary"
+                      disabled={isPipelineRunning || isDirectSubmitting}
+                      title="Pay this build only; the next builds ask again"
+                      onClick={() => {
+                        production.askEach();
+                        reset();
+                      }}
+                    >
+                      Ask for each build
                     </button>
                   )}
                   {declineOption && (

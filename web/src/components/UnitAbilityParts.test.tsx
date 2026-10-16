@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { PendingChoiceModal } from "./PendingChoiceModal.tsx";
 import type { PendingChoiceDto } from "../protocol/types.ts";
 
@@ -27,7 +27,8 @@ describe("unit ability options", () => {
     expect(rows).toHaveLength(2);
     expect(rows[0]).toHaveAttribute("data-option-id", "deploy|sol_mech|1");
     expect(rows[0]).toHaveTextContent("Deploy Mech");
-    expect(rows[0]).toHaveTextContent("Cost: 3 resources");
+    expect(rows[0]).toHaveTextContent("Cost: 3");
+    expect(within(rows[0]).getByLabelText("3 resources")).toBeInTheDocument();
     expect(rows[0]).not.toHaveTextContent("sol_mech");
     fireEvent.click(rows[0].querySelector("input")!);
     fireEvent.click(screen.getByTestId("submit-choice-button"));

@@ -161,6 +161,54 @@ describe("GameShell", () => {
     expect(screen.getByTestId("pending-choice-dialog")).toBeInTheDocument();
   });
 
+  it.each(["assault_cannon_destroy", "courageous_to_the_end_assign_casualty"])(
+    "%s opens the combat overlay for the decider and for the opponent, and the decider answers with one click",
+    (subtype) => {
+      const board: BoardView = {
+        systems: {
+          "18": {
+            system_id: "18",
+            command_tokens: [],
+            planets: {},
+            units: [
+              { owner: "p1", unit_type: "dreadnought", damaged: false },
+              { owner: "p1", unit_type: "cruiser", damaged: false },
+              { owner: "p2", unit_type: "cruiser", damaged: false },
+            ],
+          },
+        },
+        combat: { system_id: "18", round: 2, attacker: "p2", defender: "p1", phase: "resolving_hits" },
+      };
+      const casualty: PendingChoiceDto = {
+        actor: "p1",
+        nonce: `one-off-${subtype}`,
+        prompt: "assign a hit",
+        context: { subtype, target: { System: "18" } },
+        options: [
+          { id: "destroy|0", label: "destroy dreadnought", kind: "casualty" },
+          { id: "destroy|1", label: "destroy cruiser", kind: "casualty" },
+        ],
+      };
+      const onSubmitChoice = vi.fn().mockResolvedValue(undefined);
+      const props = {
+        header: <div>Header</div>,
+        board: <div>Board</div>,
+        playerSheet: <div>Player sheet</div>,
+        events: [],
+        choice: casualty,
+        boardView: board,
+        onSubmitChoice,
+        onSubmitBatch: vi.fn().mockResolvedValue(undefined),
+      };
+      const { unmount } = render(<GameShell {...props} viewerSeat="p2" />);
+      expect(screen.getByTestId("combat-resolution-modal")).toBeInTheDocument();
+      unmount();
+      render(<GameShell {...props} viewerSeat="p1" />);
+      expect(screen.getByTestId("combat-resolution-modal")).toBeInTheDocument();
+      expect(screen.queryByTestId("hit-assignment-panel")).not.toBeInTheDocument();
+    },
+  );
+
   it("does not restore completed combat after a page reload", () => {
     const board: BoardView = {
       systems: { "18": { system_id: "18", command_tokens: [], planets: {}, units: [] } },
@@ -373,7 +421,7 @@ describe("GameShell", () => {
         timestamp: "00:00",
         version: 1,
         decision_count: 0,
-        visibility: "public" as const,
+        visibility: { visibility: "public" as const },
         event: { kind: "game_initialized" as const, round: 1, phase: "strategy", speaker: "p1" },
       },
       {
@@ -381,7 +429,7 @@ describe("GameShell", () => {
         timestamp: "00:01",
         version: 2,
         decision_count: 1,
-        visibility: "public" as const,
+        visibility: { visibility: "public" as const },
         event: { kind: "decision_resolved" as const },
       },
       {
@@ -389,7 +437,7 @@ describe("GameShell", () => {
         timestamp: "00:02",
         version: 3,
         decision_count: 2,
-        visibility: "public" as const,
+        visibility: { visibility: "public" as const },
         event: { kind: "decision_resolved" as const },
       },
     ];
@@ -501,7 +549,6 @@ describe("GameShell", () => {
           position: 1,
           occupant: a,
           nickname: "Sam",
-          ready: true,
           connected: true,
           can_take_over: false,
         },
@@ -510,7 +557,6 @@ describe("GameShell", () => {
           position: 2,
           occupant: b,
           nickname: "Sam",
-          ready: true,
           connected: true,
           can_take_over: false,
         },

@@ -17,11 +17,20 @@ import { BoardView, PendingChoiceDto, PlayerView } from "../protocol/types.ts";
 describe("boardPresentation Presentation Model", () => {
   describe("Ownership Colors & Palettes", () => {
     it("assigns colors strictly by projected seating order position, not seat string patterns", () => {
-      const seatingOrder = ["custom-alpha", "player_99", "uuid-3a7b-44", "seat_0"];
+      const seatingOrder = [
+        "custom-alpha",
+        "player_99",
+        "uuid-3a7b-44",
+        "seat_0",
+      ];
 
-      expect(getPlayerColor("custom-alpha", seatingOrder)).toBe(PLAYER_PALETTE[0]);
+      expect(getPlayerColor("custom-alpha", seatingOrder)).toBe(
+        PLAYER_PALETTE[0],
+      );
       expect(getPlayerColor("player_99", seatingOrder)).toBe(PLAYER_PALETTE[1]);
-      expect(getPlayerColor("uuid-3a7b-44", seatingOrder)).toBe(PLAYER_PALETTE[2]);
+      expect(getPlayerColor("uuid-3a7b-44", seatingOrder)).toBe(
+        PLAYER_PALETTE[2],
+      );
       // Even though the seat is named 'seat_0', its index is 3 so it gets color 3
       expect(getPlayerColor("seat_0", seatingOrder)).toBe(PLAYER_PALETTE[3]);
 
@@ -73,8 +82,20 @@ describe("boardPresentation Presentation Model", () => {
         map_tiles: [
           { system_id: "18", label: "Center", q: 0, r: 0 },
           { system_id: "top", label: "South", q: 0, r: 4 },
-          { system_id: "f0", label: "Fracture A", q: 0, r: 0, special_area: "fracture" },
-          { system_id: "f1", label: "Fracture B", q: 1, r: 0, special_area: "fracture" },
+          {
+            system_id: "f0",
+            label: "Fracture A",
+            q: 0,
+            r: 0,
+            special_area: "fracture",
+          },
+          {
+            system_id: "f1",
+            label: "Fracture B",
+            q: 1,
+            r: 0,
+            special_area: "fracture",
+          },
           { system_id: "n", label: "Nexus", q: 0, r: 0, special_area: "nexus" },
         ],
       };
@@ -111,7 +132,11 @@ describe("boardPresentation Presentation Model", () => {
         symbol: "α",
         color: "#38bdf8",
       });
-      expect(deriveWormholeVisual("beta")).toEqual({ kind: "beta", symbol: "β", color: "#f43f5e" });
+      expect(deriveWormholeVisual("beta")).toEqual({
+        kind: "beta",
+        symbol: "β",
+        color: "#f43f5e",
+      });
     });
   });
 
@@ -149,7 +174,10 @@ describe("boardPresentation Presentation Model", () => {
     };
 
     it("derives target highlights from structured payloads for the active actor", () => {
-      const highlights = deriveActorTargetHighlights(mockPendingChoice, "seat_a");
+      const highlights = deriveActorTargetHighlights(
+        mockPendingChoice,
+        "seat_a",
+      );
 
       expect(highlights.hasActiveTargets).toBe(true);
       expect(highlights.contextSubjectSystemId).toBe("18");
@@ -159,16 +187,24 @@ describe("boardPresentation Presentation Model", () => {
 
       expect(highlights.systemOptionMap.get("18")).toContain("opt_activate_18");
       expect(highlights.systemOptionMap.get("34")).toContain("opt_move_to_34");
-      expect(highlights.planetOptionMap.get("mecatol_rex")).toContain("opt_invade_mecatol");
+      expect(highlights.planetOptionMap.get("mecatol_rex")).toContain(
+        "opt_invade_mecatol",
+      );
     });
 
     it("strictly redacts target highlights when viewer is an opponent or spectator", () => {
-      const opponentHighlights = deriveActorTargetHighlights(mockPendingChoice, "seat_b");
+      const opponentHighlights = deriveActorTargetHighlights(
+        mockPendingChoice,
+        "seat_b",
+      );
       expect(opponentHighlights.hasActiveTargets).toBe(false);
       expect(opponentHighlights.targetableSystemIds.size).toBe(0);
       expect(opponentHighlights.contextSubjectSystemId).toBeNull();
 
-      const spectatorHighlights = deriveActorTargetHighlights(mockPendingChoice, null);
+      const spectatorHighlights = deriveActorTargetHighlights(
+        mockPendingChoice,
+        null,
+      );
       expect(spectatorHighlights.hasActiveTargets).toBe(false);
       expect(spectatorHighlights.targetableSystemIds.size).toBe(0);
     });
@@ -194,6 +230,44 @@ describe("boardPresentation Presentation Model", () => {
     });
   });
 
+  describe("Hyperlane tiles", () => {
+    it("never highlights a hyperlane tile as an activation or move target", () => {
+      const choice: PendingChoiceDto = {
+        nonce: "c_lane",
+        actor: "seat_a",
+        prompt: "Activate a system",
+        options: [
+          {
+            id: "55",
+            kind: "activate",
+            label: "Activate 55",
+            payload: { system: "55" },
+          },
+          {
+            id: "87a",
+            kind: "activate",
+            label: "Activate 87a",
+            payload: { system: "87a" },
+          },
+        ],
+      };
+      const board = {
+        active_system: null,
+        systems: {},
+        map_tiles: [
+          { system_id: "55", label: "55", q: 0, r: 0 },
+          { system_id: "87a", label: "87a", q: 1, r: 0, hyperlane: true },
+        ],
+      } as unknown as BoardView;
+
+      const highlights = deriveActorTargetHighlights(choice, "seat_a", board);
+
+      expect(highlights.targetableSystemIds.has("55")).toBe(true);
+      expect(highlights.targetableSystemIds.has("87a")).toBe(false);
+      expect(highlights.systemOptionMap.has("87a")).toBe(false);
+    });
+  });
+
   describe("Selected System Details Inspector", () => {
     const mockBoard: BoardView = {
       active_system: "18",
@@ -210,8 +284,18 @@ describe("boardPresentation Presentation Model", () => {
             },
           },
           units: [
-            { unit_type: "carrier", owner: "seat_a", planet: null, damaged: false },
-            { unit_type: "infantry", owner: "seat_a", planet: "mecatol_rex", damaged: false },
+            {
+              unit_type: "carrier",
+              owner: "seat_a",
+              planet: null,
+              damaged: false,
+            },
+            {
+              unit_type: "infantry",
+              owner: "seat_a",
+              planet: "mecatol_rex",
+              damaged: false,
+            },
           ],
         },
       },
@@ -280,11 +364,17 @@ describe("boardPresentation Presentation Model", () => {
       expect(details?.planetUnits["mecatol_rex"][0].unitType).toBe("infantry");
 
       // Command tokens
-      expect(details?.commandTokens).toEqual([{ owner: "seat_a", color: PLAYER_PALETTE[0] }]);
+      expect(details?.commandTokens).toEqual([
+        { owner: "seat_a", color: PLAYER_PALETTE[0] },
+      ]);
 
       // Available actions
       expect(details?.availableActions).toEqual([
-        { optionId: "prod_fighter", label: "Produce 2 Fighters", kind: "produce_unit" },
+        {
+          optionId: "prod_fighter",
+          label: "Produce 2 Fighters",
+          kind: "produce_unit",
+        },
       ]);
     });
   });
@@ -298,7 +388,14 @@ describe("boardPresentation Presentation Model", () => {
         map_tiles: [{ system_id: "18", label: "Mecatol Rex", q: 0, r: 0 }],
       };
 
-      const model = buildBoardPresentationModel(board, ["seat_1"], [], null, "seat_1", "18");
+      const model = buildBoardPresentationModel(
+        board,
+        ["seat_1"],
+        [],
+        null,
+        "seat_1",
+        "18",
+      );
       expect(model.tiles.length).toBe(1);
       expect(model.tiles[0].systemId).toBe("18");
       expect(model.selectedSystem?.systemId).toBe("18");
@@ -361,7 +458,13 @@ describe("boardPresentation Presentation Model", () => {
         ],
       };
 
-      const moveModel = buildBoardPresentationModel(board, ["seat_1"], [], moveChoice, "seat_1");
+      const moveModel = buildBoardPresentationModel(
+        board,
+        ["seat_1"],
+        [],
+        moveChoice,
+        "seat_1",
+      );
       expect(moveModel.targets.movementVectors).toHaveLength(1);
       const vec = moveModel.targets.movementVectors[0];
       expect(vec.fromSystemId).toBe("24");
@@ -370,5 +473,15 @@ describe("boardPresentation Presentation Model", () => {
       expect(vec.fromCenter.x).toBe(150);
       expect(vec.toCenter.x).toBe(0);
     });
+  });
+});
+
+describe("neutral and unassigned greys", () => {
+  it("do not collide with the white/silver seat or any other seat colour", () => {
+    for (const grey of [NEUTRAL_COLOR, UNASSIGNED_COLOR]) {
+      expect(PLAYER_PALETTE).not.toContain(grey);
+      expect(grey).not.toBe(PLAYER_PALETTE[2]);
+    }
+    expect(NEUTRAL_COLOR).not.toBe(UNASSIGNED_COLOR);
   });
 });

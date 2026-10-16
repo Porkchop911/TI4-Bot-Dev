@@ -2,7 +2,7 @@ import { act } from "react";
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { CombatResolutionModal } from "./CombatResolutionModal.tsx";
-import { PendingChoiceDto } from "../protocol/types.ts";
+import { BoardView, PendingChoiceDto } from "../protocol/types.ts";
 
 describe("CombatResolutionModal", () => {
   it("renders sustain damage stage with Direct Hit warning and handles sustain submit", async () => {
@@ -208,6 +208,31 @@ describe("CombatResolutionModal", () => {
       fireEvent.click(optBtn);
     });
     expect(onSubmit).toHaveBeenCalledWith("announce_retreat:yes");
+  });
+
+  it("names the retreat destinations with tile number and name", () => {
+    const retreatTo: PendingChoiceDto = {
+      actor: "seat_1",
+      nonce: "15",
+      prompt: "retreat to which system",
+      context: { subtype: "retreat_to" },
+      options: [{ id: "1", label: "retreat to 1", kind: "retreat_to" }],
+    };
+    const board = {
+      systems: {},
+      map_tiles: [{ system_id: "1", label: "Jord - Sol", q: 0, r: 0, planets: [{ id: "jord" }] }],
+    } as unknown as BoardView;
+    render(
+      <CombatResolutionModal
+        isOpen={true}
+        choice={retreatTo}
+        viewerSeat="seat_1"
+        board={board}
+        onSubmit={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("retreat-opt-1")).toHaveTextContent("Retreat to #01 [Sol home system]");
   });
 
   it("displays spectator notice when viewerSeat is not the active actor", () => {

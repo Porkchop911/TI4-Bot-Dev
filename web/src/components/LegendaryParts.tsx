@@ -1,4 +1,5 @@
 import React from "react";
+import { ValueText } from "./PlanetValueIcons.tsx";
 import type { BoardView, ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
 import { describeLegendaryOption, legendaryWindow } from "../presentation/legendaryMenu.ts";
 
@@ -30,7 +31,7 @@ export const LegendaryOptionNote: React.FC<{
   return (
     <div className="politics-option-note" data-testid="legendary-option-note">
       <strong>{view.planet}</strong>
-      {view.stats && <span className="text-muted"> ({view.stats})</span>}
+      {view.stats && <span className="text-muted"> (<ValueText text={view.stats} />)</span>}
       {view.systemId && <span className="text-muted"> · system {view.systemId}</span>}
       {view.text && (
         <p className="politics-panel__text" data-testid="legendary-option-text">

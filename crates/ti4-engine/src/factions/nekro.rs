@@ -590,7 +590,13 @@ fn singularity_ready(
     }
     let opponent = PlayerId::new(opponent);
     (!antivirus_bars(context.state, nekro, &opponent)
-        && can_take_from(context.state, context.content, context.sources, nekro, &opponent))
+        && can_take_from(
+            context.state,
+            context.content,
+            context.sources,
+            nekro,
+            &opponent,
+        ))
     .then_some((key, opponent))
 }
 
@@ -687,7 +693,15 @@ fn threat_sources(context: &TimingContext<'_>, nekro: &PlayerId, outcome: &str) 
         .iter()
         .filter(|(voter, voted)| *voter != nekro && voted.as_str() == outcome)
         .map(|(voter, _)| voter.clone())
-        .filter(|voter| can_take_from(context.state, context.content, context.sources, nekro, voter))
+        .filter(|voter| {
+            can_take_from(
+                context.state,
+                context.content,
+                context.sources,
+                nekro,
+                voter,
+            )
+        })
         .collect()
 }
 
@@ -1299,8 +1313,7 @@ mod tests {
     #[test]
     fn a_nekro_is_offered_a_thunders_edge_faction_tech_through_the_singularity() {
         let content = ti4_content::ContentStore::embedded();
-        let mut state =
-            crate::fixtures::seated_game(&[("a", FACTION), ("b", "bastion")], DEFAULT);
+        let mut state = crate::fixtures::seated_game(&[("a", FACTION), ("b", "bastion")], DEFAULT);
         give(&mut state, &a(), "vax");
         give(&mut state, &b(), "proxima");
         let options = |sources| -> Vec<String> {
@@ -1311,7 +1324,11 @@ mod tests {
         };
         let full = options(DEFAULT);
         assert!(full.contains(&"x|b|proxima".to_owned()), "{full:?}");
-        assert!(!options(ti4_model::content_types::POK).iter().any(|id| id.ends_with("|proxima")));
+        assert!(
+            !options(ti4_model::content_types::POK)
+                .iter()
+                .any(|id| id.ends_with("|proxima"))
+        );
         // The real route: a destroyed Bastion ship opens the Singularity and the token goes on Proxima.
         let system = home(&state, &a());
         start_combat(&mut state, &system);
@@ -1321,22 +1338,29 @@ mod tests {
             &system,
             "b",
         );
-        assert!(crate::technology::has_technology_text(&state, &a(), "proxima"));
+        assert!(crate::technology::has_technology_text(
+            &state,
+            &a(),
+            "proxima"
+        ));
         assert!(!owned(&state, &a(), "proxima"), "assimilated, not owned");
     }
 
     #[test]
     fn nip_and_tuck_bars_every_assimilator_token_on_its_owners_components() {
         let content = ti4_content::ContentStore::embedded();
-        let mut state =
-            crate::fixtures::seated_game(&[("a", FACTION), ("b", "bastion")], DEFAULT);
+        let mut state = crate::fixtures::seated_game(&[("a", FACTION), ("b", "bastion")], DEFAULT);
         with_z_breakthrough(&mut state);
         give(&mut state, &a(), "vax");
         give(&mut state, &a(), "vay");
         give(&mut state, &b(), "mi");
         give(&mut state, &b(), "proxima");
         give(&mut state, &b(), "aida");
-        state.player_mut(&a()).unwrap().technologies.remove(&TechnologyId::new("aida"));
+        state
+            .player_mut(&a())
+            .unwrap()
+            .technologies
+            .remove(&TechnologyId::new("aida"));
         let ids = |state: &GameState| -> Vec<String> {
             assimilation_options(state, content, DEFAULT, &a(), &b())
                 .into_iter()
@@ -1348,14 +1372,10 @@ mod tests {
             assert!(open.contains(&wanted.to_owned()), "{wanted} in {open:?}");
         }
         // Nip and Tuck, unlocked: gaining a technology stays, every token option goes.
-        state
-            .player_mut(&b())
-            .unwrap()
-            .leaders
-            .insert(
-                ti4_model::id::LeaderId::new("bastioncommander"),
-                ti4_model::state::LeaderStatus::Unlocked,
-            );
+        state.player_mut(&b()).unwrap().leaders.insert(
+            ti4_model::id::LeaderId::new("bastioncommander"),
+            ti4_model::state::LeaderStatus::Unlocked,
+        );
         let shut = ids(&state);
         assert!(shut.contains(&"gain|b|aida".to_owned()), "{shut:?}");
         assert!(

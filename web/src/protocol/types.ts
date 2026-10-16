@@ -16,10 +16,19 @@ export interface LobbySlot {
   position: number;
   occupant: string | null;
   nickname: string | null;
-  ready: boolean;
   connected: boolean;
   can_take_over: boolean;
+  /**
+   * `"random"` for an in-process random bot, `"smart"` for an in-process rule bot; absent for a
+   * person (and for an MLP bot).
+   */
+  bot?: string;
+  /** The faction the host chose for a bot seat; absent for random (and for every person). */
+  faction?: string;
 }
+
+/** The bots a server plays itself: uniformly random, or random with simple board heuristics. */
+export type InProcessBotKind = "random" | "smart";
 
 export interface LobbyDto {
   game_id: string;
@@ -28,11 +37,23 @@ export interface LobbyDto {
   host_player_id: string;
   slots: LobbySlot[];
   bot_service_enabled?: boolean;
+  /**
+   * Bot kinds the host can add: `random` and `smart` (in-process, no password) and `mlp` (needs the bot
+   * password). Absent from servers that predate random bots, which offer neither random bot.
+   */
+  bot_kinds?: string[];
+  /** Faction ids a bot seat can be given; absent from servers that predate the choice. */
+  factions?: string[];
   /** What the table plays on; absent from servers that predate the map choice. Never a seed. */
   map?: MapChoiceDto;
   /** Changes whenever the previewed board changes (new choice, re-roll, new seat order). */
   map_revision?: number;
+  /** The strategy card set this table plays; absent from servers that predate the option. */
+  strategy_card_set?: StrategyCardSetId;
 }
+
+/** Catalog `strategy_card_sets` a game may be created with (`card_set::OFFERED` on the server). */
+export type StrategyCardSetId = "te" | "pok" | "base_game_codex1";
 
 /** The host's choice: a predefined layout or the seeded random board. */
 export type MapChoice = { kind: "template"; alias: string } | { kind: "random" };
@@ -40,6 +61,8 @@ export type MapChoice = { kind: "template"; alias: string } | { kind: "random" }
 export interface MapChoiceDto {
   kind: "template" | "random";
   alias?: string;
+  /** Display name of a template that has one (the community layouts). */
+  name?: string;
   author?: string;
   systems: number;
   hyperlanes: boolean;
@@ -48,6 +71,8 @@ export interface MapChoiceDto {
 
 export interface MapTemplateSummary {
   alias: string;
+  /** Display name of a template that has one (the community layouts); else titled from the alias. */
+  name?: string;
   author: string;
   player_count: number;
   buildable: boolean;
@@ -57,10 +82,9 @@ export interface MapTemplateSummary {
 }
 
 export interface MapSeatPreview {
-  /** 1-based, the lobby position. */
+  /** 1-based number of the place. Who sits there is drawn when the game starts. */
   seat: number;
-  faction: string;
-  faction_name: string;
+  /** The id of the preview tile that stands for the home of this seat (`seat_1`, …). */
   home_system_id: string;
 }
 
@@ -87,6 +111,8 @@ export interface JoinResponse {
 export type PublicTurnStatus =
   | { kind: "active_turn"; player: string; phase: string; round: number }
   | { kind: "waiting_for_decision"; seat: string; phase: string; round: number; stage: string }
+  /** A reaction window: names no seat, because who holds a playable card is private. */
+  | { kind: "waiting_for_reactions"; phase: string; round: number }
   | { kind: "phase_transition"; phase: string; round: number }
   | { kind: "game_over"; winner?: string | null };
 
@@ -170,6 +196,25 @@ export interface DecisionTriggerDto {
   chain?: number[];
 }
 
+export type HitCauseDto =
+  | "assault_cannon"
+  | "courageous_to_the_end"
+  | "anti_fighter_barrage"
+  | "space_cannon"
+  | "combat_roll"
+  | "start_of_combat"
+  | "end_of_round"
+  | "other";
+
+/** What kind of hit a casualty decision assigns (display only; absent from older servers). */
+export interface HitDetailDto {
+  cause: HitCauseDto;
+  /** A destroy effect: not a hit, so Sustain Damage does not apply. */
+  destroy: boolean;
+  restriction: "any" | "non_fighter";
+  producer?: string;
+}
+
 export interface DecisionContextDto {
   version?: number;
   actor?: string;
@@ -186,6 +231,7 @@ export interface DecisionContextDto {
   details?: Record<string, unknown>;
   /** Present on reaction decisions from servers that send it; absent in older saves and fixtures. */
   trigger?: DecisionTriggerDto | null;
+  hit?: HitDetailDto | null;
 }
 
 export interface OutstandingConstraintDto {
@@ -276,19 +322,39 @@ export interface PlayerView {
   held_action_cards?: string[];
   held_secret_objectives?: string[];
   scored_secret_objectives?: string[];
+  /** Progress toward this seat's own countable secrets; only ever sent to that seat. */
+  secret_objective_progress?: Record<string, ObjectiveProgressView>;
   leaders: Record<string, string>;
+  /** Other players' command tokens in this seat's fleet pool (Mahact), one entry per token. */
+  held_foreign_tokens?: string[];
 }
 
 export interface ObjectiveProgressView {
   have: number;
   threshold: number;
   satisfied: boolean;
+  /** Push Boundaries: this player's planet count against each neighbour's (public). */
+  neighbours?: NeighbourProgressView[];
+  /** Learn the Secrets of the Cosmos: the systems that count right now (holder only). */
+  systems?: string[];
+}
+
+export interface NeighbourProgressView {
+  player: string;
+  /** Planets the progress owner controls. */
+  mine: number;
+  /** Planets this neighbour controls. */
+  theirs: number;
+  /** Strictly more planets than this neighbour: the row counts toward the objective. */
+  ahead: boolean;
 }
 
 export interface TableView {
   revealed_objectives: string[];
   scored_objectives: Record<string, string[]>;
   objective_progress?: Record<string, Record<string, ObjectiveProgressView>>;
+  /** Rule 61.16: per seat barred from scoring public objectives, the home planets it does not control. */
+  home_system_lost?: Record<string, string[]>;
   unclaimed_strategy_cards: string[];
   strategy_card_goods: Record<string, number>;
   laws: Record<string, string>;
@@ -413,10 +479,33 @@ export type EventVisibility =
 export type GameEventKind =
   | { kind: "game_initialized"; round: number; phase: string; speaker: string }
   | { kind: "decision_resolved" }
+  | { kind: "dice_rolled" }
   | { kind: "phase_transition"; phase: string; round: number }
   | { kind: "game_finished"; winner?: string | null };
 
-export type GameEvent = EventVisibility & {
+/** One public die roll (a `dice_rolled` event): who rolled, what for, what showed, what it did. */
+export interface PublicRoll {
+  /** Position in the game's roll history; a replay of the same roll has the same index. */
+  index: number;
+  roller?: string;
+  /** The engine's tag ("gravity rift", "space combat"). */
+  reason: string;
+  /** The tag in words ("Gravity rift"). */
+  label: string;
+  faces: number[];
+  hits_on?: number;
+  hits?: number;
+  /** Positions of the dice that are rerolls. */
+  rerolled?: number[];
+  /** The rift exited, else the system in play. */
+  system?: string;
+  /** "ship destroyed", "2 hits". */
+  outcome?: string;
+}
+
+export type GameEvent = {
+  /** Nested object on the wire; decode with `visibilityKind` (protocol/eventVisibility.ts). */
+  visibility: EventVisibility;
   id: string;
   timestamp: string;
   version?: number;
@@ -435,6 +524,8 @@ export type GameEvent = EventVisibility & {
   detail?: string;
   private_detail?: string;
   movement?: { actor: string; origin: string; destination: string; unit: string };
+  /** Present on `dice_rolled` events. */
+  roll?: PublicRoll;
   event: GameEventKind;
 };
 
@@ -569,6 +660,130 @@ export interface PongMsg {
   sequence: number;
 }
 
+/**
+ * The seat's own bluff settings. The server sends this only to the declaring seat (never to other
+ * seats or spectators) and it carries no game version, so it is never dropped as stale.
+ */
+export interface ReactionIntentStateMsg {
+  type?: "reaction_intent_state";
+  protocol_version: number;
+  game_id: string;
+  /** Declared trigger ids (see `bluffTriggers.ts`). */
+  triggers: string[];
+  max_triggers: number;
+  /** Whether this seat may bluff now: it holds action cards and set no card to Never offer. */
+  eligible: boolean;
+  ineligible_reason?: string;
+  /** The declaration cannot change before this round starts. */
+  locked_until_round?: number;
+  /** A stall budget is used up: no more holds. Private to this seat. */
+  budget_used_up: boolean;
+  /** A hold for this seat is running now. */
+  holding: boolean;
+}
+
+/** Why the server refused a secondary preview (`ti4_server::protocol::server::PreviewRefusal`). */
+export type PreviewRefusal =
+  | "not_seated"
+  | "no_strategic_action"
+  | "is_primary"
+  | "already_asked"
+  | "busy"
+  | "rate_limited";
+
+/** Why a follower would not be asked a secondary at all (`ti4_engine::strategy::SecondaryBlocker`). */
+export type SecondaryBlocker =
+  | "no_strategy_token"
+  | "cannot_afford_influence"
+  | "cannot_pay_resources"
+  | "nothing_to_research"
+  | "no_exhausted_planet"
+  | "commodities_full"
+  | "no_production"
+  | "other";
+
+/** How the engine would pay a Technology secondary's resources. */
+export interface PreviewPayment {
+  cost: number;
+  planets: string[];
+  trade_goods: number;
+  worth: number;
+}
+
+/** What the engine says the seat would be asked (`ti4_engine::secondary_preview::SecondaryPreview`). */
+export type SecondaryPreviewBody =
+  | {
+      status: "question";
+      choice: EngineChoice;
+      step: number;
+      payment?: PreviewPayment;
+      skipped?: { subtype: string; prompt: string }[];
+    }
+  | { status: "would_not_be_asked"; blocker: SecondaryBlocker }
+  | {
+      status: "complete";
+      skipped?: { subtype: string; prompt: string }[];
+      /** Scripted answers after the first that the engine never asked for. */
+      unused_answers?: number;
+    }
+  /** A scripted answer is not offered by the question the engine asks at that point. */
+  | { status: "rejected"; at: number; answer: string; choice: EngineChoice }
+  | { status: "unavailable"; detail: string };
+
+/**
+ * The answer to a `preview_secondary` request: what the asking seat would be asked for the
+ * secondary in progress if its window opened now. Private to the asking connection, ephemeral,
+ * and without a game version of its own (so it is never dropped as stale): `as_of_version` says
+ * which position it was computed at.
+ */
+export interface SecondaryPreviewMsg {
+  type?: "secondary_preview";
+  protocol_version: number;
+  game_id: string;
+  request_id: number;
+  as_of_version: number;
+  as_of_decisions: number;
+  card: string;
+  outcome:
+    | { result: "preview"; preview: SecondaryPreviewBody }
+    | { result: "refused"; reason: PreviewRefusal; detail: string };
+}
+
+/** One kind of ship in one origin system that could move into the queried system. */
+export interface ReachShip {
+  type_id: string;
+  count: number;
+  damaged: number;
+  /** Of `count`, how many arrive only by spending Gravity Drive. */
+  gravity_drive: number;
+  /** Of `count`, how many arrive only by exhausting the Ionian Fuel Refinery. */
+  ionian: number;
+}
+
+export interface ReachOrigin {
+  owner: string;
+  origin: string;
+  ships: ReachShip[];
+}
+
+export type ReachRefusal = "busy" | "unknown_system" | "rate_limited";
+
+/**
+ * The answer to a `query_reach` request ("who can go here"): the ships that could move into
+ * `system_id` if it were activated now, from the engine's own movement search. Private to the asking
+ * connection and ephemeral; `as_of_version` says which position it was computed at.
+ */
+export interface ReachIntoMsg {
+  type?: "reach_into";
+  protocol_version: number;
+  game_id: string;
+  request_id: number;
+  system_id: string;
+  as_of_version: number;
+  origins: ReachOrigin[];
+  refused?: ReachRefusal;
+}
+
 export type ServerMessage =
   | ({ type: "initial_snapshot" } & InitialSnapshotMsg)
   | ({ type: "state_update" } & StateUpdateMsg)
@@ -579,7 +794,10 @@ export type ServerMessage =
   | ({ type: "error" } & ProtocolErrorMsg)
   | ({ type: "game_over" } & GameOverMsg)
   | ({ type: "pong" } & PongMsg)
-  | ({ type: "event" } & GameEventMsg);
+  | ({ type: "event" } & GameEventMsg)
+  | ({ type: "reaction_intent_state" } & ReactionIntentStateMsg)
+  | ({ type: "secondary_preview" } & SecondaryPreviewMsg)
+  | ({ type: "reach_into" } & ReachIntoMsg);
 
 export type ClientMessage =
   | {
@@ -603,6 +821,36 @@ export type ClientMessage =
       /** The printed card name; every copy of it is covered. */
       card: string;
       mode: ReactionModeSetting;
+    }
+  | {
+      type: "set_reaction_intent";
+      protocol_version: number;
+      game_id: string;
+      /** Trigger ids this seat bluffs about; the whole declaration, empty clears it. */
+      triggers: string[];
+    }
+  | {
+      type: "pass_reaction_hold";
+      protocol_version: number;
+      game_id: string;
+    }
+  | {
+      /** Read-only: what would my own seat be asked for this secondary if its window opened now? */
+      type: "preview_secondary";
+      protocol_version: number;
+      game_id: string;
+      request_id: number;
+      card: string;
+      primary: string;
+      answers: string[];
+    }
+  | {
+      /** Read-only: which ships could move into this system if it were activated now? */
+      type: "query_reach";
+      protocol_version: number;
+      game_id: string;
+      request_id: number;
+      system_id: string;
     }
   | {
       type: "ping";

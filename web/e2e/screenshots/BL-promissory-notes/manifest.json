@@ -1,0 +1,15 @@
+{
+  "title": "Faction cards in reaction buttons",
+  "description": "Reaction offers for faction promissory notes, unit cards and leaders now show the printed card name and text instead of the engine id (for example \"Play promissory:empyrean:iff:TURN_BEGAN:after\"). Server games now also deal every seat its faction's real promissory notes, so these offers can occur. All shots are the real app against a mocked game.",
+  "tag": "web/e2e/screenshots/BL-promissory-notes",
+  "shots": [
+    { "file": "out/1-creuss-iff.png", "heading": "Faction promissory note", "caption": "The Creuss Iff held by another seat: the button reads \"Use Creuss Iff\" and the note's printed text sits beside it." },
+    { "file": "out/2-ceasefire.png", "heading": "Generic promissory note", "caption": "Ceasefire (every faction owns one) is named the same way." },
+    { "file": "out/3-flagship.png", "heading": "Unit card ability", "caption": "Duha Menaimon, the Arborec flagship, offered after its owner activates a system. Before: \"Play unit:arborec:arborec_flagship:SYSTEM_ACTIVATED:after\"." },
+    { "file": "out/4-commander.png", "heading": "Leader ability", "caption": "The Argent commander by name (Trrakan Aun Zulok) with its ability text. Before: \"Play leader:argent:argentcommander:UNIT_ABILITY_ROLLED:when\"." }
+  ],
+  "notes": [
+    { "title": "Names come from the content catalog", "text": "The button label is built from the option id (note alias, unit id or leader id) looked up in the generated content catalog; an id it does not know falls back to the humanized id." },
+    { "title": "Notes in hands and trades", "text": "Trades already printed note ids by name (Ceasefire (sol), Creuss Iff (ghost)); a test now checks that every faction note id in the catalog resolves." }
+  ]
+}

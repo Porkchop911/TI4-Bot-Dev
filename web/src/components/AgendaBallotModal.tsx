@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import { PlanetValue } from "./PlanetValueIcons.tsx";
 import { PendingChoiceDto } from "../protocol/types.ts";
 import { usePipelineRunner, SemanticIntent } from "../hooks/usePipelineRunner.ts";
 import { Dialog } from "../primitives/index.ts";
@@ -303,12 +304,12 @@ export const AgendaBallotModal: React.FC<AgendaBallotModalProps> = ({
                     </div>
 
                     {/* Basket Tally Header */}
-                    <div className="workflow-inline">
-                      <span className="workflow-inline">Staged Votes:</span>
-                      <span data-testid="staged-votes-counter" className="workflow-inline">
-                        +{totalStagedVotes} Votes
-                      </span>
-                    </div>
+                    <p className="agenda-dialog__staged" role="status">
+                      <span>Staged: </span>
+                      <strong data-testid="staged-votes-counter">
+                        +{totalStagedVotes} {totalStagedVotes === 1 ? "vote" : "votes"}
+                      </strong>
+                    </p>
 
                     {/* Planet Grid */}
                     <div className="workflow-inline">
@@ -323,10 +324,22 @@ export const AgendaBallotModal: React.FC<AgendaBallotModalProps> = ({
                             disabled={isPipelineRunning || isDirectSubmitting}
                             className="button button--secondary agenda-dialog__planet"
                             data-staged={isStaged}
+                            aria-pressed={isStaged}
                           >
-                            <span className="workflow-inline">{planet.planetName}</span>
                             <span className="workflow-inline">
-                              {planet.votes === null ? "Votes unknown" : `${planet.votes} v`}
+                              {isStaged ? "✓ " : ""}
+                              {planet.planetName}
+                            </span>
+                            <span className="workflow-inline">
+                              {planet.votes === null ? (
+                                "Votes unknown"
+                              ) : (
+                                <PlanetValue
+                                  kind="influence"
+                                  value={planet.votes}
+                                  label={`${planet.votes} ${planet.votes === 1 ? "vote" : "votes"} (influence)`}
+                                />
+                              )}
                             </span>
                           </button>
                         );
@@ -340,11 +353,11 @@ export const AgendaBallotModal: React.FC<AgendaBallotModalProps> = ({
                       </p>
                     )}
                     {/* Commit & Done Actions */}
-                    <div className="workflow-inline">
+                    <div className="agenda-dialog__actions">
                       {stagedPlanets.length > 0 && (
                         <button
                           type="button"
-                          className="button button--secondary"
+                          className="agenda-dialog__reset"
                           onClick={() => setStagedPlanets([])}
                         >
                           Reset selection
@@ -358,7 +371,7 @@ export const AgendaBallotModal: React.FC<AgendaBallotModalProps> = ({
                           disabled={isPipelineRunning || isDirectSubmitting}
                           className="button button--secondary"
                         >
-                          Done Voting
+                          Finish without voting more
                         </button>
                       ) : (
                         <div />

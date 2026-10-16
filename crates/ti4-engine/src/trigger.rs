@@ -29,10 +29,12 @@ pub fn kind_of(event_type: &str) -> TriggerKind {
         "AGENDA_REVEALED" => TriggerKind::AgendaRevealed,
         "VOTES_CAST" => TriggerKind::VotesCast,
         "AGENDA_RESOLVED" => TriggerKind::AgendaResolved,
-        "TRANSACTION_OPENED" | "TRANSACTION_RESOLVED" | "TRANSACTION_REFUSED"
-        | "TRANSACTION_OFFERED" | "TRANSACTION_REJECTED" | "TRANSACTION_ABANDONED" => {
-            TriggerKind::Transaction
-        }
+        "TRANSACTION_OPENED"
+        | "TRANSACTION_RESOLVED"
+        | "TRANSACTION_REFUSED"
+        | "TRANSACTION_OFFERED"
+        | "TRANSACTION_REJECTED"
+        | "TRANSACTION_ABANDONED" => TriggerKind::Transaction,
         "PLANET_CONTROL_GAINED" => TriggerKind::PlanetControlGained,
         "INVASION_BEGAN" => TriggerKind::InvasionBegan,
         "UNITS_COMMITTED" => TriggerKind::UnitsCommitted,
@@ -70,16 +72,17 @@ impl DecisionTrigger {
         // hits and shots, the *outcome* of an agenda and nobody for phase and ground-roll events.
         let (actor, subject) = match kind {
             TriggerKind::SpaceCannonHits => (seat(event, "gunner"), seat(event, "player")),
-            TriggerKind::HitsToAssign | TriggerKind::ShipDestroyed => {
-                (None, seat(event, "player"))
-            }
+            TriggerKind::HitsToAssign | TriggerKind::ShipDestroyed => (None, seat(event, "player")),
             TriggerKind::AgendaResolved => (None, seat(event, "elected_player")),
             TriggerKind::AgendaRevealed
             | TriggerKind::AgendaPhaseBegan
             | TriggerKind::StrategyPhaseBegan
             | TriggerKind::GroundRolls => (None, None),
             TriggerKind::Transaction => (seat(event, "player"), seat(event, "partner")),
-            TriggerKind::CombatStarted => (seat(event, "attacker").or_else(|| seat(event, "player")), seat(event, "defender")),
+            TriggerKind::CombatStarted => (
+                seat(event, "attacker").or_else(|| seat(event, "player")),
+                seat(event, "defender"),
+            ),
             _ => (seat(event, "player"), None),
         };
         let card = event.text("card").map(str::to_owned);
@@ -126,7 +129,9 @@ impl DecisionTrigger {
             system: event.text("system").map(SystemId::new),
             planet: event.text("planet").map(PlanetId::new),
             units,
-            hits: event.integer("hits").and_then(|hits| u32::try_from(hits).ok()),
+            hits: event
+                .integer("hits")
+                .and_then(|hits| u32::try_from(hits).ok()),
             chain: chain.to_vec(),
         }
     }

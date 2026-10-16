@@ -1,3 +1,5 @@
+import { GENERATED_CONTENT_CATALOG } from "../protocol/generatedContentManifest.ts";
+
 /**
  * Card database with descriptions for Action Cards, Promissory Notes, and other tradeable items.
  * This provides UI-side descriptions for cards in trade offers.
@@ -97,7 +99,41 @@ export function getCardInfo(cardName: string): CardInfo | null {
 
   const normalized = cardName.toLowerCase().replace(/\s+/g, "_");
 
-  return ACTION_CARDS[normalized] || ACTION_CARDS[cardName] || PROMISSORY_NOTES[normalized] || PROMISSORY_NOTES[cardName] || SPECIAL_ITEMS[normalized] || SPECIAL_ITEMS[cardName] || null;
+  return ACTION_CARDS[normalized] || ACTION_CARDS[cardName] || PROMISSORY_NOTES[normalized] || PROMISSORY_NOTES[cardName] || SPECIAL_ITEMS[normalized] || SPECIAL_ITEMS[cardName] || catalogCardInfo(normalized);
+}
+
+type CatalogRecord = { name: string; text?: string; description?: string; phase?: string; window?: string };
+const CATALOG_ACTION_CARDS = GENERATED_CONTENT_CATALOG.actionCards as unknown as Record<string, CatalogRecord>;
+const CATALOG_SECRETS = GENERATED_CONTENT_CATALOG.secretObjectives as unknown as Record<string, CatalogRecord>;
+const CATALOG_NOTES = GENERATED_CONTENT_CATALOG.promissoryNotes as unknown as Record<string, CatalogRecord>;
+
+/** Engine ids the local table lacks: note aliases (`cf`, generic notes are `<color>_cf`) and action cards (`sabo1`). */
+function catalogCardInfo(id: string): CardInfo | null {
+  const note = CATALOG_NOTES[`<color>_${id}`] || CATALOG_NOTES[id];
+  if (note)
+    return {
+      name: note.name,
+      type: "Promissory Note",
+      description: (note.text ?? "").replace(/<color>/g, "issuing"),
+    };
+  const card = CATALOG_ACTION_CARDS[id] || CATALOG_ACTION_CARDS[id.replace(/\d+$/, "")];
+  if (card)
+    return {
+      name: card.name,
+      type: "Action Card",
+      phase: card.phase,
+      window: card.window,
+      description: card.description ?? "",
+    };
+  const secret = CATALOG_SECRETS[id];
+  if (secret)
+    return {
+      name: secret.name,
+      type: "Secret Objective",
+      phase: secret.phase,
+      description: secret.description ?? "",
+    };
+  return null;
 }
 
 /**

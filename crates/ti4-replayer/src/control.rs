@@ -870,6 +870,7 @@ mod tests {
                 .collect(),
             context: None,
             details: serde_json::Map::new(),
+            free_form: None,
         }
     }
 

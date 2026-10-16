@@ -1,0 +1,17 @@
+{
+  "title": "Move dialog: named systems and All from here",
+  "description": "The tactical movement dialog names every system as #<tile number> [<name>]: the destination (#18 [Mecatol Rex]), each origin (#01 [Sol home system], #41 [Gravity rift]) and en-route pickups. Each origin has an All from here button that stages every ship there and then the fighters and ground forces its holds can carry (fighters, then the space area, then planets). It only stages: counts, cargo gauge and the Commit Moves count update, and nothing is sent until Commit Moves, which sends the same plan the manual + clicks would. Regenerate with npm run screenshots -- CL.",
+  "tag": "web/e2e/screenshots/CL-move-dialog-systems",
+  "shots": [
+    { "file": "out/1-names-desktop.png", "heading": "Named systems, desktop", "caption": "Destination #18 [Mecatol Rex]; origin From #01 [Sol home system] with its All from here button (From #41 [Gravity rift] follows below, see the last shots). Nothing staged yet." },
+    { "file": "out/1-names-390x844.png", "heading": "Named systems, 390x844", "caption": "The header wraps: name and button on one line, cargo gauge below; no horizontal scroll." },
+    { "file": "out/2-all-from-sol-desktop.png", "heading": "All from here on Sol, desktop", "caption": "Both Sol carriers and the dreadnought (13 slots) take 3 fighters, the infantry in space, 7 infantry and the mech from Jord; the space dock stays. Commit Moves (15); the button is now disabled. No message was sent to the server." },
+    { "file": "out/2-all-from-sol-390x844.png", "heading": "All from here on Sol, 390x844", "caption": "Same staging on a phone." },
+    { "file": "out/3-two-origins-desktop.png", "heading": "Capacity-limited origin, desktop", "caption": "Dreadnought staged by hand from Sol, then All from here on the rift: carrier, 2 destroyers, 2 fighters and 2 of the 4 infantry (4 slots). Sol's own staging is untouched and its button stays enabled." },
+    { "file": "out/3-two-origins-390x844.png", "heading": "Capacity-limited origin, 390x844", "caption": "Same on a phone; the rift's + for infantry is disabled (holds full)." }
+  ],
+  "notes": [
+    { "title": "Naming", "text": "systemTag() in presentation/systemFacts.ts reads the board tile label: home tiles (\"Jord - Sol\") become \"Sol home system\", planetless tiles read by kind (\"Gravity rift\", \"Empty system\"), Mallice and the Creuss Gate keep their place name, anomalies with planets append the kind. Unknown tiles show the bare number." },
+    { "title": "Engine answers unchanged", "text": "All from here only fills the dialog's staging (client side). Committing goes through the existing batch path, so the steps are identical to the same manual clicks (covered by a vitest that compares both batches). No engine, option id or fingerprint change." }
+  ]
+}

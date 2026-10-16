@@ -124,7 +124,7 @@ fn share_knowledge(context: &mut TimingContext<'_>, player: &PlayerId) -> bool {
     if !crate::promissory::play_action_note(context.state, player, &note) {
         return false;
     }
-    crate::technology::grant(context.state, player, &tech);
+    crate::technology::gain(context.state, context.content, context.sources, player, &tech);
     context
         .state
         .faction_marks
@@ -374,7 +374,7 @@ fn visionaria_research(
         .player(holder)
         .is_some_and(|seat| !seat.technologies.contains(&tech))
     {
-        crate::technology::grant(context.state, holder, &tech);
+        crate::technology::gain(context.state, context.content, context.sources, holder, &tech);
     }
     Ok(())
 }

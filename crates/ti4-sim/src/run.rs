@@ -119,6 +119,28 @@ impl Table {
             sources,
         }
     }
+
+    /// Seat `players` from an explicit [`FactionRoster`]. [`FactionRoster::InScope`] is exactly
+    /// [`Table::seated`]; [`FactionRoster::Wide`] draws distinct factions from the wide roster by
+    /// `seed` (BF-21), on a stream separate from the map and dice.
+    ///
+    /// # Errors
+    /// The draw's [`ti4_engine::seating::FactionAssignmentError`], as text.
+    pub fn seated_with_roster(
+        content: &ContentStore,
+        players: &[PlayerId],
+        sources: SourceSet,
+        roster: ti4_engine::seating::FactionRoster,
+        seed: u64,
+    ) -> Result<Self, String> {
+        let factions = ti4_engine::seating::seat_roster(roster, content, players, sources, seed)
+            .map_err(|error| error.to_string())?;
+        Ok(Self {
+            players: players.to_vec(),
+            factions,
+            sources,
+        })
+    }
 }
 
 /// Build a seated game: a board, factions, and starting fleets on it.
@@ -482,11 +504,7 @@ mod tests {
         let mut scored = 0;
         // Each of these scores a secret; the scored seed-4 game also draws the Shard of the
         // Throne (a relic point), the custodians and Imperial.
-        for (seed, kind) in [
-            (1, Seats::Random),
-            (2, Seats::Random),
-            (4, Seats::Scored),
-        ] {
+        for (seed, kind) in [(1, Seats::Random), (2, Seats::Random), (4, Seats::Scored)] {
             let (state, galaxy) = seat(content, &table, seed).unwrap();
             let mut game =
                 Game::with_table(state, content, kind.table(&players, seed)).with_galaxy(galaxy);
@@ -511,7 +529,10 @@ mod tests {
                 scored += player.victory_points;
             }
         }
-        assert!(scored > 0, "nobody scored, so the ledger was never exercised");
+        assert!(
+            scored > 0,
+            "nobody scored, so the ledger was never exercised"
+        );
     }
 
     #[test]

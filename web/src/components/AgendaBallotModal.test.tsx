@@ -81,21 +81,29 @@ describe("AgendaBallotModal", () => {
     );
 
     expect(screen.getByTestId("agenda-ballot-title")).toHaveTextContent("Spend influence to vote");
-    expect(screen.getByTestId("staged-votes-counter")).toHaveTextContent("+0 Votes");
+    expect(screen.getByTestId("staged-votes-counter")).toHaveTextContent("+0 votes");
 
     const commitBtn = screen.getByTestId("commit-planet-votes-btn");
     expect(commitBtn).toBeDisabled();
+    expect(screen.getByTestId("done-voting-planets-btn")).toHaveTextContent(
+      "Finish without voting more",
+    );
+    expect(screen.queryByText("Done Voting")).not.toBeInTheDocument();
 
     // Stage Mecatol Rex
     const mecatolCard = screen.getByTestId("planet-card-Mecatol Rex");
     fireEvent.click(mecatolCard);
-    expect(screen.getByTestId("staged-votes-counter")).toHaveTextContent("+6 Votes");
+    expect(screen.getByTestId("staged-votes-counter")).toHaveTextContent("+6 votes");
+    expect(mecatolCard).toHaveAttribute("aria-pressed", "true");
+    expect(mecatolCard).toHaveTextContent(/^✓ /);
+    expect(mecatolCard).toHaveTextContent("6 votes");
+    expect(screen.getByTestId("planet-card-Jord")).toHaveAttribute("aria-pressed", "false");
     expect(commitBtn).not.toBeDisabled();
 
     // Stage Jord
     const jordCard = screen.getByTestId("planet-card-Jord");
     fireEvent.click(jordCard);
-    expect(screen.getByTestId("staged-votes-counter")).toHaveTextContent("+8 Votes");
+    expect(screen.getByTestId("staged-votes-counter")).toHaveTextContent("+8 votes");
 
     // Commit planet votes triggers pipeline
     await act(async () => {
@@ -335,14 +343,14 @@ describe("AgendaBallotModal map selection", () => {
     };
     const { rerender } = render(<AgendaBallotModal {...props} selectedOptionId="jord" />);
     expect(screen.getByTestId("planet-card-jord")).toHaveAttribute("data-staged", "true");
-    expect(screen.getByTestId("staged-votes-counter")).toHaveTextContent("+2 Votes");
+    expect(screen.getByTestId("staged-votes-counter")).toHaveTextContent("+2 votes");
     // The pick is consumed so a second click on the same planet registers again.
     expect(onSelectOption).toHaveBeenCalledWith("");
 
     rerender(<AgendaBallotModal {...props} selectedOptionId="" />);
     rerender(<AgendaBallotModal {...props} selectedOptionId="jord" />);
     expect(screen.getByTestId("planet-card-jord")).toHaveAttribute("data-staged", "false");
-    expect(screen.getByTestId("staged-votes-counter")).toHaveTextContent("+0 Votes");
+    expect(screen.getByTestId("staged-votes-counter")).toHaveTextContent("+0 votes");
   });
 
   it("ignores map picks that are not offered planets", () => {
@@ -356,6 +364,6 @@ describe("AgendaBallotModal map selection", () => {
         selectedOptionId="decline"
       />,
     );
-    expect(screen.getByTestId("staged-votes-counter")).toHaveTextContent("+0 Votes");
+    expect(screen.getByTestId("staged-votes-counter")).toHaveTextContent("+0 votes");
   });
 });

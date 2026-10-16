@@ -77,7 +77,7 @@ export function mapCards(
     return {
       key: t.alias,
       choice,
-      title: templateTitle(t.alias),
+      title: t.name ?? templateTitle(t.alias),
       detail: `${t.systems} systems${t.author ? ` · ${t.author}` : ""}`,
       badges: templateBadges(t.alias, t),
       recommended: t.recommended,
@@ -97,17 +97,22 @@ export function mapCards(
   return cards;
 }
 
-/** One line under the preview: `6pStandard by Someone · 37 systems · no hyperlanes`. */
+/** One line under the preview: `6 players · Standard by Someone · 37 systems · no hyperlanes`. */
 export function mapSummaryLine(map: MapChoiceDto): string {
-  const name = map.kind === "random" ? "Random map" : (map.alias ?? "Map");
+  const count = map.kind === "random" ? null : /^(\d+)p/.exec(map.alias ?? "")?.[1];
+  const players = count ? `${count} players · ` : "";
+  const name =
+    map.kind === "random"
+      ? "Random map"
+      : (map.name ?? (map.alias ? templateTitle(map.alias) : "Map"));
   const by = map.author ? ` by ${map.author}` : "";
   const systems = map.systems > 0 ? ` · ${map.systems} systems` : "";
-  return `${name}${by}${systems} · ${map.hyperlanes ? "with hyperlanes" : "no hyperlanes"}`;
+  return `${players}${name}${by}${systems} · ${map.hyperlanes ? "with hyperlanes" : "no hyperlanes"}`;
 }
 
 /** The short name for the lobby row. */
 export function mapName(map: MapChoiceDto): string {
-  return map.kind === "random" ? "Random" : (map.alias ?? "Map");
+  return map.kind === "random" ? "Random" : (map.name ?? map.alias ?? "Map");
 }
 
 export type TileKind =
@@ -131,14 +136,6 @@ export function mainTiles(tiles: readonly BoardTileView[]): BoardTileView[] {
 
 export function homeIdSet(seats: readonly MapSeatPreview[]): Set<string> {
   return new Set(seats.map((seat) => seat.home_system_id));
-}
-
-/** The seat the viewer sits in: their lobby position, if they have one. */
-export function viewerSeat(
-  seats: readonly MapSeatPreview[],
-  viewerPosition: number | null | undefined,
-): MapSeatPreview | undefined {
-  return viewerPosition == null ? undefined : seats.find((seat) => seat.seat === viewerPosition);
 }
 
 /** Notice for players when the host changes the map while they look at the lobby. */

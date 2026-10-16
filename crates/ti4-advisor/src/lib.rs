@@ -1,6 +1,6 @@
 //! Stateless, loopback-only MLP advice and battle odds for one redacted game snapshot.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 
 use axum::extract::State;
@@ -8,6 +8,11 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::{Json, Router, routing::post};
 use serde::{Deserialize, Serialize};
+use ti4_calc::odds::{self, CalcError, SpaceOptions};
+pub use ti4_calc::odds::{
+    BattleResponse, GroundOddsRequest, GroundOddsResponse, GroundOddsSide, ParticipantInput,
+    SideInput, UnitCounts,
+};
 use ti4_content::ContentStore;
 use ti4_content::galaxy::Galaxy;
 use ti4_engine::choice::{Choice, ChoiceOption, Decider, IllegalChoice, SeatObservation};
@@ -21,65 +26,15 @@ use ti4_policy::critic::{CriticFeatures, critic_vector};
 use ti4_policy::progress::Baseline;
 use ti4_policy::vocabulary::Vocabulary;
 use ti4_server::map::GalaxyLayout;
-use ti4_training::battle_arena::{self, GroundSide, Side};
 
 const MAX_OPTIONS: usize = 512;
-const MAX_PLACEMENTS: usize = 256;
+const MAX_PLACEMENTS: usize = odds::MAX_PLACEMENTS;
 const MAX_OFF_MAP_SYSTEMS: usize = 64;
 const MAX_SOURCES: usize = 7;
 const DEFAULT_TEMPERATURE: f64 = 0.25;
 const MAX_BODY_BYTES: usize = 1_048_576;
-const DEFAULT_SIMULATIONS: usize = 2000;
-const MAX_SIMULATIONS: usize = 50_000;
 
-/// Units count input, accepting either `{"unit_id": count}` or `[["unit_id", count]]`.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
-pub enum UnitCounts {
-    Map(BTreeMap<String, usize>),
-    List(Vec<(String, usize)>),
-}
-
-impl UnitCounts {
-    #[must_use]
-    pub fn into_entries(self) -> Vec<(String, usize)> {
-        match self {
-            Self::Map(map) => map.into_iter().collect(),
-            Self::List(list) => list,
-        }
-    }
-}
-
-/// A participant in space combat, specified either by a player ID or custom side parameters.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(untagged)]
-pub enum ParticipantInput {
-    Player(PlayerId),
-    Side(SideInput),
-}
-
-/// Fleet configuration for one participant in space combat.
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SideInput {
-    /// Player ID whose fleet/guns at the combat system should be included.
-    #[serde(default)]
-    pub player: Option<PlayerId>,
-    /// Faction identifier (e.g. "sol", "letnev", "jolnar"). If omitted and `player` is given, read from state.
-    #[serde(default)]
-    pub faction: Option<String>,
-    /// Ships to field as `{"unit_id": count}` or `[["unit_id", count]]`. Added to units from state.
-    #[serde(default)]
-    pub units: Option<UnitCounts>,
-    /// Ships that start damaged as `{"unit_id": count}` or `[["unit_id", count]]`.
-    #[serde(default)]
-    pub damaged: Option<UnitCounts>,
-    /// Units firing space cannon before combat as `{"unit_id": count}` or `[["unit_id", count]]`.
-    #[serde(default)]
-    pub guns: Option<UnitCounts>,
-}
-
-/// A request to evaluate space combat using `battle_arena` rollouts.
+/// A request to evaluate space combat using `ti4_calc` rollouts.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BattleRequest {
@@ -108,50 +63,6 @@ pub struct BattleRequest {
     /// Optional seed for deterministic simulations.
     #[serde(default)]
     pub seed: Option<u64>,
-}
-
-/// Outcome statistics from `battle_arena` rollouts.
-#[derive(Debug, Clone, Serialize)]
-pub struct BattleResponse {
-    pub simulations: usize,
-    pub attacker_win_rate: f64,
-    pub defender_win_rate: f64,
-    pub mutual_destruction_rate: f64,
-    pub unresolved_rate: f64,
-    pub average_rounds: f64,
-    pub attacker_expected_survivors: BTreeMap<String, f64>,
-    pub defender_expected_survivors: BTreeMap<String, f64>,
-    pub attacker_fielded: BTreeMap<String, usize>,
-    pub defender_fielded: BTreeMap<String, usize>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct GroundOddsSide {
-    pub faction: String,
-    pub units: BTreeMap<String, usize>,
-    #[serde(default)]
-    pub damaged: BTreeMap<String, usize>,
-    #[serde(default)]
-    pub guns: BTreeMap<String, usize>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct GroundOddsRequest {
-    pub attacker: GroundOddsSide,
-    pub defender: GroundOddsSide,
-    /// Legal bombarding ships that fire Harrow after rounds (never before landing).
-    #[serde(default)]
-    pub harrow: BTreeMap<String, usize>,
-    #[serde(default)]
-    pub simulations: Option<usize>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct GroundOddsResponse {
-    pub simulations: usize,
-    pub attacker_win_rate: f64,
 }
 
 /// A parsed request to evaluate a single legal engine choice.
@@ -189,6 +100,12 @@ impl ApiError {
     #[must_use]
     pub fn bad_request(message: impl Into<String>) -> Self {
         Self(message.into())
+    }
+}
+
+impl From<CalcError> for ApiError {
+    fn from(error: CalcError) -> Self {
+        Self(error.0)
     }
 }
 
@@ -307,12 +224,11 @@ impl Advisor {
             .ok_or_else(|| ApiError::bad_request("evaluation produced no result"))
     }
 
-    /// Evaluate space combat odds using `battle_arena` rollouts.
+    /// Evaluate space combat odds using `ti4_calc` rollouts.
     ///
     /// # Errors
     ///
     /// Returns an [`ApiError`] if parameters, factions, or unit IDs are invalid.
-    #[allow(clippy::cast_precision_loss)]
     pub fn battle(&self, request: &BattleRequest) -> Result<BattleResponse, ApiError> {
         let sources = if let Some(ref layout) = request.galaxy_layout {
             if layout.active_sources.is_empty() || layout.active_sources.len() > MAX_SOURCES {
@@ -331,7 +247,7 @@ impl Advisor {
             None
         };
 
-        let (attacker_side, attacker_fielded) = resolve_side(
+        let (attacker_side, attacker_fielded) = odds::resolve_side(
             &request.attacker,
             request.state.as_ref(),
             request.system.as_ref(),
@@ -340,7 +256,7 @@ impl Advisor {
             sources,
         )?;
 
-        let (defender_side, defender_fielded) = resolve_side(
+        let (defender_side, defender_fielded) = odds::resolve_side(
             &request.defender,
             request.state.as_ref(),
             request.system.as_ref(),
@@ -349,167 +265,25 @@ impl Advisor {
             sources,
         )?;
 
-        let simulations = match request.simulations {
-            Some(0) => return Err(ApiError::bad_request("simulations must be at least 1")),
-            Some(n) if n > MAX_SIMULATIONS => {
-                return Err(ApiError::bad_request(format!(
-                    "simulations cannot exceed {MAX_SIMULATIONS}"
-                )));
-            }
-            Some(n) => n,
-            None => DEFAULT_SIMULATIONS,
-        };
-
-        let attacker_cannon = request.attacker_cannon.unwrap_or(true);
-        let in_progress = request.in_progress.unwrap_or(false);
-        let base_seed = request.seed.unwrap_or(0);
-
-        let mut attacker_wins = 0usize;
-        let mut defender_wins = 0usize;
-        let mut mutual_destruction = 0usize;
-        let mut unresolved = 0usize;
-        let mut total_rounds = 0u64;
-
-        let mut attacker_survivors = vec![0u64; attacker_side.names().len()];
-        let mut defender_survivors = vec![0u64; defender_side.names().len()];
-
-        for i in 0..simulations {
-            let seed = base_seed.wrapping_add(i as u64);
-            let outcome = if in_progress {
-                battle_arena::fight_in_progress(&attacker_side, &defender_side, seed)
-            } else {
-                battle_arena::fight_outcome(&attacker_side, &defender_side, seed, attacker_cannon)
-            };
-
-            if outcome.unresolved {
-                unresolved += 1;
-            }
-            match outcome.winner {
-                Some("a") => attacker_wins += 1,
-                Some("b") => defender_wins += 1,
-                _ => mutual_destruction += 1,
-            }
-            total_rounds += u64::from(outcome.rounds);
-
-            for (idx, &count) in outcome.attacker_left.iter().enumerate() {
-                attacker_survivors[idx] += count as u64;
-            }
-            for (idx, &count) in outcome.defender_left.iter().enumerate() {
-                defender_survivors[idx] += count as u64;
-            }
-        }
-
-        let sim_f64 = simulations as f64;
-        let mut attacker_expected_survivors = BTreeMap::new();
-        for (idx, name) in attacker_side.names().iter().enumerate() {
-            attacker_expected_survivors
-                .insert(name.clone(), attacker_survivors[idx] as f64 / sim_f64);
-        }
-        let mut defender_expected_survivors = BTreeMap::new();
-        for (idx, name) in defender_side.names().iter().enumerate() {
-            defender_expected_survivors
-                .insert(name.clone(), defender_survivors[idx] as f64 / sim_f64);
-        }
-
-        Ok(BattleResponse {
-            simulations,
-            attacker_win_rate: attacker_wins as f64 / sim_f64,
-            defender_win_rate: defender_wins as f64 / sim_f64,
-            mutual_destruction_rate: mutual_destruction as f64 / sim_f64,
-            unresolved_rate: unresolved as f64 / sim_f64,
-            average_rounds: total_rounds as f64 / sim_f64,
-            attacker_expected_survivors,
-            defender_expected_survivors,
-            attacker_fielded,
-            defender_fielded,
-        })
+        Ok(odds::space_odds(
+            (attacker_side, attacker_fielded),
+            (defender_side, defender_fielded),
+            SpaceOptions {
+                simulations: request.simulations,
+                attacker_cannon: request.attacker_cannon,
+                in_progress: request.in_progress,
+                seed: request.seed,
+            },
+        )?)
     }
 
+    /// Evaluate ground combat odds using `ti4_calc` rollouts.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`ApiError`] if counts, unit IDs, or the number of simulations are invalid.
     pub fn ground_odds(&self, request: &GroundOddsRequest) -> Result<GroundOddsResponse, ApiError> {
-        let n = request.simulations.unwrap_or(DEFAULT_SIMULATIONS);
-        if n == 0 || n > MAX_SIMULATIONS {
-            return Err(ApiError::bad_request(
-                "simulations must be between 1 and 50000",
-            ));
-        }
-        if !request.attacker.guns.is_empty() {
-            return Err(ApiError::bad_request(
-                "only the defender has standing defense guns",
-            ));
-        }
-        if request.harrow.len() > MAX_PLACEMENTS
-            || request.harrow.values().any(|count| *count > MAX_PLACEMENTS)
-            || request.harrow.values().sum::<usize>() > MAX_PLACEMENTS
-        {
-            return Err(ApiError::bad_request("too many Harrow units"));
-        }
-        for id in request.harrow.keys() {
-            if !ti4_content::units::unit_type(self.inner.content, id, POK)
-                .is_some_and(|unit| unit.has_bombardment() && unit.bombard_dice() > 0)
-            {
-                return Err(ApiError::bad_request(format!("invalid Harrow unit: {id}")));
-            }
-        }
-        let resolve = |side: &GroundOddsSide| -> Result<GroundSide, ApiError> {
-            if side.units.len() > MAX_PLACEMENTS
-                || side.guns.len() > MAX_PLACEMENTS
-                || side.units.values().any(|count| *count > MAX_PLACEMENTS)
-                || side.guns.values().any(|count| *count > MAX_PLACEMENTS)
-                || side.units.values().sum::<usize>() > MAX_PLACEMENTS
-                || side.guns.values().sum::<usize>() > MAX_PLACEMENTS
-            {
-                return Err(ApiError::bad_request("too many ground units"));
-            }
-            for (id, count) in &side.units {
-                if *count > 0
-                    && !ti4_content::units::unit_type(self.inner.content, id, POK)
-                        .is_some_and(|unit| unit.is_ground_force())
-                {
-                    return Err(ApiError::bad_request(format!("invalid ground force: {id}")));
-                }
-                if side.damaged.get(id).copied().unwrap_or(0) > *count {
-                    return Err(ApiError::bad_request("damaged count exceeds force count"));
-                }
-            }
-            if side.damaged.keys().any(|id| !side.units.contains_key(id)) {
-                return Err(ApiError::bad_request("damaged unit is not fielded"));
-            }
-            for id in side.guns.keys() {
-                if !ti4_content::units::unit_type(self.inner.content, id, POK)
-                    .is_some_and(|unit| unit.space_cannon_hits_on().is_some())
-                {
-                    return Err(ApiError::bad_request(format!("invalid defense gun: {id}")));
-                }
-            }
-            let forces: Vec<_> = side.units.iter().map(|(id, n)| (id.clone(), *n)).collect();
-            let damaged: Vec<_> = side
-                .damaged
-                .iter()
-                .map(|(id, n)| (id.clone(), *n))
-                .collect();
-            let guns: Vec<_> = side.guns.iter().map(|(id, n)| (id.clone(), *n)).collect();
-            Ok(
-                GroundSide::of(self.inner.content, &forces, &damaged, &side.faction)
-                    .with_defense_guns(self.inner.content, &guns),
-            )
-        };
-        let harrow: Vec<_> = request
-            .harrow
-            .iter()
-            .map(|(id, count)| (id.clone(), *count))
-            .collect();
-        let attacker =
-            resolve(&request.attacker)?.with_bombardment(self.inner.content, &harrow, false, true);
-        let defender = resolve(&request.defender)?;
-        let wins = (0..n)
-            .filter(|seed| {
-                battle_arena::ground_fight(&attacker, &defender, *seed as u64).winner == Some("a")
-            })
-            .count();
-        Ok(GroundOddsResponse {
-            simulations: n,
-            attacker_win_rate: wins as f64 / n as f64,
-        })
+        Ok(odds::ground_odds(self.inner.content, request)?)
     }
 }
 
@@ -532,152 +306,6 @@ async fn ground_odds(
     Json(request): Json<GroundOddsRequest>,
 ) -> Result<Json<GroundOddsResponse>, ApiError> {
     advisor.ground_odds(&request).map(Json)
-}
-
-#[allow(clippy::too_many_lines)]
-fn resolve_side(
-    participant: &ParticipantInput,
-    state: Option<&GameState>,
-    system: Option<&SystemId>,
-    galaxy: Option<&Galaxy>,
-    content: &ContentStore,
-    sources: SourceSet,
-) -> Result<(Side, BTreeMap<String, usize>), ApiError> {
-    let (player_id, explicit_faction, extra_units, extra_damaged, extra_guns) = match participant {
-        ParticipantInput::Player(pid) => (Some(pid), None, Vec::new(), Vec::new(), Vec::new()),
-        ParticipantInput::Side(side) => (
-            side.player.as_ref(),
-            side.faction.as_deref(),
-            side.units
-                .clone()
-                .map(UnitCounts::into_entries)
-                .unwrap_or_default(),
-            side.damaged
-                .clone()
-                .map(UnitCounts::into_entries)
-                .unwrap_or_default(),
-            side.guns
-                .clone()
-                .map(UnitCounts::into_entries)
-                .unwrap_or_default(),
-        ),
-    };
-
-    let mut fleet: BTreeMap<String, usize> = BTreeMap::new();
-    let mut damaged: BTreeMap<String, usize> = BTreeMap::new();
-    let mut guns: BTreeMap<String, usize> = BTreeMap::new();
-
-    let faction: String = if let Some(pid) = player_id {
-        let game_state = state
-            .ok_or_else(|| ApiError::bad_request("state is required when player is specified"))?;
-        let seat = game_state
-            .player(pid)
-            .ok_or_else(|| ApiError::bad_request(format!("player {pid} not found in state")))?;
-        let player_faction = explicit_faction.unwrap_or(seat.faction.as_str());
-
-        if let Some(sys) = system {
-            let board = game_state.system_state(sys);
-            for unit in &board.units {
-                if &unit.owner == pid
-                    && let Some(kind) =
-                        ti4_content::units::unit_type(content, unit.type_id.as_str(), sources)
-                    && kind.is_ship()
-                {
-                    *fleet.entry(unit.type_id.to_string()).or_default() += 1;
-                    if unit.sustained_damage {
-                        *damaged.entry(unit.type_id.to_string()).or_default() += 1;
-                    }
-                }
-            }
-            for unit in board.planet_units.values().flatten() {
-                if &unit.owner == pid
-                    && let Some(kind) =
-                        ti4_content::units::unit_type(content, unit.type_id.as_str(), sources)
-                    && kind.has_space_cannon()
-                {
-                    *guns.entry(unit.type_id.to_string()).or_default() += 1;
-                }
-            }
-            if let Some(g) = galaxy {
-                for adjacent_id in g.adjacent(sys.as_str()) {
-                    let adj_sys = SystemId::new(adjacent_id);
-                    let adj_board = game_state.system_state(&adj_sys);
-                    let adj_units = adj_board
-                        .planet_units
-                        .values()
-                        .flatten()
-                        .chain(&adj_board.units);
-                    for unit in adj_units {
-                        if &unit.owner == pid {
-                            let reaches = matches!(
-                                unit.type_id.as_str(),
-                                "pds2" | "xxcha_mech" | "xxcha_flagship"
-                            ) || ti4_content::units::unit_type(
-                                content,
-                                unit.type_id.as_str(),
-                                sources,
-                            )
-                            .and_then(|k| k.record().text("ability"))
-                            .is_some_and(|ability| {
-                                let a = ability.to_ascii_lowercase();
-                                a.contains("space cannon against ships that are")
-                                    && a.contains("adjacent")
-                            });
-                            if reaches {
-                                *guns.entry(unit.type_id.to_string()).or_default() += 1;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        player_faction.to_owned()
-    } else {
-        explicit_faction.unwrap_or("generic").to_owned()
-    };
-
-    for (id, count) in extra_units {
-        *fleet.entry(id).or_default() += count;
-    }
-    for (id, count) in extra_damaged {
-        *damaged.entry(id).or_default() += count;
-    }
-    for (id, count) in extra_guns {
-        *guns.entry(id).or_default() += count;
-    }
-
-    // Validate unit IDs
-    for (id, &count) in &fleet {
-        if count > 0 && ti4_content::units::unit_type(content, id, sources).is_none() {
-            return Err(ApiError::bad_request(format!(
-                "unknown unit id in fleet: {id}"
-            )));
-        }
-    }
-    for (id, &count) in &damaged {
-        if count > 0 && ti4_content::units::unit_type(content, id, sources).is_none() {
-            return Err(ApiError::bad_request(format!(
-                "unknown unit id in damaged: {id}"
-            )));
-        }
-    }
-    for (id, &count) in &guns {
-        if count > 0 && ti4_content::units::unit_type(content, id, sources).is_none() {
-            return Err(ApiError::bad_request(format!(
-                "unknown unit id in guns: {id}"
-            )));
-        }
-    }
-
-    let fleet_vec: Vec<(String, usize)> =
-        fleet.clone().into_iter().filter(|(_, n)| *n > 0).collect();
-    let damaged_vec: Vec<(String, usize)> = damaged.into_iter().filter(|(_, n)| *n > 0).collect();
-    let guns_vec: Vec<(String, usize)> = guns.into_iter().filter(|(_, n)| *n > 0).collect();
-
-    let side =
-        Side::of(content, &fleet_vec, &damaged_vec, &faction, true).with_guns(content, &guns_vec);
-
-    Ok((side, fleet))
 }
 
 struct Evaluator<'a> {
@@ -967,146 +595,5 @@ mod tests {
             temperature: None,
         };
         assert!(validate_request(&request).is_err());
-    }
-
-    #[test]
-    fn direct_fleet_battle_simulation_computes_odds() {
-        let advisor = Advisor::battle_only();
-        let request = BattleRequest {
-            state: None,
-            galaxy_layout: None,
-            system: None,
-            attacker: ParticipantInput::Side(SideInput {
-                player: None,
-                faction: Some("sol".to_owned()),
-                units: Some(UnitCounts::List(vec![
-                    ("carrier".to_owned(), 1),
-                    ("fighter".to_owned(), 4),
-                ])),
-                damaged: None,
-                guns: None,
-            }),
-            defender: ParticipantInput::Side(SideInput {
-                player: None,
-                faction: Some("letnev".to_owned()),
-                units: Some(UnitCounts::Map(
-                    [("dreadnought".to_owned(), 1)].into_iter().collect(),
-                )),
-                damaged: None,
-                guns: None,
-            }),
-            simulations: Some(100),
-            attacker_cannon: None,
-            in_progress: None,
-            seed: Some(42),
-        };
-
-        let response = advisor.battle(&request).expect("battle succeeds");
-        assert_eq!(response.simulations, 100);
-        let total_rate = response.attacker_win_rate
-            + response.defender_win_rate
-            + response.mutual_destruction_rate;
-        assert!((total_rate - 1.0).abs() < 1e-6);
-        assert_eq!(response.attacker_fielded.get("carrier"), Some(&1));
-        assert_eq!(response.attacker_fielded.get("fighter"), Some(&4));
-        assert_eq!(response.defender_fielded.get("dreadnought"), Some(&1));
-        assert!(response.average_rounds > 0.0);
-    }
-
-    #[test]
-    fn battle_from_game_state_snapshot_resolves_fleets() {
-        let advisor = Advisor::battle_only();
-        let mut state = ti4_engine::fixtures::game(&["a", "b"]);
-        let sys = SystemId::new("18");
-        let a_player = PlayerId::new("a");
-        let b_player = PlayerId::new("b");
-
-        state
-            .system_mut(&sys)
-            .units
-            .push(ti4_model::units::Unit::new(
-                ti4_model::id::UnitTypeId::new("cruiser"),
-                a_player.clone(),
-            ));
-        state
-            .system_mut(&sys)
-            .units
-            .push(ti4_model::units::Unit::new(
-                ti4_model::id::UnitTypeId::new("cruiser"),
-                a_player.clone(),
-            ));
-        state
-            .system_mut(&sys)
-            .units
-            .push(ti4_model::units::Unit::new(
-                ti4_model::id::UnitTypeId::new("destroyer"),
-                b_player.clone(),
-            ));
-
-        let request = BattleRequest {
-            state: Some(state),
-            galaxy_layout: None,
-            system: Some(sys),
-            attacker: ParticipantInput::Player(a_player),
-            defender: ParticipantInput::Player(b_player),
-            simulations: Some(50),
-            attacker_cannon: None,
-            in_progress: None,
-            seed: Some(123),
-        };
-
-        let response = advisor.battle(&request).expect("state battle succeeds");
-        assert_eq!(response.simulations, 50);
-        assert_eq!(response.attacker_fielded.get("cruiser"), Some(&2));
-        assert_eq!(response.defender_fielded.get("destroyer"), Some(&1));
-        assert!(response.attacker_win_rate > response.defender_win_rate);
-    }
-
-    #[test]
-    fn battle_validation_rejects_invalid_inputs() {
-        let advisor = Advisor::battle_only();
-
-        // 0 simulations rejected
-        let req_zero_sims = BattleRequest {
-            state: None,
-            galaxy_layout: None,
-            system: None,
-            attacker: ParticipantInput::Side(SideInput {
-                faction: Some("sol".to_owned()),
-                units: Some(UnitCounts::List(vec![("fighter".to_owned(), 1)])),
-                ..Default::default()
-            }),
-            defender: ParticipantInput::Side(SideInput {
-                faction: Some("letnev".to_owned()),
-                units: Some(UnitCounts::List(vec![("fighter".to_owned(), 1)])),
-                ..Default::default()
-            }),
-            simulations: Some(0),
-            attacker_cannon: None,
-            in_progress: None,
-            seed: None,
-        };
-        assert!(advisor.battle(&req_zero_sims).is_err());
-
-        // Simulations exceeding MAX_SIMULATIONS rejected
-        let mut req_too_many = req_zero_sims.clone();
-        req_too_many.simulations = Some(MAX_SIMULATIONS + 1);
-        assert!(advisor.battle(&req_too_many).is_err());
-
-        // Unknown unit ID rejected
-        let mut req_bad_unit = req_zero_sims.clone();
-        req_bad_unit.simulations = Some(10);
-        req_bad_unit.attacker = ParticipantInput::Side(SideInput {
-            faction: Some("sol".to_owned()),
-            units: Some(UnitCounts::List(vec![("nonexistent_ship".to_owned(), 1)])),
-            ..Default::default()
-        });
-        assert!(advisor.battle(&req_bad_unit).is_err());
-
-        // Player specified without state rejected
-        let mut req_no_state = req_zero_sims;
-        req_no_state.simulations = Some(10);
-        req_no_state.attacker = ParticipantInput::Player(PlayerId::new("missing_player"));
-        assert!(advisor.battle(&req_no_state).is_err());
     }
 }

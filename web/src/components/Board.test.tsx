@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { Board, getPlayerColor } from "./Board.tsx";
 import { BoardView } from "../protocol/types.ts";
 import { PaymentDraftProvider } from "../presentation/PaymentDraftContext.tsx";
@@ -53,6 +53,9 @@ describe("Board Component", () => {
     render(<Board board={mockBoard} seatingOrder={["p1", "p2"]} />);
 
     expect(screen.getByTestId("ti4-board-svg")).toBeInTheDocument();
+    const map = screen.getByRole("group", { name: "Galaxy map" });
+    expect(map).toBe(screen.getByTestId("ti4-board-svg"));
+    expect(map).toHaveAccessibleDescription(/Drag the map to pan/);
     expect(screen.getByTestId("system-hex-18")).toBeInTheDocument();
     expect(screen.getByTestId("system-hex-34")).toBeInTheDocument();
 
@@ -80,8 +83,8 @@ describe("Board Component", () => {
   });
 
   it("assigns colors by projected seating order, not seat name", () => {
-    expect(getPlayerColor("unusual-seat", ["unusual-seat", "another-seat"])).toBe("#E69F00");
-    expect(getPlayerColor("another-seat", ["unusual-seat", "another-seat"])).toBe("#56B4E9");
+    expect(getPlayerColor("unusual-seat", ["unusual-seat", "another-seat"])).toBe("#3B82F6");
+    expect(getPlayerColor("another-seat", ["unusual-seat", "another-seat"])).toBe("#4ADE80");
     expect(getPlayerColor("absent-seat", ["unusual-seat"])).toBe("#94a3b8");
   });
 
@@ -122,7 +125,7 @@ describe("Board Component", () => {
     expect(screen.getByText("Mecatol Rex")).toBeInTheDocument();
     expect(screen.getByText("GRAVITY RIFT")).toBeInTheDocument();
     expect(screen.getByText("α")).toBeInTheDocument();
-    expect(screen.getByText("1/6")).toBeInTheDocument();
+    expect(screen.getByLabelText("1 resource, 6 influence")).toBeInTheDocument();
 
     // Zoom buttons
     expect(screen.getByTitle("Zoom In")).toBeInTheDocument();
@@ -448,6 +451,8 @@ describe("Board Component", () => {
       expect(eco202).toBeInTheDocument();
       expect(eco202).toHaveTextContent("0/1");
       expect(eco202).toHaveTextContent("0/3");
+      expect(within(eco202).getByLabelText("0 resources ready of 1 total")).toBeInTheDocument();
+      expect(within(eco202).getByLabelText("0 influence ready of 3 total")).toBeInTheDocument();
     });
 
     it("displays space combat units, average hits per round, and sustain damage with planets hidden", () => {
@@ -641,7 +646,8 @@ describe("Board Component", () => {
 
       const overlayTooltip = screen.getByTestId("system-tooltip-overlay");
       expect(overlayTooltip).toHaveTextContent("Economy Overlay");
-      expect(overlayTooltip).toHaveTextContent("Ready: 3 Res / 1 Inf");
+      expect(overlayTooltip).toHaveTextContent("Ready:");
+      expect(within(overlayTooltip).getByLabelText("Ready: 3 resources, 1 influence")).toBeInTheDocument();
     });
   });
 });
@@ -779,7 +785,7 @@ describe("Board payment mode", () => {
         onSelectTarget={onSelectTarget}
       />,
     );
-    expect(screen.getByTestId("payment-mark-fria")).toHaveTextContent("4R");
+    expect(screen.getByTestId("payment-mark-fria")).toHaveAttribute("aria-label", "4 resources, also 0 influence");
     expect(screen.getByTestId("planet-fria")).toHaveAttribute("data-payment-staged", "false");
     expect(screen.getByTestId("planet-abyz")).toHaveAttribute("data-target-dimmed", "true");
     fireEvent.click(screen.getByTestId("planet-fria"));
@@ -817,6 +823,23 @@ describe("Board payment mode", () => {
       </PaymentDraftProvider>,
     );
     expect(screen.getByTestId("planet-fria")).toHaveAttribute("data-payment-staged", "true");
-    expect(screen.getByTestId("payment-mark-fria")).toHaveTextContent("✓ 4R");
+    expect(screen.getByTestId("payment-mark-fria")).toHaveAttribute("aria-label", "Staged: 4 resources, also 0 influence");
+    expect(screen.getByTestId("payment-mark-fria")).toHaveTextContent("✓ 4");
+  });
+
+  it("pinch with two pointers zooms the map group and the viewport opts out of page zoom", () => {
+    render(<Board board={mockBoard} seatingOrder={["p1", "p2"]} />);
+    const viewport = screen.getByTestId("board-viewport");
+    expect(viewport.style.touchAction).toBe("none");
+    const group = () => viewport.querySelector("svg > g")!.getAttribute("transform")!;
+    const before = group();
+    const ev = (id: number, x: number) => ({ pointerId: id, pointerType: "touch", clientX: x, clientY: 100, button: 0 });
+    fireEvent.pointerDown(viewport, ev(1, 100));
+    fireEvent.pointerDown(viewport, ev(2, 200));
+    fireEvent.pointerMove(viewport, ev(2, 300));
+    expect(group()).not.toBe(before);
+    expect(group()).toMatch(/scale\(2(\.\d+)?\)/);
+    fireEvent.pointerUp(viewport, ev(2, 300));
+    fireEvent.pointerUp(viewport, ev(1, 100));
   });
 });
