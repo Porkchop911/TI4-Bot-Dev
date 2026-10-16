@@ -23,6 +23,8 @@ pub const LEADERSHIP_TOKENS: u32 = 3;
 pub const INFLUENCE_PER_TOKEN: i64 = 3;
 pub const TECHNOLOGY_PRIMARY_SECOND_COST: i64 = 6;
 pub const TECHNOLOGY_SECONDARY_COST: i64 = 4;
+/// How many exhausted planets Diplomacy's primary and secondary ready.
+pub const DIPLOMACY_READIES: usize = 2;
 pub const RESEARCH_KIND: &str = "research";
 
 /// Result of a primary.  TE Warfare hands its free activation back to the stepped game driver.
@@ -1523,7 +1525,7 @@ fn ready_planets(
     player: &PlayerId,
     maximum: usize,
 ) -> Result<(), IllegalChoice> {
-    for _ in 0..maximum {
+    for readied in 0..maximum {
         let controlled: Vec<PlanetId> = state
             .controlled_planets(player)
             .into_iter()
@@ -1554,7 +1556,9 @@ fn ready_planets(
             state.phase,
             state.round,
         ))
-        .detailed("ready_hints", ready_hints(state, content, sources, player));
+        .detailed("ready_hints", ready_hints(state, content, sources, player))
+        // Display only: how many planets this question and the ones after it ready at most.
+        .detailed("ready_count", maximum - readied);
         let answer = ask(state, content, sources, galaxy, table, &choice)?;
         state.ready_planet(&PlanetId::new(answer.id));
     }
@@ -1597,7 +1601,11 @@ fn diplomacy_primary(
             "diplomacy_choose_system",
             state.phase,
             state.round,
-        ));
+        ))
+        // Display only: the planets that are readied after the system, so that a client can
+        // stage the whole primary at once.
+        .detailed("ready_hints", ready_hints(state, content, sources, player))
+        .detailed("ready_count", DIPLOMACY_READIES);
         let chosen = SystemId::new(ask(state, content, sources, galaxy, table, &choice)?.id);
         for other in state.seating_order.clone() {
             if &other != player {
@@ -1616,7 +1624,15 @@ fn diplomacy_primary(
             }
         }
     }
-    ready_planets(state, content, sources, galaxy, table, player, 2)
+    ready_planets(
+        state,
+        content,
+        sources,
+        galaxy,
+        table,
+        player,
+        DIPLOMACY_READIES,
+    )
 }
 
 fn politics_primary(
@@ -2669,7 +2685,15 @@ pub fn secondary(
         "Leadership" => {
             buy_tokens_first_yes_assumed(state, content, sources, galaxy, table, player)?;
         }
-        "Diplomacy" => ready_planets(state, content, sources, galaxy, table, player, 2)?,
+        "Diplomacy" => ready_planets(
+            state,
+            content,
+            sources,
+            galaxy,
+            table,
+            player,
+            DIPLOMACY_READIES,
+        )?,
         "Politics" => {
             crate::action_cards::draw(state, content, table, player, 2)?;
         }
@@ -3359,6 +3383,41 @@ mod tests {
 
         assert!(state.system_state(&system).command_tokens.contains(&other));
         assert!(!state.exhausted_planets.contains(&planet));
+    }
+
+    /// The system question already has the planets that are readied after it, and each question
+    /// says how many planets it and the ones after it ready at most.
+    #[test]
+    fn diplomacy_tells_the_planets_to_ready_with_the_system() {
+        let mut state = game(&["a", "b"]);
+        let player = PlayerId::new("a");
+        let (system, planet) = a_placed_planet();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player.clone());
+        state.exhaust_planet(planet.clone());
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut table = Table::with_default(Box::new(FirstOptionCapturing { seen: seen.clone() }));
+        primary(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            None,
+            &mut table,
+            &player,
+            &card("Diplomacy"),
+        )
+        .unwrap();
+        let seen = seen.borrow();
+        let [system_question, ready] = &seen[..] else {
+            panic!("a system and one planet to ready: {seen:?}");
+        };
+        assert_eq!(system_question.details["ready_count"], 2);
+        assert_eq!(
+            system_question.details["ready_hints"]["planets"][0]["id"],
+            planet.as_str()
+        );
+        assert_eq!(ready.details["ready_count"], 2);
     }
 
     #[test]

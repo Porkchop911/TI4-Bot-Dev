@@ -1116,6 +1116,136 @@ test("Leadership: the secondary buys tokens on the same screen, with no strategy
   expect(errors).toEqual([]);
 });
 
+test("Diplomacy: the system and the planets to ready are chosen on the map and sent at once", async ({
+  page,
+}) => {
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // Sol holds Diplomacy; Jord and both planets of #37 are exhausted (1 of 6 resources ready).
+  await page.goto("/?scenario=strategy_diplomacy&humans=1");
+  const seat = page.getByRole("region", { name: "Players" }).getByRole("row").filter({
+    hasText: "Seat A",
+  });
+  const planet = (name: string) => page.locator("g.planet").filter({ hasText: name });
+  await expect(heading(page)).toHaveText("Choose an action");
+  await expect(seat).toContainText("1/6");
+  await panel(page)
+    .getByRole("button", { name: /^2 Diplomacy/ })
+    .click();
+  await page.keyboard.press("Enter");
+
+  // One screen: the system first, then the planets, and no question of a planet.
+  await expect(heading(page)).toHaveText("Diplomacy");
+  const system = panel(page).getByRole("heading", { name: "System" }).locator("../..");
+  const ready = panel(page).getByRole("heading", { name: "Ready planets" }).locator("../..");
+  await expect(system).toContainText("No system chosen");
+  await expect(ready).toContainText("0 / 2 · after the system");
+  await expect(page.locator("footer")).toContainText("Choose a system on the map.");
+  await expect(send(page)).toBeDisabled();
+  // The printed card of this set is behind the hover of the heading.
+  await panel(page).getByRole("button", { name: "Rules: Diplomacy" }).hover();
+  await expect(page.getByText(/ready up to 2 exhausted planets you control/).first()).toBeVisible();
+  await page.mouse.move(0, 0);
+
+  // The systems with a planet of Sol, but Mecatol Rex: Jord, #29 and #37.
+  await expect(page.locator("g.system.target")).toHaveCount(3);
+  await page.locator("g.system.target").filter({ hasText: "#37" }).click();
+  await expect(system).toContainText("#37");
+  await expect(system).toContainText("Hacan and Letnev place a command token here");
+  await page.getByRole("button", { name: "Close system details" }).click();
+  await expect(page.locator("g.planet.payable")).toHaveCount(3);
+  await planet("Jord").click();
+  await planet("Meer").click();
+  // No more than the game readies: a third planet is not taken.
+  await planet("Arinam").click();
+  await expect(ready).toContainText("2 / 2");
+  await expect(ready).not.toContainText("Arinam");
+  await expect(ready).toContainText("Exhausted → ready · 4 resources / 2 influence");
+  // "Change" gives a planet back; Esc clears the last choice.
+  await ready.getByRole("button", { name: "Change" }).last().click();
+  await expect(ready).toContainText("1 / 2");
+  await page.keyboard.press("Escape");
+  await expect(ready).toContainText("0 / 2");
+  await expect(system).toContainText("#37");
+  await planet("Jord").click();
+  await planet("Arinam").click();
+  await expect(page.locator("footer")).toContainText("#37 · Ready Jord, Arinam");
+  await expect(send(page)).toHaveText(/Resolve primary/);
+  await fitsHeight(page);
+  await page.screenshot({ path: "shots/local/diplomacy.png", animations: "disabled" });
+
+  // The main button answers the system and both planets; the game asks nothing more of them.
+  await send(page).click();
+  await expect(heading(page)).toHaveText("End your turn");
+  await expect(seat).toContainText("6/6");
+  expect(errors).toEqual([]);
+});
+
+test("Diplomacy: the secondary readies on the map; nothing chosen is a pass", async ({ page }) => {
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // Sol and Hacan are played here; the three planets of Hacan's home are exhausted.
+  await page.goto("/?scenario=strategy_diplomacy&humans=3");
+  await expect(heading(page)).toHaveText("Choose an action");
+  await panel(page)
+    .getByRole("button", { name: /^2 Diplomacy/ })
+    .click();
+  await page.keyboard.press("Enter");
+  await page.locator("g.system.target").filter({ hasText: "#29" }).click();
+  await page.getByRole("button", { name: "Close system details" }).click();
+  await page.locator("g.planet").filter({ hasText: "Jord" }).click();
+  await page.locator("g.planet").filter({ hasText: "Arinam" }).click();
+  await send(page).click();
+
+  // Hacan's row opens into the planets, with what the secondary costs.
+  const hacan = page.getByRole("region", { name: "Players" }).getByRole("row").filter({
+    hasText: "Seat B",
+  });
+  const ready = panel(page).getByRole("heading", { name: "Ready planets" }).locator("../..");
+  await expect(ready).toContainText("0 / 2 · Choose on the map · Strategy pool 2 → 1");
+  await expect(panel(page).getByRole("heading", { name: "System" })).toHaveCount(0);
+  await expect(send(page)).toHaveText(/^Pass/);
+  await expect(page.locator("g.planet.payable")).toHaveCount(3);
+  await page.locator("g.planet").filter({ hasText: "Arretze" }).click();
+  await expect(page.locator("footer")).toContainText("Choose 1 more planet on the map.");
+  await expect(send(page)).toBeDisabled();
+  await page.locator("g.planet").filter({ hasText: "Hercant" }).click();
+  await expect(send(page)).toHaveText(/Follow · ready 2 planets/);
+  await fitsHeight(page);
+  await page.screenshot({ path: "shots/local/diplomacy-secondary.png", animations: "disabled" });
+  await send(page).click();
+  await expect(hacan).toContainText("3/3");
+  await expect(hacan).toContainText("3 · 3 · 1");
+  expect(errors).toEqual([]);
+});
+
+test("Diplomacy of the base game has its own printed text and the same screen", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto("/?scenario=strategy_diplomacy_base&humans=1");
+  await expect(heading(page)).toHaveText("Choose an action");
+  await panel(page)
+    .getByRole("button", { name: /^2 Diplomacy/ })
+    .click();
+  await page.keyboard.press("Enter");
+  await expect(heading(page)).toHaveText("Diplomacy");
+  await panel(page).getByRole("button", { name: "Rules: Diplomacy" }).hover();
+  await expect(
+    page.getByText(/ready each exhausted planet you control in that system/).first(),
+  ).toBeVisible();
+  await page.mouse.move(0, 0);
+  // The engine asks what it asks for the Codex I card (`web2/NEXT.md`): the same screen.
+  await expect(panel(page).getByRole("heading", { name: "System" })).toBeVisible();
+  await expect(
+    panel(page).getByRole("heading", { name: "Ready planets" }).locator(".."),
+  ).toContainText("0 / 2 · after the system");
+  expect(errors).toEqual([]);
+});
+
 test("the Dev sheet leads to a game on the server, on the seed of the page", async ({ page }) => {
   await page.goto("/?local=3&players=8&humans=1");
   await expect(send(page)).toBeDisabled();

@@ -55,7 +55,7 @@ test("without the engine a game in the page shows the demo, with the reason", as
 
 test("the header switches between the demo and the local game", async ({ page }) => {
   await withoutEngine(page);
-  await page.goto("/?example=live-strategy-2");
+  await page.goto("/?example=live-strategy-3");
   await page.getByRole("button", { name: "Local game", exact: true }).click();
   await page.waitForURL((url) => url.searchParams.get("local") === "42");
   await expect(page.getByText("Local game unavailable.")).toBeVisible();

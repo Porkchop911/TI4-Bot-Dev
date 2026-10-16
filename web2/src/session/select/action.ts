@@ -29,6 +29,7 @@ import { humanizeId, seatLabel, sentence } from "./names";
 import { printedSource } from "./printed";
 import { interruptOf, reactedAction, selectReaction } from "./reaction";
 import { type PurchaseDraft, selectPurchase } from "./purchase";
+import { type ReadyDraft, selectReady } from "./ready";
 import { selectResearch } from "./research";
 import { type Pools, selectTokens } from "./tokens";
 import { type TurnMenu, isTurnMenu, selectTurn } from "./turn";
@@ -92,6 +93,8 @@ export interface LocalState {
   pools?: Pools | null;
   /** The staged gain and purchase of command tokens, with its payment. Null: nothing staged. */
   purchase?: PurchaseDraft | null;
+  /** The staged system and planets of a readying of planets. Null: nothing staged. */
+  ready?: ReadyDraft | null;
   /** The nonce of the choice that was answered. Its update is still the latest one. */
   sent: string | null;
   /** Why the game stopped, if it did. */
@@ -247,6 +250,14 @@ export function boardTask(update: SessionUpdate, local: LocalState): BoardTaskVi
   if (buying) {
     return buying.task;
   }
+  // The system and the planets of a readying of planets are chosen on the map.
+  const readying =
+    choice && !local.draft && !local.follow?.editing
+      ? selectReady(update, choice, local.ready ?? null)
+      : null;
+  if (readying) {
+    return readying.task;
+  }
   const pick = boardPick(update, choice);
   if (!choice || !pick) {
     return null;
@@ -383,6 +394,13 @@ export function selectAction(
   // A gain or a purchase of command tokens is one screen of the live game, sent as one plan.
   const purchase =
     choice && !window && !recording ? selectPurchase(update, choice, local.purchase ?? null) : null;
+  // A readying of planets, with its system or its window: one screen, answered at once.
+  const ready =
+    choice && !window && !recording
+      ? selectReady(update, choice, local.ready ?? null, printed)
+      : null;
+  /** A screen of several questions that is sent at once. */
+  const several = purchase ?? ready;
   const tiles = new Map((update.view.board.map_tiles ?? []).map((tile) => [tile.system_id, tile]));
   const planetOf = (id: string) =>
     (update.view.board.map_tiles ?? [])
@@ -573,8 +591,8 @@ export function selectAction(
         : [{ kind: "note", tone: local.error ? "accent" : "quiet", text: idle }]
       : research
         ? [research.block]
-        : purchase
-          ? purchase.blocks
+        : several
+          ? several.blocks
           : tokens
             ? [tokens.block]
             : [
@@ -610,7 +628,7 @@ export function selectAction(
           : "",
     badge: local.draft
       ? { tone: "draft", label: "Private draft" }
-      : staged || purchase?.changed
+      : staged || several?.changed
         ? { tone: "draft", label: "Not sent" }
         : null,
     past: null,
@@ -662,8 +680,8 @@ export function selectAction(
           ? turnOf && waitingFor
             ? `Waiting for ${waitingFor}.`
             : ""
-          : purchase
-            ? purchase.note
+          : several
+            ? several.note
             : tokens
               ? tokens.note
               : staged
@@ -692,7 +710,7 @@ export function selectAction(
         ...(choice
           ? [
               // The pools are cleared when the player changed them.
-              ...((purchase ? purchase.changed : tokens ? local.pools : staged)
+              ...((several ? several.changed : tokens ? local.pools : staged)
                 ? [
                     {
                       label: "Clear",
@@ -717,11 +735,11 @@ export function selectAction(
                       key: "Enter",
                       intent: { type: "reaction" as const, action: "play" as const },
                     }
-                  : purchase
+                  : several
                     ? {
-                        label: purchase.label,
+                        label: several.label,
                         tone: "primary" as const,
-                        disabled: !!purchase.problem,
+                        disabled: !!several.problem,
                         key: "Enter",
                         intent: { type: "flow" as const, action: "resolve" as const },
                       }

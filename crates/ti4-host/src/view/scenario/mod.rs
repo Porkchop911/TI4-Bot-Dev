@@ -136,6 +136,8 @@ pub const SCENARIOS: &[Scenario] = &[
     three_seats::SCORE_IMPERIAL,
     three_seats::FULL_GAME,
     three_seats::STRATEGY_LEADERSHIP,
+    three_seats::STRATEGY_DIPLOMACY,
+    three_seats::STRATEGY_DIPLOMACY_BASE,
 ];
 
 /// The scenario with this id.
@@ -1720,6 +1722,29 @@ mod tests {
                 .iter()
                 .any(|(_, planet)| state.exhausted_planets.contains(*planet))
         );
+    }
+
+    #[test]
+    fn the_diplomacy_scenarios_exhaust_more_planets_than_diplomacy_readies() {
+        let content = ContentStore::embedded();
+        let ids: Vec<PlayerId> = ["a", "b", "c"].map(PlayerId::new).to_vec();
+        for (scenario, card) in [
+            ("strategy_diplomacy", "pok2diplomacy"),
+            ("strategy_diplomacy_base", "base2"),
+        ] {
+            let (state, _) = start(content, scenario, &ids, 42).expect("it starts");
+            let sol = state.player(&ids[0]).expect("a seat");
+            assert_eq!(sol.strategy_cards, [StrategyCardId::new(card)]);
+            let exhausted = |seat: &PlayerId| {
+                state
+                    .controlled_planets(seat)
+                    .iter()
+                    .filter(|(_, planet)| state.exhausted_planets.contains(*planet))
+                    .count()
+            };
+            assert!(exhausted(&ids[0]) > 2, "{scenario}");
+            assert!(exhausted(&ids[1]) > 2, "{scenario}");
+        }
     }
 
     #[test]

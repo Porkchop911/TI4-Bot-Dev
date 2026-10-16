@@ -36,7 +36,11 @@ pub const SCORE_IMPERIAL_ID: &str = "score_objective_imperial";
 pub const FULL_GAME_ID: &str = "full_game";
 
 /// The scenarios of one strategy card each: the id of the scenario and the card that Sol plays.
-pub const STRATEGY_CARDS: &[(&str, &str)] = &[("strategy_leadership", "pok1leadership")];
+pub const STRATEGY_CARDS: &[(&str, &str)] = &[
+    ("strategy_leadership", "pok1leadership"),
+    ("strategy_diplomacy", "pok2diplomacy"),
+    ("strategy_diplomacy_base", "base2"),
+];
 
 /// Sol is played by a person, Hacan and Letnev by the rule bot.
 const SOL: &[usize] = &[0];
@@ -203,6 +207,25 @@ pub const STRATEGY_LEADERSHIP: Scenario = Scenario {
     ..STRATEGY
 };
 
+pub const STRATEGY_DIPLOMACY: Scenario = Scenario {
+    id: "strategy_diplomacy",
+    title: "Strategy card: Diplomacy",
+    description: "Sol has the turn and holds Diplomacy. Sol controls Jord, a planet next to its \
+        home with its command token on that system, and a second system next to its home; Jord \
+        and the planets of the second system are exhausted. The planets of Hacan's home are \
+        exhausted; with Sol and Hacan played here, Hacan resolves the secondary.",
+    ..STRATEGY
+};
+
+pub const STRATEGY_DIPLOMACY_BASE: Scenario = Scenario {
+    id: "strategy_diplomacy_base",
+    title: "Strategy card: Diplomacy (base game)",
+    description: "The scenario \"Strategy card: Diplomacy\" with the Diplomacy of the base game \
+        (base2). The engine resolves it as the Codex I card: it readies up to 2 exhausted planets \
+        anywhere, not each exhausted planet in the chosen system.",
+    ..STRATEGY
+};
+
 pub const FULL_GAME: Scenario = Scenario {
     id: FULL_GAME_ID,
     title: "Full Game Match",
@@ -336,6 +359,21 @@ fn strategy_card(
             board.command_tokens.insert(sol.clone());
         }
         if exhausted {
+            for planet in planets {
+                state.exhaust_planet(PlanetId::new(planet));
+            }
+        }
+    }
+    if name(card).as_deref() == Some("Diplomacy") {
+        // More exhausted planets than Diplomacy readies, for Sol and for Hacan's secondary.
+        for seat in [sol, hacan] {
+            let home = state
+                .player(seat)
+                .and_then(|player| player.home_system.clone())
+                .ok_or("a seat has no home")?;
+            let planets = ti4_content::galaxy::system(content, home.as_str(), POK)
+                .map(|tile| tile.planets())
+                .unwrap_or_default();
             for planet in planets {
                 state.exhaust_planet(PlanetId::new(planet));
             }

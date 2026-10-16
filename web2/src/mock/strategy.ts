@@ -28,12 +28,6 @@ export const STRATEGY_TEXT: Record<number, { primary: string; secondary: string 
     secondary:
       "Buy command tokens. Each other player may buy tokens for 3 influence each. No strategy token is spent.",
   },
-  2: {
-    primary:
-      "Choose 1 system other than the Mecatol Rex system that contains a planet you control; each other player places a command token from their reinforcements in that system. Then ready up to 2 exhausted planets you control.",
-    secondary:
-      "Spend 1 token from your strategy pool to ready up to 2 exhausted planets you control.",
-  },
   3: {
     primary:
       "Choose a player other than the speaker. That player gains the speaker token. Draw 2 action cards. Look at the top 2 cards of the agenda deck. Place each card on the top or bottom of the deck in any order.",
@@ -77,8 +71,6 @@ const sys = (id: string) => `${MAP[id].name} · #${id}`;
 const names = (list: string[]) =>
   list.length < 2 ? (list[0] ?? "") : `${list.slice(0, -1).join(", ")} and ${list.at(-1)}`;
 
-/** Planets of the viewer that are exhausted, for Diplomacy. */
-const EXHAUSTED = ["vefut", "quann", "lor"];
 /** Structures of the viewer on the board. A player has 3 space docks and 6 PDS. */
 const STRUCTURES: Record<string, { dock: number; pds: number }> = {
   jord: { dock: 1, pds: 1 },
@@ -250,75 +242,6 @@ const base = (): Editor => ({
 
 const followed = (primary: boolean, text: string) =>
   primary ? `Jamie ${text}.` : `Followed · ${text}`;
-
-// ---- 2 Diplomacy ---------------------------------------------------------------------------------
-
-function diplomacy(state: State, primary: boolean, seats: string[]): Editor {
-  const flow = state.flow;
-  const mine = flow.mine;
-  const others = seats.filter((seat) => seat !== "sol").map((seat) => SEATS[seat].name);
-  const who =
-    others.length > 3
-      ? `${others.slice(0, 2).join(", ")} and ${others.length - 2} more`
-      : names(others);
-  const systems = [...new Set(PLANETS.map((source) => source.system!))].filter((id) => id !== "50");
-  const ready: BlockView = {
-    kind: "card",
-    title: "Ready planets",
-    aside: `${mine.planets.length} / 2 · ${primary ? "choose on the map" : tokenCost(flow)}`,
-    rows: mine.planets.length
-      ? mine.planets.map((id: string) =>
-          planetRow(
-            id,
-            `Exhausted → ready · ${plural(planetOf(id).res, "resource")} / ${planetOf(id).inf} influence`,
-            `planet:${id}`,
-          ),
-        )
-      : [{ icon: "planet", title: ["No planet chosen"] }],
-  };
-  const planets = pickTask("planet", EXHAUSTED, mine.planets);
-  const readied = mine.planets.length
-    ? `readied ${names(mine.planets.map(planetName))}`
-    : "readied no planet";
-  if (!primary) {
-    return {
-      ...base(),
-      blocks: [ready],
-      pass: !mine.planets.length,
-      staged: mine.planets.length > 0,
-      task: planets,
-      result: mine.planets.length ? `Followed · ${readied}` : "Passed",
-    };
-  }
-  return {
-    ...base(),
-    blocks: [
-      {
-        kind: "card",
-        title: "System",
-        aside: "Choose on the map",
-        rows: mine.system
-          ? [
-              {
-                icon: "token",
-                title: [sys(mine.system)],
-                subtitle: `${who} place a command token here`,
-                link: [`sys:${mine.system}`],
-                control: change("system"),
-              },
-            ]
-          : [{ icon: "token", title: ["No system chosen"] }],
-      },
-      ready,
-    ],
-    problem: mine.system ? "" : "Choose 1 system.",
-    staged: !!mine.system,
-    task: mine.system ? planets : pickTask("system", systems, []),
-    result: mine.system
-      ? `Jamie chose ${sys(mine.system)}: each other player placed a command token there. Jamie ${readied}.`
-      : "",
-  };
-}
 
 // ---- 3 Politics ----------------------------------------------------------------------------------
 
@@ -864,8 +787,6 @@ function imperial(state: State, primary: boolean): Editor {
 export function strategyEditor(state: State, seats: string[]): Editor {
   const primary = state.flow.owner === "sol";
   switch (state.flow.number ?? 1) {
-    case 2:
-      return diplomacy(state, primary, seats);
     case 3:
       return politics(state, primary, seats);
     case 4:
@@ -901,8 +822,6 @@ function clearLast(mine: any, number: number): boolean {
     mine.counts = {};
   } else if (mine.techs.length) {
     mine.techs.pop();
-  } else if (mine.planets.length) {
-    mine.planets.pop();
   } else if (mine.build.some((slot: any) => slot.planet)) {
     mine.build.findLast((slot: any) => slot.planet).planet = null;
   } else if (mine.build[0].type) {
@@ -957,8 +876,6 @@ export function strategyIntent(state: State, seats: string[], intent: Intent): b
       }
       if (editor.task.kind === "pay") {
         mine.pay[intent.planet] = !mine.pay[intent.planet];
-      } else if (number === 2) {
-        toggle(mine.planets, intent.planet, 2);
       } else if (number === 4) {
         const slots = primary ? mine.build : mine.build.slice(0, 1);
         const open = slots.find((slot: any) => !slot.planet);
@@ -1023,8 +940,6 @@ export function strategyIntent(state: State, seats: string[], intent: Intent): b
       const [part, id] = intent.part.split(":");
       if (part === "system") {
         mine.system = null;
-      } else if (part === "planet") {
-        toggle(mine.planets, id);
       } else if (part === "seat" && id) {
         toggle(mine.seats, id);
       } else if (part === "seat") {

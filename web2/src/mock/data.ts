@@ -737,7 +737,6 @@ export const blankMine = (number = 1) => ({
   pools: number === 6 ? { t: 3, f: 4, s: 2 } : { t: 0, f: 0, s: 0 },
   pay: {},
   system: null,
-  planets: [],
   seat: null,
   seats: [],
   follow: null,
@@ -753,11 +752,6 @@ export const blankMine = (number = 1) => ({
 });
 /** What the other players do with each card in the demo: the primary, and a followed secondary. */
 export const STRATEGY_SIM: Record<number, { primary: string; follow: string }> = {
-  2: {
-    primary:
-      "chose Hercant · #51: each other player placed a command token there. Readied 2 planets.",
-    follow: "readied 2 planets",
-  },
   3: {
     primary:
       "kept the speaker token away from Jamie: Blair is the speaker. Drew 2 action cards and placed 2 agenda cards.",
@@ -782,7 +776,7 @@ export const STRATEGY_SIM: Record<number, { primary: string; follow: string }> =
 const STRATEGY_EXAMPLES: Record<string, any> = {
   // The viewer's primary of each card.
   ...Object.fromEntries(
-    [2, 3, 4, 5, 6, 7, 8].map((number) => [
+    [3, 4, 5, 6, 7, 8].map((number) => [
       `live-strategy-${number}`,
       {
         mode: "live",
@@ -803,7 +797,7 @@ const STRATEGY_EXAMPLES: Record<string, any> = {
   ),
   // The viewer's secondary on another player's card, drafted before the seat is reached.
   ...Object.fromEntries(
-    [2, 3, 4, 5, 6, 7, 8].map((number) => [
+    [3, 4, 5, 6, 7, 8].map((number) => [
       `live-secondary-${number}`,
       {
         mode: "live",

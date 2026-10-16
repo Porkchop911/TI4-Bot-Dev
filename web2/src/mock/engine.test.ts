@@ -488,29 +488,6 @@ describe("mock engine", () => {
     const main = (world: ReturnType<typeof createWorld>) =>
       footer(world).actions.find((action) => action.tone === "primary")!;
 
-    it("Diplomacy: a system on the board, then up to 2 planets; Esc clears the last choice", () => {
-      const world = open("live-strategy-2");
-      expect(selectShell(world).board.task?.target).toBe("system");
-      expect(main(world).disabled).toBe(true);
-      reduce(world, { type: "toggleSystem", system: "50" });
-      expect(flow(world).mine.system).toBeNull();
-      reduce(world, { type: "toggleSystem", system: "27" });
-      expect(selectShell(world).board.task?.target).toBe("planet");
-      for (const planet of ["vefut", "quann", "lor", "jord"]) {
-        reduce(world, { type: "togglePlanet", planet });
-      }
-      expect(flow(world).mine.planets).toEqual(["vefut", "quann"]);
-      reduce(world, shortcuts(selectShell(world).action).get("escape")!);
-      expect(flow(world).mine.planets).toEqual(["vefut"]);
-      reduce(world, { type: "clearPart", part: "system" });
-      expect(selectShell(world).board.task?.target).toBe("system");
-      reduce(world, { type: "toggleSystem", system: "27" });
-      reduce(world, shortcuts(selectShell(world).action).get("enter")!);
-      expect(flow(world).stage).toBe("secondary");
-      expect(flow(world).primaryResult).toContain("Starpoint");
-      expect(flow(world).primaryResult).toContain("readied Vefut");
-    });
-
     it("Politics: the speaker in the player table is sent first, then the agenda cards", () => {
       const world = open("live-strategy-3");
       const pick = selectShell(world).players.pick!;

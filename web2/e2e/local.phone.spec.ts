@@ -708,6 +708,33 @@ test("phone: Leadership has the purchase and the pools in the width, and the pay
   );
 });
 
+test("phone: Diplomacy has the system and the planets in the width, chosen on the map", async ({
+  page,
+}) => {
+  await page.goto("/?scenario=strategy_diplomacy&humans=1");
+  const panel = page.locator("#step-panel");
+  const panes = page.getByRole("navigation", { name: "Panes" });
+  const width = () => page.evaluate(() => document.documentElement.scrollWidth);
+  await panes.getByRole("button", { name: "Action" }).click();
+  await panel.getByRole("button", { name: /^2 Diplomacy/ }).click();
+  await page.locator('footer button[aria-keyshortcuts="Enter"]').click();
+  await expect(panel.getByRole("heading", { name: "Ready planets" })).toBeVisible();
+  expect(await width()).toBe(page.viewportSize()!.width);
+  await panes.getByRole("button", { name: "Map" }).click();
+  await page.locator("g.system.target").filter({ hasText: "#37" }).tap();
+  await page.getByRole("button", { name: "Close system details" }).tap();
+  await page.locator("g.planet").filter({ hasText: "Jord" }).tap();
+  await page.locator("g.planet").filter({ hasText: "Arinam" }).tap();
+  await expect(page.locator("footer")).toContainText("Ready Jord, Arinam");
+  expect(await width()).toBe(page.viewportSize()!.width);
+  await panes.getByRole("button", { name: "Action" }).click();
+  await expect(panel.getByRole("heading", { name: "Ready planets" }).locator("..")).toContainText(
+    "2 / 2",
+  );
+  expect(await width()).toBe(page.viewportSize()!.width);
+  await page.screenshot({ path: "shots/phone/local/diplomacy.png", animations: "disabled" });
+});
+
 test("phone: the Agendas sheet has the laws and the open groups in its width", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));

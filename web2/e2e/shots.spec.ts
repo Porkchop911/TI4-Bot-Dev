@@ -182,11 +182,11 @@ test.describe("flows", () => {
   });
 
   test("rule text opens on hover and stays on click", async ({ page }) => {
-    await page.goto("/?example=live-strategy-2");
-    const hint = page.getByRole("button", { name: "Rules: Diplomacy" });
+    await page.goto("/?example=live-strategy-3");
+    const hint = page.getByRole("button", { name: "Rules: Politics" });
     await expect(page.getByRole("note")).toHaveCount(0);
     await hint.hover();
-    await expect(page.getByRole("note")).toContainText("Choose 1 system");
+    await expect(page.getByRole("note")).toContainText("Choose a player other than the speaker");
     await hint.click();
     await page.mouse.move(10, 10);
     await expect(page.getByRole("note")).toBeVisible();
@@ -202,7 +202,7 @@ test.describe("flows", () => {
   });
 
   test("secondary, log and history", async ({ page }) => {
-    await page.goto("/?example=live-secondary-2");
+    await page.goto("/?example=live-secondary-3");
     await page.getByRole("button", { name: "Simulate Alex (demo)" }).click();
     await shot(page, "web2/flow/secondary");
     await page
@@ -277,23 +277,6 @@ test.describe("flows", () => {
         .evaluate((element) => element.scrollHeight - element.clientHeight);
       expect(overflow, "the step content needs vertical scroll").toBeLessThanOrEqual(0);
     };
-
-    test("Diplomacy: system on the board, then planets; Esc clears; Enter sends", async ({
-      page,
-    }) => {
-      await start(page, "live-strategy-2");
-      await expect(panel(page)).toContainText("No system chosen");
-      await page.getByRole("button", { name: /^Choose .*Starpoint/ }).click();
-      await expect(panel(page)).toContainText("Alex, Blair and 5 more place a command token here");
-      await page.getByRole("button", { name: /^Choose Vefut/ }).click();
-      await page.getByRole("button", { name: /^Choose Quann/ }).click();
-      await expect(panel(page)).toContainText("2 / 2");
-      await shot(page, "web2/flow/strategy-diplomacy");
-      await page.keyboard.press("Escape");
-      await expect(panel(page)).toContainText("1 / 2");
-      await page.keyboard.press("Enter");
-      await expect(panel(page)).toContainText("Jamie readied Vefut");
-    });
 
     test("Politics: speaker in the player table, then the agenda cards", async ({ page }) => {
       await start(page, "live-strategy-3");

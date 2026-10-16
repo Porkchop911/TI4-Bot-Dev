@@ -92,6 +92,13 @@ import {
   setPurchaseGoods,
   togglePurchasePlanet,
 } from "./select/purchase";
+import {
+  chooseReadySystem,
+  clearLastReady,
+  clearReadyPart,
+  selectReady,
+  toggleReadyPlanet,
+} from "./select/ready";
 import { countPools, selectTokens } from "./select/tokens";
 import type { Transport } from "./transport";
 import type { DraftOutcome, DraftStep, PlanScope, ReactionModes, SessionUpdate } from "./wire";
@@ -101,6 +108,7 @@ const NOTHING: LocalState = {
   staged: null,
   pools: null,
   purchase: null,
+  ready: null,
   sent: null,
   error: null,
   replaying: null,
@@ -595,6 +603,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           staged: null,
           pools: null,
           purchase: null,
+          ready: null,
           sent: null,
           error: null,
           offline: false,
@@ -894,6 +903,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         staged: null,
         pools: null,
         purchase: null,
+        ready: null,
         inspected: null,
         handled: [],
         step: null,
@@ -930,6 +940,11 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
     /** A gain or a purchase of command tokens of the live game: one screen, sent as one plan. */
     const buying =
       pending && !drafted && !followInfo?.editing && selectPurchase(shown, pending.choice, null)
+        ? pending
+        : null;
+    /** A readying of planets of the live game, with its system or its window: answered at once. */
+    const readying =
+      pending && !drafted && !followInfo?.editing && selectReady(shown, pending.choice, null)
         ? pending
         : null;
     /** The game can be asked for a staged production: it is paid, and within its limits. */
@@ -1105,6 +1120,15 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         }
         return;
       }
+      // A readying of planets answers its system or its window and each planet, in this order.
+      if (readying) {
+        const answers = selectReady(shown, readying.choice, local.ready ?? null)?.answers;
+        if (answers) {
+          transport.applyDraft(pending.nonce, { choices: answers, plan: null });
+          setLocal((now) => ({ ...now, ready: null, sent: pending.nonce, planNote: null }));
+        }
+        return;
+      }
       const chosen = pools ? pools.staged : (local.staged ?? pass);
       if (chosen) {
         transport.submitChoice(pending.nonce, chosen);
@@ -1248,6 +1272,10 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             const paying = togglePurchasePlanet(buying.choice, local.purchase ?? null, planet);
             return paying && setLocal((now) => ({ ...now, purchase: paying }));
           }
+          if (readying) {
+            const readied = toggleReadyPlanet(readying.choice, local.ready ?? null, planet);
+            return readied && setLocal((now) => ({ ...now, ready: readied }));
+          }
           if (!landing) {
             // A planet of a choice on the board: its option is staged.
             const option = optionOnBoard(shown, pending?.choice ?? null, planet);
@@ -1284,7 +1312,13 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
               intent.action === "auto" ? autoPay(producing, now) : clearPayment(now),
             )
           );
-        case "toggleSystem":
+        case "toggleSystem": {
+          // The system of a readying of planets: it is chosen, and it shows what is in it.
+          const chosen =
+            readying && chooseReadySystem(readying.choice, local.ready ?? null, intent.system);
+          if (chosen) {
+            return setLocal((now) => ({ ...now, ready: chosen, inspected: intent.system }));
+          }
           // In a movement the fleet of a system opens at the system, and closes there. So does
           // the build of a production.
           return moving || producing
@@ -1295,6 +1329,12 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             : inspectAndStage(
                 optionOnBoard(shown, pending?.choice ?? null, intent.system) ?? intent.system,
               );
+        }
+        case "clearPart": {
+          const cleared =
+            readying && clearReadyPart(readying.choice, local.ready ?? null, intent.part);
+          return cleared && setLocal((now) => ({ ...now, ready: cleared }));
+        }
         case "findSystem": {
           const found = pending?.choice.options.find((item) => sameSystem(intent.query, item.id));
           if (found && facts?.kind === "activation") {
@@ -1302,11 +1342,24 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           }
           return;
         }
-        case "clearChoice":
+        case "clearChoice": {
           // Esc in the payment of a production goes back to its build.
-          return producing && local.productionStage === "pay"
-            ? toBuild(producing.system)
-            : setLocal((now) => ({ ...now, staged: null, pools: null, purchase: null }));
+          if (producing && local.productionStage === "pay") {
+            return toBuild(producing.system);
+          }
+          // Esc in a readying of planets clears the last choice.
+          const back = readying && clearLastReady(readying.choice, local.ready ?? null);
+          if (back) {
+            return setLocal((now) => ({ ...now, ready: back }));
+          }
+          return setLocal((now) => ({
+            ...now,
+            staged: null,
+            pools: null,
+            purchase: null,
+            ready: null,
+          }));
+        }
         case "undo":
           if (drafted) {
             return redraft(undo);
