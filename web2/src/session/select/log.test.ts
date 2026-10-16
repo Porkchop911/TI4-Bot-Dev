@@ -62,6 +62,10 @@ const printed = {
       jolnar: { name: "Jol-Nar", commodities: 4 },
     },
     strategy_cards: [
+      { id: "pok1leadership", name: "Leadership", initiative: 1 },
+      { id: "pok2diplomacy", name: "Diplomacy", initiative: 2 },
+      { id: "pok3politics", name: "Politics", initiative: 3 },
+      { id: "pok5trade", name: "Trade", initiative: 5 },
       { id: "pok6warfare", name: "Warfare", initiative: 6 },
       { id: "pok7technology", name: "Technology", initiative: 7 },
     ],
@@ -533,6 +537,223 @@ describe("what the Log reads", () => {
           },
         ],
       }),
+    ]);
+  });
+});
+
+describe("the parts of a strategic action", () => {
+  const strategic = (action: string, seat: string, card: string): GameEvent =>
+    decided(action, seat, seat, { kind: "action_started", action: { type: "strategic", card } });
+  const follow = (action: string, actor: string, seat: string, card: string, followed = true) =>
+    decided(action, actor, seat, { kind: "secondary_followed", card, followed });
+
+  it("has a part for each seat in Secondaries: its answer, then what it did; who declined last", () => {
+    const [turn] = turns(
+      selectLog(
+        update({ viewer: null }),
+        eventsOf([
+          strategic("action_1", "a", "pok1leadership"),
+          decided("action_1", "a", "a", { kind: "tokens_gained", pool: "tactic", count: 1 }),
+          decided("action_1", "a", "a", { kind: "tokens_gained", pool: "strategy", count: 1 }),
+          decided("action_1", "a", "a", { kind: "tokens_gained", pool: "tactic", count: 1 }),
+          follow("action_1", "a", "c", "pok1leadership", false),
+          follow("action_1", "a", "b", "pok1leadership"),
+          decided("action_1", "a", "b", {
+            kind: "paid",
+            with: { type: "planet", planet: "abyz" },
+            spend: "influence",
+          }),
+          decided("action_1", "a", "b", { kind: "tokens_gained", pool: "fleet", count: 1 }),
+          decided("action_1", "a", "b", { kind: "token_bought_with_influence" }),
+          decided("action_1", "a", "b", { kind: "tokens_gained", pool: "fleet", count: 1 }),
+          decided("action_1", "a", "a", ENDED),
+          // What a seat does after the end of the turn is still a part of it.
+          decided("action_1", "a", "c", { kind: "unit_removed", unit: "carrier", system: "38" }),
+        ]),
+        printed,
+      ).entries,
+    );
+    expect(turn.label).toBe("Strategic · Leadership");
+    expect(turn.summary).toBe("gained 3 command tokens · 1 followed");
+    expect(turn.groups).toEqual([
+      {
+        title: "Primary",
+        lines: [{ seat: "a", text: "Gained 2 tactic tokens, 1 strategy token" }],
+      },
+      {
+        title: "Secondaries",
+        lines: [
+          { seat: "b", text: "Followed" },
+          { seat: "b", text: "Spent influence: Abyz" },
+          { seat: "b", text: "Gained 2 fleet tokens" },
+          { seat: "c", text: "Declined" },
+          { seat: "c", text: "Removed in Abyz, Fria · #38: Carrier I" },
+        ],
+      },
+    ]);
+  });
+
+  it("says what the primary of Diplomacy, Politics and Trade chose", () => {
+    const log = selectLog(
+      update({ viewer: null }),
+      eventsOf([
+        strategic("action_1", "a", "pok2diplomacy"),
+        decided("action_1", "a", "a", { kind: "diplomacy_chosen", system: "01" }),
+        decided("action_1", "a", "a", { kind: "planet_readied", planet: "jord" }),
+        follow("action_1", "a", "b", "pok2diplomacy"),
+        decided("action_1", "a", "b", { kind: "planet_readied", planet: "abyz" }),
+        decided("action_1", "a", "b", { kind: "planet_readied", planet: "fria" }),
+        decided("action_1", "a", "a", ENDED),
+        strategic("action_2", "b", "pok3politics"),
+        decided("action_2", "b", "b", { kind: "speaker_chosen", seat: "c" }),
+        follow("action_2", "b", "a", "pok3politics", false),
+        decided("action_2", "b", "b", ENDED),
+        strategic("action_3", "c", "pok5trade"),
+        decided("action_3", "c", "c", { kind: "commodities_replenished", seat: "c" }),
+        decided("action_3", "c", "c", { kind: "commodities_replenished", seat: "a" }),
+        follow("action_3", "c", "a", "pok5trade"),
+        decided("action_3", "c", "c", ENDED),
+      ]),
+      printed,
+    );
+    const [diplomacy, politics, trade] = turns(log.entries);
+    expect(diplomacy.summary).toBe("chose Jord · #01 · 1 followed");
+    expect(diplomacy.groups).toEqual([
+      {
+        title: "Primary",
+        lines: [
+          { seat: "a", text: "Chose Jord · #01" },
+          { seat: "a", text: "Readied Jord" },
+        ],
+      },
+      {
+        title: "Secondaries",
+        lines: [
+          { seat: "b", text: "Followed" },
+          { seat: "b", text: "Readied Abyz, Fria" },
+        ],
+      },
+    ]);
+    expect(politics.summary).toBe("chose Jol-Nar as speaker · none followed");
+    expect(politics.groups[0].lines).toEqual([{ seat: "b", text: "Chose Jol-Nar as speaker" }]);
+    expect(trade.summary).toBe("replenished 2 seats · 1 followed");
+    expect(trade.groups[0].lines).toEqual([
+      { seat: "c", text: "Replenished commodities: Jol-Nar, Sol" },
+    ]);
+  });
+
+  it("says Warfare's recalled token, the command sheet and a free tactical action", () => {
+    const [turn] = turns(
+      selectLog(
+        update({ viewer: null }),
+        eventsOf([
+          strategic("action_1", "b", "pok6warfare"),
+          decided("action_1", "b", "b", { kind: "token_recalled", system: "38" }),
+          decided("action_1", "b", "b", {
+            kind: "tokens_redistributed",
+            tactic: 3,
+            fleet: 4,
+            strategy: 1,
+          }),
+          decided("action_1", "b", "b", { kind: "free_tactical", system: "18" }),
+          decided("action_1", "b", "b", ENDED),
+        ]),
+        printed,
+      ).entries,
+    );
+    expect(turn.groups[0].lines.map((line) => line.text)).toEqual([
+      "Took the command token back from Abyz, Fria · #38",
+      "Redistributed command tokens: 3 tactic · 4 fleet · 1 strategy",
+      "Activated Mecatol Rex · #18 without a command token",
+    ]);
+  });
+
+  it("has the command sheet of each seat of the status phase in a group", () => {
+    const [status] = selectLog(
+      update({ viewer: null, phase: "status" }),
+      eventsOf([
+        transition("status", 3),
+        inPhase("status", 3, "b", {
+          kind: "tokens_redistributed",
+          tactic: 3,
+          fleet: 3,
+          strategy: 2,
+        }),
+      ]),
+      printed,
+    ).entries;
+    expect(status.groups).toEqual([
+      {
+        title: "Command tokens",
+        lines: [
+          { seat: "b", text: "Redistributed command tokens: 3 tactic · 3 fleet · 2 strategy" },
+        ],
+      },
+    ]);
+  });
+});
+
+describe("the invasion of a tactical action", () => {
+  it("numbers the rounds of a ground combat by the fact of each round, on its planet", () => {
+    const groundRoll = (seat: string, faces: number[], hits: number) =>
+      rolled("action_1", "b", {
+        roller: seat,
+        reason: "ground combat",
+        label: "Ground combat",
+        faces,
+        hits_on: 8,
+        hits,
+      });
+    const [turn] = turns(
+      selectLog(
+        update({ viewer: null }),
+        eventsOf([
+          decided("action_1", "b", "b", started("tactical")),
+          decided("action_1", "b", "b", { kind: "activated", system: "18" }),
+          decided("action_1", "b", "b", { kind: "custodians_removed", system: "18" }),
+          decided("action_1", "b", "b", {
+            kind: "bombardment_targeted",
+            target: "c",
+            planet: "mr",
+          }),
+          decided("action_1", "b", "b", {
+            kind: "landed",
+            unit: "infantry",
+            planet: "mr",
+            damaged: false,
+          }),
+          decided("action_1", "b", "b", { kind: "ground_combat_round", seat: "b", planet: "mr" }),
+          // The same seat rolls twice in one round (two values): still round 1.
+          groundRoll("b", [8, 2], 1),
+          groundRoll("b", [3], 0),
+          groundRoll("c", [9], 1),
+          decided("action_1", "b", "c", { kind: "sustain_declined", seat: "c", planet: "mr" }),
+          decided("action_1", "b", "b", { kind: "ground_combat_round", seat: "b", planet: "mr" }),
+          groundRoll("b", [1], 0),
+          groundRoll("c", [10], 1),
+          decided("action_1", "b", "c", {
+            kind: "ground_combat_started",
+            seat: "c",
+            planet: "mr",
+          }),
+          decided("action_1", "b", "b", ENDED),
+        ]),
+        printed,
+      ).entries,
+    );
+    expect(turn.summary).toBe("landed on Mecatol Rex · removed the custodians");
+    const invasion = turn.groups.find((group) => group.title === "Invasion");
+    expect(invasion?.lines.map((line) => [line.seat, line.text, line.dice?.faces])).toEqual([
+      ["b", "Removed the custodians from Mecatol Rex · #18", undefined],
+      ["b", "Bombarded Jol-Nar on Mecatol Rex", undefined],
+      ["b", "Landed on Mecatol Rex: Infantry I", undefined],
+      ["b", "Ground combat · Mecatol Rex · round 1", [8, 2]],
+      ["b", "Ground combat · Mecatol Rex · round 1", [3]],
+      ["c", "Ground combat · Mecatol Rex · round 1", [9]],
+      ["c", "Did not sustain damage", undefined],
+      ["b", "Ground combat · Mecatol Rex · round 2", [1]],
+      ["c", "Ground combat · Mecatol Rex · round 2", [10]],
+      ["c", "Started a ground combat on Mecatol Rex", undefined],
     ]);
   });
 });

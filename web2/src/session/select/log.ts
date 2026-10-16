@@ -22,6 +22,7 @@ import type {
   PublicFact,
   PublicRoll,
   SessionUpdate,
+  TokenPool,
 } from "../wire";
 import { systemLabel, tilesOf } from "./movement";
 import {
@@ -124,10 +125,15 @@ function namesOf(update: SessionUpdate, printed: Catalog | null): Names {
 type Line =
   | { kind: "text"; seat: string | null; text: string; dice?: LogLineView["dice"] }
   | { kind: "units"; seat: string | null; head: string; units: Map<string, number> }
-  | { kind: "list"; seat: string | null; head: string; items: string[]; goods: number };
+  | { kind: "list"; seat: string | null; head: string; items: string[]; goods: number }
+  | { kind: "tokens"; seat: string | null; pools: Map<TokenPool, number> };
 
 type UnitsLine = Extract<Line, { kind: "units" }>;
 type ListLine = Extract<Line, { kind: "list" }>;
+type TokensLine = Extract<Line, { kind: "tokens" }>;
+
+/** The pools of the command sheet, in the order of the sheet. */
+const POOLS: readonly TokenPool[] = ["tactic", "fleet", "strategy"];
 
 /** The groups in the order that an entry shows them. A group of another title comes last. */
 const GROUPS = [
@@ -141,6 +147,7 @@ const GROUPS = [
   "Secondaries",
   "Picks",
   "Scored",
+  "Command tokens",
   "Effects",
   "Cards played",
   "Transactions",
@@ -185,6 +192,16 @@ class Groups {
     line.units.set(unit, (line.units.get(unit) ?? 0) + count);
   }
 
+  /** Adds command tokens to the line of the seat: "Gained 2 tactic tokens, 1 fleet token". */
+  tokens(group: string, seat: string | null, pool: TokenPool, count: number) {
+    const line = this.line<TokensLine>(group, `${seat}|tokens`, () => ({
+      kind: "tokens",
+      seat,
+      pools: new Map<TokenPool, number>(),
+    }));
+    line.pools.set(pool, (line.pools.get(pool) ?? 0) + count);
+  }
+
   /** Adds an item to the line of `key`: "Spent resources: Jord, Arretze, 2 trade goods". */
   item(group: string, seat: string | null, head: string, item: string | null) {
     const line = this.line<ListLine>(group, `${seat}|${head}`, () => ({
@@ -209,10 +226,10 @@ class Groups {
     return [...this.groups]
       .filter(([, lines]) => lines.size > 0)
       .sort(([a], [b]) => rank(a) - rank(b))
-      .map(([title, lines]) => ({
-        title,
-        lines: [...lines.values()].map((line) => this.lineView(line)),
-      }));
+      .map(([title, lines]) => {
+        const views = [...lines.values()].map((line) => this.lineView(line));
+        return { title, lines: title === "Secondaries" ? bySeat(views) : views };
+      });
   }
 
   private lineView(line: Line): LogLineView {
@@ -229,8 +246,42 @@ class Groups {
         const items = [...line.items, ...(line.goods ? [plural(line.goods, "trade good")] : [])];
         return { seat: line.seat, text: `${line.head}${items.join(", ")}` };
       }
+      case "tokens": {
+        const pools = POOLS.filter((pool) => line.pools.get(pool)).map((pool) =>
+          plural(line.pools.get(pool) ?? 0, `${pool} token`),
+        );
+        return { seat: line.seat, text: `Gained ${pools.join(", ")}` };
+      }
     }
   }
+}
+
+/** The answer of a seat to a secondary: the first line of its part. */
+const FOLLOWED = "Followed";
+const DECLINED = "Declined";
+
+/**
+ * The lines of the secondaries, by seat: the seats in the order that they answered, each with
+ * its answer first and then what it did; the seats that declined last.
+ */
+function bySeat(lines: LogLineView[]): LogLineView[] {
+  const order: (string | null)[] = [];
+  for (const line of lines) {
+    if (!order.includes(line.seat)) {
+      order.push(line.seat);
+    }
+  }
+  const declined = (seat: string | null) =>
+    lines.some((line) => line.seat === seat && line.text === DECLINED);
+  const rank = (seat: string | null) => order.indexOf(seat) + (declined(seat) ? order.length : 0);
+  const answer = (line: LogLineView) => (line.text === FOLLOWED || line.text === DECLINED ? 0 : 1);
+  return lines
+    .map((line, at) => ({ line, at }))
+    .sort(
+      (a, b) =>
+        rank(a.line.seat) - rank(b.line.seat) || answer(a.line) - answer(b.line) || a.at - b.at,
+    )
+    .map(({ line }) => line);
 }
 
 /** The group of a roll, by its reason. */
@@ -298,6 +349,12 @@ function detailsOf(
    * round.
    */
   const rounds = new Map<string, { number: number; rolled: Set<string>; open: boolean }>();
+  /**
+   * The round of ground combat that a fact started (`ground_combat_round`), and the rounds so far
+   * on each planet. With it the rolls of ground combat need no guess.
+   */
+  let ground: { planet: string; number: number } | null = null;
+  const groundRounds = new Map<string, number>();
   /** The agenda of the votes so far: who voted in it, and its number. */
   let agenda = { number: 0, voted: new Set<string>() };
   /** The vote line of each seat in the agenda, for the planets that it exhausts. */
@@ -311,7 +368,9 @@ function detailsOf(
       const seat = roll.roller ?? null;
       const reason = roll.reason.split(":")[0];
       let text = roll.label;
-      if (COMBAT.has(reason)) {
+      if (reason === "ground combat" && ground) {
+        text = `${roll.label} · ${names.planet(ground.planet)} · round ${ground.number}`;
+      } else if (COMBAT.has(reason)) {
         const round = rounds.get(group) ?? { number: 0, rolled: new Set(), open: false };
         const key = `${seat}|${roll.hits_on}`;
         if (!round.open || round.rolled.has(key)) {
@@ -516,7 +575,88 @@ function detailsOf(
         );
         break;
       case "tokens_gained":
-        groups.text(effects(seat), seat, `Gained ${plural(fact.count, `${fact.pool} token`)}`);
+        groups.tokens(effects(seat), seat, fact.pool, fact.count);
+        break;
+      case "secondary_followed":
+        groups.text(
+          scope.strategic ? "Secondaries" : effects(seat),
+          seat,
+          fact.followed ? FOLLOWED : DECLINED,
+        );
+        break;
+      case "token_bought_with_influence":
+        // The purchase is its payment ("Spent influence") and the token it gains.
+        break;
+      case "diplomacy_chosen":
+        groups.text(effects(seat), seat, `Chose ${names.system(fact.system)}`);
+        break;
+      case "speaker_chosen":
+        groups.text(effects(seat), seat, `Chose ${names.seat(fact.seat)} as speaker`);
+        break;
+      case "commodities_replenished":
+        groups.item(effects(seat), seat, "Replenished commodities: ", names.seat(fact.seat));
+        break;
+      case "planet_readied":
+        groups.item(effects(seat), seat, "Readied ", names.planet(fact.planet));
+        break;
+      case "tokens_redistributed":
+        groups.text(
+          scope.phase === "status" ? "Command tokens" : effects(seat),
+          seat,
+          `Redistributed command tokens: ${fact.tactic} tactic · ${fact.fleet} fleet · ${fact.strategy} strategy`,
+        );
+        break;
+      case "token_recalled":
+        groups.text(
+          effects(seat),
+          seat,
+          `Took the command token back from ${names.system(fact.system)}`,
+        );
+        break;
+      case "free_tactical":
+        groups.text(
+          effects(seat),
+          seat,
+          `Activated ${names.system(fact.system)} without a command token`,
+        );
+        break;
+      case "ground_combat_started":
+        groundRounds.set(fact.planet, 0);
+        groups.text(
+          own("Invasion"),
+          fact.seat,
+          `Started a ground combat on ${names.planet(fact.planet)}`,
+        );
+        break;
+      case "ground_combat_round": {
+        const number = (groundRounds.get(fact.planet) ?? 0) + 1;
+        groundRounds.set(fact.planet, number);
+        ground = { planet: fact.planet, number };
+        break;
+      }
+      case "sustain_declined":
+        groups.line(
+          fact.planet ? own("Invasion") : own("Space combat"),
+          `${fact.seat}|no sustain|${fact.planet ?? ""}`,
+          () => ({ kind: "text", seat: fact.seat, text: "Did not sustain damage" }),
+        );
+        break;
+      case "bombardment_targeted":
+        groups.text(
+          own("Invasion"),
+          seat,
+          `Bombarded ${names.seat(fact.target)} on ${names.planet(fact.planet)}`,
+        );
+        break;
+      case "custodians_removed":
+        groups.text(
+          own("Invasion"),
+          seat,
+          `Removed the custodians from ${names.system(fact.system)}`,
+        );
+        break;
+      case "unit_removed":
+        groups.units(effects(seat), seat, `Removed in ${names.system(fact.system)}: `, fact.unit);
         break;
       default:
         // A fact of a newer host: not shown until the Log knows it.
@@ -714,6 +854,9 @@ function summaryOf(
   let destroyed = 0;
   let combat = false;
   let retreated = false;
+  let answered = 0;
+  let followed = 0;
+  let replenished = 0;
   const other: string[] = [];
   for (const { seat, fact } of facts) {
     const own = seat === turn.seat;
@@ -763,6 +906,28 @@ function summaryOf(
           other.push(`placed ${names.units(fact.unit, 1)} on ${names.planet(fact.planet)}`);
         }
         break;
+      case "secondary_followed":
+        answered += 1;
+        followed += fact.followed ? 1 : 0;
+        break;
+      case "diplomacy_chosen":
+        if (own) {
+          other.push(`chose ${names.system(fact.system)}`);
+        }
+        break;
+      case "speaker_chosen":
+        if (own) {
+          other.push(`chose ${names.seat(fact.seat)} as speaker`);
+        }
+        break;
+      case "commodities_replenished":
+        replenished += own ? 1 : 0;
+        break;
+      case "custodians_removed":
+        if (own) {
+          other.push("removed the custodians");
+        }
+        break;
       default:
         break;
     }
@@ -786,8 +951,15 @@ function summaryOf(
   if (produced) {
     parts.push(`produced ${plural(produced, "unit")}`);
   }
+  if (replenished) {
+    parts.push(`replenished ${plural(replenished, "seat")}`);
+  }
   if (tokens) {
     parts.push(`gained ${plural(tokens, "command token")}`);
+  }
+  // Who followed a secondary is always told: the others' part of a strategic action.
+  if (answered) {
+    return [...parts.slice(0, 2), followed ? `${followed} followed` : "none followed"].join(" · ");
   }
   return parts.slice(0, 3).join(" · ");
 }
