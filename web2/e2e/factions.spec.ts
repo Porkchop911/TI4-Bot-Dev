@@ -144,7 +144,11 @@ for (const [index, table] of TABLES.entries()) {
       ) {
         break;
       }
-      await panel(page).getByRole("button", { pressed: false }).first().click();
+      // The first option that is not chosen; the "?" of a rule (a heading, a row) is no option.
+      await panel(page)
+        .getByRole("button", { name: /^(?!Rules: )/, pressed: false })
+        .first()
+        .click();
       await send(page).click();
       await expect(status(page)).not.toHaveText("Your decision");
     }
