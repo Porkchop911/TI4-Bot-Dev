@@ -1,6 +1,7 @@
 // The action panel of a decision: the turn menu (`turn.ts`), a reaction window (`reaction.ts`), an
 // editor of several questions (`editors.ts`), a research (`research.ts`), a choice on the map or
 // in the player table, and the list of the game for every question that has none of these.
+import type { EventLog } from "../events";
 import type {
   ActionButtonView,
   ApplyView,
@@ -193,6 +194,8 @@ export interface LocalState {
    * none: it holds no dice.
    */
   rolls?: PublicRoll[];
+  /** The public events of the game, in its order, for the Log. A draft has those of the game. */
+  events?: EventLog;
 }
 
 /** The choice that the viewer can answer now. */

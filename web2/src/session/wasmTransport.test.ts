@@ -1766,3 +1766,28 @@ it.skipIf(!built)(
   },
   120_000,
 );
+
+it.skipIf(!built)(
+  "tells the public events of a local game with each update, and an undo takes them back",
+  async () => {
+    const game = await play();
+    const first = await game.next();
+    const picks = (event: Update) =>
+      (event.events ?? []).filter((entry) => entry.fact?.kind === "strategy_picked");
+    expect(picks(first)).toEqual([]);
+    const option = first.update.pending_choice!.choice.options[0].id;
+    game.transport.submitChoice(game.nonce(first), option);
+    let after = await game.next();
+    while (!picks(after).some((entry) => entry.actor === "a")) {
+      after = await game.next();
+    }
+    expect(after.events!.every((entry) => entry.visibility.visibility === "public")).toBe(true);
+    expect(new Set(after.events!.map((entry) => entry.id)).size).toBe(after.events!.length);
+    game.transport.undo();
+    let back = await game.next();
+    while (back.update.pending_choice?.choice.context?.subtype !== subtype(first)) {
+      back = await game.next();
+    }
+    expect(picks(back).some((entry) => entry.actor === "a")).toBe(false);
+  },
+);

@@ -3,6 +3,7 @@
 // (`wasmTransport.ts`, over `engineLink`) speak the same protocol: `ClientMessage` in,
 // `ServerMessage` out. What only one of them has is in `MessagePlay`.
 import type { GameLink, HostCommand } from "@ti4/shared/link/link.ts";
+import { type EventLog, NO_EVENTS, eventsOf, withEvent as withPublicEvent } from "./events";
 import type { PlanStep } from "./movementPlan";
 import { NO_ROLLS, type RollLog, actionRolls, logOf, withEvent } from "./rolls";
 import { type LegacyStaged, seatSync } from "./seatStore";
@@ -132,6 +133,8 @@ export function messageTransport(link: GameLink, play: MessagePlay): MessageCore
   const noted = new Set<string>();
   /** The public rolls that the events told, for the update of the action that is played now. */
   let rolls: RollLog = NO_ROLLS;
+  /** The public events of the game, for the Log. */
+  let events: EventLog = NO_EVENTS;
   /** The last `replaying` that was told, and when. */
   let shown = 0;
   const replies = typeof link.request === "function";
@@ -179,7 +182,7 @@ export function messageTransport(link: GameLink, play: MessagePlay): MessageCore
     }
     const { version: _, ...event } = latest;
     const seat = play.stepping?.() ?? null;
-    const told = { ...event, rolls: actionRolls(rolls) };
+    const told = { ...event, rolls: actionRolls(rolls), events };
     return seat === null ? told : { ...told, stepping: { seat } };
   };
   /**
@@ -220,6 +223,7 @@ export function messageTransport(link: GameLink, play: MessagePlay): MessageCore
       play.snapshot?.();
       // A snapshot has every event of the game: an undo took the later ones back.
       rolls = logOf(message.events);
+      events = eventsOf(message.events);
     }
     settle();
     const told = modesOf(message.reaction_modes ?? {});
@@ -323,6 +327,7 @@ export function messageTransport(link: GameLink, play: MessagePlay): MessageCore
         });
       case "event":
         rolls = withEvent(rolls, message.entry);
+        events = withPublicEvent(events, message.entry);
         return;
       case "seat_staged":
         if (play.player) {

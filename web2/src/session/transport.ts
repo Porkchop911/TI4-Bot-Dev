@@ -1,3 +1,4 @@
+import type { EventLog } from "./events";
 import type { MovementPlan, PlanStep } from "./movementPlan";
 import type { SeatStore } from "./seatStore";
 import type {
@@ -51,6 +52,11 @@ export type TransportEvent =
        * events told them (`rolls.ts`). Empty outside an action.
        */
       rolls?: PublicRoll[];
+      /**
+       * The public events of the game, in its order (`events.ts`): those of the snapshot, then
+       * each that was told after it. An undo takes the later ones back.
+       */
+      events?: EventLog;
       /** The game waits before a decision of this seat, which is not played here: `capabilities.stepping.step` goes on. */
       stepping?: { seat: string };
     }

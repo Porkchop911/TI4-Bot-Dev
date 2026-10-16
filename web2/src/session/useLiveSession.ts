@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { NO_EVENTS } from "./events";
 import type { GameSession, Intent } from "../model";
 import {
   type Draft,
@@ -570,6 +571,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             canUndo: event.canUndo,
             stepping: event.stepping?.seat ?? null,
             rolls: event.rolls ?? [],
+            events: event.events ?? NO_EVENTS,
           };
         }
         const facts = event.update.tactical;
@@ -657,6 +659,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           planNote,
           stepping: event.stepping?.seat ?? null,
           rolls: event.rolls ?? [],
+          events: event.events ?? NO_EVENTS,
           odds: null,
           groundOdds: {},
           standing: null,
