@@ -102,12 +102,13 @@ test("phone: the start screen and the lobby of eight seats with the long names",
 test("phone: the choice of the faction and the sheet of a faction", async ({ page, request }) => {
   await tableOfEight(page, request);
 
-  // The choice of the faction opens in the row of the viewer, in two columns: the pane scrolls
-  // down, nothing is cut at the side, and the main button stays in view.
+  // The choice of the faction opens as a sheet over the pane, in two columns: nothing is cut at
+  // the side, and the sheet has the room of the footer, so the main button is not shown.
   const players = page.getByRole("region", { name: "Players" });
   const opener = players.getByRole("button", { name: `Faction of ${LONG[0]}: Random` });
   await opener.tap();
-  const choice = players.getByRole("group", { name: `Faction of ${LONG[0]}` });
+  const choice = page.getByRole("group", { name: `Faction of ${LONG[0]}` });
+  await expect(players.getByRole("group", { name: `Faction of ${LONG[0]}` })).toHaveCount(0);
   await expect(choice.getByRole("listitem")).toHaveCount(25);
   await fits(page);
   for (const option of await choice.getByRole("listitem").all()) {
@@ -115,7 +116,7 @@ test("phone: the choice of the faction and the sheet of a faction", async ({ pag
     expect(box.x).toBeGreaterThanOrEqual(0);
     expect(box.x + box.width).toBeLessThanOrEqual(412);
   }
-  await expect(main(page)).toBeInViewport();
+  await expect(main(page)).toBeHidden();
   await page.screenshot({ path: "shots/phone/online/lobby-faction.png", animations: "disabled" });
   // A tap on "?" keeps the sheet of a faction open, inside the screen.
   await choice.getByRole("button", { name: "About Sol" }).tap();
@@ -131,11 +132,17 @@ test("phone: the choice of the faction and the sheet of a faction", async ({ pag
     animations: "disabled",
   });
   await choice.getByRole("button", { name: "About Sol" }).tap();
-  // A tap on a row is the choice, at once; the control of the row says it.
+  // A tap on a row is the choice, at once: the sheet closes, and the control of the row says it.
   await choice.getByRole("button", { name: "Sol", exact: true }).tap();
-  await expect(players.getByRole("button", { name: `Faction of ${LONG[0]}: Sol` })).toBeVisible();
-  await players.getByRole("button", { name: `Faction of ${LONG[0]}: Sol` }).tap();
   await expect(choice).toHaveCount(0);
+  await expect(players.getByRole("button", { name: `Faction of ${LONG[0]}: Sol` })).toBeVisible();
+  await expect(main(page)).toBeInViewport();
+  // The "×" of the sheet leaves the choice as it is.
+  await players.getByRole("button", { name: `Faction of ${LONG[0]}: Sol` }).tap();
+  await expect(choice).toBeVisible();
+  await page.getByRole("button", { name: `Close Faction of ${LONG[0]}` }).tap();
+  await expect(choice).toHaveCount(0);
+  await expect(main(page)).toBeInViewport();
 });
 
 test("phone: a visitor of a running game has its table on the panes, and the game has the sheet", async ({

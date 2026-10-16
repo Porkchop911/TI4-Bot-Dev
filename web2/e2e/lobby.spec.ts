@@ -453,6 +453,8 @@ test("two tabs choose their factions, a taken faction is refused, and each plays
     "true",
   );
   await choice(page, "Ada").getByRole("button", { name: "Hacan", exact: true }).click();
+  // A pick closes the choice.
+  await expect(choice(page, "Ada")).toHaveCount(0);
   await expect(factionOf(page, "Ada")).toHaveText(/Hacan/);
   await expect(rows(other).nth(0)).toContainText("Hacan", { timeout: 2_000 });
   // The faction of another seat stays in its place and says who has it.
@@ -471,14 +473,19 @@ test("two tabs choose their factions, a taken faction is refused, and each plays
   // Ada changes to Jol-Nar while the second tab is not told: its choice of Jol-Nar is refused
   // by the server, and the answer is a toast.
   held = true;
+  await factionOf(page, "Ada").click();
   await choice(page, "Ada").getByRole("button", { name: "Jol-Nar", exact: true }).click();
   await expect(factionOf(page, "Ada")).toHaveText(/Jol-Nar/);
+  await factionOf(other, "Blair").click();
   await choice(other, "Blair").getByRole("button", { name: "Jol-Nar", exact: true }).click();
   await expect(toast(other, "Jol-Nar is already taken by Ada")).toBeVisible();
   held = false;
-  // Esc leaves the choice.
+  // Esc leaves the choice as it is.
+  await factionOf(page, "Ada").click();
+  await expect(choice(page, "Ada")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(choice(page, "Ada")).toHaveCount(0);
+  await expect(factionOf(page, "Ada")).toHaveText(/Jol-Nar/);
 
   // The host chooses for a seat that the server plays; the other seat is left at "Random".
   await players(page).getByRole("button", { name: "Fill with rule bots" }).click();
@@ -488,7 +495,6 @@ test("two tabs choose their factions, a taken faction is refused, and each plays
   await choice(page, "Rule bot 1").getByRole("button", { name: "Naalu", exact: true }).click();
   await expect(rows(other).nth(2)).toContainText("Naalu", { timeout: 2_000 });
   await expect(rows(other).nth(3)).toContainText("Random");
-  await page.keyboard.press("Escape");
 
   // The game: each tab plays the faction that it chose, and the seat that was left at "Random"
   // has a faction that no other seat has.
@@ -604,8 +610,11 @@ test("the host sets up the table, and the other tab is told at once", async ({
   await value(page, "Strategy cards").selectOption({ label: "Prophecy of Kings" });
   await expect(said(other, "Strategy cards")).toHaveText("Prophecy of Kings");
   await expect(toast(other, "The host changed the strategy cards")).toBeVisible();
-  // What a set changes is behind "?": no card is named on the screen.
-  await expect(setup(page).getByText("Construction")).toHaveCount(0);
+  // What a set changes is behind "?": no card is named on the screen (the scenarios of "Start
+  // from" have names such as "Strategy card: Construction", in a closed list).
+  await expect(setup(page).getByText("Construction").and(page.locator(":not(option)"))).toHaveCount(
+    0,
+  );
   await setup(page).getByRole("button", { name: "About Strategy cards" }).click();
   await expect(
     page

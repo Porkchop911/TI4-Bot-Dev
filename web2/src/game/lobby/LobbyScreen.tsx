@@ -12,7 +12,7 @@ import type {
   LobbyStepView,
   LobbyView,
 } from "../../model";
-import { Button, Eyebrow, Hint, Kbd, Peek, Select, Toast, cx, usePhone } from "../../ui";
+import { Button, Drawer, Eyebrow, Hint, Kbd, Peek, Select, Toast, cx, usePhone } from "../../ui";
 import { Board } from "../board/Board";
 import { GameProvider, SeatSymbol } from "../context";
 import { LinkProvider } from "../link";
@@ -198,8 +198,9 @@ function FactionOption({
 }
 
 /**
- * The choice of the faction of a seat, open in its row. A choice applies at once and closes the
- * list; Esc and a click outside the row leave it as it is.
+ * The choice of the faction of a seat. A choice applies at once and closes the list; Esc leaves
+ * it as it is. On desktop it is open under its row, and a click outside the row leaves it too; a
+ * phone shows it as a sheet over the pane, with its own "×".
  */
 function FactionEditor({
   editor,
@@ -208,14 +209,18 @@ function FactionEditor({
   dispatch,
 }: {
   editor: LobbyFactionEditorView;
-  /** The row of the choice: a click outside it closes the choice. */
-  row: RefObject<HTMLElement | null>;
+  /** The row of the choice: a click outside it closes the choice. None: the choice is a sheet. */
+  row?: RefObject<HTMLElement | null>;
   onClose: () => void;
   dispatch: (intent: LobbyIntent) => void;
 }) {
   const root = useRef<HTMLDivElement>(null);
   // The list opens under its row: the panel shows as much of it as it has room for.
-  useEffect(() => void root.current?.scrollIntoView?.({ block: "nearest" }), []);
+  useEffect(() => {
+    if (row) {
+      root.current?.scrollIntoView?.({ block: "nearest" });
+    }
+  }, [row]);
   const close = useRef(onClose);
   close.current = onClose;
   useEffect(() => {
@@ -228,7 +233,7 @@ function FactionEditor({
       if (
         event instanceof KeyboardEvent
           ? event.key === "Escape"
-          : !row.current?.contains(event.target as Node)
+          : !!row && !row.current?.contains(event.target as Node)
       ) {
         close.current();
       }
@@ -245,7 +250,12 @@ function FactionEditor({
     onClose();
   };
   return (
-    <div ref={root} role="group" aria-label={editor.label} className="px-5 pt-0.5 pb-2 phone:px-3">
+    <div
+      ref={root}
+      role="group"
+      aria-label={editor.label}
+      className={cx("text-base", row && "px-5 pt-0.5 pb-2")}
+    >
       <ul>
         <FactionOption option={editor.random} onChoose={choose} />
       </ul>
@@ -270,6 +280,7 @@ function FactionEditor({
 function PlayerRow({
   row,
   open,
+  inline,
   onOpen,
   dispatch,
   validName,
@@ -277,6 +288,8 @@ function PlayerRow({
   row: LobbyRowView;
   /** The choice of the faction is open in this row. */
   open: boolean;
+  /** The open choice is shown under the row (desktop); else the screen shows it as a sheet. */
+  inline: boolean;
   onOpen: (open: boolean) => void;
   dispatch: (intent: LobbyIntent) => void;
   validName: ValidName;
@@ -402,7 +415,7 @@ function PlayerRow({
           </span>
         )}
       </div>
-      {open && row.editor && (
+      {open && inline && row.editor && (
         <FactionEditor
           editor={row.editor}
           row={item}
@@ -615,15 +628,21 @@ export function TableSheet({
 
 function Players({
   view,
+  open,
+  onOpen,
+  inline,
   dispatch,
   validName,
 }: {
   view: LobbyView;
+  /** The row whose choice of the faction is open, by its id. One at a time. */
+  open: string | null;
+  onOpen: (row: string | null) => void;
+  /** The open choice is shown under its row (desktop), not as a sheet (phone). */
+  inline: boolean;
   dispatch: (intent: LobbyIntent) => void;
   validName: ValidName;
 }) {
-  // The row whose choice of the faction is open, by its id. One at a time.
-  const [open, setOpen] = useState<string | null>(null);
   return (
     <section aria-label="Players" className="flex min-h-0 flex-1 flex-col">
       <Heading
@@ -653,7 +672,8 @@ function Players({
             key={row.id}
             row={row}
             open={open === row.id && row.editor !== null}
-            onOpen={(wanted) => setOpen(wanted ? row.id : null)}
+            inline={inline}
+            onOpen={(wanted) => onOpen(wanted ? row.id : null)}
             validName={validName}
             dispatch={dispatch}
           />
@@ -763,6 +783,8 @@ export function LobbyScreen({
 }) {
   const phone = usePhone();
   const [pane, setPane] = useState<Pane>("players");
+  // The row whose choice of the faction is open, by its id. One at a time.
+  const [faction, setFaction] = useState<string | null>(null);
   const [copied, setCopied] = useState<{ id: number; text: string } | null>(null);
 
   // Enter is the main button, as in the game.
@@ -827,7 +849,24 @@ export function LobbyScreen({
   ) : (
     <section aria-label="Galaxy board" className="min-h-0 min-w-0 bg-board" />
   );
-  const players = <Players view={view} dispatch={dispatch} validName={validName} />;
+  const players = (
+    <Players
+      view={view}
+      open={faction}
+      onOpen={setFaction}
+      inline={!phone}
+      dispatch={dispatch}
+      validName={validName}
+    />
+  );
+  // A phone shows the open choice of a faction as a sheet over the pane, with the room of the
+  // footer and of the tab bar.
+  const choosing = phone ? view.rows.find((row) => row.id === faction)?.editor : null;
+  const sheet = choosing && (
+    <Drawer title={choosing.label} onClose={() => setFaction(null)}>
+      <FactionEditor editor={choosing} onClose={() => setFaction(null)} dispatch={dispatch} />
+    </Drawer>
+  );
   const setup = <Setup view={view} dispatch={dispatch} />;
   const latest = (copied?.id ?? 0) > (toast?.id ?? 0) ? copied : toast;
 
@@ -875,6 +914,7 @@ export function LobbyScreen({
           pane={pane}
           onPane={(id) => setPane(id as Pane)}
           footer={footer}
+          sheet={sheet || undefined}
         >
           <Toast message={latest} />
         </ShellFrame>
