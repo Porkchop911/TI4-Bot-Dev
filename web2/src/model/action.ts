@@ -620,6 +620,11 @@ export interface SeatRowView {
   text?: string;
   /** The editor of the viewer, in place under the row. */
   open?: BlockView[];
+  /**
+   * What the seat did, line by line, under the row when the viewer opens it ("▸"): a resolved
+   * strategic action of the Log. Absent: the row does not open.
+   */
+  details?: string[];
 }
 
 /** One technology of the tree. The cell is the control. */

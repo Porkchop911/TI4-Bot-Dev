@@ -69,6 +69,7 @@ export function StepSheet({
         <div
           role="region"
           aria-label="Open step"
+          data-covers-board=""
           className="absolute inset-x-0 bottom-0 z-2 flex max-h-[60%] flex-col overflow-auto border-t border-line bg-surface"
         >
           {minimized ? (

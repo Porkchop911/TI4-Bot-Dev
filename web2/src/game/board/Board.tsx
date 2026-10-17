@@ -112,8 +112,16 @@ export function Board({ view, children }: { view: BoardView; children?: ReactNod
   const svg = useRef<SVGSVGElement>(null);
   const galaxy = useRef<HTMLDivElement>(null);
   const camera = useCamera(svg, galaxy, view.tiles);
+  const section = useRef<HTMLElement>(null);
+  // A sheet over the bottom of the board (the step sheet of a phone) covers a part of it: the
+  // systems of the task are framed above it.
+  const covered = () => {
+    const sheet = section.current?.querySelector<HTMLElement>(":scope > [data-covers-board]");
+    const height = galaxy.current?.clientHeight ?? 0;
+    return sheet && height ? Math.min(sheet.offsetHeight / height, 0.8) : 0;
+  };
   // biome-ignore lint/correctness/useExhaustiveDependencies: the board is framed again only when the data source asks for it
-  useLayoutEffect(() => camera.fitFor(view.taskSystems), [view.fitKey]);
+  useLayoutEffect(() => camera.fitFor(view.taskSystems, covered()), [view.fitKey]);
   const tool =
     "grid h-7 place-items-center rounded-sm border border-line bg-surface text-base text-muted hover:text-text touch:h-9";
   const payment = view.task?.interactive ? view.task.payment : undefined;
@@ -131,6 +139,7 @@ export function Board({ view, children }: { view: BoardView; children?: ReactNod
   );
   return (
     <section
+      ref={section}
       aria-label="Galaxy board"
       className="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-board"
     >
@@ -172,7 +181,7 @@ export function Board({ view, children }: { view: BoardView; children?: ReactNod
             +
           </button>
           {fit("Fit task", "Show the systems of this action", "target", () =>
-            camera.fit(view.taskSystems),
+            camera.fit(view.taskSystems, covered()),
           )}
           {fit("Fit board", "Show the full board", "frame", () => camera.fit())}
         </div>

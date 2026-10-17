@@ -1113,6 +1113,101 @@ export function turnEvents(events: EventLog, id: string): { seat: string; at: nu
   return { seat: turn.seat, at: turn.events.map((entry) => places.get(entry)!) };
 }
 
+/** What one seat did in a turn: its answer to a secondary, its lines, and their summary. */
+export interface SeatPart {
+  seat: string;
+  /** Its answer to the secondary of a strategic action: followed or declined. Null: no answer. */
+  followed: boolean | null;
+  /** Its lines, in the order of the game, with no answer: "Produced on Jord: 2 Infantry II". */
+  lines: string[];
+  /** At most three outcomes in one line: "produced 3 units at Jord · #01". Empty: none. */
+  summary: string;
+}
+
+/** A turn of the Log by its id, with what each seat did in it. */
+export interface TurnParts {
+  view: LogTurnView;
+  action: TurnAction | null;
+  /** The card that a component action played, when a decision or the state told it. */
+  card: string | null;
+  /** The seats of the turn, the seat of the turn first, the others in the order that they answered. */
+  seats: SeatPart[];
+}
+
+/**
+ * A turn of the Log (`LogTurnView.id`) and what each seat did in it, as the Log words it: the
+ * parts of the seats of a strategic action, the lines of a component action. Null when the events
+ * have no such turn.
+ */
+export function turnParts(
+  update: SessionUpdate,
+  events: EventLog,
+  id: string,
+  printed: Catalog | null = null,
+): TurnParts | null {
+  const names = namesOf(update, printed);
+  const turn = entriesOf(events).raw.find((item) => item.kind === "turn" && item.id === id);
+  if (turn?.kind !== "turn") {
+    return null;
+  }
+  const action = actionOf(turn);
+  const viewer = update.viewer.role === "player" ? update.viewer.seat : null;
+  const view = turnView(turn, 0, false, viewer, names, update.view.round);
+  const { groups, facts } = detailsOf(turn.events, names, {
+    actor: turn.seat,
+    strategic: action?.type === "strategic",
+    phase: "action",
+    action,
+  });
+  const tiles = update.view.board.map_tiles ?? [];
+  const systemOf = (planet: string) =>
+    tiles.find((tile) => (tile.planets ?? []).some((item) => item.id === planet))?.system_id ??
+    null;
+  const order = [turn.seat];
+  const lines = new Map<string, string[]>();
+  for (const group of groups) {
+    // A transaction is no part of a strategic action: it is a deal of the turn. A component
+    // action may be a deal (Trade Convoys).
+    if (group.title === "Transactions" && action?.type === "strategic") {
+      continue;
+    }
+    for (const line of group.lines) {
+      const seat = line.seat ?? turn.seat;
+      if (!order.includes(seat)) {
+        order.push(seat);
+      }
+      if (line.text !== FOLLOWED && line.text !== DECLINED) {
+        lines.set(seat, [...(lines.get(seat) ?? []), line.text]);
+      }
+    }
+  }
+  const answer = new Map<string, boolean>();
+  for (const { seat, fact } of facts) {
+    if (seat && fact.kind === "secondary_followed") {
+      answer.set(seat, fact.followed);
+    }
+  }
+  const played = facts.find(
+    (item) => item.seat === turn.seat && item.fact.kind === "card_played",
+  )?.fact;
+  return {
+    view,
+    action,
+    card: played?.kind === "card_played" ? played.card : null,
+    seats: order.map((seat) => ({
+      seat,
+      followed: answer.get(seat) ?? null,
+      lines: lines.get(seat) ?? [],
+      summary: summaryOf(
+        { ...turn, seat },
+        facts.filter((item) => item.seat === seat && item.fact.kind !== "secondary_followed"),
+        names,
+        systemOf,
+      ),
+    })),
+  };
+}
+
 /**
  * What a seat did at its turn menu before it chose its action (a transaction, a component action
  * that does not end the turn, such as an agent) is a part of that turn: the game counts it as an
@@ -1196,9 +1291,16 @@ function summaryOf(
   turn: RawTurn,
   facts: { seat: string | null; fact: PublicFact }[],
   names: Names,
+  /**
+   * The system of a planet: a production says where it was (the part of one seat of a strategic
+   * action). Without it a production is its count.
+   */
+  systemOf: ((planet: string) => string | null) | null = null,
 ): string {
   const parts: string[] = [];
   let ships = 0;
+  /** Where the seat produced, by system. */
+  const where = new Set<string>();
   const landed: string[] = [];
   let produced = 0;
   let tokens = 0;
@@ -1230,9 +1332,14 @@ function summaryOf(
         }
         break;
       }
-      case "produced":
+      case "produced": {
         produced += own ? fact.count : 0;
+        const system = fact.system ?? (fact.planet ? systemOf?.(fact.planet) : null);
+        if (own && system) {
+          where.add(system);
+        }
         break;
+      }
       case "tokens_gained":
         tokens += own ? fact.count : 0;
         break;
@@ -1351,7 +1458,8 @@ function summaryOf(
   }
   parts.push(...new Set(other));
   if (produced) {
-    parts.push(`produced ${plural(produced, "unit")}`);
+    const at = systemOf && where.size === 1 ? ` at ${names.system([...where][0])}` : "";
+    parts.push(`produced ${plural(produced, "unit")}${at}`);
   }
   if (replenished) {
     parts.push(`replenished ${plural(replenished, "seat")}`);

@@ -8,11 +8,11 @@ test.skip(!existsSync(WASM), "the engine is not built: run web2/scripts/build-wa
 
 const SHOTS = process.env.WEB2_SHOTS ?? "shots/phone/shell";
 
-/** Nothing in the Log is a control but the rows of the tactical turns, which open them. */
+/** Nothing in the Log is a control but the rows of the turns that open their action. */
 const readOnly = async (log: Locator) => {
   await expect(log.locator("input, select, textarea, button:not([aria-pressed])")).toHaveCount(0);
   for (const row of await log.locator("button[aria-pressed]").all()) {
-    await expect(row).toHaveAttribute("aria-label", /· Tactical/);
+    await expect(row).toHaveAttribute("aria-label", /· (Tactical|Strategic|Component)/);
   }
 };
 
@@ -160,7 +160,8 @@ test("phone: the Log pane has the strategic action that the other seats follow a
     .click();
   const log = page.getByRole("region", { name: "Log" });
   // The action is the turn of the viewer that is played now: the last row, with "▶" and "You".
-  const live = log.getByRole("list", { name: "Turns" }).getByRole("article").last();
+  // A strategic turn opens its action: its row is a button.
+  const live = log.getByRole("list", { name: "Turns" }).locator("li > article, li > button").last();
   await expect(live).toContainText("▶");
   await expect(live).toContainText("You");
   await expect(live).toContainText("Strategic · Leadership");
@@ -209,7 +210,8 @@ test("phone: while the viewer decides a secondary, the sheet on the map has its 
     .getByRole("button", { name: "Log" })
     .click();
   const log = page.getByRole("region", { name: "Log" });
-  const live = log.getByRole("list", { name: "Turns" }).getByRole("article").last();
+  // A strategic turn opens its action: its row is a button.
+  const live = log.getByRole("list", { name: "Turns" }).locator("li > article, li > button").last();
   await expect(live).toContainText("▶");
   await expect(live).toContainText("Strategic · Leadership");
   await expect(log).not.toContainText("Command pools");
@@ -319,5 +321,58 @@ test("phone: a tactical turn of the Log opens on Map over the board, read-only, 
   await turn.getByRole("button", { name: "Close" }).click();
   await expect(turn).toHaveCount(0);
   await expect(sheet).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("phone: a strategic turn of the Log opens on Map, with its seats, and the map brings the system of Diplomacy into view above the sheet", async ({
+  page,
+}) => {
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error" && message.text().startsWith("[board history]")) {
+      errors.push(message.text());
+    }
+  });
+  await page.goto("/?local=3&players=8&humans=1");
+  const panes = page.getByRole("navigation", { name: "Panes" });
+  const pane = (name: string) => panes.getByRole("button", { name });
+  const sheet = page.getByRole("region", { name: "Open step" });
+  const row = (name: RegExp) => sheet.locator("#step-panel").getByRole("button", { name });
+  // The viewer has the last card: the seven other seats play their first turn before it.
+  await row(/^8\. Imperial$/).click();
+  await page.locator('footer button[aria-keyshortcuts="Enter"]').click();
+  await expect(row(/^Activate a system$/)).toBeVisible();
+
+  await pane("Log").click();
+  const log = page.getByRole("region", { name: "Log" });
+  await readOnly(log);
+  await log.getByRole("button", { name: /· Strategic · Diplomacy/ }).click();
+  // A tap on the row goes to Map, with the turn over the board.
+  await expect(pane("Map")).toHaveAttribute("aria-pressed", "true");
+  const turn = page.getByRole("region", { name: "Turn" });
+  await expect(turn.getByRole("heading", { name: "Diplomacy" })).toBeVisible();
+  const rows = turn.locator("ul[aria-label=Seats] > li");
+  await expect(rows.first()).toContainText("✓ Resolved");
+  // Every other seat is a row.
+  await expect(rows).toHaveCount(8);
+  // The system of Diplomacy is marked, and in view above the sheet.
+  const board = page.getByRole("region", { name: "Galaxy board" });
+  const marked = board.locator('[aria-label*="the open window or turn is about this system"]');
+  await expect(marked).toHaveCount(1);
+  const tile = (await marked.boundingBox())!;
+  const top = (await turn.boundingBox())!.y;
+  const area = (await board.boundingBox())!;
+  expect(tile.y).toBeGreaterThanOrEqual(area.y);
+  expect(tile.y + tile.height).toBeLessThanOrEqual(top + 1);
+  expect(tile.x).toBeGreaterThanOrEqual(area.x - 1);
+  expect(tile.x + tile.width).toBeLessThanOrEqual(area.x + area.width + 1);
+  const width = page.viewportSize()!.width;
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+  expect(await turn.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
+  await page.screenshot({ path: `${SHOTS}/strategic-turn.png`, animations: "disabled" });
+  await turn.getByRole("button", { name: "Close" }).click();
+  await expect(turn).toHaveCount(0);
   expect(errors).toEqual([]);
 });

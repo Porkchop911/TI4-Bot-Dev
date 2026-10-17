@@ -5,8 +5,8 @@ import { SeatSymbol, useDispatch, useSeats } from "../context";
 /**
  * The turns since the viewer's last turn, oldest first: one large row for each turn and each
  * phase that is no action phase, the turn that is played now last. A row says who did what and
- * how it ended; what happened in it is the sheet of its action, read-only: a tactical turn opens
- * it over the board.
+ * how it ended; what happened in it is the sheet of its action, read-only: a tactical, strategic
+ * or component turn opens it over the board.
  */
 export function LogHistory({ view, open = null }: { view: LogView; open?: string | null }) {
   // The start of an action phase has nothing to say: the turns that follow say their round.
@@ -44,8 +44,9 @@ const Live = () => (
 
 /**
  * A turn: the seat (symbol, the name of the player and the faction, cut with "…"), "You" on a
- * turn of the viewer and the round and turn; then the action, then its outcomes. A tactical turn
- * is a control: it opens its action over the board, read-only ("Open" while it is open).
+ * turn of the viewer and the round and turn; then the action, then its outcomes. A tactical,
+ * strategic or component turn is a control: it opens its action over the board, read-only
+ * ("Open" while it is open). A pass opens nothing.
  */
 function TurnRow({ view, open }: { view: LogTurnView; open: boolean }) {
   const dispatch = useDispatch();
@@ -54,7 +55,8 @@ function TurnRow({ view, open }: { view: LogTurnView; open: boolean }) {
   // The player table says the name of the player and the faction; so does a row.
   const faction = seat?.name && seat.name !== seat.faction ? seat.faction : null;
   const full = faction ? `${name} · ${faction}` : name;
-  const opens = view.action === "tactical";
+  const opens =
+    view.action === "tactical" || view.action === "strategic" || view.action === "component";
   const label = `Turn ${view.turn} · ${name} · ${view.label}`;
   const className = cx(
     ROW,

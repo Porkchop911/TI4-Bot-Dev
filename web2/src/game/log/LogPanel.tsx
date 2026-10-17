@@ -11,7 +11,8 @@ const AT_END = 24;
  * played now last. Desktop has it under the player table, where it fills the column and scrolls
  * inside itself; a phone has it as the pane Log, which scrolls the same way. The newest is at the
  * end: the Log starts there, and follows what is new while it is at its end; else it stays where
- * the viewer scrolled. A tactical turn opens its action over the board, read-only.
+ * the viewer scrolled. A tactical, strategic or component turn opens its action over the board,
+ * read-only.
  */
 export function LogPanel({
   log,

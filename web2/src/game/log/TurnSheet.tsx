@@ -48,6 +48,7 @@ export function TurnSheet({
       <div
         role="region"
         aria-label="Turn"
+        data-covers-board=""
         className="absolute inset-x-0 bottom-0 z-2 flex max-h-[60%] flex-col border-t border-line bg-surface"
       >
         <div className="flex min-h-0 flex-1 flex-col overflow-auto">{panel}</div>

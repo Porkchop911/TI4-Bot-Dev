@@ -12,6 +12,7 @@ import {
 import { selectBoard } from "./board";
 import { NO_EVENTS } from "../events";
 import { selectLog } from "./log";
+import { selectPastFlow } from "./pastFlow";
 import { selectPastTurn } from "./pastTurn";
 import { selectTokens } from "./tokens";
 import { type CardSettings, NO_CARD_SETTINGS, selectActionCards } from "./cards";
@@ -60,6 +61,21 @@ function status(update: SessionUpdate, local: LocalState, printed: Catalog | nul
 }
 
 /** The footer with a main button that waits. */
+/** A system and the systems next to it on the map: what the board frames for a turn of the Log. */
+function around(update: SessionUpdate, system: string): string[] {
+  const tiles = update.view.board.map_tiles ?? [];
+  const at = tiles.find((tile) => tile.system_id === system);
+  if (!at) {
+    return [system];
+  }
+  return tiles
+    .filter((tile) => {
+      const [dq, dr] = [tile.q - at.q, tile.r - at.r];
+      return Math.max(Math.abs(dq), Math.abs(dr), Math.abs(dq + dr)) <= 1;
+    })
+    .map((tile) => tile.system_id);
+}
+
 const held = (footer: FooterView): FooterView => ({
   ...footer,
   actions: footer.actions.map((button) =>
@@ -168,7 +184,8 @@ export function selectShell(
   // A turn of the Log that the viewer opened: the board is as its open step left it, with its
   // system marked, and nothing on it is a control.
   const past = local.inspect
-    ? selectPastTurn(update, local.events ?? NO_EVENTS, local.inspect, catalog, printed)
+    ? (selectPastTurn(update, local.events ?? NO_EVENTS, local.inspect, catalog, printed) ??
+      selectPastFlow(update, local.events ?? NO_EVENTS, local.inspect.turn, printed))
     : null;
   return {
     seats: selectSeats(update, printed),
@@ -208,7 +225,14 @@ export function selectShell(
             false,
             printed,
           ),
-          ...(past.system ? { marked: past.system } : {}),
+          ...(past.system
+            ? {
+                marked: past.system,
+                // The board brings the system of the turn into view, with the systems around it.
+                taskSystems: around(past.update, past.system),
+                fitKey: `turn:${local.inspect?.turn}:${past.system}`,
+              }
+            : {}),
         }
       : {
           ...selectBoard(

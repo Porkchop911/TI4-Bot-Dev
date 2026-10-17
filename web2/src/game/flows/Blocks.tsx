@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type {
   BlockView,
   DealItemView,
@@ -442,44 +443,77 @@ const STATUS_TONE: Record<SeatRowView["status"]["tone"], string> = {
  */
 function SeatList({ rows }: { rows: SeatRowView[] }) {
   return (
-    <div className="rounded-lg border border-line bg-surface/40">
+    <ul aria-label="Seats" className="rounded-lg border border-line bg-surface/40">
       {rows.map((row) => (
-        <div key={row.order} className="[&+&]:border-t [&+&]:border-line/50">
-          <div
-            className={cx(
-              // On a phone the name and the state are one line; what the seat did is the line under it.
-              "grid min-h-6 grid-cols-[16px_16px_132px_150px_minmax(0,1fr)] items-baseline gap-x-2.5 px-3.5 py-0.5 text-sm phone:grid-cols-[16px_16px_minmax(0,1fr)_auto] phone:px-2.5 phone:py-1",
-              row.open && "bg-gold/[.06] shadow-[inset_2px_0_0_var(--color-gold)]",
-            )}
-          >
-            <span className="text-xs text-faint tabular-nums">{row.order}</span>
-            <SeatSymbol seat={row.seat} />
-            <span
-              className={cx("truncate", row.you ? "font-semibold" : "font-mid")}
-              title={row.name}
-            >
-              {row.name}
-            </span>
-            <span className={cx("text-xs whitespace-nowrap", STATUS_TONE[row.status.tone])}>
-              {row.status.sign} {row.status.label}
-            </span>
-            <span
-              className={cx(
-                "min-w-0 phone:col-start-3 phone:col-end-[-1] phone:empty:hidden",
-                row.status.tone === "quiet" && "text-muted",
-              )}
-            >
-              {row.text}
-            </span>
-          </div>
-          {row.open && (
-            <div className="space-y-1.5 border-l-2 border-gold/60 py-1 pr-2.5 pl-3 phone:pr-1.5 phone:pl-1.5">
-              <Blocks blocks={row.open} />
-            </div>
-          )}
-        </div>
+        <SeatRow key={row.order} row={row} />
       ))}
-    </div>
+    </ul>
+  );
+}
+
+/**
+ * One seat of a strategy card. A row with details (a resolved action of the Log) opens with a
+ * click to what the seat did, line by line ("▸" closed, "▾" open): a view toggle, not a choice.
+ */
+function SeatRow({ row }: { row: SeatRowView }) {
+  const [open, setOpen] = useState(false);
+  const details = row.details?.length ? row.details : null;
+  const grid = cx(
+    // On a phone the name and the state are one line; what the seat did is the line under it.
+    "grid min-h-6 w-full grid-cols-[16px_16px_132px_150px_minmax(0,1fr)] items-baseline gap-x-2.5 px-3.5 py-0.5 text-left text-sm phone:grid-cols-[16px_16px_minmax(0,1fr)_auto] phone:px-2.5 phone:py-1",
+    row.open && "bg-gold/[.06] shadow-[inset_2px_0_0_var(--color-gold)]",
+    details && "cursor-pointer hover:bg-white/5",
+  );
+  const cells = (
+    <>
+      <span className="text-xs text-faint tabular-nums">{row.order}</span>
+      <SeatSymbol seat={row.seat} />
+      <span className={cx("truncate", row.you ? "font-semibold" : "font-mid")} title={row.name}>
+        {row.name}
+      </span>
+      <span className={cx("text-xs whitespace-nowrap", STATUS_TONE[row.status.tone])}>
+        {row.status.sign} {row.status.label}
+      </span>
+      <span
+        className={cx(
+          "min-w-0 phone:col-start-3 phone:col-end-[-1] phone:empty:hidden",
+          row.status.tone === "quiet" && "text-muted",
+        )}
+      >
+        {details && (
+          <span aria-hidden="true" className="mr-1.5 text-muted">
+            {open ? "▾" : "▸"}
+          </span>
+        )}
+        {row.text}
+      </span>
+    </>
+  );
+  return (
+    <li className="[&+&]:border-t [&+&]:border-line/50">
+      {details ? (
+        <button type="button" className={grid} aria-expanded={open} onClick={() => setOpen(!open)}>
+          {cells}
+        </button>
+      ) : (
+        <div className={grid}>{cells}</div>
+      )}
+      {details && open && (
+        <ul
+          aria-label="What it did"
+          className="space-y-0.5 border-l-2 border-line-strong py-1 pr-2.5 pl-3 text-sm text-muted phone:pr-1.5 phone:pl-1.5"
+        >
+          {details.map((line, index) => (
+            <li key={index}>{line}</li>
+          ))}
+        </ul>
+      )}
+      {row.open && (
+        <div className="space-y-1.5 border-l-2 border-gold/60 py-1 pr-2.5 pl-3 phone:pr-1.5 phone:pl-1.5">
+          <Blocks blocks={row.open} />
+        </div>
+      )}
+    </li>
   );
 }
 

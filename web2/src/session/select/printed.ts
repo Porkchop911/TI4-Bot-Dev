@@ -1,7 +1,13 @@
 // What a component of the game is, as printed: the card of an option of the turn menu, and the
 // card, ability or strategy card that asks a question (`DecisionContext.source`). The engine says
 // which one; the catalogue has its name and its text. No rule text is written here.
-import type { Catalog, ChoiceOption, DecisionSource, SessionUpdate } from "../wire";
+import type {
+  Catalog,
+  ChoiceOption,
+  ComponentSource,
+  DecisionSource,
+  SessionUpdate,
+} from "../wire";
 import { plain } from "./components";
 import { humanizeId, sentence, strategyCard } from "./names";
 
@@ -180,4 +186,34 @@ export function printedSource(
     );
   }
   return null;
+}
+
+/**
+ * The component that a component action of the Log used, as printed: its source, and the action
+ * card that it played when a decision or the state told it. Null for a source that the catalogue
+ * does not print (a rule, a deal) or does not have.
+ */
+export function printedComponent(
+  source: ComponentSource,
+  card: string | null,
+  catalog: Catalog | null,
+): Printed | null {
+  switch (source.type) {
+    case "technology":
+      return named(catalog?.components.technologies, source.tech, "Technology");
+    case "leader":
+      return leader(source.leader, catalog);
+    case "action_card":
+      return card ? actionCard(card, catalog) : null;
+    case "relic":
+      return named(catalog?.components.relics, source.relic, "Relic");
+    case "relic_fragments":
+      return null;
+    case "exploration":
+      return named(catalog?.exploration.cards, source.card, "Exploration card");
+    case "faction":
+      return named(catalog?.components.abilities, source.ability, "Faction ability");
+    default:
+      return null;
+  }
 }
