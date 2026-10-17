@@ -1,43 +1,25 @@
-//! A draft of a secondary that its seat marked ready is sent by the server, when the game asks
-//! the seat that secondary. Every tab and device of the seat has the draft (`super::staged`), so
-//! the server sends it once, also when no tab of the seat is open.
-//!
-//! This is the check that a page made before: the draft is played on a copy of the game
-//! ([`super::run_draft_on`], as `run_draft` with the scope of the secondary), and it is sent
-//! only when the game plays every answer and the secondary is over with it, or ends where the
-//! game shows something hidden (`isOver` of `web2/src/session/secondaryDraft.ts`). A draft that
-//! no longer fits is not ready any more: the server writes it back with `ready: false`, and
-//! every tab says so. A draft that is sent is cleared.
+//! The server's half of the ready draft of a secondary (`ti4_host::staged::ready`): when the
+//! game asks a seat that secondary, the server sends the seat's ready draft. Every tab and device
+//! of the seat has the draft (`super::staged`), so the server sends it once, also when no tab of
+//! the seat is open. The draft is played on a copy of the game ([`super::run_draft_on`]); a draft
+//! that no longer fits is written back not ready, and every tab says so. A draft that is sent is
+//! cleared.
 //!
 //! There are two moments: the game asks the seat ([`on_reach`], from the decider of the seat,
 //! before the seat is told the question), and the seat marks its draft ready while the game asks
-//! it already (`GameSession::send_ready_secondary`, after the write).
+//! it already (`GameSession::send_ready_secondary`, after the write). What stays here is what is
+//! the server's: the gate of a live session ([`may_send`]), the shared book and its messages.
 
 use std::sync::Mutex;
 
 use ti4_engine::choice::{Choice, ChoiceOption};
+use ti4_host::planning::draft::{DraftStep, ScriptAnswer, script_answer};
+use ti4_host::protocol::staged::StagedSlot;
+use ti4_host::staged::ready::{Check, Ready, asked, judge, ready_draft, unready_value};
 use ti4_model::id::PlayerId;
-use ti4_view::planning::audit::PlanScope;
-use ti4_view::planning::draft::{DraftStep, DraftStop, ScriptAnswer, script_answer};
 
-use super::staged::{SecondaryDraft, StagedBook, StagedSlot, put_and_tell};
+use super::staged::{StagedBook, put_and_tell};
 use super::worker::SessionShared;
-
-/// The ready draft of a seat, with the revision of its slot and the value as it is kept.
-pub(crate) struct Ready {
-    pub revision: u64,
-    pub draft: SecondaryDraft,
-    pub value: serde_json::Value,
-}
-
-/// The game asks `seat` its secondary of a strategic action with `choice`: the primary and the
-/// card, as the question names them.
-fn asked<'a>(choice: &'a Choice, seat: &PlayerId) -> Option<(&'a str, &'a str)> {
-    let detail = |key: &str| choice.details.get(key).and_then(serde_json::Value::as_str);
-    (&choice.player == seat && detail("kind") == Some("strategy_secondary"))
-        .then(|| detail("played_by").zip(detail("card")))
-        .flatten()
-}
 
 /// The game may send a draft for `choice` now: it asks `seat` a secondary, the game is live, and
 /// no change of the history is running.
@@ -50,63 +32,12 @@ pub(crate) fn may_send(shared: &SessionShared, seat: &PlayerId, choice: &Choice)
         && !shared.history_pause
 }
 
-/// The draft of `seat` that is ready for the secondary that `choice` asks in `round`.
-pub(crate) fn ready_draft(
-    book: &StagedBook,
-    seat: &PlayerId,
-    choice: &Choice,
-    round: u32,
-) -> Option<Ready> {
-    let (primary, card) = asked(choice, seat)?;
-    let seats = book.lock();
-    let slot = seats.get(seat)?.slots.get(&StagedSlot::Secondary)?;
-    let value = slot.value.clone()?;
-    let draft = SecondaryDraft::of(&value)?;
-    (draft.ready
-        && !draft.answers.is_empty()
-        && draft.round == round
-        && draft.primary.as_str() == primary
-        && draft.card.as_str() == card)
-        .then_some(Ready {
-            revision: slot.revision,
-            draft,
-            value,
-        })
-}
-
-/// What the game makes of a ready draft.
-pub(crate) enum Check {
-    /// The game plays it whole: send this script.
-    Fits(Vec<DraftStep>),
-    /// The game no longer plays it whole.
-    Unfit,
-    /// The game cannot be copied now: nothing is decided.
-    Unknown,
-}
-
-/// Plays the draft on a copy of the game of `shared`.
-pub(crate) fn check(
-    shared: &Mutex<SessionShared>,
-    seat: &PlayerId,
-    draft: &SecondaryDraft,
-) -> Check {
-    let scope = PlanScope::Secondary {
-        primary: draft.primary.clone(),
-        card: draft.card.clone(),
-    };
-    let script = draft.script();
-    match super::run_draft_on(shared, seat, &scope, &script).1 {
+/// Plays the ready draft on a copy of the game of `shared` ([`judge`]).
+pub(crate) fn check(shared: &Mutex<SessionShared>, seat: &PlayerId, ready: &Ready) -> Check {
+    let script = ready.draft.script();
+    match super::run_draft_on(shared, seat, &ready.scope(), &script).1 {
         None => Check::Unknown,
-        Some(outcome)
-            if outcome.consumed == script.len()
-                && matches!(
-                    outcome.stop,
-                    DraftStop::Complete | DraftStop::Stopped { .. }
-                ) =>
-        {
-            Check::Fits(script)
-        }
-        Some(_) => Check::Unfit,
+        Some(outcome) => judge(&outcome, script.len()),
     }
 }
 
@@ -118,15 +49,13 @@ pub(crate) fn unready(
     seat: &PlayerId,
     ready: Ready,
 ) {
-    let mut value = ready.value;
-    value["ready"] = serde_json::Value::Bool(false);
     let _ = put_and_tell(
         shared,
         book,
         seat,
         StagedSlot::Secondary,
         ready.revision,
-        Some(value),
+        Some(unready_value(ready.value)),
         None,
     );
 }
@@ -169,9 +98,9 @@ pub(crate) fn on_reach(
     round: u32,
 ) -> Option<Send> {
     let book = shared.lock().expect("shared lock").staged.clone();
-    let ready = ready_draft(&book, seat, choice, round)?;
-    let script = match check(shared, seat, &ready.draft) {
-        Check::Fits(script) => script,
+    let ready = ready_draft(&book.lock(), seat, choice, round)?;
+    let script = match check(shared, seat, &ready) {
+        Check::Fits => ready.draft.script(),
         Check::Unfit => {
             unready(shared, &book, seat, ready);
             return None;

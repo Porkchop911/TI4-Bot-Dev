@@ -7,9 +7,10 @@
 //! ```
 //!
 //! The file may be the save blob itself, a stored report (`context.local.save`) or a request body.
-//! The game is played again from its seed and the person's answers until the saved position;
+//! The game is played again from its seed and every saved decision until the saved position;
 //! the tool prints whether the decisions came back the same (count and hash of the save) and what
-//! the person was asked there. `--snapshot FILE` also writes the full `initial_snapshot` message
+//! the person was asked there. A save of a finished game has no question: the whole game's decisions
+//! (count and hash) are compared instead. `--snapshot FILE` also writes the full `initial_snapshot` message
 //! (the board as the person saw it) for inspection. Exit code 1 when the replay differs.
 
 use std::sync::{Arc, Mutex};
@@ -26,7 +27,7 @@ fn save_of(file: &Value) -> Option<Value> {
     ]
     .into_iter()
     .flatten()
-    .find(|v| v.get("setup").is_some() && v.get("answers").is_some())
+    .find(|v| v.get("game").is_some() && v.get("decisions").is_some())
     .cloned()
 }
 
@@ -45,10 +46,9 @@ fn main() -> Result<(), String> {
     let file: Value =
         serde_json::from_slice(&std::fs::read(&path).map_err(|e| format!("{path}: {e}"))?)
             .map_err(|e| format!("{path}: {e}"))?;
-    let save = save_of(&file).ok_or("no save found (need setup and answers)")?;
+    let save = save_of(&file).ok_or("no save found (need game and decisions)")?;
     let seed = save["seed"].as_u64().ok_or("save.seed")?;
-    let human =
-        usize::try_from(save["human_seat"].as_u64().unwrap_or(0)).map_err(|e| e.to_string())?;
+    let humans = save["humans"].as_u64().unwrap_or(0);
     if let Some(local) = file.pointer("/context/local").or_else(|| file.get("local")) {
         println!(
             "report: seed {seed}, engine build {}, content {}, wasm {}",
@@ -72,18 +72,40 @@ fn main() -> Result<(), String> {
         }
         -1
     });
-    let request = json!({ "setup": save["setup"], "resume": save });
+    let request = json!({ "resume": save });
     let len = host_api::put_input(&request.to_string());
     let status = ti4_wasm::ti4_host_start(u32::try_from(len).map_err(|e| e.to_string())?);
     let end = host_api::out_text();
     if status < 0 {
         return Err(format!("the replay failed: {end}"));
     }
-    let ask = seen
-        .lock()
-        .expect("seen")
-        .take()
-        .ok_or_else(|| format!("the game ended before a question: {end}"))?;
+    let asked = seen.lock().expect("seen").take();
+    if asked.is_none() && save["finished"] == true {
+        // A finished game has no question to compare at: compare everything it decided instead.
+        let (found, hash) = host_api::with(|session| {
+            (
+                session.decision_log().len(),
+                ti4_wasm::host_session::decisions_hash(session.decision_log()),
+            )
+        })
+        .ok_or("the replay left no session")?;
+        println!(
+            "replayed {} answers of the page's seats {humans:#b}: the game ended",
+            save["answers"].as_array().map_or(0, Vec::len),
+        );
+        println!(
+            "saved: decisions {} hash {}",
+            save["decisions"], save["decisions_hash"]
+        );
+        println!("found: decisions {found} hash {hash}");
+        if save["decisions"] == json!(found) && save["decisions_hash"] == json!(hash) {
+            println!("OK: the finished game is reproduced");
+            return Ok(());
+        }
+        println!("DIFFERENT: this build decides otherwise than the one that made the save");
+        std::process::exit(1);
+    }
+    let ask = asked.ok_or_else(|| format!("the game ended before a question: {end}"))?;
     let snapshot = ask["messages"]
         .as_array()
         .and_then(|m| m.iter().find(|m| m["type"] == "initial_snapshot"))
@@ -91,15 +113,15 @@ fn main() -> Result<(), String> {
         .unwrap_or(Value::Null);
     let check = &ask["resume_check"];
     println!(
-        "replayed {} answers of seat {human}: round {} phase {} version {}",
-        save["answers"].as_array().map_or(0, Vec::len),
+        "replayed {} decisions, the page's seats {humans:#b}: round {} phase {} version {}",
+        save["decisions"].as_array().map_or(0, Vec::len),
         snapshot.pointer("/state/round").unwrap_or(&Value::Null),
         snapshot.pointer("/state/phase").unwrap_or(&Value::Null),
         snapshot.get("game_version").unwrap_or(&Value::Null),
     );
     println!(
-        "saved: decisions {} hash {}",
-        save["decisions"], save["decisions_hash"]
+        "saved: format {} hash {}",
+        save["format"], save["decisions_hash"]
     );
     println!("check: {check}");
     println!(

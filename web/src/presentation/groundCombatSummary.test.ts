@@ -7,6 +7,7 @@ const u = (unit_type: string, owner: string, damaged = false): PlacedUnitView =>
   owner,
   planet: "jord",
   damaged,
+  galvanized: false,
 });
 const step = (
   before: PlacedUnitView[],

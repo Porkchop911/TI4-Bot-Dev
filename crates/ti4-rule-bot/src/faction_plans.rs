@@ -19,6 +19,7 @@
 //!
 //! Own-seat view only (the seat's faction, technologies and units, all public), deterministic.
 
+use crate::tuning;
 use std::collections::BTreeMap;
 
 use ti4_content::units::UnitType;
@@ -543,13 +544,119 @@ pub const PLANS: &[Plan] = &[
     },
 ];
 
+/// Bot version 2 ([`tuning::plans_v2`]): reworked plans of the factions that won least in
+/// self-play (golden set: yssaril 8.5%, l1z1x 9%, nekro 9%, hacan 10%, arborec 10%).
+///
+/// - The Yssaril take Leadership and Technology instead of Politics: the bot plays its action
+///   cards mostly at random, so two more of them are worth less than tokens.
+/// - The L1Z1X and the Nekro take Leadership first: a dreadnought fleet (and the Nekro, who
+///   cannot research, its Propagation tokens from Technology later) moves on command tokens.
+/// - The Hacan build carriers to expand on their trade goods, and take Leadership after Trade.
+/// - The Arborec take Leadership after Construction and build more carriers for Mitosis' troops.
+pub const PLANS_V2: &[Plan] = &[
+    Plan {
+        factions: &["yssaril"],
+        techs: &[
+            "dxa", "tp", "mi", "st", "ps", "sar", "hm", "amd|sr", "cv2", "dn2",
+        ],
+        units: &[
+            Emphasis("carrier", 1.3, 1.0, 3, 2),
+            Emphasis("cruiser", 1.1, 1.0, 0, 0),
+            Emphasis("mech", 1.1, 1.1, 1, 1),
+            Emphasis("dreadnought", 1.1, 1.4, 1, 2),
+            Emphasis("flagship", 1.0, 1.3, 0, 1),
+        ],
+        ships: [8, 10],
+        cards: &["Leadership", "Technology", "Warfare"],
+    },
+    Plan {
+        factions: &["l1z1x"],
+        techs: &[
+            "amd|sr", "st", "sdn2", "sar", "ff2", "da", "gls", "is", "asc", "fl",
+        ],
+        units: &[
+            Emphasis("dreadnought", 1.8, 1.8, 4, 5),
+            Emphasis("carrier", 1.1, 1.0, 2, 1),
+            Emphasis("fighter", 1.2, 1.2, 0, 0),
+            Emphasis("flagship", 1.0, 1.3, 0, 1),
+            Emphasis("cruiser", 0.7, 0.7, 0, 0),
+            Emphasis("destroyer", 0.8, 0.8, 0, 0),
+            Emphasis("infantry", 0.8, 0.8, 0, 0),
+        ],
+        ships: [9, 11],
+        cards: &["Leadership", "Warfare", "Technology"],
+    },
+    Plan {
+        factions: &["nekro"],
+        techs: &[],
+        units: &[
+            Emphasis("dreadnought", 1.5, 1.6, 2, 4),
+            Emphasis("carrier", 1.1, 1.0, 2, 1),
+            Emphasis("cruiser", 1.1, 1.0, 0, 0),
+            Emphasis("flagship", 1.0, 1.4, 0, 1),
+            Emphasis("mech", 1.1, 1.1, 0, 0),
+        ],
+        ships: [8, 10],
+        cards: &["Leadership", "Technology", "Warfare"],
+    },
+    Plan {
+        factions: &["hacan"],
+        techs: &[
+            "gls", "sdn|pi", "qdn", "nm", "dxa", "pm", "cv2", "dn2", "ie",
+        ],
+        units: &[
+            Emphasis("dreadnought", 1.3, 1.5, 2, 3),
+            Emphasis("carrier", 1.3, 1.0, 3, 2),
+            Emphasis("fighter", 1.1, 1.0, 0, 0),
+            Emphasis("flagship", 1.0, 1.3, 0, 1),
+        ],
+        ships: [8, 10],
+        cards: &["Trade", "Leadership", "Technology"],
+    },
+    Plan {
+        factions: &["arborec"],
+        techs: &[
+            "nm", "dxa", "lw2", "amd|sr", "cv2", "bio", "hm", "sar", "da",
+        ],
+        units: &[
+            Emphasis("carrier", 1.4, 1.1, 3, 3),
+            Emphasis("mech", 1.3, 1.2, 2, 3),
+            Emphasis("flagship", 1.2, 1.5, 0, 1),
+            Emphasis("dreadnought", 1.0, 1.4, 1, 2),
+            Emphasis("fighter", 0.8, 0.8, 0, 0),
+        ],
+        ships: [7, 9],
+        cards: &["Construction", "Leadership", "Warfare"],
+    },
+];
+
 /// The plan for a faction alias, if it has one.
 #[must_use]
 pub fn plan_for(faction: &str) -> Option<&'static Plan> {
+    if tuning::plans_v2()
+        && let Some(plan) = PLANS_V2
+            .iter()
+            .find(|plan| plan.factions.contains(&faction))
+    {
+        return Some(plan);
+    }
     PLANS.iter().find(|plan| plan.factions.contains(&faction))
 }
 
 fn seat_plan(seen: &Observed<'_>, me: &PlayerId) -> Option<&'static Plan> {
+    if !tuning::faction_plans_enabled() {
+        return None;
+    }
+    if tuning::plan_off() == 1
+        && seen.seat(me).is_some_and(|seat| {
+            matches!(
+                seat.faction.as_str(),
+                "ghost" | "hacan" | "empyrean" | "naaz" | "winnu"
+            )
+        })
+    {
+        return None;
+    }
     seen.seat(me)
         .and_then(|seat| plan_for(seat.faction.as_str()))
 }
@@ -658,6 +765,52 @@ pub fn research_pick(choice: &Choice, seen: &Observed<'_>, me: &PlayerId) -> Opt
     None
 }
 
+/// The starting technology (bot version 3): the offered technology that comes first in the
+/// faction's plan, then in [`GENERAL`]; a technology on neither list comes last, by id.
+#[must_use]
+pub fn starting_tech_pick(choice: &Choice, seen: &Observed<'_>, me: &PlayerId) -> Option<usize> {
+    let own_list = seat_plan(seen, me).map_or(&[][..], |plan| plan.techs);
+    let order: Vec<&str> = own_list.iter().chain(GENERAL).copied().collect();
+    let rank = |alias: &str| {
+        order
+            .iter()
+            .position(|entry| entry.split('|').any(|a| a == alias))
+            .unwrap_or(usize::MAX)
+    };
+    choice
+        .options
+        .iter()
+        .enumerate()
+        .filter(|(_, o)| !o.is_decline())
+        .min_by_key(|(_, o)| (rank(&o.id), o.id.as_str()))
+        .map(|(index, _)| index)
+}
+
+/// Bot version 3: of technologies offered outside a research (a stolen or copied one), the index
+/// of the best by the seat's own order (its plan, then [`GENERAL`]); one it already owns never.
+/// `candidates` are `(option index, technology alias)`.
+#[must_use]
+pub fn best_technology(
+    seen: &Observed<'_>,
+    me: &PlayerId,
+    candidates: &[(usize, &str)],
+) -> Option<usize> {
+    let seat = seen.seat(me)?;
+    let own_list = seat_plan(seen, me).map_or(&[][..], |plan| plan.techs);
+    let order: Vec<&str> = own_list.iter().chain(GENERAL).copied().collect();
+    let rank = |alias: &str| {
+        order
+            .iter()
+            .position(|entry| entry.split('|').any(|a| a == alias))
+            .unwrap_or(order.len())
+    };
+    candidates
+        .iter()
+        .filter(|(_, alias)| !seat.technologies.contains(&TechnologyId::new(*alias)))
+        .min_by_key(|(index, alias)| (rank(alias), *index))
+        .map(|(index, _)| *index)
+}
+
 // -- production ----------------------------------------------------------------------------------
 
 /// How many of the seat's units of `base` type are on the board (ships and ground forces).
@@ -699,11 +852,11 @@ pub fn unit_weight(seen: &Observed<'_>, me: &PlayerId, kind: UnitType<'_>) -> f6
         };
         weight *= w;
         if wanted > 0 && count_of(seen, me, base) < wanted {
-            weight *= SHORT_BONUS;
+            weight *= tuning::short_bonus();
         }
     }
     if kind.upgrades_from().is_some() {
-        weight *= UPGRADED_BONUS;
+        weight *= tuning::upgraded_bonus();
     }
     weight
 }

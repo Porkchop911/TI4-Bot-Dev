@@ -1,12 +1,13 @@
 //! The random pick under the rule bot: what a seat answers where the bot has no opinion.
 //!
-//! Every pick is seeded from (game seed, seat id, decision index), so the same position gets the
-//! same answer in the server and in the wasm build.
+//! Every pick is seeded from (game seed, seat place, decision index), so the same position gets the
+//! same answer in the server and in the wasm build. The seat place is the 0-based index of the seat
+//! in the seat order of the game (`GameState::players`), not its id: the ids of a game differ
+//! between the hosts (the server makes random ones), its seat order does not.
 
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use ti4_engine::choice::{Choice, ChoiceOption};
-use ti4_model::id::PlayerId;
 
 fn mix(mut x: u64) -> u64 {
     // splitmix64 finaliser
@@ -16,16 +17,13 @@ fn mix(mut x: u64) -> u64 {
     x ^ (x >> 31)
 }
 
-fn fnv(text: &str) -> u64 {
-    text.bytes().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
-        (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
-    })
-}
-
-/// The RNG for one decision: a pure function of (game seed, seat, decision index).
+/// The RNG for one decision: a pure function of (game seed, seat place, decision index). `seat`
+/// is the place of the deciding seat in the seat order of the game, from 0.
 #[must_use]
-pub fn decision_rng(game_seed: u64, seat: &PlayerId, index: usize) -> ChaCha8Rng {
-    let seed = mix(game_seed ^ mix(fnv(seat.as_str())) ^ mix(index as u64 ^ 0xA5A5_5A5A_0000_0000));
+pub fn decision_rng(game_seed: u64, seat: usize, index: usize) -> ChaCha8Rng {
+    let seed = mix(game_seed
+        ^ mix(seat as u64 ^ 0x5EA7_0000_0000_0000)
+        ^ mix(index as u64 ^ 0xA5A5_5A5A_0000_0000));
     ChaCha8Rng::seed_from_u64(seed)
 }
 

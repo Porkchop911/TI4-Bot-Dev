@@ -14,16 +14,16 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
 use tracing::{debug, warn};
 
-use crate::protocol::PROTOCOL_VERSION;
-use crate::protocol::client::ClientMessage;
-use crate::protocol::error::ErrorKind;
-use crate::protocol::server::{
-    ActionRejectedMsg, DraftAppliedMsg, DraftKind, DraftOutcomeMsg, PlanningRejection,
-    PlanningResultMsg, PlanningUpdateMsg, PongMsg, PreviewRefusal, PreviewResult, ProtocolErrorMsg,
-    SecondaryPreviewMsg, ServerMessage,
+use ti4_host::preview::PreviewRequest;
+use ti4_host::protocol::PROTOCOL_VERSION;
+use ti4_host::protocol::client::ClientMessage;
+use ti4_host::protocol::error::ErrorKind;
+use ti4_host::protocol::server::{
+    ActionRejectedMsg, DraftAppliedMsg, DraftOutcomeMsg, PongMsg, PreviewRefusal, PreviewResult,
+    ProtocolErrorMsg, SecondaryPreviewMsg, ServerMessage,
 };
-use crate::protocol::status::{RejectionReason, ViewerRole};
-use crate::session::preview::PreviewRequest;
+use ti4_host::protocol::status::{RejectionReason, ViewerRole};
+
 use crate::session::{GameRegistry, GameSession};
 
 /// WebSocket upgrade handler for `GET /ws/games/{game_id}`.
@@ -51,8 +51,8 @@ pub const MAX_CLIENT_MESSAGE_BYTES: usize = 64 * 1024;
 /// The newest draft request of a connection: its `request_id` and its script.
 type DraftRequest = Option<(
     String,
-    ti4_view::planning::audit::PlanScope,
-    Vec<ti4_view::planning::draft::DraftStep>,
+    ti4_host::planning::audit::PlanScope,
+    Vec<ti4_host::planning::draft::DraftStep>,
 )>;
 /// Least time between two reaction declarations on one connection.
 const MIN_INTENT_INTERVAL: Duration = Duration::from_millis(500);
@@ -84,7 +84,6 @@ async fn handle_socket(
     let pump_game = game_id.clone();
     let outbound_credential = Arc::new(std::sync::Mutex::new(None::<String>));
     let credential_for_pump = outbound_credential.clone();
-    let session_for_pump = session.clone();
 
     // Outbound pump task: forwards ServerMessage as JSON text to WebSocket sink
     let outbound_task = tokio::spawn(async move {
@@ -113,24 +112,6 @@ async fn handle_socket(
                     .is_err()
             }) {
                 break;
-            }
-            if let ServerMessage::PlanningUpdate(update) = &msg {
-                let Some(player) = credential.as_deref().and_then(|token| {
-                    outbound_registry
-                        .authenticate_player_session(&outbound_game, token)
-                        .ok()
-                }) else {
-                    continue;
-                };
-                let current = match update.draft {
-                    DraftKind::Tactical => session_for_pump
-                        .planning_attempt_is_current(&player, update.envelope.identity),
-                    DraftKind::Secondary => session_for_pump
-                        .secondary_attempt_is_current(&player, update.envelope.identity),
-                };
-                if !current {
-                    continue;
-                }
             }
             match serde_json::to_string(&msg) {
                 Ok(text) => {
@@ -260,119 +241,6 @@ async fn handle_socket(
         }
 
         match client_msg {
-            message @ (ClientMessage::StartPlanning { .. }
-            | ClientMessage::ResetPlanning { .. }
-            | ClientMessage::EditPlanningMovement { .. }
-            | ClientMessage::ApplyPlanning { .. }
-            | ClientMessage::SubmitPlanningChoice { .. }) => {
-                let request_id = match &message {
-                    ClientMessage::SubmitPlanningChoice { request_id, .. } => request_id.as_deref(),
-                    _ => None,
-                };
-                let (message_game_id, answer) = match &message {
-                    ClientMessage::StartPlanning { game_id, .. } => (game_id, None),
-                    ClientMessage::ResetPlanning {
-                        game_id, identity, ..
-                    }
-                    | ClientMessage::EditPlanningMovement {
-                        game_id, identity, ..
-                    } => (game_id, Some((*identity, ""))),
-                    ClientMessage::ApplyPlanning {
-                        game_id, identity, ..
-                    } => (game_id, Some((*identity, ""))),
-                    ClientMessage::SubmitPlanningChoice {
-                        game_id,
-                        identity,
-                        option_id,
-                        ..
-                    } => (game_id, Some((*identity, option_id.as_str()))),
-                    _ => unreachable!(),
-                };
-                let rejection = if message_game_id != &game_id {
-                    Some(PlanningRejection::WrongGame)
-                } else if let (Some(ViewerRole::Player(player)), Some(token)) =
-                    (&current_role, &current_token)
-                {
-                    if let ClientMessage::ApplyPlanning {
-                        identity,
-                        nonce,
-                        expected_version,
-                        ..
-                    } = &message
-                    {
-                        registry
-                            .apply_player_planning(
-                                &game_id,
-                                token,
-                                player,
-                                &session,
-                                *identity,
-                                nonce,
-                                *expected_version,
-                            )
-                            .err()
-                    } else if let ClientMessage::EditPlanningMovement { identity, .. } = &message {
-                        registry
-                            .edit_player_planning_movement(
-                                &game_id, token, player, &session, *identity,
-                            )
-                            .err()
-                    } else if matches!(message, ClientMessage::ResetPlanning { .. }) {
-                        registry
-                            .reset_player_planning(
-                                &game_id,
-                                token,
-                                player,
-                                &session,
-                                answer.expect("reset identity").0,
-                            )
-                            .err()
-                    } else {
-                        registry
-                            .submit_player_planning_with_request_id(
-                                &game_id, token, player, &session, answer, request_id,
-                            )
-                            .err()
-                    }
-                } else {
-                    Some(PlanningRejection::Unauthorized)
-                };
-                let _ = outbound_tx
-                    .send(ServerMessage::PlanningResult(PlanningResultMsg {
-                        protocol_version: PROTOCOL_VERSION,
-                        game_id: game_id.clone(),
-                        draft: DraftKind::Tactical,
-                        identity: answer.map(|(identity, _)| identity),
-                        rejection,
-                    }))
-                    .await;
-            }
-            ClientMessage::SecondaryPlanning {
-                game_id: message_game_id,
-                request,
-                ..
-            } => {
-                let rejection = if message_game_id != game_id {
-                    Some(PlanningRejection::WrongGame)
-                } else if let (Some(ViewerRole::Player(player)), Some(token)) =
-                    (&current_role, &current_token)
-                {
-                    registry
-                        .player_secondary_planning(&game_id, token, player, &session, &request)
-                        .err()
-                } else {
-                    Some(PlanningRejection::Unauthorized)
-                };
-                let _ = outbound_tx
-                    .send(ServerMessage::PlanningResult(PlanningResultMsg {
-                        protocol_version: PROTOCOL_VERSION,
-                        game_id: game_id.clone(),
-                        draft: DraftKind::Secondary,
-                        identity: request.identity(),
-                        rejection,
-                    }))
-                    .await;
-            }
             ClientMessage::RunDraft {
                 game_id: message_game_id,
                 request_id,
@@ -641,87 +509,13 @@ async fn handle_socket(
                 let registry_for_updates = registry.clone();
                 let game_for_updates = game_id.clone();
                 let token_for_updates = current_token.clone();
-                let session_for_updates = session.clone();
                 let staged_for_updates = staged_wanted;
                 tokio::spawn(async move {
                     let mut check = tokio::time::interval(Duration::from_millis(50));
-                    let mut planning = None;
-                    let mut secondary_planning = None;
-                    let mut last_planning_status = None;
                     loop {
                         tokio::select! {
                             _ = check.tick() => {},
                             _ = tx_clone.closed() => return,
-                        }
-                        if let ViewerRole::Player(player) = &role {
-                            // Publish retirement/availability before draining replacement offers.
-                            // This also covers phases where no replacement worker exists.
-                            let status = session_for_updates.planning_status(player);
-                            if last_planning_status.as_ref() != Some(&status) {
-                                if tx_clone
-                                    .send(ServerMessage::PlanningStatus(status.clone()))
-                                    .await
-                                    .is_err()
-                                {
-                                    return;
-                                }
-                                last_planning_status = Some(status);
-                            }
-                            if planning.is_none() {
-                                planning = session_for_updates.subscribe_planning(player);
-                            }
-                            if secondary_planning.is_none() {
-                                secondary_planning =
-                                    session_for_updates.subscribe_secondary_planning(player);
-                            }
-                            for (draft, subscription) in [
-                                (DraftKind::Tactical, &mut planning),
-                                (DraftKind::Secondary, &mut secondary_planning),
-                            ] {
-                                let Some(receiver) = subscription else {
-                                    continue;
-                                };
-                                loop {
-                                    match receiver.try_recv() {
-                                        Ok(envelope) => {
-                                            let current = match draft {
-                                                DraftKind::Tactical => session_for_updates
-                                                    .planning_attempt_is_current(
-                                                        player,
-                                                        envelope.identity,
-                                                    ),
-                                                DraftKind::Secondary => session_for_updates
-                                                    .secondary_attempt_is_current(
-                                                        player,
-                                                        envelope.identity,
-                                                    ),
-                                            };
-                                            if !current {
-                                                continue;
-                                            }
-                                            if tx_clone
-                                                .send(ServerMessage::PlanningUpdate(
-                                                    PlanningUpdateMsg {
-                                                        protocol_version: PROTOCOL_VERSION,
-                                                        game_id: game_for_updates.clone(),
-                                                        draft,
-                                                        envelope,
-                                                    },
-                                                ))
-                                                .await
-                                                .is_err()
-                                            {
-                                                return;
-                                            }
-                                        }
-                                        Err(std::sync::mpsc::TryRecvError::Empty) => break,
-                                        Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                                            *subscription = None;
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
                         }
                         loop {
                             match subscription.try_recv() {
@@ -814,7 +608,7 @@ async fn handle_socket(
                                     value,
                                     connection,
                                 ) {
-                                    Ok(crate::session::staged::Put::Stale) => {
+                                    Ok(ti4_host::staged::Put::Stale) => {
                                         // Nothing is written: the connection takes what is.
                                         let _ = outbound_tx
                                             .send(ServerMessage::SeatStaged(
@@ -823,9 +617,9 @@ async fn handle_socket(
                                             .await;
                                         None
                                     }
-                                    Ok(crate::session::staged::Put::Written)
+                                    Ok(ti4_host::staged::Put::Written)
                                         if slot
-                                            == crate::session::staged::StagedSlot::Secondary =>
+                                            == ti4_host::protocol::staged::StagedSlot::Secondary =>
                                     {
                                         // A draft that is marked ready while the game asks the
                                         // seat is sent now.
@@ -1023,14 +817,14 @@ async fn handle_socket(
                 {
                     let _ = outbound_tx
                         .send(ServerMessage::ReachInto(
-                            crate::protocol::reach::ReachIntoMsg {
+                            ti4_host::protocol::reach::ReachIntoMsg {
                                 protocol_version: PROTOCOL_VERSION,
                                 game_id: game_id.clone(),
                                 request_id,
                                 system_id,
                                 as_of_version: session.game_version(),
                                 origins: Vec::new(),
-                                refused: Some(crate::protocol::reach::ReachRefusal::RateLimited),
+                                refused: Some(ti4_host::protocol::reach::ReachRefusal::RateLimited),
                             },
                         ))
                         .await;

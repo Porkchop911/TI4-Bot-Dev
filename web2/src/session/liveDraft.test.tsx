@@ -1,8 +1,8 @@
 import { act, renderHook } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import activationUpdate from "./fixtures/update-activation.json";
-import menuUpdate from "./fixtures/update-menu.json";
-import movementUpdate from "./fixtures/update-movement.json";
+import activationUpdate from "../../../fixtures/protocol/update-activation.json";
+import menuUpdate from "../../../fixtures/protocol/update-menu.json";
+import movementUpdate from "../../../fixtures/protocol/update-movement.json";
 import type { Transport, TransportEvent } from "./transport";
 import { type LiveSession, useLiveSession } from "./useLiveSession";
 import type { DraftOutcome, DraftStep, SessionUpdate } from "./wire";

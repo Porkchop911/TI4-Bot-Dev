@@ -6,7 +6,8 @@ use axum::Json;
 use axum::extract::State;
 use serde::Serialize;
 
-use crate::protocol::PROTOCOL_VERSION;
+use ti4_host::protocol::PROTOCOL_VERSION;
+
 use crate::session::GameRegistry;
 
 /// Health check response payload.

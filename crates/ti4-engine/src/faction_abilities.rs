@@ -128,6 +128,17 @@ pub fn fleet_supply(
     crate::factions::fleet_supply(state, content, player, limit)
 }
 
+/// How many ships Armada adds to the per-system limit for this player (0 without the ability).
+/// Display only: [`fleet_supply`] already includes it in the enforced limit.
+#[must_use]
+pub fn armada_bonus(state: &GameState, content: &ContentStore, player: &PlayerId) -> i32 {
+    if has(state, content, player, "armada") {
+        2
+    } else {
+        0
+    }
+}
+
 /// Command tokens gained in the status phase, adjusted.
 #[must_use]
 pub fn status_tokens(
@@ -611,7 +622,7 @@ pub fn annexable(
         };
         for planet_id in system_record.strings("planets") {
             let planet = ti4_model::id::PlanetId::new(planet_id);
-            if planet.as_str() == "mr" || board.planet_control.contains_key(&planet) {
+            if crate::seating::is_mecatol_planet(planet.as_str()) || board.planet_control.contains_key(&planet) {
                 continue; // somebody holds it
             }
             // Space Stations rule 7 keeps them out of the scoring view and rule 5 keeps
@@ -825,6 +836,10 @@ pub fn space_combat_round_started(
     if !has(state, content, player, "munitions") {
         return;
     }
+    // From RULES_MUNITIONS_AFTER_ROLL the ability is decided after the roll, in the reroll window.
+    if state.rules_version >= ti4_model::state::RULES_MUNITIONS_AFTER_ROLL {
+        return;
+    }
     if crate::supply::potential_goods(state, player) < i64::from(MUNITIONS_COST) {
         return; // it cannot resolve, so it is not offered
     }
@@ -905,6 +920,133 @@ fn munitions_offer(
     }
 }
 
+/// Munitions Reserves, decided after the fleet has rolled (rules version 2): "At the start of each
+/// round of space combat, you may spend 2 trade goods to re-roll any number of your dice during
+/// that combat round." Re-rolling needs the dice, so the question comes once the roll is staged and
+/// shows it. Answers: re-roll every missed die, choose which dice (each die is asked, as with the
+/// Crown of Thalnos; "any number of your dice" includes a hit), or decline. Pays the 2 trade goods on either yes and returns the `(roll entry, die)` positions to
+/// re-roll; the caller applies them.
+pub fn munitions_after_roll(
+    state: &mut GameState,
+    ctx: &mut crate::choice::Resolving<'_>,
+    player: &PlayerId,
+) -> Vec<(usize, usize)> {
+    let (content, sources) = (ctx.content, ctx.sources);
+    if !has(state, content, player, "munitions") {
+        return Vec::new();
+    }
+    let Some(set) = state.reroll_staging.get(player) else {
+        return Vec::new();
+    };
+    let misses = crate::combat::staged_misses(set);
+    if misses.is_empty()
+        || crate::supply::potential_goods(state, player) < i64::from(MUNITIONS_COST)
+    {
+        return Vec::new();
+    }
+    let dice = crate::combat::staged_dice_view(set);
+    let Ok(opened) = crate::supply::open_goods_window(
+        state,
+        content,
+        sources,
+        None,
+        ctx.table,
+        player,
+        i64::from(MUNITIONS_COST),
+    ) else {
+        return Vec::new();
+    };
+    let picks = munitions_roll_offer(state, ctx, player, &dice, &misses);
+    crate::supply::close_goods_window(state, player, opened);
+    picks
+}
+
+fn munitions_roll_offer(
+    state: &mut GameState,
+    ctx: &mut crate::choice::Resolving<'_>,
+    player: &PlayerId,
+    dice: &[serde_json::Value],
+    misses: &[(usize, usize)],
+) -> Vec<(usize, usize)> {
+    let (content, sources) = (ctx.content, ctx.sources);
+    let held = i32::try_from(crate::supply::spendable_goods(state, player)).unwrap_or(i32::MAX);
+    if held < MUNITIONS_COST {
+        return Vec::new(); // the agent was declined and the trade goods alone fall short
+    }
+    let preview = || {
+        Preview::certain(vec![Delta::new(
+            Quantity::TradeGoods,
+            i64::from(held),
+            i64::from(held - MUNITIONS_COST),
+        )])
+    };
+    let mut options = vec![
+        crate::choice::ChoiceOption::labelled(
+            "munitions",
+            "ability",
+            format!("reroll all {} missed dice", misses.len()),
+        )
+        .previewed(preview()),
+    ];
+    if misses.len() > 1 {
+        options.push(
+            crate::choice::ChoiceOption::labelled(
+                "munitions_choose",
+                "ability",
+                "choose which dice to reroll",
+            )
+            .previewed(preview()),
+        );
+    }
+    options.push(crate::choice::ChoiceOption::decline());
+    let choice = crate::choice::Choice::new(
+        player.clone(),
+        "spend 2 trade goods for Munitions Reserves",
+        options,
+    )
+    .detailed("kind", "ability_offer")
+    .detailed("ability", ability_card(content, "munitions"))
+    .detailed(
+        "cost",
+        serde_json::json!({ "trade_goods": MUNITIONS_COST, "have": held }),
+    )
+    .detailed("dice", dice.to_vec())
+    .detailed("misses", misses.len())
+    .contextualized(DecisionContext::new(
+        player.clone(),
+        DecisionSource::FactionAbility("munitions".to_owned()),
+        "munitions_reserves_reroll",
+        state.phase,
+        state.round,
+    ));
+    let Ok(answer) = ctx.table.ask_seeing(
+        &choice,
+        &crate::choice::Observed::new(state, content, sources, None),
+    ) else {
+        return Vec::new();
+    };
+    if answer.is_decline() {
+        return Vec::new();
+    }
+    if !crate::supply::spend_goods(state, player, MUNITIONS_COST) {
+        return Vec::new();
+    }
+    if answer.id == "munitions_choose" {
+        crate::combat::choose_reroll_dice(
+            state,
+            content,
+            sources,
+            None,
+            ctx.table,
+            player,
+            &DecisionSource::FactionAbility("munitions".to_owned()),
+            "munitions_reroll_die",
+        )
+    } else {
+        misses.to_vec()
+    }
+}
+
 // -- coverage ------------------------------------------------------------------------------------
 
 /// Every ability the corpus prints, by id.
@@ -947,16 +1089,14 @@ pub fn unimplemented_mechs(
     let known = registered_mech_abilities();
     factions
         .iter()
-        .map(|faction| format!("{faction}_mech"))
-        .filter(|id| {
-            content
-                .get(ti4_model::content_types::ContentType::Units, id)
-                .is_some_and(|record| {
-                    record.in_sources(sources)
-                        && record.text("ability").is_some_and(|text| !text.is_empty())
-                })
+        .filter_map(|faction| ti4_content::units::faction_unit(content, faction, "mech", sources))
+        .filter(|mech| {
+            mech.record()
+                .text("ability")
+                .is_some_and(|text| !text.is_empty())
         })
-        .filter(|id| !known.contains(&id.as_str()))
+        .filter(|mech| !known.contains(&mech.id()))
+        .map(|mech| mech.id().to_owned())
         .collect()
 }
 
@@ -1003,6 +1143,13 @@ mod tests {
     use crate::fixtures::game;
     use ti4_model::content_types::{FULL, POK};
     use ti4_model::id::{FactionId, PlayerId, TechnologyId};
+
+    /// A seat under the rules before Munitions Reserves moved after the roll (version 1).
+    fn seated_legacy(faction: &str) -> (GameState, PlayerId) {
+        let (mut state, player) = seated(faction);
+        state.rules_version = ti4_model::state::RULES_INFILTRATE_FIX;
+        (state, player)
+    }
 
     fn seated(faction: &str) -> (GameState, PlayerId) {
         let player = PlayerId::new("a");
@@ -1124,7 +1271,7 @@ mod tests {
             return;
         };
         let content = ContentStore::embedded();
-        let (mut state, player) = seated(&letnev);
+        let (mut state, player) = seated_legacy(&letnev);
         state.player_mut(&player).unwrap().fleet_tokens = 3;
 
         assert_eq!(
@@ -1849,7 +1996,7 @@ mod tests {
             return;
         };
         let content = ContentStore::embedded();
-        let (mut state, player) = seated(&letnev);
+        let (mut state, player) = seated_legacy(&letnev);
         state.player_mut(&player).unwrap().trade_goods = 5;
         state.combat_round_seq = 3;
         let mut table = crate::choice::Table::new();
@@ -1869,7 +2016,7 @@ mod tests {
             return;
         };
         let content = ContentStore::embedded();
-        let (mut state, player) = seated(&letnev);
+        let (mut state, player) = seated_legacy(&letnev);
         state.player_mut(&player).unwrap().trade_goods = 5;
         let (decider, seen) = crate::choice::Capturing::new(Box::new(crate::choice::AlwaysDecline));
         let mut table = crate::choice::Table::with_default(Box::new(decider));
@@ -1894,7 +2041,7 @@ mod tests {
             return;
         };
         let content = ContentStore::embedded();
-        let (mut state, player) = seated(&letnev);
+        let (mut state, player) = seated_legacy(&letnev);
         state.player_mut(&player).unwrap().trade_goods = 5;
         let (decider, seen) =
             crate::choice::Capturing::new(Box::new(crate::choice::Scripted::new(["munitions"])));
@@ -1939,7 +2086,7 @@ mod tests {
             return;
         };
         let content = ContentStore::embedded();
-        let (mut state, player) = seated(&letnev);
+        let (mut state, player) = seated_legacy(&letnev);
         state.player_mut(&player).unwrap().trade_goods = 5;
         let mut table = crate::choice::Table::new();
         table.seat(player.clone(), Box::new(SeeingDecline));
@@ -1956,7 +2103,7 @@ mod tests {
             return;
         };
         let content = ContentStore::embedded();
-        let (mut state, player) = seated(&letnev);
+        let (mut state, player) = seated_legacy(&letnev);
         state.player_mut(&player).unwrap().trade_goods = 1;
         let mut table = crate::choice::Table::new();
 
@@ -1979,6 +2126,15 @@ mod tests {
         assert_eq!(state.player(&player).unwrap().trade_goods, 5);
     }
 
+    #[test]
+    fn the_mech_ledger_uses_the_active_printing() {
+        let content = ContentStore::embedded();
+        assert!(unimplemented_mechs(content, ti4_model::content_types::DEFAULT, &["naalu"]).is_empty());
+        assert_eq!(
+            unimplemented_mechs(content, ti4_model::content_types::POK, &["naalu"]),
+            ["naalu_mech"]
+        );
+    }
     #[test]
     fn the_blocked_abilities_are_named_with_a_reason() {
         // Kept apart from merely unwritten ones: one is work, the other is a dependency, and a

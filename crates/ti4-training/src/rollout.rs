@@ -287,9 +287,8 @@ pub fn game_factions(
             Ok(fixed.iter().map(|alias| FactionId::new(*alias)).collect())
         }
         ti4_engine::seating::FactionRoster::Wide | ti4_engine::seating::FactionRoster::New => {
-            let drawn =
-                ti4_engine::seating::seat_roster(roster, content, players, sources, seed)
-                    .map_err(|error| format!("{roster:?} roster for seed {seed}: {error}"))?;
+            let drawn = ti4_engine::seating::seat_roster(roster, content, players, sources, seed)
+                .map_err(|error| format!("{roster:?} roster for seed {seed}: {error}"))?;
             players
                 .iter()
                 .map(|player| {
@@ -358,7 +357,14 @@ fn save54_board(
     }
     let mut owned: Vec<(String, Hex)> = SAVE54_NEUTRAL
         .iter()
-        .map(|(id, q, r)| ((*id).to_owned(), Hex::new(*q, *r)))
+        .map(|(id, q, r)| {
+            let id = if *id == ti4_engine::seating::MECATOL {
+                ti4_engine::seating::mecatol_for(content, sources)
+            } else {
+                id
+            };
+            (id.to_owned(), Hex::new(*q, *r))
+        })
         .collect();
     for ((player, hex), _) in players.iter().zip(SAVE54_HOMES).zip(0..) {
         let faction = factions
@@ -2528,8 +2534,7 @@ mod tests {
         let players = six_players();
         for seed in 0..12 {
             let drawn =
-                game_factions(content, FactionRoster::Wide, &SIX, &players, DEFAULT, seed)
-                    .unwrap();
+                game_factions(content, FactionRoster::Wide, &SIX, &players, DEFAULT, seed).unwrap();
             let assignments: BTreeMap<PlayerId, FactionId> = players
                 .iter()
                 .enumerate()

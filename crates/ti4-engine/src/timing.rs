@@ -10,7 +10,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use ti4_model::id::PlayerId;
+use ti4_model::id::{ActionCardId, PlayerId};
 use ti4_model::{content_types::SourceSet, state::GameState};
 
 use crate::{
@@ -898,6 +898,7 @@ impl Resolver {
         let mut resolved_here = BTreeSet::<String>::new();
         let result = (|| {
             let mut passed = BTreeSet::<PlayerId>::new();
+            let mut passed_last = BTreeSet::<PlayerId>::new();
             loop {
                 let mut resolved_this_pass = false;
                 for player in self.player_order() {
@@ -909,6 +910,11 @@ impl Resolver {
                         continue;
                     }
                     let Some(ability) = self.pick(eligible, event, &player, relation)? else {
+                        // A seat passing twice in a row closes the window (operator rule), so a
+                        // no-op "resolution" cannot reopen the same window forever.
+                        if passed_last.contains(&player) {
+                            return Ok(());
+                        }
                         passed.insert(player);
                         continue;
                     };
@@ -932,7 +938,7 @@ impl Resolver {
                 if !resolved_this_pass {
                     return Ok(());
                 }
-                passed.clear();
+                passed_last = std::mem::take(&mut passed);
             }
         })();
         self.relation_being_resolved = previous;
@@ -950,6 +956,7 @@ impl Resolver {
         let mut resolved_here = BTreeSet::<String>::new();
         let result = (|| {
             let mut passed = BTreeSet::<PlayerId>::new();
+            let mut passed_last = BTreeSet::<PlayerId>::new();
             // Seats already looked at once in this window (see `Table::window_skipped`).
             let mut announced = BTreeSet::<PlayerId>::new();
             loop {
@@ -980,6 +987,11 @@ impl Resolver {
                     let Some(ability) =
                         self.pick_with_context(eligible, event, &player, relation, context)?
                     else {
+                        // A seat passing twice in a row closes the window (operator rule), so a
+                        // no-op "resolution" cannot reopen the same window forever.
+                        if passed_last.contains(&player) {
+                            return Ok(());
+                        }
                         passed.insert(player);
                         continue;
                     };
@@ -991,10 +1003,23 @@ impl Resolver {
                         player,
                         ability.id
                     ));
+                    let hand = |state: &GameState| state.player(&player).map(|p| p.action_cards.clone());
+                    let hand_before = ability
+                        .id
+                        .starts_with("reaction:")
+                        .then(|| hand(context.state));
                     if let Some(effect) = ability.stateful_effect {
                         effect(event, self, context)?;
                     } else {
                         (ability.effect)(event, self)?;
+                    }
+                    // A reaction slot opened and backed out of plays no card: that is a pass.
+                    if hand_before.is_some_and(|before| before == hand(context.state)) {
+                        if passed_last.contains(&player) {
+                            return Ok(());
+                        }
+                        passed.insert(player);
+                        continue;
                     }
                     resolved_this_pass = true;
                     if event.cancelled {
@@ -1004,9 +1029,19 @@ impl Resolver {
                 if !resolved_this_pass {
                     return Ok(());
                 }
-                passed.clear();
+                passed_last = std::mem::take(&mut passed);
             }
         })();
+        // Rules version 3 (`RULES_SABOTAGE_TIMING`): the cards the players declared in this
+        // window are announced only now, once every declaration is in, each in declaration
+        // order and each opening its own Sabotage window.
+        let result = result.and_then(|()| {
+            let declared = std::mem::take(&mut context.state.declared_card_plays);
+            for (player, alias) in declared {
+                crate::reactions::announce(context, self, &player, &alias)?;
+            }
+            Ok(())
+        });
         self.relation_being_resolved = previous;
         result
     }
@@ -1184,8 +1219,30 @@ impl Resolver {
             format!("{} {}", relation_name(relation), event.event_type),
             options,
         );
+        // What each single-card slot would do now (display only; see `reaction_preview`).
+        let previews = {
+            let single: Vec<(ActionCardId, String)> = choice
+                .options
+                .iter()
+                .filter_map(|option| {
+                    option
+                        .payload
+                        .get("card")
+                        .and_then(serde_json::Value::as_str)
+                        .map(|card| (ActionCardId::new(card), option.id.clone()))
+                })
+                .collect();
+            crate::reaction_preview::previews_for(
+                context.state,
+                context.content,
+                context.sources,
+                player,
+                event,
+                single.iter().map(|(card, option)| (card, option.clone())),
+            )
+        };
         // Whose turn it is, for a seat that asked to be offered a reaction on its own turns only
-        // (`ti4_view::reaction_modes`). Display only, as every detail: not in a record or a replay.
+        // (`ti4_host::view::reaction_modes`). Display only, as every detail: not in a record or a replay.
         let choice = match &context.state.active {
             Some(active) if context.state.phase == ti4_model::state::Phase::Action => {
                 choice.detailed(ACTIVE_DETAIL, active.to_string())
@@ -1202,6 +1259,7 @@ impl Resolver {
             )
             .optional(declinable)
             .about_battle(context.state)
+            .with_previews(previews)
             .with_trigger(crate::decision_context::DecisionTrigger::from_event(
                 event,
                 relation_name(relation),
@@ -2038,6 +2096,29 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn a_second_consecutive_pass_closes_a_window_a_no_op_slot_keeps_reopening() {
+        // BUG-AGENDA-NESTED-DECLINE: a repeatable slot that resolves nothing used to clear the
+        // other seats' passes forever. Sol passing twice in a row now closes the window.
+        let order = Arc::new(Mutex::new(Vec::new()));
+        let mut timing = resolver(&["sol", "letnev"], "sol");
+        timing
+            .table_mut()
+            .seat(player("sol"), Box::new(Scripted::new(["decline", "decline"])));
+        timing.register([
+            recording_ability("sol", "sol", "E", Relation::When, order.clone()).with_optional(true),
+            recording_ability("slot", "letnev", "E", Relation::When, order.clone())
+                .with_frequency(Frequency::Unlimited)
+                .with_repeatable_in_window(true),
+        ]);
+
+        timing
+            .emit(Event::new(1, "E", BTreeMap::new()), |_| {})
+            .unwrap();
+
+        assert_eq!(*order.lock().unwrap(), ["slot"]);
     }
 
     #[test]

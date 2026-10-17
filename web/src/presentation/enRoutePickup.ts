@@ -1,4 +1,4 @@
-import type { BoardView } from "../protocol/types.ts";
+import type { BoardView, MovementFacts } from "../protocol/types.ts";
 
 // 95.1: a transporting ship "can pick up and transport units from the active system, the system it
 // started its movement in, and each system it moves through". The engine opens the hold after the
@@ -127,4 +127,42 @@ export function originCargoBlockedByToken(
 ): boolean {
   if (system === activeSystem) return false;
   return (board?.systems?.[system]?.command_tokens ?? []).includes(actor);
+}
+
+/**
+ * The systems on the way that the engine lets a ship from `origin` pick up from, read from the
+ * host's movement facts (`ShipFact.loads` points into `MovementFacts.cargo`; the engine computed
+ * both with the route it will really use). `null` when the facts are missing or are not those of
+ * this activation, so the caller falls back to {@link enRoutePickupSystems}.
+ */
+export function factPickupSystems(
+  facts: MovementFacts | null | undefined,
+  origin: string,
+  destination: string,
+): string[] | null {
+  if (!facts || facts.active !== destination) return null;
+  const ships = facts.ships.filter((ship) => ship.origin === origin);
+  if (!ships.some((ship) => ship.move)) return null;
+  const found = new Set<string>();
+  for (const ship of ships) {
+    for (const index of ship.loads ?? []) {
+      const system = facts.cargo[index]?.system;
+      if (system && system !== origin && system !== destination) found.add(system);
+    }
+  }
+  return [...found];
+}
+
+/** The pickup systems on the way: the engine's facts when present, else the predicted route. */
+export function routePickupSystems(
+  facts: MovementFacts | null | undefined,
+  board: BoardView | undefined,
+  origin: string,
+  destination: string,
+  actor: string,
+): string[] {
+  return (
+    factPickupSystems(facts, origin, destination) ??
+    enRoutePickupSystems(board, origin, destination, actor)
+  );
 }

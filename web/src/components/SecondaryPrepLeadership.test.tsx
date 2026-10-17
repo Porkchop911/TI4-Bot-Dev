@@ -168,7 +168,7 @@ function enginePreview(verdict: "accept" | "reject" | "unavailable" = "accept") 
         choice: {
           player: "b",
           prompt: "pay 3 more influence",
-          options: [{ id: "exhaust|jord", kind: "pay", label: "jord" }],
+          options: [{ id: "exhaust|jord", kind: "pay", label: "jord", payload: {} }],
           context: { subtype: "pay_influence" } as never,
         },
       });

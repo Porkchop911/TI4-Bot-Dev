@@ -1325,13 +1325,28 @@ mod tests {
         }
     }
 
+    /// The committed copy of the holdout pool (same bytes as [`POOL_PATH`], pinned by
+    /// [`POOL_SHA_PREFIX`]), relative to the repository root.
+    const COMMITTED_POOL_PATH: &str = "examples/reviewer/full_np8_12_holdout.json";
+
+    /// [`POOL_PATH`] when the gitignored pool is present, else the committed copy, so the test
+    /// runs on a clean checkout. The sha prefix check still pins the bytes.
+    fn test_pool_path() -> PathBuf {
+        let local = repo_root().join(POOL_PATH);
+        if local.exists() {
+            local
+        } else {
+            repo_root().join(COMMITTED_POOL_PATH)
+        }
+    }
+
     /// The fixture capture is deterministic: two independent captures from the same inputs find
     /// the same position. (Runs against the real pool; cheap — one replay each.)
     #[test]
     fn fixture_capture_is_deterministic() {
         let content = ContentStore::embedded();
         let sources = DEFAULT;
-        let pool_path = repo_root().join(POOL_PATH);
+        let pool_path = test_pool_path();
         let bytes = fs::read(&pool_path).expect("pool exists in this checkout");
         assert!(hex(Sha256::digest(&bytes)).starts_with(POOL_SHA_PREFIX));
         let pool = MapPool::load(&pool_path).expect("pool loads");

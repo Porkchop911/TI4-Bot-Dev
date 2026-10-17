@@ -60,6 +60,7 @@ pub enum StrategySecondaryError {
 /// Why a follower is not asked a card's secondary (see [`StrategySecondaryWindow::blocker`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum SecondaryBlocker {
     /// The secondary costs a strategy token and the seat has none (and no waiver).
     NoStrategyToken,

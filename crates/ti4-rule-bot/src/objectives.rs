@@ -40,6 +40,7 @@
 //! - **Research** and **structure placement**: the option that moves an objective most.
 //! - **Secret objectives**: over the hand limit, the secret furthest from done goes back.
 
+use crate::tuning;
 use std::collections::BTreeSet;
 
 use rand::Rng;
@@ -50,9 +51,9 @@ use ti4_engine::production::Spend;
 use ti4_model::id::{ObjectiveId, PlanetId, PlayerId, SystemId};
 
 use super::{
-    ACTIVATION_THRESHOLD, EAGER_WORTH, activation_value, best_above, card_is, has_hostile_ships,
-    holds_mecatol, home_system, is_ground, is_ship, mecatol_in_reach, mecatol_takeable,
-    payload_f64, payload_str, ready_card, strategic_option, targets, unit_type,
+    activation_value, best_above, card_is, has_hostile_ships, holds_mecatol, home_system,
+    is_ground, is_ship, mecatol_in_reach, mecatol_takeable, payload_f64, payload_str, ready_card,
+    strategic_option, targets, unit_type,
 };
 
 /// The first round the objective layer plays: rounds one and two are the expansion.
@@ -87,16 +88,17 @@ pub fn set_enabled_for(seats: &[&str]) {
 }
 
 fn enabled_for(seat: &PlayerId) -> bool {
-    ENABLED
-        .lock()
-        .expect("objective layer switch")
-        .as_ref()
-        .is_none_or(|seats| seats.contains(seat.as_str()))
+    tuning::objectives_enabled()
+        && ENABLED
+            .lock()
+            .expect("objective layer switch")
+            .as_ref()
+            .is_none_or(|seats| seats.contains(seat.as_str()))
 }
 
 /// Whether the objective layer plays this decision.
 fn active(seen: &Observed<'_>) -> bool {
-    seen.round() >= OBJECTIVE_ROUND
+    seen.round() >= tuning::objective_round()
 }
 
 /// The objective layer's answer to `choice`, or `None` to leave it to the rule bot.
@@ -124,6 +126,28 @@ pub fn pick(
     if !active(observed) {
         return None;
     }
+    // Backward planning, Warfare variant: the gather step beside Mecatol Rex moves and loads
+    // everything that can then reach it.
+    if matches!(subtype, Some("movement_step" | "load_cargo"))
+        && observed
+            .active_system()
+            .is_some_and(crate::backward::gathering)
+    {
+        return if subtype == Some("load_cargo") {
+            crate::backward::mecatol_two_step::gather_load(choice, observed)
+        } else {
+            crate::backward::mecatol_two_step::gather_move(choice, observed)
+        };
+    }
+    // Backward planning, ground pile: every ground force on one planet of the planned system.
+    if subtype == Some("commit_ground_forces")
+        && observed
+            .active_system()
+            .is_some_and(crate::backward::piling)
+        && let Some(index) = choice.options.iter().position(|o| o.kind == "commit")
+    {
+        return Some(index);
+    }
     match subtype {
         Some("activate_system") => return pick_activation(choice, seen, me),
         Some("movement_step") => return pick_move(choice, seen, me),
@@ -147,7 +171,13 @@ pub fn pick(
         return Some(index);
     }
     if choice.options.iter().any(|o| o.kind == "produce") {
-        return pick_produce(choice, observed, me, &reserve);
+        return pick_produce(
+            choice,
+            observed,
+            me,
+            &reserve,
+            &crate::planner::Bias::of(seen, me),
+        );
     }
     if !choice.options.is_empty() && choice.options.iter().all(|o| o.kind == "pay") {
         return pick_pay(choice, observed, &reserve);
@@ -265,9 +295,10 @@ pub fn gain(before: &[Goal], after: &[Goal]) -> f64 {
                 public_ready
             };
             let extra = (old.points - ready).max(0.0);
-            value += COMPLETE_VALUE * extra.max(0.25 * old.points);
-        } else if new.have > old.have && new.gap() <= 2.0 && old.threshold > 0.0 {
-            value += PROGRESS_VALUE * old.points * (new.have - old.have) / old.threshold;
+            value += tuning::complete_value() * extra.max(0.25 * old.points);
+        } else if new.have > old.have && new.gap() <= tuning::progress_gap() && old.threshold > 0.0
+        {
+            value += tuning::progress_value() * old.points * (new.have - old.have) / old.threshold;
         }
     }
     value
@@ -370,7 +401,7 @@ fn cost_rank(cost: ti4_engine::objectives::Cost) -> u8 {
 }
 
 /// A ready planet's (resources, influence).
-fn ready_planets(seen: &Observed<'_>, me: &PlayerId) -> Vec<(i64, i64)> {
+pub(crate) fn ready_planets(seen: &Observed<'_>, me: &PlayerId) -> Vec<(i64, i64)> {
     seen.controlled_planets(me)
         .into_iter()
         .filter(|(_, planet)| seen.planet_is_ready(planet))
@@ -430,11 +461,11 @@ fn spare_after_influence(
     (rest, trade_goods - reserve.trade_goods - need.max(0))
 }
 
-fn trade_goods(seen: &Observed<'_>, me: &PlayerId) -> i64 {
+pub(crate) fn trade_goods(seen: &Observed<'_>, me: &PlayerId) -> i64 {
     seen.seat(me).map_or(0, |seat| i64::from(seat.trade_goods))
 }
 
-fn pool_tokens(seen: &Observed<'_>, me: &PlayerId) -> i32 {
+pub(crate) fn pool_tokens(seen: &Observed<'_>, me: &PlayerId) -> i32 {
     seen.seat(me)
         .map_or(0, |seat| seat.tactic_tokens + seat.strategic_tokens)
 }
@@ -446,6 +477,7 @@ fn pick_produce(
     seen: &Observed<'_>,
     me: &PlayerId,
     reserve: &Reserve,
+    bias: &crate::planner::Bias,
 ) -> Option<usize> {
     if reserve.resources == 0 && reserve.influence == 0 && reserve.trade_goods == 0 {
         return None;
@@ -470,7 +502,7 @@ fn pick_produce(
     if !narrowed.options.iter().any(|o| o.kind == "produce") {
         return choice.options.iter().position(ChoiceOption::is_decline);
     }
-    super::pick_produce(&narrowed, seen, me).and_then(|i| keep.get(i).copied())
+    super::pick_produce_biased(&narrowed, seen, me, bias).and_then(|i| keep.get(i).copied())
 }
 
 /// Payment keeping the reserve: a planet's value of the other kind counts in full while the
@@ -601,8 +633,8 @@ fn pick_secret_return(choice: &Choice, seen: &SeatObservation<'_>) -> Option<usi
 
 /// Ground forces the seat could have in `system` after activating it, and whether a ship could
 /// get there (the same reach as [`activation_value`]).
-fn reach(seen: &Observed<'_>, me: &PlayerId, system: &SystemId) -> (bool, usize) {
-    let movable = seen.movable_into(me, system);
+pub(crate) fn reach(seen: &Observed<'_>, me: &PlayerId, system: &SystemId) -> (bool, usize) {
+    let movable = crate::movable_for(seen, me, system);
     let ships = movable.iter().any(|m| is_ship(seen, &m.unit));
     let capacity: i64 = movable
         .iter()
@@ -636,7 +668,7 @@ fn reach(seen: &Observed<'_>, me: &PlayerId, system: &SystemId) -> (bool, usize)
 }
 
 /// The planets an activation of `system` would take, greedily as [`super::takeable_value`] does.
-fn taken_planets(
+pub(crate) fn taken_planets(
     seen: &Observed<'_>,
     me: &PlayerId,
     system: &SystemId,
@@ -660,7 +692,7 @@ fn rivals_about_to_win(seen: &Observed<'_>, me: &PlayerId) -> Vec<PlayerId> {
         .filter(|p| *p != me)
         .filter(|p| {
             seen.seat(p)
-                .is_some_and(|seat| seat.victory_points >= WIN - DENY_WITHIN)
+                .is_some_and(|seat| seat.victory_points >= WIN - tuning::deny_within())
         })
         .cloned()
         .collect()
@@ -741,7 +773,7 @@ fn system_value(
         })
         .count();
     #[expect(clippy::cast_precision_loss, reason = "a handful of planets")]
-    let deny = DENY_VALUE * denied as f64;
+    let deny = tuning::deny_value() * denied as f64;
     let mut value = base + objective + deny;
     // A fight that takes nothing and protects nothing is not worth the ships any more.
     if has_hostile_ships(observed, me, system)
@@ -762,12 +794,17 @@ fn values<'s>(
 ) -> Vec<(SystemId, f64)> {
     let before = goals(seen, me, &Imagined::NONE);
     let leaders = rivals_about_to_win(seen.observed(), me);
+    // Backward planning (backward/, knob bw_enabled): systems on the chosen plans' routes.
+    let bonus = crate::backward::verdict(seen, me)
+        .map(|v| v.bonus())
+        .unwrap_or_default();
     systems
         .into_iter()
         .map(|system| {
+            let steer = bonus.get(system).copied().unwrap_or(0.0);
             (
                 system.clone(),
-                system_value(seen, me, system, &before, &leaders),
+                system_value(seen, me, system, &before, &leaders) + steer,
             )
         })
         .collect()
@@ -796,7 +833,7 @@ fn pick_activation(choice: &Choice, seen: &SeatObservation<'_>, me: &PlayerId) -
         .collect();
     // Nothing worth a token (an empty fight scores zero now): the least harmful system rather
     // than the rule bot's own pick, which would take that fight.
-    best_above(&scored, ACTIVATION_THRESHOLD).or_else(|| best_above(&scored, 0.0))
+    best_above(&scored, tuning::activation_threshold()).or_else(|| best_above(&scored, 0.0))
 }
 
 /// Action phase from round three: Imperial at once when it scores a public objective; a tactical
@@ -816,6 +853,17 @@ fn pick_action(
     };
     if observed.scoreable_public(me) > 0
         && let Some(index) = play("Imperial")
+    {
+        return Some(index);
+    }
+    if tuning::mecatol_imperial_priority()
+        && crate::holds_mecatol(observed, me)
+        && let Some(index) = play("Imperial")
+    {
+        return Some(index);
+    }
+    if crate::backward::verdict(seen, me).is_some_and(|v| v.plays("Warfare"))
+        && let Some(index) = play("Warfare")
     {
         return Some(index);
     }
@@ -852,15 +900,15 @@ fn pick_action(
     let reserve = Reserve::of(seen, me);
     let keep_tokens = reserve.tokens > 0 && pool_tokens(observed, me) - 1 < reserve.tokens;
     let needed = if keep_tokens {
-        EAGER_WORTH * 2.0
+        tuning::eager_worth() * 2.0
     } else {
-        ACTIVATION_THRESHOLD
+        tuning::activation_threshold()
     };
     if worth < needed {
         return strategic.or_else(|| choice.options.iter().position(|o| o.id == "pass"));
     }
     match strategic {
-        Some(index) if worth < EAGER_WORTH && rng.random_bool(0.25) => Some(index),
+        Some(index) if worth < tuning::eager_worth() && rng.random_bool(0.25) => Some(index),
         _ => Some(tactical),
     }
 }
@@ -1107,11 +1155,31 @@ fn card_score(seen: &SeatObservation<'_>, me: &PlayerId, card: &str, goals: &[Go
 
 fn pick_strategy_card(choice: &Choice, seen: &SeatObservation<'_>, me: &PlayerId) -> Option<usize> {
     let goals = goals(seen, me, &Imagined::NONE);
+    let verdict = crate::backward::verdict(seen, me);
+    let imperial_wanted = verdict.as_ref().is_some_and(|v| v.imperial);
+    let wanted_cards = verdict.map(|v| v.cards()).unwrap_or_default();
     let scored: Vec<(usize, f64)> = choice
         .options
         .iter()
         .enumerate()
-        .map(|(i, o)| (i, card_score(seen, me, &o.id, &goals)))
+        .map(|(i, o)| {
+            let mut score = card_score(seen, me, &o.id, &goals);
+            let name = ti4_engine::strategy_cards::card_name(seen.observed().content(), &o.id);
+            if imperial_wanted && name.as_deref() == Some("Imperial") {
+                score += 20.0;
+            }
+            // Mecatol Rex held (or takeable) is Imperial's point every round: take the card first.
+            if tuning::mecatol_imperial_priority()
+                && name.as_deref() == Some("Imperial")
+                && crate::mecatol_imperial_wanted(seen.observed(), me)
+            {
+                score += 100.0;
+            }
+            if let Some(expected) = name.and_then(|n| wanted_cards.get(&n).copied()) {
+                score += tuning::bw_card_weight() * expected.max(0.0);
+            }
+            (i, score)
+        })
         .collect();
     // Without an objective or trade goods to tip it, the rule bot's own draft decides.
     if scored.iter().all(|(_, s)| *s < 1.0) {
@@ -1145,7 +1213,30 @@ fn pick_research(choice: &Choice, seen: &SeatObservation<'_>, me: &PlayerId) -> 
         }
     }
     let me = me.clone();
+    // Backward planning, technology preps: the technology a chosen plan's prep needs.
+    if let Some(v) = crate::backward::verdict(seen, &me) {
+        let wanted = v.techs();
+        if let Some(index) = choice.options.iter().position(|o| wanted.contains(&o.id)) {
+            return Some(index);
+        }
+    }
     let before = goals(seen, &me, &Imagined::NONE);
+    // Backward planning (backward/technology.rs): the technologies on the routes of the
+    // technology objectives in view, up to three researches deep.
+    if tuning::bw_enabled()
+        && tuning::bw_technology()
+        && observed.round() >= tuning::bw_round()
+        && let Some(index) =
+            crate::backward::technology::research_pick(choice, seen, &me, &before, |narrowed| {
+                if tuning::faction_plans_enabled() {
+                    crate::faction_plans::research_pick(narrowed, observed, &me)
+                } else {
+                    None
+                }
+            })
+    {
+        return Some(index);
+    }
     let scored: Vec<(usize, f64)> = choice
         .options
         .iter()
@@ -1171,6 +1262,10 @@ fn pick_research(choice: &Choice, seen: &SeatObservation<'_>, me: &PlayerId) -> 
 /// dock counted for secrets that count them; none, no opinion.
 fn pick_structure(choice: &Choice, seen: &SeatObservation<'_>) -> Option<usize> {
     let me = seen.bound_seat().clone();
+    // Turn Their Fleets to Dust (backward/ttfd.rs): a PDS that covers Mecatol Rex first.
+    if let Some(index) = crate::backward::ttfd::placement(choice, seen, &me) {
+        return Some(index);
+    }
     let before = goals(seen, &me, &Imagined::NONE);
     let scored: Vec<(usize, f64)> = choice
         .options
@@ -1193,9 +1288,9 @@ fn pick_structure(choice: &Choice, seen: &SeatObservation<'_>) -> Option<usize> 
                 .filter(|g| !g.satisfied && g.family == format!("units_{kind}"))
                 .map(|g| {
                     if g.gap() <= 1.0 {
-                        COMPLETE_VALUE * g.points
+                        tuning::complete_value() * g.points
                     } else {
-                        PROGRESS_VALUE * g.points / g.threshold.max(1.0)
+                        tuning::progress_value() * g.points / g.threshold.max(1.0)
                     }
                 })
                 .sum();
@@ -1515,6 +1610,39 @@ mod tests {
     }
 
     #[test]
+    fn backward_research_follows_the_route_of_a_technology_objective() {
+        use ti4_model::id::TechnologyId;
+        let mut state = game(&["a", "b"]);
+        round_three(&mut state);
+        state.revealed_objectives.push(ObjectiveId::new("develop"));
+        // One upgrade, a red and a yellow owned: Planetary Shield II (RY) scores Develop Weaponry.
+        {
+            let seat = state.player_mut(&me()).expect("seat");
+            seat.technologies.clear();
+            for t in ["dd2", "st", "ps"] {
+                seat.technologies.insert(TechnologyId::new(t));
+            }
+        }
+        let choice = contextual(
+            Choice::new(
+                me(),
+                "research a technology",
+                vec![
+                    ChoiceOption::labelled("amd", "research", "amd").with("cost", 0i64),
+                    ChoiceOption::labelled("pds2", "research", "pds2").with("cost", 0i64),
+                ],
+            ),
+            "research_technology",
+            3,
+        );
+        // The existing one-step gain already finds a completing technology; the backward route
+        // must agree, and with the knob off nothing changes.
+        let mut on = tuning::Tuning::default();
+        on.bw_enabled = true;
+        assert_eq!(tuning::with(on, || picked(&state, None, &choice)), Some(1));
+    }
+
+    #[test]
     fn a_paid_research_is_declined_when_it_would_spend_the_monument() {
         let mut state = game(&["a", "b"]);
         round_three(&mut state);
@@ -1584,6 +1712,58 @@ mod tests {
             3,
         );
         assert_eq!(picked(&state, None, &draft), Some(2));
+    }
+
+    #[test]
+    fn a_seat_holding_mecatol_rex_drafts_imperial_first_only_with_the_knob() {
+        let mut state = game(&["a", "b"]);
+        round_three(&mut state);
+        state.phase = Phase::Strategy;
+        state
+            .revealed_objectives
+            .push(ObjectiveId::new("trade_routes"));
+        state.player_mut(&me()).expect("seat").trade_goods = 3;
+        let draft = |state: &GameState| {
+            let choice = contextual(
+                Choice::new(
+                    me(),
+                    "choose a strategy card",
+                    ["pok1leadership", "pok5trade", "pok8imperial"]
+                        .iter()
+                        .map(|id| ChoiceOption::labelled(*id, "strategy_card", *id))
+                        .collect(),
+                ),
+                "draft_strategy_card",
+                3,
+            );
+            picked(state, None, &choice)
+        };
+        // Trade serves Trade Routes; Mecatol Rex is not held: Trade.
+        assert_eq!(draft(&state), Some(1));
+        state
+            .system_mut(&SystemId::new("18"))
+            .planet_control
+            .insert(PlanetId::new("mr"), me());
+        let on = tuning::Tuning {
+            mecatol_imperial_priority: true,
+            ..tuning::Tuning::default()
+        };
+        // Held, knob on: Imperial.
+        tuning::with(on, || assert_eq!(draft(&state), Some(2)));
+        // Another seat holds the card: it is not offered, nothing changes.
+        let choice = contextual(
+            Choice::new(
+                me(),
+                "choose a strategy card",
+                ["pok1leadership", "pok5trade"]
+                    .iter()
+                    .map(|id| ChoiceOption::labelled(*id, "strategy_card", *id))
+                    .collect(),
+            ),
+            "draft_strategy_card",
+            3,
+        );
+        tuning::with(on, || assert_eq!(picked(&state, None, &choice), Some(1)));
     }
 
     /// A ring map: the centre and `outer[1]` each hold one planet, `outer[0]` is where the bot's

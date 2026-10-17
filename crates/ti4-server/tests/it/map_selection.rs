@@ -303,8 +303,8 @@ async fn the_lobby_preview_equals_the_started_games_board() {
         let (status, _) = made.choose(&made.host, map.clone()).await;
         assert_eq!(status, StatusCode::OK);
         let preview = made.get("/map-preview").await;
-        // A seat of the preview is a place: who sits there, and with which faction, is drawn at
-        // the start, and nothing of it is told before.
+        // A seat of the preview is a place: the faction of a seat is drawn at the start, and
+        // nothing of it is told before.
         let seats = preview["seats"].as_array().unwrap();
         assert_eq!(seats.len(), 4);
         for seat in seats {
@@ -401,7 +401,7 @@ async fn every_startable_player_count_has_a_working_random_board() {
     // Seats seven and eight have factions of their own (`seating::EXTRA_SEAT_FACTIONS`), so
     // every table size the lobby allows has distinct homes.
     for n in 2..=8 {
-        ti4_server::maps::catalog::validate(&ti4_server::maps::MapChoice::Random, n)
+        ti4_host::maps::catalog::validate(&ti4_host::maps::MapChoice::Random, n)
             .unwrap_or_else(|e| panic!("random for {n}: {e}"));
     }
 }

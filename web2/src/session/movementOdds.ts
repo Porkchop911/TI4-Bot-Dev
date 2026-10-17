@@ -3,18 +3,21 @@
 // ships that the movement brings are added here, with the fighters that they carry.
 import { type MovementDraft, shipId } from "./movementDraft";
 import { isShip, unitType } from "./select/names";
-import type { CombatSide, MovementFacts, SpaceOddsRequest, SpaceOddsResponse } from "./wire";
+import type { BattleResponse, CombatSide, MovementFacts } from "./wire";
 
-/** A question for `Transport.odds`. The key is its JSON: the same sides have the same key. */
+/**
+ * A question for `Transport.odds`. The key is its JSON: the same sides have the same key. The
+ * sides are as `MovementFacts.battle` has them, a narrower `SpaceOddsRequest`.
+ */
 export interface OddsRequest {
   key: string;
-  request: SpaceOddsRequest;
+  request: { attacker: CombatSide; defender: CombatSide };
 }
 
 /** The last answer of `Transport.odds`, with the key of its question. Null: no odds for it. */
 export interface KeptOdds {
   key: string;
-  response: SpaceOddsResponse | null;
+  response: BattleResponse | null;
 }
 
 /** A count by unit id, with its keys in order, so that the same counts are the same JSON. */
@@ -82,7 +85,7 @@ export function oddsRequest(facts: MovementFacts, staged: MovementDraft): OddsRe
   if (!arrives) {
     return null;
   }
-  const request: SpaceOddsRequest = {
+  const request: OddsRequest["request"] = {
     attacker: sideOf(battle.attacker, units, damaged),
     defender: sideOf(battle.defender_side),
   };

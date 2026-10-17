@@ -1,5 +1,5 @@
 import type { Page, TestInfo } from "@playwright/test";
-import type { ChoiceOptionDto } from "../../../src/protocol/types";
+import type { ChoiceOption } from "../../../src/protocol/types";
 import { openMockedGame } from "../_shared/mockGame";
 import { shot } from "../_shared/shot";
 import { playerWithHand, opponent, withPlayer } from "../_shared/players";
@@ -12,7 +12,7 @@ export const tradePlayers = [
   withPlayer(opponent, { id: PARTNER, faction: "jolnar", trade_goods: 5, commodities: 2, action_cards_count: 3 }),
 ];
 
-const offer = (id: string, label: string, payload: Record<string, unknown> = {}): ChoiceOptionDto => ({
+const offer = (id: string, label: string, payload: Record<string, unknown> = {}): ChoiceOption => ({
   id,
   label,
   kind: "offer",
@@ -20,7 +20,7 @@ const offer = (id: string, label: string, payload: Record<string, unknown> = {})
 });
 
 /** A catalogue shaped like the engine's offer menu for these two seats (ids as in transactions.rs). */
-export const proposeOptions: ChoiceOptionDto[] = [
+export const proposeOptions: ChoiceOption[] = [
   offer("cc2", "swap 2 commodities each -- both gain", { net: 2, their_net: 2 }),
   offer("cc1", "swap 1 commodity each", { net: 1, their_net: 1 }),
   offer("ct3:2", "give 3 commodities for 2 trade goods", { net: 0, their_net: 1 }),
@@ -61,7 +61,7 @@ export const answerChoice = {
     { id: "accept", label: "accept", kind: "answer", payload: { net: 1 } },
     { id: "refuse", label: "refuse", kind: "decline" },
     { id: "counter", label: "counter-offer", kind: "answer" },
-  ] as ChoiceOptionDto[],
+  ] as ChoiceOption[],
   nonce: "trade-answer",
 };
 

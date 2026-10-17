@@ -5,11 +5,11 @@ use std::fs;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use ti4_host::protocol::server::ServerMessage;
+use ti4_host::protocol::status::ViewerRole;
 use ti4_model::id::PlayerId;
 use ti4_model::state::ReactionMode;
-use ti4_server::dev::execute_launch_scenario;
-use ti4_server::protocol::server::ServerMessage;
-use ti4_server::protocol::status::ViewerRole;
+use ti4_server::dev::launch_scenario;
 use ti4_server::session::{GameRegistry, GameSession, MockClient};
 use ti4_server::storage::FileGameStore;
 
@@ -110,7 +110,7 @@ fn never_declines_the_window_unasked_journals_it_and_survives_a_restart() {
     let registry = Arc::new(GameRegistry::new().with_store(store.clone()));
 
     // Control: with no preference the Letnev seat is asked about Sabotage.
-    let control = execute_launch_scenario(&registry, "ongoing_combat_four_views", Some(54_322))
+    let control = launch_scenario(&registry, "ongoing_combat_four_views", Some(54_322))
         .expect("launch control");
     let control_session = registry.get_game(&control.game_id).unwrap();
     let seats = table(&control_session, &control.player_id);
@@ -121,8 +121,8 @@ fn never_declines_the_window_unasked_journals_it_and_survives_a_restart() {
     );
 
     // With Never: the same play opens no window for Letnev.
-    let launch = execute_launch_scenario(&registry, "ongoing_combat_four_views", Some(54_322))
-        .expect("launch");
+    let launch =
+        launch_scenario(&registry, "ongoing_combat_four_views", Some(54_322)).expect("launch");
     let session = registry.get_game(&launch.game_id).unwrap();
     let seats = table(&session, &launch.player_id);
     let letnev_client =
@@ -252,7 +252,7 @@ fn only_a_seat_can_set_its_own_known_cards_and_old_saves_have_no_file() {
     ));
     let store = Arc::new(FileGameStore::new(&dir).expect("store"));
     let registry = Arc::new(GameRegistry::new().with_store(store.clone()));
-    let launch = execute_launch_scenario(&registry, "ongoing_combat_four_views", Some(7)).unwrap();
+    let launch = launch_scenario(&registry, "ongoing_combat_four_views", Some(7)).unwrap();
     let session = registry.get_game(&launch.game_id).unwrap();
     let seats = table(&session, &launch.player_id);
 

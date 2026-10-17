@@ -32,50 +32,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let store = Arc::new(ti4_server::storage::FileGameStore::new(&data_dir)?);
     let public_config = ti4_server::public::PublicConfig::from_env(std::path::Path::new(&data_dir));
-    let public_mode = public_config.public;
     let mut registry = GameRegistry::new()
         .with_store(store)
         .with_public(public_config);
     if let Ok(millis) = std::env::var("TI4_DEV_PRESENCE_GRACE_MS") {
         registry = registry.with_presence_grace(Duration::from_millis(millis.parse()?));
     }
-    if public_mode && std::env::var("TI4_BOT_PASSWORD").is_ok_and(|v| !v.trim().is_empty()) {
-        eprintln!("TI4_PUBLIC=1: ignoring TI4_BOT_PASSWORD, ML bots stay disabled");
+    // The MLP models, before the games that seat them are recovered.
+    let models = match ti4_server::models::load_from_env() {
+        Ok(models) => models,
+        Err(error) => {
+            eprintln!("MLP models: {error}");
+            return Err(error.into());
+        }
+    };
+    for served in &models {
+        println!(
+            "MLP model: mlp:{} ({}) sha256 {} {} bytes{} on {}",
+            served.model.name(),
+            served.model.label(),
+            served.sha256,
+            served.bytes,
+            if served.offered { ", offered" } else { "" },
+            served.model.model().backend().name()
+        );
     }
-    if !public_mode
-        && let Ok(bot_password) = std::env::var("TI4_BOT_PASSWORD")
-        && !bot_password.trim().is_empty()
-    {
-        let advisor_url =
-            std::env::var("TI4_ADVISOR_URL").unwrap_or_else(|_| "http://127.0.0.1:8081".to_owned());
-        let bot_agent_bin = std::env::var("TI4_BOT_AGENT_BIN")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|_| {
-                let release_path = std::path::PathBuf::from("./target/release/ti4-bot-agent");
-                let debug_path = std::path::PathBuf::from("./target/debug/ti4-bot-agent");
-                if release_path.exists() {
-                    release_path
-                } else if debug_path.exists() {
-                    debug_path
-                } else {
-                    std::path::PathBuf::from("ti4-bot-agent")
-                }
-            });
-        let max_active_bots: usize = std::env::var("TI4_MAX_ACTIVE_BOTS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(6);
-
-        info!("MLP bot service enabled with advisor at {advisor_url}");
-        registry = registry.with_bot_service(ti4_server::session::BotServiceConfig {
-            password: bot_password,
-            advisor_url,
-            bot_agent_bin,
-            server_port: port,
-            max_active_bots,
-        });
-    }
-    let registry = Arc::new(registry);
+    let registry = Arc::new(registry.with_models(models));
 
     // Print recovery results even when tracing has no RUST_LOG filter configured.
     let recovery = registry.recover_all_games_report()?;

@@ -1,33 +1,34 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { useBuildInfo } from "../buildInfo.ts";
 import { FeedbackSheet } from "./FeedbackSheet.tsx";
-import { useOfflineGameActive } from "../offline/useOfflineLauncher.ts";
+import {
+  OPEN_FEEDBACK_EVENT,
+  openFeedback,
+  useFeedbackAvailable,
+  useFeedbackDockActive,
+} from "./FeedbackDockButton.tsx";
 import "./feedback.css";
 
-const OPEN_EVENT = "ti4:open-feedback";
-
-/** Opens the feedback sheet from anywhere (the phone menu, the lobby). */
-export function openFeedback(): void {
-  window.dispatchEvent(new Event(OPEN_EVENT));
-}
+export { openFeedback };
 
 /**
  * The floating Feedback button and its sheet, mounted once for the whole app. It only exists on
  * the public playtest server (`/health` says `public`), so local development stays unchanged.
  */
 export const FeedbackLauncher: React.FC = () => {
-  const info = useBuildInfo();
+  const available = useFeedbackAvailable();
+  const inDock = useFeedbackDockActive();
   const [open, setOpen] = useState(false);
-  const offlineGame = useOfflineGameActive();
   const show = useCallback(() => setOpen(true), []);
   useEffect(() => {
-    window.addEventListener(OPEN_EVENT, show);
-    return () => window.removeEventListener(OPEN_EVENT, show);
+    window.addEventListener(OPEN_FEEDBACK_EVENT, show);
+    return () => window.removeEventListener(OPEN_FEEDBACK_EVENT, show);
   }, [show]);
   // An offline game has no server to ask: reports are queued and sent later, so the button is there.
-  if (!info.isPublic && !offlineGame) return null;
+  if (!available) return null;
   return (
     <>
+      {/* On a phone in a game the dock carries the icon button instead of this floating pill. */}
+      {!inDock && (
       <button
         type="button"
         className="feedback-fab"
@@ -46,6 +47,7 @@ export const FeedbackLauncher: React.FC = () => {
         </svg>
         <span>Feedback</span>
       </button>
+      )}
       <FeedbackSheet open={open} onClose={() => setOpen(false)} />
     </>
   );

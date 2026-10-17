@@ -15,8 +15,11 @@ export interface LoneAutoSubmitInput {
   history?: HistoryStatus;
   /** The pipeline runner or a history change is busy: leave the decision alone. */
   busy?: boolean;
-  /** Same path a click takes (`submit_choice` with nonce and expected version). */
-  submit: (optionId: string) => Promise<void>;
+  /**
+   * Same path a click takes (`submit_choice` with nonce and expected version). The nonce is the
+   * question this hook evaluated: the transport drops the answer when another one is pending.
+   */
+  submit: (optionId: string, nonce: string) => Promise<void>;
   onNotice?: (note: { id: string; text: string }) => void;
 }
 
@@ -95,7 +98,7 @@ export function useLoneAutoSubmit({
         return;
       }
       noticeRef.current?.({ id: `lone-${nonce}`, text });
-      submitRef.current(optionId).catch(() => {
+      submitRef.current(optionId, nonce).catch(() => {
         // The session client already records the error; the decision stays open for a click.
         setAnswering(null);
       });

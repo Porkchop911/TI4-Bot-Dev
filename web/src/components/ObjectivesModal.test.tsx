@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { ObjectivesModal } from "./ObjectivesModal.tsx";
-import type { PlayerView, ObjectiveProgressView } from "../protocol/types.ts";
+import type { PlayerView, ObjectiveProgressView, PendingChoiceDto } from "../protocol/types.ts";
+import { partialContext } from "../test/wire.ts";
 
 const mockPlayers: PlayerView[] = [
   {
@@ -179,11 +180,11 @@ describe("ObjectivesModal", () => {
           actor: "p1",
           nonce: "nonce-1",
           prompt: "Score a public objective",
-          context: { subtype: "score_objective" },
+          context: partialContext({ subtype: "score_objective" }),
           options: [
-            { id: "lead", label: "Lead From the Front" },
-            { id: "trade_routes", label: "Negotiate Trade Routes" },
-            { id: "decline", label: "Decline" },
+            { id: "lead", label: "Lead From the Front", payload: {}, kind: "" },
+            { id: "trade_routes", label: "Negotiate Trade Routes", payload: {}, kind: "" },
+            { id: "decline", label: "Decline", payload: {}, kind: "" },
           ],
         }}
         onSubmit={onSubmit}
@@ -232,10 +233,10 @@ describe("ObjectivesModal", () => {
       actor: "p1",
       nonce: "nonce-same",
       prompt: "Score a public objective",
-      context: { subtype: "score_objective" },
+      context: partialContext({ subtype: "score_objective" }),
       options: [
-        { id: "lead", label: "Lead From the Front" },
-        { id: "trade_routes", label: "Negotiate Trade Routes" },
+        { id: "lead", label: "Lead From the Front", kind: "", payload: {} },
+        { id: "trade_routes", label: "Negotiate Trade Routes", kind: "", payload: {} },
       ],
     };
 
@@ -271,8 +272,8 @@ describe("ObjectivesModal", () => {
         choice={{
           ...choice,
           options: [
-            { id: "lead", label: "Lead From the Front" },
-            { id: "trade_routes", label: "Negotiate Trade Routes" },
+            { id: "lead", label: "Lead From the Front", payload: {}, kind: "" },
+            { id: "trade_routes", label: "Negotiate Trade Routes", payload: {}, kind: "" },
           ],
         }}
         isScoringMode={true}
@@ -288,10 +289,10 @@ describe("ObjectivesModal", () => {
       actor: "p1",
       nonce: "imperial-1",
       prompt: "score a public objective with Imperial",
-      context: { subtype: "imperial_score_objective" },
+      context: partialContext({ subtype: "imperial_score_objective" }),
       options: [
-        { id: "lead", label: "lead" },
-        { id: "decline", kind: "decline", label: "decline" },
+        { id: "lead", label: "lead", kind: "", payload: {} },
+        { id: "decline", kind: "decline", label: "decline", payload: {} },
       ],
       details: {
         kind: "imperial",
@@ -345,7 +346,7 @@ describe("ObjectivesModal", () => {
           revealedObjectives={["lead"]}
           players={mockPlayers}
           viewerSeat="p1"
-          choice={{ ...imperial(true), context: { subtype: "score_objective" } }}
+          choice={{ ...imperial(true), context: partialContext({ subtype: "score_objective" }) }}
           isScoringMode={true}
         />,
       );
@@ -398,8 +399,8 @@ describe("ObjectivesModal", () => {
           actor: "p1",
           nonce: "n",
           prompt: "Score",
-          context: { subtype: "score_objective" },
-          options: [{ id: "corner", label: "Corner" }],
+          context: partialContext({ subtype: "score_objective" }),
+          options: [{ id: "corner", label: "Corner", payload: {}, kind: "" }],
         },
       });
       expect(screen.getByTestId("bought-progress-monument-p1")).toHaveTextContent(/^can pay 5 \/ 8 now$/);
@@ -426,12 +427,12 @@ describe("ObjectivesModal", () => {
       { ...mockPlayers[0], held_secret_objectives: ["ans", "ctr", "baf"] },
       mockPlayers[1],
     ];
-    const scoring = (options: { id: string; label: string }[], subtype = "score_objective") => ({
+    const scoring = (options: PendingChoiceDto["options"], subtype = "score_objective") => ({
       actor: "p1",
       nonce: "secret-nonce",
       prompt: "score an objective",
-      context: { subtype },
-      options: [...options, { id: "decline", label: "decline" }],
+      context: partialContext({ subtype }),
+      options: [...options, { id: "decline", label: "decline", kind: "", payload: {} }],
     });
 
     it("shows an offered secret as a card with name, condition, phase and VP", async () => {
@@ -444,8 +445,8 @@ describe("ObjectivesModal", () => {
           players={withHand}
           viewerSeat="p1"
           choice={scoring([
-            { id: "corner", label: "corner" },
-            { id: "ans", label: "ans" },
+            { id: "corner", label: "corner", kind: "", payload: {} },
+            { id: "ans", label: "ans", kind: "", payload: {} },
           ])}
           onSubmit={onSubmit}
           isScoringMode={true}
@@ -480,7 +481,7 @@ describe("ObjectivesModal", () => {
           revealedObjectives={["corner"]}
           players={withHand}
           viewerSeat="p1"
-          choice={scoring([{ id: "ans", label: "ans" }])}
+          choice={scoring([{ id: "ans", label: "ans", kind: "", payload: {} }])}
           isScoringMode={true}
         />,
       );
@@ -500,7 +501,7 @@ describe("ObjectivesModal", () => {
           revealedObjectives={[]}
           players={withHand}
           viewerSeat="p1"
-          choice={scoring([{ id: "baf", label: "baf" }], "score_secret_objective")}
+          choice={scoring([{ id: "baf", label: "baf", kind: "", payload: {} }], "score_secret_objective")}
           isScoringMode={true}
         />,
       );
@@ -519,7 +520,7 @@ describe("ObjectivesModal", () => {
           revealedObjectives={["corner"]}
           players={mockPlayers}
           viewerSeat="p1"
-          choice={scoring([{ id: "plot|ctr|p2", label: "ctr as a plot with p2's control token" }])}
+          choice={scoring([{ id: "plot|ctr|p2", label: "ctr as a plot with p2's control token", kind: "", payload: {} }])}
           isScoringMode={true}
         />,
       );
@@ -587,10 +588,10 @@ describe("ObjectivesModal", () => {
             actor: "p1",
             nonce: "n",
             prompt: "score",
-            context: { subtype: "score_objective" },
+            context: partialContext({ subtype: "score_objective" }),
             options: [
-              { id: "eap", label: "eap" },
-              { id: "decline", label: "decline" },
+              { id: "eap", label: "eap", kind: "", payload: {} },
+              { id: "decline", label: "decline", kind: "", payload: {} },
             ],
           } as never}
           isScoringMode={true}

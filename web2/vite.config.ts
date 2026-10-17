@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -7,7 +8,13 @@ export default defineConfig({
   // Not the default ".vite": Cloudflare still holds stale bundles under that path (see server.headers).
   // Cleanup: after a purge of the Cloudflare cache for this host, remove this line.
   cacheDir: "node_modules/.vite-web2",
+  // The module shared with web/ (`web-shared/AGENTS.md`).
+  resolve: {
+    alias: { "@ti4/shared": fileURLToPath(new URL("../web-shared/src", import.meta.url)) },
+  },
   server: {
+    // The repo root: `web-shared/` is outside this app.
+    fs: { allow: [".."] },
     allowedHosts: ["web2.beckermann-zibert.com"],
     // Vite marks pre-bundled dependencies "immutable". Cloudflare in front of Caddy then keeps a
     // stale bundle across restarts, and the page loads two copies of React. This header stops the
@@ -29,7 +36,10 @@ export default defineConfig({
     // Two kinds of test. A `*.test.ts` has no DOM and runs in node, as the engine does. A
     // `*.test.tsx` renders components in jsdom; the VM pool spares it a process for each file.
     projects: [
-      { extends: true, test: { name: "unit", include: ["src/**/*.test.ts"] } },
+      {
+        extends: true,
+        test: { name: "unit", include: ["src/**/*.test.ts", "../web-shared/src/**/*.test.ts"] },
+      },
       {
         extends: true,
         test: {

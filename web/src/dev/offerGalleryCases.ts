@@ -1,7 +1,8 @@
 import type { GalleryCase } from "./decisionGalleryCases.ts";
+import { partialContext } from "../test/wire.ts";
 
 const actor = "gallery_seat";
-const option = (id: string, label: string, kind?: string, payload?: Record<string, unknown>) => ({
+const option = (id: string, label: string, kind = "", payload: Record<string, unknown> = {}) => ({
   id,
   label,
   kind,
@@ -21,7 +22,7 @@ export function offerCases(): GalleryCase[] {
         actor,
         nonce: "gallery-ground-sustain",
         prompt: "sustain the hit on mech on Jord (system 14)",
-        context: { subtype: "ground_effect_sustain", source: { Rule: "87" } },
+        context: partialContext({ subtype: "ground_effect_sustain", source: { Rule: "87" } }),
         options: [option("sustain", "use SUSTAIN DAMAGE", "ground_effect_sustain"), decline()],
         details: {
           kind: "offer",
@@ -52,7 +53,7 @@ export function offerCases(): GalleryCase[] {
         actor,
         nonce: "gallery-ssruu-round",
         prompt: "Ssruu copying letnevagent: choose one unit for +1 combat die",
-        context: { subtype: "leader_ssruu_round_agent_unit", source: { Content: "letnevagent" } },
+        context: partialContext({ subtype: "leader_ssruu_round_agent_unit", source: { Content: "letnevagent" } }),
         options: [
           option("other_seat|space|cruiser|0|0", "other_seat's cruiser (unit 1)", "leader_ssruu_round_agent_unit"),
           option("other_seat|jord|infantry|1|0", "other_seat's infantry on jord (unit 2)", "leader_ssruu_round_agent_unit"),
@@ -84,7 +85,7 @@ export function offerCases(): GalleryCase[] {
         actor,
         nonce: "gallery-l1z1x-copy",
         prompt: "I48S (Ssruu): replace which infantry in the active system?",
-        context: { subtype: "leader_l1z1xagent_copy_planet", source: { Content: "l1z1xagent" } },
+        context: partialContext({ subtype: "leader_l1z1xagent_copy_planet", source: { Content: "l1z1xagent" } }),
         options: [
           option("jord", "replace infantry on Jord with a mech", "leader_l1z1xagent_copy_planet", { planet: "jord", system: "14" }),
           option("lodor", "replace infantry on Lodor with a mech", "leader_l1z1xagent_copy_planet", { planet: "lodor", system: "14" }),
@@ -100,11 +101,11 @@ export function offerCases(): GalleryCase[] {
         actor,
         nonce: "gallery-coexist",
         prompt: "Slumberstate Computing: coexist on jord instead of fighting",
-        context: {
+        context: partialContext({
           subtype: "coalescence_coexist",
           source: { Content: "titansbt" },
           target: { Planet: { system: "14", planet: "jord" } },
-        },
+        }),
         options: [
           option("fight", "fight for jord", "coalescence"),
           option("coexist", "coexist on jord", "coalescence"),
@@ -136,7 +137,7 @@ export function offerCases(): GalleryCase[] {
         actor,
         nonce: "gallery-take-revealed",
         prompt: "take 1 of other_seat's action cards",
-        context: { subtype: "take_revealed_action_card", source: { FactionAbility: "mageon" } },
+        context: partialContext({ subtype: "take_revealed_action_card", source: { FactionAbility: "mageon" } }),
         options: [
           option("abs1", "Ancient Burial Sites", "take_revealed_card"),
           option("sab1", "Sabotage", "take_revealed_card"),
@@ -154,7 +155,7 @@ export function offerCases(): GalleryCase[] {
         actor,
         nonce: "gallery-reinforce-place",
         prompt: "place up to 2 infantry",
-        context: { subtype: "place_units_from_reinforcements", source: { FactionAbility: "yso" } },
+        context: partialContext({ subtype: "place_units_from_reinforcements", source: { FactionAbility: "yso" } }),
         options: [
           option("14|jord", "place 2x infantry on jord in 14", "place_unit", { system: "14", count: 2 }),
           option("26|lodor", "place 2x infantry on lodor in 26", "place_unit", { system: "26", count: 2 }),
@@ -190,7 +191,7 @@ export function offerCases(): GalleryCase[] {
         actor,
         nonce: "gallery-pds-alternative",
         prompt: "place a PDS or an alternative",
-        context: { subtype: "place_structure_pds_alternative", source: { Content: "place_structure" } },
+        context: partialContext({ subtype: "place_structure_pds_alternative", source: { Content: "place_structure" } }),
         options: [
           option("pds", "place pds on jord", "build"),
           option("titans|hecatoncheires", "place 1 mech and 1 infantry on jord instead", "build"),
@@ -217,7 +218,7 @@ export function offerCases(): GalleryCase[] {
         actor,
         nonce: "gallery-vote-goods",
         prompt: "spend trade goods for votes on for",
-        context: { subtype: "vote_spend_trade_goods", source: { Content: "hacancommander" } },
+        context: partialContext({ subtype: "vote_spend_trade_goods", source: { Content: "hacancommander" } }),
         options: [
           option("spend|1", "spend 1 trade goods for 2 votes", "vote_trade_goods", { trade_goods: 1 }),
           option("spend|2", "spend 2 trade goods for 4 votes", "vote_trade_goods", { trade_goods: 2 }),
@@ -248,7 +249,7 @@ export function offerCases(): GalleryCase[] {
         actor,
         nonce: "gallery-research-waiver",
         prompt: "research ws: choose a prerequisite waiver",
-        context: { subtype: "research_waiver", source: { FactionAbility: "research_waiver" } },
+        context: partialContext({ subtype: "research_waiver", source: { FactionAbility: "research_waiver" } }),
         options: [
           option("waiver|0", "return 1 infantry to reinforcements to ignore its prerequisites", "research_waiver"),
           decline(),
@@ -275,7 +276,7 @@ export function offerCases(): GalleryCase[] {
         actor,
         nonce: "gallery-waiver-pay",
         prompt: "return 1 infantry to reinforcements to ignore its prerequisites: choose the payment",
-        context: { subtype: "research_waiver_payment", source: { FactionAbility: "research_waiver" } },
+        context: partialContext({ subtype: "research_waiver_payment", source: { FactionAbility: "research_waiver" } }),
         options: [
           option("space|18", "return infantry from the space of system 18", "research_waiver_payment"),
           option("planet|jord", "return infantry from Jord", "research_waiver_payment"),
@@ -332,7 +333,7 @@ const reduceCase = (): GalleryCase => ({
     actor,
     nonce: "gallery-deepwrought-reduce",
     prompt: "Deepwrought commander: reduce this research by 1 (pays other_seat)",
-    context: { subtype: "deepwrought_reduce_research", source: { Content: "deepwroughtcommander" } },
+    context: partialContext({ subtype: "deepwrought_reduce_research", source: { Content: "deepwroughtcommander" } }),
     options: [option("reduce", "reduce by 1", "research"), decline()],
     details: {
       kind: "offer",
@@ -370,7 +371,7 @@ function paymentCase(spec: {
       actor,
       nonce: spec.nonce,
       prompt: spec.prompt,
-      context: { subtype: spec.subtype, source: { Content: spec.source } },
+      context: partialContext({ subtype: spec.subtype, source: { Content: spec.source } }),
       options: [
         option("gain", "gain 1 commodity", "economy"),
         option("convert", "convert 1 commodity to a trade good", "economy"),

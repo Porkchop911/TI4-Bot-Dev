@@ -968,14 +968,25 @@ fn umbat(context: &mut TimingContext<'_>, player: &PlayerId) -> bool {
             .iter()
             .any(|(_, source)| source.as_str() == AGENT);
     let saved_log = copied.then(|| context.table.log.clone());
-    let done = umbat_inner(context, player);
-    if !done && let Some(log) = saved_log {
+    let declined = std::cell::Cell::new(false);
+    let done = umbat_inner(context, player, &declined);
+    // A failed copy leaves no partial decision trace. A legal decline of the player pick is an
+    // answered decision, though: it stays in the log, or a replay of the game would give that
+    // question the next answer (offline run o1-232-0312 could not be resumed).
+    if !done
+        && !declined.get()
+        && let Some(log) = saved_log
+    {
         context.table.log = log;
     }
     done
 }
 
-fn umbat_inner(context: &mut TimingContext<'_>, player: &PlayerId) -> bool {
+fn umbat_inner(
+    context: &mut TimingContext<'_>,
+    player: &PlayerId,
+    declined: &std::cell::Cell<bool>,
+) -> bool {
     let (content, sources) = (context.content, context.sources);
     let targets = agent_targets(context.state, content, sources);
     if !umbat_available(context.state, content, player) || targets.is_empty() {
@@ -1001,6 +1012,7 @@ fn umbat_inner(context: &mut TimingContext<'_>, player: &PlayerId) -> bool {
         .find(|who| who.as_str() == answer.id)
         .cloned()
     else {
+        declined.set(answer.is_decline());
         return false;
     };
     let copied = crate::factions::hooks_cards::borrowable_agents(context.state, content, player)
@@ -2669,6 +2681,32 @@ mod tests {
             Some(LeaderStatus::Readied)
         );
         assert_eq!(state.board, before.board);
+    }
+
+    /// Offline run o1-232-0312 (nightly 2026-10-14 #6): Ssruu copied Umbat and the person
+    /// declined the player pick. The copy's rollback also dropped that answered decision from the
+    /// log, so the save missed the answer and its replay gave the next answer ("tactical") to the
+    /// Umbat question again: "This game no longer replays the same way" after a reload.
+    #[test]
+    fn a_declined_copied_umbat_keeps_its_answered_decision_in_the_log() {
+        let mut state = borrow_game();
+        let before = state.clone();
+        let mut table = scripted(&["decline"]);
+        let logged = table.log.records.len();
+        assert!(!borrow_umbat(&mut state, &mut table, &b()));
+        assert_eq!(
+            state, before,
+            "a declined copy changes nothing and keeps Ssruu ready"
+        );
+        let records = &table.log.records[logged..];
+        assert_eq!(
+            records
+                .iter()
+                .map(|record| record.chosen.as_str())
+                .collect::<Vec<_>>(),
+            ["decline"],
+            "the answered decline stays recorded, so a replay asks and answers it again"
+        );
     }
 
     #[test]

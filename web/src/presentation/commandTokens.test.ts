@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  hasArmada,
   addToken,
   arrangementId,
   canConfirmTokens,
@@ -28,6 +29,7 @@ const poolOptions = ["tactic_tokens", "fleet_tokens", "strategic_tokens"].map((i
   id,
   kind: "pool",
   label: id,
+  payload: {},
 }));
 const gain = (toPlace = 2) => ({
   options: poolOptions,
@@ -40,7 +42,7 @@ const gain = (toPlace = 2) => ({
   },
 });
 const redistribute = (arrangements = ["3|4|2", "2|5|2", "4|4|1", "9|0|0"]) => ({
-  options: arrangements.map((id) => ({ id, kind: "redistribute", label: id })),
+  options: arrangements.map((id) => ({ id, kind: "redistribute", label: id, payload: {} })),
   details: {
     kind: "command_tokens",
     mode: "redistribute",
@@ -154,7 +156,11 @@ describe("redistribution staging", () => {
   it("refuses an arrangement the engine does not offer, with a reason", () => {
     const bad = { tactic: 8, fleet: 1, strategic: 0 };
     expect(arrangementId(view, bad)).toBeNull();
-    expect(confirmBlocker(view, bad)).toContain("fleet pool");
+    // Only the fleet floor the engine's arrangements keep is named (here 4); with a 0 on offer
+    // (Letnev) the message is the generic one.
+    const floored = describeCommandTokens(redistribute(["3|4|2", "2|5|2"]), false)!;
+    expect(confirmBlocker(floored, bad)).toContain("at least 4 tokens in the fleet pool");
+    expect(confirmBlocker(view, bad)).toBe("That arrangement is not allowed.");
     expect(tokenOutcome(view, bad)).toBeNull();
   });
 
@@ -163,6 +169,48 @@ describe("redistribution staging", () => {
     expect(poolPips(view, staging, "tactic")).toEqual({ kept: 2, added: 0, removed: 1 });
     expect(poolPips(view, staging, "fleet")).toEqual({ kept: 4, added: 1, removed: 0 });
     expect(resultingCount(view, staging, "fleet")).toBe(5);
+  });
+});
+
+describe("redistribution with gained tokens (status phase)", () => {
+  // Held 3|4|2 = 9, gained 2: the engine offers arrangements of 11.
+  const statusChoice = (details: Record<string, unknown> = { gained: 2 }) => ({
+    options: ["5|4|2", "3|6|2", "3|4|4"].map((id) => ({ id, kind: "redistribute", label: id, payload: {} })),
+    details: {
+      kind: "command_tokens",
+      mode: "redistribute",
+      pools: { tactic: 3, fleet: 4, strategic: 2 },
+      reinforcements: 5,
+      total: 11,
+      ...details,
+    },
+  });
+  const view = describeCommandTokens(statusChoice(), false)!;
+
+  it("reads the gained count, and 0 when the details leave it out", () => {
+    expect(view.gained).toBe(2);
+    expect(view.total).toBe(11);
+    expect(describeCommandTokens(statusChoice({}), false)!.gained).toBe(0);
+    expect(describeCommandTokens(redistribute(), false)!.gained).toBe(0);
+    expect(describeCommandTokens(gain(), true)!.gained).toBe(0);
+  });
+
+  it("starts at the held pools with the gained tokens still to place", () => {
+    const staging = initialStaging(view);
+    expect(staging).toEqual({ tactic: 3, fleet: 4, strategic: 2 });
+    expect(tokensRemaining(view, staging)).toBe(2);
+    expect(canConfirmTokens(view, staging)).toBe(false);
+    expect(confirmBlocker(view, staging)).toContain("2 more tokens");
+  });
+
+  it("confirms the matching arrangement once the gained tokens are placed", () => {
+    let staging = addToken(view, initialStaging(view), "fleet");
+    expect(tokensRemaining(view, staging)).toBe(1);
+    staging = addToken(view, staging, "fleet");
+    expect(tokensRemaining(view, staging)).toBe(0);
+    expect(addToken(view, staging, "tactic")).toEqual(staging);
+    expect(canConfirmTokens(view, staging)).toBe(true);
+    expect(tokenOutcome(view, staging)).toEqual({ kind: "option", optionId: "3|6|2" });
   });
 });
 
@@ -181,8 +229,8 @@ const gainBuy = (toPlace = 3, purchase = purchaseDetails()) => ({
 });
 const buyQuestion = (purchase = purchaseDetails()) => ({
   options: [
-    { id: "no", kind: "strategy", label: "spend nothing further" },
-    { id: "yes", kind: "strategy", label: "spend 3 influence" },
+    { id: "no", kind: "strategy", label: "spend nothing further", payload: {} },
+    { id: "yes", kind: "strategy", label: "spend 3 influence", payload: {} },
   ],
   details: {
     kind: "command_tokens",
@@ -328,7 +376,9 @@ describe("payment override", () => {
     current: { tactic: 3, fleet: 4, strategic: 2 },
     reinforcements: 20,
     total: 0,
+    gained: 0,
     arrangements: new Set(),
+    fleetSupplyBonus: 0,
     purchase: {
       cost: 3,
       influence: 14,
@@ -412,7 +462,7 @@ describe("payment override", () => {
 describe("restack (Predictive Intelligence)", () => {
   const moveIds = ["tactic|fleet", "tactic|strategy", "fleet|tactic", "fleet|strategy", "strategy|tactic", "strategy|fleet", "done"];
   const restack = () => ({
-    options: moveIds.map((id) => ({ id, kind: id === "done" ? "decline" : "redistribute", label: id })),
+    options: moveIds.map((id) => ({ id, kind: id === "done" ? "decline" : "redistribute", label: id, payload: {} })),
     details: {
       kind: "command_tokens",
       mode: "restack",
@@ -431,7 +481,7 @@ describe("restack (Predictive Intelligence)", () => {
   });
 
   it("is not offered without any move option", () => {
-    const none = { ...restack(), options: [{ id: "done", kind: "decline", label: "done" }] };
+    const none = { ...restack(), options: [{ id: "done", kind: "decline", label: "done", payload: {} }] };
     expect(describeCommandTokens(none, true)).toBeNull();
   });
 
@@ -492,5 +542,21 @@ describe("gainTokensPrompt", () => {
         details: { kind: "command_tokens", mode: "redistribute", total: 9 },
       }),
     ).toBe(prompt);
+  });
+});
+
+describe("Armada fleet supply bonus", () => {
+  it("reads the engine's bonus, zero when absent", () => {
+    const base = redistribute();
+    expect(describeCommandTokens(base, false)!.fleetSupplyBonus).toBe(0);
+    const letnev = { ...base, details: { ...base.details, fleet_supply_bonus: 2 } };
+    expect(describeCommandTokens(letnev, false)!.fleetSupplyBonus).toBe(2);
+  });
+
+  it("recognises only Letnev", () => {
+    expect(hasArmada("letnev")).toBe(true);
+    expect(hasArmada("Letnev")).toBe(true);
+    expect(hasArmada("sol")).toBe(false);
+    expect(hasArmada(null)).toBe(false);
   });
 });

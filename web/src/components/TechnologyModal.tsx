@@ -1,7 +1,10 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { PlanetValue, ValueText } from "./PlanetValueIcons.tsx";
 import type { BoardView, PlayerView, PendingChoiceDto } from "../protocol/types.ts";
-import type { ChoiceRendererModel } from "../presentation/choiceModel.ts";
+import {
+  isEnigmaticDeviceResearch,
+  type ChoiceRendererModel,
+} from "../presentation/choiceModel.ts";
 import { Dialog } from "../primitives/index.ts";
 import { usePlayerIdentity } from "../presentation/PlayerIdentity.tsx";
 import { SEAT_INK_LIGHT, seatInk } from "../presentation/playerDisplay.ts";
@@ -101,6 +104,7 @@ export const TechnologyModal: React.FC<TechnologyModalProps> = ({
     Boolean(
       choice &&
       (choice.context?.subtype === "research_technology" ||
+        isEnigmaticDeviceResearch(choice.context?.subtype) ||
         choice.options.some((o) => o.kind === "research")),
     );
 
@@ -196,7 +200,10 @@ export const TechnologyModal: React.FC<TechnologyModalProps> = ({
 
   const legalOptionIds = useMemo(() => {
     if (choice?.options) {
-      return choice.options.filter((o) => o.kind === "research").map((o) => o.id);
+      // The Enigmatic Device's list is `technology` options; every other research is `research`.
+      const kind =
+        isEnigmaticDeviceResearch(choice.context?.subtype) ? "technology" : "research";
+      return choice.options.filter((o) => o.kind === kind).map((o) => o.id);
     }
     return selectableTechIds ?? null;
   }, [choice?.options, selectableTechIds]);
@@ -651,9 +658,11 @@ export const TechnologyModal: React.FC<TechnologyModalProps> = ({
 
               {/* Resources & Decision Actions */}
               <div className="technology-modal__research-footer">
+                <div className="technology-modal__status-line">
                 <div
                   className="technology-modal__resources-bar"
                   data-testid="tech-available-resources"
+                  title={`${availableResources.planet} planet + ${availableResources.tradeGoods} TG`}
                 >
                   <span>Available:</span>
                   <span className="technology-modal__resources-tag">
@@ -693,6 +702,8 @@ export const TechnologyModal: React.FC<TechnologyModalProps> = ({
                       )}
                     </span>
                   )}
+                </div>
+
                 </div>
 
                 {secondPickOpen && selectedTechs.length === 1 && !secondPickAffordable && (
@@ -1018,9 +1029,7 @@ const TechCard: React.FC<TechCardProps> = ({
         </div>
       </div>
 
-      <div className="technology-card__effect" data-testid={`tech-effect-${tech.id}`}>
-        {tech.meta.description}
-      </div>
+      <TechEffectText id={tech.id} text={tech.meta.description} />
 
       <div className="technology-card__researched" data-testid={`tech-researched-${tech.id}`}>
         <span className="technology-card__researched-label">Researched:</span>
@@ -1062,8 +1071,20 @@ const TechFilterBar: React.FC<{
   filter: TechFilter;
   onChange: (next: TechFilter) => void;
   canFilterAvailable: boolean;
-}> = ({ filter, onChange, canFilterAvailable }) => (
-  <div className="technology-filter" role="group" aria-label="Filter technologies" data-testid="tech-filter">
+}> = ({ filter, onChange, canFilterAvailable }) => {
+  const rowRef = useRef<HTMLDivElement>(null);
+  // On a phone the chips are one scrolling row: keep the pressed chip in view (also after a restore).
+  useEffect(() => {
+    const row = rowRef.current;
+    const pressed = row?.querySelector<HTMLElement>('[aria-pressed="true"]:not([data-testid="tech-filter-all"])');
+    if (!row || !pressed || row.scrollWidth <= row.clientWidth) return;
+    const left = pressed.getBoundingClientRect().left - row.getBoundingClientRect().left + row.scrollLeft;
+    const right = left + pressed.offsetWidth;
+    if (left < row.scrollLeft) row.scrollLeft = Math.max(0, left - 12);
+    else if (right > row.scrollLeft + row.clientWidth) row.scrollLeft = right - row.clientWidth + 12;
+  }, [filter.color, filter.availableOnly]);
+  return (
+  <div ref={rowRef} className="technology-filter" role="group" aria-label="Filter technologies" data-testid="tech-filter">
     <button
       type="button"
       className="technology-filter__chip"
@@ -1098,4 +1119,53 @@ const TechFilterBar: React.FC<{
       </button>
     )}
   </div>
-);
+  );
+};
+
+/**
+ * A technology's own text. On phones the CSS clamps it to a few lines; when the text really is cut off,
+ * a small More / Less button (a card tap would select the technology instead) shows the rest. On desktop
+ * nothing is clamped and the button never appears.
+ */
+const TechEffectText: React.FC<{ id: string; text: string }> = ({ id, text }) => {
+  const ref = useRef<HTMLDivElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [clamped, setClamped] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => {
+      if (!expanded) setClamped(el.scrollHeight > el.clientHeight + 1);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [text, expanded]);
+  return (
+    <div className="technology-card__effect-wrap">
+      <div
+        ref={ref}
+        className="technology-card__effect"
+        data-testid={`tech-effect-${id}`}
+        data-expanded={expanded}
+      >
+        {text}
+      </div>
+      {(clamped || expanded) && (
+        <button
+          type="button"
+          className="technology-card__more"
+          data-testid={`tech-effect-more-${id}`}
+          aria-expanded={expanded}
+          onClick={(e) => {
+            e.stopPropagation();
+            setExpanded((v) => !v);
+          }}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          {expanded ? "Less" : "More"}
+        </button>
+      )}
+    </div>
+  );
+};

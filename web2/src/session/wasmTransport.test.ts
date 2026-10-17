@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { loadCatalog } from "@ti4/shared/content/catalog.ts";
 import { expect, it } from "vitest";
 import { setLoad, setShip } from "./movementDraft";
 import {
@@ -35,12 +36,14 @@ import { selectAgendas } from "./select/agendas";
 import { selectSecrets } from "./select/secrets";
 import { factionSheet } from "./select/factionSheet";
 import { selectPlayers } from "./select/players";
+import type { ModelFile } from "@ti4/shared/engine/protocol.ts";
 import type { TransportEvent } from "./transport";
-import type { LocalGame, SeatSwitch } from "./savedGame";
+import type { LocalGame } from "./savedGame";
 import {
   type Engine,
-  catalogOf,
+  type HostSave,
   createWasmTransport,
+  engineQuery,
   scenariosOf,
   setupDrawOf,
   setupOptionsOf,
@@ -48,12 +51,13 @@ import {
 } from "./wasmTransport";
 import type {
   DraftOutcome,
-  DraftScope,
   DraftStep,
   InvasionFacts,
   MovementFacts,
+  PlanScope,
   ProductionFacts,
   ReactionModes,
+  SeatSwitch,
   SessionUpdate,
   TableRequest,
 } from "./wire";
@@ -69,14 +73,15 @@ async function play(
   stepping = false,
   game: LocalGame = { seed: 3, players: 8, humans: 1 },
   saved: {
-    decisions?: readonly string[];
-    switches?: readonly SeatSwitch[];
+    /** The game of an earlier visit (`save()` of its `play`). */
+    save?: HostSave;
     /** The cards that are never offered, by name: a short form of `modes`. */
     never?: readonly string[];
     modes?: ReactionModes;
     ruleSeats?: number;
     table?: TableRequest;
     waitMs?: number;
+    models?: ModelFile[];
   } = {},
 ) {
   const engine: Engine = {
@@ -85,21 +90,17 @@ async function play(
     scenarios: [],
     catalog: null,
   };
-  /** Every decision of the game, of every seat: the saved game. */
-  let decisions: readonly string[] = saved.decisions ?? [];
-  /** The answers of this side among them, once the transport told them. */
-  let answers: readonly string[] = [];
-  let switches: readonly SeatSwitch[] = saved.switches ?? [];
-  const transport = createWasmTransport(engine, game, {
-    ...saved,
+  /** What plays the game again, as the transport told it last: every decision of every seat, and the answers of this side among them. */
+  let save: HostSave | undefined = saved.save;
+  const { table, never: _, ...rest } = saved;
+  const transport = createWasmTransport(engine, table ? { ...game, table } : game, {
+    ...rest,
     modes: {
       ...saved.modes,
       ...Object.fromEntries((saved.never ?? []).map((name) => [name, "never"])),
     },
-    onDecisions: (all, changes, own) => {
-      decisions = [...all];
-      answers = own.map((at) => all[at]);
-      switches = [...changes];
+    onSave: (made) => {
+      save = made;
     },
     stepping,
   });
@@ -129,7 +130,7 @@ async function play(
     }
   });
   /** Asks for a draft and waits for its answer: the script comes back with it. */
-  const draft = (script: DraftStep[], scope?: DraftScope) =>
+  const draft = (script: DraftStep[], scope?: PlanScope) =>
     new Promise<DraftOutcome | null>((answer) => {
       drafts.set(script, answer);
       transport.draft(script, scope);
@@ -150,9 +151,10 @@ async function play(
     passed,
     never: () => never,
     modes: () => modes,
-    decisions: () => decisions,
-    answers: () => answers,
-    switches: () => switches,
+    save: () => save!,
+    decisions: (): readonly string[] => save?.decisions ?? [],
+    answers: (): readonly string[] => save?.answers ?? [],
+    switches: (): readonly SeatSwitch[] => save?.switches ?? [],
   };
 }
 
@@ -362,7 +364,7 @@ it.skipIf(!built)(
     const steps = stepsOf(facts, setShip(facts, setShip(facts, {}, "01|0", true), "01|2", true));
     first.transport.submitPlan(first.nonce(open), { destination: "23", steps });
     await first.next();
-    const saved = [...first.decisions()];
+    const saved = first.save();
     // The hold of the carrier was declined, though the plan loads nothing.
     expect(first.answers().slice(3)).toEqual([
       "move|01|0",
@@ -383,7 +385,7 @@ it.skipIf(!built)(
     const transport = createWasmTransport(
       engine,
       { seed: 3, players: 8, humans: 1 },
-      { decisions: saved, onDecisions: (all, _, own) => (answers = own.map((at) => all[at])) },
+      { save: saved, onSave: (made) => (answers = made.answers) },
     );
     const updates: Update[] = [];
     let wake: (() => void) | null = null;
@@ -597,11 +599,11 @@ it.skipIf(!built)(
     }
     const open = await next();
     expect(subtype(open)).toBe("produce_unit");
+    expect(open.update.tactical?.kind).toBe("production");
     const facts = open.update.tactical as ProductionFacts;
-    expect(facts.kind).toBe("production");
     const unit = (id: string) => facts.units.findIndex((item) => item.unit === id);
     // The printed side of a unit, in the shape that the card reads. A failure here with an
-    // engine that is older than `ti4-view`: run scripts/build-wasm.sh.
+    // engine that is older than `ti4-host/src/view`: run scripts/build-wasm.sh.
     expect(facts.units[unit("warsun")]).toMatchObject({
       abilities: ["SUSTAIN DAMAGE", "BOMBARDMENT 3+ (x3)"],
       rules: "Other player's units in this system lose PLANETARY SHIELD.",
@@ -745,7 +747,9 @@ it.skipIf(!built)(
 it.skipIf(!built)(
   "has the printed exploration cards, and an update says what the decks hold",
   async () => {
-    const printed = await catalogOf(await WebAssembly.compile(readFileSync(WASM)));
+    const printed = await loadCatalog({
+      query: engineQuery(await WebAssembly.compile(readFileSync(WASM))),
+    });
     const catalog = printed.exploration;
     expect(Object.keys(catalog.decks).sort()).toEqual([
       "CULTURAL",
@@ -787,7 +791,9 @@ it.skipIf(!built)(
 it.skipIf(!built)(
   "has the printed action cards, and an update says where the cards of the deck are",
   async () => {
-    const catalog = await catalogOf(await WebAssembly.compile(readFileSync(WASM)));
+    const catalog = await loadCatalog({
+      query: engineQuery(await WebAssembly.compile(readFileSync(WASM))),
+    });
     const deck = catalog.components.action_cards;
     const boosts = deck.filter((card) => card.name === "Morale Boost");
     expect(boosts).toHaveLength(4);
@@ -827,7 +833,9 @@ it.skipIf(!built)(
 it.skipIf(!built)(
   "has the printed secret objectives, and an update says what each seat has scored",
   async () => {
-    const catalog = await catalogOf(await WebAssembly.compile(readFileSync(WASM)));
+    const catalog = await loadCatalog({
+      query: engineQuery(await WebAssembly.compile(readFileSync(WASM))),
+    });
     const deck = catalog.components.secret_objectives;
     expect(deck).toHaveLength(40);
     for (const card of deck) {
@@ -872,7 +880,9 @@ it.skipIf(!built)(
 it.skipIf(!built)(
   "has the printed agendas, and an update says which laws are in play",
   async () => {
-    const catalog = await catalogOf(await WebAssembly.compile(readFileSync(WASM)));
+    const catalog = await loadCatalog({
+      query: engineQuery(await WebAssembly.compile(readFileSync(WASM))),
+    });
     const deck = catalog.components.agendas!;
     expect(deck).toHaveLength(50);
     // Every agenda is in the deck once.
@@ -956,7 +966,9 @@ it.skipIf(!built)("says where the points of every seat of the late game come fro
 it.skipIf(!built)(
   "has the printed cards of a play area, and an update says which are used",
   async () => {
-    const catalog = await catalogOf(await WebAssembly.compile(readFileSync(WASM)));
+    const catalog = await loadCatalog({
+      query: engineQuery(await WebAssembly.compile(readFileSync(WASM))),
+    });
     const { transport, next } = await play(false, {
       seed: 42,
       players: 8,
@@ -1051,7 +1063,7 @@ it.skipIf(!built)(
 it.skipIf(!built)(
   "plays another seat from a decision on, several times, and a replay is the same game",
   async () => {
-    const { transport, next, nonce, answers, decisions, switches } = await play();
+    const { transport, next, nonce, answers, save, switches } = await play();
     const seatOf = (event: Update) => {
       const { viewer, pending_choice } = event.update;
       expect(pending_choice?.choice.player).toBe(viewer.role === "player" ? viewer.seat : null);
@@ -1111,7 +1123,7 @@ it.skipIf(!built)(
     transport.close();
 
     // A new visit: the decisions and the seat changes play the same game.
-    const visit = await play(false, undefined, { decisions: decisions(), switches: switches() });
+    const visit = await play(false, undefined, { save: save() });
     const resumed = await visit.next();
     expect(resumed.update).toEqual(reached.update);
     expect(resumed.canUndo).toBe(true);
@@ -1127,7 +1139,7 @@ it.skipIf(!built)(
 it.skipIf(!built)(
   "takes the seat that the game waits for, while the seats are stepped",
   async () => {
-    const { transport, next, nonce, decisions, switches } = await play(true);
+    const { transport, next, nonce, save } = await play(true);
     const menu = await next();
     transport.submitChoice(nonce(menu), menu.update.pending_choice!.choice.options[0].id);
     const paused = await next();
@@ -1144,7 +1156,7 @@ it.skipIf(!built)(
     transport.close();
 
     // Played again without steps, the change is at the same decision.
-    const visit = await play(false, undefined, { decisions: decisions(), switches: switches() });
+    const visit = await play(false, undefined, { save: save() });
     expect((await visit.next()).update).toEqual(asked.update);
     visit.transport.close();
   },
@@ -1210,7 +1222,9 @@ async function toWindowOf(game: Awaited<ReturnType<typeof play>>, key: string): 
 it.skipIf(!built)(
   "says what a window of an ability offers as printed, and passes it for a seat that wants it in its turns only",
   async () => {
-    const catalog = await catalogOf(await WebAssembly.compile(readFileSync(WASM)));
+    const catalog = await loadCatalog({
+      query: engineQuery(await WebAssembly.compile(readFileSync(WASM))),
+    });
     const game = await play(false, SARDAKK);
     const window = await toWindowOf(game, TRO);
     const { update } = window;
@@ -1316,17 +1330,17 @@ it.skipIf(!built)(
     first.transport.submitChoice(first.nonce(activation), "41");
     expect(subtype(await first.next())).toBe("movement_step");
     expect(first.passed).toHaveLength(4);
-    const saved = first.decisions();
+    const saved = first.save();
     first.transport.close();
 
     // The card is offered again, and the saved game is the same game: its window was declined.
-    const offered = await play(false, XXCHA, { decisions: saved });
+    const offered = await play(false, XXCHA, { save: saved });
     expect(subtype(await offered.next())).toBe("movement_step");
     expect(offered.passed).toEqual([]);
     offered.transport.close();
 
     // A game where the player declined the window, played again with the card never offered.
-    const again = await play(false, XXCHA, { decisions: saved, never: [NAV_SUITE] });
+    const again = await play(false, XXCHA, { save: saved, never: [NAV_SUITE] });
     const resumed = await again.next();
     expect(subtype(resumed)).toBe("movement_step");
     expect(again.passed).toEqual([]);
@@ -1385,7 +1399,7 @@ it.skipIf(!built)(
     const choose = (option_id: string): DraftStep => ({ kind: "choose", option_id });
     // Seat a takes the last card, so that another seat plays a strategy card before its turn.
     let event = await next();
-    let drafted: { scope: DraftScope; pass: string } | null = null;
+    let drafted: { scope: PlanScope; pass: string } | null = null;
     for (let turns = 0; turns < 600 && !drafted; turns += 1) {
       const action = event.update.secondary;
       if (event.update.pending_choice) {
@@ -1399,7 +1413,7 @@ it.skipIf(!built)(
         // was before the card was played.
         expect(action.primary).not.toBe("a");
         expect(action.followers.find((follower) => follower.seat === "a")?.state).toBe("waiting");
-        const scope: DraftScope = { kind: "secondary", primary: action.primary, card: action.card };
+        const scope: PlanScope = { kind: "secondary", primary: action.primary, card: action.card };
         const asked = await draft([], scope);
         if (asked?.stop.kind === "complete") {
           // A secondary that the seat cannot use asks nothing (Leadership with no influence).
@@ -1618,6 +1632,7 @@ it.skipIf(!built)(
     }
     const answers = first.answers();
     const saved = first.decisions();
+    const kept = first.save();
     // The decisions of the other seats are in the game, in their order.
     expect(saved).toHaveLength(before + 3);
     expect(saved[before]).toBe(answers.at(-1));
@@ -1625,7 +1640,7 @@ it.skipIf(!built)(
     first.transport.close();
 
     // A new visit, stepped: it waits for the same seat, on the same game.
-    const visit = await play(true, game, { table, decisions: saved });
+    const visit = await play(true, game, { table, save: kept });
     const resumed = await visit.next();
     expect(resumed.stepping).toEqual(event.stepping);
     expect(resumed.update).toEqual(event.update);
@@ -1640,7 +1655,7 @@ it.skipIf(!built)(
     visit.transport.close();
 
     // A new visit with the wait of the table: the page is shown that seat at once.
-    const paced = await play(false, game, { table, waitMs: 2, decisions: saved });
+    const paced = await play(false, game, { table, waitMs: 2, save: kept });
     const waiting = await paced.next();
     expect(waiting.stepping).toBeUndefined();
     expect(waiting.update).toEqual(event.update);
@@ -1693,6 +1708,54 @@ it.skipIf(!built)(
     });
     expect((await old.next()).update.seats).toBeUndefined();
     old.transport.close();
+  },
+  120_000,
+);
+
+it.skipIf(!built)(
+  "a model of the table is loaded in the Worker before the game, and a seat of it plays",
+  async () => {
+    const dir = fileURLToPath(new URL("../../../fixtures/models", import.meta.url));
+    const index = JSON.parse(readFileSync(`${dir}/index.json`, "utf8")) as {
+      models: { name: string; label: string; sha256: string }[];
+    };
+    const model = index.models[0];
+    const file = (): ModelFile => ({
+      sha256: model.sha256,
+      bytes: new Uint8Array(readFileSync(`${dir}/${model.name}.ti4m`)).buffer,
+    });
+    const table: TableRequest = {
+      setup: { player_count: 3, seed: 12 },
+      seats: [
+        { kind: "human", name: "Ada" },
+        { kind: `mlp:${model.name}`, name: `${model.label} 1` },
+        { kind: "smart", name: "Rule bot 1" },
+      ],
+    };
+    const game = { seed: 12, players: 3, humans: 1 };
+    const { transport, next } = await play(false, game, { table, models: [file()] });
+    const event = await next();
+    expect(event.update.seats?.b).toEqual({
+      nickname: `${model.label} 1`,
+      kind: `mlp:${model.name}`,
+    });
+    expect(event.update.pending_choice).toBeDefined();
+    transport.close();
+
+    // Without the file the engine refuses the game, with the name of the model.
+    const errors: string[] = [];
+    const bare = createWasmTransport(
+      {
+        module: await WebAssembly.compile(readFileSync(WASM)),
+        hash: "test",
+        scenarios: [],
+        catalog: null,
+      },
+      { ...game, table },
+    );
+    bare.subscribe((each) => each.kind === "error" && errors.push(each.message));
+    await expect.poll(() => errors.join()).toContain(model.name);
+    bare.close();
   },
   120_000,
 );

@@ -24,6 +24,8 @@ export type LobbyIntent =
   | { type: "addBot"; kind: string }
   | { type: "fillBots"; kind: string }
   | { type: "remove"; player: string }
+  /** The host puts the players in another order of the rows: the seats of the game. */
+  | { type: "shuffleSeats" }
   /** The host changes the setup. */
   | { type: "set"; change: LobbySettingsChange }
   /** The viewer takes another name. */
@@ -40,7 +42,7 @@ export type LobbyIntent =
 
 /** The one sign of a row, with its word (the tooltip and the accessible name). */
 export interface LobbySignView {
-  kind: "host" | "rule" | "random" | "away" | "open";
+  kind: "host" | "rule" | "random" | "model" | "away" | "open";
   word: string;
 }
 
@@ -87,7 +89,10 @@ export interface LobbyFactionEditorView {
   groups: { name: string; options: LobbyFactionOptionView[] }[];
 }
 
-/** One seat of the table, in the order in which the players came. The list has no numbers. */
+/**
+ * One seat of the table, in the order of the seats of the game: the order in which the players
+ * came, until the host shuffles the seats. The list has no numbers.
+ */
 export interface LobbyRowView {
   id: string;
   /** The player of the seat. Of a running game it is the seat of the game. Null: the seat is open. */
@@ -169,5 +174,7 @@ export interface LobbyView {
   rows: LobbyRowView[];
   /** The button for the usual target, under the list. */
   fill: LobbyButtonView | null;
+  /** "Shuffle seats", for the host before the start: the rows are the seats of the game. */
+  shuffle: LobbyButtonView | null;
   footer: LobbyFooterView;
 }

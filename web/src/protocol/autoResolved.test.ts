@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeAutoResolved, decodeServerMessage } from "./decode.ts";
+import { decodeAutoResolved, decodeServerMessage } from "@ti4/shared/wire/decode.ts";
 import { PROTOCOL_VERSION, StateUpdateMsg } from "./types.ts";
 
 const update = {

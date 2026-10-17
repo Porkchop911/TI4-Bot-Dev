@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { CombatView, PlacedUnitView } from "../protocol/types.ts";
 import { summarizeCombat } from "./combatSummary.ts";
+import { partialCombat } from "../test/wire.ts";
 
 const u = (unit_type: string, owner: string, damaged = false): PlacedUnitView => ({
   unit_type,
   owner,
   damaged,
+  planet: null,
+  galvanized: false,
 });
-const combat = (start: PlacedUnitView[], extra: Partial<CombatView> = {}): CombatView => ({
+const combat = (start: PlacedUnitView[], extra: Partial<CombatView> = {}): CombatView => partialCombat({
   system_id: "18",
   round: 2,
   phase: "complete",

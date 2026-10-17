@@ -2,10 +2,17 @@ import type { GameView, PendingChoiceDto } from "../protocol/types.ts";
 
 const subtypeOf = (choice: Pick<PendingChoiceDto, "context">) => choice.context?.subtype ?? "";
 
+/** Public Disgrace's re-choice and the card picks of Overrule and Strategize (`strategize2_pick_strategy card`). */
+const ACTION_CARD_STRATEGY_PICK = /^(public_disgrace_choose_card|overrule_pick_strategy card|strategize\d*_pick_strategy card)$/;
+
 /** The subtypes whose options are strategy cards, shown as the card grid. */
 export function isStrategyCardGrid(choice: Pick<PendingChoiceDto, "context">): boolean {
   const subtype = subtypeOf(choice);
-  return subtype === "draft_strategy_card" || subtype.endsWith("investments_pick_strategy_card");
+  return (
+    subtype === "draft_strategy_card" ||
+    subtype.endsWith("investments_pick_strategy_card") ||
+    ACTION_CARD_STRATEGY_PICK.test(subtype)
+  );
 }
 
 /** Manipulate Investments: which of the five trade goods this question places. */

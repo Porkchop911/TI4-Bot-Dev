@@ -26,7 +26,7 @@ use ratelimit::{LimitKind, RateLimiter, RateLimits};
 /// Static settings, usually read from the environment.
 #[derive(Debug, Clone, Default)]
 pub struct PublicConfig {
-    /// `TI4_PUBLIC=1`: dev routes off, no ML bots, safe defaults for everything below.
+    /// `TI4_PUBLIC=1`: dev routes off, safe defaults for everything below.
     pub public: bool,
     /// `TI4_WEB_DIR`: directory with the built web client.
     pub web_dir: Option<PathBuf>,
@@ -204,10 +204,7 @@ fn classify(method: &Method, path: &str) -> Option<LimitKind> {
     if path == "/api/games" && post {
         return Some(LimitKind::GameCreate);
     }
-    if path.ends_with("/lobby/join")
-        || path.ends_with("/lobby/add-bot")
-        || path.ends_with("/lobby/bots")
-    {
+    if path.ends_with("/lobby/join") || path.ends_with("/lobby/bots") {
         return Some(LimitKind::LobbyJoin);
     }
     if path.ends_with("/batches") {

@@ -1,6 +1,6 @@
-import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
+import { test, expect, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 import { openPlayerGame } from "./lobbyHelpers";
-import type { InitialSnapshotMsg, ChoiceOptionDto } from "../src/protocol/types";
+import type { InitialSnapshotMsg, ChoiceOption } from "../src/protocol/types";
 import { getUnitBaseType } from "../src/components/UnitIcon";
 
 const backend = `http://127.0.0.1:${process.env.TI4_E2E_BACKEND_PORT ?? "8180"}`;
@@ -81,6 +81,66 @@ async function expectFleetPills(page: Page, state: InitialSnapshotMsg, step: num
       }
     }
   }
+}
+
+/**
+ * The seat that is asked now. A private reaction window (Sabotage against an action card) shows
+ * publicly as "waiting for reactions" without naming the seat: ask each seat's own view.
+ */
+async function actorOf(
+  request: APIRequestContext,
+  game: string,
+  seats: Record<string, string>,
+  state: InitialSnapshotMsg,
+): Promise<string | undefined> {
+  if (state.turn_status.kind === "waiting_for_decision") return state.turn_status.seat;
+  if (state.turn_status.kind !== "waiting_for_reactions") return undefined;
+  for (const [id, token] of Object.entries(seats))
+    if ((await snapshot(request, game, token)).pending_choice) return id;
+  return undefined;
+}
+
+/**
+ * Stages the hits of a sustain or casualty decision in the shared hit panel, which sends every hit
+ * as one plan: a sustain on a ship of the offered type when the test chose to sustain, and
+ * destroys for the rest. Destroys go first to ships that cannot sustain and are not of the
+ * sustaining type (a destroy on an undamaged sustaining ship stages its sustain too).
+ */
+async function stageHits(panel: Locator, selected: ChoiceOption) {
+  const sustained = selected.kind === "sustain" ? String(selected.payload?.unit ?? "") : "";
+  if (sustained)
+    await panel.locator(`[data-testid^="hit-sustain-${sustained}#"]:enabled`).first().click();
+  const remaining = panel.getByTestId("hit-assignment-remaining");
+  const plainRows = panel.locator('[data-testid^="hit-row-"]:not(:has([data-testid^="hit-sustain-"]))');
+  const choices = [
+    plainRows
+      .filter({ hasNot: panel.page().locator(`[data-testid^="hit-staged-${sustained || "-"}#"]`) })
+      .locator('[data-testid^="hit-destroy-"]:enabled'),
+    plainRows.locator('[data-testid^="hit-destroy-"]:enabled'),
+    panel.locator('[data-testid^="hit-destroy-"]:enabled'),
+  ];
+  for (let hit = 0; hit < 20 && !(await remaining.innerText()).startsWith("0 of"); hit++) {
+    let staged = false;
+    for (const destroy of choices) {
+      if ((await destroy.count()) === 0) continue;
+      await destroy.first().click();
+      staged = true;
+      break;
+    }
+    if (!staged) break;
+  }
+  await panel.getByTestId("hit-confirm").click();
+}
+
+/** Answers a combat decision in the actor's view: hits in the shared panel when it shows. */
+async function answerCombat(page: Page, selector: string, subtype: string, selected: ChoiceOption) {
+  const button = page.getByTestId(selector).first();
+  if (subtype === "sustain_damage" || subtype === "assign_casualty") {
+    const panel = page.getByTestId("hit-assignment-panel");
+    await expect(panel.or(button).first()).toBeVisible();
+    if (await panel.isVisible()) return stageHits(panel, selected);
+  }
+  await button.click();
 }
 
 test("a complete human battle stays public in four independent views", async ({
@@ -174,7 +234,7 @@ test("a complete human battle stays public in four independent views", async ({
           (combat.remaining_hits?.[combat.defender] ?? 0) > 0;
       }
       const actor =
-        current.turn_status.kind === "waiting_for_decision" ? current.turn_status.seat : undefined;
+        await actorOf(request, game, seats, current);
       expect(actor).toBeTruthy();
       const actorPage = views.get(actor!);
       expect(actorPage).toBeDefined();
@@ -295,7 +355,7 @@ test("a complete human battle stays public in four independent views", async ({
           .soft(actorPage!.getByRole("button", { name: "Play Shields Holding" }))
           .toBeVisible();
       }
-      let selected: ChoiceOptionDto;
+      let selected: ChoiceOption;
       if (card && (actor === sol || String(card.payload?.card_name) === "Sabotage")) {
         selected = card;
       } else if (subtype === "announce_retreat") {
@@ -338,7 +398,7 @@ test("a complete human battle stays public in four independent views", async ({
         await actorPage!.getByRole("radio", { name: selected.label }).click();
         await actorPage!.getByRole("button", { name: "Confirm choice" }).click();
       } else {
-        await actorPage!.getByTestId(selector).first().click();
+        await answerCombat(actorPage!, selector, subtype, selected);
       }
       await expect
         .poll(async () => (await snapshot(request, game, seats[sol])).game_version)
@@ -369,17 +429,20 @@ test("a complete human battle stays public in four independent views", async ({
         }
       }
       if (subtype === "sustain_damage" && selected.kind === "sustain") {
-        const beforeUnits = current.view.board.systems[combat.system_id].units.filter(
-          (unit) => unit.owner === actor && !unit.planet,
+        // The hit panel sends the other hits of this volley in the same plan: compare the
+        // sustaining type only.
+        const type = String(selected.payload?.unit ?? "");
+        const ships = (state: InitialSnapshotMsg) =>
+          state.view.board.systems[combat.system_id].units.filter(
+            (unit) => unit.owner === actor && !unit.planet && unit.unit_type === type,
+          );
+        expect(ships(after).length, `step ${step}: sustain keeps the ship`).toBe(
+          ships(current).length,
         );
-        const afterUnits = after.view.board.systems[combat.system_id].units.filter(
-          (unit) => unit.owner === actor && !unit.planet,
-        );
-        expect(afterUnits.length, `step ${step}: sustain keeps the ship`).toBe(beforeUnits.length);
         expect(
-          afterUnits.filter((unit) => unit.damaged).length,
+          ships(after).filter((unit) => unit.damaged).length,
           `step ${step}: exactly one ship sustains`,
-        ).toBe(beforeUnits.filter((unit) => unit.damaged).length + 1);
+        ).toBe(ships(current).filter((unit) => unit.damaged).length + 1);
         if (after.view.board.combat) {
           for (const page of pages) await expectFleetPills(page, after, step);
         }
@@ -394,8 +457,9 @@ test("a complete human battle stays public in four independent views", async ({
         for (let i = 0; i < pages.length; i++) {
           const id = ids[i];
           const view = await snapshot(request, game, id ? seats[id] : undefined);
+          // No hits left to assign: the field is left out.
           expect(
-            view.view.board.combat?.hits_to_assign,
+            view.view.board.combat?.hits_to_assign ?? 0,
             `Shields Holding must update incoming hits for ${id ?? "spectator"}`,
           ).toBe(expectedHits);
           const callout = pages[i].getByTestId("combat-hits-callout");
@@ -576,14 +640,10 @@ test("a complete human battle stays public in four independent views", async ({
       if (await generic.isVisible())
         await generic.getByRole("button", { name: "Minimize decision" }).click();
       await page.getByTestId("event-log-toggle").click();
-      for (const label of [/Round 1/, /Action phase/, /Tactical action/]) {
+      // Rounds and phases fold; an open phase lists its actions and stages in full.
+      for (const label of [/Round 1/, /Action phase/]) {
         const branch = page.getByRole("button", { name: label });
         if ((await branch.getAttribute("aria-expanded")) === "false") await branch.click();
-      }
-      const stages = page.locator(".event-log__group--stage > .event-log__heading");
-      for (let stage = 0; stage < (await stages.count()); stage++) {
-        if ((await stages.nth(stage).getAttribute("aria-expanded")) === "false")
-          await stages.nth(stage).click();
       }
       for (const play of publicPlays) {
         await expect(page.getByTestId("event-log-container")).toContainText(
@@ -627,7 +687,7 @@ test("undo during a Shields Holding reaction preserves a healthy, playable game"
     for (let step = 0; step < 40; step++) {
       const state = await snapshot(request, game, seats[host]);
       const actor =
-        state.turn_status.kind === "waiting_for_decision" ? state.turn_status.seat : undefined;
+        await actorOf(request, game, seats, state);
       expect(actor).toBeTruthy();
       const offer = await snapshot(request, game, seats[actor!]);
       const choice = offer.pending_choice?.choice;
@@ -673,7 +733,7 @@ test("undo during a Shields Holding reaction preserves a healthy, playable game"
               : subtype === "assign_casualty"
                 ? `casualty-opt-${selected.id}`
                 : `combat-follow-up-${selected.id}`;
-      await actorPage.getByTestId(selector).first().click();
+      await answerCombat(actorPage, selector, subtype, selected);
       await expect
         .poll(async () => (await snapshot(request, game, seats[host])).game_version)
         .toBeGreaterThan(state.game_version);
@@ -696,7 +756,7 @@ test("undo during a Shields Holding reaction preserves a healthy, playable game"
     const restored = (await health.json()) as InitialSnapshotMsg;
     expect(restored.history?.cursor).toBeLessThan(before.history!.cursor);
     const restoredActor =
-      restored.turn_status.kind === "waiting_for_decision" ? restored.turn_status.seat : undefined;
+      await actorOf(request, game, seats, restored);
     expect(restoredActor).toBeTruthy();
     expect(
       (await snapshot(request, game, seats[restoredActor!])).pending_choice?.choice,
@@ -742,7 +802,7 @@ test("replaying Direct Hit, Sabotage and Shields Holding after undo keeps the ga
       for (let step = 0; step < 55; step++) {
         const before = await snapshot(request, game, seats[sol]);
         const actor =
-          before.turn_status.kind === "waiting_for_decision" ? before.turn_status.seat : undefined;
+          await actorOf(request, game, seats, before);
         expect(actor, `chain ${replayed ? "replayed" : "original"}, step ${step}`).toBeTruthy();
         const offer = await snapshot(request, game, seats[actor!]);
         const choice = offer.pending_choice?.choice;
@@ -759,7 +819,7 @@ test("replaying Direct Hit, Sabotage and Shields Holding after undo keeps the ga
           options.find(
             (option) => option.payload?.card_name === name || option.label === `Play ${name}`,
           );
-        let selected: ChoiceOptionDto;
+        let selected: ChoiceOption;
         if (!seen.sustain && actor === letnev && subtype === "sustain_damage") {
           selected = options.find((option) => option.kind === "sustain")!;
           expect(selected).toBeDefined();
@@ -801,7 +861,7 @@ test("replaying Direct Hit, Sabotage and Shields Holding after undo keeps the ga
                 : subtype === "assign_casualty"
                   ? `casualty-opt-${selected.id}`
                   : `combat-follow-up-${selected.id}`;
-        await actorPage.getByTestId(selector).first().click();
+        await answerCombat(actorPage, selector, subtype, selected);
         await expect
           .poll(async () => {
             const response = await request.get(`${backend}/api/games/${game}/snapshot`, {

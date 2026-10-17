@@ -264,9 +264,12 @@ test("phone: a movement into a fleet of another seat has the odds of the space c
   await page.locator("#step-panel").getByRole("button", { name: "Take a tactical action" }).click();
   await send.click();
   await pane("Map").click();
-  // Seat C has two cruisers and a destroyer in 32.
+  // Seat C has two cruisers and a destroyer in 32. A click on a system that is not yet a choice
+  // (the engine has not answered) inspects it: wait for the step before each click.
+  await expect(system("32")).toHaveClass(/\btarget\b/);
   await system("32").click();
   await send.click();
+  await expect(send).toHaveText(/Move nothing/);
   await system("24").click();
   const fleet = page.getByRole("group", { name: /^Move from / });
   await fleet.getByRole("button", { name: "Dreadnought 1 of 1" }).click();
@@ -314,6 +317,7 @@ test("phone: the landings are staged in a sheet over the map", async ({ page }) 
   await pane("Map").click();
   await system("38").click();
   await send.click();
+  await expect(send).toHaveText(/Move nothing/);
   await system("63").click();
   const fleet = page.getByRole("group", { name: /^Move from / });
   await fleet.getByRole("button", { name: "Carrier 1 of 1" }).click();
@@ -482,6 +486,8 @@ test("phone: a draft goes on to the landings and the production", async ({ page 
   await expect(row("Take a tactical action")).toBeVisible();
   await draft().click();
   await pane("Map").click();
+  // The systems are the choice once the engine answered the draft.
+  await expect(page.locator("g.system.target:not(.plain)")).not.toHaveCount(0);
 
   // The system of the two space docks. Nothing moves, and AI Development Algorithm is kept.
   await system("72").click();
@@ -522,8 +528,10 @@ test("phone: a draft goes on to the landings and the production", async ({ page 
   // Another action: a carrier lands infantry, and the draft ends where the landing draws a card.
   await page.getByRole("button", { name: "Reference and more" }).click();
   await page.getByRole("menuitem", { name: "Start over" }).click();
+  await expect(page.locator("g.system.target:not(.plain)")).not.toHaveCount(0);
   await system("38").click();
   await send.click();
+  await expect(send).toHaveText(/Move nothing/);
   await system("63").click();
   const fleet = page.getByRole("group", { name: /^Move from / });
   await fleet.getByRole("button", { name: "Carrier 1 of 1" }).click();
@@ -598,6 +606,67 @@ test("phone: a reaction window has its card, its setting and Pass, and nothing i
   await page.screenshot({ path: "shots/phone/local/reaction-window.png", animations: "disabled" });
 });
 
+test("phone: the technology tree has its columns in the width, and a cell stages a research", async ({
+  page,
+}) => {
+  await page.goto("/?scenario=research_tech_skips&humans=1");
+  const panel = page.locator("#step-panel");
+  await page
+    .getByRole("navigation", { name: "Panes" })
+    .getByRole("button", { name: "Action" })
+    .click();
+  await expect(panel.getByRole("heading", { name: "Research", exact: true })).toBeVisible();
+  const cell = panel.getByRole("button", { name: "Sarween Tools", exact: true });
+  await cell.click();
+  await expect(cell).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator('footer button[aria-keyshortcuts="Enter"]')).toHaveText(/^Send/);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
+    page.viewportSize()!.width,
+  );
+  await page.screenshot({ path: "shots/phone/local/research-tree.png", animations: "disabled" });
+});
+
+test("phone: the command pools of the status phase fit the width, and Send is in view", async ({
+  page,
+}) => {
+  // The load of the scenario, an answer, the editor and a second answer.
+  test.setTimeout(10_000);
+  // Sol is in the status phase with 2 · 3 · 2 on its sheet, and gains 3 tokens.
+  await page.goto("/?scenario=score_objective_status&humans=1");
+  const panel = page.locator("#step-panel");
+  const send = page.locator('footer button[aria-keyshortcuts="Enter"]');
+  const pane = (name: string) =>
+    page.getByRole("navigation", { name: "Panes" }).getByRole("button", { name });
+  await pane("Action").click();
+  await panel.getByRole("button", { name: "Decline" }).click();
+  await send.click();
+  await expect(panel.getByRole("heading").first()).toHaveText("Redistribute your command tokens");
+  await expect(page.getByText(/into which pool/i)).toHaveCount(0);
+  const pools = panel.getByRole("heading", { name: "Command pools" }).locator("..");
+  await expect(pools).toContainText("7 / 10 placed");
+  for (const pool of ["tactic", "fleet", "strategy"]) {
+    await panel.getByRole("button", { name: `Add ${pool} pool token` }).click();
+  }
+  await expect(pools).toContainText("10 / 10 placed");
+  // The three rows are in the width: the counter at the right edge of each is in view.
+  for (const pool of ["tactic", "fleet", "strategy"]) {
+    await expect(panel.getByRole("button", { name: `Add ${pool} pool token` })).toBeInViewport({
+      ratio: 1,
+    });
+  }
+  await expect(send).toBeEnabled();
+  await expect(send).toBeInViewport({ ratio: 1 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
+    page.viewportSize()!.width,
+  );
+  await page.screenshot({ path: "shots/phone/local/command-pools.png", animations: "disabled" });
+  await send.click();
+  await pane("Players").click();
+  await expect(
+    page.getByRole("region", { name: "Players" }).getByRole("row").filter({ hasText: "Seat A" }),
+  ).toContainText("3 · 4 · 3");
+});
+
 test("phone: the Agendas sheet has the laws and the open groups in its width", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -646,10 +715,21 @@ test("phone: the draft of a secondary is the row of the viewer in the list of th
   await send.click();
   // Another seat plays Politics after some steps of the seats before it.
   const draft = panel.getByText("✎ Private draft");
+  const politics = panel.getByRole("heading", { name: "Politics" });
+  const done = async () => (await politics.isVisible()) && (await draft.isVisible());
   const step = page.getByRole("button", { name: /^Step/ });
-  for (let steps = 0; steps < 200 && !(await draft.isVisible()); steps++) {
+  const status = page.locator("header strong");
+  for (let steps = 0; steps < 200 && !(await done()); steps++) {
+    const before = await status.textContent();
     await step.click();
-    await page.waitForTimeout(100);
+    // The step is taken when the game says something else. A seat that decides twice says the
+    // same: then the next step is tried after a moment.
+    await expect
+      .poll(async () => (await done()) || (await status.textContent()) !== before, {
+        timeout: 300,
+      })
+      .toBe(true)
+      .catch(() => {});
   }
   await expect(draft).toBeVisible();
   await expect(panel.getByText("Strategy pool 2 → 1")).toBeVisible();
@@ -700,6 +780,29 @@ test("phone: single player is set up on the panes of the lobby, with the long na
   await expect(main).toBeInViewport();
   await fits();
   await page.screenshot({ path: "shots/phone/local/single-players.png", animations: "disabled" });
+
+  // An open seat has the three models of the server after "Random": its row wraps them, and
+  // nothing is cut at the side.
+  await rows.nth(7).getByRole("button", { name: "Remove Rule bot 7" }).tap();
+  const kinds = rows.nth(7).getByRole("button");
+  await expect(kinds).toHaveText([
+    "Rule bot",
+    "Random",
+    "Synthetic model 1",
+    "Synthetic model 2",
+    "Synthetic model 3",
+  ]);
+  await fits();
+  for (const kind of await kinds.all()) {
+    const box = (await kind.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(412);
+  }
+  await expect(main).toBeInViewport();
+  await page.screenshot({ path: "shots/phone/local/single-models.png", animations: "disabled" });
+  await kinds.filter({ hasText: "Synthetic model 3" }).tap();
+  await expect(rows.nth(7)).toContainText("Synthetic model 3 1");
+  await expect(main).toBeEnabled();
 
   await pane("Setup").tap();
   const setup = page.getByRole("region", { name: "Setup" });

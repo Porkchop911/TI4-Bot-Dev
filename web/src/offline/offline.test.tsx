@@ -13,7 +13,7 @@ import { feedbackChipText } from "./useFeedbackQueue.ts";
 import { registerOfflineLauncher, setActiveOfflineGame } from "./registry.ts";
 import type { OfflineFeedbackLocal, OfflineGameSummary, OfflineMismatchPrompt } from "./types.ts";
 import { setLoadedEngine } from "./engineInfo.ts";
-import { sha256Hex } from "./local/sha256.ts";
+import { sha256Hex } from "@ti4/shared/engine/identity.ts";
 
 afterEach(() => {
   cleanup();
@@ -24,7 +24,8 @@ afterEach(() => {
 
 const draft = { ...DEFAULT_DRAFT, nickname: "Ada" };
 const game = (over: Partial<OfflineGameSummary> = {}): OfflineGameSummary => ({
-  gameId: "off_1", playerCount: 4, humanFaction: "sol", humanSeat: 2, round: 3, phase: "action",
+  gameId: "off_1", playerCount: 4, humanFaction: "sol", humanSeat: 2, humanSeats: [2], factions: [null, "sol", null, null],
+  playable: true, round: 3, phase: "action",
   answers: 100, createdAt: 1, updatedAt: Date.now() / 1000, status: "in_progress", resumeEstimateMs: 9000, ...over,
 });
 
@@ -63,14 +64,15 @@ describe("capabilities", () => {
   it("lists what offline lacks and nothing online", () => {
     expect(unavailableFeatures(ONLINE_CAPABILITIES)).toEqual([]);
     expect(unavailableFeatures(OFFLINE_CAPABILITIES)).toEqual(
-      expect.arrayContaining(["Map splice preview", "Turn redo", "Advisor", "Multiplayer and invite links"]),
+      expect.arrayContaining(["Map splice preview", "Multiplayer and invite links"]),
     );
+    expect(unavailableFeatures(OFFLINE_CAPABILITIES)).not.toContain("Turn redo");
   });
   it("IfCapable hides children when off", () => {
     render(
       <CapabilityProvider value={OFFLINE_CAPABILITIES}>
-        <IfCapable name="turnRedo">redo-button</IfCapable>
-        <IfCapable name="turnRedo">second</IfCapable>
+        <IfCapable name="splicePreview">redo-button</IfCapable>
+        <IfCapable name="splicePreview">second</IfCapable>
       </CapabilityProvider>,
     );
     expect(screen.queryByText("redo-button")).toBeNull();
@@ -121,6 +123,23 @@ describe("games list", () => {
     fireEvent.click(screen.getByTestId("offline-delete-confirm"));
     await waitFor(() => expect(onDelete).toHaveBeenCalledWith("off_1"));
   });
+  it("names the faction of every seat and marks the person's", () => {
+    render(<OfflineGamesList games={[game({ factions: ["hacan", "sol", null, "xxcha"] })]} onResume={vi.fn()} onDelete={vi.fn()} onExport={vi.fn()} />);
+    expect(screen.getByTestId("offline-game-factions").textContent).toBe("Emirates of Hacan, Federation of Sol (you), ?, Xxcha Kingdom");
+  });
+  it("a game of several people at one screen is listed, but cannot be resumed here", () => {
+    render(
+      <OfflineGamesList
+        games={[game({ humanSeats: [1, 3], playable: false, factions: ["hacan", "sol", "xxcha", null] })]}
+        onResume={vi.fn()} onDelete={vi.fn()} onExport={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("offline-game-row").textContent).toMatch(/seats 1, 3/);
+    expect(screen.getByTestId("offline-game-factions").textContent).toMatch(/Emirates of Hacan \(you\).*Xxcha Kingdom \(you\)/);
+    expect(screen.getByTestId("offline-game-not-playable")).toBeTruthy();
+    expect(screen.queryByTestId("offline-resume")).toBeNull();
+    expect(screen.getByTestId("offline-export")).toBeTruthy();
+  });
   it("a finished game says View", () => {
     render(<OfflineGamesList games={[game({ status: "finished" })]} onResume={vi.fn()} onDelete={vi.fn()} onExport={vi.fn()} />);
     expect(screen.getByTestId("offline-resume").textContent).toBe("View");
@@ -140,11 +159,11 @@ describe("progress", () => {
 });
 
 const LOCAL: OfflineFeedbackLocal = {
-  seed: 7, setup: { seed: 7, players: 4 }, answers: ["a", "b"],
+  seed: 7, answers: ["a", "b"],
   engine: { build: "abc", content_digest: "d" }, wasm_sha256: "ff",
   save: {
-    seed: 7, setup: { seed: 7, players: 4 }, answers: ["a", "b"], redo: [], never: [],
-    event_times: [], event_versions: [], generation: 0, version: 3, decisions: 9, decisions_hash: "00ff00ff00ff00ff",
+    format: 2, seed: 7, game: { setup: { seed: 7, players: 4 } }, decisions: ["a", "x", "b"], answers: ["a", "b"],
+    redo: [], never: [], event_times: [], event_versions: [], generation: 0, version: 3, decisions_hash: "00ff00ff00ff00ff",
   },
 };
 
@@ -152,7 +171,7 @@ describe("banner and queued feedback", () => {
   it("names the hidden features and the queue state", async () => {
     const launcher = createMockLauncher({ feedback: [{ state: "queued" }, { state: "sending" }] });
     render(<OfflineBanner capabilities={launcher.capabilities} feedback={launcher.feedback} />);
-    expect(screen.getByTestId("offline-missing").textContent).toMatch(/Turn redo.*Advisor/);
+    expect(screen.getByTestId("offline-missing").textContent).toMatch(/Map splice preview.*Multiplayer/);
     expect(screen.getByTestId("offline-feedback-chip").textContent).toBe("2 feedback reports will be sent");
     await act(async () => {
       await launcher.feedback.enqueue({ category: "bug", text: "x", context: {} });
@@ -234,6 +253,23 @@ describe("home screen", () => {
   });
 });
 
+describe("saves of an older version", () => {
+  it("are counted, and deleted after a second click", async () => {
+    const launcher = createMockLauncher({ games: [game()], unreadable: 2 });
+    render(<OfflineHome launcher={launcher} onEnter={vi.fn()} onBack={vi.fn()} />);
+    expect((await screen.findByTestId("offline-older-saves")).textContent).toMatch(/2 saved games from an older version/);
+    fireEvent.click(screen.getByTestId("offline-older-delete"));
+    fireEvent.click(screen.getByTestId("offline-older-delete-confirm"));
+    await waitFor(() => expect(screen.queryByTestId("offline-older-saves")).toBeNull());
+    expect(screen.getAllByTestId("offline-game-row")).toHaveLength(1);
+  });
+  it("show nothing when there are none", async () => {
+    render(<OfflineHome launcher={createMockLauncher({ games: [game()] })} onEnter={vi.fn()} onBack={vi.fn()} />);
+    await screen.findByTestId("offline-game-row");
+    expect(screen.queryByTestId("offline-older-saves")).toBeNull();
+  });
+});
+
 const PROMPT: OfflineMismatchPrompt = {
   reason: "engine-changed",
   differs: ["wasmSha256"],
@@ -307,7 +343,7 @@ describe("saves, import and the engine", () => {
     const bytes = new TextEncoder().encode("abc");
     const expected = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
     expect(await sha256Hex(bytes)).toBe(expected);
-    const { sha256 } = await import("./local/sha256.ts");
+    const { sha256 } = await import("@ti4/shared/engine/identity.ts");
     expect(Array.from(sha256(bytes), (b) => b.toString(16).padStart(2, "0")).join("")).toBe(expected);
     const long = new Uint8Array(1000).fill(97);
     const viaSubtle = await sha256Hex(long);

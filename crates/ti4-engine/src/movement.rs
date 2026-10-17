@@ -637,15 +637,15 @@ impl<'a> MovementRules<'a> {
         // +1 in total however many rifts the route passes, so it is carried per route. The sixth is
         // the own-unit systems whose Luminous step this route has already earned: "+1 for each of
         // those systems" counts a system once, however often the route passes it.
-        let mut queue: VecDeque<(String, i32, i32, Vec<String>, bool, BTreeSet<String>)> =
-            VecDeque::from([(
-                origin.to_owned(),
-                0,
-                budget,
-                vec![origin.to_owned()],
-                false,
-                BTreeSet::new(),
-            )]);
+        type Frontier = (String, i32, i32, Vec<String>, bool, BTreeSet<String>);
+        let mut queue: VecDeque<Frontier> = VecDeque::from([(
+            origin.to_owned(),
+            0,
+            budget,
+            vec![origin.to_owned()],
+            false,
+            BTreeSet::new(),
+        )]);
         // Revisiting is only worthwhile with a larger budget left over (and the same bonus state).
         // The earned Luminous systems are part of that state: a route that has not yet passed an
         // own-unit system can still earn its step, so it is not dominated by one that has.

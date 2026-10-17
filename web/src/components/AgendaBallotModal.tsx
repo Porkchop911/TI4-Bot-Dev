@@ -5,7 +5,8 @@ import { usePipelineRunner, SemanticIntent } from "../hooks/usePipelineRunner.ts
 import { Dialog } from "../primitives/index.ts";
 import { getAgendaPlanetVotes, ChoiceRendererModel } from "../presentation/choiceModel.ts";
 import { WorkflowShell } from "./WorkflowShell.tsx";
-import { usePlayerIdentity } from "../presentation/PlayerIdentity.tsx";
+import { usePlayerIdentity, useIsSeat } from "../presentation/PlayerIdentity.tsx";
+import { SeatTag } from "./SeatTag.tsx";
 import { DecisionHeader } from "./DecisionHeader.tsx";
 
 export interface AgendaBallotModalProps {
@@ -36,6 +37,10 @@ export const AgendaBallotModal: React.FC<AgendaBallotModalProps> = ({
   onSelectOption,
 }) => {
   const display = usePlayerIdentity();
+  const isSeat = useIsSeat();
+  /** An elected player is shown by name and colour; For/Against and planets keep their label. */
+  const outcomeText = (id: string, label: string): React.ReactNode =>
+    isSeat(id) ? <SeatTag seat={id} /> : label;
   const subtype =
     choice?.context?.subtype === "vote_tiebreak"
       ? "vote_tiebreak"
@@ -169,7 +174,7 @@ export const AgendaBallotModal: React.FC<AgendaBallotModalProps> = ({
   if (!isOpen || !choice) return null;
 
   // Extract agenda card information from context details
-  const agendaCard = choice.context?.details?.agenda_card as
+  const agendaCard = choice.details?.agenda_card as
     | { name?: string; yes_outcome?: string; no_outcome?: string }
     | undefined;
 
@@ -267,7 +272,7 @@ export const AgendaBallotModal: React.FC<AgendaBallotModalProps> = ({
                           disabled={isDirectSubmitting}
                           className="button button--secondary"
                         >
-                          <span className="workflow-inline">{outcome.label}</span>
+                          <span className="workflow-inline">{outcomeText(outcome.id, outcome.label)}</span>
                           <span
                             data-testid={`outcome-tally-${outcome.id}`}
                             className="workflow-inline"
@@ -337,6 +342,7 @@ export const AgendaBallotModal: React.FC<AgendaBallotModalProps> = ({
                                 <PlanetValue
                                   kind="influence"
                                   value={planet.votes}
+                                  planetId={planet.id}
                                   label={`${planet.votes} ${planet.votes === 1 ? "vote" : "votes"} (influence)`}
                                 />
                               )}
@@ -415,7 +421,7 @@ export const AgendaBallotModal: React.FC<AgendaBallotModalProps> = ({
                           disabled={isDirectSubmitting}
                           className="button button--primary"
                         >
-                          Resolve in Favor of: {opt.label}
+                          Resolve in Favor of: {outcomeText(opt.id, opt.label)}
                         </button>
                       ))}
                     </div>

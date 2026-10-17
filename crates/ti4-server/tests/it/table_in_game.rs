@@ -7,8 +7,8 @@ use std::time::Duration;
 
 use reqwest::StatusCode;
 use serde_json::{Value, json};
+use ti4_host::protocol::status::ViewerRole;
 use ti4_model::id::PlayerId;
-use ti4_server::protocol::status::ViewerRole;
 use ti4_server::session::GameRegistry;
 use ti4_server::storage::FileGameStore;
 

@@ -13,11 +13,11 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::net::TcpListener;
 use tokio_tungstenite::tungstenite::Message;
 
+use ti4_host::protocol::PROTOCOL_VERSION;
+use ti4_host::protocol::client::ClientMessage;
+use ti4_host::protocol::server::ServerMessage;
+use ti4_host::protocol::status::{RejectionReason, ViewerRole};
 use ti4_server::create_app;
-use ti4_server::protocol::PROTOCOL_VERSION;
-use ti4_server::protocol::client::ClientMessage;
-use ti4_server::protocol::server::ServerMessage;
-use ti4_server::protocol::status::{RejectionReason, ViewerRole};
 use ti4_server::session::GameRegistry;
 use ti4_server::ws::MAX_CLIENT_MESSAGE_BYTES;
 
@@ -54,7 +54,7 @@ where
     panic!("Stream ended without ActionRejected");
 }
 
-async fn wait_for_accepted<S>(stream: &mut S) -> ti4_server::protocol::server::ActionAcceptedMsg
+async fn wait_for_accepted<S>(stream: &mut S) -> ti4_host::protocol::server::ActionAcceptedMsg
 where
     S: StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
 {
@@ -70,7 +70,7 @@ where
     panic!("Stream ended without ActionAccepted");
 }
 
-async fn wait_for_protocol_error<S>(stream: &mut S) -> ti4_server::protocol::error::ErrorKind
+async fn wait_for_protocol_error<S>(stream: &mut S) -> ti4_host::protocol::error::ErrorKind
 where
     S: StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
 {
@@ -84,7 +84,7 @@ where
     panic!("Stream ended without ProtocolError");
 }
 
-async fn wait_for_state_update<S>(stream: &mut S) -> ti4_server::protocol::server::StateUpdateMsg
+async fn wait_for_state_update<S>(stream: &mut S) -> ti4_host::protocol::server::StateUpdateMsg
 where
     S: StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
 {
@@ -139,7 +139,7 @@ async fn create_game(
     let response = client
         .post(format!("http://{addr}/api/games"))
         .json(
-            &serde_json::json!({ "player_count": players.len(), "seed": seed, "nickname": "Host", "seat_order": "join" }),
+            &serde_json::json!({ "player_count": players.len(), "seed": seed, "nickname": "Host" }),
         )
         .send()
         .await
@@ -295,7 +295,7 @@ async fn websocket_full_lifecycle_and_rejections() {
     let pong: ServerMessage = serde_json::from_str(&reply.to_text().unwrap()).unwrap();
     assert_eq!(
         pong,
-        ServerMessage::Pong(ti4_server::protocol::server::PongMsg {
+        ServerMessage::Pong(ti4_host::protocol::server::PongMsg {
             protocol_version: PROTOCOL_VERSION,
             sequence: 777,
         })
@@ -359,10 +359,7 @@ async fn websocket_full_lifecycle_and_rejections() {
                 ServerMessage::PendingChoice(p) => {
                     break (p.nonce, p.game_version, p.choice.options[0].id.clone());
                 }
-                ServerMessage::Event(_)
-                | ServerMessage::StateUpdate(_)
-                | ServerMessage::PlanningStatus(_)
-                | ServerMessage::PlanningUpdate(_) => continue,
+                ServerMessage::Event(_) | ServerMessage::StateUpdate(_) => continue,
                 other => panic!("Expected PendingChoice, got {other:?}"),
             }
         }
@@ -383,7 +380,7 @@ async fn websocket_full_lifecycle_and_rejections() {
         .expect("send second subscribe");
     assert_eq!(
         wait_for_protocol_error(&mut ws_stream).await,
-        ti4_server::protocol::error::ErrorKind::MalformedMessage
+        ti4_host::protocol::error::ErrorKind::MalformedMessage
     );
 
     // 3. The protocol game ID is bound to the WebSocket path.
@@ -741,7 +738,7 @@ async fn application_ping_refreshes_presence_but_control_ping_and_spectators_do_
         .unwrap();
     assert_eq!(
         wait_for_protocol_error(&mut invalid).await,
-        ti4_server::protocol::error::ErrorKind::Unauthorized
+        ti4_host::protocol::error::ErrorKind::Unauthorized
     );
     assert!(registry.authenticate_player_session(&game, &token).is_ok());
     server.abort();
@@ -869,7 +866,7 @@ async fn set_reaction_mode_is_owner_only_and_reaches_only_the_owners_clients() {
         tokio_tungstenite::WebSocketStream<
             tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
         >,
-        ti4_server::protocol::server::InitialSnapshotMsg,
+        ti4_host::protocol::server::InitialSnapshotMsg,
     ) {
         let (mut stream, _) = tokio_tungstenite::connect_async(ws_url)
             .await
@@ -914,7 +911,7 @@ async fn set_reaction_mode_is_owner_only_and_reaches_only_the_owners_clients() {
         .unwrap();
     assert_eq!(
         wait_for_protocol_error(&mut spectator).await,
-        ti4_server::protocol::error::ErrorKind::Unauthorized
+        ti4_host::protocol::error::ErrorKind::Unauthorized
     );
 
     // The owner can; an unknown card is refused; the state update carries the change.
@@ -926,7 +923,7 @@ async fn set_reaction_mode_is_owner_only_and_reaches_only_the_owners_clients() {
         .unwrap();
     assert_eq!(
         wait_for_protocol_error(&mut owner).await,
-        ti4_server::protocol::error::ErrorKind::MalformedMessage
+        ti4_host::protocol::error::ErrorKind::MalformedMessage
     );
     owner
         .send(set("Sabotage", ti4_model::state::ReactionMode::Never))
@@ -999,7 +996,7 @@ async fn reaction_intent_is_seated_players_only_validated_and_rate_limited() {
             .into(),
         )
     };
-    async fn next_error<S>(stream: &mut S) -> (ti4_server::protocol::error::ErrorKind, String)
+    async fn next_error<S>(stream: &mut S) -> (ti4_host::protocol::error::ErrorKind, String)
     where
         S: StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
     {
@@ -1018,7 +1015,7 @@ async fn reaction_intent_is_seated_players_only_validated_and_rate_limited() {
     spectator.send(intent(&["agenda"])).await.unwrap();
     assert_eq!(
         next_error(&mut spectator).await.0,
-        ti4_server::protocol::error::ErrorKind::Unauthorized
+        ti4_host::protocol::error::ErrorKind::Unauthorized
     );
     spectator
         .send(Message::Text(
@@ -1036,10 +1033,7 @@ async fn reaction_intent_is_seated_players_only_validated_and_rate_limited() {
     let mut owner = connect(&ws_url, &game_id, Some(&p1_token)).await;
     owner.send(intent(&["agenda"])).await.unwrap();
     let (kind, message) = next_error(&mut owner).await;
-    assert_eq!(
-        kind,
-        ti4_server::protocol::error::ErrorKind::MalformedMessage
-    );
+    assert_eq!(kind, ti4_host::protocol::error::ErrorKind::MalformedMessage);
     assert!(message.contains("no action cards"), "{message}");
     let state = loop {
         let reply = owner.next().await.expect("reply").expect("ws ok");

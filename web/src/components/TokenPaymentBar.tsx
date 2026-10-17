@@ -138,11 +138,12 @@ export const TokenPaymentBar: React.FC<TokenPaymentBarProps> = ({ view, onConfir
             {picked.map((planet) => (
               <li key={planet.id} data-testid={`token-bar-chip-${planet.id}`}>
                 {planetLabel(planet.id)}{" "}
-                <PlanetValue kind="influence" value={planet.worth} label={`Pays ${planet.worth} influence`} />
+                <PlanetValue kind="influence" value={planet.worth} planetId={planet.id} label={`Pays ${planet.worth} influence`} />
                 {planet.resources !== null && (
                   <PlanetValue
                     kind="resources"
                     value={planet.resources}
+                    planetId={planet.id}
                     label={`Exhausting it loses ${planet.resources} resource${planet.resources === 1 ? "" : "s"}`}
                   />
                 )}

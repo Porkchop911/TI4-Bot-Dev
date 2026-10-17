@@ -33,7 +33,7 @@ const cardLine = (cards: ComponentCardView[], name: (card: ComponentCardView) =>
     .join(" · ");
 
 /** The sign of a seat that no person plays, as the lobby has it. */
-const PLAYED = { rule: "⚙", random: "⚄" };
+const PLAYED = { rule: "⚙", random: "⚄", model: "✦" };
 
 function Row({
   row,

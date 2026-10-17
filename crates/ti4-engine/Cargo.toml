@@ -23,6 +23,11 @@ indexmap.workspace = true
 bitflags.workspace = true
 enumset.workspace = true
 itertools.workspace = true
+ts-rs = { workspace = true, optional = true }
+
+# The TypeScript types of the wire (`ti4_wasm::wire_ts`); off but in the tests of the browser game.
+[features]
+ts = ["dep:ts-rs", "ti4-model/ts"]
 
 [dev-dependencies]
 strum.workspace = true

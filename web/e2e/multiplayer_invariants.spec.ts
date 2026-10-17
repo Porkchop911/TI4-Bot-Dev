@@ -128,15 +128,12 @@ test.describe("Multiplayer Online Flow & Invariant Suite", () => {
     await expect(pageP1.locator('[data-testid="system-hex-18"]')).toBeVisible();
     await expect(pageP1.locator('button[title="Zoom In"]')).toBeVisible();
 
-    // Verify Event Log toggle and entries have timestamps while inspecting
+    // The Event Log opens while inspecting; before the first pick it holds the opening marker.
     const eventLogToggle = pageP1.locator('[data-testid="event-log-toggle"]');
     await eventLogToggle.click();
     const logList = pageP1.locator('[data-testid="event-log-list"]');
     await expect(logList).toBeVisible();
-    const firstEntry = pageP1.locator('[data-testid="event-log-entry"]').first();
-    await expect(firstEntry).toBeVisible();
-    const entryText = await firstEntry.innerText();
-    expect(entryText).toMatch(/\d{2}:\d{2}:\d{2}/);
+    await expect(logList).toContainText("Game initialized");
     // Close event log drawer
     await eventLogToggle.click();
     await expect(logList).toHaveCount(0);
@@ -167,6 +164,14 @@ test.describe("Multiplayer Online Flow & Invariant Suite", () => {
     await expect(scBadge).toContainText("1. Leadership");
     const scTitle = await scBadge.getAttribute("title");
     expect(scTitle).toContain("Gain 3 command tokens");
+
+    // The pick is logged with its time (phase markers such as "Game initialized" carry none).
+    await eventLogToggle.click();
+    const timedEntry = logList.locator('[data-testid="event-log-entry"]:has(time)').first();
+    await expect(timedEntry).toBeVisible();
+    expect(await timedEntry.innerText()).toMatch(/\d{2}:\d{2}:\d{2}/);
+    await eventLogToggle.click();
+    await expect(logList).toHaveCount(0);
 
     // Broadcast propagates: P2 now receives choice!
     await expect(p2Modal).toBeVisible({ timeout: 5000 });
@@ -298,10 +303,9 @@ test.describe("Multiplayer Online Flow & Invariant Suite", () => {
         (await gameSnapshot(request, gameId, players[index].session)).pending_choice,
       ).toBeFalsy();
     }
-    await expect(actionPage.getByTestId("pending-choice-dialog")).toBeVisible();
-    await actionPage.locator('[data-testid="choice-option"][data-option-id="tactical"]').click();
-    await expect(actionPage.getByTestId("submit-choice-button")).toBeEnabled();
-    await actionPage.getByTestId("submit-choice-button").click();
+    // The turn menu lives on the persistent turn bar, not in the decision dialog.
+    await expect(actionPage.getByTestId("turn-action-bar")).toBeVisible();
+    await actionPage.getByTestId("turn-bar-tactical").click();
     await expect
       .poll(
         async () => {

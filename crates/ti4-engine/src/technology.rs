@@ -1083,6 +1083,37 @@ pub(crate) fn prerequisites_met(
     crate::synergy::satisfies(&prerequisites(content, alias), &holdings, &joined, waivable)
 }
 
+/// What the Enigmatic Device may research: everything [`researchable`] whose prerequisites are met
+/// (rules version `RULES_ENIGMATIC_DEVICE`). Waiver-only technologies (Inheritance Systems, faction
+/// waivers) are left out: those charge a second price, and the card's six resources are the price.
+#[must_use]
+pub fn researchable_by_prerequisites(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+) -> Vec<TechnologyId> {
+    researchable(state, content, sources, player)
+        .into_iter()
+        .filter(|alias| prerequisites_met(state, content, sources, player, alias))
+        .collect()
+}
+
+/// Research a technology the Enigmatic Device chose, the six resources already paid: the normal
+/// research (specialties exhausted, unit upgrades applied, research consequences), falling back
+/// to a plain gain if the payment itself spent what the prerequisites needed.
+pub fn research_chosen(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    alias: &TechnologyId,
+) {
+    if !research(state, content, sources, player, alias) {
+        gain(state, content, sources, player, alias);
+    }
+}
+
 /// Everything this player could research now, in a stable order.
 ///
 /// The order is canonical (sorted by technology id), not the file layout of
@@ -2636,7 +2667,10 @@ mod tests {
             ) else {
                 continue;
             };
-            if content.get(ti4_model::content_types::ContentType::Factions, faction).is_none() {
+            if content
+                .get(ti4_model::content_types::ContentType::Factions, faction)
+                .is_none()
+            {
                 continue; // homebrew faction with no faction record (Ghemina)
             }
             checked += 1;
@@ -2665,7 +2699,10 @@ mod tests {
             .map(|unit| unit.type_id.to_string())
             .collect();
             if !ids.iter().any(|id| id == after.id()) || ids.iter().any(|id| id == before) {
-                failures.push(format!("{faction} {tech}: {before} -> {} left {ids:?}", after.id()));
+                failures.push(format!(
+                    "{faction} {tech}: {before} -> {} left {ids:?}",
+                    after.id()
+                ));
             }
         }
         assert!(checked >= 17, "only {checked} faction upgrades found");
@@ -2682,7 +2719,13 @@ mod tests {
         let player = PlayerId::new("a");
         state.board.entry(plain.clone()).or_default();
         crate::fixtures::put(&mut state, &plain, "sol_carrier", &player, 2);
-        gain(&mut state, content, sources, &player, &TechnologyId::new("ac2"));
+        gain(
+            &mut state,
+            content,
+            sources,
+            &player,
+            &TechnologyId::new("ac2"),
+        );
         let ids: Vec<String> = state
             .system_state(&plain)
             .units_of(&player)
@@ -2690,7 +2733,10 @@ mod tests {
             .map(|unit| unit.type_id.to_string())
             .filter(|id| id.starts_with("sol_carrier"))
             .collect();
-        assert!(ids.len() >= 2 && ids.iter().all(|id| id == "sol_carrier2"), "{ids:?}");
+        assert!(
+            ids.len() >= 2 && ids.iter().all(|id| id == "sol_carrier2"),
+            "{ids:?}"
+        );
     }
 
     #[test]

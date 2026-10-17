@@ -1,8 +1,8 @@
 import {
   PendingChoiceDto,
-  ChoiceOptionDto,
-  OutstandingConstraintDto,
-  DecisionTargetDto,
+  ChoiceOption,
+  OutstandingConstraint,
+  DecisionTarget,
 } from "../protocol/types.ts";
 import { isReactionStepSubtype } from "./reactionModel.ts";
 
@@ -47,15 +47,15 @@ export interface ChoiceRendererModel {
   readonly actor: string;
   readonly nonce: string;
   readonly isOptional: boolean;
-  readonly contextTarget: DecisionTargetDto | null;
-  readonly options: readonly ChoiceOptionDto[];
-  readonly outstanding: readonly OutstandingConstraintDto[];
-  readonly declineOption: ChoiceOptionDto | null;
-  readonly optionsByKind: ReadonlyMap<string, ChoiceOptionDto[]>;
-  readonly optionsByTarget: ReadonlyMap<string, ChoiceOptionDto[]>;
+  readonly contextTarget: DecisionTarget | null;
+  readonly options: readonly ChoiceOption[];
+  readonly outstanding: readonly OutstandingConstraint[];
+  readonly declineOption: ChoiceOption | null;
+  readonly optionsByKind: ReadonlyMap<string, ChoiceOption[]>;
+  readonly optionsByTarget: ReadonlyMap<string, ChoiceOption[]>;
 }
 
-export function getPaymentPayload(opt: ChoiceOptionDto): {
+export function getPaymentPayload(opt: ChoiceOption): {
   worth: number;
   owed: number;
   kind: "resources" | "influence";
@@ -72,7 +72,7 @@ export function getPaymentPayload(opt: ChoiceOptionDto): {
   };
 }
 
-export function getMovementPayload(opt: ChoiceOptionDto): {
+export function getMovementPayload(opt: ChoiceOption): {
   origin?: string;
   unit?: string;
   damaged?: boolean;
@@ -89,7 +89,7 @@ export function getMovementPayload(opt: ChoiceOptionDto): {
   };
 }
 
-export function getTradePayload(opt: ChoiceOptionDto): {
+export function getTradePayload(opt: ChoiceOption): {
   net?: number;
   their_net?: number;
 } {
@@ -100,7 +100,7 @@ export function getTradePayload(opt: ChoiceOptionDto): {
   };
 }
 
-export function getCombatPayload(opt: ChoiceOptionDto): {
+export function getCombatPayload(opt: ChoiceOption): {
   unit?: string;
   damaged?: boolean;
 } {
@@ -111,7 +111,7 @@ export function getCombatPayload(opt: ChoiceOptionDto): {
   };
 }
 
-export function getAgendaPlanetVotes(opt: ChoiceOptionDto): number | null {
+export function getAgendaPlanetVotes(opt: ChoiceOption): number | null {
   const p = opt.payload ?? {};
   if (typeof p.votes === "number") return p.votes;
   if (typeof p.influence === "number") return p.influence;
@@ -128,12 +128,12 @@ export function getAgendaPlanetVotes(opt: ChoiceOptionDto): number | null {
 }
 
 /** The planet an option is about, from the structured `payload.planet` only (never the option id). */
-export function optionPlanetId(opt: ChoiceOptionDto): string | null {
+export function optionPlanetId(opt: ChoiceOption): string | null {
   const planet = opt.payload?.planet;
   return typeof planet === "string" && planet.length > 0 ? planet : null;
 }
 
-export function isDeclineOption(opt: ChoiceOptionDto): boolean {
+export function isDeclineOption(opt: ChoiceOption): boolean {
   return opt.id === "decline" || opt.kind === "decline";
 }
 
@@ -141,6 +141,21 @@ export function isDeclineOption(opt: ChoiceOptionDto): boolean {
  * Subtypes that carry planet payloads but already have a dedicated workflow (payment, voting
  * baskets, production, invasion and ground combat). They must never become a planet selection.
  */
+/**
+ * Enigmatic Device ("spend 6 resources and purge this card to research 1 technology") asks which
+ * technology with plain `technology` options (the engine shares that question with Maw of Worlds,
+ * which gains one without prerequisites and so keeps its list). Only the Enigmatic Device's
+ * question is a research, so only it opens the technology dialog.
+ */
+export const ENIGMATIC_DEVICE_RESEARCH_SUBTYPES: ReadonlySet<string> = new Set([
+  "enigmaticdevice_choose_technology", // the relic
+  "enigmatic_device_choose_technology", // the exploration cards
+]);
+
+export function isEnigmaticDeviceResearch(subtype: string | undefined | null): boolean {
+  return Boolean(subtype && ENIGMATIC_DEVICE_RESEARCH_SUBTYPES.has(subtype));
+}
+
 const PLANET_SELECTION_EXCLUDED_SUBTYPES = new Set([
   "pay_resources",
   "pay_influence",
@@ -181,7 +196,7 @@ const NON_EXTRA_OPTION_KINDS = new Set([
  * A non-planet option offered alongside planet picks (Bio-Stims technologies, The Acropolis
  * relics/leaders). It must not point somewhere on the board itself.
  */
-export function isExtraPlanetSelectionOption(opt: ChoiceOptionDto): boolean {
+export function isExtraPlanetSelectionOption(opt: ChoiceOption): boolean {
   if (isDeclineOption(opt) || optionPlanetId(opt)) return false;
   if (opt.kind && NON_EXTRA_OPTION_KINDS.has(opt.kind)) return false;
   const p = opt.payload ?? {};
@@ -237,8 +252,8 @@ export function deriveChoiceRendererModel(
   const constraints = choice.context?.outstanding?.[0];
 
   // Grouping options by kind
-  const optionsByKind = new Map<string, ChoiceOptionDto[]>();
-  const optionsByTarget = new Map<string, ChoiceOptionDto[]>();
+  const optionsByKind = new Map<string, ChoiceOption[]>();
+  const optionsByTarget = new Map<string, ChoiceOption[]>();
 
   for (const opt of choice.options) {
     const kindKey = opt.kind ?? "default";
@@ -443,6 +458,7 @@ export function deriveChoiceRendererModel(
   // Technology Research
   if (
     subtype === "research_technology" ||
+    isEnigmaticDeviceResearch(subtype) ||
     // An engine-built offer card (Deepwrought's "reduce by 1") is not a technology pick.
     (choice.details?.kind !== "offer" &&
       choice.options.length > 0 &&
@@ -457,8 +473,8 @@ export function deriveChoiceRendererModel(
       !(choice.context.source as { StrategyCard: { card: string; secondary: boolean } })
         .StrategyCard?.secondary;
 
-    const min = constraints?.min_selection ?? (isOptional ? 0 : 1);
-    const max = constraints?.max_selection ?? (isPrimary ? 2 : 1);
+    const min = isOptional ? 0 : 1;
+    const max = isPrimary ? 2 : 1;
 
     return {
       workflow: "technology_research",
@@ -635,12 +651,9 @@ export function deriveChoiceRendererModel(
   }
 
   // 9. Bounded Multi-Selection Fallback
-  const min = constraints?.min_selection ?? 1;
-  const max =
-    constraints?.max_selection ?? (constraints?.min_selection ? constraints.min_selection : 1);
   return {
     workflow: "generic_selection",
-    selectionMode: max > 1 ? { mode: "multi", min, max } : { mode: "single" },
+    selectionMode: { mode: "single" },
     prompt: choice.prompt,
     actor: choice.actor,
     nonce: choice.nonce,

@@ -692,17 +692,26 @@ pub fn play(
     player: &PlayerId,
     alias: &ActionCardId,
 ) -> Result<bool, TimingError> {
+    if !spend(context, player, alias) {
+        // Not in hand and not on Garbozia: there was nothing to play.
+        return Ok(false);
+    }
+    announce(context, resolver, player, alias)
+}
+
+/// Take the card out of the hand (or off Garbozia) into the discard pile. `false` when the
+/// player holds no such card.
+fn spend(context: &mut TimingContext<'_>, player: &PlayerId, alias: &ActionCardId) -> bool {
     let held = context
         .state
         .player(player)
         .and_then(|seat| seat.action_cards.iter().position(|held| held == alias));
     if let Some(index) = held {
         crate::action_cards::discard(context.state, player, index);
-    } else if !crate::legendary::purge_salvaged(context.state, player, alias) {
-        // Not in hand and not on Garbozia: there was nothing to play.
-        return Ok(false);
+        true
+    } else {
+        crate::legendary::purge_salvaged(context.state, player, alias)
     }
-    announce(context, resolver, player, alias)
 }
 
 /// Announce a card as played, then resolve it.
@@ -917,6 +926,11 @@ fn slot(owner_name: &str, player: &PlayerId, event_type: &str, relation: Relatio
                 // plays nothing and the window offers its slot again, so the outer Pass stays.
                 let mut card_options = reaction_card_options(context.content, &options);
                 card_options.push(crate::choice::ChoiceOption::decline());
+                let offered: Vec<ActionCardId> = card_options
+                    .iter()
+                    .filter_map(|option| option.payload.get("card")?.as_str())
+                    .map(ActionCardId::new)
+                    .collect();
                 let choice = crate::choice::Choice::new(
                     owner.clone(),
                     format!(
@@ -940,6 +954,14 @@ fn slot(owner_name: &str, player: &PlayerId, event_type: &str, relation: Relatio
                     )
                     .optional(true)
                     .about_battle(context.state)
+                    .with_previews(crate::reaction_preview::previews_for(
+                        context.state,
+                        context.content,
+                        context.sources,
+                        &owner,
+                        event,
+                        offered.iter().map(|card| (card, card.to_string())),
+                    ))
                     .with_trigger(
                         crate::decision_context::DecisionTrigger::from_event(
                             event,
@@ -954,6 +976,20 @@ fn slot(owner_name: &str, player: &PlayerId, event_type: &str, relation: Relatio
                     Err(_) => return Ok(()),
                 }
             };
+            // Rules version 3: a play in an ordinary window is only declared here (the card is
+            // spent); it is announced, and Sabotage offered, once every player has declared.
+            // The Sabotage window itself is the answer to a play and stays immediate.
+            if context.state.rules_version >= ti4_model::state::RULES_SABOTAGE_TIMING
+                && event.event_type != "ACTION_CARD_PLAYED"
+            {
+                if spend(context, &owner, &chosen) {
+                    context
+                        .state
+                        .declared_card_plays
+                        .push((owner.clone(), chosen));
+                }
+                return Ok(());
+            }
             let played = play(context, resolver, &owner, &chosen)?;
             // Sabotage: "Cancel that action card." The cancelled event is the one that
             // opened this window, and only this closure still holds it: a card's effect
@@ -2052,6 +2088,209 @@ mod tests {
             PlayerId::new("b"),
             "the asked seat is the reactor"
         );
+    }
+
+    /// Who was asked what, in order, when `a` picks a strategy card and `b` and `c` each hold a
+    /// card for that window while `d` holds Sabotage. `b` and `c` always play; `d` always passes.
+    fn declaration_round(rules_version: u32) -> Vec<(String, String)> {
+        struct Plays(std::rc::Rc<std::cell::RefCell<Vec<(String, String)>>>);
+        impl crate::choice::Decider for Plays {
+            fn choose(
+                &mut self,
+                choice: &crate::choice::Choice,
+            ) -> Result<crate::choice::ChoiceOption, crate::choice::IllegalChoice> {
+                self.0
+                    .borrow_mut()
+                    .push((choice.player.to_string(), choice.prompt.clone()));
+                let pick = choice
+                    .options
+                    .iter()
+                    .find(|o| o.id.starts_with("reaction:") && choice.player.as_str() != "d");
+                Ok(pick
+                    .or_else(|| choice.options.iter().find(|o| o.is_decline()))
+                    .unwrap_or(&choice.options[0])
+                    .clone())
+            }
+        }
+        let mut state = crate::fixtures::game(&["a", "b", "c", "d"]);
+        state.rules_version = rules_version;
+        for (id, card) in [("b", "disgrace"), ("c", "disgrace"), ("d", "sabo1")] {
+            state.player_mut(&PlayerId::new(id)).unwrap().action_cards =
+                vec![ActionCardId::new(card)];
+        }
+        state
+            .player_mut(&PlayerId::new("a"))
+            .unwrap()
+            .action_cards
+            .clear();
+        let log = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut table = crate::choice::Table::with_default(Box::new(Plays(log.clone())));
+        let seats: Vec<PlayerId> = state.players.iter().map(|seat| seat.id.clone()).collect();
+        let mut resolver = Resolver::new(
+            seats.clone(),
+            seats.first().cloned(),
+            crate::choice::Table::default(),
+        );
+        arm(&mut resolver, &state);
+        let mut dice = crate::dice::Dice::new();
+        let mut rng = crate::rng::GameRng::new(0);
+        let mut event_sequence = crate::event::EventSequence::new();
+        let mut context = TimingContext {
+            state: &mut state,
+            content: ContentStore::embedded(),
+            sources: POK,
+            table: &mut table,
+            dice: &mut dice,
+            rng: &mut rng,
+            event_sequence: &mut event_sequence,
+            galaxy: None,
+        };
+        let event = context
+            .event_sequence
+            .next("STRATEGY_CARD_CHOSEN", payload(&[("player", "a".into())]))
+            .unwrap();
+        resolver
+            .emit_with_context(&mut context, event, |_, _| {})
+            .unwrap();
+        let asked = log.borrow().clone();
+        asked
+    }
+
+    /// Positions of the first Sabotage question and of the declarers' own questions.
+    fn sabotage_and_declarers(asked: &[(String, String)]) -> (usize, Vec<usize>) {
+        let sabotage_at = asked
+            .iter()
+            .position(|(_, prompt)| prompt.contains("ACTION_CARD_PLAYED"))
+            .expect("Sabotage is offered");
+        let declarers = asked
+            .iter()
+            .enumerate()
+            .filter(|(_, (who, prompt))| {
+                (who == "b" || who == "c") && prompt.contains("STRATEGY_CARD_CHOSEN")
+            })
+            .map(|(i, _)| i)
+            .collect();
+        (sabotage_at, declarers)
+    }
+
+    #[test]
+    fn sabotage_waits_until_every_player_has_declared_their_cards() {
+        // Rules version 2: a window collects every player's card play first; only then are
+        // the declared plays announced one by one, each opening its Sabotage window.
+        let asked = declaration_round(ti4_model::state::RULES_SABOTAGE_TIMING);
+        let (sabotage_at, declarers) = sabotage_and_declarers(&asked);
+        assert!(declarers.len() >= 2, "both declare: {asked:?}");
+        assert!(
+            declarers.iter().take(2).all(|i| *i < sabotage_at),
+            "both players declare before any Sabotage window: {asked:?}"
+        );
+    }
+
+    #[test]
+    fn a_legacy_game_opens_sabotage_right_after_each_play() {
+        let asked = declaration_round(1);
+        let (sabotage_at, declarers) = sabotage_and_declarers(&asked);
+        assert!(
+            declarers[0] < sabotage_at && sabotage_at < declarers[1],
+            "{asked:?}"
+        );
+    }
+
+    fn previews_of(asked: &[crate::choice::Choice]) -> Vec<crate::decision_context::EffectPreview> {
+        asked
+            .iter()
+            .flat_map(|choice| choice.context.iter().flat_map(|c| c.previews.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn sabotage_says_which_card_it_would_cancel_and_whose() {
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state
+            .player_mut(&PlayerId::new("a"))
+            .unwrap()
+            .action_cards
+            .clear();
+        state.player_mut(&PlayerId::new("b")).unwrap().action_cards =
+            vec![ActionCardId::new("sabo1")];
+        let asked = asked_for(
+            state,
+            "ACTION_CARD_PLAYED",
+            payload(&[("player", "a".into()), ("card", "fs1".into())]),
+            &["decline"],
+        );
+        let previews = previews_of(&asked);
+        assert_eq!(previews.len(), 1);
+        let preview = &previews[0];
+        assert_eq!(preview.effect, "cancel_card");
+        assert_eq!(preview.card, "sabo1");
+        assert_eq!(preview.seats, vec![PlayerId::new("a")]);
+        assert_eq!(preview.refs, vec!["fs1".to_owned()]);
+        let offered = asked[0]
+            .options
+            .iter()
+            .map(|o| o.id.clone())
+            .collect::<Vec<_>>();
+        assert!(
+            offered.contains(&preview.option),
+            "the preview names an option of the same decision"
+        );
+        // Display only: neither the canonical form nor a recorded decision holds it.
+        let context = asked[0].context.as_ref().unwrap();
+        assert!(!context.canonical().contains("cancel_card"));
+        assert!(context.without_display_fields().previews.is_empty());
+    }
+
+    #[test]
+    fn shields_holding_says_how_many_of_the_incoming_hits_it_cancels() {
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state
+            .player_mut(&PlayerId::new("a"))
+            .unwrap()
+            .action_cards
+            .clear();
+        state.player_mut(&PlayerId::new("b")).unwrap().action_cards =
+            vec![ActionCardId::new("sh1")];
+        let asked = asked_for(
+            state,
+            "HITS_TO_ASSIGN",
+            payload(&[
+                ("player", "b".into()),
+                ("system", "27".into()),
+                ("hits", 3.into()),
+            ]),
+            &["decline"],
+        );
+        let previews = previews_of(&asked);
+        assert_eq!(previews.len(), 1, "{asked:?}");
+        assert_eq!(previews[0].effect, "cancel_hits");
+        assert_eq!(previews[0].amount, Some(2));
+        assert_eq!(previews[0].of, Some(3));
+        assert_eq!(previews[0].system, Some(SystemId::new("27")));
+    }
+
+    #[test]
+    fn the_inner_card_choice_has_a_preview_for_each_offered_card() {
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state
+            .player_mut(&PlayerId::new("a"))
+            .unwrap()
+            .action_cards
+            .clear();
+        state.player_mut(&PlayerId::new("b")).unwrap().action_cards = vec![
+            ActionCardId::new("sabo1"),
+            ActionCardId::new("sabo2"),
+            ActionCardId::new("stability"),
+        ];
+        let asked = asked_for(
+            state,
+            "ACTION_CARD_PLAYED",
+            payload(&[("player", "a".into()), ("card", "fs1".into())]),
+            &["decline"],
+        );
+        // Only Sabotage answers this window; the preview never names another card.
+        let previews = previews_of(&asked);
+        assert!(previews.iter().all(|p| p.card.starts_with("sabo")));
     }
 
     #[test]

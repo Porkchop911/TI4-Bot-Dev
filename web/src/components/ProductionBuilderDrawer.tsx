@@ -1,6 +1,7 @@
+import { ARMADA_TEXT, readFleetSupply } from "../presentation/commandTokens.ts";
 import React, { useEffect, useMemo, useState } from "react";
 import { ValueUnit } from "./PlanetValueIcons.tsx";
-import { ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import { ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import { Dialog } from "../primitives/index.ts";
 import { ChoiceRendererModel } from "../presentation/choiceModel.ts";
 import { WorkflowShell } from "./WorkflowShell.tsx";
@@ -52,11 +53,11 @@ const GROUP_OF: Record<string, OptionGroupKey> = {
   spacedock: "structures",
 };
 
-const unitKeyOf = (option: ChoiceOptionDto): string => String(option.payload?.unit ?? option.id);
+const unitKeyOf = (option: ChoiceOption): string => String(option.payload?.unit ?? option.id);
 
 /** Build options split into ships, ground forces and structures; each keeps the order the engine offered. */
-function groupOptions(options: ChoiceOptionDto[]) {
-  const groups = new Map<OptionGroupKey, ChoiceOptionDto[]>();
+function groupOptions(options: ChoiceOption[]) {
+  const groups = new Map<OptionGroupKey, ChoiceOption[]>();
   for (const option of options) {
     const key = GROUP_OF[getUnitBaseType(unitKeyOf(option))] ?? "ships";
     groups.set(key, [...(groups.get(key) ?? []), option]);
@@ -67,7 +68,7 @@ function groupOptions(options: ChoiceOptionDto[]) {
 }
 
 const BuildOptionCard: React.FC<{
-  option: ChoiceOptionDto;
+  option: ChoiceOption;
   seat: string;
   count: number;
   blockedReason: React.ReactNode;
@@ -235,9 +236,22 @@ export const ProductionBuilderDrawer: React.FC<ProductionBuilderDrawerProps> = (
         : "";
 
   // Extract fleet supply if available from context
-  // The server sends it as a display-only choice detail; context.details is the legacy spot.
-  const fleetSupply =
-    choice?.details?.fleet_supply ?? choice?.context?.details?.fleet_supply ?? null;
+  // The server sends it as a display-only choice detail.
+  const fleetSupply = choice?.details?.fleet_supply ?? null;
+  // Ships the staged builds add to the pool. The engine names them per option (`fleet_ships`:
+  // non-fighter ships only), so this never re-derives which units count.
+  const stagedShips = productionOptions.reduce((sum, opt) => {
+    const ships = opt.payload?.fleet_ships;
+    return sum + (draft[opt.id] ?? 0) * (typeof ships === "number" && ships > 0 ? ships : 0);
+  }, 0);
+  const fleetNow = readFleetSupply(fleetSupply);
+  const fleetUnlimited =
+    !!fleetSupply && typeof fleetSupply === "object" && (fleetSupply as { unlimited?: unknown }).unlimited === true;
+  const overFleetSupply =
+    !!fleetNow && !fleetUnlimited && stagedShips > 0 && fleetNow.used + stagedShips > fleetNow.limit;
+  const overFleetText = fleetNow
+    ? `These builds would put ${fleetNow.used + stagedShips} ships in this system against a fleet supply of ${fleetNow.limit}. You may still build them, but at the end of your turn you must remove the ships above the limit.`
+    : "";
 
   const optionGroups = groupOptions(productionOptions);
   const multiGroup = optionGroups.length > 1;
@@ -286,12 +300,40 @@ export const ProductionBuilderDrawer: React.FC<ProductionBuilderDrawerProps> = (
                     <div className="workflow-card production-drawer__meter">
                       <div className="workflow-card--row">
                         <span className="text-muted">Fleet Supply:</span>
-                        <span data-testid="fleet-supply-counter" className="text-success">
-                          {fleetSupply && typeof fleetSupply === "object" && "used" in fleetSupply && "limit" in fleetSupply
-                            ? "unlimited" in fleetSupply && fleetSupply.unlimited === true
-                              ? `${fleetSupply.used} / unlimited`
-                              : `${fleetSupply.used} / ${fleetSupply.limit}`
-                            : "Data unavailable"}
+                        <span className="token-panel__armada-group">
+                        <span
+                          data-testid="fleet-supply-counter"
+                          className={overFleetSupply ? "production-drawer__fleet--over" : "text-success"}
+                          data-over={overFleetSupply ? "true" : undefined}
+                        >
+                          {fleetNow ? (
+                            <>
+                              {fleetNow.used}
+                              {stagedShips > 0 && (
+                                <>
+                                  {" "}
+                                  <span className="production-drawer__fleet-staged" data-testid="fleet-supply-staged">
+                                    +{stagedShips}
+                                  </span>
+                                </>
+                              )}
+                              {" / "}
+                              {fleetUnlimited ? "unlimited" : fleetNow.limit}
+                            </>
+                          ) : (
+                            "Data unavailable"
+                          )}
+                        </span>
+                        {(readFleetSupply(fleetSupply)?.armada ?? 0) > 0 && (
+                          <span
+                            className="token-panel__armada"
+                            data-testid="production-armada"
+                            title={ARMADA_TEXT}
+                            aria-label={ARMADA_TEXT}
+                          >
+                            incl. +{readFleetSupply(fleetSupply)?.armada} Armada
+                          </span>
+                        )}
                         </span>
                       </div>
                     </div>
@@ -456,7 +498,13 @@ export const ProductionBuilderDrawer: React.FC<ProductionBuilderDrawerProps> = (
                       </button>
                       <button
                         type="button"
-                        className="button button--primary"
+                        className={
+                          overFleetSupply
+                            ? "button button--primary production-drawer__build--over"
+                            : "button button--primary"
+                        }
+                        data-over-fleet-supply={overFleetSupply ? "true" : undefined}
+                        title={overFleetSupply ? overFleetText : undefined}
                         aria-label={queued || preparing ? undefined : "Confirm builds"}
                         disabled={!stagedBatches || queued || isSubmitting || batchRunning}
                         onClick={async () => {

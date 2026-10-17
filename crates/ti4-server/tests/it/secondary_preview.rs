@@ -9,10 +9,10 @@ use std::time::{Duration, Instant};
 
 use ti4_content::ContentStore;
 use ti4_engine::secondary_preview::SecondaryPreview;
+use ti4_host::preview::PreviewRequest;
+use ti4_host::protocol::server::{PreviewRefusal, PreviewResult, SecondaryPreviewMsg};
+use ti4_host::protocol::status::ViewerRole;
 use ti4_model::id::{PlayerId, StrategyCardId};
-use ti4_server::protocol::server::{PreviewRefusal, PreviewResult, SecondaryPreviewMsg};
-use ti4_server::protocol::status::ViewerRole;
-use ti4_server::session::preview::PreviewRequest;
 use ti4_server::session::{GameSession, MockClient, SeatController, SessionConfig};
 
 struct Table {
@@ -32,7 +32,7 @@ fn start(card_name: &str, card_id: &str) -> Table {
     let p3 = PlayerId::new("p3");
     let ids = vec![p1.clone(), p2.clone(), p3.clone()];
     let (mut state, galaxy) =
-        ti4_server::map::create_game_with_map(content, &ids, 4242).expect("game");
+        ti4_host::map::create_game_with_template(content, &ids, 4242, None).expect("game");
     let card = StrategyCardId::new(card_id);
     state.unclaimed_strategy_cards.retain(|c| c != &card);
     state.player_mut(&p1).unwrap().strategy_cards = vec![card.clone()];
@@ -42,7 +42,7 @@ fn start(card_name: &str, card_id: &str) -> Table {
         seat.strategic_tokens = 2;
         seat.trade_goods = 6;
     }
-    let tiles = ti4_server::map::build_board_tiles(content, &galaxy);
+    let tiles = ti4_host::map::build_board_tiles(content, &galaxy);
     let config = SessionConfig::new(format!("preview_{card_name}"), state)
         .with_player_ids(ids)
         .with_galaxy(galaxy, tiles)
@@ -118,6 +118,33 @@ fn into_the_primary(table: &Table) {
     });
 }
 
+/// From rules version `RULES_TECH_PAYMENT_CHOICE` a paid research asks the researcher which
+/// planets pay: the first offered payment is taken.
+fn pay_if_asked(table: &Table) {
+    let Some(choice) = table.c1.snapshot().pending_choice.map(|e| e.choice) else {
+        return;
+    };
+    let is_payment = choice
+        .context
+        .as_ref()
+        .is_some_and(|context| context.subtype == "pay_resources");
+    if !is_payment {
+        return;
+    }
+    let Some((seat, nonce, version)) = pending(table) else {
+        return;
+    };
+    if seat != table.p1 {
+        return;
+    }
+    let option = choice.options.first().expect("a payment is offered").id.clone();
+    table
+        .c1
+        .submit(&nonce, version, &option)
+        .expect("p1 pays");
+    thread::sleep(Duration::from_millis(150));
+}
+
 /// The primary researches the first technology that needs no faction waiver, which ends its part.
 fn finish_primary(table: &Table) {
     let options: Vec<String> = table
@@ -142,6 +169,7 @@ fn finish_primary(table: &Table) {
             .submit(&nonce, version, &option)
             .expect("p1 researches");
         thread::sleep(Duration::from_millis(150));
+        pay_if_asked(table);
         if pending_prompt(table, &table.p1).as_deref() != Some("research a technology") {
             return;
         }
@@ -314,7 +342,7 @@ fn the_answer_does_not_depend_on_other_seats_hidden_information() {
             PlayerId::new("p3"),
         ];
         let (mut state, _) =
-            ti4_server::map::create_game_with_map(content, &ids, 4242).expect("game");
+            ti4_host::map::create_game_with_template(content, &ids, 4242, None).expect("game");
         let card = StrategyCardId::new("pok7technology");
         state.unclaimed_strategy_cards.retain(|c| c != &card);
         state.player_mut(&ids[0]).unwrap().strategy_cards = vec![card.clone()];
@@ -369,7 +397,7 @@ fn files(dir: &std::path::Path) -> Vec<(String, Vec<u8>)> {
 
 #[test]
 fn a_preview_writes_nothing_to_storage() {
-    use ti4_server::dev::execute_launch_scenario;
+    use ti4_server::dev::launch_scenario;
     use ti4_server::session::GameRegistry;
     use ti4_server::storage::FileGameStore;
     let dir =
@@ -377,8 +405,7 @@ fn a_preview_writes_nothing_to_storage() {
     let store = Arc::new(FileGameStore::new(&dir).expect("store"));
     let registry = Arc::new(GameRegistry::new().with_store(store));
     // Sol (human) has played Technology and is being asked its research; a bot seat follows.
-    let launch =
-        execute_launch_scenario(&registry, "research_tech_skips", Some(17)).expect("launch");
+    let launch = launch_scenario(&registry, "research_tech_skips", Some(17)).expect("launch");
     let session = registry.get_game(&launch.game_id).expect("game");
     let state = session.current_state();
     let Some(ViewerRole::Player(primary)) = session.viewer_for_seat_token(&launch.player_session)

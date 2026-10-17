@@ -4,6 +4,7 @@ import React, { useEffect, useState, useMemo, useRef } from "react";
 import { GameLogEntry } from "../hooks/useGameSession.ts";
 import {
   BoardView,
+  TacticalFacts,
   CurrentLogPath,
   HistoryStatus,
   PendingChoiceDto,
@@ -11,6 +12,7 @@ import {
   ObjectiveProgressView,
 } from "../protocol/types.ts";
 import { EventLog } from "./EventLog.tsx";
+import { NotificationLogButton } from "./NotificationLog.tsx";
 import { TurnRedoBar } from "./TurnRedoBar.tsx";
 import type { TurnRedoRequestControls } from "./EventLog.tsx";
 import type { TurnRedoBusy } from "../hooks/useTurnRedo.ts";
@@ -19,6 +21,7 @@ import { BoardPrepSlotContext } from "../presentation/BoardPrepSlot.tsx";
 import { PausedPlanBanner } from "./PausedPlanBanner.tsx";
 import { PendingChoiceModal } from "./PendingChoiceModal.tsx";
 import { TechnologyModal } from "./TechnologyModal.tsx";
+import { FeedbackDockButton, useFeedbackDock } from "../feedback/FeedbackDockButton.tsx";
 import { ObjectivesModal } from "./ObjectivesModal.tsx";
 import { PaymentDrawer } from "./PaymentDrawer.tsx";
 import { PaymentBar } from "./PaymentBar.tsx";
@@ -31,6 +34,7 @@ import { SpaceCombatOverlay } from "./CombatResolutionModal.tsx";
 import { TradeDeskModal } from "./TradeDeskModal.tsx";
 import { AgendaBallotModal } from "./AgendaBallotModal.tsx";
 import { AgendaPillProvider, AgendaStrip, useAgendaPill } from "./AgendaStrip.tsx";
+import { ActiveEffectsStrip } from "./ActiveEffectsStrip.tsx";
 import type { AgendaStrip as AgendaStripModel } from "../presentation/agendaStrip.ts";
 import { ReactionStatusBar } from "./ReactionStatusBar.tsx";
 import { ProductionBuilderDrawer } from "./ProductionBuilderDrawer.tsx";
@@ -80,6 +84,9 @@ export interface GameShellProps {
   detail?: React.ReactNode;
   /** Phone bottom buttons: opens the Objectives dialog (absent: no Objectives button). */
   onOpenObjectives?: () => void;
+  /** The Objectives window is open: on a phone it is a sheet like the drawers (toggled by its button). */
+  objectivesOpen?: boolean;
+  onCloseObjectives?: () => void;
   events: GameLogEntry[];
   history?: HistoryStatus;
   currentPath?: CurrentLogPath;
@@ -89,6 +96,10 @@ export interface GameShellProps {
     steps?: number,
   ) => void;
   historyBusy?: boolean;
+  /** Single-player undo: takes back the viewer's last answer; resolves true when it worked. Absent: no button. */
+  onUndoLast?: () => Promise<boolean>;
+  /** Single-player games list the event log newest first. */
+  newestFirst?: boolean;
   /** Told when the client answered a lone strategic action / activation, for the corner toast. */
   onAutoSubmitNotice?: (note: { id: string; text: string; prompt?: string }) => void;
   /** Loads the replay JSON for the event log's "Copy replay" button (seated players). */
@@ -98,9 +109,12 @@ export interface GameShellProps {
   choice: PendingChoiceDto | null;
   /** The agenda being decided, for the strip under the top bar and the minimized pill; null outside the agenda phase. */
   agenda?: AgendaStripModel | null;
+  /** Lingering action card effects in force now (`GameView.active_effects`), for the strip under the top bar. */
+  activeEffects?: import("../protocol/types.ts").ActiveEffectDto[];
   /** What the minimized decision pill says about the agenda ("Voting: Minister of Peace — For/Against"). */
   agendaPill?: string | null;
-  onSubmitChoice: (optionId: string) => Promise<void>;
+  /** With `nonce` (the question that was shown) a stale answer is dropped instead of sent. */
+  onSubmitChoice: (optionId: string, nonce?: string) => Promise<void>;
   /** The viewing seat's "never offer" cards (server state) and how to change them. */
   reactionModes?: import("../protocol/types.ts").ReactionModes;
   onSetReactionMode?: (
@@ -129,6 +143,8 @@ export interface GameShellProps {
   viewerSeat?: string | null;
   players?: Record<string, PlayerView> | PlayerView[];
   boardView?: BoardView;
+  /** The engine's facts for the pending tactical choice (routes and loads of the ships). */
+  tacticalFacts?: TacticalFacts | null;
   activeSystemId?: string | null;
   revealedObjectives?: readonly string[];
   scoredObjectives?: Record<string, string[]>;
@@ -162,18 +178,24 @@ export interface TurnRedoShellProps {
   /** Host only: the seats whose turn may be redone. */
   seats?: TurnRedoRequestControls["seats"];
   viewerSeat?: string | null;
+  /** A game on this device: the button reads "Undo my last turn". */
+  local?: boolean;
 }
 
 export interface TurnInfo {
   phase: string;
   activePlayer: string | null;
+  /** The game has ended: no turn bar, not even the read-only one. */
+  over?: boolean;
+  /** The game waits for another seat's decision or for a reaction window (the turn status). */
+  othersDeciding?: boolean;
 }
 
 export interface ChoiceRendererDispatcherProps {
   choice: PendingChoiceDto | null;
   model?: ChoiceRendererModel | null;
   viewerSeat?: string | null;
-  onSubmit: (optionId: string) => Promise<void>;
+  onSubmit: (optionId: string, nonce?: string) => Promise<void>;
   reactionModes?: GameShellProps["reactionModes"];
   onSetReactionMode?: GameShellProps["onSetReactionMode"];
   /** A decision the client is answering for the seat; its dialog stays closed (movement, nothing movable). */
@@ -191,6 +213,8 @@ export interface ChoiceRendererDispatcherProps {
   onMinimizedChange: (minimized: boolean) => void;
   players?: Record<string, PlayerView>;
   boardView?: BoardView;
+  /** The engine's facts for the pending tactical choice (routes and loads of the ships). */
+  tacticalFacts?: TacticalFacts | null;
   activeSystemId?: string | null;
   revealedObjectives?: readonly string[];
   scoredObjectives?: Record<string, string[]>;
@@ -220,6 +244,7 @@ const renderTactical: WorkflowRenderer = ({
   choice,
   model,
   boardView,
+  tacticalFacts,
   activeSystemId,
   viewerSeat,
   players,
@@ -237,6 +262,7 @@ const renderTactical: WorkflowRenderer = ({
     choice={choice}
     model={model}
     board={boardView}
+    facts={tacticalFacts?.kind === "movement" ? tacticalFacts : null}
     viewerSeat={viewerSeat}
     activeSystemId={
       activeSystemId ||
@@ -678,6 +704,7 @@ export const ChoiceRendererDispatcher: React.FC<
   onMinimizedChange,
   players,
   boardView,
+  tacticalFacts,
   activeSystemId,
   revealedObjectives,
   scoredObjectives,
@@ -773,6 +800,7 @@ export const ChoiceRendererDispatcher: React.FC<
         lastError={lastError}
         landingDraft={landingDraft}
         onLandingDraftChange={onLandingDraftChange}
+        othersDeciding={turn?.othersDeciding ?? false}
       />
     );
   }
@@ -811,7 +839,7 @@ export const ChoiceRendererDispatcher: React.FC<
   // Not your turn in the action phase: the same bar, read-only, with the reason on every button.
   const viewer = viewerSeat ? players?.[viewerSeat] : undefined;
   const readOnlyBar =
-    viewer && turn?.phase === "action" && !isCombatWorkflow ? (
+    viewer && turn?.phase === "action" && !turn.over && !isCombatWorkflow ? (
       <TurnActionBar
         model={deriveReadOnlyTurnBar(viewer, turn.activePlayer)}
         onSubmit={onSubmit}
@@ -852,10 +880,6 @@ export const ChoiceRendererDispatcher: React.FC<
     options: choice.options.map((option) => ({
       ...option,
       label: present(option.label),
-      description:
-        option.description == null
-          ? option.description
-          : present(option.description),
     })),
   };
 
@@ -867,7 +891,9 @@ export const ChoiceRendererDispatcher: React.FC<
       return (
         <TurnActionBar
           model={barModel}
-          onSubmit={onSubmit}
+          // A click on a bar that is still painted after its question was answered (the next
+          // question is already pending) must not answer the next one: the nonce says which.
+          onSubmit={(optionId) => onSubmit(optionId, choice.nonce)}
           lastError={lastError ? present(lastError) : lastError}
         />
       );
@@ -900,6 +926,7 @@ export const ChoiceRendererDispatcher: React.FC<
     onMinimizedChange,
     players,
     boardView,
+    tacticalFacts,
     activeSystemId,
     revealedObjectives,
     scoredObjectives,
@@ -1006,17 +1033,22 @@ export const GameShell: React.FC<GameShellProps> = ({
   playerSheet,
   detail,
   onOpenObjectives,
+  objectivesOpen,
+  onCloseObjectives,
   events,
   history,
   currentPath,
   logHistoryKey,
   onChangeHistory,
   historyBusy,
+  onUndoLast,
+  newestFirst,
   onAutoSubmitNotice,
   onFetchReplay,
   turnRedo,
   choice,
   agenda,
+  activeEffects,
   agendaPill,
   onSubmitChoice,
   onSubmitMovementBatch,
@@ -1036,6 +1068,7 @@ export const GameShell: React.FC<GameShellProps> = ({
   viewerSeat,
   players,
   boardView,
+  tacticalFacts,
   activeSystemId,
   revealedObjectives,
   scoredObjectives,
@@ -1346,7 +1379,7 @@ export const GameShell: React.FC<GameShellProps> = ({
   // Like the dialogs: a tap outside an open phone drawer closes it. The drawers and the panel buttons
   // (which toggle them) are left alone, and so is anything stacked above (a dialog or a card).
   useEffect(() => {
-    if (!openDrawer) return;
+    if (!openDrawer && !objectivesOpen) return;
     const onPointerDown = (event: PointerEvent) => {
       // Only where the drawers overlay the game (phones); on a desktop the log is a docked panel.
       if (!window.matchMedia?.("(max-width: 720px)").matches) return;
@@ -1354,15 +1387,18 @@ export const GameShell: React.FC<GameShellProps> = ({
       if (!target?.closest) return;
       if (
         target.closest(
-          "#player-sheet-drawer, #event-log-drawer, .app-shell__mobile-actions, [role='dialog'], .detail-panel, .corner-toast-layer",
+          "#player-sheet-drawer, #event-log-drawer, #objectives-drawer, .app-shell__mobile-actions, [role='dialog'], .detail-panel, .corner-toast-layer",
         )
       )
         return;
       setOpenDrawer(null);
+      onCloseObjectives?.();
     };
     window.addEventListener("pointerdown", onPointerDown, true);
     return () => window.removeEventListener("pointerdown", onPointerDown, true);
-  }, [openDrawer]);
+  }, [openDrawer, objectivesOpen, onCloseObjectives]);
+
+  const feedbackInDock = useFeedbackDock();
 
   const [prepSlot, setPrepSlot] = useState<HTMLElement | null>(null);
   const prepSlotValue = useMemo(() => ({ slot: prepSlot, setSlot: setPrepSlot }), [prepSlot]);
@@ -1375,6 +1411,7 @@ export const GameShell: React.FC<GameShellProps> = ({
       <div className="app-shell__header">
         {header}
         {agenda && <AgendaStrip strip={agenda} />}
+        <ActiveEffectsStrip effects={activeEffects} viewerSeat={viewerSeat} />
       </div>
       <div className="app-shell__content">
         <main className="app-shell__board">
@@ -1408,9 +1445,10 @@ export const GameShell: React.FC<GameShellProps> = ({
           className="button button--secondary"
           aria-expanded={openDrawer === "players"}
           aria-controls="player-sheet-drawer"
-          onClick={() =>
-            setOpenDrawer((drawer) => (drawer === "players" ? null : "players"))
-          }
+          onClick={() => {
+            onCloseObjectives?.();
+            setOpenDrawer((drawer) => (drawer === "players" ? null : "players"));
+          }}
         >
           Players
         </button>
@@ -1419,26 +1457,33 @@ export const GameShell: React.FC<GameShellProps> = ({
             type="button"
             data-testid="objectives-mobile-button"
             className="button button--secondary"
+            aria-expanded={Boolean(objectivesOpen)}
+            aria-controls="objectives-drawer"
             onClick={() => {
               setOpenDrawer(null);
-              onOpenObjectives();
+              // Pressing it again closes the sheet, like Players / Events.
+              if (objectivesOpen && onCloseObjectives) onCloseObjectives();
+              else onOpenObjectives();
             }}
           >
             Objectives
           </button>
         )}
+        <NotificationLogButton testId="toast-history-mobile-toggle" />
         <button
           type="button"
           data-testid="event-log-mobile-toggle"
           className="button button--secondary"
           aria-expanded={openDrawer === "events"}
           aria-controls="event-log-drawer"
-          onClick={() =>
-            setOpenDrawer((drawer) => (drawer === "events" ? null : "events"))
-          }
+          onClick={() => {
+            onCloseObjectives?.();
+            setOpenDrawer((drawer) => (drawer === "events" ? null : "events"));
+          }}
         >
           Events
         </button>
+        {feedbackInDock && <FeedbackDockButton />}
       </div>
 
       <section
@@ -1463,6 +1508,12 @@ export const GameShell: React.FC<GameShellProps> = ({
             onChangeHistory ? (action) => onChangeHistory(action) : undefined
           }
           onFetchReplay={onFetchReplay}
+          newestFirst={newestFirst}
+          undoLast={
+            onUndoLast
+              ? { available: history?.can_undo === true, busy: historyBusy ?? false, onUndo: onUndoLast }
+              : undefined
+          }
           turnRedo={
             turnRedo
               ? {
@@ -1470,6 +1521,7 @@ export const GameShell: React.FC<GameShellProps> = ({
                   disabled: turnRedo.busy !== null || turnRedo.status !== null,
                   seats: turnRedo.seats,
                   viewerSeat: turnRedo.viewerSeat,
+                  local: turnRedo.local,
                 }
               : undefined
           }
@@ -1509,6 +1561,7 @@ export const GameShell: React.FC<GameShellProps> = ({
             viewerSeat={viewerSeat}
             players={playersMap}
             boardView={boardView}
+            tacticalFacts={tacticalFacts}
             activeSystemId={activeSystemId}
             revealedObjectives={revealedObjectives}
             scoredObjectives={scoredObjectives}

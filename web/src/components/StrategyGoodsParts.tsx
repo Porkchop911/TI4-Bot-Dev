@@ -1,5 +1,5 @@
 import React from "react";
-import type { ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import type { ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import { goodsNote, goodsOnCard, investmentsProgress } from "../presentation/strategyGoods.ts";
 import { useDecisionTable } from "./PoliticsDecisionParts.tsx";
 
@@ -27,7 +27,7 @@ export const InvestmentsContextPanel: React.FC<{ choice: PendingChoiceDto }> = (
 };
 
 /** Under a strategy card option: the trade goods lying on it now. */
-export const StrategyGoodsNote: React.FC<{ choice: PendingChoiceDto; option: ChoiceOptionDto }> = ({
+export const StrategyGoodsNote: React.FC<{ choice: PendingChoiceDto; option: ChoiceOption }> = ({
   choice,
   option,
 }) => {
@@ -42,7 +42,7 @@ export const StrategyGoodsNote: React.FC<{ choice: PendingChoiceDto; option: Cho
 };
 
 /** In the card's title row, so it stays in view however long the card text is: the goods on it. */
-export const StrategyGoodsBadge: React.FC<{ option: ChoiceOptionDto }> = ({ option }) => {
+export const StrategyGoodsBadge: React.FC<{ option: ChoiceOption }> = ({ option }) => {
   const table = useDecisionTable();
   const goods = goodsOnCard(table, option.id);
   if (goods === null) return null;

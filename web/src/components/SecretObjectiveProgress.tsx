@@ -1,7 +1,11 @@
 import React from "react";
 import type { BoardView, ObjectiveProgressView } from "../protocol/types.ts";
 import { systemTag } from "../presentation/systemFacts.ts";
-import { secretNoProgressNote, secretProgressDisplay } from "../presentation/secretProgress.ts";
+import {
+  secretNoProgressNote,
+  secretProgressDisplay,
+  secretUnreachableNote,
+} from "../presentation/secretProgress.ts";
 import "./SecretObjectiveProgress.css";
 
 /**
@@ -16,13 +20,25 @@ export const SecretObjectiveProgress: React.FC<{
   board?: BoardView | null;
 }> = ({ alias, progress, board }) => {
   const display = secretProgressDisplay(alias, progress);
+  const unreachable = secretUnreachableNote(alias, board);
+  const unreachableNote = unreachable ? (
+    <div
+      className="secret-progress__unreachable"
+      data-testid={`secret-unreachable-${alias}`}
+      role="note"
+    >
+      {unreachable}
+    </div>
+  ) : null;
   if (!display) {
     const note = secretNoProgressNote(alias);
     return note ? (
       <div className="secret-progress__note" data-testid={`secret-progress-note-${alias}`}>
         {note}
       </div>
-    ) : null;
+    ) : (
+      unreachableNote
+    );
   }
   return (
     <div
@@ -41,11 +57,17 @@ export const SecretObjectiveProgress: React.FC<{
       <div className="secret-progress__bar" aria-hidden="true">
         <div className="secret-progress__fill" style={{ width: `${display.percent}%` }} />
       </div>
+      {display.hint && (
+        <div className="secret-progress__hint" data-testid={`secret-progress-hint-${alias}`}>
+          {display.hint}
+        </div>
+      )}
       {display.systems.length > 0 && (
         <div className="secret-progress__systems" data-testid={`secret-progress-systems-${alias}`}>
           Counting: {display.systems.map((id) => systemTag(id, board)).join(", ")}
         </div>
       )}
+      {unreachableNote}
     </div>
   );
 };

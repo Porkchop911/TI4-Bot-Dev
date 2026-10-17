@@ -1,0 +1,37 @@
+{
+  "title": "Agenda preview (Insider Information) no longer covers the turn bar",
+  "description": "The private preview of the top agendas used to be a fixed card, up to 60% of the screen high, at the bottom of the screen: on a 390x844 phone it covered the whole turn bar. It now starts collapsed as a small chip (name of the next agenda and how many more follow), tapping it opens the cards (at most half the screen, scrollable), Escape or the close button dismisses it. Before shots were taken on the merged head without the change (copied to before/); npm run screenshots -- EE regenerates the after shots and asserts: the chip is at most 64 px tall, no turn bar button is covered, the expanded card stays within half the viewport, Escape closes it.",
+  "tag": "web/e2e/screenshots/EE-agenda-peek-chip",
+  "shots": [
+    {
+      "file": "before/before-collapsed-phone.png",
+      "heading": "Before: 390x844, Insider Information card",
+      "caption": "Fixed card, 352 px tall: it covers the turn bar's heading and every action button; the player cannot act until they find the small x."
+    },
+    {
+      "file": "out/after-collapsed-phone.png",
+      "heading": "After: 390x844, default",
+      "caption": "A 54 px chip above the turn bar: 'Next agenda: Minister of Commerce +2'. The whole turn bar stays visible and tappable."
+    },
+    {
+      "file": "out/after-expanded-phone.png",
+      "heading": "After: 390x844, opened by a tap",
+      "caption": "The three cards in deck order, at most half the screen high and scrollable, still above the turn bar. Minus collapses, x (or Escape) closes."
+    },
+    {
+      "file": "before/before-collapsed-desktop.png",
+      "heading": "Before: desktop",
+      "caption": "The card sits bottom-left over the turn bar's first three buttons."
+    },
+    {
+      "file": "out/after-collapsed-desktop.png",
+      "heading": "After: desktop, default",
+      "caption": "The chip floats just above the turn bar."
+    },
+    {
+      "file": "out/after-expanded-desktop.png",
+      "heading": "After: desktop, opened",
+      "caption": "The opened card ends above the turn bar; every button of the bar stays visible."
+    }
+  ]
+}

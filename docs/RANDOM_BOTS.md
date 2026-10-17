@@ -22,8 +22,7 @@ between 60% and 140%). Their moves appear in the event log like anyone's.
 |---|---|
 | `TI4_RANDOM_BOT_DELAY_MS` | Think delay per bot decision in milliseconds. Default `600`, `0` disables it (tests, soaks), capped at 30000. Read when a game session starts. |
 
-Nothing else is needed: no `TI4_BOT_PASSWORD`, no advisor service, no libtorch, no child process.
-Random bots do not count against `TI4_MAX_ACTIVE_BOTS`.
+Nothing else is needed: no password, no model, no libtorch, no child process.
 
 ## API
 
@@ -36,15 +35,15 @@ Random bots do not count against `TI4_MAX_ACTIVE_BOTS`.
 {"kind": "random", "nickname": "Robo"}      // one bot with a name (default "Random bot N")
 ```
 
-The response is the lobby view. It lists `bot_kinds` (`["random"]`, plus `"mlp"` when the MLP bot
-service is configured; a client that finds no `bot_kinds` must assume neither) and marks bot
-seats with `"bot": "random"` (these also report `ready: true`, `connected: true`,
+The response is the lobby view. It lists `bot_kinds` (`["random", "smart"]`, then `mlp:<name>` for
+every model that the server loaded from `TI4_MODEL_DIR` and offers; a client that finds no `bot_kinds` must
+assume none) and marks bot seats with their kind, `"bot": "random"` (these also report `ready: true`, `connected: true`,
 `can_take_over: false`).
 
 | Status | When |
 |---|---|
 | 200 | the bots were seated (all or none) |
-| 400 | unknown `kind` (`mlp` is added with `/lobby/add-bot`), `fill` together with `count`, a bad nickname, a nickname with more than one bot |
+| 400 | unknown `kind` (also a bare `mlp`: an MLP kind names its model), `fill` together with `count`, a bad nickname, a nickname with more than one bot |
 | 422 | unknown JSON fields (for example a `password`) |
 | 403 | no or unknown credential, or not the host |
 | 404 | unknown game |
@@ -55,13 +54,14 @@ size the map template fixes at creation, so the player-count limits are the lobb
 
 ## How it works
 
-- `SeatController::BotRandom` is stored in the lobby and in the saved game, so a restart brings
-  the bots back. The decider runs inside the game worker (`session/random_bot.rs`), so its
+- `SeatController::Bot(BotKind::Random)` (written `{"Bot": "random"}`; `"BotRandom"` of an older
+  record reads as it) is stored in the lobby and in the saved game, so a restart brings the bots
+  back. The rule bot and the MLP models are kinds of the same controller (`ti4_host::bots`). The decider runs inside the game worker (`session/random_bot.rs`), so its
   decisions are ordinary recorded decisions: history, replay, recovery, undo and redo, turn redo,
   splice and batches see nothing special. On a replay or recovery the recorded answers are used
   and only new decisions are random.
-- **Determinism.** Each pick is seeded from (game seed, seat id, decision index), where the
-  decision index counts every decision answered in the game (replayed ones included). The same
+- **Determinism.** Each pick is seeded from (game seed, seat place, decision index), where the
+  seat place is the index of the seat in the seat order of the game and the decision index counts every decision answered in the game (replayed ones included). The same
   position gets the same choice, in the same process and after a restart. Consequently, a bot
   that is asked the same question at the same index gives the same answer again.
 - **Undo.** Because of that determinism, an undo that would start with a bot's decision would be
@@ -77,10 +77,10 @@ size the map template fixes at creation, so the player-count limits are the lobb
 
 | | Random bot | MLP bot | Nightly browser `random` policy |
 |---|---|---|---|
-| Runs | in the game worker | separate `ti4-bot-agent` process over a websocket | in a Playwright browser, clicking the UI |
-| Needs | nothing | `TI4_BOT_PASSWORD`, advisor service, libtorch | a browser and a running server |
-| Chooses | among the engine's legal options | by the model's scores | among clickable controls |
-| Reproducible | yes (game seed, seat, index) | no (temperature) | by click seed, per browser run |
+| Runs | in the game worker | in the game worker (`mlp:<name>`, on `ti4-infer`) | in a Playwright browser, clicking the UI |
+| Needs | nothing | its model in `TI4_MODEL_DIR` (`index.json` and the `.ti4m`) | a browser and a running server |
+| Chooses | among the engine's legal options | by the model's scores, at its temperature | among clickable controls |
+| Reproducible | yes (game seed, seat, index) | yes (game seed, seat, index) | by click seed, per browser run |
 
 The browser policy clicks a random enabled control and leans on helpers to finish multi-click
 workflows (confirm a complete payment, confirm hits, confirm command tokens, propose a listed

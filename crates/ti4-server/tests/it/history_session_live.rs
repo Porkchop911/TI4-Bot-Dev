@@ -8,11 +8,11 @@ use std::time::{Duration, Instant};
 
 use ti4_content::ContentStore;
 use ti4_engine::setup::start_game_seeded;
+use ti4_host::protocol::server::ServerMessage;
+use ti4_host::protocol::status::ViewerRole;
 use ti4_model::POK;
 use ti4_model::id::PlayerId;
-use ti4_server::dev::execute_launch_scenario;
-use ti4_server::protocol::server::ServerMessage;
-use ti4_server::protocol::status::ViewerRole;
+use ti4_server::dev::launch_scenario;
 use ti4_server::session::bluff::BluffPolicy;
 use ti4_server::session::registry::HistoryAction;
 use ti4_server::session::{GameRegistry, GameSession, MockClient, SeatController, SessionConfig};
@@ -168,8 +168,46 @@ fn faction_seat(session: &GameSession, faction: &str) -> PlayerId {
         .expect("seat")
 }
 
+/// Submit an answer without waiting for its reply. With Sabotage timing (rules version 3) the reply
+/// to a declared card comes when the window closes, after the next questions were asked, and a
+/// client (the websocket handler) never blocks on it. Returns whether the answer went in.
+fn submit_without_waiting(
+    session: &Arc<GameSession>,
+    seat: &PlayerId,
+    nonce: &str,
+    version: u64,
+    option: &str,
+) -> bool {
+    let handle = {
+        let (session, seat, nonce, option) = (
+            session.clone(),
+            seat.clone(),
+            nonce.to_owned(),
+            option.to_owned(),
+        );
+        std::thread::spawn(move || {
+            session
+                .submit_choice(&seat, &nonce, version, &option)
+                .is_ok()
+        })
+    };
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if handle.is_finished() {
+            return handle.join().unwrap_or(false);
+        }
+        let moved_on = session
+            .current_pending_decision()
+            .is_none_or(|(_, now, _)| now != nonce);
+        if moved_on || session.is_finished() || Instant::now() > deadline {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
 /// Answer pending decisions with their first option; returns the seats seen holding.
-fn drive(session: &GameSession, steps: usize) -> Vec<PlayerId> {
+fn drive(session: &Arc<GameSession>, steps: usize) -> Vec<PlayerId> {
     let mut held = Vec::new();
     for _ in 0..steps {
         let deadline = Instant::now() + Duration::from_secs(15);
@@ -185,10 +223,7 @@ fn drive(session: &GameSession, steps: usize) -> Vec<PlayerId> {
                     .pending_choice
             {
                 let option = envelope.choice.options[0].id.clone();
-                if session
-                    .submit_choice(&seat, &nonce, version, &option)
-                    .is_ok()
-                {
+                if submit_without_waiting(session, &seat, &nonce, version, &option) {
                     break;
                 }
             }
@@ -216,8 +251,8 @@ fn after_an_undo_a_declared_bluff_holds_the_game_as_in_a_fresh_one() {
         ..BluffPolicy::default()
     };
     let registry = Arc::new(GameRegistry::new());
-    let launch = execute_launch_scenario(&registry, "ongoing_combat_four_views", Some(SEED))
-        .expect("launch");
+    let launch =
+        launch_scenario(&registry, "ongoing_combat_four_views", Some(SEED)).expect("launch");
     let session = registry.get_game(&launch.game_id).expect("game");
     wait_ready(&session);
     let version = session.game_version();
@@ -264,15 +299,16 @@ fn wait_pending(session: &GameSession) -> (PlayerId, String, u64) {
 
 #[test]
 fn a_session_made_by_a_batch_commit_is_not_replaying_once_live() {
-    use ti4_server::session::batch::{BatchKind, BatchRequest, MovementPlan, MovementStep};
+    use ti4_host::batch::{BatchKind, BatchRequest, MovementPlan, MovementStep};
     let (dir, store) = temp_store();
     let registry = GameRegistry::new().with_store(store);
     let host = PlayerId::new("p1");
     let guest = PlayerId::new("p2");
     let players = vec![host.clone(), guest.clone()];
     let (state, galaxy) =
-        ti4_server::map::create_game_with_map(ContentStore::embedded(), &players, 42).unwrap();
-    let tiles = ti4_server::map::build_board_tiles(ContentStore::embedded(), &galaxy);
+        ti4_host::map::create_game_with_template(ContentStore::embedded(), &players, 42, None)
+            .unwrap();
+    let tiles = ti4_host::map::build_board_tiles(ContentStore::embedded(), &galaxy);
     let mut config = SessionConfig::new("hist_batch_live", state)
         .with_seed(42)
         .with_player_ids(players)

@@ -60,10 +60,9 @@ pub fn reconcile_with_redo(
     {
         return Reconciled::Fresh;
     }
-    if event_log
-        .last()
-        .is_some_and(|previous| &previous.event == event && previous.decision_count == Some(decision_count))
-    {
+    if event_log.last().is_some_and(|previous| {
+        &previous.event == event && previous.decision_count == Some(decision_count)
+    }) {
         return Reconciled::Duplicate;
     }
     let before_next_decision = redo_events
@@ -73,7 +72,8 @@ pub fn reconcile_with_redo(
     redo_events[..before_next_decision]
         .iter()
         .position(|entry| {
-            &entry.event == event && entry.decision_count.unwrap_or(decision_count) == decision_count
+            &entry.event == event
+                && entry.decision_count.unwrap_or(decision_count) == decision_count
         })
         .map_or(Reconciled::Fresh, Reconciled::Reattach)
 }
@@ -152,9 +152,12 @@ pub fn build_event(
 /// recorded its own).
 #[must_use]
 pub fn roll_is_known(event_log: &[GameEvent], roll: &PublicRoll) -> bool {
-    event_log
-        .iter()
-        .any(|event| event.roll.as_ref().is_some_and(|known| known.index == roll.index))
+    event_log.iter().any(|event| {
+        event
+            .roll
+            .as_ref()
+            .is_some_and(|known| known.index == roll.index)
+    })
 }
 
 /// The cursor that the history file validates for a roll event: decisions resolved so far.
@@ -270,7 +273,13 @@ mod tests {
     #[test]
     fn an_event_carries_the_injected_time_and_a_counted_id() {
         let clock = ManualClock::new(0, 3 * 3600 + 4 * 60 + 5);
-        let event = build_event(&clock, "g1", 7, &[], draft(GameEventKind::DecisionResolved, 0));
+        let event = build_event(
+            &clock,
+            "g1",
+            7,
+            &[],
+            draft(GameEventKind::DecisionResolved, 0),
+        );
         assert_eq!(event.id, "g1-7");
         assert_eq!(event.timestamp, "03:04:05");
         assert_eq!(event.decision_count, Some(0));
@@ -308,8 +317,20 @@ mod tests {
     fn the_roll_cursor_counts_resolved_decisions() {
         let clock = ManualClock::new(0, 0);
         let events = vec![
-            build_event(&clock, "g", 1, &[], draft(GameEventKind::DecisionResolved, 1)),
-            build_event(&clock, "g", 2, &[], draft(GameEventKind::DecisionResolved, 2)),
+            build_event(
+                &clock,
+                "g",
+                1,
+                &[],
+                draft(GameEventKind::DecisionResolved, 1),
+            ),
+            build_event(
+                &clock,
+                "g",
+                2,
+                &[],
+                draft(GameEventKind::DecisionResolved, 2),
+            ),
         ];
         assert_eq!(roll_cursor(&events), 2);
     }

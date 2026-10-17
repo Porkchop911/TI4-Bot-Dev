@@ -1,0 +1,102 @@
+{
+ "title": "Score Public Objective on a phone: compact header",
+ "description": "The scoring window (Score Public Objective / Score Objective / Score Secret Objective, incl. Imperial) on phones (390x844, 360x740, landscape 844x390): one-row header with Minimize, Imperial note folded to one line with a Why? button, tighter table and footer. Desktop unchanged. Before shots from the commit without the change (TI4_SHOT_PREFIX=before). Mocked fixtures.",
+ "tag": "web/e2e/screenshots/EK-score-objective-compact",
+ "shots": [
+  {
+   "file": "before/before-imperial-8rows-390x844.png",
+   "heading": "Before: Imperial, 8 objectives, phone 390x844",
+   "caption": "Two-line title with badge, subtitle, Minimize row, big Imperial box: only ~1.5 rows visible."
+  },
+  {
+   "file": "out/after-imperial-8rows-390x844.png",
+   "heading": "After: Imperial, 8 objectives, phone 390x844",
+   "caption": "One-row header with Minimize, one-line Imperial note with a Why? button; 8 rows in the list, footer in view."
+  },
+  {
+   "file": "before/before-imperial-8rows-360x740.png",
+   "heading": "Before: Imperial, 8 objectives, phone 360x740",
+   "caption": "Same oversized top area."
+  },
+  {
+   "file": "out/after-imperial-8rows-360x740.png",
+   "heading": "After: Imperial, 8 objectives, phone 360x740",
+   "caption": "Header is one row; more than 3 rows visible above the footer."
+  },
+  {
+   "file": "before/before-imperial-3rows-390x844.png",
+   "heading": "Before: Imperial, short list (3), phone 390x844",
+   "caption": "Short list still crowded by the header."
+  },
+  {
+   "file": "out/after-imperial-3rows-390x844.png",
+   "heading": "After: Imperial, short list (3), phone 390x844",
+   "caption": "Short list fits with room to spare."
+  },
+  {
+   "file": "before/before-imperial-3rows-360x740.png",
+   "heading": "Before: Imperial, short list (3), phone 360x740",
+   "caption": "Same oversized top area."
+  },
+  {
+   "file": "out/after-imperial-3rows-360x740.png",
+   "heading": "After: Imperial, short list (3), phone 360x740",
+   "caption": "Short list fits."
+  },
+  {
+   "file": "before/before-plain-8rows-390x844.png",
+   "heading": "Before: No Imperial box (plain scoring window), phone 390x844",
+   "caption": "Title wraps, badge and subtitle take extra lines."
+  },
+  {
+   "file": "out/after-plain-8rows-390x844.png",
+   "heading": "After: No Imperial box (plain scoring window), phone 390x844",
+   "caption": "Same compact header; the table starts straight under it."
+  },
+  {
+   "file": "before/before-plain-8rows-360x740.png",
+   "heading": "Before: No Imperial box, phone 360x740",
+   "caption": "Same oversized top area."
+  },
+  {
+   "file": "out/after-plain-8rows-360x740.png",
+   "heading": "After: No Imperial box, phone 360x740",
+   "caption": "Compact header, 4+ rows."
+  },
+  {
+   "file": "before/before-imperial-8rows-844x390.png",
+   "heading": "Before: Imperial, landscape phone 844x390",
+   "caption": "Header and Imperial box leave about one row visible."
+  },
+  {
+   "file": "out/after-imperial-8rows-844x390.png",
+   "heading": "After: Imperial, landscape phone 844x390",
+   "caption": "Footer in one row, compact header; 2 rows visible."
+  },
+  {
+   "file": "out/after-imperial-expanded-390x844.png",
+   "heading": "After: Why? tapped, phone 390x844",
+   "caption": "The full explanation is one tap away (Less folds it again)."
+  },
+  {
+   "file": "before/before-imperial-8rows-1440x900.png",
+   "heading": "Before: Desktop 1440x900 (unchanged)",
+   "caption": "Badge, subtitle and full Imperial text."
+  },
+  {
+   "file": "out/after-imperial-8rows-1440x900.png",
+   "heading": "After: Desktop 1440x900 (unchanged)",
+   "caption": "Identical: badge, subtitle and full Imperial text still shown, no Why? button."
+  }
+ ],
+ "notes": [
+  {
+   "title": "Where",
+   "text": "web/src/components/ObjectivesModal.tsx and .css; phone breakpoint (max-width 720px or max-height 500px) as elsewhere. Only copy served by the alpha (web/dist); web2 has no such component."
+  },
+  {
+   "title": "Assertions",
+   "text": "Per phone size: header <= 52 px and Minimize on the header row, >= 3 rows fully visible (2 in landscape), footer and Confirm inside the viewport, no horizontal overflow; desktop keeps subtitle, badge and full Imperial text."
+  }
+ ]
+}

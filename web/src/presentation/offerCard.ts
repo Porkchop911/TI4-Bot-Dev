@@ -1,4 +1,4 @@
-import type { ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import type { ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import { findPlanetMeta, getTechnologyMeta, humanizeId } from "../protocol/contentCatalog.ts";
 import { getUnitDisplayName } from "../components/UnitIcon.tsx";
 
@@ -16,7 +16,7 @@ export interface OfferFact {
 }
 
 export interface OfferAnswer {
-  option: ChoiceOptionDto;
+  option: ChoiceOption;
   /** What the button says (the engine's caption, else the option's own label). */
   label: string;
   /** What it does, under the label. */
@@ -45,7 +45,7 @@ const num = (value: unknown): number | null =>
 
 const capitalize = (value: string): string => (value ? value[0].toUpperCase() + value.slice(1) : value);
 
-const isDecline = (option: ChoiceOptionDto) => option.kind === "decline" || option.id === "decline";
+const isDecline = (option: ChoiceOption) => option.kind === "decline" || option.id === "decline";
 
 function readFact(raw: unknown): OfferFact | null {
   if (!raw || typeof raw !== "object") return null;

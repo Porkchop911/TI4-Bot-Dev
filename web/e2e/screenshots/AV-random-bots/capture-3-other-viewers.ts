@@ -20,10 +20,3 @@ test("older server: no bot kinds, no random bot buttons", async ({ page }, testI
   await expect(page.getByTestId("add-random-bot-button")).toHaveCount(0);
   await shot(page, testInfo, `${prefix}-8-older-server`);
 });
-
-test("server with the MLP service: both ways to add a bot", async ({ page }, testInfo) => {
-  await openBotLobby(page, { botKinds: ["random", "mlp"], mlp: true, guest: true });
-  if (!before) await expect(page.getByTestId("add-random-bot-button")).toBeVisible();
-  await expect(page.getByTestId("add-bot-button-3")).toBeVisible();
-  await shot(page, testInfo, `${prefix}-9-with-mlp`);
-});

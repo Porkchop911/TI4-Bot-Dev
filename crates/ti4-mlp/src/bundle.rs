@@ -409,25 +409,7 @@ fn manifest_document(
     // Blocks decide the schema, and only a schema-8 trunk names them, so a block-free bundle is
     // exactly the schema-7 document it always was.
     let blocks = actor.residual_blocks();
-    let battle = actor.battle_predictor().is_some();
-    let schema = match (actor.head_layout(), blocks == 0, battle) {
-        (HeadLayout::Legacy, _, true) => {
-            return Err(BundleError::Invalid(
-                "a battle predictor needs the diplomacy head layout".to_owned(),
-            ));
-        }
-        (HeadLayout::Legacy, true, false) => SCHEMA,
-        (HeadLayout::Legacy, false, false) => RESIDUAL_SCHEMA,
-        (HeadLayout::Diplomacy, true, false) => DIPLOMACY_SCHEMA,
-        (HeadLayout::Diplomacy, false, false) => DIPLOMACY_RESIDUAL_SCHEMA,
-        (HeadLayout::Diplomacy, true, true) => BATTLE_SCHEMA,
-        (HeadLayout::Diplomacy, false, true) => BATTLE_RESIDUAL_SCHEMA,
-    };
-    let projection_abi = match (actor.head_layout(), battle) {
-        (HeadLayout::Legacy, _) => PROJECTION_ABI_VERSION,
-        (HeadLayout::Diplomacy, false) => DIPLOMACY_PROJECTION_ABI_VERSION,
-        (HeadLayout::Diplomacy, true) => BATTLE_PROJECTION_ABI_VERSION,
-    };
+    let (schema, projection_abi) = schema_of(actor)?;
     let trunk = if blocks == 0 {
         serde_json::json!({ "width": actor.width(), "depth": 2, "activation": "relu" })
     } else {
@@ -483,6 +465,35 @@ fn validate_provenance(provenance: &Provenance) -> Result<(), BundleError> {
     Ok(())
 }
 
+/// The schema and the projection ABI of the bundle an actor is written as: its head layout, its
+/// residual blocks and its battle predictor decide them.
+///
+/// # Errors
+/// [`BundleError::Invalid`] for a battle predictor on the legacy head layout.
+pub(crate) fn schema_of(actor: &Actor) -> Result<(u32, u32), BundleError> {
+    let blocks = actor.residual_blocks();
+    let battle = actor.battle_predictor().is_some();
+    let schema = match (actor.head_layout(), blocks == 0, battle) {
+        (HeadLayout::Legacy, _, true) => {
+            return Err(BundleError::Invalid(
+                "a battle predictor needs the diplomacy head layout".to_owned(),
+            ));
+        }
+        (HeadLayout::Legacy, true, false) => SCHEMA,
+        (HeadLayout::Legacy, false, false) => RESIDUAL_SCHEMA,
+        (HeadLayout::Diplomacy, true, false) => DIPLOMACY_SCHEMA,
+        (HeadLayout::Diplomacy, false, false) => DIPLOMACY_RESIDUAL_SCHEMA,
+        (HeadLayout::Diplomacy, true, true) => BATTLE_SCHEMA,
+        (HeadLayout::Diplomacy, false, true) => BATTLE_RESIDUAL_SCHEMA,
+    };
+    let projection_abi = match (actor.head_layout(), battle) {
+        (HeadLayout::Legacy, _) => PROJECTION_ABI_VERSION,
+        (HeadLayout::Diplomacy, false) => DIPLOMACY_PROJECTION_ABI_VERSION,
+        (HeadLayout::Diplomacy, true) => BATTLE_PROJECTION_ABI_VERSION,
+    };
+    Ok((schema, projection_abi))
+}
+
 /// A validated schema-7 bundle, and the model it describes.
 #[derive(Debug)]
 pub struct Loaded {
@@ -513,6 +524,63 @@ pub fn migrate_v10_to_v11(mut loaded: Loaded) -> Result<Loaded, BundleError> {
     loaded.vocabulary = vocabulary;
     Ok(loaded)
 }
+/// The training updates a bundle's provenance names ("M10-034 PPO, 300 update(s) from ...").
+#[must_use]
+pub fn trained_updates(bundle: &Path) -> Option<u64> {
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(bundle.join("manifest.json")).ok()?).ok()?;
+    let source = manifest.get("source")?.as_str()?;
+    let before = &source[..source.find(" update(s)")?];
+    before.rsplit(' ').next()?.parse().ok()
+}
+
+/// A separate-models run (`ppo_update --separate-models`) writes `<out>/<faction>/checkpoint-N`,
+/// one directory per faction in `factions`. Given one faction's bundle there, every faction's
+/// bundle trained for the same number of updates (folder numbers are each model's own optimiser
+/// steps, so they differ). `Ok(None)` when the bundle is not in that layout.
+///
+/// # Errors
+/// The layout is there but a faction has no bundle at that update count.
+pub fn separate_model_bundles(
+    directory: &Path,
+    factions: &[&str],
+) -> Result<Option<BTreeMap<String, PathBuf>>, String> {
+    let Some(faction_directory) = directory.parent() else {
+        return Ok(None);
+    };
+    let is_faction = faction_directory
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| factions.contains(&name));
+    let Some(run) = faction_directory.parent().filter(|_| is_faction) else {
+        return Ok(None);
+    };
+    if !factions.iter().all(|faction| run.join(faction).is_dir()) {
+        return Ok(None);
+    }
+    let wanted = trained_updates(directory).ok_or_else(|| {
+        format!(
+            "separate models: {} does not name its training updates",
+            directory.display()
+        )
+    })?;
+    let mut bundles = BTreeMap::new();
+    for faction in factions {
+        let entries = std::fs::read_dir(run.join(faction))
+            .map_err(|error| format!("separate models {faction}: {error}"))?;
+        let bundle = entries
+            .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+            .find(|path| {
+                path.join("manifest.json").is_file() && trained_updates(path) == Some(wanted)
+            })
+            .ok_or_else(|| {
+                format!("separate models: no {faction} checkpoint at {wanted} update(s)")
+            })?;
+        bundles.insert((*faction).to_owned(), bundle);
+    }
+    Ok(Some(bundles))
+}
+
 
 /// Read and fully validate one bundle.
 ///

@@ -4,7 +4,7 @@ import { formatCounts, shooterLabel, stepOutcomeText, summarizeInvasionStep } fr
 
 const INVADER = "player_inv";
 const RIVAL = "player_rival";
-const unit = (owner: string, unit_type: string, damaged = false): PlacedUnitView => ({ owner, unit_type, damaged, planet: "jord" });
+const unit = (owner: string, unit_type: string, damaged = false): PlacedUnitView => ({ owner, unit_type, damaged, planet: "jord", galvanized: false });
 const die = (player: string, group: string, face: number, target: number) => ({ planet: "jord", player, group, face, target, hit: face >= target });
 
 const bombardment: InvasionStepView = {

@@ -1,8 +1,9 @@
-import { BoardView, ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import { BoardView, ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import {
   findPlanetMeta,
   humanizeId,
 } from "../protocol/contentCatalog.ts";
+import { applyBoosts, wireBoosts, type PlanetBoost } from "./planetValues.ts";
 import { isDeclineOption, isPlanetSelectionChoice, optionPlanetId } from "./choiceModel.ts";
 import { formatDecisionSource } from "./decisionSource.ts";
 
@@ -12,6 +13,8 @@ export interface PlanetDetails {
   systemId: string | null;
   resources: number | null;
   influence: number | null;
+  /** What raises the values above the printed ones (resources / influence here are the raised values). */
+  boosts: PlanetBoost[];
   traits: string[];
   techSpecialties: string[];
   legendary: boolean;
@@ -30,7 +33,7 @@ export function findPlanetSystem(planetId: string, board?: BoardView | null): st
 }
 
 /** The system an option points at: `payload.system` when present, else the planet's system. */
-export function resolveOptionSystem(opt: ChoiceOptionDto, board?: BoardView | null): string | null {
+export function resolveOptionSystem(opt: ChoiceOption, board?: BoardView | null): string | null {
   const system = opt.payload?.system;
   if (typeof system === "string" && system) return system;
   if (typeof system === "number") return String(system);
@@ -44,12 +47,17 @@ export function getPlanetDetails(planetId: string, board?: BoardView | null): Pl
   const meta = tile?.planets?.find((p) => p.id === planetId);
   const catalog = findPlanetMeta(planetId);
   const dynamic = systemId ? board?.systems?.[systemId]?.planets?.[planetId] : undefined;
+  const boosts = wireBoosts(dynamic);
+  const printedR = meta?.resources ?? catalog?.resources ?? null;
+  const printedI = meta?.influence ?? catalog?.influence ?? null;
+  const raised = printedR !== null && printedI !== null ? applyBoosts(printedR, printedI, boosts) : null;
   return {
     id: planetId,
     name: meta?.label || catalog?.name || humanizeId(planetId),
     systemId,
-    resources: meta?.resources ?? catalog?.resources ?? null,
-    influence: meta?.influence ?? catalog?.influence ?? null,
+    resources: raised ? raised.resources : printedR,
+    influence: raised ? raised.influence : printedI,
+    boosts,
     traits: meta?.traits ?? [],
     techSpecialties: [...(meta?.tech_specialties ?? catalog?.techSpecialties ?? [])],
     legendary: Boolean(meta?.legendary),
@@ -114,7 +122,7 @@ export function describePlanetDecision(choice: PendingChoiceDto): DecisionDescri
 }
 
 /** The option label without a repeated "Source: " prefix. */
-export function optionActionLabel(opt: ChoiceOptionDto, sourceLabel: string | null): string {
+export function optionActionLabel(opt: ChoiceOption, sourceLabel: string | null): string {
   const label = (opt.label ?? "").trim();
   if (sourceLabel) {
     const prefix = `${sourceLabel.toLowerCase()}:`;
@@ -125,7 +133,7 @@ export function optionActionLabel(opt: ChoiceOptionDto, sourceLabel: string | nu
 
 /** True when the option label says more than the planet's name (e.g. "place pds on lodor"). */
 export function isSpecificOptionLabel(
-  opt: ChoiceOptionDto,
+  opt: ChoiceOption,
   sourceLabel: string | null,
   planet: PlanetDetails,
 ): boolean {
@@ -137,7 +145,7 @@ export function isSpecificOptionLabel(
 export interface PlanetCandidate {
   planetId: string;
   systemId: string | null;
-  options: ChoiceOptionDto[];
+  options: ChoiceOption[];
 }
 
 /** Candidate planets in offer order, each with every option that targets it. */

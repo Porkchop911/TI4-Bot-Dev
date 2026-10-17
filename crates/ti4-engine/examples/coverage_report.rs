@@ -108,7 +108,7 @@ fn main() {
         abilities,
     );
 
-    let leaders_missing = ti4_engine::leaders::unimplemented(content, &FACTIONS).len();
+    let leaders_missing = ti4_engine::leaders::unimplemented(content, sources, &FACTIONS).len();
     println!(
         "  {:<22} {:>5} unimplemented across the six trained factions",
         "leaders", leaders_missing
@@ -164,7 +164,7 @@ fn main() {
                 .is_some_and(|f| FACTIONS.contains(&f.to_ascii_lowercase().as_str()))
         })
         .count();
-    let missing_ours_leaders = ti4_engine::leaders::unimplemented(content, &FACTIONS).len();
+    let missing_ours_leaders = ti4_engine::leaders::unimplemented(content, sources, &FACTIONS).len();
     row(
         "leaders",
         ours_leaders.saturating_sub(missing_ours_leaders),

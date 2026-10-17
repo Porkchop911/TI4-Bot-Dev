@@ -17,6 +17,6 @@
   ],
   "notes": [
     { "title": "Reproduce", "text": "cd web && npm run build:wasm && npm run screenshots -- DO (needs cargo with the wasm32-unknown-unknown target; TI4_WASM_FILE=<file> reuses a prebuilt engine)." },
-    { "title": "Not shown", "text": "The advisor odds in space and ground combat fall back to the rough estimate offline (tag: Rough fleet estimate); a combat in these seeds is not guaranteed in the first rounds, so it is covered by unit-level wiring only." }
+    { "title": "Not shown", "text": "The odds of a space or ground combat (from the engine of the game, in its Worker): a combat in these seeds is not guaranteed in the first rounds, so they are covered by unit tests and the offline odds check only." }
   ]
 }

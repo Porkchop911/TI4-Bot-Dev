@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { expect, it } from "vitest";
 import { GameProvider } from "../game/context";
 import { ReferenceDrawer } from "../game/shell/Reference";
-import menuUpdate from "../session/fixtures/update-menu.json";
+import menuUpdate from "../../../fixtures/protocol/update-menu.json";
 import { selectShell } from "../session/select/shell";
 import type { Catalog, SessionUpdate } from "../session/wire";
 
@@ -19,10 +19,15 @@ const agenda = (id: string, name: string, kind: string, elect: string, group: st
   ...(elect === "For/Against" && { against: `Against: the other text of ${name}.` }),
 });
 const catalog = {
+  content: "",
   exploration: { cards: [], decks: {}, attachments: [] },
   components: {
     abilities: [],
     factions: {},
+    faction_sheets: {},
+    strategy_cards: [],
+    public_objectives: [],
+    public_objective_groups: [],
     leaders: [],
     technologies: [],
     relics: [],
@@ -44,6 +49,23 @@ const catalog = {
       agenda("travel_ban", "Enforced Travel Ban", "Law", "For/Against", "Map and movement"),
     ],
     agenda_groups: ["Victory points and objectives", "Map and movement", "Laws and votes"],
+  },
+  records: {
+    strategy_cards: [],
+    secret_objectives: [],
+    public_objectives: [],
+    action_cards: [],
+    technologies: [],
+    explores: [],
+    planets: [],
+    attachments: [],
+    factions: [],
+    units: [],
+    leaders: [],
+    abilities: [],
+    promissory_notes: [],
+    relics: [],
+    breakthroughs: [],
   },
 } as Catalog;
 const update = (laws: Record<string, string>): SessionUpdate => ({

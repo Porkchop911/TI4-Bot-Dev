@@ -11,6 +11,7 @@ import {
   unsentBuilds,
   type ProductionPay,
 } from "./productionPayment.ts";
+import { partialContext } from "../test/wire.ts";
 
 const build = (unit: string, cost: number, extra: Record<string, unknown> = {}) => ({
   id: `build|${unit}|1`,
@@ -23,8 +24,8 @@ const produceChoice = (): PendingChoiceDto => ({
   actor: "p1",
   nonce: "n",
   prompt: "produce",
-  context: { subtype: "produce_unit", target: { System: "18" } },
-  options: [build("destroyer", 2), build("cruiser", 3), build("fighter", 1, { free_this_use: true }), { id: "decline", kind: "decline", label: "Done" }],
+  context: partialContext({ subtype: "produce_unit", target: { System: "18" } }),
+  options: [build("destroyer", 2), build("cruiser", 3), build("fighter", 1, { free_this_use: true }), { id: "decline", kind: "decline", label: "Done", payload: {} }],
 });
 
 const planet = (id: string, worth: number, source?: string) => ({
@@ -43,11 +44,11 @@ const question = (
   actor: "p1",
   nonce: `q${owed}`,
   prompt: `Pay ${owed}`,
-  context: {
+  context: partialContext({
     subtype,
     target: { System: "18" },
     outstanding: [{ kind: "Resources", amount: owed, paid: 0 }],
-  },
+  }),
   options: [
     ...planets,
     ...(tradeGoods ? [{ id: "trade_good", kind: "pay", label: "Trade good", payload: { worth: 1 } }] : []),

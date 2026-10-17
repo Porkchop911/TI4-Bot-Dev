@@ -1,0 +1,22 @@
+{
+  "title": "Planet resources and influence raised by attachments",
+  "description": "A planet's resources and influence icons now show what the planet is worth now: printed value plus attachments (Mining World, Dyson Sphere, Tomb of Emphidia ...), laws (Core Mining, Senate Sanctuary, Terraforming Initiative) and Helios docks, wherever the icons appear. A raised number is green with a small +N badge, and its tooltip reads for example '5 resources (3 printed; Mining World: +2 resources)'. The extra comes from the engine's own planet value function through the new display-only PlanetView.value_boosts, so the UI cannot differ from what payment counts. Mocked fixtures: Lodor (printed 3R/1I) with Mining World, Quann (2R/1I) with Dyson Sphere (both kinds), Jord (2R/2I) under Core Mining.",
+  "tag": "web/e2e/screenshots/FC-planet-attachment-values",
+  "shots": [
+    { "file": "out/1-map-desktop.png", "heading": "Map", "caption": "The pills under Lodor (5+ resources), Quann (4+ and 2+) and Jord (4+) are green where a planet is raised; unboosted values keep their colours." },
+    { "file": "out/1-map-phone.png", "heading": "Map on a phone (390x844)", "caption": "Same pills." },
+    { "file": "out/2-inspector-lodor-desktop.png", "heading": "System inspector", "caption": "Lodor: 5 resources with a +2 badge; influence stays 1." },
+    { "file": "out/2b-inspector-quann-desktop.png", "heading": "Inspector, both kinds raised", "caption": "Dyson Sphere raises Quann's resources (+2) and influence (+1)." },
+    { "file": "out/2-inspector-lodor-phone.png", "heading": "Inspector on a phone", "caption": "Same on 390x844." },
+    { "file": "out/3-tile-tooltip.png", "heading": "Tile hover", "caption": "The hover list uses the same component." },
+    { "file": "out/4-payment-desktop.png", "heading": "Payment drawer", "caption": "Both values beside each planet; the worth that counts for payment (5 for Lodor, 4 for Quann and Jord) is the raised one." },
+    { "file": "out/4-payment-phone.png", "heading": "Payment drawer on a phone", "caption": "Same on 390x844." },
+    { "file": "out/5-payment-map-desktop.png", "heading": "Payment bar and map", "caption": "Pick on map: the pills on the planets carry the raised numbers." },
+    { "file": "out/6-vote-desktop.png", "heading": "Vote: exhaust planets", "caption": "Quann's 2 votes (influence) are marked as raised by Dyson Sphere's +1; Lodor and Jord (Core Mining raises resources only) are not." },
+    { "file": "out/6-vote-phone.png", "heading": "Vote on a phone", "caption": "Same on 390x844." },
+    { "file": "out/7-player-stats-desktop.png", "heading": "Player sheet", "caption": "Ready / total resources and influence count the raised values." }
+  ],
+  "notes": [
+    { "title": "Where the value comes from", "text": "Rust: production::planet_value_boosts (laws::planet_value_bonus_sources, attachment records, Helios docks) sums to planet_value_now - planet_value, and the host copies it into PlanetView.value_boosts. Web: planetValues.ts, PlanetValue / PlanetValuePair (boosts or planetId), PlanetBoostContext. Fixtures are synthetic." }
+  ]
+}

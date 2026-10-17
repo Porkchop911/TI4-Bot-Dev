@@ -21,15 +21,16 @@
 //! Only the bound seat's view is read (public board plus its own hand); every answer is one of the
 //! offered options, and the choice of one is deterministic for a given position.
 
+use crate::tuning;
 use rand_chacha::ChaCha8Rng;
 use ti4_engine::choice::{Choice, ChoiceOption, Observed, SeatObservation};
 use ti4_engine::decision_context::DecisionTrigger;
 use ti4_model::id::{PlanetId, PlayerId, SystemId};
 
 use super::{
-    ACTIVATION_THRESHOLD, CARRIER_COST, activation_value, exhausted_resources, expanding,
-    free_transports_and_ground, home_build_wanted, home_system, is_ground, pick_action,
-    pick_secondary, spare_resources, target_near, transport_plan, unit_type, waiting_and_lift,
+    CARRIER_COST, activation_value, exhausted_resources, expanding, free_transports_and_ground,
+    home_build_wanted, home_system, is_ground, pick_action, pick_secondary, spare_resources,
+    target_near, transport_plan, unit_type, waiting_and_lift,
 };
 
 /// Every agent this layer has a rule for (Ssruu, `yssarilagent`, carries the others' texts).
@@ -503,7 +504,7 @@ fn zeu_system(choice: &Choice, seen: &Observed<'_>, me: &PlayerId) -> Option<usi
         .enumerate()
         .filter(|(_, o)| !o.is_decline())
         .map(|(i, o)| (i, activation_value(seen, me, &SystemId::new(&o.id))))
-        .filter(|(_, worth)| *worth >= ACTIVATION_THRESHOLD)
+        .filter(|(_, worth)| *worth >= tuning::activation_threshold())
         .fold(None, |best: Option<(usize, f64)>, (i, w)| match best {
             Some((_, b)) if b >= w => best,
             _ => Some((i, w)),
@@ -813,7 +814,7 @@ fn zeu_best_is_away(seen: &Observed<'_>, me: &PlayerId) -> bool {
         .into_iter()
         .map(SystemId::new)
         .filter(|system| !tokens.contains(system) && !homes.contains(system))
-        .any(|system| activation_value(seen, me, &system) >= ACTIVATION_THRESHOLD)
+        .any(|system| activation_value(seen, me, &system) >= tuning::activation_threshold())
 }
 
 #[cfg(test)]

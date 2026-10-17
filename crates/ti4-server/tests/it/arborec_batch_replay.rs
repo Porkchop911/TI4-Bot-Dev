@@ -16,13 +16,13 @@ use ti4_engine::choice::{
     Choice, ChoiceOption, Decider, DecisionLog, DecisionRecord, IllegalChoice, SeededRandom, Table,
 };
 use ti4_engine::game::Game;
-use ti4_model::id::PlayerId;
-use ti4_server::session::SessionConfig;
-use ti4_server::session::batch::{
+use ti4_host::batch::{
     BatchKind, MovementPlan, MovementStep, SimulationMode, simulate_with, simulation_difference,
 };
-use ti4_server::session::replay::replay_session_forced;
-use ti4_server::session::step_snapshot::StepSnapshot;
+use ti4_host::replay::replay_session_forced;
+use ti4_host::step_snapshot::StepSnapshot;
+use ti4_model::id::PlayerId;
+use ti4_server::session::SessionConfig;
 
 const FLAGSHIP: &str = "unit:arborec:arborec_flagship:SYSTEM_ACTIVATED:after";
 

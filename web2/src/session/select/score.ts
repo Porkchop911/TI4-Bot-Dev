@@ -3,7 +3,7 @@
 import type { ScoreCellView, ScoreRowView, ScoreView } from "../../model";
 import type { Catalog, PointSource, SessionUpdate } from "../wire";
 import { plain } from "./components";
-import { titleCase } from "./names";
+import { humanizeId } from "./names";
 import { seated } from "./players";
 
 /** The name of a source that the game has once. */
@@ -73,7 +73,7 @@ export function selectScore(update: SessionUpdate, catalog: Catalog | null): Sco
       seat,
       ids.map((id) => {
         const card = printed.get(id);
-        return { name: card?.name ?? titleCase(id), text: card ? plain(card.text) : "" };
+        return { name: card?.name ?? humanizeId(id), text: card ? plain(card.text) : "" };
       }),
     ]),
   );

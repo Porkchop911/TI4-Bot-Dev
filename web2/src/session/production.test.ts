@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import productionUpdate from "./fixtures/update-production.json";
+import productionUpdate from "../../../fixtures/protocol/update-production.json";
 import { type PlanStep, stepOf } from "./movementPlan";
 import {
   EMPTY,
@@ -19,13 +19,13 @@ import {
 } from "./productionDraft";
 import type { LocalState } from "./select/action";
 import { selectShell } from "./select/shell";
-import type { ProductionFacts, SessionUpdate } from "./wire";
+import type { ProductionFacts, SessionUpdate, TacticalFacts } from "./wire";
 
 // An update of a real game, written by the engine: in the scenario "Late game" seat a (Sol)
-// activated the system with its two space docks, moved nothing and kept AI Development Algorithm.
-//   cargo run -p ti4-wasm --example record -- late-game 8 1 5 tactical 72 done_moving decline > web2/src/session/fixtures/update-production.json
+// activated the system with its two space docks, moved nothing and kept AI Development Algorithm
+// (`crates/ti4-wasm/tests/it/protocol_fixtures.rs` (`cargo wire-web`)).
 const update = productionUpdate as unknown as SessionUpdate;
-const facts = update.tactical as ProductionFacts;
+const facts = update.tactical as Extract<TacticalFacts, { kind: "production" }>;
 const choice = update.pending_choice!.choice;
 
 const unit = (id: string) => facts.units.findIndex((item) => item.unit === id);

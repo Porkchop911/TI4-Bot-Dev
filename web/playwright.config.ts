@@ -13,6 +13,8 @@ const webBuild = process.env.TI4_E2E_WEB === "build";
 
 export default defineConfig({
   testDir: "./e2e",
+  // The offline game needs the production build and no backend: `npm run test:e2e:offline`.
+  testIgnore: /offline_local\.spec\.ts$/,
   timeout: 30_000,
   globalTimeout: 300_000,
   expect: {

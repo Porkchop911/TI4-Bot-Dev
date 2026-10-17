@@ -1,10 +1,11 @@
 import { expect, it } from "vitest";
-import menuUpdate from "../fixtures/update-menu.json";
+import menuUpdate from "../../../../fixtures/protocol/update-menu.json";
 import type { Catalog, ScoreFacts, SessionUpdate } from "../wire";
 import { selectScore } from "./score";
 
-// An update of the real engine, viewed by seat a, with the points written by hand.
-const menu = menuUpdate as unknown as SessionUpdate;
+// An update of the real engine, viewed by seat a, with the points written by hand (its own facts
+// are left out).
+const menu: SessionUpdate = { ...(menuUpdate as unknown as SessionUpdate), score: undefined };
 const seats = menu.view.players.map((player) => player.id);
 const facts: ScoreFacts = {
   target: 10,

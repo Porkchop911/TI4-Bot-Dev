@@ -5,7 +5,6 @@ import type { Capabilities } from "./types.ts";
 export const ONLINE_CAPABILITIES: Capabilities = {
   splicePreview: true,
   turnRedo: true,
-  advisor: true,
   multiplayer: true,
   immediateFeedback: true,
 };
@@ -13,8 +12,7 @@ export const ONLINE_CAPABILITIES: Capabilities = {
 /** What a local game offers in v1. */
 export const OFFLINE_CAPABILITIES: Capabilities = {
   splicePreview: false,
-  turnRedo: false,
-  advisor: false,
+  turnRedo: true,
   multiplayer: false,
   immediateFeedback: false,
 };
@@ -22,7 +20,6 @@ export const OFFLINE_CAPABILITIES: Capabilities = {
 const LABELS: Record<keyof Capabilities, string> = {
   splicePreview: "Map splice preview",
   turnRedo: "Turn redo",
-  advisor: "Advisor",
   multiplayer: "Multiplayer and invite links",
   immediateFeedback: "Instant feedback delivery",
 };

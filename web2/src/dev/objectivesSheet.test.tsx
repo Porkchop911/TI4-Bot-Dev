@@ -2,13 +2,13 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { expect, it } from "vitest";
 import { GameProvider } from "../game/context";
 import { ReferenceDrawer } from "../game/shell/Reference";
-import menuUpdate from "../session/fixtures/update-menu.json";
+import menuUpdate from "../../../fixtures/protocol/update-menu.json";
 import { selectShell } from "../session/select/shell";
 import type { SessionUpdate } from "../session/wire";
 
 // The Objectives sheet over an update of the real engine with eight seats, viewed by seat a
-// (Sol). The fixture is older than the `score` fact, so the points are written here. The test is
-// here because `dev` is the layer that may import both the session and the components.
+// (Sol), with the points written here. The test is here because `dev` is the layer that may
+// import both the session and the components.
 const update: SessionUpdate = {
   ...(menuUpdate as unknown as SessionUpdate),
   score: {
@@ -96,8 +96,8 @@ it("has the viewer first in the heading, then the seats by their points", () => 
     .slice(1)
     .map((name) => Number(name?.match(/: (\d+) point/)?.[1]));
   expect(points).toEqual([...points].sort((a, b) => b - a));
-  expect(names(seats)).toContain("Hacan: 1 point");
-  expect(names(seats)).toContain("Xxcha: 1 point");
+  expect(names(seats)).toContain("L1z1x: 1 point");
+  expect(names(seats)).toContain("Yin: 1 point");
 });
 
 it("lists the public objectives by stage, as printed, with who scored each", () => {

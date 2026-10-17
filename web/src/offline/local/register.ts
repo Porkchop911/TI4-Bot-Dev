@@ -4,12 +4,14 @@ import { registerOfflineLauncher } from "../registry.ts";
 import {
   createDurableFeedbackQueue,
   httpFeedbackSender,
+  listSummaries,
   openOfflineSaveStore,
+  shellStatus,
   type OfflineSaveStore,
 } from "../storage/index.ts";
-import type { OfflineFeedbackQueue, OfflineLauncher } from "../types.ts";
-import { hasEngineAsset } from "./engineAsset.ts";
-import { JSPI_MISSING, jspiSupported } from "./jspi.ts";
+import type { OfflineFeedbackQueue, OfflineLauncher, OfflineMapSource } from "../types.ts";
+import { hasJspi } from "@ti4/shared/engine/jspi.ts";
+import { hasEngineAsset, JSPI_MISSING } from "./engineAsset.ts";
 
 /**
  * The launcher as the page registers it at startup: only what the shell needs at once (flags,
@@ -21,11 +23,17 @@ export function createLazyLauncher(store: OfflineSaveStore, feedback: OfflineFee
   let real: Promise<OfflineLauncher> | null = null;
   const launcher = () =>
     (real ??= import("./launcher.ts").then((m) => m.createLocalLauncher({ store, feedback })));
+  let maps: Promise<OfflineMapSource> | null = null;
+  const mapSource = () => (maps ??= import("./mapSource.ts").then((m) => m.createMapSource()));
   return {
     capabilities: OFFLINE_CAPABILITIES,
     factions: OFFLINE_FACTION_IDS,
-    supported: () => (jspiSupported() ? { ok: true } : { ok: false, reason: JSPI_MISSING }),
-    list: () => store.listSummaries(),
+    maps: {
+      catalog: async (playerCount) => (await mapSource()).catalog(playerCount),
+      preview: async (choice, playerCount, variant) => (await mapSource()).preview(choice, playerCount, variant),
+    },
+    supported: () => (hasJspi() ? { ok: true } : { ok: false, reason: JSPI_MISSING }),
+    list: () => listSummaries(store),
     create: async (setup, onProgress, signal) => (await launcher()).create(setup, onProgress, signal),
     resume: async (gameId, onProgress, signal, options) =>
       (await launcher()).resume(gameId, onProgress, signal, options),
@@ -33,8 +41,9 @@ export function createLazyLauncher(store: OfflineSaveStore, feedback: OfflineFee
     exportGame: (gameId) => store.exportGame(gameId),
     feedback,
     storage: {
-      status: () => store.status(),
+      status: () => shellStatus(store),
       subscribe: (listener) => store.subscribe(listener),
+      removeUnreadable: () => store.removeUnreadable(),
       importGame: async (file) => {
         const outcome = await store.importGame(file);
         return { id: outcome.id, engineDiffers: outcome.engineDiffers };

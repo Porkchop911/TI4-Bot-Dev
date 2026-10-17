@@ -1,12 +1,18 @@
 /** Engine identity comparison and the data of the "saved with another engine" dialog. */
-import type { EngineIdentity, EngineMismatchPrompt } from "./types.ts";
+import { type EngineIdentity, engineDifferences } from "@ti4/shared/storage/index.ts";
 
-export function engineDifferences(saved: EngineIdentity, current: EngineIdentity): EngineMismatchPrompt["differs"] {
-  const out: EngineMismatchPrompt["differs"] = [];
-  if (saved.build !== current.build) out.push("build");
-  if (saved.contentDigest !== current.contentDigest) out.push("contentDigest");
-  if (saved.wasmSha256 !== current.wasmSha256) out.push("wasmSha256");
-  return out;
+export type EngineMismatchChoice = "view-only" | "try-anyway" | "delete";
+
+/** Data for the dialog "this game was saved with another version of the engine". */
+export interface EngineMismatchPrompt {
+  /** `engine-changed`: known before replaying; `replay-diverged`: the replay gave other decisions (resume_check.ok false). */
+  reason: "engine-changed" | "replay-diverged";
+  differs: Array<keyof EngineIdentity>;
+  saved: EngineIdentity;
+  current: EngineIdentity;
+  title: string;
+  message: string;
+  choices: ReadonlyArray<{ id: EngineMismatchChoice; label: string; destructive: boolean }>;
 }
 
 const CHOICES: EngineMismatchPrompt["choices"] = [

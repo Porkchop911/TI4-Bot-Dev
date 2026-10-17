@@ -13,6 +13,7 @@ import type {
 } from "./types.ts";
 
 import { OFFLINE_FACTION_IDS } from "./factions.ts";
+import { fixturePreview, fixtureTemplates } from "../dev/mapPickerFixtures.ts";
 
 export const MOCK_FACTIONS = OFFLINE_FACTION_IDS;
 
@@ -30,6 +31,12 @@ export interface MockOptions {
   freezeAt?: number;
   /** Text of the storage warning banner (private window, quota). */
   storageWarning?: string;
+  /** No map picker data at all (a launcher that cannot ask the engine). */
+  noMaps?: boolean;
+  /** How the picker's data behaves: answers (default), never answers, fails, or has no layout. */
+  mapsState?: "ready" | "loading" | "error" | "empty";
+  /** Saved games of an older version (not listed, only deleted). */
+  unreadable?: number;
   /** A resume asks this question first (a saved game of another engine). */
   mismatch?: OfflineMismatchPrompt;
 }
@@ -40,6 +47,7 @@ export interface MockOptions {
  */
 export function createMockLauncher(options: MockOptions = {}): OfflineLauncher {
   let games = [...(options.games ?? [])];
+  let unreadable = options.unreadable ?? 0;
   let items: QueuedFeedbackItem[] = (options.feedback ?? []).map((f, i) => ({
     localId: `fb_local_${i}`,
     state: f.state,
@@ -79,15 +87,30 @@ export function createMockLauncher(options: MockOptions = {}): OfflineLauncher {
   return {
     capabilities: OFFLINE_CAPABILITIES,
     factions: MOCK_FACTIONS,
+    ...(options.noMaps
+      ? {}
+      : {
+          maps: {
+            catalog: async (count: number) => {
+              if (options.mapsState === "loading") return new Promise<never>(() => undefined);
+              if (options.mapsState === "error") throw new Error("engine unavailable");
+              return options.mapsState === "empty" ? [] : fixtureTemplates(count);
+            },
+            preview: async (choice: { kind: string; alias?: string }, count: number) =>
+              fixturePreview(count, choice.kind === "random" ? null : (choice.alias ?? null)),
+          },
+        }),
     supported: () => (options.unsupported ? { ok: false, reason: options.unsupported } : { ok: true }),
     list: async () => [...games],
     async create(setup: OfflineSetup, onProgress, signal): Promise<OfflineGameHandle> {
+      (window as unknown as { __TI4_LAST_SETUP__?: OfflineSetup }).__TI4_LAST_SETUP__ = setup;
       await play(onProgress, signal, false);
       const gameId = `off_${games.length + 1}`;
       games = [
         {
           gameId, playerCount: setup.playerCount, humanFaction: setup.humanFaction,
-          humanSeat: setup.humanSeat ?? 1, round: 1, phase: "strategy", answers: 0,
+          humanSeat: setup.humanSeat ?? 1,
+          humanSeats: [setup.humanSeat ?? 1], factions: [], playable: true, round: 1, phase: "strategy", answers: 0,
           createdAt: Date.now() / 1000, updatedAt: Date.now() / 1000, status: "in_progress",
           resumeEstimateMs: 1000,
         },
@@ -119,12 +142,19 @@ export function createMockLauncher(options: MockOptions = {}): OfflineLauncher {
         persistence: options.storageWarning ? "memory" : "indexeddb",
         warning: options.storageWarning ?? null,
         persisted: options.storageWarning ? null : true,
+        unreadable,
       }),
       subscribe: () => () => undefined,
+      removeUnreadable: async () => {
+        const removed = unreadable;
+        unreadable = 0;
+        return removed;
+      },
       importGame: async () => {
         games = [
           {
             gameId: `off_imported_${games.length + 1}`, playerCount: 4, humanFaction: "sol", humanSeat: 1,
+            humanSeats: [1], factions: ["sol", null, null, null], playable: true,
             round: 2, phase: "action", answers: 60, createdAt: Date.now() / 1000, updatedAt: Date.now() / 1000,
             status: "in_progress", resumeEstimateMs: 700,
           },

@@ -1,7 +1,5 @@
-import type { ChoiceOptionDto } from "../protocol/types.ts";
-import {
-  GENERATED_CONTENT_CATALOG,
-} from "../protocol/generatedContentManifest.ts";
+import type { ChoiceOption } from "../protocol/types.ts";
+import { CONTENT } from "../protocol/catalogStore.ts";
 import {
   findExplorationCardMeta,
   findTechnologyMeta,
@@ -46,16 +44,16 @@ interface RelicRecord {
   text?: string;
 }
 
-const LEADERS = GENERATED_CONTENT_CATALOG.leaders as unknown as Record<string, LeaderRecord>;
-const ABILITIES = GENERATED_CONTENT_CATALOG.factionAbilities as unknown as Record<
+const LEADERS = CONTENT.leaders as unknown as Record<string, LeaderRecord>;
+const ABILITIES = CONTENT.factionAbilities as unknown as Record<
   string,
   FactionAbilityRecord
 >;
-const NOTES = GENERATED_CONTENT_CATALOG.promissoryNotes as unknown as Record<
+const NOTES = CONTENT.promissoryNotes as unknown as Record<
   string,
   PromissoryNoteRecord
 >;
-const RELICS = GENERATED_CONTENT_CATALOG.relics as unknown as Record<string, RelicRecord>;
+const RELICS = CONTENT.relics as unknown as Record<string, RelicRecord>;
 
 const norm = (text: string) => text.toLowerCase().replace(/[^a-z0-9]/g, "");
 
@@ -154,19 +152,19 @@ function fromLeader(leader: LeaderRecord, borrowed: boolean): ComponentDescripti
   };
 }
 
-const fallback = (option: ChoiceOptionDto, kind: string): ComponentDescription => ({
+const fallback = (option: ChoiceOption, kind: string): ComponentDescription => ({
   name: option.label,
   kind,
   owner: null,
   timing: null,
   cost: componentCost(option.label),
-  text: option.description ?? null,
+  text: null,
   note: null,
 });
 
 /** Map an engine component option to its printed description. */
 export function describeComponent(
-  option: ChoiceOptionDto,
+  option: ChoiceOption,
   viewerFaction?: string | null,
 ): ComponentDescription {
   const id = option.id;
@@ -236,7 +234,7 @@ export function describeComponent(
       owner: null,
       timing: "ACTION",
       cost: componentCost(label),
-      text: option.description ?? `Pay for and resolve this expedition slice: ${what}.`,
+      text: `Pay for and resolve this expedition slice: ${what}.`,
       // The slice that grants the breakthrough names the card so the choice is an informed one.
       note: breakthroughNote(viewerFaction),
     };

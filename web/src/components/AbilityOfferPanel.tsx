@@ -27,6 +27,23 @@ export const AbilityOfferPanel: React.FC<{
           </p>
         )}
       </div>
+      {view.dice.length > 0 && (
+        <div className="secondary-panel__tokens" data-testid="ability-offer-dice">
+          <span>Your dice</span>
+          <strong>
+            {view.dice.map((die, index) => (
+              <span
+                key={index}
+                data-testid={die.hit ? "ability-offer-die-hit" : "ability-offer-die-miss"}
+                style={{ marginLeft: 8, opacity: die.hit ? 1 : 0.6 }}
+              >
+                {die.face}
+                {die.hit === null ? "" : die.hit ? " hit" : " miss"}
+              </span>
+            ))}
+          </strong>
+        </div>
+      )}
       <div className="secondary-panel__tokens" data-testid="ability-offer-goods">
         <span>Trade goods</span>
         <strong>
@@ -43,6 +60,17 @@ export const AbilityOfferPanel: React.FC<{
         >
           {abilityOfferLabel(view)}
         </button>
+        {view.alternative && (
+          <button
+            type="button"
+            className="button button--secondary"
+            data-testid="ability-offer-alt-btn"
+            disabled={disabled || cantPay}
+            onClick={() => onChoose(view.alternative!.id)}
+          >
+            {view.alternative.label}
+          </button>
+        )}
         <button
           type="button"
           className="button button--secondary"

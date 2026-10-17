@@ -8,18 +8,15 @@ import {
   PreviewUnsupportedError,
   ReachUnsupportedError,
   reduceServerMessage,
+  StaleChoiceError,
   serverEventLog,
 } from "./client.ts";
-import {
-  decodeCreateGameResponse,
-  decodeJoinResponse,
-  decodeLobby,
-  decodeServerMessage,
-} from "./decode.ts";
-import { InitialSnapshotMsg, PROTOCOL_VERSION } from "./types.ts";
+import { decodeCreateGameResponse, decodeJoinResponse, decodeLobby } from "./decode.ts";
+import { decodeServerMessage } from "@ti4/shared/wire/decode.ts";
+import { PROTOCOL_VERSION, type ServerMessage } from "./types.ts";
 import { validNickname } from "./nickname.ts";
 
-const snapshot: InitialSnapshotMsg = {
+const snapshot: Extract<ServerMessage, { type: "initial_snapshot" }> = {
   type: "initial_snapshot",
   protocol_version: PROTOCOL_VERSION,
   game_id: "game_12345",
@@ -42,6 +39,7 @@ const snapshot: InitialSnapshotMsg = {
       strategy_card_goods: {},
       laws: {},
     },
+    turn: 0,
   },
   turn_status: {
     kind: "active_turn",
@@ -60,7 +58,7 @@ const state: GameSessionState = {
   turnStatus: null,
   lastError: null,
   events: [],
-  history: { cursor: 0, redo_count: 0 },
+  history: { cursor: 0, redo_count: 0, generation: 0 },
 };
 
 describe("GameSessionClient reducer", () => {
@@ -76,6 +74,8 @@ describe("GameSessionClient reducer", () => {
           {
             id: "reaction:seat_a:HITS_TO_ASSIGN:when",
             label: "Play Shields Holding",
+            kind: "",
+            payload: {},
           },
         ],
       },
@@ -103,7 +103,7 @@ describe("GameSessionClient reducer", () => {
       pendingChoice: {
         player: "seat_a",
         prompt: "end your turn",
-        options: [{ id: "end", label: "end your turn" }],
+        options: [{ id: "end", label: "end your turn", kind: "", payload: {} }],
       },
     } as unknown as GameSessionState;
     const next = reduceServerMessage(open, {
@@ -154,7 +154,7 @@ describe("GameSessionClient reducer", () => {
       choice: {
         player: "seat_a",
         prompt: "spend a strategy token to draw two action cards",
-        options: [{ id: "no", label: "decline" }, { id: "yes", label: "draw" }],
+        options: [{ id: "no", label: "decline", kind: "", payload: {} }, { id: "yes", label: "draw", kind: "", payload: {} }],
         details: { kind: "strategy_secondary", card: "pok3politics", tokens_left: 3 },
       },
     } as never);
@@ -172,7 +172,7 @@ describe("GameSessionClient reducer", () => {
       game_id: "game_12345",
       game_version: 7,
       nonce: "n-2",
-      choice: { player: "seat_a", prompt: "p", options: [{ id: "a", label: "a" }] },
+      choice: { player: "seat_a", prompt: "p", options: [{ id: "a", label: "a", kind: "", payload: {} }] },
     } as never);
     expect(next.pendingChoice).not.toHaveProperty("details");
   });
@@ -201,7 +201,7 @@ describe("GameSessionClient reducer", () => {
       decodeServerMessage(
         {
           type: "event",
-          protocol_version: 3,
+          protocol_version: 4,
           game_id: "game_12345",
           entry: { id: "bad", decision_count: 1.5 },
         },
@@ -254,7 +254,7 @@ describe("GameSessionClient reducer", () => {
       decodeServerMessage(
         {
           type: "event",
-          protocol_version: 3,
+          protocol_version: 4,
           game_id: "game_12345",
           entry: { ...before.events[1], version: 12 },
         },
@@ -475,7 +475,7 @@ describe("GameSessionClient ingress lifecycle", () => {
           player: "player_a",
           prompt: "Pay",
           context: { subtype: "pay_resources" },
-          options: [{ id: "trade_good", kind: "pay", label: "Trade good" }],
+          options: [{ id: "trade_good", kind: "pay", label: "Trade good", payload: {} }],
         },
       },
     });
@@ -524,7 +524,7 @@ describe("GameSessionClient ingress lifecycle", () => {
           player: "player_a",
           prompt: "pay 1 more resources",
           context: { subtype: "pay_resources" },
-          options: [{ id: "trade_good", kind: "pay", label: "Trade good" }],
+          options: [{ id: "trade_good", kind: "pay", label: "Trade good", payload: {} }],
         },
       },
     });
@@ -656,7 +656,7 @@ describe("GameSessionClient ingress lifecycle", () => {
             player: "player_a",
             prompt: "produce in 14 (4 left)",
             context: { subtype: "produce_unit" },
-            options: [{ id: "build|fighter|2", kind: "produce", label: "produce 2x fighter for 1" }],
+            options: [{ id: "build|fighter|2", kind: "produce", label: "produce 2x fighter for 1", payload: {} }],
           },
         },
       });
@@ -696,7 +696,7 @@ describe("GameSessionClient ingress lifecycle", () => {
           player: "player_a",
           prompt: "gain a command token into which pool",
           context: { subtype },
-          options: [{ id: "tactic_tokens", kind: "pool", label: "tactic pool" }],
+          options: [{ id: "tactic_tokens", kind: "pool", label: "tactic pool", payload: {} }],
         },
       },
     });
@@ -733,8 +733,8 @@ describe("GameSessionClient ingress lifecycle", () => {
           prompt: "ready which planet",
           context: { subtype },
           options: [
-            { id: "jord", kind: "ready", label: "ready jord" },
-            { id: "lodor", kind: "ready", label: "ready lodor" },
+            { id: "jord", kind: "ready", label: "ready jord", payload: {} },
+            { id: "lodor", kind: "ready", label: "ready lodor", payload: {} },
           ],
         },
       },
@@ -775,7 +775,7 @@ describe("GameSessionClient ingress lifecycle", () => {
           player: "player_a",
           prompt: subtype,
           context: { subtype },
-          options: [{ id: "decline", kind: "decline", label: "decline" }],
+          options: [{ id: "decline", kind: "decline", label: "decline", payload: {} }],
         },
       },
     });
@@ -903,7 +903,7 @@ describe("GameSessionClient ingress lifecycle", () => {
           player: "player_a",
           prompt: "cancel a hit at 18",
           context: { subtype: "sustain_damage" },
-          options: [{ id: "decline", kind: "decline", label: "take the hit" }],
+          options: [{ id: "decline", kind: "decline", label: "take the hit", payload: {} }],
         },
       },
     });
@@ -1079,7 +1079,7 @@ describe("GameSessionClient ingress lifecycle", () => {
     const { client, socket, send } = await connectedPlayer();
     const pending = {
       nonce: "nonce-4",
-      choice: { player: "player_a", prompt: "Choose", options: [{ id: "opt-4", label: "Choose" }] },
+      choice: { player: "player_a", prompt: "Choose", options: [{ id: "opt-4", label: "Choose", kind: "", payload: {} }] },
     };
     send({
       ...snapshot,
@@ -1537,7 +1537,7 @@ describe("GameSessionClient ingress lifecycle", () => {
             choice: {
               player: "player_a",
               prompt: "Choose",
-              options: [{ id: "opt-4", label: "Choose" }],
+              options: [{ id: "opt-4", label: "Choose", kind: "", payload: {} }],
             },
           },
         }),
@@ -1565,19 +1565,9 @@ describe("GameSessionClient ingress lifecycle", () => {
     return { client, socket, send };
   }
 
-  it("ignores the planning protocol the server pushes to every player", async () => {
+  it("ignores the answers of the draft protocol", async () => {
     const { client, send } = await connectedPlayer();
-    send({
-      type: "planning_status",
-      checkpoint_id: 6,
-      available: false,
-      can_start: false,
-      has_draft: false,
-      identity: null,
-      can_apply: false,
-      application: null,
-    });
-    send({ type: "planning_update" });
+    send({ type: "draft_outcome" });
     send({ type: "draft_applied" });
     expect(client.getState().lastError).toBeNull();
     expect(client.getState().pendingChoice?.nonce).toBe("nonce-4");
@@ -1657,7 +1647,7 @@ describe("GameSessionClient ingress lifecycle", () => {
             choice: {
               player: "player_a",
               prompt: "Next",
-              options: [{ id: "opt-5", label: "Next" }],
+              options: [{ id: "opt-5", label: "Next", kind: "", payload: {} }],
             },
           },
         });
@@ -1689,7 +1679,7 @@ describe("GameSessionClient ingress lifecycle", () => {
             player: "player_a",
             prompt: "Sustain damage",
             context: { subtype: "sustain_damage" },
-            options: [{ id: "sustain", kind: "sustain", label: "Sustain" }],
+            options: [{ id: "sustain", kind: "sustain", label: "Sustain", payload: {} }],
           },
           state: {},
           galaxy_layout: snapshot.galaxy_layout,
@@ -1738,7 +1728,7 @@ describe("GameSessionClient ingress lifecycle", () => {
           choice: {
             player: "player_a",
             prompt: "Choose",
-            options: [{ id: "opt-4", label: "Choose" }],
+            options: [{ id: "opt-4", label: "Choose", kind: "", payload: {} }],
           },
         },
       }),
@@ -1793,7 +1783,7 @@ describe("GameSessionClient ingress lifecycle", () => {
         choice: {
           player: "player_a",
           prompt: "Choose",
-          options: [{ id: "opt-4", label: "Choose" }],
+          options: [{ id: "opt-4", label: "Choose", kind: "", payload: {} }],
         },
       },
     });
@@ -1812,6 +1802,80 @@ describe("GameSessionClient ingress lifecycle", () => {
     });
     await failed;
     expect(client.getState().lastError).toBe("Rejected: Stale decision nonce");
+    client.stop();
+  });
+
+  // Nightly 2026-10-14 #8 (o1-43-2146 and 10 other runs): a lone `strategic` from an earlier
+  // render went out with the next question's nonce ("Rejected: Unknown option 'strategic'").
+  it("drops an answer stamped with an earlier question's nonce instead of sending it with the new one", async () => {
+    const { client, socket, send } = await connectedPlayer();
+    send({
+      ...snapshot,
+      type: "state_update",
+      game_version: 5,
+      viewer: { role: "player", seat: "player_a" },
+      pending_choice: {
+        nonce: "nonce-5",
+        choice: { player: "player_a", prompt: "Next", options: [{ id: "opt-5", label: "Next" }] },
+      },
+    });
+    const before = socket.sent.length;
+    await expect(client.submitChoice("opt-4", "nonce-4")).rejects.toBeInstanceOf(StaleChoiceError);
+    expect(socket.sent.length).toBe(before);
+    expect(client.getState().lastError).toBeNull();
+    // The question that is shown still goes out.
+    const current = client.submitChoice("opt-5", "nonce-5");
+    expect(JSON.parse(socket.sent.at(-1)!)).toMatchObject({ nonce: "nonce-5", option_id: "opt-5" });
+    const stopped = expect(current).rejects.toThrow(/stopped/i);
+    client.stop();
+    await stopped;
+  });
+
+  // Nightly 2026-10-14 #9 (s2-39-0238): the late rejection of a superseded submission whose caller
+  // did not wait for it was an unhandled promise rejection, which killed the run.
+  it("a late rejection of a superseded answer is neither unhandled nor shown", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const { client, send } = await connectedPlayer();
+      void client.submitChoice("opt-4"); // fire and forget, like a click handler that moved on
+      send({
+        type: "pending_choice",
+        game_version: 5,
+        nonce: "nonce-5",
+        choice: { player: "player_a", prompt: "Next", options: [{ id: "opt-5", label: "Next" }] },
+        state: {},
+        galaxy_layout: snapshot.galaxy_layout,
+      });
+      const next = client.submitChoice("opt-5");
+      send({ type: "action_rejected", game_version: 4, reason: { reason: "no_pending_choice" } });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(unhandled).toEqual([]);
+      expect(client.getState().lastError).toBeNull();
+      const stopped = expect(next).rejects.toThrow(/stopped/i);
+      client.stop();
+      await stopped;
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+
+  it("ignores a no-pending-choice rejection that arrives after a newer version", async () => {
+    const { client, send } = await connectedPlayer();
+    send({
+      type: "pending_choice",
+      game_version: 6,
+      nonce: "nonce-6",
+      choice: { player: "player_a", prompt: "Next", options: [{ id: "opt-6", label: "Next" }] },
+      state: {},
+      galaxy_layout: snapshot.galaxy_layout,
+    });
+    send({ type: "action_rejected", game_version: 4, reason: { reason: "no_pending_choice" } });
+    expect(client.getState().lastError).toBeNull();
+    // A real validation failure at the current version is still shown.
+    send({ type: "action_rejected", game_version: 6, reason: { reason: "validation_failed", message: "bad" } });
+    expect(client.getState().lastError).toBe("Rejected: bad");
     client.stop();
   });
 
@@ -1858,7 +1922,7 @@ describe("GameSessionClient ingress lifecycle", () => {
     socket.onopen?.();
     expect(JSON.parse(socket.sent[0])).toMatchObject({
       type: "subscribe",
-      protocol_version: 3,
+      protocol_version: 4,
       player_session: "private",
     });
     vi.advanceTimersByTime(10_000);

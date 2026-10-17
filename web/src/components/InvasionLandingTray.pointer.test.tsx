@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { InvasionLandingTray } from "./InvasionLandingTray.tsx";
 import { galleryBoard } from "../dev/galleryBoard.ts";
 import { actor } from "../dev/decisionGalleryCases.ts";
+import { partialContext } from "../test/wire.ts";
 
 const css = readFileSync(resolve(__dirname, "../index.css"), "utf8");
 
@@ -29,7 +30,7 @@ it("takes pointer events back inside the overlay layer when rendered standalone"
         actor,
         nonce: "landing-1",
         prompt: "commit ground forces in 18",
-        context: { subtype: "commit_ground_forces", target: { System: "18" } },
+        context: partialContext({ subtype: "commit_ground_forces", target: { System: "18" } }),
         options: [
           {
             id: "commit|0|jord",
@@ -37,7 +38,7 @@ it("takes pointer events back inside the overlay layer when rendered standalone"
             kind: "commit",
             payload: { planet: "jord", unit: "infantry", damaged: false },
           },
-          { id: "done_committing", label: "commit no more ground forces", kind: "decline" },
+          { id: "done_committing", label: "commit no more ground forces", kind: "decline", payload: {} },
         ],
       }}
       board={{ ...galleryBoard, invasion: undefined, active_system: "18" }}

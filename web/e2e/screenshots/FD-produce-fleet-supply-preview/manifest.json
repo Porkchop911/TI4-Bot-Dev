@@ -1,0 +1,24 @@
+{
+  "title": "Produce units: fleet supply preview",
+  "description": "While units are staged in the produce dialog, Fleet Supply reads 'used +X / limit' for the ships the builds add, and the Build button turns alert orange when the builds would pass the limit. Fighters and ground forces add nothing. The engine names the ships per build option (fleet_ships); the limit is the engine's own, with Fleet Regulations, Mahact tokens and Letnev's Armada. Synthetic mocked game.",
+  "tag": "web/e2e/screenshots/FD-produce-fleet-supply-preview",
+  "shots": [
+    { "file": "out/1-nothing-staged-desktop.png", "heading": "Nothing staged, desktop", "caption": "Fleet Supply reads 2 / 5, as before." },
+    { "file": "out/2-within-limit-desktop.png", "heading": "Two cruisers staged, within the limit, desktop", "caption": "The counter reads 2 +2 / 5, the staged part in the accent colour; Build is the normal primary button." },
+    { "file": "out/3-at-limit-desktop.png", "heading": "Three cruisers staged, exactly at the limit, desktop", "caption": "2 +3 / 5: a full fleet is still allowed, so no warning." },
+    { "file": "out/4-over-limit-desktop.png", "heading": "Four cruisers staged, over the limit, desktop", "caption": "2 +4 / 5: the counter and the Build button turn alert orange. The build is still allowed; the button tooltip says the ships above the limit must be removed at the end of the turn." },
+    { "file": "out/5-letnev-armada-desktop.png", "heading": "Letnev, within the limit of 5, desktop", "caption": "Letnev with Armada: the engine's limit of 5 already includes Armada +2 (chip kept). 2 +3 / 5 is within it, so no warning." },
+    { "file": "out/6-letnev-armada-over-desktop.png", "heading": "Letnev, over the limit, desktop", "caption": "2 +4 / 5 passes even Letnev's raised limit: orange." },
+    { "file": "out/1-nothing-staged-phone.png", "heading": "Nothing staged, phone (390 px, tall viewport so the whole drawer fits)", "caption": "Fleet Supply reads 2 / 5." },
+    { "file": "out/2-within-limit-phone.png", "heading": "Within the limit, phone", "caption": "2 +2 / 5, normal Build button." },
+    { "file": "out/3-at-limit-phone.png", "heading": "At the limit, phone", "caption": "2 +3 / 5, no warning." },
+    { "file": "out/4-over-limit-phone.png", "heading": "Over the limit, phone", "caption": "2 +4 / 5, orange counter and Build button." },
+    { "file": "out/5-letnev-armada-phone.png", "heading": "Letnev within the limit, phone", "caption": "Armada chip kept, no warning at 2 +3 / 5." },
+    { "file": "out/6-letnev-armada-over-phone.png", "heading": "Letnev over the limit, phone", "caption": "Orange at 2 +4 / 5." }
+  ],
+  "notesHeading": "Notes",
+  "notes": [
+    { "title": "Over the limit. ", "text": "The engine allows an over-limit build; at the end of the turn the player removes the ships above the limit. Orange is a warning, not a block." },
+    { "title": "Which units count. ", "text": "Only non-fighter ships (fleet_ships on each build option, from the engine's own rule); fighters and ground forces add nothing." }
+  ]
+}

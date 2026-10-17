@@ -85,7 +85,10 @@ fn main() {
         .filter(|name| !vocabulary.is_assigned(name))
         .collect();
     // Where each new name resolved before the append: its family's out-of-vocabulary column.
-    let fallback: Vec<usize> = fresh.iter().map(|name| vocabulary.column_of(name)).collect();
+    let fallback: Vec<usize> = fresh
+        .iter()
+        .map(|name| vocabulary.column_of(name))
+        .collect();
     let added = if grow {
         let growth = vocabulary
             .append_reallocating(fresh.iter().map(|name| name.as_str()))

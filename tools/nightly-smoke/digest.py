@@ -20,11 +20,10 @@ SUSPICIOUS = re.compile(
     r"panicked|RUST_BACKTRACE|\bERROR\b|Error:|error\[|rejected:|click failed|pageerror|"
     r"console:|did not advance|no actionable control|never reached|game idle|timed out|✘",
 )
-# Vite dev-server proxy chatter: the /advisor/battle odds proxy refuses connections because no
-# advisor runs in the smoke setup, and websocket reconnects reset sockets. Neither affects play.
+# Vite dev-server proxy chatter: websocket reconnects reset sockets. It does not affect play.
 NOISE = re.compile(
     r"\[frontend\].*(ECONNREFUSED|ECONNRESET|socket has been ended|ws proxy error|http proxy error)"
-    r"|\[vite\] (ws |http )?proxy error|/advisor",
+    r"|\[vite\] (ws |http )?proxy error",
 )
 COMBAT = {
     "sustain_damage", "assign_casualty", "announce_retreat", "retreat_to",
@@ -35,14 +34,15 @@ MECATOL_PLANETS = ("mr", "mrte")
 
 
 def content_names():
-    """id -> display name for cards, technologies, objectives and planets (from the web manifest)."""
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "web", "src",
-                        "protocol", "generatedContentManifest.ts")
+    """id -> display name for every record of the catalogue (`fixtures/catalog/catalog.json`)."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "fixtures",
+                        "catalog", "catalog.json")
     try:
-        text = open(path).read()
-    except OSError:
+        with open(path) as handle:
+            records = json.load(handle)["records"]
+    except (OSError, ValueError, KeyError):
         return {}
-    return dict(re.findall(r'id: "([^"]+)",\s*name: "([^"]+)"', text))
+    return {record["id"]: record["name"] for kind in records.values() for record in kind}
 
 
 NAMES = content_names()

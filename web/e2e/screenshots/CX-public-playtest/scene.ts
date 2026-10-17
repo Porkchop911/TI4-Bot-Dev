@@ -11,7 +11,7 @@ export type SizeName = keyof typeof SIZES;
 /** What `GET /health` answers on the public playtest server. */
 export async function publicHealth(page: Page) {
   await page.route("**/health", (route) =>
-    route.fulfill({ json: { status: "ok", protocol_version: 3, commit: "51390594", public: true } }),
+    route.fulfill({ json: { status: "ok", protocol_version: 4, commit: "51390594", public: true } }),
   );
 }
 

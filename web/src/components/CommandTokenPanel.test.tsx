@@ -5,7 +5,7 @@ import { PendingChoiceModal } from "./PendingChoiceModal.tsx";
 import { PlanetResourcesContext } from "../presentation/PlanetResourcesContext.tsx";
 import type { PendingChoiceDto } from "../protocol/types.ts";
 
-const pool = (id: string) => ({ id, kind: "pool", label: id });
+const pool = (id: string) => ({ id, kind: "pool", label: id, payload: {} });
 const gainChoice = (toPlace = 2): PendingChoiceDto => ({
   actor: "seat_1",
   nonce: "gain-1",
@@ -24,7 +24,7 @@ const redistributeChoice = (): PendingChoiceDto => ({
   actor: "seat_1",
   nonce: "redis-1",
   prompt: "redistribute your command tokens",
-  options: ["3|4|2", "2|5|2", "2|4|3"].map((id) => ({ id, kind: "redistribute", label: id })),
+  options: ["3|4|2", "2|5|2", "2|4|3"].map((id) => ({ id, kind: "redistribute", label: id, payload: {} })),
   context: { subtype: "status_redistribute_tokens" } as PendingChoiceDto["context"],
   details: {
     kind: "command_tokens",
@@ -135,6 +135,103 @@ describe("command token panel (redistribute)", () => {
     await click("token-plus-tactic");
     expect(screen.getByTestId("token-confirm")).toBeDisabled();
     expect(screen.getByTestId("token-blocker")).toBeInTheDocument();
+  });
+
+  it("has no gained split without a gain", () => {
+    render(<PendingChoiceModal choice={redistributeChoice()} onSubmit={vi.fn()} />);
+    expect(screen.queryByTestId("token-gained-split")).not.toBeInTheDocument();
+  });
+
+  it("lets a faction whose engine offers a small fleet pool take it to zero, and names the floor otherwise", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    const letnev = redistributeChoice();
+    letnev.options = ["3|4|2", "5|0|4", "7|0|2", "3|0|6"].map((id) => ({
+      id,
+      kind: "redistribute",
+      label: id,
+      payload: {},
+    }));
+    render(<PendingChoiceModal choice={letnev} onSubmit={onSubmit} />);
+    for (let i = 0; i < 4; i++) await click("token-minus-fleet");
+    await click("token-plus-strategic");
+    await click("token-plus-strategic");
+    await click("token-plus-strategic");
+    await click("token-plus-strategic");
+    expect(screen.getByTestId("token-count-fleet")).toHaveTextContent("0");
+    expect(screen.queryByTestId("token-blocker")).not.toBeInTheDocument();
+    await click("token-confirm");
+    expect(onSubmit).toHaveBeenCalledWith("3|0|6");
+  });
+
+  it("shows the Armada fleet supply bonus next to the fleet pool only when the engine reports it", () => {
+    const plain = render(<PendingChoiceModal choice={redistributeChoice()} onSubmit={vi.fn()} />);
+    expect(screen.queryByTestId("token-armada")).not.toBeInTheDocument();
+    plain.unmount();
+    const letnev = redistributeChoice();
+    letnev.details = { ...letnev.details, fleet_supply_bonus: 2 };
+    render(<PendingChoiceModal choice={letnev} onSubmit={vi.fn()} />);
+    const chip = screen.getByTestId("token-armada");
+    expect(chip).toHaveTextContent("+2 supply");
+    expect(chip).toHaveAttribute("aria-label", expect.stringContaining("non-fighter ships per system"));
+    expect(within(screen.getByTestId("token-pool-fleet")).getByTestId("token-armada")).toBe(chip);
+  });
+
+  it("explains the floor of two when the engine offers no smaller fleet pool", async () => {
+    render(<PendingChoiceModal choice={redistributeChoice()} onSubmit={vi.fn()} />);
+    await click("token-minus-fleet");
+    await click("token-minus-fleet");
+    await click("token-minus-fleet");
+    await click("token-plus-tactic");
+    await click("token-plus-tactic");
+    await click("token-plus-strategic");
+    expect(screen.getByTestId("token-blocker")).toHaveTextContent("at least 4");
+  });
+});
+
+// The status phase: 6 held (2|3|1) and 2 gained, one redistribution of 8.
+const statusChoice = (): PendingChoiceDto => ({
+  actor: "seat_1",
+  nonce: "status-1",
+  prompt: "redistribute your command tokens",
+  options: ["4|3|1", "2|5|1", "2|3|3", "3|4|1"].map((id) => ({
+    id,
+    kind: "redistribute",
+    label: id,
+    payload: {},
+  })),
+  context: { subtype: "status_redistribute_tokens" } as PendingChoiceDto["context"],
+  details: {
+    kind: "command_tokens",
+    mode: "redistribute",
+    pools: { tactic: 2, fleet: 3, strategic: 1 },
+    total: 8,
+    gained: 2,
+    reinforcements: 6,
+  },
+});
+
+describe("command token panel (status phase redistribution with gained tokens)", () => {
+  it("shows the held and gained split next to the total", () => {
+    render(<PendingChoiceModal choice={statusChoice()} onSubmit={vi.fn()} />);
+    expect(screen.getByTestId("token-total")).toHaveTextContent("8");
+    expect(screen.getByTestId("token-gained-split")).toHaveTextContent("(6 held + 2 gained)");
+    expect(screen.getByTestId("token-remaining")).toHaveTextContent("2");
+  });
+
+  it("cannot confirm until the gained tokens are placed, then sends the matching option id", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<PendingChoiceModal choice={statusChoice()} onSubmit={onSubmit} />);
+    expect(screen.getByTestId("token-count-tactic")).toHaveTextContent("2");
+    expect(screen.getByTestId("token-confirm")).toBeDisabled();
+    await click("token-plus-tactic");
+    expect(screen.getByTestId("token-remaining")).toHaveTextContent("1");
+    expect(screen.getByTestId("token-confirm")).toBeDisabled();
+    await click("token-plus-fleet");
+    expect(screen.getByTestId("token-remaining")).toHaveTextContent("0");
+    expect(screen.getByTestId("token-plus-strategic")).toBeDisabled();
+    expect(screen.getByTestId("token-confirm")).toBeEnabled();
+    await click("token-confirm");
+    expect(onSubmit).toHaveBeenCalledWith("3|4|1");
   });
 });
 
@@ -279,8 +376,8 @@ describe("command token panel (planet first: gain and buy)", () => {
       nonce: "secondary-1",
       prompt: "spend 3 influence for a command token",
       options: [
-        { id: "no", kind: "strategy", label: "spend nothing further" },
-        { id: "yes", kind: "strategy", label: "spend 3 influence" },
+        { id: "no", kind: "strategy", label: "spend nothing further", payload: {} },
+        { id: "yes", kind: "strategy", label: "spend 3 influence", payload: {} },
       ],
       context: { subtype: "buy_token_with_influence" } as PendingChoiceDto["context"],
       details: {
@@ -479,8 +576,8 @@ describe("command token panel (Predictive Intelligence restack)", () => {
     nonce,
     prompt: "Predictive Intelligence: redistribute command tokens",
     options: [
-      ...moves.map((id) => ({ id, kind: "redistribute", label: id })),
-      { id: "done", kind: "decline", label: "finish redistribution" },
+      ...moves.map((id) => ({ id, kind: "redistribute", label: id, payload: {} })),
+      { id: "done", kind: "decline", label: "finish redistribution", payload: {} },
     ],
     context: { subtype: "predictive_intelligence_redistribute" } as PendingChoiceDto["context"],
     details: { kind: "command_tokens", mode: "restack", pools, reinforcements: 7, total: 9 },

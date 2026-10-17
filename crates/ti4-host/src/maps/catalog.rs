@@ -1,9 +1,9 @@
 //! What the host can choose, and what each choice looks like: the buildable template list, a
 //! pictured preview of any choice, and the public description of a lobby's current choice.
 //!
-//! Previews are built with the very functions a started game uses
-//! ([`crate::map::create_game_with_template`] and `create_game_with_map`), so a lobby's preview
-//! is the board its game gets. No seed ever leaves this module.
+//! Previews are built with the very function a started game uses
+//! ([`crate::map::create_game_with_template_seated`]), so a lobby's preview is the board its game
+//! gets. No seed ever leaves this module.
 //!
 //! Both hosts use it: the server for the tables of its lobbies, the wasm host for the table of
 //! the page ([`crate::setup`]).
@@ -23,6 +23,7 @@ use crate::protocol::view::BoardTileView;
 /// The host's choice of map for a lobby.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum MapChoice {
     /// A predefined layout; open slots are filled from the lobby's seeded filler.
     Template { alias: String },
@@ -51,14 +52,18 @@ impl MapChoice {
 
 /// Public description of a lobby's map choice. Deliberately has no seed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct MapChoiceView {
     pub kind: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub alias: Option<String>,
     /// Display name of a template that has one (community layouts).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub author: Option<String>,
     pub systems: usize,
     pub hyperlanes: bool,
@@ -68,6 +73,7 @@ pub struct MapChoiceView {
 /// The place of one seat on the previewed map. It names no faction: nobody knows before Start
 /// who sits where, and which faction a seat without a choice gets.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SeatPreview {
     /// 1-based number of the place, in the seat order of the map.
     pub seat: usize,
@@ -78,6 +84,7 @@ pub struct SeatPreview {
 
 /// A pictured map: the tiles a game with this choice has, and where each seat sits.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct MapPreview {
     pub choice: MapChoice,
     pub player_count: usize,
@@ -138,17 +145,19 @@ pub fn preview(choice: &MapChoice, player_count: usize, seed: u64) -> Result<Map
     ))
 }
 
-/// The board of the game that the scenario `id` of `ti4_view::scenario` starts, with the homes
-/// of its seats as places. `choice` is what the table says of its map.
+/// The board of the game that the scenario `id` of `crate::view::scenario` starts, with the homes
+/// of its seats as places, for a table of the seed `seed`. `choice` is what the table says of its
+/// map.
 ///
 /// # Errors
 /// A message for an unknown scenario, or when its map does not build.
-pub fn scenario_preview(choice: &MapChoice, id: &str) -> Result<MapPreview, String> {
+pub fn scenario_preview(choice: &MapChoice, id: &str, seed: u64) -> Result<MapPreview, String> {
     let content = ContentStore::embedded();
-    let players = ti4_view::scenario::find(id)
+    let players = crate::view::scenario::find(id)
         .ok_or_else(|| format!("no scenario '{id}'"))?
         .players;
-    let (state, galaxy) = ti4_view::scenario::start(content, id, &placeholder_players(players))?;
+    let (state, galaxy) =
+        crate::view::scenario::start(content, id, &placeholder_players(players), seed)?;
     let factions: Vec<ti4_model::id::FactionId> = state
         .players
         .iter()

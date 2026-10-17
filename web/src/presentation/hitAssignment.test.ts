@@ -28,7 +28,8 @@ const unit = (
   unit_type,
   owner: "p1",
   damaged,
-  planet,
+  planet: planet ?? null,
+  galvanized: false,
 });
 
 const fleet = [
@@ -241,7 +242,7 @@ describe("hit staging", () => {
           label: "",
           payload: { unit: "mech", damaged: true },
         },
-        { id: "decline", kind: "decline", label: "" },
+        { id: "decline", kind: "decline", label: "", payload: {} },
       ]),
     ).toEqual(new Set(["carrier|intact", "mech|damaged"]));
   });

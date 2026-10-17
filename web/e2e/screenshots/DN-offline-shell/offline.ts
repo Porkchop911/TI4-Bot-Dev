@@ -14,7 +14,7 @@ export const GAMES: OfflineGameSummary[] = [
 /** Opens the real app with the in-memory offline launcher registered (dev builds only). */
 export async function openOffline(page: Page, path: string, mock: MockOptions = {}) {
   await page.route("**/health", (route) =>
-    route.fulfill({ json: { status: "ok", protocol_version: 3, commit: "51390594", public: true } }),
+    route.fulfill({ json: { status: "ok", protocol_version: 4, commit: "51390594", public: true } }),
   );
   await page.route("**/api/feedback", (route) => route.fulfill({ status: 500, json: {} }));
   await page.route("**/api/**", (route) => {

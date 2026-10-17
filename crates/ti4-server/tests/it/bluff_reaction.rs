@@ -6,10 +6,10 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use ti4_host::protocol::server::ServerMessage;
+use ti4_host::protocol::status::{PublicTurnStatus, ViewerRole};
 use ti4_model::id::PlayerId;
-use ti4_server::dev::execute_launch_scenario;
-use ti4_server::protocol::server::ServerMessage;
-use ti4_server::protocol::status::{PublicTurnStatus, ViewerRole};
+use ti4_server::dev::launch_scenario;
 use ti4_server::session::bluff::BluffPolicy;
 use ti4_server::session::registry::HistoryAction;
 use ti4_server::session::{GameRegistry, GameSession, MockClient};
@@ -50,9 +50,47 @@ fn short_policy() -> BluffPolicy {
     }
 }
 
+/// Submit an answer without waiting for its reply. With Sabotage timing (rules version 3) the reply
+/// to a declared card comes when the window closes, after the next questions were asked, and a
+/// client (the websocket handler) never blocks on it. Returns whether the answer went in.
+fn submit_without_waiting(
+    session: &Arc<GameSession>,
+    seat: &PlayerId,
+    nonce: &str,
+    version: u64,
+    option: &str,
+) -> bool {
+    let handle = {
+        let (session, seat, nonce, option) = (
+            session.clone(),
+            seat.clone(),
+            nonce.to_owned(),
+            option.to_owned(),
+        );
+        std::thread::spawn(move || {
+            session
+                .submit_choice(&seat, &nonce, version, &option)
+                .is_ok()
+        })
+    };
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if handle.is_finished() {
+            return handle.join().unwrap_or(false);
+        }
+        let moved_on = session
+            .current_pending_decision()
+            .is_none_or(|(_, now, _)| now != nonce);
+        if moved_on || session.is_finished() || Instant::now() > deadline {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
 /// Answer the pending decision with its first option, watching for a bluff hold while waiting.
 /// Returns the seats seen holding.
-fn drive(session: &GameSession, steps: usize) -> Vec<PlayerId> {
+fn drive(session: &Arc<GameSession>, steps: usize) -> Vec<PlayerId> {
     let mut held = Vec::new();
     for _ in 0..steps {
         let deadline = Instant::now() + Duration::from_secs(15);
@@ -70,10 +108,7 @@ fn drive(session: &GameSession, steps: usize) -> Vec<PlayerId> {
                     continue;
                 };
                 let option = envelope.choice.options[0].id.clone();
-                if session
-                    .submit_choice(&seat, &nonce, version, &option)
-                    .is_ok()
-                {
+                if submit_without_waiting(session, &seat, &nonce, version, &option) {
                     break;
                 }
             }
@@ -140,7 +175,7 @@ fn event_shape(session: &GameSession) -> String {
 
 fn launch(registry: &Arc<GameRegistry>) -> (Arc<GameSession>, Seats, String) {
     let launch =
-        execute_launch_scenario(registry, "ongoing_combat_four_views", Some(SEED)).expect("launch");
+        launch_scenario(registry, "ongoing_combat_four_views", Some(SEED)).expect("launch");
     let session = registry.get_game(&launch.game_id).expect("game");
     let seats = seats(&session);
     (session, seats, launch.player_session)
@@ -203,7 +238,7 @@ fn a_declared_bluff_holds_the_live_game_and_leaves_no_trace_in_the_history() {
 fn the_banner_is_the_status_a_real_question_sends() {
     use ti4_engine::choice::{Choice, ChoiceOption};
     use ti4_engine::decision_context::{DecisionContext, DecisionSource};
-    use ti4_server::projection::{
+    use ti4_host::projection::{
         project_turn_status, project_turn_status_for, waiting_for_player_status,
         waiting_for_reactions_status,
     };

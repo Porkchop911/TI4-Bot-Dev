@@ -13,6 +13,7 @@ import {
   UNASSIGNED_COLOR,
 } from "./boardPresentation.ts";
 import { BoardView, PendingChoiceDto, PlayerView } from "../protocol/types.ts";
+import { partialContext } from "../test/wire.ts";
 
 describe("boardPresentation Presentation Model", () => {
   describe("Ownership Colors & Palettes", () => {
@@ -165,12 +166,12 @@ describe("boardPresentation Presentation Model", () => {
           payload: { system: "18", planet: "mecatol_rex", unit: "infantry" },
         },
       ],
-      context: {
+      context: partialContext({
         version: 1,
         actor: "seat_a",
         subtype: "tactical_action",
         target: { System: "18" },
-      },
+      }),
     };
 
     it("derives target highlights from structured payloads for the active actor", () => {
@@ -289,12 +290,14 @@ describe("boardPresentation Presentation Model", () => {
               owner: "seat_a",
               planet: null,
               damaged: false,
+              galvanized: false,
             },
             {
               unit_type: "infantry",
               owner: "seat_a",
               planet: "mecatol_rex",
               damaged: false,
+              galvanized: false,
             },
           ],
         },
@@ -420,8 +423,8 @@ describe("boardPresentation Presentation Model", () => {
         nonce: "n_act",
         actor: "seat_1",
         prompt: "activate a system",
-        context: { subtype: "activate_system" },
-        options: [{ id: "18", label: "Mecatol Rex", kind: "activate" }],
+        context: partialContext({ subtype: "activate_system" }),
+        options: [{ id: "18", label: "Mecatol Rex", kind: "activate", payload: {} }],
       };
       const actModel = buildBoardPresentationModel(
         board,
@@ -437,10 +440,10 @@ describe("boardPresentation Presentation Model", () => {
         nonce: "n_move",
         actor: "seat_1",
         prompt: "movement",
-        context: {
+        context: partialContext({
           subtype: "movement_step",
           target: { System: "18" },
-        },
+        }),
         options: [
           {
             id: "move|24|0",
@@ -454,7 +457,7 @@ describe("boardPresentation Presentation Model", () => {
             kind: "move",
             payload: { origin: "24", unit: "carrier" },
           },
-          { id: "done_moving", label: "Finish", kind: "decline" },
+          { id: "done_moving", label: "Finish", kind: "decline", payload: {} },
         ],
       };
 
@@ -477,7 +480,7 @@ describe("boardPresentation Presentation Model", () => {
 });
 
 describe("neutral and unassigned greys", () => {
-  it("do not collide with the white/silver seat or any other seat colour", () => {
+  it("do not collide with the cyan seat or any other seat colour", () => {
     for (const grey of [NEUTRAL_COLOR, UNASSIGNED_COLOR]) {
       expect(PLAYER_PALETTE).not.toContain(grey);
       expect(grey).not.toBe(PLAYER_PALETTE[2]);

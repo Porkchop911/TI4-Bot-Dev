@@ -1,11 +1,11 @@
 import type {
-  EngineChoice,
+  Choice,
   PendingChoiceDto,
-  PreviewPayment,
+  PaymentPreview,
   SecondaryBlocker,
 } from "../protocol/types.ts";
 import type { SecondaryPreviewReply } from "../protocol/client.ts";
-import { decodeDecisionTrigger } from "../protocol/decode.ts";
+import { decodeDecisionTrigger } from "@ti4/shared/wire/decode.ts";
 import { planetName } from "./secondaryPlan.ts";
 import type { TokenStep } from "./commandTokens.ts";
 
@@ -17,13 +17,13 @@ import type { TokenStep } from "./commandTokens.ts";
  */
 export type ExactResult =
   /** The question the engine would ask, ready to render with the real components. */
-  | { kind: "question"; choice: EngineChoice; payment?: PreviewPayment; skipped: string[] }
+  | { kind: "question"; choice: Choice; payment?: PaymentPreview; skipped: string[] }
   /** The window would not open for this seat right now. */
   | { kind: "not_asked"; blocker: SecondaryBlocker }
   /** The answers given end the secondary: nothing further is asked (`unused`: answers it never asked for). */
   | { kind: "complete"; unused: number }
   /** A scripted answer is not offered by the question the engine asks at that point. */
-  | { kind: "rejected"; at: number; answer: string; choice: EngineChoice }
+  | { kind: "rejected"; at: number; answer: string; choice: Choice }
   /** No exact answer (old server, refusal, timeout, unexpected question): use the estimate. */
   | { kind: "none"; why: string };
 
@@ -50,7 +50,7 @@ export function toExactResult(reply: SecondaryPreviewReply): ExactResult {
 }
 
 /** The engine's choice as the shell's pending decision, under a client-made (dry) nonce. */
-export function pendingFromEngine(choice: EngineChoice, nonce: string): PendingChoiceDto {
+export function pendingFromEngine(choice: Choice, nonce: string): PendingChoiceDto {
   const context = choice.context;
   return {
     nonce,
@@ -59,7 +59,7 @@ export function pendingFromEngine(choice: EngineChoice, nonce: string): PendingC
     options: choice.options,
     context:
       context && "trigger" in context
-        ? { ...context, trigger: decodeDecisionTrigger(context.trigger) }
+        ? { ...context, trigger: decodeDecisionTrigger(context.trigger) ?? undefined }
         : context,
     ...(choice.details ? { details: choice.details } : {}),
   };
@@ -81,7 +81,7 @@ export const describeBlocker = (blocker: SecondaryBlocker): string =>
   `As of now you would not be asked this secondary: ${BLOCKERS[blocker]}. Your plan is kept and applies if that changes before your turn.`;
 
 /** "Jord (2 resources), 1 trade good" for the plan the engine would pay a research with. */
-export function describePayment(payment: PreviewPayment): string {
+export function describePayment(payment: PaymentPreview): string {
   const parts = [
     ...payment.planets.map((planet) => planetName(planet)),
     ...(payment.trade_goods

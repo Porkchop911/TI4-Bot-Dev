@@ -1,5 +1,5 @@
 import React, { createContext, useContext } from "react";
-import type { ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import type { ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import { usePlayerIdentity } from "../presentation/PlayerIdentity.tsx";
 import {
   describeAgendaPlacement,
@@ -85,7 +85,7 @@ export const PoliticsContextPanel: React.FC<{ choice: PendingChoiceDto }> = ({ c
 };
 
 /** A line under an option's label: who it is (faction, seat) and what choosing it does. */
-export const PoliticsOptionNote: React.FC<{ choice: PendingChoiceDto; option: ChoiceOptionDto }> = ({
+export const PoliticsOptionNote: React.FC<{ choice: PendingChoiceDto; option: ChoiceOption }> = ({
   choice,
   option,
 }) => {

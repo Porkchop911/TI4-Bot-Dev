@@ -1,5 +1,5 @@
 import { expect, type Page } from "@playwright/test";
-import { PROTOCOL_VERSION, type ChoiceOptionDto, type ClientMessage, type PlacedUnitView } from "../../../src/protocol/types";
+import { PROTOCOL_VERSION, type ChoiceOption, type ClientMessage, type PlacedUnitView } from "../../../src/protocol/types";
 import { GAME_ID, openMockedGame, type MockedGame } from "../_shared/mockGame";
 import { opponent, playerWithHand, actor } from "../_shared/players";
 import { leadershipBoard } from "../V-leadership-map-payment/leadership";
@@ -30,7 +30,7 @@ export interface ProductionScene {
 
 const piece = (unit_type: string): PlacedUnitView => ({ unit_type, owner: actor, damaged: false });
 
-const reactionWindow = (): { prompt: string; context: Record<string, unknown>; options: ChoiceOptionDto[] } => ({
+const reactionWindow = (): { prompt: string; context: Record<string, unknown>; options: ChoiceOption[] } => ({
   prompt: "after units are produced: use a card?",
   context: { subtype: "reaction_after_UNITS_PRODUCED" },
   options: [
@@ -81,7 +81,7 @@ export async function openProduction(
         payload: { unit: "cruiser", cost: COST, printed_cost: COST, count: 1, production_spent: 1, available_resources: worthLeft() - sim.credit, credit: sim.credit },
       },
       { id: "done_producing", kind: "decline", label: "Done producing", payload: {} },
-    ] as ChoiceOptionDto[],
+    ] as ChoiceOption[],
   });
 
   const payChoice = (owed: number, only?: string[]) => ({
@@ -96,7 +96,7 @@ export async function openProduction(
       kind: "pay",
       label: `exhaust ${id} for ${WORTH[id]} resources`,
       payload: { worth: WORTH[id], planet_name: id[0].toUpperCase() + id.slice(1) },
-    })) as ChoiceOptionDto[],
+    })) as ChoiceOption[],
   });
 
   const board = () => ({
@@ -117,7 +117,7 @@ export async function openProduction(
   });
 
   let game!: MockedGame;
-  const show = (choice: { prompt: string; context: Record<string, unknown>; options: ChoiceOptionDto[] }) => {
+  const show = (choice: { prompt: string; context: Record<string, unknown>; options: ChoiceOption[] }) => {
     sim.version += 1;
     const snapshot = game.snapshot as unknown as Record<string, any>;
     snapshot.game_version = sim.version;

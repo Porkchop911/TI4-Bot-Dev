@@ -230,7 +230,7 @@ struct Ship {
     /// J.N.S. Hylarim: each 9 or 10, before modifiers, produces 2 additional hits.
     bonus_on_nine: bool,
     /// Arc Secundus: repaired at the start of each space combat round.
-    self_repair: bool,
+    repair: RepairTiming,
     /// 0.0.1 in the fleet: this ship's hits must be assigned to non-fighters if able.
     forces_non_fighters: bool,
     /// A cruiser or destroyer, which Ambush may roll for.
@@ -240,6 +240,13 @@ struct Ship {
     own_bonus: i64,
     /// The flagship whose ability this is, while it stands (see [`Flagship`]).
     flagship: Flagship,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RepairTiming {
+    None,
+    RoundStart,
+    RoundEnd,
 }
 
 /// Flagships whose abilities act inside a pitched space battle, each while it stands.
@@ -268,8 +275,8 @@ pub struct SideContext {
     /// The Bastion flagship: non-home systems containing a planet this side controls (+1 each).
     pub conquests: i64,
     /// The Heaven's Eye (Firmament): the opponent has a control token on one of this side's plots,
-    /// so the flagship is repaired at the end of every combat round -- for the outcome, the same
-    /// as the Arc Secundus's repair at the start of the next.
+    /// so the flagship is repaired at the end of every combat round. Damage before the first
+    /// round remains until then, unlike the Arc Secundus's start-of-round repair.
     pub plot_repair: bool,
 }
 
@@ -352,7 +359,11 @@ impl Side {
                 damaged: false,
                 fighter: unit.is_fighter(),
                 bonus_on_nine: effects && id == "jolnar_flagship",
-                self_repair: effects && id == "letnev_flagship",
+                repair: if effects && id == "letnev_flagship" {
+                    RepairTiming::RoundStart
+                } else {
+                    RepairTiming::None
+                },
                 forces_non_fighters: l1z1x_flagship
                     && matches!(unit.base_type(), "flagship" | "dreadnought"),
                 ambusher: matches!(unit.base_type(), "cruiser" | "destroyer"),
@@ -392,7 +403,11 @@ impl Side {
                 _ => 0,
             };
             if id == "firmament_flagship" {
-                ship.self_repair = context.plot_repair;
+                ship.repair = if context.plot_repair {
+                    RepairTiming::RoundEnd
+                } else {
+                    RepairTiming::None
+                };
             }
         }
         self
@@ -516,9 +531,9 @@ impl Side {
         hits
     }
 
-    fn repair(&mut self) {
+    fn repair(&mut self, timing: RepairTiming) {
         for ship in &mut self.ships {
-            if ship.self_repair {
+            if ship.repair == timing {
                 ship.damaged = false;
             }
         }
@@ -738,8 +753,10 @@ fn fight_core(
         if a.ships.is_empty() || d.ships.is_empty() {
             break;
         }
-        a.repair();
-        d.repair();
+        if round > 1 || !in_progress {
+            a.repair(RepairTiming::RoundStart);
+            d.repair(RepairTiming::RoundStart);
+        }
         if round == 1 && !in_progress {
             // "At the start of a space combat" (Ambush), then the barrage.
             let (ha, hd) = (a.ambush_hits(&mut rng), d.ambush_hits(&mut rng));
@@ -779,6 +796,8 @@ fn fight_core(
         if blown {
             blast(&mut a, &mut d);
         }
+        a.repair(RepairTiming::RoundEnd);
+        d.repair(RepairTiming::RoundEnd);
     }
     let unresolved = !a.ships.is_empty() && !d.ships.is_empty();
     let winner = match (a.ships.is_empty(), d.ships.is_empty()) {
@@ -1208,9 +1227,7 @@ mod wide_tests {
                     vec![entry]
                 }
             })
-            .flat_map(|faction| {
-                [false, true].map(|upgraded| Profile { faction, upgraded })
-            })
+            .flat_map(|faction| [false, true].map(|upgraded| Profile { faction, upgraded }))
             .collect();
         assert!(profiles.len() >= 60, "{} profiles", profiles.len());
         for profile in profiles {
@@ -1317,6 +1334,69 @@ mod wide_tests {
         assert!(win_rate(&argent, &target, 4000) > win_rate(&neutral, &target, 4000));
     }
 
+    #[test]
+    fn heavens_eye_cannot_repair_before_its_first_combat_round() {
+        let content = ContentStore::embedded();
+        let mut enemy = side(&[("cruiser", 1)], "hacan");
+        enemy.ships[0].hits_on = 1;
+        enemy.ships[0].dice = 1;
+        for damaged_at_start in [true, false] {
+            let damage = if damaged_at_start {
+                fleet(&[("firmament_flagship", 1)])
+            } else {
+                Vec::new()
+            };
+            let mut eye = Side::of(
+                content,
+                &fleet(&[("firmament_flagship", 1)]),
+                &damage,
+                "firmament",
+                true,
+            )
+            .with_context(SideContext {
+                plot_repair: true,
+                ..SideContext::default()
+            });
+            eye.ships[0].dice = 0;
+            let mut enemy = enemy.clone();
+            if !damaged_at_start {
+                // Opening space cannon damages the flagship before round 1 instead.
+                enemy.guns = vec![(1, 1)];
+            }
+            let outcome = fight_outcome(&eye, &enemy, 7, true);
+            assert_eq!(
+                outcome.winner,
+                Some("b"),
+                "damage before round 1 must not be repaired early"
+            );
+            assert_eq!(outcome.rounds, 1);
+            assert_eq!(outcome.attacker_left.iter().sum::<usize>(), 0);
+            assert!(!outcome.unresolved);
+        }
+    }
+
+    #[test]
+    fn resumed_round_does_not_repeat_letnev_start_repair() {
+        let content = ContentStore::embedded();
+        let mut letnev = Side::of(
+            content,
+            &fleet(&[("letnev_flagship", 1)]),
+            &fleet(&[("letnev_flagship", 1)]),
+            "letnev",
+            true,
+        );
+        letnev.ships[0].dice = 0;
+        let mut enemy = side(&[("cruiser", 1)], "hacan");
+        enemy.ships[0].hits_on = 1;
+        enemy.ships[0].dice = 1;
+        let outcome = fight_in_progress(&letnev, &enemy, 7);
+        assert_eq!(outcome.winner, Some("b"));
+        assert_eq!(outcome.rounds, 1);
+        assert_eq!(outcome.attacker_left.iter().sum::<usize>(), 0);
+        assert!(!outcome.unresolved);
+        // A fresh combat still repairs Letnev at the start of its first round.
+        assert!(fight_outcome(&letnev, &enemy, 7, true).unresolved);
+    }
     #[test]
     fn board_context_shifts_the_conditional_flagships() {
         // Two cruisers: a fight each flagship can win or lose (66%, 10%, 66% without context).

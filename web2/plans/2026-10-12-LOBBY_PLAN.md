@@ -57,9 +57,12 @@ the first version with the same numbers.
    the online plan ("no mode picker for now"). See "The start screen".
 6. **There is no "Ready", for every table.** The host starts the game when every seat is
    filled. `ready` goes from the server, and `web/` loses its Ready button.
-7. **The seat order is always random, for every table.** It is drawn at Start from the seed of
-   the game. No host moves a seat: `reorder` goes from the server, and `web/` loses its
-   controls for it. The lobby lists the players in the order in which they came.
+7. **The rows of the lobby are the seats, for every table.** The players sit in the order in
+   which they came, until the host shuffles them ("Shuffle seats", `POST …/lobby/shuffle-seats`):
+   the rows are put in another order, visibly, and the game seats them so. Nothing of the seats
+   is drawn at Start. `reorder` goes from the server, and `web/` loses its controls for it. A
+   seat that the server plays decides by its place in the seat order, not by its id, so a table
+   of a seed is the same game every time, on the server and in the page.
 8. **Single player shares the setup of multiplayer**: the player count, the map, the strategy
    cards, the factions, the kinds of the other seats. It is the same screen and the same code
    (phase 6).
@@ -274,8 +277,7 @@ Desktop (1920×1080), eight seats, the two long names of the demo data:
   footer.
 - **A state has one sign and a word on hover** (patterns 4 and 6), in a column of fixed width:
   "★" host, "⚙" the rule bot, "⚄" a random seat, "◇" not connected, an empty outline for an
-  open seat. The list has no numbers and no seat colours: the seats are drawn at Start
-  (decision 7).
+  open seat. The list has no numbers and no seat colours: the rows are the seats (decision 7).
 - **The faction of a row** is a word in a column of fixed width: the name of the faction, or
   "Random". It is public (decision 1), so it is not hidden information.
 - **Names** (pattern 13): a column of fixed width, cut with "…", the full name on hover; on a
@@ -522,11 +524,10 @@ Server, for every table:
 1. **No "Ready"** (decision 6): `start` needs every seat filled and nothing else. The call
    `ready`, `HumansNotReady` and the field go. `web/`, the smoke harness and
    `ti4-bot-agent` are changed with it.
-2. **The seat order is drawn at Start** (decision 7): the occupants of the slots are shuffled
-   with a stream of the seed of the game (a domain of its own in `GameRng`, as
-   `seating:lobby-faction-draw:v1`), then the factions are drawn for the new order; a chosen
-   faction stays with its player. `reorder` goes. `seat_order: "join"` of `POST /api/games`
-   keeps the order of the join for tests and presets.
+2. **The seats are the slots** (decision 7): the game seats the occupants of the slots in their
+   order, and the factions are drawn for that order; a chosen faction stays with its player.
+   The host shuffles the occupants of the slots before the start (`shuffle-seats`). `reorder`
+   goes.
 3. **The preview names no faction.** A home of the preview is a place of a seat: nobody knows
    before Start who sits there. `SeatPreview.faction` and `faction_name` go, and the home tile
    is sent as a place. Read `maps/build.rs` (`placeholder_homes`, `preview_seated`): whether a

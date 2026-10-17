@@ -1,0 +1,15 @@
+{
+  "title": "Seize an Icon without legendary planets",
+  "description": "Alpha report fb_1792227611_a263a756: a player held Seize an Icon (control a legendary planet) on a map with none. By the rules the card stays in the deck and can be dealt, and the project's setup rule keeps it because Mallice (Wormhole Nexus) or Mirage could still arrive. The held card now says so instead of sitting at 0 / 1 unexplained. Mocked fixtures; regenerate with npm run screenshots -- EZ.",
+  "tag": "web/e2e/screenshots/EZ-legendary-secret-note",
+  "shots": [
+    { "file": "out/1-without-legendary-desktop.png", "heading": "No legendary planet on the map, desktop", "caption": "Seize an Icon at 0 / 1 with a note: no legendary planet is on this map; only Mirage or the Wormhole Nexus could bring one; the card stays in the deck by the rules." },
+    { "file": "out/1-without-legendary-390x844.png", "heading": "No legendary planet on the map, 390x844", "caption": "Same in the phone Players drawer; no horizontal scroll." },
+    { "file": "out/2-with-legendary-desktop.png", "heading": "A legendary planet is on the map, desktop", "caption": "Unchanged: just the 0 / 1 bar, no note." },
+    { "file": "out/2-with-legendary-390x844.png", "heading": "A legendary planet is on the map, 390x844", "caption": "Unchanged on a phone." }
+  ],
+  "notes": [
+    { "title": "Why the card was dealt", "text": "Dealing follows the rules (secrets stay in the deck). The project's setup rule (map_feasibility) removes only cards that even a perfect game cannot score; Seize an Icon is kept whenever the census finds any legendary planet, and the locked Mallice tile in the Wormhole Nexus counts. No engine change." },
+    { "title": "When the note shows", "text": "Only for Seize an Icon, only when the board lists its tiles and none of the main-map planets is legendary. Nexus and Fracture tiles count once they hold something." }
+  ]
+}

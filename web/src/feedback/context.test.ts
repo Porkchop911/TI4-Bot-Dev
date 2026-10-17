@@ -25,7 +25,7 @@ const event = (id: string, visibility: GameEvent["visibility"], extra: Partial<G
 // A snapshot whose `state` (the engine state passed through) holds another seat's secrets.
 const snapshot = {
   type: "initial_snapshot",
-  protocol_version: 3,
+  protocol_version: 4,
   game_id: "game_deadbeef",
   game_version: 7,
   viewer: { role: "player", seat: "p1", playerSession: "SECRET-TOKEN" },

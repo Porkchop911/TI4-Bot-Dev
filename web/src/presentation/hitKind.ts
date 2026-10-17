@@ -1,7 +1,7 @@
 import type {
-  DecisionContextDto,
-  HitCauseDto,
-  HitDetailDto,
+  DecisionContext,
+  HitCause,
+  HitDetail,
 } from "../protocol/types.ts";
 import { getUnitBaseType } from "../components/UnitIcon.tsx";
 
@@ -11,7 +11,7 @@ import { getUnitBaseType } from "../components/UnitIcon.tsx";
  * send it yet. Never from label text.
  */
 export interface HitKindModel {
-  cause: HitCauseDto;
+  cause: HitCause;
   icon: string;
   /** Source name shown as the badge: "Assault Cannon". */
   source: string;
@@ -30,7 +30,7 @@ export interface HitKindNames {
   hits?: number;
 }
 
-const SOURCES: Record<HitCauseDto, { icon: string; source: string }> = {
+const SOURCES: Record<HitCause, { icon: string; source: string }> = {
   assault_cannon: { icon: "🔻", source: "Assault Cannon" },
   courageous_to_the_end: { icon: "🎯", source: "Courageous to the End" },
   anti_fighter_barrage: { icon: "🛰️", source: "Anti-Fighter Barrage" },
@@ -43,8 +43,8 @@ const SOURCES: Record<HitCauseDto, { icon: string; source: string }> = {
 
 /** The structured hit description, falling back to the subtype for older payloads. */
 export function hitDetailOf(
-  context: DecisionContextDto | null | undefined,
-): HitDetailDto | null {
+  context: DecisionContext | null | undefined,
+): HitDetail | null {
   if (!context) return null;
   if (context.hit) return context.hit;
   switch (context.subtype) {
@@ -68,7 +68,7 @@ export function hitDetailOf(
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
 export function deriveHitKind(
-  context: DecisionContextDto | null | undefined,
+  context: DecisionContext | null | undefined,
   names: HitKindNames,
 ): HitKindModel | null {
   const hit = hitDetailOf(context);
@@ -144,7 +144,7 @@ export interface BarrageWindowModel {
 }
 
 export function isBarrageWindow(
-  context: DecisionContextDto | null | undefined,
+  context: DecisionContext | null | undefined,
 ): boolean {
   return (
     context?.trigger?.kind === "anti_fighter_barrage" ||
@@ -154,7 +154,7 @@ export function isBarrageWindow(
 }
 
 export function deriveBarrageWindow(
-  context: DecisionContextDto | null | undefined,
+  context: DecisionContext | null | undefined,
   roller: string | null,
 ): BarrageWindowModel | null {
   if (!isBarrageWindow(context)) return null;

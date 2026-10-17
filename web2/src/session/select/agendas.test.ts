@@ -1,10 +1,10 @@
 import { expect, it } from "vitest";
-import menuUpdate from "../fixtures/update-menu.json";
+import menuUpdate from "../../../../fixtures/protocol/update-menu.json";
 import type { Catalog, SessionUpdate } from "../wire";
 import { selectAgendas } from "./agendas";
 
-// No law is in play in this update of the real engine.
-const menu = menuUpdate as unknown as SessionUpdate;
+// No law is in play in this update of the real engine. Its facts are left out: a test gives its own.
+const menu: SessionUpdate = { ...(menuUpdate as unknown as SessionUpdate), agendas: undefined };
 const agenda = (
   id: string,
   name: string,

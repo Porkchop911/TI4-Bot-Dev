@@ -1539,7 +1539,8 @@ fn top_up_influence(content: &ContentStore, state: &mut GameState, player: &Play
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::map::{create_game_with_preset, create_game_with_template};
+    use crate::map::create_game_with_template;
+    use crate::setup::preset_game;
     use ti4_model::state::LeaderStatus;
 
     fn players(n: usize) -> Vec<PlayerId> {
@@ -1563,31 +1564,15 @@ mod tests {
 
     #[test]
     fn an_unknown_preset_is_an_error() {
-        let err =
-            create_game_with_preset(content(), &players(3), 5, None, Some("nope")).unwrap_err();
+        let err = preset_game(content(), &players(3), 5, None, "nope").unwrap_err();
         assert!(err.contains("unknown start_preset"), "{err}");
         assert!(!is_known("nope") && is_known(COMBAT));
     }
 
     #[test]
-    fn no_preset_leaves_the_opening_state_untouched() {
-        for n in 3..=6 {
-            let (plain, _) = create_game_with_template(content(), &players(n), 11, None).unwrap();
-            let (same, _) =
-                create_game_with_preset(content(), &players(n), 11, None, None).unwrap();
-            assert_eq!(
-                serde_json::to_string(&plain).unwrap(),
-                serde_json::to_string(&same).unwrap(),
-                "{n} players"
-            );
-        }
-    }
-
-    #[test]
     fn the_preset_is_deterministic_per_seed_and_varies_between_seeds() {
         let build = |seed| {
-            let (state, _) =
-                create_game_with_preset(content(), &players(4), seed, None, Some(COMBAT)).unwrap();
+            let (state, _) = preset_game(content(), &players(4), seed, None, COMBAT).unwrap();
             serde_json::to_string(&state).unwrap()
         };
         assert_eq!(build(7), build(7));
@@ -1608,8 +1593,7 @@ mod tests {
         for preset in presets {
             for n in 3..=6 {
                 for seed in 0..4 {
-                    let Ok((state, _)) =
-                        create_game_with_preset(content(), &players(n), seed, None, Some(preset))
+                    let Ok((state, _)) = preset_game(content(), &players(n), seed, None, preset)
                     else {
                         continue;
                     };
@@ -1627,9 +1611,8 @@ mod tests {
     fn every_player_count_gets_legal_fleets_within_supply_capacity_and_pools() {
         for n in 3..=6 {
             for seed in 0..8 {
-                let (state, _) =
-                    create_game_with_preset(content(), &players(n), seed, None, Some(COMBAT))
-                        .unwrap_or_else(|e| panic!("{n} players seed {seed}: {e}"));
+                let (state, _) = preset_game(content(), &players(n), seed, None, COMBAT)
+                    .unwrap_or_else(|e| panic!("{n} players seed {seed}: {e}"));
                 for player in &players(n) {
                     for (system, board) in &state.board {
                         assert_eq!(
@@ -1657,8 +1640,7 @@ mod tests {
             for seed in 0..8 {
                 let list = players(n);
                 let (plain, _) = create_game_with_template(content(), &list, seed, None).unwrap();
-                let (state, _) =
-                    create_game_with_preset(content(), &list, seed, None, Some(COMBAT)).unwrap();
+                let (state, _) = preset_game(content(), &list, seed, None, COMBAT).unwrap();
                 let mut fleets = 0;
                 for (system, board) in &state.board {
                     let before = plain.board.get(system).map_or(0, |b| b.units.len());
@@ -1708,8 +1690,7 @@ mod tests {
             for seed in 0..8 {
                 let list = players(n);
                 let (plain, _) = create_game_with_template(content(), &list, seed, None).unwrap();
-                let (state, galaxy) =
-                    create_game_with_preset(content(), &list, seed, None, Some(COMBAT)).unwrap();
+                let (state, galaxy) = preset_game(content(), &list, seed, None, COMBAT).unwrap();
                 let homes = homes_of(&list);
                 let mut beside_a_home = 0;
                 for (i, player) in list.iter().enumerate() {
@@ -1763,8 +1744,7 @@ mod tests {
         for n in 3..=6 {
             for seed in 0..8 {
                 let list = players(n);
-                let (state, galaxy) =
-                    create_game_with_preset(content(), &list, seed, None, Some(COMBAT)).unwrap();
+                let (state, galaxy) = preset_game(content(), &list, seed, None, COMBAT).unwrap();
                 let raiders: Vec<&PlayerId> = list
                     .iter()
                     .filter(|player| {
@@ -1832,8 +1812,7 @@ mod tests {
         for n in 3..=6 {
             let list = players(n);
             let (plain, _) = create_game_with_template(content(), &list, 3, None).unwrap();
-            let (state, _) =
-                create_game_with_preset(content(), &list, 3, None, Some(CARDS)).unwrap();
+            let (state, _) = preset_game(content(), &list, 3, None, CARDS).unwrap();
             let mut dealt: Vec<&ActionCardId> = Vec::new();
             for player in &list {
                 let hand = &state.player(player).unwrap().action_cards;
@@ -1864,8 +1843,7 @@ mod tests {
             let list = players(n);
             let (plain, _) = create_game_with_template(content(), &list, 5, None).unwrap();
             assert!(!plain.custodians_removed);
-            let (state, _) =
-                create_game_with_preset(content(), &list, 5, None, Some(AGENDA)).unwrap();
+            let (state, _) = preset_game(content(), &list, 5, None, AGENDA).unwrap();
             assert!(state.custodians_removed);
             assert_eq!(
                 state.agenda_deck.len(),
@@ -1914,8 +1892,7 @@ mod tests {
         for n in 3..=6 {
             for seed in 0..4 {
                 let list = players(n);
-                let (state, _) =
-                    create_game_with_preset(content(), &list, seed, None, Some(RELICS)).unwrap();
+                let (state, _) = preset_game(content(), &list, seed, None, RELICS).unwrap();
                 let held: Vec<&RelicId> = list
                     .iter()
                     .flat_map(|p| state.player(p).unwrap().relics.iter())
@@ -1956,9 +1933,8 @@ mod tests {
         for n in 3..=6 {
             for seed in 0..8 {
                 let list = players(n);
-                let (state, _) =
-                    create_game_with_preset(content(), &list, seed, None, Some(INVASION))
-                        .unwrap_or_else(|e| panic!("{n}p seed {seed}: {e}"));
+                let (state, _) = preset_game(content(), &list, seed, None, INVASION)
+                    .unwrap_or_else(|e| panic!("{n}p seed {seed}: {e}"));
                 let pds_systems: BTreeSet<(&SystemId, &PlayerId)> = state
                     .board
                     .iter()
@@ -2018,9 +1994,8 @@ mod tests {
     fn the_techs_preset_is_the_invasion_setup_plus_every_pool_technology() {
         let list = players(4);
         let (plain, _) = create_game_with_template(content(), &list, 2, None).unwrap();
-        let (invasion, _) =
-            create_game_with_preset(content(), &list, 2, None, Some(INVASION)).unwrap();
-        let (techs, _) = create_game_with_preset(content(), &list, 2, None, Some(TECHS)).unwrap();
+        let (invasion, _) = preset_game(content(), &list, 2, None, INVASION).unwrap();
+        let (techs, _) = preset_game(content(), &list, 2, None, TECHS).unwrap();
         for player in &list {
             let owned = &techs.player(player).unwrap().technologies;
             for id in TECH_POOL {
@@ -2043,9 +2018,8 @@ mod tests {
         for n in 3..=6 {
             for seed in 0..8 {
                 let list = players(n);
-                let (state, _) =
-                    create_game_with_preset(content(), &list, seed, None, Some(LEADERS))
-                        .unwrap_or_else(|e| panic!("{n}p seed {seed}: {e}"));
+                let (state, _) = preset_game(content(), &list, seed, None, LEADERS)
+                    .unwrap_or_else(|e| panic!("{n}p seed {seed}: {e}"));
                 let rotated = rotation(LEADERS, seed);
                 assert!((2..=5).contains(&rotated));
                 let factions: Vec<&str> = list
@@ -2085,21 +2059,18 @@ mod tests {
         assert!(is_known("invasion+rot") && is_known(LEADERS) && !is_known("nope+rot"));
         let list = players(4);
         let (plain, _) = create_game_with_template(content(), &list, 9, None).unwrap();
-        let (rotated, _) =
-            create_game_with_preset(content(), &list, 9, None, Some("combat+rot")).unwrap();
+        let (rotated, _) = preset_game(content(), &list, 9, None, "combat+rot").unwrap();
         let faction = |s: &GameState, i: usize| s.player(&list[i]).unwrap().faction.clone();
         assert_ne!(faction(&plain, 0), faction(&rotated, 0));
         // The combat fleets were built for the factions that actually sit there.
-        let (_, _) =
-            create_game_with_preset(content(), &players(5), 3, None, Some("combat+rot")).unwrap();
+        let (_, _) = preset_game(content(), &players(5), 3, None, "combat+rot").unwrap();
     }
 
     #[test]
     fn the_endgame_preset_sets_scores_round_and_an_empty_objective_deck() {
         for n in 3..=6 {
             let list = players(n);
-            let (state, _) =
-                create_game_with_preset(content(), &list, 4, None, Some(ENDGAME)).unwrap();
+            let (state, _) = preset_game(content(), &list, 4, None, ENDGAME).unwrap();
             assert_eq!(state.round, 5);
             assert!(state.objective_deck.is_empty());
             let mut points: Vec<i32> = list
@@ -2144,7 +2115,7 @@ mod tests {
         for n in 3..=6 {
             for seed in 0..6 {
                 let list = players(n);
-                let (state, _) = create_game_with_preset(content(), &list, seed, None, Some(SIEGE))
+                let (state, _) = preset_game(content(), &list, seed, None, SIEGE)
                     .unwrap_or_else(|e| panic!("{n}p seed {seed}: {e}"));
                 let mut garrisoned = 0;
                 for board in state.board.values() {
@@ -2197,8 +2168,7 @@ mod tests {
     fn the_bombard_preset_has_no_pds_two_dreadnoughts_and_a_third_seats_infantry() {
         for n in 3..=6 {
             let list = players(n);
-            let (state, _) =
-                create_game_with_preset(content(), &list, 3, None, Some(BOMBARD)).unwrap();
+            let (state, _) = preset_game(content(), &list, 3, None, BOMBARD).unwrap();
             let mut contested = 0;
             for board in state.board.values() {
                 let dreads = board
@@ -2234,9 +2204,8 @@ mod tests {
         for n in 3..=6 {
             for seed in 0..6 {
                 let list = players(n);
-                let (state, galaxy) =
-                    create_game_with_preset(content(), &list, seed, None, Some(CAPTURE))
-                        .unwrap_or_else(|e| panic!("{n}p seed {seed}: {e}"));
+                let (state, galaxy) = preset_game(content(), &list, seed, None, CAPTURE)
+                    .unwrap_or_else(|e| panic!("{n}p seed {seed}: {e}"));
                 let cabal: Vec<&PlayerId> = list
                     .iter()
                     .filter(|p| state.player(p).unwrap().faction.as_str() == "cabal")
@@ -2339,7 +2308,7 @@ mod tests {
             for (n, seed) in [(3, 1_u64), (4, 2), (6, 3)] {
                 let list = players(n);
                 let name = format!("world+fac:{alias}");
-                match create_game_with_preset(content(), &list, seed, None, Some(&name)) {
+                match preset_game(content(), &list, seed, None, &name) {
                     Ok((state, _)) => {
                         let seat = state.player(&list[0]).unwrap();
                         assert_eq!(seat.faction.as_str(), *alias);
@@ -2355,8 +2324,7 @@ mod tests {
     #[test]
     fn world_gives_every_seat_foreign_notes_and_its_own_faction_technologies() {
         let list = players(4);
-        let (state, _) =
-            create_game_with_preset(content(), &list, 7, None, Some("world+fac:naalu")).unwrap();
+        let (state, _) = preset_game(content(), &list, 7, None, "world+fac:naalu").unwrap();
         for player in &list {
             let name = ti4_engine::promissory::faction_name(&state, player);
             let foreign = ti4_engine::promissory::held_by(&state, player)
@@ -2374,8 +2342,7 @@ mod tests {
     #[test]
     fn world_gives_nekro_only_the_sheet_technologies() {
         let list = players(4);
-        let (state, _) =
-            create_game_with_preset(content(), &list, 7, None, Some("world+fac:nekro")).unwrap();
+        let (state, _) = preset_game(content(), &list, 7, None, "world+fac:nekro").unwrap();
         let nekro = state.player(&list[0]).unwrap();
         assert_eq!(nekro.faction.as_str(), "nekro", "{:?}", nekro.faction);
         let owned: Vec<&str> = nekro.technologies.iter().map(|t| t.as_str()).collect();
@@ -2393,7 +2360,7 @@ mod tests {
     fn the_notes_preset_only_moves_notes() {
         let list = players(4);
         let (plain, _) = create_game_with_template(content(), &list, 5, None).unwrap();
-        let (notes, _) = create_game_with_preset(content(), &list, 5, None, Some(NOTES)).unwrap();
+        let (notes, _) = preset_game(content(), &list, 5, None, NOTES).unwrap();
         assert_ne!(plain.promissory_notes, notes.promissory_notes);
         // A plain server game deals every seat its own notes after seating: no "generic" ones.
         assert!(
@@ -2434,8 +2401,7 @@ mod tests {
                 .map(str::to_owned)
                 .or_else(|| crate::maps::default_template_for(content(), &loader, n, POK));
             let (state, galaxy) =
-                create_game_with_preset(content(), &list, seed, template.as_deref(), Some(EXPLORE))
-                    .unwrap();
+                preset_game(content(), &list, seed, template.as_deref(), EXPLORE).unwrap();
             let frontier = ti4_engine::exploration::frontier_systems(content(), POK, &galaxy);
             let mut landings = 0;
             let mut frontier_ships = 0;
@@ -2474,15 +2440,11 @@ mod tests {
         for n in 3..=6 {
             let list = players(n);
             for name in ["combat", "cards", "world", "leaders", "explore", "techs"] {
-                let plain = create_game_with_preset(content(), &list, 9, None, Some(name))
-                    .unwrap()
-                    .0;
+                let plain = preset_game(content(), &list, 9, None, name).unwrap().0;
                 assert!(!plain.custodians_removed, "{name} {n}p");
                 let with = format!("{name}+agenda");
-                let (a, _) =
-                    create_game_with_preset(content(), &list, 9, None, Some(&with)).unwrap();
-                let (b, _) =
-                    create_game_with_preset(content(), &list, 9, None, Some(&with)).unwrap();
+                let (a, _) = preset_game(content(), &list, 9, None, &with).unwrap();
+                let (b, _) = preset_game(content(), &list, 9, None, &with).unwrap();
                 assert!(a.custodians_removed, "{with} {n}p");
                 assert_eq!(a.agenda_deck, b.agenda_deck, "{with} {n}p: deterministic");
                 for player in &list {
@@ -2490,9 +2452,7 @@ mod tests {
                     assert_eq!(x.trade_goods, y.trade_goods + AGENDA_TRADE_GOODS, "{with}");
                 }
             }
-            let (s, _) =
-                create_game_with_preset(content(), &list, 9, None, Some("agenda+short+agenda"))
-                    .unwrap();
+            let (s, _) = preset_game(content(), &list, 9, None, "agenda+short+agenda").unwrap();
             assert!(s.custodians_removed && s.objective_deck.len() == 3);
         }
     }
@@ -2501,8 +2461,7 @@ mod tests {
     fn short_games_start_on_a_few_points_with_three_objectives_left() {
         let list = players(4);
         let (plain, _) = create_game_with_template(content(), &list, 6, None).unwrap();
-        let (short, _) =
-            create_game_with_preset(content(), &list, 6, None, Some("techs+short")).unwrap();
+        let (short, _) = preset_game(content(), &list, 6, None, "techs+short").unwrap();
         assert_eq!(short.objective_deck.len(), 3);
         assert!(plain.objective_deck.len() > 3);
         for player in &list {
@@ -2532,13 +2491,9 @@ mod tests {
                         let template =
                             crate::maps::default_template_for(content(), &loader, n, POK);
                         let name = format!("{base}{suffix}");
-                        if let Err(e) = create_game_with_preset(
-                            content(),
-                            &list,
-                            seed,
-                            template.as_deref(),
-                            Some(&name),
-                        ) {
+                        if let Err(e) =
+                            preset_game(content(), &list, seed, template.as_deref(), &name)
+                        {
                             failures.push(format!("{name} {n}p seed {seed}: {e}"));
                         }
                     }
@@ -2561,8 +2516,7 @@ mod tests {
         assert_eq!(rotation("combat+short", 3), 0);
         assert_eq!(rotation("techs+fac", 3), 0);
         let list = players(3);
-        let (state, _) =
-            create_game_with_preset(content(), &list, 3, None, Some("leaders+short")).unwrap();
+        let (state, _) = preset_game(content(), &list, 3, None, "leaders+short").unwrap();
         let factions: Vec<&str> = list
             .iter()
             .map(|p| state.player(p).unwrap().faction.as_str())

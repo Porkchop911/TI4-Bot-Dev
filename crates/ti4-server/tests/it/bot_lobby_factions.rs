@@ -51,7 +51,7 @@ impl Server {
         let created: Value = self
             .client
             .post(self.url("/api/games"))
-            .json(&json!({"player_count": players, "seed": seed, "nickname": "Host", "seat_order": "join"}))
+            .json(&json!({"player_count": players, "seed": seed, "nickname": "Host"}))
             .send()
             .await
             .unwrap()
@@ -428,8 +428,8 @@ async fn the_map_preview_names_no_faction_and_a_choice_does_not_change_it() {
     server
         .post(&game, "bots", &host, json!({"kind": "smart", "fill": true}))
         .await;
-    // Who sits where is drawn at the start: the preview shows places, and a chosen faction is
-    // no reason to ask for it again.
+    // The preview shows places with no faction: a chosen faction is no reason to ask for it
+    // again.
     let after = preview(&server, &game).await;
     assert_eq!(before, after);
     assert_eq!(server.view(&game).await["map_revision"], revision);

@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, within } from "@testing-library/react";
 import { ProductionBuilderDrawer } from "./ProductionBuilderDrawer.tsx";
 import { PendingChoiceDto } from "../protocol/types.ts";
+import { partialContext } from "../test/wire.ts";
 
 describe("ProductionBuilderDrawer", () => {
   it("can stage a legally offered free-capacity batch", () => {
@@ -13,7 +14,7 @@ describe("ProductionBuilderDrawer", () => {
           actor: "seat_1",
           nonce: "free",
           prompt: "produce",
-          context: { subtype: "produce_unit", outstanding: [{ amount: 2, paid: 1 }] },
+          context: partialContext({ subtype: "produce_unit", outstanding: [{ amount: 2, paid: 1 }] }),
           options: [
             {
               id: "build|fighter|1",
@@ -43,11 +44,11 @@ describe("ProductionBuilderDrawer", () => {
       actor: "seat_1",
       nonce: "50",
       prompt: "produce a unit",
-      context: {
+      context: partialContext({
         subtype: "produce_unit",
         target: { System: "18" },
         outstanding: [{ amount: 5, paid: 2 }],
-      },
+      }),
       options: [
         {
           id: "produce|fighter",
@@ -61,7 +62,7 @@ describe("ProductionBuilderDrawer", () => {
           kind: "produce",
           payload: { unit: "carrier", production_spent: 1, cost: 3, available_resources: 8 },
         },
-        { id: "decline", label: "Done Producing", kind: "decline" },
+        { id: "decline", label: "Done Producing", kind: "decline", payload: {} },
       ],
     };
 
@@ -130,7 +131,7 @@ describe("ProductionBuilderDrawer", () => {
           actor: "seat_1",
           nonce: "budget",
           prompt: "produce",
-          context: { subtype: "produce_unit", outstanding: [{ amount: 5, paid: 0 }] },
+          context: partialContext({ subtype: "produce_unit", outstanding: [{ amount: 5, paid: 0 }] }),
           options: [
             {
               id: "build|fighter|2",
@@ -189,7 +190,7 @@ describe("ProductionBuilderDrawer", () => {
           actor: "seat_1",
           nonce: "credit",
           prompt: "produce",
-          context: { subtype: "produce_unit", outstanding: [{ amount: 4, paid: 0 }] },
+          context: partialContext({ subtype: "produce_unit", outstanding: [{ amount: 4, paid: 0 }] }),
           options: [
             {
               id: "build|fighter|1",
@@ -231,7 +232,7 @@ describe("ProductionBuilderDrawer", () => {
           actor: "seat_1",
           nonce: "discount",
           prompt: "produce",
-          context: { subtype: "produce_unit", outstanding: [{ amount: 4, paid: 0 }] },
+          context: partialContext({ subtype: "produce_unit", outstanding: [{ amount: 4, paid: 0 }] }),
           options: [
             {
               id: "build|fighter|1",
@@ -270,7 +271,7 @@ describe("ProductionBuilderDrawer", () => {
           actor: "seat_1",
           nonce: "unknown",
           prompt: "produce",
-          context: { subtype: "produce_unit", outstanding: [{ amount: 3, paid: 0 }] },
+          context: partialContext({ subtype: "produce_unit", outstanding: [{ amount: 3, paid: 0 }] }),
           options: [
             {
               id: "build|carrier|1",
@@ -298,7 +299,7 @@ describe("ProductionBuilderDrawer", () => {
           actor: "seat_1",
           nonce: "free-use",
           prompt: "produce",
-          context: { subtype: "produce_unit", outstanding: [{ amount: 3, paid: 0 }] },
+          context: partialContext({ subtype: "produce_unit", outstanding: [{ amount: 3, paid: 0 }] }),
           options: [
             {
               id: "build|fighter|1",
@@ -340,13 +341,13 @@ describe("ProductionBuilderDrawer", () => {
       actor: "seat_1",
       nonce: "51",
       prompt: "place the fighter",
-      context: {
+      context: partialContext({
         subtype: "place_unit",
         target: { System: "18" },
-      },
+      }),
       options: [
-        { id: "place|space", label: "Place in space area", kind: "place" },
-        { id: "place|jord", label: "Place on Jord", kind: "place" },
+        { id: "place|space", label: "Place in space area", kind: "place", payload: {} },
+        { id: "place|jord", label: "Place on Jord", kind: "place", payload: {} },
       ],
     };
 
@@ -377,10 +378,10 @@ describe("ProductionBuilderDrawer", () => {
       actor: "seat_2",
       nonce: "52",
       prompt: "produce a unit",
-      context: {
+      context: partialContext({
         subtype: "produce_unit",
-      },
-      options: [{ id: "decline", label: "Done" }],
+      }),
+      options: [{ id: "decline", label: "Done", payload: {}, kind: "" }],
     };
 
     render(
@@ -406,10 +407,10 @@ describe("ProductionBuilderDrawer", () => {
       actor: "seat_1",
       nonce: "53",
       prompt: "produce a unit",
-      context: {
+      context: partialContext({
         subtype: "produce_unit",
-      },
-      options: [{ id: "decline", label: "Done" }],
+      }),
+      options: [{ id: "decline", label: "Done", payload: {}, kind: "" }],
     };
 
     render(
@@ -428,7 +429,7 @@ describe("ProductionBuilderDrawer", () => {
     );
   });
 
-  it("displays fleet supply counter when data is available in context", () => {
+  it("displays fleet supply counter when the choice details carry it", () => {
     const onSubmit = vi.fn();
     const onClose = vi.fn();
 
@@ -436,12 +437,12 @@ describe("ProductionBuilderDrawer", () => {
       actor: "seat_1",
       nonce: "fleet-supply",
       prompt: "produce a unit",
-      context: {
+      context: partialContext({
         subtype: "produce_unit",
         outstanding: [{ amount: 5, paid: 2 }],
-        details: {
-          fleet_supply: { used: 2, limit: 5 },
-        },
+      }),
+      details: {
+        fleet_supply: { used: 2, limit: 5 },
       },
       options: [
         {
@@ -475,7 +476,7 @@ describe("ProductionBuilderDrawer", () => {
       actor: "seat_1",
       nonce: "fleet-supply-details",
       prompt: "produce a unit",
-      context: { subtype: "produce_unit", outstanding: [{ amount: 5, paid: 2 }] },
+      context: partialContext({ subtype: "produce_unit", outstanding: [{ amount: 5, paid: 2 }] }),
       details: { fleet_supply: fleetSupply },
       options: [
         {
@@ -506,10 +507,10 @@ describe("ProductionBuilderDrawer", () => {
       actor: "seat_1",
       nonce: "no-fleet-supply",
       prompt: "produce a unit",
-      context: {
+      context: partialContext({
         subtype: "produce_unit",
         outstanding: [{ amount: 5, paid: 2 }],
-      },
+      }),
       options: [
         {
           id: "build|fighter|1",
@@ -539,11 +540,11 @@ describe("ProductionBuilderDrawer", () => {
       actor: "seat_1",
       nonce: "cabal",
       prompt: "produce in 14",
-      context: {
+      context: partialContext({
         subtype: "produce_unit",
         target: { System: "14" },
         outstanding: [{ amount: 3, paid: 0 }],
-      },
+      }),
       options: [
         {
           id: "build|carrier|1",
@@ -622,7 +623,7 @@ describe("ProductionBuilderDrawer", () => {
           actor: "seat_1",
           nonce: "split",
           prompt: "produce",
-          context: { subtype: "produce_unit", outstanding: [{ amount: 4, paid: 0 }] },
+          context: partialContext({ subtype: "produce_unit", outstanding: [{ amount: 4, paid: 0 }] }),
           options: [
             {
               id: "build|fighter|2",
@@ -642,5 +643,121 @@ describe("ProductionBuilderDrawer", () => {
     expect(screen.getByTestId("production-split-planets")).toHaveTextContent("2");
     expect(screen.getByTestId("production-split-tg")).toHaveTextContent("7");
     expect(screen.getByTestId("trade-good-sources-empty")).toBeInTheDocument();
+  });
+});
+
+describe("ProductionBuilderDrawer Armada fleet supply", () => {
+  const open = (fleetSupply: Record<string, unknown>) => {
+    const choice: PendingChoiceDto = {
+      actor: "seat_1",
+      nonce: "armada-build",
+      prompt: "produce a unit",
+      context: partialContext({ subtype: "produce_unit", outstanding: [{ amount: 5, paid: 2 }] }),
+      details: { fleet_supply: fleetSupply },
+      options: [
+        {
+          id: "build|fighter|1",
+          kind: "produce",
+          label: "Fighter",
+          payload: { unit: "fighter", production_spent: 1, cost: 1, available_resources: 8 },
+        },
+      ],
+    };
+    render(
+      <ProductionBuilderDrawer isOpen choice={choice} viewerSeat="seat_1" onSubmit={vi.fn()} onClose={vi.fn()} />,
+    );
+  };
+
+  it("marks the Armada part of the limit", () => {
+    open({ used: 2, limit: 6, armada: 2 });
+    expect(screen.getByTestId("fleet-supply-counter")).toHaveTextContent("2 / 6");
+    expect(screen.getByTestId("production-armada")).toHaveTextContent("incl. +2 Armada");
+  });
+
+  it("shows nothing extra without it", () => {
+    open({ used: 2, limit: 4 });
+    expect(screen.queryByTestId("production-armada")).not.toBeInTheDocument();
+  });
+});
+
+describe("ProductionBuilderDrawer staged fleet supply", () => {
+  const open = (fleetSupply: Record<string, unknown>) => {
+    const choice: PendingChoiceDto = {
+      actor: "seat_1",
+      nonce: "staged-fleet",
+      prompt: "produce a unit",
+      context: partialContext({ subtype: "produce_unit", outstanding: [{ amount: 6, paid: 0 }] }),
+      details: { fleet_supply: fleetSupply },
+      options: [
+        {
+          id: "build|cruiser|1",
+          kind: "produce",
+          label: "Cruiser",
+          payload: { unit: "cruiser", production_spent: 1, cost: 2, available_resources: 20, fleet_ships: 1 },
+        },
+        {
+          id: "build|fighter|2",
+          kind: "produce",
+          label: "Fighter",
+          payload: { unit: "fighter", production_spent: 1, cost: 1, available_resources: 20, fleet_ships: 0 },
+        },
+      ],
+    };
+    render(
+      <ProductionBuilderDrawer isOpen choice={choice} viewerSeat="seat_1" onSubmit={vi.fn()} onClose={vi.fn()} />,
+    );
+  };
+  const add = (id: string) => fireEvent.click(screen.getByTestId(`produce-unit-btn-${id}`));
+  const build = () => screen.getByRole("button", { name: "Confirm builds" });
+
+  it("shows only the standing count while nothing is staged", () => {
+    open({ used: 2, limit: 5 });
+    expect(screen.getByTestId("fleet-supply-counter")).toHaveTextContent(/^2 \/ 5$/);
+    expect(build()).not.toHaveAttribute("data-over-fleet-supply");
+  });
+
+  it("shows 2 +X / 5 for staged ships and leaves the button normal within the limit", () => {
+    open({ used: 2, limit: 5 });
+    add("build|cruiser|1");
+    add("build|cruiser|1");
+    expect(screen.getByTestId("fleet-supply-counter")).toHaveTextContent(/^2 \+2 \/ 5$/);
+    expect(build()).not.toHaveAttribute("data-over-fleet-supply");
+  });
+
+  it("does not count fighters", () => {
+    open({ used: 2, limit: 5 });
+    add("build|fighter|2");
+    expect(screen.getByTestId("fleet-supply-counter")).toHaveTextContent(/^2 \/ 5$/);
+  });
+
+  it("is still normal exactly at the limit, orange one ship over", () => {
+    open({ used: 3, limit: 5 });
+    add("build|cruiser|1");
+    add("build|cruiser|1");
+    expect(build()).not.toHaveAttribute("data-over-fleet-supply");
+    add("build|cruiser|1");
+    expect(screen.getByTestId("fleet-supply-counter")).toHaveTextContent(/^3 \+3 \/ 5$/);
+    expect(build()).toHaveAttribute("data-over-fleet-supply", "true");
+    expect(build()).toHaveClass("production-drawer__build--over");
+    expect(build()).toHaveAttribute("title", expect.stringContaining("remove the ships above the limit"));
+    expect(build()).not.toBeDisabled();
+  });
+
+  it("Letnev with Armada stays normal within its limit of 5", () => {
+    open({ used: 2, limit: 5, armada: 2 });
+    add("build|cruiser|1");
+    add("build|cruiser|1");
+    add("build|cruiser|1");
+    expect(screen.getByTestId("fleet-supply-counter")).toHaveTextContent(/^2 \+3 \/ 5$/);
+    expect(screen.getByTestId("production-armada")).toBeInTheDocument();
+    expect(build()).not.toHaveAttribute("data-over-fleet-supply");
+  });
+
+  it("never goes orange when the supply is unlimited", () => {
+    open({ used: 2, limit: 3, unlimited: true });
+    add("build|cruiser|1");
+    add("build|cruiser|1");
+    expect(screen.getByTestId("fleet-supply-counter")).toHaveTextContent(/^2 \+2 \/ unlimited$/);
+    expect(build()).not.toHaveAttribute("data-over-fleet-supply");
   });
 });

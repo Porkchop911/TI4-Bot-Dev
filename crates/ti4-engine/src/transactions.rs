@@ -1883,11 +1883,20 @@ mod tests {
         let id = free_form_id(&given, &received);
         let offer = offer_from(&state, &id, &a(), &b()).expect("parses");
         assert_eq!((offer.given, offer.received), (given, received));
-        for bad in ["x;gt=-1;", "x;gt=2;gt=3;", "x;zt=1;", "x;gt=;", "x;gt=1x;", "x;gq=1;", "x;gt=99999;"] {
+        for bad in [
+            "x;gt=-1;",
+            "x;gt=2;gt=3;",
+            "x;zt=1;",
+            "x;gt=;",
+            "x;gt=1x;",
+            "x;gq=1;",
+            "x;gt=99999;",
+        ] {
             assert!(offer_from(&state, bad, &a(), &b()).is_none(), "{bad}");
         }
         // A bare prefix names no deal, and the choice does not accept it as an answer.
-        let choice = crate::choice::Choice::new(a(), "q", vec![]).accepting_free_form(FREE_FORM_PREFIX);
+        let choice =
+            crate::choice::Choice::new(a(), "q", vec![]).accepting_free_form(FREE_FORM_PREFIX);
         assert!(choice.answer_for("x;").is_none());
         assert!(choice.answer_for("y;gt=1;").is_none());
     }

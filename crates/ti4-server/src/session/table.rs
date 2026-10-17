@@ -1,5 +1,8 @@
-//! The setup of a table while it is a lobby: its settings, the order of its seats at Start, and
-//! the scenario that it starts from. `web/` and web2 use the same table.
+//! The setup of a table while it is a lobby: its settings, the order of its seats, and the
+//! scenario that it starts from. `web/` and web2 use the same table.
+//!
+//! The players sit in the order of the slots, which is the order of the rows of the lobby: the
+//! order of the join, until the host shuffles the seats ([`shuffle_seats`]).
 //!
 //! Everything here works on a [`PlayerLobbyRecord`]; the registry holds the lock, checks the
 //! caller and saves the result.
@@ -8,43 +11,36 @@ use serde::{Deserialize, Deserializer};
 use ti4_host::setup::TableSetup;
 use ti4_model::id::PlayerId;
 
+use ti4_host::maps::MapChoice;
+
 use super::registry::LobbyError;
-use crate::maps::MapChoice;
 use crate::storage::{LobbySlotId, PlayerLobbyRecord, PlayerLobbySlot};
 
 pub use ti4_host::setup::{
     BotKindOption, CardOption, CardSetOption, FactionGroup, FactionOption, MAX_BOT_DELAY_MS,
-    PLAYER_COUNTS, SeatOrder, SetupOptions,
+    PLAYER_COUNTS, SetupOptions,
 };
 
-/// The order that a table really uses. A start preset and a scenario place their cases by seat,
-/// so such a table keeps the order of the join whatever it stores.
-#[must_use]
-pub fn seat_order_of(record: &PlayerLobbyRecord) -> SeatOrder {
-    if record.start_preset.is_some() || record.start_from.is_some() {
-        SeatOrder::Join
-    } else {
-        SeatOrder::from_stored(record.seat_order.as_deref())
-    }
-}
-
-/// What the host of `record` chose, as the setup of `ti4-view` has it: the server starts the
-/// table and pictures it with the functions that the wasm host uses for the table of a page.
-/// A start preset is not a part of it (it is a tool of this server, `crate::preset`).
+/// What the host of `record` chose, as the setup of `ti4-host` has it: the server starts the
+/// table and pictures it with the functions that the wasm hosts use for the table of a page.
 #[must_use]
 pub fn setup_of(record: &PlayerLobbyRecord) -> TableSetup {
     TableSetup {
         player_count: record.slots.len(),
         map: MapChoice::from_stored(record.map_template.as_deref()),
-        strategy_cards: crate::card_set::resolve(record.strategy_card_set.as_deref()).to_owned(),
-        seat_order: seat_order_of(record),
-        speaker_order: crate::map::SpeakerOrder::from_stored(record.speaker_order.as_deref()),
+        strategy_cards: crate::storage::stored_card_set(record.strategy_card_set.as_deref())
+            .to_owned(),
+        speaker_order: ti4_host::setup::SpeakerOrder::from_stored(record.speaker_order.as_deref()),
         start_from: record.start_from.clone(),
+        preset: record.start_preset.clone(),
+        // A lobby starts a new game, which asks for the starting technology; the game then lives
+        // on in its saved opening state, whatever this says.
+        starting_tech: true,
         seed: record.seed,
     }
 }
 
-/// The players of a full table in the order in which they came.
+/// The players of a full table in the order of its slots: the seats of the game.
 ///
 /// # Panics
 /// When a slot is open: the caller checks that the table is full.
@@ -57,18 +53,27 @@ pub fn joined_players(record: &PlayerLobbyRecord) -> Vec<PlayerId> {
         .collect()
 }
 
-/// The players of a full table in the order of their seats, for the game that starts now.
-/// `seed` is the seed of that game.
-///
-/// # Panics
-/// When a slot is open: the caller checks that the table is full.
+/// The table with the players of its slots in another order, open seats included: the rows of
+/// the lobby, and so the seats of the game. A table of two or more different slots always gets
+/// another order.
 #[must_use]
-pub fn seated_players(record: &PlayerLobbyRecord, seed: u64) -> Vec<PlayerId> {
-    let joined = joined_players(record);
-    ti4_host::setup::seat_places(seat_order_of(record), joined.len(), seed)
-        .into_iter()
-        .map(|place| joined[place].clone())
-        .collect()
+pub fn shuffle_seats(record: &PlayerLobbyRecord, rng: &mut impl rand::Rng) -> PlayerLobbyRecord {
+    use rand::seq::SliceRandom;
+    let before: Vec<Option<PlayerId>> = record
+        .slots
+        .iter()
+        .map(|slot| slot.occupant.clone())
+        .collect();
+    let mut order = before.clone();
+    let movable = before.iter().any(|occupant| occupant != &before[0]);
+    while movable && order == before {
+        order.shuffle(rng);
+    }
+    let mut updated = record.clone();
+    for (slot, occupant) in updated.slots.iter_mut().zip(order) {
+        slot.occupant = occupant;
+    }
+    updated
 }
 
 /// `null` and a value are told apart from a missing field: `Some(None)` clears.
@@ -86,11 +91,11 @@ where
 pub struct TableSettings {
     /// 2 to 8.
     pub player_count: Option<usize>,
-    /// One of [`crate::card_set::OFFERED`].
+    /// One of [`ti4_host::setup::card_set::OFFERED`].
     pub strategy_card_set: Option<String>,
     /// 0 to [`MAX_BOT_DELAY_MS`].
     pub bot_delay_ms: Option<u64>,
-    /// The id of a scenario of `ti4_view::scenario`, or `null` for round 1.
+    /// The id of a scenario of `ti4_host::view::scenario`, or `null` for round 1.
     #[serde(default, deserialize_with = "nullable")]
     pub start_from: Option<Option<String>>,
 }
@@ -170,7 +175,7 @@ fn resize(record: &mut PlayerLobbyRecord, count: usize) -> Result<(), LobbyError
         }
     }
     if record.map_template.is_some() {
-        record.map_template = crate::maps::catalog::recommended_for(count);
+        record.map_template = ti4_host::maps::catalog::recommended_for(count);
     }
     record.map_revision += 1;
     Ok(())
@@ -202,8 +207,8 @@ pub fn apply_settings(
                         "start_from is not available on the public server".to_owned(),
                     ));
                 }
-                let scenario = ti4_view::scenario::find(id).ok_or_else(|| {
-                    let known: Vec<&str> = ti4_view::scenario::SCENARIOS
+                let scenario = ti4_host::view::scenario::find(id).ok_or_else(|| {
+                    let known: Vec<&str> = ti4_host::view::scenario::SCENARIOS
                         .iter()
                         .map(|scenario| scenario.id)
                         .collect();
@@ -225,7 +230,7 @@ pub fn apply_settings(
         if let Some(scenario) = updated
             .start_from
             .as_deref()
-            .and_then(ti4_view::scenario::find)
+            .and_then(ti4_host::view::scenario::find)
             && scenario.players != count
         {
             return Err(LobbyError::ScenarioTable(format!(
@@ -236,7 +241,7 @@ pub fn apply_settings(
         resize(&mut updated, count)?;
     }
     if let Some(name) = &settings.strategy_card_set {
-        let set = crate::card_set::validate(name)
+        let set = ti4_host::setup::card_set::validate(name)
             .map_err(|error| LobbyError::InvalidSetting(error.to_string()))?;
         updated.strategy_card_set = Some(set.to_owned());
     }
@@ -252,11 +257,20 @@ pub fn apply_settings(
 }
 
 /// What a host can choose for a table: `GET /api/setup-options`. The page writes none of these
-/// names. `public`: the public server, which starts no scenario.
+/// names. `public`: the public server, which starts no scenario. The MLP kinds are the models
+/// that the process loaded (`ti4_host::bots::models`) and offers (`crate::models::is_offered`).
 #[must_use]
 pub fn setup_options(public: bool) -> SetupOptions {
-    let mut options =
-        ti4_host::setup::setup_options("The server", super::random_bot::random_bot_delay_ms());
+    let models: Vec<ti4_host::bots::ModelEntry> = ti4_host::bots::models()
+        .iter()
+        .filter(|model| crate::models::is_offered(model.name()))
+        .map(ti4_host::bots::MlpModel::entry)
+        .collect();
+    let mut options = ti4_host::setup::setup_options(
+        "The server",
+        super::random_bot::random_bot_delay_ms(),
+        &models,
+    );
     if public {
         options.scenarios.clear();
     }
@@ -300,15 +314,6 @@ mod tests {
             player_count: Some(count),
             ..TableSettings::default()
         }
-    }
-
-    #[test]
-    fn seat_order_names_round_trip_and_a_missing_value_is_random() {
-        for order in [SeatOrder::Random, SeatOrder::Join] {
-            assert_eq!(SeatOrder::parse(order.as_str()), Ok(order));
-        }
-        assert!(SeatOrder::parse("host").is_err());
-        assert_eq!(SeatOrder::from_stored(None), SeatOrder::Random);
     }
 
     #[test]
@@ -356,10 +361,13 @@ mod tests {
     #[test]
     fn the_map_follows_the_count_and_a_random_board_stays_random() {
         let mut record = table(4);
-        record.map_template = crate::maps::catalog::recommended_for(4);
+        record.map_template = ti4_host::maps::catalog::recommended_for(4);
         assert!(record.map_template.is_some());
         let six = apply_settings(&record, &count(6), false).unwrap();
-        assert_eq!(six.map_template, crate::maps::catalog::recommended_for(6));
+        assert_eq!(
+            six.map_template,
+            ti4_host::maps::catalog::recommended_for(6)
+        );
         assert_ne!(six.map_template, record.map_template);
 
         record.map_template = None;
@@ -398,10 +406,9 @@ mod tests {
             start_from: Some(id.map(str::to_owned)),
             ..TableSettings::default()
         };
-        let scenario = ti4_view::scenario::find(ti4_view::scenario::LATE_GAME).unwrap();
+        let scenario = ti4_host::view::scenario::find(ti4_host::view::scenario::LATE_GAME).unwrap();
         let started = apply_settings(&record, &late(Some(scenario.id)), false).unwrap();
         assert_eq!(started.slots.len(), scenario.players);
-        assert_eq!(seat_order_of(&started), SeatOrder::Join);
         assert!(matches!(
             apply_settings(&started, &count(4), false),
             Err(LobbyError::ScenarioTable(_))
@@ -422,30 +429,49 @@ mod tests {
         assert_eq!(cleared.start_from, Some(None));
     }
 
-    #[test]
-    fn the_seats_of_a_seed_are_drawn_once_and_join_keeps_the_order() {
-        let mut record = table(6);
-        for name in ["Bo", "Cy", "Di", "Ed", "Fa"] {
-            seat(&mut record, name, None);
-        }
-        let joined: Vec<PlayerId> = record
+    fn occupants(record: &PlayerLobbyRecord) -> Vec<Option<PlayerId>> {
+        record
             .slots
             .iter()
-            .map(|slot| slot.occupant.clone().unwrap())
-            .collect();
-        let drawn = seated_players(&record, 11);
-        assert_eq!(drawn, seated_players(&record, 11));
-        let mut sorted = drawn.clone();
-        sorted.sort();
-        let mut all = joined.clone();
-        all.sort();
-        assert_eq!(sorted, all, "every player has one seat");
-        assert!(
-            (0..20).any(|seed| seated_players(&record, seed) != joined),
-            "some seed moves a player"
-        );
-        record.seat_order = Some("join".to_owned());
-        assert_eq!(seated_players(&record, 11), joined);
+            .map(|slot| slot.occupant.clone())
+            .collect()
+    }
+
+    #[test]
+    fn a_shuffle_reorders_the_rows_and_keeps_everything_else() {
+        use rand::SeedableRng;
+        let mut record = table(6);
+        for name in ["Bo", "Cy", "Di"] {
+            seat(&mut record, name, None);
+        }
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(1);
+        for _ in 0..50 {
+            let shuffled = shuffle_seats(&record, &mut rng);
+            assert_ne!(occupants(&shuffled), occupants(&record), "another order");
+            let mut before = occupants(&record);
+            let mut after = occupants(&shuffled);
+            before.sort();
+            after.sort();
+            assert_eq!(after, before, "the same players and open seats");
+            let slots = |r: &PlayerLobbyRecord| -> Vec<LobbySlotId> {
+                r.slots.iter().map(|slot| slot.slot_id.clone()).collect()
+            };
+            assert_eq!(slots(&shuffled), slots(&record));
+            assert_eq!(shuffled.players.len(), record.players.len());
+            shuffled.validate().unwrap();
+            // The game seats the players in the order of the rows.
+            let mut full = shuffled.clone();
+            for slot in &mut full.slots {
+                slot.occupant.get_or_insert_with(|| PlayerId::new("open"));
+            }
+            assert_eq!(
+                joined_players(&full)
+                    .into_iter()
+                    .map(Some)
+                    .collect::<Vec<_>>(),
+                occupants(&full)
+            );
+        }
     }
 
     #[test]

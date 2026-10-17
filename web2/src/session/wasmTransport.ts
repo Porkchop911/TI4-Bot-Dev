@@ -1,18 +1,32 @@
-// The engine in this page: `crates/ti4-wasm`, built by `scripts/build-wasm.sh`.
-import type { LocalGame, SeatSwitch } from "./savedGame";
-import { stepOf } from "./movementPlan";
-import type { Capabilities, PlanStopped, Transport, TransportEvent } from "./transport";
+// The engine in this page: `crates/ti4-wasm`, built by `scripts/build-wasm.sh`. A game runs in a
+// Web Worker (`web-shared/src/engine/worker.ts`) and speaks the protocol of the server through
+// the hosted exports: `ClientMessage` in, `ServerMessage` out, over `engineLink`, read by the
+// code of the server's transport (`messageTransport.ts`). Step, "Play as" and the wait are local
+// commands of the engine (`step`, `switch_seat`, `stepping`). The engine keeps the staged work of
+// each seat in its saved game, as the server keeps it for the seat, and sends a ready draft of a
+// secondary itself. The questions that need no game are exports of their own, asked in the page.
+import { loadCatalog } from "@ti4/shared/content/catalog.ts";
+import { type HostSave as EngineSave, Host, type StartConfig } from "@ti4/shared/engine/host.ts";
+import { sha256Hex } from "@ti4/shared/engine/identity.ts";
+import { hasJspi } from "@ti4/shared/engine/jspi.ts";
+import { spaceOdds } from "@ti4/shared/engine/odds.ts";
+import { inlinePort, workerPort } from "@ti4/shared/engine/port.ts";
+import type { HostPort, ModelFile } from "@ti4/shared/engine/protocol.ts";
+import { engineLink } from "@ti4/shared/link/engineLink.ts";
+import type { GameLink, HostCommand } from "@ti4/shared/link/link.ts";
+import type { HostSave as StoredSave } from "@ti4/shared/storage/index.ts";
+import { type MessageCore, messageTransport } from "./messageTransport";
+import type { LocalGame } from "./savedGame";
+import { SLOTS, type StagedSlot, sameStaged } from "./seatStore";
+import type { Capabilities, Transport } from "./transport";
 import type {
   Catalog,
-  ChoiceOption,
-  DraftOutcome,
-  DraftScope,
-  DraftStep,
-  ReactionMode,
+  ClientMessage,
+  ModelEntry,
+  OptionsRequest,
   ReactionModes,
-  SessionUpdate,
-  SpaceOddsRequest,
-  SpaceOddsResponse,
+  SeatStaged,
+  SeatSwitch,
   TableDraw,
   TableOptions,
   TablePreview,
@@ -21,97 +35,66 @@ import type {
 
 interface Exports {
   memory: WebAssembly.Memory;
-  ti4_play(seed: number, players: number, humans: number): number;
-  ti4_play_scenario(humans: number, idLength: number): number;
-  ti4_play_setup(length: number): number;
-  ti4_setup_options(players: number): number;
+  // The questions that need no game: the request buffer in, the response buffer out.
+  ti4_setup_options(length: number): number;
   ti4_setup_preview(length: number): number;
   ti4_setup_draw(length: number): number;
-  ti4_set_rule_seats(mask: number): void;
   ti4_scenarios(): number;
-  ti4_catalog(): number;
-  ti4_space_odds(length: number): number;
-  ti4_can_undo(): number;
-  ti4_response_ptr(): number;
-  ti4_update_ptr(): number;
-  ti4_update_len(): number;
-  /** 0: the other seats play on. 1: the engine asks before each of their decisions. 2: before each that takes the wait of a table. */
-  ti4_set_stepping(mode: number): void;
-  ti4_decided(): number;
-  ti4_switch_seats(decision: number, humans: number): void;
   ti4_request_ptr(): number;
-  ti4_draft(length: number): number;
-  ti4_draft_ptr(): number;
-  ti4_plan(length: number): number;
-  ti4_set_reaction_mode(length: number): number;
-  ti4_journal(): number;
-  ti4_replay(decisions: number): void;
-  ti4_saved_option(length: number): number;
+  ti4_response_ptr(): number;
 }
 
 /**
- * What a script answers to the choice that the engine is parked in (`ti4_plan`,
- * `ti4_view::planning::draft::script_answer`).
+ * What the engine keeps of a game to play it again (`HostSession::save_state`, format 2, the save
+ * of the save store): the game, the option id of every decision of every seat, in order
+ * (`decisions`), the answers of the page among them, and the seat changes. The rest (the redo
+ * list, the times of the events, the hash of the decisions) is given back as it was.
  */
-type PlanAnswer =
-  /**
-   * Answer the choice with the option at `index`. `next` is the first entry that is still to
-   * play. With `script` the script goes on in this order: a payment changed its place.
-   */
-  | { kind: "answer"; index: number; next: number; script?: DraftStep[] }
-  /** Every entry is played: the choice is not of the script. */
-  | { kind: "done" }
-  /** The game asks something else first (a reaction window, another seat). */
-  | { kind: "interrupted"; reason: string }
-  /** The game does not offer what the entry asks for. */
-  | { kind: "mismatch"; reason: string };
-
-/** A window that the engine declined for this side. */
-interface Passed {
-  option: ChoiceOption;
-  cards: string[];
+export interface HostSave extends StoredSave {
+  switches?: SeatSwitch[];
 }
+
+/** What a save keeps of the staged work of each seat. */
+type SavedStaged = Record<string, SeatStaged>;
+
+/** The highest revision of the staged work of any seat of a save. */
+const topRevision = (staged: SavedStaged) =>
+  Math.max(0, ...Object.values(staged).map((each) => each.revision));
 
 /**
- * The decisions that were made without asking the page since it last read them (`ti4_journal`):
- * of the seats that are not played here, and the windows that the engine declined for this
- * side. `from` is the number of the first of them.
+ * The save with the values of `slots` staged for `seat`, each with a new revision. A value that
+ * the save has already is left as it is. Null: nothing changed.
  */
-interface Journal {
-  from: number;
-  entries: { id: string; passed?: Passed }[];
+function stagedInto(
+  save: HostSave,
+  seat: string,
+  slots: Partial<Record<StagedSlot, unknown>>,
+): HostSave | null {
+  const staged = { ...(save.staged as SavedStaged | undefined) };
+  const kept = staged[seat] ?? { revision: 0, slots: {} };
+  let revision = topRevision(staged);
+  const next = { ...kept.slots };
+  let changed = false;
+  for (const slot of SLOTS) {
+    if (!(slot in slots)) {
+      continue;
+    }
+    const value = slots[slot] ?? null;
+    if (!sameStaged(value, next[slot]?.value ?? null)) {
+      changed = true;
+      revision += 1;
+      next[slot] = value === null ? { revision } : { revision, value };
+    }
+  }
+  return changed ? { ...save, staged: { ...staged, [seat]: { revision, slots: next } } } : null;
 }
 
-/** An option of the decision that the engine is parked in (`ti4_saved_option`). */
-interface SavedOption {
-  index: number;
-  /** A seat of this page decides it. */
-  own: boolean;
-  option: ChoiceOption;
-}
-
-// JSPI: the engine asks for a decision with a blocking call. `Suspending` parks its stack until
-// the promise of the answer settles, and `promising` makes the export that runs the game async.
-interface Jspi {
-  Suspending: new (ask: () => Promise<number>) => WebAssembly.ImportValue;
-  promising<Args extends number[]>(
-    run: (...args: Args) => number,
-  ): (...args: Args) => Promise<number>;
-}
-
-/** Leaves the game: the engine unwinds and `ti4_play` returns. */
+/** Leaves the game: an instance that plays no game answers every question with it. */
 const LEAVE = -1;
-/** Takes back the answer before the pending choice, when `ti4_can_undo` says the engine can. */
-const UNDO = -2;
-/** Lets a seat decide that the engine waits for while it is stepped. */
-const GO = -3;
-/** After `ti4_switch_seats`: the engine asks the decision again, of the new decider of its seat. */
-const SWITCH = -4;
+/** The id of every game in this page. */
+const GAME_ID = "local";
 
-/** A replay gives the page a turn this often, so it can show how far the replay is. */
-const REPLAY_SLICE_MS = 50;
-
-/** A prepared board that the engine can start a game from (`ti4_view::scenario`). */
+/** A prepared board that the engine can start a game from (`ti4_host::view::scenario`). */
 export interface ScenarioInfo {
   id: string;
   title: string;
@@ -120,7 +103,7 @@ export interface ScenarioInfo {
   players: number;
 }
 
-/** The engine file, compiled once. Each game and each undo makes an instance of it. */
+/** The engine file, compiled once. Each game, and each undo that plays it again, makes an instance of it in a Worker. */
 export interface Engine {
   module: WebAssembly.Module;
   /** SHA-256 of the file, in hex. A saved game names the engine that played it. */
@@ -161,55 +144,31 @@ function askOn<T>(
   return JSON.parse(text) as T;
 }
 
-/** The instance of a module that answers the questions that come often. It plays no game. */
-const kept = new WeakMap<WebAssembly.Module, Promise<Exports>>();
-
-function keptOf(module: WebAssembly.Module) {
-  let exports = kept.get(module);
-  if (!exports) {
-    exports = WebAssembly.instantiate(module, { host: { ask: () => LEAVE } }).then(
-      (instance) => instance.exports as unknown as Exports,
-    );
-    kept.set(module, exports);
-  }
-  return exports;
-}
-
-/**
- * The odds of a space combat (`ti4_space_odds`). It is asked for each change of a staged
- * movement, so one instance of the module answers all of them.
- */
-export async function spaceOddsOf(module: WebAssembly.Module, request: SpaceOddsRequest) {
-  const exports = await keptOf(module);
-  try {
-    return askOn<SpaceOddsResponse>(
-      exports,
-      (on, length) => on.ti4_space_odds(length),
-      request,
-    );
-  } catch (error) {
-    // A trap may leave the instance broken: the next question makes a new one.
-    if (error instanceof WebAssembly.RuntimeError) {
-      kept.delete(module);
-    }
-    throw error;
-  }
-}
-
 /** Asks the engine for its scenarios. */
 export const scenariosOf = (module: WebAssembly.Module) =>
   ask<ScenarioInfo[]>(module, (exports) => exports.ti4_scenarios());
 
-/** Asks the engine for the printed cards. */
-export const catalogOf = (module: WebAssembly.Module) =>
-  ask<Catalog>(module, (exports) => exports.ti4_catalog());
+/**
+ * A question of the engine that needs no game (`ti4_host_query`: `describe`, `catalog`), on an
+ * instance of its own. `loadCatalog({ query: engineQuery(module) })` asks it for the printed cards.
+ */
+export const engineQuery = (module: WebAssembly.Module) => async (request: object) =>
+  (await Host.create(module)).query(request);
 
 /**
  * What a host can choose for the table of the page, with the maps that build for `players`
- * seats (0: every map). The same options as `GET /api/setup-options` of the server.
+ * seats (0: every map). The same options as `GET /api/setup-options` of the server; each of
+ * `models` is the kind `mlp:<name>`.
  */
-export const setupOptionsOf = (module: WebAssembly.Module, players: number) =>
-  ask<TableOptions>(module, (exports) => exports.ti4_setup_options(players));
+export const setupOptionsOf = (
+  module: WebAssembly.Module,
+  players: number,
+  models: ModelEntry[] = [],
+) =>
+  ask<TableOptions>(module, (exports, length) => exports.ti4_setup_options(length), {
+    players,
+    models,
+  } satisfies OptionsRequest);
 
 /** The board of a table before it starts, with a place for each seat. */
 export const setupPreviewOf = (module: WebAssembly.Module, table: TableRequest) =>
@@ -221,8 +180,7 @@ export const setupDrawOf = (module: WebAssembly.Module, table: TableRequest) =>
 
 /** Fetches and compiles `ti4.wasm` from `wasmUrl`. */
 export async function loadEngine(wasmUrl: string): Promise<Engine> {
-  const jspi = WebAssembly as unknown as Partial<Jspi>;
-  if (!jspi.Suspending || !jspi.promising) {
+  if (!hasJspi()) {
     throw new Error(
       "This browser has no WebAssembly JSPI, which local play needs. Chrome 137 or later has it.",
     );
@@ -234,34 +192,31 @@ export async function loadEngine(wasmUrl: string): Promise<Engine> {
     );
   }
   const bytes = await response.arrayBuffer();
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
   const module = await WebAssembly.compile(bytes);
   return {
     module,
-    hash: Array.from(digest, (byte) => byte.toString(16).padStart(2, "0")).join(""),
+    hash: await sha256Hex(bytes),
     scenarios: await scenariosOf(module),
-    catalog: await catalogOf(module),
+    catalog: await loadCatalog({ query: engineQuery(module) }),
   };
 }
 
 export interface LocalPlay {
+  /** The game of an earlier visit (`HostSave`). It is played again before the first update. */
+  save?: HostSave;
   /**
-   * The decisions of an earlier visit, of every seat (`SavedGame.decisions`). The game is played
-   * again with them before the first update.
+   * Told what plays the game again, to keep it: after each update of the game and at its end.
+   * The engine saves it, as the server keeps a game: no seat decides a saved decision again.
    */
-  decisions?: readonly string[];
-  /** The seat changes of an earlier visit. The game is played again with them. */
-  switches?: readonly SeatSwitch[];
+  onSave?(save: HostSave): void;
   /**
-   * Told the whole lists after each decision that the page learns of, each undo and each seat
-   * change, to keep them. `own` is not kept: the places in `decisions` of the answers of this
-   * page, which are what an undo takes back.
+   * Told when the page is left (or hidden), with the newest save: with what the seat that the page
+   * is shown as staged since the save before. A write of it (`onSave`) may not end before the page
+   * is gone; this is told so that the app keeps it at once.
    */
-  onDecisions?(
-    decisions: readonly string[],
-    switches: readonly SeatSwitch[],
-    own: readonly number[],
-  ): void;
+  onLeave?(save: HostSave): void;
+  /** A new game is kept from its first question on, also with no decision yet (a game that a table started). */
+  keepFirst?: boolean;
   /** The game waits before each decision of a seat that is not played here. */
   stepping?: boolean;
   /** The mode of each reaction that the seats of this page set, by its key. */
@@ -269,18 +224,11 @@ export interface LocalPlay {
   /** Told all modes after each change, to keep them. */
   onModes?(modes: ReactionModes): void;
   /**
-   * The seats that the rule bot plays where this page does not, as `LocalGame.humans`
-   * (`ti4_set_rule_seats`). The other seats decide at random. A game that is played again
-   * needs the same mask. Not read with `table`, which names the kind of each player.
+   * The seats that the rule bot plays where this page does not, as `LocalGame.humans`. The
+   * other seats decide at random. Not read with `LocalGame.table`, which names the kind of each
+   * player.
    */
   ruleSeats?: number;
-  /**
-   * The table that the game is started from (`ti4_play_setup`), in place of the seed, the
-   * seats and the mask of the game: its seats and the factions that nobody chose are drawn
-   * from its seed, as the server does it for the table of a lobby. A game that is played again
-   * needs the same table.
-   */
-  table?: TableRequest;
   /**
    * The wait of a table, in milliseconds: a seat that is not played here takes about this long
    * before each answer, and the page is shown the game while it waits. It does not wait to
@@ -288,679 +236,290 @@ export interface LocalPlay {
    * every wait, and a game that is played again does not wait for its saved decisions.
    */
   waitMs?: number;
+  /**
+   * The files of the MLP models that the seats of the game play (`mlp:<name>`), loaded into the
+   * engine in the Worker before the game starts (`models.ts`). Their buffers are transferred.
+   */
+  models?: ModelFile[];
 }
 
-/** A turn of the event loop. A timer would be slowed down in a tab that is not shown. */
-const breathe = () =>
-  new Promise<void>((resume) => {
-    const channel = new MessageChannel();
-    channel.port1.onmessage = () => resume();
-    channel.port2.postMessage(null);
+/**
+ * The commands that let the game go on and that the engine does not check against the game it
+ * shows: a second one would be taken by the next wait. An answer, a plan and an undo carry the
+ * version that they are for.
+ */
+const MOVES = new Set(["step"]);
+
+/** A Worker that runs the engine; in a place without Workers (Node, the tests) this thread. */
+function enginePort(module: WebAssembly.Module): HostPort {
+  if (typeof Worker === "undefined") {
+    return inlinePort(module);
+  }
+  // A relative path, not `@ti4/shared`: vite bundles a Worker only from a literal `new URL`.
+  const worker = new Worker(new URL("../../../web-shared/src/engine/worker.ts", import.meta.url), {
+    type: "module",
   });
+  return workerPort(worker, module);
+}
 
 /**
- * Plays one game. The first update comes when `play.decisions` are used up and the game asks a
- * seat of this page, or waits before a decision of another seat.
+ * Plays one game, in a Worker. The first update comes when the saved game is played again and
+ * the game asks a seat of this page, or waits before a decision of another seat.
  */
 export function createWasmTransport(
   engine: Engine,
   game: LocalGame,
   play: LocalPlay = {},
 ): Transport {
-  const listeners = new Set<(event: TransportEvent) => void>();
-  /**
-   * Every decision of the game in order, of every seat: the id of the chosen option. It is the
-   * saved game, as the decision log is on the server. `log[n]` answers the decision with the
-   * number `n` (`ti4_decided`).
-   */
-  const log = [...(play.decisions ?? [])];
-  /**
-   * The places in `log` of the answers of this side: what an undo can take back. A game that is
-   * played again fills it again.
-   */
-  let own: number[] = [];
-  const switches = [...(play.switches ?? [])];
-  /** How many answers are of seats that were played here before the last seat change: they stay. */
-  const kept = () => {
-    const from = switches.at(-1)?.decision ?? 0;
-    return own.filter((at) => at < from).length;
-  };
-  /**
-   * What each answer of this side chose, by its place in `own`: an id alone does not say that.
-   * Compare `RecordedDecision` of the server. A game that is played again fills it again.
-   */
-  let recorded: ChoiceOption[] = [];
-  /** Tells the app the game as it is to keep. */
-  const keep = () => play.onDecisions?.(log, switches, own);
-  /** An answer of this side to the decision that the game waits in. */
-  const give = (option: ChoiceOption) => {
-    own.push(log.length);
-    log.push(option.id);
-    recorded.push(option);
-  };
-  let latest: TransportEvent | null = null;
-  /** The pending choice: its update, its option ids in order, and how to answer the engine. */
-  let pending: {
-    nonce: string;
-    update: SessionUpdate;
-    options: string[];
-    answer: (index: number) => void;
-    /** The engine has a checkpoint for the answer before this choice. */
-    canGoBack: boolean;
-    /** The game waits before a decision of another seat: there is no choice to answer. */
-    paused: boolean;
-    /** Runs a draft script on the instance that waits here. */
-    draft: (script: DraftStep[], scope?: DraftScope) => DraftOutcome;
-    /** Tells the instance that waits here the seats of the page. Returns the number of the decision. */
-    switchTo: (humans: number) => number;
-  } | null = null;
   let stepping = play.stepping ?? false;
   let waitMs = play.waitMs ?? 0;
-  /** What the engine is told (`ti4_set_stepping`): it asks before each decision of another seat, or before each that takes the wait, or not at all. */
+  /** What the engine is told: it asks before each decision of another seat, or before each that takes the wait, or not at all. */
   const pauses = () => (stepping ? 1 : waitMs > 0 ? 2 : 0);
-  /** Tells the engine of the run that is the game whether it waits for each seat. */
-  let tellStepping: () => void = () => {};
-  /** The modes that the seats of this page set. The engine of each run is told. */
-  const modes: ReactionModes = { ...play.modes };
-  /** Tells the engine of the run that is the game the mode of a reaction. */
-  let tellMode: (key: string, mode: ReactionMode) => void = () => {};
-  /** Asks the engine of the run that is the game what a script answers to the choice that it waits in. */
-  let askPlan: (script: DraftStep[], next: number, actor: string) => PlanAnswer = () => ({
-    kind: "done",
+  /** The engine waits for the page: at a question, or before a decision of another seat. */
+  let parked = false;
+  /** The game is over: a command still reaches its session (an undo). */
+  let ended = false;
+  /** The game waits before a decision of this seat, which the page does not play. */
+  let waiting: string | null = null;
+  /** The wait of the seat that the game waits for. */
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let core: MessageCore | null = null;
+  const settle = () => {
+    if (timer !== null) {
+      clearTimeout(timer);
+      timer = null;
+    }
+  };
+
+  // A save names its game: the engine plays the game of the save.
+  const config: StartConfig = {
+    ...(play.save
+      ? {}
+      : game.table
+        ? { table: game.table }
+        : {
+            local: {
+              seed: game.seed,
+              players: game.players,
+              humans: game.humans,
+              ...(game.scenario === undefined ? {} : { scenario: game.scenario }),
+              bots: Array.from({ length: game.players }, (_, seat) =>
+                ((play.ruleSeats ?? 0) >> seat) & 1 ? ("smart" as const) : null,
+              ),
+            },
+          }),
+    ...(play.save ? { resume: play.save as unknown as EngineSave } : {}),
+    modes: { ...play.modes },
+    stepping: pauses(),
+    staged: true,
+  };
+  const link = engineLink(enginePort(engine.module), config, {
+    ...(play.models?.length ? { models: play.models } : {}),
+    gate(envelope) {
+      // The engine waits for the page from here on: what is sent reaches this question.
+      settle();
+      parked = true;
+      ended = false;
+      waiting = envelope.waiting ?? null;
+      core?.flushModes();
+    },
   });
+
+  /** A command, and its reply. A step does not wait for its reply: no second one is sent. */
+  const request = async (command: ClientMessage | HostCommand) => {
+    const moves = MOVES.has(command.type);
+    const was = parked;
+    if (moves) {
+      parked = false;
+    }
+    const envelope = await link.request(command);
+    if (envelope.restart) {
+      // The game is played again: its next question comes from a new run.
+      parked = ended = false;
+      waiting = null;
+    } else if (envelope.resume !== undefined) {
+      parked = false;
+      waiting = null;
+      settle();
+    } else if (moves) {
+      parked = was;
+    }
+    return envelope;
+  };
+  const local = (command: ClientMessage | HostCommand) => {
+    request(command).catch(() => undefined);
+  };
+  const linked: GameLink = {
+    send: local,
+    request,
+    subscribe: link.subscribe,
+    close: () => link.close(),
+  };
+
+  /** The app was told a save: an undo back to the start is a save too. */
+  let kept = play.save !== undefined || !!play.keepFirst;
+  /** The save that the app was told last. */
+  let last: HostSave | null = null;
   /**
-   * The answers that the engine gave itself in this run: the decline of a window of cards that
-   * are never offered. By their place in `own`. An undo goes back over them.
+   * Tells the app what plays the game again. A new game with no decision yet has nothing to
+   * keep, unless the seat staged something in it (a draft at the first question of a scenario).
    */
-  let passed = new Set<number>();
-  /** The plan that is being sent: the choices of the game are answered from its script. */
-  let plan: {
-    destination: string;
-    /** How many entries of the script answer the choices before the steps of the plan. */
-    lead: number;
-    /** The answers by id, then the steps. A payment may change its place (`ti4_plan`). */
-    script: DraftStep[];
-    next: number;
-    actor: string;
-    /** How many answers the game had before the plan. */
-    start: number;
-    /** The game refused a step: the answers of the plan are taken back, down to `start`. */
-    refused: string | null;
-  } | null = null;
-  /** Told with the next update: where the last plan stopped. */
-  let planStopped: PlanStopped | null = null;
-  /** An undo goes on while the choice that is open again is in the middle of a movement. */
-  let undoing = false;
-  /** What the undo took back so far, first answer first. Told with the next update. */
-  let undone: ChoiceOption[] = [];
-  /** The answers of each plan of this visit, as a range of `own`: an undo takes them back whole. */
-  let groups: { start: number; end: number }[] = [];
-  /** The number of the run that is the game. An undo starts a new run; the old one leaves. */
-  let current = 0;
+  const keep = (save: HostSave) => {
+    last = save;
+    const staged = save.staged;
+    const hasStaged = !!staged && typeof staged === "object" && Object.keys(staged).length > 0;
+    if (save.decisions.length > 0 || kept || hasStaged) {
+      kept = true;
+      play.onSave?.(save);
+    }
+  };
+  link.subscribe((event) => {
+    if (event.kind === "save") {
+      keep(event.save as unknown as HostSave);
+    }
+  });
 
-  /** Tells an event that is no state of the game: a listener that comes later does not get it. */
-  const say = (event: TransportEvent) => {
-    for (const listener of listeners) {
-      listener(event);
+  /** Lets the seat decide that the game waits for. */
+  const step = () => {
+    if (waiting !== null && parked) {
+      local({ type: "step" });
     }
   };
-  const tell = (event: TransportEvent) => {
-    latest = event;
-    say(event);
-  };
-  /** Where the answers end that this side gave itself: an undo takes the last of them back. */
-  const lastOwn = () => {
-    let end = own.length;
-    while (end > kept() && passed.has(end - 1)) {
-      end -= 1;
-    }
-    return end;
-  };
-  const canUndo = () => lastOwn() > kept();
-
-  /** Shows the player a choice, with what the plan or the undo before it came to. */
-  const show = (update: SessionUpdate, seat?: string) => {
-    const steps = undone.flatMap((answer) => stepOf(answer) ?? []);
-    tell({
-      kind: "update",
-      update,
-      canUndo: canUndo(),
-      plan: planStopped ?? undefined,
-      undone: steps.length ? steps : undefined,
-      stepping: seat === undefined ? undefined : { seat },
-    });
-    planStopped = null;
-    undone = [];
-  };
-
-  const run = async (id: number) => {
-    const jspi = WebAssembly as unknown as Jspi;
-    /** How many decisions the run is given from the saved game, and how many it was given. */
-    const saved = log.length;
-    let replayed = 0;
-    /** The app was told which of the saved decisions are answers of this side. */
-    let told = saved === 0;
-    own = [];
-    recorded = [];
-    // The engine of this run is given every saved decision, so it knows none as its own.
-    passed = new Set();
-    let shown = performance.now();
-    let diverged: string | null = null;
-    let exports!: Exports;
-    const text = (pointer: number, length: number) =>
-      new TextDecoder().decode(new Uint8Array(exports.memory.buffer, pointer, length));
-    const readUpdate = (): SessionUpdate | null => {
-      const length = exports.ti4_update_len();
-      return length ? JSON.parse(text(exports.ti4_update_ptr(), length)) : null;
-    };
-    /** Calls an export that reads the request buffer. The result is in the response buffer, or at `result`. */
-    const request = <T>(
-      call: (length: number) => number,
-      body: unknown,
-      result: () => number = exports.ti4_response_ptr,
-    ): T | null => {
-      const bytes = new TextEncoder().encode(JSON.stringify(body));
-      new Uint8Array(exports.memory.buffer).set(bytes, exports.ti4_request_ptr());
-      const status = call(bytes.length);
-      if (status < 0) {
-        throw new Error(text(exports.ti4_response_ptr(), -status));
-      }
-      return status ? JSON.parse(text(result(), status)) : null;
-    };
-    const draft = (steps: DraftStep[], scope?: DraftScope) =>
-      request<DraftOutcome>(exports.ti4_draft, { script: steps, scope }, exports.ti4_draft_ptr)!;
-    const setMode = (key: string, mode: ReactionMode) =>
-      void request(exports.ti4_set_reaction_mode, { card: key, mode });
-    /** The option of a saved decision in the decision that the engine is parked in, or why it is not offered. */
-    const savedOption = (wanted: string): SavedOption | string => {
-      const bytes = new TextEncoder().encode(wanted);
-      new Uint8Array(exports.memory.buffer).set(bytes, exports.ti4_request_ptr());
-      const status = exports.ti4_saved_option(bytes.length);
-      const result = text(exports.ti4_response_ptr(), Math.abs(status));
-      return status < 0 ? result : JSON.parse(result);
-    };
-    /**
-     * Brings the log up to the game: the decisions that were made since the engine last asked.
-     * Returns the windows that the engine declined for this side. Each is an answer of this
-     * side: an undo goes back over it.
-     */
-    const takeJournal = (): Passed[] => {
-      const status = exports.ti4_journal();
-      if (status < 0) {
-        throw new Error(text(exports.ti4_response_ptr(), -status));
-      }
-      const { from, entries }: Journal = JSON.parse(text(exports.ti4_response_ptr(), status));
-      const windows: Passed[] = [];
-      if (entries.length) {
-        // After an undo from a checkpoint the engine made the decisions since then again.
-        log.length = Math.min(log.length, from);
-        for (const { id, passed: window } of entries) {
-          if (window) {
-            passed.add(own.length);
-            give(window.option);
-            windows.push(window);
-          } else {
-            log.push(id);
-          }
-        }
-        keep();
-      } else if (!told) {
-        keep();
-      }
-      told = true;
-      if (log.length !== exports.ti4_decided()) {
-        throw new Error(
-          `The page has ${log.length} decisions of the game, and the engine made ${exports.ti4_decided()}.`,
-        );
-      }
-      return windows;
-    };
-    const switchTo = (humans: number) => {
-      const decision = exports.ti4_decided();
-      exports.ti4_switch_seats(decision, humans);
-      return decision;
-    };
-    const ask = new jspi.Suspending(async () => {
-      if (id !== current) {
-        return LEAVE;
-      }
-      const update = readUpdate();
-      if (!update) {
-        // A decision of the saved game: the engine is given its answer, whoever the seat is.
-        const wanted = log[replayed];
-        const found = replayed < saved ? savedOption(wanted) : "the saved game has no more";
-        if (typeof found === "string") {
-          diverged =
-            `The saved game does not fit this engine: decision ${replayed + 1} of ${saved} ` +
-            `was "${wanted}", but ${found}. Start a new game.`;
-          return LEAVE;
-        }
-        if (found.own) {
-          own.push(replayed);
-          recorded.push(found.option);
-        }
-        replayed += 1;
-        if (performance.now() - shown > REPLAY_SLICE_MS) {
-          tell({ kind: "replaying", done: replayed, total: saved });
-          await breathe();
-          shown = performance.now();
-        }
-        return found.index;
-      }
-      // An undo that opens such a window again goes on to the answer of the player before it.
-      const windows = takeJournal();
-      const goesBack = windows.length > 0 && undoing && canUndo();
-      for (const { cards } of goesBack ? [] : windows) {
-        say({ kind: "passed", cards });
-      }
-      if (!update.pending_choice) {
-        // The engine waits before a decision of a seat that is not played here.
-        const turn = update.turn_status;
-        const seat = turn.kind === "waiting_for_decision" ? turn.seat : "";
-        const canGoBack = exports.ti4_can_undo() === 1;
-        // A plan ends where another seat decides.
-        const index = decidePlan(update, canGoBack);
-        if (index !== null) {
-          return index;
-        }
-        if (goesBack) {
-          return back(canGoBack);
-        }
-        // An undo goes on to the choice that it opens again.
-        if (undoing || pauses() === 0) {
-          return GO;
-        }
-        return new Promise<number>((answer) => {
-          const waits = {
-            nonce: "",
-            update,
-            options: [],
-            answer,
-            canGoBack,
-            paused: true,
-            draft,
-            switchTo,
-          };
-          pending = waits;
-          if (stepping) {
-            return show(update, seat);
-          }
-          // The wait of the table: the game is shown, and the seat decides by itself. An undo
-          // or a seat change in the wait answers first, and the timer then finds another state.
-          show(update);
-          setTimeout(() => pending === waits && step(), waitMs * (0.6 + 0.8 * Math.random()));
-        });
-      }
-      const { nonce, choice } = update.pending_choice;
-      const options = choice.options.map((option) => option.id);
-      const canGoBack = exports.ti4_can_undo() === 1;
-      const index = decide(update, canGoBack, goesBack);
-      if (index !== null) {
-        return index;
-      }
-      return new Promise<number>((answer) => {
-        pending = { nonce, update, options, answer, canGoBack, paused: false, draft, switchTo };
-        show(update);
-      });
-    });
-    const instance = await WebAssembly.instantiate(engine.module, { host: { ask } });
-    exports = instance.exports as unknown as Exports;
-    exports.ti4_set_stepping(pauses());
-    tellStepping = () => id === current && exports.ti4_set_stepping(pauses());
-    for (const [key, mode] of Object.entries(modes)) {
-      setMode(key, mode);
-    }
-    tellMode = (card, mode) => id === current && setMode(card, mode);
-    askPlan = (entries, next, actor) =>
-      request<PlanAnswer>(exports.ti4_plan, { script: entries, next, actor })!;
-    // The engine is given the saved decisions: a window that was declined then is one of them.
-    exports.ti4_replay(saved);
-    for (const item of switches) {
-      exports.ti4_switch_seats(item.decision, item.humans);
-    }
-    // A status of 0 or more is the length of a result; below 0, the negated length of an error.
-    let status: number;
-    exports.ti4_set_rule_seats(play.table ? 0 : (play.ruleSeats ?? 0));
-    if (play.table) {
-      // The engine reads the table before it plays: a draft writes into the same buffer.
-      const table = new TextEncoder().encode(JSON.stringify(play.table));
-      new Uint8Array(exports.memory.buffer).set(table, exports.ti4_request_ptr());
-      status = await jspi.promising(exports.ti4_play_setup)(table.length);
-    } else if (game.scenario === undefined) {
-      status = await jspi.promising(exports.ti4_play)(game.seed, game.players, game.humans);
-    } else {
-      // The engine copies the id before it plays: a draft writes into the same buffer.
-      const name = new TextEncoder().encode(game.scenario);
-      new Uint8Array(exports.memory.buffer).set(name, exports.ti4_request_ptr());
-      status = await jspi.promising(exports.ti4_play_scenario)(game.humans, name.length);
-    }
-    if (id !== current) {
+  /** The game waits before a decision of another seat: with Step for the page, else for the wait of the table. */
+  const waitFor = () => {
+    settle();
+    if (stepping) {
       return;
     }
-    if (diverged) {
-      throw new Error(diverged);
+    if (waitMs === 0) {
+      return step();
     }
-    const result = text(exports.ti4_response_ptr(), Math.abs(status));
-    if (status < 0) {
-      throw new Error(result);
-    }
-    const last = readUpdate();
-    for (const { cards } of takeJournal()) {
-      say({ kind: "passed", cards });
-    }
-    if (last) {
-      tell({ kind: "update", update: last, canUndo: canUndo() });
-    }
-    const stopped: string | null = JSON.parse(result).stopped;
-    if (stopped) {
-      throw new Error(stopped);
-    }
-  };
-
-  const start = () => {
-    const id = current;
-    if (log.length > 0) {
-      tell({ kind: "replaying", done: 0, total: log.length });
-    }
-    run(id).catch((error: unknown) => {
-      if (id === current) {
-        pending = null;
-        tell({ kind: "error", message: error instanceof Error ? error.message : String(error) });
-      }
-    });
-  };
-  /**
-   * Takes back the answer before the open choice: the engine asks that choice again, from a
-   * checkpoint when it has one, or else the game is played again without the answer.
-   */
-  const back = (canGoBack: boolean): number => {
-    /**
-     * The answers from `length` on leave, with every decision of the game after the first of
-     * them, and an undo keeps what they chose.
-     */
-    const drop = (length: number) => {
-      log.length = own[length];
-      own.length = length;
-      passed = new Set([...passed].filter((at) => at < length));
-      const gone = recorded.splice(length);
-      if (undoing) {
-        undone = [...gone, ...undone];
-      }
-      keep();
-    };
-    // A window that the engine declined goes with the answer before it: the engine does the same.
-    const end = lastOwn();
-    if (canGoBack) {
-      drop(end - 1);
-      return UNDO;
-    }
-    // A game that is played again costs the same for one answer and for many: the answers of a
-    // plan go at once.
-    const group = groups.findLast((item) => item.start < end && end <= item.end);
-    drop(group ? group.start : end - 1);
-    groups = groups.filter((item) => item.start < own.length);
-    current += 1;
-    start();
-    return LEAVE;
-  };
-  /**
-   * A choice in the middle of a movement (a ship has moved, or a hold is open) or of the
-   * landings (the answer before it landed a unit).
-   */
-  const insideMovement = (update: SessionUpdate) => {
-    const subtype = update.pending_choice?.choice.context?.subtype;
-    return (
-      subtype === "load_cargo" ||
-      (subtype === "movement_step" &&
-        update.tactical?.kind === "movement" &&
-        update.tactical.moved > 0) ||
-      (subtype === "commit_ground_forces" && recorded.at(-1)?.kind === "commit") ||
-      ((subtype === "produce_unit" || subtype === "pay_resources" || subtype === "place_unit") &&
-        afterPurchase())
+    timer = setTimeout(
+      () => {
+        timer = null;
+        step();
+      },
+      waitMs * (0.6 + 0.8 * Math.random()),
     );
   };
-  /** The answers before the open choice are of a production: a purchase, then what paid and placed it. */
-  const afterPurchase = () => {
-    for (let at = recorded.length - 1; at >= 0; at--) {
-      const { kind } = recorded[at];
-      if (kind === "produce") {
-        return true;
-      }
-      if (kind !== "pay" && kind !== "place") {
-        return false;
-      }
-    }
-    return false;
-  };
-  /**
-   * The answer of the plan that is being sent to the choice that the game waits in. Null when
-   * there is no plan, or when it ends here: what it came to is then told with the next update.
-   */
-  const decidePlan = (update: SessionUpdate, canGoBack: boolean): number | null => {
-    if (plan) {
-      const sent = plan;
-      const result: PlanAnswer = sent.refused
-        ? { kind: "mismatch", reason: sent.refused }
-        : askPlan(sent.script, sent.next, sent.actor);
-      // The steps of the plan that are in the game, without the answers before them.
-      const done = Math.max(0, sent.next - sent.lead);
-      if (result.kind === "answer") {
-        const option = update.pending_choice!.choice.options[result.index];
-        sent.next = result.next;
-        sent.script = result.script ?? sent.script;
-        give(option);
-        keep();
-        return result.index;
-      }
-      if (result.kind === "mismatch") {
-        // All or nothing: the answers of the plan are taken back before the player is asked.
-        if (!sent.refused) {
-          sent.refused = result.reason;
-          groups.push({ start: sent.start, end: Number.POSITIVE_INFINITY });
+  /** Each question and the end, after what they told: a wait starts, a save that does not fit is said. */
+  let watching: { cancel(): void } | null = null;
+  const watch = () => {
+    const next = link.nextQuestion();
+    watching = next;
+    next.promise.then(
+      (envelope) => {
+        if (envelope?.kind === "end") {
+          parked = false;
+          ended = true;
+          waiting = null;
+          const diverged = (envelope.end as { diverged?: string | null } | undefined)?.diverged;
+          if (diverged) {
+            core?.fail(`The saved game does not fit this engine: ${diverged}. Start a new game.`);
+            return;
+          }
+        } else if (waiting !== null && parked) {
+          waitFor();
         }
-        if (own.length > sent.start) {
-          return back(canGoBack);
-        }
-        groups = groups.filter((item) => item.end !== Number.POSITIVE_INFINITY);
-        planStopped = {
-          destination: sent.destination,
-          applied: 0,
-          remaining: sent.script.slice(sent.lead),
-          interrupted: false,
-          reason: result.reason,
-        };
-      } else if (result.kind === "interrupted") {
-        planStopped = {
-          destination: sent.destination,
-          applied: done,
-          remaining: sent.script.slice(sent.lead + done),
-          interrupted: true,
-          reason: result.reason,
-        };
-      }
-      if (own.length > sent.start) {
-        groups.push({ start: sent.start, end: own.length });
-      }
-      plan = null;
-    }
-    return null;
+        watch();
+      },
+      () => undefined,
+    );
   };
-  /**
-   * The answer to a choice that needs none from the player: the next step of the plan, or one
-   * more step back. Null when the player is asked.
-   */
-  const decide = (update: SessionUpdate, canGoBack: boolean, goesBack = false): number | null => {
-    const index = decidePlan(update, canGoBack);
-    if (index !== null) {
-      return index;
-    }
-    if (undoing) {
-      if (canUndo() && (goesBack || insideMovement(update))) {
-        return back(canGoBack);
-      }
-      undoing = false;
-    }
-    return null;
-  };
-  /** The run that is the game now is no longer it. Where it waits for an answer, it leaves. */
-  const leave = () => {
-    current += 1;
-    pending?.answer(LEAVE);
-    pending = null;
-  };
-  start();
+  watch();
 
-  const step = () => {
-    if (pending?.paused) {
-      const { answer } = pending;
-      pending = null;
-      answer(GO);
-    }
-  };
+  /** Tells the engine whether it waits for each seat. Only a flag: it may be set at any time. */
+  const tellStepping = () => local({ type: "stepping", mode: pauses() });
+  const isPlayer = () => core?.latest()?.update.viewer.role === "player";
+
   // The tools of a local game. The saved game and the scenarios are of the app that made this
-  // transport (`onDecisions`, `Engine.scenarios`).
+  // transport (`onSave`, `Engine.scenarios`).
   const capabilities: Capabilities = {
     stepping: {
       set(on) {
         stepping = on;
         tellStepping();
-        if (!on) {
-          step();
+        if (waiting !== null && parked) {
+          if (on) {
+            // The seat waits for Step now, not for its time.
+            settle();
+            core?.again();
+          } else {
+            step();
+          }
         }
       },
       step,
     },
     switchSeat(seat) {
-      const viewer = pending?.update.viewer;
-      if (!pending || plan || viewer?.role !== "player") {
+      if (!parked || core?.sending() || !isPlayer()) {
         return;
       }
-      // Bit 0 is seat a.
-      const bit = (id: string) => 1 << (id.charCodeAt(0) - 97);
-      const now = switches.at(-1)?.humans ?? game.humans;
-      if (now & bit(seat)) {
-        return;
-      }
-      const humans = (now & ~bit(viewer.seat)) | bit(seat);
-      const { answer, switchTo } = pending;
-      pending = null;
-      undoing = false;
-      switches.push({ decision: switchTo(humans), humans });
-      keep();
-      answer(SWITCH);
+      local({ type: "switch_seat", seat });
     },
     wait(ms) {
       waitMs = Math.max(0, ms);
       tellStepping();
+      if (!stepping) {
+        step();
+      }
     },
     scenarios: true,
     save: true,
   };
 
-  return {
+  core = messageTransport(linked, {
+    gameId: GAME_ID,
     catalog: engine.catalog,
-    odds: (request) => spaceOddsOf(engine.module, request),
+    // The odds are asked of the Worker: of the instance of the game, also while it waits.
+    odds: (request) => spaceOdds(link.query, request),
     capabilities,
-    subscribe(listener) {
-      listeners.add(listener);
-      listener({ kind: "modes", modes: { ...modes } });
-      if (latest) {
-        listener(latest);
-      }
-      return () => listeners.delete(listener);
+    player: true,
+    ready: () => parked || ended,
+    modes: { initial: play.modes, onModes: play.onModes },
+    passedEach: true,
+    stepping: () => (stepping ? waiting : null),
+    // The save is kept after each write of the staged work.
+    afterPut() {
+      request({ type: "save_state" }).then(
+        (envelope) => envelope.save && keep(envelope.save as unknown as HostSave),
+        () => undefined,
+      );
     },
-    submitChoice(nonce, optionId) {
-      if (pending?.nonce !== nonce) {
-        return;
-      }
-      const index = pending.options.indexOf(optionId);
-      if (index < 0) {
-        return;
-      }
-      const { answer, update } = pending;
-      pending = null;
-      give(update.pending_choice!.choice.options[index]);
-      keep();
-      answer(index);
-    },
-    submitPlan(nonce, sent) {
-      this.applyDraft(nonce, { choices: [], plan: sent });
-    },
-    applyDraft(nonce, draft) {
-      if (pending?.nonce !== nonce || pending.paused || pending.update.viewer.role !== "player") {
-        return;
-      }
-      plan = {
-        destination: draft.plan?.destination ?? "",
-        lead: draft.choices.length,
-        script: [
-          ...draft.choices.map((option_id): DraftStep => ({ kind: "choose", option_id })),
-          ...(draft.plan?.steps ?? []),
-        ],
-        next: 0,
-        actor: pending.update.viewer.seat,
-        start: own.length,
-        refused: null,
-      };
-      const { update, answer, canGoBack } = pending;
-      const index = decide(update, canGoBack);
-      if (index === null) {
-        // The first step was refused: nothing was sent, and the same choice is open.
-        show(update);
-        return;
-      }
-      pending = null;
-      answer(index);
-    },
-    draft(script, scope) {
-      // Later, not now: the answer of the server is later too, and the page has one path.
-      queueMicrotask(() => {
-        if (!listeners.size) {
-          return;
-        }
-        let outcome: DraftOutcome | null = null;
-        if (pending) {
-          try {
-            outcome = pending.draft(script, scope);
-          } catch (error) {
-            const reason = error instanceof Error ? error.message : String(error);
-            outcome = { update: pending.update, consumed: 0, stop: { kind: "failed", reason } };
-          }
-        }
-        say({ kind: "draft", script, scope, outcome });
-      });
-    },
-    setReactionMode(key, mode) {
-      if ((modes[key] ?? "always") === mode) {
-        return;
-      }
-      if (mode === "always") {
-        delete modes[key];
-      } else {
-        modes[key] = mode;
-      }
-      tellMode(key, mode);
-      play.onModes?.({ ...modes });
-      say({ kind: "modes", modes: { ...modes } });
-      // A window that is open stays as it was asked: the mode is of the windows after it.
-    },
-    undo() {
-      if (!canUndo()) {
-        return;
-      }
-      undoing = true;
-      undone = [];
-      // With no choice open the game is over: it is played again without the answer.
-      const { answer = null, canGoBack = false } = pending ?? {};
-      pending = null;
-      answer?.(back(canGoBack));
-      if (!answer) {
-        back(false);
+    closed() {
+      settle();
+      watching?.cancel();
+      if (typeof window !== "undefined") {
+        window.removeEventListener("pagehide", stay);
+        document.removeEventListener("visibilitychange", hidden);
       }
     },
-    close() {
-      leave();
-      listeners.clear();
-    },
+  });
+
+  /**
+   * The page is left: a write of the staged work to the Worker would not come back. What the
+   * seat that the page is shown as staged since the last save is put into that save here, and
+   * the app is told the newest save.
+   */
+  const stay = () => {
+    if (!last) {
+      return;
+    }
+    const store = core?.transport.staged;
+    const viewer = core?.latest()?.update.viewer;
+    if (store && viewer?.role === "player") {
+      const values = Object.fromEntries(SLOTS.map((slot) => [slot, store.get(slot) ?? null]));
+      const left = stagedInto(last, viewer.seat, values);
+      if (left) {
+        keep(left);
+      }
+    }
+    play.onLeave?.(last);
   };
+  const hidden = () => document.visibilityState === "hidden" && stay();
+  if (typeof window !== "undefined") {
+    window.addEventListener("pagehide", stay);
+    document.addEventListener("visibilitychange", hidden);
+  }
+  return core.transport;
 }

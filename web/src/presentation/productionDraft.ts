@@ -1,4 +1,4 @@
-import type { ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import type { ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 
 /**
  * The arithmetic of the production builder, shared by the drawer (what a staged draft costs) and by
@@ -7,7 +7,7 @@ import type { ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
  */
 
 /** Resources a staged draft costs: printed costs less the single one-time discount of the use. */
-export function draftResourceCost(options: ChoiceOptionDto[], draft: Record<string, number>): number {
+export function draftResourceCost(options: ChoiceOption[], draft: Record<string, number>): number {
   let printedTotal = 0;
   let discountOnce = 0;
   for (const option of options) {
@@ -63,7 +63,7 @@ export interface ProductionTotal {
  * `draftResourceCost` (the same figure the budget meter and the payment panel use), so exchange
  * builds and free uses cost nothing and the one-time discount counts once.
  */
-export function productionTotal(options: ChoiceOptionDto[], draft: Record<string, number>): ProductionTotal {
+export function productionTotal(options: ChoiceOption[], draft: Record<string, number>): ProductionTotal {
   const lines: ProductionTotalLine[] = [];
   let builds = 0;
   let printed = 0;
@@ -91,7 +91,7 @@ export function productionTotal(options: ChoiceOptionDto[], draft: Record<string
 }
 
 /** Production capacity one batch of this option uses. */
-export const optionCapacity = (option: ChoiceOptionDto): number =>
+export const optionCapacity = (option: ChoiceOption): number =>
   typeof option.payload?.production_spent === "number"
     ? option.payload.production_spent
     : typeof option.payload?.placed === "number"
@@ -101,11 +101,11 @@ export const optionCapacity = (option: ChoiceOptionDto): number =>
         : 1;
 
 /** True for the Amalgamation option: return a captured model of the type instead of paying. */
-export const isExchangeOption = (option: ChoiceOptionDto): boolean =>
+export const isExchangeOption = (option: ChoiceOption): boolean =>
   option.payload?.exchange === true;
 
 /** The unit type an option makes (its payload, else its id), for both the build and the exchange. */
-export const optionUnitType = (option: ChoiceOptionDto): string =>
+export const optionUnitType = (option: ChoiceOption): string =>
   String(option.payload?.unit ?? option.id);
 
 /**
@@ -113,12 +113,12 @@ export const optionUnitType = (option: ChoiceOptionDto): string =>
  * same type is its own option id (`exchange|carrier`), so the two never share a key and a staged
  * "carrier" can only ever mean the paid one.
  */
-export const optionUnit = (option: ChoiceOptionDto): string =>
+export const optionUnit = (option: ChoiceOption): string =>
   isExchangeOption(option) ? option.id : optionUnitType(option);
 
 /** The production batch step for one staged build of this option. */
 export const produceStep = (
-  option: ChoiceOptionDto,
+  option: ChoiceOption,
 ): { kind: "produce"; unit: string; count: number; exchange?: true } => ({
   kind: "produce",
   unit: optionUnitType(option),
@@ -130,7 +130,7 @@ export const produceStep = (
 export const stepUnitKey = (step: { unit: string; exchange?: boolean }): string =>
   step.exchange ? `exchange|${step.unit}` : step.unit;
 
-const isBuild = (option: ChoiceOptionDto) => option.id !== "decline" && option.kind !== "decline";
+const isBuild = (option: ChoiceOption) => option.id !== "decline" && option.kind !== "decline";
 
 /** The production room the question states: capacity left and resources that can be spent. */
 export function productionRoom(choice: PendingChoiceDto): {

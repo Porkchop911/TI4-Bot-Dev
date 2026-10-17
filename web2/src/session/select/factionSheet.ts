@@ -3,26 +3,26 @@
 import { type ComponentCardView, type FactionSheetView, unitName } from "../../model";
 import type { Catalog } from "../wire";
 import { plain, timing } from "./components";
-import { titleCase, unitType } from "./names";
+import { humanizeId, unitType } from "./names";
 
 const LEADER_KINDS = ["agent", "commander", "hero"];
 
 /** "2 Carriers", "Destroyer": a unit by its id, with its count when there are several. */
 function units(id: string, count: number): string {
   const unit = unitType(id);
-  const name = unit ? unitName(unit, count) : titleCase(id);
+  const name = unit ? unitName(unit, count) : humanizeId(id);
   return count === 1 ? name : `${count} ${name}`;
 }
 
 /** The sheet of the faction `id`. Null without the catalogue, or for a faction that it does not have. */
 export function factionSheet(id: string, catalog: Catalog | null): FactionSheetView | null {
   const printed = catalog?.components;
-  const sheet = printed?.faction_sheets?.[id];
+  const sheet = printed?.faction_sheets[id];
   if (!printed || !sheet) {
     return null;
   }
   const technologies = new Map(printed.technologies.map((card) => [card.id, card]));
-  const technology = (tech: string) => technologies.get(tech)?.name ?? titleCase(tech);
+  const technology = (tech: string) => technologies.get(tech)?.name ?? humanizeId(tech);
   const planets = sheet.home_planets ?? [];
   const fleet = sheet.starting_fleet ?? [];
   const at = (planet: string | undefined) =>
@@ -65,7 +65,7 @@ export function factionSheet(id: string, catalog: Catalog | null): FactionSheetV
     abilities: (printed.factions[id] ?? []).map((ability) => {
       const found = abilities.get(ability);
       return {
-        ...card(found?.name ?? titleCase(ability), "", found?.text),
+        ...card(found?.name ?? humanizeId(ability), "", found?.text),
         window: timing(found?.window),
       };
     }),
@@ -78,7 +78,7 @@ export function factionSheet(id: string, catalog: Catalog | null): FactionSheetV
       .map((leader) => ({
         ...card(
           leader.name,
-          [titleCase(leader.kind), leader.title].filter(Boolean).join(" · "),
+          [humanizeId(leader.kind), leader.title].filter(Boolean).join(" · "),
           leader.text,
         ),
         window: timing(leader.window),

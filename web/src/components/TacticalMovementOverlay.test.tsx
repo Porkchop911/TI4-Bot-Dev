@@ -3,15 +3,16 @@ import { render, screen, fireEvent, act, waitFor } from "@testing-library/react"
 import { TacticalMovementOverlay, emptyMovementPlan } from "./TacticalMovementOverlay.tsx";
 import { PendingChoiceDto, PlayerView } from "../protocol/types.ts";
 import { deriveChoiceRendererModel } from "../presentation/choiceModel.ts";
+import { partialContext } from "../test/wire.ts";
 
 const mockMoveChoice: PendingChoiceDto = {
   prompt: "movement",
   actor: "p1",
   nonce: "nonce_move_step",
-  context: {
+  context: partialContext({
     subtype: "movement_step",
     target: { System: "18" },
-  },
+  }),
   options: [
     {
       id: "move|24|0",
@@ -35,6 +36,7 @@ const mockMoveChoice: PendingChoiceDto = {
       id: "done_moving",
       label: "Finish Movement",
       kind: "decline",
+      payload: {},
     },
   ],
 };
@@ -96,7 +98,7 @@ describe("TacticalMovementOverlay Component", () => {
     await waitFor(() =>
       expect(onSubmitBatch).toHaveBeenCalledExactlyOnceWith("18", [
         { kind: "move", origin: "24", unit: "carrier", damaged: false },
-        { kind: "load", origin: "24", unit: "infantry", source: "jord", damaged: false },
+        { kind: "load", origin: "24", unit: "infantry", source: "jord", damaged: false, pickup_system: "24" },
         { kind: "done_moving" },
       ]),
     );
@@ -139,7 +141,7 @@ describe("TacticalMovementOverlay Component", () => {
     await waitFor(() =>
       expect(onSubmitBatch).toHaveBeenCalledExactlyOnceWith("18", [
         { kind: "move", origin: "24", unit: "carrier", damaged: false },
-        { kind: "load", origin: "24", unit: "infantry", source: "jord", damaged: false },
+        { kind: "load", origin: "24", unit: "infantry", source: "jord", damaged: false, pickup_system: "24" },
         { kind: "done_loading" },
         { kind: "done_moving" },
       ]),
@@ -219,7 +221,7 @@ describe("TacticalMovementOverlay Component", () => {
       actor: "p1",
       nonce: "cargo-1",
       prompt: "load carrier",
-      context: { subtype: "load_cargo", target: { System: "24" } },
+      context: partialContext({ subtype: "load_cargo", target: { System: "24" } }),
       options: [
         {
           id: "load|0",
@@ -227,13 +229,13 @@ describe("TacticalMovementOverlay Component", () => {
           label: "load infantry",
           payload: { unit: "infantry", source: "jord" },
         },
-        { id: "done_loading", kind: "decline", label: "carry nothing further" },
+        { id: "done_loading", kind: "decline", label: "carry nothing further", payload: {} },
       ],
     };
     const moveAgain = {
       ...mockMoveChoice,
       nonce: "move-2",
-      options: [{ id: "done_moving", kind: "decline", label: "finish movement" }],
+      options: [{ id: "done_moving", kind: "decline", label: "finish movement", payload: {} }],
     };
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     const props = {
@@ -282,8 +284,8 @@ describe("TacticalMovementOverlay Component", () => {
       actor: "p1",
       nonce: "0123456789abcdef",
       prompt: "movement",
-      context: { subtype: "movement_step", target: { System: "18" } },
-      options: [{ id: "done_moving", kind: "decline", label: "finish movement" }],
+      context: partialContext({ subtype: "movement_step", target: { System: "18" } }),
+      options: [{ id: "done_moving", kind: "decline", label: "finish movement", payload: {} }],
     };
     const model = deriveChoiceRendererModel(choice, "p1");
     expect(model?.workflow).toBe("tactical_movement");
@@ -314,8 +316,8 @@ describe("TacticalMovementOverlay Component", () => {
       actor: "p1",
       nonce: "0123456789abcdef",
       prompt: "movement",
-      context: { subtype: "movement_step", target: { System: "18" } },
-      options: [{ id: "unknown", kind: "mystery", label: "unrecognized action" }],
+      context: partialContext({ subtype: "movement_step", target: { System: "18" } }),
+      options: [{ id: "unknown", kind: "mystery", label: "unrecognized action", payload: {} }],
     };
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     render(
@@ -338,8 +340,8 @@ describe("TacticalMovementOverlay Component", () => {
       actor: "p1",
       nonce: "0123456789abcdef",
       prompt: "movement",
-      context: { subtype: "movement_step", target: { System: "18" } },
-      options: [{ id: "done_moving", kind: "decline", label: "finish movement" }],
+      context: partialContext({ subtype: "movement_step", target: { System: "18" } }),
+      options: [{ id: "done_moving", kind: "decline", label: "finish movement", payload: {} }],
     };
     const onSubmit = vi
       .fn()
@@ -516,7 +518,7 @@ describe("TacticalMovementOverlay Component", () => {
       prompt: "movement",
       actor: "p1",
       nonce: "nonce_sol",
-      context: { subtype: "movement_step", target: { System: "18" } },
+      context: partialContext({ subtype: "movement_step", target: { System: "18" } }),
       options: [
         {
           id: "move|24|0",
@@ -530,7 +532,7 @@ describe("TacticalMovementOverlay Component", () => {
           kind: "move",
           payload: { origin: "24", unit: "cruiser" },
         },
-        { id: "done_moving", kind: "decline", label: "finish movement" },
+        { id: "done_moving", kind: "decline", label: "finish movement", payload: {} },
       ],
     };
 
@@ -592,7 +594,7 @@ describe("TacticalMovementOverlay Component", () => {
       prompt: "movement",
       actor: "p1",
       nonce: "nonce_fleet",
-      context: { subtype: "movement_step", target: { System: "18" } },
+      context: partialContext({ subtype: "movement_step", target: { System: "18" } }),
       options: [
         {
           id: "move|24|0",
@@ -600,7 +602,7 @@ describe("TacticalMovementOverlay Component", () => {
           kind: "move",
           payload: { origin: "24", unit: "cruiser" },
         },
-        { id: "done_moving", kind: "decline", label: "finish movement" },
+        { id: "done_moving", kind: "decline", label: "finish movement", payload: {} },
       ],
     };
 
@@ -662,7 +664,7 @@ describe("TacticalMovementOverlay Component", () => {
       prompt: "movement",
       actor: "p1",
       nonce: "nonce_cargo",
-      context: { subtype: "movement_step", target: { System: "18" } },
+      context: partialContext({ subtype: "movement_step", target: { System: "18" } }),
       options: [
         {
           id: "move|24|0",
@@ -670,7 +672,7 @@ describe("TacticalMovementOverlay Component", () => {
           kind: "move",
           payload: { origin: "24", unit: "carrier", capacity: 4 },
         },
-        { id: "done_moving", kind: "decline", label: "finish movement" },
+        { id: "done_moving", kind: "decline", label: "finish movement", payload: {} },
       ],
     };
 
@@ -738,7 +740,7 @@ describe("TacticalMovementOverlay Component", () => {
       prompt: "movement",
       actor: "p1",
       nonce: "nonce_multi",
-      context: { subtype: "movement_step", target: { System: "18" } },
+      context: partialContext({ subtype: "movement_step", target: { System: "18" } }),
       options: [
         {
           id: "move|24|0",
@@ -752,7 +754,7 @@ describe("TacticalMovementOverlay Component", () => {
           kind: "move",
           payload: { origin: "12", unit: "cruiser" },
         },
-        { id: "done_moving", kind: "decline", label: "finish movement" },
+        { id: "done_moving", kind: "decline", label: "finish movement", payload: {} },
       ],
     };
 
@@ -852,7 +854,7 @@ describe("TacticalMovementOverlay Component", () => {
       prompt: "movement",
       actor: "p1",
       nonce: "nonce_soft",
-      context: { subtype: "movement_step", target: { System: "18" } },
+      context: partialContext({ subtype: "movement_step", target: { System: "18" } }),
       options: [
         {
           id: "move|24|0",
@@ -860,7 +862,7 @@ describe("TacticalMovementOverlay Component", () => {
           kind: "move",
           payload: { origin: "24", unit: "carrier", capacity: 2 },
         },
-        { id: "done_moving", kind: "decline", label: "finish movement" },
+        { id: "done_moving", kind: "decline", label: "finish movement", payload: {} },
       ],
     };
 
@@ -935,7 +937,7 @@ describe("TacticalMovementOverlay Component", () => {
       prompt: "movement",
       actor: "p1",
       nonce: "nonce_gd",
-      context: { subtype: "movement_step", target: { System: "18" } },
+      context: partialContext({ subtype: "movement_step", target: { System: "18" } }),
       options: [
         {
           id: "move_gd|16|0",
@@ -955,7 +957,7 @@ describe("TacticalMovementOverlay Component", () => {
           kind: "move",
           payload: { origin: "17", unit: "cruiser", gravity_drive: true },
         },
-        { id: "done_moving", label: "Finish Movement", kind: "decline" },
+        { id: "done_moving", label: "Finish Movement", kind: "decline", payload: {} },
       ],
     };
     render(
@@ -997,11 +999,11 @@ describe("TacticalMovementOverlay Component", () => {
         prompt: "movement",
         actor: "p1",
         nonce: "nonce_variant",
-        context: { subtype: "movement_step", target: { System: "18" } },
+        context: partialContext({ subtype: "movement_step", target: { System: "18" } }),
         options: [
           { id: "move|20|0", label: base, kind: "move", payload: { origin: "20", unit: base, capacity: 1 } },
           { id: "move|20|1", label: variant, kind: "move", payload: { origin: "20", unit: variant, capacity: 1 } },
-          { id: "done_moving", label: "Finish Movement", kind: "decline" },
+          { id: "done_moving", label: "Finish Movement", kind: "decline", payload: {} },
         ],
       };
       render(
@@ -1149,5 +1151,39 @@ describe("TacticalMovementOverlay Component", () => {
       expect(screen.getByTestId("rally-count-cargo-24-infantry-space")).toHaveTextContent("0");
       expect(screen.getByTestId("rally-count-cargo-24-fighter-space")).toHaveTextContent("0");
     });
+  });
+});
+
+describe("TacticalMovementOverlay Armada fleet supply", () => {
+  const movement = (details?: Record<string, unknown>): PendingChoiceDto => ({
+    actor: "p1",
+    nonce: "armada-move",
+    prompt: "movement",
+    context: partialContext({ subtype: "movement_step", target: { System: "18" } }),
+    options: [{ id: "done_moving", kind: "decline", label: "finish movement", payload: {} }],
+    ...(details ? { details } : {}),
+  });
+  const show = (choice: PendingChoiceDto) =>
+    render(
+      <TacticalMovementOverlay
+        choice={choice}
+        model={deriveChoiceRendererModel(choice, "p1")}
+        player={mockPlayer}
+        onSubmit={vi.fn().mockResolvedValue(undefined)}
+        isOpen
+        onClose={vi.fn()}
+      />,
+    );
+
+  it("reads the engine's limit and marks Armada's two", () => {
+    show(movement({ fleet_supply: { used: 0, limit: 5, armada: 2 } }));
+    expect(screen.getByTestId("fleet-supply-gauge")).toHaveTextContent("0 / 5 Ships");
+    expect(screen.getByTestId("movement-armada")).toHaveTextContent("incl. +2 Armada");
+  });
+
+  it("shows no Armada mark for other factions and falls back to the token count", () => {
+    show(movement({ fleet_supply: { used: 0, limit: 3 } }));
+    expect(screen.getByTestId("fleet-supply-gauge")).toHaveTextContent("0 / 3 Ships");
+    expect(screen.queryByTestId("movement-armada")).not.toBeInTheDocument();
   });
 });

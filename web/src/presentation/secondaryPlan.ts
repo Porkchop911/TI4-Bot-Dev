@@ -1,6 +1,6 @@
 import type {
   BoardView,
-  ChoiceOptionDto,
+  ChoiceOption,
   PendingChoiceDto,
   PlayerView,
 } from "../protocol/types.ts";
@@ -293,10 +293,10 @@ export interface TokenPrefill {
   override: PaymentOverride | null;
 }
 
-const isNoOption = (option: ChoiceOptionDto) =>
+const isNoOption = (option: ChoiceOption) =>
   option.id === "no" || option.id === "decline" || option.kind === "decline";
-const isYesOption = (option: ChoiceOptionDto) => option.id === "yes" || option.id === "follow";
-const isWaiver = (option: ChoiceOptionDto) => option.id.startsWith("follow|waived|");
+const isYesOption = (option: ChoiceOption) => option.id === "yes" || option.id === "follow";
+const isWaiver = (option: ChoiceOption) => option.id.startsWith("follow|waived|");
 
 /** True for the strategy-card secondary question itself. */
 export const isSecondaryQuestion = (choice: Pick<PendingChoiceDto, "details">): boolean =>

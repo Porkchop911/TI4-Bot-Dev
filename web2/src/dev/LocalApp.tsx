@@ -12,29 +12,52 @@ import { GameShell } from "../game/shell/GameShell";
 import { DEFAULT_GAME } from "./defaultGame";
 import { DemoApp } from "./DemoApp";
 import { GameTable } from "./GameTable";
-import { onlineAddress } from "./onlineStart";
+import { DEFAULT_NICKNAME, onlineAddress } from "./onlineStart";
 import {
   type LocalGame,
-  type SavedGame,
-  type SeatSwitch,
   STEPPING_KEY,
-  cardsKey,
-  clearSavedGame,
-  draftKey,
+  gameOfSave,
+  clearLeft,
   gameAddress,
-  loadSavedGame,
-  parseSavedGame,
-  planKey,
-  secondaryKey,
-  saveKey,
-  storeSavedGame,
+  idAddress,
+  readWait,
+  sideKey,
+  slotOf,
+  storeLeft,
+  storeWait,
 } from "../session/savedGame";
 import { localGameTable } from "../session/localTable";
-import { localSeatStore } from "../session/seatStore";
+import {
+  ModelMissing,
+  type ServedModel,
+  filesOfTable,
+  megabytes,
+  workerFiles,
+} from "../session/models";
+import { keptNickname } from "../session/onlineKeys";
+import {
+  type GameMeta,
+  type OfflineSaveStore,
+  type SavedGameRecord,
+  autosaveOf,
+  engineOfSave,
+  factionsOf,
+  importFailure,
+  newSaveId,
+  removeSave,
+  saveStore,
+  storeWarning,
+  takeLeft,
+} from "../session/saves";
 import type { Transport } from "../session/transport";
-import type { ReactionModes } from "../session/wire";
+import type { ReactionModes, SeatSwitch, SessionUpdate } from "../session/wire";
 import { useLiveSession } from "../session/useLiveSession";
-import { type Engine, createWasmTransport, loadEngine } from "../session/wasmTransport";
+import {
+  type Engine,
+  type HostSave,
+  createWasmTransport,
+  loadEngine,
+} from "../session/wasmTransport";
 import { Button, Drawer, Hint, Segmented } from "../ui";
 
 // Not an import: the file is built by scripts/build-wasm.sh and is not in the repository. Without
@@ -43,30 +66,43 @@ export const wasmUrl = new URL("../session/ti4.wasm", import.meta.url).href;
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-/** What the page starts from: the engine, and the saved game of this address if there is one. */
+/** The name of the player, for the saved games. */
+const nickname = () => keptNickname(localStorage) ?? DEFAULT_NICKNAME;
+
+/** What the page starts from: the engine, the save store, and the saved game of this address if there is one. */
 type Start =
   | { kind: "loading" }
   | { kind: "failed"; message: string }
+  /** The address names a saved game by its id, and this browser has none of that id. */
+  | { kind: "missing" }
+  /** A model that the game seats cannot be had: the game cannot go on. */
+  | { kind: "nomodel"; message: string; store: OfflineSaveStore; id: string | null }
   | {
       kind: "ready";
       engine: Engine;
-      saved: SavedGame | null;
-      /** Why the game that this browser kept is not read (a save of an older format). */
-      unread?: string;
+      store: OfflineSaveStore;
+      /** The id of the game in the store: of the saved game, or a new one. */
+      id: string;
+      record: SavedGameRecord | null;
+      /** The files of the models that the seats of the game play, for its Worker. */
+      files: { model: ServedModel; bytes: Uint8Array }[];
     };
 
 /**
  * A game of the engine in this page. `?local=3&players=8&humans=1`: the seed, the number of
  * seats, and which seats are played here (bit 0 is seat A). `?scenario=late-game` starts from a
- * prepared board of the engine. The decisions of every seat are kept in localStorage, so a
- * reload goes on where the game was.
+ * prepared board of the engine. The decisions of every seat are kept in the save store under the
+ * slot of the address (or, with `id`, under that id), so a reload goes on where the game was.
  */
 export function LocalApp({
   game,
+  id: savedId,
   onNewGame,
   other = { label: "Demo", href: "/?example=live-picker" },
 }: {
   game: LocalGame;
+  /** The saved game of this id (`?save=<id>`), in place of the game of the slot of `game`. */
+  id?: string;
   /**
    * "New game" leaves the game for what set it up, in place of the same game again: the game of
    * a table goes back to its setup.
@@ -76,6 +112,8 @@ export function LocalApp({
   other?: { label: string; href: string };
 }) {
   const [start, setStart] = useState<Start>({ kind: "loading" });
+  /** How far the file of a model of the game is, while it loads. */
+  const [loading, setLoading] = useState<string | null>(null);
   /** The saved game was played by another engine, and the player said to play it anyway. */
   const [anyway, setAnyway] = useState(false);
   /** How many decisions of the game are saved, those of every seat, and how many are answers of this page. */
@@ -83,9 +121,9 @@ export function LocalApp({
   const [answers, setAnswers] = useState(0);
   /** The seat changes of the game ("Play as"). The last one says which seats are played here. */
   const [switches, setSwitches] = useState<readonly SeatSwitch[]>([]);
-  /** Counts the seat changes of this visit: what was staged for the seat before is dropped. */
-  const [seatChanges, setSeatChanges] = useState(0);
   const [importError, setImportError] = useState<string | null>(null);
+  /** Why the saved games are kept in memory only, in words. */
+  const [warning, setWarning] = useState<string | null>(null);
   const [transport, setTransport] = useState<Transport | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // A scenario names its seed and its seats, and the engine knows them.
@@ -101,12 +139,12 @@ export function LocalApp({
   steps.current = stepping;
   /**
    * The wait of the seats that the page plays, as the host set it last: in the setup, or in the
-   * sheet "Table" of the game. The game that is played is told, and the saved game keeps it.
+   * sheet "Table" of the game. The game that is played is told, and localStorage keeps it next to
+   * the saved game.
    */
   const wait = useRef(game.waitMs ?? 0);
-  useEffect(() => {
-    wait.current = game.waitMs ?? 0;
-  }, [game]);
+  /** The writes of the saves of the game that is played. */
+  const saving = useRef<{ flush(): Promise<void>; drop(): Promise<void> } | null>(null);
   // Without the shell nothing else closes the Dev sheet: Esc does, as in the shell.
   useEffect(() => {
     if (!settingsOpen) {
@@ -119,25 +157,64 @@ export function LocalApp({
 
   useEffect(() => {
     let stale = false;
-    loadEngine(wasmUrl)
-      .then((engine): Start => {
-        try {
-          return { kind: "ready", engine, saved: loadSavedGame(localStorage, game) };
-        } catch (failure) {
-          return { kind: "ready", engine, saved: null, unread: message(failure) };
+    Promise.all([loadEngine(wasmUrl), saveStore()])
+      .then(async ([engine, store]): Promise<Start> => {
+        // A page that was left before the store had its last save kept it in localStorage.
+        await takeLeft(store, localStorage, nickname());
+        const record =
+          savedId === undefined ? await store.findSlot(slotOf(game)) : await store.load(savedId);
+        if (savedId !== undefined && !record) {
+          return { kind: "missing" };
         }
+        // The models of the game are loaded before it starts (a saved game too).
+        const table = record ? gameOfSave(record.save as HostSave).table : game.table;
+        let files: { model: ServedModel; bytes: Uint8Array }[];
+        try {
+          files = await filesOfTable(table, (model, done, total) => {
+            if (!stale) {
+              setLoading(`Loading ${model.label} · ${megabytes(done, total)}`);
+            }
+          });
+        } catch (error) {
+          return {
+            kind: "nomodel",
+            store,
+            id: record?.id ?? null,
+            message:
+              error instanceof ModelMissing
+                ? error.message
+                : `A model that this game seats did not load. ${message(error)}`,
+          };
+        }
+        return { kind: "ready", engine, store, id: record?.id ?? newSaveId(), record, files };
       })
       .catch((error: unknown) => ({ kind: "failed" as const, message: message(error) }))
       .then((next) => stale || setStart(next));
     return () => {
       stale = true;
     };
-  }, [game]);
+  }, [game, savedId]);
 
-  const foreign =
-    start.kind === "ready" && start.saved !== null && start.saved.engine !== start.engine.hash;
-  const unread = start.kind === "ready" ? start.unread : undefined;
-  const waits = (foreign && !anyway) || unread !== undefined;
+  const store = start.kind === "ready" ? start.store : null;
+  useEffect(() => {
+    if (!store) {
+      return;
+    }
+    const tell = () => setWarning(storeWarning(store.status()));
+    tell();
+    return store.subscribe(tell);
+  }, [store]);
+
+  /** The saved game that the page plays again, and the engine that played it. */
+  const saved = useMemo(
+    () =>
+      start.kind === "ready" && start.record
+        ? { save: start.record.save as HostSave, engine: start.record.engine.wasmSha256 }
+        : null,
+    [start],
+  );
+  const foreign = start.kind === "ready" && saved !== null && saved.engine !== start.engine.hash;
+  const waits = foreign && !anyway;
 
   // Made in an effect, not in a memo: the game is closed when the page lets go of it, and React
   // may do that and mount again (StrictMode). Each mount gets a game of its own.
@@ -145,59 +222,121 @@ export function LocalApp({
     if (start.kind !== "ready" || waits) {
       return;
     }
-    const { engine, saved } = start;
-    setDecisions(saved?.decisions.length ?? 0);
-    setAnswers(0);
-    setSwitches(saved?.switches ?? []);
+    const { engine, store, id, record } = start;
+    const save = saved?.save;
+    if (save) {
+      wait.current = readWait(localStorage, id);
+    } else {
+      wait.current = game.waitMs ?? 0;
+      storeWait(localStorage, id, wait.current);
+    }
+    setDecisions(save?.decisions.length ?? 0);
+    setAnswers(save?.answers.length ?? 0);
+    setSwitches(save?.switches ?? []);
+    /** A write of the store failed since the last flush: what localStorage keeps stays. */
+    let failed = false;
+    const autosave = autosaveOf(store, () => {
+      failed = true;
+    });
+    /** The game was removed: what it saves from now on is not kept. */
+    let gone = false;
+    let factions = record?.summary.factions ?? null;
+    const slot = savedId === undefined ? slotOf(game) : undefined;
+    const meta = (made: HostSave): GameMeta => ({
+      nickname: nickname(),
+      factions: factions?.length === made.players ? factions : factionsOf(null, made.players),
+      engine: engineOfSave(made, engine.hash),
+      // A game of an address keeps its slot; a game opened by its id keeps what it has.
+      ...(slot === undefined ? {} : { slot }),
+    });
+    /** The newest save of the game. */
+    let latest: HostSave | null = null;
+    /** localStorage keeps a save of the game that the store may not have. */
+    let kept = false;
+    /** Removes the save of localStorage when the store has the newest save. */
+    const settle = () => {
+      const at = latest;
+      failed = false;
+      void autosave.flush().then(() => {
+        if (kept && latest === at && !failed && !gone) {
+          clearLeft(localStorage, id);
+          kept = false;
+        }
+      });
+    };
+    const write = (next: HostSave) => {
+      latest = next;
+      autosave.schedule(id, next, meta(next));
+      if (kept) {
+        settle();
+      }
+    };
     const made = createWasmTransport(engine, played, {
-      decisions: saved?.decisions,
-      switches: saved?.switches,
+      save,
+      models: workerFiles(start.files),
+      keepFirst: game.table !== undefined,
       stepping: steps.current,
-      table: game.table,
       waitMs: wait.current,
-      modes: readModes(game),
-      onModes: (modes) => localStorage.setItem(cardsKey(game), JSON.stringify(modes)),
-      onDecisions(list, changes, own) {
-        storeSavedGame(localStorage, {
-          format: 3,
-          engine: engine.hash,
-          ...played,
-          waitMs: wait.current || undefined,
-          decisions: [...list],
-          ...(changes.length ? { switches: [...changes] } : {}),
-        });
-        setDecisions(list.length);
-        setAnswers(own.length);
-        setSwitches([...changes]);
+      modes: readModes(id),
+      onModes: (modes) => localStorage.setItem(sideKey(id, "cards"), JSON.stringify(modes)),
+      onSave(next) {
+        if (gone) {
+          return;
+        }
+        write(next);
+        setDecisions(next.decisions.length);
+        setAnswers(next.answers.length);
+        setSwitches(next.switches ?? []);
+      },
+      onLeave(next) {
+        if (gone) {
+          return;
+        }
+        // The page may be gone before the store has it: localStorage takes it at once.
+        kept =
+          storeLeft(localStorage, id, {
+            ...(slot ? { slot } : {}),
+            engine: engine.hash,
+            at: Date.now(),
+            factions: meta(next).factions,
+            save: next,
+          }) || kept;
+        latest = next;
+        settle();
       },
     });
+    const stop = made.subscribe((event) => {
+      if (event.kind === "update") {
+        factions = factionsOf(event.update as SessionUpdate, event.update.view.players.length);
+      }
+    });
+    saving.current = {
+      flush: () => autosave.flush(),
+      async drop() {
+        gone = true;
+        await autosave.flush();
+      },
+    };
     setTransport(made);
     return () => {
+      stop();
       made.close();
+      autosave.dispose();
+      saving.current = null;
       setTransport(null);
     };
-  }, [start, waits, played, game]);
+  }, [start, saved, waits, played, game, savedId]);
 
-  // A new object after a seat change: the session then starts with nothing staged.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: seatChanges is the reason to make it again
-  const drafts = useMemo(
-    () =>
-      localSeatStore(localStorage, {
-        movement: draftKey(game),
-        plan: planKey(game),
-        secondary: secondaryKey(game),
-      }),
-    [game, seatChanges],
-  );
   const stepSeats = (on: boolean) => {
     setStepping(on);
     localStorage.setItem(STEPPING_KEY, on ? "1" : "0");
     transport?.capabilities.stepping?.set(on);
   };
-  const { session, error, replaying } = useLiveSession(transport, drafts);
+  const { session, error, replaying } = useLiveSession(transport, transport?.staged);
   // The table of the game, for its sheet: of its setup the wait can still change.
   const module = start.kind === "ready" ? start.engine.module : null;
   const catalog = start.kind === "ready" ? start.engine.catalog : null;
+  const id = start.kind === "ready" ? start.id : null;
   const openTable = useCallback(
     () =>
       localGameTable(module!, game, {
@@ -205,18 +344,13 @@ export function LocalApp({
         onWait(ms) {
           wait.current = ms;
           transport?.capabilities.wait?.(ms);
-          // The saved game is the game with its wait: a reload waits as long.
-          try {
-            const saved = loadSavedGame(localStorage, game);
-            if (saved) {
-              storeSavedGame(localStorage, { ...saved, waitMs: ms || undefined });
-            }
-          } catch {
-            // A save that is not read is left as it is.
+          // The wait is kept next to the saved game: a reload waits as long.
+          if (id !== null) {
+            storeWait(localStorage, id, ms);
           }
         },
       }),
-    [module, game, transport],
+    [module, game, transport, id],
   );
   // The shell takes an open Dev sheet over. A page without the shell starts with it closed.
   const shown = !waits && !!session;
@@ -229,49 +363,67 @@ export function LocalApp({
   /** The seats that are played here (bit 0 is seat A). */
   const humans = switches.at(-1)?.humans ?? game.humans;
   const playsHere = (seat: string) => (humans >> (seat.charCodeAt(0) - 97)) & 1;
-  /** Plays `seat` here in place of the seat that is shown. The draft of that seat is dropped. */
-  const playAs = (seat: string) => {
-    localStorage.removeItem(draftKey(game));
-    localStorage.removeItem(planKey(game));
-    localStorage.removeItem(secondaryKey(game));
-    setSeatChanges((count) => count + 1);
-    transport?.capabilities.switchSeat?.(seat);
-  };
-  const newGame = () => {
-    clearSavedGame(localStorage, game);
-    setAnyway(false);
+  /** Plays `seat` here in place of the seat that is shown. The engine drops what that seat staged. */
+  const playAs = (seat: string) => transport?.capabilities.switchSeat?.(seat);
+  const newGame = async () => {
     setSettingsOpen(false);
+    if (start.kind === "nomodel") {
+      // The game cannot go on without its model: it is dropped, as New game drops a game.
+      if (start.id !== null) {
+        await removeSave(start.store, localStorage, start.id);
+      }
+      if (onNewGame) {
+        return onNewGame();
+      }
+      window.location.search = gameAddress(game);
+      return;
+    }
+    if (start.kind !== "ready") {
+      return;
+    }
+    // What the game would still save is not kept: the game is gone.
+    await saving.current?.drop();
+    await removeSave(start.store, localStorage, start.id);
+    setAnyway(false);
     if (onNewGame) {
       return onNewGame();
     }
-    setStart((now) =>
-      now.kind === "ready" ? { kind: "ready", engine: now.engine, saved: null } : now,
-    );
-  };
-  const exportGame = () => {
-    const text = localStorage.getItem(saveKey(game));
-    if (text === null) {
+    if (savedId !== undefined) {
+      // A game of an id has no address of its own to start again at: the address of its setup.
+      window.location.search = gameAddress(game);
       return;
     }
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(new Blob([text], { type: "application/json" }));
-    link.download = `ti4-${game.scenario ?? `seed${game.seed}`}-${answers}answers.json`;
-    link.click();
-    URL.revokeObjectURL(link.href);
+    setStart({ ...start, id: newSaveId(), record: null });
+  };
+  const exportGame = async () => {
+    if (start.kind !== "ready") {
+      return;
+    }
+    try {
+      await saving.current?.flush();
+      const { filename, blob } = await start.store.exportGame(start.id);
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    } catch {
+      setImportError("The game is not saved yet.");
+    }
   };
   const importGame = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
-    if (!file) {
+    if (!file || start.kind !== "ready") {
       return;
     }
+    const text = await file.text();
     try {
-      const saved = parseSavedGame(await file.text());
-      storeSavedGame(localStorage, saved);
-      // The file says which game it is. Its address opens it.
-      window.location.search = gameAddress(saved);
+      const imported = await start.store.importGame(text);
+      // An imported game is a game of its own, with an id and no address of a setup.
+      window.location.search = idAddress(imported.id);
     } catch (failure) {
-      setImportError(message(failure));
+      setImportError(importFailure(failure, text));
     }
   };
   const file = useRef<HTMLInputElement>(null);
@@ -316,6 +468,11 @@ export function LocalApp({
   // The Dev sheet. The shell shows it in its sheet slot; a page without the shell shows it below.
   const settingsView = (close: () => void) => (
     <>
+      {warning && (
+        <p role="alert" className="mb-3 text-orange">
+          ⚠ {warning}
+        </p>
+      )}
       <p className="text-muted">
         {`${game.table ? "Single player" : "Local game"} · ${game.scenario === undefined ? "" : `scenario ${game.scenario} · `}seed ${played.seed} · ${played.players} seats · ${answers} answers saved · ${decisions} decisions of all seats`}
       </p>
@@ -438,20 +595,32 @@ export function LocalApp({
   }
 
   let body: ReactNode;
-  if (unread !== undefined) {
+  if (start.kind === "missing") {
     body = (
       <Notice tone="error">
-        {unread} It cannot be played again.
+        This browser has no saved game of this address. The saved games are listed on the{" "}
+        <a href="/" className="text-cyan underline">
+          start screen
+        </a>
+        .
+      </Notice>
+    );
+  } else if (start.kind === "nomodel") {
+    body = (
+      <Notice tone="error">
+        {start.message}
         <span className="mt-3 flex gap-2">
           <Button onClick={newGame}>New game</Button>
         </span>
       </Notice>
     );
+  } else if (start.kind === "loading" && loading) {
+    body = <Notice tone="quiet">{loading}</Notice>;
   } else if (waits) {
     body = (
       <Notice tone="error">
-        The saved game ({start.kind === "ready" ? start.saved?.decisions.length : 0} decisions) was
-        played by another build of the engine. This build may not offer the same options.
+        The saved game ({saved?.save.decisions.length ?? 0} decisions) was played by another build
+        of the engine. This build may not offer the same options.
         <span className="mt-3 flex gap-2">
           <Button onClick={() => setAnyway(true)}>Replay anyway</Button>
           <Button onClick={newGame}>New game</Button>
@@ -516,9 +685,9 @@ export function LocalApp({
  * The modes of the reactions that the player set in this game, as they were kept. A page of
  * before the modes of abilities kept the names of the cards that are never offered.
  */
-function readModes(game: LocalGame): ReactionModes {
+function readModes(id: string): ReactionModes {
   try {
-    const kept: unknown = JSON.parse(localStorage.getItem(cardsKey(game)) || "{}");
+    const kept: unknown = JSON.parse(localStorage.getItem(sideKey(id, "cards")) || "{}");
     const modes: ReactionModes = {};
     if (Array.isArray(kept)) {
       for (const name of kept) {

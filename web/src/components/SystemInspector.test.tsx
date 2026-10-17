@@ -213,4 +213,23 @@ describe("SystemInspector Component", () => {
     expect(c.getByTestId("inspector-space-unit")).toHaveTextContent("Cruiser");
     expect(c.getByTestId("inspector-ground-unit")).toHaveTextContent("Infantry");
   });
+
+  it("marks a planet raised by an attachment and names the source", () => {
+    const boosted: SelectedSystemDetails = {
+      ...mockSystem,
+      planets: [
+        {
+          ...mockSystem.planets[0],
+          resources: 3,
+          influence: 6,
+          boosts: [{ source: "Mining World", resources: 2, influence: 0 }],
+        },
+      ],
+    };
+    render(<SystemInspector system={boosted} onClose={vi.fn()} />);
+    const resources = screen.getByLabelText(/^3 resources/);
+    expect(resources).toHaveAttribute("data-boosted", "true");
+    expect(resources).toHaveAttribute("title", "3 resources (1 printed; Mining World: +2 resources)");
+    expect(screen.getByLabelText("6 influence")).not.toHaveAttribute("data-boosted");
+  });
 });

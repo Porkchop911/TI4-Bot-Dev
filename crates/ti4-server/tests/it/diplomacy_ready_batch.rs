@@ -5,8 +5,8 @@ use std::time::{Duration, Instant};
 
 use ti4_content::ContentStore;
 use ti4_engine::choice::Choice;
+use ti4_host::batch::{BatchKind, BatchRequest, MovementPlan, MovementStep};
 use ti4_model::id::PlayerId;
-use ti4_server::session::batch::{BatchKind, BatchRequest, MovementPlan, MovementStep};
 use ti4_server::session::{GameRegistry, GameSession, SeatController, SessionConfig};
 use ti4_server::storage::FileGameStore;
 
@@ -16,7 +16,7 @@ fn current(session: &GameSession) -> Pending {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         if let Some((seat, nonce, version)) = session.current_pending_decision() {
-            let snapshot = session.get_snapshot(&ti4_server::protocol::status::ViewerRole::Player(
+            let snapshot = session.get_snapshot(&ti4_host::protocol::status::ViewerRole::Player(
                 seat.clone(),
             ));
             return (
@@ -51,7 +51,8 @@ fn at_ready(game_id: &str) -> Table {
     let registry = GameRegistry::new().with_store(store);
     let players = vec![PlayerId::new("p1"), PlayerId::new("p2")];
     let (mut state, galaxy) =
-        ti4_server::map::create_game_with_map(ContentStore::embedded(), &players, 42).unwrap();
+        ti4_host::map::create_game_with_template(ContentStore::embedded(), &players, 42, None)
+            .unwrap();
     // Jord is p1's only home planet; two more make a real choice of which two to ready.
     for (system, planet) in
         ti4_content::galaxy::all_planets(ContentStore::embedded(), ti4_model::content_types::POK)
@@ -77,7 +78,7 @@ fn at_ready(game_id: &str) -> Table {
     for planet in &owned {
         state.exhaust_planet(ti4_model::id::PlanetId::new(planet.clone()));
     }
-    let tiles = ti4_server::map::build_board_tiles(ContentStore::embedded(), &galaxy);
+    let tiles = ti4_host::map::build_board_tiles(ContentStore::embedded(), &galaxy);
     let config = SessionConfig::new(game_id, state)
         .with_seed(42)
         .with_player_ids(players.clone())

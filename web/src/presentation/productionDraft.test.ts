@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
-import type { ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import type { ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import { buildCosts } from "./productionPayment.ts";
 import { optionUnit, planBuilds, produceStep, stepUnitKey } from "./productionDraft.ts";
 
-const build: ChoiceOptionDto = {
+const build: ChoiceOption = {
   id: "build|carrier|1",
   kind: "produce",
   label: "produce 1x carrier for 3",
   payload: { unit: "carrier", count: 1, cost: 3, printed_cost: 3, discount: 0, production_spent: 1, available_resources: 6 },
 };
-const exchange: ChoiceOptionDto = {
+const exchange: ChoiceOption = {
   id: "exchange|carrier",
   kind: "produce",
   label: "produce 1x carrier by returning a captured carrier",

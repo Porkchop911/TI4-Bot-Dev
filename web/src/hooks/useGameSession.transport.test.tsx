@@ -17,7 +17,7 @@ const blank: GameSessionState = {
   fatal: null,
   reconnecting: false,
   events: [],
-  history: { cursor: 0, redo_count: 0 },
+  history: { cursor: 0, redo_count: 0, generation: 0 },
 };
 
 /** A transport with no network: tests push state in and observe the commands the hook sends. */

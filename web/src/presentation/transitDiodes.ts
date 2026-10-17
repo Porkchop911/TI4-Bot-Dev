@@ -3,7 +3,7 @@
 // `transit|<source_system>|<source>|<unit>|<destination_system>|<planet>`, with the same parts in
 // the payload. With a dozen planets that is well over a hundred options, so the client splits the
 // pick into steps (what to move, then where to) and only ever submits one of the engine's ids.
-import type { BoardView, ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import type { BoardView, ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import { getUnitDisplayName } from "../components/UnitIcon.tsx";
 import { isDeclineOption } from "./choiceModel.ts";
 import { getPlanetDetails } from "./planetSelection.ts";
@@ -66,13 +66,13 @@ export interface TransitModel {
   sources: TransitSystemGroup<TransitSource>[];
   /** Every move option, by id. */
   moves: Map<string, TransitMove>;
-  declineOption: ChoiceOptionDto | null;
+  declineOption: ChoiceOption | null;
 }
 
 const str = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
 
 /** Reads a transit option from its payload, falling back to the id parts. */
-export function parseTransitOption(option: ChoiceOptionDto): TransitMove | null {
+export function parseTransitOption(option: ChoiceOption): TransitMove | null {
   if (!option.id.startsWith("transit|")) return null;
   const p = option.payload ?? {};
   const parts = option.id.split("|");

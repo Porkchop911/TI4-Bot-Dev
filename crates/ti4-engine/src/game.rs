@@ -6,7 +6,7 @@ use ti4_content::ContentStore;
 use ti4_content::galaxy::Galaxy;
 use ti4_model::content_types::{POK, SourceSet};
 use ti4_model::id::{PlayerId, StrategyCardId, SystemId};
-use ti4_model::state::{Feat, FeatOccurrence, GameState, Phase, TransientFlags};
+use ti4_model::state::{Feat, FeatOccurrence, GameState, Phase, TokenPool, TransientFlags};
 use ti4_model::units::Unit;
 
 use crate::agenda::{AgendaPhaseError, resolve_agenda_phase};
@@ -31,7 +31,7 @@ use crate::tactical::{
     read_move,
 };
 use crate::timing::{Resolver, TimingContext, TimingError};
-use crate::tokens::{TokenGain, TokenGainError};
+use crate::tokens::TokenGain;
 use crate::transit::{CargoError, CargoWindow, MoveOutcome, apply_move, survives_gravity_rifts};
 use crate::vote::{AGAINST, VoteError, VoteWindow, is_law, outcomes};
 
@@ -77,8 +77,6 @@ pub enum GameError {
     UnsupportedAction(String),
     #[error("timing cancelled required game event {0:?}")]
     TimingEventCancelled(String),
-    #[error(transparent)]
-    TokenGain(#[from] TokenGainError),
     #[error(transparent)]
     Scoring(#[from] ScoringError),
     #[error(transparent)]
@@ -811,8 +809,17 @@ impl Window for AftermathWindow {
                     CONTINUE_ACTION_KIND,
                     if *invade {
                         "continue to the invasion"
-                    } else {
+                    } else if crate::production::capacity(
+                        state,
+                        content,
+                        sources,
+                        &self.player,
+                        &self.system,
+                    ) > 0
+                    {
                         "continue to production"
+                    } else {
+                        "finish the tactical action"
                     },
                 )];
                 options.extend(crate::diplomacy::candidates::available_contacts(
@@ -947,7 +954,8 @@ pub struct Game<'a> {
     /// the rest of the status phase, and this one simply ends. Sharing the field would run the
     /// status steps in the middle of somebody's turn.
     event_scoring: Option<ScoringWindow>,
-    /// The open 81.5 token gain, and the report its remaining steps will extend.
+    /// The 81.5 token gain still to be placed by each seat's redistribution, and the report the
+    /// remaining status steps will extend.
     tokens: Option<(TokenGain, Box<StatusPhaseReport>)>,
     /// The open agenda vote, and the agendas still to be put after it.
     voting: Option<(Box<VoteWindow>, Vec<String>)>,
@@ -1976,24 +1984,6 @@ impl<'a> Game<'a> {
         if let Some(window) = &self.scoring {
             return window.pending_choice(&self.state, self.content, self.sources);
         }
-        if let Some((window, _)) = &self.tokens {
-            return window.pending_choice().map(|choice| {
-                let actor = choice.player.clone();
-                let choice = choice.contextualized(DecisionContext::new(
-                    actor,
-                    DecisionSource::Rule("52.4".to_owned()),
-                    "gain_command_token",
-                    self.state.phase,
-                    self.state.round,
-                ));
-                crate::tokens::with_pool_details(
-                    choice,
-                    &self.state,
-                    "gain",
-                    Some(window.remaining_for_next_player()),
-                )
-            });
-        }
         if let Some((window, _)) = &self.voting {
             return window.pending_choice(&self.state, self.content, self.sources);
         }
@@ -2010,6 +2000,11 @@ impl<'a> Game<'a> {
         }
         if let Some(window) = &self.tactical {
             return self.tactical_choice(window);
+        }
+        // Starting technology is chosen before anything else in the game (setup, before the first
+        // card is drafted); a game made without the choice has no picks.
+        if !self.state.starting_tech_picks.is_empty() {
+            return crate::starting_tech::choice(&self.state, self.content, self.sources);
         }
         match self.state.phase {
             Phase::Strategy => strategy_options(&self.state, self.content),
@@ -2043,8 +2038,15 @@ impl<'a> Game<'a> {
     pub fn step(&mut self) -> StepResult {
         // Identical-ask counts are per step: a cycle inside one step is what trips the guard.
         self.table.begin_step();
+        if !self.state.starting_tech_picks.is_empty() {
+            crate::starting_tech::settle(&mut self.state, self.content, self.sources);
+        }
         // Rolls are stamped with the system in play, for the public roll feed only.
-        let scene = self.state.active_system.as_ref().map(|id| id.as_str().to_owned());
+        let scene = self
+            .state
+            .active_system
+            .as_ref()
+            .map(|id| id.as_str().to_owned());
         self.dice.set_scene(scene.as_deref());
         if let Err(error) = self.announce_staged_ground_events() {
             return self.result(false, Some(error));
@@ -2122,7 +2124,7 @@ impl<'a> Game<'a> {
             return self.step_scoring();
         }
         if self.tokens.is_some() {
-            return self.step_token_gain();
+            return self.finish_status_phase();
         }
         if self.voting.is_some() {
             return self.step_vote();
@@ -2193,6 +2195,7 @@ impl<'a> Game<'a> {
         if self.state.phase == Phase::Strategy
             && self.state.round == 1
             && !self.strategy_phase_announced
+            && self.state.starting_tech_picks.is_empty()
         {
             self.strategy_phase_announced = true;
             self.sync_timing_context();
@@ -2297,7 +2300,6 @@ impl<'a> Game<'a> {
     /// that is simply absent from the options. Never read by the engine.
     fn with_turn_menu(&self, choice: Choice, closing: bool) -> Choice {
         use serde_json::json;
-        use ti4_model::state::TokenPool;
         let player = choice.player.clone();
         let Some(seat) = self.state.player(&player) else {
             return choice;
@@ -2623,6 +2625,15 @@ impl<'a> Game<'a> {
         reason = "one arm per kind of turn action, read as a table of what a turn may be"
     )]
     fn apply_choice(&mut self, choice: &Choice, answer: ChoiceOption) -> Result<(), GameError> {
+        if choice
+            .context
+            .as_ref()
+            .is_some_and(|context| context.subtype == crate::starting_tech::SUBTYPE)
+        {
+            crate::starting_tech::apply(&mut self.state, self.content, self.sources, answer)?;
+            self.emit("STARTING_TECHNOLOGY_CHOSEN");
+            return Ok(());
+        }
         match self.state.phase {
             Phase::Strategy => {
                 let player = self.take_timed_strategy_card(&choice.player, answer)?;
@@ -5519,56 +5530,31 @@ impl<'a> Game<'a> {
         }
     }
 
-    /// Resolve one token of the 81.5 gain, finishing the status phase when the window closes.
-    fn step_token_gain(&mut self) -> StepResult {
-        let Some(choice) = self.legal_options() else {
-            return self.finish_status_phase();
-        };
-        // Field borrows, not `self`: the table answers while the position stays readable.
-        let answer = match self.table.ask_seeing(
-            &choice,
-            &crate::choice::Observed::new(
-                &self.state,
-                self.content,
-                self.sources,
-                self.galaxy.as_ref(),
-            ),
-        ) {
-            Ok(answer) => answer,
-            Err(error) => return self.result(false, Some(error.into())),
-        };
-        // Taken out and put back so the window and `state` are not borrowed from `self` at
-        // once. On the error path it goes back unchanged, leaving the token still owed.
-        let Some((mut window, report)) = self.tokens.take() else {
-            unreachable!("the token window is open");
-        };
-        let outcome = window.resolve(&mut self.state, answer);
-        let complete = window.is_complete();
-        self.tokens = Some((window, report));
-
-        match outcome {
-            Ok(pool) => {
-                self.emit(&format!("COMMAND_TOKEN_GAINED:{pool:?}"));
-                if complete {
-                    return self.finish_status_phase();
-                }
-                self.result(true, None)
-            }
-            Err(error) => self.result(false, Some(error.into())),
-        }
+    /// A seat's tactic, fleet and strategy pools.
+    fn pools_of(&self, player: &PlayerId) -> [i32; 3] {
+        self.state.player(player).map_or([0; 3], |seat| {
+            [seat.tactic_tokens, seat.fleet_tokens, seat.strategic_tokens]
+        })
     }
 
     /// Steps 81.6 to 81.8, completing the status phase.
     fn finish_status_phase(&mut self) -> StepResult {
-        let Some((_, mut report)) = self.tokens.take() else {
+        let Some((gain, mut report)) = self.tokens.take() else {
             unreachable!("the token window was open");
         };
-        // 81.5, second sentence: "Then, each player can redistribute each command token on their
-        // command sheet ... among their strategy, tactic, and fleet pools." The gain above places
-        // two tokens by choice; this is the separate rearrangement of everything already held, and
-        // it happens every round for every player. Initiative order, like the rest of 81.
+        // 81.5: "Each player gains two command tokens ... Then, each player can redistribute each
+        // command token on their command sheet ... among their strategy, tactic, and fleet pools."
+        // The redistribution that follows decides where every token ends up, so the pool of each
+        // gained token is not asked on its own: one decision per player, in initiative order like
+        // the rest of 81, chooses the whole sheet with the gained tokens in it. The gain is capped
+        // by the reinforcements (20.4a).
         for player in report.initiative_order.clone() {
-            let _ = crate::strategy_cards::redistribute_tokens(
+            let owed = i32::try_from(gain.remaining_for(&player)).unwrap_or(i32::MAX);
+            let gained = owed
+                .min(self.state.tokens_in_reinforcements(&player))
+                .max(0);
+            let before = self.pools_of(&player);
+            let answered = crate::strategy_cards::redistribute_tokens(
                 &mut self.state,
                 self.content,
                 self.sources,
@@ -5578,7 +5564,15 @@ impl<'a> Game<'a> {
                 &DecisionSource::Rule("81.5".to_owned()),
                 "status_redistribute_tokens",
                 "redistribute your command tokens",
+                gained,
             );
+            if answered.is_err() && gained > 0 {
+                // The decision failed: the gain is still the player's, in the tactic pool.
+                self.state.gain_token(&player, TokenPool::Tactic, gained);
+            }
+            for pool in gained_pools(before, self.pools_of(&player), gained) {
+                self.emit(&format!("COMMAND_TOKEN_GAINED:{pool:?}"));
+            }
         }
         // "When you would return strategy cards during the status phase" — fired per seat
         // that holds cards, so every holder's window opens (and every card plays) before
@@ -6129,6 +6123,7 @@ impl<'a> Game<'a> {
             unreachable!("a vote is open");
         };
         let voter = choice.player.clone();
+        let answered_outcome = window.is_outcome_question();
         let outcome = window.resolve(&mut self.state, self.content, self.sources, answer);
         if let Some((spender, _)) = &goods_window {
             crate::supply::close_goods_window(&mut self.state, spender, true);
@@ -6136,12 +6131,19 @@ impl<'a> Game<'a> {
         let complete = window.is_complete();
         self.voting = Some((window, queue));
         // "After you cast votes on an outcome of an agenda", and "after the speaker votes".
-        let mut payload = BTreeMap::new();
-        payload.insert(
-            "player".to_owned(),
-            serde_json::Value::String(voter.to_string()),
-        );
-        let _ = self.emit_typed("VOTES_CAST", payload);
+        // Before RULES_BRIBERY_PER_PLAYER this fired after every answer of the vote (the outcome,
+        // each planet exhausted, the trade goods), asking a Bribery holder again at each; now it
+        // fires once per voter, when they have named their outcome.
+        if answered_outcome
+            || self.state.rules_version < ti4_model::state::RULES_BRIBERY_PER_PLAYER
+        {
+            let mut payload = BTreeMap::new();
+            payload.insert(
+                "player".to_owned(),
+                serde_json::Value::String(voter.to_string()),
+            );
+            let _ = self.emit_typed("VOTES_CAST", payload);
+        }
 
         match outcome {
             Ok(()) => {
@@ -6208,9 +6210,11 @@ impl<'a> Game<'a> {
         // Imperial Rider pays out before the agenda's own effect, and clears the
         // predictions. A prediction left behind would pay again on the next agenda,
         // for a card that was spent on this one.
-        for player in crate::action_cards::resolve_predictions_with(
+        for player in crate::action_cards::resolve_predictions_asking(
             &mut self.state,
             self.content,
+            self.sources,
+            self.galaxy.as_ref(),
             &mut self.table,
             outcome,
         ) {
@@ -7179,6 +7183,29 @@ fn wormhole_hops(
     hops
 }
 
+/// The pools that `gained` tokens went to, one entry per token, from the sheet before and after a
+/// redistribution that also gained them: the pools that grew, in tactic, fleet, strategy order,
+/// and the tactic pool for any token the growth does not account for. Only the announcement uses
+/// it (`COMMAND_TOKEN_GAINED`); the sheet is already set.
+fn gained_pools(before: [i32; 3], after: [i32; 3], gained: i32) -> Vec<TokenPool> {
+    const POOLS: [TokenPool; 3] = [TokenPool::Tactic, TokenPool::Fleet, TokenPool::Strategic];
+    let mut left = gained.max(0);
+    let mut pools = Vec::new();
+    for (index, pool) in POOLS.into_iter().enumerate() {
+        let grew = (after[index] - before[index]).clamp(0, left);
+        left -= grew;
+        pools.extend(std::iter::repeat_n(
+            pool,
+            usize::try_from(grew).unwrap_or(0),
+        ));
+    }
+    pools.extend(std::iter::repeat_n(
+        TokenPool::Tactic,
+        usize::try_from(left).unwrap_or(0),
+    ));
+    pools
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -7246,6 +7273,62 @@ mod tests {
     use crate::setup::start_game;
     use crate::timing::{Ability, Relation};
     use crate::tokens::STATUS_TOKENS;
+
+    #[test]
+    fn aftermath_negotiation_names_whether_production_can_continue() {
+        let content = ContentStore::embedded();
+        let sources = ti4_model::content_types::DEFAULT;
+        let player = PlayerId::new("a");
+        let mut state = crate::fixtures::seated_game(&[("a", "saar"), ("b", "sol")], sources);
+        let system = state
+            .player(&player)
+            .and_then(|seat| seat.home_system.clone())
+            .expect("Saar has a home system");
+        {
+            let here = state.system_mut(&system);
+            here.units.clear();
+            here.planet_control.clear();
+            here.planet_units.clear();
+            here.coexisting.clear();
+        }
+        crate::fixtures::put(&mut state, &system, "carrier", &player, 1);
+
+        let window = |state: &GameState, invade: bool| AftermathWindow {
+            player: player.clone(),
+            system: system.clone(),
+            stage: Aftermath::Negotiating { invade },
+            log: Vec::new(),
+            before_combat: crate::combat::before_combat(state, content, sources, &system),
+            feats_noted: false,
+            pending_event_scoring: None,
+            notes_at_tactical_start: crate::combat::note_holdings(state),
+        };
+        let continue_label = |choice: Choice| {
+            choice
+                .options
+                .iter()
+                .find(|option| option.id == CONTINUE_ACTION_ID)
+                .expect("continue option")
+                .label
+                .clone()
+        };
+
+        let no_factory = window(&state, false)
+            .pending_choice(&state, content, sources)
+            .expect("negotiation choice without a factory");
+        assert_eq!(continue_label(no_factory), "finish the tactical action");
+
+        crate::fixtures::put(&mut state, &system, "saar_spacedock", &player, 1);
+        let with_factory = window(&state, false)
+            .pending_choice(&state, content, sources)
+            .expect("negotiation choice with a factory");
+        assert_eq!(continue_label(with_factory), "continue to production");
+
+        let invasion = window(&state, true)
+            .pending_choice(&state, content, sources)
+            .expect("invasion negotiation choice");
+        assert_eq!(continue_label(invasion), "continue to the invasion");
+    }
 
     #[test]
     fn fork_uses_fresh_deciders_and_callbacks_for_nested_timing_choices() {
@@ -9605,6 +9688,39 @@ mod tests {
         );
     }
 
+    /// Feedback fb_1792235794_f7d819ff: the closing vote of the driven game pays a correct
+    /// Technology Rider with a research question, not silence.
+    #[test]
+    fn a_correct_technology_rider_asks_for_its_research_when_the_vote_closes() {
+        let a = PlayerId::new("a");
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state
+            .agenda_predictions
+            .insert(a.clone(), "for|tech_rider".to_owned());
+        let before = state.player(&a).unwrap().technologies.len();
+        let (decider, seen) = crate::choice::Capturing::new(Box::new(crate::choice::FirstOption));
+        let table = Table::with_default(Box::new(decider));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table);
+
+        game.resolve_agenda_outcome("nonexistent_agenda", "for", &crate::vote::Ballot::default());
+
+        assert_eq!(
+            game.state.player(&a).unwrap().technologies.len(),
+            before + 1
+        );
+        assert!(
+            seen.borrow()
+                .iter()
+                .any(|choice| choice.context.as_ref().map(|c| c.subtype.as_str())
+                    == Some("research_technology")),
+            "the research was asked as a technology pick"
+        );
+        assert!(
+            game.events
+                .contains(&format!("AGENDA_PREDICTION_CORRECT:{a}"))
+        );
+    }
+
     #[test]
     fn political_favor_replaces_the_agenda_and_costs_xxcha_a_strategy_token() {
         let a = PlayerId::new("a");
@@ -11277,28 +11393,71 @@ mod tests {
         cost.expect("the carrier was offered")
     }
 
-    /// OBS-003e: the status-phase token-gain choice, wrapped at `legal_options`'s dispatch site
-    /// because `TokenGain` itself has no board position to read `phase`/`round` from, carries the
-    /// same typed context whichever of its two callers (status step 81.5, or Leadership through
-    /// `strategy_cards::gain_tokens`, typed separately) opened it.
+    /// 81.5: the status phase's gain is placed by the redistribution that follows it, so each seat
+    /// is asked once, over every arrangement of what it holds plus what it gains, with the gain in
+    /// the details. No gained token is asked about on its own, and the gain stays capped by the
+    /// reinforcements (20.4a).
     #[test]
-    fn obs003e_status_phase_token_gain_carries_its_typed_context() {
-        let state = crate::fixtures::game(&["a", "b"]);
-        let table = Table::with_default(Box::new(crate::choice::FirstOption));
+    fn status_phase_gain_is_part_of_the_one_redistribution() {
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.phase = Phase::Status;
+        let (a, b) = (PlayerId::new("a"), PlayerId::new("b"));
+        for (seat, pools) in [(&a, (3, 3, 2)), (&b, (5, 5, 5))] {
+            let seat = state.player_mut(seat).expect("seated");
+            (seat.tactic_tokens, seat.fleet_tokens, seat.strategic_tokens) = pools;
+        }
+        assert_eq!(
+            state.tokens_in_reinforcements(&b),
+            1,
+            "b has one token left to gain"
+        );
+        let (decider, seen) = crate::choice::Capturing::new(Box::new(crate::choice::FirstOption));
+        let table = Table::with_default(Box::new(decider));
         let mut game = Game::with_table(state, ContentStore::embedded(), table);
+        let order = [a.clone(), b.clone()];
         game.tokens = Some((
-            crate::tokens::TokenGain::for_status(
-                &game.state,
-                ContentStore::embedded(),
-                &[PlayerId::new("a")],
-            ),
-            Box::default(),
+            crate::tokens::TokenGain::for_status(&game.state, ContentStore::embedded(), &order),
+            Box::new(StatusPhaseReport {
+                initiative_order: order.to_vec(),
+                ..StatusPhaseReport::default()
+            }),
         ));
+        assert!(
+            game.legal_options().is_none(),
+            "no gained token is asked about alone"
+        );
 
-        let choice = game.legal_options().expect("a token is owed");
-        let context = choice.context.as_ref().expect("typed context");
-        assert_eq!(context.source, DecisionSource::Rule("52.4".to_owned()));
-        assert_eq!(context.subtype, "gain_command_token");
+        assert_eq!(game.step().error, None);
+
+        let asked = seen.borrow();
+        assert_eq!(asked.len(), 2, "one decision per seat");
+        for (choice, (seat, held, gained)) in asked.iter().zip([(&a, 8, 2), (&b, 15, 1)]) {
+            assert_eq!(&choice.player, seat);
+            let context = choice.context.as_ref().expect("typed context");
+            assert_eq!(context.source, DecisionSource::Rule("81.5".to_owned()));
+            assert_eq!(context.subtype, "status_redistribute_tokens");
+            assert_eq!(choice.details["mode"], "redistribute");
+            assert_eq!(choice.details["total"], held + gained);
+            assert_eq!(choice.details["gained"], gained);
+            let pools = &choice.details["pools"];
+            let sheet = ["tactic", "fleet", "strategic"].map(|pool| pools[pool].as_i64().unwrap());
+            assert_eq!(
+                sheet.iter().sum::<i64>(),
+                i64::from(held),
+                "pools are before the gain"
+            );
+        }
+        // The first option of each: nothing in tactic, the least in fleet, the rest in strategy.
+        let sheet = |seat: &PlayerId| game.pools_of(seat);
+        assert_eq!(sheet(&a), [0, 2, 8]);
+        assert_eq!(sheet(&b), [0, 2, 14]);
+        assert_eq!(game.state.tokens_in_reinforcements(&b), 0);
+        let gained = game
+            .events
+            .iter()
+            .filter(|event| event.starts_with("COMMAND_TOKEN_GAINED:"))
+            .count();
+        assert_eq!(gained, 3, "each gained token is still announced");
     }
 
     /// OBS-003d: the movement-step choice `Game::tactical_choice` builds carries its typed
@@ -13043,6 +13202,7 @@ mod tests {
         let a = PlayerId::new("a");
         let b = PlayerId::new("b");
         state.player_mut(&a).unwrap().faction = ti4_model::id::FactionId::new("letnev");
+        state.rules_version = ti4_model::state::RULES_INFILTRATE_FIX; // legacy: paid at the round start
         state.player_mut(&a).unwrap().trade_goods = 4;
         state.player_mut(&a).unwrap().secret_objectives =
             vec![ti4_model::id::SecretObjectiveId::new("fwp")];
@@ -13942,6 +14102,102 @@ mod tests {
             game.state.feat_occurrence_seq > occurrence_before,
             "a resolved For/Against agenda receives an occurrence even without an elected player"
         );
+    }
+
+    /// Declines every reaction window but counts the "after votes cast" offers made to `holder`;
+    /// answers everything else with the first option.
+    struct CountingDecider {
+        holder: PlayerId,
+        offers: std::rc::Rc<std::cell::Cell<usize>>,
+    }
+
+    impl crate::choice::Decider for CountingDecider {
+        fn choose(
+            &mut self,
+            choice: &crate::choice::Choice,
+        ) -> Result<crate::choice::ChoiceOption, crate::choice::IllegalChoice> {
+            if choice.player == self.holder
+                && choice
+                    .options
+                    .iter()
+                    .any(|o| o.id.contains("VOTES_CAST") && o.id.starts_with("reaction:"))
+            {
+                self.offers.set(self.offers.get() + 1);
+            }
+            if let Some(decline) = choice.options.iter().find(|o| o.is_decline()) {
+                if choice.options.iter().any(|o| o.id.starts_with("reaction:")) {
+                    return Ok(decline.clone());
+                }
+            }
+            choice.options.first().cloned().ok_or_else(|| {
+                crate::choice::IllegalChoice::NoOptions {
+                    player: choice.player.clone(),
+                    prompt: choice.prompt.clone(),
+                }
+            })
+        }
+    }
+
+    /// How often the Bribery holder (seat b, voting second) is offered the "votes cast" window
+    /// during one agenda in which the other seat exhausts three planets, under `rules_version`.
+    fn votes_cast_offers_to_bribery_holder(rules_version: u32) -> usize {
+        let players = [PlayerId::new("a"), PlayerId::new("b")];
+        let mut state = start_game(ContentStore::embedded(), &players, POK, None).unwrap();
+        state.rules_version = rules_version;
+        state.phase = Phase::Agenda;
+        state.custodians_removed = true;
+        let law = ContentStore::embedded()
+            .records(ti4_model::content_types::ContentType::Agendas)
+            .iter()
+            .find(|record| {
+                record.text("type") == Some("Law") && record.text("target") == Some("For/Against")
+            })
+            .and_then(|record| record.text("alias"))
+            .expect("the corpus has a For/Against law")
+            .to_owned();
+        state.agenda_deck = vec![law];
+        let catalogue = ti4_content::galaxy::all_planets(ContentStore::embedded(), POK);
+        for (index, (id, record)) in catalogue
+            .iter()
+            .filter(|(_, p)| p.influence() > 0 && !p.is_placed_during_play())
+            .take(4)
+            .enumerate()
+        {
+            let owner = if index < 3 { &players[0] } else { &players[1] };
+            state
+                .system_mut(&ti4_model::id::SystemId::new(
+                    record.system_id().unwrap_or("18"),
+                ))
+                .set_control(ti4_model::id::PlanetId::new(*id), owner.clone());
+        }
+        state.player_mut(&players[1]).unwrap().action_cards =
+            vec![ti4_model::id::ActionCardId::new("bribery")];
+        let offers = std::rc::Rc::new(std::cell::Cell::new(0));
+        let table = Table::with_default(Box::new(CountingDecider {
+            holder: players[1].clone(),
+            offers: offers.clone(),
+        }));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table);
+        let mut guard = 0;
+        while game.state.phase == Phase::Agenda && guard < 120 {
+            assert_eq!(game.step().error, None, "no agenda step should refuse");
+            guard += 1;
+        }
+        offers.get()
+    }
+
+    #[test]
+    fn bribery_is_offered_once_per_voter_not_once_per_planet() {
+        // Two voters: the holder is asked once after each of them.
+        assert_eq!(
+            votes_cast_offers_to_bribery_holder(ti4_model::state::RULES_BRIBERY_PER_PLAYER),
+            2
+        );
+    }
+
+    #[test]
+    fn legacy_games_still_offer_votes_cast_after_every_planet() {
+        assert!(votes_cast_offers_to_bribery_holder(1) > 2);
     }
 
     #[test]
@@ -15895,7 +16151,7 @@ mod tests {
         // readied strategy card: If that player's next action is not a strategic
         // action, they discard all of their action cards, give you all of their trade
         // goods, and show you all of their secret objectives." b arms it at the start
-        // of a's turn; a's first action is a played action card (Spy — a card whose
+        // of a's turn; a's first action is a played action card (Economic Initiative — a card whose
         // window is "Action", so it is offered on a plain turn), not a strategic
         // one, so the punishment settles: the goods move to b, the rest of the hand
         // is discarded, the duress is spent, and the turn passes on.
@@ -15912,7 +16168,7 @@ mod tests {
             .player_mut(&a)
             .unwrap()
             .action_cards
-            .push(ti4_model::id::ActionCardId::new("spy"));
+            .push(ti4_model::id::ActionCardId::new("economic_initiative"));
         // A card the punishment will discard, proving the hand is lost wholesale.
         state
             .player_mut(&a)
@@ -15979,7 +16235,7 @@ mod tests {
             .player_mut(&a)
             .unwrap()
             .action_cards
-            .push(ti4_model::id::ActionCardId::new("spy"));
+            .push(ti4_model::id::ActionCardId::new("economic_initiative"));
         state
             .player_mut(&a)
             .unwrap()
@@ -16703,18 +16959,42 @@ mod tests {
         );
     }
 
-    #[test]
-    fn infiltrate_is_played_when_the_planet_changes_hands() {
-        // Infiltrate: "When you gain control of a planet: Replace each PDS and space
-        // dock that is on that planet with a matching unit from your reinforcements."
-        // a holds its own PDS on the planet it is about to capture (b holds one
-        // infantry); a's war sun disables the planet's shield so the bombardment
-        // reaches the infantry. a plays the card in the When window as the planet
-        // changes hands; with a full box the replacement is the same unit for the
-        // unit-less model, so the test pins the play, the spend, and that the capture
-        // proceeds undisturbed: the PDS a owned is still standing (LRR 49 destroys
-        // only rival structures), and a owns the planet.
+    /// Plays an invasion in which a captures b's planet; `b_structures` stand on it (unit ids
+    /// owned by b), `holds_card` gives a Infiltrate, and `spent_pds` places that many of a's
+    /// six PDS elsewhere (to empty a's box). Returns the finished game and the planet.
+    fn infiltrate_invasion(
+        b_structures: &[&str],
+        holds_card: bool,
+        spent_pds: usize,
+    ) -> (
+        Game<'static>,
+        ti4_model::id::SystemId,
+        ti4_model::id::PlanetId,
+    ) {
+        infiltrate_invasion_at(
+            ti4_model::state::RULES_VERSION,
+            b_structures,
+            holds_card,
+            spent_pds,
+            None,
+        )
+    }
+
+    /// [`infiltrate_invasion`] under rules version `rules_version`; with `script`, the game is
+    /// answered from that recorded list of choices (a replay) instead of the usual decider.
+    fn infiltrate_invasion_at(
+        rules_version: u32,
+        b_structures: &[&str],
+        holds_card: bool,
+        spent_pds: usize,
+        script: Option<Vec<String>>,
+    ) -> (
+        Game<'static>,
+        ti4_model::id::SystemId,
+        ti4_model::id::PlanetId,
+    ) {
         let (mut state, galaxy, system, planet) = invasion_fixture();
+        state.rules_version = rules_version;
         let a = PlayerId::new("a");
         let b = PlayerId::new("b");
         crate::fixtures::put(&mut state, &system, "destroyer", &a, 1);
@@ -16724,53 +17004,264 @@ mod tests {
             .system_mut(&system)
             .set_control(planet.clone(), b.clone());
         crate::fixtures::put_on_planet(&mut state, &system, &planet, "infantry", &b, 1);
-        crate::fixtures::put_on_planet(&mut state, &system, &planet, "pds", &a, 1);
-        state.player_mut(&a).unwrap().action_cards =
-            vec![ti4_model::id::ActionCardId::new("infiltrate")];
+        for kind in b_structures {
+            crate::fixtures::put_on_planet(&mut state, &system, &planet, kind, &b, 1);
+        }
+        if spent_pds > 0 {
+            crate::fixtures::put(&mut state, &system, "pds", &a, spent_pds);
+        }
+        if holds_card {
+            state.player_mut(&a).unwrap().action_cards =
+                vec![ti4_model::id::ActionCardId::new("infiltrate")];
+        }
         let mut reactions = std::collections::BTreeMap::new();
         reactions.insert(
             a.clone(),
             "reaction:generic:PLANET_CONTROL_GAINED:when".to_owned(),
         );
-        let table = Table::with_default(Box::new(InvasionDecider {
-            system: system.clone(),
-            commit: planet.clone(),
-            reactions,
-        }));
+        let decider: Box<dyn crate::choice::Decider> = match script {
+            Some(chosen) => Box::new(ScriptedDecider {
+                script: chosen.into(),
+            }),
+            None => Box::new(InvasionDecider {
+                system: system.clone(),
+                commit: planet.clone(),
+                reactions,
+            }),
+        };
+        let table = Table::with_default(decider);
         let mut game = Game::with_table(state, ContentStore::embedded(), table).with_galaxy(galaxy);
-        game.dice = Dice::from_faces([4, 4, 4]);
+        game.dice = Dice::from_faces([4; 24]);
         let mut guard = 0;
         while !game.events.iter().any(|e| e == "TACTICAL_ACTION_COMPLETE") && guard < 60 {
             assert_eq!(game.step().error, None, "log: {:?}", game.events);
             guard += 1;
         }
-        let events = &game.events;
-        let state = &game.state;
+        (game, system, planet)
+    }
+
+    /// Answers each ask with the next recorded choice, as a replay of a saved log does; fails
+    /// when that choice is not among the options offered.
+    struct ScriptedDecider {
+        script: std::collections::VecDeque<String>,
+    }
+
+    impl crate::choice::Decider for ScriptedDecider {
+        fn choose(
+            &mut self,
+            choice: &crate::choice::Choice,
+        ) -> Result<crate::choice::ChoiceOption, crate::choice::IllegalChoice> {
+            let wanted = self.script.pop_front().unwrap_or_default();
+            choice
+                .options
+                .iter()
+                .find(|o| o.id == wanted)
+                .cloned()
+                .ok_or_else(|| crate::choice::IllegalChoice::NoOptions {
+                    player: choice.player.clone(),
+                    prompt: format!("replay wanted {wanted:?}, offered {:?}", choice.options),
+                })
+        }
+    }
+
+    const INFILTRATE_WINDOW: &str = "reaction:generic:PLANET_CONTROL_GAINED:when";
+
+    fn recorded_choices(game: &Game) -> Vec<String> {
+        game.table
+            .log
+            .records
+            .iter()
+            .map(|r| r.chosen.clone())
+            .collect()
+    }
+
+    /// Rules version 0 (a game recorded before the Infiltrate fix) is offered the card after any
+    /// capture, even one with no rival structure, and spends it for nothing.
+    #[test]
+    fn legacy_infiltrate_is_offered_after_a_capture_without_rival_structures() {
+        let (game, system, planet) = infiltrate_invasion_at(0, &[], true, 0, None);
         assert!(
-            state.system_state(&system).planet_control.get(&planet) == Some(&a),
-            "a took the planet; log {events:?}"
+            recorded_choices(&game)
+                .iter()
+                .any(|c| c == INFILTRATE_WINDOW),
+            "offered and answered; log {:?}",
+            game.events
         );
-        let units: Vec<(String, String)> = state
-            .system_state(&system)
+        assert!(!a_holds_infiltrate(&game), "spent; log {:?}", game.events);
+        assert_eq!(
+            planet_units_of(&game, &system, &planet),
+            vec![owned("a", "infantry")]
+        );
+    }
+
+    /// Version 0 destroys the rival structures before the window opens, so the card replaces
+    /// the invader's own (none here) and the rival PDS and dock are simply gone.
+    #[test]
+    fn legacy_infiltrate_finds_no_rival_structure_to_replace() {
+        let (game, system, planet) =
+            infiltrate_invasion_at(0, &["pds", "spacedock"], true, 0, None);
+        assert!(!a_holds_infiltrate(&game), "offered and spent");
+        assert_eq!(
+            planet_units_of(&game, &system, &planet),
+            vec![owned("a", "infantry")],
+            "log {:?}",
+            game.events
+        );
+    }
+
+    /// Version 0 is offered it with the box empty too (no supply check on the offer).
+    #[test]
+    fn legacy_infiltrate_is_offered_with_the_box_empty() {
+        let (game, _, _) = infiltrate_invasion_at(0, &["pds"], true, 6, None);
+        assert!(!a_holds_infiltrate(&game), "offered and spent");
+    }
+
+    /// A version 0 log with the offer answered replays to the same events and state.
+    #[test]
+    fn a_legacy_log_with_an_infiltrate_offer_replays_identically() {
+        let (first, _, _) = infiltrate_invasion_at(0, &[], true, 0, None);
+        let log = recorded_choices(&first);
+        assert!(log.iter().any(|c| c == INFILTRATE_WINDOW));
+        let (again, _, _) = infiltrate_invasion_at(0, &[], true, 0, Some(log.clone()));
+        assert_eq!(again.events, first.events);
+        assert!(again.state == first.state, "same state after the replay");
+        assert_eq!(recorded_choices(&again), log);
+    }
+
+    /// A new game has the current rules version; a state saved without the field reads as 0, and
+    /// a version 0 state is written without it (so a legacy `init.json` keeps its bytes).
+    #[test]
+    fn rules_version_is_current_for_new_games_and_zero_for_old_saves() {
+        let (state, _, _, _) = invasion_fixture();
+        assert_eq!(state.rules_version, ti4_model::state::RULES_VERSION);
+        let mut json = serde_json::to_value(&state).unwrap();
+        assert_eq!(json["rules_version"], ti4_model::state::RULES_VERSION);
+        // The declaration queue of rules version 3 is not written while empty.
+        assert!(json.get("declared_card_plays").is_none());
+        json.as_object_mut().unwrap().remove("rules_version");
+        let old: GameState = serde_json::from_value(json).unwrap();
+        assert_eq!(old.rules_version, 0);
+        let mut zero = state.clone();
+        zero.rules_version = 0;
+        assert!(
+            serde_json::to_value(&zero)
+                .unwrap()
+                .get("rules_version")
+                .is_none()
+        );
+    }
+
+    fn planet_units_of(
+        game: &Game,
+        system: &ti4_model::id::SystemId,
+        planet: &ti4_model::id::PlanetId,
+    ) -> Vec<(String, String)> {
+        let mut units: Vec<(String, String)> = game
+            .state
+            .system_state(system)
             .planet_units
-            .get(&planet)
+            .get(planet)
             .map(|list| {
                 list.iter()
                     .map(|unit| (unit.owner.to_string(), unit.type_id.to_string()))
                     .collect()
             })
             .unwrap_or_default();
+        units.sort();
+        units
+    }
+
+    fn a_holds_infiltrate(game: &Game) -> bool {
+        !game
+            .state
+            .player(&PlayerId::new("a"))
+            .unwrap()
+            .action_cards
+            .is_empty()
+    }
+
+    fn owned(owner: &str, kind: &str) -> (String, String) {
+        (owner.to_owned(), kind.to_owned())
+    }
+
+    #[test]
+    fn infiltrate_is_not_offered_when_the_planet_has_no_pds_or_space_dock() {
+        // The defender held only infantry: nothing to replace, so the card is not offered
+        // (a still holds it) and the capture proceeds.
+        let (game, system, planet) = infiltrate_invasion(&[], true, 0);
+        assert!(a_holds_infiltrate(&game), "log {:?}", game.events);
         assert_eq!(
-            units,
-            vec![
-                ("a".to_owned(), "pds".to_owned()),
-                ("a".to_owned(), "infantry".to_owned()),
-            ],
-            "a's own PDS stood through the capture and its committed infantry landed on it; log {events:?}"
+            game.state.system_state(&system).planet_control.get(&planet),
+            Some(&PlayerId::new("a"))
         );
+    }
+
+    #[test]
+    fn infiltrate_replaces_the_defenders_pds() {
+        let (game, system, planet) = infiltrate_invasion(&["pds"], true, 0);
         assert!(
-            state.player(&a).unwrap().action_cards.is_empty(),
-            "infiltrate was spent on the play; log {events:?}"
+            !a_holds_infiltrate(&game),
+            "offered and spent; log {:?}",
+            game.events
+        );
+        assert_eq!(
+            planet_units_of(&game, &system, &planet),
+            vec![owned("a", "infantry"), owned("a", "pds")],
+            "log {:?}",
+            game.events
+        );
+    }
+
+    #[test]
+    fn infiltrate_replaces_the_defenders_space_dock() {
+        let (game, system, planet) = infiltrate_invasion(&["spacedock"], true, 0);
+        assert!(!a_holds_infiltrate(&game), "log {:?}", game.events);
+        assert_eq!(
+            planet_units_of(&game, &system, &planet),
+            vec![owned("a", "infantry"), owned("a", "spacedock")],
+            "log {:?}",
+            game.events
+        );
+    }
+
+    #[test]
+    fn infiltrate_replaces_both_a_pds_and_a_space_dock() {
+        let (game, system, planet) = infiltrate_invasion(&["pds", "spacedock"], true, 0);
+        assert!(!a_holds_infiltrate(&game), "log {:?}", game.events);
+        assert_eq!(
+            planet_units_of(&game, &system, &planet),
+            vec![
+                owned("a", "infantry"),
+                owned("a", "pds"),
+                owned("a", "spacedock")
+            ],
+            "log {:?}",
+            game.events
+        );
+    }
+
+    #[test]
+    fn without_the_card_the_defenders_structures_are_destroyed() {
+        let (game, system, planet) = infiltrate_invasion(&["pds", "spacedock"], false, 0);
+        assert_eq!(
+            planet_units_of(&game, &system, &planet),
+            vec![owned("a", "infantry")],
+            "log {:?}",
+            game.events
+        );
+    }
+
+    #[test]
+    fn infiltrate_is_not_offered_when_the_box_has_no_pds_left() {
+        // a already has all six PDS on the board: the only structure is a PDS, no
+        // replacement is possible, so the card stays in hand.
+        let (game, system, planet) = infiltrate_invasion(&["pds"], true, 6);
+        assert!(a_holds_infiltrate(&game), "log {:?}", game.events);
+        assert_eq!(
+            planet_units_of(&game, &system, &planet),
+            vec![owned("a", "infantry")],
+            "log {:?}",
+            game.events
         );
     }
 

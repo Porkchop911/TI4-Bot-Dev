@@ -522,7 +522,7 @@ describe("preparing a Warfare production with the real builder", () => {
       await act(async () => {
         click("secondary-prepared-confirm");
       });
-      again({ history: hist(7), choice: stepChoice("place_unit", [{ id: "place|x", kind: "place", label: "x" }]) });
+      again({ history: hist(7), choice: stepChoice("place_unit", [{ id: "place|x", kind: "place", label: "x", payload: {} }]) });
       await settle();
       expect(screen.queryByTestId("secondary-prepared-bar")).toBeNull();
       expect(screen.queryByTestId("secondary-needs-review")).toBeNull();

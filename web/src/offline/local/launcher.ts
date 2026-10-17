@@ -3,7 +3,13 @@ import { setLoadedEngine } from "../engineInfo.ts";
 import { OFFLINE_FACTION_IDS } from "../factions.ts";
 import {
   engineMismatchPrompt,
+  firstHumanSeat,
+  humanSeatsOf,
+  listSummaries,
+  NOT_PLAYABLE_HERE,
+  offlineSummary,
   replayDivergedPrompt,
+  shellStatus,
   type EngineIdentity,
   type OfflineSaveStore,
   type SavedGameRecord,
@@ -18,11 +24,11 @@ import {
   type OfflineResumeOptions,
   type OfflineSetup,
 } from "../types.ts";
-import type { HostSave, StartConfig } from "./hostApi.ts";
-import { JSPI_MISSING, jspiSupported } from "./jspi.ts";
+import type { HostSave, StartConfig } from "@ti4/shared/engine/host.ts";
+import { hasJspi } from "@ti4/shared/engine/jspi.ts";
+import { JSPI_MISSING } from "./engineAsset.ts";
 import type { LocalTransport } from "./LocalTransport.ts";
 
-export { JSPI_MISSING, jspiSupported };
 
 /** Hands out the lazily loaded session code (a dynamic import, so it is a separate chunk). */
 const sessionModule = () => import("./session.ts");
@@ -39,7 +45,6 @@ export interface LocalLauncherOptions {
   session?: typeof sessionModule;
 }
 
-const nowSeconds = () => Math.floor(Date.now() / 1000);
 const abortError = () => new DOMException("aborted", "AbortError");
 
 /** 0-based `Setup.human_seat` from the shell's 1-based seat; the nickname never reaches the engine. */
@@ -51,6 +56,8 @@ export function engineSetup(setup: OfflineSetup, gameId: string): Record<string,
     players: setup.playerCount,
     ...(setup.humanSeat !== null ? { human_seat: setup.humanSeat - 1 } : {}),
     ...(setup.humanFaction !== null ? { human_faction: setup.humanFaction } : {}),
+    // Left out when untouched: the engine takes the layout recommended for the table size.
+    ...(setup.map ? { map: setup.map.kind === "random" ? "random" : setup.map.alias } : {}),
   };
 }
 
@@ -62,11 +69,14 @@ function randomSeed(): number {
 
 const newGameId = () => `off_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
 
-/** The five things a store write needs besides the save. */
+/** What a store write needs besides the save. */
 interface Entry {
   id: string;
   nickname: string;
   humanFaction: string | null;
+  /** The faction of each seat known so far (seat `a` first); null where it is not known. */
+  factions: Array<string | null>;
+  /** Milliseconds, as the store keeps it. */
   createdAt: number;
   resumeMs: number | null;
   wasmSha256: string;
@@ -87,9 +97,14 @@ export function createLocalLauncher(options: LocalLauncherOptions): OfflineLaunc
   const persist = (entry: Entry, save: HostSave): Promise<void> => {
     if (entry.viewOnly) return Promise.resolve();
     const run = async () => {
+      // A faction once known stays: a write before the first question knows none.
+      const factions = Array.from({ length: save.players }, (_, seat) => entry.factions[seat] ?? null);
+      const human = firstHumanSeat(save.humans) - 1;
+      factions[human] ??= (save.game.setup?.human_faction as string | undefined) ?? entry.humanFaction;
+      entry.factions = factions;
       await store.put(entry.id, save as never, {
         nickname: entry.nickname,
-        humanFaction: (save.setup.human_faction as string | undefined) ?? entry.humanFaction,
+        factions,
         engine: {
           build: save.engine?.build ?? "unknown",
           contentDigest: save.engine?.content_digest ?? "unknown",
@@ -117,7 +132,7 @@ export function createLocalLauncher(options: LocalLauncherOptions): OfflineLaunc
     current: EngineIdentity,
     saved: EngineIdentity | null,
   ): Promise<OfflineGameHandle> {
-    const total = replaying ? (config.resume?.answers?.length ?? null) : null;
+    const total = replaying ? ((config.resume as Partial<HostSave> | undefined)?.decisions?.length ?? null) : null;
     onProgress({ phase: replaying ? "replaying" : "starting", done: 0, total });
     const started = performance.now();
     const transport = session.openTransport(engine, {
@@ -128,7 +143,7 @@ export function createLocalLauncher(options: LocalLauncherOptions): OfflineLaunc
       viewOnly: entry.viewOnly,
       config,
       onSave: (save) => {
-        entry.humanFaction = transport.humanFaction() ?? entry.humanFaction;
+        noteFactions(save);
         return persist(entry, save);
       },
       onProgress: (progress) => onProgress({ phase: "replaying", done: progress.done, total: progress.total }),
@@ -144,6 +159,12 @@ export function createLocalLauncher(options: LocalLauncherOptions): OfflineLaunc
             }
           : undefined,
     });
+    /** What the board shows of the factions, kept in the entry for the list. */
+    const noteFactions = (save: HostSave) => {
+      entry.humanFaction = transport.humanFaction() ?? entry.humanFaction;
+      const shown = transport.factions(save.players);
+      entry.factions = shown.map((faction, seat) => faction ?? entry.factions[seat] ?? null);
+    };
     const abort = () => transport.close();
     signal.addEventListener("abort", abort, { once: true });
     try {
@@ -168,7 +189,10 @@ export function createLocalLauncher(options: LocalLauncherOptions): OfflineLaunc
     if (replaying) entry.resumeMs = Math.round(performance.now() - started);
     live.set(entry.id, transport);
     const save = transport.latestSave();
-    if (save && !transport.viewOnly) await persist(entry, save);
+    if (save && !transport.viewOnly) {
+      noteFactions(save);
+      await persist(entry, save);
+    }
     return { gameId: entry.id, transport, ...(transport.viewOnly ? { viewOnly: true } : {}) };
   }
 
@@ -194,10 +218,10 @@ export function createLocalLauncher(options: LocalLauncherOptions): OfflineLaunc
   return {
     capabilities: OFFLINE_CAPABILITIES,
     factions: OFFLINE_FACTIONS,
-    supported: () => (jspiSupported() ? { ok: true } : { ok: false, reason: JSPI_MISSING }),
-    list: () => store.listSummaries(),
+    supported: () => (hasJspi() ? { ok: true } : { ok: false, reason: JSPI_MISSING }),
+    list: () => listSummaries(store),
     async create(setup, onProgress, signal) {
-      if (!jspiSupported()) throw new Error(JSPI_MISSING);
+      if (!hasJspi()) throw new Error(JSPI_MISSING);
       const gameId = newGameId();
       const config: StartConfig = { setup: engineSetup(setup, gameId) };
       const { session, engine, current } = await loadCurrent(onProgress, null);
@@ -206,7 +230,8 @@ export function createLocalLauncher(options: LocalLauncherOptions): OfflineLaunc
         id: gameId,
         nickname: setup.nickname,
         humanFaction: setup.humanFaction,
-        createdAt: nowSeconds(),
+        factions: [],
+        createdAt: Date.now(),
         resumeMs: null,
         wasmSha256: engine.wasmSha256,
         viewOnly: false,
@@ -221,15 +246,19 @@ export function createLocalLauncher(options: LocalLauncherOptions): OfflineLaunc
         return { gameId, transport: existing, ...(existing.viewOnly ? { viewOnly: true } : {}) };
       existing?.close();
       live.delete(gameId);
-      if (!jspiSupported()) throw new Error(JSPI_MISSING);
+      if (!hasJspi()) throw new Error(JSPI_MISSING);
       const record: SavedGameRecord | null = await store.load(gameId);
       if (!record) throw new Error("This offline game is not on this device any more.");
+      // The game screen shows one seat: a game of several people at one screen does not play here.
+      if (humanSeatsOf(record.summary.humans, record.summary.playerCount).length !== 1)
+        throw new Error(NOT_PLAYABLE_HERE);
       const { session, engine, current } = await loadCurrent(onProgress, record.engine);
       if (signal.aborted) throw abortError();
       const entry: Entry = {
         id: gameId,
         nickname: record.nickname,
-        humanFaction: record.summary.humanFaction,
+        humanFaction: offlineSummary(record).humanFaction,
+        factions: record.summary.factions,
         createdAt: record.createdAt,
         resumeMs: record.resumeEstimateMs,
         wasmSha256: engine.wasmSha256,
@@ -248,9 +277,10 @@ export function createLocalLauncher(options: LocalLauncherOptions): OfflineLaunc
         entry.viewOnly = choice === "view-only";
       }
       const save = record.save as unknown as HostSave;
-      const config: StartConfig = { setup: save.setup, resume: save };
+      // The save names its game.
+      const config: StartConfig = { resume: save };
       void store.requestPersistence();
-      return open(entry, config, onProgress, signal, save.answers.length > 0, engine, session, resumeOptions?.decide, current, record.engine);
+      return open(entry, config, onProgress, signal, save.decisions.length > 0, engine, session, resumeOptions?.decide, current, record.engine);
     },
     async remove(gameId) {
       live.get(gameId)?.close();
@@ -263,8 +293,9 @@ export function createLocalLauncher(options: LocalLauncherOptions): OfflineLaunc
     },
     feedback,
     storage: {
-      status: () => store.status(),
+      status: () => shellStatus(store),
       subscribe: (listener) => store.subscribe(listener),
+      removeUnreadable: () => store.removeUnreadable(),
       importGame: async (file) => {
         const outcome = await store.importGame(file, currentEngine);
         return { id: outcome.id, engineDiffers: outcome.engineDiffers };

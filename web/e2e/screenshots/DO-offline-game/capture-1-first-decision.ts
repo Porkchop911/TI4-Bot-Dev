@@ -3,7 +3,7 @@ import { shot } from "../_shared/shot";
 import { SIZES, startGame } from "./offlineGame";
 
 // The first decision of a real offline game: the engine runs in a Web Worker on this device and
-// the page has no server (every /api, /ws, /advisor and /health call is blocked).
+// the page has no server (every /api, /ws and /health call is blocked).
 for (const [size, viewport] of Object.entries(SIZES)) {
   test(`first decision ${size}`, async ({ page }, testInfo) => {
     await page.setViewportSize(viewport);

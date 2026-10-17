@@ -8,7 +8,7 @@ for (const size of ["desktop", "phone"] as SizeName[]) {
     await expect(page.getByTestId("alpha-notice")).toBeVisible();
     await expect(page.getByTestId("alpha-notice")).toContainText("Alpha");
     await expect(page.getByTestId("build-footer")).toContainText("build 51390594");
-    await expect(page.getByTestId("build-footer")).toContainText("protocol v3");
+    await expect(page.getByTestId("build-footer")).toContainText("protocol v4");
     const button = page.getByTestId("feedback-button");
     await expect(button).toBeVisible();
     const box = (await button.boundingBox())!;

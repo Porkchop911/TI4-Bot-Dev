@@ -7,10 +7,10 @@ use std::time::{Duration, Instant};
 
 use ti4_content::ContentStore;
 use ti4_engine::setup::start_game_seeded;
+use ti4_host::protocol::server::ServerMessage;
+use ti4_host::protocol::status::ViewerRole;
 use ti4_model::POK;
 use ti4_model::id::PlayerId;
-use ti4_server::protocol::server::ServerMessage;
-use ti4_server::protocol::status::ViewerRole;
 use ti4_server::session::{GameSession, MockClient, SeatController, SessionConfig};
 
 #[test]

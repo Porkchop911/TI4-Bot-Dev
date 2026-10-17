@@ -1,0 +1,127 @@
+{
+  "title": "Single-player notification log, toast swipe and undo",
+  "description": "Single-player (offline) games, real engine games with a fixed seed. The notification log is now an icon-only button in the same row as the Technologies / Objectives buttons (phone: the Players / Objectives / Events row), toasts can be swiped away (mouse drag shown) and no longer cover the turn bar, the event log lists the newest entry first and has an Undo last decision button (the engine's live undo: exactly the human's last answer), and the browser Back button does the same undo (it leaves the game only when there is nothing to undo; asserted in the offline e2e, not shown as a picture). Before shots were taken with TI4_SHOT_PREFIX=before on the base commit; npm run screenshots -- EC regenerates the after shots and asserts: no turn bar control covered by a toast, toggle without words in the Objectives row, newest entry first, undo enabled/disabled, one answer taken back, reload resumes at the undone position.",
+  "tag": "web/e2e/screenshots/EC-sp-notification-log",
+  "shots": [
+    {
+      "file": "before/before-toasts-desktop.png",
+      "heading": "Before: toasts, desktop",
+      "caption": "The toast stack and the Recent notifications pill sit bottom-left, right over the turn bar's neighbourhood; the pill's wrapper intercepts clicks (nightly overlap findings)."
+    },
+    {
+      "file": "out/after-toasts-desktop.png",
+      "heading": "After: toasts, desktop",
+      "caption": "No pill; the toast column is painted below the turn bar and its menus. The bell sits in the Objectives row, top right."
+    },
+    {
+      "file": "out/after-objectives-row-desktop.png",
+      "heading": "After: the objectives row, desktop",
+      "caption": "Technologies, Objectives and the icon-only notification button with an unread count."
+    },
+    {
+      "file": "before/before-toasts-phone.png",
+      "heading": "Before: toasts, phone",
+      "caption": "Tall toasts and the pill cover the turn bar area."
+    },
+    {
+      "file": "out/after-toasts-phone.png",
+      "heading": "After: toasts, phone",
+      "caption": "Toasts sit under the bar; the bell is in the bottom row between Objectives and Events."
+    },
+    {
+      "file": "out/after-objectives-row-phone.png",
+      "heading": "After: the objectives row, phone",
+      "caption": "Players, Objectives, notifications (with count), Events."
+    },
+    {
+      "file": "out/after-swiping-desktop.png",
+      "heading": "After: swiping a toast, desktop",
+      "caption": "Mouse drag: the toast follows the pointer and fades. Past about 70 px, or on a quick flick, it slides out."
+    },
+    {
+      "file": "out/after-swiped-desktop.png",
+      "heading": "After: toast swiped away, desktop",
+      "caption": "The toast is gone from the screen (it stays in the log)."
+    },
+    {
+      "file": "out/after-swiping-phone.png",
+      "heading": "After: swiping a toast, phone",
+      "caption": "Same on the phone; touch swipes work the same way (pan-y keeps vertical scrolling)."
+    },
+    {
+      "file": "out/after-swiped-phone.png",
+      "heading": "After: toast swiped away, phone",
+      "caption": "One toast left."
+    },
+    {
+      "file": "before/before-log-open-desktop.png",
+      "heading": "Before: notification list, desktop",
+      "caption": "The list grows above the pill, bottom-left."
+    },
+    {
+      "file": "out/after-log-open-desktop.png",
+      "heading": "After: notification list, desktop",
+      "caption": "A popover under the bell, newest first; the unread count is cleared."
+    },
+    {
+      "file": "before/before-log-open-phone.png",
+      "heading": "Before: notification list, phone",
+      "caption": "List and pill over the turn bar."
+    },
+    {
+      "file": "out/after-log-open-phone.png",
+      "heading": "After: notification list, phone",
+      "caption": "A popover above the bell, kept inside the screen."
+    },
+    {
+      "file": "before/before-log-desktop.png",
+      "heading": "Before: event log, desktop",
+      "caption": "Oldest entry first, no single Undo (only a small Undo on every row)."
+    },
+    {
+      "file": "out/after-log-desktop.png",
+      "heading": "After: event log, desktop",
+      "caption": "Newest entry on top (#123 first); Undo last decision is enabled."
+    },
+    {
+      "file": "out/after-undo-disabled-desktop.png",
+      "heading": "After: undo disabled, desktop",
+      "caption": "Nothing answered yet: the button is disabled and says Nothing to undo yet."
+    },
+    {
+      "file": "out/after-undone-desktop.png",
+      "heading": "After: after undo, desktop",
+      "caption": "One decision taken back; the polite status line reads 'Undid your last decision'. The bots' later moves are gone from the log and can be redone with the Redo buttons."
+    },
+    {
+      "file": "before/before-log-phone.png",
+      "heading": "Before: event log, phone",
+      "caption": "Oldest first."
+    },
+    {
+      "file": "out/after-log-phone.png",
+      "heading": "After: event log, phone",
+      "caption": "Newest first with the Undo last decision button."
+    },
+    {
+      "file": "out/after-undo-disabled-phone.png",
+      "heading": "After: undo disabled, phone",
+      "caption": "Disabled at the start of a game."
+    },
+    {
+      "file": "out/after-undone-phone.png",
+      "heading": "After: after undo, phone",
+      "caption": "Status line after the undo."
+    },
+    {
+      "file": "out/after-back-undo-desktop.png",
+      "heading": "After: browser Back undoes a decision, desktop",
+      "caption": "Back took the last decision back and stayed on the game screen; the note at the top says so (and is announced). With nothing to undo, Back leaves the game for the previous page instead."
+    },
+    {
+      "file": "out/after-back-undo-phone.png",
+      "heading": "After: system Back undoes a decision, phone",
+      "caption": "Same on the phone."
+    }
+  ]
+}

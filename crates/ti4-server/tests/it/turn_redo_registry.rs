@@ -9,12 +9,12 @@ use serde_json::{Value, json};
 use tokio::net::TcpListener;
 
 use ti4_content::ContentStore;
+use ti4_host::history::turn_redo::find_turns;
+use ti4_host::protocol::status::ViewerRole;
+use ti4_host::protocol::turn_redo::{TurnRedoStage, TurnRedoStop};
 use ti4_model::id::PlayerId;
 use ti4_server::create_app;
-use ti4_server::protocol::status::ViewerRole;
-use ti4_server::protocol::turn_redo::{TurnRedoStage, TurnRedoStop};
 use ti4_server::session::registry::HistoryError;
-use ti4_server::session::turn_redo::find_turns;
 use ti4_server::session::{GameRegistry, GameSession, SeatController, SessionConfig};
 use ti4_server::storage::FileGameStore;
 
@@ -42,8 +42,9 @@ fn table(id: &str, third: SeatController, store: Option<Arc<FileGameStore>>) -> 
     let players = vec![host.clone(), guest.clone(), third_seat.clone()];
     let seed = 42;
     let (state, galaxy) =
-        ti4_server::map::create_game_with_map(ContentStore::embedded(), &players, seed).unwrap();
-    let tiles = ti4_server::map::build_board_tiles(ContentStore::embedded(), &galaxy);
+        ti4_host::map::create_game_with_template(ContentStore::embedded(), &players, seed, None)
+            .unwrap();
+    let tiles = ti4_host::map::build_board_tiles(ContentStore::embedded(), &galaxy);
     let mut config = SessionConfig::new(id, state)
         .with_seed(seed)
         .with_player_ids(players)
@@ -139,7 +140,7 @@ impl Table3 {
             .map(|_| ())
     }
 
-    fn status(&self, token: &str) -> Option<ti4_server::protocol::turn_redo::TurnRedoStatus> {
+    fn status(&self, token: &str) -> Option<ti4_host::protocol::turn_redo::TurnRedoStatus> {
         self.registry.turn_redo_status(&self.id, token).unwrap()
     }
 }
@@ -386,7 +387,7 @@ fn a_new_turn_then_autoplay_keeps_the_round_and_a_second_redo_keeps_the_first_or
         .filter(|e| {
             matches!(
                 e.event,
-                ti4_server::protocol::server::GameEventKind::DecisionResolved
+                ti4_host::protocol::server::GameEventKind::DecisionResolved
             )
         })
         .count();
@@ -559,7 +560,7 @@ fn the_redo_and_its_saved_original_survive_a_restart_with_their_forced_dice() {
             .rng_marks
             .deck_plan
             .iter()
-            .all(|segment| segment.until != ti4_server::session::rng_force::OPEN),
+            .all(|segment| segment.until != ti4_host::rng_force::OPEN),
         "the finished redo's card reservations are closed"
     );
     assert_eq!(saved.rng_marks.deck_plan.len(), 1);
@@ -785,7 +786,7 @@ fn a_redo_in_its_new_turn_recovers_from_disk_with_its_open_card_reservations() {
         .rng_marks
         .deck_plan
         .iter()
-        .filter(|s| s.until == ti4_server::session::rng_force::OPEN)
+        .filter(|s| s.until == ti4_host::rng_force::OPEN)
         .collect();
     assert_eq!(
         open.len(),

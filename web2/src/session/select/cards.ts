@@ -5,14 +5,14 @@
 import type { ActionCardView, ActionCardsView } from "../../model";
 import type { Catalog, ReactionModes, SessionUpdate } from "../wire";
 import { plain, timing } from "./components";
-import { titleCase } from "./names";
+import { humanizeId } from "./names";
 
 /** What the player set for cards. Only `modes` changes what the viewer is asked. */
 export interface CardSettings {
   /**
    * The mode of each reaction that the viewer set: an action card by its printed name, the card
    * of an ability by its key. Where the game runs has them (`Transport.setReactionMode`), and
-   * applies them (`ti4_view::reaction_modes`).
+   * applies them (`ti4_host::view::reaction_modes`).
    */
   modes: ReactionModes;
   /** The printed names of the cards that the viewer acts as if holding. Not wired to anything yet. */
@@ -42,7 +42,7 @@ export function selectActionCards(
   }
   const deck = catalog?.components.action_cards ?? [];
   const printed = new Map(deck.map((card) => [card.id, card]));
-  const nameOf = (id: string) => printed.get(id)?.name ?? titleCase(id);
+  const nameOf = (id: string) => printed.get(id)?.name ?? humanizeId(id);
   const count = (ids: string[]) => {
     const counts = new Map<string, number>();
     for (const id of ids) {

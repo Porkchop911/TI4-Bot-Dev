@@ -1,3 +1,5 @@
+import type { MapChoice } from "../protocol/types.ts";
+
 /**
  * The seam between the offline UI shell (this folder) and whatever actually runs a local game.
  *
@@ -13,8 +15,6 @@ export interface Capabilities {
   splicePreview: boolean;
   /** Turn redo (undo to the start of the own turn and play it again). */
   turnRedo: boolean;
-  /** The advisor (neural move suggestions from the server). */
-  advisor: boolean;
   /** More than one human: lobby, invite links, presence, takeover. */
   multiplayer: boolean;
   /** Feedback reaches the server at once (offline it is queued and sent later). */
@@ -32,6 +32,11 @@ export interface OfflineSetup {
   /** Faction id of the human; `null` = random. Bots always draw randomly. */
   humanFaction: string | null;
   nickname: string;
+  /**
+   * The map the host chose: a template alias of the engine's catalog or the seeded random board.
+   * Left out: the layout recommended for the table size (what every game had before the picker).
+   */
+  map?: MapChoice;
   /** Only ever set from the dev-only seed field. */
   seed?: number;
 }
@@ -41,12 +46,24 @@ export interface OfflineGameSummary {
   gameId: string;
   playerCount: number;
   humanFaction: string | null;
+  /** The first of `humanSeats`. */
   humanSeat: number;
+  /** The seats that people play, 1-based. */
+  humanSeats: number[];
+  /** The faction of each seat (seat 1 first), null while it is not known. */
+  factions: Array<string | null>;
+  /**
+   * False when this app cannot show the game: several people play it at one screen (a game
+   * started in the other app). It can still be exported and deleted.
+   */
+  playable: boolean;
   round: number | null;
   phase: string | null;
   /** Number of the human's answers stored (the replay length). */
   answers: number;
+  /** Unix seconds. */
   createdAt: number;
+  /** Unix seconds. */
   updatedAt: number;
   status: "in_progress" | "finished";
   /** Rough resume time in ms from the last measured replay; null when unknown. */
@@ -117,8 +134,12 @@ export interface OfflineStorage {
     /** Text of a visible notice; null when all is well. */
     warning: string | null;
     persisted: boolean | null;
+    /** Saved games of an older version: not read, not listed, only deleted. */
+    unreadable: number;
   };
   subscribe(listener: () => void): () => void;
+  /** Deletes the saved games of an older version; resolves with how many. */
+  removeUnreadable(): Promise<number>;
   /** Reads a game file exported earlier into the list. Throws with a message fit to show. */
   importGame(file: Blob): Promise<{ id: string; engineDiffers: boolean }>;
 }
@@ -147,14 +168,15 @@ export interface QueuedFeedbackReport {
  */
 export interface OfflineFeedbackLocal {
   seed: number;
-  setup: Record<string, unknown>;
   /** The human's option ids so far. */
   answers: string[];
   engine: { build: string; content_digest: string };
   wasm_sha256: string;
   save: {
+    format: 2;
     seed: number;
-    setup: Record<string, unknown>;
+    game: Record<string, unknown>;
+    decisions: string[];
     answers: string[];
     redo: string[];
     never: string[];
@@ -162,7 +184,6 @@ export interface OfflineFeedbackLocal {
     event_versions: Array<number | null>;
     generation: number;
     version: number;
-    decisions: number;
     decisions_hash: string;
     [other: string]: unknown;
   };
@@ -191,6 +212,14 @@ export interface OfflineFeedbackQueue {
   retry(localId: string): void;
 }
 
+/** The engine's answers to the map picker (same shapes as `GET /api/maps` and `/api/maps/{alias}/preview`). */
+export interface OfflineMapSource {
+  /** Layouts that build for a table of this size, as JSON in the shape of `GET /api/maps`. The first call loads the engine. */
+  catalog(playerCount: number): Promise<unknown>;
+  /** A pictured example board in the shape of `GET /api/maps/{alias}/preview`; `variant` asks for another example. */
+  preview(choice: MapChoice, playerCount: number, variant: number): Promise<unknown>;
+}
+
 export interface OfflineLauncher {
   capabilities: Capabilities;
   /** Faction ids the human can choose, in display order. */
@@ -209,6 +238,8 @@ export interface OfflineLauncher {
   /** A JSON file with seed, answers and engine hash; the user keeps it as a backup. */
   exportGame(gameId: string): Promise<{ filename: string; blob: Blob }>;
   feedback: OfflineFeedbackQueue;
+  /** The map picker's data; absent where the engine cannot be asked (the form then offers no choice). */
+  maps?: OfflineMapSource;
   /** Where the saves live; absent in builds that cannot import. */
   storage?: OfflineStorage;
 }

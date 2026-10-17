@@ -4,7 +4,7 @@ import { trackInvasion, type InvasionTracker } from "./invasionToasts.ts";
 
 const INVADER = "player_inv";
 const RIVAL = "player_rival";
-const g = (owner: string, unit_type: string, damaged = false): PlacedUnitView => ({ owner, unit_type, damaged, planet: "jord" });
+const g = (owner: string, unit_type: string, damaged = false): PlacedUnitView => ({ owner, unit_type, damaged, planet: "jord", galvanized: false });
 const many = (n: number, type: string, owner: string) => Array.from({ length: n }, () => g(owner === "" ? RIVAL : owner, type));
 const die = (player: string, group: string, face: number, target: number) => ({ planet: "jord", player, group, face, target, hit: face >= target });
 

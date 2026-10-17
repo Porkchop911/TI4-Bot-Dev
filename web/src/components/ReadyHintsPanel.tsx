@@ -24,7 +24,7 @@ export const ReadyHintsPanel: React.FC<{ hints: ReadyHints; showPlanets?: boolea
               <li key={planet.id} data-testid={`ready-hint-planet-${planet.id}`}>
                 <span className="ready-hints__name">{planet.name}</span>
                 {planet.resources !== null && planet.influence !== null && (
-                  <PlanetValuePair resources={planet.resources} influence={planet.influence} />
+                  <PlanetValuePair resources={planet.resources} influence={planet.influence} planetId={planet.id} />
                 )}
                 <span className="ready-hints__tag">exhausted</span>
               </li>

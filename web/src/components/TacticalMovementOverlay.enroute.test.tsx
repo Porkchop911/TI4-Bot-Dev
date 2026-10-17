@@ -1,14 +1,15 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { TacticalMovementOverlay } from "./TacticalMovementOverlay.tsx";
-import type { BoardView, PendingChoiceDto } from "../protocol/types.ts";
+import type { BoardView, MovementFacts, PendingChoiceDto } from "../protocol/types.ts";
+import { partialContext } from "../test/wire.ts";
 
 // 95.1: a carrier also picks up from the systems it moves through. 24 (origin) - 30 - 18 (active).
 const choice: PendingChoiceDto = {
   prompt: "movement",
   actor: "p1",
   nonce: "n1",
-  context: { subtype: "movement_step", target: { System: "18" } },
+  context: partialContext({ subtype: "movement_step", target: { System: "18" } }),
   options: [
     {
       id: "move|24|0",
@@ -16,7 +17,7 @@ const choice: PendingChoiceDto = {
       kind: "move",
       payload: { origin: "24", unit: "carrier", capacity: 4 },
     },
-    { id: "done_moving", label: "Finish Movement", kind: "decline" },
+    { id: "done_moving", label: "Finish Movement", kind: "decline", payload: {} },
   ],
 };
 
@@ -40,7 +41,7 @@ const sys = (
 const board = (mid: BoardView["systems"][string]): BoardView => ({
   map_tiles: [tile("24", 0, 0), tile("30", 1, 0), tile("18", 2, 0)],
   systems: {
-    "24": sys("24", [{ owner: "p1", unit_type: "carrier", damaged: false }]),
+    "24": sys("24", [{ owner: "p1", unit_type: "carrier", damaged: false, planet: null, galvanized: false }]),
     "30": mid,
     "18": sys("18", []),
   },
@@ -51,17 +52,20 @@ const infantryOnPlanet = {
   unit_type: "infantry",
   planet: "mid",
   damaged: false,
+  galvanized: false,
 };
-const fighterInSpace = { owner: "p1", unit_type: "fighter", damaged: false };
+const fighterInSpace = { owner: "p1", unit_type: "fighter", damaged: false, planet: null, galvanized: false };
 
 const renderOverlay = (
   b: BoardView,
   onSubmitBatch = vi.fn().mockResolvedValue(undefined),
+  facts: MovementFacts | null = null,
 ) => {
   render(
     <TacticalMovementOverlay
       choice={choice}
       board={b}
+      facts={facts}
       activeSystemId="18"
       onSubmit={vi.fn().mockResolvedValue(undefined)}
       onSubmitBatch={onSubmitBatch}
@@ -104,6 +108,7 @@ describe("TacticalMovementOverlay en-route pickups (95.1)", () => {
           unit: "infantry",
           source: "mid",
           damaged: false,
+          pickup_system: "30",
         },
         {
           kind: "load",
@@ -111,6 +116,7 @@ describe("TacticalMovementOverlay en-route pickups (95.1)", () => {
           unit: "infantry",
           source: "mid",
           damaged: false,
+          pickup_system: "30",
         },
         {
           kind: "load",
@@ -118,11 +124,33 @@ describe("TacticalMovementOverlay en-route pickups (95.1)", () => {
           unit: "fighter",
           source: null,
           damaged: false,
+          pickup_system: "30",
         },
         { kind: "done_loading" },
         { kind: "done_moving" },
       ]),
     );
+  });
+
+  // Run s2-01-2031: infantry waited in space in the origin and in the active system; the engine
+  // offers one load per system, so a load without its pickup system was "ambiguous".
+  it("names the pickup system of an origin load when the active system holds the same unit", async () => {
+    const b = board(sys("30", []));
+    b.systems["24"].units.push({ owner: "p1", unit_type: "infantry", planet: null, damaged: false, galvanized: false });
+    b.systems["18"].units.push({ owner: "p1", unit_type: "infantry", planet: null, damaged: false, galvanized: false });
+    const onSubmitBatch = renderOverlay(b);
+    fireEvent.click(screen.getByTestId("rally-inc-24-carrier"));
+    fireEvent.click(screen.getByTestId("rally-inc-cargo-24-infantry-space"));
+    fireEvent.click(screen.getByTestId("commit-moves-btn"));
+    await waitFor(() => expect(onSubmitBatch).toHaveBeenCalledOnce());
+    expect(onSubmitBatch.mock.calls[0][1]).toContainEqual({
+      kind: "load",
+      origin: "24",
+      unit: "infantry",
+      source: null,
+      damaged: false,
+      pickup_system: "24",
+    });
   });
 
   it("offers nothing from a system with the player's command token (95.5)", () => {
@@ -137,9 +165,9 @@ describe("TacticalMovementOverlay en-route pickups (95.1)", () => {
     b.systems["24"] = sys(
       "24",
       [
-        { owner: "p1", unit_type: "carrier", damaged: false },
-        { owner: "p1", unit_type: "fighter", damaged: false },
-        { owner: "p1", unit_type: "infantry", planet: "home", damaged: false },
+        { owner: "p1", unit_type: "carrier", damaged: false, planet: null, galvanized: false },
+        { owner: "p1", unit_type: "fighter", damaged: false, planet: null, galvanized: false },
+        { owner: "p1", unit_type: "infantry", planet: "home", damaged: false, galvanized: false },
       ],
       ["p1"],
     );
@@ -152,15 +180,15 @@ describe("TacticalMovementOverlay en-route pickups (95.1)", () => {
   it("still offers origin cargo without a token (control for the Dominus Orb case)", () => {
     const b = board(sys("30", []));
     b.systems["24"] = sys("24", [
-      { owner: "p1", unit_type: "carrier", damaged: false },
-      { owner: "p1", unit_type: "fighter", damaged: false },
+      { owner: "p1", unit_type: "carrier", damaged: false, planet: null, galvanized: false },
+      { owner: "p1", unit_type: "fighter", damaged: false, planet: null, galvanized: false },
     ]);
     renderOverlay(b);
     expect(screen.getByTestId("rally-row-cargo-24-fighter-space")).toBeInTheDocument();
   });
 
   it("offers nothing when the passed system has no own units", () => {
-    renderOverlay(board(sys("30", [{ ...infantryOnPlanet, owner: "p2" }])));
+    renderOverlay(board(sys("30", [{ ...infantryOnPlanet, owner: "p2", galvanized: false }])));
     expect(
       screen.queryByTestId("rally-row-cargo-24-infantry-mid-via-30"),
     ).toBeNull();
@@ -189,8 +217,9 @@ describe("TacticalMovementOverlay en-route pickups (95.1)", () => {
       unit_type: "mech",
       planet: "mid",
       damaged: false,
+      galvanized: false,
     };
-    const mechInSpace = { owner: "p1", unit_type: "mech", damaged: false };
+    const mechInSpace = { owner: "p1", unit_type: "mech", damaged: false, planet: null, galvanized: false };
     const stageCarrier = () =>
       fireEvent.click(screen.getByTestId("rally-inc-24-carrier"));
     const mechId = "cargo-24-mech-mid-via-30";
@@ -213,6 +242,7 @@ describe("TacticalMovementOverlay en-route pickups (95.1)", () => {
             unit: "mech",
             source: "mid",
             damaged: false,
+            pickup_system: "30",
           },
           { kind: "done_loading" },
           { kind: "done_moving" },
@@ -236,6 +266,7 @@ describe("TacticalMovementOverlay en-route pickups (95.1)", () => {
             unit: "mech",
             source: null,
             damaged: false,
+            pickup_system: "30",
           },
           { kind: "done_loading" },
           { kind: "done_moving" },
@@ -314,6 +345,7 @@ describe("TacticalMovementOverlay en-route pickups (95.1)", () => {
         unit_type: "argent_mech",
         planet: "mid",
         damaged: false,
+        galvanized: false,
       };
       const argentId = "cargo-24-argent_mech-mid-via-30";
 
@@ -422,6 +454,71 @@ describe("TacticalMovementOverlay en-route pickups (95.1)", () => {
         renderOverlay(board(sys("30", [argent])));
         expect(screen.getByTestId(`rally-inc-${argentId}`)).toBeDisabled();
       });
+    });
+  });
+
+  // Run s1-15 (#579): the engine's route (a Spatial Conduit hop, here 24 - 31 - 18) is not the
+  // plain hex route (24 - 30 - 18) the client guesses. The facts say which systems are crossed.
+  describe("with the engine's movement facts", () => {
+    const withBoth = () => {
+      const b = board(sys("30", [infantryOnPlanet]));
+      b.map_tiles!.push(tile("31", 0, 5));
+      b.systems["31"] = sys("31", [{ ...infantryOnPlanet, planet: "far" }]);
+      return b;
+    };
+    const facts = (loads: number[]): MovementFacts => ({
+      active: "18",
+      ships: [
+        {
+          origin: "24",
+          index: 0,
+          unit: "carrier",
+          damaged: false,
+          capacity: 4,
+          fleet: true,
+          move_value: 1,
+          move: { gravity_drive: false, ionian: false, path: ["31", "18"], rifts: [] },
+          loads,
+        },
+      ],
+      cargo: [
+        { system: "31", source: "far", unit: "infantry", damaged: false, galvanized: false, count: 1 },
+      ],
+      gravity_drive: false,
+      ionian: false,
+      fleet_supply: { limit: 4, charged: 0 },
+      moved: 0,
+    });
+
+    it("stages the pickup from the system of the engine's route, not the guessed one", async () => {
+      const onSubmitBatch = renderOverlay(withBoth(), undefined, facts([0]));
+      expect(screen.queryByTestId("rally-row-cargo-24-infantry-mid-via-30")).toBeNull();
+      expect(screen.getByTestId("rally-row-cargo-24-infantry-far-via-31")).toHaveTextContent(
+        "On the way: #31",
+      );
+      fireEvent.click(screen.getByTestId("rally-inc-24-carrier"));
+      fireEvent.click(screen.getByTestId("rally-inc-cargo-24-infantry-far-via-31"));
+      fireEvent.click(screen.getByTestId("commit-moves-btn"));
+      await waitFor(() => expect(onSubmitBatch).toHaveBeenCalledOnce());
+      expect(onSubmitBatch.mock.calls[0][1]).toContainEqual({
+        kind: "load",
+        origin: "24",
+        unit: "infantry",
+        source: "far",
+        damaged: false,
+        pickup_system: "31",
+      });
+    });
+
+    it("offers no en-route pickup when the engine lists no load", () => {
+      renderOverlay(withBoth(), undefined, facts([]));
+      expect(screen.queryByTestId("rally-row-cargo-24-infantry-mid-via-30")).toBeNull();
+      expect(screen.queryByTestId("rally-row-cargo-24-infantry-far-via-31")).toBeNull();
+    });
+
+    it("falls back to the guessed route when the facts are missing", () => {
+      renderOverlay(withBoth());
+      expect(screen.getByTestId("rally-row-cargo-24-infantry-mid-via-30")).toBeInTheDocument();
     });
   });
 });

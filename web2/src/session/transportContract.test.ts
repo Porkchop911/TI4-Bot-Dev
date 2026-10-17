@@ -1,19 +1,22 @@
-import { type ChildProcess, spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { loadCatalog } from "@ti4/shared/content/catalog.ts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  type TestServer,
+  spawnTestServer,
+  testServerBinary,
+} from "../../../web-shared/test/server.ts";
 import { canMove, setLoad, setShip, shipId } from "./movementDraft";
 import { type PlanStep, stepsOf } from "./movementPlan";
 import type { Transport, TransportEvent } from "./transport";
-import { type Engine, catalogOf, createWasmTransport } from "./wasmTransport";
+import { type Engine, createWasmTransport, engineQuery } from "./wasmTransport";
 import type {
   ActivationFacts,
   DraftOutcome,
-  DraftScope,
   DraftStep,
   MovementFacts,
+  PlanScope,
   ReactionModes,
   SessionUpdate,
 } from "./wire";
@@ -28,7 +31,7 @@ import { createWsTransport, openSocket } from "./wsTransport";
 // Both are built outside this suite, and a case is skipped without its build:
 // `scripts/build-wasm.sh`, and `cargo b-web`.
 const WASM = fileURLToPath(new URL("./ti4.wasm", import.meta.url));
-const SERVER = fileURLToPath(new URL("../../../target/debug/server", import.meta.url));
+const SERVER = testServerBinary();
 
 type Update = Extract<TransportEvent, { kind: "update" }>;
 
@@ -37,7 +40,7 @@ interface Side {
   transport: Transport;
   /** The next event that is an update and that `wanted` holds for. Updates before it are passed. */
   until(wanted: (event: Update) => boolean): Promise<Update>;
-  draft(script: DraftStep[], scope?: DraftScope): Promise<DraftOutcome | null>;
+  draft(script: DraftStep[], scope?: PlanScope): Promise<DraftOutcome | null>;
   never(): string[];
   modes(): ReactionModes;
   /** Waits until the transport told this mode of a reaction. */
@@ -296,7 +299,7 @@ function contract(start: () => Promise<Side>) {
     expect(action.followers.find((follower) => follower.seat === me)?.state).toBe("waiting");
 
     // The draft asks what the game asks, on a copy.
-    const scope: DraftScope = { kind: "secondary", primary: action.primary, card: action.card };
+    const scope: PlanScope = { kind: "secondary", primary: action.primary, card: action.card };
     const open = await game.draft([], scope);
     expect(open?.stop).toEqual({ kind: "open" });
     expect(open?.update.pending_choice?.choice.options.map((option) => option.id)).toEqual(
@@ -410,45 +413,32 @@ describe.skipIf(!existsSync(WASM))("the engine in this page", () => {
   let engine: Engine;
   beforeAll(async () => {
     const module = await WebAssembly.compile(readFileSync(WASM));
-    engine = { module, hash: "test", scenarios: [], catalog: await catalogOf(module) };
+    engine = {
+      module,
+      hash: "test",
+      scenarios: [],
+      catalog: await loadCatalog({ query: engineQuery(module) }),
+    };
   });
   contract(async () => side(createWasmTransport(engine, { seed: 3, players: 8, humans: 1 })));
 });
 
-describe.skipIf(!existsSync(WASM) || !existsSync(SERVER))("a server", () => {
-  const port = 20_000 + Math.floor(Math.random() * 30_000);
-  const data = mkdtempSync(join(tmpdir(), "ti4-contract-"));
-  let server: ChildProcess;
+describe.skipIf(!existsSync(WASM) || !SERVER)("a server", () => {
+  let server: TestServer;
   let engine: Pick<Engine, "catalog" | "module">;
   beforeAll(async () => {
     // The printed cards are those of the engine of this page, as in the browser: the transport
     // plays only when the server has the same corpus. The odds are of that engine too.
     const module = await WebAssembly.compile(readFileSync(WASM));
-    engine = { catalog: await catalogOf(module), module };
-    server = spawn(SERVER, [], {
-      env: {
-        ...process.env,
-        HOST: "127.0.0.1",
-        PORT: String(port),
-        TI4_DATA_DIR: data,
-        // A seat that the server plays answers at once: by default it waits before each answer.
-        TI4_RANDOM_BOT_DELAY_MS: "0",
-      },
-      stdio: ["ignore", "pipe", "inherit"],
-    });
-    await new Promise<void>((ready, failed) => {
-      server.once("exit", (code) => failed(new Error(`The server stopped with ${code}.`)));
-      server.stdout?.on("data", (text) => String(text).includes("Listening on") && ready());
-    });
+    engine = { catalog: await loadCatalog({ query: engineQuery(module) }), module };
+    // A seat that the server plays answers at once: by default it waits before each answer.
+    server = await spawnTestServer({ env: { TI4_RANDOM_BOT_DELAY_MS: "0" } });
   }, 60_000);
-  afterAll(() => {
-    server?.kill();
-    rmSync(data, { recursive: true, force: true });
-  });
+  afterAll(() => server?.stop());
   /** A game of eight with one seat for this side, and the transport of that seat. */
   const play = async (made?: { game_id: string; player_session: string }) => {
     if (!made) {
-      const response = await fetch(`http://127.0.0.1:${port}/api/games`, {
+      const response = await fetch(`${server.url}/api/games`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -467,7 +457,7 @@ describe.skipIf(!existsSync(WASM) || !existsSync(SERVER))("a server", () => {
       transport: createWsTransport(
         engine,
         { gameId: game.game_id, playerSession: game.player_session },
-        { open: (id) => openSocket(`ws://127.0.0.1:${port}/ws/games/${id}`) },
+        { open: (id) => openSocket(`ws://127.0.0.1:${server.port}/ws/games/${id}`) },
       ),
     };
   };
@@ -506,7 +496,7 @@ describe.skipIf(!existsSync(WASM) || !existsSync(SERVER))("a server", () => {
     }
   }, 30_000);
   contract(async () => {
-    const response = await fetch(`http://127.0.0.1:${port}/api/games`, {
+    const response = await fetch(`${server.url}/api/games`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -522,7 +512,7 @@ describe.skipIf(!existsSync(WASM) || !existsSync(SERVER))("a server", () => {
       createWsTransport(
         engine,
         { gameId: made.game_id, playerSession: made.player_session },
-        { open: (id) => openSocket(`ws://127.0.0.1:${port}/ws/games/${id}`) },
+        { open: (id) => openSocket(`ws://127.0.0.1:${server.port}/ws/games/${id}`) },
       ),
     );
   });

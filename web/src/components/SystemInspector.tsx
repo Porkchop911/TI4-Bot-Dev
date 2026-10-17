@@ -8,6 +8,10 @@ import { PlanetValuePair } from "./PlanetValueIcons.tsx";
 import { PlanetStructures } from "./PlanetStructures.tsx";
 import { splitStructures } from "../presentation/planetStructures.ts";
 import { UnitStatsTip } from "./UnitInfo.tsx";
+import { HyperlaneDiagram } from "./hyperlane/HyperlaneArt.tsx";
+import { hyperlaneLabel, parseHyperlaneId } from "./hyperlane/hyperlaneGeometry.ts";
+import { AnomalyIconInline } from "./anomaly/AnomalyArt.tsx";
+import { anomalyKind } from "./anomaly/anomalyKind.ts";
 import { describeAnomaly } from "../presentation/anomalyRules.ts";
 import { findPlanetMeta } from "../protocol/contentCatalog.ts";
 import { attachmentLabels, explorationsInSystem } from "../presentation/explorationMarks.ts";
@@ -101,6 +105,22 @@ export const SystemInspector: React.FC<SystemInspectorProps> = ({
         </div>
       </div>
 
+      {(() => {
+        const lane = parseHyperlaneId(system.systemId);
+        if (!lane) return null;
+        return (
+          <div data-testid="inspector-hyperlane" style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <HyperlaneDiagram systemId={system.systemId} />
+            <div style={{ fontSize: 12, color: "#cbd5e1" }}>
+              <strong>{hyperlaneLabel(lane)}</strong>
+              <div style={{ color: "#94a3b8", marginTop: 2 }}>
+                Not a system: no planets, and nothing can stop here.
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {reach && (
         <div role="tablist" aria-label="System overview" style={{ display: "flex", gap: 6 }}>
           {(
@@ -157,6 +177,10 @@ export const SystemInspector: React.FC<SystemInspectorProps> = ({
                 border: "1px solid #d97706",
               }}
             >
+              {(() => {
+                const k = anomalyKind(a);
+                return k ? <AnomalyIconInline kind={k} size={14} /> : null;
+              })()}{" "}
               {a.toUpperCase()}
             </span>
           ))}
@@ -236,7 +260,7 @@ export const SystemInspector: React.FC<SystemInspectorProps> = ({
                     )}
                   </span>
                   <span style={{ fontSize: 12, color: "#facc15", fontWeight: 600 }}>
-                    <PlanetValuePair resources={p.resources} influence={p.influence} size="tooltip" />
+                    <PlanetValuePair resources={p.resources} influence={p.influence} boosts={p.boosts} size="tooltip" />
                   </span>
                 </div>
 

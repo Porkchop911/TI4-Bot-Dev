@@ -1,11 +1,13 @@
 import type {
   BoardView,
-  DecisionTriggerDto,
+  DecisionTrigger,
   GameEvent,
   PendingChoiceDto,
 } from "../protocol/types.ts";
-import { decodeDecisionTrigger } from "../protocol/decode.ts";
-import { GENERATED_CONTENT_CATALOG } from "../protocol/generatedContentManifest.ts";
+import { decodeDecisionTrigger } from "@ti4/shared/wire/decode.ts";
+import { CONTENT } from "../protocol/catalogStore.ts";
+import { decodeEffectPreviews } from "../protocol/decode.ts";
+import { describePreview } from "./effectText.ts";
 import {
   findActionCardByName,
   findActionCardMeta,
@@ -281,7 +283,7 @@ function strategyCardName(id: string | null): string {
 }
 
 /** Facts from the engine's typed trigger: the best source, and the only one for exact units. */
-export function factsFromTrigger(trigger: DecisionTriggerDto): ReactionTriggerFacts {
+export function factsFromTrigger(trigger: DecisionTrigger): ReactionTriggerFacts {
   const facts = emptyFacts(trigger.event_type);
   facts.actorId = trigger.actor ?? null;
   facts.subjectId = trigger.subject ?? null;
@@ -455,9 +457,9 @@ interface CatalogNamed {
   ability?: string;
 }
 
-const CATALOG_NOTES = GENERATED_CONTENT_CATALOG.promissoryNotes as unknown as Record<string, CatalogNamed>;
-const CATALOG_UNITS = GENERATED_CONTENT_CATALOG.units as unknown as Record<string, CatalogNamed>;
-const CATALOG_LEADERS = GENERATED_CONTENT_CATALOG.leaders as unknown as Record<string, CatalogNamed>;
+const CATALOG_NOTES = CONTENT.promissoryNotes as unknown as Record<string, CatalogNamed>;
+const CATALOG_UNITS = CONTENT.units as unknown as Record<string, CatalogNamed>;
+const CATALOG_LEADERS = CONTENT.leaders as unknown as Record<string, CatalogNamed>;
 
 /**
  * Non-card abilities (`technology:<faction>:<id>:<EVENT>:<rel>`, `leader:...`, and the faction's
@@ -642,8 +644,18 @@ export function describeReaction(input: ReactionModelInput): ReactionModel {
     .map((option) =>
       subtype in ABILITY_SUBTYPES ? abilityStepRow(option, subtype) : rowFor(option),
     );
+  // What the engine says each card would do now (the context's previews, per option).
+  const previews = decodeEffectPreviews(choice.context?.previews);
   for (const row of reactions) {
-    if (row.card?.id === "salvage") {
+    const preview = previews.find((candidate) => candidate.option === row.optionId);
+    if (preview) {
+      row.effect = describePreview(preview, {
+        seat: labels.actor,
+        viewerSeat: input.viewerSeat,
+        system: systemLabel,
+      });
+    }
+    if (row.card?.id === "salvage" && !row.effect) {
       row.effect = salvageEffect(
         trigger?.actor ?? input.viewerSeat ?? null,
         input.board,

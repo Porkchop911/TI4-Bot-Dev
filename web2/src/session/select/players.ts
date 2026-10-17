@@ -1,5 +1,6 @@
 // The seats and the player table.
 import type { PlayerRowView, PlayerTableView, SeatId, SeatView } from "../../model";
+import { MLP_PREFIX } from "../models";
 import type { Catalog, PlayerView, ReactionModes, SessionUpdate } from "../wire";
 import { componentCards } from "./components";
 import { DECKS } from "./exploration";
@@ -27,7 +28,13 @@ export function selectSeats(
         faction: factionName(player.faction, catalog),
         ...seatMark(index),
       };
-      if (fact && fact.kind !== "human") {
+      if (fact?.kind.startsWith(MLP_PREFIX)) {
+        // A host names the seat of a model by its label and a number ("Reviewer 473312 1").
+        seat.played = {
+          kind: "model",
+          word: `${fact.nickname.replace(/ \d+$/, "")}: no person plays this seat`,
+        };
+      } else if (fact && fact.kind !== "human") {
         seat.played = {
           kind: fact.kind === "smart" ? "rule" : "random",
           word: "No person plays this seat",

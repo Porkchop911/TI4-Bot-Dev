@@ -41,6 +41,7 @@ pub mod bundle;
 pub mod critic_warmup;
 pub mod distill;
 pub mod gpu_batch;
+pub mod infer;
 pub mod perf;
 pub mod positive_corpus;
 pub mod ppo;
@@ -103,42 +104,9 @@ pub const EMBED_DIM: i64 = 16;
 ///
 /// Frozen like the OOV registry: a trained row is addressed by index, so reordering this list
 /// silently repoints every faction's residual and embedding. `the_roster_is_the_corpus_selectable_
-/// seats` fails when the corpus and this list disagree.
-pub const FACTION_ROSTER: [&str; 33] = [
-    "arborec",
-    "argent",
-    "bastion",
-    "cabal",
-    "crimson",
-    "deepwrought",
-    "empyrean",
-    "firmament",
-    "ghost",
-    "hacan",
-    "jolnar",
-    "keleresa",
-    "keleresm",
-    "keleresx",
-    "l1z1x",
-    "letnev",
-    "mahact",
-    "mentak",
-    "muaat",
-    "naalu",
-    "naaz",
-    "nekro",
-    "nomad",
-    "obsidian",
-    "ralnel",
-    "saar",
-    "sardakk",
-    "sol",
-    "titans",
-    "winnu",
-    "xxcha",
-    "yin",
-    "yssaril",
-];
+/// seats` fails when the corpus and this list disagree. The list lives with the decision pipeline
+/// (`ti4_policy::mlp`), which every model shares.
+pub use ti4_policy::mlp::FACTION_ROSTER;
 
 /// A validated row in [`FACTION_ROSTER`].
 ///
@@ -164,6 +132,16 @@ impl FactionRow {
     #[must_use]
     pub const fn index(self) -> usize {
         self.0
+    }
+
+    /// The row at an index of [`FACTION_ROSTER`], or `None` past its end.
+    #[must_use]
+    pub const fn at(index: usize) -> Option<Self> {
+        if index < FACTION_ROSTER.len() {
+            Some(Self(index))
+        } else {
+            None
+        }
     }
 }
 
@@ -194,24 +172,10 @@ pub fn capture_head(requested: &str) -> &str {
     }
 }
 
-/// Positional readout layout carried by an actor bundle.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HeadLayout {
-    /// Frozen schemas 7/8: the original fourteen rows.
-    Legacy,
-    /// Schemas 9/10: the same rows plus `diplomacy` at the end.
-    Diplomacy,
-}
-
-impl HeadLayout {
-    #[must_use]
-    pub const fn heads(self) -> &'static [&'static str] {
-        match self {
-            Self::Legacy => &ti4_policy::learned::STAGE1_DECISION_HEADS,
-            Self::Diplomacy => &ti4_policy::learned::DIPLOMACY_DECISION_HEADS,
-        }
-    }
-}
+/// Positional readout layout carried by an actor bundle: `Legacy` (schemas 7/8, the original
+/// fourteen rows) or `Diplomacy` (schemas 9 to 12, `diplomacy` appended). It lives with the
+/// decision pipeline (`ti4_policy::mlp`), which resolves the head of every decision against it.
+pub use ti4_policy::mlp::HeadLayout;
 
 /// Anything that stopped a forward pass.
 #[derive(Debug, Error)]
@@ -247,6 +211,20 @@ pub struct SparseOption {
     pub columns: Vec<i64>,
     /// Their values, positionally matched.
     pub values: Vec<f32>,
+}
+
+impl SparseOption {
+    /// The option of a column list of the decision pipeline (`ti4_policy::mlp::Columns`).
+    #[must_use]
+    pub fn from_columns(columns: &[(u32, f32)]) -> Self {
+        Self {
+            columns: columns
+                .iter()
+                .map(|(column, _)| i64::from(*column))
+                .collect(),
+            values: columns.iter().map(|(_, value)| *value).collect(),
+        }
+    }
 }
 
 /// The only thing [`Actor::value`] accepts.
@@ -1006,10 +984,9 @@ impl Actor {
     /// # Errors
     /// [`ActorError::NotUsable`] for a row outside the table.
     pub fn copy_input_rows(&mut self, pairs: &[(i64, i64)]) -> Result<(), ActorError> {
-        if let Some((from, to)) = pairs
-            .iter()
-            .find(|(from, to)| !(0..self.capacity).contains(from) || !(0..self.capacity).contains(to))
-        {
+        if let Some((from, to)) = pairs.iter().find(|(from, to)| {
+            !(0..self.capacity).contains(from) || !(0..self.capacity).contains(to)
+        }) {
             return Err(ActorError::NotUsable {
                 what: "row copy",
                 detail: format!("{from} -> {to} outside capacity {}", self.capacity),
@@ -1335,19 +1312,14 @@ impl Actor {
 
     /// Resolve a policy head against this actor's versioned layout.
     #[must_use]
-    pub fn resolve_layout_head<'a>(&self, requested: &'a str) -> &'a str {
-        if self.head_names().contains(&requested) {
-            requested
-        } else {
-            "other"
-        }
+    pub fn resolve_layout_head(&self, requested: &str) -> &'static str {
+        self.head_layout.resolve(requested)
     }
 
     /// Locate a head in this actor's versioned layout.
     pub fn layout_head_index(&self, name: &str) -> Result<usize, ActorError> {
-        self.head_names()
-            .iter()
-            .position(|head| *head == name)
+        self.head_layout
+            .index(name)
             .ok_or_else(|| ActorError::UnknownHead(name.to_owned()))
     }
 
@@ -1888,47 +1860,61 @@ pub fn stable_softmax(scores: &Tensor) -> Result<Vec<f64>, ActorError> {
         what: "logits",
         detail: error.to_string(),
     })?;
-    if raw.is_empty() {
-        return Err(ActorError::EmptyLegalSet);
+    ti4_policy::mlp::softmax(&raw).map_err(ActorError::from)
+}
+
+impl From<ti4_policy::mlp::MlpError> for ActorError {
+    fn from(error: ti4_policy::mlp::MlpError) -> Self {
+        use ti4_policy::mlp::MlpError;
+        match error {
+            MlpError::EmptyLegalSet => Self::EmptyLegalSet,
+            MlpError::Temperature(temperature) => Self::Temperature(temperature),
+            MlpError::NotUsable { what, detail } => Self::NotUsable { what, detail },
+            MlpError::Features(detail) | MlpError::Model(detail) => Self::NotUsable {
+                what: "the decision",
+                detail,
+            },
+        }
     }
-    if let Some(bad) = raw.iter().copied().find(|value| !value.is_finite()) {
-        return Err(ActorError::NotUsable {
-            what: "a logit",
-            detail: format!("{bad}"),
-        });
+}
+
+/// The pipeline of `ti4_policy::mlp` reads the layout and the battle predictor of the actor.
+impl ti4_policy::mlp::ModelInfo for Actor {
+    fn layout(&self) -> HeadLayout {
+        self.head_layout
     }
 
-    let highest = raw.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-    let weights: Vec<f64> = raw
-        .iter()
-        .map(|value| f64::from(*value - highest).exp())
-        .collect();
-    let total: f64 = weights.iter().sum();
-    if !total.is_finite() || total <= 0.0 {
-        return Err(ActorError::NotUsable {
-            what: "the softmax normaliser",
-            detail: format!("{total}"),
-        });
+    fn battle_predictor(&self) -> Option<&ti4_policy::battle::BattlePredictor> {
+        self.battle.as_deref()
     }
-    let probabilities: Vec<f64> = weights.into_iter().map(|weight| weight / total).collect();
-    if let Some(bad) = probabilities
-        .iter()
-        .copied()
-        .find(|value| !value.is_finite() || *value < 0.0)
-    {
-        return Err(ActorError::NotUsable {
-            what: "a probability",
-            detail: format!("{bad}"),
-        });
+}
+
+/// The actor on libtorch as the model of the shared decision pipeline: [`Actor::logits`] over the
+/// column lists of the pipeline.
+impl ti4_policy::mlp::Scorer for Actor {
+    fn logits(
+        &self,
+        faction: usize,
+        head: usize,
+        options: &[ti4_policy::mlp::Columns],
+    ) -> Result<Vec<f32>, ti4_policy::mlp::MlpError> {
+        let refuse =
+            |error: &dyn std::fmt::Display| ti4_policy::mlp::MlpError::Model(error.to_string());
+        let row = FactionRow::at(faction)
+            .ok_or_else(|| refuse(&format!("faction row {faction} is outside the roster")))?;
+        let name = self
+            .head_names()
+            .get(head)
+            .ok_or_else(|| refuse(&format!("head row {head} is not in the layout")))?;
+        let sparse: Vec<SparseOption> = options
+            .iter()
+            .map(|option| SparseOption::from_columns(option))
+            .collect();
+        let logits = self
+            .logits(&sparse, name, row)
+            .map_err(|error| refuse(&error))?;
+        ti4_tensor::to_vec(&logits).map_err(|error| refuse(&error))
     }
-    let sum: f64 = probabilities.iter().sum();
-    if (sum - 1.0).abs() > 1e-9 {
-        return Err(ActorError::NotUsable {
-            what: "the distribution total",
-            detail: format!("{sum}"),
-        });
-    }
-    Ok(probabilities)
 }
 
 #[cfg(test)]
@@ -2241,7 +2227,11 @@ mod tests {
             ..growth
         };
         assert!(actor.grow_input_capacity(wrong).is_err());
-        assert_eq!(actor.capacity(), CAPACITY, "a refused growth changed the actor");
+        assert_eq!(
+            actor.capacity(),
+            CAPACITY,
+            "a refused growth changed the actor"
+        );
 
         actor.grow_input_capacity(growth).expect("grows");
         assert_eq!(actor.capacity(), CAPACITY * 2);
@@ -2250,7 +2240,11 @@ mod tests {
         let new_column = CAPACITY + 5;
         let with_new = option(&[3, 48, 79, new_column], &[0.25, 1.0, -0.5, 1.0]);
         assert_eq!(score(&actor, with_new), before, "a new row is not zero");
-        let padded = actor.input().narrow(0, CAPACITY, CAPACITY).abs().sum(Kind::Float);
+        let padded = actor
+            .input()
+            .narrow(0, CAPACITY, CAPACITY)
+            .abs()
+            .sum(Kind::Float);
         assert!(padded.double_value(&[]) == 0.0);
     }
 
@@ -2265,9 +2259,89 @@ mod tests {
                 .expect("vec")
         };
         let before = score(&actor, option(&[3, 7], &[0.25, 1.0]));
-        assert!(actor.copy_input_rows(&[(7, CAPACITY)]).is_err(), "out of range is refused");
+        assert!(
+            actor.copy_input_rows(&[(7, CAPACITY)]).is_err(),
+            "out of range is refused"
+        );
         actor.copy_input_rows(&[(7, 300)]).expect("copies");
         assert_eq!(score(&actor, option(&[3, 300], &[0.25, 1.0])), before);
+    }
+
+    #[test]
+    fn capacity_growth_and_fallback_copy_preserve_the_separate_critic() {
+        let mut actor = Actor::zeros(Width::W128, 16);
+        let tensor = |shape: &[i64]| Tensor::zeros(shape, (Kind::Float, Device::Cpu));
+        let input = Tensor::arange(16 * 128, (Kind::Float, Device::Cpu)).reshape([16, 128]);
+        let before = input.copy();
+        actor.set_separate_critic(Some(SeparateCritic::new(
+            input,
+            tensor(&[128]),
+            Tensor::eye(128, (Kind::Float, Device::Cpu)),
+            tensor(&[128]),
+            Tensor::ones([128], (Kind::Float, Device::Cpu)),
+            tensor(&[]),
+        )));
+        let growth = ti4_policy::vocabulary::CapacityGrowth {
+            added: 20,
+            old_slot_count: 16,
+            old_capacity: 16,
+            new_capacity: 32,
+        };
+        let value = |actor: &Actor, column| {
+            actor
+                .value(
+                    &CriticInput {
+                        sparse: option(&[column], &[1.0]),
+                    },
+                    row("sol"),
+                )
+                .expect("critic value")
+        };
+        let before_value = value(&actor, 7);
+        assert!(before_value > 0.0);
+        let policy_before = actor.input().copy();
+        // A critic shape refusal must leave the policy table and capacity unchanged too.
+        actor.separate_critic_mut().unwrap().input = before.narrow(0, 0, 15).copy();
+        assert!(actor.grow_input_capacity(growth).is_err());
+        assert_eq!(actor.capacity(), 16);
+        assert!(actor.input().equal(&policy_before));
+        actor.separate_critic_mut().unwrap().input = before.copy();
+        actor.grow_input_capacity(growth).expect("both tables grow");
+        assert_eq!(value(&actor, 7), before_value);
+        let critic = actor.separate_critic().unwrap();
+        assert_eq!(critic.input.size(), vec![32, 128]);
+        assert!(critic.input.narrow(0, 0, 16).equal(&before));
+        assert_eq!(
+            critic
+                .input
+                .narrow(0, 16, 16)
+                .abs()
+                .sum(Kind::Float)
+                .double_value(&[]),
+            0.0
+        );
+        assert!(actor.copy_input_rows(&[(7, 20), (7, 32)]).is_err());
+        assert_eq!(
+            actor
+                .separate_critic()
+                .unwrap()
+                .input
+                .get(20)
+                .abs()
+                .sum(Kind::Float)
+                .double_value(&[]),
+            0.0
+        );
+        actor.copy_input_rows(&[(7, 20)]).expect("fallback copied");
+        assert_eq!(value(&actor, 20), before_value);
+        assert!(
+            actor
+                .separate_critic()
+                .unwrap()
+                .input
+                .get(20)
+                .equal(&before.get(7))
+        );
     }
 
     #[test]
@@ -2282,7 +2356,10 @@ mod tests {
             if matches!(index, 6..=8) {
                 assert!(total(mask) > 0.0, "parameter {index} opens the named rows");
             } else {
-                assert!(total(mask).abs() < f64::EPSILON, "parameter {index} is shared");
+                assert!(
+                    total(mask).abs() < f64::EPSILON,
+                    "parameter {index} is shared"
+                );
             }
         }
         let opened = |mask: &Tensor, faction: &str| {
@@ -2291,7 +2368,10 @@ mod tests {
         };
         for parameter in 6..=8 {
             assert!(opened(&masks[parameter], "sardakk") && opened(&masks[parameter], "naalu"));
-            assert!(!opened(&masks[parameter], "sol"), "a trained faction stays frozen");
+            assert!(
+                !opened(&masks[parameter], "sol"),
+                "a trained faction stays frozen"
+            );
         }
     }
 

@@ -3,15 +3,16 @@ import { render, screen, fireEvent, act } from "@testing-library/react";
 import { PaymentDrawer } from "./PaymentDrawer.tsx";
 import { PaymentDraftProvider } from "../presentation/PaymentDraftContext.tsx";
 import { PendingChoiceDto, PlayerView } from "../protocol/types.ts";
+import { partialContext } from "../test/wire.ts";
 
 const mockPaymentChoice: PendingChoiceDto = {
   prompt: "pay 4 more resources",
   actor: "p1",
   nonce: "nonce_pay_1",
-  context: {
+  context: partialContext({
     subtype: "pay_resources",
-    outstanding: [{ kind: "resources", amount: 4, paid: 0 }],
-  },
+    outstanding: [{ kind: "Resources", amount: 4, paid: 0 }],
+  }),
   options: [
     {
       id: "exhaust|jord",
@@ -35,6 +36,7 @@ const mockPaymentChoice: PendingChoiceDto = {
       id: "decline",
       label: "Cancel Payment",
       kind: "decline",
+      payload: {},
     },
   ],
 };
@@ -262,7 +264,7 @@ describe("PaymentDrawer Component", () => {
           kind: "pay",
           payload: { worth: 3, owed: 3, kind: "influence", source: "planet", planet_name: "Archon Ren" },
         },
-        { id: "decline", label: "Cancel Payment", kind: "decline" },
+        { id: "decline", label: "Cancel Payment", kind: "decline", payload: {} },
       ],
     };
     render(

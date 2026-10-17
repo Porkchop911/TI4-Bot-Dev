@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fixtureLobby, fixturePreview, fixtureTemplates } from "../dev/mapPickerFixtures.ts";
 import { decodeLobby } from "./decode.ts";
-import { decodeMapChoice, decodeMapList, decodeMapPreview } from "./mapDecode.ts";
+import { decodeMapChoice, decodeMapList, decodeMapPreview } from "@ti4/shared/wire/decode.ts";
 
 describe("map protocol decoding", () => {
   it("keeps only maps that build", () => {

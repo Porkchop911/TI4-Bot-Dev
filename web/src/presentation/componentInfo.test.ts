@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { describeComponent } from "./componentInfo.ts";
 import { deriveTurnBar } from "./turnBar.ts";
 
-const component = (id: string, label: string) => ({ id, label, kind: "component" });
+const component = (id: string, label: string) => ({ id, label, kind: "component", payload: {} });
 
 describe("describeComponent", () => {
   it("names a technology and gives its printed text, timing and cost", () => {
@@ -60,9 +60,9 @@ describe("describeComponent", () => {
     expect(convoys.text).toMatch(/not your neighbor/);
   });
 
-  it("falls back to the engine's label and description for an unknown component", () => {
-    const d = describeComponent({ id: "mystery|1", label: "something new", kind: "component", description: "Does a thing." });
-    expect(d).toMatchObject({ name: "something new", kind: "Component action", text: "Does a thing." });
+  it("falls back to the engine's label for an unknown component", () => {
+    const d = describeComponent({ id: "mystery|1", label: "something new", kind: "component", payload: {} });
+    expect(d).toMatchObject({ name: "something new", kind: "Component action", text: null });
   });
 });
 
@@ -71,7 +71,7 @@ describe("turn bar component rows", () => {
     const model = deriveTurnBar({
       prompt: "action phase",
       options: [
-        { id: "pass", label: "pass", kind: "action" },
+        { id: "pass", label: "pass", kind: "action", payload: {} },
         component("relic|stellarconverter", "use stellarconverter"),
         component("component|leader|solhero", "Jace X, 4th Air Legion"),
       ],

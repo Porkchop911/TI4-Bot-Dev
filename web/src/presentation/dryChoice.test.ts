@@ -96,7 +96,7 @@ describe("dry choices: the engine's questions, synthesized from the viewer's own
   it("Construction: PDS and space dock sites on own planets, minus structures already there", () => {
     const { action, players } = actionFor("pok4construction", "Construction");
     const board = boardWith([{ system: "18", planet: "jord", owner: "b" }]);
-    board.systems["18"].units.push({ unit_type: "pds", owner: "b", planet: "jord", damaged: false });
+    board.systems["18"].units.push({ unit_type: "pds", owner: "b", planet: "jord", damaged: false, galvanized: false });
     const dry = buildDryChoice({ action, viewer: players[1], board, step: "site" })!;
     expect(dry.choice.options.map((o) => o.id)).toEqual(["spacedock|18|jord", "decline"]);
     expect(dry.choice.options[0].payload).toMatchObject({ planet: "jord", system: "18", unit: "spacedock" });

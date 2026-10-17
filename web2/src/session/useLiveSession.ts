@@ -78,12 +78,14 @@ import type { CardSettings } from "./select/cards";
 import { systemLabel } from "./select/movement";
 import { selectShell } from "./select/shell";
 import { tacticalFacts } from "./select/tactical";
+import { countPools, selectTokens } from "./select/tokens";
 import type { Transport } from "./transport";
-import type { DraftOutcome, DraftScope, DraftStep, ReactionModes, SessionUpdate } from "./wire";
+import type { DraftOutcome, DraftStep, PlanScope, ReactionModes, SessionUpdate } from "./wire";
 
 const NOTHING: LocalState = {
   inspected: null,
   staged: null,
+  pools: null,
   sent: null,
   error: null,
   replaying: null,
@@ -110,7 +112,7 @@ const sameSystem = (query: string, id: string) =>
 /** A script that the game is asked to play, and what it is of. No scope: a tactical action. */
 interface Wanted {
   script: DraftStep[];
-  scope?: DraftScope;
+  scope?: PlanScope;
 }
 
 /** What the game made of a draft script, and the update of the game that it was asked on. */
@@ -574,6 +576,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           ...now,
           inspected,
           staged: null,
+          pools: null,
           sent: null,
           error: null,
           offline: false,
@@ -775,8 +778,6 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
     (run.wanted === wanted ||
       (same(run.wanted.script, wanted.script) &&
         same(run.wanted.scope ?? null, wanted.scope ?? null)));
-  /** The answer is of this script on this game. */
-  const answered = settled && run.base === update;
   const tactical = !!wanted && !wanted.scope;
   // Before the first answer the draft is open with nothing to decide, so that nothing of the
   // live game can be sent from it.
@@ -796,28 +797,10 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
   /** What the game made of the draft of the secondary. Until the answer, of the draft before. */
   const followOutcome = wanted?.scope && run?.wanted.scope ? run.outcome : null;
   const followChecked = !!wanted?.scope && settled;
-  /** The draft of the secondary is checked on the game as it is now. */
-  const followFresh = !!wanted?.scope && answered;
 
-  // A ready draft is sent when the game asks the seat, if the game still plays it whole. One
-  // that no longer fits is not ready, and the seat decides in Live. Both need the check of the
-  // game as it is now. A game that keeps the staged work of the seat (online) does this itself,
-  // once for every tab, also when none is open: the page does not send.
-  const serverSends = !!transport?.staged;
-  useEffect(() => {
-    if (!transport || serverSends || !mine?.ready || !followFresh || !followOutcome) {
-      return;
-    }
-    const fits = isOver(mine, followOutcome);
-    if (fits && reached !== null && mine.answers.length) {
-      transport.applyDraft(reached, { choices: mine.answers.map(({ id }) => id), plan: null });
-      setFollow(null);
-      setLocal((now) => ({ ...now, sent: reached, planNote: null }));
-    } else if (!fits) {
-      setFollow({ ...mine, ready: false });
-      setLocal((now) => ({ ...now, planNote: UNFIT }));
-    }
-  }, [transport, serverSends, mine, followFresh, followOutcome, reached]);
+  // A ready draft is sent by the game when it asks the seat (`ti4_host::staged::ready`), once
+  // for every tab of the seat, also when none is open: the page sends none. One that no longer
+  // fits is written back not ready, and the page says so (`SeatStore.subscribe`).
 
   // The sheet of the landings or of the build opens when the draft comes to that step.
   const draftStage =
@@ -839,15 +822,6 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
     if (!update || !transport) {
       return null;
     }
-    // The live question of the secondary is not shown while a ready draft is checked for it.
-    // A check that the game does not answer holds nothing back. A server that sends the draft
-    // does not ask the seat; when it does, it did not send the draft.
-    const holding =
-      !serverSends &&
-      reached !== null &&
-      !!mine?.ready &&
-      mine.answers.length > 0 &&
-      !(followChecked && !followOutcome);
     const drafted0 = mine ?? (drafting ? newFollow(update.view.round, drafting) : null);
     const over = !!drafted0 && followChecked && !!followOutcome && isOver(drafted0, followOutcome);
     const followInfo: FollowInfo | null =
@@ -877,10 +851,12 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
       // A draft is played on a copy of the game, which no table is told to: the seats are those of the game.
       (drafted && { ...drafted.update, seats: update.seats }) ??
       (followInfo?.editing
-        ? { ...update, pending_choice: followOutcome?.update.pending_choice }
-        : holding
-          ? { ...update, pending_choice: undefined, tactical: undefined }
-          : update);
+        ? {
+            ...update,
+            pending_choice: followOutcome?.update.pending_choice,
+            research: followOutcome?.update.research,
+          }
+        : update);
     const state = drafted?.local ?? live;
     // Nothing is sent while the game cannot be reached: the next update says what is open.
     const pending =
@@ -888,7 +864,14 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
     /** Opens or closes the draft. What was staged for the other workspace is dropped. */
     const workspace = (open: boolean, draft: Draft | null) => {
       setPlan({ open, draft, stage: null });
-      setLocal((now) => ({ ...now, staged: null, inspected: null, handled: [], step: null }));
+      setLocal((now) => ({
+        ...now,
+        staged: null,
+        pools: null,
+        inspected: null,
+        handled: [],
+        step: null,
+      }));
     };
     /** A change of the draft: one step of its undo. */
     const redraft = (change: (now: Draft) => Draft) =>
@@ -1007,12 +990,20 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         // The screen is of the script before: its main button waits for the game.
         return;
       }
+      // A research with nothing chosen in its tree researches nothing.
+      const pass =
+        shown.research && !state.staged
+          ? (pending.choice.options.find((item) => item.kind === "decline")?.id ?? null)
+          : null;
+      // A redistribution of command tokens answers with the arrangement of its pools.
+      const pools = selectTokens(pending.choice, state.pools ?? null);
       if (followInfo?.editing) {
         // Nothing of a draft is sent: the answer is recorded, and the game is asked again.
-        const option = pending.choice.options.find((item) => item.id === state.staged);
+        const chosen = pools ? pools.staged : (state.staged ?? pass);
+        const option = pending.choice.options.find((item) => item.id === chosen);
         if (option && drafted0 && followChecked) {
           setFollow(record(drafted0, { id: option.id, label: option.label || option.id }));
-          setLocal((now) => ({ ...now, staged: null }));
+          setLocal((now) => ({ ...now, staged: null, pools: null }));
         }
         return;
       }
@@ -1074,8 +1065,9 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         );
         return setLocal((now) => ({ ...now, sent: pending.nonce, planNote: null }));
       }
-      if (local.staged) {
-        transport.submitChoice(pending.nonce, local.staged);
+      const chosen = pools ? pools.staged : (local.staged ?? pass);
+      if (chosen) {
+        transport.submitChoice(pending.nonce, chosen);
         // The details that the choice of the system opened close with it: the movement starts
         // with the whole map in view, as in a draft.
         const opened = facts?.kind === "activation" ? local.staged : null;
@@ -1207,7 +1199,7 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           // Esc in the payment of a production goes back to its build.
           return producing && local.productionStage === "pay"
             ? toBuild(producing.system)
-            : setLocal((now) => ({ ...now, staged: null }));
+            : setLocal((now) => ({ ...now, staged: null, pools: null }));
         case "undo":
           if (drafted) {
             return redraft(undo);
@@ -1319,6 +1311,14 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           transport.submitChoice(pending.nonce, decline.id);
           return setLocal((now) => ({ ...now, staged: null, sent: pending.nonce }));
         }
+        case "flowCount": {
+          // A counter of a pool of command tokens: the arrangement is staged when it is offered.
+          const counted =
+            pending && countPools(pending.choice, state.pools ?? null, intent.key, intent.value);
+          return (
+            counted && setLocal((now) => ({ ...now, pools: counted.pools, staged: counted.staged }))
+          );
+        }
         case "setCardFake": {
           const { card } = intent;
           return setFaked((now) => [
@@ -1361,7 +1361,6 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
     reached,
     followOutcome,
     followChecked,
-    serverSends,
   ]);
 
   // The engine of the page is asked for the odds of each new movement. The answer for a movement

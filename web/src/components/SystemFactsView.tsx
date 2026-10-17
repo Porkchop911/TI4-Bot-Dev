@@ -25,7 +25,7 @@ export const SystemFactsView: React.FC<{ systemId: string; board?: BoardView | n
                 {p.resources !== null && p.influence !== null && (
                   <>
                     {" ("}
-                    <PlanetValuePair resources={p.resources} influence={p.influence} />
+                    <PlanetValuePair resources={p.resources} influence={p.influence} planetId={p.id} />
                     {")"}
                   </>
                 )}

@@ -1,12 +1,31 @@
 import React, { createContext, useContext, useMemo } from "react";
 import type { BoardView } from "../protocol/types.ts";
+import { type PlanetBoost, wireBoosts } from "./planetValues.ts";
 
-/** Resource value of every planet on the board by planet id (printed values, from the static tiles). */
+/** What raises each planet above its printed values, by planet id (planets with no boost are absent). */
+export function planetBoostMap(board: BoardView | null | undefined): Map<string, PlanetBoost[]> {
+  const map = new Map<string, PlanetBoost[]>();
+  for (const system of Object.values(board?.systems ?? {})) {
+    for (const [id, planet] of Object.entries(system.planets ?? {})) {
+      const boosts = wireBoosts(planet);
+      if (boosts.length > 0) map.set(id, boosts);
+    }
+  }
+  return map;
+}
+
+const sum = (boosts: readonly PlanetBoost[] | undefined, key: "resources" | "influence"): number =>
+  (boosts ?? []).reduce((total, b) => total + b[key], 0);
+
+/** Resource value of every planet on the board by planet id: printed (static tiles) plus boosts. */
 export function planetResourceMap(board: BoardView | null | undefined): Map<string, number> {
   const map = new Map<string, number>();
+  const boosts = planetBoostMap(board);
   for (const tile of board?.map_tiles ?? []) {
     for (const planet of tile.planets ?? []) {
-      if (typeof planet.resources === "number") map.set(planet.id, planet.resources);
+      if (typeof planet.resources === "number") {
+        map.set(planet.id, planet.resources + sum(boosts.get(planet.id), "resources"));
+      }
     }
   }
   return map;
@@ -26,12 +45,15 @@ export const PlanetResourcesProvider: React.FC<{
 
 export const usePlanetResources = (): ReadonlyMap<string, number> => useContext(PlanetResourcesContext);
 
-/** Influence value of every planet on the board by planet id (printed values, from the static tiles). */
+/** Influence value of every planet on the board by planet id: printed (static tiles) plus boosts. */
 export function planetInfluenceMap(board: BoardView | null | undefined): Map<string, number> {
   const map = new Map<string, number>();
+  const boosts = planetBoostMap(board);
   for (const tile of board?.map_tiles ?? []) {
     for (const planet of tile.planets ?? []) {
-      if (typeof planet.influence === "number") map.set(planet.id, planet.influence);
+      if (typeof planet.influence === "number") {
+        map.set(planet.id, planet.influence + sum(boosts.get(planet.id), "influence"));
+      }
     }
   }
   return map;
@@ -39,3 +61,8 @@ export function planetInfluenceMap(board: BoardView | null | undefined): Map<str
 
 export const PlanetInfluenceContext = createContext<ReadonlyMap<string, number>>(EMPTY);
 export const usePlanetInfluence = (): ReadonlyMap<string, number> => useContext(PlanetInfluenceContext);
+
+const NO_BOOSTS: ReadonlyMap<string, PlanetBoost[]> = new Map();
+export const PlanetBoostContext = createContext<ReadonlyMap<string, PlanetBoost[]>>(NO_BOOSTS);
+/** Boosts by planet id, for the payment and vote UIs that know a planet id but not the board. */
+export const usePlanetBoosts = (): ReadonlyMap<string, PlanetBoost[]> => useContext(PlanetBoostContext);

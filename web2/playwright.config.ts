@@ -40,6 +40,9 @@ const server = {
     TI4_DATA_DIR: `/tmp/ti4-web2-e2e-games-${backendPort}-${process.pid}`,
     // A seat that the server plays answers at once: by default it waits before each answer.
     TI4_RANDOM_BOT_DELAY_MS: "0",
+    // Three offered models (the synthetic model of the tests under three names, `cargo wire-web`):
+    // a lobby shows three models, and a game with an MLP seat is fast in a debug build.
+    TI4_MODEL_DIR: "fixtures/models",
   },
 };
 const page = {

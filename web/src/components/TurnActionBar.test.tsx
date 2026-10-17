@@ -5,7 +5,7 @@ import { TurnActionBar } from "./TurnActionBar.tsx";
 import { deriveReadOnlyTurnBar, deriveTurnBar, type TurnBarModel } from "../presentation/turnBar.ts";
 import type { PendingChoiceDto, PlayerView } from "../protocol/types.ts";
 
-const opt = (id: string, label: string, kind = "action") => ({ id, label, kind });
+const opt = (id: string, label: string, kind = "action") => ({ id, label, kind, payload: {} });
 const tokens = { tactic: 3, fleet: 3, strategy: 2 };
 const twoCards = [
   { card: "pok2diplomacy", used: false, option: "strategic|pok2diplomacy" },
@@ -405,7 +405,7 @@ describe("the bar through the renderer", () => {
     expect(screen.getByTestId("turn-action-bar")).toBeInTheDocument();
     expect(screen.queryByTestId("decision-modal")).toBeNull();
     await click(screen.getByTestId("turn-bar-strategic-pok2diplomacy"));
-    expect(onSubmit).toHaveBeenCalledExactlyOnceWith("strategic|pok2diplomacy");
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith("strategic|pok2diplomacy", "n1");
   });
 
   it("keeps the old list for options the bar cannot place", () => {

@@ -11,7 +11,6 @@ use std::sync::{Arc, Mutex};
 use serde_json::{Value, json};
 use ti4_engine::choice::Choice;
 use ti4_host::protocol::server::ServerMessage;
-use ti4_model::id::PlayerId;
 use ti4_wasm::host_api;
 
 const GAME: &str = "local";
@@ -60,7 +59,8 @@ fn pending(messages: &[Value]) -> Option<(String, u64, Choice, usize)> {
 /// The person: the rule bot, deciding without a view of the board.
 fn install_person(page: &Arc<Mutex<Page>>, seed: u64, viewer: &str) {
     let page = page.clone();
-    let viewer = PlayerId::new(viewer);
+    // The person answers as a rule seat of its place would (seat `a` is place 0).
+    let place = usize::from(viewer.as_bytes()[0] - b'a');
     ti4_wasm::set_native_host(move |text: &str| {
         let envelope: Value = serde_json::from_str(text).expect("the output is JSON");
         let mut page = page.lock().unwrap();
@@ -97,11 +97,11 @@ fn install_person(page: &Arc<Mutex<Page>>, seed: u64, viewer: &str) {
         }
         let (nonce, version, choice, cursor) =
             pending(&page.messages).expect("an ask has a pending choice");
-        let (picked, _) = ti4_rule_bot::choose(&choice, None, seed, &viewer, cursor);
+        let (picked, _) = ti4_rule_bot::choose(&choice, None, seed, place, cursor);
         let option = choice.options[picked].id.clone();
         let answered = send(&json!({
             "type": "submit_choice",
-            "protocol_version": 3,
+            "protocol_version": 4,
             "game_id": GAME,
             "nonce": nonce,
             "expected_version": version,
@@ -272,11 +272,11 @@ fn a_command_that_is_not_the_servers_is_refused_the_servers_way() {
     install_person(&page, 5, "a");
     // Before it answers the first time, the person sends things the server would refuse.
     page.lock().unwrap().before_answer = vec![
-        json!({ "type": "submit_choice", "protocol_version": 3, "game_id": GAME,
+        json!({ "type": "submit_choice", "protocol_version": 4, "game_id": GAME,
                 "nonce": "999", "expected_version": 2, "option_id": "x" }),
-        json!({ "type": "ping", "protocol_version": 3, "sequence": 7 }),
-        json!({ "type": "undo", "protocol_version": 3, "game_id": GAME, "expected_version": 2 }),
-        json!({ "type": "preview_secondary", "protocol_version": 3, "game_id": GAME,
+        json!({ "type": "ping", "protocol_version": 4, "sequence": 7 }),
+        json!({ "type": "undo", "protocol_version": 4, "game_id": GAME, "expected_version": 2 }),
+        json!({ "type": "preview_secondary", "protocol_version": 4, "game_id": GAME,
                 "request_id": 1, "card": "x", "primary": "b" }),
     ];
     let (_, end) = start(&setup(5, 3), None);
@@ -291,10 +291,16 @@ fn a_command_that_is_not_the_servers_is_refused_the_servers_way() {
     let kinds = kinds(&page.messages);
     assert!(kinds.contains(&"action_rejected"), "{kinds:?}");
     assert!(kinds.contains(&"pong"));
-    assert!(
-        kinds.contains(&"error"),
-        "preview is not offered: {kinds:?}"
-    );
+    // At the first question no strategic action is in progress: the server's refusal.
+    let preview = page
+        .messages
+        .iter()
+        .find(|message| message["type"] == "secondary_preview")
+        .unwrap_or_else(|| panic!("the preview is answered: {kinds:?}"));
+    assert_eq!(preview["request_id"], 1);
+    assert_eq!(preview["outcome"]["result"], "refused");
+    assert_eq!(preview["outcome"]["reason"], "no_strategic_action");
+    assert!(!kinds.contains(&"error"), "{kinds:?}");
     let rejected: Vec<&Value> = page
         .messages
         .iter()

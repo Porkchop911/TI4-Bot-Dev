@@ -1,6 +1,6 @@
 import { useParticipantText } from "../presentation/PlayerIdentity.tsx";
 import React, { useState, useEffect, useMemo } from "react";
-import { usePlanetInfluence, usePlanetResources } from "../presentation/PlanetResourcesContext.tsx";
+import { usePlanetBoosts, usePlanetInfluence, usePlanetResources } from "../presentation/PlanetResourcesContext.tsx";
 import { PendingChoiceDto, PlayerView } from "../protocol/types.ts";
 import { ChoiceRendererModel } from "../presentation/choiceModel.ts";
 import { usePipelineRunner, SemanticIntent } from "../hooks/usePipelineRunner.ts";
@@ -62,6 +62,7 @@ export const PaymentDrawer: React.FC<PaymentDrawerProps> = ({
   const shared = useSharedPaymentDraft();
   const resourcesOf = usePlanetResources();
   const influenceOf = usePlanetInfluence();
+  const boostsOf = usePlanetBoosts();
   const local = usePaymentDraftState(choice?.nonce);
   const { draft, togglePlanet, setTradeGoods, setDraft, reset } = shared ?? local;
   const selectedPlanetIds = draft.planetIds;
@@ -325,16 +326,18 @@ export const PaymentDrawer: React.FC<PaymentDrawerProps> = ({
                                 <PlanetValue
                                   kind="resources"
                                   value={resourcesOf.get(paymentPlanetKey(planet.id)) ?? 0}
+                                  boosts={boostsOf.get(paymentPlanetKey(planet.id))}
                                   state={kind === "resources" ? "ready" : "muted"}
                                 />{" "}
                                 <PlanetValue
                                   kind="influence"
                                   value={influenceOf.get(paymentPlanetKey(planet.id)) ?? 0}
+                                  boosts={boostsOf.get(paymentPlanetKey(planet.id))}
                                   state={kind === "influence" ? "ready" : "muted"}
                                 />
                               </>
                             ) : planet.worth ? (
-                              <PlanetValue kind={kind} value={planet.worth} sign="+" />
+                              <PlanetValue kind={kind} value={planet.worth} boosts={boostsOf.get(paymentPlanetKey(planet.id))} sign="+" />
                             ) : (
                               "Value unknown"
                             )}

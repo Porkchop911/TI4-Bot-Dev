@@ -1,12 +1,34 @@
 // The table of a game: who sits at it and how the game is set up, before the game and while it
 // runs. `Table` is the seam of the setup, as `Transport` is the seam of a game: the screen of the
 // lobby does not know where the table is kept.
-import { type Connection, type Socket, backoff, connect, pageSocket } from "./socket";
+import {
+  type Admission,
+  ApiError,
+  type Fetch,
+  SETUP_OPTIONS_PATH,
+  type TableRequest,
+  createTable as createServerTable,
+  gameGone,
+  gamePath,
+  joinLobby,
+  lobbyPath,
+  lobbyPost,
+  mapsPath,
+  postJson,
+  tableSocketPath,
+} from "@ti4/shared/net/api.ts";
+import {
+  type Connection,
+  type Socket,
+  backoff,
+  connect,
+  pageSocket,
+} from "@ti4/shared/net/socket.ts";
 import {
   type LobbyState,
   type MapChoice,
   type MapPreview,
-  type MapSummary,
+  type MapTemplateSummary,
   PROTOCOL_VERSION,
   type SetupOptions,
   type TableServerMessage,
@@ -32,6 +54,11 @@ export interface TableState {
    * else can come to it. It has no address to give away and no name to change.
    */
   local?: true;
+  /**
+   * A file of a model that a seat of a table in the page plays, while it loads: the start waits
+   * for it. The first of the table that is not loaded.
+   */
+  loading?: { label: string; done: number; total: number };
 }
 
 /** A change of the setup of a table. A part that is left out stays as it is. */
@@ -77,6 +104,11 @@ export interface Table {
   /** Removes a seat that the server plays, or another player. Host only. */
   removeSeat(playerId: string): void;
   /**
+   * Puts the players in another order of the rows, which are the seats of the game. Host only,
+   * before the start.
+   */
+  shuffleSeats(): void;
+  /**
    * Changes the setup. Host only. The change applies at once, for every player. Of a running
    * game only the wait changes.
    */
@@ -89,7 +121,7 @@ export interface Table {
    */
   setFaction(playerId: string, faction: string | null): void;
   /** The maps that a table of `players` seats can play. */
-  maps(players: number): Promise<MapSummary[]>;
+  maps(players: number): Promise<MapTemplateSummary[]>;
   /** Chooses the map. Host only. A map is for one number of seats. */
   setMap(map: MapChoice): void;
   /** Starts the game. Host only, with every seat filled. */
@@ -105,84 +137,35 @@ export interface ServerTablePlay {
   open?(gameId: string): Socket;
   retryAfter?(attempt: number): number;
   /** Without it: `fetch` of the page. */
-  fetch?: typeof fetch;
+  fetch?: Fetch;
 }
 
-const tableSocket = (gameId: string): Socket =>
-  pageSocket(`/ws/tables/${encodeURIComponent(gameId)}`);
+// The HTTP calls themselves are those of web-shared, which web makes too.
+export { playerOf } from "@ti4/shared/net/api.ts";
+export type { TableRequest } from "@ti4/shared/net/api.ts";
 
-/** What `POST /api/games` and `…/lobby/join` answer: the part that the page keeps. */
-interface Admission {
-  game_id?: string;
-  player_session?: string;
-  player: { id: string };
-  lobby: LobbyState;
-}
+const tableSocket = (gameId: string): Socket => pageSocket(tableSocketPath(gameId));
 
 async function refusal(response: Response): Promise<string> {
   const text = (await response.text()).trim();
   return text || `The server refused (${response.status}).`;
 }
 
-/** What a new table is made with. */
-export interface TableRequest {
-  playerCount: number;
-  nickname: string;
-  /** Without it the server chooses one. */
-  seed?: number;
-  /** A map of the server by its alias, or "random". Without it: the default map of the count. */
-  map?: string;
-  /** "random": every other seat is played by the server at random, and the game starts at once. */
-  fill?: "random";
-  /** The wait of the seats that the server plays, in milliseconds. Without it: the server's. */
-  waitMs?: number;
-}
-
 /** Makes a table on the server. The player of this page is its host. */
 export async function createTable(
   request: TableRequest,
-  fetcher: typeof fetch = fetch,
+  fetcher?: Fetch,
 ): Promise<Seat & { gameId: string }> {
-  const response = await fetcher("/api/games", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      player_count: request.playerCount,
-      nickname: request.nickname,
-      ...(request.fill ? { fill_seats: request.fill } : {}),
-      ...(request.seed === undefined ? {} : { seed: request.seed }),
-      ...(request.waitMs === undefined ? {} : { bot_delay_ms: request.waitMs }),
-      ...(request.map === undefined
-        ? {}
-        : request.map === "random"
-          ? { map: "random" }
-          : { map_template: request.map }),
-    }),
-  });
-  if (!response.ok) {
-    throw new Error(
-      `The server did not make a table (${response.status}). ${await response.text()}`,
-    );
+  let made: Admission;
+  try {
+    made = await createServerTable(request, fetcher);
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw new Error(`The server did not make a table (${error.status}). ${error.body}`);
+    }
+    throw error;
   }
-  const made: Admission = await response.json();
   return { gameId: made.game_id!, playerId: made.player.id, playerSession: made.player_session! };
-}
-
-/** The id of the player that a player session of a game belongs to. Null: the game does not know it. */
-export async function playerOf(
-  gameId: string,
-  playerSession: string,
-  fetcher: typeof fetch = fetch,
-): Promise<string | null> {
-  const response = await fetcher(`/api/games/${encodeURIComponent(gameId)}/lobby/join`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-ti4-player-session": playerSession },
-    body: JSON.stringify({ kind: "new" }),
-  });
-  if (!response.ok) {
-    return null;
-  }
-  return ((await response.json()) as Admission).player.id;
 }
 
 /**
@@ -194,8 +177,7 @@ export function serverTable(gameId: string, seat: Seat | null, play: ServerTable
   const open = play.open ?? tableSocket;
   const retryAfter = play.retryAfter ?? backoff;
   // Called as a function of its own: `fetch` of a browser refuses another `this`.
-  const fetcher: typeof fetch = play.fetch ?? ((...args) => fetch(...args));
-  const api = `/api/games/${encodeURIComponent(gameId)}/lobby`;
+  const fetcher: Fetch = play.fetch ?? ((...args) => fetch(...args));
   /** The lobby and the viewer as the server told them last. */
   let latest: { lobby: LobbyState; viewer: string | null } | null = null;
   let preview: MapPreview | null = null;
@@ -229,15 +211,8 @@ export function serverTable(gameId: string, seat: Seat | null, play: ServerTable
     say({ kind: "error", message });
   };
 
-  const call = (route: string, body: unknown, session = seat?.playerSession) =>
-    fetcher(`${api}/${route}`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(session ? { "x-ti4-player-session": session } : {}),
-      },
-      body: JSON.stringify(body),
-    });
+  const call = (route: string, body: unknown) =>
+    lobbyPost(gameId, route, body, { session: seat?.playerSession }, fetcher);
 
   /**
    * The setup options are the same for every table of a server. They are asked when the socket
@@ -247,7 +222,7 @@ export function serverTable(gameId: string, seat: Seat | null, play: ServerTable
     if (options) {
       return;
     }
-    fetcher("/api/setup-options")
+    fetcher(SETUP_OPTIONS_PATH)
       .then(async (response) => {
         if (closed || !response.ok) {
           return;
@@ -260,7 +235,7 @@ export function serverTable(gameId: string, seat: Seat | null, play: ServerTable
 
   const askPreview = (revision: number) => {
     previewed = revision;
-    fetcher(`${api}/map-preview`)
+    fetcher(lobbyPath(gameId, "map-preview"))
       .then(async (response) => {
         if (closed || previewed !== revision || !response.ok) {
           return;
@@ -361,14 +336,11 @@ export function serverTable(gameId: string, seat: Seat | null, play: ServerTable
       if (!event.opened) {
         // The server refuses the socket of a table that it does not have. Only the answer
         // "not found" says so: a server that cannot be reached may come back.
-        fetcher(api).then(
-          (response) => {
-            if (response.status === 404 && !closed && failed === null) {
-              fail(TABLE_UNKNOWN);
-            }
-          },
-          () => {},
-        );
+        void gameGone(gameId, fetcher).then((gone) => {
+          if (gone && !closed && failed === null) {
+            fail(TABLE_UNKNOWN);
+          }
+        });
       }
       if (!offline) {
         offline = true;
@@ -396,12 +368,12 @@ export function serverTable(gameId: string, seat: Seat | null, play: ServerTable
     async join(nickname) {
       try {
         // With no credential: a new player, also when this page has one already.
-        const response = await call("join", { kind: "new", nickname }, "");
+        const response = await joinLobby(gameId, { kind: "new", nickname }, {}, fetcher);
         if (!response.ok) {
           say({ kind: "rejected", reason: await refusal(response) });
           return null;
         }
-        const made: Admission = await response.json();
+        const made: Admission<LobbyState> = await response.json();
         take(made.lobby, latest?.viewer ?? null, false);
         return { playerId: made.player.id, playerSession: made.player_session! };
       } catch {
@@ -412,16 +384,17 @@ export function serverTable(gameId: string, seat: Seat | null, play: ServerTable
     async takeOver(playerId, nickname) {
       try {
         // With no credential: the server gives the seat to nobody who has one.
-        const response = await call(
-          "join",
+        const response = await joinLobby(
+          gameId,
           { kind: "takeover", player_id: playerId, nickname },
-          "",
+          {},
+          fetcher,
         );
         if (!response.ok) {
           say({ kind: "rejected", reason: await refusal(response) });
           return null;
         }
-        const made: Admission = await response.json();
+        const made: Admission<LobbyState> = await response.json();
         take(made.lobby, latest?.viewer ?? null, false);
         return { playerId: made.player.id, playerSession: made.player_session! };
       } catch {
@@ -432,18 +405,17 @@ export function serverTable(gameId: string, seat: Seat | null, play: ServerTable
     leave: () => void change("leave", {}),
     addBots: (kind, fill = false) => void change("bots", fill ? { kind, fill: true } : { kind }),
     removeSeat: (playerId) => void change("remove-bot", { player_id: playerId }),
+    shuffleSeats: () => void change("shuffle-seats", {}),
     setSettings: (settings) =>
       latest?.lobby.phase === "running"
         ? // The wait is the one value of a table that changes after the start: the game has the call.
           void change("settings", { bot_delay_ms: settings.waitMs }, (_, body) =>
-            fetcher(`/api/games/${encodeURIComponent(gameId)}/settings`, {
-              method: "POST",
-              headers: {
-                "content-type": "application/json",
-                ...(seat ? { "x-ti4-player-session": seat.playerSession } : {}),
-              },
-              body: JSON.stringify(body),
-            }),
+            postJson(
+              `${gamePath(gameId)}/settings`,
+              body,
+              { session: seat?.playerSession },
+              fetcher,
+            ),
           )
         : void change("settings", {
             ...(settings.players === undefined ? {} : { player_count: settings.players }),
@@ -455,7 +427,7 @@ export function serverTable(gameId: string, seat: Seat | null, play: ServerTable
     setFaction: (playerId, faction) =>
       void change("seat-faction", { player_id: playerId, faction }),
     async maps(players) {
-      const response = await fetcher(`/api/maps?player_count=${players}`);
+      const response = await fetcher(mapsPath(players));
       if (!response.ok) {
         throw new Error(await refusal(response));
       }

@@ -1,15 +1,21 @@
 import type { ChoiceWorkflowKind } from "../presentation/choiceModel.ts";
 import { removeUnitCases } from "./removeUnitGalleryCases.ts";
 import { offerCases } from "./offerGalleryCases.ts";
-import type { DecisionTargetDto, PendingChoiceDto } from "../protocol/types.ts";
+import type {
+  DecisionSource,
+  DecisionTarget,
+  OutstandingConstraint,
+  PendingChoiceDto,
+} from "../protocol/types.ts";
+import { partialContext, type Loose } from "../test/wire.ts";
 
 // Illustrative UI inputs, not captured engine states or legal-game fixtures.
 export const actor = "gallery_seat";
 const option = (
   id: string,
   label: string,
-  kind?: string,
-  payload?: Record<string, unknown>,
+  kind = "",
+  payload: Record<string, unknown> = {},
 ) => ({
   id,
   label,
@@ -162,7 +168,7 @@ const cases = {
   },
   payment: {
     subtype: "pay_resources",
-    outstanding: [{ kind: "resources", amount: 2, paid: 0 }],
+    outstanding: [{ kind: "Resources", amount: 2, paid: 0 }],
     options: [
       option("exhaust|jord", "Exhaust Jord", "pay", {
         worth: 2,
@@ -178,7 +184,7 @@ const cases = {
   production: {
     subtype: "produce_unit",
     target: system,
-    outstanding: [{ kind: "production_capacity", amount: 3, paid: 0 }],
+    outstanding: [{ kind: "ProductionCapacity", amount: 3, paid: 0 }],
     options: [
       option("build|infantry|1", "Produce infantry", "produce", {
         unit: "infantry",
@@ -301,9 +307,9 @@ const cases = {
     subtype: string;
     options: PendingChoiceDto["options"];
     note: string;
-    target?: DecisionTargetDto;
-    source?: Record<string, unknown>;
-    outstanding?: NonNullable<PendingChoiceDto["context"]>["outstanding"];
+    target?: DecisionTarget;
+    source?: DecisionSource;
+    outstanding?: Loose<OutstandingConstraint>[];
   }
 >;
 
@@ -342,12 +348,12 @@ export const galleryCases: GalleryCase[] = (
           generic_selection: "Choose an option",
         } satisfies Record<ChoiceWorkflowKind, string>
       )[workflow],
-      context: {
+      context: partialContext({
         subtype: entry.subtype,
         ...("target" in entry ? { target: entry.target } : {}),
         ...("source" in entry ? { source: entry.source } : {}),
         ...("outstanding" in entry ? { outstanding: entry.outstanding } : {}),
-      },
+      }),
       options: entry.options,
     },
   };
@@ -363,10 +369,10 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-place-structure",
       prompt: "place a structure",
-      context: {
+      context: partialContext({
         subtype: "place_structure",
         source: { Content: "place_structure" },
-      },
+      }),
       options: [
         option("pds|18|jord", "place pds on jord", "build", {
           planet: "jord",
@@ -397,10 +403,10 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-place-structure-2",
       prompt: "place a structure",
-      context: {
+      context: partialContext({
         subtype: "place_structure",
         source: { Content: "place_structure" },
-      },
+      }),
       options: [
         option("pds|18|jord", "place pds on jord", "build", {
           planet: "jord",
@@ -426,7 +432,7 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-bio-stims",
       prompt: "Bio-Stims",
-      context: { subtype: "bio_stims_ready", source: { Content: "bs" } },
+      context: partialContext({ subtype: "bio_stims_ready", source: { Content: "bs" } }),
       options: [
         option("ready|planet|gral", "Bio-Stims: ready gral", "ready", {
           planet: "gral",
@@ -455,7 +461,7 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-elect-planet",
       prompt: "vote for which outcome",
-      context: { subtype: "cast_vote", source: { Rule: "8.10" } },
+      context: partialContext({ subtype: "cast_vote", source: { Rule: "8.10" } }),
       options: [
         option("vote|lodor", "Lodor", "vote", {
           planet: "lodor",
@@ -484,10 +490,10 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-diplomacy-system",
       prompt: "choose a system to lock down",
-      context: {
+      context: partialContext({
         subtype: "diplomacy_choose_system",
         source: { StrategyCard: { card: "Diplomacy", secondary: false } },
-      },
+      }),
       options: [
         option("18", "18", "system"),
         option("26", "26", "system"),
@@ -504,10 +510,10 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-unexpected-recall",
       prompt: "Unexpected Action: recall your token from where",
-      context: {
+      context: partialContext({
         subtype: "unexpected_pick_recall",
         source: { Content: "unexpected" },
-      },
+      }),
       options: [
         option("25", "recall your token from 25", "recall"),
         option("26", "recall your token from 26", "recall"),
@@ -523,10 +529,10 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-warfare-recall",
       prompt: "recall a command token",
-      context: {
+      context: partialContext({
         subtype: "warfare_recall_token",
         source: { StrategyCard: { card: "Warfare", secondary: false } },
-      },
+      }),
       options: [
         option("18", "18", "system"),
         option("26", "26", "system"),
@@ -543,12 +549,12 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-context-header",
       prompt: "place the redistribution agenda where",
-      context: {
+      context: partialContext({
         subtype: "politics_place_agenda",
         source: { StrategyCard: { card: "pok3politics", secondary: true } },
-        phase: "Action",
+        phase: "action",
         round: 2,
-      },
+      }),
       options: [
         option("top", "on top of the deck"),
         option("bottom", "on the bottom"),
@@ -574,12 +580,12 @@ export const fallbackCases: GalleryCase[] = [
           text2: "",
         },
       },
-      context: {
+      context: partialContext({
         subtype: "politics_place_agenda",
         source: { StrategyCard: { card: "pok3politics", secondary: false } },
-        phase: "Action",
+        phase: "action",
         round: 2,
-      },
+      }),
       options: [
         option("top", "on top of the deck", "agenda"),
         option("bottom", "on the bottom", "agenda"),
@@ -596,12 +602,12 @@ export const fallbackCases: GalleryCase[] = [
       nonce: "gallery-politics-speaker",
       prompt: "who becomes speaker",
       details: { seats: { Hacan: "other_seat" } },
-      context: {
+      context: partialContext({
         subtype: "politics_choose_speaker",
         source: { StrategyCard: { card: "pok3politics", secondary: false } },
-        phase: "Action",
+        phase: "action",
         round: 2,
-      },
+      }),
       options: [option("Hacan", "Hacan becomes speaker", "speaker")],
     },
   },
@@ -615,12 +621,12 @@ export const fallbackCases: GalleryCase[] = [
       nonce: "gallery-trade-replenish",
       prompt: "let another player replenish commodities",
       details: { seats: { Hacan: "other_seat" } },
-      context: {
+      context: partialContext({
         subtype: "trade_choose_replenish",
         source: { StrategyCard: { card: "pok5trade", secondary: false } },
-        phase: "Action",
+        phase: "action",
         round: 2,
-      },
+      }),
       options: [
         option("Hacan", "Hacan replenishes commodities", "replenish"),
         option("done", "nobody else replenishes", "decline"),
@@ -636,12 +642,12 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-hacan-agent",
       prompt: "Leader: gain 2 commodities or replenish another player",
-      context: {
+      context: partialContext({
         subtype: "leader_hacanagent_branch",
         source: { FactionAbility: "hacanagent" },
-        phase: "Action",
+        phase: "action",
         round: 2,
-      },
+      }),
       options: [
         option("self", "gain 2 commodities", "leader_hacanagent_branch"),
         option("other_seat", "replenish other_seat", "leader_hacanagent_branch"),
@@ -657,12 +663,12 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-hand-limit",
       prompt: "over the hand limit — discard one of 8",
-      context: {
+      context: partialContext({
         subtype: "discard_over_hand_limit",
         source: { Rule: "2.4" },
-        phase: "Status",
+        phase: "status",
         round: 3,
-      },
+      }),
       options: [
         option("4", "Ancient Burial Sites", "discard"),
         option("3", "Direct Hit", "discard"),
@@ -680,12 +686,12 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-secret-limit",
       prompt: "return a secret objective to the deck",
-      context: {
+      context: partialContext({
         subtype: "return_over_secret_hand_limit",
         source: { Rule: "45.4" },
-        phase: "Status",
+        phase: "status",
         round: 3,
-      },
+      }),
       options: [
         option("baf", "return baf", "return"),
         option("ans", "return ans", "return"),
@@ -724,7 +730,7 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-imperial-mecatol",
       prompt: "score a public objective with Imperial",
-      context: { subtype: "imperial_score_objective" },
+      context: partialContext({ subtype: "imperial_score_objective" }),
       options: [
         option("expand_borders", "expand_borders", "objective"),
         finish("decline", "decline"),
@@ -746,7 +752,7 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-imperial-secret",
       prompt: "score a public objective with Imperial",
-      context: { subtype: "imperial_score_objective" },
+      context: partialContext({ subtype: "imperial_score_objective" }),
       options: [
         option("expand_borders", "expand_borders", "objective"),
         finish("decline", "decline"),
@@ -768,7 +774,7 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-trade-replenish",
       prompt: "let another player replenish commodities",
-      context: { subtype: "trade_choose_replenish" },
+      context: partialContext({ subtype: "trade_choose_replenish" }),
       options: [
         option("hacan", "hacan replenishes commodities", "replenish"),
         option("sol", "sol replenishes commodities", "replenish"),
@@ -812,7 +818,7 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-leadership-gain-buy",
       prompt: "gain a command token into which pool",
-      context: { subtype: "gain_command_token" },
+      context: partialContext({ subtype: "gain_command_token" }),
       options: [
         option("tactic_tokens", "tactic pool", "pool"),
         option("fleet_tokens", "fleet pool", "pool"),
@@ -844,7 +850,7 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-leadership-change-payment",
       prompt: "gain a command token into which pool",
-      context: { subtype: "gain_command_token" },
+      context: partialContext({ subtype: "gain_command_token" }),
       options: [
         option("tactic_tokens", "tactic pool", "pool"),
         option("fleet_tokens", "fleet pool", "pool"),
@@ -880,7 +886,7 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-leadership-secondary-buy",
       prompt: "spend 3 influence for a command token",
-      context: { subtype: "buy_token_with_influence" },
+      context: partialContext({ subtype: "buy_token_with_influence" }),
       options: [
         option("no", "spend nothing further", "strategy"),
         option("yes", "spend 3 influence", "strategy"),
@@ -948,10 +954,10 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-explore-reward",
       prompt: "Abandoned Warehouses",
-      context: {
+      context: partialContext({
         subtype: "abandoned_warehouses_choose_reward",
         source: { Content: "abandoned_warehouses" },
-      },
+      }),
       options: [
         option("gain", "gain 2 commodities", "explore"),
         option("convert", "convert up to 2 commodities to trade goods", "explore"),
@@ -967,10 +973,10 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-predict-outcome",
       prompt: "Imperial Rider: predict the agenda outcome",
-      context: {
+      context: partialContext({
         subtype: "predict_agenda_outcome",
         source: { Rule: "8" },
-      },
+      }),
       options: [
         option("FOR", "predict FOR", "prediction"),
         option("AGAINST", "predict AGAINST", "prediction"),
@@ -986,10 +992,10 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-divert-pick",
       prompt: "Divert Funding: which technology to return",
-      context: {
+      context: partialContext({
         subtype: "divert_funding_pick_technology",
         source: { ActionCard: "divert" },
-      },
+      }),
       options: [
         option("pa", "Psychoarchaeology", "technology"),
         option("amd", "Antimass Deflectors", "technology"),
@@ -1006,10 +1012,10 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-scuttle-pick",
       prompt: "Scuttle: which ship to scuttle",
-      context: {
+      context: partialContext({
         subtype: "scuttle_pick_ship",
         source: { ActionCard: "scuttle" },
-      },
+      }),
       options: [
         option("26|0", "dreadnought2 in 26", "ship"),
         option("25|1", "cruiser in 25", "ship"),
@@ -1033,10 +1039,10 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-munitions",
       prompt: "spend 2 trade goods for Munitions Reserves",
-      context: {
+      context: partialContext({
         subtype: "munitions_reserves_reroll",
         source: { FactionAbility: "munitions" },
-      },
+      }),
       options: [
         option("munitions", "reroll this round's misses", "ability"),
         option("decline", "decline", "decline"),
@@ -1061,10 +1067,10 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-investments-pick",
       prompt: "Manipulate Investments: place a trade good on which strategy card",
-      context: {
+      context: partialContext({
         subtype: "investments_pick_strategy_card",
         source: { ActionCard: "investments" },
-      },
+      }),
       options: [
         "pok1leadership",
         "pok2diplomacy",
@@ -1087,10 +1093,10 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-legendary-menu",
       prompt: "use a legendary planet ability",
-      context: {
+      context: partialContext({
         subtype: "legendary_end_of_turn",
         source: { Content: "legendary" },
-      },
+      }),
       options: [
         option("primor", "The Atrament", "legendary"),
         option("mirage", "Mirage Flight Academy", "legendary"),
@@ -1107,10 +1113,10 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-spy-pick",
       prompt: "Spy: rob which player",
-      context: {
+      context: partialContext({
         subtype: "spy_pick_player",
         source: { ActionCard: "spy" },
-      },
+      }),
       options: [
         option("other_seat", "take a card from other_seat", "player"),
         option("third_seat", "take a card from third_seat", "player"),
@@ -1126,10 +1132,10 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-pi-restack",
       prompt: "Predictive Intelligence: redistribute command tokens",
-      context: {
+      context: partialContext({
         subtype: "predictive_intelligence_redistribute",
         source: { Content: "pi" },
-      },
+      }),
       options: [
         ...["tactic|fleet", "tactic|strategy", "fleet|tactic", "fleet|strategy", "strategy|tactic", "strategy|fleet"].map(
           (id) => option(id, `move 1 token from ${id.replace("|", " to ")}`, "redistribute"),
@@ -1154,7 +1160,7 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-unknown",
       prompt: "Unknown subtype",
-      context: { subtype: "gallery_unrecognized" },
+      context: partialContext({ subtype: "gallery_unrecognized" }),
       options: [option("offered_option", "Offered option")],
     },
   },
@@ -1171,26 +1177,6 @@ export const fallbackCases: GalleryCase[] = [
     },
   },
   {
-    workflow: "generic_selection",
-    title: "Bounded multi-select",
-    fallback: "Unknown subtype + constraint → generic multi-select",
-    note: "The UI stages choices; a mock acknowledgement does not establish a next decision.",
-    choice: {
-      actor,
-      nonce: "gallery-multi",
-      prompt: "Select two",
-      context: {
-        subtype: "gallery_bounded",
-        outstanding: [{ min_selection: 2, max_selection: 2 }],
-      },
-      options: [
-        option("a", "Option A"),
-        option("b", "Option B"),
-        option("c", "Option C"),
-      ],
-    },
-  },
-  {
     workflow: "tactical_movement",
     title: "Empty movement",
     fallback: "Explicit finish, no movable units",
@@ -1199,7 +1185,7 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-empty-move",
       prompt: "No units can move",
-      context: { subtype: "movement_step", target: system },
+      context: partialContext({ subtype: "movement_step", target: system }),
       options: [finish("done_moving", "Done moving")],
     },
   },
@@ -1212,7 +1198,7 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-missing-finish",
       prompt: "No finish offered",
-      context: { subtype: "movement_step", target: system },
+      context: partialContext({ subtype: "movement_step", target: system }),
       options: [option("unrelated", "Unrelated option", "other")],
     },
   },
@@ -1225,7 +1211,7 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-no-options",
       prompt: "No options offered",
-      context: { subtype: "gallery_empty" },
+      context: partialContext({ subtype: "gallery_empty" }),
       options: [],
     },
   },
@@ -1239,11 +1225,11 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-hit-assignment",
       prompt: "cancel a hit at 18",
-      context: {
+      context: partialContext({
         subtype: "sustain_damage",
         target: system,
         outstanding: [{ kind: "UnitsToRemove", amount: 5, paid: 0 }],
-      },
+      }),
       options: [
         option("sustain|10", "sustain damage on dreadnought", "sustain", {
           unit: "dreadnought",
@@ -1262,7 +1248,7 @@ export const fallbackCases: GalleryCase[] = [
       actor,
       nonce: "gallery-hit-unstated",
       prompt: "cancel a hit at 18",
-      context: { subtype: "sustain_damage", target: system },
+      context: partialContext({ subtype: "sustain_damage", target: system }),
       options: [
         option("sustain|10", "sustain damage on dreadnought", "sustain", {
           unit: "dreadnought",
@@ -1309,14 +1295,14 @@ function reactionCases(): GalleryCase[] {
       actor,
       nonce,
       prompt: subtype,
-      context: {
+      context: partialContext({
         subtype,
         optional: true,
         ...(Object.keys(source).length ? { source } : {}),
         ...(triggerDto
           ? { trigger: triggerDto as unknown as NonNullable<PendingChoiceDto["context"]>["trigger"] }
           : {}),
-      },
+      }),
       options: [...options, finish("decline", "Pass")],
     },
   });

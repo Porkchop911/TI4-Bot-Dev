@@ -1,8 +1,8 @@
 import type {
   BoardTileView,
   LobbyDto,
-  MapChoiceDto,
-  MapPreviewDto,
+  MapChoiceView,
+  MapPreview,
   MapTemplateSummary,
 } from "../protocol/types.ts";
 
@@ -33,9 +33,9 @@ function ring(k: number): [number, number][] {
 export function fixturePreview(
   playerCount: number,
   alias: string | null = "6pStandard",
-): MapPreviewDto {
+): MapPreview {
   const tiles: BoardTileView[] = [];
-  const seats: MapPreviewDto["seats"] = [];
+  const seats: MapPreview["seats"] = [];
   const outer = ring(3);
   const stride = Math.floor(outer.length / playerCount);
   const homeAt = new Map<string, number>();
@@ -136,7 +136,7 @@ export const fixtureTemplates = (playerCount: number): MapTemplateSummary[] => [
   },
 ];
 
-export const fixtureMapChoice = (alias: string | null, playerCount = 6): MapChoiceDto =>
+export const fixtureMapChoice = (alias: string | null, playerCount = 6): MapChoiceView =>
   alias
     ? {
         kind: "template",

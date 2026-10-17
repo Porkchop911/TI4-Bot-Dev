@@ -4,16 +4,17 @@ import { GameShell } from "./GameShell.tsx";
 import type { BasketPlan } from "../protocol/client.ts";
 import type { PendingChoiceDto } from "../protocol/types.ts";
 import { SINGLE_PAYMENT_KEY } from "../hooks/useSinglePaymentSetting.ts";
+import { partialContext } from "../test/wire.ts";
 
 const produce = (nonce: string): PendingChoiceDto => ({
   actor: "p1",
   nonce,
   prompt: "produce in 18",
-  context: {
+  context: partialContext({
     subtype: "produce_unit",
     target: { System: "18" },
     outstanding: [{ amount: 3, paid: 0 }],
-  },
+  }),
   options: [
     {
       id: "build|destroyer|1",
@@ -27,7 +28,7 @@ const produce = (nonce: string): PendingChoiceDto => ({
         available_resources: 8,
       },
     },
-    { id: "done_producing", kind: "decline", label: "Done" },
+    { id: "done_producing", kind: "decline", label: "Done", payload: {} },
   ],
 });
 
@@ -43,11 +44,11 @@ const pay = (nonce: string, owed: number, planets: ReturnType<typeof planet>[]):
   actor: "p1",
   nonce,
   prompt: `Pay ${owed}`,
-  context: {
+  context: partialContext({
     subtype: "pay_resources",
     target: { System: "18" },
     outstanding: [{ kind: "Resources", amount: owed, paid: 0 }],
-  },
+  }),
   options: [...planets, { id: "trade_good", kind: "pay", label: "Trade good", payload: { worth: 1 } }],
 });
 
@@ -55,8 +56,8 @@ const place = (nonce: string): PendingChoiceDto => ({
   actor: "p1",
   nonce,
   prompt: "place the unit",
-  context: { subtype: "place_unit", target: { System: "18" } },
-  options: [{ id: "place|space", kind: "place", label: "Space" }],
+  context: partialContext({ subtype: "place_unit", target: { System: "18" } }),
+  options: [{ id: "place|space", kind: "place", label: "Space", payload: {} }],
 });
 
 const JORD = planet("jord", "Jord", 3);
@@ -151,8 +152,8 @@ describe("one payment for a whole production", () => {
       actor: "p2",
       nonce: "r-1",
       prompt: "when a unit is produced",
-      context: { subtype: "reaction_after_UNITS_PRODUCED" },
-      options: [{ id: "decline", kind: "decline", label: "Decline" }],
+      context: partialContext({ subtype: "reaction_after_UNITS_PRODUCED" }),
+      options: [{ id: "decline", kind: "decline", label: "Decline", payload: {} }],
     };
     rerender(view(reaction));
     await act(async () => {});

@@ -804,6 +804,12 @@ const PRODUCERS: &[Producer] = &[
     },
     Producer {
         module: "action_cards.rs",
+        function: "pick_rider_target",
+        count: 1,
+        delivery: Delivery::ObservedHere,
+    },
+    Producer {
+        module: "action_cards.rs",
         function: "predicted_outcome",
         count: 1,
         delivery: Delivery::ObservedHere,
@@ -962,6 +968,13 @@ const PRODUCERS: &[Producer] = &[
         // `space_combat_round_started` opens.
         module: "faction_abilities.rs",
         function: "munitions_offer",
+        count: 1,
+        delivery: Delivery::ObservedHere,
+    },
+    Producer {
+        // Munitions Reserves after the roll (rules version 2), asked with the dice in view.
+        module: "faction_abilities.rs",
+        function: "munitions_roll_offer",
         count: 1,
         delivery: Delivery::ObservedHere,
     },
@@ -1283,6 +1296,14 @@ const PRODUCERS: &[Producer] = &[
         delivery: Delivery::ObservedHere,
     },
     Producer {
+        // Starting technology (Winnu, Argent Flight, Keleres, Thunder's Edge picks): the front
+        // pick of `GameState::starting_tech_picks`, asked by the driver before the first draft.
+        module: "starting_tech.rs",
+        function: "choice",
+        count: 1,
+        delivery: Delivery::ObservedVia("game.rs::step"),
+    },
+    Producer {
         module: "strategy.rs",
         function: "secondary_question",
         count: 3,
@@ -1471,14 +1492,11 @@ const PRODUCERS: &[Producer] = &[
     Producer {
         module: "tokens.rs",
         function: "pending_choice",
-        // Two `Choice::new` sites share this function name: `TokenGain::pending_choice` (81.5's
-        // token-gain window, wired below) and `TokenRedistribution::pending_choice` (81.5's
-        // token-redistribution window -- see its doc comment in `tokens.rs`). The redistribution
-        // window is not wired into a driver yet; `strategy_cards::redistribute_tokens` still
-        // drives the sequential single-move mechanic it is meant to replace. Bug-fix note
-        // 2026-09-07 in `plans/current_bugs_2026-09-07.txt`.
-        count: 2,
-        delivery: Delivery::ObservedVia("game.rs::step_token_gain"),
+        // `TokenRedistribution::pending_choice`: 81.5's gain and redistribution (one decision per
+        // seat), and Warfare's and Predictive Intelligence's redistributions, all asked by
+        // `strategy_cards::redistribute_tokens`.
+        count: 1,
+        delivery: Delivery::ObservedVia("strategy_cards.rs::ask"),
     },
     Producer {
         module: "transactions.rs",
@@ -1609,6 +1627,7 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("action_cards.rs", "pick_detailed", 1),
     // BF-00b: placement from reinforcements by a faction effect; asks its own choice.
     ("action_cards.rs", "place_units_choosing", 1),
+    ("action_cards.rs", "pick_rider_target", 1),
     ("action_cards.rs", "predicted_outcome", 1),
     ("action_cards.rs", "public_disgrace", 1),
     ("action_cards.rs", "reparations", 2),
@@ -1627,6 +1646,7 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("exploration.rs", "ask_decorated", 1),
     ("exploration.rs", "ask_device_technology", 1),
     ("faction_abilities.rs", "munitions_offer", 1),
+    ("faction_abilities.rs", "munitions_roll_offer", 1),
     ("faction_abilities.rs", "perform_component", 2),
     ("faction_abilities.rs", "production_biomes", 1),
     ("faction_abilities.rs", "strategy_resolved", 1),
@@ -1641,7 +1661,6 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("game.rs", "step_scoring", 1),
     ("game.rs", "step_secondary", 1),
     ("game.rs", "step_tactical", 1),
-    ("game.rs", "step_token_gain", 1),
     ("game.rs", "step_trade", 1),
     ("game.rs", "step_diplomacy", 1),
     ("game.rs", "step_agenda_talks", 1),

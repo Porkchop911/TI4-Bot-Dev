@@ -1,9 +1,9 @@
-import type { ChoiceOptionDto, GameView, PendingChoiceDto, PlayerView } from "../protocol/types.ts";
+import type { ChoiceOption, GameView, PendingChoiceDto, PlayerView } from "../protocol/types.ts";
 import { findActionCardMeta, humanizeId } from "../protocol/contentCatalog.ts";
 
 /** What the client already knows about the table; enough to describe a candidate seat. */
 export type DecisionTable = Pick<GameView, "players" | "seating_order" | "speaker"> &
-  Partial<Pick<GameView, "table">>;
+  Partial<Pick<GameView, "table" | "board">>;
 
 export const SPEAKER_ROLE_TEXT =
   "The speaker picks first in the strategy phase, votes last on agendas and breaks voting ties.";
@@ -99,7 +99,7 @@ export function seatStanding(table: DecisionTable, seat: string | undefined): Se
 /** The seat an option stands for: from `details.seats` (named options) or the id itself (Hacan). */
 export function optionSeat(
   choice: Pick<PendingChoiceDto, "context" | "details">,
-  option: ChoiceOptionDto,
+  option: ChoiceOption,
 ): string | undefined {
   const seats = choice.details?.seats;
   if (seats && typeof seats === "object") {
@@ -121,7 +121,7 @@ export const isPlayerPick = (choice: Pick<PendingChoiceDto, "context">): boolean
  * The player a pick option stands for: the option id is a seat id, or (Signal Jamming) the name
  * of the faction that seat plays.
  */
-export function playerPickSeat(option: ChoiceOptionDto, table: DecisionTable): PlayerView | undefined {
+export function playerPickSeat(option: Pick<ChoiceOption, "id" | "label">, table: DecisionTable): PlayerView | undefined {
   const id = option.id.toLowerCase();
   return (
     table.players.find((p) => p.id === option.id) ??
@@ -143,23 +143,79 @@ export function describePickCard(
 
 const count = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
+/** The planets `seat` controls that carry a planet trait, by name, with how many are exhausted already. */
+function planetsWithTrait(table: DecisionTable, seat: string, trait: string): { names: string[]; exhausted: number } {
+  const names: string[] = [];
+  let exhausted = 0;
+  for (const tile of table.board?.map_tiles ?? []) {
+    for (const planet of tile.planets ?? []) {
+      if (!(planet.traits ?? []).some((entry) => entry.toLowerCase() === trait)) continue;
+      const dynamic = table.board?.systems?.[tile.system_id]?.planets?.[planet.id];
+      if (dynamic?.controlled_by !== seat) continue;
+      names.push(planet.label || humanizeId(planet.id));
+      if (dynamic.exhausted) exhausted += 1;
+    }
+  }
+  return { names, exhausted };
+}
+
+/** The alias of the action card a pick belongs to (`abs_pick_player` is `abs`). */
+const cardAlias = (choice: Pick<PendingChoiceDto, "context">) => subtypeOf(choice).split("_pick_")[0];
+
+/** What a card does to the player it is aimed at, as one sentence from what the client already holds. */
+function playerPickEffect(
+  alias: string,
+  target: PlayerView,
+  actor: PlayerView | undefined,
+  table: DecisionTable,
+): string {
+  switch (alias) {
+    case "spy":
+      return `Holds ${count(target.action_cards_count, "action card")}; you take one at random.`;
+    case "insub":
+    case "insubordination":
+      return `Has ${count(target.tactic_tokens, "tactic token")}; you take one.`;
+    case "abs": {
+      const { names, exhausted } = planetsWithTrait(table, target.id, "cultural");
+      if (names.length === 0) return "Controls no cultural planet: nothing is exhausted.";
+      const ready = names.length - exhausted;
+      return `Exhausts ${count(names.length, "cultural planet")}: ${names.join(", ")}${exhausted > 0 ? ` (${exhausted} already exhausted, so ${ready} newly)` : ""}.`;
+    }
+    case "fsb":
+      return `Gains 1 trade good: ${target.trade_goods} now, ${target.trade_goods + 1} after.`;
+    case "seize": {
+      const total = Object.values(target.relic_fragments ?? {}).reduce((sum, n) => sum + n, 0);
+      const kinds = Object.entries(target.relic_fragments ?? {})
+        .filter(([, n]) => n > 0)
+        .map(([kind, n]) => `${n} ${kind}`)
+        .join(", ");
+      return total > 0
+        ? `Holds ${count(total, "relic fragment")} (${kinds}); you choose which one they give.`
+        : "Holds no relic fragments.";
+    }
+    case "exchangeprogram":
+      return `Fleet pool ${target.fleet_tokens} against your ${actor?.fleet_tokens ?? "?"}: if they refuse, you each lose 1 fleet token.`;
+    case "assassin":
+      return "Loses their representative: they cast no votes on the agenda being resolved.";
+    case "confusing":
+      return "Becomes the elected player instead of the one the votes chose.";
+    default:
+      return "";
+  }
+}
+
 /** One line about a player the actor may pick: standing first, then what the card does to them. */
 function playerPickNote(
   choice: Pick<PendingChoiceDto, "context" | "actor">,
-  option: ChoiceOptionDto,
+  option: ChoiceOption,
   table: DecisionTable | null,
 ): OptionNote | null {
   const target = table ? playerPickSeat(option, table) : undefined;
-  if (!target) return null;
-  const subtype = subtypeOf(choice);
+  if (!table || !target) return null;
   const standing = `${target.victory_points} VP, ${count(target.trade_goods, "trade good")}, ${count(target.commodities, "commodity", "commodities")}`;
-  let effect = "";
-  if (subtype.startsWith("spy_")) {
-    effect = ` Holds ${count(target.action_cards_count, "action card")}; you take one at random.`;
-  } else if (subtype.startsWith("insubordination_")) {
-    effect = ` Has ${count(target.tactic_tokens, "tactic token")}; you take one.`;
-  }
-  return { seat: target.id, text: `${standing}.${effect}` };
+  const actor = table.players.find((entry) => entry.id === choice.actor);
+  const effect = playerPickEffect(cardAlias(choice), target, actor, table);
+  return { seat: target.id, text: `${standing}.${effect ? ` ${effect}` : ""}` };
 }
 
 export interface OptionNote {
@@ -172,7 +228,7 @@ export interface OptionNote {
 /** Display-only: a sub-line for one option of the three decisions; `null` elsewhere. */
 export function optionNote(
   choice: Pick<PendingChoiceDto, "context" | "details" | "actor">,
-  option: ChoiceOptionDto,
+  option: ChoiceOption,
   table: DecisionTable | null,
 ): OptionNote | null {
   const subtype = subtypeOf(choice);

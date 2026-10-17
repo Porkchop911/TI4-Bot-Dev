@@ -1,23 +1,25 @@
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { pageQuery, spaceOdds } from "@ti4/shared/engine/odds.ts";
 import { describe, expect, it } from "vitest";
-import battleUpdate from "./fixtures/update-battle.json";
-import movementUpdate from "./fixtures/update-movement.json";
+import battleUpdate from "../../../fixtures/protocol/update-battle.json";
+import movementUpdate from "../../../fixtures/protocol/update-movement.json";
 import { type MovementDraft, setLoad, setShip } from "./movementDraft";
 import { type KeptOdds, oddsRequest } from "./movementOdds";
 import { percentages, selectArrival, selectMovement } from "./select/movement";
-import { spaceOddsOf } from "./wasmTransport";
-import type { MovementFacts, SessionUpdate, SpaceOddsResponse } from "./wire";
+import type { BattleResponse, MovementFacts, SessionUpdate } from "./wire";
 
 // An update of a real game, written by the engine: in the late game, seat a (Sol) moves into
-// the system of seat c (Letnev), which has two cruisers, a destroyer and a PDS there:
-//   cargo run -p ti4-wasm --example record -- late-game 8 1 3 tactical 32 > web2/src/session/fixtures/update-battle.json
+// the system of seat c (Letnev), which has two cruisers, a destroyer and a PDS there
+// (`crates/ti4-wasm/tests/it/protocol_fixtures.rs` (`cargo wire-web`)).
 const update = battleUpdate as unknown as SessionUpdate;
 const facts = update.tactical as MovementFacts;
 const WARSUN = "01|1";
 const CARRIER = "01|2";
 const FIGHTERS = facts.cargo.findIndex((pool) => pool.system === "01" && pool.unit === "fighter2");
-const INFANTRY = facts.cargo.findIndex((pool) => pool.source === "jord" && pool.unit === "sol_infantry2");
+const INFANTRY = facts.cargo.findIndex(
+  (pool) => pool.source === "jord" && pool.unit === "sol_infantry2",
+);
 
 const staged = (...changes: ((draft: MovementDraft) => MovementDraft)[]) =>
   changes.reduce((draft, change) => change(draft), {} as MovementDraft);
@@ -26,7 +28,7 @@ const load = (id: string, pool: number, count: number) => (draft: MovementDraft)
   setLoad(facts, draft, id, pool, count);
 
 /** An answer of the engine, as it could be: Sol wins mostly, and keeps most of its ships. */
-const RESPONSE: SpaceOddsResponse = {
+const RESPONSE: BattleResponse = {
   simulations: 2000,
   attacker_win_rate: 0.7234,
   defender_win_rate: 0.2496,
@@ -79,7 +81,12 @@ it("adds the ships that move in and the fighters in their holds to the attacker"
   });
   expect(asked?.key).toBe(JSON.stringify(asked?.request));
   // The same fleet staged in another order is the same question.
-  const again = staged(ship(CARRIER), ship(WARSUN), load(WARSUN, INFANTRY, 3), load(WARSUN, FIGHTERS, 2));
+  const again = staged(
+    ship(CARRIER),
+    ship(WARSUN),
+    load(WARSUN, INFANTRY, 3),
+    load(WARSUN, FIGHTERS, 2),
+  );
   expect(oddsRequest(facts, again)?.key).toBe(asked?.key);
   expect(oddsRequest(facts, staged(ship(WARSUN)))?.key).not.toBe(asked?.key);
 });
@@ -139,9 +146,9 @@ describe("the odds in the movement", () => {
       ],
     ]);
     // The active system has the same odds in its inspector.
-    expect(selectArrival(update, facts, draft, { key: asked.key, response: RESPONSE }).odds).toEqual(
-      odds,
-    );
+    expect(
+      selectArrival(update, facts, draft, { key: asked.key, response: RESPONSE }).odds,
+    ).toEqual(odds);
   });
 
   it("keeps the numbers of another movement as pending, with the ships of this one", () => {
@@ -162,13 +169,13 @@ const WASM = fileURLToPath(new URL("./ti4.wasm", import.meta.url));
 
 describe.skipIf(!existsSync(WASM))("the odds of the engine in this page", () => {
   it("computes the odds of the staged movement, the same for the same sides", async () => {
-    const module = await WebAssembly.compile(readFileSync(WASM));
+    const query = pageQuery(await WebAssembly.compile(readFileSync(WASM)));
     const draft = staged(ship(WARSUN), load(WARSUN, FIGHTERS, 3), ship(CARRIER));
     const asked = oddsRequest(facts, draft)!;
-    const response = await spaceOddsOf(module, asked.request);
+    const response = await spaceOdds(query, asked.request);
     expect(response.attacker_fielded).toMatchObject({ warsun: 1, sol_carrier2: 1, fighter2: 3 });
     expect(response.defender_fielded).toMatchObject({ cruiser: 2, destroyer: 1 });
-    expect(await spaceOddsOf(module, asked.request)).toEqual(response);
+    expect(await spaceOdds(query, asked.request)).toEqual(response);
     const odds = selectMovement(update, facts, draft, [], { key: asked.key, response }).odds!;
     expect(odds.win! + odds.draw! + odds.loss!).toBe(100);
     // A war sun, a carrier and three fighters against two cruisers and a destroyer.

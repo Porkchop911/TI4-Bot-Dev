@@ -1,0 +1,77 @@
+{
+  "limits": {
+    "max_rounds": 1000,
+    "max_steps": 20000000,
+    "max_seconds": 900,
+    "loop_steps": 5000
+  },
+  "setups": [
+    {
+      "name": "3p",
+      "players": 3,
+      "maps": [
+        "3pHyperlanes",
+        "3pLearnToPlayPoK",
+        "3pBgaBalancedD"
+      ],
+      "map_policy": "cross",
+      "seeds": "5000..5006"
+    },
+    {
+      "name": "4p",
+      "players": 4,
+      "maps": [
+        "4pHyperlanes",
+        "4pOuterRim",
+        "4pExpanse",
+        "4pBgaBalancedD",
+        "4pLearnToPlayPoK"
+      ],
+      "map_policy": "cross",
+      "seeds": "5000..5007"
+    },
+    {
+      "name": "5p",
+      "players": 5,
+      "maps": [
+        "5pHyperlanes",
+        "5pOuterRim",
+        "5pBgaBalancedD"
+      ],
+      "map_policy": "cross",
+      "seeds": "5000..5005"
+    },
+    {
+      "name": "6p",
+      "players": 6,
+      "maps": [
+        "6pStandard",
+        "6pOuterRim",
+        "6pBgaBalancedD",
+        "6pGravity"
+      ],
+      "map_policy": "cross",
+      "seeds": "5000..5005"
+    },
+    {
+      "name": "7p",
+      "players": 7,
+      "maps": [
+        "7pHyperlanes",
+        "7pAnaphase"
+      ],
+      "map_policy": "cross",
+      "seeds": "5000..5004"
+    },
+    {
+      "name": "8p",
+      "players": 8,
+      "maps": [
+        "8pBeMyNeighborHyperlanes",
+        "8pSpoonMap"
+      ],
+      "map_policy": "cross",
+      "seeds": "5000..5004"
+    }
+  ]
+}

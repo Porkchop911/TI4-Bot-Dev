@@ -6,7 +6,7 @@
  * combination back to that menu: a pure round trip between a `Staged` deal and a listed deal id.
  * Nothing here invents a deal; a combination that matches no listed id cannot be proposed.
  */
-import { ChoiceOptionDto } from "../protocol/types.ts";
+import { ChoiceOption } from "../protocol/types.ts";
 import { DecodedTradeOffer, decodeTradeOption } from "./tradeDecoder.ts";
 import { printedCardName } from "./tradeNames.ts";
 
@@ -105,7 +105,7 @@ export interface StagedDeal {
 }
 
 /** Decode a server deal list (decline excluded) into stageable deals. */
-export function stageableDeals(options: readonly ChoiceOptionDto[]): StagedDeal[] {
+export function stageableDeals(options: readonly ChoiceOption[]): StagedDeal[] {
   return options
     .filter((o) => o.id !== "decline" && o.kind !== "decline")
     .map((o) => {

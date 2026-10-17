@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { PendingChoiceDto, PublicTurnStatus, ViewerRole } from "../protocol/types.ts";
 import {
   ConnectionStatus,
@@ -42,7 +42,7 @@ export interface UseGameSessionReturn {
   events: GameLogEntry[];
   history: import("../protocol/types.ts").HistoryStatus;
   batchResume?: import("../protocol/client.ts").BatchResume | null;
-  submitChoice: (optionId: string) => Promise<void>;
+  submitChoice: (optionId: string, nonce?: string) => Promise<void>;
   /** This seat's bluff settings as the server holds them (null until it has answered). */
   reactionIntent: import("../protocol/types.ts").ReactionIntentStateMsg | null;
   /** Declare the reaction windows this seat bluffs about (whole set; empty clears). */
@@ -70,6 +70,8 @@ export interface UseGameSessionReturn {
   ) => Promise<import("../protocol/client.ts").SecondaryPreviewReply>;
   /** Read-only "who can go here": the ships that could move into a system if it were activated now. */
   queryReach: (systemId: string) => Promise<import("../protocol/client.ts").ReachReply>;
+  /** The engine of a game that runs on this device (`GameTransport.queryEngine`); absent online. */
+  queryEngine?: (request: object) => Promise<unknown>;
   resumeBatch: () => Promise<void>;
   dismissBatchResume: () => void;
 }
@@ -94,7 +96,10 @@ export function useGameSession({
     };
   }, [client]);
 
-  const submitChoice = useCallback((optionId: string) => client.submitChoice(optionId), [client]);
+  const submitChoice = useCallback(
+    (optionId: string, nonce?: string) => client.submitChoice(optionId, nonce),
+    [client],
+  );
   const changeHistory = useCallback(
     (action: import("../protocol/client.ts").HistoryChange) => client.changeHistory(action),
     [client],
@@ -102,6 +107,8 @@ export function useGameSession({
 
   // Stable identity: the who-can-go-here hook re-asks whenever it changes.
   const queryReach = useCallback((systemId: string) => client.queryReach(systemId), [client]);
+  // Stable identity: the odds engine of the page keys on it.
+  const queryEngine = useMemo(() => client.queryEngine?.bind(client), [client]);
 
   // Stable identities: the turn redo hook re-reads its status whenever these change, so a new
   // function per render made every status response trigger the next request (and a re-render).
@@ -129,6 +136,7 @@ export function useGameSession({
     submitBatch: (plan) => client.submitBatch(plan),
     previewSecondary: (card, primary, answers) => client.previewSecondary(card, primary, answers),
     queryReach,
+    queryEngine,
     resumeBatch: () => client.resumeBatch(),
     dismissBatchResume: () => client.dismissBatchResume(),
   };

@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { expect, it } from "vitest";
 import { ProductionSheet } from "../game/steps/production/ProductionSheet";
-import productionUpdate from "../session/fixtures/update-production.json";
+import productionUpdate from "../../../fixtures/protocol/update-production.json";
 import { EMPTY } from "../session/productionDraft";
 import { selectBuild } from "../session/select/production";
 import type { ProductionFacts, SessionUpdate } from "../session/wire";

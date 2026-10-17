@@ -278,7 +278,7 @@ export function setCount(
 /**
  * The steps of the staged production: each purchase with its place, when the game asks for one,
  * then what pays, then the end. The game asks for the payments between the purchases; the plan
- * gives them in this order whenever it is asked (`plan_answer` in `ti4-view`).
+ * gives them in this order whenever it is asked (`plan_answer` in `ti4-host`).
  */
 export function stepsOf(facts: ProductionFacts, draft: ProductionDraft): ProductionStep[] {
   const steps: ProductionStep[] = [];

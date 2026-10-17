@@ -179,6 +179,34 @@ pub struct Reward {
     /// (so Styx also earns `styx_bonus` on top). Credited at the final slot. Off by default.
     #[serde(default)]
     pub fracture_planet_bonus: f64,
+    /// Zero the scoreable public/secret counts in the final snapshot, as projection is, so
+    /// `objective_weight`/`secret_weight` become pure shaping: a game can no longer bank reward for
+    /// standing next to a point at the horizon. Off keeps the reference reward exactly.
+    #[serde(default)]
+    pub zero_terminal_objectives: bool,
+    /// Potential charged per home planet this seat does not control ([`Progress::home_planets_lost`]).
+    /// Losing home bars public scoring (61.16), and the guides treat home defence as basic. Taken
+    /// back when the planet is retaken; still charged at the horizon. Off by default.
+    #[serde(default)]
+    pub home_loss_weight: f64,
+    /// Keep projection standing at the horizon (the seat's last measured projection), so
+    /// `projection_weight` becomes an objective instead of pure shaping. Off keeps the reference.
+    #[serde(default)]
+    pub keep_terminal_projection: bool,
+    /// Per-round bonus on the seat's rank at the table: `weight * (below - above) / (seats - 1)`,
+    /// averaged over two ranks (projection, and planets held outside home), credited at the seat's
+    /// last decision of the round. Applied by the trainer,
+    /// which sees every seat. Off by default.
+    #[serde(default)]
+    pub projection_rank_weight: f64,
+    /// Reward `-penalty` at every diplomacy-head decision, so haggling is not free. Applied by the
+    /// trainer, which sees each decision's head. Off by default.
+    #[serde(default)]
+    pub negotiation_step_penalty: f64,
+    /// Paid per resource and influence of the non-home planets held when round one ends, credited
+    /// at the seat's last round-one decision like `r1_bonus`. Off by default.
+    #[serde(default)]
+    pub r1_expansion_weight: f64,
     /// How much a decision is credited for what happens later (gamma).
     ///
     /// One (the default) is the undiscounted suffix sum this trainer has always used: every
@@ -238,6 +266,12 @@ impl Default for Reward {
             styx_bonus: 0.0,
             fracture_entry_bonus: 0.0,
             fracture_planet_bonus: 0.0,
+            zero_terminal_objectives: false,
+            home_loss_weight: 0.0,
+            keep_terminal_projection: false,
+            projection_rank_weight: 0.0,
+            negotiation_step_penalty: 0.0,
+            r1_expansion_weight: 0.0,
         }
     }
 }
@@ -292,7 +326,12 @@ impl Reward {
             reason = "permille opportunity stays small"
         )]
         let projection = progress.projection_permille as f64 / 1000.0;
-        self.projection_weight * projection
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "home planet counts are single digits"
+        )]
+        let home_lost = progress.home_planets_lost as f64;
+        self.projection_weight * projection - self.home_loss_weight * home_lost
             + self.vp_weight * points
             + self.objective_weight * public
             + self.secret_weight * secret
@@ -395,8 +434,20 @@ pub fn returns(episode: &Episode, reward: &Reward) -> Vec<f64> {
     }
     let mut snapshots = episode.steps.clone();
     let mut last = episode.final_progress;
-    // Projection is pure shaping: no potential is left standing at the end of the game.
-    last.projection_permille = 0;
+    // Projection is pure shaping unless kept: then the final snapshot (which never measures it)
+    // stands at the last measured value.
+    last.projection_permille = if reward.keep_terminal_projection {
+        episode
+            .steps
+            .last()
+            .map_or(0, |step| step.projection_permille)
+    } else {
+        0
+    };
+    if reward.zero_terminal_objectives {
+        last.scoreable_public = 0;
+        last.scoreable_secret = 0;
+    }
     snapshots.push(last);
     let mut rewards = step_rewards(&snapshots, reward);
     if rewards.is_empty() {
@@ -425,6 +476,13 @@ pub fn returns(episode: &Episode, reward: &Reward) -> Vec<f64> {
             {
                 *slot += reward.r1_bonus
                     * (f64::from(u8::from(episode.cleared)) - 0.1 * episode.shortfall);
+                // Holdings after the last round-one decision: the next snapshot, round two's first
+                // or the final one.
+                #[expect(clippy::cast_precision_loss, reason = "planet values are small")]
+                let expanded = snapshots
+                    .get(index + 1)
+                    .map_or(0.0, |after| after.non_home_planet_value as f64);
+                *slot += reward.r1_expansion_weight * expanded;
             }
             if let Some(last) = rewards.last_mut() {
                 *last += reward.trade_bonus * episode.traded_goods;
@@ -738,6 +796,39 @@ mod tests {
     }
 
     #[test]
+    fn terminal_zeroed_objectives_are_pure_shaping_and_home_loss_is_charged() {
+        let mut shaped = Reward::for_stage(Stage::Two);
+        shaped.r1_bonus = 0.0;
+        shaped.r1_shaping = 0.0;
+        shaped.objective_weight = 0.3;
+        shaped.secret_weight = 0.2;
+        shaped.zero_terminal_objectives = true;
+        shaped.home_loss_weight = 0.5;
+        let at = |scoreable_public: i64, scoreable_secret: i64, home_planets_lost: i64| Progress {
+            scoreable_public,
+            scoreable_secret,
+            home_planets_lost,
+            round_number: 2,
+            ..Progress::default()
+        };
+        let episode = Episode {
+            steps: vec![at(1, 1, 0), at(2, 1, 1)],
+            final_progress: at(2, 1, 1),
+            cleared: false,
+            shortfall: 0.0,
+            traded_goods: 0.0,
+            strategy_card_plays: std::collections::BTreeMap::new(),
+        };
+        let credited = returns(&episode, &shaped);
+        // Whole game: minus the opening objective potential (0.3 + 0.2), minus one lost home planet.
+        assert!((credited[0] - (-0.5 - 0.5)).abs() < 1e-9, "{credited:?}");
+        // Off, the horizon keeps the standing potential (the reference behaviour).
+        shaped.zero_terminal_objectives = false;
+        let credited = returns(&episode, &shaped);
+        assert!((credited[0] - (0.3 - 0.5)).abs() < 1e-9, "{credited:?}");
+    }
+
+    #[test]
     fn fleet_and_tech_shaping_pay_for_gains_and_claw_back_losses() {
         // Projection shaping is pure: over a game it sums to minus the opening projection, whatever
         // happened in between, because the final snapshot's projection is zeroed.
@@ -1008,6 +1099,29 @@ mod tests {
             opening_step < 2.0 * one_point,
             "a whole cleared opening is worth {opening_step} against {one_point} for a point"
         );
+    }
+
+    #[test]
+    fn round_one_expansion_pays_for_what_is_held_when_round_one_ends() {
+        let mut reward = Reward::for_stage(Stage::Two);
+        let round_two = Progress {
+            non_home_planet_value: 5,
+            ..at(2)
+        };
+        let episode = Episode {
+            steps: vec![at(1), at(1), round_two, at(3)],
+            final_progress: at(3),
+            cleared: true,
+            shortfall: 0.0,
+            traded_goods: 0.0,
+            strategy_card_plays: std::collections::BTreeMap::new(),
+        };
+        let without = returns(&episode, &reward);
+        reward.r1_expansion_weight = 0.5;
+        let with = returns(&episode, &reward);
+        assert!((with[0] - without[0] - 2.5).abs() < 1e-9, "round one carries 0.5 x 5");
+        assert!((with[1] - without[1] - 2.5).abs() < 1e-9);
+        assert!((with[2] - without[2]).abs() < 1e-9, "round two does not");
     }
 
     #[test]

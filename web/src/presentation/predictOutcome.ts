@@ -1,4 +1,4 @@
-import type { ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import type { ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import { findActionCardByName, findPlanetMeta, humanizeId } from "../protocol/contentCatalog.ts";
 import { playerPickSeat, type DecisionTable } from "./politicsDecision.ts";
 
@@ -23,7 +23,7 @@ export function describeRider(
  */
 export function describePrediction(
   choice: Pick<PendingChoiceDto, "context">,
-  option: Pick<ChoiceOptionDto, "id" | "label">,
+  option: Pick<ChoiceOption, "id" | "label">,
   table: DecisionTable | null,
 ): string | null {
   if (!isPredictOutcome(choice)) return null;

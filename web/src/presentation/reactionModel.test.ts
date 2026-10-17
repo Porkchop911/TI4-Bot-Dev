@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { GameEvent, PendingChoiceDto } from "../protocol/types.ts";
 import { describeReaction } from "./reactionModel.ts";
+import { partialContext } from "../test/wire.ts";
 
 const labels = {
   playerLabel: (id: string) => ({ p1: "Anna", p2: "Bob" })[id] ?? id,
@@ -10,7 +11,7 @@ const sabotageOffer = (subtype = "reaction_when_ACTION_CARD_PLAYED"): PendingCho
   actor: "p2",
   nonce: "1",
   prompt: "when ACTION_CARD_PLAYED",
-  context: { subtype, optional: true, source: { Reaction: "ACTION_CARD_PLAYED" } },
+  context: partialContext({ subtype, optional: true, source: { Reaction: "ACTION_CARD_PLAYED" } }),
   options: [
     {
       id: "reaction:Sol:ACTION_CARD_PLAYED:when",
@@ -18,7 +19,7 @@ const sabotageOffer = (subtype = "reaction_when_ACTION_CARD_PLAYED"): PendingCho
       label: "Play Sabotage",
       payload: { card: "sabo1", card_name: "Sabotage" },
     },
-    { id: "decline", kind: "decline", label: "Pass" },
+    { id: "decline", kind: "decline", label: "Pass", payload: {} },
   ],
 });
 
@@ -103,10 +104,10 @@ describe("describeReaction", () => {
         actor: "p2",
         nonce: "2",
         prompt: "Instinct Training: exhaust ... cancel sabo1",
-        context: { subtype: "instinct_training_cancel", source: { Content: "it" } },
+        context: partialContext({ subtype: "instinct_training_cancel", source: { Content: "it" } }),
         options: [
-          { id: "use", kind: "technology", label: "cancel it" },
-          { id: "decline", kind: "decline", label: "Pass" },
+          { id: "use", kind: "technology", label: "cancel it", payload: {} },
+          { id: "decline", kind: "decline", label: "Pass", payload: {} },
         ],
       },
       ...labels,
@@ -122,10 +123,10 @@ describe("describeReaction", () => {
       actor: "p2",
       nonce: "3",
       prompt: "when SYSTEM_ACTIVATED",
-      context: { subtype: "reaction_after_SYSTEM_ACTIVATED", optional: true, source: { Reaction: "SYSTEM_ACTIVATED" } },
+      context: partialContext({ subtype: "reaction_after_SYSTEM_ACTIVATED", optional: true, source: { Reaction: "SYSTEM_ACTIVATED" } }),
       options: [
-        { id, kind: "ability", label: `Play ${id}` },
-        { id: "decline", kind: "decline", label: "Pass" },
+        { id, kind: "ability", label: `Play ${id}`, payload: {} },
+        { id: "decline", kind: "decline", label: "Pass", payload: {} },
       ],
     });
     const label = (id: string) =>
@@ -139,7 +140,7 @@ describe("describeReaction", () => {
 
   it("keeps the engine label for an unnamed multi-card outer offer", () => {
     const choice = sabotageOffer();
-    choice.options[0] = { id: "reaction:Sol:X:when", kind: "ability", label: "Choose an action card…" };
+    choice.options[0] = { id: "reaction:Sol:X:when", kind: "ability", label: "Choose an action card…", payload: {} };
     const model = describeReaction({ choice, ...labels, viewerSeat: "p2" });
     expect(model.reactions[0].buttonLabel).toBe("Choose an action card…");
   });
@@ -260,9 +261,9 @@ describe("describeReaction", () => {
             command_tokens: [],
             planets: {},
             units: [
-              { unit_type: "cruiser", owner: "p2", damaged: false },
-              { unit_type: "cruiser", owner: "p2", damaged: false },
-              { unit_type: "cruiser", owner: "p1", damaged: false },
+              { unit_type: "cruiser", owner: "p2", damaged: false, planet: null, galvanized: false },
+              { unit_type: "cruiser", owner: "p2", damaged: false, planet: null, galvanized: false },
+              { unit_type: "cruiser", owner: "p1", damaged: false, planet: null, galvanized: false },
             ],
           },
         },
@@ -293,7 +294,7 @@ describe("Salvage effect", () => {
     actor: "p1",
     nonce: "1",
     prompt: "after SPACE_COMBAT_WON",
-    context: {
+    context: partialContext({
       subtype: "reaction_after_SPACE_COMBAT_WON",
       optional: true,
       trigger: {
@@ -304,7 +305,7 @@ describe("Salvage effect", () => {
         actor: "p1",
         system: "27",
       },
-    },
+    }),
     options: [
       {
         id: "reaction:Sol:SPACE_COMBAT_WON:after",
@@ -312,7 +313,7 @@ describe("Salvage effect", () => {
         label: "Play Salvage",
         payload: { card: "salvage", card_name: "Salvage" },
       },
-      { id: "decline", kind: "decline", label: "Pass" },
+      { id: "decline", kind: "decline", label: "Pass", payload: {} },
     ],
   });
   const board = {
@@ -342,5 +343,61 @@ describe("Salvage effect", () => {
     expect(empty.reactions[0].effect).toContain("would gain nothing");
     const unknown = describeReaction({ choice: salvageOffer(), ...labels, viewerSeat: "p1" });
     expect(unknown.reactions[0].effect).toBeNull();
+  });
+});
+
+describe("Engine effect previews", () => {
+  const sabotageOffer = (previews: unknown): PendingChoiceDto => ({
+    actor: "p1",
+    nonce: "1",
+    prompt: "when ACTION_CARD_PLAYED",
+    context: partialContext({
+      subtype: "reaction_when_ACTION_CARD_PLAYED",
+      optional: true,
+      trigger: {
+        kind: "action_card_played",
+        event_type: "ACTION_CARD_PLAYED",
+        event_id: 7,
+        relation: "when",
+        actor: "p2",
+        card: "fs1",
+      },
+      previews: previews as never,
+    }),
+    options: [
+      {
+        id: "reaction:Sol:ACTION_CARD_PLAYED:when",
+        kind: "ability",
+        label: "Play Sabotage",
+        payload: { card: "sabo1", card_name: "Sabotage" },
+      },
+      { id: "decline", kind: "decline", label: "Pass", payload: {} },
+    ],
+  });
+
+  it("words the preview of the option as the row's effect", () => {
+    const model = describeReaction({
+      choice: sabotageOffer([
+        {
+          option: "reaction:Sol:ACTION_CARD_PLAYED:when",
+          card: "sabo1",
+          effect: "cancel_card",
+          seats: ["p2"],
+          refs: ["fs1"],
+        },
+      ]),
+      ...labels,
+      viewerSeat: "p1",
+    });
+    expect(model.reactions[0].effect).toBe(
+      "Cancels Bob's Flank Speed. The card stays spent and its effect does not happen.",
+    );
+  });
+
+  it("leaves the effect empty for an older server, a damaged preview or an unknown kind", () => {
+    for (const previews of [undefined, "junk", [{ option: 3 }], [{ option: "reaction:Sol:ACTION_CARD_PLAYED:when", card: "x", effect: "later" }]]) {
+      const model = describeReaction({ choice: sabotageOffer(previews), ...labels, viewerSeat: "p1" });
+      expect(model.reactions[0].effect).toBeNull();
+    }
   });
 });

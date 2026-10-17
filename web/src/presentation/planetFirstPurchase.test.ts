@@ -19,7 +19,7 @@ import {
   type PurchaseState,
 } from "./commandTokens.ts";
 
-const pools = ["tactic_tokens", "fleet_tokens", "strategic_tokens"].map((id) => ({ id, kind: "pool", label: id }));
+const pools = ["tactic_tokens", "fleet_tokens", "strategic_tokens"].map((id) => ({ id, kind: "pool", label: id, payload: {} }));
 
 const view = (over: { reinforcements?: number; free?: number; tradeGoods?: number } = {}): CommandTokenView => {
   const resources = new Map([
@@ -38,7 +38,7 @@ const view = (over: { reinforcements?: number; free?: number; tradeGoods?: numbe
   const free = over.free ?? 1;
   const built = describeCommandTokens(
     {
-      options: free === 0 ? [{ id: "yes", kind: "yes", label: "yes" }, { id: "no", kind: "no", label: "no" }] : pools,
+      options: free === 0 ? [{ id: "yes", kind: "yes", label: "yes", payload: {} }, { id: "no", kind: "no", label: "no", payload: {} }] : pools,
       details: {
         kind: free === 0 ? "strategy_secondary" : "command_tokens",
         mode: free === 0 ? "buy" : "gain",

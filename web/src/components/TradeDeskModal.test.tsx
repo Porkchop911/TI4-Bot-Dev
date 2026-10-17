@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { TradeDeskModal } from "./TradeDeskModal.tsx";
 import { PendingChoiceDto } from "../protocol/types.ts";
+import { partialContext } from "../test/wire.ts";
 
 describe("TradeDeskModal", () => {
   it("renders propose mode with categorized tabs and handles deal proposal", async () => {
@@ -13,10 +14,10 @@ describe("TradeDeskModal", () => {
       actor: "seat_1",
       nonce: "20",
       prompt: "Propose a transaction",
-      context: {
+      context: partialContext({
         subtype: "propose_transaction",
         target: { Player: "seat_2" },
-      },
+      }),
       options: [
         {
           id: "cc2",
@@ -36,7 +37,7 @@ describe("TradeDeskModal", () => {
           kind: "offer",
           payload: { net: 3, their_net: 1 },
         },
-        { id: "decline", label: "Offer nothing", kind: "decline" },
+        { id: "decline", label: "Offer nothing", kind: "decline", payload: {} },
       ],
     };
 
@@ -99,13 +100,13 @@ describe("TradeDeskModal", () => {
       actor: "seat_1",
       nonce: "21",
       prompt: "Propose a transaction",
-      context: {
+      context: partialContext({
         subtype: "propose_transaction",
         target: { Player: "seat_2" },
-      },
+      }),
       options: [
-        { id: "cc1", label: "swap 1 commodity each", kind: "offer" },
-        { id: "decline", label: "Offer nothing", kind: "decline" },
+        { id: "cc1", label: "swap 1 commodity each", kind: "offer", payload: {} },
+        { id: "decline", label: "Offer nothing", kind: "decline", payload: {} },
       ],
     };
 
@@ -134,14 +135,14 @@ describe("TradeDeskModal", () => {
       actor: "seat_2",
       nonce: "22",
       prompt: "seat_1 offers 2 commodities for 2 trade goods -- accept?",
-      context: {
+      context: partialContext({
         subtype: "answer_transaction",
         target: { Player: "seat_1" },
-      },
+      }),
       options: [
         { id: "accept", label: "Accept", kind: "answer", payload: { net: 0 } },
-        { id: "refuse", label: "Refuse", kind: "decline" },
-        { id: "counter", label: "Counter-Offer", kind: "answer" },
+        { id: "refuse", label: "Refuse", kind: "decline", payload: {} },
+        { id: "counter", label: "Counter-Offer", kind: "answer", payload: {} },
       ],
     };
 
@@ -180,11 +181,11 @@ describe("TradeDeskModal", () => {
       actor: "seat_2",
       nonce: "23",
       prompt: "Propose transaction",
-      context: {
+      context: partialContext({
         subtype: "propose_transaction",
         target: { Player: "seat_3" },
-      },
-      options: [{ id: "decline", label: "Decline" }],
+      }),
+      options: [{ id: "decline", label: "Decline", payload: {}, kind: "" }],
     };
 
     render(
@@ -210,11 +211,11 @@ describe("TradeDeskModal", () => {
       actor: "seat_1",
       nonce: "24",
       prompt: "Propose transaction",
-      context: {
+      context: partialContext({
         subtype: "propose_transaction",
         target: { Player: "seat_2" },
-      },
-      options: [{ id: "decline", label: "Decline" }],
+      }),
+      options: [{ id: "decline", label: "Decline", payload: {}, kind: "" }],
     };
 
     render(
@@ -235,7 +236,7 @@ describe("TradeDeskModal", () => {
       actor: "seat_1",
       nonce: "25",
       prompt: "Propose a transaction",
-      context: { subtype: "propose_transaction", target: { Player: "seat_2" } },
+      context: partialContext({ subtype: "propose_transaction", target: { Player: "seat_2" } }),
       options: [
         {
           id: "cpconvoys:hacan:3",
@@ -243,7 +244,7 @@ describe("TradeDeskModal", () => {
           kind: "offer",
           payload: { received_promissory: "convoys:hacan", net: 0, their_net: 3 },
         },
-        { id: "decline", label: "Offer nothing", kind: "decline" },
+        { id: "decline", label: "Offer nothing", kind: "decline", payload: {} },
       ],
     };
 

@@ -1,6 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import menuUpdate from "./fixtures/update-menu.json";
+import menuUpdate from "../../../fixtures/protocol/update-menu.json";
 import type { Transport, TransportEvent } from "./transport";
 import { useLiveSession } from "./useLiveSession";
 import type { SessionUpdate } from "./wire";

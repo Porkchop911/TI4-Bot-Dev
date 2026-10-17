@@ -1,4 +1,4 @@
-import { BoardView, ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import { BoardView, ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import { humanizeId } from "../protocol/contentCatalog.ts";
 import { isDeclineOption } from "./choiceModel.ts";
 import { getPlanetDetails } from "./planetSelection.ts";
@@ -165,10 +165,14 @@ export function planetOccupants(
   return [...byOwner].map(([owner, list]) => ({ owner, summary: summarizeUnits(list) }));
 }
 
-const SYSTEM_PICK_SUBTYPE = /(_pick_system|_choose_system|_recall_token|_pick_recall)$/;
+const SYSTEM_PICK_SUBTYPE =
+  /(_pick_system|_choose_system|_recall_token|_pick_recall|_pick_rescue_from|_pick_space dock)$/;
+
+/** Cards that pick one of several units; each option names the system its unit stands in (`payload.system`). */
+const UNIT_PICK_SUBTYPE = /_pick_(ship|infantry|cruiser)$/;
 
 /** The system an option of a system pick stands for: payload.system, else the option id. */
-export function systemPickOptionSystem(opt: ChoiceOptionDto): string | null {
+export function systemPickOptionSystem(opt: ChoiceOption): string | null {
   if (isDeclineOption(opt)) return null;
   const p = opt.payload?.system;
   if (typeof p === "string" && p) return p;
@@ -195,3 +199,25 @@ export function isSystemPickChoice(
     );
   });
 }
+
+/**
+ * A pick among units on the board (Lucky Shot, Upgrade, Scuttle, Refit Troops) whose options say
+ * which system their unit is in, so the map can mark those systems and the dialog can step aside.
+ * The "stop after one" option of the two-unit cards is not a unit and does not count.
+ */
+export function isUnitMapPick(choice: PendingChoiceDto | null, board?: BoardView | null): boolean {
+  if (!choice || !board) return false;
+  if (!UNIT_PICK_SUBTYPE.test(choice.context?.subtype ?? "")) return false;
+  const offered = choice.options.filter((o) => !isDeclineOption(o) && o.id !== "stop");
+  return (
+    offered.length > 0 &&
+    offered.every((o) => {
+      const id = typeof o.payload?.system === "string" ? o.payload.system : null;
+      return Boolean(id && (board.systems?.[id] || board.map_tiles?.some((t) => t.system_id === id)));
+    })
+  );
+}
+
+/** A decision answered on the map by its system: a bare system pick, or a pick among units in systems. */
+export const isMapAnchoredPick = (choice: PendingChoiceDto | null, board?: BoardView | null): boolean =>
+  isSystemPickChoice(choice, board) || isUnitMapPick(choice, board);

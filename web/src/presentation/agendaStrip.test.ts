@@ -11,6 +11,7 @@ import {
   isAgendaDecision,
   type AgendaMemory,
 } from "./agendaStrip.ts";
+import { partialContext } from "../test/wire.ts";
 
 const PEACE = {
   id: "minister_of_peace",
@@ -29,10 +30,10 @@ const choice = (
   options: PendingChoiceDto["options"] = [
     { id: "FOR", label: "FOR", kind: "vote", payload: { current_votes: 3 } },
     { id: "AGAINST", label: "AGAINST", kind: "vote", payload: { current_votes: 1 } },
-    { id: "decline", label: "Abstain", kind: "decline" },
+    { id: "decline", label: "Abstain", kind: "decline", payload: {} },
   ],
 ): PendingChoiceDto =>
-  ({ nonce: "n", actor, prompt: "p", context: { subtype }, options, ...extra }) as PendingChoiceDto;
+  ({ nonce: "n", actor, prompt: "p", context: partialContext({ subtype }), options, ...extra }) as PendingChoiceDto;
 
 const label = (seat: string) => (seat === "p1" ? "You" : seat === "p2" ? "Alice" : seat);
 const strip = (c: PendingChoiceDto | null, memory: AgendaMemory = EMPTY_AGENDA_MEMORY, extra = {}) =>
@@ -46,12 +47,12 @@ describe("agendaInfoFromChoice", () => {
   });
   it("reads the old fixture shape and a reaction trigger's agenda id", () => {
     const fixture = choice("cast_vote", "p1", {
-      context: { subtype: "cast_vote", details: { agenda_card: { name: "Sling Relay", yes_outcome: "Y", no_outcome: "N" } } },
+      details: { agenda_card: { name: "Sling Relay", yes_outcome: "Y", no_outcome: "N" } },
     });
     expect(agendaInfoFromChoice(fixture)?.name).toBe("Sling Relay");
     expect(agendaInfoFromChoice(fixture)?.text).toEqual(["For: Y", "Against: N"]);
     const reaction = choice("reaction_when_AGENDA_REVEALED", "p1", {
-      context: { subtype: "reaction_when_AGENDA_REVEALED", trigger: { kind: "agenda_revealed", event_type: "X", event_id: 1, relation: "when", agenda: "minister_of_peace" } },
+      context: partialContext({ subtype: "reaction_when_AGENDA_REVEALED", trigger: { kind: "agenda_revealed", event_type: "X", event_id: 1, relation: "when", agenda: "minister_of_peace" } }),
     });
     expect(agendaInfoFromChoice(reaction)?.name).toBe("Minister of Peace");
   });
@@ -68,8 +69,8 @@ describe("agendaInfoFromChoice", () => {
 describe("the strip in each agenda sub-state", () => {
   it("reveal and reactions (riders, when/after cards): the trigger names the agenda", () => {
     const reaction = choice("reaction_when_AGENDA_REVEALED", "p1", {
-      context: { subtype: "reaction_when_AGENDA_REVEALED", trigger: { kind: "agenda_revealed", event_type: "X", event_id: 1, relation: "when", agenda: "minister_of_peace" } },
-      options: [{ id: "decline", label: "Pass", kind: "decline" }],
+      context: partialContext({ subtype: "reaction_when_AGENDA_REVEALED", trigger: { kind: "agenda_revealed", event_type: "X", event_id: 1, relation: "when", agenda: "minister_of_peace" } }),
+      options: [{ id: "decline", label: "Pass", kind: "decline", payload: {} }],
     });
     expect(isAgendaDecision(reaction)).toBe(true);
     const memory = advanceAgendaMemory(EMPTY_AGENDA_MEMORY, { phase: "agenda", round: 3, info: agendaInfoFromChoice(reaction), decision: true });
@@ -106,8 +107,8 @@ describe("the strip in each agenda sub-state", () => {
     const vote = choice("cast_vote", "p2", { details: { agenda: PEACE } });
     const memory = advanceAgendaMemory(EMPTY_AGENDA_MEMORY, { phase: "agenda", round: 3, info: agendaInfoFromChoice(vote) });
     const predict = choice("predict_agenda_outcome", "p1", {}, [
-      { id: "FOR", label: "predict FOR", kind: "prediction" },
-      { id: "AGAINST", label: "predict AGAINST", kind: "prediction" },
+      { id: "FOR", label: "predict FOR", kind: "prediction", payload: {} },
+      { id: "AGAINST", label: "predict AGAINST", kind: "prediction", payload: {} },
     ]);
     const s = strip(predict, memory)!;
     expect(agendaStripText(s)).toBe("Agenda 1/2: Minister of Peace · For/Against · Your prediction");
@@ -122,8 +123,8 @@ describe("the strip in each agenda sub-state", () => {
 
   it("the speaker's tie-break names the speaker, not the actor field alone", () => {
     const c = choice("vote_tiebreak", "p2", { details: { agenda: PEACE } }, [
-      { id: "FOR", label: "FOR", kind: "tiebreak" },
-      { id: "AGAINST", label: "AGAINST", kind: "tiebreak" },
+      { id: "FOR", label: "FOR", kind: "tiebreak", payload: {} },
+      { id: "AGAINST", label: "AGAINST", kind: "tiebreak", payload: {} },
     ]);
     const s = strip(c)!;
     expect(s.whose?.text).toBe("Alice breaks the tie");
@@ -135,7 +136,7 @@ describe("the strip in each agenda sub-state", () => {
     const c = choice("cast_vote", "p1", { details: { agenda: COMMERCE } }, [
       { id: "p1", label: "p1", kind: "vote", payload: { current_votes: 0 } },
       { id: "p2", label: "p2", kind: "vote", payload: { current_votes: 2 } },
-      { id: "decline", label: "Abstain", kind: "decline" },
+      { id: "decline", label: "Abstain", kind: "decline", payload: {} },
     ]);
     const s = strip(c)!;
     expect(s.kind).toBe("elect");

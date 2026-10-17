@@ -1,4 +1,4 @@
-import type { ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import type { ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 
 /** A faction ability offered for a price: the card as printed, what it costs, and the two answers. */
 export interface AbilityOfferView {
@@ -9,11 +9,22 @@ export interface AbilityOfferView {
   effect: string | null;
   tradeGoods: number;
   held: number;
-  yes: ChoiceOptionDto;
-  no: ChoiceOptionDto;
+  yes: ChoiceOption;
+  /** A second way to say yes (Munitions Reserves: pick the dice to re-roll one by one). */
+  alternative: ChoiceOption | null;
+  no: ChoiceOption;
+  /** The dice just rolled, when the ability acts on them (Munitions Reserves after the roll). */
+  dice: AbilityOfferDie[];
 }
 
-const isNo = (option: ChoiceOptionDto) =>
+export interface AbilityOfferDie {
+  unit: string;
+  face: number;
+  hitsOn: number | null;
+  hit: boolean | null;
+}
+
+const isNo = (option: ChoiceOption) =>
   option.kind === "decline" || option.id === "decline" || option.id === "no";
 
 const text = (value: unknown): string | null =>
@@ -38,8 +49,32 @@ export function describeAbilityOffer(
   const held = count(cost?.have);
   const no = choice.options.find(isNo);
   const yes = choice.options.find((option) => option !== no);
-  if (!name || tradeGoods === null || held === null || !no || !yes || choice.options.length !== 2) {
+  const alternative = choice.options.find((option) => option !== no && option !== yes) ?? null;
+  if (
+    !name ||
+    tradeGoods === null ||
+    held === null ||
+    !no ||
+    !yes ||
+    choice.options.length !== (alternative ? 3 : 2)
+  ) {
     return null;
+  }
+  const dice: AbilityOfferDie[] = [];
+  if (Array.isArray(details.dice)) {
+    for (const entry of details.dice) {
+      const record = (entry ?? {}) as Record<string, unknown>;
+      const face = typeof record.face === "number" ? record.face : null;
+      if (face === null) continue;
+      const bonus = typeof record.bonus === "number" ? record.bonus : 0;
+      const hitsOn = typeof record.hits_on === "number" ? record.hits_on : null;
+      dice.push({
+        unit: typeof record.unit === "string" ? record.unit : "",
+        face,
+        hitsOn,
+        hit: hitsOn === null ? null : face + bonus >= hitsOn,
+      });
+    }
   }
   return {
     name,
@@ -48,12 +83,16 @@ export function describeAbilityOffer(
     tradeGoods,
     held,
     yes,
+    alternative,
     no,
+    dice,
   };
 }
 
 /** "Spend 2 trade goods (5 → 3) to use Munitions Reserves". */
 export function abilityOfferLabel(view: AbilityOfferView): string {
   const unit = view.tradeGoods === 1 ? "trade good" : "trade goods";
-  return `Spend ${view.tradeGoods} ${unit} (${view.held} → ${view.held - view.tradeGoods}) to use ${view.name}`;
+  const price = `Spend ${view.tradeGoods} ${unit} (${view.held} → ${view.held - view.tradeGoods})`;
+  // With the dice in view the button says what it does to them ("reroll all 2 missed dice").
+  return view.dice.length > 0 ? `${price}: ${view.yes.label}` : `${price} to use ${view.name}`;
 }

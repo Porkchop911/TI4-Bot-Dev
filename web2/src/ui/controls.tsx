@@ -4,6 +4,8 @@ import { Icon, type IconName } from "./Icon";
 
 export interface CounterProps {
   value: number;
+  /** The least value. 0 when it is not given. */
+  min?: number;
   max: number;
   /** Names the thing counted, for assistive technology: "Carrier from Jord". */
   label: string;
@@ -12,7 +14,7 @@ export interface CounterProps {
   onChange: (value: number) => void;
 }
 
-export function Counter({ value, max, label, shown = value, onChange }: CounterProps) {
+export function Counter({ value, min = 0, max, label, shown = value, onChange }: CounterProps) {
   const button =
     "size-7 text-lg text-muted enabled:hover:bg-raised enabled:hover:text-text disabled:opacity-30 touch:size-10";
   return (
@@ -21,7 +23,7 @@ export function Counter({ value, max, label, shown = value, onChange }: CounterP
         type="button"
         className={button}
         aria-label={`Remove ${label}`}
-        disabled={value <= 0}
+        disabled={value <= min}
         onClick={() => onChange(value - 1)}
       >
         −

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isGone, joinLobby, lobbyPath, lobbyPost } from "@ti4/shared/net/api.ts";
 import { decodeJoinResponse, decodeLobby } from "../protocol/decode.ts";
 import { InProcessBotKind, LobbyDto, MapChoice } from "../protocol/types.ts";
 import { rememberNickname, validNickname } from "../protocol/nickname.ts";
@@ -24,7 +25,6 @@ export interface LobbySessionState {
   chooseMap: (choice: MapChoice, startPreset?: string) => Promise<void>;
   join: (nickname: string, playerId?: string) => Promise<string | undefined>;
   leave: () => Promise<boolean>;
-  addBot: (password: string, nickname?: string, temperature?: number) => Promise<boolean>;
   removeBot: (playerId: string) => Promise<boolean>;
   /** Host only, before Start: seat random bots (no password). `fill` takes every open seat. */
   addRandomBots: (options?: {
@@ -55,10 +55,9 @@ export function useLobbySession(gameId: string, playerSession?: string): LobbySe
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const pending = useRef(false);
   const revision = useRef(0);
-  const base = `/api/games/${encodeURIComponent(gameId)}/lobby`;
-  const headers: Record<string, string> = playerSession
-    ? { "x-ti4-player-session": playerSession }
-    : {};
+  /** A call of the lobby as the player of this page. */
+  const post = (route: string, body?: object) =>
+    lobbyPost(gameId, route, body, { session: playerSession });
 
   useEffect(() => {
     let active = true;
@@ -78,18 +77,10 @@ export function useLobbySession(gameId: string, playerSession?: string): LobbySe
       try {
         // The public lobby intentionally has no viewer field. Reconnect explicitly to
         // obtain the authenticated identity; spectators only make a read-only GET.
-        const response = await fetch(
-          playerSession ? `${base}/join` : base,
-          playerSession
-            ? {
-                method: "POST",
-                headers: { "Content-Type": "application/json", ...headers },
-                body: JSON.stringify({ kind: "new" }),
-                signal: controller.signal,
-              }
-            : { signal: controller.signal },
-        );
-        if (response.status === 404 && active && mine === generation && !pending.current) setGone(true);
+        const response = await (playerSession
+          ? joinLobby(gameId, { kind: "new" }, { session: playerSession, signal: controller.signal })
+          : fetch(lobbyPath(gameId), { signal: controller.signal }));
+        if (isGone(response) && active && mine === generation && !pending.current) setGone(true);
         if (!response.ok) {
           if (
             response.status === 403 &&
@@ -170,11 +161,7 @@ export function useLobbySession(gameId: string, playerSession?: string): LobbySe
       run(
         path,
         async () => {
-          const response = await fetch(`${base}/${path}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", ...headers },
-            body: body ? JSON.stringify(body) : undefined,
-          });
+          const response = await post(path, body);
           if (!response.ok) {
             throw new Error(`Lobby ${path} failed (${response.status}): ${await response.text()}`);
           }
@@ -183,7 +170,7 @@ export function useLobbySession(gameId: string, playerSession?: string): LobbySe
         },
         undefined,
       ),
-    [base, gameId, playerSession, run],
+    [gameId, playerSession, run],
   );
 
   const join = useCallback(
@@ -195,15 +182,12 @@ export function useLobbySession(gameId: string, playerSession?: string): LobbySe
             throw new Error(
               "Nickname must be 1–64 UTF-8 bytes, trimmed, without control or format characters.",
             );
-          const response = await fetch(`${base}/join`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(
-              takeoverId
-                ? { kind: "takeover", player_id: takeoverId, nickname }
-                : { kind: "new", nickname },
-            ),
-          });
+          const response = await joinLobby(
+            gameId,
+            takeoverId
+              ? { kind: "takeover", player_id: takeoverId, nickname }
+              : { kind: "new", nickname },
+          );
           if (!response.ok)
             throw new Error(`Join failed (${response.status}): ${await response.text()}`);
           const joined = decodeJoinResponse(await response.json(), gameId);
@@ -216,7 +200,7 @@ export function useLobbySession(gameId: string, playerSession?: string): LobbySe
         },
         undefined,
       ),
-    [base, gameId, run],
+    [gameId, run],
   );
 
   const leave = useCallback(async (): Promise<boolean> => {
@@ -224,7 +208,7 @@ export function useLobbySession(gameId: string, playerSession?: string): LobbySe
     return run(
       "leave",
       async () => {
-        const response = await fetch(`${base}/leave`, { method: "POST", headers });
+        const response = await post("leave");
         if (!response.ok)
           throw new Error(`Leave lobby failed (${response.status}): ${await response.text()}`);
         // Validate the successful server response before removing the only local credential.
@@ -234,33 +218,7 @@ export function useLobbySession(gameId: string, playerSession?: string): LobbySe
       },
       false,
     );
-  }, [base, gameId, playerSession, run]);
-
-  const addBot = useCallback(
-    async (password: string, nickname?: string, temperature?: number): Promise<boolean> => {
-      if (!playerSession) return false;
-      return run(
-        "add_bot",
-        async () => {
-          const response = await fetch(`${base}/add-bot`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", ...headers },
-            body: JSON.stringify({ password, nickname: nickname || undefined, temperature }),
-          });
-          if (!response.ok) {
-            const msg = await response.text();
-            throw new Error(`Add bot failed (${response.status}): ${msg}`);
-          }
-          const updated = decodeLobby(await response.json(), gameId);
-          setLobby(updated);
-          setError(null);
-          return true;
-        },
-        false,
-      );
-    },
-    [base, gameId, headers, playerSession, run],
-  );
+  }, [gameId, playerSession, run]);
 
   const addRandomBots = useCallback(
     async (
@@ -276,16 +234,12 @@ export function useLobbySession(gameId: string, playerSession?: string): LobbySe
       return run(
         "add_random_bots",
         async () => {
-          const response = await fetch(`${base}/bots`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", ...headers },
-            body: JSON.stringify({
-              kind: options.kind ?? "random",
-              ...(options.fill ? { fill: true } : {}),
-              ...(options.count !== undefined && !options.fill ? { count: options.count } : {}),
-              ...(options.nickname ? { nickname: options.nickname } : {}),
-              ...(options.faction ? { faction: options.faction } : {}),
-            }),
+          const response = await post("bots", {
+            kind: options.kind ?? "random",
+            ...(options.fill ? { fill: true } : {}),
+            ...(options.count !== undefined && !options.fill ? { count: options.count } : {}),
+            ...(options.nickname ? { nickname: options.nickname } : {}),
+            ...(options.faction ? { faction: options.faction } : {}),
           });
           if (!response.ok) {
             const msg = await response.text();
@@ -299,7 +253,7 @@ export function useLobbySession(gameId: string, playerSession?: string): LobbySe
         false,
       );
     },
-    [base, gameId, headers, playerSession, run],
+    [gameId, playerSession, run],
   );
 
   const setSeatFaction = useCallback(
@@ -308,11 +262,7 @@ export function useLobbySession(gameId: string, playerSession?: string): LobbySe
       return run(
         "seat_faction",
         async () => {
-          const response = await fetch(`${base}/seat-faction`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", ...headers },
-            body: JSON.stringify({ player_id: targetPlayerId, faction }),
-          });
+          const response = await post("seat-faction", { player_id: targetPlayerId, faction });
           if (!response.ok) {
             const msg = await response.text();
             throw new Error(`Choose faction failed (${response.status}): ${msg}`);
@@ -325,7 +275,7 @@ export function useLobbySession(gameId: string, playerSession?: string): LobbySe
         false,
       );
     },
-    [base, gameId, headers, playerSession, run],
+    [gameId, playerSession, run],
   );
 
   const removeBot = useCallback(
@@ -334,11 +284,7 @@ export function useLobbySession(gameId: string, playerSession?: string): LobbySe
       return run(
         "remove_bot",
         async () => {
-          const response = await fetch(`${base}/remove-bot`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", ...headers },
-            body: JSON.stringify({ player_id: targetPlayerId }),
-          });
+          const response = await post("remove-bot", { player_id: targetPlayerId });
           if (!response.ok) {
             const msg = await response.text();
             throw new Error(`Remove bot failed (${response.status}): ${msg}`);
@@ -351,7 +297,7 @@ export function useLobbySession(gameId: string, playerSession?: string): LobbySe
         false,
       );
     },
-    [base, gameId, headers, playerSession, run],
+    [gameId, playerSession, run],
   );
 
   return {
@@ -374,7 +320,6 @@ export function useLobbySession(gameId: string, playerSession?: string): LobbySe
       mutate("map", startPreset === undefined ? { map } : { map, start_preset: startPreset }),
     join,
     leave,
-    addBot,
     removeBot,
     addRandomBots,
     setSeatFaction,

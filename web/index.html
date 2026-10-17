@@ -16,21 +16,6 @@
     "
   >
     <div id="root"></div>
-    <script>
-      (() => {
-        const match = /^\/games\/([^/]+)$/.exec(window.location.pathname);
-        const params = new URLSearchParams(window.location.hash.slice(1));
-        const token = params.get("token");
-        if (!match || !params.get("seat") || !token) return;
-        try {
-          const gameId = decodeURIComponent(match[1]);
-          sessionStorage.setItem(`ti4.viewer.v1:${gameId}`, token);
-          history.replaceState({}, "", `/games/${encodeURIComponent(gameId)}`);
-        } catch {
-          // Leave malformed paths untouched for the application router to reject.
-        }
-      })();
-    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

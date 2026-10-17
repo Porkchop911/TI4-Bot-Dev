@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeReactionModes, decodeServerMessage } from "./decode.ts";
+import { decodeReactionModes, decodeServerMessage } from "@ti4/shared/wire/decode.ts";
 import { PROTOCOL_VERSION, StateUpdateMsg, InitialSnapshotMsg } from "./types.ts";
 
 const base = {

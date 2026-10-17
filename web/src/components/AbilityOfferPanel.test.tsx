@@ -10,8 +10,8 @@ const munitions = (have = 5): PendingChoiceDto => ({
   prompt: "spend 2 trade goods for Munitions Reserves",
   context: { subtype: "munitions_reserves_reroll" } as never,
   options: [
-    { id: "munitions", kind: "ability", label: "reroll this round's misses" },
-    { id: "decline", kind: "decline", label: "decline" },
+    { id: "munitions", kind: "ability", label: "reroll this round's misses", payload: {} },
+    { id: "decline", kind: "decline", label: "decline", payload: {} },
   ],
   details: {
     kind: "ability_offer",
@@ -55,5 +55,34 @@ describe("ability offer", () => {
   it("cannot be bought without the goods", () => {
     render(<PendingChoiceModal choice={munitions(1)} onSubmit={vi.fn()} />);
     expect(screen.getByTestId("ability-offer-yes-btn")).toBeDisabled();
+  });
+
+  it("after the roll it shows the dice and offers all misses or a pick", () => {
+    const afterRoll: PendingChoiceDto = {
+      ...munitions(),
+      options: [
+        { id: "munitions", kind: "ability", label: "reroll all 2 missed dice", payload: {} },
+        { id: "munitions_choose", kind: "ability", label: "choose which dice to reroll", payload: {} },
+        { id: "decline", kind: "decline", label: "decline", payload: {} },
+      ],
+      details: {
+        ...munitions().details,
+        dice: [
+          { unit: "cruiser", unit_index: 0, die: 0, face: 3, bonus: 0, hits_on: 7, rerolled: false },
+          { unit: "cruiser", unit_index: 0, die: 1, face: 9, bonus: 0, hits_on: 7, rerolled: false },
+          { unit: "cruiser", unit_index: 0, die: 2, face: 1, bonus: 0, hits_on: 7, rerolled: false },
+        ],
+        misses: 2,
+      },
+    };
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<PendingChoiceModal choice={afterRoll} onSubmit={onSubmit} />);
+    expect(screen.getAllByTestId("ability-offer-die-miss")).toHaveLength(2);
+    expect(screen.getAllByTestId("ability-offer-die-hit")).toHaveLength(1);
+    expect(screen.getByTestId("ability-offer-yes-btn")).toHaveTextContent(
+      "Spend 2 trade goods (5 → 3): reroll all 2 missed dice",
+    );
+    fireEvent.click(screen.getByTestId("ability-offer-alt-btn"));
+    expect(onSubmit).toHaveBeenCalledWith("munitions_choose");
   });
 });

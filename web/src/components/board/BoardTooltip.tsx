@@ -15,6 +15,7 @@ import { TechBenefitsTooltipSection } from "./TechBenefitsOverlay.tsx";
 import { UnitStatLine } from "../UnitInfo.tsx";
 import { getUnitDisplayName } from "../UnitIcon.tsx";
 import { describeAnomaly } from "../../presentation/anomalyRules.ts";
+import type { PlanetBoost } from "../../presentation/planetValues.ts";
 import { PlanetValuePair } from "../PlanetValueIcons.tsx";
 
 export interface HoveredTileInfo {
@@ -22,7 +23,7 @@ export interface HoveredTileInfo {
   label: string;
   anomalies?: string[];
   wormholes?: string[];
-  planets: { label: string; resources?: number; influence?: number; owner?: string | null }[];
+  planets: { label: string; resources?: number; influence?: number; boosts?: PlanetBoost[]; owner?: string | null }[];
   unitsCount: number;
   tokensCount: number;
 }
@@ -105,7 +106,7 @@ export const BoardTooltip: React.FC<BoardTooltipProps> = ({
               {p.resources !== undefined && p.influence !== undefined && (
                 <>
                   {" "}
-                  <PlanetValuePair resources={p.resources} influence={p.influence} size="tooltip" />
+                  <PlanetValuePair resources={p.resources} influence={p.influence} boosts={p.boosts} size="tooltip" />
                 </>
               )}
               {p.owner && (

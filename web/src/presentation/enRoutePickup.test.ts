@@ -20,7 +20,7 @@ const board = (): BoardView => ({
   map_tiles: [tile("24", 0, 0), tile("30", 1, 0), tile("18", 2, 0), tile("31", 1, -1)],
   systems: {
     "24": sys("24"),
-    "30": sys("30", [{ owner: "p1", unit_type: "infantry", planet: "mid", damaged: false }]),
+    "30": sys("30", [{ owner: "p1", unit_type: "infantry", planet: "mid", damaged: false, galvanized: false }]),
     "18": sys("18"),
     "31": sys("31"),
   },
@@ -39,7 +39,7 @@ describe("predictRouteBetween", () => {
 
   it("goes around a system that holds another player's ships", () => {
     const b = board();
-    b.systems["30"].units.push({ owner: "p2", unit_type: "cruiser", damaged: false });
+    b.systems["30"].units.push({ owner: "p2", unit_type: "cruiser", damaged: false, planet: null, galvanized: false });
     // (0,0) -> 31 (1,-1) -> needs (2,-1) to reach (2,0): no route yet
     expect(predictRouteBetween(b, "24", "18", "p1")).toEqual([]);
     b.map_tiles!.push(tile("32", 2, -1));

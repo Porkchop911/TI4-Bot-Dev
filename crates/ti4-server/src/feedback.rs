@@ -98,9 +98,10 @@ pub fn validate(request: &FeedbackRequest) -> Result<(), String> {
 }
 
 /// Checks `context.local`, what an offline game attaches so the position can be replayed:
-/// `{ seed, setup, answers, engine: { build, content_digest }, wasm_sha256, save }`, where `save`
-/// is the host's save object (`seed`, `setup`, `answers`, `redo`, `never`, `event_times`,
-/// `event_versions`, `generation`, `version`, `decisions`, `decisions_hash`; other keys are kept).
+/// `{ seed, answers, engine: { build, content_digest }, wasm_sha256, save }`, where `save` is the
+/// host's save object, format 2 (`seed`, `game`, `decisions`, `answers`, `redo`, `never`,
+/// `event_times`, `event_versions`, `generation`, `version`, `decisions_hash`; other keys are
+/// kept).
 fn validate_local(local: &Value) -> Result<(), String> {
     const BAD: &str = "context.local is malformed";
     let bad = |what: &str| Err(format!("{BAD}: {what}"));
@@ -117,9 +118,6 @@ fn validate_local(local: &Value) -> Result<(), String> {
     let Some(seed) = object.get("seed").and_then(Value::as_u64) else {
         return bad("seed");
     };
-    if !object.get("setup").is_some_and(Value::is_object) {
-        return bad("setup");
-    }
     let ids = |v: Option<&Value>, name: &str| -> Result<Vec<String>, String> {
         let Some(array) = v.and_then(Value::as_array) else {
             return Err(format!("{BAD}: {name}"));
@@ -151,13 +149,16 @@ fn validate_local(local: &Value) -> Result<(), String> {
     if save.get("seed").and_then(Value::as_u64) != Some(seed) {
         return bad("save.seed differs from seed");
     }
-    if !save.get("setup").is_some_and(Value::is_object) {
-        return bad("save.setup");
+    if save.get("format").and_then(Value::as_u64) != Some(2) {
+        return bad("save.format");
+    }
+    if !save.get("game").is_some_and(Value::is_object) {
+        return bad("save.game");
     }
     if ids(save.get("answers"), "save.answers")? != answers {
         return bad("save.answers differ from answers");
     }
-    for key in ["redo", "never"] {
+    for key in ["decisions", "redo", "never"] {
         if let Some(v) = save.get(key) {
             ids(Some(v), &format!("save.{key}"))?;
         }
@@ -171,9 +172,6 @@ fn validate_local(local: &Value) -> Result<(), String> {
         if save.get(key).is_some_and(|v| !v.is_u64()) {
             return bad(&format!("save.{key}"));
         }
-    }
-    if save.get("decisions").and_then(Value::as_u64).is_none() {
-        return bad("save.decisions");
     }
     if !short(save.get("decisions_hash"), 64) {
         return bad("save.decisions_hash");
@@ -206,7 +204,10 @@ pub fn local_summary(record: &StoredFeedback) -> Option<LocalSummary> {
             .pointer("/engine/build")
             .and_then(Value::as_str)
             .map_or_else(|| "?".to_owned(), clean),
-        decisions: local.pointer("/save/decisions").and_then(Value::as_u64),
+        decisions: local
+            .pointer("/save/decisions")
+            .and_then(Value::as_array)
+            .map(|decisions| decisions.len() as u64),
         answers: local
             .get("answers")
             .and_then(Value::as_array)
@@ -467,7 +468,7 @@ pub fn render(record: &StoredFeedback, verbose: bool) -> String {
         // The save blob is large; `feedback-save` extracts it.
         let mut shown = ctx.clone();
         if let Some(local) = shown.get_mut("local").and_then(Value::as_object_mut) {
-            for key in ["save", "answers", "setup"] {
+            for key in ["save", "answers"] {
                 if let Some(v) = local.get_mut(key) {
                     *v = Value::String(format!("<{} bytes, omitted>", v.to_string().len()));
                 }
@@ -559,16 +560,17 @@ mod tests {
 
     fn local(answers: usize) -> Value {
         let ids: Vec<String> = (0..answers).map(|i| format!("opt{i}")).collect();
+        let decisions: Vec<String> = (0..12).map(|i| format!("opt{i}")).collect();
         serde_json::json!({
             "seed": 7,
-            "setup": { "seed": 7, "players": 4 },
             "answers": ids,
             "engine": { "build": "abc123", "content_digest": "d1" },
             "wasm_sha256": "f00d",
             "save": {
-                "seed": 7, "setup": { "seed": 7, "players": 4 }, "answers": ids, "redo": [],
-                "never": [], "event_times": ["10:00:00"], "event_versions": [1],
-                "generation": 0, "version": 5, "decisions": 12, "decisions_hash": "00ff00ff00ff00ff"
+                "format": 2, "seed": 7, "game": { "setup": { "seed": 7, "players": 4 } },
+                "decisions": decisions, "answers": ids, "redo": [], "never": [],
+                "event_times": ["10:00:00"], "event_versions": [1],
+                "generation": 0, "version": 5, "decisions_hash": "00ff00ff00ff00ff"
             }
         })
     }
@@ -749,6 +751,8 @@ mod tests {
         assert!(with(&|l| l["save"]["answers"] = serde_json::json!(["x"])).is_err());
         assert!(with(&|l| l["engine"]["build"] = "".into()).is_err());
         assert!(with(&|l| l["save"]["decisions_hash"] = 5.into()).is_err());
+        assert!(with(&|l| l["save"]["format"] = 1.into()).is_err());
+        assert!(with(&|l| l["save"]["decisions"] = 12.into()).is_err());
         assert!(with(&|l| l["answers"] = serde_json::json!([1])).is_err());
     }
 

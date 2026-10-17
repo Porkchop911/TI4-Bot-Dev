@@ -1,4 +1,3 @@
-
 # web2: the odds of a space combat in the movement, and the details of a system on every click
 
 Status: built, 2026-10-14. Phases 1 to 4 are built.
@@ -62,6 +61,7 @@ The odds are computed in the page, through a stateless export of the engine. The
 5. **`AGENTS.md`, Board section:** add the rule of decision 3.
 
 Tests:
+
 - `e2e/local.spec.ts` and `e2e/local.phone.spec.ts`:
   - a click in the activation shows "Close system details" with the planets;
   - an origin in the movement shows its planets;

@@ -71,6 +71,17 @@ export const Popover: React.FC<PopoverProps> = ({
       const trigger = triggerRef.current?.getBoundingClientRect();
       const card = popoverRef.current?.getBoundingClientRect();
       if (!trigger || !card) return;
+      // The trigger scrolled out of view (a hover or focus card of a chip in a scrolling panel): the
+      // card would be clamped to the screen edge, away from what it explains, and could cover the
+      // panel's own controls (a phone's invasion overlay: the card sat over "Fight next round").
+      // Close it instead; focus stays where it is.
+      if (
+        (trigger.width > 0 || trigger.height > 0) &&
+        (trigger.bottom <= 0 || trigger.top >= window.innerHeight)
+      ) {
+        setIsOpen(false);
+        return;
+      }
       const margin = 8;
       const roomBelow = window.innerHeight - trigger.bottom - margin;
       const roomAbove = trigger.top - margin;

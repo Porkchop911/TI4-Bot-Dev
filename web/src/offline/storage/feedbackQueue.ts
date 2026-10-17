@@ -1,7 +1,7 @@
 /**
  * Durable store-and-forward queue for feedback written during offline games. Implements
  * `OfflineFeedbackQueue` of ../types.ts (what T2's `useFeedbackQueue` reads) on top of the
- * store's `feedbackBackend`.
+ * shared save store's `feedbackBackend` (object store `feedback` of `ti4-offline`).
  *
  * - Durable: every state change is written before the next step; a crash while "sending" reverts
  *   to "queued" on the next start.
@@ -14,17 +14,48 @@
  * - Never blocks the game: `enqueue` only touches local storage; sending is in the background.
  */
 import { feedbackRequestBody, newReportId } from "../feedbackRoute.ts";
-import type { QueuedFeedbackItem, QueuedFeedbackReport } from "../types.ts";
-import {
-  type DurableFeedbackQueue,
-  type FeedbackBackend,
-  type FeedbackPayload,
-  type FeedbackSendResult,
-  type FeedbackSender,
-  LIMITS,
-  StoreError,
-  type StoredFeedbackItem,
-} from "./types.ts";
+import type { OfflineFeedbackQueue, QueuedFeedbackItem, QueuedFeedbackReport } from "../types.ts";
+import { type FeedbackBackend, StoreError } from "@ti4/shared/storage/index.ts";
+
+/** Mirrors the server (`MAX_TEXT_CHARS`, `MAX_CONTEXT_BYTES`), and how many reports may wait. */
+export const FEEDBACK_LIMITS = {
+  maxFeedbackTextChars: 4000,
+  maxFeedbackPayloadBytes: 200 * 1024,
+  maxFeedbackItems: 50,
+} as const;
+
+/** A queue item plus the retry state the UI type does not show. */
+export interface StoredFeedbackItem extends QueuedFeedbackItem {
+  /** Idempotency key: sent with every attempt; the same report is never created twice. */
+  reportId: string;
+  /** Not before this time (ms since epoch). */
+  nextAttemptAt: number;
+  lastError?: string;
+  lastAttemptAt?: number;
+}
+
+export type FeedbackSendResult =
+  | { ok: true; serverId: string }
+  | { ok: false; retryable: boolean; message: string };
+
+export type FeedbackSender = (payload: FeedbackPayload) => Promise<FeedbackSendResult>;
+
+/** What the sender gets. `reportId` goes with every attempt of the same report. */
+export interface FeedbackPayload {
+  reportId: string;
+  category: QueuedFeedbackItem["report"]["category"];
+  text: string;
+  context: Record<string, unknown>;
+  local?: QueuedFeedbackItem["report"]["local"];
+}
+
+export interface DurableFeedbackQueue extends OfflineFeedbackQueue {
+  /** Loads the stored items; call once before use. */
+  start(): Promise<void>;
+  /** Tries every due item now (also called on `online` and by the timer). */
+  flush(): Promise<void>;
+  dispose(): void;
+}
 
 export interface FeedbackQueueOptions {
   backend: FeedbackBackend;
@@ -169,7 +200,7 @@ export function createDurableFeedbackQueue(opts: FeedbackQueueOptions): DurableF
         if (existing) return toPublic(existing);
       }
       checkReport(report);
-      if (items.filter((i) => i.state !== "sent").length >= LIMITS.maxFeedbackItems) {
+      if (items.filter((i) => i.state !== "sent").length >= FEEDBACK_LIMITS.maxFeedbackItems) {
         throw new StoreError("too-many-games", "Too many feedback reports are waiting to be sent.");
       }
       const item: StoredFeedbackItem = {
@@ -220,9 +251,9 @@ function checkReport(r: QueuedFeedbackReport) {
   const bad = (m: string) => new StoreError("invalid", m);
   if (!["bug", "confusing", "idea", "other"].includes(r.category)) throw bad("category");
   if (typeof r.text !== "string" || r.text.trim() === "") throw bad("The report is empty.");
-  if ([...r.text].length > LIMITS.maxFeedbackTextChars) throw bad("The report text is too long.");
+  if ([...r.text].length > FEEDBACK_LIMITS.maxFeedbackTextChars) throw bad("The report text is too long.");
   const bytes = new TextEncoder().encode(JSON.stringify({ c: r.context, l: r.local })).length;
-  if (bytes > LIMITS.maxFeedbackPayloadBytes) throw new StoreError("too-large", "The report is too large.");
+  if (bytes > FEEDBACK_LIMITS.maxFeedbackPayloadBytes) throw new StoreError("too-large", "The report is too large.");
 }
 
 function isStoredItem(v: unknown): v is StoredFeedbackItem {

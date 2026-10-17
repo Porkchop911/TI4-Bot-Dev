@@ -57,7 +57,7 @@ export function agendaInfoFromChoice(
   choice: Pick<PendingChoiceDto, "context" | "details"> | null | undefined,
 ): AgendaInfo | null {
   if (!choice) return null;
-  const printed = record(choice.details?.agenda) ?? record(choice.context?.details?.agenda);
+  const printed = record(choice.details?.agenda);
   if (printed) {
     const id = str(printed.id);
     const name = str(printed.name) ?? (id ? agendaNameFromId(id) : null);
@@ -71,7 +71,7 @@ export function agendaInfoFromChoice(
       };
     }
   }
-  const card = record(choice.context?.details?.agenda_card);
+  const card = record(choice.details?.agenda_card);
   if (card && str(card.name)) {
     return {
       id: null,
@@ -188,7 +188,7 @@ const roleOf = (subtype: string, choice: PendingChoiceDto): TurnRole => {
   if (VOTE_SUBTYPES.has(subtype)) return "vote";
   if (subtype === "vote_tiebreak") return "tiebreak";
   if (subtype === "predict_agenda_outcome") return "predict";
-  if (choice.context?.trigger || /^(play_)?reaction_/.test(subtype) || choice.context?.kind === "reaction") return "reaction";
+  if (choice.context?.trigger || /^(play_)?reaction_/.test(subtype)) return "reaction";
   return "other";
 };
 

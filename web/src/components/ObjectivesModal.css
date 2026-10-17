@@ -566,3 +566,147 @@
 .objectives-matrix__icon-blocked {
   font-weight: 800;
 }
+
+/* Imperial note: desktop shows the full text; the fold-away button only exists on phones. */
+.objectives-modal__outcome-toggle {
+  display: none;
+}
+
+/* Phones (same breakpoint as the other dialogs): a compact scoring window so the objectives and the
+   footer (Selected line, Decline, Confirm) get the screen. Desktop is unchanged. */
+@media (max-width: 720px), (max-height: 500px) {
+  .objectives-dialog .objectives-modal-panel {
+    width: calc(100vw - 16px);
+    height: calc(100dvh - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+
+  .objectives-modal__header--scoring {
+    flex-wrap: nowrap;
+    gap: 8px;
+    padding: 6px 10px 6px 12px;
+    min-height: 0;
+  }
+  .objectives-modal__header--scoring .objectives-modal__title-group {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  .objectives-modal__header--scoring .objectives-modal__title {
+    font-size: 16px;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .objectives-modal__header--scoring .objectives-modal__scoring-badge,
+  .objectives-modal__header--scoring .objectives-modal__subtitle {
+    display: none;
+  }
+  .objectives-modal__header--scoring .button {
+    flex: 0 0 auto;
+    padding: 4px 10px !important;
+    font-size: 12px;
+    min-height: 32px;
+  }
+
+  .objectives-modal__outcome {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 6px;
+    row-gap: 2px;
+    margin: 6px 10px 0;
+    padding: 5px 8px;
+    font-size: 13px;
+  }
+  .objectives-modal__outcome-tag-long {
+    display: none;
+  }
+  .objectives-modal__outcome-tag::after {
+    content: ":";
+  }
+  .objectives-modal__outcome strong {
+    font-size: 13px;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .objectives-modal__outcome-toggle {
+    display: inline-block;
+    flex: 0 0 auto;
+    padding: 0 6px;
+    min-height: 24px;
+    border: 1px solid rgba(56, 189, 248, 0.5);
+    border-radius: 999px;
+    background: transparent;
+    color: #38bdf8;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .objectives-modal__outcome-details {
+    display: none;
+    flex: 1 0 100%;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .objectives-modal__outcome[data-open="true"] .objectives-modal__outcome-details {
+    display: block;
+  }
+
+  .objectives-modal__scroll-body {
+    padding: 8px 8px 12px;
+  }
+
+  .objectives-modal__footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    padding: 8px 10px;
+  }
+  .objectives-modal__selection-summary {
+    font-size: 13px;
+    line-height: 1.3;
+  }
+  .objectives-modal__footer-actions {
+    gap: 8px;
+  }
+}
+
+/* Landscape phones: the footer is one row (Selected line left, buttons right). */
+@media (max-height: 500px) {
+  .objectives-modal__footer {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: nowrap;
+    padding: 6px 10px;
+  }
+  .objectives-modal__footer-left {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  .objectives-modal__footer-actions {
+    flex: 0 0 auto;
+  }
+  .objectives-dialog .objectives-modal-panel {
+    height: calc(100dvh - 8px);
+    max-height: calc(100dvh - 8px);
+  }
+}
+
+/* Phones: tighter table cells so more objective rows fit (scoring window and overview alike). */
+@media (max-width: 720px), (max-height: 500px) {
+  .objectives-dialog .objectives-modal-panel {
+    gap: 0;
+  }
+  .objectives-matrix th,
+  .objectives-matrix td {
+    padding: 8px 10px;
+  }
+  .objectives-matrix thead th {
+    padding: 5px 10px;
+  }
+  .objectives-matrix__stage-header-row td {
+    padding: 4px 10px;
+  }
+}

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { decodeServerMessage } from "./decode.ts";
+import { decodeServerMessage } from "@ti4/shared/wire/decode.ts";
 import { reduceServerMessage, type GameSessionState } from "./client.ts";
 
 /**
@@ -25,7 +25,7 @@ const blank: GameSessionState = {
   fatal: null,
   reconnecting: false,
   events: [],
-  history: { cursor: 0, redo_count: 0 },
+  history: { cursor: 0, redo_count: 0, generation: 0 },
 };
 
 describe.skipIf(!path)("a hosted game", () => {

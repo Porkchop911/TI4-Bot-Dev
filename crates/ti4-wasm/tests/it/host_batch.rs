@@ -140,3 +140,39 @@ fn slow_a_movement_plan_is_applied_whole_or_not_at_all() {
     let end = start(&setup(seed, 4), None);
     assert_eq!(end["end"]["left"], true, "{end}");
 }
+
+/// The offline host sends the engine's routes and loads (`tactical`) with the movement question,
+/// as the server does: the page stages pickups from them instead of guessing the route.
+#[test]
+fn slow_the_movement_question_carries_the_engine_route_facts() {
+    let _serial = crate::common::serial();
+    let seed = 6;
+    let seen = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let seen_in = seen.clone();
+    let page = Arc::new(Mutex::new(Page {
+        script: vec![
+            Act::Until(Box::new(movement_question)),
+            Act::Probe(Box::new(move |page| {
+                let question = last_question(&page.messages).clone();
+                let facts = &question["tactical"];
+                assert_eq!(facts["kind"], "movement", "{facts}");
+                assert_eq!(facts["active"], question["state"]["active_system"], "{facts}");
+                let ships = facts["ships"].as_array().expect("ships");
+                let mut moving = 0;
+                for ship in ships {
+                    let Some(route) = ship.get("move") else { continue };
+                    moving += 1;
+                    assert_eq!(route["path"].as_array().unwrap().last(), Some(&facts["active"]));
+                }
+                assert!(moving > 0, "no ship with a route: {facts}");
+                seen_in.store(true, std::sync::atomic::Ordering::Relaxed);
+            })),
+        ]
+        .into(),
+        ..Page::default()
+    }));
+    install(&page, seed, "a");
+    let end = start(&setup(seed, 4), None);
+    assert!(end["end"]["error"].is_null(), "{end}");
+    assert!(seen.load(std::sync::atomic::Ordering::Relaxed), "the question was seen");
+}

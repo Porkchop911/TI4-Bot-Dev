@@ -1,8 +1,8 @@
-import type { ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import type { ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import { humanizeId } from "../protocol/contentCatalog.ts";
 
 export interface ReplenishRow {
-  option: ChoiceOptionDto;
+  option: ChoiceOption;
   /** The seat that would be replenished (a raw seat id; resolve it with the player identity). */
   seat: string | null;
   name: string;
@@ -14,10 +14,10 @@ export interface ReplenishRow {
 
 export interface TradeReplenishView {
   rows: ReplenishRow[];
-  done: ChoiceOptionDto;
+  done: ChoiceOption;
 }
 
-const isDone = (option: ChoiceOptionDto) =>
+const isDone = (option: ChoiceOption) =>
   option.kind === "decline" || option.id === "done" || option.id === "decline";
 
 /**

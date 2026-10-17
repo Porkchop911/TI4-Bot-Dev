@@ -7,23 +7,26 @@ use ti4_model::id::PlayerId;
 use super::error::ErrorKind;
 use super::status::{PublicTurnStatus, RejectionReason, ViewerRole};
 use super::view::GameView;
+use crate::map::GalaxyLayout;
 pub use ti4_engine::choice::{Choice, ChoiceOption};
 use ti4_model::state::GameState;
 use ti4_model::state::Phase;
 use ti4_model::state::ReactionMode;
-use ti4_view::map::GalaxyLayout;
 
-pub use ti4_view::projection::PendingChoiceEnvelope;
+pub use crate::projection::PendingChoiceEnvelope;
 
 /// Initial per-viewer snapshot sent upon subscription or reconnection.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct InitialSnapshotMsg {
     pub protocol_version: u16,
     pub game_id: String,
     pub game_version: u64,
     pub viewer: ViewerRole,
     pub view: GameView,
+    /// The engine's `GameState`, passed through without a projection.
+    #[cfg_attr(feature = "ts", ts(type = "Record<string, unknown>"))]
     pub state: GameState,
     pub galaxy_layout: GalaxyLayout,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -40,50 +43,55 @@ pub struct InitialSnapshotMsg {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub reaction_modes: BTreeMap<String, ReactionMode>,
     /// What the viewer needs to stage the pending choice of a tactical action
-    /// ([`ti4_view::tactical`]). Only the seat that is asked has it.
+    /// ([`crate::view::tactical`]). Only the seat that is asked has it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tactical: Option<ti4_view::tactical::TacticalFacts>,
-    /// The exploration decks and the planets that are still explored ([`ti4_view::exploration`]).
+    pub tactical: Option<crate::view::tactical::TacticalFacts>,
+    /// The exploration decks and the planets that are still explored ([`crate::view::exploration`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub exploration: Option<ti4_view::exploration::ExplorationFacts>,
+    pub exploration: Option<crate::view::exploration::ExplorationFacts>,
     /// The action card deck, its discard pile and the hand limit of the viewer
-    /// ([`ti4_view::action_cards`]).
+    /// ([`crate::view::action_cards`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub action_cards: Option<ti4_view::action_cards::ActionCardFacts>,
+    pub action_cards: Option<crate::view::action_cards::ActionCardFacts>,
     /// The secret objective deck and what each seat has scored of it
-    /// ([`ti4_view::secret_objectives`]).
+    /// ([`crate::view::secret_objectives`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub secret_objectives: Option<ti4_view::secret_objectives::SecretObjectiveFacts>,
-    /// Where the victory points of every seat come from ([`ti4_view::score`]).
+    pub secret_objectives: Option<crate::view::secret_objectives::SecretObjectiveFacts>,
+    /// Where the victory points of every seat come from ([`crate::view::score`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub score: Option<ti4_view::score::ScoreFacts>,
-    /// The agenda deck ([`ti4_view::agendas`]).
+    pub score: Option<crate::view::score::ScoreFacts>,
+    /// The agenda deck ([`crate::view::agendas`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub agendas: Option<ti4_view::agendas::AgendaFacts>,
-    /// The strategic action that is resolved now ([`ti4_view::secondary`]).
+    pub agendas: Option<crate::view::agendas::AgendaFacts>,
+    /// The strategic action that is resolved now ([`crate::view::secondary`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub secondary: Option<ti4_view::secondary::SecondaryFacts>,
-    /// The reaction window that the viewer is asked in ([`ti4_view::reaction`]).
+    pub secondary: Option<crate::view::secondary::SecondaryFacts>,
+    /// The reaction window that the viewer is asked in ([`crate::view::reaction`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reaction: Option<ti4_view::reaction::ReactionFacts>,
+    pub reaction: Option<crate::view::reaction::ReactionFacts>,
+    /// The technology tree of the viewer, while it is asked to research
+    /// ([`crate::view::research`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub research: Option<crate::view::research::ResearchFacts>,
     /// Who sits in each seat: the name of its player and who plays it
     /// ([`crate::setup::SeatFact`]). Public; absent for a game with no table.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seats: Option<crate::setup::TableSeats>,
     /// The digest of the corpus that this server plays with
     /// ([`ti4_content::provenance::embedded_digest`]). A client that has the printed texts of
-    /// its own (`ti4_view::components::Catalog::content`) compares the two before it plays.
+    /// its own (`crate::view::components::Catalog::content`) compares the two before it plays.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub content: String,
     /// The steps of a movement, of the landings or of a production that the undo of the
     /// viewer took back, in order, for the page to stage them again. Told once, with the
     /// first snapshot of the seat after its undo.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub undone: Vec<ti4_view::planning::steps::PlanStep>,
+    pub undone: Vec<crate::planning::steps::PlanStep>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct CurrentLogPath {
     pub round: u32,
     pub phase: Phase,
@@ -122,6 +130,7 @@ pub fn current_log_path(
 /// Public cursor counts decisions, not engine steps or wall-clock events.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct HistoryStatus {
     pub cursor: usize,
     pub redo_count: usize,
@@ -161,6 +170,7 @@ impl InitialSnapshotMsg {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[serde(tag = "visibility", content = "seat", rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum EventVisibility {
     Public,
     Seat(PlayerId),
@@ -181,6 +191,7 @@ impl EventVisibility {
 /// Typed event payload. Visibility is never inferred from presentation text.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum GameEventKind {
     GameInitialized {
         round: u32,
@@ -202,6 +213,7 @@ pub enum GameEventKind {
 /// Authoritative, auditable event log entry recorded during game execution.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct GameEvent {
     pub id: String,
     pub timestamp: String,
@@ -255,6 +267,7 @@ pub struct GameEvent {
 /// public; see [`public_roll`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct PublicRoll {
     /// Position in the game's roll history. A restart replays the same rolls; this is how the
     /// replay is told apart from a new roll.
@@ -362,6 +375,7 @@ impl PublicRoll {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SeatDecisionDetail {
     pub seat: PlayerId,
     pub detail: String,
@@ -402,6 +416,7 @@ pub fn action_id_for(
 pub fn stage_for(subtype: &str) -> Option<&'static str> {
     Some(match subtype {
         "draft_strategy_card" => "draft",
+        "starting_technology" => "setup",
         "score_objective" | "score_secret_objective" => "scoring",
         "cast_vote" | "vote_exhaust_planet" | "vote_tiebreak" => "voting",
         "propose_transaction" | "answer_transaction" => "transactions",
@@ -471,6 +486,14 @@ fn public_choice_detail(
         "draft_strategy_card" if option.kind == "strategy_card" => {
             format!("{actor} picked {}", strategy_card_name(id)?)
         }
+        // Technology cards lie face up in the play area from the start: a public fact.
+        "starting_technology" if option.kind == "starting_technology" => format!(
+            "{actor} starts with {}",
+            ti4_engine::technology::name(
+                ti4_content::ContentStore::embedded(),
+                &ti4_model::id::TechnologyId::new(id)
+            )
+        ),
         "activate_system" if option.kind == "activate" => format!("{actor} activated #{id}"),
         "gain_command_token" if option.kind == "pool" => {
             let pool = match id {
@@ -950,17 +973,26 @@ pub fn verified_decision_facts(
         detail = Some(format!("{} scored objective {}", record.player, option.id));
         private = None;
     }
-    if detail.is_none()
+    // The action selection says what was chosen. A recorded selection carries its `action_menu`
+    // context, for which the generic fallback ("resolved action menu") would hide the card.
+    let generic = record
+        .context
+        .as_ref()
+        .is_some_and(|context| context.subtype == "action_menu");
+    if (detail.is_none() || generic)
         && record.prompt == "action phase"
         && let Some(option) = offered.filter(|option| option.id == record.chosen)
     {
         detail = match option.id.as_str() {
             "tactical" => Some(format!("{} began a tactical action", record.player)),
             "pass" => Some(format!("{} passed their turn", record.player)),
+            // One strategy card: the web names it from the seat's single unexhausted card.
+            "strategic" => Some(format!("{} began a strategic action", record.player)),
             id if id.starts_with("strategic|") => id
                 .strip_prefix("strategic|")
                 .and_then(strategy_card_name)
-                .map(|name| format!("{} played {name}", record.player)),
+                .map(|name| format!("{} played {name}", record.player))
+                .or(detail),
             _ => Some(format!("{} began a component action", record.player)),
         };
     }
@@ -987,6 +1019,7 @@ pub fn verified_decision_facts(
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct MovementFact {
     pub actor: PlayerId,
     pub origin: String,
@@ -1275,6 +1308,28 @@ mod fact_tests {
             .as_deref(),
             Some("action selection")
         );
+        // Nightly 2026-10-14 #11 (s2-36-0118 and five more server runs): a recorded selection
+        // carries its `action_menu` context, whose generic "resolved action menu" hid the card.
+        // The web then took the primary's other, still unexhausted card for the action, a
+        // follower prepared a secondary for that card, and the plan was dropped before its window.
+        for (id, expected) in [
+            ("strategic|pok2diplomacy", "p1 played Diplomacy"),
+            ("tactical", "p1 began a tactical action"),
+            ("pass", "p1 passed their turn"),
+            ("strategic", "p1 began a strategic action"),
+        ] {
+            let option = ChoiceOption::new(id, "action");
+            let selection = DecisionRecord {
+                prompt: "action phase".into(),
+                ..record("action_menu", &option)
+            };
+            assert_eq!(
+                verified_decision_facts(&selection, Some(&option), None, &state)
+                    .0
+                    .as_deref(),
+                Some(expected)
+            );
+        }
         let effect = ChoiceOption::new("unknown", "effect").with("card", "hidden_card");
         let detail = public_decision_facts(&record("activate_relic", &effect), Some(&effect), None)
             .0
@@ -1569,7 +1624,7 @@ mod fact_tests {
     #[test]
     fn event_visibility_wire_shape_matches_the_client_fixture() {
         let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../ti4-server/fixtures/event_visibility.json"
+            "../../../../fixtures/protocol/event_visibility.json"
         ))
         .unwrap();
         let events: Vec<GameEvent> = serde_json::from_value(fixture.clone()).unwrap();
@@ -1707,6 +1762,7 @@ mod fact_tests {
 /// Server message carrying a new game event to all subscribers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct GameEventMsg {
     pub protocol_version: u16,
     pub game_id: String,
@@ -1716,12 +1772,15 @@ pub struct GameEventMsg {
 /// Versioned state update or replacement snapshot after state transition.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct StateUpdateMsg {
     pub protocol_version: u16,
     pub game_id: String,
     pub game_version: u64,
     pub viewer: ViewerRole,
     pub view: GameView,
+    /// The engine's `GameState`, passed through without a projection.
+    #[cfg_attr(feature = "ts", ts(type = "Record<string, unknown>"))]
     pub state: GameState,
     pub galaxy_layout: GalaxyLayout,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1740,32 +1799,36 @@ pub struct StateUpdateMsg {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub reaction_modes: BTreeMap<String, ReactionMode>,
     /// What the viewer needs to stage the pending choice of a tactical action
-    /// ([`ti4_view::tactical`]). Only the seat that is asked has it.
+    /// ([`crate::view::tactical`]). Only the seat that is asked has it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tactical: Option<ti4_view::tactical::TacticalFacts>,
-    /// The exploration decks and the planets that are still explored ([`ti4_view::exploration`]).
+    pub tactical: Option<crate::view::tactical::TacticalFacts>,
+    /// The exploration decks and the planets that are still explored ([`crate::view::exploration`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub exploration: Option<ti4_view::exploration::ExplorationFacts>,
+    pub exploration: Option<crate::view::exploration::ExplorationFacts>,
     /// The action card deck, its discard pile and the hand limit of the viewer
-    /// ([`ti4_view::action_cards`]).
+    /// ([`crate::view::action_cards`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub action_cards: Option<ti4_view::action_cards::ActionCardFacts>,
+    pub action_cards: Option<crate::view::action_cards::ActionCardFacts>,
     /// The secret objective deck and what each seat has scored of it
-    /// ([`ti4_view::secret_objectives`]).
+    /// ([`crate::view::secret_objectives`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub secret_objectives: Option<ti4_view::secret_objectives::SecretObjectiveFacts>,
-    /// Where the victory points of every seat come from ([`ti4_view::score`]).
+    pub secret_objectives: Option<crate::view::secret_objectives::SecretObjectiveFacts>,
+    /// Where the victory points of every seat come from ([`crate::view::score`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub score: Option<ti4_view::score::ScoreFacts>,
-    /// The agenda deck ([`ti4_view::agendas`]).
+    pub score: Option<crate::view::score::ScoreFacts>,
+    /// The agenda deck ([`crate::view::agendas`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub agendas: Option<ti4_view::agendas::AgendaFacts>,
-    /// The strategic action that is resolved now ([`ti4_view::secondary`]).
+    pub agendas: Option<crate::view::agendas::AgendaFacts>,
+    /// The strategic action that is resolved now ([`crate::view::secondary`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub secondary: Option<ti4_view::secondary::SecondaryFacts>,
-    /// The reaction window that the viewer is asked in ([`ti4_view::reaction`]).
+    pub secondary: Option<crate::view::secondary::SecondaryFacts>,
+    /// The reaction window that the viewer is asked in ([`crate::view::reaction`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reaction: Option<ti4_view::reaction::ReactionFacts>,
+    pub reaction: Option<crate::view::reaction::ReactionFacts>,
+    /// The technology tree of the viewer, while it is asked to research
+    /// ([`crate::view::research`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub research: Option<crate::view::research::ResearchFacts>,
     /// Who sits in each seat: the name of its player and who plays it
     /// ([`crate::setup::SeatFact`]). Public; absent for a game with no table.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1775,6 +1838,7 @@ pub struct StateUpdateMsg {
 /// One decision made on a seat's behalf because it had a single legal option.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct AutoResolvedNote {
     /// Unique per note, so a client can drop a repeat.
     pub id: String,
@@ -1827,12 +1891,15 @@ impl StateUpdateMsg {
 /// Pending choice sent only to the acting seat.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct PendingChoiceMsg {
     pub protocol_version: u16,
     pub game_id: String,
     pub game_version: u64,
     pub nonce: String,
     pub choice: Choice,
+    /// The engine's `GameState`, passed through without a projection.
+    #[cfg_attr(feature = "ts", ts(type = "Record<string, unknown>"))]
     pub state: GameState,
     pub galaxy_layout: GalaxyLayout,
 }
@@ -1841,6 +1908,7 @@ pub struct PendingChoiceMsg {
 /// stale-version filter never drops it).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ReactionIntentStateMsg {
     pub protocol_version: u16,
     pub game_id: String,
@@ -1863,6 +1931,7 @@ pub struct ReactionIntentStateMsg {
 /// Why a secondary preview was refused (see [`SecondaryPreviewMsg`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum PreviewRefusal {
     /// Only a seated player can ask.
     NotSeated,
@@ -1885,6 +1954,7 @@ pub enum PreviewRefusal {
     clippy::large_enum_variant,
     reason = "one short-lived value per request; the engine value is carried as it is"
 )]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum PreviewResult {
     /// The engine's answer: the question, "would not be asked", "complete" or "unavailable".
     Preview {
@@ -1903,6 +1973,7 @@ pub enum PreviewResult {
 /// computed at, and the client re-checks the plan against the real question when it opens.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SecondaryPreviewMsg {
     pub protocol_version: u16,
     pub game_id: String,
@@ -1918,6 +1989,7 @@ pub struct SecondaryPreviewMsg {
 /// Public turn status update.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct TurnStatusMsg {
     pub protocol_version: u16,
     pub game_id: String,
@@ -1928,6 +2000,7 @@ pub struct TurnStatusMsg {
 /// Confirmation that an action was validated and accepted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ActionAcceptedMsg {
     pub protocol_version: u16,
     pub game_id: String,
@@ -1938,6 +2011,7 @@ pub struct ActionAcceptedMsg {
 /// Notification that an action submission was rejected.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ActionRejectedMsg {
     pub protocol_version: u16,
     pub game_id: String,
@@ -1948,6 +2022,7 @@ pub struct ActionRejectedMsg {
 /// Protocol error notification.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ProtocolErrorMsg {
     pub protocol_version: u16,
     pub kind: ErrorKind,
@@ -1957,6 +2032,7 @@ pub struct ProtocolErrorMsg {
 /// Notification of game completion.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct GameOverMsg {
     pub protocol_version: u16,
     pub game_id: String,
@@ -1968,123 +2044,16 @@ pub struct GameOverMsg {
 /// Keep-alive pong response.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct PongMsg {
     pub protocol_version: u16,
     pub sequence: u64,
 }
 
-/// A gated planning publication delivered only to its owning player.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PlanningStatusMsg {
-    pub protocol_version: u16,
-    pub game_id: String,
-    pub checkpoint_id: u64,
-    pub available: bool,
-    pub can_start: bool,
-    pub has_draft: bool,
-    pub identity: Option<crate::planning::AttemptIdentity>,
-    pub can_apply: bool,
-    pub application: Option<DraftApplication>,
-    /// The strategic action whose secondary this seat may draft, if any.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub secondary: Option<SecondaryDraftStatus>,
-}
-
-/// Which of a seat's two independent drafts a planning message is about.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum DraftKind {
-    #[default]
-    Tactical,
-    Secondary,
-}
-
-impl DraftKind {
-    fn is_tactical(&self) -> bool {
-        *self == Self::Tactical
-    }
-}
-
-/// A follower's private view of the secondary they may draft while they wait.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SecondaryDraftStatus {
-    pub card: String,
-    pub played_by: PlayerId,
-    /// False while the primary ability is still resolving.
-    pub window_open: bool,
-    /// Followers the live window asks before this seat, once it is open.
-    pub seats_before: Option<usize>,
-    pub can_start: bool,
-    pub has_draft: bool,
-    pub identity: Option<crate::planning::AttemptIdentity>,
-    /// The draft is submitted for the seat when the live window reaches it.
-    pub ready: bool,
-    pub application: Option<DraftApplication>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum DraftApplicationState {
-    Applying,
-    WaitingForPlayer,
-    NeedsDecision,
-    Applied,
-}
-
-/// Seat-private live execution progress, retained across socket reconnects.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct DraftApplication {
-    pub applied: usize,
-    pub total: usize,
-    pub state: DraftApplicationState,
-    pub message: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PlanningUpdateMsg {
-    pub protocol_version: u16,
-    pub game_id: String,
-    #[serde(default, skip_serializing_if = "DraftKind::is_tactical")]
-    pub draft: DraftKind,
-    pub envelope: crate::planning::PlanningEnvelope,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PlanningRejection {
-    Unauthorized,
-    WrongGame,
-    Unavailable,
-    UnknownSeat,
-    ActivePlayer,
-    NotStarted,
-    Retired,
-    NotWaiting,
-    UnknownOption,
-    NoActionOpportunity,
-    ReplayMismatch,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PlanningResultMsg {
-    pub protocol_version: u16,
-    pub game_id: String,
-    #[serde(default, skip_serializing_if = "DraftKind::is_tactical")]
-    pub draft: DraftKind,
-    /// None identifies a start request; Some identifies an answer, reset, or apply request.
-    pub identity: Option<crate::planning::AttemptIdentity>,
-    /// None means accepted by the controller. Application progress is seat-private status.
-    pub rejection: Option<PlanningRejection>,
-}
-
 /// The answer to `ClientMessage::RunDraft`: where the run of the script ended.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct DraftOutcomeMsg {
     pub protocol_version: u16,
     pub game_id: String,
@@ -2094,18 +2063,19 @@ pub struct DraftOutcomeMsg {
     /// the same script may end elsewhere.
     pub base_version: u64,
     /// Boxed: an outcome has up to four updates, and a message is moved through queues.
-    pub outcome: Box<ti4_view::planning::draft::DraftOutcome>,
+    pub outcome: Box<crate::planning::draft::DraftOutcome>,
 }
 
 /// Where a script that was sent to the live game stopped before its end.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ScriptStopped {
     /// How many entries of the script are in the game. 0 when the script was refused: the game
     /// is as before.
     pub applied: usize,
     /// The entries that are not in the game.
-    pub remaining: Vec<ti4_view::planning::draft::DraftStep>,
+    pub remaining: Vec<crate::planning::draft::DraftStep>,
     /// True when the game asked something else first, or went on without the rest; false when
     /// it refused an entry and nothing was sent.
     pub interrupted: bool,
@@ -2115,6 +2085,7 @@ pub struct ScriptStopped {
 /// What became of `ClientMessage::ApplyDraft`, for the seat that sent it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct DraftAppliedMsg {
     pub protocol_version: u16,
     pub game_id: String,
@@ -2130,10 +2101,8 @@ pub use super::staged::SeatStagedMsg;
 /// Messages emitted from server to client.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum ServerMessage {
-    PlanningUpdate(PlanningUpdateMsg),
-    PlanningStatus(PlanningStatusMsg),
-    PlanningResult(PlanningResultMsg),
     InitialSnapshot(InitialSnapshotMsg),
     StateUpdate(StateUpdateMsg),
     PendingChoice(PendingChoiceMsg),
@@ -2163,9 +2132,6 @@ impl ServerMessage {
     #[must_use]
     pub fn protocol_version(&self) -> u16 {
         match self {
-            Self::PlanningUpdate(m) => m.protocol_version,
-            Self::PlanningStatus(m) => m.protocol_version,
-            Self::PlanningResult(m) => m.protocol_version,
             Self::InitialSnapshot(m) => m.protocol_version,
             Self::StateUpdate(m) => m.protocol_version,
             Self::PendingChoice(m) => m.protocol_version,
@@ -2189,9 +2155,6 @@ impl ServerMessage {
     #[must_use]
     pub fn game_id(&self) -> Option<&str> {
         match self {
-            Self::PlanningUpdate(m) => Some(&m.game_id),
-            Self::PlanningStatus(m) => Some(&m.game_id),
-            Self::PlanningResult(m) => Some(&m.game_id),
             Self::InitialSnapshot(m) => Some(&m.game_id),
             Self::StateUpdate(m) => Some(&m.game_id),
             Self::PendingChoice(m) => Some(&m.game_id),
@@ -2226,9 +2189,6 @@ impl ServerMessage {
             // preview names its own `as_of_version`).
             Self::Error(_)
             | Self::Pong(_)
-            | Self::PlanningUpdate(_)
-            | Self::PlanningStatus(_)
-            | Self::PlanningResult(_)
             | Self::DraftOutcome(_)
             | Self::DraftApplied(_)
             | Self::ReactionIntentState(_)

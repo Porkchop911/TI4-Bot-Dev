@@ -1,63 +1,38 @@
-//! The read-only secondary preview a seated follower can ask for while a strategic action is in
-//! progress (see `ti4_engine::secondary_preview` for how the answer is computed).
+//! The secondary preview on the server (the eligibility and the answer are
+//! `ti4_host::preview`). What stays here is the lock and the busy check:
 //!
-//! What this module guarantees:
-//!
-//! * **Read only.** It takes the session lock only to check eligibility and to copy the newest
-//!   published position (`latest_state`: the state at the top of the worker loop or at the last
-//!   nested offer, whichever is fresher while a step is running), then releases it. The
-//!   computation runs on the caller's thread on the copy; the worker is never waited on, and the
-//!   game, its RNG, the decision log, the event log and storage are never touched.
-//! * **Private.** The answer goes only to the connection that asked, for that connection's own
-//!   seat. It is computed from that seat's own holdings and the public board.
-//! * **Only when it means something.** A seated follower, while the action phase's latest action
-//!   is a strategic action by another seat whose card is still unexhausted, and before that seat
-//!   has been asked anything of the action. Anything else is refused with a reason.
-//!
-//! The freshest position available while the primary is mid-step is the one published at its
-//! last nested offer; before the primary's first question it is the position at the top of the
-//! step, i.e. BEFORE the primary. Either way the answer is "as of now": the primary's remaining
-//! effects, followers asked earlier in clockwise order and action cards can still change what the
-//! real question offers, so a client re-checks its plan against the real question.
+//! * It takes the session lock only to check that the game is live and the request eligible, and
+//!   to copy the newest published position (`latest_state`: the state at the top of the worker
+//!   loop or at the last nested offer, whichever is fresher while a step is running), then
+//!   releases it. The computation runs on the caller's thread on the copy; the worker is never
+//!   waited on, and the game, its RNG, the decision log, the event log and storage are never
+//!   touched.
+//! * The answer goes only to the connection that asked, for that connection's own seat.
 
 use std::sync::{Arc, Mutex};
 
-use ti4_content::ContentStore;
 use ti4_content::galaxy::Galaxy;
-use ti4_engine::secondary_preview::{SecondaryPreview, preview_secondary};
-use ti4_model::content_types::POK;
+use ti4_host::preview::{Basis, Position, PreviewRequest, Refusal, busy, eligibility};
+use ti4_host::protocol::server::SecondaryPreviewMsg;
 use ti4_model::id::{PlayerId, StrategyCardId};
-use ti4_model::state::{GameState, Phase};
+use ti4_model::state::GameState;
 
-use crate::protocol::PROTOCOL_VERSION;
-use crate::protocol::server::{PreviewRefusal, PreviewResult, SecondaryPreviewMsg};
 use crate::session::worker::SessionShared;
 
-/// One preview request as the connection layer hands it over (the seat is the connection's).
-#[derive(Debug, Clone)]
-pub struct PreviewRequest {
-    pub request_id: u64,
-    pub card: String,
-    pub primary: String,
-    pub answers: Vec<String>,
-}
-
 /// The position a preview is computed from, copied out under the lock.
-struct Basis {
+struct Copied {
     state: GameState,
     galaxy: Option<Arc<Galaxy>>,
-    version: u64,
     decisions: usize,
 }
 
-/// Why no strategic action is in progress for this follower, or the basis for the preview.
+/// Why the game is not live or the request means nothing, or the copy of the position.
 fn basis(
     shared: &SessionShared,
     seat: &PlayerId,
     card: &StrategyCardId,
     primary: &PlayerId,
-) -> Result<Basis, (PreviewRefusal, String)> {
-    let refuse = |reason, detail: &str| Err((reason, detail.to_owned()));
+) -> Result<Copied, Refusal> {
     if shared.stopped
         || shared.finished
         || shared.error.is_some()
@@ -68,66 +43,21 @@ fn basis(
         // live decision pending for a seat proves the replay has caught up.
         || (!shared.replay_complete && shared.pending_decision.is_none())
     {
-        return refuse(PreviewRefusal::Busy, "the game is not live right now");
+        return Err(busy());
     }
-    let state = &shared.latest_state;
-    if state.phase != Phase::Action || state.player(seat).is_none() {
-        return refuse(
-            PreviewRefusal::NoStrategicAction,
-            "no strategic action is in progress",
-        );
-    }
-    if seat == primary {
-        return refuse(PreviewRefusal::IsPrimary, "you played this card");
-    }
-    // The action in progress is the newest "action phase" decision, taken by the primary, and
-    // the primary is still the active seat (Coup d'Etat passes the turn without exhausting).
-    let log = &shared.decision_log;
-    let Some(start) = log
-        .iter()
-        .rposition(|record| record.prompt == "action phase")
-    else {
-        return refuse(
-            PreviewRefusal::NoStrategicAction,
-            "no strategic action is in progress",
-        );
+    let position = Position {
+        state: &shared.latest_state,
+        decision_log: &shared.decision_log,
+        asked: shared
+            .pending_decision
+            .as_ref()
+            .map(|pending| (&pending.seat, &pending.choice)),
     };
-    let action = &log[start];
-    let named = action.chosen.strip_prefix("strategic|");
-    let strategic = action.chosen == ti4_engine::STRATEGIC_ACTION_ID || named.is_some();
-    let holds_unexhausted = state.player(primary).is_some_and(|holder| {
-        holder.strategy_cards.contains(card) && !holder.exhausted_strategy_cards.contains(card)
-    });
-    if !strategic
-        || &action.player != primary
-        || named.is_some_and(|id| id != card.as_str())
-        || state.active.as_ref() != Some(primary)
-        || !holds_unexhausted
-    {
-        return refuse(
-            PreviewRefusal::NoStrategicAction,
-            "that strategic action is not in progress",
-        );
-    }
-    // Every decision the seat answered after the action began is in the log; once there is one
-    // the seat has been asked. A question open for the seat right now counts as asked too.
-    let asked_now = shared.pending_decision.as_ref().is_some_and(|pending| {
-        &pending.seat == seat
-            && pending
-                .choice
-                .details
-                .get("kind")
-                .and_then(serde_json::Value::as_str)
-                == Some("strategy_secondary")
-    });
-    if asked_now || log[start + 1..].iter().any(|record| &record.player == seat) {
-        return refuse(PreviewRefusal::AlreadyAsked, "you have already been asked");
-    }
-    Ok(Basis {
-        state: state.clone(),
+    eligibility(&position, seat, card, primary)?;
+    Ok(Copied {
+        state: shared.latest_state.clone(),
         galaxy: shared.preview_galaxy.clone(),
-        version: shared.game_version,
-        decisions: log.len(),
+        decisions: shared.decision_log.len(),
     })
 }
 
@@ -142,46 +72,25 @@ pub fn answer(
 ) -> SecondaryPreviewMsg {
     let card = StrategyCardId::new(request.card.clone());
     let primary = PlayerId::new(request.primary.clone());
-    let basis = {
+    let (copy, version) = {
         let lock = shared.lock().expect("shared lock");
-        basis(&lock, seat, &card, &primary).map_err(|refusal| (refusal, lock.game_version))
+        (basis(&lock, seat, &card, &primary), lock.game_version)
     };
-    let (as_of_version, as_of_decisions, outcome) = match basis {
-        Err(((reason, detail), version)) => (version, 0, PreviewResult::Refused { reason, detail }),
-        Ok(basis) => {
-            let preview: SecondaryPreview = preview_secondary(
-                &basis.state,
-                ContentStore::embedded(),
-                POK,
-                basis.galaxy.as_deref(),
-                &card,
-                &primary,
-                seat,
-                &request.answers,
-            );
-            (
-                basis.version,
-                basis.decisions,
-                PreviewResult::Preview { preview },
-            )
-        }
-    };
-    SecondaryPreviewMsg {
-        protocol_version: PROTOCOL_VERSION,
-        game_id: game_id.to_owned(),
-        request_id: request.request_id,
-        as_of_version,
-        as_of_decisions,
-        card: request.card.clone(),
-        outcome,
-    }
+    let basis = copy.as_ref().map_err(Clone::clone).map(|copy| Basis {
+        state: &copy.state,
+        galaxy: copy.galaxy.as_deref(),
+        decisions: copy.decisions,
+    });
+    ti4_host::preview::answer(game_id, seat, request, version, basis)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::session::worker::{PendingDecision, PendingSubmissionState};
+    use ti4_content::ContentStore;
     use ti4_engine::choice::Choice;
+    use ti4_host::protocol::server::PreviewRefusal;
 
     fn shared() -> SessionShared {
         let ids = [PlayerId::new("a"), PlayerId::new("b")];

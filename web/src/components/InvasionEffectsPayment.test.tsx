@@ -8,6 +8,7 @@ import {
   PlanetResourcesContext,
 } from "../presentation/PlanetResourcesContext.tsx";
 import { deriveActorTargetHighlights } from "../presentation/boardPresentation.ts";
+import { partialContext } from "../test/wire.ts";
 
 const board: BoardView = {
   systems: {
@@ -15,7 +16,7 @@ const board: BoardView = {
       system_id: "18",
       command_tokens: [],
       planets: { mr: { planet_id: "mr", controlled_by: null, exhausted: false } },
-      units: [{ owner: "p1", unit_type: "infantry", planet: "mr", damaged: false }],
+      units: [{ owner: "p1", unit_type: "infantry", planet: "mr", damaged: false, galvanized: false }],
     },
     "25": {
       system_id: "25",
@@ -36,6 +37,7 @@ const board: BoardView = {
     current_planet: "mr",
     defender: null,
     ground_round: 0,
+    odds_context: {},
   },
 } as BoardView;
 
@@ -44,11 +46,11 @@ const custodiansPayment: PendingChoiceDto = {
   actor: "p1",
   nonce: "pay-custodians",
   prompt: "pay 6 more influence",
-  context: {
+  context: partialContext({
     subtype: "pay_influence",
     invasion_seq: 3,
     outstanding: [{ kind: "Influence", amount: 6, paid: 0 }],
-  },
+  }),
   options: [
     { id: "exhaust|meer", kind: "pay", label: "exhaust meer for 4 influence", payload: { worth: 4, kind: "influence", source: "influence", owed: 6 } },
     { id: "exhaust|arinam", kind: "pay", label: "exhaust arinam for 2 influence", payload: { worth: 2, kind: "influence", source: "influence", owed: 6 } },
@@ -113,11 +115,11 @@ describe("producing as a consequence of invasion", () => {
     actor: "p1",
     nonce: "frln",
     prompt: "Freelancers: produce one unit in 25",
-    context: { subtype: "produce_one_unit", optional: true, target: { System: "25" } },
+    context: partialContext({ subtype: "produce_one_unit", optional: true, target: { System: "25" } }),
     options: [
       { id: "build|destroyer|1", kind: "produce", label: "produce 1x destroyer for 1", payload: { unit: "destroyer", count: 1, cost: 1, system: "25" } },
       { id: "build|cruiser|1", kind: "produce", label: "produce 1x cruiser for 2", payload: { unit: "cruiser", count: 1, cost: 2, system: "25" } },
-      { id: "decline", kind: "decline", label: "Decline" },
+      { id: "decline", kind: "decline", label: "Decline", payload: {} },
     ],
   };
 

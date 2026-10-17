@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { expect, it } from "vitest";
 import { GameProvider } from "../game/context";
 import { ReferenceDrawer } from "../game/shell/Reference";
-import menuUpdate from "../session/fixtures/update-menu.json";
+import menuUpdate from "../../../fixtures/protocol/update-menu.json";
 import { selectShell } from "../session/select/shell";
 import type { Catalog, SessionUpdate } from "../session/wire";
 
@@ -16,10 +16,17 @@ const secret = (id: string, name: string, phase: string, group: string) => ({
   text: `The text of ${name}.`,
 });
 const catalog = {
+  content: "",
   exploration: { cards: [], decks: {}, attachments: [] },
   components: {
     abilities: [],
     factions: {},
+    faction_sheets: {},
+    strategy_cards: [],
+    public_objectives: [],
+    public_objective_groups: [],
+    agendas: [],
+    agenda_groups: [],
     leaders: [],
     technologies: [],
     relics: [],
@@ -34,6 +41,23 @@ const catalog = {
       secret("te", "Threaten Enemies", "Status", "Ships on the board"),
     ],
     secret_objective_groups: ["Planets you control", "Ships on the board", "Win a combat"],
+  },
+  records: {
+    strategy_cards: [],
+    secret_objectives: [],
+    public_objectives: [],
+    action_cards: [],
+    technologies: [],
+    explores: [],
+    planets: [],
+    attachments: [],
+    factions: [],
+    units: [],
+    leaders: [],
+    abilities: [],
+    promissory_notes: [],
+    relics: [],
+    breakthroughs: [],
   },
 } as Catalog;
 const update: SessionUpdate = {

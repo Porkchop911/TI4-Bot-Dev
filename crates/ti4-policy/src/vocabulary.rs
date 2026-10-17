@@ -1478,13 +1478,17 @@ mod tests {
     fn reallocating_past_the_limit_is_refused_and_changes_nothing() {
         let mut vocabulary = Vocabulary::build(sample()).expect("builds");
         let snapshot = vocabulary.clone();
-        let far_too_many: Vec<String> =
-            (0..CAPACITY_LIMIT).map(|n| format!("option:limit{n}")).collect();
+        let far_too_many: Vec<String> = (0..CAPACITY_LIMIT)
+            .map(|n| format!("option:limit{n}"))
+            .collect();
         match vocabulary.append_reallocating(&far_too_many) {
             Err(VocabularyError::OverCapacity { .. }) => {}
             other => panic!("wrong result: {other:?}"),
         }
-        assert_eq!(vocabulary, snapshot, "a refused growth changed the vocabulary");
+        assert_eq!(
+            vocabulary, snapshot,
+            "a refused growth changed the vocabulary"
+        );
     }
 
     #[test]

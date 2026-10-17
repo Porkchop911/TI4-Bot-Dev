@@ -13,9 +13,10 @@
 //! ```
 //!
 //! `--roster wide --rotations 1` censuses the whole implemented faction roster (BF-22): each seed
-//! draws six distinct factions, so the names the six-faction regime never produced (other
-//! factions' abilities, technologies, units, home planets, leaders and decisions) are found and
-//! can be appended into zero rows, leaving every original-six decision scored exactly as before.
+//! draws six distinct factions and discovers names absent from the vocabulary, including some
+//! that also occur in original-six games. These abilities, technologies, units and decision names
+//! can be migrated with `migrate_bundle_append_names --grow --init-from-oov` to preserve the
+//! former fallback contributions, subject to floating-point accumulation rounding.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -195,6 +196,25 @@ fn census_game(
     (census, decisions, rollout.error)
 }
 
+// Publishing migration input requires every requested game to have completed.
+fn names_for_output(
+    census: &Census,
+    min_count: usize,
+    errors: usize,
+) -> Result<Vec<(&String, &(usize, String))>, String> {
+    if errors != 0 {
+        return Err(format!(
+            "{errors} games failed; refusing incomplete census output"
+        ));
+    }
+    let mut kept: Vec<_> = census
+        .iter()
+        .filter(|(_, (count, _))| *count >= min_count)
+        .collect();
+    kept.sort_by(|a, b| b.1.0.cmp(&a.1.0).then(a.0.cmp(b.0)));
+    Ok(kept)
+}
+
 fn main() {
     let bundle_path = argument("--bundle").unwrap_or_else(|| refuse("--bundle is required"));
     let pool_path = argument("--map-pool").unwrap_or_else(|| refuse("--map-pool is required"));
@@ -221,9 +241,10 @@ fn main() {
     let players: Vec<PlayerId> = (0..6)
         .map(|index| PlayerId::new(format!("seat{index}")))
         .collect();
-    let roster = argument("--roster").map_or(ti4_engine::seating::FactionRoster::InScope, |value| {
-        ti4_training::rollout::parse_roster(&value).unwrap_or_else(|error| refuse(&error))
-    });
+    let roster = argument("--roster")
+        .map_or(ti4_engine::seating::FactionRoster::InScope, |value| {
+            ti4_training::rollout::parse_roster(&value).unwrap_or_else(|error| refuse(&error))
+        });
     // Rotations move the six around the seats. Under `--roster wide` every rotation of a seed seats
     // the same six, so more seeds at one rotation reach more factions for the same games.
     let rotations: usize = number("--rotations", FACTIONS.len());
@@ -297,11 +318,7 @@ fn main() {
         "{} unseen admitted names; those seen at least {min_count} times:",
         census.len()
     );
-    let mut kept: Vec<(&String, &(usize, String))> = census
-        .iter()
-        .filter(|(_, (count, _))| *count >= min_count)
-        .collect();
-    kept.sort_by(|a, b| b.1.0.cmp(&a.1.0).then(a.0.cmp(b.0)));
+    let kept = names_for_output(&census, min_count, errors).unwrap_or_else(|error| refuse(&error));
     for (name, (count, subtype)) in &kept {
         println!("{count:>8}  {name:<60}  first under {subtype}");
     }
@@ -310,5 +327,27 @@ fn main() {
         std::fs::write(&path, text)
             .unwrap_or_else(|error| refuse(&format!("writing {path}: {error}")));
         println!("wrote {} names to {path}", kept.len());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn failed_games_refuse_migration_input_and_complete_games_keep_canonical_names() {
+        let census = Census::from([
+            ("option:z".to_owned(), (3, "trade".to_owned())),
+            ("option:a".to_owned(), (3, "research".to_owned())),
+            ("option:rare".to_owned(), (1, "trade".to_owned())),
+        ]);
+        assert!(names_for_output(&census, 2, 1).is_err());
+        assert!(names_for_output(&Census::new(), 2, 1).is_err());
+        let names: Vec<_> = names_for_output(&census, 2, 0)
+            .expect("complete census")
+            .into_iter()
+            .map(|(name, _)| name.as_str())
+            .collect();
+        assert_eq!(names, ["option:a", "option:z"]);
     }
 }

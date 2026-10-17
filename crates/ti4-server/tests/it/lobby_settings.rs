@@ -315,6 +315,7 @@ async fn the_wait_of_a_table_is_kept_with_its_game() {
 
 #[tokio::test]
 async fn the_setup_options_name_what_a_host_can_choose() {
+    let model = ti4_host::bots::test_model();
     let server = serve(Arc::new(GameRegistry::new())).await;
     let options: Value = server.get("/api/setup-options").await;
     let sets = options["strategy_card_sets"].as_array().unwrap();
@@ -336,7 +337,21 @@ async fn the_setup_options_name_what_a_host_can_choose() {
             + groups[1]["factions"].as_array().unwrap().len(),
         24
     );
-    assert_eq!(options["bot_kinds"][0]["id"], "smart");
+    let kinds: Vec<(&str, &str)> = options["bot_kinds"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|kind| (kind["id"].as_str().unwrap(), kind["name"].as_str().unwrap()))
+        .collect();
+    // The models that the server loaded follow the rule bot and the random seat.
+    assert_eq!(
+        kinds,
+        [
+            ("smart", "Rule bot"),
+            ("random", "Random"),
+            (model.kind_id().as_str(), model.label())
+        ]
+    );
     assert_eq!(options["scenarios"][0]["id"], "late-game");
     assert_eq!(options["max_bot_delay_ms"], 30_000);
 }

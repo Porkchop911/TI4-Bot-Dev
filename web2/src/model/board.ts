@@ -1,10 +1,4 @@
-import type {
-  BuildSheetView,
-  LandingView,
-  OriginView,
-  PaymentView,
-  SpaceOddsView,
-} from "./action";
+import type { BuildSheetView, LandingView, OriginView, PaymentView, SpaceOddsView } from "./action";
 import type { Force, PlanetId, SeatId, SystemId } from "./core";
 
 export type Anomaly = "asteroid" | "supernova" | "nebula" | "rift";

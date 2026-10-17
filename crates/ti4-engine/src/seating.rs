@@ -149,7 +149,7 @@ pub enum FactionAssignmentError {
 pub const IN_SCOPE_FACTIONS: [&str; 6] = ["sol", "hacan", "letnev", "xxcha", "jolnar", "l1z1x"];
 
 /// The factions a lobby table can seat: the 24 base and Prophecy of Kings factions the smart-bot
-/// survey roster plays (`ti4_server::preset::ROSTER`, a server test keeps the two in step), base
+/// survey roster plays (`ti4_host::preset::ROSTER`, a server test keeps the two in step), base
 /// game first. Left out: the three Keleres variants (each takes another faction's home system, a
 /// table-dependent rule), the Obsidian (cannot be chosen during setup) and the Thunder's Edge
 /// factions (their home tiles are not in the Prophecy of Kings source set every server game uses).
@@ -344,6 +344,8 @@ pub const KELERES_FAMILY: &str = "keleres";
 const WIDE_ROSTER_DOMAIN: &str = "seating:wide-roster:v1";
 /// RNG domain that picks a Keleres variant among the Tribuni-legal ones.
 const KELERES_VARIANT_DOMAIN: &str = "seating:keleres-variant:v1";
+/// RNG domain that orders the wide roster by weight in [`seat_wide_weighted`].
+const WEIGHTED_ROSTER_DOMAIN: &str = "seating:wide-roster-weighted:v1";
 
 /// The wide roster under `sources`, in canonical order: the six [`IN_SCOPE_FACTIONS`], then every
 /// engine faction module in [`crate::factions::MODULES`] order.
@@ -399,7 +401,57 @@ pub fn seat_wide(
     sources: SourceSet,
     seed: u64,
 ) -> Result<BTreeMap<PlayerId, FactionId>, FactionAssignmentError> {
-    seat_wide_from(content, players, sources, seed, &[])
+    seat_wide_from(content, players, sources, seed, &[], None)
+}
+
+/// [`seat_wide`] with the roster ordered by integer weight instead of a uniform shuffle: entries
+/// are drawn one at a time without replacement, each with probability proportional to its
+/// weight, on the separate `seating:wide-roster-weighted:v1` stream. Integer draws only, so the
+/// order is exact and reproducible. `weight` is asked once per [`wide_roster`] entry (the Keleres
+/// family as [`KELERES_FAMILY`]); a weight of 0 counts as 1. Keleres handling is [`seat_wide`]'s.
+///
+/// # Errors
+/// As [`seat_wide`].
+pub fn seat_wide_weighted(
+    content: &ContentStore,
+    players: &[PlayerId],
+    sources: SourceSet,
+    seed: u64,
+    weight: &dyn Fn(&str) -> u32,
+) -> Result<BTreeMap<PlayerId, FactionId>, FactionAssignmentError> {
+    seat_wide_from(content, players, sources, seed, &[], Some(weight))
+}
+
+/// `entries` in a weighted order: repeated draws without replacement, probability proportional to
+/// weight (0 counts as 1).
+fn weighted_order(
+    rng: &mut crate::rng::GameRng,
+    entries: &[&'static str],
+    weight: &dyn Fn(&str) -> u32,
+) -> Vec<&'static str> {
+    let mut remaining: Vec<(&'static str, u64)> = entries
+        .iter()
+        .map(|entry| (*entry, u64::from(weight(entry).max(1))))
+        .collect();
+    let mut order = Vec::with_capacity(remaining.len());
+    while !remaining.is_empty() {
+        let total: u64 = remaining.iter().map(|(_, w)| w).sum();
+        // shortcut: die() takes u32; weights are capped by the caller far below u32::MAX in total.
+        let mut ticket = u64::from(rng.die(WEIGHTED_ROSTER_DOMAIN, u32::try_from(total).unwrap_or(u32::MAX)));
+        let index = remaining
+            .iter()
+            .position(|(_, w)| {
+                if ticket <= *w {
+                    true
+                } else {
+                    ticket -= w;
+                    false
+                }
+            })
+            .unwrap_or(remaining.len() - 1);
+        order.push(remaining.remove(index).0);
+    }
+    order
 }
 
 /// [`seat_wide`] without the six [`IN_SCOPE_FACTIONS`]: the same shuffle and Keleres handling over
@@ -413,7 +465,7 @@ pub fn seat_new(
     sources: SourceSet,
     seed: u64,
 ) -> Result<BTreeMap<PlayerId, FactionId>, FactionAssignmentError> {
-    seat_wide_from(content, players, sources, seed, &IN_SCOPE_FACTIONS)
+    seat_wide_from(content, players, sources, seed, &IN_SCOPE_FACTIONS, None)
 }
 
 fn seat_wide_from(
@@ -422,6 +474,7 @@ fn seat_wide_from(
     sources: SourceSet,
     seed: u64,
     excluded: &[&str],
+    weight: Option<&dyn Fn(&str) -> u32>,
 ) -> Result<BTreeMap<PlayerId, FactionId>, FactionAssignmentError> {
     let mut seen_players = BTreeSet::new();
     for player in players {
@@ -435,7 +488,10 @@ fn seat_wide_from(
         .collect();
     let catalogue = factions::catalogue(content, sources);
     let mut rng = crate::rng::GameRng::new(seed);
-    let shuffled = rng.shuffled(WIDE_ROSTER_DOMAIN, &roster);
+    let shuffled = match weight {
+        None => rng.shuffled(WIDE_ROSTER_DOMAIN, &roster),
+        Some(weight) => weighted_order(&mut rng, &roster, weight),
+    };
 
     let mut picked: Vec<&'static str> = Vec::with_capacity(players.len());
     let mut taken_base: Option<&'static str> = None;
@@ -492,16 +548,6 @@ pub fn seat_roster(
         FactionRoster::Wide => seat_wide(content, players, sources, seed),
         FactionRoster::New => seat_new(content, players, sources, seed),
     }
-}
-
-/// The order in which the players of a lobby table sit: a seeded shuffle of the places
-/// `0..count` (the dedicated `seating:lobby-seat-order:v1` stream). Entry `i` is the place in the
-/// lobby (the order of the join) of the player who gets seat `i`. The same seed and count always
-/// give the same order, and the draw uses no other stream of the game.
-#[must_use]
-pub fn lobby_seat_order(count: usize, seed: u64) -> Vec<usize> {
-    let places: Vec<usize> = (0..count).collect();
-    crate::rng::GameRng::new(seed).shuffled("seating:lobby-seat-order:v1", &places)
 }
 
 /// Home system tile ids for a player-to-faction assignment, in assignment order.
@@ -2126,6 +2172,30 @@ mod tests {
                 validate_tribuni(seats.values().map(FactionId::as_str)).unwrap();
             }
         }
+    }
+
+    #[test]
+    fn a_weighted_draw_replays_follows_its_weights_and_keeps_the_table_legal() {
+        let players = wide_players();
+        let heavy = |entry: &str| if entry == "winnu" { 400 } else { 1 };
+        let mut winnu = 0;
+        for seed in 0..200 {
+            let table = seat_wide_weighted(content(), &players, FULL, seed, &heavy).unwrap();
+            assert_eq!(
+                table,
+                seat_wide_weighted(content(), &players, FULL, seed, &heavy).unwrap(),
+                "seed {seed} does not replay"
+            );
+            let aliases: Vec<&str> = table.values().map(FactionId::as_str).collect();
+            assert_eq!(aliases.iter().collect::<BTreeSet<_>>().len(), players.len());
+            assert!(validate_tribuni(aliases.iter().copied()).is_ok());
+            winnu += usize::from(aliases.contains(&"winnu"));
+        }
+        // Uniform odds are 6 in ~32 per table; at weight 400 against ~31 it is drawn nearly always.
+        assert!(winnu > 190, "winnu seated in {winnu} of 200 tables");
+        // Equal weights still draw a valid table, from its own stream.
+        let flat = seat_wide_weighted(content(), &players, FULL, 0, &|_| 1).unwrap();
+        assert_eq!(flat.len(), players.len());
     }
 
     #[test]

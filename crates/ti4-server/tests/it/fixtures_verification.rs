@@ -1,13 +1,16 @@
+use ti4_host::protocol::server::ServerMessage;
+use ti4_host::protocol::status::RejectionReason;
+use ti4_host::protocol::{PROTOCOL_VERSION, parse_server_message};
 use ti4_server::fixtures::{
     sample_actor_snapshot, sample_opponent_snapshot, sample_spectator_snapshot,
     sample_stale_submission_rejected, sample_terminal_game_over,
 };
-use ti4_server::protocol::server::ServerMessage;
-use ti4_server::protocol::status::RejectionReason;
-use ti4_server::protocol::{PROTOCOL_VERSION, parse_server_message};
 
+/// The messages of `fixtures/protocol/`, which the tests of web and web2 read. `cargo wire-web`
+/// writes them (this test, with `TI4_WRITE_WIRE`); otherwise the test fails while one differs.
 #[test]
 fn ensure_and_verify_fixtures() {
+    let dir = format!("{}/../../fixtures/protocol", env!("CARGO_MANIFEST_DIR"));
     let fixtures = [
         ("actor_snapshot.json", sample_actor_snapshot()),
         ("opponent_snapshot.json", sample_opponent_snapshot()),
@@ -20,22 +23,17 @@ fn ensure_and_verify_fixtures() {
     ];
 
     for (name, expected_msg) in &fixtures {
-        if std::env::var("UPDATE_FIXTURES").is_ok() {
+        if std::env::var_os("TI4_WRITE_WIRE").is_some_and(|value| value == "1") {
             let pretty = serde_json::to_string_pretty(expected_msg).expect("pretty");
-            std::fs::write(
-                format!("{}/fixtures/{name}", env!("CARGO_MANIFEST_DIR")),
-                format!("{pretty}\n"),
-            )
-            .expect("write fixture");
+            std::fs::write(format!("{dir}/{name}"), format!("{pretty}\n")).expect("write fixture");
         }
         let persisted =
-            std::fs::read_to_string(format!("{}/fixtures/{name}", env!("CARGO_MANIFEST_DIR")))
-                .expect("read checked-in fixture");
+            std::fs::read_to_string(format!("{dir}/{name}")).expect("read checked-in fixture");
         let checked_in: serde_json::Value = serde_json::from_str(&persisted).expect("fixture JSON");
         let generated = serde_json::to_value(expected_msg).expect("generate fixture JSON");
         assert_eq!(
             checked_in, generated,
-            "Fixture {name} differs from the versioned generator"
+            "fixtures/protocol/{name} differs from the generator; write it again with `cargo wire-web`"
         );
         let content = serde_json::to_string(expected_msg).expect("serialize fixture");
         let parsed: ServerMessage = parse_server_message(&content).expect("parse fixture");
@@ -76,7 +74,7 @@ fn a_snapshot_names_the_corpus_of_the_catalogue() {
     let ServerMessage::InitialSnapshot(snapshot) = sample_actor_snapshot() else {
         panic!("a snapshot");
     };
-    let catalog = ti4_view::components::catalog(
+    let catalog = ti4_host::view::components::catalog(
         ti4_content::ContentStore::embedded(),
         ti4_model::content_types::POK,
     );

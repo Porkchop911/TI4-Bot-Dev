@@ -102,21 +102,27 @@ impl GpuInferenceClient {
 
     /// Resolve a requested head against the frozen service model's stored layout.
     #[must_use]
-    pub fn resolve_layout_head<'a>(&self, requested: &'a str) -> &'a str {
-        if self.layout.heads().contains(&requested) {
-            requested
-        } else {
-            "other"
-        }
+    pub fn resolve_layout_head(&self, requested: &str) -> &'static str {
+        self.layout.resolve(requested)
     }
 
     /// Resolve a stored-layout head to the service model's readout index.
     pub fn layout_head_index(&self, name: &str) -> Result<usize, String> {
         self.layout
-            .heads()
-            .iter()
-            .position(|known| *known == name)
+            .index(name)
             .ok_or_else(|| format!("GPU service layout has no head {name}"))
+    }
+}
+
+/// What the decision pipeline reads of the service's model. The service refuses an arena-capable
+/// actor ([`GpuInferenceService::spawn`]), so there is no battle predictor.
+impl ti4_policy::mlp::ModelInfo for GpuInferenceClient {
+    fn layout(&self) -> HeadLayout {
+        self.layout
+    }
+
+    fn battle_predictor(&self) -> Option<&ti4_policy::battle::BattlePredictor> {
+        None
     }
 }
 

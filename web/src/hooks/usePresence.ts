@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { lobbyPost } from "@ti4/shared/net/api.ts";
 import { onResume } from "../protocol/resilience.ts";
 
 const devHeartbeatMs = Number(import.meta.env.VITE_TI4_DEV_PRESENCE_HEARTBEAT_MS);
@@ -32,9 +33,8 @@ export function usePresence(
       const controller = new AbortController();
       const deadline = window.setTimeout(() => controller.abort(), HEARTBEAT_TIMEOUT_MS);
       abort = () => controller.abort();
-      const response = await fetch(`/api/games/${encodeURIComponent(gameId)}/lobby/heartbeat`, {
-        method: "POST",
-        headers: { "x-ti4-player-session": credential },
+      const response = await lobbyPost(gameId, "heartbeat", undefined, {
+        session: credential,
         signal: controller.signal,
       }).catch(() => undefined);
       window.clearTimeout(deadline);

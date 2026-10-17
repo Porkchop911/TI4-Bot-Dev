@@ -5,6 +5,7 @@ import { SeatInfoProvider } from "../presentation/SeatInfoContext.tsx";
 import { ProductionBuilderDrawer } from "./ProductionBuilderDrawer.tsx";
 import { PlayerSheet } from "./PlayerSheet.tsx";
 import type { PlayerView } from "../protocol/types.ts";
+import { partialContext } from "../test/wire.ts";
 
 const player = (over: Partial<PlayerView>): PlayerView => ({
   id: "seat_1",
@@ -185,7 +186,7 @@ describe("build options", () => {
     actor: "seat_1",
     nonce: "n",
     prompt: "produce",
-    context: { subtype: "produce_unit", outstanding: [{ amount: 3, paid: 0 }] },
+    context: partialContext({ subtype: "produce_unit", outstanding: [{ amount: 3, paid: 0 }] }),
     options: [
       {
         id: "build|dreadnought",
@@ -242,7 +243,7 @@ describe("build options", () => {
 describe("player sheet", () => {
   it("has a Faction button per player that opens that player's faction card", () => {
     const players = [
-      player({ id: "p1", faction: "Federation of Sol", leaders: { solhero: "Locked" } }),
+      player({ id: "p1", faction: "Federation of Sol", leaders: { solhero: "locked" } }),
       player({ id: "p2", faction: "Barony of Letnev" }),
     ];
     render(<PlayerSheet players={players} userSeat="p1" />);

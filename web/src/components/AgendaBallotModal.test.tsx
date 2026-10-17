@@ -3,6 +3,8 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { AgendaBallotModal } from "./AgendaBallotModal.tsx";
 import { PendingChoiceDto } from "../protocol/types.ts";
+import { partialContext } from "../test/wire.ts";
+import { PlayerIdentityProvider } from "../presentation/PlayerIdentity.tsx";
 
 describe("AgendaBallotModal", () => {
   it("renders cast_vote stage with live tallies and handles outcome selection and abstain", async () => {
@@ -13,13 +15,13 @@ describe("AgendaBallotModal", () => {
       actor: "seat_1",
       nonce: "30",
       prompt: "vote for which outcome",
-      context: {
+      context: partialContext({
         subtype: "cast_vote",
-      },
+      }),
       options: [
         { id: "FOR", label: "FOR", kind: "vote", payload: { current_votes: 12 } },
         { id: "AGAINST", label: "AGAINST", kind: "vote", payload: { current_votes: 8 } },
-        { id: "decline", label: "Abstain", kind: "decline" },
+        { id: "decline", label: "Abstain", kind: "decline", payload: {} },
       ],
     };
 
@@ -60,13 +62,13 @@ describe("AgendaBallotModal", () => {
       actor: "seat_1",
       nonce: "31",
       prompt: "exhaust a planet to vote FOR",
-      context: {
+      context: partialContext({
         subtype: "vote_exhaust_planet",
-      },
+      }),
       options: [
-        { id: "Mecatol Rex", label: "exhaust Mecatol Rex for 6 votes", kind: "vote_planet" },
-        { id: "Jord", label: "exhaust Jord for 2 votes", kind: "vote_planet" },
-        { id: "decline", label: "Done", kind: "decline" },
+        { id: "Mecatol Rex", label: "exhaust Mecatol Rex for 6 votes", kind: "vote_planet", payload: {} },
+        { id: "Jord", label: "exhaust Jord for 2 votes", kind: "vote_planet", payload: {} },
+        { id: "decline", label: "Done", kind: "decline", payload: {} },
       ],
     };
 
@@ -117,7 +119,7 @@ describe("AgendaBallotModal", () => {
       actor: "seat_1",
       nonce: "31b",
       prompt: "exhaust a planet to vote FOR",
-      context: { subtype: "vote_exhaust_planet" },
+      context: partialContext({ subtype: "vote_exhaust_planet" }),
       options: [
         {
           id: "exhaust|mecatol_rex",
@@ -150,12 +152,12 @@ describe("AgendaBallotModal", () => {
       actor: "seat_1",
       nonce: "32",
       prompt: "speaker breaks the tie",
-      context: {
+      context: partialContext({
         subtype: "vote_tiebreak",
-      },
+      }),
       options: [
-        { id: "FOR", label: "FOR", kind: "tiebreak" },
-        { id: "AGAINST", label: "AGAINST", kind: "tiebreak" },
+        { id: "FOR", label: "FOR", kind: "tiebreak", payload: {} },
+        { id: "AGAINST", label: "AGAINST", kind: "tiebreak", payload: {} },
       ],
     };
 
@@ -187,10 +189,10 @@ describe("AgendaBallotModal", () => {
       actor: "seat_2",
       nonce: "33",
       prompt: "vote for which outcome",
-      context: {
+      context: partialContext({
         subtype: "cast_vote",
-      },
-      options: [{ id: "FOR", label: "FOR" }],
+      }),
+      options: [{ id: "FOR", label: "FOR", payload: {}, kind: "" }],
     };
 
     render(
@@ -216,10 +218,10 @@ describe("AgendaBallotModal", () => {
       actor: "seat_1",
       nonce: "34",
       prompt: "vote for which outcome",
-      context: {
+      context: partialContext({
         subtype: "cast_vote",
-      },
-      options: [{ id: "FOR", label: "FOR" }],
+      }),
+      options: [{ id: "FOR", label: "FOR", payload: {}, kind: "" }],
     };
 
     render(
@@ -244,14 +246,12 @@ describe("AgendaBallotModal", () => {
       actor: "seat_1",
       nonce: "35",
       prompt: "vote for which outcome",
-      context: {
-        subtype: "cast_vote",
-        details: {
-          agenda_card: {
-            name: "Sling Relay",
-            yes_outcome: "All players may move their ships in non-home systems.",
-            no_outcome: "Players cannot move ships during this agenda phase.",
-          },
+      context: partialContext({ subtype: "cast_vote" }),
+      details: {
+        agenda_card: {
+          name: "Sling Relay",
+          yes_outcome: "All players may move their ships in non-home systems.",
+          no_outcome: "Players cannot move ships during this agenda phase.",
         },
       },
       options: [
@@ -288,10 +288,10 @@ describe("AgendaBallotModal", () => {
       actor: "seat_1",
       nonce: "36",
       prompt: "vote for which outcome",
-      context: {
+      context: partialContext({
         subtype: "cast_vote",
-      },
-      options: [{ id: "FOR", label: "FOR" }],
+      }),
+      options: [{ id: "FOR", label: "FOR", payload: {}, kind: "" }],
     };
 
     render(
@@ -313,7 +313,7 @@ describe("AgendaBallotModal map selection", () => {
     actor: "seat_1",
     nonce: "40",
     prompt: "exhaust planets to vote",
-    context: { subtype: "vote_exhaust_planet" },
+    context: partialContext({ subtype: "vote_exhaust_planet" }),
     options: [
       {
         id: "jord",
@@ -327,7 +327,7 @@ describe("AgendaBallotModal map selection", () => {
         kind: "vote_planet",
         payload: { planet: "moll" },
       },
-      { id: "decline", label: "Done", kind: "decline" },
+      { id: "decline", label: "Done", kind: "decline", payload: {} },
     ],
   };
 
@@ -365,5 +365,35 @@ describe("AgendaBallotModal map selection", () => {
       />,
     );
     expect(screen.getByTestId("staged-votes-counter")).toHaveTextContent("+0 votes");
+  });
+  it("shows an elect-player vote as the players, not their seat ids, and still submits the id", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    const choice: PendingChoiceDto = {
+      actor: "a",
+      nonce: "31",
+      prompt: "vote for which outcome",
+      context: partialContext({ subtype: "cast_vote" }),
+      options: ["a", "b", "c", "d"]
+        .map((id) => ({ id, label: id, kind: "vote", payload: { current_votes: 0 } }))
+        .concat([{ id: "decline", label: "Abstain", kind: "decline", payload: { current_votes: 0 } }]),
+    };
+    const lobby = {
+      slots: ["a", "b", "c", "d"].map((id, i) => ({
+        occupant: id,
+        nickname: ["Ann", "Ben", "Cy", "Di"][i],
+        position: i + 1,
+      })),
+    } as never;
+    render(
+      <PlayerIdentityProvider lobby={lobby} seatingOrder={["a", "b", "c", "d"]}>
+        <AgendaBallotModal isOpen choice={choice} viewerSeat="a" onSubmit={onSubmit} onClose={vi.fn()} />
+      </PlayerIdentityProvider>,
+    );
+    expect(screen.getByTestId("vote-outcome-opt-b")).toHaveTextContent("Ben");
+    expect(screen.getByTestId("vote-outcome-opt-d")).toHaveTextContent("Di");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("vote-outcome-opt-c"));
+    });
+    expect(onSubmit).toHaveBeenCalledWith("c");
   });
 });

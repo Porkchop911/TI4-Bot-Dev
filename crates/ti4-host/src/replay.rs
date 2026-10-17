@@ -64,14 +64,15 @@ impl Decider for ReplayDecider {
             force.before_answer(index);
         }
         let offered: Vec<String> = choice.options.iter().map(|o| o.id.clone()).collect();
-        if let Some(opt) = choice.options.iter().find(|o| o.id == wanted) {
+        // A free-form answer (a trade deal with any amounts) is not a listed option.
+        if let Some(opt) = choice.answer_for(&wanted) {
             let mut log = ti4_engine::choice::DecisionLog::default();
-            log.record(choice, opt);
+            log.record(choice, &opt);
             self.answered
                 .lock()
                 .expect("replay answers lock")
                 .extend(log.records);
-            Ok(opt.clone())
+            Ok(opt)
         } else {
             Err(IllegalChoice::ScriptDiverged {
                 player: choice.player.clone(),

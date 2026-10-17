@@ -1,6 +1,6 @@
-import type { BoardView, ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import type { BoardView, ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import { findPlanetMeta, humanizeId } from "../protocol/contentCatalog.ts";
-import { findPlanetSystem } from "./planetSelection.ts";
+import { findPlanetSystem, formatPlanetStats, getPlanetDetails } from "./planetSelection.ts";
 
 const WINDOWS: Record<string, string> = {
   legendary_end_of_turn: "at the end of your turn",
@@ -27,7 +27,7 @@ export function legendaryWindow(choice: Pick<PendingChoiceDto, "context">): stri
 /** One offered legendary ability: its card text and the planet that carries it. */
 export function describeLegendaryOption(
   choice: Pick<PendingChoiceDto, "context">,
-  option: Pick<ChoiceOptionDto, "id" | "kind" | "label">,
+  option: Pick<ChoiceOption, "id" | "kind" | "label">,
   board?: BoardView | null,
 ): LegendaryAbilityView | null {
   if (legendaryWindow(choice) === null || option.kind !== "legendary") return null;
@@ -35,7 +35,7 @@ export function describeLegendaryOption(
   return {
     ability: meta?.legendaryAbilityName ?? option.label,
     planet: meta?.name ?? humanizeId(option.id),
-    stats: meta ? `${meta.resources}R/${meta.influence}I` : null,
+    stats: meta ? formatPlanetStats(getPlanetDetails(option.id, board)) ?? `${meta.resources}R/${meta.influence}I` : null,
     systemId: findPlanetSystem(option.id, board),
     text: meta?.legendaryAbilityText?.trim() || null,
   };

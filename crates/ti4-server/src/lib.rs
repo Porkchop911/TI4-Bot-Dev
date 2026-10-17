@@ -7,8 +7,7 @@ pub mod dev;
 pub mod feedback;
 pub mod fixtures;
 pub mod http;
-pub mod maps;
-pub mod planning;
+pub mod models;
 pub mod public;
 pub mod session;
 pub mod storage;
@@ -16,11 +15,6 @@ pub mod ws;
 
 pub use http::create_app;
 pub use session::{
-    BotServiceConfig, GameRegistry, GameSession, MockClient, RemoteHumanDecider, SeatController,
-    SessionConfig,
+    GameRegistry, GameSession, MockClient, RemoteHumanDecider, SeatController, SessionConfig,
 };
 pub use storage::{FileGameStore, GameInitRecord, StorageError};
-pub use ti4_host::projection;
-pub use ti4_host::protocol;
-pub use ti4_host::protocol::*;
-pub use ti4_host::{card_set, map, preset};

@@ -33,7 +33,7 @@ fn main() {
     );
     show(
         "leaders",
-        ti4_engine::leaders::unimplemented(content, FACTIONS)
+        ti4_engine::leaders::unimplemented(content, sources, FACTIONS)
             .iter()
             .map(ToString::to_string)
             .collect(),

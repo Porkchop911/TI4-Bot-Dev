@@ -24,7 +24,6 @@ import {
   undo,
 } from "./draft";
 import type { LandingStep, MovementStep, ProductionStep } from "./movementPlan";
-import { localSeatStore } from "./seatStore";
 import type { DraftOutcome, DraftStop, SessionUpdate } from "./wire";
 
 const MOVE: MovementStep[] = [
@@ -101,22 +100,11 @@ it("says whether the game played the whole script, and why not", () => {
   );
 });
 
-it("is kept between two visits, with its history", () => {
-  const stored = new Map<string, string>();
-  const storage = {
-    getItem: (key: string) => stored.get(key) ?? null,
-    setItem: (key: string, value: string) => void stored.set(key, value),
-    removeItem: (key: string) => void stored.delete(key),
-  };
-  const store = localSeatStore(storage, { movement: "movement", plan: "draft", secondary: "s" });
-  expect(parseDraft(store.get("plan"))).toBeNull();
+it("is read back as it is kept, with its history", () => {
+  expect(parseDraft(null)).toBeNull();
   const draft = undo(setMovement(activate(newDraft(), "23"), MOVE));
-  store.set("plan", draft);
-  expect(parseDraft(store.get("plan"))).toEqual(draft);
-  stored.set("draft", '{"history":[],"cursor":0}');
-  expect(parseDraft(store.get("plan"))).toBeNull();
-  store.set("plan", null);
-  expect(stored.has("draft")).toBe(false);
+  expect(parseDraft(JSON.parse(JSON.stringify(draft)))).toEqual(draft);
+  expect(parseDraft({ history: [], cursor: 0 })).toBeNull();
 });
 
 it("drops the oldest states of its undo first when it is too large to keep", () => {

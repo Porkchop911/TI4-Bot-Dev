@@ -50,31 +50,23 @@ npm run dev
    engine state after that entry for everyone in the game. Redo remains available
    until a new choice is made; connected tabs reconnect to the restored timeline.
 
-### 4. Self-Service Bot Play (Optional)
+### 4. MLP Bots (Optional)
 
-To enable self-service MLP bots from the lobby:
+The server plays the trained MLP policies itself, inside the game worker, on `ti4-infer` (no
+libtorch, no extra process). Point it at a model directory:
 
-1. **Build the bot agent binary**:
-   ```bash
-   cargo build -p ti4-bot-agent
-   ```
-2. **Start the advisor service** (port 8081):
-   ```bash
-   export LIBTORCH="$PWD/out/libtorch-2.9.1-cpu-linux"
-   export LIBTORCH_BYPASS_VERSION_CHECK=1
-   export LD_LIBRARY_PATH="$LIBTORCH/lib:${LD_LIBRARY_PATH:-}"
-   cargo run -p ti4-advisor -- --port 8081
-   ```
-3. **Start the server with a bot password**:
-   ```bash
-   TI4_BOT_PASSWORD="your-bot-password" cargo run -p ti4-server --bin server
-   ```
-4. **Using Bot Controls in the Web UI**:
-   - In the browser lobby, the **host** will see a **`+ Bot`** button next to each available (unoccupied) seat slot.
-   - _Note_: If `TI4_BOT_PASSWORD` was not set on the server, or if viewing the lobby as a guest/spectator, the `+ Bot` buttons are hidden.
-   - Clicking `+ Bot` opens a modal prompting for the bot's display nickname and the server bot password (with an option to save the password in local storage).
-   - Once submitted, the server spawns a `ti4-bot-agent` process that connects, heartbeats, and readies the seat.
-   - The host can remove a bot by clicking the **`×`** button next to its slot before starting the match.
+```bash
+scripts/pack-models.sh
+TI4_MODEL_DIR=out/models cargo run -p ti4-server --bin server
+```
+
+The directory holds an `index.json` and the packed `.ti4m` files it lists:
+`scripts/pack-models.sh` writes both into `out/models/` from `models/index.json` (an entry has
+`name`, `label`, `temperature`, `source`, `sha256`, the SHA-256 of the whole file, and `offered`).
+Every model is loaded; each offered one (at most three) becomes a bot kind `mlp:<name>` of the
+lobby (`bot_kinds`, `POST /api/games/{id}/lobby/bots` with `{"kind": "mlp:<name>"}`), and its file
+is served to the pages (`GET /api/models`, `GET /api/models/<sha256>.ti4m`). Without
+`TI4_MODEL_DIR` no MLP kind is offered. The lobby of this client offers the rule bot only.
 
 ---
 
@@ -82,7 +74,8 @@ To enable self-service MLP bots from the lobby:
 
 ### Unit & Protocol Conformance Tests (Vitest)
 
-Runs wire fixture validations, React component tests, and invariant checks:
+Runs wire fixture validations (the messages of `../fixtures/protocol/`, written by the Rust tests),
+React component tests, and invariant checks:
 
 ```bash
 npm test
@@ -135,7 +128,7 @@ web/
 │   ├── hooks/
 │   │   └── useGameSession.ts           # WebSocket connection hook with state sync & heartbeat
 │   ├── protocol/
-│   │   └── types.ts                    # TypeScript wire DTOs matching ti4-server Rust protocol
+│   │   └── types.ts                    # the wire types generated from Rust (web-shared), what web narrows, the lobby
 │   ├── test/
 │   │   └── invariants.test.ts          # State integrity and privacy invariant checks
 │   ├── App.tsx                         # Main app container
@@ -143,3 +136,43 @@ web/
 ├── playwright.config.ts                # Playwright configuration with auto-spawning dev servers
 └── vite.config.ts                      # Vite configuration with proxy to ti4-server
 ```
+
+### Shared with web2
+
+The engine driver of offline play (the Worker, `Host`, `HostRunner`, the engine file hash), the
+save store, the wire types (generated from Rust) and their checks (`decodeServerMessage`, the map
+answers: `wire/decode.ts`) are in `../web-shared/`, which web and web2 share. This app imports it as `@ti4/shared/...` (the alias is in
+`vite.config.ts` and `tsconfig.json`). Read [`../web-shared/AGENTS.md`](../web-shared/AGENTS.md)
+before you change it: some changes there need the agreement of both maintainers.
+
+The engine file of offline play (`src/offline/local/engine/ti4_wasm.wasm`, not in the repository)
+is built by `npm run build:wasm` (`scripts/build-wasm.mjs`, also the `prebuild` of `npm run build`).
+It runs the build that web2 runs too, `../web-shared/scripts/build-wasm.mjs`, so both apps get the
+same file from one cargo build. `TI4_WASM_FILE=<file>` copies a prebuilt file, `TI4_SKIP_WASM=1`
+builds without "Play offline", `TI4_REQUIRE_WASM=1` makes a failed build an error.
+
+### The catalog of the printed cards
+
+Every text of a card, technology, unit, faction, leader, objective or planet that web shows comes
+from the engine's catalog (`Catalog.records`): the same JSON from `GET /api/catalog` of the server
+and from the engine's `{"query":"catalog"}`. `CatalogProvider` (`src/components/CatalogProvider.tsx`)
+loads it once, before the app renders: an online page from the server, an offline page
+(`/offline`) from its engine (`src/protocol/pageEngine.ts`); each falls back to the other, and with neither
+the page says that the cards could not be loaded and offers Retry. It fills the tables of
+`src/protocol/catalogStore.ts`, which the content wrappers (`contentCatalog.ts`, `factionInfo.ts`,
+`technologyData.ts`, `unitStats.ts`, `cardDatabase.ts`, ...) read. The unit tests fill them from
+`../fixtures/catalog/catalog.json` (`src/test/setup.ts`), the engine's answer written by
+`cargo wire-web`.
+
+### The odds of a combat
+
+The win odds of a space combat (`SpaceCombatOverlay`) and of a landing (`InvasionLandingTray`)
+come from the engine, online and offline, with no server: `spaceOdds` and `groundOdds` of
+`@ti4/shared/engine/odds.ts` (`{"query":"space_odds"}`, `{"query":"ground_odds"}`, on
+`ti4_calc::odds`). `OddsEngineProvider` (`src/components/OddsEngine.tsx`) gives the game screen
+its engine: in an offline game the engine that plays it (`LocalTransport.queryEngine`, in its
+Worker); online the page's own engine (`src/protocol/pageEngine.ts`: the wasm file fetched and
+compiled once, after the first render, and one instance on the main thread, which also answers
+the catalog). Until it is there the space combat shows a rough fleet estimate ("simulation
+pending") and the landing "Calculating…"; in a browser without WebAssembly JSPI they stay at the
+estimate and "Odds unavailable".

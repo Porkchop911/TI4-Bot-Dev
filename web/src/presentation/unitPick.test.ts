@@ -36,6 +36,30 @@ describe("unit picks (Refit Troops, Scuttle)", () => {
     expect(view?.effect).toBe("Replaced by a mech from your reinforcements.");
   });
 
+  it("names a rival's ship for Lucky Shot, its owner and that it is destroyed", () => {
+    const lucky = {
+      context: { subtype: "lucky_pick_ship", source: { ActionCard: "lucky" } } as never,
+      actor: "player_me",
+      details: { units: { "31|2": { system: "31", planet: null, unit: "dreadnought", owner: "player_rival", damaged: false, cost: 4 } } },
+    };
+    const view = describeUnitPickOption(lucky, { id: "31|2" });
+    expect(view).toMatchObject({ title: "Dreadnought", owner: "player_rival", systemId: "31" });
+    expect(view?.effect).toMatch(/^Destroyed/);
+    // Your own units carry no owner line.
+    expect(describeUnitPickOption({ ...lucky, actor: "player_rival" }, { id: "31|2" })?.owner).toBeNull();
+  });
+
+  it("says a cruiser becomes a dreadnought for Upgrade", () => {
+    const upgrade = {
+      context: { subtype: "upgrade_pick_cruiser", source: { ActionCard: "upgrade" } } as never,
+      details: { units: { "1": { system: "27", planet: null, unit: "cruiser2", owner: "p", damaged: false, cost: 2 } } },
+    };
+    expect(isUnitPick(upgrade)).toBe(true);
+    const view = describeUnitPickOption(upgrade, { id: "1" });
+    expect(view?.title).toBe("Cruiser II");
+    expect(view?.effect).toBe("Replaced by a dreadnought from your reinforcements.");
+  });
+
   it("has nothing for the stop option or a decision without details", () => {
     expect(describeUnitPickOption(scuttle, { id: "stop" })).toBeNull();
     expect(describeUnitPickOption({ ...scuttle, details: undefined }, { id: "26|0" })).toBeNull();

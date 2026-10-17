@@ -7,10 +7,10 @@ use ti4_content::ContentStore;
 use ti4_content::galaxy::Galaxy;
 use ti4_engine::choice::{Choice, ChoiceOption, Decider, DecisionRecord, IllegalChoice, Table};
 use ti4_engine::game::Game;
+use ti4_host::history::splice::{SpliceBaseline, SpliceError, splice_preview};
+use ti4_host::protocol::splice::{AlignmentChange, ConflictKind, RngStatus, SpliceEdit};
 use ti4_model::id::PlayerId;
 use ti4_model::state::GameState;
-use ti4_server::protocol::splice::{AlignmentChange, ConflictKind, RngStatus, SpliceEdit};
-use ti4_server::session::splice::{SpliceBaseline, SpliceError, splice_preview};
 
 /// A tiny LCG picks options, so histories are varied but reproducible. The aggressive flavour
 /// marches fleets at each other, which is what makes dice.
@@ -64,7 +64,8 @@ fn setup(seed: u64) -> (GameState, Galaxy) {
         PlayerId::new("p3"),
     ];
     let (mut state, galaxy) =
-        ti4_server::map::create_game_with_map(ContentStore::embedded(), &players, seed).unwrap();
+        ti4_host::map::create_game_with_template(ContentStore::embedded(), &players, seed, None)
+            .unwrap();
     // These fixtures name decisions by index in games tuned against the notes a server game held
     // before notes were dealt after seating: four factionless notes in the last seat's hand.
     // Keep that opening so the indices still mean what they were chosen for.
@@ -78,6 +79,9 @@ fn setup(seed: u64) -> (GameState, Galaxy) {
             )
         })
         .collect();
+    // The decision indices were chosen before Letnev could redistribute below two fleet tokens
+    // (rules version 4): keep the option lists those games saw.
+    state.rules_version = ti4_model::state::RULES_LETNEV_FLEET_POOL - 1;
     (state, galaxy)
 }
 
@@ -350,10 +354,19 @@ fn removing_a_decision_that_drew_cards_is_flagged_not_neutral() {
 #[test]
 fn replacing_a_decline_with_a_draw_is_caught_without_a_removal() {
     let (state, galaxy, h) = base_history();
-    assert_eq!(h[206].chosen, "no");
-    let p = splice_preview(&state, Some(&galaxy), &h, &replace(206, "yes")).unwrap();
+    // Politics' secondary, declined: the history is found by what it asks, not by its index.
+    let k = h
+        .iter()
+        .position(|r| {
+            r.prompt
+                .starts_with("spend a strategy token to draw two action cards")
+                && r.chosen == "no"
+                && r.offered.iter().any(|o| o == "yes")
+        })
+        .expect("the fixture game declines Politics' secondary draw");
+    let p = splice_preview(&state, Some(&galaxy), &h, &replace(k, "yes")).unwrap();
     assert_eq!(p.rng.status, RngStatus::NotNeutral);
-    assert_eq!(p.rng.first_divergence_cursor, Some(206));
+    assert_eq!(p.rng.first_divergence_cursor, Some(k));
     assert_eq!(
         p.rng.first_divergence.unwrap().decks.get("action_card"),
         Some(&-2)
@@ -431,8 +444,9 @@ fn the_dry_run_leaves_the_game_its_history_and_storage_untouched() {
     let guest = PlayerId::new("p2");
     let players = vec![host.clone(), guest.clone()];
     let (state, galaxy) =
-        ti4_server::map::create_game_with_map(ContentStore::embedded(), &players, 42).unwrap();
-    let tiles = ti4_server::map::build_board_tiles(ContentStore::embedded(), &galaxy);
+        ti4_host::map::create_game_with_template(ContentStore::embedded(), &players, 42, None)
+            .unwrap();
+    let tiles = ti4_host::map::build_board_tiles(ContentStore::embedded(), &galaxy);
     let config = SessionConfig::new("splice_probe", state)
         .with_seed(42)
         .with_player_ids(players)
@@ -455,7 +469,7 @@ fn the_dry_run_leaves_the_game_its_history_and_storage_untouched() {
     for _ in 0..4 {
         let (seat, nonce, version) = wait_pending();
         let option = session
-            .get_snapshot(&ti4_server::protocol::status::ViewerRole::Player(
+            .get_snapshot(&ti4_host::protocol::status::ViewerRole::Player(
                 seat.clone(),
             ))
             .pending_choice

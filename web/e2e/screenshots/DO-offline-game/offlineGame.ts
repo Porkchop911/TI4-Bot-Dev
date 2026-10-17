@@ -20,7 +20,7 @@ export function requireEngine() {
  */
 export async function startGame(page: Page): Promise<string> {
   requireEngine();
-  await page.route(/\/(api|ws|advisor|health)(\/|$)/, (route) => route.abort());
+  await page.route(/\/(api|ws|health)(\/|$)/, (route) => route.abort());
   await page.goto("/offline");
   await page.getByTestId("offline-nickname").fill("Ada");
   await page.getByTestId("offline-player-count").selectOption("4");

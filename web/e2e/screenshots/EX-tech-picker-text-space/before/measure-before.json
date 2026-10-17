@@ -1,0 +1,62 @@
+{
+ "free-skips desktop": {
+  "firstCardTop": 410,
+  "researchPanelBottom": 268,
+  "skipsTop": 164,
+  "filterTop": 284,
+  "filterBottom": 338,
+  "skipPillHeight": 30,
+  "effectVisible": true,
+  "effectHeight": 59
+ },
+ "free-noskips desktop": {
+  "firstCardTop": 409,
+  "researchPanelBottom": 267,
+  "skipsTop": 172,
+  "filterTop": 283,
+  "filterBottom": 337,
+  "skipPillHeight": null,
+  "effectVisible": true,
+  "effectHeight": 59
+ },
+ "free-skips 390x844": {
+  "firstCardTop": 336,
+  "researchPanelBottom": 198,
+  "skipsTop": 75,
+  "filterTop": 214,
+  "filterBottom": 268,
+  "skipPillHeight": 44,
+  "effectVisible": false,
+  "effectHeight": 0
+ },
+ "free-noskips 390x844": {
+  "firstCardTop": 307,
+  "researchPanelBottom": 169,
+  "skipsTop": 76,
+  "filterTop": 185,
+  "filterBottom": 239,
+  "skipPillHeight": null,
+  "effectVisible": false,
+  "effectHeight": 0
+ },
+ "free-skips 844x390": {
+  "firstCardTop": 52,
+  "researchPanelBottom": 220,
+  "skipsTop": 100,
+  "filterTop": 236,
+  "filterBottom": 390,
+  "skipPillHeight": 44,
+  "effectVisible": false,
+  "effectHeight": 0
+ },
+ "free-noskips 844x390": {
+  "firstCardTop": 52,
+  "researchPanelBottom": 220,
+  "skipsTop": 100,
+  "filterTop": 236,
+  "filterBottom": 390,
+  "skipPillHeight": null,
+  "effectVisible": false,
+  "effectHeight": 0
+ }
+}

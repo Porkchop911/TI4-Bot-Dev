@@ -649,7 +649,13 @@ fn radical(owner_name: &str, seat: &PlayerId) -> Ability {
                 seat.technologies.remove(&swap.old);
                 seat.exhausted_technologies.remove(&swap.old);
             }
-            crate::technology::gain(context.state, context.content, context.sources, &owner, &swap.new);
+            crate::technology::gain(
+                context.state,
+                context.content,
+                context.sources,
+                &owner,
+                &swap.new,
+            );
             Ok(())
         }),
     )
@@ -1750,7 +1756,13 @@ mod tests {
             1,
         );
         crate::fixtures::put(&mut state, &centre, "cruiser", &a(), 1);
-        crate::fixtures::put(&mut state, &SystemId::new(beside.as_str()), "cruiser", &a(), 1);
+        crate::fixtures::put(
+            &mut state,
+            &SystemId::new(beside.as_str()),
+            "cruiser",
+            &a(),
+            1,
+        );
         let flagship = Some("deepwrought_flagship");
         // No such destination: the search has to run out and say so.
         assert!(!rules(&hub, &state, "nowhere").can_reach_ship(&start, 1, flagship));

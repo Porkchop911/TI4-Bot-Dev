@@ -8,14 +8,14 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::net::TcpListener;
 use tokio_tungstenite::tungstenite::Message;
 
-use ti4_server::create_app;
-use ti4_server::dev::execute_launch_scenario;
-use ti4_server::protocol::PROTOCOL_VERSION;
-use ti4_server::protocol::client::ClientMessage;
-use ti4_server::protocol::server::{
+use ti4_host::protocol::PROTOCOL_VERSION;
+use ti4_host::protocol::client::ClientMessage;
+use ti4_host::protocol::server::{
     PreviewRefusal, PreviewResult, SecondaryPreviewMsg, ServerMessage,
 };
-use ti4_server::protocol::status::ViewerRole;
+use ti4_host::protocol::status::ViewerRole;
+use ti4_server::create_app;
+use ti4_server::dev::launch_scenario;
 use ti4_server::session::GameRegistry;
 
 type Socket =
@@ -90,8 +90,7 @@ async fn previews_are_seated_only_private_and_rate_limited() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
     let addr = format!("127.0.0.1:{}", listener.local_addr().unwrap().port());
     tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
-    let launch =
-        execute_launch_scenario(&registry, "research_tech_skips", Some(17)).expect("launch");
+    let launch = launch_scenario(&registry, "research_tech_skips", Some(17)).expect("launch");
     let game_id = launch.game_id;
     let session = registry.get_game(&game_id).expect("game");
     let Some(ViewerRole::Player(seat)) = session.viewer_for_seat_token(&launch.player_session)
@@ -182,7 +181,7 @@ async fn previews_are_seated_only_private_and_rate_limited() {
         {
             assert_eq!(
                 error.kind,
-                ti4_server::protocol::error::ErrorKind::MalformedMessage
+                ti4_host::protocol::error::ErrorKind::MalformedMessage
             );
             break;
         }

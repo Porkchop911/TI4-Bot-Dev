@@ -8,14 +8,14 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::net::TcpListener;
 use tokio_tungstenite::tungstenite::Message;
 
+use ti4_host::planning::draft::DraftStep;
+use ti4_host::planning::steps::PlanStep;
+use ti4_host::protocol::PROTOCOL_VERSION;
+use ti4_host::protocol::client::ClientMessage;
+use ti4_host::protocol::server::ServerMessage;
+use ti4_host::protocol::status::{RejectionReason, UndoBarrier, ViewerRole};
 use ti4_model::id::PlayerId;
-use ti4_server::protocol::PROTOCOL_VERSION;
-use ti4_server::protocol::client::ClientMessage;
-use ti4_server::protocol::server::ServerMessage;
-use ti4_server::protocol::status::{RejectionReason, UndoBarrier, ViewerRole};
 use ti4_server::session::{GameRegistry, GameSession};
-use ti4_view::planning::draft::DraftStep;
-use ti4_view::planning::steps::PlanStep;
 
 use crate::draft_scripts::{
     asked, config, movement_script, next_message, passive, ships_at, subtype, to_the_turn_menu,
@@ -32,9 +32,8 @@ fn game(game_id: &str) -> (Arc<GameRegistry>, PlayerId, String) {
             "Host",
             None,
             None,
-            ti4_server::card_set::DEFAULT,
-            ti4_server::map::SpeakerOrder::Seat,
-            ti4_server::session::table::SeatOrder::Join,
+            ti4_host::setup::card_set::DEFAULT,
+            ti4_host::setup::SpeakerOrder::Seat,
             None,
         )
         .expect("a started game");
@@ -58,9 +57,26 @@ fn steps(script: &[DraftStep]) -> Vec<PlanStep> {
         .collect()
 }
 
-#[test]
-fn a_seat_takes_back_its_action_and_not_the_decision_of_another_seat() {
-    let game_id = "undo_action";
+/// A game in which the seat moved one ship, and what the test needs of it.
+struct Moved {
+    game_id: String,
+    registry: Arc<GameRegistry>,
+    seat: PlayerId,
+    credential: String,
+    session: Arc<GameSession>,
+    at_the_menu: Vec<ti4_engine::choice::DecisionRecord>,
+    script: Vec<DraftStep>,
+    target: String,
+    unit: String,
+    before: usize,
+    version: u64,
+}
+
+/// Plays the seat to its turn and sends the movement of one ship. In the game of the seed of
+/// [`game`] no other seat answers the movement (as Foresight of the Naalu could, whose ships are
+/// in the system): the seat may take back all of it. The seats that the server plays decide by
+/// their place, so the seed tells the game.
+fn moved_alone(game_id: &str) -> Moved {
     let (registry, seat, credential) = game(game_id);
     let session = registry.get_game(game_id).expect("the game runs");
     let (_, nonce, version) = to_the_turn_menu(&session, &seat);
@@ -75,6 +91,43 @@ fn a_seat_takes_back_its_action_and_not_the_decision_of_another_seat() {
     );
     let (_, _, version) = asked(&session, &seat);
     assert_eq!(ships_at(&session, &target, &seat, &unit), before + 1);
+    assert!(
+        session.decision_log()[at_the_menu.len()..]
+            .iter()
+            .all(|record| record.player == seat),
+        "another seat answers the movement: the test needs a seed where none does"
+    );
+    Moved {
+        game_id: game_id.to_owned(),
+        registry,
+        seat,
+        credential,
+        session,
+        at_the_menu,
+        script,
+        target,
+        unit,
+        before,
+        version,
+    }
+}
+
+#[test]
+fn a_seat_takes_back_its_action_and_not_the_decision_of_another_seat() {
+    let Moved {
+        game_id,
+        registry,
+        seat,
+        credential,
+        session,
+        at_the_menu,
+        script,
+        target,
+        unit,
+        before,
+        version,
+    } = moved_alone("undo_action");
+    let game_id = game_id.as_str();
     assert!(can_undo(&session, &seat));
     // No other viewer may undo, and a version that is not the game's is refused.
     assert!(!can_undo(&session, &PlayerId::new("player_2")));
@@ -220,7 +273,20 @@ fn slow_a_card_that_is_drawn_ends_the_undo_and_a_recovered_game_knows_it() {
     let recovered = GameSession::start_recovered(again, log, events);
     recovered.wait_replayed().expect("the replay ends");
     let (_, _, version) = asked(&recovered, &seat);
-    assert_eq!(recovered.undo_plan(&seat, version), plan);
+    // A recovered session has no entries of its own: its first look at the game finds decisions
+    // no seat of the session answered, so it is cut as `OtherSeat`. When the live game stands
+    // right after an own decision of the seat without any barrier, the plans differ by that.
+    let again_plan = recovered.undo_plan(&seat, version);
+    if plan.is_ok() {
+        assert_eq!(
+            again_plan,
+            Err(RejectionReason::UndoBarrier {
+                barrier: UndoBarrier::OtherSeat
+            })
+        );
+    } else {
+        assert_eq!(again_plan, plan);
+    }
     recovered.stop();
 }
 

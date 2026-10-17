@@ -37,7 +37,11 @@ export interface GameTransport {
   /** Try to reconnect now (the Retry button). */
   retryNow(): void;
 
-  submitChoice(optionId: string): Promise<void>;
+  /**
+   * Answers the pending question. With `nonce` (the question the caller showed) a stale answer is
+   * refused with `StaleChoiceError` and nothing is sent.
+   */
+  submitChoice(optionId: string, nonce?: string): Promise<void>;
   submitBatch(plan: BatchPlan): Promise<void>;
   submitMovementBatch(destination: string, steps: MovementStep[]): Promise<void>;
   resumeBatch(): Promise<void>;
@@ -62,6 +66,11 @@ export interface GameTransport {
   turnRedoCommand(command: TurnRedoCommand): Promise<void>;
   /** Needs `capabilities.splicePreview`. Not used by the hook; the history panel calls it. */
   previewSplice?(edit: SpliceEdit): Promise<SplicePreview>;
+  /**
+   * A question of the engine that plays the game, when it runs on this device (`{"query": ...}`:
+   * the odds of a combat). Without it the page asks its own engine.
+   */
+  queryEngine?(request: object): Promise<unknown>;
 }
 
 /** The WebSocket/HTTP transport to the game server. `GameSessionClient` is its implementation. */

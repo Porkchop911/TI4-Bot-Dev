@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { GENERATED_CONTENT_CATALOG } from "../protocol/generatedContentManifest.ts";
+import { CONTENT } from "../protocol/catalogStore.ts";
 import { printedCardName } from "./tradeNames.ts";
 
-const NOTES = GENERATED_CONTENT_CATALOG.promissoryNotes as unknown as Record<
+const NOTES = CONTENT.promissoryNotes as unknown as Record<
   string,
   { name: string; faction?: string }
 >;

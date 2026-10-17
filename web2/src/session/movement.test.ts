@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
-import loadUpdate from "./fixtures/update-load.json";
-import movementUpdate from "./fixtures/update-movement.json";
+import loadUpdate from "../../../fixtures/protocol/update-load.json";
+import movementUpdate from "../../../fixtures/protocol/update-movement.json";
 import {
   type MovementDraft,
   fill,
@@ -16,9 +16,8 @@ import { type MovementStep, draftOf, stepOf, stepsOf } from "./movementPlan";
 import type { MovementFacts, SessionUpdate } from "./wire";
 
 // Updates of a real game, written by the engine (seat a is Sol; it activated the system next
-// to its home, where it has two carriers, a destroyer, three fighters and five infantry):
-//   cargo run -p ti4-wasm --example record -- 3 8 1 5 pok8imperial no tactical 23 > web2/src/session/fixtures/update-movement.json
-//   cargo run -p ti4-wasm --example record -- 3 8 1 6 pok8imperial no tactical 23 'move|01|0' > web2/src/session/fixtures/update-load.json
+// to its home, where it has two carriers, a destroyer, three fighters and five infantry), from
+// `crates/ti4-wasm/tests/it/protocol_fixtures.rs` (`cargo wire-web`).
 const moving = movementUpdate as unknown as SessionUpdate;
 const loading = loadUpdate as unknown as SessionUpdate;
 const facts = moving.tactical as MovementFacts;
@@ -142,7 +141,7 @@ it("stages the steps of a stopped plan again", () => {
 const moveChoice = moving.pending_choice!.choice;
 const loadChoice = loading.pending_choice!.choice;
 
-// How a step answers a choice is decided in the engine (`plan_answer` in ti4-view); the tests
+// How a step answers a choice is decided in the engine (`plan_answer` in ti4-host); the tests
 // of it are there, and `wasmTransport.test.ts` sends plans to the real engine.
 it("reads the step back from the option that answered it", () => {
   // Every option of a movement is a step, and no two options are the same step.

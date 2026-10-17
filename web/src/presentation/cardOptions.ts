@@ -1,11 +1,11 @@
-import type { ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import type { ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import {
   findActionCardByName,
   findActionCardMeta,
   findSecretObjectiveMeta,
   humanizeId,
 } from "../protocol/contentCatalog.ts";
-import { GENERATED_CONTENT_CATALOG } from "../protocol/generatedContentManifest.ts";
+import { CONTENT } from "../protocol/catalogStore.ts";
 
 export interface CardOptionInfo {
   title: string;
@@ -20,11 +20,26 @@ const DISCARD_SUBTYPES = new Set(["discard_over_hand_limit", "expedition_discard
 const TAKE_SUBTYPES = new Set(["take_revealed_action_card"]);
 const SECRET_SUBTYPES = new Set(["return_over_secret_hand_limit", "expedition_discard_secret"]);
 
+/**
+ * Lie in Wait: the hand of one neighbour is laid open (`details.from`); take 1 card. The alias in
+ * front of `_pick_action_card` is the card's, so only that one (Spy takes a random card, no pick).
+ */
+const HAND_TAKE_PICK = /^lieinwait_pick_action_card$/;
+/** Seize Artifact: which of the neighbour's relic fragments (one per trait) to take. */
+const FRAGMENT_PICK = /^seize_pick_fragment$/;
+const FRAGMENT_TRAITS: Record<string, string> = {
+  cultural: "Cultural",
+  hazardous: "Hazardous",
+  industrial: "Industrial",
+  frontier: "Frontier",
+  unknown: "Unknown",
+};
+
 /** Diplomatic Pressure (and any card) asking a seat which promissory note to give: `<card>_pick_promissory note`. */
 const NOTE_PICK_SUBTYPE = /_pick_promissory note$/;
 
 type NoteRecord = { name: string; text?: string };
-const NOTES = GENERATED_CONTENT_CATALOG.promissoryNotes as unknown as Record<string, NoteRecord>;
+const NOTES = CONTENT.promissoryNotes as unknown as Record<string, NoteRecord>;
 
 /** A note id is `alias:Owner faction` (Support for the Throne: `support:Owner`). */
 function describeNote(id: string): CardOptionInfo {
@@ -45,7 +60,12 @@ function describeNote(id: string): CardOptionInfo {
 export function isHandCardDecision(subtype: string | undefined): boolean {
   return (
     subtype !== undefined &&
-    (NOTE_PICK_SUBTYPE.test(subtype) || DISCARD_SUBTYPES.has(subtype) || TAKE_SUBTYPES.has(subtype) || SECRET_SUBTYPES.has(subtype))
+    (NOTE_PICK_SUBTYPE.test(subtype) ||
+      DISCARD_SUBTYPES.has(subtype) ||
+      TAKE_SUBTYPES.has(subtype) ||
+      HAND_TAKE_PICK.test(subtype) ||
+      FRAGMENT_PICK.test(subtype) ||
+      SECRET_SUBTYPES.has(subtype))
   );
 }
 
@@ -55,11 +75,19 @@ export function isHandCardDecision(subtype: string | undefined): boolean {
  */
 export function describeCardOption(
   subtype: string | undefined,
-  option: Pick<ChoiceOptionDto, "id" | "label">,
+  option: Pick<ChoiceOption, "id" | "label">,
 ): CardOptionInfo | null {
   if (!subtype) return null;
   if (NOTE_PICK_SUBTYPE.test(subtype)) return describeNote(option.id);
-  if (DISCARD_SUBTYPES.has(subtype) || TAKE_SUBTYPES.has(subtype)) {
+  if (FRAGMENT_PICK.test(subtype)) {
+    const trait = FRAGMENT_TRAITS[option.id] ?? humanizeId(option.id);
+    return {
+      title: `${trait} relic fragment`,
+      text: `Purge 3 ${trait.toLowerCase()} fragments (unknown ones count as any type) to gain 1 relic.`,
+      badge: "Relic fragment",
+    };
+  }
+  if (DISCARD_SUBTYPES.has(subtype) || TAKE_SUBTYPES.has(subtype) || HAND_TAKE_PICK.test(subtype)) {
     const meta = findActionCardByName(option.label) ?? findActionCardMeta(option.id);
     return {
       title: meta?.name ?? option.label,
@@ -86,9 +114,18 @@ export function describeCardOption(
 }
 
 /** One line under the question that says how many cards are held and what leaves. */
-export function handDecisionNote(choice: Pick<PendingChoiceDto, "prompt" | "options" | "context">): string | null {
+export function handDecisionNote(
+  choice: Pick<PendingChoiceDto, "prompt" | "options" | "context"> & Partial<Pick<PendingChoiceDto, "details">>,
+): string | null {
   const subtype = choice.context?.subtype;
   if (!subtype) return null;
+  if (HAND_TAKE_PICK.test(subtype)) {
+    const from = choice.details?.from;
+    return `You looked at ${typeof from === "string" ? `${from}'s` : "their"} hand of action cards. Choose one to add to your hand; their other cards stay with them. Nobody else sees these cards.`;
+  }
+  if (FRAGMENT_PICK.test(subtype)) {
+    return "They hold these relic fragments. Choose which one they give you.";
+  }
   if (DISCARD_SUBTYPES.has(subtype)) {
     const held = /\bof (\d+)\s*$/.exec(choice.prompt)?.[1];
     return held
@@ -108,7 +145,8 @@ export function handDecisionNote(choice: Pick<PendingChoiceDto, "prompt" | "opti
 export function handDecisionConfirmLabel(subtype: string | undefined): string | null {
   if (!subtype) return null;
   if (DISCARD_SUBTYPES.has(subtype)) return "Discard card";
-  if (TAKE_SUBTYPES.has(subtype)) return "Take card";
+  if (TAKE_SUBTYPES.has(subtype) || HAND_TAKE_PICK.test(subtype)) return "Take card";
+  if (FRAGMENT_PICK.test(subtype)) return "Take fragment";
   if (SECRET_SUBTYPES.has(subtype)) return "Return objective";
   return null;
 }

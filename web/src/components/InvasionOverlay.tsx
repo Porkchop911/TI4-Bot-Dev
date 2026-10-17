@@ -239,12 +239,6 @@ export const InvasionEffectCard: React.FC<{
                 {unit && cost !== null && (
                   <small className="invasion-effect-btn__sub"> · cost {cost}</small>
                 )}
-                {option.description && (
-                  <small className="invasion-effect-btn__sub">
-                    {" "}
-                    · {option.description}
-                  </small>
-                )}
               </button>
             );
           })}
@@ -264,6 +258,8 @@ export const InvasionOverlay: React.FC<{
   lastError?: string | null;
   landingDraft?: Landing[];
   onLandingDraftChange?: (draft: Landing[]) => void;
+  /** The game waits for another seat or a reaction window (turn status): the landings pause. */
+  othersDeciding?: boolean;
   /** When present, ground combat hits are staged in a panel and sent as one casualty plan. */
   onSubmitBatch?: (plan: BasketPlan) => Promise<void>;
 }> = ({
@@ -277,6 +273,7 @@ export const InvasionOverlay: React.FC<{
   landingDraft,
   onLandingDraftChange,
   onSubmitBatch,
+  othersDeciding = false,
 }) => {
   const display = usePlayerIdentity();
   const lastLandingChoice = useRef<PendingChoiceDto | null>(null);
@@ -569,6 +566,12 @@ export const InvasionOverlay: React.FC<{
             lastError={lastError}
             draft={landingDraft}
             onDraftChange={onLandingDraftChange}
+            interrupted={
+              // Between two landings the next offer may not have arrived yet (no choice, the
+              // invader still the one asked): only another decision interrupts.
+              !(isLandingChoice && choice?.actor === viewerSeat) &&
+              (!!choice || othersDeciding)
+            }
           />
         </div>
       )}

@@ -2,10 +2,10 @@
 
 use std::sync::Arc;
 use ti4_content::ContentStore;
+use ti4_host::protocol::server::ServerMessage;
+use ti4_host::protocol::status::ViewerRole;
+use ti4_host::replay::replay_session;
 use ti4_model::id::PlayerId;
-use ti4_server::protocol::server::ServerMessage;
-use ti4_server::protocol::status::ViewerRole;
-use ti4_server::session::replay::replay_session;
 use ti4_server::session::{GameSession, MockClient, SeatController, SessionConfig};
 
 #[test]
@@ -17,9 +17,9 @@ fn recovery_replay_produces_identical_canonical_hashes_and_event_logs() {
 
     let content = ContentStore::embedded();
     let seed = 424_242;
-    let (state, galaxy) =
-        ti4_server::map::create_game_with_map(content, &players, seed).expect("create map");
-    let map_tiles = ti4_server::map::build_board_tiles(content, &galaxy);
+    let (state, galaxy) = ti4_host::map::create_game_with_template(content, &players, seed, None)
+        .expect("create map");
+    let map_tiles = ti4_host::map::build_board_tiles(content, &galaxy);
 
     let config = SessionConfig::new("game_recovery_test", state.clone())
         .with_galaxy(galaxy.clone(), map_tiles)
@@ -98,7 +98,7 @@ fn recovery_replay_produces_identical_canonical_hashes_and_event_logs() {
             ServerMessage::TurnStatus(m)
                 if matches!(
                     m.status,
-                    ti4_server::protocol::PublicTurnStatus::WaitingForDecision { .. }
+                    ti4_host::protocol::PublicTurnStatus::WaitingForDecision { .. }
                 ) =>
             {
                 break;
@@ -177,7 +177,7 @@ async fn http_snapshot_fetches_current_state_and_events_for_reconnecting_client(
         .post(format!("{base_url}/api/games"))
         .json(&serde_json::json!({
             "player_count": 3, "nickname": "Host",
-            "seed": 12345, "seat_order": "join"
+            "seed": 12345
         }))
         .send()
         .await
@@ -241,11 +241,11 @@ async fn http_snapshot_fetches_current_state_and_events_for_reconnecting_client(
     assert_eq!(snap_res.status(), reqwest::StatusCode::OK);
 
     let snapshot = match snap_res
-        .json::<ti4_server::protocol::server::ServerMessage>()
+        .json::<ti4_host::protocol::server::ServerMessage>()
         .await
         .expect("deserialize snapshot")
     {
-        ti4_server::protocol::server::ServerMessage::InitialSnapshot(snapshot) => snapshot,
+        ti4_host::protocol::server::ServerMessage::InitialSnapshot(snapshot) => snapshot,
         message => panic!("expected initial snapshot, got {message:?}"),
     };
     assert_eq!(snapshot.game_id, game_id);
@@ -255,7 +255,7 @@ async fn http_snapshot_fetches_current_state_and_events_for_reconnecting_client(
     );
     assert!(matches!(
         snapshot.events[0].event,
-        ti4_server::protocol::GameEventKind::GameInitialized { .. }
+        ti4_host::protocol::GameEventKind::GameInitialized { .. }
     ));
 
     // 3. Submit an action and verify snapshot updates event log
@@ -290,18 +290,20 @@ async fn http_snapshot_fetches_current_state_and_events_for_reconnecting_client(
     assert_eq!(reconnect_res.status(), reqwest::StatusCode::OK);
 
     let reconnect_snap = match reconnect_res
-        .json::<ti4_server::protocol::server::ServerMessage>()
+        .json::<ti4_host::protocol::server::ServerMessage>()
         .await
         .expect("deserialize reconnect snapshot")
     {
-        ti4_server::protocol::server::ServerMessage::InitialSnapshot(snapshot) => snapshot,
+        ti4_host::protocol::server::ServerMessage::InitialSnapshot(snapshot) => snapshot,
         message => panic!("expected initial snapshot, got {message:?}"),
     };
 
-    assert!(reconnect_snap.events.iter().any(|e| matches!(
-        e.event,
-        ti4_server::protocol::GameEventKind::DecisionResolved
-    )));
+    assert!(
+        reconnect_snap
+            .events
+            .iter()
+            .any(|e| matches!(e.event, ti4_host::protocol::GameEventKind::DecisionResolved))
+    );
     assert_eq!(reconnect_snap.events.len(), session.event_log().len());
 
     session.stop();

@@ -2,10 +2,10 @@
 
 use std::thread;
 use std::time::Duration;
+use ti4_host::protocol::server::ServerMessage;
+use ti4_host::protocol::status::{RejectionReason, ViewerRole};
 use ti4_model::id::PlayerId;
 use ti4_server::fixtures::create_sample_game;
-use ti4_server::protocol::server::ServerMessage;
-use ti4_server::protocol::status::{RejectionReason, ViewerRole};
 use ti4_server::session::{GameSession, MockClient, SeatController, SessionConfig};
 
 #[test]
@@ -109,10 +109,10 @@ fn wrong_seat_stale_nonce_and_unknown_option_preserve_state_and_log() {
     assert!(
         events.iter().all(|event| matches!(
             event.event,
-            ti4_server::protocol::GameEventKind::GameInitialized { .. }
-                | ti4_server::protocol::GameEventKind::DecisionResolved
-                | ti4_server::protocol::GameEventKind::PhaseTransition { .. }
-                | ti4_server::protocol::GameEventKind::GameFinished { .. }
+            ti4_host::protocol::GameEventKind::GameInitialized { .. }
+                | ti4_host::protocol::GameEventKind::DecisionResolved
+                | ti4_host::protocol::GameEventKind::PhaseTransition { .. }
+                | ti4_host::protocol::GameEventKind::GameFinished { .. }
         )),
         "public event history must use the fixed non-private event vocabulary"
     );

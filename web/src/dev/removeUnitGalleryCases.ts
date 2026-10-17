@@ -1,7 +1,8 @@
 import type { GalleryCase } from "./decisionGalleryCases.ts";
+import { partialContext } from "../test/wire.ts";
 
 const actor = "gallery_seat";
-const remove = (id: string, label: string) => ({ id, label, kind: "remove" });
+const remove = (id: string, label: string) => ({ id, label, kind: "remove", payload: {} });
 
 /** "Remove a unit" over the fleet supply or capacity: system 18 holds the shared gallery fleet. */
 export function removeUnitCases(): GalleryCase[] {
@@ -62,11 +63,11 @@ function manyReactionsCase(): GalleryCase {
       actor,
       nonce: "gallery-reaction-many",
       prompt: "reaction_after_SYSTEM_ACTIVATED",
-      context: {
+      context: partialContext({
         subtype: "reaction_after_SYSTEM_ACTIVATED",
         optional: true,
         source: { Reaction: "SYSTEM_ACTIVATED" },
-      },
+      }),
       options: [
         ...cards.map(([id, name]) => ({
           id,
@@ -74,7 +75,7 @@ function manyReactionsCase(): GalleryCase {
           kind: "ability",
           payload: { card: id, card_name: name },
         })),
-        { id: "decline", label: "Pass", kind: "decline" },
+        { id: "decline", label: "Pass", kind: "decline", payload: {} },
       ],
     },
   };
@@ -92,7 +93,7 @@ function unitAbilityCases(): GalleryCase[] {
         actor,
         nonce: "gallery-orbital-drop",
         prompt: "Orbital Drop: deploy a mech on jord",
-        context: { subtype: "orbital_drop_deploy_mech", optional: true },
+        context: partialContext({ subtype: "orbital_drop_deploy_mech", optional: true }),
         options: [
           {
             id: "deploy|sol_mech|1",
@@ -100,7 +101,7 @@ function unitAbilityCases(): GalleryCase[] {
             kind: "produce",
             payload: { unit: "sol_mech", count: 1, cost: 3, system: "18", planet: "jord", orbital_drop_deploy: true },
           },
-          { id: "decline", label: "Pass", kind: "decline" },
+          { id: "decline", label: "Pass", kind: "decline", payload: {} },
         ],
       },
     },
@@ -138,7 +139,7 @@ function unitAbilityCases(): GalleryCase[] {
         actor,
         nonce: "gallery-transit-diodes",
         prompt: "Transit Diodes: move a ground force",
-        context: { subtype: "transit_diodes_redeploy", optional: true },
+        context: partialContext({ subtype: "transit_diodes_redeploy", optional: true }),
         options: [
           {
             id: "transit|18|jord|infantry|18|exhausted",
@@ -146,7 +147,7 @@ function unitAbilityCases(): GalleryCase[] {
             kind: "transit",
             payload: { source_system: "18", source: "jord", unit: "infantry", destination_system: "18", planet: "exhausted" },
           },
-          { id: "decline", label: "Pass", kind: "decline" },
+          { id: "decline", label: "Pass", kind: "decline", payload: {} },
         ],
       },
     },

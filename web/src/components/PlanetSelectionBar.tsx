@@ -1,6 +1,8 @@
+import { PlagueTargetNote } from "./PlagueTargetNote.tsx";
+import { describePlagueTarget, isPlaguePick } from "../presentation/plagueTarget.ts";
 import React, { useState } from "react";
-import { ValueText } from "./PlanetValueIcons.tsx";
-import { BoardView, ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import { PlanetValuePair, ValueText } from "./PlanetValueIcons.tsx";
+import { BoardView, ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import {
   ChoiceRendererModel,
   isDeclineOption,
@@ -65,6 +67,12 @@ function withPlanetEmphasis(label: string, planet: PlanetDetails): React.ReactNo
   );
 }
 
+/** Resources and influence of a planet with the boost marker; text only when a value is unknown. */
+function PlanetStatsValue({ planet, fallback }: { planet: PlanetDetails; fallback: string }) {
+  if (planet.resources === null || planet.influence === null) return <ValueText text={fallback} />;
+  return <PlanetValuePair resources={planet.resources} influence={planet.influence} boosts={planet.boosts} />;
+}
+
 function PlanetFacts({ planet }: { planet: PlanetDetails }) {
   const stats = formatPlanetStats(planet);
   const facts = [
@@ -77,7 +85,7 @@ function PlanetFacts({ planet }: { planet: PlanetDetails }) {
     <span className="planet-selection-bar__facts" data-testid="planet-selection-facts">
       {stats && (
         <span className="planet-selection-bar__stats">
-          (<ValueText text={stats} />)
+          (<PlanetStatsValue planet={planet} fallback={stats} />)
         </span>
       )}
       {facts.length > 0 && <span className="text-muted"> · {facts.join(" · ")}</span>}
@@ -163,7 +171,7 @@ export const PlanetSelectionBar: React.FC<PlanetSelectionBarProps> = ({
     setSubmissionError(null);
   };
 
-  const pickOption = (option: ChoiceOptionDto) => {
+  const pickOption = (option: ChoiceOption) => {
     setPlanet(optionPlanetId(option));
     onSelectOption?.(option.id);
     setSubmissionError(null);
@@ -188,7 +196,7 @@ export const PlanetSelectionBar: React.FC<PlanetSelectionBarProps> = ({
     setSubmissionError(null);
   };
 
-  const actionFor = (option: ChoiceOptionDto): React.ReactNode => {
+  const actionFor = (option: ChoiceOption): React.ReactNode => {
     const planetId = optionPlanetId(option);
     if (!planetId) return capitalize(optionActionLabel(option, sourceLabel));
     const planet = getPlanetDetails(planetId, boardView);
@@ -209,7 +217,7 @@ export const PlanetSelectionBar: React.FC<PlanetSelectionBarProps> = ({
     );
   };
 
-  const currentVotes = (option: ChoiceOptionDto) =>
+  const currentVotes = (option: ChoiceOption) =>
     typeof option.payload?.current_votes === "number" ? option.payload.current_votes : null;
 
   const errorMessage = submissionError || lastError;
@@ -304,6 +312,7 @@ export const PlanetSelectionBar: React.FC<PlanetSelectionBarProps> = ({
         ) : null}
 
         {activeOption && <UnitAbilityOptionNote choice={choice} option={activeOption} board={boardView} />}
+        {activePlanetId && <PlagueTargetNote choice={choice} planetId={activePlanetId} board={boardView} />}
 
         {choice.context?.subtype === "place_structure" && activePlanetId && (
           <StructureInfo planetId={activePlanetId} board={boardView} />
@@ -319,6 +328,10 @@ export const PlanetSelectionBar: React.FC<PlanetSelectionBarProps> = ({
             const planet = getPlanetDetails(candidate.planetId, boardView);
             const stats = formatPlanetStats(planet);
             const votes = currentVotes(candidate.options[0]);
+            // Plague rolls for the infantry there: that count matters, not the planet's values.
+            const plague = isPlaguePick(choice)
+              ? describePlagueTarget(choice, candidate.planetId, boardView)
+              : null;
             return (
               <button
                 key={candidate.planetId}
@@ -330,10 +343,15 @@ export const PlanetSelectionBar: React.FC<PlanetSelectionBarProps> = ({
                 onClick={() => pickPlanet(candidate.planetId)}
               >
                 {planet.name}
-                {stats && (
+                {plague ? (
+                  <span className="text-muted" data-testid={`plague-chip-infantry-${candidate.planetId}`}>
+                    {" "}
+                    · {plague.infantry} infantry
+                  </span>
+                ) : stats && (
                   <span className="text-muted">
                     {" "}
-                    <ValueText text={stats} />
+                    <PlanetStatsValue planet={planet} fallback={stats} />
                   </span>
                 )}
                 {votes !== null && <span className="text-muted"> · {votes} votes</span>}

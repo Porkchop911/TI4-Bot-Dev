@@ -1,5 +1,5 @@
 import type { Browser, Page } from "@playwright/test";
-import type { BoardView, ChoiceOptionDto, PlacedUnitView, SystemView } from "../../../src/protocol/types";
+import type { BoardView, ChoiceOption, PlacedUnitView, SystemView } from "../../../src/protocol/types";
 import { openMockedGame } from "../_shared/mockGame";
 import { actor, galleryBoard } from "../_shared/fixtures";
 import { playerWithHand, opponent } from "../_shared/players";
@@ -68,13 +68,13 @@ export function transitBoard(): BoardView {
 const GROUND = new Set(["infantry", "mech"]);
 
 /** The engine's `transit_options` (crates/ti4-engine/src/technology.rs) over a board view. */
-export function transitOptions(board: BoardView): ChoiceOptionDto[] {
+export function transitOptions(board: BoardView): ChoiceOption[] {
   const destinations: [string, string][] = [];
   for (const [systemId, sys] of Object.entries(board.systems))
     for (const [planetId, p] of Object.entries(sys.planets ?? {}))
       if (p.controlled_by === actor) destinations.push([systemId, planetId]);
   const seen = new Set<string>();
-  const options: ChoiceOptionDto[] = [];
+  const options: ChoiceOption[] = [];
   for (const [sourceSystem, sys] of Object.entries(board.systems).sort(([a], [b]) => a.localeCompare(b))) {
     for (const unit of sys.units) {
       if (unit.owner !== actor || !GROUND.has(unit.unit_type)) continue;

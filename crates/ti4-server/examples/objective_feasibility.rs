@@ -10,9 +10,9 @@ use std::collections::BTreeMap;
 use ti4_content::ContentStore;
 use ti4_engine::map_feasibility::{census, unsatisfiable_public, unsatisfiable_secret};
 use ti4_engine::seating;
+use ti4_host::maps::{TemplateLoader, build_template_galaxy};
 use ti4_model::content_types::POK;
 use ti4_model::id::{PlayerId, SystemId};
-use ti4_server::maps::{TemplateLoader, build_template_galaxy};
 
 fn main() {
     let seeds: u64 = std::env::args()

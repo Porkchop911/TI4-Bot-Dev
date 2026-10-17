@@ -55,7 +55,8 @@ $allowed = @(
     'opponent', 'trade-goods-hoard-weight', 'unit-weight', 'updates', 'vp-weight',
     'waste-penalties',
     'waste-penalty', 'zero-fleet-penalty', 'diag', 'capture-batch', 'seeds-per-update', 'rotations',
-    'roster', 'self-imitation', 'sil-margin', 'sil-keep'
+    'roster', 'self-imitation', 'sil-margin', 'sil-keep', 'faction-focus', 'gae-lambda',
+    'home-loss-weight', 'zero-terminal-objectives', 'rollout-backend', 'keep-terminal-projection', 'projection-rank-weight', 'negotiation-step-penalty', 'r1-expansion-weight', 'phase-lock'
 )
 
 $unknown = @($flags.Keys | Where-Object { $_ -notin $allowed })
@@ -73,6 +74,10 @@ if ($diplomacy) {
 # Train only the per-faction rows of the factions outside the six (BF-22).
 if ($settings.ContainsKey('FactionRowsOnly') -and [bool]$settings.FactionRowsOnly) {
     $arguments += '--faction-rows-only'
+}
+# One network per faction of the six.
+if ($settings.ContainsKey('SeparateModels') -and [bool]$settings.SeparateModels) {
+    $arguments += '--separate-models'
 }
 foreach ($name in ($flags.Keys | Sort-Object)) {
     $arguments += "--$name"

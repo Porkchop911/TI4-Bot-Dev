@@ -509,6 +509,56 @@ test("two tabs choose their factions, a taken faction is refused, and each plays
   expect(errors).toEqual([]);
 });
 
+test("the host shuffles the seats: every tab sees the rows in their new order, and the game seats them so", async ({
+  page,
+  context,
+  request,
+}) => {
+  const errors = errorsOf(page);
+  const table = await makeTable(request, 4, "Ada");
+  const blair = await table.call("join", { kind: "new", nickname: "Blair" }, null);
+  await table.call("bots", { kind: "smart", count: 2 });
+  await asPlayers(context, table.id, {
+    [table.host.id]: table.host.session,
+    [blair.player.id]: blair.player_session,
+  });
+  await page.goto(`/?online=${table.id}&seat=${table.host.id}`);
+  const other = await context.newPage();
+  const otherErrors = errorsOf(other);
+  await other.goto(`/?online=${table.id}&seat=${blair.player.id}`);
+  const NAMES = ["Ada", "Blair", "Rule bot 1", "Rule bot 2"];
+  /** The players in the order of the rows. */
+  const order = async (tab: Page) =>
+    (await rows(tab).allInnerTexts()).map((text) => NAMES.find((name) => text.includes(name)));
+  for (const tab of [page, other]) {
+    await expect(rows(tab)).toHaveCount(4);
+    expect(await order(tab)).toEqual(NAMES);
+  }
+  // Only the host has the button, beside the count of the players.
+  await expect(players(other).getByRole("button", { name: "Shuffle seats" })).toHaveCount(0);
+  await players(page).getByRole("button", { name: "Shuffle seats" }).click();
+  await expect.poll(() => order(page)).not.toEqual(NAMES);
+  const shuffled = await order(page);
+  expect([...shuffled].sort()).toEqual(NAMES);
+  await expect.poll(() => order(other)).toEqual(shuffled);
+  await expect(toast(other, "The host shuffled the seats")).toBeVisible();
+
+  // The rows are the seats of the game.
+  await page.keyboard.press("Enter");
+  for (const tab of [page, other]) {
+    await expect(tab.getByText("Round 1 · Strategy phase")).toBeVisible();
+  }
+  const response = await request.get(`/api/games/${table.id}/snapshot`, {
+    headers: { "x-ti4-player-session": table.host.session },
+  });
+  expect(response.ok()).toBe(true);
+  const snapshot = await response.json();
+  expect(
+    snapshot.view.seating_order.map((id: string) => snapshot.seats[id].nickname as string),
+  ).toEqual(shuffled);
+  expect([...errors, ...otherErrors]).toEqual([]);
+});
+
 test("the host sets up the table, and the other tab is told at once", async ({
   page,
   context,
@@ -602,9 +652,11 @@ test("a secondary is drafted in one tab while a rule bot takes its time, and the
   const table = await makeTable(request, 4, "Ada");
   await asPlayers(context, table.id, { [table.host.id]: table.host.session });
   await page.goto(`/?online=${table.id}&seat=${table.host.id}`);
-  // The host starts from the late game. It is a game of its own: eight seats, its map, its
-  // cards and its factions, so these rows have no control.
-  await value(page, "Start from").selectOption({ label: "Late game" });
+  // The host starts from the late game with deflectors. It is a game of its own: eight seats,
+  // its map, its cards and its factions, so these rows have no control. Its seed and the places of
+  // the seats tell what each rule bot does: in this game none cancels the strategic action of the
+  // host.
+  await value(page, "Start from").selectOption({ label: "Late game with deflectors" });
   await expect(title(page)).toHaveText("Lobby · 8 players");
   await expect(said(page, "Players")).toHaveText("8");
   await expect(setup(page).getByRole("combobox")).toHaveCount(1);
@@ -620,7 +672,7 @@ test("a secondary is drafted in one tab while a rule bot takes its time, and the
   const other = await context.newPage();
   const otherErrors = errorsOf(other);
   await other.goto(`/?online=${table.id}&seat=${blair.player.id}`);
-  await expect(said(other, "Start from")).toHaveText("Late game");
+  await expect(said(other, "Start from")).toHaveText("Late game with deflectors");
   // The seats that the server plays wait a second before each answer.
   await setup(page).getByRole("button", { name: "Wait more" }).click();
   await setup(page).getByRole("button", { name: "Wait more" }).click();
@@ -674,8 +726,9 @@ test("a ready secondary of a seat in two tabs is sent once, by the server, with 
   // Longer than a test of this suite should be: see "Tests" in AGENTS.md.
   test.setTimeout(10_000);
   const table = await makeTable(request, 4, "Ada");
-  // Blair is the second seat: the first to follow, and the next to have a turn.
-  await table.call("settings", { start_from: "late-game" });
+  // Blair is the second seat: the first to follow, and the next to have a turn. In the late game
+  // with deflectors no rule bot cancels the strategic action of the host.
+  await table.call("settings", { start_from: "late-game-deflectors" });
   const blair = await table.call("join", { kind: "new", nickname: "Blair" }, null);
   await table.call("bots", { kind: "smart", fill: true });
   await asPlayers(context, table.id, {
@@ -698,7 +751,7 @@ test("a ready secondary of a seat in two tabs is sent once, by the server, with 
     );
     await tab.goto(`/?online=${table.id}&seat=${blair.player.id}`);
   }
-  await expect(said(tabs[0], "Start from")).toHaveText("Late game");
+  await expect(said(tabs[0], "Start from")).toHaveText("Late game with deflectors");
   await expect(title(page)).toHaveText("Lobby · 8 players");
   await page.keyboard.press("Enter");
   for (const tab of [page, ...tabs]) {

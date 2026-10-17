@@ -1,9 +1,36 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { decodeMapList, decodeMapPreview } from "../protocol/mapDecode.ts";
+import { createContext, createElement, useCallback, useContext, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
+import { decodeMapList, decodeMapPreview } from "@ti4/shared/wire/decode.ts";
 import type { MapChoice, MapPreviewDto, MapTemplateSummary } from "../protocol/types.ts";
 
 export type Loadable<T> =
   { status: "loading" } | { status: "error"; message: string } | { status: "ready"; value: T };
+
+/**
+ * Where map lists and card pictures come from. The default asks the server over HTTP; offline play
+ * provides one that asks the wasm engine (`MapDataProvider`). Lobby previews are always the server's.
+ */
+export interface MapDataSource {
+  /** Keeps cached pictures of different sources apart. */
+  id: string;
+  /** Raw JSON as `GET /api/maps?player_count=N` gives it. */
+  catalog(playerCount: number): Promise<unknown>;
+  /** Raw JSON as `GET /api/maps/{alias}/preview` gives it. */
+  preview(choice: MapChoice, playerCount: number, variant: number): Promise<unknown>;
+}
+
+const DEFAULT_SOURCE: MapDataSource = {
+  id: "http",
+  catalog: (playerCount) => getJson(`/api/maps?player_count=${playerCount}`),
+  preview: (choice, playerCount, variant) =>
+    getJson(previewUrl({ kind: "card", choice, playerCount, variant })),
+};
+
+const MapDataContext = createContext<MapDataSource>(DEFAULT_SOURCE);
+
+export function MapDataProvider(props: { source: MapDataSource; children: ReactNode }) {
+  return createElement(MapDataContext.Provider, { value: props.source }, props.children);
+}
 
 async function getJson(url: string): Promise<unknown> {
   const response = await fetch(url);
@@ -16,6 +43,7 @@ export function useMapCatalog(playerCount: number): {
   state: Loadable<MapTemplateSummary[]>;
   retry: () => void;
 } {
+  const source = useContext(MapDataContext);
   const [state, setState] = useState<Loadable<MapTemplateSummary[]>>({
     status: "loading",
   });
@@ -27,13 +55,14 @@ export function useMapCatalog(playerCount: number): {
     }
     let active = true;
     setState({ status: "loading" });
-    getJson(`/api/maps?player_count=${playerCount}`)
+    source
+      .catalog(playerCount)
       .then((json) => active && setState({ status: "ready", value: decodeMapList(json) }))
       .catch((cause) => active && setState({ status: "error", message: String(cause) }));
     return () => {
       active = false;
     };
-  }, [playerCount, attempt]);
+  }, [playerCount, attempt, source]);
   return { state, retry: useCallback(() => setAttempt((n) => n + 1), []) };
 }
 
@@ -67,7 +96,8 @@ export function useMapPreview(source: MapPreviewSource | null): {
   refreshing: boolean;
   retry: () => void;
 } {
-  const url = source ? previewUrl(source) : null;
+  const data = useContext(MapDataContext);
+  const url = source ? `${data.id}:${previewUrl(source)}` : null;
   const cacheable = source?.kind === "card";
   const key = url === null ? null : source!.kind === "lobby" ? `${url}#${source!.revision}` : url;
   const [state, setState] = useState<Loadable<MapPreviewDto>>(() => {
@@ -88,7 +118,12 @@ export function useMapPreview(source: MapPreviewSource | null): {
     let active = true;
     if (last.current && !cacheable) setRefreshing(true);
     else setState({ status: "loading" });
-    getJson(url)
+    const wanted = source!;
+    const request =
+      wanted.kind === "card"
+        ? data.preview(wanted.choice, wanted.playerCount, wanted.variant ?? 0)
+        : getJson(previewUrl(wanted));
+    request
       .then((json) => {
         if (!active) return;
         const value = decodeMapPreview(json);

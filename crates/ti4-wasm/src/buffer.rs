@@ -1,4 +1,4 @@
-//! Fixed memory for everything that crosses the wasm boundary.
+//! Fixed memory for the exports that need no game (a game speaks through `host_api`).
 //!
 //! Each buffer is one static block of a fixed size. It is never grown, never freed, and its
 //! address never changes, so the host reads a result at the same pointer after every call. A value
@@ -9,22 +9,16 @@ use std::fmt;
 use std::io;
 use std::sync::Mutex;
 
-/// The largest result of an export, in bytes. A full game state is about 40 KiB (2026-10-09).
+/// The largest result of an export, in bytes: the options of a table with its maps. A full game
+/// state is about 40 KiB (2026-10-09). The catalogue of printed cards (about 410 KiB) is not an
+/// export of its own: it is the answer of `ti4_host_query`, in the output of `host_api`.
 pub const RESPONSE_CAPACITY: usize = 256 * 1024;
-/// The largest update for the host, in bytes: the view of a seat and the choice it is asked.
-/// Early in a game of eight an update is about 40 KiB (2026-10-09).
-pub const UPDATE_CAPACITY: usize = 512 * 1024;
 
-/// The largest request of the host, in bytes: the script of a draft. A step is about 150 bytes.
+/// The largest request of the host, in bytes: a table, the sides of a combat.
 pub const REQUEST_CAPACITY: usize = 64 * 1024;
-/// The largest outcome of a draft, in bytes: two updates, where the draft stopped and where
-/// its movement began.
-pub const DRAFT_CAPACITY: usize = 1024 * 1024;
 
 pub static RESPONSE: Mutex<Buffer<RESPONSE_CAPACITY>> = Mutex::new(Buffer::new());
-pub static UPDATE: Mutex<Buffer<UPDATE_CAPACITY>> = Mutex::new(Buffer::new());
 pub static REQUEST: Mutex<Buffer<REQUEST_CAPACITY>> = Mutex::new(Buffer::new());
-pub static DRAFT: Mutex<Buffer<DRAFT_CAPACITY>> = Mutex::new(Buffer::new());
 
 pub struct Buffer<const N: usize> {
     bytes: [u8; N],

@@ -75,6 +75,13 @@ pub struct Progress {
     /// recording bot fills it, because the movement search behind it costs about a millisecond.
     #[serde(default)]
     pub projection_permille: i64,
+    /// Home planets this seat does not control; reward bookkeeping only.
+    #[serde(default)]
+    pub home_planets_lost: i64,
+    /// Resources plus influence of the controlled planets outside the faction's home planets;
+    /// reward bookkeeping only.
+    #[serde(default)]
+    pub non_home_planet_value: i64,
 }
 
 /// What a seat held at setup, so the gains above can be deltas.
@@ -159,6 +166,22 @@ pub fn measure(seen: &Observed<'_>, player: &PlayerId, baseline: Baseline) -> Pr
         // Filled by the recording bot, which computes the power summary once per decision for
         // both this and the critic; see `MEASURE_PROJECTION`.
         projection_permille: 0,
+        home_planets_lost: count(seen.home_planets_lost(player)),
+        non_home_planet_value: {
+            let home = seen
+                .seat(player)
+                .and_then(|seat| ti4_content::factions::get(seen.content(), seat.faction.as_str()))
+                .map(|faction| faction.home_planets())
+                .unwrap_or_default();
+            controlled
+                .iter()
+                .filter(|(_, planet)| !home.contains(&planet.as_str()))
+                .filter_map(|(_, planet)| {
+                    ti4_content::galaxy::planet(seen.content(), planet.as_str(), seen.sources())
+                })
+                .map(|planet| planet.resources() + planet.influence())
+                .sum()
+        },
     }
 }
 

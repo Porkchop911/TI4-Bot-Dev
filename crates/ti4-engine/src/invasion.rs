@@ -894,7 +894,7 @@ pub(crate) fn landable_planets(
                 .filter(|planet| planet.in_sources(sources))
                 .map(|_| PlanetId::new(name))
         })
-        .filter(|planet| planet.as_str() != "mr" || state.custodians_removed)
+        .filter(|planet| !crate::seating::is_mecatol_planet(planet.as_str()) || state.custodians_removed)
         // Space stations rule 5: "Structures and ground forces cannot be committed to or placed on
         // a space station." They are listed in the system's `planets` array because they carry a
         // planet card, so without this they were offered to every invasion like any other planet --
@@ -3886,6 +3886,39 @@ impl InvasionWindow {
     ) {
         while index < planets.len() {
             let planet = planets[index].clone();
+            // 35.1: a planet nobody controls is explored first, and control follows only if the
+            // invader still has a ground force there (a card can cost the last infantry).
+            let unowned = !state
+                .system_state(&self.system)
+                .planet_control
+                .contains_key(&planet);
+            let holds_ground = || {
+                let types = catalogue(ctx.content, ctx.sources);
+                state
+                    .system_state(&self.system)
+                    .on_planet_of(&planet, &self.invader)
+                    .into_iter()
+                    .any(|unit| {
+                        types
+                            .get(unit.type_id.as_str())
+                            .is_some_and(UnitType::is_ground_force)
+                    })
+            };
+            if unowned
+                && holds_ground()
+                && !crate::coexistence::is_coexisting(state, &self.system, &planet, &self.invader)
+                && let Some(deck) =
+                    crate::exploration::choose_deck(ctx, state, &self.invader, &planet)
+                && let Some(outcome) = crate::exploration::explore_with(
+                    state,
+                    ctx,
+                    &self.invader,
+                    &deck,
+                    Some(&planet),
+                )
+            {
+                self.report.explored.push((planet.clone(), outcome));
+            }
             let Some((planet, previous)) = establish_control(
                 state,
                 ctx.content,
@@ -3935,28 +3968,16 @@ impl InvasionWindow {
         self.stage = Stage::Done;
     }
 
-    fn finish_control_gain(
-        &mut self,
+    /// LRR 49: the rival structures left on a captured planet are destroyed as control changes
+    /// hands — whatever Assimilate did not convert. No rival ground force can stand here: the
+    /// invader holds the planet only because every one of them is dead.
+    fn destroy_rival_structures(
+        &self,
         state: &mut GameState,
-        ctx: &mut Resolving<'_>,
+        content: &ContentStore,
+        sources: SourceSet,
         planet: &PlanetId,
-        previous: Option<&PlayerId>,
     ) {
-        let (content, sources) = (ctx.content, ctx.sources);
-        // L1Z1X's Assimilate converts the structures on a planet as it changes hands, before
-        // anything else looks at what is standing on it.
-        crate::faction_abilities::control_gained(
-            state,
-            content,
-            sources,
-            &self.invader,
-            &self.system,
-            planet,
-        );
-
-        // LRR 49: the rival structures left on a captured planet are destroyed as control
-        // changes hands — whatever Assimilate did not convert above. No rival ground force can
-        // stand here: the invader holds the planet only because every one of them is dead.
         let types = catalogue(content, sources);
         let standing = state
             .system_state(&self.system)
@@ -3977,6 +3998,29 @@ impl InvasionWindow {
             state
                 .system_mut(&self.system)
                 .remove_from_planet(planet, &doomed);
+        }
+    }
+
+    fn finish_control_gain(
+        &mut self,
+        state: &mut GameState,
+        ctx: &mut Resolving<'_>,
+        planet: &PlanetId,
+        previous: Option<&PlayerId>,
+    ) {
+        let (content, sources) = (ctx.content, ctx.sources);
+        // L1Z1X's Assimilate converts the structures on a planet as it changes hands, before
+        // anything else looks at what is standing on it.
+        crate::faction_abilities::control_gained(
+            state,
+            content,
+            sources,
+            &self.invader,
+            &self.system,
+            planet,
+        );
+        if state.rules_version < ti4_model::state::RULES_INFILTRATE_FIX {
+            self.destroy_rival_structures(state, content, sources, planet);
         }
 
         // Two printed windows read "when you gain control of a planet", so a capture is
@@ -3999,6 +4043,13 @@ impl InvasionWindow {
             payload.insert("previous_owner".to_owned(), previous.to_string().into());
         }
         let _ = ctx.emit(state, "PLANET_CONTROL_GAINED", payload);
+
+        // This waits for the capture window to close, because Infiltrate ("when you gain
+        // control") replaces the rival structures and so they must still stand while it is
+        // offered (rules version 1; a version 0 game destroyed them before the window).
+        if state.rules_version >= ti4_model::state::RULES_INFILTRATE_FIX {
+            self.destroy_rival_structures(state, content, sources, planet);
+        }
 
         // Technology AFTER windows resolve before exploration. Integrated Economy is the first.
         let _ = crate::technology::control_gained(
@@ -4036,13 +4087,7 @@ impl InvasionWindow {
         // `choose_deck` rather than `trait_of`: a planet with two printed traits (several
         // Thunder's Edge worlds do) is the invader's choice of deck, not a fixed pick of
         // whichever trait happens to sort first.
-        if previous.is_none()
-            && let Some(deck) = crate::exploration::choose_deck(ctx, state, &self.invader, planet)
-            && let Some(outcome) =
-                crate::exploration::explore_with(state, ctx, &self.invader, &deck, Some(planet))
-        {
-            self.report.explored.push((planet.clone(), outcome));
-        }
+        // (The exploration itself now resolves in `advance_control`, before control is gained.)
     }
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeDecisionTrigger } from "./decode.ts";
+import { decodeDecisionTrigger } from "@ti4/shared/wire/decode.ts";
 
 describe("decodeDecisionTrigger", () => {
   it("keeps a well-formed trigger as the engine sends it", () => {

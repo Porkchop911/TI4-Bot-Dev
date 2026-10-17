@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { StoreError } from "./types.ts";
+import { StoreError } from "@ti4/shared/storage/index.ts";
 
 /**
  * "Import a game" button: a file picker that hands the chosen JSON file to `store.importGame`.

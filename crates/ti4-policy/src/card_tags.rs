@@ -123,7 +123,8 @@ mod tests {
 
     /// SHA-256 of the embedded artifact bytes. Moving it is a deliberate act: it means the tags a
     /// migrated checkpoint's columns were named for may have changed meaning.
-    const ARTIFACT_SHA256: &str = "df3bb5584f3b4feff54810c1fc056d043aa4d6fab8c3771df69faf678850355b";
+    const ARTIFACT_SHA256: &str =
+        "df3bb5584f3b4feff54810c1fc056d043aa4d6fab8c3771df69faf678850355b";
 
     #[test]
     fn the_embedded_bytes_are_the_pinned_artifact() {

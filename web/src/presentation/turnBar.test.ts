@@ -7,7 +7,7 @@ import {
   type TurnBarModel,
 } from "./turnBar.ts";
 
-const opt = (id: string, label: string, kind = "action") => ({ id, label, kind });
+const opt = (id: string, label: string, kind = "action") => ({ id, label, kind, payload: {} });
 
 const tokens = { tactic: 3, fleet: 3, strategy: 2 };
 const partner = (seat: string, faction: string, extra: Record<string, unknown> = {}) => ({
@@ -44,7 +44,7 @@ function bar(choice: Parameters<typeof deriveTurnBar>[0], player?: PlayerView): 
 describe("deriveTurnBar: what it maps", () => {
   it("recognises the action-phase menu and the end-turn question, nothing else", () => {
     expect(isTurnMenuChoice({ prompt: "action phase" })).toBe(true);
-    expect(isTurnMenuChoice({ prompt: "x", context: { subtype: "end_turn" } })).toBe(true);
+    expect(isTurnMenuChoice({ prompt: "x", context: partialContext({ subtype: "end_turn" }) })).toBe(true);
     expect(isTurnMenuChoice({ prompt: "pick a planet" })).toBe(false);
     expect(deriveTurnBar({ prompt: "pick a planet", options: [opt("a", "a")] })).toBeNull();
   });
@@ -345,6 +345,7 @@ describe("deriveReadOnlyTurnBar", () => {
 });
 
 import { planetsSummary as econSummary } from "./turnBar.ts";
+import { partialContext } from "../test/wire.ts";
 describe("planetsSummary", () => {
   it("counts the exhausted cultural planets", () => {
     expect(

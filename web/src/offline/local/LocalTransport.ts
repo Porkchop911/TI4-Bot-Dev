@@ -1,5 +1,6 @@
 import {
   canContinueBatch,
+  checkChoiceNonce,
   PLAN_SUBTYPES,
   PreviewUnsupportedError,
   ReachUnsupportedError,
@@ -10,7 +11,7 @@ import {
   type ReachReply,
   type SecondaryPreviewReply,
 } from "../../protocol/client.ts";
-import { decodeServerMessage } from "../../protocol/decode.ts";
+import { decodeServerMessage } from "@ti4/shared/wire/decode.ts";
 import {
   MessageDrivenState,
   type GameTransport,
@@ -18,20 +19,21 @@ import {
 } from "../../protocol/transport.ts";
 import { PROTOCOL_VERSION, type ReactionModeSetting, type ServerMessage } from "../../protocol/types.ts";
 import type { TurnRedoCommand, TurnRedoStatus } from "../../protocol/turnRedo.ts";
-import type { Envelope, HostProgress, HostSave, StartConfig } from "./hostApi.ts";
-import type { FromWorker, HostPort } from "./hostProtocol.ts";
+import type { Envelope, HostProgress, HostSave, StartConfig } from "@ti4/shared/engine/host.ts";
+import type { HostPort } from "@ti4/shared/engine/protocol.ts";
+import { engineLink, type EngineLink } from "@ti4/shared/link/engineLink.ts";
+import type { HostCommand, LinkEvent } from "@ti4/shared/link/link.ts";
 
 /** What a local game offers in `GameTransport` terms. The shell's `Capabilities` say the same. */
 export const LOCAL_TRANSPORT_CAPABILITIES: TransportCapabilities = {
   splicePreview: false,
-  turnRedo: false,
-  advisor: false,
+  turnRedo: true,
   multiplayer: false,
   feedback: true,
 };
 
 /** Server messages of protocols this client does not use (see GameSessionClient). */
-const IGNORED = new Set(["planning_status", "planning_update", "planning_result", "draft_outcome", "draft_applied"]);
+const IGNORED = new Set(["draft_outcome", "draft_applied"]);
 
 /** After the page stops using the transport, the engine is shut down this much later (React remounts in dev). */
 const CLOSE_DELAY_MS = 1_500;
@@ -66,16 +68,11 @@ export interface LocalTransportOptions {
   onProgress?: (progress: HostProgress) => void;
 }
 
-type Waiter = {
-  resolve: (envelope: Envelope | null) => void;
-  reject: (error: Error) => void;
-};
-
 /**
  * A game session against the engine in a Web Worker instead of a server. Commands go to the
- * worker, the `ServerMessage` objects it returns go through the same decoder and reducer as the
- * server's (`MessageDrivenState`), so the UI cannot tell the difference. One human; the other
- * seats are rule bots that play inside the engine.
+ * worker over an `engineLink`, the `ServerMessage` objects it tells go through the same decoder
+ * and reducer as the server's (`MessageDrivenState`), so the UI cannot tell the difference. One
+ * human; the other seats are rule bots that play inside the engine.
  */
 export class LocalTransport implements GameTransport {
   readonly capabilities = LOCAL_TRANSPORT_CAPABILITIES;
@@ -90,12 +87,12 @@ export class LocalTransport implements GameTransport {
     fatal: null,
     reconnecting: false,
     events: [],
-    history: { cursor: 0, redo_count: 0 },
+    history: { cursor: 0, redo_count: 0, generation: 0 },
   });
-  private port: HostPort | null = null;
-  private nextId = 1;
-  private readonly replies = new Map<number, { resolve: (e: Envelope) => void; reject: (e: Error) => void }>();
-  private waiters: Waiter[] = [];
+  private link: EngineLink | null = null;
+  /** The link ended because of the saved game (it does not play back, or it was deleted), not the engine. */
+  private gone = false;
+  private nextRequestId = 1;
   private inflight: { nonce: string; optionId: string; promise: Promise<void> } | null = null;
   private batching: { nonce: string; plan: string; promise: Promise<void> } | null = null;
   private latest: HostSave | null = null;
@@ -136,6 +133,15 @@ export class LocalTransport implements GameTransport {
     return typeof player?.faction === "string" ? player.faction : null;
   }
 
+  /** The faction of each seat (seat `a` first), as the board shows it; null where it is not known. */
+  factions(players: number): Array<string | null> {
+    const view = this.store.get().snapshot?.view;
+    return Array.from({ length: players }, (_, place) => {
+      const faction = view?.players.find((p) => p.id === String.fromCharCode(97 + place))?.faction;
+      return typeof faction === "string" ? faction : null;
+    });
+  }
+
   get viewOnly(): boolean {
     return this.readOnly;
   }
@@ -150,17 +156,20 @@ export class LocalTransport implements GameTransport {
   }
 
   private async boot(config: StartConfig): Promise<void> {
-    this.port?.terminate();
-    this.port = null;
+    this.link?.close();
+    this.link = null;
+    this.gone = false;
     try {
       const port = await this.options.createPort();
       if (this.closed) {
         port.terminate();
         return;
       }
-      this.port = port;
-      port.listen((message) => this.receive(port, message));
-      port.post({ t: "start", config });
+      const link = engineLink(port, config, { gate: (envelope) => this.gate(envelope) });
+      this.link = link;
+      link.subscribe((event) => {
+        if (link === this.link) this.receive(event);
+      });
     } catch (error) {
       this.fail(error instanceof Error ? error.message : String(error));
     }
@@ -189,9 +198,8 @@ export class LocalTransport implements GameTransport {
   /** Shuts the engine down for good. */
   close(): void {
     this.closed = true;
-    this.port?.terminate();
-    this.port = null;
-    this.settle(new Error("The game was closed"));
+    this.link?.close();
+    this.link = null;
   }
 
   /** The Retry button after the engine stopped: play the stored game again in a new engine. */
@@ -199,7 +207,7 @@ export class LocalTransport implements GameTransport {
     if (this.closed) return;
     this.store.set({ ...this.store.get(), status: "connecting", fatal: null, lastError: null });
     const save = this.latest;
-    void this.boot(save ? { setup: save.setup, resume: save } : this.options.config);
+    void this.boot(save ? { resume: save } : this.options.config);
   }
 
   /** The latest save (the answers so far); null before the first question. */
@@ -209,85 +217,57 @@ export class LocalTransport implements GameTransport {
 
   // --- the engine's messages ---------------------------------------------------------------
 
-  private receive(port: HostPort, message: FromWorker): void {
-    if (port !== this.port) return;
-    switch (message.t) {
-      case "ready":
+  private receive(event: LinkEvent): void {
+    switch (event.kind) {
+      case "message":
+        this.ingest(event.message);
         return;
-      case "fatal":
-      case "crash":
-        this.fail(message.message);
+      case "save":
+        this.remember(event.save);
         return;
       case "progress":
-        this.options.onProgress?.(message.progress);
+        this.options.onProgress?.({ done: event.done, total: event.total });
         return;
-      case "reply": {
-        const pending = this.replies.get(message.id);
-        this.replies.delete(message.id);
-        if (!pending) return;
-        if (message.error !== undefined) pending.reject(new Error(message.error));
-        else pending.resolve(message.envelope ?? ({ kind: "command", messages: [] } as Envelope));
+      case "opened":
+        this.store.set({ ...this.store.get(), status: "connected", fatal: null, reconnecting: false });
+        this.readyHandlers?.resolve();
+        this.readyHandlers = null;
         return;
-      }
-      case "ask":
-        this.onAsk(message.envelope, message.save);
+      case "fatal":
+        if (this.gone) this.fail(event.message, "gone");
+        else this.fail(`The game engine stopped: ${event.message}`);
         return;
-      case "end":
-        this.onEnd(message.envelope, message.save);
+      case "offline":
+        return;
     }
   }
 
-  private onAsk(envelope: Envelope, save: HostSave | null): void {
+  /**
+   * Holds the first question of a saved game that did not play back to where it was, until the
+   * person decides; a refusal ends the link and the game is "gone".
+   */
+  private gate(envelope: Envelope): void | Promise<void> {
     const check = envelope.resume_check;
-    if (check && !check.ok && !this.readOnly) {
-      const decide = this.options.onDiverged;
-      if (!decide) {
-        this.fail(
-          "This saved game does not play back to where it was. The game engine has changed since it was saved.",
-          "gone",
-        );
-        return;
-      }
-      void decide(check).then(
-        (choice) => {
-          if (this.closed) return;
-          if (choice === "delete") {
-            this.deletedOnRequest = true;
-            this.fail("The game was deleted.", "gone");
-            return;
-          }
-          if (choice === "view-only") this.readOnly = true;
-          this.accept(envelope, save);
-        },
-        (error: unknown) => this.fail(error instanceof Error ? error.message : String(error), "gone"),
+    if (!check || check.ok || this.readOnly) return;
+    const decide = this.options.onDiverged;
+    if (!decide) {
+      this.gone = true;
+      throw new Error(
+        "This saved game does not play back to where it was. The game engine has changed since it was saved.",
       );
-      return;
     }
-    this.accept(envelope, save);
-  }
-
-  private accept(envelope: Envelope, save: HostSave | null): void {
-    // The messages first: the stored game names the human's faction, which the board tells.
-    this.ingest(envelope.messages);
-    this.remember(save);
-    this.store.set({ ...this.store.get(), status: "connected", fatal: null, reconnecting: false });
-    this.readyHandlers?.resolve();
-    this.readyHandlers = null;
-    this.settle(null, envelope);
-  }
-
-  private onEnd(envelope: Envelope, save: HostSave | null): void {
-    this.remember(save);
-    this.ingest(envelope.messages);
-    const error = envelope.end?.error;
-    if (error) {
-      this.fail(`The game engine stopped: ${error}`);
-      return;
-    }
-    this.store.set({ ...this.store.get(), status: "connected" });
-    this.readyHandlers?.resolve();
-    this.readyHandlers = null;
-    this.settle(null, envelope);
+    return decide(check)
+      .then((choice) => {
+        if (choice === "delete") {
+          this.deletedOnRequest = true;
+          throw new Error("The game was deleted.");
+        }
+        if (choice === "view-only") this.readOnly = true;
+      })
+      .catch((error: unknown) => {
+        this.gone = true;
+        throw error;
+      });
   }
 
   private remember(save: HostSave | null): void {
@@ -308,21 +288,15 @@ export class LocalTransport implements GameTransport {
   }
 
   /** Decodes like the WebSocket path of GameSessionClient and feeds the shared reducer. */
-  private ingest(raw: readonly unknown[]): ServerMessage[] {
-    const accepted: ServerMessage[] = [];
-    for (const value of raw) {
-      const type = (value as { type?: unknown } | null)?.type;
-      if (typeof type === "string" && IGNORED.has(type)) continue;
-      try {
-        const message = decodeServerMessage(value, this.options.gameId);
-        accepted.push(message);
-        if (message.type !== "reach_into" && message.type !== "secondary_preview")
-          this.store.ingest(message);
-      } catch (error) {
-        this.store.set({ ...this.store.get(), lastError: `Invalid engine message: ${String(error)}` });
-      }
+  private ingest(value: unknown): void {
+    const type = (value as { type?: unknown } | null)?.type;
+    if (typeof type === "string" && IGNORED.has(type)) return;
+    try {
+      const message = decodeServerMessage(this.relabel(value), this.options.gameId);
+      if (message.type !== "reach_into" && message.type !== "secondary_preview") this.store.ingest(message);
+    } catch (error) {
+      this.store.set({ ...this.store.get(), lastError: `Invalid engine message: ${String(error)}` });
     }
-    return accepted;
   }
 
   private fail(message: string, kind: "gone" | "unreachable" = "unreachable"): void {
@@ -332,24 +306,24 @@ export class LocalTransport implements GameTransport {
       lastError: message,
       fatal: { kind, message },
     });
-    const error = new Error(message);
-    this.readyHandlers?.reject(error);
+    this.readyHandlers?.reject(new Error(message));
     this.readyHandlers = null;
-    this.settle(error);
-    for (const pending of this.replies.values()) pending.reject(error);
-    this.replies.clear();
   }
 
   // --- commands ------------------------------------------------------------------------------
 
-  private send(request: object): Promise<Envelope> {
-    const port = this.port;
-    if (!port) return Promise.reject(new Error("The game engine is not running"));
-    const id = this.nextId++;
-    return new Promise<Envelope>((resolve, reject) => {
-      this.replies.set(id, { resolve, reject });
-      port.post({ t: "command", id, request });
-    });
+  /** A question of the engine of this game (the odds of a combat); it runs in the game's Worker. */
+  queryEngine(request: object): Promise<unknown> {
+    const link = this.link;
+    if (!link) return Promise.reject(new Error(NOT_RUNNING));
+    return link.query(request);
+  }
+
+  /** A command to the engine; the messages of its reply reach the reducer before it resolves. */
+  private send(request: HostCommand): Promise<Envelope> {
+    const link = this.link;
+    if (!link) return Promise.reject(new Error(NOT_RUNNING));
+    return link.request(request);
   }
 
   private message<T extends object>(fields: T): T & { protocol_version: number; game_id: string } {
@@ -358,21 +332,11 @@ export class LocalTransport implements GameTransport {
 
   /** Resolves with the envelope of the next question (or end) the engine reaches. */
   private nextQuestion(): { promise: Promise<Envelope | null>; cancel: () => void } {
-    let waiter!: Waiter;
-    const promise = new Promise<Envelope | null>((resolve, reject) => {
-      waiter = { resolve, reject };
-      this.waiters.push(waiter);
-    });
-    return { promise, cancel: () => (this.waiters = this.waiters.filter((w) => w !== waiter)) };
-  }
-
-  private settle(error: Error | null, envelope: Envelope | null = null): void {
-    const waiting = this.waiters;
-    this.waiters = [];
-    for (const waiter of waiting) {
-      if (error) waiter.reject(error);
-      else waiter.resolve(envelope);
-    }
+    if (!this.link) throw new Error(NOT_RUNNING);
+    const next = this.link.nextQuestion();
+    // A failed command is thrown first; the question it then no longer waits for fails with it.
+    next.promise.catch(() => undefined);
+    return next;
   }
 
   private setError(message: string): never {
@@ -380,9 +344,10 @@ export class LocalTransport implements GameTransport {
     throw new Error(message);
   }
 
-  async submitChoice(optionId: string): Promise<void> {
+  async submitChoice(optionId: string, nonce?: string): Promise<void> {
     if (this.readOnly) return this.setError(VIEW_ONLY);
     const { pendingChoice, gameVersion } = this.store.get();
+    checkChoiceNonce(pendingChoice, nonce);
     if (!pendingChoice) return this.setError("No decision currently pending");
     if (this.inflight) {
       if (this.inflight.nonce === pendingChoice.nonce) {
@@ -404,7 +369,6 @@ export class LocalTransport implements GameTransport {
             option_id: optionId,
           }),
         );
-        this.ingest(reply.messages);
         if (reply.resume === undefined) {
           next.cancel();
           throw new Error(this.store.get().lastError ?? "The choice was not accepted");
@@ -448,10 +412,9 @@ export class LocalTransport implements GameTransport {
           expected_version: this.store.get().gameVersion,
           plan,
         });
-        this.ingest(reply.messages);
         if (reply.resume === undefined) {
           next.cancel();
-          throw new Error(batchFailure(reply.batch?.message) );
+          throw new Error(batchFailure(reply.batch?.message));
         }
         const envelope = await next.promise;
         this.finishBatch(plan, envelope?.batch);
@@ -508,14 +471,12 @@ export class LocalTransport implements GameTransport {
 
   setReactionMode(card: string, mode: ReactionModeSetting): void {
     if (this.readOnly) return;
-    void this.send(this.message({ type: "set_reaction_mode", card, mode }))
-      .then((reply) => this.ingest(reply.messages))
-      .catch((error: unknown) =>
-        this.store.set({
-          ...this.store.get(),
-          lastError: `Could not change the setting: ${error instanceof Error ? error.message : String(error)}`,
-        }),
-      );
+    void this.send(this.message({ type: "set_reaction_mode", card, mode })).catch((error: unknown) =>
+      this.store.set({
+        ...this.store.get(),
+        lastError: `Could not change the setting: ${error instanceof Error ? error.message : String(error)}`,
+      }),
+    );
   }
 
   /** Bluff holds exist only against people; the engine ignores them. */
@@ -529,11 +490,14 @@ export class LocalTransport implements GameTransport {
         : "cursor" in action
           ? { restore_cursor: { cursor: action.cursor } }
           : { restore: { event_id: action.eventId } };
+    await this.sendHistory(wire);
+  }
+
+  private async sendHistory(wire: unknown): Promise<void> {
     await this.stored();
     const next = this.nextQuestion();
     try {
       const reply = await this.send({ type: "history", action: wire });
-      this.ingest(reply.messages);
       if (reply.resume === undefined) {
         next.cancel();
         const message = this.store.get().lastError ?? "That history change is not possible";
@@ -555,15 +519,14 @@ export class LocalTransport implements GameTransport {
   }
 
   async queryReach(systemId: string): Promise<ReachReply> {
-    const requestId = this.nextId++;
+    const requestId = this.nextRequestId++;
     let reply: Envelope;
     try {
       reply = await this.send(this.message({ type: "query_reach", request_id: requestId, system_id: systemId }));
     } catch (error) {
       throw error instanceof Error ? error : new Error(String(error));
     }
-    const answers = this.ingestAnswer(reply);
-    const found = answers.find((m) => m.type === "reach_into");
+    const found = this.decodeAll(reply.messages).find((m) => m.type === "reach_into");
     if (found?.type === "reach_into") {
       return found.refused
         ? { kind: "refused", reason: found.refused }
@@ -572,7 +535,7 @@ export class LocalTransport implements GameTransport {
     throw new ReachUnsupportedError("The engine could not answer who can go there");
   }
 
-  /** The hosted game has no secondary preview: the page falls back to its own estimate. */
+  /** Offline the page uses its own estimate: this transport does not ask the host (`preview_secondary`). */
   async previewSecondary(
     _card: string,
     _primary: string,
@@ -581,16 +544,43 @@ export class LocalTransport implements GameTransport {
     throw new PreviewUnsupportedError("The offline engine cannot preview a secondary");
   }
 
-  private ingestAnswer(reply: Envelope): ServerMessage[] {
-    return this.ingest(reply.messages);
+  /**
+   * The engine names the game as it was set up (`"local"`, or the id of the page that started it);
+   * the store's id names it here. An imported game and a game of web2 have another id than their
+   * engine's, so the messages take the store's id before they are decoded.
+   */
+  private relabel(value: unknown): unknown {
+    if (value === null || typeof value !== "object" || !("game_id" in value)) return value;
+    return { ...value, game_id: this.options.gameId };
+  }
+
+  /** The messages of a reply, decoded again (the reducer has had them, and any error in them). */
+  private decodeAll(raw: readonly unknown[]): ServerMessage[] {
+    const decoded: ServerMessage[] = [];
+    for (const value of raw) {
+      try {
+        decoded.push(decodeServerMessage(this.relabel(value), this.options.gameId));
+      } catch {
+        // Told as lastError when the reply came in.
+      }
+    }
+    return decoded;
   }
 
   async fetchTurnRedoStatus(): Promise<TurnRedoStatus | null> {
     return null;
   }
 
-  async turnRedoCommand(_command: TurnRedoCommand): Promise<void> {
-    throw new Error("Turn redo is not available in an offline game");
+  /**
+   * "Undo my last turn": the engine takes the game back to the start of the person's last turn(s)
+   * (a restart from the answers before it, like any history change). There is no auto-play of
+   * recorded decisions and no saved original: the bots just decide again from the same game, and
+   * the undone answers can be redone with the history's redo. `autoplay`, `restore` and `keep`
+   * have nothing to do (a redo is never "in flight" offline).
+   */
+  async turnRedoCommand(command: TurnRedoCommand): Promise<void> {
+    if (command.action !== "request") return;
+    await this.sendHistory({ undo_turn: { turns: command.turns === 2 ? 2 : 1 } });
   }
 
   private seat(): string | null {
@@ -598,6 +588,8 @@ export class LocalTransport implements GameTransport {
     return snapshot?.viewer.role === "player" ? snapshot.viewer.seat : null;
   }
 }
+
+const NOT_RUNNING = "The game engine is not running";
 
 const VIEW_ONLY = "This game is open to look at only (it was saved with another version of the engine).";
 

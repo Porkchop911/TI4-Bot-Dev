@@ -1,8 +1,10 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { FactionPicker } from "../components/FactionPicker.tsx";
 import { preferredNickname } from "../protocol/nickname.ts";
-import { buildSetup, DEFAULT_DRAFT, type SetupDraft } from "./setup.ts";
-import { PLAYER_COUNTS, type OfflineSetup } from "./types.ts";
+import { MapDataProvider } from "../hooks/useMapCatalog.ts";
+import { mapDataSourceOf, mapLabel, OfflineMapPicker } from "./OfflineMapPicker.tsx";
+import { buildSetup, DEFAULT_DRAFT, mapForPlayers, type SetupDraft } from "./setup.ts";
+import { PLAYER_COUNTS, type OfflineMapSource, type OfflineSetup } from "./types.ts";
 
 /** Setup of a one-human game against rule bots. The seed field exists only in dev builds. */
 export const OfflineSetupForm: React.FC<{
@@ -11,7 +13,11 @@ export const OfflineSetupForm: React.FC<{
   disabled?: boolean;
   allowSeed?: boolean;
   initial?: Partial<SetupDraft>;
-}> = ({ factions, onStart, disabled, allowSeed = import.meta.env.DEV, initial }) => {
+  /** The engine's maps; without it the form offers no choice and the recommended layout is used. */
+  maps?: OfflineMapSource;
+}> = ({ factions, onStart, disabled, allowSeed = import.meta.env.DEV, initial, maps }) => {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const mapData = useMemo(() => (maps ? mapDataSourceOf(maps) : null), [maps]);
   const [draft, setDraft] = useState<SetupDraft>(() => ({
     ...DEFAULT_DRAFT,
     nickname: safeNickname(),
@@ -38,7 +44,11 @@ export const OfflineSetupForm: React.FC<{
           value={draft.playerCount}
           onChange={(e) => {
             const playerCount = Number(e.target.value);
-            set({ playerCount, seat: Number(draft.seat) > playerCount ? "random" : draft.seat });
+            set({
+              playerCount,
+              seat: Number(draft.seat) > playerCount ? "random" : draft.seat,
+              map: mapForPlayers(draft.map, playerCount),
+            });
           }}
         >
           {PLAYER_COUNTS.map((n) => (
@@ -77,6 +87,35 @@ export const OfflineSetupForm: React.FC<{
           testId="offline-faction"
         />
       </div>
+      {mapData && (
+        <div className="field-label">
+          Map
+          <div className="lobby-map-row" data-testid="offline-map-row">
+            <span className="lobby-map-row__name" data-testid="offline-map-name">
+              <strong>{mapLabel(draft.map, null)}</strong>
+            </span>
+            <button
+              type="button"
+              className="button button--outline"
+              data-testid="offline-map-button"
+              disabled={disabled}
+              onClick={() => setPickerOpen(true)}
+            >
+              Choose map
+            </button>
+          </div>
+        </div>
+      )}
+      {mapData && pickerOpen && (
+        <MapDataProvider source={mapData}>
+          <OfflineMapPicker
+            playerCount={draft.playerCount}
+            value={draft.map}
+            onChange={(map) => set({ map })}
+            onClose={() => setPickerOpen(false)}
+          />
+        </MapDataProvider>
+      )}
       <label className="field-label">
         Nickname
         <input

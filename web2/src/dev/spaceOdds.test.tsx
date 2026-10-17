@@ -2,12 +2,12 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { expect, it } from "vitest";
 import { SpaceOdds } from "../game/combat/SpaceOdds";
 import { GameProvider } from "../game/context";
-import battleUpdate from "../session/fixtures/update-battle.json";
+import battleUpdate from "../../../fixtures/protocol/update-battle.json";
 import { setCount } from "../session/movementDraft";
 import { type KeptOdds, oddsRequest } from "../session/movementOdds";
 import { selectMovement } from "../session/select/movement";
 import { selectSeats } from "../session/select/players";
-import type { MovementFacts, SessionUpdate, SpaceOddsResponse } from "../session/wire";
+import type { BattleResponse, MovementFacts, SessionUpdate } from "../session/wire";
 
 // The odds of a space combat over an update of the real engine: seat a (Sol) activates the
 // system of seat c and moves its war sun in (see `session/liveOdds.test.tsx`). The test is here
@@ -17,7 +17,7 @@ const facts = update.tactical as MovementFacts;
 const warSun = setCount(facts, {}, "ship:01|1", 1);
 const key = oddsRequest(facts, warSun)!.key;
 
-const answer: SpaceOddsResponse = {
+const answer: BattleResponse = {
   simulations: 2000,
   attacker_win_rate: 0.72,
   defender_win_rate: 0.25,

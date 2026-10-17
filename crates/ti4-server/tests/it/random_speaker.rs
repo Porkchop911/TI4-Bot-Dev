@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
+use ti4_host::setup::SpeakerOrder;
 use ti4_model::id::PlayerId;
-use ti4_server::map::SpeakerOrder;
 use ti4_server::session::GameRegistry;
 use ti4_server::storage::FileGameStore;
 
@@ -23,7 +23,7 @@ fn start(
             "Host",
             None,
             None,
-            ti4_server::card_set::DEFAULT,
+            ti4_host::setup::card_set::DEFAULT,
             order,
         )
         .unwrap();

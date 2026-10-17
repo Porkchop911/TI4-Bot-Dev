@@ -38,8 +38,8 @@ describe("parseTransitOption", () => {
       destinationSystem: "26",
       planet: "lodor",
     });
-    expect(parseTransitOption({ id: "transit|18|space|infantry|19|wellon", label: "", kind: "transit" })?.source).toBe("space");
-    expect(parseTransitOption({ id: "decline", label: "", kind: "decline" })).toBeNull();
+    expect(parseTransitOption({ id: "transit|18|space|infantry|19|wellon", label: "", kind: "transit", payload: {} })?.source).toBe("space");
+    expect(parseTransitOption({ id: "decline", label: "", kind: "decline", payload: {} })).toBeNull();
   });
 });
 

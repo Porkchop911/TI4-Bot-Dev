@@ -33,8 +33,8 @@ describe("Politics, Trade and Hacan agent decisions", () => {
           prompt: "place mutiny where",
           details: { agenda: { name: "Mutiny", type: "Law", target: "For/Against", text1: "Printed text.", text2: "" } },
           options: [
-            { id: "top", label: "on top of the deck" },
-            { id: "bottom", label: "on the bottom" },
+            { id: "top", label: "on top of the deck", payload: {}, kind: "" },
+            { id: "bottom", label: "on the bottom", payload: {}, kind: "" },
           ],
         })}
       />,
@@ -57,7 +57,7 @@ describe("Politics, Trade and Hacan agent decisions", () => {
           choice={base("politics_choose_speaker", {
             prompt: "who becomes speaker",
             details: { seats: { Hacan: "b" } },
-            options: [{ id: "Hacan", label: "Hacan becomes speaker" }],
+            options: [{ id: "Hacan", label: "Hacan becomes speaker", payload: {}, kind: "" }],
           })}
         />
       </DecisionTableProvider>,
@@ -75,8 +75,8 @@ describe("Politics, Trade and Hacan agent decisions", () => {
           choice={base("trade_choose_replenish", {
             details: { seats: { Hacan: "b" } },
             options: [
-              { id: "Hacan", label: "Hacan replenishes commodities", kind: "replenish" },
-              { id: "done", label: "nobody else replenishes", kind: "decline" },
+              { id: "Hacan", label: "Hacan replenishes commodities", kind: "replenish", payload: {} },
+              { id: "done", label: "nobody else replenishes", kind: "decline", payload: {} },
             ],
           })}
         />
@@ -91,8 +91,8 @@ describe("Politics, Trade and Hacan agent decisions", () => {
           onSubmit={vi.fn()}
           choice={base("leader_hacanagent_branch", {
             options: [
-              { id: "self", label: "gain 2 commodities" },
-              { id: "b", label: "replenish b" },
+              { id: "self", label: "gain 2 commodities", payload: {}, kind: "" },
+              { id: "b", label: "replenish b", payload: {}, kind: "" },
             ],
           })}
         />
@@ -124,8 +124,8 @@ describe("decisions about a revealed agenda show that agenda", () => {
             prompt: "Quash: spend 1 strategy token to discard this agenda and reveal the next",
             details: { agenda: secret },
             options: [
-              { id: "use", label: "use quash", kind: "promissory_note" },
-              { id: "decline", label: "decline", kind: "decline" },
+              { id: "use", label: "use quash", kind: "promissory_note", payload: {} },
+              { id: "decline", label: "decline", kind: "decline", payload: {} },
             ],
           }),
           context: { subtype: "quash", source: { Content: "quash" } } as never,
@@ -153,8 +153,8 @@ describe("decisions about a revealed agenda show that agenda", () => {
             prompt: "when AGENDA_REVEALED",
             details: { agenda: secret },
             options: [
-              { id: "action_card:a:veto:AGENDA_REVEALED:when", label: "Veto" },
-              { id: "decline", label: "pass", kind: "decline" },
+              { id: "action_card:a:veto:AGENDA_REVEALED:when", label: "Veto", payload: {}, kind: "" },
+              { id: "decline", label: "pass", kind: "decline", payload: {} },
             ],
           }),
           context: {
@@ -171,7 +171,7 @@ describe("decisions about a revealed agenda show that agenda", () => {
     render(
       <PendingChoiceModal
         onSubmit={vi.fn()}
-        choice={base("some_other", { options: [{ id: "x", label: "x" }] })}
+        choice={base("some_other", { options: [{ id: "x", label: "x", payload: {}, kind: "" }] })}
       />,
     );
     expect(screen.queryByTestId("decision-agenda-card")).toBeNull();

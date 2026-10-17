@@ -117,3 +117,36 @@ Fixtures are synthetic, not captured engine states. Playwright starts and stops 
 ## Offline saves and engine checks (DP-offline-saves)
 
 `DP-offline-saves` shows the saved-games list with several real games, import (done and refused), the engine-mismatch dialog (view only, delete confirmation), the storage-warning banner, the feedback chip (queued, sent, failed with Retry) and the "engine <hash>" label in the banner and build footer, desktop and 390x844. Like DO it needs the engine: `npm run build:wasm`, then `npm run screenshots -- DP`. The other-engine save, the missing IndexedDB and the feedback answers are simulated.
+
+## Reaction effect previews and active effects (EB-reaction-effects)
+
+`EB-reaction-effects` shows, for every card that now previews its effect (39 cards), the reaction window before and after, desktop and 390x844, grouped by effect type, plus the active-effects strip under the top bar in eight situations (a combat round, a tactical action, a rival's turn, an invasion, the agenda phase, duress and stability, black market). `cards.ts` and `strip-scenes.ts` hold the fixtures, shaped exactly like the engine's `DecisionContext.previews` and `GameView.active_effects`; `capture-3-manifest.ts` writes `manifest.json` (and the coverage table) from the same tables. The `before/` PNGs are the same captures run on the base commit (`action-card-ui-audit`, `24e84de5`) with `TI4_SHOT_PREFIX=before`, which ignores the new fields; `npm run screenshots -- EB` regenerates the `after-*` PNGs and asserts that each preview is a plain sentence without raw ids, that nothing scrolls sideways and that Play stays reachable, and for the strip that it stays inside the viewport, lists one chip per effect and is one short line collapsed.
+
+## Action card pickers (EA-action-card-pickers)
+
+`EA-action-card-pickers` shows every action-card picker that changed (Plagiarize, Lucky Shot, Public Disgrace, Overrule, Strategize, Repeal Law, Fire Team, Upgrade, Rescue, Plague, the player-pick facts, Insider Information, Ghost Squad, Lie in Wait, Seize Artifact, Bribery) as the same mocked decision before and after, on a desktop and a 390x844 phone. `scene.ts` holds the decisions: with `TI4_SHOT_PREFIX=before` it uses the shape the engine sent before the change (no `details`, no option payloads), otherwise the current shape. The `before-*` PNGs in `before/` were taken on the audit branch commit (copy the folder there and run `TI4_SHOT_PREFIX=before npm run screenshots -- EA`); `npm run screenshots -- EA` regenerates the `after-*` PNGs and builds a page that pairs them per card (the manifest's `groups`, an optional addition to `build-artifact.mjs`). The decisions are taken from real nightly traces, with the ids the engine writes (`player_` plus 64 hex characters), so the labels carry the raw ids as they do in play.
+
+
+## Hyperlane art and network (DY-hyperlane-art, ED-hyperlane-network)
+
+`DY-hyperlane-art` is the first hyperlane tile art (flat double-line lanes per tile, picker and inspector); `ED-hyperlane-network` replaces it with one continuous lane network across tile edges (the `hyperlane-network` test id), with the before shots taken on the DY art. Both folders are kept; DY's captures assert on the network element now.
+
+## Offline map select, anomaly art, notification log (DQ, DX, EC)
+
+`DQ-offline-map-select` shows the map selection in the offline setup form; `DX-anomaly-art` the per-anomaly SVG silhouettes; `EC-sp-notification-log` the single-player notification log, toast swipe, undo button and Back undo (real seeded engine games; `before/` taken with `TI4_SHOT_PREFIX=before`).
+
+## Agenda preview chip (EE-agenda-peek-chip)
+
+`EE-agenda-peek-chip` shows the Insider Information preview on a 390x844 phone and on a desktop, with the turn menu open: before it was a fixed card up to 60% of the screen high over the turn bar (`before/` PNGs from the merged head without the change); now it is a 54 px chip above the bar that opens to the cards on a tap. `npm run screenshots -- EE` asserts the chip height, that no turn bar button is covered, the half-screen cap and that Escape closes the open card.
+
+## Nightly 2026-10-14 follow-up fixes (EF-nightly-0415-fixes)
+
+`EF-nightly-0415-fixes` shows the corner toast column stopping below the "Prepare your secondary" chip, and a finished game without a turn bar (game-over banner). Regenerate with `npm run screenshots -- EF`.
+
+## Alpha feedback 15 October (EG-alpha-feedback-0415)
+
+`EG-alpha-feedback-0415` shows Plague's planet chips with infantry counts, the commander/hero unlock toast and the lobby's Back to start button (before-* PNGs in `before/`, taken with `TI4_SHOT_PREFIX=before`). Regenerate with `npm run screenshots -- EG`. The folder was created as `EF-alpha-feedback-0415` and renamed to EG when merged with the nightly fixes (which also used EF).
+
+## Score Public Objective on a phone (EK-score-objective-compact)
+
+`EK-score-objective-compact` shows the scoring window (objectives modal in scoring mode, with and without the Imperial note) on 390x844, 360x740 and landscape 844x390, plus desktop unchanged. The `before-*` PNGs were taken with `TI4_SHOT_PREFIX=before` on the commit without the change; `npm run screenshots -- EK` regenerates the `after-*` PNGs and asserts a one-row header (<= 52 px, Minimize on it), >= 3 visible objective rows (2 in landscape), the footer inside the viewport and no horizontal overflow.

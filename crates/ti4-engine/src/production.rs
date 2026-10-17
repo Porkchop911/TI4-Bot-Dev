@@ -133,6 +133,15 @@ fn placement_facts(option: ChoiceOption, before: &Standing, after: &Standing) ->
         .with("capacity_excess_after", after.capacity_excess)
 }
 
+/// Ships a build adds to the fleet pool: the non-fighter ships among the `placed` units (37.1).
+fn fleet_ships(kind: &UnitType<'_>, placed: usize) -> i64 {
+    if crate::fleet::counts_against_supply(kind) {
+        i64::try_from(placed).unwrap_or(0)
+    } else {
+        0
+    }
+}
+
 /// What may be produced at all. Structures arrive through Construction, not PRODUCTION.
 pub const BUILDABLE: [&str; 9] = [
     "fighter",
@@ -199,6 +208,37 @@ pub fn planet_value_now(
             Spend::Resources => crate::factions::bastion_units::resource_bonus(state, planet),
             Spend::Influence => 0,
         }
+}
+
+/// One thing that raises a planet's value, for display: `(source name, resources, influence)`.
+///
+/// Built from the same three terms [`planet_value_now`] adds to the printed value (laws, attachment
+/// records, the Helios docks), so the list always sums to `planet_value_now - planet_value`.
+#[must_use]
+pub fn planet_value_boosts(
+    state: &GameState,
+    content: &ContentStore,
+    planet: &PlanetId,
+) -> Vec<(String, i64, i64)> {
+    let mut out: Vec<(String, i64, i64)> = crate::laws::planet_value_bonus_sources(state, planet)
+        .into_iter()
+        .map(|(name, r, i)| (name.to_owned(), r, i))
+        .collect();
+    for id in state.planet_attachments.get(planet).into_iter().flatten() {
+        let Some(record) = content.get(ContentType::Attachments, id) else {
+            continue;
+        };
+        let r = record.int("resourcesModifier").unwrap_or(0);
+        let i = record.int("influenceModifier").unwrap_or(0);
+        if r != 0 || i != 0 {
+            out.push((record.text("name").unwrap_or(id).to_owned(), r, i));
+        }
+    }
+    let helios = crate::factions::bastion_units::resource_bonus(state, planet);
+    if helios != 0 {
+        out.push(("Helios dock".to_owned(), helios, 0));
+    }
+    out
 }
 
 /// The faction mark holding the [`GameState::production_seq`] a value swap was declared in.
@@ -1254,11 +1294,20 @@ fn produce_one_from(
             let blocked = if cost > affordable {
                 Some(format!("costs {cost}, you can pay {affordable}"))
             } else if placements(state, content, sources, player, system, kind).is_empty() {
-                Some("no place to put it in this system (ground forces need a planet you control)".to_owned())
+                Some(
+                    "no place to put it in this system (ground forces need a planet you control)"
+                        .to_owned(),
+                )
             } else if !within_fleet_supply {
                 Some("the fleet supply in this system is full".to_owned())
-            } else if crate::supply::allowed(state, content, sources, player, &UnitTypeId::new(&id), 1)
-                == 0
+            } else if crate::supply::allowed(
+                state,
+                content,
+                sources,
+                player,
+                &UnitTypeId::new(&id),
+                1,
+            ) == 0
             {
                 Some("none left in your reinforcements".to_owned())
             } else {
@@ -2671,7 +2720,10 @@ impl ProductionWindow {
                 .with("owed", cost - credit_used)
                 .with("production_spent", production_spent)
                 .with("unit", id.clone())
-                .with("system", self.system.to_string());
+                .with("system", self.system.to_string())
+                // Display only: ships this option adds to the fleet pool (37.1), so a client
+                // can preview `used + staged` without re-deriving which units count.
+                .with("fleet_ships", fleet_ships(kind, placed));
                 // A ship has one destination and no placement question follows, so its fleet and
                 // transport aftermath is settled here. A unit with a choice of destinations does
                 // not have one yet, and says so rather than reporting a consequence it cannot know.
@@ -2726,6 +2778,7 @@ impl ProductionWindow {
                 .with("production_spent", self.remaining - limit_after)
                 .with("unit", id.clone())
                 .with("system", self.system.to_string())
+                .with("fleet_ships", fleet_ships(kind, 1))
                 .with("exchange", true);
                 let mut deltas = vec![
                     Delta::new(Quantity::ProductionRemaining, self.remaining, limit_after),
@@ -2890,6 +2943,11 @@ impl Window for ProductionWindow {
                 });
                 if crate::fleet::is_unlimited(state, &self.player) {
                     fleet_supply["unlimited"] = serde_json::Value::Bool(true);
+                }
+                // Letnev's Armada: already inside `limit`; named so a client can mark it.
+                let armada = crate::faction_abilities::armada_bonus(state, content, &self.player);
+                if armada > 0 {
+                    fleet_supply["armada"] = serde_json::json!(armada);
                 }
                 Some(
                     Choice::new(
@@ -4059,6 +4117,144 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn production_offer_does_not_credit_influence_for_a_resource_bill() {
+        // A resource production bill may use controlled resource faces only. Keep a distinct
+        // zero-resource influence planet under the Saar player so an implementation that
+        // accidentally folds influence into resource affordability would offer the carrier.
+        let content = ContentStore::embedded();
+        let sources = ti4_model::content_types::DEFAULT;
+        let all = ti4_content::galaxy::all_planets(content, sources);
+        let (resource_planet, system) = all
+            .iter()
+            .find_map(|(id, record)| {
+                let system_id = record.system_id()?;
+                if record.is_placed_during_play() || record.resources() != 1 {
+                    return None;
+                }
+                Some((PlanetId::new(*id), SystemId::new(system_id)))
+            })
+            .expect("the corpus has a one-resource placed planet");
+        let influence_planet = all
+            .iter()
+            .find(|(id, record)| {
+                PlanetId::new(**id) != resource_planet
+                    && !record.is_placed_during_play()
+                    && record.resources() == 0
+                    && record.influence() >= 3
+            })
+            .map(|(id, _)| PlanetId::new(*id))
+            .expect("the corpus has a distinct zero-resource influence planet");
+        let influence_system = all
+            .iter()
+            .find(|(id, _)| PlanetId::new(**id) == influence_planet)
+            .and_then(|(_, record)| record.system_id())
+            .map(SystemId::new)
+            .expect("the selected influence planet has a system");
+
+        let player = player();
+        let mut state = crate::fixtures::seated_game(&[("a", "saar"), ("b", "sol")], sources);
+        for here in state.board.values_mut() {
+            here.units.clear();
+            here.planet_control.clear();
+            here.planet_units.clear();
+            here.coexisting.clear();
+        }
+        state.exhausted_planets.clear();
+        state.influence_pays_for_units.clear();
+        state.production_discount_remaining = 0;
+        for seat in &mut state.players {
+            seat.trade_goods = 0;
+            seat.technologies.clear();
+            seat.exhausted_technologies.clear();
+            seat.free_production_use = None;
+        }
+        state
+            .system_mut(&system)
+            .set_control(resource_planet.clone(), player.clone());
+        state
+            .system_mut(&influence_system)
+            .set_control(influence_planet.clone(), player.clone());
+        put(&mut state, &system, "saar_spacedock", &player, 1);
+        assert_eq!(
+            planet_value(&content, sources, &resource_planet, Spend::Resources),
+            1
+        );
+        assert_eq!(
+            planet_value(&content, sources, &influence_planet, Spend::Resources),
+            0
+        );
+        assert!(
+            planet_value(&content, sources, &influence_planet, Spend::Influence) >= 3
+        );
+        assert_eq!(available(&state, content, sources, &player, Spend::Resources), 1);
+
+        let mut window = ProductionWindow::new(&state, content, sources, &player, &system)
+            .with_only_unit(Some("carrier".to_owned()));
+        assert!(
+            window
+                .pending_choice(&state, content, sources)
+                .is_none(),
+            "a carrier resource bill must not be funded by the other planet's influence"
+        );
+        window.stage = Stage::Paying {
+            id: "carrier".to_owned(),
+            owed: 1,
+            made: 1,
+            cost: 3,
+            paid: 2,
+        };
+        let payment = window
+            .pending_choice(&state, content, sources)
+            .expect("the ordinary production payment prompt");
+        assert!(
+            payment.options.iter().all(|option| {
+                option
+                    .payload
+                    .get("kind")
+                    .and_then(serde_json::Value::as_str)
+                    == Some("resources")
+                    && option.label.ends_with(" resources")
+            }),
+            "ordinary production must expose resource payment labels only"
+        );
+    }
+
+    #[test]
+    fn saar_carrier_without_a_factory_cannot_open_production() {
+        let content = ContentStore::embedded();
+        let sources = ti4_model::content_types::DEFAULT;
+        let player = player();
+        let mut state = crate::fixtures::seated_game(&[("a", "saar"), ("b", "sol")], sources);
+        let system = state
+            .player(&player)
+            .and_then(|seat| seat.home_system.clone())
+            .expect("Saar has a home system");
+        {
+            let here = state.system_mut(&system);
+            here.units.clear();
+            here.planet_control.clear();
+            here.planet_units.clear();
+            here.coexisting.clear();
+        }
+        put(&mut state, &system, "carrier", &player, 1);
+        put(&mut state, &system, "infantry", &player, 1);
+        put(&mut state, &system, "fighter", &player, 1);
+        let before_state = state.clone();
+
+        assert_eq!(capacity(&state, content, sources, &player, &system), 0);
+        let window = ProductionWindow::new(&state, content, sources, &player, &system);
+        assert!(
+            window.pending_choice(&state, content, sources).is_none(),
+            "Saar ships and ground forces do not produce without a factory"
+        );
+
+        assert_eq!(
+            serde_json::to_value(&state).expect("state serializes"),
+            serde_json::to_value(&before_state).expect("saved state serializes")
+        );
     }
 
     #[test]
@@ -5403,6 +5599,30 @@ mod tests {
             Some(i64::from(crate::fleet::limit(&state, content, &player())))
         );
         assert!(supply.get("unlimited").is_none());
+    }
+
+    #[test]
+    fn build_options_name_the_ships_they_add_to_the_fleet_pool() {
+        let content = ContentStore::embedded();
+        let (mut state, system, planet) = seated();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player());
+        put_on_planet(&mut state, &system, &planet, "spacedock", &player(), 1);
+        let window = ProductionWindow::new(&state, content, POK, &player(), &system);
+        let choice = window
+            .pending_choice(&state, content, POK)
+            .expect("production choice");
+        let ships = |unit: &str| {
+            choice
+                .options
+                .iter()
+                .find(|o| o.payload.get("unit").and_then(|u| u.as_str()) == Some(unit))
+                .and_then(|o| o.payload.get("fleet_ships").and_then(serde_json::Value::as_i64))
+        };
+        assert_eq!(ships("cruiser"), Some(1));
+        assert_eq!(ships("fighter"), Some(0), "fighters are not in the pool");
+        assert_eq!(ships("infantry"), Some(0), "ground forces are not in the pool");
     }
 
     #[test]

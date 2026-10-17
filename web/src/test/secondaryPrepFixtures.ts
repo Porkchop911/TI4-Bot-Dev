@@ -1,10 +1,11 @@
 import type {
   BoardView,
-  ChoiceOptionDto,
+  ChoiceOption,
   GameEvent,
   PendingChoiceDto,
   PlayerView,
 } from "../protocol/types.ts";
+import { partialContext } from "./wire.ts";
 
 /** Small builders for the strategy-card secondary preparation tests. */
 
@@ -58,22 +59,22 @@ export const playedLog = (named: string | null = "Technology"): GameEvent[] => [
   actionEvent("action_5", "a", named ? { detail: `a played ${named}` } : { detail: "a began a component action" }),
 ];
 
-export const option = (id: string, kind = "strategy", label = id): ChoiceOptionDto => ({ id, kind, label });
+export const option = (id: string, kind = "strategy", label = id): ChoiceOption => ({ id, kind, label, payload: {} });
 
-const yesNo = (): ChoiceOptionDto[] => [option("no", "strategy", "decline"), option("yes", "strategy", "go")];
+const yesNo = (): ChoiceOption[] => [option("no", "strategy", "decline"), option("yes", "strategy", "go")];
 
 /** The follower's own secondary question for `card`, as the engine sends it. */
 export function secondaryChoice(
   card: string,
   overrides: Partial<PendingChoiceDto> = {},
-  options: ChoiceOptionDto[] = yesNo(),
+  options: ChoiceOption[] = yesNo(),
 ): PendingChoiceDto {
   return {
     actor: "b",
     nonce: "n-secondary",
     prompt: "spend a strategy token to research",
     options,
-    context: { subtype: "strategy_secondary" } as PendingChoiceDto["context"],
+    context: partialContext({ subtype: "strategy_secondary" }) as PendingChoiceDto["context"],
     details: { kind: "strategy_secondary", card, played_by: "a", tokens_left: 2, costs_token: true },
     ...overrides,
   };
@@ -81,19 +82,19 @@ export function secondaryChoice(
 
 export const stepChoice = (
   subtype: string,
-  options: ChoiceOptionDto[],
+  options: ChoiceOption[],
   nonce = `n-${subtype}`,
 ): PendingChoiceDto => ({
   actor: "b",
   nonce,
   prompt: subtype,
   options,
-  context: { subtype } as PendingChoiceDto["context"],
+  context: partialContext({ subtype }) as PendingChoiceDto["context"],
 });
 
 /** The server's answer to a preview request, as the client hands it to the preparation hook. */
 export const previewReply = (
-  body: import("../protocol/types.ts").SecondaryPreviewBody,
+  body: import("../protocol/types.ts").SecondaryPreview,
 ): import("../protocol/client.ts").SecondaryPreviewReply => ({
   kind: "preview",
   body,
@@ -106,7 +107,7 @@ export function engineWindow(
   card: string,
   prompt: string,
   extra: Record<string, unknown> = {},
-): import("../protocol/types.ts").EngineChoice {
+): import("../protocol/types.ts").Choice {
   return {
     player: "b",
     prompt,
@@ -123,7 +124,7 @@ export function engineWindow(
 }
 
 /** The engine's "research a technology" question for the Technology secondary (cost 4, decline offered). */
-export function engineResearch(ids: string[]): import("../protocol/types.ts").EngineChoice {
+export function engineResearch(ids: string[]): import("../protocol/types.ts").Choice {
   return {
     player: "b",
     prompt: "research a technology",
@@ -136,10 +137,10 @@ export function engineResearch(ids: string[]): import("../protocol/types.ts").En
       })),
       option("decline", "decline", "decline"),
     ],
-    context: {
+    context: partialContext({
       subtype: "research_technology",
       source: { StrategyCard: { card: "Technology", secondary: true } },
-    } as import("../protocol/types.ts").EngineChoice["context"],
+    }) as import("../protocol/types.ts").Choice["context"],
   };
 }
 
@@ -147,7 +148,7 @@ export function engineResearch(ids: string[]): import("../protocol/types.ts").En
 export function engineProduction(
   builds: { unit: string; cost: number; count: number }[],
   over: { capacity?: number; resources?: number } = {},
-): import("../protocol/types.ts").EngineChoice {
+): import("../protocol/types.ts").Choice {
   return {
     player: "b",
     prompt: "produce in 18 (3 left)",
@@ -175,17 +176,17 @@ export function engineProduction(
       })),
       option("done_producing", "decline", "produce nothing further"),
     ],
-    context: {
+    context: partialContext({
       subtype: "produce_unit",
       target: { System: "18" },
       outstanding: [{ kind: "ProductionCapacity", amount: over.capacity ?? 3, paid: 0 }],
-    } as import("../protocol/types.ts").EngineChoice["context"],
+    }) as import("../protocol/types.ts").Choice["context"],
     details: { fleet_supply: { used: 1, limit: 4 } },
   };
 }
 
 /** The payment question the first build opens: two planets and trade goods. */
-export function enginePayment(owed: number): import("../protocol/types.ts").EngineChoice {
+export function enginePayment(owed: number): import("../protocol/types.ts").Choice {
   return {
     player: "b",
     prompt: `pay ${owed} more resources`,
@@ -204,10 +205,10 @@ export function enginePayment(owed: number): import("../protocol/types.ts").Engi
       },
       { id: "trade_good", kind: "pay", label: "spend a trade good", payload: { worth: 1, owed, kind: "resources" } },
     ],
-    context: {
+    context: partialContext({
       subtype: "pay_resources",
-      outstanding: [{ kind: "resources", amount: owed, paid: 0 }],
-    } as import("../protocol/types.ts").EngineChoice["context"],
+      outstanding: [{ kind: "Resources", amount: owed, paid: 0 }],
+    }) as import("../protocol/types.ts").Choice["context"],
   };
 }
 

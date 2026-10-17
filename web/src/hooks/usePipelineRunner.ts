@@ -1,8 +1,8 @@
 import { createContext, useContext, useState, useEffect, useRef } from "react";
-import { PendingChoiceDto, ChoiceOptionDto } from "../protocol/types.ts";
+import { PendingChoiceDto, ChoiceOption } from "../protocol/types.ts";
 
 export interface SemanticIntent {
-  predicate: (option: ChoiceOptionDto) => boolean;
+  predicate: (option: ChoiceOption) => boolean;
 }
 
 export function useOwnedPipelineRunner(

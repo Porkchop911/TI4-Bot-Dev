@@ -2,8 +2,8 @@ import { expect, type Page } from "@playwright/test";
 import {
   PROTOCOL_VERSION,
   type ClientMessage,
-  type EngineChoice,
-  type SecondaryPreviewBody,
+  type Choice,
+  type SecondaryPreview,
 } from "../../../src/protocol/types";
 import { GAME_ID, openMockedGame, type MockedGame } from "../_shared/mockGame";
 import { opponent, playerWithHand, actor } from "../_shared/players";
@@ -23,7 +23,7 @@ export const PLANETS = [
 ];
 
 /** The Leadership window as the engine sends it: the purchase facts ride on the question. */
-export function leadershipWindow(planets = PLANETS, tradeGoods = 2): EngineChoice {
+export function leadershipWindow(planets = PLANETS, tradeGoods = 2): Choice {
   const worth = planets.reduce((sum, planet) => sum + planet.worth, 0) + tradeGoods;
   return {
     ...engineWindow(CARD, "spend 3 influence for a command token", {
@@ -41,11 +41,11 @@ export function leadershipWindow(planets = PLANETS, tradeGoods = 2): EngineChoic
         planets,
       },
     }),
-    context: { subtype: "buy_token_with_influence" } as EngineChoice["context"],
+    context: { subtype: "buy_token_with_influence" } as Choice["context"],
   };
 }
 
-export type PreviewScript = (answers: string[]) => SecondaryPreviewBody | null;
+export type PreviewScript = (answers: string[]) => SecondaryPreview | null;
 
 /** The engine accepts any scripted purchase (its payment, pool and "again?" all fit). */
 export const acceptingScript: PreviewScript = (answers) =>
@@ -65,7 +65,7 @@ export const rejectingScript: PreviewScript = (answers) =>
           player: actor,
           prompt: "pay 3 more influence",
           options: [{ id: "exhaust|lodor", kind: "pay", label: "exhaust lodor for 3 influence" }],
-          context: { subtype: "pay_influence" } as EngineChoice["context"],
+          context: { subtype: "pay_influence" } as Choice["context"],
         },
       };
 
@@ -108,7 +108,7 @@ export async function openScene(page: Page, script: PreviewScript): Promise<Mock
 }
 
 /** A state update that moves the game forward and puts `choice` to the viewer (full engine shape). */
-export function pushChoice(game: MockedGame, version: number, choice: EngineChoice) {
+export function pushChoice(game: MockedGame, version: number, choice: Choice) {
   const { events: _events, ...base } = game.snapshot;
   game.send({
     ...base,

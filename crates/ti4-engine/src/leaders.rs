@@ -899,12 +899,16 @@ pub fn registered_abilities() -> Vec<&'static str> {
 
 /// Leaders of these factions that still do nothing, by any of the three routes.
 #[must_use]
-pub fn unimplemented(content: &ContentStore, factions: &[&str]) -> Vec<LeaderId> {
+pub fn unimplemented(
+    content: &ContentStore,
+    sources: SourceSet,
+    factions: &[&str],
+) -> Vec<LeaderId> {
     let known = registered_abilities();
     let standing = modifiers();
     factions
         .iter()
-        .flat_map(|faction| for_faction(content, ti4_model::content_types::POK, faction))
+        .flat_map(|faction| for_faction(content, sources, faction))
         .filter(|leader| {
             !known.contains(&leader.as_str()) && !standing.contains_key(leader.as_str())
         })
@@ -2941,7 +2945,7 @@ mod tests {
     fn a_standing_modifier_counts_as_implemented() {
         // Naming them keeps coverage honest: a leader whose effect lives where it modifies is
         // not a gap, and reporting it as one trains the reader to ignore the list.
-        let missing = unimplemented(ContentStore::embedded(), &["xxcha"]);
+        let missing = unimplemented(ContentStore::embedded(), POK, &["xxcha"]);
         assert!(
             !missing.contains(&LeaderId::new("xxchacommander")),
             "its effect lives in elder_qanoj"
@@ -2955,7 +2959,8 @@ mod tests {
         // until Z'eu was delivered (2026-10-12); across every faction one is still left (the
         // Keleres' Orlando hero, 2026-10-12), so the whole roster stands in now.
         assert!(
-            !unimplemented(ContentStore::embedded(), &["naalu"]).contains(&LeaderId::new(ZEU)),
+            !unimplemented(ContentStore::embedded(), POK, &["naalu"])
+                .contains(&LeaderId::new(ZEU)),
             "Z'eu is delivered by the game"
         );
         let all: Vec<&str> =
@@ -2963,8 +2968,16 @@ mod tests {
                 .into_keys()
                 .collect();
         assert!(
-            !unimplemented(ContentStore::embedded(), &all).is_empty(),
+            !unimplemented(ContentStore::embedded(), POK, &all).is_empty(),
             "a leader this module does not handle is still reported"
+        );
+        assert!(
+            unimplemented(
+                ContentStore::embedded(),
+                ti4_model::content_types::DEFAULT,
+                &["naalu"]
+            )
+            .is_empty()
         );
     }
 

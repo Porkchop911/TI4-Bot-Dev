@@ -12,8 +12,8 @@ const choice: PendingChoiceDto = {
   nonce: "n1",
   prompt: "action phase",
   options: [
-    { id: "tactical", label: "take a tactical action", kind: "action" },
-    { id: "pass", label: "pass", kind: "action" },
+    { id: "tactical", label: "take a tactical action", kind: "action", payload: {} },
+    { id: "pass", label: "pass", kind: "action", payload: {} },
   ],
   details: { kind: "turn_menu", closing: false, tokens, strategy_cards: [], partners: [] },
 };

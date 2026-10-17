@@ -1,5 +1,5 @@
 import { expect, type Locator, type Page } from "@playwright/test";
-import type { ChoiceOptionDto } from "../../../src/protocol/types";
+import type { ChoiceOption } from "../../../src/protocol/types";
 import { openMockedGame } from "../_shared/mockGame";
 import { opponent, playerWithHand, withPlayer } from "../_shared/players";
 
@@ -30,14 +30,14 @@ export const players = [
   ),
 ];
 
-const component = (id: string, label: string): ChoiceOptionDto => ({ id, label, kind: "component" });
+const component = (id: string, label: string): ChoiceOption => ({ id, label, kind: "component" });
 
 /**
  * Component actions as the engine offers them (ids and labels as in leaders.rs, relics.rs,
  * technology.rs, faction_abilities.rs, exploration.rs and thunders_edge.rs): several leaders and
  * relics carry only a name or a raw id, no rules text.
  */
-export const COMPONENTS: ChoiceOptionDto[] = [
+export const COMPONENTS: ChoiceOption[] = [
   component("faction|orbital_drop", "Orbital Drop: spend a strategy token to land 2 infantry"),
   component("component|tech|sr", "use Sling Relay"),
   component("faction|trade_convoys", "Trade Convoys: place it faceup in your play area"),

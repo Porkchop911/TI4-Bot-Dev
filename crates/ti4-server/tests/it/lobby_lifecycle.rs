@@ -1,11 +1,9 @@
-use std::collections::BTreeMap;
-use std::sync::{Arc, Barrier};
+use std::sync::Arc;
 
 use tokio::net::TcpListener;
 
 use ti4_model::id::PlayerId;
 use ti4_server::create_app;
-use ti4_server::session::registry::LobbyConfig;
 use ti4_server::session::{GameRegistry, SeatController};
 use ti4_server::storage::FileGameStore;
 
@@ -224,158 +222,6 @@ async fn lobby_creation_and_mutation_rejections_are_atomic_and_claim_bound() {
 }
 
 #[test]
-fn concurrent_start_initializes_exactly_one_session_and_post_start_requests_preserve_it() {
-    let registry = Arc::new(GameRegistry::new());
-    let mut seats = BTreeMap::new();
-    seats.insert(PlayerId::new("host"), SeatController::Human);
-    let created = registry
-        .create_lobby(LobbyConfig {
-            game_id: "concurrent_start".to_owned(),
-            host_seat: PlayerId::new("host"),
-            player_ids: vec![PlayerId::new("host")],
-            seats,
-            seed: 23,
-        })
-        .expect("create lobby");
-    let token = created.seat_tokens[&PlayerId::new("host")].clone();
-    registry
-        .set_ready("concurrent_start", &token, true)
-        .expect("ready host");
-
-    let barrier = Arc::new(Barrier::new(3));
-    let starts: Vec<_> = (0..2)
-        .map(|_| {
-            let registry = registry.clone();
-            let token = token.clone();
-            let barrier = barrier.clone();
-            std::thread::spawn(move || {
-                barrier.wait();
-                registry.start_lobby("concurrent_start", &token)
-            })
-        })
-        .collect();
-    barrier.wait();
-    let results: Vec<_> = starts
-        .into_iter()
-        .map(|start| start.join().expect("start thread"))
-        .collect();
-    assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
-    assert_eq!(
-        results
-            .iter()
-            .filter(|result| matches!(
-                result,
-                Err(ti4_server::session::registry::LobbyError::AlreadyRunning)
-            ))
-            .count(),
-        1
-    );
-
-    let session = registry
-        .get_game("concurrent_start")
-        .expect("one running session");
-    let before = registry
-        .lobby_status("concurrent_start", Some(&token))
-        .expect("running status")
-        .lobby;
-    assert!(matches!(
-        registry.set_ready("concurrent_start", &token, false),
-        Err(ti4_server::session::registry::LobbyError::AlreadyRunning)
-    ));
-    assert!(matches!(
-        registry.start_lobby("concurrent_start", &token),
-        Err(ti4_server::session::registry::LobbyError::AlreadyRunning)
-    ));
-    let after = registry
-        .lobby_status("concurrent_start", Some(&token))
-        .expect("running status after rejection")
-        .lobby;
-    assert_eq!(
-        after.phase,
-        ti4_server::session::registry::LobbyPhase::Running
-    );
-    assert_eq!(after.lobby_version, before.lobby_version);
-    assert!(after.seats[&PlayerId::new("host")].ready);
-    assert!(Arc::ptr_eq(
-        &session,
-        &registry
-            .get_game("concurrent_start")
-            .expect("same running session")
-    ));
-    session.stop();
-}
-
-#[test]
-fn unstarted_lobby_recovers_without_initializing_an_engine_session() {
-    let path =
-        std::env::temp_dir().join(format!("ti4_lobby_recovery_{:016x}", rand::random::<u64>()));
-    let store = Arc::new(FileGameStore::new(&path).expect("create store"));
-    let mut seats = BTreeMap::new();
-    seats.insert(PlayerId::new("host"), SeatController::Human);
-    seats.insert(PlayerId::new("bot"), SeatController::BotFirstOption);
-    let registry = GameRegistry::new().with_store(store.clone());
-    let created = registry
-        .create_lobby(LobbyConfig {
-            game_id: "durable_lobby".to_owned(),
-            host_seat: PlayerId::new("host"),
-            player_ids: vec![PlayerId::new("host"), PlayerId::new("bot")],
-            seats,
-            seed: 7,
-        })
-        .expect("persist lobby");
-    let host_token = created.seat_tokens[&PlayerId::new("host")].clone();
-    assert!(
-        store
-            .game_dir("durable_lobby")
-            .expect("game dir")
-            .join("lobby.json")
-            .exists()
-    );
-    assert!(
-        !store
-            .game_dir("durable_lobby")
-            .expect("game dir")
-            .join("init.json")
-            .exists()
-    );
-
-    let recovered = GameRegistry::new().with_store(store);
-    assert_eq!(
-        recovered.recover_all_games().expect("recover lobby"),
-        vec!["durable_lobby"]
-    );
-    assert!(recovered.get_game("durable_lobby").is_none());
-    let status = recovered
-        .lobby_status("durable_lobby", None)
-        .expect("recovered lobby status");
-    assert_eq!(
-        status.lobby.phase,
-        ti4_server::session::registry::LobbyPhase::Lobby
-    );
-    assert!(!status.lobby.seats[&PlayerId::new("host")].ready);
-    recovered
-        .set_ready("durable_lobby", &host_token, true)
-        .expect("ready recovered host");
-    let started = recovered
-        .start_lobby("durable_lobby", &host_token)
-        .expect("start recovered lobby");
-    started.stop();
-    let post_start =
-        GameRegistry::new().with_store(Arc::new(FileGameStore::new(&path).expect("reopen store")));
-    assert_eq!(
-        post_start
-            .recover_all_games()
-            .expect("recover running game"),
-        vec!["durable_lobby"]
-    );
-    assert!(post_start.get_game("durable_lobby").is_some());
-    post_start
-        .remove_game("durable_lobby")
-        .expect("stop recovered session");
-    let _ = std::fs::remove_dir_all(path);
-}
-
-#[test]
 fn recovery_migrates_legacy_initialized_records_to_running_lobbies() {
     let path = std::env::temp_dir().join(format!(
         "ti4_legacy_lobby_recovery_{:016x}",
@@ -384,9 +230,9 @@ fn recovery_migrates_legacy_initialized_records_to_running_lobbies() {
     let store = Arc::new(FileGameStore::new(&path).expect("create store"));
     let players = vec![PlayerId::new("p1"), PlayerId::new("p2")];
     let content = ti4_content::ContentStore::embedded();
-    let (state, galaxy) =
-        ti4_server::map::create_game_with_map(content, &players, 29).expect("create legacy map");
-    let map_tiles = ti4_server::map::build_board_tiles(content, &galaxy);
+    let (state, galaxy) = ti4_host::map::create_game_with_template(content, &players, 29, None)
+        .expect("create legacy map");
+    let map_tiles = ti4_host::map::build_board_tiles(content, &galaxy);
     let registry = GameRegistry::new().with_store(store.clone());
     let legacy = registry
         .create_game(

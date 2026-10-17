@@ -156,8 +156,8 @@ describe("PlayerSheet Component & Human Readable Metadata", () => {
             jord: { planet_id: "jord", controlled_by: "p1", exhausted: false },
           },
           units: [
-            { owner: "p1", unit_type: "carrier", damaged: false },
-            { owner: "p1", unit_type: "space_dock", planet: "jord", damaged: false },
+            { owner: "p1", unit_type: "carrier", damaged: false, planet: null, galvanized: false },
+            { owner: "p1", unit_type: "space_dock", planet: "jord", damaged: false, galvanized: false },
           ],
         },
       },
@@ -221,7 +221,7 @@ describe("PlayerSheet Component & Human Readable Metadata", () => {
           planets: {
             jord: { planet_id: "jord", controlled_by: "p1", exhausted: false },
           },
-          units: [{ owner: "p1", unit_type: "space_dock", planet: "jord", damaged: false }],
+          units: [{ owner: "p1", unit_type: "space_dock", planet: "jord", damaged: false, galvanized: false }],
         },
       },
     };
@@ -439,3 +439,14 @@ describe("PlayerSheet held foreign command tokens", () => {
   });
 });
 
+
+describe("PlayerSheet Armada indicator", () => {
+  it("shows Fleet +2 for the Letnev seat only", () => {
+    const players = [{ ...mockPlayers[0], faction: "letnev" }, { ...mockPlayers[1], faction: "sol" }];
+    render(<PlayerSheet players={players} userSeat="p1" />);
+    const chips = screen.getAllByTestId("player-armada");
+    expect(chips).toHaveLength(1);
+    expect(chips[0]).toHaveTextContent("Fleet +2");
+    expect(chips[0].getAttribute("aria-label")).toContain("non-fighter ships per system");
+  });
+});

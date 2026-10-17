@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { Socket } from "./socket";
+import type { Socket } from "@ti4/shared/net/socket.ts";
 import {
   type Seat,
   TABLE_UNKNOWN,
@@ -41,7 +41,6 @@ const lobby = (version: number, change: Partial<LobbyState> = {}): LobbyState =>
   strategy_card_set: "te",
   speaker_order: "random",
   factions: [],
-  seat_order: "random",
   bot_delay_ms: 600,
   ...change,
 });

@@ -67,16 +67,21 @@ test.describe("Technology Research with Tech Skips", () => {
     await expect(resourcesBar.getByRole("img", { name: /resources available/ })).toBeVisible();
     await expect(resourcesBar).toContainText("6 TG");
 
-    // Tech skips row: Rigel III (ready, Biotic) and Tar'mann (exhausted, Propulsion)
+    // Tech skips row: Rigel III (ready, Biotic) and one exhausted skip, whichever planet this
+    // map carries (the scenario picks it).
     const rigelSkip = page.getByTestId("tech-skip-rigeliii");
     await expect(rigelSkip).toBeVisible();
     await expect(rigelSkip).toContainText("Ready");
     await expect(rigelSkip).toBeEnabled();
 
-    const tarmannSkip = page.getByTestId("tech-skip-tarmann");
-    await expect(tarmannSkip).toBeVisible();
-    await expect(tarmannSkip).toContainText("(Exhausted)");
-    await expect(tarmannSkip).toBeDisabled();
+    const exhausted = Object.values(initial.view.board.systems)
+      .flatMap((system) => Object.values(system.planets))
+      .find((planet) => planet.controlled_by === player && planet.exhausted);
+    expect(exhausted, "the scenario exhausts one skip planet").toBeDefined();
+    const exhaustedSkip = page.getByTestId(`tech-skip-${exhausted!.planet_id}`);
+    await expect(exhaustedSkip).toBeVisible();
+    await expect(exhaustedSkip).toContainText("(Exhausted)");
+    await expect(exhaustedSkip).toBeDisabled();
 
     // Spec Ops II (so2) requires 2 Biotic prereqs (GG).
     // Sol starts with 1 Biotic (Neural Motivator). Without Rigel III skip toggled -> so2 is unresearchable (opacity dimmed)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ChoiceOptionDto, PendingChoiceDto } from "../protocol/types.ts";
+import type { ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import {
   canConfirmReady,
   describeReadyPlanets,
@@ -12,7 +12,7 @@ const ready = (...ids: string[]): PendingChoiceDto => ({
   actor: "b",
   nonce: "n1",
   prompt: "ready which planet",
-  options: ids.map((id): ChoiceOptionDto => ({ id, kind: "ready", label: `ready ${id}` })),
+  options: ids.map((id): ChoiceOption => ({ id, kind: "ready", label: `ready ${id}`, payload: {} })),
   context: { subtype: "ready_planet" } as PendingChoiceDto["context"],
 });
 
@@ -32,7 +32,7 @@ describe("describeReadyPlanets", () => {
     expect(describeReadyPlanets(null)).toBeNull();
     expect(describeReadyPlanets({ ...ready("jord"), context: { subtype: "mine_planet" } as PendingChoiceDto["context"] })).toBeNull();
     const mixed = ready("jord");
-    mixed.options.push({ id: "decline", kind: "decline", label: "decline" });
+    mixed.options.push({ id: "decline", kind: "decline", label: "decline", payload: {} });
     expect(describeReadyPlanets(mixed)).toBeNull();
   });
 });

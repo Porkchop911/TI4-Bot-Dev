@@ -1,4 +1,4 @@
-import { GENERATED_CONTENT_CATALOG } from "../protocol/generatedContentManifest.ts";
+import { CONTENT, catalogContent } from "../protocol/catalogStore.ts";
 import { findBreakthroughForFaction, findTechnologyMeta } from "../protocol/contentCatalog.ts";
 import { synergyText } from "./breakthroughs.ts";
 
@@ -30,7 +30,8 @@ export interface UnitRecord {
   deepSpaceCannon?: boolean;
   planetaryShield?: boolean;
   disablesPlanetaryShield?: boolean;
-  productionValue?: number | string;
+  /** As printed: "5", or what is added to the resources of the planet ("+2"). */
+  productionValue?: string;
   requiredTechId?: string;
   upgradesFromUnitId?: string;
   upgradesToUnitId?: string;
@@ -78,14 +79,14 @@ export interface FactionRecord {
   source?: string;
 }
 
-const FACTIONS = GENERATED_CONTENT_CATALOG.factions as unknown as Record<string, FactionRecord>;
-const UNITS = GENERATED_CONTENT_CATALOG.units as unknown as Record<string, UnitRecord>;
-const LEADERS = GENERATED_CONTENT_CATALOG.leaders as unknown as Record<string, LeaderRecord>;
-const FACTION_ABILITIES = GENERATED_CONTENT_CATALOG.factionAbilities as unknown as Record<
+const FACTIONS = CONTENT.factions as unknown as Record<string, FactionRecord>;
+const UNITS = CONTENT.units as unknown as Record<string, UnitRecord>;
+const LEADERS = CONTENT.leaders as unknown as Record<string, LeaderRecord>;
+const FACTION_ABILITIES = CONTENT.factionAbilities as unknown as Record<
   string,
   FactionAbilityRecord
 >;
-const PROMISSORY_NOTES = GENERATED_CONTENT_CATALOG.promissoryNotes as unknown as Record<
+const PROMISSORY_NOTES = CONTENT.promissoryNotes as unknown as Record<
   string,
   PromissoryNoteRecord
 >;
@@ -96,21 +97,23 @@ const normalize = (text: string): string =>
     .replace(/^the\s+/, "")
     .replace(/[^a-z0-9]/g, "");
 
-let factionsByName: Map<string, FactionRecord> | undefined;
+/** The factions by normalized id and printed name, of the catalog `content`. */
+let factionsByName: { content: string | null; factions: Map<string, FactionRecord> } | undefined;
 
 /** A faction by its id ("hacan") or its printed name ("The Barony of Letnev"); `undefined` when the catalog has none. */
 export function findFactionRecord(key: string | null | undefined): FactionRecord | undefined {
   if (!key) return undefined;
   const exact = FACTIONS[key] ?? FACTIONS[key.toLowerCase()];
   if (exact) return exact;
-  if (!factionsByName) {
-    factionsByName = new Map();
+  if (factionsByName?.content !== catalogContent()) {
+    const factions = new Map<string, FactionRecord>();
     for (const faction of Object.values(FACTIONS)) {
-      factionsByName.set(normalize(faction.id), faction);
-      factionsByName.set(normalize(faction.name), faction);
+      factions.set(normalize(faction.id), faction);
+      factions.set(normalize(faction.name), faction);
     }
+    factionsByName = { content: catalogContent(), factions };
   }
-  return factionsByName.get(normalize(key));
+  return factionsByName.factions.get(normalize(key));
 }
 
 export function findUnitRecord(id: string): UnitRecord | undefined {
@@ -264,7 +267,7 @@ export function describeUnit(resolved: ResolvedUnit): UnitDescription {
   if (u.moveValue !== undefined) facts.push({ label: "Move", value: String(u.moveValue) });
   if (u.capacityValue !== undefined) facts.push({ label: "Capacity", value: String(u.capacityValue) });
   if (u.productionValue !== undefined) {
-    facts.push({ label: "Production", value: String(u.productionValue) });
+    facts.push({ label: "Production", value: u.productionValue });
   }
 
   const keywords: string[] = [];

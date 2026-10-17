@@ -33,7 +33,7 @@ use ti4_model::content_types::FULL;
 use ti4_policy::battle::{
     self as policy_battle, BattlePredictor, BattleSide, FEATURE_VERSION, INPUT_WIDTH, OUTPUT_WIDTH,
 };
-use ti4_training::battle_arena::{self as arena, Profile, Rng, Side, SideContext};
+use ti4_training::battle_arena::{self as arena, Rng, Side, SideContext};
 
 /// Survival slots per side.
 const SLOTS: usize = policy_battle::unit_ids(FEATURE_VERSION).len();

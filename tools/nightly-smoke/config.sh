@@ -4,6 +4,9 @@
 REPO="${NIGHTLY_REPO:-/root/TI4-Bot-Dev}"
 NIGHTLY_DIR="$REPO/tools/nightly-smoke"
 REPORT_ROOT="${NIGHTLY_REPORT_ROOT:-$REPO/nightly-reports}"
+# server (default: the classic proctored sweep), offline or both; see the offline section below.
+MODE="${NIGHTLY_MODE:-server}"
+case "$MODE" in server|offline|both) ;; *) echo "NIGHTLY_MODE must be server, offline or both (got '$MODE')" >&2; exit 2 ;; esac
 
 # Window in Berlin local time. The sweep starts at START (one day) and runs until END (the next
 # morning); it stops launching runs so that the last proctor can finish by END. A night is named
@@ -132,6 +135,8 @@ SLOT_POLL_SECONDS="${NIGHTLY_SLOT_POLL_SECONDS:-5}"
 MEM_AVAIL_CMD="${NIGHTLY_MEM_AVAIL_CMD:-awk '/^MemAvailable:/ { print int(\$2 / 1024) }' /proc/meminfo}"
 # The tree the games, builds and proctors work in. The live checkout unless a slot overrides it.
 GAME_REPO="${NIGHTLY_GAME_REPO:-$REPO}"
+# Offline mode builds the offline bundle (offline_build.sh) instead of the server.
+[ "${MODE:-server}" != offline ] || BUILD_CMD="${NIGHTLY_BUILD_CMD:-$NIGHTLY_DIR/offline_build.sh \"$GAME_REPO\" > /dev/null}"
 # A fixer round that fails to start (no disk, no worktree) is retried after this long, up to this
 # many attempts in total.
 FIX_RETRY_SECONDS="${NIGHTLY_FIX_RETRY_SECONDS:-1800}"
@@ -140,6 +145,47 @@ FIX_MAX_ATTEMPTS="${NIGHTLY_FIX_MAX_ATTEMPTS:-2}"
 MIN_RUN_SECONDS="${NIGHTLY_MIN_RUN_SECONDS:-1800}"
 # Kill a run when its seat UI makes no progress for this long (seconds); the proctor reports it.
 STALL_SECONDS="${NIGHTLY_STALL_SECONDS:-900}"
+
+# ---------------------------------------------------------------------------------------------
+# Offline mode (NIGHTLY_MODE=offline|both): instead of proctored games against the server, many
+# fast games of the offline single-player build (the engine runs as wasm in one headless browser,
+# the other seats are rule bots, no server, no proctor). See README.md, "Offline mode".
+#   server  the classic proctored sweep (default, nothing changes)
+#   offline only offline games (no server build, no Sonnet proctors)
+#   both    the classic sweep, plus offline workers side by side on the same machine
+# ---------------------------------------------------------------------------------------------
+# Browser workers playing offline games side by side (each is one headless Chromium with the wasm
+# engine in a worker; measured: see README.md). With NIGHTLY_MODE=both the default is lower.
+OFFLINE_WORKERS="${NIGHTLY_OFFLINE_WORKERS:-$([ "$MODE" = both ] && echo 2 || echo 3)}"
+OFFLINE_PLAYER_COUNTS="${NIGHTLY_OFFLINE_PLAYER_COUNTS:-3 4 5 6}"
+# One policy per run, picked at random from this list (a name twice counts twice): `steer` favours
+# tactical play so combat and invasions occur, `random` clicks uniformly.
+OFFLINE_POLICIES="${NIGHTLY_OFFLINE_POLICIES:-steer steer random}"
+# A game ends by itself (final objective or ten victory points); these only stop a runaway game.
+OFFLINE_MAX_DECISIONS="${NIGHTLY_OFFLINE_MAX_DECISIONS:-20000}"
+OFFLINE_MAX_SECONDS="${NIGHTLY_OFFLINE_MAX_SECONDS:-1500}"
+# No message from the engine for this long is a stuck game (a UI that cannot answer is caught by
+# its own click and poll limits first).
+OFFLINE_STALL_SECONDS="${NIGHTLY_OFFLINE_STALL_SECONDS:-90}"
+# Percent of runs on a phone-sized viewport (390x844) instead of 1440x900.
+OFFLINE_PHONE_PERCENT="${NIGHTLY_OFFLINE_PHONE_PERCENT:-15}"
+OFFLINE_SHOT_CAP="${NIGHTLY_OFFLINE_SHOT_CAP:-30}"
+# Percent of runs that reload the page once at a random question (between decision 8 and 160) and check that the
+# saved game comes back with the same question: the resume path, at every kind of position.
+OFFLINE_RESUME_PERCENT="${NIGHTLY_OFFLINE_RESUME_PERCENT:-25}"
+# Percent of finished runs that also get a Sonnet review of their evidence (prompts/offline_proctor.md)
+# which replaces the machine entry. 0 (default): none, no model is ever started.
+OFFLINE_PROCTOR_PERCENT="${NIGHTLY_OFFLINE_PROCTOR_PERCENT:-0}"
+# Ask for a fix round (request_fix.sh) on the first blocker of a night: a stuck game, an engine trap
+# or an uncaught page error. 1 = yes (like a proctor), 0 = only report.
+OFFLINE_REQUEST_FIX="${NIGHTLY_OFFLINE_REQUEST_FIX:-1}"
+# `nightly.sh loop` runs offline games in batches of this many seconds, merging ready fixer branches
+# (and rebuilding) in between, like the classic sweep does between games.
+OFFLINE_BATCH_SECONDS="${NIGHTLY_OFFLINE_BATCH_SECONDS:-1800}"
+# Built web bundles and engine files, keyed by the content of web/ and crates/ (about 8 MB each).
+OFFLINE_CACHE="${NIGHTLY_OFFLINE_CACHE:-$REPORT_ROOT/offline-cache}"
+# cargo target dir of the wasm engine build (kept between nights; about 270 MB, a cold build takes about a minute).
+OFFLINE_TARGET="${NIGHTLY_OFFLINE_TARGET:-$REPORT_ROOT/target-offline}"
 
 CLAUDE_BIN="${NIGHTLY_CLAUDE:-/root/.local/bin/claude}"
 PROCTOR_MODEL="${NIGHTLY_PROCTOR_MODEL:-claude-sonnet-5-5}"
@@ -273,5 +319,17 @@ clean_stale_tmp() {
     busy=$(grep -lsa -e "$pat" /proc/[0-9]*/cmdline /proc/[0-9]*/environ 2>/dev/null | head -1 || true)
     [ -z "$busy" ] || continue
     rm -rf -- "$dir" && echo "removed stale $dir"
+  done
+}
+
+# Kill every process whose environment holds NAME=VALUE (the offline games tag their Playwright
+# run and its browsers with TI4_OFFLINE_RUN_ID, which survives new sessions and re-parenting).
+kill_processes_with_env() { # kill_processes_with_env <NAME> <VALUE>
+  local sig pids
+  for sig in TERM KILL; do
+    pids=$(grep -lsz "^$1=$2\$" /proc/[0-9]*/environ 2>/dev/null | tr '\0' '\n' | cut -d/ -f3 | grep -vx -e "$$" -e "${BASHPID:-$$}" || true)
+    [ -n "$pids" ] || return 0
+    kill -"$sig" $pids 2>/dev/null || true
+    [ "$sig" = TERM ] && sleep 3
   done
 }

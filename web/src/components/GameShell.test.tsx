@@ -5,12 +5,13 @@ import { BoardView, PendingChoiceDto } from "../protocol/types.ts";
 import { deriveChoiceRendererModel } from "../presentation/choiceModel.ts";
 import { PlayerIdentityProvider } from "../presentation/PlayerIdentity.tsx";
 import type { LobbyDto } from "../protocol/types.ts";
+import { partialCombat, partialContext } from "../test/wire.ts";
 
 const choice: PendingChoiceDto = {
   prompt: "Choose a strategy card",
   actor: "p1",
   nonce: "choice-1",
-  options: [{ id: "leadership", label: "Leadership" }],
+  options: [{ id: "leadership", label: "Leadership", payload: {}, kind: "" }],
 };
 
 function renderShell(pendingChoice: PendingChoiceDto | null = null) {
@@ -35,19 +36,19 @@ describe("GameShell", () => {
           command_tokens: [],
           planets: {},
           units: [
-            { owner: "p1", unit_type: "cruiser", damaged: false },
-            { owner: "p2", unit_type: "cruiser", damaged: false },
+            { owner: "p1", unit_type: "cruiser", damaged: false, planet: null, galvanized: false },
+            { owner: "p2", unit_type: "cruiser", damaged: false, planet: null, galvanized: false },
           ],
         },
       },
-      combat: { system_id: "18", round: 1, attacker: "p1", defender: "p2", dice_rolls: [] },
+      combat: partialCombat({ system_id: "18", round: 1, attacker: "p1", defender: "p2", dice_rolls: [] }),
     };
     const submit = vi.fn().mockResolvedValue(undefined);
     const offer: PendingChoiceDto = {
       actor: "p2",
       nonce: "outer",
       prompt: "when HITS_TO_ASSIGN",
-      context: { subtype: "reaction_when_HITS_TO_ASSIGN", space_battle: true },
+      context: partialContext({ subtype: "reaction_when_HITS_TO_ASSIGN", space_battle: true }),
       options: [
         {
           id: "reaction:p2:HITS_TO_ASSIGN:when",
@@ -55,7 +56,7 @@ describe("GameShell", () => {
           label: "Play Shields Holding",
           payload: { card: "sh1" },
         },
-        { id: "decline", kind: "decline", label: "Decline" },
+        { id: "decline", kind: "decline", label: "Decline", payload: {} },
       ],
     };
     const props = {
@@ -75,7 +76,7 @@ describe("GameShell", () => {
         choice={{
           ...offer,
           nonce: "inner",
-          context: { subtype: "play_reaction_when_HITS_TO_ASSIGN", space_battle: true },
+          context: partialContext({ subtype: "play_reaction_when_HITS_TO_ASSIGN", space_battle: true }),
           options: [
             {
               id: "sh1",
@@ -93,7 +94,7 @@ describe("GameShell", () => {
         {...props}
         choice={{
           ...offer,
-          context: { subtype: "reaction_when_HITS_TO_ASSIGN", space_battle: false },
+          context: partialContext({ subtype: "reaction_when_HITS_TO_ASSIGN", space_battle: false }),
         }}
         boardView={{ ...board, combat: undefined }}
       />,
@@ -110,12 +111,12 @@ describe("GameShell", () => {
           command_tokens: [],
           planets: {},
           units: [
-            { owner: "p1", unit_type: "dreadnought", damaged: false },
-            { owner: "p2", unit_type: "cruiser", damaged: false },
+            { owner: "p1", unit_type: "dreadnought", damaged: false, planet: null, galvanized: false },
+            { owner: "p2", unit_type: "cruiser", damaged: false, planet: null, galvanized: false },
           ],
         },
       },
-      combat: {
+      combat: partialCombat({
         system_id: "18",
         round: 2,
         attacker: "p1",
@@ -123,7 +124,7 @@ describe("GameShell", () => {
         attacker_hits: 1,
         defender_hits: 0,
         dice_rolls: [{ player: "p1", unit: "dreadnought", roll: 9, target: 5, hit: true }],
-      },
+      }),
     };
     const nextBoard: BoardView = {
       systems: {
@@ -134,8 +135,8 @@ describe("GameShell", () => {
       actor: "p2",
       nonce: "combat-last",
       prompt: "Assign a casualty",
-      context: { subtype: "assign_casualty", target: { System: "18" } },
-      options: [{ id: "destroy", label: "Cruiser", kind: "casualty" }],
+      context: partialContext({ subtype: "assign_casualty", target: { System: "18" } }),
+      options: [{ id: "destroy", label: "Cruiser", kind: "casualty", payload: {} }],
     };
     const props = {
       header: <div>Header</div>,
@@ -171,22 +172,22 @@ describe("GameShell", () => {
             command_tokens: [],
             planets: {},
             units: [
-              { owner: "p1", unit_type: "dreadnought", damaged: false },
-              { owner: "p1", unit_type: "cruiser", damaged: false },
-              { owner: "p2", unit_type: "cruiser", damaged: false },
+              { owner: "p1", unit_type: "dreadnought", damaged: false, planet: null, galvanized: false },
+              { owner: "p1", unit_type: "cruiser", damaged: false, planet: null, galvanized: false },
+              { owner: "p2", unit_type: "cruiser", damaged: false, planet: null, galvanized: false },
             ],
           },
         },
-        combat: { system_id: "18", round: 2, attacker: "p2", defender: "p1", phase: "resolving_hits" },
+        combat: partialCombat({ system_id: "18", round: 2, attacker: "p2", defender: "p1", phase: "resolving_hits" }),
       };
       const casualty: PendingChoiceDto = {
         actor: "p1",
         nonce: `one-off-${subtype}`,
         prompt: "assign a hit",
-        context: { subtype, target: { System: "18" } },
+        context: partialContext({ subtype, target: { System: "18" } }),
         options: [
-          { id: "destroy|0", label: "destroy dreadnought", kind: "casualty" },
-          { id: "destroy|1", label: "destroy cruiser", kind: "casualty" },
+          { id: "destroy|0", label: "destroy dreadnought", kind: "casualty", payload: {} },
+          { id: "destroy|1", label: "destroy cruiser", kind: "casualty", payload: {} },
         ],
       };
       const onSubmitChoice = vi.fn().mockResolvedValue(undefined);
@@ -212,7 +213,7 @@ describe("GameShell", () => {
   it("does not restore completed combat after a page reload", () => {
     const board: BoardView = {
       systems: { "18": { system_id: "18", command_tokens: [], planets: {}, units: [] } },
-      combat: { system_id: "18", round: 1, attacker: "p1", defender: "p2" },
+      combat: partialCombat({ system_id: "18", round: 1, attacker: "p1", defender: "p2" }),
     };
     const props = {
       header: <div>Header</div>,
@@ -237,10 +238,10 @@ describe("GameShell", () => {
         actor: "p1",
         nonce: "one",
         prompt: "pay 2 resources",
-        context: {
+        context: partialContext({
           subtype: "pay_resources",
-          outstanding: [{ kind: "resources", amount: 2, paid: 0 }],
-        },
+          outstanding: [{ kind: "Resources", amount: 2, paid: 0 }],
+        }),
         options: [
           {
             id: "exhaust|jord",
@@ -265,7 +266,7 @@ describe("GameShell", () => {
         actor: "p1",
         nonce: "one",
         prompt: "load carrier (2 free)",
-        context: { subtype: "load_cargo", target: { System: "42" } },
+        context: partialContext({ subtype: "load_cargo", target: { System: "42" } }),
         options: [
           {
             id: "load|0",
@@ -273,7 +274,7 @@ describe("GameShell", () => {
             label: "Fighter",
             payload: { unit: "fighter", source: null, capacity_remaining: 2 },
           },
-          { id: "done_loading", kind: "decline", label: "Done" },
+          { id: "done_loading", kind: "decline", label: "Done", payload: {} },
         ],
       } satisfies PendingChoiceDto,
       second: {
@@ -295,11 +296,11 @@ describe("GameShell", () => {
         actor: "p1",
         nonce: "one",
         prompt: "exhaust planets to vote",
-        context: { subtype: "vote_exhaust_planet" },
+        context: partialContext({ subtype: "vote_exhaust_planet" }),
         options: [
           { id: "Jord", kind: "vote_planet", label: "Jord", payload: { votes: 2 } },
           { id: "Mecatol", kind: "vote_planet", label: "Mecatol", payload: { votes: 6 } },
-          { id: "decline", kind: "decline", label: "Done" },
+          { id: "decline", kind: "decline", label: "Done", payload: {} },
         ],
       } satisfies PendingChoiceDto,
       second: { id: "Mecatol", kind: "vote_planet", label: "Mecatol", payload: { votes: 6 } },
@@ -308,29 +309,6 @@ describe("GameShell", () => {
         fireEvent.click(screen.getByTestId("planet-card-Jord"));
         fireEvent.click(screen.getByTestId("planet-card-Mecatol"));
         fireEvent.click(screen.getByTestId("commit-planet-votes-btn"));
-      },
-    },
-    {
-      name: "generic multi-select",
-      first: {
-        actor: "p1",
-        nonce: "one",
-        prompt: "choose two",
-        context: {
-          subtype: "select_targets",
-          outstanding: [{ min_selection: 1, max_selection: 2 }],
-        },
-        options: [
-          { id: "first", kind: "target", label: "First" },
-          { id: "second", kind: "target", label: "Second" },
-        ],
-      } satisfies PendingChoiceDto,
-      second: { id: "second", kind: "target", label: "Second" },
-      expected: ["first", "second"],
-      stage: () => {
-        fireEvent.click(screen.getByText("First"));
-        fireEvent.click(screen.getByText("Second"));
-        fireEvent.click(screen.getByTestId("submit-choice-button"));
       },
     },
   ])(
@@ -353,8 +331,8 @@ describe("GameShell", () => {
                 command_tokens: [],
                 planets: {},
                 units: [
-                  { owner: "p1", unit_type: "fighter", damaged: false },
-                  { owner: "p1", unit_type: "fighter", damaged: false },
+                  { owner: "p1", unit_type: "fighter", damaged: false, planet: null, galvanized: false },
+                  { owner: "p1", unit_type: "fighter", damaged: false, planet: null, galvanized: false },
                 ],
               },
             },
@@ -377,11 +355,12 @@ describe("GameShell", () => {
     const first: PendingChoiceDto = {
       actor: "p1",
       nonce: "one",
-      prompt: "choose two",
-      context: { subtype: "select_targets", outstanding: [{ min_selection: 1, max_selection: 2 }] },
+      prompt: "exhaust planets to vote",
+      context: partialContext({ subtype: "vote_exhaust_planet" }),
       options: [
-        { id: "first", label: "First" },
-        { id: "second", label: "Second" },
+        { id: "Jord", kind: "vote_planet", label: "Jord", payload: { votes: 2 } },
+        { id: "Mecatol", kind: "vote_planet", label: "Mecatol", payload: { votes: 6 } },
+        { id: "decline", kind: "decline", label: "Done", payload: {} },
       ],
     };
     const view = (pending: PendingChoiceDto | null) => (
@@ -396,17 +375,17 @@ describe("GameShell", () => {
       />
     );
     const { rerender } = render(view(first));
-    fireEvent.click(screen.getByText("First"));
-    fireEvent.click(screen.getByText("Second"));
-    fireEvent.click(screen.getByTestId("submit-choice-button"));
-    await waitFor(() => expect(onSubmit).toHaveBeenCalledExactlyOnceWith("first"));
+    fireEvent.click(screen.getByTestId("planet-card-Jord"));
+    fireEvent.click(screen.getByTestId("planet-card-Mecatol"));
+    fireEvent.click(screen.getByTestId("commit-planet-votes-btn"));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledExactlyOnceWith("Jord"));
     rerender(view(null));
     rerender(
       view({
         ...first,
         nonce: "two",
-        context: { subtype: "pay_resources" },
-        options: [{ id: "second", kind: "pay", label: "Second" }],
+        context: partialContext({ subtype: "pay_resources" }),
+        options: [{ id: "Mecatol", kind: "pay", label: "Mecatol", payload: {} }],
       }),
     );
     await act(async () => {});
@@ -422,7 +401,7 @@ describe("GameShell", () => {
         version: 1,
         decision_count: 0,
         visibility: { visibility: "public" as const },
-        event: { kind: "game_initialized" as const, round: 1, phase: "strategy", speaker: "p1" },
+        event: { kind: "game_initialized" as const, round: 1, phase: "strategy" as const, speaker: "p1" },
       },
       {
         id: "event-1",
@@ -448,7 +427,7 @@ describe("GameShell", () => {
         playerSheet={null}
         choice={null}
         events={events}
-        history={{ cursor: 2, redo_count: 1 }}
+        history={{ cursor: 2, redo_count: 1, generation: 0 }}
         onChangeHistory={change}
         onSubmitChoice={vi.fn()}
       />,
@@ -467,11 +446,11 @@ describe("GameShell", () => {
       actor: "p1",
       nonce,
       prompt: "produce in 18",
-      context: {
+      context: partialContext({
         subtype: "produce_unit",
         target: { System: "18" },
         outstanding: [{ amount: 3, paid: 0 }],
-      },
+      }),
       options: [
         {
           id: "build|fighter|1",
@@ -479,15 +458,15 @@ describe("GameShell", () => {
           label: "Fighter",
           payload: { unit: "fighter", production_spent: 1, cost: 1, available_resources: 3 },
         },
-        { id: "done_producing", kind: "decline", label: "Done" },
+        { id: "done_producing", kind: "decline", label: "Done", payload: {} },
       ],
     });
     const payment: PendingChoiceDto = {
       actor: "p1",
       nonce: "pay-2",
       prompt: "Pay 1",
-      context: { subtype: "pay_resources" },
-      options: [{ id: "trade_good", kind: "pay", label: "Trade good" }],
+      context: partialContext({ subtype: "pay_resources" }),
+      options: [{ id: "trade_good", kind: "pay", label: "Trade good", payload: {} }],
     };
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     const view = (choice: PendingChoiceDto) => (
@@ -518,7 +497,7 @@ describe("GameShell", () => {
       actor: "p1",
       nonce: "activation",
       prompt: "Activate a system",
-      context: { subtype: "activate_system" },
+      context: partialContext({ subtype: "activate_system" }),
       options: [{ id: "18", kind: "activate", label: "18", payload: { system: "18" } }],
     };
     render(
@@ -569,8 +548,9 @@ describe("GameShell", () => {
       options: [
         {
           id: `deal:${b}`,
-          label: `Accept from ${b}`,
-          description: `Notify ${missing}; content:${b} stays`,
+          label: `Accept from ${b}: notify ${missing}; content:${b} stays`,
+          kind: "",
+          payload: {},
         },
       ],
     };
@@ -674,8 +654,8 @@ describe("GameShell", () => {
         choice={{
           ...choice,
           options: [
-            { id: "opt_1", label: "Option 1" },
-            { id: "opt_2", label: "Option 2" },
+            { id: "opt_1", label: "Option 1", payload: {}, kind: "" },
+            { id: "opt_2", label: "Option 2", payload: {}, kind: "" },
           ],
         }}
         selectedOptionId="opt_2"
@@ -706,8 +686,8 @@ describe("GameShell", () => {
           actor: "p1",
           nonce: "pay-1",
           prompt: "Pay 3 resources",
-          context: { subtype: "pay_resources" },
-          options: [{ id: "opt_1", label: "Planet 1" }],
+          context: partialContext({ subtype: "pay_resources" }),
+          options: [{ id: "opt_1", label: "Planet 1", payload: {}, kind: "" }],
         }}
         viewerSeat="p1"
         onSubmitChoice={vi.fn().mockResolvedValue(undefined)}
@@ -726,8 +706,8 @@ describe("GameShell", () => {
           actor: "p1",
           nonce: "combat-1",
           prompt: "Sustain damage",
-          context: { subtype: "sustain_damage" },
-          options: [{ id: "opt_1", label: "Dreadnought" }],
+          context: partialContext({ subtype: "sustain_damage" }),
+          options: [{ id: "opt_1", label: "Dreadnought", payload: {}, kind: "" }],
         }}
         viewerSeat="p1"
         onSubmitChoice={vi.fn().mockResolvedValue(undefined)}
@@ -746,8 +726,8 @@ describe("GameShell", () => {
           actor: "p1",
           nonce: "trade-1",
           prompt: "Propose transaction",
-          context: { subtype: "propose_transaction" },
-          options: [{ id: "cc1", label: "Swap" }],
+          context: partialContext({ subtype: "propose_transaction" }),
+          options: [{ id: "cc1", label: "Swap", payload: {}, kind: "" }],
         }}
         viewerSeat="p1"
         onSubmitChoice={vi.fn().mockResolvedValue(undefined)}
@@ -766,8 +746,8 @@ describe("GameShell", () => {
           actor: "p1",
           nonce: "agenda-1",
           prompt: "Cast vote",
-          context: { subtype: "cast_vote" },
-          options: [{ id: "FOR", label: "FOR" }],
+          context: partialContext({ subtype: "cast_vote" }),
+          options: [{ id: "FOR", label: "FOR", payload: {}, kind: "" }],
         }}
         viewerSeat="p1"
         onSubmitChoice={vi.fn().mockResolvedValue(undefined)}
@@ -786,8 +766,8 @@ describe("GameShell", () => {
           actor: "p1",
           nonce: "reaction-1",
           prompt: "Sabotage?",
-          context: { subtype: "play_reaction_when_action_card_played" },
-          options: [{ id: "sabotage", label: "Sabotage" }],
+          context: partialContext({ subtype: "play_reaction_when_action_card_played" }),
+          options: [{ id: "sabotage", label: "Sabotage", payload: {}, kind: "" }],
         }}
         viewerSeat="p1"
         onSubmitChoice={vi.fn().mockResolvedValue(undefined)}
@@ -806,8 +786,8 @@ describe("GameShell", () => {
           actor: "p1",
           nonce: "prod-1",
           prompt: "Produce units",
-          context: { subtype: "produce_unit" },
-          options: [{ id: "produce|fighter", label: "Fighter" }],
+          context: partialContext({ subtype: "produce_unit" }),
+          options: [{ id: "produce|fighter", label: "Fighter", payload: {}, kind: "" }],
         }}
         viewerSeat="p1"
         onSubmitChoice={vi.fn().mockResolvedValue(undefined)}
@@ -826,8 +806,8 @@ describe("GameShell", () => {
           actor: "p1",
           nonce: "score-1",
           prompt: "Score an objective",
-          context: { subtype: "score_objective" },
-          options: [{ id: "obj-1", label: "Objective" }],
+          context: partialContext({ subtype: "score_objective" }),
+          options: [{ id: "obj-1", label: "Objective", payload: {}, kind: "" }],
         }}
         viewerSeat="p1"
         onSubmitChoice={vi.fn().mockResolvedValue(undefined)}
@@ -841,8 +821,8 @@ describe("GameShell", () => {
       actor: "p1",
       nonce: "production-model",
       prompt: "Produce",
-      context: { subtype: "produce_unit" },
-      options: [{ id: "produce|fighter", label: "Fighter" }],
+      context: partialContext({ subtype: "produce_unit" }),
+      options: [{ id: "produce|fighter", label: "Fighter", payload: {}, kind: "" }],
     };
     const model = deriveChoiceRendererModel(productionChoice, "p1");
 
@@ -867,10 +847,10 @@ describe("planet selection dispatch", () => {
     actor: "p1",
     nonce: "mining-1",
     prompt: "Mining Initiative: mine which planet",
-    context: {
+    context: partialContext({
       subtype: "mining_initiative_pick_planet",
       source: { ActionCard: "mining_initiative" },
-    },
+    }),
     options: [
       { id: "lodor", kind: "planet", label: "Lodor", payload: { planet: "lodor", system: "26" } },
       { id: "quann", kind: "planet", label: "Quann", payload: { planet: "quann", system: "25" } },
@@ -928,7 +908,7 @@ describe("planet selection dispatch", () => {
         events={[]}
         choice={{
           ...miningChoice,
-          context: { subtype: "place_structure" },
+          context: partialContext({ subtype: "place_structure" }),
           prompt: "place a structure",
           options: [
             {
@@ -966,7 +946,7 @@ describe("planet selection dispatch", () => {
           actor: "p1",
           nonce: "pay-1",
           prompt: "pay 3 resources",
-          context: { subtype: "pay_resources", outstanding: [{ kind: "resources", amount: 3, paid: 0 }] },
+          context: partialContext({ subtype: "pay_resources", outstanding: [{ kind: "Resources", amount: 3, paid: 0 }] }),
           options: [
             { id: "exhaust|jord", label: "Jord", kind: "pay", payload: { worth: 4, planet_name: "Jord" } },
           ],
@@ -990,11 +970,11 @@ describe("planet selection dispatch", () => {
       actor: "p2",
       nonce: "reaction-wiring",
       prompt: "after SYSTEM_ACTIVATED",
-      context: {
+      context: partialContext({
         subtype: "reaction_after_SYSTEM_ACTIVATED",
         optional: true,
         source: { Reaction: "SYSTEM_ACTIVATED" },
-      },
+      }),
       options: [
         {
           id: "reaction:x:SYSTEM_ACTIVATED:after",
@@ -1002,7 +982,7 @@ describe("planet selection dispatch", () => {
           label: "Play Decoy Operation",
           payload: { card: "decoy", card_name: "Decoy Operation" },
         },
-        { id: "decline", kind: "decline", label: "Pass" },
+        { id: "decline", kind: "decline", label: "Pass", payload: {} },
       ],
     };
     render(
