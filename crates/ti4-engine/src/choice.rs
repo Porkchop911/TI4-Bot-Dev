@@ -1288,6 +1288,18 @@ impl<'a> Observed<'a> {
             && crate::fracture::is_fracture_system(self.content, self.sources, system)
     }
 
+    /// Victory points this seat currently holds from Support for the Throne, from the public
+    /// ledger of every point moved. Used only by training progress; not a policy feature.
+    #[must_use]
+    pub fn support_for_the_throne_points(&self, player: &PlayerId) -> i64 {
+        self.state
+            .vp_ledger
+            .iter()
+            .filter(|(holder, _, reason)| holder == player && reason == "support_for_the_throne")
+            .map(|(_, delta, _)| i64::from(*delta))
+            .sum()
+    }
+
     /// How many of this seat's home planets it does not control (61.16 bars public scoring while
     /// any is lost). Used only by training progress; it does not add a policy observation feature.
     #[must_use]

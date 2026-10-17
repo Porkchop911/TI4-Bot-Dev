@@ -207,6 +207,10 @@ pub struct Reward {
     /// at the seat's last round-one decision like `r1_bonus`. Off by default.
     #[serde(default)]
     pub r1_expansion_weight: f64,
+    /// What a Support for the Throne point is worth as a share of `vp_weight` (1 counts it like any
+    /// other point). The default keeps every earlier reward exact.
+    #[serde(default = "full_weight")]
+    pub sftt_weight: f64,
     /// How much a decision is credited for what happens later (gamma).
     ///
     /// One (the default) is the undiscounted suffix sum this trainer has always used: every
@@ -222,6 +226,10 @@ pub struct Reward {
     /// difference in the advantage and calls it signal. Bucketing the baseline by round removes
     /// it. Costs nothing in data: the buckets partition the same decisions.
     pub round_baseline: bool,
+}
+
+const fn full_weight() -> f64 {
+    1.0
 }
 
 const fn default_requirement() -> Requirement {
@@ -272,6 +280,7 @@ impl Default for Reward {
             projection_rank_weight: 0.0,
             negotiation_step_penalty: 0.0,
             r1_expansion_weight: 0.0,
+            sftt_weight: 1.0,
         }
     }
 }
@@ -331,8 +340,10 @@ impl Reward {
             reason = "home planet counts are single digits"
         )]
         let home_lost = progress.home_planets_lost as f64;
+        #[expect(clippy::cast_precision_loss, reason = "a handful of points")]
+        let sftt = progress.support_for_the_throne_points as f64;
         self.projection_weight * projection - self.home_loss_weight * home_lost
-            + self.vp_weight * points
+            + self.vp_weight * (points - (1.0 - self.sftt_weight) * sftt)
             + self.objective_weight * public
             + self.secret_weight * secret
             + self.fleet_weight * fleet
@@ -1098,6 +1109,33 @@ mod tests {
         assert!(
             opening_step < 2.0 * one_point,
             "a whole cleared opening is worth {opening_step} against {one_point} for a point"
+        );
+    }
+
+    #[test]
+    fn a_support_for_the_throne_point_pays_its_weight() {
+        let mut reward = Reward::for_stage(Stage::Two);
+        let before = Progress {
+            victory_points: 2,
+            ..at(2)
+        };
+        let after = Progress {
+            victory_points: 3,
+            support_for_the_throne_points: 1,
+            ..at(2)
+        };
+        let full = step_rewards(&[before, after], &reward)[0];
+        reward.sftt_weight = 0.3;
+        let reduced = step_rewards(&[before, after], &reward)[0];
+        assert!((full - reward.vp_weight).abs() < 1e-9, "by default it is a point");
+        assert!((reduced - 0.3 * reward.vp_weight).abs() < 1e-9, "at 0.3 it pays 0.3");
+        let objective = Progress {
+            victory_points: 3,
+            ..at(2)
+        };
+        assert!(
+            (step_rewards(&[before, objective], &reward)[0] - reward.vp_weight).abs() < 1e-9,
+            "any other point still pays in full"
         );
     }
 

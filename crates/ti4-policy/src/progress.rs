@@ -82,6 +82,10 @@ pub struct Progress {
     /// reward bookkeeping only.
     #[serde(default)]
     pub non_home_planet_value: i64,
+    /// Victory points held from Support for the Throne (included in `victory_points`); reward
+    /// bookkeeping only.
+    #[serde(default)]
+    pub support_for_the_throne_points: i64,
 }
 
 /// What a seat held at setup, so the gains above can be deltas.
@@ -167,6 +171,7 @@ pub fn measure(seen: &Observed<'_>, player: &PlayerId, baseline: Baseline) -> Pr
         // both this and the critic; see `MEASURE_PROJECTION`.
         projection_permille: 0,
         home_planets_lost: count(seen.home_planets_lost(player)),
+        support_for_the_throne_points: seen.support_for_the_throne_points(player),
         non_home_planet_value: {
             let home = seen
                 .seat(player)
