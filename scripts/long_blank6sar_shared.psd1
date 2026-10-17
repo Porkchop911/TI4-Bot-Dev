@@ -4,7 +4,7 @@
 
     Bundle   = 'D:\Projects\ti4-engine-rs\out\ppo-blank6-shared-long1000-20261017\checkpoints\checkpoint-33240'
     Pool     = 'D:\Projects\ti4-engine-rs\out\pools\full_np8_12_train.json'
-    Run      = 'D:\Projects\ti4-engine-rs\out\ppo-blank6sar-shared-resume450-20261017'
+    Run      = 'D:\Projects\ti4-engine-rs\out\ppo-blank6sar-shared-resume450-r2-20261017'
     LibTorch = 'D:\Projects\ti4-engine-rs\out\libtorch-2.9.1-cu128-20260908'
 
     Diplomacy       = $true

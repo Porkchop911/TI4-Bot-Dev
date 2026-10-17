@@ -555,19 +555,35 @@ pub fn advantage_weighted_clone_loss(
     if demos.is_empty() {
         return Ok(None);
     }
-    let mut advantages = Vec::with_capacity(demos.len());
-    for item in demos {
-        if !item.return_to_go.is_finite() {
-            return Err(format!(
-                "an advantage demonstration has non-finite return {}",
-                item.return_to_go
-            ));
-        }
-        let value = actor
-            .value(&item.critic, item.demo.row)
-            .map_err(|error| format!("advantage critic inference failed: {error}"))?;
-        advantages.push((item.return_to_go - value).max(0.0));
+    if let Some(item) = demos.iter().find(|item| !item.return_to_go.is_finite()) {
+        return Err(format!(
+            "an advantage demonstration has non-finite return {}",
+            item.return_to_go
+        ));
     }
+    // One batched critic pass. Scoring each demonstration on its own read every value back from
+    // the device separately: ~9,000 synchronous round trips an update with six separate models.
+    let critics: Vec<&crate::CriticInput> = demos.iter().map(|item| &item.critic).collect();
+    let rows: Vec<i64> = demos
+        .iter()
+        .map(|item| i64::try_from(item.demo.row.index()).unwrap_or(i64::MAX))
+        .collect();
+    let values = actor
+        .value_batch(&critics, &rows)
+        .and_then(|values| Ok(ti4_tensor::to_vec(&values.detach())?))
+        .map_err(|error| format!("advantage critic inference failed: {error}"))?;
+    if values.len() != demos.len() || values.iter().any(|value| !value.is_finite()) {
+        return Err(format!(
+            "advantage critic returned {} values for {} demonstrations, or a non-finite one",
+            values.len(),
+            demos.len()
+        ));
+    }
+    let advantages: Vec<f64> = demos
+        .iter()
+        .zip(values)
+        .map(|(item, value)| (item.return_to_go - f64::from(value)).max(0.0))
+        .collect();
     #[expect(
         clippy::cast_precision_loss,
         reason = "demonstration batches are bounded"
@@ -806,6 +822,42 @@ mod tests {
                 .is_none(),
             "a zero positive advantage must not secretly become plain cloning"
         );
+    }
+
+    #[test]
+    fn the_batched_advantage_critic_matches_one_at_a_time() {
+        // The advantage weights come from one batched critic pass; each position, under its own
+        // faction row, must score what scoring it alone does.
+        let rows: Vec<i64> = (0..64).collect();
+        let actor = crate::distill::initialize(crate::Width::W256, 64, &rows);
+        let critics: Vec<crate::CriticInput> = [vec![3, 5], vec![7], vec![1, 9, 11]]
+            .into_iter()
+            .map(|columns| {
+                let values = vec![1.0; columns.len()];
+                crate::CriticInput::from_sparse(crate::SparseOption { columns, values })
+            })
+            .collect();
+        let factions: Vec<crate::FactionRow> = ["sol", "hacan", "l1z1x"]
+            .iter()
+            .map(|alias| crate::FactionRow::of(alias).expect("roster"))
+            .collect();
+        let batched = actor
+            .value_batch(
+                &critics.iter().collect::<Vec<_>>(),
+                &factions
+                    .iter()
+                    .map(|row| i64::try_from(row.index()).expect("small"))
+                    .collect::<Vec<_>>(),
+            )
+            .and_then(|values| Ok(ti4_tensor::to_vec(&values.detach())?))
+            .expect("batched values");
+        for ((critic, row), value) in critics.iter().zip(&factions).zip(batched) {
+            let alone = actor.value(critic, *row).expect("value");
+            assert!(
+                (f64::from(value) - alone).abs() < 1e-5,
+                "{row:?}: {value} batched vs {alone} alone"
+            );
+        }
     }
 
     #[test]
