@@ -170,6 +170,21 @@ html,
   border-bottom: 1px solid var(--color-border);
 }
 
+.event-log__undo-last {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 16px;
+  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.event-log__undo-icon {
+  margin-right: 4px;
+  vertical-align: -2px;
+}
+
 .event-log__replay {
   display: flex;
   align-items: center;
@@ -2194,19 +2209,43 @@ html,
   }
 
   .app-shell {
-    display: block;
+    display: flex;
+    flex-direction: column;
     min-height: 100vh;
+    min-height: 100dvh;
     height: auto;
     overflow: visible;
   }
 
+  /* The content row takes what the header leaves, so the map reaches the bottom of the screen. */
   .app-shell__content {
-    display: block;
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
     overflow: visible;
   }
 
+  /* The column has no definite height here, so the board's own height: 100% fell back to its content
+     (the map's aspect ratio) and left the rest of the 55vh column as an empty dark band; a zoomed or
+     panned map was then cut off by a straight edge above that band. A flex column lets the board
+     fill the whole column. */
   .app-shell__board {
     min-height: 55vh;
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+  }
+  .app-shell__board > .board-container {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  .app-shell__board .board-stage {
+    display: flex;
+    flex-direction: column;
+  }
+  .app-shell__board .board-stage > svg {
+    flex: 1 1 auto;
+    min-height: 0;
   }
 
   .app-shell__player-sheet,
@@ -2257,6 +2296,70 @@ html,
     display: flex;
     gap: 8px;
     z-index: var(--layer-header);
+  }
+
+  /* The icon-only dock buttons (Feedback): a 44px square tap target like the rest of the dock. */
+  .app-shell__dock-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+  }
+
+  /* Five buttons (Players, Objectives, bell, Events, Feedback) must fit one row on a 360 px phone. */
+  @media (max-width: 400px) {
+    .app-shell__mobile-actions {
+      left: 8px;
+      right: 8px;
+      gap: 6px;
+      justify-content: flex-end;
+    }
+    .app-shell__mobile-actions > .button:not(.app-shell__dock-icon):not(.notification-log-button) {
+      padding-left: 10px;
+      padding-right: 10px;
+      min-height: 44px;
+    }
+  }
+
+  .app-shell__mobile-actions .notification-log-button {
+    min-width: 44px;
+    min-height: 44px;
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  /* The Objectives window as a bottom sheet over the map, like the Players / Events drawers; the
+     dock (--layer-header) stays above it so the buttons keep working. */
+  .objectives-dialog--sheet {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: calc(var(--layer-modal) + 1);
+    max-height: min(70vh, 560px);
+    display: flex;
+    flex-direction: column;
+    background: var(--color-canvas);
+    box-shadow: var(--shadow-panel);
+  }
+  .objectives-dialog--sheet .objectives-modal-panel {
+    width: 100%;
+    max-width: none;
+    height: auto;
+    min-height: 35vh;
+    max-height: min(70vh, 560px);
+    border-radius: 0;
+    border-width: 1px 0 0;
+    box-shadow: none;
+  }
+  .objectives-dialog--sheet .objectives-modal__header {
+    padding: 10px 14px;
+  }
+  /* Clear the dock so the last row is reachable. */
+  .objectives-dialog--sheet .objectives-modal__scroll-body {
+    padding: 12px 14px calc(72px + env(safe-area-inset-bottom, 0px));
   }
 
   .app-shell__overlays {
@@ -4152,6 +4255,21 @@ select:focus-visible,
     padding: 12px;
     flex-wrap: wrap;
   }
+  /* The drawer is a column: with wrap, a bounded height spills the planet list and footer into a
+     second column off the right edge of the screen. */
+  .decision-modal .payment-drawer {
+    flex-wrap: nowrap;
+    min-width: 0;
+  }
+  .decision-modal .payment-drawer > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .payment-drawer__problem,
+  .payment-drawer__planet,
+  .payment-drawer__tally .workflow-card--row {
+    overflow-wrap: anywhere;
+  }
   .choice-workflow-modal {
     padding: 12px;
   }
@@ -5352,4 +5470,20 @@ select:focus-visible,
 .mygames__error {
   margin: 0;
   color: var(--color-danger);
+}
+
+/* Short note after Back undid a decision (single-player games). */
+.back-undo-note {
+  position: fixed;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--layer-dialog, 50);
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(10, 12, 18, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #f5f5f5;
+  font-size: 13px;
+  pointer-events: none;
 }

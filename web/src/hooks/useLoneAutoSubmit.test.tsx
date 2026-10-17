@@ -101,7 +101,9 @@ describe("useLoneAutoSubmit", () => {
     hook.rerender({ choice: menu("n1", [opt("strategic")]), history: hist(6) });
     wait();
     expect(submit).toHaveBeenCalledTimes(1);
-    expect(submit).toHaveBeenCalledWith("strategic");
+    // The nonce of the question it evaluated: the transport drops the answer if another one is
+    // pending by then (nightly 2026-10-14 #8, "Unknown option 'strategic'").
+    expect(submit).toHaveBeenCalledWith("strategic", "n1");
     expect(onNotice).toHaveBeenCalledWith({ id: "lone-n1", text: "take your strategic action" });
   });
 
@@ -120,7 +122,7 @@ describe("useLoneAutoSubmit", () => {
     hook.rerender({ choice: activation("n2", ["33"]), history: hist(6) });
     wait();
     expect(submit).toHaveBeenCalledTimes(1);
-    expect(submit).toHaveBeenCalledWith("33");
+    expect(submit).toHaveBeenCalledWith("33", "n2");
     expect(onNotice).toHaveBeenCalledWith({ id: "lone-n2", text: "activate system 33" });
   });
 
@@ -129,7 +131,7 @@ describe("useLoneAutoSubmit", () => {
     hook.rerender({ choice: movement("m1", ["done_moving"]), history: hist(6) });
     expect(hook.result.current.answeringNonce).toBe("m1");
     wait();
-    expect(submit).toHaveBeenCalledWith("done_moving");
+    expect(submit).toHaveBeenCalledWith("done_moving", "m1");
     expect(onNotice).toHaveBeenCalledWith({ id: "lone-m1", text: "no unit can move, finishing movement" });
   });
 

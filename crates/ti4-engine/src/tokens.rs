@@ -103,6 +103,16 @@ pub fn with_pool_details(
             "pools",
             serde_json::json!({ "tactic": tactic, "fleet": fleet, "strategic": strategic }),
         );
+    // Letnev's Armada (`faction_abilities::fleet_supply`): two more non-fighter ships per system
+    // than the fleet pool allows. Display only; the panel shows it next to the fleet pool.
+    let choice = if state
+        .player(&choice.player)
+        .is_some_and(|seat| seat.faction.as_str() == "letnev")
+    {
+        choice.detailed("fleet_supply_bonus", 2)
+    } else {
+        choice
+    };
     match (mode, tokens_to_place) {
         ("gain" | "buy", Some(count)) => choice
             .detailed("reinforcements", reinforcements)
@@ -154,8 +164,8 @@ pub enum RedistributeError {
 /// redistribution only ever moves sheet tokens), which puts a hard ceiling of `C(16, 2) = 120`
 /// options on any legal redistribution. When `total < 2` no split keeps the fleet pool above one,
 /// so every split is offered instead -- the window must stay answerable.
-fn distribution_options(total: i32) -> Vec<ChoiceOption> {
-    let min_fleet = if total >= 2 { 2 } else { 0 };
+fn distribution_options(total: i32, floor: i32) -> Vec<ChoiceOption> {
+    let min_fleet = if total >= floor { floor } else { 0 };
     let mut options = Vec::new();
     for tactic in 0..=total {
         for fleet in min_fleet..=(total - tactic) {
@@ -242,6 +252,21 @@ impl TokenRedistribution {
         })
     }
 
+    /// The fewest tokens an offered arrangement keeps in the fleet pool. Two for everyone (the
+    /// policy guard above); Letnev's Armada keeps its ships legal on a small pool (the per-system
+    /// limit is the pool plus two), so the rules-allowed minimum of none is offered from
+    /// `RULES_LETNEV_FLEET_POOL` on.
+    fn fleet_floor(&self, state: &GameState) -> i32 {
+        let letnev = state
+            .player(&self.player)
+            .is_some_and(|seat| seat.faction.as_str() == "letnev");
+        if letnev && state.rules_version >= ti4_model::state::RULES_LETNEV_FLEET_POOL {
+            0
+        } else {
+            2
+        }
+    }
+
     /// The one choice this window ever asks, built fresh from `state`. `None` once resolved, or
     /// if the player holds nothing to redistribute.
     #[must_use]
@@ -254,7 +279,7 @@ impl TokenRedistribution {
             Choice::new(
                 self.player.clone(),
                 "redistribute your command tokens",
-                distribution_options(total),
+                distribution_options(total, self.fleet_floor(state)),
             )
         })
     }
@@ -524,7 +549,7 @@ mod tests {
         assert_eq!(choice.details["total"], 9);
         assert!(choice.details.get("tokens_to_place").is_none());
         // The offered arrangements are unchanged by the details.
-        assert_eq!(choice.options.len(), distribution_options(9).len());
+        assert_eq!(choice.options.len(), distribution_options(9, 2).len());
     }
 
     #[test]
@@ -624,6 +649,62 @@ mod tests {
             "a single fleet token is not offered"
         );
         assert!(choice.option("3|2|3").is_some());
+    }
+
+    #[test]
+    fn letnev_may_redistribute_below_two_fleet_tokens() {
+        let (mut state, players) = game();
+        state.player_mut(&players[0]).unwrap().faction = ti4_model::id::FactionId::new("letnev");
+        let window = TokenRedistribution::new(players[0].clone());
+        let choice = window.pending_choice(&state).unwrap();
+        assert!(
+            choice.option("0|0|8").is_some(),
+            "an empty fleet pool is offered"
+        );
+        assert!(choice.option("4|1|3").is_some());
+        assert_eq!(
+            choice.options.len(),
+            45,
+            "C(10, 2) splits of 8 tokens, no floor"
+        );
+        // Everyone else keeps the floor, and so does a legacy Letnev game.
+        let other = TokenRedistribution::new(players[1].clone());
+        assert!(
+            other
+                .pending_choice(&state)
+                .unwrap()
+                .option("4|1|3")
+                .is_none()
+        );
+        state.rules_version = ti4_model::state::RULES_LETNEV_FLEET_POOL - 1;
+        let legacy = window.pending_choice(&state).unwrap();
+        assert!(legacy.option("4|1|3").is_none());
+        assert_eq!(legacy.options.len(), 28);
+    }
+
+    #[test]
+    fn only_letnev_reports_the_armada_fleet_supply_bonus() {
+        let (mut state, players) = game();
+        state.player_mut(&players[0]).unwrap().faction = ti4_model::id::FactionId::new("letnev");
+        let choice = |player: &PlayerId| {
+            let window = TokenRedistribution::new(player.clone());
+            with_pool_details(
+                window.pending_choice(&state).unwrap(),
+                &state,
+                "redistribute",
+                None,
+            )
+        };
+        assert_eq!(
+            choice(&players[0]).details.get("fleet_supply_bonus"),
+            Some(&serde_json::json!(2))
+        );
+        assert!(
+            choice(&players[1])
+                .details
+                .get("fleet_supply_bonus")
+                .is_none()
+        );
     }
 
     #[test]

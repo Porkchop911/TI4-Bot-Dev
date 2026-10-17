@@ -1,0 +1,1181 @@
+{
+  "title": "Card Effect Previews",
+  "description": "Reaction windows now state what playing the card would do right now (which card it cancels, which ship it destroys, how many hits it cancels, ...), drawn from engine-provided facts, and a strip under the top bar lists the lingering card effects in force with their seat and expiry. Each card is shown before (base commit, same mocked decision) and after, on desktop and a 390x844 phone. Fixtures are synthetic but shaped exactly like the engine's DecisionContext.previews and GameView.active_effects.",
+  "tag": "web/e2e/screenshots/EB-reaction-effects",
+  "intro": "\n    <h2>Coverage</h2>\n    <p>39 cards now say what playing them would do (the 26 reaction-only cards and the 11 marker cards of the audit, plus Scramble Frequency and Veto). 20 cards leave a lingering effect that the active-effects strip shows while it is in force.</p>\n    <table><thead><tr><th>Card</th><th>Audit class</th><th>Reaction window</th><th>Active-effects strip</th></tr></thead><tbody><tr><td>Sabotage</td><td>reaction-only</td><td class=\"ok\">preview</td><td class=\"no\">one-shot: gone before the next question</td></tr><tr><td>Coup d'Etat</td><td>reaction-only</td><td class=\"ok\">preview</td><td class=\"no\">one-shot: gone before the next question</td></tr><tr><td>Shields Holding</td><td>reaction-only</td><td class=\"ok\">preview</td><td class=\"ok\">strip</td></tr><tr><td>Maneuvering Jets</td><td>reaction-only</td><td class=\"ok\">preview</td><td class=\"ok\">strip</td></tr><tr><td>Direct Hit</td><td>reaction-only</td><td class=\"ok\">preview</td><td class=\"no\">one-shot: gone before the next question</td></tr><tr><td>Reflective Shielding</td><td>reaction-only</td><td class=\"ok\">preview</td><td class=\"no\">one-shot: gone before the next question</td></tr><tr><td>Emergency Repairs</td><td>reaction-only</td><td class=\"ok\">preview</td><td class=\"no\">one-shot: gone before the next question</td></tr><tr><td>Morale Boost</td><td>marker card</td><td class=\"ok\">preview</td><td class=\"ok\">strip</td></tr><tr><td>Fighter Prototype</td><td>reaction-only</td><td class=\"ok\">preview</td><td class=\"ok\">strip</td></tr><tr><td>Flank Speed</td><td>marker card</td><td class=\"ok\">preview</td><td class=\"ok\">strip</td></tr><tr><td>Lost Star Chart</td><td>marker card</td><td class=\"ok\">preview</td><td class=\"ok\">strip</td></tr><tr><td>Nav Suite</td><td>marker card</td><td class=\"ok\">preview</td><td class=\"ok\">strip</td></tr><tr><td>Solar Flare</td><td>marker card</td><td class=\"ok\">preview</td><td class=\"ok\">strip</td></tr><tr><td>Rout</td><td>reaction-only</td><td class=\"ok\">preview</td><td class=\"ok\">strip</td></tr><tr><td>Intercept</td><td>reaction-only</td><td class=\"ok\">preview</td><td class=\"ok\">strip</td></tr><tr><td>Waylay</td><td>reaction-only</td><td class=\"ok\">preview</td><td class=\"ok\">strip</td></tr><tr><td>Scramble Frequency</td><td>extra</td><td class=\"ok\">preview</td><td class=\"no\">one-shot: gone before the next question</td></tr><tr><td>Salvage</td><td>reaction-only</td><td class=\"ok\">preview</td><td class=\"no\">one-shot: gone before the next question</td></tr><tr><td>Bunker</td><td>reaction-only</td><td class=\"ok\">preview</td><td class=\"ok\">strip</td></tr><tr><td>Blitz</td><td>reaction-only</td><td class=\"ok\">preview</td><td class=\"ok\">strip</td></tr><tr><td>Disable</td><td>reaction-only</td><td class=\"ok\">preview</td><td class=\"ok\">strip</td></tr><tr><td>Parley</td><td>reaction-only</td><td class=\"ok\">preview</td><td class=\"no\">one-shot: gone before the next question</td></tr><tr><td>Infiltrate</td><td>reaction-only</td><td class=\"ok\">preview</td><td class=\"no\">one-shot: gone before the next question</td></tr><tr><td>Counterstroke</td><td>reaction-only</td><td class=\"ok\">preview</td><td class=\"no\">one-shot: gone before the next question</td></tr><tr><td>Rally</td><td>reaction-only</td><td class=\"ok\">preview</td><td class=\"no\">one-shot: gone before the next question</td></tr><tr><td>Harness Energy</td><td>reaction-only</td><td class=\"ok\">preview</td><td class=\"no\">one-shot: gone before the next question</td></tr><tr><td>War Machine</td><td>marker card</td><td class=\"ok\">preview</td><td class=\"ok\">strip</td></tr><tr><td>Deadly Plot</td><td>reaction-only</td><td class=\"ok\">preview</td><td class=\"no\">one-shot: gone before the next question</td></tr><tr><td>Confounding Legal Text</td><td>reaction-only</td><td class=\"ok\">preview</td><td class=\"no\">one-shot: gone before the next question</td></tr><tr><td>Hack Election</td><td>reaction-only</td><td class=\"ok\">preview</td><td class=\"ok\">strip</td></tr><tr><td>Veto</td><td>extra</td><td class=\"ok\">preview</td><td class=\"no\">one-shot: gone before the next question</td></tr><tr><td>Distinguished Councilor</td><td>reaction-only</td><td class=\"ok\">preview</td><td class=\"ok\">strip</td></tr><tr><td>Political Stability</td><td>reaction-only</td><td class=\"ok\">preview</td><td class=\"ok\">strip</td></tr><tr><td>Reverse Engineer</td><td>reaction-only</td><td class=\"ok\">preview</td><td class=\"no\">one-shot: gone before the next question</td></tr><tr><td>Master Plan</td><td>marker card</td><td class=\"ok\">preview</td><td class=\"no\">one-shot: gone before the next question</td></tr><tr><td>Puppets on a String</td><td>marker card</td><td class=\"ok\">preview</td><td class=\"no\">one-shot: gone before the next question</td></tr><tr><td>Extreme Duress</td><td>marker card</td><td class=\"ok\">preview</td><td class=\"ok\">strip</td></tr><tr><td>Crisis</td><td>marker card</td><td class=\"ok\">preview</td><td class=\"no\">one-shot: gone before the next question</td></tr><tr><td>Black Market Dealings</td><td>marker card</td><td class=\"ok\">preview</td><td class=\"ok\">strip</td></tr></tbody></table>\n    <h2>Not covered</h2>\n    <p>These reaction cards have no preview because playing them asks their own question (a pick, a rider outcome, a retreat, a dice reroll), which their own pickers handle: Ancient Burial Sites, Assassinate Representative, Bribery, Confusing Legal Text, Construction Rider, Courageous to the End, Crash Landing, Decoy Operation, Diplomacy Rider, Diplomatic Pressure, Experimental Battlestation, Fire Team, Forward Supply Base, Ghost Squad, Imperial Rider, In the Silence of Space, Insider Information, Leadership Rider, Lie in Wait, Manipulate Investments, Politics Rider, Public Disgrace, Reparations, Rescue, Reveal Prototype, Sanction, Skilled Retreat, Summit, Technology Rider, Trade Rider, Upgrade, Warfare Rider.</p>\n    <p>Master Plan, Puppets on a String, Crisis, Coup d'Etat, Deadly Plot, Veto and Confounding Legal Text are one-shot: the engine consumes their flag before the next question is asked, so there is no lingering state to show; their preview in the window is the whole indication.</p>",
+  "shots": [
+    {
+      "group": "Cancel a card or hits",
+      "heading": "Sabotage",
+      "caption": "Names whose card it cancels and that the card stays spent.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-sabotage-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-sabotage-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-sabotage-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-sabotage-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Cancel a card or hits",
+      "heading": "Coup d'Etat",
+      "caption": "Names the strategy card whose action it would cancel.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-coup-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-coup-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-coup-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-coup-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Cancel a card or hits",
+      "heading": "Shields Holding",
+      "caption": "Says how many of the incoming hits it cancels and how many remain.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-shields-holding-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-shields-holding-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-shields-holding-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-shields-holding-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Cancel a card or hits",
+      "heading": "Maneuvering Jets",
+      "caption": "Says which gunner's space cannon hits it cancels.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-maneuvering-jets-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-maneuvering-jets-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-maneuvering-jets-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-maneuvering-jets-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Hit or destroy ships",
+      "heading": "Direct Hit",
+      "caption": "Names the exact ship that would be destroyed.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-direct-hit-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-direct-hit-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-direct-hit-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-direct-hit-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Hit or destroy ships",
+      "heading": "Direct Hit (immune ship)",
+      "caption": "Warns when the sustained ship cannot be destroyed by Direct Hit.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-direct-hit-immune-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-direct-hit-immune-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-direct-hit-immune-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-direct-hit-immune-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Hit or destroy ships",
+      "heading": "Reflective Shielding",
+      "caption": "Names the opponent who takes the 2 hits and where.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-reflective-shielding-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-reflective-shielding-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-reflective-shielding-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-reflective-shielding-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Hit or destroy ships",
+      "heading": "Emergency Repairs",
+      "caption": "Lists the damaged units that would be repaired.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-emergency-repairs-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-emergency-repairs-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-emergency-repairs-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-emergency-repairs-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Hit or destroy ships",
+      "heading": "Emergency Repairs (nothing to repair)",
+      "caption": "Says so when nothing is damaged.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-emergency-repairs-none-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-emergency-repairs-none-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-emergency-repairs-none-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-emergency-repairs-none-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Combat and movement bonuses",
+      "heading": "Morale Boost",
+      "caption": "States the bonus and that it ends with this combat round; the active-effects strip then shows it.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-morale-boost-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-morale-boost-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-morale-boost-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-morale-boost-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Combat and movement bonuses",
+      "heading": "Fighter Prototype",
+      "caption": "Counts the fighters that get the +2.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-fighter-prototype-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-fighter-prototype-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-fighter-prototype-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-fighter-prototype-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Combat and movement bonuses",
+      "heading": "Flank Speed",
+      "caption": "States the bonus and its duration; the strip shows it during the tactical action.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-flank-speed-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-flank-speed-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-flank-speed-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-flank-speed-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Combat and movement bonuses",
+      "heading": "Lost Star Chart",
+      "caption": "Explains the adjacency change and its duration.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-lost-star-chart-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-lost-star-chart-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-lost-star-chart-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-lost-star-chart-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Combat and movement bonuses",
+      "heading": "Nav Suite",
+      "caption": "Explains what is ignored and for how long.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-nav-suite-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-nav-suite-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-nav-suite-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-nav-suite-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Combat and movement bonuses",
+      "heading": "Solar Flare",
+      "caption": "Says space cannon is off for this movement step.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-solar-flare-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-solar-flare-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-solar-flare-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-solar-flare-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Retreats and rolls",
+      "heading": "Rout",
+      "caption": "Names who must announce a retreat.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-rout-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-rout-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-rout-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-rout-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Retreats and rolls",
+      "heading": "Intercept",
+      "caption": "Names who cannot retreat this round.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-intercept-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-intercept-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-intercept-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-intercept-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Retreats and rolls",
+      "heading": "Waylay",
+      "caption": "Says the barrage hits are not limited to fighters.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-waylay-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-waylay-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-waylay-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-waylay-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Retreats and rolls",
+      "heading": "Scramble Frequency",
+      "caption": "Names who must reroll everything.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-scramble-frequency-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-scramble-frequency-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-scramble-frequency-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-scramble-frequency-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Retreats and rolls",
+      "heading": "Salvage",
+      "caption": "Already had a client-side preview; the engine now states the opponents and the total.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-salvage-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-salvage-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-salvage-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-salvage-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Invasion",
+      "heading": "Bunker",
+      "caption": "Lists the planets the -4 protects.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-bunker-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-bunker-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-bunker-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-bunker-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Invasion",
+      "heading": "Blitz",
+      "caption": "Lists the ships that gain Bombardment 6.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-blitz-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-blitz-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-blitz-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-blitz-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Invasion",
+      "heading": "Disable",
+      "caption": "Lists the opposing PDS that lose their guns.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-disable-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-disable-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-disable-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-disable-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Invasion",
+      "heading": "Parley",
+      "caption": "Names the committed unit that would go back to space.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-parley-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-parley-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-parley-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-parley-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Invasion",
+      "heading": "Infiltrate",
+      "caption": "Lists the structures it would replace.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-infiltrate-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-infiltrate-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-infiltrate-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-infiltrate-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Command tokens, commodities and production",
+      "heading": "Counterstroke",
+      "caption": "Names the system whose token comes back to the tactic pool.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-counterstroke-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-counterstroke-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-counterstroke-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-counterstroke-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Command tokens, commodities and production",
+      "heading": "Rally",
+      "caption": "States the tokens and whose ships justify them.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-rally-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-rally-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-rally-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-rally-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Command tokens, commodities and production",
+      "heading": "Harness Energy",
+      "caption": "Gives the exact commodities gained.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-harness-energy-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-harness-energy-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-harness-energy-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-harness-energy-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Command tokens, commodities and production",
+      "heading": "War Machine",
+      "caption": "States +4 production and -1 cost.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-war-machine-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-war-machine-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-war-machine-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-war-machine-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Agenda and votes",
+      "heading": "Deadly Plot",
+      "caption": "Names the agenda and how many planets get exhausted.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-deadly-plot-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-deadly-plot-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-deadly-plot-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-deadly-plot-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Agenda and votes",
+      "heading": "Confounding Legal Text",
+      "caption": "Names who you replace as the elected player.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-confounding-legal-text-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-confounding-legal-text-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-confounding-legal-text-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-confounding-legal-text-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Agenda and votes",
+      "heading": "Hack Election",
+      "caption": "States the new vote order for this agenda; the strip keeps it visible.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-hack-election-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-hack-election-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-hack-election-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-hack-election-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Agenda and votes",
+      "heading": "Veto",
+      "caption": "Says the revealed agenda is replaced by the next one.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-veto-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-veto-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-veto-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-veto-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Agenda and votes",
+      "heading": "Distinguished Councilor",
+      "caption": "States the +5 votes; the strip shows them while the agenda is open.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-distinguished-councilor-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-distinguished-councilor-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-distinguished-councilor-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-distinguished-councilor-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Strategy, turns and negotiation",
+      "heading": "Political Stability",
+      "caption": "Names the strategy cards you would keep.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-political-stability-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-political-stability-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-political-stability-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-political-stability-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Strategy, turns and negotiation",
+      "heading": "Reverse Engineer",
+      "caption": "Names the discarded card you would take.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-reverse-engineer-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-reverse-engineer-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-reverse-engineer-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-reverse-engineer-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Strategy, turns and negotiation",
+      "heading": "Master Plan",
+      "caption": "Says an extra action follows.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-master-plan-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-master-plan-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-master-plan-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-master-plan-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Strategy, turns and negotiation",
+      "heading": "Puppets on a String",
+      "caption": "Says you act once more although you have passed.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-puppets-on-a-string-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-puppets-on-a-string-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-puppets-on-a-string-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-puppets-on-a-string-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Strategy, turns and negotiation",
+      "heading": "Extreme Duress",
+      "caption": "Names the marked player and the penalty; the strip then shows the mark to everyone.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-extreme-duress-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-extreme-duress-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-extreme-duress-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-extreme-duress-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Strategy, turns and negotiation",
+      "heading": "Crisis",
+      "caption": "Says the next turn is skipped.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-crisis-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-crisis-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-crisis-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-crisis-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Strategy, turns and negotiation",
+      "heading": "Black Market Dealings",
+      "caption": "Says what the transaction may now include; the strip shows it while the negotiation is open.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-black-market-dealings-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-black-market-dealings-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-black-market-dealings-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-black-market-dealings-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Inside the combat overlay",
+      "heading": "Direct Hit, during a space combat",
+      "caption": "In a fight the window is shown in the combat overlay, which has its own offer rows; they carry the same preview.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-combat-direct-hit-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-combat-direct-hit-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-combat-direct-hit-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-combat-direct-hit-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Inside the combat overlay",
+      "heading": "Shields Holding, during a space combat",
+      "caption": "In a fight the window is shown in the combat overlay, which has its own offer rows; they carry the same preview.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-combat-shields-holding-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-combat-shields-holding-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-combat-shields-holding-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-combat-shields-holding-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Active-effects strip",
+      "heading": "A combat round with three effects",
+      "caption": "Your Morale Boost (+1 to all combat rolls), the rival's Fighter Prototype (+2 for fighters) and the rival's pool of hit cancellations from Shields Holding or Maneuvering Jets, each with its seat badge. They end with this combat round.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-strip-combat-round-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-strip-combat-round-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-strip-combat-round-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-strip-combat-round-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Active-effects strip",
+      "heading": "The same, opened",
+      "caption": "Tapping the line lists each effect with its summary and when it ends (the chips collapse into the list on a phone).",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-strip-combat-round-open-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-strip-combat-round-open-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-strip-combat-round-open-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-strip-combat-round-open-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Active-effects strip",
+      "heading": "Your tactical action",
+      "caption": "Flank Speed, Nav Suite, Solar Flare and Lost Star Chart, all until the end of this tactical action.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-strip-tactical-action-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-strip-tactical-action-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-strip-tactical-action-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-strip-tactical-action-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Active-effects strip",
+      "heading": "A rival's turn: what they are running with",
+      "caption": "While the rival moves, everybody sees their Flank Speed and two stacked War Machines (+8 production, -1 cost each).",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-strip-rival-turn-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-strip-rival-turn-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-strip-rival-turn-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-strip-rival-turn-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Active-effects strip",
+      "heading": "An invasion",
+      "caption": "Bunker (-4 to bombardment), Blitz (Bombardment 6) and Disable (opposing PDS silenced) until the end of this invasion.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-strip-invasion-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-strip-invasion-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-strip-invasion-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-strip-invasion-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Active-effects strip",
+      "heading": "The agenda phase",
+      "caption": "Hack Election (votes last) and Distinguished Councilor (+5 votes) until the agenda is resolved.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-strip-agenda-phase-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-strip-agenda-phase-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-strip-agenda-phase-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-strip-agenda-phase-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Active-effects strip",
+      "heading": "Marks that outlast a turn",
+      "caption": "Extreme Duress marks you until your next action (the holder is named); Political Stability keeps strategy cards until the next strategy phase has passed.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-strip-duress-and-stability-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-strip-duress-and-stability-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-strip-duress-and-stability-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-strip-duress-and-stability-390x844.png"
+        }
+      ]
+    },
+    {
+      "group": "Active-effects strip",
+      "heading": "A negotiation under Black Market Dealings",
+      "caption": "While the transaction is open the strip says relic fragments, action cards and secret objectives may be traded.",
+      "images": [
+        {
+          "label": "Before, desktop",
+          "file": "before/before-strip-black-market-desktop.png"
+        },
+        {
+          "label": "After, desktop",
+          "file": "out/after-strip-black-market-desktop.png"
+        },
+        {
+          "label": "Before, 390x844",
+          "file": "before/before-strip-black-market-390x844.png"
+        },
+        {
+          "label": "After, 390x844",
+          "file": "out/after-strip-black-market-390x844.png"
+        }
+      ]
+    }
+  ]
+}

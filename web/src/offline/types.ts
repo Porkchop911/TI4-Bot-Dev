@@ -1,3 +1,5 @@
+import type { MapChoice } from "../protocol/types.ts";
+
 /**
  * The seam between the offline UI shell (this folder) and whatever actually runs a local game.
  *
@@ -30,6 +32,11 @@ export interface OfflineSetup {
   /** Faction id of the human; `null` = random. Bots always draw randomly. */
   humanFaction: string | null;
   nickname: string;
+  /**
+   * The map the host chose: a template alias of the engine's catalog or the seeded random board.
+   * Left out: the layout recommended for the table size (what every game had before the picker).
+   */
+  map?: MapChoice;
   /** Only ever set from the dev-only seed field. */
   seed?: number;
 }
@@ -205,6 +212,14 @@ export interface OfflineFeedbackQueue {
   retry(localId: string): void;
 }
 
+/** The engine's answers to the map picker (same shapes as `GET /api/maps` and `/api/maps/{alias}/preview`). */
+export interface OfflineMapSource {
+  /** Layouts that build for a table of this size, as JSON in the shape of `GET /api/maps`. The first call loads the engine. */
+  catalog(playerCount: number): Promise<unknown>;
+  /** A pictured example board in the shape of `GET /api/maps/{alias}/preview`; `variant` asks for another example. */
+  preview(choice: MapChoice, playerCount: number, variant: number): Promise<unknown>;
+}
+
 export interface OfflineLauncher {
   capabilities: Capabilities;
   /** Faction ids the human can choose, in display order. */
@@ -223,6 +238,8 @@ export interface OfflineLauncher {
   /** A JSON file with seed, answers and engine hash; the user keeps it as a backup. */
   exportGame(gameId: string): Promise<{ filename: string; blob: Blob }>;
   feedback: OfflineFeedbackQueue;
+  /** The map picker's data; absent where the engine cannot be asked (the form then offers no choice). */
+  maps?: OfflineMapSource;
   /** Where the saves live; absent in builds that cannot import. */
   storage?: OfflineStorage;
 }

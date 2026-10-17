@@ -56,6 +56,8 @@ export function engineSetup(setup: OfflineSetup, gameId: string): Record<string,
     players: setup.playerCount,
     ...(setup.humanSeat !== null ? { human_seat: setup.humanSeat - 1 } : {}),
     ...(setup.humanFaction !== null ? { human_faction: setup.humanFaction } : {}),
+    // Left out when untouched: the engine takes the layout recommended for the table size.
+    ...(setup.map ? { map: setup.map.kind === "random" ? "random" : setup.map.alias } : {}),
   };
 }
 

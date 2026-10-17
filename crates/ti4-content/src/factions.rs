@@ -179,6 +179,22 @@ impl<'a> Faction<'a> {
         self.record.strings("startingTech")
     }
 
+    /// The technologies a faction chooses its starting technology from (`startingTechOptions`);
+    /// empty for a fixed list, for a free choice, or for none.
+    #[must_use]
+    pub fn starting_tech_options(&self) -> Vec<&'a str> {
+        self.record.strings("startingTechOptions")
+    }
+
+    /// How many starting technologies the faction picks (`startingTechAmount`); `None` when it
+    /// has a fixed list (or the record does not say).
+    #[must_use]
+    pub fn starting_tech_amount(&self) -> Option<u8> {
+        self.record
+            .int("startingTechAmount")
+            .and_then(|n| u8::try_from(n).ok())
+    }
+
     #[must_use]
     pub fn faction_tech(&self) -> Vec<&'a str> {
         self.record.strings("factionTech")

@@ -50,9 +50,47 @@ fn short_policy() -> BluffPolicy {
     }
 }
 
+/// Submit an answer without waiting for its reply. With Sabotage timing (rules version 3) the reply
+/// to a declared card comes when the window closes, after the next questions were asked, and a
+/// client (the websocket handler) never blocks on it. Returns whether the answer went in.
+fn submit_without_waiting(
+    session: &Arc<GameSession>,
+    seat: &PlayerId,
+    nonce: &str,
+    version: u64,
+    option: &str,
+) -> bool {
+    let handle = {
+        let (session, seat, nonce, option) = (
+            session.clone(),
+            seat.clone(),
+            nonce.to_owned(),
+            option.to_owned(),
+        );
+        std::thread::spawn(move || {
+            session
+                .submit_choice(&seat, &nonce, version, &option)
+                .is_ok()
+        })
+    };
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if handle.is_finished() {
+            return handle.join().unwrap_or(false);
+        }
+        let moved_on = session
+            .current_pending_decision()
+            .is_none_or(|(_, now, _)| now != nonce);
+        if moved_on || session.is_finished() || Instant::now() > deadline {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
 /// Answer the pending decision with its first option, watching for a bluff hold while waiting.
 /// Returns the seats seen holding.
-fn drive(session: &GameSession, steps: usize) -> Vec<PlayerId> {
+fn drive(session: &Arc<GameSession>, steps: usize) -> Vec<PlayerId> {
     let mut held = Vec::new();
     for _ in 0..steps {
         let deadline = Instant::now() + Duration::from_secs(15);
@@ -70,10 +108,7 @@ fn drive(session: &GameSession, steps: usize) -> Vec<PlayerId> {
                     continue;
                 };
                 let option = envelope.choice.options[0].id.clone();
-                if session
-                    .submit_choice(&seat, &nonce, version, &option)
-                    .is_ok()
-                {
+                if submit_without_waiting(session, &seat, &nonce, version, &option) {
                     break;
                 }
             }

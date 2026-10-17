@@ -113,6 +113,8 @@ enum MovementOnlyStep {
         damaged: bool,
         #[serde(default)]
         galvanized: Option<bool>,
+        #[serde(default)]
+        pickup_system: Option<String>,
     },
     DoneLoading,
     DoneMoving,
@@ -233,12 +235,14 @@ impl From<MovementOnlyStep> for MovementStep {
                 source,
                 damaged,
                 galvanized,
+                pickup_system,
             } => Self::Load {
                 origin,
                 unit,
                 source,
                 damaged,
                 galvanized,
+                pickup_system,
             },
             MovementOnlyStep::DoneLoading => Self::DoneLoading,
             MovementOnlyStep::DoneMoving => Self::DoneMoving,
@@ -337,6 +341,10 @@ pub enum MovementStep {
         damaged: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         galvanized: Option<bool>,
+        /// The system the unit stands in (the origin, the active system or one passed through,
+        /// 95.1). Two otherwise identical loads from different systems need it to tell apart.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pickup_system: Option<String>,
     },
     DoneLoading,
     DoneMoving,
@@ -434,9 +442,13 @@ impl MovementStep {
                 source,
                 damaged,
                 galvanized,
+                pickup_system,
             } => {
                 option.kind == "load"
                     && value("system") == Some(origin.as_str())
+                    && pickup_system
+                        .as_deref()
+                        .is_none_or(|pickup| value("pickup_system") == Some(pickup))
                     && value("unit") == Some(unit.as_str())
                     && value("source") == source.as_deref()
                     && galvanized.is_none_or(|expected| {
@@ -664,11 +676,8 @@ impl PrivateDecider {
             if let Some(force) = &script.force {
                 force.before_answer(prefix_index);
             }
-            let matching: Vec<_> = choice
-                .options
-                .iter()
-                .filter(|o| o.id == record.chosen)
-                .collect();
+            // A free-form answer (a trade deal with any amounts) is not a listed option.
+            let matching = choice.answer_for(&record.chosen);
             return if choice.player == record.player
                 && choice.prompt == record.prompt
                 && choice.ids()
@@ -685,9 +694,15 @@ impl PrivateDecider {
                         .context
                         .as_ref()
                         .map(ti4_engine::decision_context::DecisionContext::without_display_fields)
-                && matching.len() == 1
+                && choice
+                    .options
+                    .iter()
+                    .filter(|o| o.id == record.chosen)
+                    .count()
+                    <= 1
+                && let Some(matching) = matching
             {
-                Ok(matching[0].clone())
+                Ok(matching)
             } else {
                 Err(IllegalChoice::DeciderFailed {
                     player: choice.player.clone(),
@@ -817,7 +832,7 @@ impl PrivateDecider {
                     c.target.as_ref().is_none_or(|target| matches!(target, DecisionTarget::System(id) if id.as_str() == script.destination))
                 })
         });
-        let matches: Vec<_> = if choice.player == script.actor && context_ok {
+        let mut matches: Vec<_> = if choice.player == script.actor && context_ok {
             choice
                 .options
                 .iter()
@@ -826,6 +841,25 @@ impl PrivateDecider {
         } else {
             Vec::new()
         };
+        // The hold also offers identical units waiting in the active system or along the path;
+        // a Load names the ship's origin, so it means the ones picked up there.
+        if matches.len() > 1
+            && let MovementStep::Load { origin, .. } = step
+        {
+            let at_origin: Vec<_> = matches
+                .iter()
+                .copied()
+                .filter(|o| {
+                    o.payload
+                        .get("pickup_system")
+                        .and_then(serde_json::Value::as_str)
+                        == Some(origin.as_str())
+                })
+                .collect();
+            if at_origin.len() == 1 {
+                matches = at_origin;
+            }
+        }
         let own_seat = choice.player == script.actor;
         let offered_subtype = choice.context.as_ref().map(|c| c.subtype.clone());
         // The engine takes a lone payment option without asking, so a payment can settle before
@@ -1785,6 +1819,71 @@ mod tests {
         }
     }
 
+    /// Run s2-01-2031 (2026-10-14): Saar's Floating Factory in 11 could take infantry from 11 or
+    /// from the active system 72; both loads look the same apart from `pickup_system`, so the
+    /// plan was rejected as "ambiguous option".
+    #[test]
+    fn movement_load_matches_the_pickup_system_from_the_wire() {
+        for pickup in ["11", "72"] {
+            let plan: MovementPlan = serde_json::from_value(serde_json::json!({
+                "kind": "tactical_movement",
+                "destination": "72",
+                "steps": [{
+                    "kind": "load", "origin": "11", "unit": "infantry", "source": null,
+                    "damaged": false, "pickup_system": pickup
+                }, {"kind": "done_moving"}]
+            }))
+            .expect("browser pickup system must deserialize");
+            let options = ["11", "72"].map(|system| {
+                let mut option = ChoiceOption::labelled(
+                    format!("load|{system}"),
+                    "load",
+                    "load infantry from space",
+                );
+                option.payload = serde_json::from_value(serde_json::json!({
+                    "system": "11", "unit": "infantry", "source": null,
+                    "pickup_system": system, "damaged": false, "galvanized": false
+                }))
+                .unwrap();
+                option
+            });
+            let mut choice = offered("load_cargo", options.to_vec());
+            choice.context.as_mut().unwrap().target =
+                Some(DecisionTarget::System(ti4_model::id::SystemId::new("11")));
+            let mut script = decider(plan.kind, plan.steps);
+            let selected = script
+                .choose(&choice)
+                .expect("explicit pickup system is unambiguous");
+            assert_eq!(selected.payload["pickup_system"], pickup);
+        }
+    }
+
+    #[test]
+    fn a_load_prefers_the_unit_waiting_at_the_ships_origin() {
+        // The hold also offers identical fighters waiting in the active system; the plan's Load
+        // names the ship's origin, so it means the ones there (runs s2-06-2048, o4-07-2042:
+        // "ambiguous option" for Load { origin: "54", unit: "fighter", .. }).
+        let plan: MovementPlan = serde_json::from_str(
+            r#"{"destination":"63","steps":[{"kind":"load","origin":"54","unit":"fighter","source":null,"damaged":false},{"kind":"done_moving"}]}"#,
+        )
+        .unwrap();
+        let options = ["63", "54"].map(|pickup| {
+            let mut option =
+                ChoiceOption::labelled(format!("load|{pickup}"), "load", "Load fighter");
+            option.payload = serde_json::from_value(serde_json::json!({
+                "system": "54", "unit": "fighter", "source": null, "pickup_system": pickup,
+                "damaged": false, "galvanized": false
+            }))
+            .unwrap();
+            option
+        });
+        let mut choice = offered("load_cargo", options.to_vec());
+        choice.context.as_mut().unwrap().target =
+            Some(DecisionTarget::System(ti4_model::id::SystemId::new("54")));
+        let mut script = decider(plan.kind, plan.steps);
+        assert_eq!(script.choose(&choice).unwrap().id, "load|54");
+    }
+
     #[test]
     fn legacy_load_without_a_cargo_variant_still_rejects_ambiguity() {
         let plan: MovementPlan = serde_json::from_str(
@@ -1852,6 +1951,31 @@ mod tests {
     }
 
     #[test]
+    fn a_recorded_free_form_offer_replays_from_the_prefix() {
+        // A transaction answered with a composed offer ("x;...") is not one of the listed ids;
+        // the prefix replay must accept it the way the live game did (run s2-02-2037: every
+        // later batch failed with "batch prefix diverged" at "transaction with hacan").
+        let choice = offered(
+            "propose_transaction",
+            vec![
+                ChoiceOption::labelled("ss", "offer", "support"),
+                ChoiceOption::labelled("decline", "decline", "decline"),
+            ],
+        )
+        .accepting_free_form("x;");
+        let mut log = ti4_engine::choice::DecisionLog::default();
+        log.record(&choice, &choice.answer_for("x;rn=cf:hacan;").unwrap());
+        let mut decider = decider(BatchKind::Tokens, vec![pool("fleet_tokens")]);
+        {
+            let mut script = decider.0.lock().unwrap();
+            script.prefix_len = log.records.len();
+            script.prefix = log.records.into();
+        }
+        assert_eq!(decider.choose(&choice).unwrap().id, "x;rn=cf:hacan;");
+        assert_eq!(decider.choose(&gain_ask()).unwrap().id, "fleet_tokens");
+    }
+
+    #[test]
     fn unplanned_cargo_hold_is_declined_when_the_plan_moves_on() {
         // A carrier with nothing at its origin still gets a load_cargo offer, because the
         // active system holds own infantry. The plan [Move, DoneMoving] carries nothing.
@@ -1901,6 +2025,7 @@ mod tests {
                 source: None,
                 damaged: false,
                 galvanized: None,
+                pickup_system: None,
             }],
         );
         let hold = offered(
@@ -2005,6 +2130,28 @@ mod tests {
         let mut changed = pay;
         changed.options.push(ChoiceOption::decline());
         assert!(script.choose(&changed).is_err());
+        assert_eq!(script.0.lock().unwrap().next, 0);
+    }
+
+    /// Run s1-01-2030 (2026-10-14): a free-form trade answer ("x;rn=cf:xxcha;") is not a listed
+    /// option, so replaying the recorded prefix from the opening state failed with "batch prefix
+    /// diverged" and every later batch of the game was rejected.
+    #[test]
+    fn prefix_replays_a_free_form_transaction_answer() {
+        let deal = offered("propose_transaction", vec![ChoiceOption::decline()])
+            .accepting_free_form(ti4_engine::transactions::FREE_FORM_PREFIX);
+        let mut script = decider(BatchKind::Payment, vec![MovementStep::TradeGood]);
+        script.0.lock().unwrap().prefix.push_back(DecisionRecord {
+            player: deal.player.clone(),
+            prompt: deal.prompt.clone(),
+            chosen: "x;rn=cf:xxcha;".into(),
+            offered: deal.ids().iter().map(|id| (*id).to_owned()).collect(),
+            context: deal.context.clone(),
+        });
+        let chosen = script
+            .choose(&deal)
+            .expect("free-form prefix answer replays");
+        assert_eq!(chosen.id, "x;rn=cf:xxcha;");
         assert_eq!(script.0.lock().unwrap().next, 0);
     }
 

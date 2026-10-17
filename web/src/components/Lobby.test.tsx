@@ -143,6 +143,16 @@ describe("lobby UI", () => {
     expect(localStorage.getItem("ti4.nickname")).toBe("Returning visitor");
   });
 
+  it("offers a way back to the start screen without leaving a seat (fb_1791875585)", () => {
+    const onHome = vi.fn();
+    const { rerender } = render(<LobbyStatus lobby={{ ...lobby, phase: "running" }} playerId={null} {...props} onHome={onHome} />);
+    fireEvent.click(screen.getByTestId("lobby-back-to-start"));
+    expect(onHome).toHaveBeenCalledOnce();
+    expect(props.onLeave).not.toHaveBeenCalled();
+    rerender(<LobbyStatus lobby={lobby} playerId="player_a" {...props} onHome={onHome} />);
+    expect(screen.getByTestId("lobby-back-to-start")).toHaveTextContent("Back to start");
+  });
+
   it("shows watch, first-open join, and eligible explicit rejoin without admitting on render", () => {
     render(<LobbyStatus lobby={lobby} playerId={null} {...props} />);
     fireEvent.click(screen.getByText("Watch"));

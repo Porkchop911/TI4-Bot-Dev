@@ -12,9 +12,17 @@ for (const size of ["desktop", "phone"] as SizeName[]) {
     const { width, height } = page.viewportSize()!;
     expect(box.x + box.width).toBeLessThanOrEqual(width);
     expect(box.y + box.height).toBeLessThanOrEqual(height);
-    // Clear of the turn action bar: the button's bottom edge sits above the bar's top edge.
-    const bar = await page.getByTestId("turn-action-bar").boundingBox();
-    if (bar) expect(box.y + box.height).toBeLessThanOrEqual(bar.y + 1);
+    if (size === "phone") {
+      // On a phone it is an icon in the bottom dock (Players / Objectives / bell / Events), not a pill over the map.
+      await expect(button).toHaveAttribute("aria-label", "Feedback");
+      expect(box.width).toBeGreaterThanOrEqual(44);
+      expect(await page.locator(".app-shell__mobile-actions").getByTestId("feedback-button").count()).toBe(1);
+      expect(await page.locator(".feedback-fab").count()).toBe(0);
+    } else {
+      // Clear of the turn action bar: the button's bottom edge sits above the bar's top edge.
+      const bar = await page.getByTestId("turn-action-bar").boundingBox();
+      if (bar) expect(box.y + box.height).toBeLessThanOrEqual(bar.y + 1);
+    }
     await shot(page, testInfo, `game-${size}`);
   });
 }

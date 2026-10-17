@@ -308,4 +308,23 @@ describe("PlanetSelectionBar", () => {
     fireEvent.click(screen.getByTestId("confirm-planet-btn"));
     await waitFor(() => expect(onSubmit).toHaveBeenCalledWith("deploy|sol_mech|1"));
   });
+
+  it("Plague: each candidate chip shows how many infantry stand there, not the planet's values (fb_1792038952)", () => {
+    const plague: PendingChoiceDto = {
+      nonce: "pl1",
+      actor: "p1",
+      prompt: "Plague: which planet",
+      context: partialContext({ subtype: "plague_pick_planet", source: { ActionCard: "plague" } }),
+      options: [
+        { id: "26|lodor", kind: "planet", label: "Lodor", payload: { planet: "lodor", system: "26" } },
+        { id: "30|gral", kind: "planet", label: "Gral", payload: { planet: "gral", system: "30" } },
+      ],
+    };
+    render(<PlanetSelectionBar choice={plague} viewerSeat="p1" boardView={board} onSubmit={vi.fn()} />);
+    const lodor = screen.getByTestId("planet-chip-lodor");
+    expect(lodor).toHaveTextContent("Lodor");
+    expect(lodor).toHaveTextContent("2 infantry");
+    expect(within(lodor).queryByLabelText("3 resources")).toBeNull();
+    expect(screen.getByTestId("planet-chip-gral")).toHaveTextContent("0 infantry");
+  });
 });

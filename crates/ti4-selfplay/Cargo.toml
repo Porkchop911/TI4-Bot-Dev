@@ -1,0 +1,26 @@
+[package]
+name = "ti4-selfplay"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Headless rule-bot-only games: the entry point for rule bot optimisation (no server, no browser, no libtorch)."
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "selfplay"
+path = "src/main.rs"
+
+[dependencies]
+ti4-model = { workspace = true }
+ti4-content = { workspace = true }
+ti4-engine = { workspace = true }
+ti4-host = { workspace = true }
+ti4-rule-bot = { workspace = true }
+# For `decisions_hash`, the hash a save of the browser host carries.
+ti4-wasm = { path = "../ti4-wasm" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+rand = { workspace = true }
+rand_chacha = { workspace = true }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PreviewUnsupportedError } from "../../protocol/client.ts";
+import { PreviewUnsupportedError, StaleChoiceError } from "../../protocol/client.ts";
 import { LocalTransport } from "./LocalTransport.ts";
 import { GAME, FakePort, accepted, envelope, question, rejected, save, snapshot } from "./testKit.ts";
 import type { StartConfig } from "@ti4/shared/engine/host.ts";
@@ -40,7 +40,7 @@ describe("LocalTransport", () => {
     expect(state.pendingChoice?.nonce).toBe("n1");
     expect(state.gameVersion).toBe(1);
     expect(saves).toHaveLength(1);
-    expect(transport.capabilities).toMatchObject({ turnRedo: false, multiplayer: false, splicePreview: false });
+    expect(transport.capabilities).toMatchObject({ turnRedo: true, multiplayer: false, splicePreview: false });
     expect(transport.nickname).toBe("Tester");
   });
 
@@ -88,6 +88,25 @@ describe("LocalTransport", () => {
     await promise;
     expect(transport.getState().pendingChoice?.nonce).toBe("n2");
     expect(transport.latestSave()?.answers).toEqual(["o1"]);
+  });
+
+  // Nightly 2026-10-14 #8 (o1-43-2146 and 10 other offline runs): the lone `strategic` answer of
+  // the previous question went out with the next question's nonce.
+  it("drops an answer stamped with the nonce of an earlier question and sends nothing", async () => {
+    const { transport, port } = await open();
+    port.onCommand = (request, id) => ({
+      t: "reply",
+      id,
+      envelope: envelope("command", { messages: [accepted(1, String(request.option_id))], resume: 0 }),
+    });
+    const first = transport.submitChoice("o1", "n1");
+    await new Promise((r) => setTimeout(r, 0));
+    port.emit({ t: "ask", envelope: envelope("ask", { messages: [question(2, "n2")] }), save: save(["o1"]) });
+    await first;
+    await expect(transport.submitChoice("o1", "n1")).rejects.toBeInstanceOf(StaleChoiceError);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(port.commands("submit_choice")).toHaveLength(1);
+    expect(transport.getState().lastError).toBeNull();
   });
 
   it("shares a repeated submit of the same option and refuses another option for the same decision", async () => {
@@ -183,6 +202,24 @@ describe("LocalTransport", () => {
     await Promise.all([rewind, byEvent]);
   });
 
+  it("undoes the last turn through the history command and ignores the redo steps of a server", async () => {
+    const { transport, port } = await open();
+    port.onCommand = (_r, id) => ({
+      t: "reply",
+      id,
+      envelope: envelope("command", { resume: -1, restart: { answers: [], redo: [], generation: 1, version: 5 } }),
+    });
+    const undo = transport.turnRedoCommand({ action: "request", turns: 2 });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(port.commands("history")[0]).toEqual({ type: "history", action: { undo_turn: { turns: 2 } } });
+    port.emit({ t: "ask", envelope: envelope("ask", { messages: [snapshot(6, "n5", 1)] }), save: save([]) });
+    await undo;
+    expect(transport.getState().history.generation).toBe(1);
+    await transport.turnRedoCommand({ action: "autoplay" });
+    await transport.turnRedoCommand({ action: "restore" });
+    expect(port.commands("history")).toHaveLength(1);
+  });
+
   it("rejects a history change the engine refuses", async () => {
     const { transport, port } = await open();
     port.onCommand = (_r, id) => ({ t: "reply", id, envelope: envelope("command", { messages: [rejected(1)] }) });
@@ -211,7 +248,7 @@ describe("LocalTransport", () => {
     await expect(transport.queryReach("27")).resolves.toEqual({ kind: "reach", systemId: "27", asOfVersion: 1, origins: [] });
     await expect(transport.previewSecondary("c", "p", [])).rejects.toBeInstanceOf(PreviewUnsupportedError);
     await expect(transport.fetchTurnRedoStatus()).resolves.toBeNull();
-    await expect(transport.turnRedoCommand({ command: "keep" } as never)).rejects.toThrow(/not available/);
+    await expect(transport.turnRedoCommand({ action: "keep" })).resolves.toBeUndefined();
     expect((transport as { previewSplice?: unknown }).previewSplice).toBeUndefined();
   });
 

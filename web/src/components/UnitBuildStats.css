@@ -219,6 +219,10 @@
   .payment-drawer__footer {
     flex-wrap: wrap;
     justify-content: stretch;
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    background: var(--color-surface);
   }
   .payment-drawer__footer .button {
     flex: 1 1 140px;
@@ -230,14 +234,24 @@
   .production-drawer .production-drawer__footer .button {
     flex: 1 1 100%;
   }
-  .payment-drawer__footer {
+  /* Secondary buttons in two columns (an odd last one spans both); Pay is its own full-width row. */
+  /* .payment-drawer prefix: index.css sets display:flex on the footer with equal specificity. */
+  .payment-drawer .payment-drawer__footer {
     position: sticky;
     bottom: 0;
     z-index: 1;
     background: var(--color-surface);
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .payment-drawer__footer .button {
-    flex: 1 1 100%;
+  .payment-drawer .payment-drawer__footer .button {
+    flex: none;
+    min-width: 0;
+    min-height: 44px;
+  }
+  .payment-drawer .payment-drawer__footer .button--primary,
+  .payment-drawer .payment-drawer__footer .button--secondary:nth-last-child(2):nth-child(odd) {
+    grid-column: 1 / -1;
   }
 }
 

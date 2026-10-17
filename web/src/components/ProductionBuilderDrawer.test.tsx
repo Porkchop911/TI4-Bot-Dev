@@ -645,3 +645,119 @@ describe("ProductionBuilderDrawer", () => {
     expect(screen.getByTestId("trade-good-sources-empty")).toBeInTheDocument();
   });
 });
+
+describe("ProductionBuilderDrawer Armada fleet supply", () => {
+  const open = (fleetSupply: Record<string, unknown>) => {
+    const choice: PendingChoiceDto = {
+      actor: "seat_1",
+      nonce: "armada-build",
+      prompt: "produce a unit",
+      context: partialContext({ subtype: "produce_unit", outstanding: [{ amount: 5, paid: 2 }] }),
+      details: { fleet_supply: fleetSupply },
+      options: [
+        {
+          id: "build|fighter|1",
+          kind: "produce",
+          label: "Fighter",
+          payload: { unit: "fighter", production_spent: 1, cost: 1, available_resources: 8 },
+        },
+      ],
+    };
+    render(
+      <ProductionBuilderDrawer isOpen choice={choice} viewerSeat="seat_1" onSubmit={vi.fn()} onClose={vi.fn()} />,
+    );
+  };
+
+  it("marks the Armada part of the limit", () => {
+    open({ used: 2, limit: 6, armada: 2 });
+    expect(screen.getByTestId("fleet-supply-counter")).toHaveTextContent("2 / 6");
+    expect(screen.getByTestId("production-armada")).toHaveTextContent("incl. +2 Armada");
+  });
+
+  it("shows nothing extra without it", () => {
+    open({ used: 2, limit: 4 });
+    expect(screen.queryByTestId("production-armada")).not.toBeInTheDocument();
+  });
+});
+
+describe("ProductionBuilderDrawer staged fleet supply", () => {
+  const open = (fleetSupply: Record<string, unknown>) => {
+    const choice: PendingChoiceDto = {
+      actor: "seat_1",
+      nonce: "staged-fleet",
+      prompt: "produce a unit",
+      context: partialContext({ subtype: "produce_unit", outstanding: [{ amount: 6, paid: 0 }] }),
+      details: { fleet_supply: fleetSupply },
+      options: [
+        {
+          id: "build|cruiser|1",
+          kind: "produce",
+          label: "Cruiser",
+          payload: { unit: "cruiser", production_spent: 1, cost: 2, available_resources: 20, fleet_ships: 1 },
+        },
+        {
+          id: "build|fighter|2",
+          kind: "produce",
+          label: "Fighter",
+          payload: { unit: "fighter", production_spent: 1, cost: 1, available_resources: 20, fleet_ships: 0 },
+        },
+      ],
+    };
+    render(
+      <ProductionBuilderDrawer isOpen choice={choice} viewerSeat="seat_1" onSubmit={vi.fn()} onClose={vi.fn()} />,
+    );
+  };
+  const add = (id: string) => fireEvent.click(screen.getByTestId(`produce-unit-btn-${id}`));
+  const build = () => screen.getByRole("button", { name: "Confirm builds" });
+
+  it("shows only the standing count while nothing is staged", () => {
+    open({ used: 2, limit: 5 });
+    expect(screen.getByTestId("fleet-supply-counter")).toHaveTextContent(/^2 \/ 5$/);
+    expect(build()).not.toHaveAttribute("data-over-fleet-supply");
+  });
+
+  it("shows 2 +X / 5 for staged ships and leaves the button normal within the limit", () => {
+    open({ used: 2, limit: 5 });
+    add("build|cruiser|1");
+    add("build|cruiser|1");
+    expect(screen.getByTestId("fleet-supply-counter")).toHaveTextContent(/^2 \+2 \/ 5$/);
+    expect(build()).not.toHaveAttribute("data-over-fleet-supply");
+  });
+
+  it("does not count fighters", () => {
+    open({ used: 2, limit: 5 });
+    add("build|fighter|2");
+    expect(screen.getByTestId("fleet-supply-counter")).toHaveTextContent(/^2 \/ 5$/);
+  });
+
+  it("is still normal exactly at the limit, orange one ship over", () => {
+    open({ used: 3, limit: 5 });
+    add("build|cruiser|1");
+    add("build|cruiser|1");
+    expect(build()).not.toHaveAttribute("data-over-fleet-supply");
+    add("build|cruiser|1");
+    expect(screen.getByTestId("fleet-supply-counter")).toHaveTextContent(/^3 \+3 \/ 5$/);
+    expect(build()).toHaveAttribute("data-over-fleet-supply", "true");
+    expect(build()).toHaveClass("production-drawer__build--over");
+    expect(build()).toHaveAttribute("title", expect.stringContaining("remove the ships above the limit"));
+    expect(build()).not.toBeDisabled();
+  });
+
+  it("Letnev with Armada stays normal within its limit of 5", () => {
+    open({ used: 2, limit: 5, armada: 2 });
+    add("build|cruiser|1");
+    add("build|cruiser|1");
+    add("build|cruiser|1");
+    expect(screen.getByTestId("fleet-supply-counter")).toHaveTextContent(/^2 \+3 \/ 5$/);
+    expect(screen.getByTestId("production-armada")).toBeInTheDocument();
+    expect(build()).not.toHaveAttribute("data-over-fleet-supply");
+  });
+
+  it("never goes orange when the supply is unlimited", () => {
+    open({ used: 2, limit: 3, unlimited: true });
+    add("build|cruiser|1");
+    add("build|cruiser|1");
+    expect(screen.getByTestId("fleet-supply-counter")).toHaveTextContent(/^2 \+2 \/ unlimited$/);
+    expect(build()).not.toHaveAttribute("data-over-fleet-supply");
+  });
+});

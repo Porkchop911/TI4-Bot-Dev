@@ -608,8 +608,7 @@ fn given(choice: &Choice) -> Result<Option<ChoiceOption>, IllegalChoice> {
     let left = host.preload_left;
     drop(host);
     let option = choice
-        .option(&wanted)
-        .cloned()
+        .answer_for(&wanted)
         .ok_or_else(|| IllegalChoice::ScriptDiverged {
             player: choice.player.clone(),
             wanted,
@@ -1804,6 +1803,23 @@ pub fn response(status: i32) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_saved_free_form_offer_is_given_again() {
+        // A transaction answered with a composed offer ("x;...") is not a listed id; a saved
+        // game played again must accept it like the live game did (server runs s2-02-2037,
+        // s1-03-2102 and s2-07-2050 failed the same way on their replays).
+        let choice = Choice::new(
+            PlayerId::new("p1"),
+            "transaction with hacan",
+            vec![ChoiceOption::labelled("decline", "decline", "decline")],
+        )
+        .accepting_free_form("x;");
+        host().script = VecDeque::from(["x;rn=cf:hacan;".to_owned()]);
+        let given = given(&choice);
+        *host() = Host::default();
+        assert_eq!(given.unwrap().unwrap().id, "x;rn=cf:hacan;");
+    }
 
     #[test]
     fn slow_an_eight_player_game_runs_with_random_deciders() {

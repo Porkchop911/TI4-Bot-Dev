@@ -1,0 +1,21 @@
+{
+  "title": "Starting technology choices",
+  "description": "The question a new game asks before the first strategy card: the Winnu choose 1 technology without prerequisites, the Argent Flight 2 of 3 (the one they leave behind stays in the deck), the Council Keleres 2 technologies that the other players start with. Mocked decisions with the options, details and context that crates/ti4-engine/src/starting_tech.rs sends; regenerate with npm run screenshots -- EP.",
+  "tag": "web/e2e/screenshots/EP-starting-technology",
+  "shots": [
+    { "file": "out/1-winnu-desktop.png", "heading": "Winnu, desktop", "caption": "Any one of the eight technologies that have no prerequisites (four base, four Prophecy of Kings). Each row shows its colour, that it needs nothing, and the printed text." },
+    { "file": "out/1-winnu-390x844.png", "heading": "Winnu, 390x844", "caption": "The same on a phone." },
+    { "file": "out/2-argent-first-desktop.png", "heading": "Argent Flight, first of two picks, desktop", "caption": "Neural Motivator, Sarween Tools or Plasma Scoring. The title says 1 of 2 and the text says the one left behind stays in the technology deck." },
+    { "file": "out/2-argent-first-390x844.png", "heading": "Argent Flight, first pick, 390x844", "caption": "The same on a phone." },
+    { "file": "out/3-argent-second-desktop.png", "heading": "Argent Flight, second pick, desktop", "caption": "The pick already made is named (Sarween Tools) and only the two that remain are offered." },
+    { "file": "out/3-argent-second-390x844.png", "heading": "Argent Flight, second pick, 390x844", "caption": "The same on a phone." },
+    { "file": "out/4-keleres-desktop.png", "heading": "Council Keleres, desktop", "caption": "Asked after every other seat has chosen: a non-faction technology that another player starts with, with the seats that hold it." },
+    { "file": "out/4-keleres-390x844.png", "heading": "Council Keleres, 390x844", "caption": "The same on a phone." },
+    { "file": "out/5-confirm-desktop.png", "heading": "Selected, desktop", "caption": "A row is selected and Confirm choice is enabled. Nothing is sent before it." },
+    { "file": "out/5-confirm-390x844.png", "heading": "Selected, 390x844", "caption": "The same on a phone." }
+  ],
+  "notes": [
+    { "title": "Fixtures", "text": "Synthetic: a mocked server sends the decision as the engine builds it (subtype starting_technology, option kind starting_technology, details pick/of/rule/held, option payload owners). Not a captured game." },
+    { "title": "Not shown", "text": "Thunder's Edge picks (Last Bastion, Crimson Rebellion, Ral Nel, Firmament, Deepwrought) use the same question; those factions cannot be seated in this build." }
+  ]
+}

@@ -554,6 +554,44 @@ fn scepter_systems(state: &GameState, holder: &PlayerId) -> Vec<SystemId> {
         .collect()
 }
 
+/// Who the Scepter makes place a token in `system`: the owners of the tokens in the Mahact fleet
+/// pool other than `holder`, without one there already and with one in reinforcements.
+fn scepter_payers(
+    state: &GameState,
+    mahact: &PlayerId,
+    holder: &PlayerId,
+    system: &SystemId,
+) -> Vec<PlayerId> {
+    let mut payers = fleet_pool_owners(state, mahact);
+    payers.retain(|payer| payer != holder);
+    payers.dedup();
+    payers.retain(|payer| {
+        let placed = state
+            .board
+            .get(system)
+            .is_some_and(|board| board.command_tokens.contains(payer));
+        !placed && reinforcements(state, payer) > 0
+    });
+    payers
+}
+
+/// The option label of a Scepter system: who would place a token there (display only; the
+/// decision records ids, not labels).
+fn scepter_label(state: &GameState, payers: &[PlayerId], system: &SystemId) -> String {
+    if payers.is_empty() {
+        return format!(
+            "nobody places a command token in {system} (only other players with a token in the \
+             Mahact fleet pool place one)"
+        );
+    }
+    let names: Vec<String> = payers
+        .iter()
+        .map(|payer| crate::promissory::faction_name(state, payer))
+        .collect();
+    let verb = if names.len() == 1 { "places" } else { "place" };
+    format!("{} {verb} a command token in {system}", names.join(", "))
+}
+
 /// "At the start of the strategy phase: Choose 1 non-home system that contains your units, each
 /// other player who has a token on the Mahact player's command sheet places a token from their
 /// reinforcements in that system. Then, return this card to the Mahact player."
@@ -579,7 +617,11 @@ fn scepter(owner_name: &str, seat: &PlayerId) -> Ability {
                             ChoiceOption::labelled(
                                 system.to_string(),
                                 "scepter",
-                                format!("each other player places a command token in {system}"),
+                                scepter_label(
+                                    context.state,
+                                    &scepter_payers(context.state, &mahact, &holder, system),
+                                    system,
+                                ),
                             )
                         })
                         .collect();
@@ -595,22 +637,14 @@ fn scepter(owner_name: &str, seat: &PlayerId) -> Ability {
                 }
             };
             if let Some(system) = system {
-                let mut payers = fleet_pool_owners(context.state, &mahact);
-                payers.retain(|payer| *payer != holder);
-                payers.dedup();
-                for payer in payers {
-                    let placed = context
+                // Placing one token never changes another payer's reinforcements or tokens here,
+                // so deciding them all first is the same as checking each in turn.
+                for payer in scepter_payers(context.state, &mahact, &holder, &system) {
+                    context
                         .state
-                        .board
-                        .get(&system)
-                        .is_some_and(|board| board.command_tokens.contains(&payer));
-                    if !placed && reinforcements(context.state, &payer) > 0 {
-                        context
-                            .state
-                            .system_mut(&system)
-                            .command_tokens
-                            .insert(payer);
-                    }
+                        .system_mut(&system)
+                        .command_tokens
+                        .insert(payer);
                 }
             }
             crate::promissory::give_back(
@@ -1302,6 +1336,66 @@ mod tests {
         emit(&mut state, &mut scripted(&[]), "STRATEGY_PHASE_BEGAN", &[]);
         assert_eq!(placed(&state), tokens, "home systems are excluded");
         assert_eq!(state.promissory_notes["scepter:mahact"], a());
+    }
+
+    /// fb_1791905479: the holder's own token was the only one in the Mahact fleet pool, so nobody
+    /// placed a token, yet every system option promised "each other player places a command
+    /// token". The labels now name who would place one, or say that nobody would.
+    #[test]
+    fn the_scepter_system_options_say_who_places_a_token() {
+        use crate::choice::{Capturing, FirstOption};
+        let mut state = game();
+        add_token(&mut state, &a(), &c());
+        for system in ["27", "26"] {
+            crate::fixtures::put(&mut state, &SystemId::new(system), "carrier", &c(), 1);
+        }
+        crate::promissory::take(&mut state, content(), &c(), "scepter:mahact");
+        let (capturing, seen) = Capturing::new(Box::new(FirstOption));
+        let mut table = Table::with_default(Box::new(capturing));
+        let before = state.clone();
+        emit(&mut state, &mut table, "STRATEGY_PHASE_BEGAN", &[]);
+        let asked = seen.borrow();
+        let choice = asked
+            .iter()
+            .find(|choice| choice.prompt.starts_with("Scepter of Dominion"))
+            .expect("the holder chooses a system");
+        for option in &choice.options {
+            assert!(
+                option.label.contains("nobody places a command token"),
+                "{}",
+                option.label
+            );
+        }
+        assert!(
+            state
+                .board
+                .iter()
+                .all(|(id, board)| board.command_tokens == before.system_state(id).command_tokens),
+            "and indeed nobody did"
+        );
+
+        let mut state = game();
+        add_token(&mut state, &a(), &b());
+        add_token(&mut state, &a(), &c());
+        for system in ["27", "26"] {
+            crate::fixtures::put(&mut state, &SystemId::new(system), "carrier", &c(), 1);
+        }
+        crate::promissory::take(&mut state, content(), &c(), "scepter:mahact");
+        let (capturing, seen) = Capturing::new(Box::new(FirstOption));
+        let mut table = Table::with_default(Box::new(capturing));
+        emit(&mut state, &mut table, "STRATEGY_PHASE_BEGAN", &[]);
+        let asked = seen.borrow();
+        let choice = asked
+            .iter()
+            .find(|choice| choice.prompt.starts_with("Scepter of Dominion"))
+            .unwrap();
+        assert!(
+            choice.options[0]
+                .label
+                .starts_with("xxcha places a command token in "),
+            "{}",
+            choice.options[0].label
+        );
     }
 
     // -- Vaults of the Heir --------------------------------------------------------------------

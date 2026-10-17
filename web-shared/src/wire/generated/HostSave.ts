@@ -30,6 +30,15 @@ table?: TableSetup,
  */
 scenario?: string, 
 /**
+ * The rule bot version the game was played with (left out: version 1).
+ */
+bot_version?: number, 
+/**
+ * The rules version the game was played with (`GameState::rules_version`; left out:
+ * version 0, the rules of a save made before the field existed).
+ */
+rules_version?: number, 
+/**
  * The seats that the page plays at the start (bit 0 is seat `a`).
  */
 humans: number, 

@@ -4,6 +4,7 @@ import type { BoardView, GroundOddsRequest, PendingChoiceDto, PlayerView } from 
 import { groundOdds } from "@ti4/shared/engine/odds.ts";
 import { useOddsEngine } from "./OddsEngine.tsx";
 import { getPlanetEffectiveValues } from "../presentation/playerStats.ts";
+import { wireBoosts } from "../presentation/planetValues.ts";
 import { DecisionHeader } from "./DecisionHeader.tsx";
 import { UnitIcon, getUnitDisplayName } from "./UnitIcon.tsx";
 import { PlanetValue } from "./PlanetValueIcons.tsx";
@@ -100,14 +101,15 @@ export const InvasionLandingTray: React.FC<{
 
   /** Resources/influence with attachment modifiers (map tile data, catalog fallback), plus trait. */
   const planetInfo = (planetId: string) => {
-    const attachments = Object.values(board?.systems[system]?.planets ?? {}).find(
+    const planetView = Object.values(board?.systems[system]?.planets ?? {}).find(
       (view) => view.planet_id === planetId,
-    )?.attachments;
+    );
+    const attachments = planetView?.attachments;
     const meta = board?.map_tiles
       ?.flatMap((tile) => tile.planets ?? [])
       .find((entry) => entry.id === planetId);
     return {
-      ...getPlanetEffectiveValues(planetId, attachments, board?.map_tiles),
+      ...getPlanetEffectiveValues(planetId, attachments, board?.map_tiles, wireBoosts(planetView)),
       traits: meta?.traits ?? [],
       attachments: attachments ?? [],
     };
@@ -464,9 +466,9 @@ export const InvasionLandingTray: React.FC<{
                         className="invasion-planet-landing-card__values"
                         data-testid="invasion-planet-values"
                       >
-                        <PlanetValue kind="resources" value={info.resources} />
+                        <PlanetValue kind="resources" value={info.resources} planetId={name} />
                         <span aria-hidden="true">·</span>
-                        <PlanetValue kind="influence" value={info.influence} />
+                        <PlanetValue kind="influence" value={info.influence} planetId={name} />
                         {info.traits.length > 0 && (
                           <span className="invasion-planet-trait" title={`Trait: ${info.traits.join(", ")}`}>
                             {info.traits.join(" / ")}

@@ -14,6 +14,7 @@ import {
   canAddToken,
   canConfirmTokens,
   canRemoveToken,
+  ARMADA_TEXT,
   confirmBlocker,
   chooseTokenCount,
   initialStaging,
@@ -207,12 +208,14 @@ export const CommandTokenPanel: React.FC<CommandTokenPanelProps> = ({
                     <PlanetValue
                       kind="influence"
                       value={planet.worth}
+                      planetId={planet.id}
                       label={`Pays ${planet.worth} influence`}
                     />
                     {planet.resources !== null && (
                       <PlanetValue
                         kind="resources"
                         value={planet.resources}
+                        planetId={planet.id}
                         label={`Exhausting it loses ${planet.resources} resource${planet.resources === 1 ? "" : "s"}`}
                         testId={`token-payment-planet-${planet.id}-resources`}
                       />
@@ -320,11 +323,12 @@ export const CommandTokenPanel: React.FC<CommandTokenPanelProps> = ({
                 <span key={planet.id} data-testid={`token-suggestion-${planet.id}`}>
                   {i > 0 ? ", " : ""}
                   {planetLabel(planet.id)}{" "}
-                  <PlanetValue kind="influence" value={planet.worth} label={`Pays ${planet.worth} influence`} />
+                  <PlanetValue kind="influence" value={planet.worth} planetId={planet.id} label={`Pays ${planet.worth} influence`} />
                   {planet.resources !== null && (
                     <PlanetValue
                       kind="resources"
                       value={planet.resources}
+                      planetId={planet.id}
                       label={`Exhausting it loses ${planet.resources} resource${planet.resources === 1 ? "" : "s"}`}
                     />
                   )}
@@ -387,6 +391,16 @@ export const CommandTokenPanel: React.FC<CommandTokenPanelProps> = ({
               <span className="token-panel__name">
                 {label}
                 <span className="token-panel__purpose">{POOL_PURPOSE[pool]}</span>
+                {pool === "fleet" && view.fleetSupplyBonus > 0 && (
+                  <span
+                    className="token-panel__armada"
+                    data-testid="token-armada"
+                    title={ARMADA_TEXT}
+                    aria-label={ARMADA_TEXT}
+                  >
+                    +{view.fleetSupplyBonus} supply
+                  </span>
+                )}
               </span>
               <span className="token-panel__stepper">
                 <button

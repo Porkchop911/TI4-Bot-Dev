@@ -10,7 +10,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use ti4_model::id::PlayerId;
+use ti4_model::id::{ActionCardId, PlayerId};
 use ti4_model::{content_types::SourceSet, state::GameState};
 
 use crate::{
@@ -1032,6 +1032,16 @@ impl Resolver {
                 passed_last = std::mem::take(&mut passed);
             }
         })();
+        // Rules version 3 (`RULES_SABOTAGE_TIMING`): the cards the players declared in this
+        // window are announced only now, once every declaration is in, each in declaration
+        // order and each opening its own Sabotage window.
+        let result = result.and_then(|()| {
+            let declared = std::mem::take(&mut context.state.declared_card_plays);
+            for (player, alias) in declared {
+                crate::reactions::announce(context, self, &player, &alias)?;
+            }
+            Ok(())
+        });
         self.relation_being_resolved = previous;
         result
     }
@@ -1209,6 +1219,28 @@ impl Resolver {
             format!("{} {}", relation_name(relation), event.event_type),
             options,
         );
+        // What each single-card slot would do now (display only; see `reaction_preview`).
+        let previews = {
+            let single: Vec<(ActionCardId, String)> = choice
+                .options
+                .iter()
+                .filter_map(|option| {
+                    option
+                        .payload
+                        .get("card")
+                        .and_then(serde_json::Value::as_str)
+                        .map(|card| (ActionCardId::new(card), option.id.clone()))
+                })
+                .collect();
+            crate::reaction_preview::previews_for(
+                context.state,
+                context.content,
+                context.sources,
+                player,
+                event,
+                single.iter().map(|(card, option)| (card, option.clone())),
+            )
+        };
         // Whose turn it is, for a seat that asked to be offered a reaction on its own turns only
         // (`ti4_host::view::reaction_modes`). Display only, as every detail: not in a record or a replay.
         let choice = match &context.state.active {
@@ -1227,6 +1259,7 @@ impl Resolver {
             )
             .optional(declinable)
             .about_battle(context.state)
+            .with_previews(previews)
             .with_trigger(crate::decision_context::DecisionTrigger::from_event(
                 event,
                 relation_name(relation),

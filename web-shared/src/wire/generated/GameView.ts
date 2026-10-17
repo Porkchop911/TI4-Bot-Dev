@@ -1,4 +1,5 @@
 // Generated from the Rust types by `cargo wire-web` (ti4_wasm::wire_ts). Do not edit.
+import type { ActiveEffectView } from "./ActiveEffectView.ts";
 import type { BoardView } from "./BoardView.ts";
 import type { Phase } from "./Phase.ts";
 import type { PlayerId } from "./PlayerId.ts";
@@ -12,4 +13,10 @@ export type GameView = { round: number,
 /**
  * The turn of the action phase (LRR 3), counted from 1; zero outside it.
  */
-turn: number, phase: Phase, speaker: PlayerId, seating_order: Array<PlayerId>, active_player?: PlayerId, finished: boolean, players: Array<PlayerView>, board: BoardView, table: TableView, };
+turn: number, phase: Phase, speaker: PlayerId, seating_order: Array<PlayerId>, active_player?: PlayerId, finished: boolean, players: Array<PlayerView>, board: BoardView, table: TableView, 
+/**
+ * Lingering effects of played action cards that are in force now
+ * ([`crate::view::effects`]). Display only, public, and absent while there are none, so
+ * older clients and saves never see the field.
+ */
+active_effects?: Array<ActiveEffectView>, };

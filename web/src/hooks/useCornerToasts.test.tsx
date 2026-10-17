@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
+import { partialLeaders } from "../test/wire.ts";
 import { renderHook, act } from "@testing-library/react";
-import type { AutoResolvedNote, GameEvent } from "../protocol/types.ts";
+import type { AutoResolvedNote, GameEvent, LeaderStatus } from "../protocol/types.ts";
 import { useCornerToasts } from "./useCornerToasts.ts";
 import type { AgendaRecordDto } from "../presentation/agendaToasts.ts";
 import { TOAST_MUTE_KEY } from "./useToastMute.ts";
@@ -42,6 +43,17 @@ describe("useCornerToasts", () => {
     expect(dice[0].text).toMatch(/rolled Gravity rift in #67.*: 2 \u00b7 ship destroyed/);
     // Muting clears them like every other toast.
     act(() => localStorage.setItem(TOAST_MUTE_KEY, "true"));
+  });
+
+  it("toasts an unlocked commander with what it does, for every seat (fb_1792039768)", () => {
+    const sol = (status: string) => [{ id: "p1", victory_points: 3, leaders: partialLeaders({ solcommander: status as LeaderStatus }) }];
+    const { result, rerender } = renderHook((p: Props) => useCornerToasts(p), {
+      initialProps: { ...base, players: sol("locked") },
+    });
+    expect(result.current.notifications).toHaveLength(0);
+    rerender({ ...base, players: sol("unlocked") });
+    const texts = result.current.notifications.map((t) => t.text);
+    expect(texts).toContainEqual(expect.stringMatching(/unlocked the commander Claire Gibson: At the start of a ground combat/));
   });
 
   it("does not toast what was already in the log when the game loaded", () => {

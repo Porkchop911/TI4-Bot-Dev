@@ -118,6 +118,33 @@ fn into_the_primary(table: &Table) {
     });
 }
 
+/// From rules version `RULES_TECH_PAYMENT_CHOICE` a paid research asks the researcher which
+/// planets pay: the first offered payment is taken.
+fn pay_if_asked(table: &Table) {
+    let Some(choice) = table.c1.snapshot().pending_choice.map(|e| e.choice) else {
+        return;
+    };
+    let is_payment = choice
+        .context
+        .as_ref()
+        .is_some_and(|context| context.subtype == "pay_resources");
+    if !is_payment {
+        return;
+    }
+    let Some((seat, nonce, version)) = pending(table) else {
+        return;
+    };
+    if seat != table.p1 {
+        return;
+    }
+    let option = choice.options.first().expect("a payment is offered").id.clone();
+    table
+        .c1
+        .submit(&nonce, version, &option)
+        .expect("p1 pays");
+    thread::sleep(Duration::from_millis(150));
+}
+
 /// The primary researches the first technology that needs no faction waiver, which ends its part.
 fn finish_primary(table: &Table) {
     let options: Vec<String> = table
@@ -142,6 +169,7 @@ fn finish_primary(table: &Table) {
             .submit(&nonce, version, &option)
             .expect("p1 researches");
         thread::sleep(Duration::from_millis(150));
+        pay_if_asked(table);
         if pending_prompt(table, &table.p1).as_deref() != Some("research a technology") {
             return;
         }

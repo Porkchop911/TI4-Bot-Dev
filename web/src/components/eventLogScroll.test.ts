@@ -56,3 +56,23 @@ describe("event log scroll decisions", () => {
     expect(restoreTarget(false, 50, m(0, 100, 320))).toBe(0);
   });
 });
+
+describe("event log scroll decisions, newest entry first", () => {
+  it("is pinned at the top, not at the bottom", () => {
+    expect(isPinned(m(0), true)).toBe(true);
+    expect(isPinned(m(PIN_THRESHOLD_PX), true)).toBe(true);
+    expect(isPinned(m(PIN_THRESHOLD_PX + 1), true)).toBe(false);
+    expect(isPinned(m(680), true)).toBe(false);
+  });
+
+  it("follows new content to the top only while pinned", () => {
+    expect(followTarget(true, m(0, 1208), true)).toBe(0);
+    expect(followTarget(false, m(300, 1208), true)).toBeUndefined();
+  });
+
+  it("restores to the top when the reader was at the newest entry, else to where they were", () => {
+    expect(restoreTarget(true, 0, m(0), true)).toBe(0);
+    expect(restoreTarget(false, 200, m(0), true)).toBe(200);
+    expect(restoreTarget(false, 5000, m(0), true)).toBe(680);
+  });
+});

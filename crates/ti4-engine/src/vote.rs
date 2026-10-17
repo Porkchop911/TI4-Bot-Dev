@@ -1040,6 +1040,13 @@ impl VoteWindow {
         Ok(())
     }
 
+    /// Whether the pending question is a voter naming an outcome (or abstaining), as opposed to
+    /// the planets, trade goods, Genetic Recombination or tribute questions after it.
+    #[must_use]
+    pub fn is_outcome_question(&self) -> bool {
+        matches!(self.stage, Stage::Outcome(index) if index < self.order.len())
+    }
+
     /// Advance past players and stages with nothing to decide, before the first question.
     pub fn open(&mut self, state: &GameState, content: &ContentStore, sources: SourceSet) {
         self.settle(state, content, sources);
@@ -1111,6 +1118,36 @@ mod tests {
             "b predicted, so b does not vote; asked {asked:?}"
         );
         assert!(asked.contains(&PlayerId::new("a")), "a still votes");
+    }
+
+    /// Feedback fb_1792235794_f7d819ff: an Xxcha player with Elder Qanoj unlocked kept voting
+    /// after playing a rider. That is the commander's text ("Game effects cannot prevent you
+    /// from voting on an agenda"), not a missing ban: without it the same player is barred.
+    #[test]
+    fn elder_qanoj_keeps_a_rider_player_voting_and_nobody_else() {
+        let (mut state, _) = game(&["a", "b", "c"]);
+        state.speaker = PlayerId::new("c");
+        for who in ["a", "b"] {
+            state
+                .agenda_predictions
+                .insert(PlayerId::new(who), "for|tech_rider".to_owned());
+        }
+        state
+            .player_mut(&PlayerId::new("a"))
+            .expect("a sits at the table")
+            .leaders
+            .insert(
+                ti4_model::id::LeaderId::new("xxchacommander"),
+                ti4_model::state::LeaderStatus::Unlocked,
+            );
+
+        let vote = VoteWindow::new(&state, "some_agenda", for_against());
+
+        assert_eq!(
+            vote.order(),
+            [PlayerId::new("a"), PlayerId::new("c")],
+            "Qanoj's owner votes despite the rider; b, who has no such commander, does not"
+        );
     }
 
     /// A speaker who paid the Imperial Rider's cost gives up their vote too. The old

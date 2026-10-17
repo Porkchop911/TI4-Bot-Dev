@@ -18,8 +18,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::protocol::status::{PublicTurnStatus, ViewerRole};
 use crate::protocol::view::{
-    BoardTileView, BoardView, GameView, ObjectiveProgressView, PlacedUnitView, PlanetView,
-    PlayerView, SystemView, TableView,
+    BoardTileView, BoardView, GameView, ObjectiveProgressView, PlacedUnitView, PlanetValueBoost,
+    PlanetView, PlayerView, SystemView, TableView,
 };
 
 /// Projects one player record that has already passed through the model's redaction boundary.
@@ -67,6 +67,7 @@ pub fn project_player_view(player: &Player) -> PlayerView {
         secret_objective_progress: BTreeMap::new(),
         leaders: player.leaders.clone(),
         held_foreign_tokens: Vec::new(),
+        agenda_peek: Vec::new(),
     }
 }
 
@@ -250,6 +251,18 @@ pub fn project_board_view_full(
                         .get(&planet_id)
                         .cloned()
                         .unwrap_or_default(),
+                    value_boosts: ti4_engine::production::planet_value_boosts(
+                        state,
+                        ti4_content::ContentStore::embedded(),
+                        &planet_id,
+                    )
+                    .into_iter()
+                    .map(|(source, r, i)| PlanetValueBoost {
+                        source,
+                        resources: i32::try_from(r).unwrap_or(0),
+                        influence: i32::try_from(i).unwrap_or(0),
+                    })
+                    .collect(),
                 },
             );
         }
@@ -682,6 +695,10 @@ pub fn project_game_view_full(
             {
                 view.secret_objective_progress =
                     project_secret_progress(&redacted, seat, map_tiles);
+                view.agenda_peek = ti4_engine::action_cards::insider_peek(&redacted, seat)
+                    .iter()
+                    .map(|alias| project_agenda_peek_card(alias))
+                    .collect();
             }
             view
         })
@@ -708,6 +725,30 @@ pub fn project_game_view_full(
             Some(viewer),
         ),
         table: project_table_view_with_map(&redacted, map_tiles),
+        active_effects: crate::view::effects::project_active_effects(state),
+    }
+}
+
+/// One agenda as printed (an id the content does not know shows as its id, with no text).
+fn project_agenda_peek_card(alias: &str) -> crate::protocol::view::AgendaPeekCard {
+    let record = ContentStore::embedded().get(ContentType::Agendas, alias);
+    let field = |key: &str| {
+        record
+            .as_ref()
+            .and_then(|record| record.text(key))
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let name = Some(field("name"))
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| alias.to_owned());
+    crate::protocol::view::AgendaPeekCard {
+        id: alias.to_owned(),
+        name,
+        kind: field("type"),
+        target: field("target"),
+        text1: field("text1"),
+        text2: field("text2"),
     }
 }
 
@@ -721,6 +762,9 @@ pub fn redacted_state(state: &GameState, viewer: &ViewerRole) -> GameState {
             for player in &mut spectator.players {
                 *player = redact_player(player);
             }
+            // A spectator is nobody: the private rows of faction_marks (a seat's own secret, cards
+            // shown to one seat, Insider Information's peek) are for their seat alone.
+            ti4_model::view::redact_marks(&mut spectator, &PlayerId::new(""));
             spectator
         }
     }
@@ -1023,6 +1067,108 @@ mod tests {
         );
     }
 
+    #[test]
+    fn an_insider_peek_reaches_only_the_seat_that_looked() {
+        let mut state = ti4_engine::fixtures::seated_game(
+            &[("a", "mahact"), ("b", "xxcha")],
+            ti4_model::content_types::DEFAULT,
+        );
+        let (viewer, other) = (PlayerId::new("a"), PlayerId::new("b"));
+        state.agenda_deck = vec!["one".into(), "two".into(), "three".into(), "four".into()];
+        state.faction_marks.insert(
+            ti4_engine::action_cards::insider_peek_key(&viewer),
+            "one,two,three".to_owned(),
+        );
+        let peek = |viewer: &ViewerRole, whose: &PlayerId| {
+            project_game_view(&state, viewer)
+                .players
+                .iter()
+                .find(|player| &player.id == whose)
+                .map(|player| {
+                    player
+                        .agenda_peek
+                        .iter()
+                        .map(|card| card.id.clone())
+                        .collect::<Vec<_>>()
+                })
+                .expect("a seat")
+        };
+
+        assert_eq!(
+            peek(&ViewerRole::Player(viewer.clone()), &viewer),
+            vec!["one", "two", "three"]
+        );
+        assert!(peek(&ViewerRole::Player(other.clone()), &viewer).is_empty());
+        assert!(peek(&ViewerRole::Player(other.clone()), &other).is_empty());
+        assert!(peek(&ViewerRole::Spectator, &viewer).is_empty());
+        // And nothing of it is on the wire for anybody else.
+        let sent =
+            serde_json::to_string(&project_game_view(&state, &ViewerRole::Player(other))).unwrap();
+        assert!(
+            !sent.contains("agenda_peek") && !sent.contains("three"),
+            "{sent}"
+        );
+        // The viewer gets the printed card, not just an id.
+        state.agenda_deck = vec!["revolution".into(), "secret".into()];
+        state.faction_marks.insert(
+            ti4_engine::action_cards::insider_peek_key(&viewer),
+            "revolution,secret".to_owned(),
+        );
+        let shown = project_game_view(&state, &ViewerRole::Player(viewer.clone()));
+        let cards = &shown
+            .players
+            .iter()
+            .find(|p| p.id == viewer)
+            .unwrap()
+            .agenda_peek;
+        assert_eq!(cards[0].name, "Anti-Intellectual Revolution");
+        assert_eq!(cards[0].kind, "Law");
+        assert!(cards[0].text1.starts_with("For:"));
+        assert_eq!(cards[1].target, "Elect Player");
+    }
+
+    #[test]
+    fn a_spectators_state_carries_no_private_mark() {
+        let mut state = ti4_engine::fixtures::seated_game(
+            &[("a", "mahact"), ("b", "xxcha")],
+            ti4_model::content_types::DEFAULT,
+        );
+        let viewer = PlayerId::new("a");
+        state.agenda_deck = vec!["one".into(), "two".into()];
+        state.faction_marks.insert(
+            ti4_engine::action_cards::insider_peek_key(&viewer),
+            "one,two".to_owned(),
+        );
+        state
+            .faction_marks
+            .insert("sardakk:tekklar:round".to_owned(), "3".to_owned());
+
+        let spectator = redacted_state(&state, &ViewerRole::Spectator);
+        assert!(
+            !spectator
+                .faction_marks
+                .keys()
+                .any(|key| key.starts_with("private:"))
+        );
+        assert!(
+            spectator
+                .faction_marks
+                .contains_key("sardakk:tekklar:round")
+        );
+        let own = redacted_state(&state, &ViewerRole::Player(viewer.clone()));
+        assert!(
+            own.faction_marks
+                .contains_key(&ti4_engine::action_cards::insider_peek_key(&viewer))
+        );
+        let other = redacted_state(&state, &ViewerRole::Player(PlayerId::new("b")));
+        assert!(
+            !other
+                .faction_marks
+                .keys()
+                .any(|key| key.starts_with("private:"))
+        );
+    }
+
     fn reaction_offer() -> (Choice, String) {
         use ti4_engine::choice::ChoiceOption;
         use ti4_engine::decision_context::{DecisionContext, DecisionSource, DecisionTrigger};
@@ -1084,6 +1230,53 @@ mod tests {
             .remove("trigger");
         let back: PendingChoiceEnvelope = serde_json::from_value(old).unwrap();
         assert!(back.choice.context.unwrap().trigger.is_none());
+    }
+
+    #[test]
+    fn the_effect_previews_reach_the_asked_seat_and_only_that_seat() {
+        use ti4_engine::decision_context::EffectPreview;
+        let (mut choice, nonce) = reaction_offer();
+        let preview = EffectPreview {
+            option: "reaction:x:ACTION_CARD_PLAYED:when".to_owned(),
+            card: "sabo1".to_owned(),
+            effect: "cancel_card".to_owned(),
+            seats: vec![PlayerId::new("player_1")],
+            system: None,
+            planets: Vec::new(),
+            units: Vec::new(),
+            amount: None,
+            of: None,
+            refs: vec!["fs1".to_owned()],
+            fizzles: None,
+        };
+        choice.context = choice
+            .context
+            .take()
+            .map(|c| c.with_previews(vec![preview]));
+        let owner = ViewerRole::Player(PlayerId::new("player_2"));
+        let sent = project_pending_choice(&owner, Some((&choice, &nonce))).expect("asked");
+        let json = serde_json::to_value(&sent).unwrap();
+        let previews = &json["choice"]["context"]["previews"];
+        assert_eq!(previews[0]["effect"], "cancel_card");
+        assert_eq!(previews[0]["refs"][0], "fs1");
+        assert!(
+            previews[0].get("units").is_none(),
+            "empty fields stay off the wire"
+        );
+        for other in [
+            ViewerRole::Player(PlayerId::new("player_1")),
+            ViewerRole::Spectator,
+        ] {
+            assert!(project_pending_choice(&other, Some((&choice, &nonce))).is_none());
+        }
+        // A message from before previews existed decodes, with none.
+        let mut old = json.clone();
+        old["choice"]["context"]
+            .as_object_mut()
+            .unwrap()
+            .remove("previews");
+        let back: PendingChoiceEnvelope = serde_json::from_value(old).unwrap();
+        assert!(back.choice.context.unwrap().previews.is_empty());
     }
 
     #[test]
@@ -1274,5 +1467,56 @@ mod tests {
                 .home_system_lost
                 .contains_key(&xxcha)
         );
+    }
+
+    #[test]
+    fn a_planet_view_lists_what_raises_its_value_and_the_sum_is_the_engine_value() {
+        let mut state = ti4_engine::fixtures::seated_game(
+            &[("a", "xxcha"), ("b", "letnev")],
+            ti4_model::content_types::DEFAULT,
+        );
+        let planet = PlanetId::new("archontau");
+        state
+            .system_mut(&SystemId::new("14"))
+            .set_control(planet.clone(), PlayerId::new("a"));
+        let board = |state: &GameState| project_board_view(state);
+        let boosts = |state: &GameState| {
+            board(state).systems[&SystemId::new("14")].planets[&planet]
+                .value_boosts
+                .clone()
+        };
+        assert!(boosts(&state).is_empty());
+
+        state.planet_attachments.insert(
+            planet.clone(),
+            vec!["miningworld".into(), "dysonsphere".into()],
+        );
+        state
+            .laws
+            .insert("senate_sanctuary".into(), planet.to_string());
+        let listed = boosts(&state);
+        let names: Vec<_> = listed.iter().map(|b| b.source.as_str()).collect();
+        assert_eq!(names, ["Senate Sanctuary", "Mining World", "Dyson Sphere"]);
+
+        let content = ContentStore::embedded();
+        let full = ti4_model::content_types::FULL;
+        for (kind, sum) in [
+            (
+                ti4_engine::production::Spend::Resources,
+                listed.iter().map(|b| i64::from(b.resources)).sum::<i64>(),
+            ),
+            (
+                ti4_engine::production::Spend::Influence,
+                listed.iter().map(|b| i64::from(b.influence)).sum::<i64>(),
+            ),
+        ] {
+            let printed = ti4_engine::production::planet_value(content, full, &planet, kind);
+            let now =
+                ti4_engine::production::planet_value_now(&state, content, full, &planet, kind);
+            assert_eq!(now - printed, sum);
+        }
+        assert_eq!(listed[1].resources, 2);
+        assert_eq!(listed[2].resources, 2);
+        assert_eq!(listed[2].influence, 1);
     }
 }

@@ -5,6 +5,8 @@ import { actionEvent, playedLog, player } from "../test/secondaryPrepFixtures.ts
 const primary = (cards: string[], exhausted: string[] = []) =>
   player("a", { strategy_cards: cards, exhausted_strategy_cards: exhausted });
 const base = { phase: "action" };
+/** Seat a played Leadership earlier in the same round: that is why it is exhausted. */
+const earlierLeadership = actionEvent("action_2", "a", { detail: "a resolved action menu" });
 
 describe("cardFamily", () => {
   it("maps base and Thunder's Edge cards to the printed family", () => {
@@ -29,7 +31,7 @@ describe("detectStrategicAction", () => {
   it("infers the card from the single unexhausted card when the detail is generic", () => {
     const action = detectStrategicAction({
       ...base,
-      events: playedLog(null),
+      events: [earlierLeadership, ...playedLog(null)],
       players: [primary(["pok2diplomacy", "pok1leadership"], ["pok1leadership"]), player("b")],
     });
     expect(action).toMatchObject({ card: "pok2diplomacy", inferred: true });
@@ -38,6 +40,7 @@ describe("detectStrategicAction", () => {
   it("keeps the inferred card when the primary plays an action card during its own action (nightly 2026-10-08: Warfare + Morale Boost dropped every follower's plan)", () => {
     const players = [primary(["te6warfare", "pok1leadership"], ["pok1leadership"]), player("b")];
     const events = [
+      earlierLeadership,
       ...playedLog(null),
       actionEvent("action_5", "a", { detail: "a played Morale Boost", stage: "reactions" }),
     ];
@@ -45,6 +48,15 @@ describe("detectStrategicAction", () => {
       card: "te6warfare",
       inferred: true,
     });
+  });
+
+  // Nightly 2026-10-14 #11 (s2-36-0118): the primary played Diplomacy (its card exhausted at once,
+  // nobody followed) while still holding Warfare; the log said only "resolved action menu". The
+  // follower was shown "Warfare", prepared it, and the plan was gone when Warfare really came.
+  it("does not take the other card when the action's own card is already exhausted", () => {
+    const players = [primary(["pok2diplomacy", "pok6warfare"], ["pok2diplomacy"]), player("b")];
+    const events = [actionEvent("action_5", "a", { detail: "a resolved action menu" })];
+    expect(detectStrategicAction({ ...base, events, players })).toBeNull();
   });
 
   it("still reads a named card when the same action also logs an action card the primary played", () => {

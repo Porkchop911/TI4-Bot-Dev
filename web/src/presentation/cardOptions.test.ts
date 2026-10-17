@@ -82,3 +82,31 @@ describe("promissory note picks (Diplomatic Pressure)", () => {
     expect(info?.title).toBe("Support for the Throne");
   });
 });
+
+describe("Lie in Wait and Seize Artifact (hidden hands and fragments)", () => {
+  it("names the action card taken from a laid-open hand", () => {
+    const info = describeCardOption("lieinwait_pick_action_card", { id: "spy", label: "take spy from player_x" });
+    expect(info?.title).toBe("Spy");
+    expect(info?.text).toContain("random action card");
+    expect(isHandCardDecision("lieinwait_pick_action_card")).toBe(true);
+    expect(handDecisionConfirmLabel("lieinwait_pick_action_card")).toBe("Take card");
+  });
+
+  it("says whose hand it is and that nobody else sees it", () => {
+    const note = handDecisionNote({
+      prompt: "Lie in Wait: take which action card",
+      options: [],
+      context: { subtype: "lieinwait_pick_action_card" } as never,
+      details: { from: "player_x" },
+    });
+    expect(note).toContain("player_x's hand");
+    expect(note).toContain("Nobody else sees");
+  });
+
+  it("describes a relic fragment by its trait", () => {
+    const info = describeCardOption("seize_pick_fragment", { id: "cultural", label: "cultural" });
+    expect(info?.title).toBe("Cultural relic fragment");
+    expect(info?.badge).toBe("Relic fragment");
+    expect(handDecisionConfirmLabel("seize_pick_fragment")).toBe("Take fragment");
+  });
+});

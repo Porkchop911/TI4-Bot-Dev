@@ -9,7 +9,8 @@
 //! The file may be the save blob itself, a stored report (`context.local.save`) or a request body.
 //! The game is played again from its seed and every saved decision until the saved position;
 //! the tool prints whether the decisions came back the same (count and hash of the save) and what
-//! the person was asked there. `--snapshot FILE` also writes the full `initial_snapshot` message
+//! the person was asked there. A save of a finished game has no question: the whole game's decisions
+//! (count and hash) are compared instead. `--snapshot FILE` also writes the full `initial_snapshot` message
 //! (the board as the person saw it) for inspection. Exit code 1 when the replay differs.
 
 use std::sync::{Arc, Mutex};
@@ -78,11 +79,33 @@ fn main() -> Result<(), String> {
     if status < 0 {
         return Err(format!("the replay failed: {end}"));
     }
-    let ask = seen
-        .lock()
-        .expect("seen")
-        .take()
-        .ok_or_else(|| format!("the game ended before a question: {end}"))?;
+    let asked = seen.lock().expect("seen").take();
+    if asked.is_none() && save["finished"] == true {
+        // A finished game has no question to compare at: compare everything it decided instead.
+        let (found, hash) = host_api::with(|session| {
+            (
+                session.decision_log().len(),
+                ti4_wasm::host_session::decisions_hash(session.decision_log()),
+            )
+        })
+        .ok_or("the replay left no session")?;
+        println!(
+            "replayed {} answers of the page's seats {humans:#b}: the game ended",
+            save["answers"].as_array().map_or(0, Vec::len),
+        );
+        println!(
+            "saved: decisions {} hash {}",
+            save["decisions"], save["decisions_hash"]
+        );
+        println!("found: decisions {found} hash {hash}");
+        if save["decisions"] == json!(found) && save["decisions_hash"] == json!(hash) {
+            println!("OK: the finished game is reproduced");
+            return Ok(());
+        }
+        println!("DIFFERENT: this build decides otherwise than the one that made the save");
+        std::process::exit(1);
+    }
+    let ask = asked.ok_or_else(|| format!("the game ended before a question: {end}"))?;
     let snapshot = ask["messages"]
         .as_array()
         .and_then(|m| m.iter().find(|m| m["type"] == "initial_snapshot"))

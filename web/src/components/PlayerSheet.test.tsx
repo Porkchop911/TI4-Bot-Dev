@@ -439,3 +439,14 @@ describe("PlayerSheet held foreign command tokens", () => {
   });
 });
 
+
+describe("PlayerSheet Armada indicator", () => {
+  it("shows Fleet +2 for the Letnev seat only", () => {
+    const players = [{ ...mockPlayers[0], faction: "letnev" }, { ...mockPlayers[1], faction: "sol" }];
+    render(<PlayerSheet players={players} userSeat="p1" />);
+    const chips = screen.getAllByTestId("player-armada");
+    expect(chips).toHaveLength(1);
+    expect(chips[0]).toHaveTextContent("Fleet +2");
+    expect(chips[0].getAttribute("aria-label")).toContain("non-fighter ships per system");
+  });
+});

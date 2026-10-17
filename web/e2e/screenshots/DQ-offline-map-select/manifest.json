@@ -1,0 +1,108 @@
+{
+  "title": "Offline play: map selection",
+  "description": "The map selection screen of the online lobby is back in the offline setup form: a Map row, the Choose map sheet with the layout cards and the large board picture (answered by the wasm engine), Random, table-size handling and the loading, error and empty states. Shots 1 to 7 are the real app with the real engine; shots 8 to 10 use the in-memory launcher to force the data states.",
+  "tag": "web/e2e/screenshots/DQ-offline-map-select",
+  "shots": [
+    {
+      "file": "out/1-form-default-desktop.png",
+      "heading": "Setup form with a Map row",
+      "caption": "A new Map row sits between your faction and the nickname. Untouched it says Recommended layout: the game then takes the layout the engine recommends for the table size, exactly as before the picker came back."
+    },
+    {
+      "file": "out/2-picker-recommended-desktop.png",
+      "heading": "Choose map, recommended layout selected",
+      "caption": "The same sheet as the online lobby: a strip of cards (picture, name, system count, badges, Recommended) and the large board picture with a badge per seat. Layouts and pictures come from the wasm engine, not a server."
+    },
+    {
+      "file": "out/3-picker-picked-desktop.png",
+      "heading": "Another layout picked",
+      "caption": "A pick applies to the form at once and updates the picture. The picture is an example: seats, factions and the open tiles are drawn when the game starts (it says so under the picture). Another example redraws it."
+    },
+    {
+      "file": "out/4-picker-random-desktop.png",
+      "heading": "Random map",
+      "caption": "Random is always offered: a seeded random galaxy, as in the lobby."
+    },
+    {
+      "file": "out/5-form-chosen-desktop.png",
+      "heading": "Form after Done",
+      "caption": "The Map row names the choice. Changing the player count forgets a layout made for another size."
+    },
+    {
+      "file": "out/1-form-default-390x844.png",
+      "heading": "Setup form with a Map row on a phone",
+      "caption": "A new Map row sits between your faction and the nickname. Untouched it says Recommended layout: the game then takes the layout the engine recommends for the table size, exactly as before the picker came back."
+    },
+    {
+      "file": "out/2-picker-recommended-390x844.png",
+      "heading": "Choose map, recommended layout selected on a phone",
+      "caption": "The same sheet as the online lobby: a strip of cards (picture, name, system count, badges, Recommended) and the large board picture with a badge per seat. Layouts and pictures come from the wasm engine, not a server."
+    },
+    {
+      "file": "out/3-picker-picked-390x844.png",
+      "heading": "Another layout picked on a phone",
+      "caption": "A pick applies to the form at once and updates the picture. The picture is an example: seats, factions and the open tiles are drawn when the game starts (it says so under the picture). Another example redraws it."
+    },
+    {
+      "file": "out/4-picker-random-390x844.png",
+      "heading": "Random map on a phone",
+      "caption": "Random is always offered: a seeded random galaxy, as in the lobby."
+    },
+    {
+      "file": "out/5-form-chosen-390x844.png",
+      "heading": "Form after Done on a phone",
+      "caption": "The Map row names the choice. Changing the player count forgets a layout made for another size."
+    },
+    {
+      "file": "out/6-picker-six-players-desktop.png",
+      "heading": "Six players",
+      "caption": "The layouts offered depend on the table size; six seats are badged."
+    },
+    {
+      "file": "out/7-game-board-desktop.png",
+      "heading": "The started game",
+      "caption": "A game started with a picked layout: the choice is stored in the save (setup.map, checked by the capture) so resume, export and import replay the same board."
+    },
+    {
+      "file": "out/7-game-board-390x844.png",
+      "heading": "The started game on a phone",
+      "caption": "A game started with a picked layout: the choice is stored in the save (setup.map, checked by the capture) so resume, export and import replay the same board."
+    },
+    {
+      "file": "out/8-picker-loading-desktop.png",
+      "heading": "Engine still loading",
+      "caption": "Skeleton cards while the engine loads (first use of the picker downloads and compiles it)."
+    },
+    {
+      "file": "out/8-picker-loading-390x844.png",
+      "heading": "Engine still loading on a phone",
+      "caption": "Skeleton cards while the engine loads (first use of the picker downloads and compiles it)."
+    },
+    {
+      "file": "out/9-picker-error-desktop.png",
+      "heading": "Engine could not answer",
+      "caption": "Message with Retry; the form still works and starts with the recommended layout."
+    },
+    {
+      "file": "out/9-picker-error-390x844.png",
+      "heading": "Engine could not answer on a phone",
+      "caption": "Message with Retry; the form still works and starts with the recommended layout."
+    },
+    {
+      "file": "out/10-picker-empty-desktop.png",
+      "heading": "No ready-made layout",
+      "caption": "Only Random remains, with the lobby's wording."
+    },
+    {
+      "file": "out/10-picker-empty-390x844.png",
+      "heading": "No ready-made layout on a phone",
+      "caption": "Only Random remains, with the lobby's wording."
+    }
+  ],
+  "notes": [
+    {
+      "title": "Picture is an example",
+      "text": "The game's seed is drawn at Start, so the picture cannot be the exact board; layout, hyperlanes and seat count match, filler tiles and factions are drawn at the start."
+    }
+  ]
+}

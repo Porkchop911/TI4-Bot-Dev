@@ -1,5 +1,6 @@
 // Generated from the Rust types by `cargo wire-web` (ti4_wasm::wire_ts). Do not edit.
 import type { ActionCardId } from "./ActionCardId.ts";
+import type { AgendaPeekCard } from "./AgendaPeekCard.ts";
 import type { FactionId } from "./FactionId.ts";
 import type { LeaderId } from "./LeaderId.ts";
 import type { LeaderStatus } from "./LeaderStatus.ts";
@@ -59,4 +60,11 @@ secret_objective_progress?: { [key in SecretObjectiveId]: ObjectiveProgressView 
  * per token naming its owner, sorted. Public. Absent for every other seat and while the pool
  * holds none, so older clients and saves are unaffected.
  */
-held_foreign_tokens?: Array<PlayerId>, };
+held_foreign_tokens?: Array<PlayerId>, 
+/**
+ * The top agendas this seat was shown by Insider Information, top first, while they are
+ * still the top of the deck. Private: present only in the view of the seat itself, never for
+ * opponents or spectators, and absent when there is nothing to show, so older clients and
+ * saves are unaffected.
+ */
+agenda_peek?: Array<AgendaPeekCard>, };

@@ -60,6 +60,7 @@ const SUBTYPE_TOPICS: Record<string, string> = {
   warfare_recall_token: "Warfare",
   research_technology: "Research",
   draft_strategy_card: "Strategy phase",
+  starting_technology: "Starting technology",
   strategy_secondary: "Strategy card secondary",
   ready_planet: "Ready a planet",
   place_structure: "Construction",

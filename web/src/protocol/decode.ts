@@ -1,4 +1,5 @@
 import { JoinResponse, CreateGameResponse, LobbyDto } from "./types.ts";
+import type { ActiveEffectDto, EffectExpiryDto, EffectPreviewDto, TriggerUnitsDto } from "./types.ts";
 import { decodeMapChoice } from "@ti4/shared/wire/decode.ts";
 import { isStrategyCardSetId } from "../presentation/strategyCardSet.ts";
 import { validNickname } from "./nickname.ts";
@@ -130,3 +131,101 @@ export function decodeJoinResponse(value: unknown, expectedGameId: string): Join
     lobby,
   };
 }
+
+const optionalString = (value: unknown): string | undefined =>
+  typeof value === "string" && value.length > 0 ? value : undefined;
+
+// Our additions (action card reaction previews, lingering effects), kept beside the shared decoder.
+const strings = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string" && entry.length > 0) : [];
+
+const finiteNumber = (value: unknown): number | undefined =>
+  typeof value === "number" && Number.isFinite(value) ? value : undefined;
+
+/**
+ * The well-formed effect previews of a reaction decision; a damaged entry is dropped. Display data:
+ * never fails the message.
+ */
+export function decodeEffectPreviews(raw: unknown): EffectPreviewDto[] {
+  if (!Array.isArray(raw)) return [];
+  const previews: EffectPreviewDto[] = [];
+  for (const entry of raw) {
+    if (
+      !isRecord(entry) ||
+      typeof entry.option !== "string" ||
+      typeof entry.card !== "string" ||
+      typeof entry.effect !== "string"
+    )
+      continue;
+    const units: TriggerUnitsDto[] = [];
+    if (Array.isArray(entry.units)) {
+      for (const unit of entry.units) {
+        if (
+          isRecord(unit) &&
+          typeof unit.owner === "string" &&
+          typeof unit.unit_type === "string" &&
+          isNonNegativeInteger(unit.count)
+        )
+          units.push({ owner: unit.owner, unit_type: unit.unit_type, count: unit.count });
+      }
+    }
+    const seats = strings(entry.seats);
+    const planets = strings(entry.planets);
+    const refs = strings(entry.refs);
+    const amount = finiteNumber(entry.amount);
+    const of = finiteNumber(entry.of);
+    previews.push({
+      option: entry.option,
+      card: entry.card,
+      effect: entry.effect,
+      ...(seats.length ? { seats } : {}),
+      ...(optionalString(entry.system) ? { system: optionalString(entry.system) } : {}),
+      ...(planets.length ? { planets } : {}),
+      ...(units.length ? { units } : {}),
+      ...(amount !== undefined ? { amount } : {}),
+      ...(of !== undefined ? { of } : {}),
+      ...(refs.length ? { refs } : {}),
+      ...(optionalString(entry.fizzles) ? { fizzles: optionalString(entry.fizzles) } : {}),
+    });
+  }
+  return previews;
+}
+
+const EXPIRIES: readonly EffectExpiryDto[] = [
+  "combat_round",
+  "tactical_action",
+  "invasion",
+  "agenda",
+  "next_action",
+  "negotiation",
+  "next_strategy_phase",
+];
+
+/** The well-formed lingering effects of a view (`GameView.active_effects`); absent is empty. */
+export function decodeActiveEffects(raw: unknown): ActiveEffectDto[] {
+  if (!Array.isArray(raw)) return [];
+  const effects: ActiveEffectDto[] = [];
+  for (const entry of raw) {
+    if (
+      !isRecord(entry) ||
+      typeof entry.seat !== "string" ||
+      typeof entry.effect !== "string" ||
+      !EXPIRIES.includes(entry.until as EffectExpiryDto)
+    )
+      continue;
+    const amount = finiteNumber(entry.amount);
+    effects.push({
+      seat: entry.seat,
+      effect: entry.effect,
+      until: entry.until as EffectExpiryDto,
+      ...(optionalString(entry.card) ? { card: optionalString(entry.card) } : {}),
+      ...(isNonNegativeInteger(entry.copies) && entry.copies > 1 ? { copies: entry.copies } : {}),
+      ...(amount !== undefined ? { amount } : {}),
+      ...(optionalString(entry.other) ? { other: optionalString(entry.other) } : {}),
+      ...(optionalString(entry.system) ? { system: optionalString(entry.system) } : {}),
+    });
+  }
+  return effects;
+}
+
+/** The well-formed auto-resolved notes in a state update; anything else is ignored. */

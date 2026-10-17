@@ -98,7 +98,7 @@ describe("TacticalMovementOverlay Component", () => {
     await waitFor(() =>
       expect(onSubmitBatch).toHaveBeenCalledExactlyOnceWith("18", [
         { kind: "move", origin: "24", unit: "carrier", damaged: false },
-        { kind: "load", origin: "24", unit: "infantry", source: "jord", damaged: false },
+        { kind: "load", origin: "24", unit: "infantry", source: "jord", damaged: false, pickup_system: "24" },
         { kind: "done_moving" },
       ]),
     );
@@ -141,7 +141,7 @@ describe("TacticalMovementOverlay Component", () => {
     await waitFor(() =>
       expect(onSubmitBatch).toHaveBeenCalledExactlyOnceWith("18", [
         { kind: "move", origin: "24", unit: "carrier", damaged: false },
-        { kind: "load", origin: "24", unit: "infantry", source: "jord", damaged: false },
+        { kind: "load", origin: "24", unit: "infantry", source: "jord", damaged: false, pickup_system: "24" },
         { kind: "done_loading" },
         { kind: "done_moving" },
       ]),
@@ -1151,5 +1151,39 @@ describe("TacticalMovementOverlay Component", () => {
       expect(screen.getByTestId("rally-count-cargo-24-infantry-space")).toHaveTextContent("0");
       expect(screen.getByTestId("rally-count-cargo-24-fighter-space")).toHaveTextContent("0");
     });
+  });
+});
+
+describe("TacticalMovementOverlay Armada fleet supply", () => {
+  const movement = (details?: Record<string, unknown>): PendingChoiceDto => ({
+    actor: "p1",
+    nonce: "armada-move",
+    prompt: "movement",
+    context: partialContext({ subtype: "movement_step", target: { System: "18" } }),
+    options: [{ id: "done_moving", kind: "decline", label: "finish movement", payload: {} }],
+    ...(details ? { details } : {}),
+  });
+  const show = (choice: PendingChoiceDto) =>
+    render(
+      <TacticalMovementOverlay
+        choice={choice}
+        model={deriveChoiceRendererModel(choice, "p1")}
+        player={mockPlayer}
+        onSubmit={vi.fn().mockResolvedValue(undefined)}
+        isOpen
+        onClose={vi.fn()}
+      />,
+    );
+
+  it("reads the engine's limit and marks Armada's two", () => {
+    show(movement({ fleet_supply: { used: 0, limit: 5, armada: 2 } }));
+    expect(screen.getByTestId("fleet-supply-gauge")).toHaveTextContent("0 / 5 Ships");
+    expect(screen.getByTestId("movement-armada")).toHaveTextContent("incl. +2 Armada");
+  });
+
+  it("shows no Armada mark for other factions and falls back to the token count", () => {
+    show(movement({ fleet_supply: { used: 0, limit: 3 } }));
+    expect(screen.getByTestId("fleet-supply-gauge")).toHaveTextContent("0 / 3 Ships");
+    expect(screen.queryByTestId("movement-armada")).not.toBeInTheDocument();
   });
 });

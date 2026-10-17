@@ -37,8 +37,19 @@ export const POOL_PURPOSE: Record<TokenPool, string> = {
   strategic: "strategy secondaries and abilities",
 };
 
-/** A fleet pool of 0 or 1 leaves a faction unable to move; the engine never offers it. */
-export const MIN_FLEET_POOL = 2;
+/**
+ * The fewest fleet tokens any arrangement the engine offers keeps. Two for most factions (a fleet
+ * pool of 0 or 1 leaves them unable to move); Letnev's Armada may go lower, so this reads it from
+ * the offered arrangements instead of assuming a number.
+ */
+export function minFleetOffered(view: CommandTokenView): number {
+  let min = Number.POSITIVE_INFINITY;
+  for (const id of view.arrangements) {
+    const fleet = Number(id.split("|")[1]);
+    if (Number.isFinite(fleet)) min = Math.min(min, fleet);
+  }
+  return Number.isFinite(min) ? min : 0;
+}
 
 const gainOptionId = (pool: TokenPool) => `${pool}_tokens`;
 
@@ -87,7 +98,17 @@ export interface CommandTokenView {
   arrangements: ReadonlySet<string>;
   /** Gain: the influence purchase that follows (or is asked first), planned on the same screen. */
   purchase: PurchaseView | null;
+  /** Extra non-fighter ships per system the seat's fleet supply allows (Letnev's Armada: 2), else 0. */
+  fleetSupplyBonus: number;
 }
+
+/** What Armada adds, shown next to the fleet pool and on the player card. */
+export const ARMADA_BONUS = 2;
+export const ARMADA_TEXT = `Armada: +${ARMADA_BONUS} fleet supply (pool + ${ARMADA_BONUS} non-fighter ships per system)`;
+
+/** Whether a seat's faction id is Letnev (Armada applies to it unconditionally). */
+export const hasArmada = (faction: string | null | undefined): boolean =>
+  (faction ?? "").toLowerCase().replace(/[-_\s]/g, "") === "letnev";
 
 /** Staged tokens per pool: added ones for a gain, the whole arrangement for a redistribute. */
 export type TokenStaging = Pools;
@@ -103,9 +124,19 @@ const asCount = (value: unknown): number | null =>
 export function describeCommandTokens(
   choice: Pick<PendingChoiceDto, "options" | "details">,
   canBatch: boolean,
-  /** Resource value per planet id (from the board), so the flow can show and weigh resources. */
   resourcesOf?: ReadonlyMap<string, number>,
 ): CommandTokenView | null {
+  const view = describeBase(choice, canBatch, resourcesOf);
+  if (!view) return null;
+  return { ...view, fleetSupplyBonus: asCount(choice.details?.fleet_supply_bonus) ?? 0 };
+}
+
+function describeBase(
+  choice: Pick<PendingChoiceDto, "options" | "details">,
+  canBatch: boolean,
+  /** Resource value per planet id (from the board), so the flow can show and weigh resources. */
+  resourcesOf?: ReadonlyMap<string, number>,
+): Omit<CommandTokenView, "fleetSupplyBonus"> | null {
   const details = choice.details;
   if (!details) return null;
   // Leadership's secondary window keeps its strategy-secondary details and adds the purchase.
@@ -274,8 +305,9 @@ export function confirmBlocker(
     return `Assign ${remaining} more token${remaining === 1 ? "" : "s"} to confirm.`;
   }
   if (view.mode === "redistribute" && arrangementId(view, staging) === null) {
-    return view.total >= MIN_FLEET_POOL
-      ? `Keep at least ${MIN_FLEET_POOL} tokens in the fleet pool.`
+    const floor = minFleetOffered(view);
+    return floor > 0 && staging.fleet < floor
+      ? `Keep at least ${floor} tokens in the fleet pool.`
       : "That arrangement is not allowed.";
   }
   return null;
@@ -723,4 +755,21 @@ export function purchaseSummary(view: CommandTokenView, state: PurchaseState): P
     resourcesLost,
     atLimit: cost > 0 && Math.floor(influence / cost) > maxPurchases(view),
   };
+}
+
+/** The engine's display-only `fleet_supply` detail: ships counted, the enforced limit, Armada's part of it. */
+export interface FleetSupplyDetail {
+  used: number;
+  limit: number;
+  /** Ships Armada adds, already inside `limit` (Letnev only). */
+  armada: number;
+}
+
+export function readFleetSupply(raw: unknown): FleetSupplyDetail | null {
+  if (!raw || typeof raw !== "object") return null;
+  const value = raw as Record<string, unknown>;
+  const used = asCount(value.used);
+  const limit = asCount(value.limit);
+  if (used === null || limit === null) return null;
+  return { used, limit, armada: asCount(value.armada) ?? 0 };
 }

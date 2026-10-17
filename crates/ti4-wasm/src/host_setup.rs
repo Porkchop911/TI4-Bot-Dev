@@ -85,6 +85,18 @@ pub struct Setup {
     /// Who plays the seats of the others. Left out: the rule bot.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bots: Option<Bots>,
+    /// The rule bot's behaviour ([`ti4_rule_bot::tuning::for_version`]). A resumed save
+    /// recomputes the rule seats' answers, so it must play the bot it was saved with. Left out:
+    /// a new game plays [`ti4_rule_bot::tuning::BOT_VERSION`]; a save made before this field
+    /// existed played version 1 ([`Start::settle_bot_version`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bot_version: Option<u32>,
+    /// Whether the seats that choose their starting technology are asked
+    /// ([`ti4_host::setup::TableSetup::starting_tech`]). Left out: on for a game that plays a
+    /// bot of version 3 or later ([`Start::settle_bot_version`]), so a save made before the choice
+    /// (bot version 2 or less) resumes without it. Not written while off, like the table's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub starting_tech: Option<bool>,
 }
 
 /// The format of the save of [`crate::host_session::HostSession::save_state`]. A save of another
@@ -133,6 +145,15 @@ pub struct Resume {
     /// The steps that the undo before this run took back (`Restart::undone`).
     #[serde(default)]
     pub undone: Vec<ti4_host::planning::steps::PlanStep>,
+    /// The rule bot version the game was played with (a save and a restart carry it besides
+    /// the setup's own; see [`Start::settle_bot_version`]).
+    #[serde(default)]
+    pub bot_version: Option<u32>,
+    /// The rules version the game was played with ([`ti4_model::state::GameState::rules_version`]).
+    /// A save made before the field existed has none: version 0, the rules it was recorded with.
+    /// Only a start without a resume (a new game) plays the current version.
+    #[serde(default)]
+    pub rules_version: Option<u32>,
     /// What each seat has staged and not sent (`ti4_host::staged`).
     #[serde(default)]
     pub staged: std::collections::BTreeMap<ti4_model::id::PlayerId, ti4_host::staged::SeatStaged>,
@@ -502,6 +523,54 @@ impl Local {
     }
 }
 
+/// The first rule bot version of the games that ask for a starting technology (a new game plays
+/// the current version; a save records the one it was made with).
+pub const STARTING_TECH_FROM_BOT_VERSION: u32 = 3;
+
+/// Whether this build plays the rule bot of `version`.
+fn check_bot_version(version: u32) -> Result<(), String> {
+    if (1..=ti4_rule_bot::tuning::MAX_BOT_VERSION).contains(&version) {
+        Ok(())
+    } else {
+        Err(format!(
+            "bot version {version}: this build plays 1 to {}",
+            ti4_rule_bot::tuning::MAX_BOT_VERSION
+        ))
+    }
+}
+
+impl Start {
+    /// The rule bot version of the game: the setup's own; else the resume's (a save or a restart
+    /// of this host carries it); a resumed save without one was made by version 1 (the field
+    /// came with version 2); a new game plays the current bot. A setup gets it filled in.
+    ///
+    /// # Errors
+    /// A message when this build does not play that version.
+    pub fn settle_bot_version(&mut self) -> Result<u32, String> {
+        let own = self.setup.as_ref().and_then(|setup| setup.bot_version);
+        let version = own.unwrap_or_else(|| match &self.resume {
+            Some(resume) => resume.bot_version.unwrap_or(1),
+            None => ti4_rule_bot::tuning::BOT_VERSION,
+        });
+        check_bot_version(version)?;
+        // The starting-technology choice came with bot version 3: a game of an older bot is
+        // played as it was recorded, without it.
+        let choice = version >= STARTING_TECH_FROM_BOT_VERSION;
+        if let Some(setup) = &mut self.setup {
+            setup.bot_version = Some(version);
+            if setup.starting_tech.is_none() && choice {
+                setup.starting_tech = Some(true);
+            }
+        }
+        if let Some(table) = &mut self.table
+            && choice
+        {
+            table.setup.starting_tech = true;
+        }
+        Ok(version)
+    }
+}
+
 fn mix(seed: u64) -> u64 {
     let mut x = seed.wrapping_add(0x9E37_79B9_7F4A_7C15);
     x = (x ^ (x >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
@@ -558,6 +627,7 @@ impl Setup {
             speaker_order: self.speaker.unwrap_or_default(),
             start_from: self.scenario.clone(),
             preset: self.preset.clone(),
+            starting_tech: self.starting_tech == Some(true),
             seed: self.seed,
         }
     }
@@ -591,6 +661,9 @@ impl Setup {
             && !seating::LOBBY_FACTIONS.contains(&faction.as_str())
         {
             return Err(format!("faction '{faction}' is not played here"));
+        }
+        if let Some(version) = setup.bot_version {
+            check_bot_version(version)?;
         }
         Ok(setup)
     }

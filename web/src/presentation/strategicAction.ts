@@ -118,7 +118,26 @@ export function detectStrategicAction({
   let inferred = false;
   // A strategy card named in the log but not unexhausted is a finished action, not a one-card holding.
   const namedAStrategyCard = playedNames.some((name) => FAMILIES.includes(name.toLowerCase() as CardFamily));
-  if (!card && unexhausted.length === 1 && !namedAStrategyCard) {
+  // The single unexhausted card is the action's only when every exhausted card of the primary was
+  // played in an earlier strategic action this round. A log that names no card (servers wrote
+  // "resolved action menu" for every selection) can otherwise belong to an action whose card is
+  // already exhausted, and the primary's other card was taken for it: followers prepared that
+  // card's secondary and lost the plan before its window (nightly 2026-10-14 #11, s2-36-0118).
+  const actionRound = events.find((event) => event.action_id === actionId && event.round !== undefined)?.round;
+  const earlier = new Set(
+    events
+      .filter(
+        (event) =>
+          event.action_id &&
+          event.action_id !== actionId &&
+          event.action_type === "strategic" &&
+          (event.action_actor ?? event.actor) === primarySeat &&
+          event.round === actionRound,
+      )
+      .map((event) => event.action_id),
+  ).size;
+  const exhaustedAccountedFor = primary.exhausted_strategy_cards.length <= earlier;
+  if (!card && unexhausted.length === 1 && exhaustedAccountedFor && !namedAStrategyCard) {
     card = unexhausted[0];
     inferred = true;
   }

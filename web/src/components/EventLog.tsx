@@ -31,6 +31,19 @@ export interface EventLogProps {
   onFetchReplay?: () => Promise<{ text: string; filename: string }>;
   /** Turn redo: lets a seated player rewind their own last turn(s); the host may pick any seat. */
   turnRedo?: TurnRedoRequestControls;
+  /** Single-player games: the newest entry comes first (rounds, phases, actions and events), and new entries appear at the top. */
+  newestFirst?: boolean;
+  /** Single-player undo: one button that takes back the viewer's last answer. */
+  undoLast?: UndoLastControls;
+}
+
+export interface UndoLastControls {
+  /** The engine can take the last answer back right now. */
+  available: boolean;
+  /** A history change is running. */
+  busy: boolean;
+  /** Resolves true when the answer was taken back. */
+  onUndo: () => Promise<boolean>;
 }
 
 /** Tooltip on the undo/redo buttons while a history change is still running. */
@@ -43,6 +56,8 @@ export interface TurnRedoRequestControls {
   /** Host only: the seats whose turn may be redone (the viewer's own seat first). */
   seats?: { id: string; label: string }[];
   viewerSeat?: string | null;
+  /** A game on this device (single player): the bots just play on from the start of the turn. */
+  local?: boolean;
 }
 
 export interface LogNode {
@@ -278,6 +293,40 @@ export function buildEventTree(events: readonly GameLogEntry[]): LogNode[] {
   return rounds;
 }
 
+const isHeading = (node: LogNode) => node.kind === "marker" && !node.entry;
+
+/**
+ * A phase's flat list as sections: an action or stage heading followed by its events. Newest
+ * first the sections swap places and the events inside each swap too, but the heading stays on top.
+ */
+function reverseSections(children: readonly LogNode[]): LogNode[] {
+  const sections: LogNode[][] = [];
+  let current: LogNode[] = [];
+  let hasBody = false;
+  for (const child of children) {
+    if (isHeading(child) && hasBody) {
+      sections.push(current);
+      current = [];
+      hasBody = false;
+    }
+    current.push(child);
+    if (!isHeading(child)) hasBody = true;
+  }
+  if (current.length) sections.push(current);
+  return sections.reverse().flatMap((section) => [
+    ...section.filter(isHeading),
+    ...section.filter((node) => !isHeading(node)).reverse(),
+  ]);
+}
+
+/** The log tree, newest first: latest round, its latest phase, the latest action and event at the top. */
+export function newestFirstTree(tree: readonly LogNode[]): LogNode[] {
+  return [...tree].reverse().map((round) => ({
+    ...round,
+    children: [...round.children].reverse().map((phase) => ({ ...phase, children: reverseSections(phase.children) })),
+  }));
+}
+
 function openPath(tree: LogNode[], path?: CurrentLogPath): Set<string> {
   const opened = new Set<string>();
   if (!path) return opened;
@@ -305,7 +354,11 @@ export const EventLog: React.FC<EventLogProps> = ({
   historyKey,
   onFetchReplay,
   turnRedo,
+  newestFirst = false,
+  undoLast,
 }) => {
+  const [undoNote, setUndoNote] = useState("");
+  const [undoRunning, setUndoRunning] = useState(false);
   const [redoTurns, setRedoTurns] = useState<1 | 2>(1);
   const [redoSeat, setRedoSeat] = useState<string | undefined>(undefined);
   const [replayState, setReplayState] = useState<ReplayCopyState>({ kind: "idle" });
@@ -326,6 +379,7 @@ export const EventLog: React.FC<EventLogProps> = ({
   const present = useParticipantText();
   const parts = useParticipantParts();
   const tree = useMemo(() => buildEventTree(events), [events]);
+  const shownTree = useMemo(() => (newestFirst ? newestFirstTree(tree) : tree), [tree, newestFirst]);
   const [expanded, setExpanded] = useState<Set<string>>(() => openPath(tree, currentPath));
   const [manual, setManual] = useState<Set<string>>(() => new Set());
   useEffect(() => {
@@ -365,7 +419,7 @@ export const EventLog: React.FC<EventLogProps> = ({
   });
   const onListScroll = (event: React.UIEvent<HTMLDivElement>) => {
     const el = event.currentTarget;
-    pinned.current = isPinned(measure(el));
+    pinned.current = isPinned(measure(el), newestFirst);
     savedTop.current = el.scrollTop;
     if (pinned.current) setUnseen(0);
   };
@@ -373,14 +427,14 @@ export const EventLog: React.FC<EventLogProps> = ({
     const el = listRef.current;
     if (!el) return;
     pinned.current = true;
-    el.scrollTop = followTarget(true, measure(el)) ?? 0;
+    el.scrollTop = followTarget(true, measure(el), newestFirst) ?? 0;
     setUnseen(0);
   };
   // Shown again: back to the bottom if the reader was pinned, else to where they were.
   useLayoutEffect(() => {
     const el = listRef.current;
     if (!isOpen || !el) return;
-    el.scrollTop = restoreTarget(pinned.current, savedTop.current, measure(el));
+    el.scrollTop = restoreTarget(pinned.current, savedTop.current, measure(el), newestFirst);
   }, [isOpen]);
   // Content grew (new events, a new round/phase node opening, a new history generation).
   useLayoutEffect(() => {
@@ -391,10 +445,10 @@ export const EventLog: React.FC<EventLogProps> = ({
     if (manualToggle.current) {
       // The reader's own expand/collapse: never move them, just re-read where they are.
       manualToggle.current = false;
-      pinned.current = isPinned(measure(el));
+      pinned.current = isPinned(measure(el), newestFirst);
       return;
     }
-    const target = followTarget(pinned.current, measure(el));
+    const target = followTarget(pinned.current, measure(el), newestFirst);
     if (target !== undefined) el.scrollTop = target;
     else savedTop.current = el.scrollTop;
     setUnseen((old) => nextUnseen(old, pinned.current, previous, events.length));
@@ -612,8 +666,51 @@ export const EventLog: React.FC<EventLogProps> = ({
               data-testid="event-log-jump"
               onClick={jumpToLatest}
             >
-              {unseen} new {unseen === 1 ? "event" : "events"} ↓ Jump to latest
+              {unseen} new {unseen === 1 ? "event" : "events"} {newestFirst ? "↑" : "↓"} Jump to latest
             </button>
+          )}
+          {undoLast && (
+            <div className="event-log__undo-last" data-testid="event-log-undo-last-row">
+              <button
+                type="button"
+                className="button button--secondary button--sm"
+                data-testid="event-log-undo-last"
+                disabled={!undoLast.available || undoLast.busy || undoRunning}
+                aria-describedby="event-log-undo-status"
+                title={
+                  undoLast.busy || undoRunning
+                    ? HISTORY_BUSY_REASON
+                    : undoLast.available
+                      ? "Takes back your last decision. The other seats' moves after it are played again from the same seed."
+                      : "Nothing to undo: your last decision cannot be taken back right now"
+                }
+                onClick={async () => {
+                  setUndoRunning(true);
+                  setUndoNote("Undoing your last decision…");
+                  const done = await undoLast.onUndo().catch(() => false);
+                  setUndoRunning(false);
+                  setUndoNote(
+                    done
+                      ? "Undid your last decision. The game is back at the question before it."
+                      : "Could not undo your last decision.",
+                  );
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" focusable="false" className="event-log__undo-icon">
+                  <path d="M9 14L4 9l5-5M4 9h9a6 6 0 0 1 0 12h-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                Undo last decision
+              </button>
+              <span
+                id="event-log-undo-status"
+                role="status"
+                aria-live="polite"
+                data-testid="event-log-undo-status"
+                className="event-log__replay-status"
+              >
+                {undoNote || (undoLast.available ? "" : "Nothing to undo yet.")}
+              </span>
+            </div>
           )}
           {onFetchReplay && (
             <div className="event-log__replay" data-testid="event-log-replay">
@@ -675,7 +772,11 @@ export const EventLog: React.FC<EventLogProps> = ({
                 className="button button--secondary button--sm"
                 data-testid="turn-redo-btn"
                 disabled={turnRedo.disabled}
-                title="Rewinds the game for everyone to the start of that turn. After the new turn, the recorded decisions that followed replay (same dice, same cards) until that seat's next turn begins. The original timeline is kept and can be restored."
+                title={
+                  turnRedo.local
+                    ? "Takes the game back to the start of your turn so you can play it again. The bots decide again from there; the turn you took back can be redone with Redo."
+                    : "Rewinds the game for everyone to the start of that turn. After the new turn, the recorded decisions that followed replay (same dice, same cards) until that seat's next turn begins. The original timeline is kept and can be restored."
+                }
                 onClick={() =>
                   turnRedo.onRequest({
                     turns: redoTurns,
@@ -684,7 +785,9 @@ export const EventLog: React.FC<EventLogProps> = ({
                   })
                 }
               >
-                {!redoSeat || redoSeat === turnRedo.viewerSeat
+                {turnRedo.local
+                  ? "Undo my last turn"
+                  : !redoSeat || redoSeat === turnRedo.viewerSeat
                   ? "Redo my last turn"
                   : "Redo their last turn"}
               </button>
@@ -718,8 +821,8 @@ export const EventLog: React.FC<EventLogProps> = ({
             ref={listRef}
             onScroll={onListScroll}
           >
-            {tree.length ? (
-              tree.map((item) => renderNode(item, 0))
+            {shownTree.length ? (
+              shownTree.map((item) => renderNode(item, 0))
             ) : (
               <div>No events recorded yet.</div>
             )}

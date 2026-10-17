@@ -141,6 +141,21 @@ export function isDeclineOption(opt: ChoiceOption): boolean {
  * Subtypes that carry planet payloads but already have a dedicated workflow (payment, voting
  * baskets, production, invasion and ground combat). They must never become a planet selection.
  */
+/**
+ * Enigmatic Device ("spend 6 resources and purge this card to research 1 technology") asks which
+ * technology with plain `technology` options (the engine shares that question with Maw of Worlds,
+ * which gains one without prerequisites and so keeps its list). Only the Enigmatic Device's
+ * question is a research, so only it opens the technology dialog.
+ */
+export const ENIGMATIC_DEVICE_RESEARCH_SUBTYPES: ReadonlySet<string> = new Set([
+  "enigmaticdevice_choose_technology", // the relic
+  "enigmatic_device_choose_technology", // the exploration cards
+]);
+
+export function isEnigmaticDeviceResearch(subtype: string | undefined | null): boolean {
+  return Boolean(subtype && ENIGMATIC_DEVICE_RESEARCH_SUBTYPES.has(subtype));
+}
+
 const PLANET_SELECTION_EXCLUDED_SUBTYPES = new Set([
   "pay_resources",
   "pay_influence",
@@ -443,6 +458,7 @@ export function deriveChoiceRendererModel(
   // Technology Research
   if (
     subtype === "research_technology" ||
+    isEnigmaticDeviceResearch(subtype) ||
     // An engine-built offer card (Deepwrought's "reduce by 1") is not a technology pick.
     (choice.details?.kind !== "offer" &&
       choice.options.length > 0 &&

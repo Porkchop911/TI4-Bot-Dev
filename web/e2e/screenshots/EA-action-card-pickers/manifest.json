@@ -1,0 +1,390 @@
+{
+  "title": "Action Card Pickers",
+  "description": "Audit priorities 0 and 2 to 9 of docs/ACTION_CARD_UI_AUDIT.md. Every card whose picker changed, as the same mocked decision rendered on the audit branch (before) and on this branch (after), on a desktop and a 390x844 phone. Synthetic fixtures through a mocked server; before shots use the decision as the engine sent it before the change, after shots as it sends it now.",
+  "tag": "web/e2e/screenshots/EA-action-card-pickers",
+  "groups": [
+    {
+      "title": "Strategy-card grid with holders",
+      "text": "Public Disgrace, Overrule and Strategize now use the draft's strategy-card grid (card name, initiative, printed primary and secondary text) with player names instead of seat ids. New component: StrategyCardPickParts. Engine facts: details.holders, details.first, details.played_by.",
+      "cards": [
+        {
+          "name": "Public Disgrace",
+          "change": "Radio list of bare card names became the card grid, with trade goods on each card and a banner naming who played Public Disgrace and which card the player lost.",
+          "pairs": [
+            {
+              "label": "Desktop 1440x900",
+              "before": "before/before-disgrace-desktop.png",
+              "after": "out/after-disgrace-desktop.png"
+            },
+            {
+              "label": "Phone 390x844",
+              "before": "before/before-disgrace-phone.png",
+              "after": "out/after-disgrace-phone.png"
+            }
+          ]
+        },
+        {
+          "name": "Overrule",
+          "change": "Raw radio list with seat ids became the card grid. Each card says who holds it (or Unchosen) and the half that is performed (primary) is tagged. Trade goods are not shown: the card is not taken.",
+          "pairs": [
+            {
+              "label": "Desktop 1440x900",
+              "before": "before/before-overrule-desktop.png",
+              "after": "out/after-overrule-desktop.png"
+            },
+            {
+              "label": "Phone 390x844",
+              "before": "before/before-overrule-phone.png",
+              "after": "out/after-overrule-phone.png"
+            }
+          ]
+        },
+        {
+          "name": "Strategize",
+          "change": "Same grid as Overrule, with the secondary half tagged as performed.",
+          "pairs": [
+            {
+              "label": "Desktop 1440x900",
+              "before": "before/before-strategize-desktop.png",
+              "after": "out/after-strategize-desktop.png"
+            },
+            {
+              "label": "Phone 390x844",
+              "before": "before/before-strategize-phone.png",
+              "after": "out/after-strategize-phone.png"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Technology tiles with owner",
+      "text": "Plagiarize offers seat|technology ids; the technology tiles now read the technology and show who owns it.",
+      "cards": [
+        {
+          "name": "Plagiarize",
+          "change": "Every row read just 'Technology' (the seat|tech id was treated as a technology id). Now: technology name, colour, prerequisites, printed text, an owner line, and a banner that explains the 5 influence is already paid.",
+          "pairs": [
+            {
+              "label": "Desktop 1440x900",
+              "before": "before/before-plagiarize-desktop.png",
+              "after": "out/after-plagiarize-desktop.png"
+            },
+            {
+              "label": "Phone 390x844",
+              "before": "before/before-plagiarize-phone.png",
+              "after": "out/after-plagiarize-phone.png"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Law picker",
+      "text": "Repeal Law shows the laws in play as cards. New: LawPickParts (panel, option note). Engine fact: details.laws with the printed agenda and its outcome.",
+      "cards": [
+        {
+          "name": "Repeal Law",
+          "change": "Raw law ids (checks, minister_commerce) became law names with Law/Directive tag, what the vote passed (For or Against, showing only the side in force) or who was elected, and the printed text.",
+          "pairs": [
+            {
+              "label": "Desktop 1440x900",
+              "before": "before/before-repeal-desktop.png",
+              "after": "out/after-repeal-desktop.png"
+            },
+            {
+              "label": "Phone 390x844",
+              "before": "before/before-repeal-phone.png",
+              "after": "out/after-repeal-phone.png"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Board-anchored unit picker",
+      "text": "Unit and system picks name what they act on, show its owner and place, say what the card does to it, and can be answered on the map. Engine facts: details.units (type, owner, system), and a system payload on the options so the map marks them.",
+      "cards": [
+        {
+          "name": "Lucky Shot",
+          "change": "The engine sent no unit details, so rows were raw text ('destroy <seat>'s dreadnought2 in 28'). Now: unit icon and name (Dreadnought II, damaged), owner by name, the system by name, what happens to it, an info button, and 'Choose on the map' (the three systems light up).",
+          "pairs": [
+            {
+              "label": "Desktop 1440x900",
+              "before": "before/before-lucky-desktop.png",
+              "after": "out/after-lucky-desktop.png"
+            },
+            {
+              "label": "Phone 390x844",
+              "before": "before/before-lucky-phone.png",
+              "after": "out/after-lucky-phone.png"
+            }
+          ]
+        },
+        {
+          "name": "Upgrade",
+          "change": "Rows 'cruiser' and 'cruiser2' became unit rows with damage state, system and 'Replaced by a dreadnought from your reinforcements'; the system is marked on the map.",
+          "pairs": [
+            {
+              "label": "Desktop 1440x900",
+              "before": "before/before-upgrade-desktop.png",
+              "after": "out/after-upgrade-desktop.png"
+            },
+            {
+              "label": "Phone 390x844",
+              "before": "before/before-upgrade-phone.png",
+              "after": "out/after-upgrade-phone.png"
+            }
+          ]
+        },
+        {
+          "name": "Rescue",
+          "change": "Rows 'a ship from 24' now carry the system's name, its planets and the ships you have there (the system facts) and the map button; the systems are marked on the map.",
+          "pairs": [
+            {
+              "label": "Desktop 1440x900",
+              "before": "before/before-rescue-desktop.png",
+              "after": "out/after-rescue-desktop.png"
+            },
+            {
+              "label": "Phone 390x844",
+              "before": "before/before-rescue-phone.png",
+              "after": "out/after-rescue-phone.png"
+            }
+          ]
+        },
+        {
+          "name": "Plague",
+          "change": "The planet bar adds a consequence line for the chosen planet: how many infantry roll, whose they are, and the expected number destroyed. The dice-per-infantry rule (6 or better) is in the line.",
+          "pairs": [
+            {
+              "label": "Desktop 1440x900",
+              "before": "before/before-plague-desktop.png",
+              "after": "out/after-plague-desktop.png"
+            },
+            {
+              "label": "Phone 390x844",
+              "before": "before/before-plague-phone.png",
+              "after": "out/after-plague-phone.png"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Dice display and reroll picker",
+      "text": "The whole roll as dice. Engine fact: details.dice and details.current on every reroll question (shared by Fire Team and the other roll cards, which therefore get the same panel).",
+      "cards": [
+        {
+          "name": "Fire Team",
+          "change": "One radio per die ('reroll die 1 of combat value 8 (shows 3)') became the roll itself: every die with its face, whether it hits and the threshold, grouped by unit. Tick dice to redraw; the summary gives hits now and the hits to expect. One button sends one answer per die (reroll for ticked, decline for the rest). Keyboard operable; aria-pressed and a full label per die.",
+          "pairs": [
+            {
+              "label": "Desktop 1440x900",
+              "before": "before/before-fire-team-desktop.png",
+              "after": "out/after-fire-team-desktop.png"
+            },
+            {
+              "label": "Phone 390x844",
+              "before": "before/before-fire-team-phone.png",
+              "after": "out/after-fire-team-phone.png"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Player picker with consequence facts",
+      "text": "The player picker gets a one-line fact per target from what the client already holds: no engine change. Also fixes Insubordination, whose fact never showed (the card's alias is insub).",
+      "cards": [
+        {
+          "name": "Ancient Burial Sites",
+          "change": "Adds which cultural planets would be exhausted for each player, and how many of them are already exhausted.",
+          "pairs": [
+            {
+              "label": "Desktop 1440x900",
+              "before": "before/before-abs-desktop.png",
+              "after": "out/after-abs-desktop.png"
+            },
+            {
+              "label": "Phone 390x844",
+              "before": "before/before-abs-phone.png",
+              "after": "out/after-abs-phone.png"
+            }
+          ]
+        },
+        {
+          "name": "Insubordination",
+          "change": "The tactic-token fact now appears (the code looked for the wrong card alias).",
+          "pairs": [
+            {
+              "label": "Desktop 1440x900",
+              "before": "before/before-insub-desktop.png",
+              "after": "out/after-insub-desktop.png"
+            },
+            {
+              "label": "Phone 390x844",
+              "before": "before/before-insub-phone.png",
+              "after": "out/after-insub-phone.png"
+            }
+          ]
+        },
+        {
+          "name": "Seize Artifact (choose the neighbour)",
+          "change": "Adds the relic fragments each neighbour holds, by type, and says you choose which one they give.",
+          "pairs": [
+            {
+              "label": "Desktop 1440x900",
+              "before": "before/before-seize-player-desktop.png",
+              "after": "out/after-seize-player-desktop.png"
+            },
+            {
+              "label": "Phone 390x844",
+              "before": "before/before-seize-player-phone.png",
+              "after": "out/after-seize-player-phone.png"
+            }
+          ]
+        },
+        {
+          "name": "Forward Supply Base",
+          "change": "Adds the trade goods each player has now and after receiving the 1 trade good.",
+          "pairs": [
+            {
+              "label": "Desktop 1440x900",
+              "before": "before/before-fsb-desktop.png",
+              "after": "out/after-fsb-desktop.png"
+            },
+            {
+              "label": "Phone 390x844",
+              "before": "before/before-fsb-phone.png",
+              "after": "out/after-fsb-phone.png"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Agenda peek",
+      "text": "Insider Information was an engine no-op. It now records the top 3 agendas as a private mark of the player and projects them into that player's own view only (PlayerView.agenda_peek). The web shows a closable card. Nothing is sent to other players or spectators, and no decision is added to the game log.",
+      "cards": [
+        {
+          "name": "Insider Information",
+          "change": "Nothing happened before (the card did nothing, the player could not see the deck). Now: a private card lists the next three agendas in deck order with their printed text. It disappears when the top of the deck moves, and can be closed.",
+          "pairs": [
+            {
+              "label": "Desktop 1440x900",
+              "before": "before/before-insider-desktop.png",
+              "after": "out/after-insider-desktop.png",
+              "note": "Before: the same game state on the previous code. The preview does not exist there."
+            },
+            {
+              "label": "Phone 390x844",
+              "before": "before/before-insider-phone.png",
+              "after": "out/after-insider-phone.png"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Ground-force mover",
+      "text": "Ghost Squad as moves between planets with counts before and after.",
+      "cards": [
+        {
+          "name": "Ghost Squad",
+          "change": "Radio rows 'move 3 infantry from jord to exhausted' became the planets with their forces and one button per move (unit icon, stack size, from and to counts before and after) plus Done. The engine's option payload gained from/to/unit/count (display only).",
+          "pairs": [
+            {
+              "label": "Desktop 1440x900",
+              "before": "before/before-ghost-squad-desktop.png",
+              "after": "out/after-ghost-squad-desktop.png"
+            },
+            {
+              "label": "Phone 390x844",
+              "before": "before/before-ghost-squad-phone.png",
+              "after": "out/after-ghost-squad-phone.png"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Hidden-hand and fragment picker",
+      "text": "Cards laid open to you, and relic fragments, as cards with their printed text.",
+      "cards": [
+        {
+          "name": "Lie in Wait",
+          "change": "Rows 'take spy from <seat>' became action cards with name, phase and printed text, a line saying whose hand it is and that nobody else sees it, and 'Take card'.",
+          "pairs": [
+            {
+              "label": "Desktop 1440x900",
+              "before": "before/before-lie-in-wait-desktop.png",
+              "after": "out/after-lie-in-wait-desktop.png"
+            },
+            {
+              "label": "Phone 390x844",
+              "before": "before/before-lie-in-wait-phone.png",
+              "after": "out/after-lie-in-wait-phone.png"
+            }
+          ]
+        },
+        {
+          "name": "Seize Artifact (choose the fragment)",
+          "change": "Rows 'cultural' and 'hazardous' became relic-fragment cards with the purge rule and 'Take fragment'.",
+          "pairs": [
+            {
+              "label": "Desktop 1440x900",
+              "before": "before/before-seize-fragment-desktop.png",
+              "after": "out/after-seize-fragment-desktop.png"
+            },
+            {
+              "label": "Phone 390x844",
+              "before": "before/before-seize-fragment-phone.png",
+              "after": "out/after-seize-fragment-phone.png"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Number stepper",
+      "text": "A quantity to step instead of one radio per number.",
+      "cards": [
+        {
+          "name": "Bribery",
+          "change": "Radios 0 to N became a stepper (minus, plus, typed number, All) with the votes bought written out, and a confirm button that names the amount. 48 px targets.",
+          "pairs": [
+            {
+              "label": "Desktop 1440x900",
+              "before": "before/before-bribery-desktop.png",
+              "after": "out/after-bribery-desktop.png"
+            },
+            {
+              "label": "Phone 390x844",
+              "before": "before/before-bribery-phone.png",
+              "after": "out/after-bribery-phone.png"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "title": "Reproducing",
+      "text": "Run npm run screenshots -- EA from web/ for the after shots. The before shots were taken on the audit branch commit with TI4_SHOT_PREFIX=before (copy this folder there, run the same command) and are committed in before/."
+    },
+    {
+      "title": "Not shown (their decisions are the same shape)",
+      "text": "Spy and Signal Jamming (already had facts), Mining Initiative, Frontline Deployment, Cripple Defenses, War Effort, Uprising, Unstable Planet, Unexpected Action, Skilled Retreat, In the Silence of Space, Focused Research, Reveal Prototype, Tactical Bombardment, Reactor Meltdown, Summit, Diplomatic Pressure, the riders, Reparations, Impersonation, Mercenary Contract, Pirate Fleet, Pirate Contract, Exploration Probe, Ghost Ship and every card that only opens a reaction window (those belong to the reaction prompt work)."
+    },
+    {
+      "title": "Changed without a shot of its own",
+      "text": "Scuttle and Refit Troops (their unit rows now name the owner and system, and the map button appears), Experimental Battlestation (its dock choice gets the system facts and the map button, like Rescue), and the non-card reroll windows (Crown of Thalnos, Aglnlan Oln and others) that share Fire Team's engine question and so show the dice panel."
+    },
+    {
+      "title": "Not done",
+      "text": "Decoy Operation (needs per-unit details from the engine), Veto replacement banner and Archaeological Expedition's reveal of 3, the coexistence confirm for Exchange Program and Crash Landing, and the reaction preview and active-effects strip (priority 1, another branch)."
+    }
+  ]
+}

@@ -2,6 +2,8 @@ import React, { useEffect, useState } from "react";
 import { usePlayerIdentity } from "../presentation/PlayerIdentity.tsx";
 import { useParticipantText } from "../presentation/PlayerIdentity.tsx";
 import { autoResolveText } from "../presentation/autoResolveText.ts";
+import { isDismissKey, swipeOpacity } from "../presentation/swipeDismiss.ts";
+import { useSwipeDismiss } from "../hooks/useSwipeDismiss.ts";
 import "./AutoResolveToast.css";
 
 export interface AutoResolveNotification {
@@ -33,13 +35,26 @@ interface AutoResolveToastProps {
 
 /**
  * A corner toast. Auto-resolved decisions say what was taken and why; action toasts say what
- * another player did, with their name and seat colour. Clicking dismisses early.
+ * another player did, with their name and seat colour. Clicking, swiping it sideways (touch or
+ * mouse drag) or pressing Escape / Delete while it has focus dismisses it early. A dismissed toast
+ * stays in the notification history.
  */
 export const AutoResolveToast: React.FC<AutoResolveToastProps> = ({
   notification,
   onDismiss,
 }) => {
   const [isDismissing, setIsDismissing] = useState(false);
+  const [swipedOut, setSwipedOut] = useState<"left" | "right" | null>(null);
+  const swipe = useSwipeDismiss((end) => {
+    if (end === "snap-back") return;
+    setSwipedOut(end === "dismiss-left" ? "left" : "right");
+    setIsDismissing(true);
+  }, isDismissing);
+  // Once dragged, the toast's own entry animation must not hold the transform any more.
+  const [touched, setTouched] = useState(false);
+  useEffect(() => {
+    if (swipe.dragging) setTouched(true);
+  }, [swipe.dragging]);
   const display = usePlayerIdentity();
   const present = useParticipantText();
   const kind = notification.kind ?? "auto-resolve";
@@ -61,10 +76,26 @@ export const AutoResolveToast: React.FC<AutoResolveToastProps> = ({
       type="button"
       data-testid="corner-toast"
       data-toast-kind={kind}
-      title="Click to dismiss"
-      className={`auto-resolve-toast auto-resolve-toast--${kind} ${isDismissing ? "dismissing" : ""}`}
-      style={actor ? ({ "--toast-accent": actor.color } as React.CSSProperties) : undefined}
+      title="Click or swipe to dismiss"
+      className={`auto-resolve-toast auto-resolve-toast--${kind} ${isDismissing ? "dismissing" : ""}${
+        swipedOut ? ` dismissing--${swipedOut}` : ""
+      }${swipe.dragging ? " auto-resolve-toast--dragging" : ""}${touched ? " auto-resolve-toast--touched" : ""}`}
+      style={
+        {
+          ...(actor ? { "--toast-accent": actor.color } : {}),
+          ...(swipe.offset !== 0
+            ? { "--swipe-x": `${swipe.offset}px`, transform: `translateX(${swipe.offset}px)`, opacity: swipeOpacity(swipe.offset) }
+            : {}),
+        } as React.CSSProperties
+      }
       onClick={() => setIsDismissing(true)}
+      onKeyDown={(event) => {
+        if (isDismissKey(event.key)) {
+          event.preventDefault();
+          setIsDismissing(true);
+        }
+      }}
+      {...swipe.handlers}
     >
       {kind === "invasion" || kind === "agenda" || kind === "notice" ? (
         <>
@@ -100,8 +131,15 @@ interface AutoResolveToastContainerProps {
   onDismiss: (id: string) => void;
   /** Extra space above the bottom edge, so toasts clear bars and overlays down there. */
   bottomOffset?: number;
+  /** The column stops this far up (a control near the top); the oldest toasts are cut off. */
+  maxHeight?: number;
   /** Rendered below the toasts (the notification history button). */
   footer?: React.ReactNode;
+  /**
+   * Single-player games: the column sits below the turn bar, its menus and the dialogs (they
+   * paint over a toast, never the other way round), so no control is ever covered by a toast.
+   */
+  underControls?: boolean;
 }
 
 /**
@@ -110,15 +148,23 @@ interface AutoResolveToastContainerProps {
  */
 export const AutoResolveToastContainer: React.FC<
   AutoResolveToastContainerProps
-> = ({ notifications, onDismiss, bottomOffset, footer }) => (
+> = ({ notifications, onDismiss, bottomOffset, maxHeight, footer, underControls }) => (
   <div
-    className="auto-resolve-toast-container"
+    className={`auto-resolve-toast-container${underControls ? " auto-resolve-toast-container--under" : ""}`}
     data-testid="corner-toasts"
     role="log"
     aria-live="polite"
     aria-relevant="additions"
     aria-label="Game notifications"
-    style={bottomOffset === undefined ? undefined : { bottom: bottomOffset }}
+    style={
+      bottomOffset === undefined && maxHeight === undefined
+        ? undefined
+        : {
+            ...(bottomOffset === undefined ? {} : { bottom: bottomOffset }),
+            // Clipped from the top: the newest toasts and the history pill stay at the bottom.
+            ...(maxHeight === undefined ? {} : { maxHeight, overflow: "hidden", justifyContent: "flex-end" }),
+          }
+    }
   >
     {notifications.map((notification) => (
       <AutoResolveToast

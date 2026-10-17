@@ -609,7 +609,17 @@ pub fn preview_moves(
             ),
         ]));
     }
-    choice
+    // Display only: the seat's ships against the fleet supply of the active system. `limit` is
+    // the enforced one (Letnev's Armada included, named in `armada`).
+    let mut fleet_supply = serde_json::json!({
+        "used": before.fleet_charged,
+        "limit": before.fleet_limit,
+    });
+    let armada = crate::faction_abilities::armada_bonus(state, content, player);
+    if armada > 0 {
+        fleet_supply["armada"] = serde_json::json!(armada);
+    }
+    choice.detailed("fleet_supply", fleet_supply)
 }
 
 /// What a movement-step answer asks for.
@@ -1106,6 +1116,41 @@ mod tests {
         let (mut state, galaxy, _) = fixture();
         state.player_mut(&player()).unwrap().tactic_tokens = 0;
         assert!(activation_options(&state, &galaxy, &player()).is_none());
+    }
+
+    /// The movement choice carries the enforced fleet limit of the active system; Letnev's Armada
+    /// is inside it and named, other seats carry no `armada` key.
+    #[test]
+    fn the_movement_choice_reports_the_fleet_limit_with_letnevs_armada() {
+        let hub = crate::fixtures::plain_hub();
+        let player = PlayerId::new("a");
+        let origin = SystemId::new(hub.outer[0].clone());
+        let active = SystemId::new(hub.centre.clone());
+        let details = |faction: &str| {
+            let mut state = crate::fixtures::game(&["a"]);
+            state.player_mut(&player).unwrap().faction = ti4_model::id::FactionId::new(faction);
+            state.player_mut(&player).unwrap().fleet_tokens = 3;
+            crate::fixtures::put(&mut state, &origin, "cruiser", &player, 1);
+            activate(&mut state, &player, &active).unwrap();
+            let moves = movable(&state, ContentStore::embedded(), POK, &hub.galaxy, &player);
+            preview_moves(
+                &state,
+                ContentStore::embedded(),
+                POK,
+                &hub.galaxy,
+                &player,
+                &active,
+                movement_options(&player, &moves),
+            )
+            .details["fleet_supply"]
+                .clone()
+        };
+        let letnev = details("letnev");
+        assert_eq!(letnev["limit"], 5, "three tokens and Armada's two");
+        assert_eq!(letnev["armada"], 2);
+        let other = details("sol");
+        assert_eq!(other["limit"], 3);
+        assert!(other.get("armada").is_none());
     }
 
     /// OBS-008a2: each ship-move option states the exact fleet-supply and transport change the ship

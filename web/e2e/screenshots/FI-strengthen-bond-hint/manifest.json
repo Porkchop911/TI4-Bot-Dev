@@ -1,0 +1,15 @@
+{
+  "title": "Strengthen Bonds hint",
+  "description": "Strengthen Bonds (have another player's promissory note in your play area) read 0 / 1 for a player holding a rival's Trade Agreement in hand, which is correct per the card but looked like a bug. The progress line now carries a one-line rule reminder: only face-up play-area notes count, not the hand. Mocked fixtures; regenerate with npm run screenshots -- FI.",
+  "tag": "web/e2e/screenshots/FI-strengthen-bond-hint",
+  "shots": [
+    { "file": "out/1-player-sheet-desktop.png", "heading": "Player sheet, desktop", "caption": "0 / 1 with the reminder under the bar." },
+    { "file": "out/1-player-sheet-390x844.png", "heading": "Player sheet, phone", "caption": "Same at 390 px wide." },
+    { "file": "out/2-objectives-desktop.png", "heading": "Objectives dialog, desktop", "caption": "The same line in the Objectives dialog." },
+    { "file": "out/2-objectives-390x844.png", "heading": "Objectives dialog, phone", "caption": "Same at 390 px wide." }
+  ],
+  "notesHeading": "Notes",
+  "notes": [
+    { "title": "Why 0 / 1", "text": "Report fb_1792237670_e36ea77a: the player held another player's Trade Agreement in hand. Only Alliance, Support for the Throne and some faction notes are laid face-up in the play area; the engine count is right." }
+  ]
+}

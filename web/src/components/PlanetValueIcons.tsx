@@ -1,5 +1,7 @@
 import React from "react";
 import "./PlanetValueIcons.css";
+import { usePlanetBoosts } from "../presentation/PlanetResourcesContext.tsx";
+import { boostLines, boostsFor, type PlanetBoost } from "../presentation/planetValues.ts";
 
 /**
  * One icon for resources and one for influence, used everywhere a planet or economy value is
@@ -75,6 +77,13 @@ export interface PlanetValueProps {
   sign?: "+" | "-";
   /** Overrides the accessible text, e.g. "Ready: 3 of 5 resources". */
   label?: string;
+  /**
+   * What raises this planet above its printed value (`value` is already the raised value). The
+   * number is marked as boosted, with a small +N badge and "Mining World: +2 resources" in the tooltip.
+   */
+  boosts?: readonly PlanetBoost[];
+  /** The planet this value belongs to: its boosts are looked up when `boosts` is not given. */
+  planetId?: string;
   className?: string;
   testId?: string;
 }
@@ -89,10 +98,18 @@ export const PlanetValue: React.FC<PlanetValueProps> = ({
   state,
   sign,
   label,
+  boosts: boostsProp,
+  planetId,
   className,
   testId,
 }) => {
-  const text = label ?? `${sign === "-" ? "minus " : sign === "+" ? "plus " : ""}${valueLabel(kind, value, total)}`;
+  const known = usePlanetBoosts();
+  const boosts = boostsProp ?? (planetId ? known.get(planetId) : undefined);
+  const boostList = boostsFor(boosts, kind);
+  const extra = boostList.reduce((sum, b) => sum + b.amount, 0);
+  const boosted = extra !== 0;
+  const base = `${label ?? `${sign === "-" ? "minus " : sign === "+" ? "plus " : ""}${valueLabel(kind, value, total)}`}`;
+  const text = boosted ? `${base} (${value - extra} printed; ${boostLines(boosts, kind).join("; ")})` : base;
   const tone = state ?? (value === 0 ? "muted" : "ready");
   return (
     <span
@@ -102,7 +119,8 @@ export const PlanetValue: React.FC<PlanetValueProps> = ({
       data-testid={testId}
       data-kind={kind}
       data-state={tone}
-      className={`planet-value planet-value--${kind} planet-value--${size} planet-value--${tone} ${className ?? ""}`.trim()}
+      data-boosted={boosted ? "true" : undefined}
+      className={`planet-value planet-value--${kind} planet-value--${size} planet-value--${tone}${boosted ? " planet-value--boosted" : ""} ${className ?? ""}`.trim()}
     >
       <Icon kind={kind} />
       <span className="planet-value__num" aria-hidden="true">
@@ -111,6 +129,7 @@ export const PlanetValue: React.FC<PlanetValueProps> = ({
         {total !== undefined && (alwaysTotal || total !== value) ? (
           <span className="planet-value__total">/{total}</span>
         ) : null}
+        {boosted ? <span className="planet-value__boost">{extra > 0 ? `+${extra}` : extra}</span> : null}
       </span>
     </span>
   );
@@ -141,6 +160,10 @@ export interface PlanetValuePairProps {
   influence: number;
   size?: PlanetValueSize;
   state?: PlanetValueState;
+  /** What raises the planet; `resources` / `influence` are already the raised values. */
+  boosts?: readonly PlanetBoost[];
+  /** The planet these values belong to: its boosts are looked up when `boosts` is not given. */
+  planetId?: string;
   className?: string;
   testId?: string;
 }
@@ -151,12 +174,14 @@ export const PlanetValuePair: React.FC<PlanetValuePairProps> = ({
   influence,
   size = "inline",
   state,
+  boosts,
+  planetId,
   className,
   testId,
 }) => (
   <span className={`planet-value-pair ${className ?? ""}`.trim()} data-testid={testId}>
-    <PlanetValue kind="resources" value={resources} size={size} state={state} />
-    <PlanetValue kind="influence" value={influence} size={size} state={state} />
+    <PlanetValue kind="resources" value={resources} size={size} state={state} boosts={boosts} planetId={planetId} />
+    <PlanetValue kind="influence" value={influence} size={size} state={state} boosts={boosts} planetId={planetId} />
   </span>
 );
 

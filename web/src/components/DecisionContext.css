@@ -189,6 +189,28 @@
   font-size: 0.75rem;
   font-weight: 400;
 }
+.token-panel__armada {
+  display: inline-block;
+  margin-top: 2px;
+  padding: 0 6px;
+  border: 1px solid var(--color-accent, #5cc8ff);
+  border-radius: 999px;
+  color: var(--color-accent, #5cc8ff);
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.token-panel__armada-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px 6px;
+}
+.token-panel__armada-group .token-panel__armada {
+  margin-top: 0;
+}
 .token-panel__count {
   min-width: 2ch;
   font-size: 1.25rem;
@@ -471,4 +493,23 @@
   color: #cbd5e1;
   line-height: 1.45;
   white-space: pre-line;
+}
+
+/* Production drawer: staged ships against the fleet supply. */
+.production-drawer__fleet-staged {
+  color: var(--color-accent, #5cc8ff);
+  font-weight: 700;
+}
+.production-drawer__fleet--over {
+  color: var(--color-alert-orange, #f97316);
+  font-weight: 700;
+}
+.production-drawer__fleet--over .production-drawer__fleet-staged {
+  color: inherit;
+}
+.button.production-drawer__build--over,
+.button--primary.production-drawer__build--over {
+  background: var(--color-alert-orange, #f97316);
+  border-color: var(--color-alert-orange, #f97316);
+  color: #1a0f00;
 }

@@ -14,6 +14,7 @@ import {
 import { mergeRollToasts, rollToasts, type RollToast } from "../presentation/rollToasts.ts";
 import { explorationToasts, type ExplorationRecordDto } from "../presentation/explorationToasts.ts";
 import { breakthroughToasts } from "../presentation/breakthroughs.ts";
+import { leaderUnlockToasts, readLeaderStatuses } from "../presentation/leaderUnlocks.ts";
 import { agendaToasts, type AgendaRecordDto, type AgendaToast } from "../presentation/agendaToasts.ts";
 import { buildTurnRecap, trackTurns, type OpenTurn, type TurnRecap } from "../presentation/turnRecap.ts";
 import { isTurnMenuChoice } from "../presentation/turnBar.ts";
@@ -27,7 +28,7 @@ import { useToastMute } from "./useToastMute.ts";
 export interface CornerToastsInput {
   /** The public event log as the session delivers it. */
   events: readonly GameEvent[];
-  players?: readonly Pick<PlayerView, "id" | "victory_points">[];
+  players?: readonly (Pick<PlayerView, "id" | "victory_points"> & Partial<Pick<PlayerView, "leaders">>)[];
   /** The viewer's seat; absent for spectators, who get every player's actions. */
   viewerSeat?: string | null;
   pendingChoice?: PendingChoiceDto | null;
@@ -259,6 +260,19 @@ export function useCornerToasts({
     lastBreakthroughs.current = breakthroughs;
     if (!mutedRef.current) push(breakthroughToasts(before ? { ...before } : null, { ...breakthroughs }));
   }, [breakthroughs, ready, historyGeneration, push]);
+
+  // A commander or hero is unlocked by the state, not by a logged decision: diff the seats'
+  // leaders. What seats had unlocked at load, or after undo/redo, is history.
+  const lastLeaders = useRef<Record<string, Record<string, string>> | null>(null);
+  const leaderGeneration = useRef(historyGeneration);
+  useEffect(() => {
+    if (!ready || !players) return;
+    const now = readLeaderStatuses(players as readonly Pick<PlayerView, "id" | "leaders">[]);
+    const before = leaderGeneration.current === historyGeneration ? lastLeaders.current : null;
+    leaderGeneration.current = historyGeneration;
+    lastLeaders.current = now;
+    if (!mutedRef.current) push(leaderUnlockToasts(before, now));
+  }, [players, ready, historyGeneration, push]);
 
   // Agenda results come from the state's agenda log, like explorations: what is there at load, or
   // reappears after undo/redo, is history. The voter is told too: the result is news to all.

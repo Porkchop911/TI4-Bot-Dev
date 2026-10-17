@@ -4,6 +4,9 @@ import { deriveHexGeometry } from "../presentation/boardPresentation.ts";
 import { homeIdSet, mainTiles, tileKind } from "../presentation/mapPicker.ts";
 import { seatStyle } from "../presentation/playerDisplay.ts";
 import { TILE_FILL } from "./MapThumbnail.tsx";
+import { HyperlaneNetwork } from "./hyperlane/HyperlaneArt.tsx";
+import { getHyperlaneNetwork } from "./hyperlane/hyperlaneNetwork.ts";
+import { hyperlaneLabel, parseHyperlaneId } from "./hyperlane/hyperlaneGeometry.ts";
 import { PlanetValueGlyph, pairLabel } from "./PlanetValueIcons.tsx";
 
 const planetLabel = (tile: MapPreview["tiles"][number]) =>
@@ -23,6 +26,7 @@ export const MapPreviewBoard: React.FC<{
     tile,
     geometry: deriveHexGeometry(tile.q, tile.r),
   }));
+  const model = getHyperlaneNetwork(placed.map(({ tile }) => ({ systemId: tile.system_id, q: tile.q, r: tile.r })));
   const xs = placed.map((p) => p.geometry.center.x);
   const ys = placed.map((p) => p.geometry.center.y);
   const pad = 90;
@@ -50,7 +54,12 @@ export const MapPreviewBoard: React.FC<{
             <title>
               {seat
                 ? `Seat ${seat.seat}`
-                : `${tile.label}${tile.planets?.length ? ` (${planetLabel(tile)})` : ""}`}
+                : kind === "hyperlane"
+                  ? (() => {
+                      const lane = parseHyperlaneId(tile.system_id);
+                      return lane ? hyperlaneLabel(lane) : tile.label;
+                    })()
+                  : `${tile.label}${tile.planets?.length ? ` (${planetLabel(tile)})` : ""}`}
             </title>
             <polygon
               points={geometry.points}
@@ -58,6 +67,7 @@ export const MapPreviewBoard: React.FC<{
               stroke={seat ? seatStyle(seat.seat).color : "#0b1220"}
               strokeWidth={seat ? 8 : 3}
             />
+            {kind !== "hyperlane" && (
             <text
               x={geometry.center.x}
               y={geometry.center.y + (seat ? 12 : -2)}
@@ -68,6 +78,7 @@ export const MapPreviewBoard: React.FC<{
             >
               {seat ? seat.seat : tile.system_id}
             </text>
+            )}
             {!seat && tile.planets && tile.planets.length > 0 && (
               <g aria-hidden="true">
                 {tile.planets.map((planet, i) => {
@@ -91,6 +102,18 @@ export const MapPreviewBoard: React.FC<{
           </g>
         );
       })}
+      <HyperlaneNetwork
+        tiles={placed.map(({ tile, geometry }) => ({
+          systemId: tile.system_id,
+          q: tile.q,
+          r: tile.r,
+          cx: geometry.center.x,
+          cy: geometry.center.y,
+        }))}
+        model={model}
+        weight={1.2}
+        bed={TILE_FILL.hyperlane}
+      />
     </svg>
   );
 };

@@ -8,6 +8,7 @@ import type {
 import type { ChoiceRendererModel } from "../presentation/choiceModel.ts";
 import { describeImperialOutcome } from "../presentation/imperialOutcome.ts";
 import { Dialog } from "../primitives/index.ts";
+import { useMatchMedia } from "../hooks/useCompactLayout.ts";
 import { usePlayerIdentity } from "../presentation/PlayerIdentity.tsx";
 import { humanizeId } from "../protocol/contentCatalog.ts";
 import {
@@ -94,10 +95,14 @@ export const ObjectivesModal: React.FC<ObjectivesModalProps> = ({
   homeSystemLost,
 }) => {
   const display = usePlayerIdentity();
+  // On a phone the window is a bottom sheet over the map (like the Players drawer) so the dock
+  // buttons stay usable; scoring keeps the modal. Same breakpoint as the drawers in index.css.
+  const phoneWidth = useMatchMedia("(max-width: 720px)");
   const label = (seat: string) => display(seat).label;
   const homeLost = (seat: string) => lostHomePlanets({ home_system_lost: homeSystemLost }, board, seat);
   const viewerHomeLost = homeLost(viewerSeat ?? "");
   const imperial = choice ? describeImperialOutcome(choice) : null;
+  const [imperialDetailsOpen, setImperialDetailsOpen] = useState(false);
 
   const activeScoringMode = Boolean(
     isScoringMode ||
@@ -106,6 +111,8 @@ export const ObjectivesModal: React.FC<ObjectivesModalProps> = ({
         choice.context?.subtype === "imperial_score_objective" ||
         model?.workflow === "objective_scoring")),
   );
+
+  const sheet = phoneWidth && !activeScoringMode;
 
   const scoreableOptionMap = useMemo(() => {
     if (!activeScoringMode || !choice?.options) return new Map<string, string>();
@@ -597,20 +604,28 @@ export const ObjectivesModal: React.FC<ObjectivesModalProps> = ({
   return (
     <Dialog.Root
       open={isOpen}
+      modal={!sheet}
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
     >
       <Dialog.Content
+        id={sheet ? "objectives-drawer" : undefined}
         data-testid="objectives-modal"
-        className="choice-workflow-dialog objectives-dialog"
+        className={
+          sheet
+            ? "objectives-dialog objectives-dialog--sheet"
+            : "choice-workflow-dialog objectives-dialog"
+        }
         // A tap on the dimmed area outside the panel closes it, like the other panels.
         onClick={(e) => {
-          if (e.target === e.currentTarget) onClose();
+          if (!sheet && e.target === e.currentTarget) onClose();
         }}
       >
         <div className="panel choice-workflow-modal objectives-modal-panel">
-          <header className="objectives-modal__header">
+          <header
+            className={`objectives-modal__header${activeScoringMode ? " objectives-modal__header--scoring" : ""}`}
+          >
             <div className="objectives-modal__title-group">
               <Dialog.Title as="h2" className="objectives-modal__title">
                 {title}
@@ -660,10 +675,24 @@ export const ObjectivesModal: React.FC<ObjectivesModalProps> = ({
               className="objectives-modal__outcome"
               data-testid="imperial-outcome"
               data-variant={imperial.controlsMecatol ? "mecatol" : "secret"}
+              data-open={imperialDetailsOpen ? "true" : "false"}
             >
-              <span className="objectives-modal__outcome-tag">Imperial · always applies</span>
+              <span className="objectives-modal__outcome-tag">
+                Imperial<span className="objectives-modal__outcome-tag-long"> · always applies</span>
+              </span>
               <strong data-testid="imperial-outcome-headline">{imperial.headline}</strong>
-              <span className="text-muted">
+              {/* Phones: the explanation folds away behind this button; desktop always shows it. */}
+              <button
+                type="button"
+                className="objectives-modal__outcome-toggle"
+                data-testid="imperial-outcome-toggle"
+                aria-expanded={imperialDetailsOpen}
+                aria-label={imperialDetailsOpen ? "Hide Imperial details" : "Show Imperial details"}
+                onClick={() => setImperialDetailsOpen((open) => !open)}
+              >
+                {imperialDetailsOpen ? "Less" : "Why?"}
+              </button>
+              <span className="text-muted objectives-modal__outcome-details" data-testid="imperial-outcome-details">
                 Scoring an objective is optional. This follows either way: holding Mecatol Rex
                 gives the point, otherwise you draw the secret.
               </span>

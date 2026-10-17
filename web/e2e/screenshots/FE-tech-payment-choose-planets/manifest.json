@@ -1,0 +1,11 @@
+{
+  "title": "Choose the planets that pay for a technology",
+  "description": "Researching with the Technology strategy card (secondary: 4 resources, primary: 6 for the second technology) used to spend the cheapest planets automatically. From rules version 6 the engine asks the ordinary pay_resources question after the technology is picked, so the exhaust-planets payment dialog lets the player choose planets and trade goods. Legacy games keep the automatic payment. The dialog is the unchanged PaymentDrawer; mocked fixtures with the engine's question shape.",
+  "tag": "web/e2e/screenshots/FE-tech-payment-choose-planets",
+  "shots": [
+    { "file": "out/tech-payment-open-desktop.png", "heading": "Desktop: pay 4 resources", "caption": "The dialog after picking the technology: choose planets or trade goods." },
+    { "file": "out/tech-payment-staged-desktop.png", "heading": "Desktop: two planets chosen", "caption": "Chosen planets are staged; Pay confirms." },
+    { "file": "out/tech-payment-open-390x844.png", "heading": "Phone: pay 4 resources", "caption": "Same dialog in one column." },
+    { "file": "out/tech-payment-staged-390x844.png", "heading": "Phone: two planets chosen", "caption": "Pay button reachable." }
+  ]
+}

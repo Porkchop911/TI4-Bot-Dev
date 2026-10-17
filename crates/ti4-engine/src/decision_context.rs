@@ -183,6 +183,53 @@ pub struct DecisionContext {
     /// restates rules the engine already enforces, so a client need not guess them from labels.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hit: Option<HitDetail>,
+    /// What playing each card of a reaction window would do right now, for display only.
+    ///
+    /// Like [`DecisionContext::trigger`], deliberately not part of [`DecisionContext::canonical`]
+    /// or the replay fingerprint, stripped from recorded decisions, additive and optional: it is
+    /// recomputed from the state and the event, adds no information a replay needs, and is only
+    /// ever sent to the seat that is asked (the pending choice reaches no one else).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub previews: Vec<EffectPreview>,
+}
+
+/// What playing one reaction card would do in the window that offers it (display only).
+///
+/// Structured facts, not prose: the client words them. Every field except `option`, `card` and
+/// `effect` is optional and omitted when empty, so a new effect kind never breaks a client (it
+/// ignores a kind it does not know).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct EffectPreview {
+    /// The id of the option of this decision the preview belongs to.
+    pub option: String,
+    /// The content alias of the card.
+    pub card: String,
+    /// A stable snake_case effect kind (`cancel_card`, `destroy_unit`, `cancel_hits`, ...).
+    pub effect: String,
+    /// Seats the effect lands on or concerns (the victim, the opponent, the elected player).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub seats: Vec<PlayerId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system: Option<SystemId>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub planets: Vec<PlanetId>,
+    /// The units the effect concerns, public on the board.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub units: Vec<TriggerUnits>,
+    /// The main quantity: hits cancelled, tokens gained, votes added, planets exhausted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub amount: Option<i64>,
+    /// The quantity it applies to: the hits that are about to be assigned.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub of: Option<i64>,
+    /// Other cards, agendas or strategy cards the effect names (the card cancelled, the agenda
+    /// discarded). Ids, not names.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub refs: Vec<String>,
+    /// Why playing it would change nothing right now (`immune`, `nothing_there`, ...).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fizzles: Option<String>,
 }
 
 /// What produced the hits a casualty decision assigns.
@@ -347,7 +394,15 @@ impl DecisionContext {
             outstanding: Vec::new(),
             trigger: None,
             hit: None,
+            previews: Vec::new(),
         }
+    }
+
+    /// Say what playing each card of this reaction window would do (display only).
+    #[must_use]
+    pub fn with_previews(mut self, previews: Vec<EffectPreview>) -> Self {
+        self.previews = previews;
+        self
     }
 
     /// Say what kind of hit this casualty decision assigns (display only).
@@ -370,6 +425,7 @@ impl DecisionContext {
         Self {
             trigger: None,
             hit: None,
+            previews: Vec::new(),
             ..self.clone()
         }
     }
@@ -489,6 +545,7 @@ impl DecisionContext {
             // Public by construction: only facts that already happened at the table.
             ("trigger", Visibility::Public),
             ("hit", Visibility::Public),
+            ("previews", Visibility::Public),
         ])
     }
 }
@@ -519,6 +576,43 @@ mod tests {
         )
         .optional(true)
         .owing(OutstandingConstraint::new(ConstraintKind::Influence, 3, 4))
+    }
+
+    #[test]
+    fn previews_are_display_only_and_change_no_canonical_form_or_record() {
+        let plain = context();
+        let preview = EffectPreview {
+            option: "reaction:x:Y:when".to_owned(),
+            card: "sabo1".to_owned(),
+            effect: "cancel_card".to_owned(),
+            seats: vec![PlayerId::new("b")],
+            system: None,
+            planets: Vec::new(),
+            units: Vec::new(),
+            amount: Some(2),
+            of: None,
+            refs: vec!["fs1".to_owned()],
+            fizzles: None,
+        };
+        let shown = plain.clone().with_previews(vec![preview]);
+        assert_eq!(shown.canonical(), plain.canonical());
+        assert_eq!(shown.without_display_fields(), plain);
+        // A recorded decision (what a save and a replay hold) is byte-identical without them.
+        assert_eq!(
+            serde_json::to_string(&shown.without_display_fields()).unwrap(),
+            serde_json::to_string(&plain).unwrap()
+        );
+        // And a context that carries none serializes without the field, as before this existed.
+        assert!(
+            serde_json::to_value(&plain)
+                .unwrap()
+                .get("previews")
+                .is_none()
+        );
+        assert!(
+            DecisionContext::visibility().contains_key("previews"),
+            "the field is in the visibility table"
+        );
     }
 
     #[test]
@@ -681,6 +775,6 @@ mod tests {
             .iter()
             .filter(|(_, v)| **v == Visibility::Public)
             .count();
-        assert_eq!(public, 12, "every other field describes a public question");
+        assert_eq!(public, 13, "every other field describes a public question");
     }
 }

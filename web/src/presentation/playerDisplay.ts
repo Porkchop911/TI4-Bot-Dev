@@ -4,12 +4,12 @@ import type { LobbyDto } from "../protocol/types.ts";
  * Fixed physical-position palette (TI4 traditional hues); neither slot IDs nor player IDs determine
  * these colors. Ordered so the first N seats are the most distinguishable subset for an N-player
  * game, with blue and green first and the two red-family hues (red 4, orange 6) kept apart:
- * blue, green, white, red, pink, orange, yellow, purple. Symbols stay the second channel.
+ * blue, green, cyan, red, pink, orange, yellow, purple. Symbols stay the second channel.
  */
 export const SEAT_COLORS = [
   "#3B82F6", // blue
   "#4ADE80", // green
-  "#F1F5F9", // white
+  "#22D3EE", // cyan (was white: read as an unexplored planet)
   "#EF4444", // red
   "#F472B6", // pink
   "#F97316", // orange
@@ -34,7 +34,7 @@ export function contrastRatio(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-/** Dark or white ink, whichever reads better on a seat-colored fill (white seat, yellow, green need dark). */
+/** Dark or white ink, whichever reads better on a seat-colored fill (cyan, yellow, green need dark). */
 export function seatInk(fill: string): string {
   return contrastRatio(fill, SEAT_INK_DARK) >= contrastRatio(fill, SEAT_INK_LIGHT)
     ? SEAT_INK_DARK

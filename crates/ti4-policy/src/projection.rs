@@ -2979,6 +2979,15 @@ mod card_tag_tests {
             .find(|alias| {
                 ti4_engine::action_cards::is_component_action(content, alias)
                     && alias.as_str() != "jamming"
+                    // A card with no target on the starting board is not offered (version 10).
+                    && ti4_engine::action_cards::is_playable(
+                        &table_of("sol", "winnu").0,
+                        content,
+                        ti4_model::content_types::POK,
+                        None,
+                        &table_of("sol", "winnu").1,
+                        alias,
+                    )
                     && !tags_of(kind::ACTION_CARD, alias.as_str()).is_empty()
             })
             .expect("the corpus has a tagged component-action card")

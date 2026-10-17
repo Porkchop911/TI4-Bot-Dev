@@ -189,8 +189,24 @@ pub(crate) fn grant_chosen_technology(
         .unwrap_or_default();
     let faction = state.player(player).map(|seat| seat.faction.to_string());
 
+    // Enigmatic Device researches (rules version `RULES_ENIGMATIC_DEVICE`): only what the player
+    // could research, by the normal rules. Earlier games and Maw of Worlds (which says *gain*) keep
+    // the unfiltered list.
+    let researching = relic == "enigmaticdevice"
+        && state.rules_version >= ti4_model::state::RULES_ENIGMATIC_DEVICE;
+    let researchable: Vec<ti4_model::id::TechnologyId> = if researching {
+        crate::technology::researchable_by_prerequisites(state, content, sources, player)
+    } else {
+        Vec::new()
+    };
     let options: Vec<crate::choice::ChoiceOption> = content
         .from_sources(ti4_model::content_types::ContentType::Technologies, sources)
+        .filter(|record| {
+            !researching
+                || record
+                    .text("alias")
+                    .is_some_and(|alias| researchable.iter().any(|open| open.as_str() == alias))
+        })
         .filter(|record| {
             // 90.11: a faction technology belongs to that faction alone.
             record
@@ -228,9 +244,11 @@ pub(crate) fn grant_chosen_technology(
     else {
         return false;
     };
-    if let Some(seat) = state.player_mut(player) {
-        seat.technologies
-            .insert(ti4_model::id::TechnologyId::new(answer.id));
+    let chosen = ti4_model::id::TechnologyId::new(answer.id);
+    if researching {
+        crate::technology::research_chosen(state, content, sources, player, &chosen);
+    } else if let Some(seat) = state.player_mut(player) {
+        seat.technologies.insert(chosen);
     }
     true
 }
@@ -1120,7 +1138,12 @@ pub fn available_actions(
         match alias {
             // Six resources, and no way to take the action without them.
             "enigmaticdevice" => {
-                crate::production::available(
+                (state.rules_version < ti4_model::state::RULES_ENIGMATIC_DEVICE
+                    || !crate::technology::researchable_by_prerequisites(
+                        state, content, sources, player,
+                    )
+                    .is_empty())
+                    && crate::production::available(
                     state,
                     content,
                     sources,
@@ -1242,6 +1265,85 @@ mod tests {
                 0,
                 1,
             )]))
+        );
+    }
+
+    /// The technologies the Enigmatic Device relic offers a seat that owns nothing, at `version`.
+    fn enigmatic_offer(version: u32) -> (Vec<String>, Vec<String>) {
+        let content = ti4_content::ContentStore::embedded();
+        let mut state = crate::fixtures::game(&["a"]);
+        let player = PlayerId::new("a");
+        state.rules_version = version;
+        let seat = state.player_mut(&player).unwrap();
+        seat.technologies.clear();
+        seat.relics = vec![RelicId::new("enigmaticdevice")];
+        seat.trade_goods = 20;
+        // No planet may supply a technology specialty: prerequisites must be unmet for gd.
+        for planet in state
+            .controlled_planets(&player)
+            .into_iter()
+            .map(|(_, planet)| planet.clone())
+            .collect::<Vec<_>>()
+        {
+            state.exhaust_planet(planet);
+        }
+        let open: Vec<String> = crate::technology::researchable_by_prerequisites(
+            &state,
+            content,
+            ti4_model::content_types::DEFAULT,
+            &player,
+        )
+        .iter()
+        .map(|alias| alias.to_string())
+        .collect();
+        let (decider, seen) = crate::choice::Capturing::new(Box::new(
+            crate::choice::Scripted::new(Vec::<String>::new()),
+        ));
+        let mut table = crate::choice::Table::with_default(Box::new(decider));
+        use_relic(
+            &mut state,
+            content,
+            ti4_model::content_types::DEFAULT,
+            &mut crate::dice::Dice::new(),
+            &mut crate::rng::GameRng::new(1),
+            &mut table,
+            None,
+            &player,
+            &RelicId::new("enigmaticdevice"),
+        );
+        let offered = seen
+            .borrow()
+            .iter()
+            .find(|asked| asked.prompt.contains("technology"))
+            .map(|asked| asked.options.iter().map(|o| o.id.clone()).collect())
+            .unwrap_or_default();
+        (offered, open)
+    }
+
+    /// Felix's report: the Enigmatic Device offered ANY technology. It says "research", so
+    /// prerequisites apply from rules version 5 on; older games keep the unfiltered list.
+    #[test]
+    fn enigmatic_device_offers_only_researchable_technologies() {
+        let (offered, open) = enigmatic_offer(ti4_model::state::RULES_ENIGMATIC_DEVICE);
+        assert!(!offered.is_empty());
+        assert!(
+            !offered.iter().any(|id| id == "gd"),
+            "Gravity Drive needs a blue prerequisite the seat does not have: {offered:?}"
+        );
+        for id in &offered {
+            assert!(
+                open.contains(id),
+                "{id} is offered but is not researchable"
+            );
+        }
+    }
+
+    #[test]
+    fn enigmatic_device_in_a_legacy_game_still_offers_everything() {
+        let (offered, _) = enigmatic_offer(ti4_model::state::RULES_ENIGMATIC_DEVICE - 1);
+        assert!(
+            offered.iter().any(|id| id == "gd"),
+            "legacy rules keep the unfiltered list"
         );
     }
 

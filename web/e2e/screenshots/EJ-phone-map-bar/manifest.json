@@ -1,0 +1,13 @@
+{
+  "title": "Phone map fills the screen (no dark bar)",
+  "description": "On a phone the board column (min-height 55vh) had no definite height, so the map container fell back to the SVG's aspect ratio: at 412x915 the map was 367 px tall inside a 503 px column, the remaining 136 px were an empty dark band under the map, and a zoomed or panned map was cut off by a straight edge above that band (hex tips visible at the cut). The column now grows to the bottom of the screen and the board fills it. Synthetic game-over fixture on the 37-tile gallery map through a mocked server (the offline BGA balanced map cannot be loaded here; the cause does not depend on the map, only on its aspect ratio versus the column). The before shots were taken with TI4_SHOT_PREFIX=before on the commit without the fix.",
+  "tag": "web/e2e/screenshots/EJ-phone-map-bar",
+  "shots": [
+    { "file": "before/before-412x915.png", "heading": "Before: 412x915", "caption": "Map container ends at y=407; empty dark band down to the buttons." },
+    { "file": "out/after-412x915.png", "heading": "After: 412x915", "caption": "The map container covers the whole area above the buttons." },
+    { "file": "before/before-390x844.png", "heading": "Before: 390x844", "caption": "Same band." },
+    { "file": "out/after-390x844.png", "heading": "After: 390x844", "caption": "Filled." },
+    { "file": "before/before-360x740.png", "heading": "Before: 360x740", "caption": "Same band." },
+    { "file": "out/after-360x740.png", "heading": "After: 360x740", "caption": "Filled." }
+  ]
+}

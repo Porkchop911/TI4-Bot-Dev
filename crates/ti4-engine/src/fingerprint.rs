@@ -98,8 +98,9 @@ pub const V2_CONTEXT_FIELDS: [&str; 10] = [
 
 /// Context fields that are display metadata only and never enter a fingerprint (stripped by
 /// `decision_hash` and by `DecisionLog::record`). `trigger` is derived from the event that opened
-/// a reaction window, so it adds nothing a replay needs.
-pub const V2_CONTEXT_DISPLAY_ONLY: [&str; 2] = ["trigger", "hit"];
+/// a reaction window, so it adds nothing a replay needs; `previews` is derived from the state and that
+/// same event (what each reaction card would do), so it adds nothing either.
+pub const V2_CONTEXT_DISPLAY_ONLY: [&str; 3] = ["trigger", "hit", "previews"];
 
 /// The one context field carrying values rather than identity, bound alongside the fields above.
 pub const V2_CONTEXT_QUANTITIES: &str = "outstanding";
@@ -203,6 +204,45 @@ mod tests {
             hash.digest,
             "7214f5740b14f02bc279b96c6c2209b5905a199079725052f574f8073789f140"
         );
+    }
+
+    /// Display facts (option payloads, `Choice::details`) are for clients. The record a replay
+    /// binds is the prompt, the chosen id, the offered ids and the context, so adding facts to a
+    /// question, as the action-card pickers do, leaves every digest of an old save as it was.
+    #[test]
+    fn display_facts_on_a_question_never_reach_its_decision_hash() {
+        use crate::choice::{Choice, ChoiceOption, DecisionLog};
+        let player = PlayerId::new("a");
+        let plain = || {
+            Choice::new(
+                player.clone(),
+                "Lucky Shot: destroy which ship",
+                vec![
+                    ChoiceOption::labelled("28|4", "ship", "destroy a cruiser"),
+                    ChoiceOption::labelled("28|5", "ship", "destroy a dreadnought"),
+                ],
+            )
+        };
+        let with_facts = {
+            let choice = Choice::new(
+                player.clone(),
+                "Lucky Shot: destroy which ship",
+                vec![
+                    ChoiceOption::labelled("28|4", "ship", "destroy a cruiser")
+                        .with("system", "28"),
+                    ChoiceOption::labelled("28|5", "ship", "destroy a dreadnought")
+                        .with("system", "28"),
+                ],
+            );
+            choice.detailed("units", serde_json::json!({"28|4": {"owner": "b"}}))
+        };
+        let hash_of = |choice: &Choice| {
+            let mut log = DecisionLog::default();
+            log.record(choice, &choice.options[0]);
+            [CanonicalHashVersion::V1, CanonicalHashVersion::V2]
+                .map(|version| decision_hash(version, &log.records[0]).digest)
+        };
+        assert_eq!(hash_of(&plain()), hash_of(&with_facts));
     }
 
     /// An old replay, as JSON written before contexts existed.

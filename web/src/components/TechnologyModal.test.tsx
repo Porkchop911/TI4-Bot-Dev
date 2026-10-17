@@ -163,6 +163,19 @@ describe("TechnologyModal", () => {
     expect(cr2Prereqs.textContent).toContain("R");
   });
 
+  it("renders every technology card's own text (never an empty effect), and a CSS-independent clamp hook", () => {
+    renderWithIdentity(<TechnologyModal isOpen={true} onClose={vi.fn()} players={mockPlayers} />);
+
+    const effects = screen.getAllByTestId(/^tech-effect-(?!more-)/);
+    expect(effects.length).toBeGreaterThan(20);
+    for (const el of effects) {
+      expect(el.textContent?.trim().length, el.getAttribute("data-testid") ?? "").toBeGreaterThan(5);
+      expect(el).toHaveAttribute("data-expanded", "false");
+    }
+    // jsdom has no layout, so nothing counts as clamped: no More button on a card.
+    expect(screen.queryByTestId("tech-effect-more-amd")).toBeNull();
+  });
+
   it("displays player markers with symbol, position/nickname, and seat color for researched tech", () => {
     renderWithIdentity(<TechnologyModal isOpen={true} onClose={vi.fn()} players={mockPlayers} />);
 
@@ -263,6 +276,46 @@ describe("TechnologyModal", () => {
 
     fireEvent.click(screen.getByTestId("confirm-research-btn"));
     expect(onConfirmResearch).toHaveBeenCalledWith("gd");
+  });
+
+  it("shows the Enigmatic Device question as a research: prerequisites apply and the pick is submitted", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    const researchPlayers: PlayerView[] = mockPlayers.map((p) =>
+      p.id === "player1" ? { ...p, technologies: ["amd"] } : p,
+    );
+    const choice: PendingChoiceDto = {
+      nonce: "n1",
+      actor: "player1",
+      prompt: "gain which technology",
+      context: partialContext({
+        subtype: "enigmaticdevice_choose_technology",
+        source: { Content: "enigmaticdevice" },
+      }),
+      options: ["gd", "sr", "amd"].map((id) => ({
+        id,
+        label: `gain ${id}`,
+        kind: "technology",
+        payload: {},
+      })),
+    };
+    renderWithIdentity(
+      <TechnologyModal
+        isOpen={true}
+        onClose={vi.fn()}
+        players={researchPlayers}
+        viewerSeat="player1"
+        choice={choice}
+        onSubmit={onSubmit}
+      />,
+    );
+    expect(screen.getByText("Select Research")).toBeInTheDocument();
+    // Offered by the engine and without prerequisites: pickable. Held or unlisted: not.
+    expect(screen.getByTestId("tech-card-sr")).toHaveAttribute("data-selectable", "true");
+    expect(screen.getByTestId("tech-card-amd")).toHaveAttribute("data-selectable", "false");
+    expect(screen.getByTestId("tech-card-ps")).toHaveAttribute("data-selectable", "false");
+    fireEvent.click(screen.getByTestId("tech-card-sr"));
+    fireEvent.click(screen.getByTestId("confirm-research-btn"));
+    await vi.waitFor(() => expect(onSubmit).toHaveBeenCalledWith("sr"));
   });
 
   it("renders faction technologies first at the top of modal body for Sol", () => {

@@ -263,6 +263,8 @@ interface LobbyStatusProps {
   onChooseMap?: (choice: MapChoice, startPreset?: string) => Promise<boolean | void>;
   watching?: boolean;
   pendingAction?: string | null;
+  /** Back to the start screen (create a lobby, my games); keeps any seat. */
+  onHome?: () => void;
 }
 
 function rememberedSeen(key: string): boolean {
@@ -300,6 +302,7 @@ export const LobbyStatus: React.FC<LobbyStatusProps> = ({
   onChooseMap,
   watching,
   pendingAction,
+  onHome,
 }) => {
   const [nickname, setNickname] = useState(preferredNickname);
   const [copyState, setCopyState] = useState<string | null>(null);
@@ -642,6 +645,16 @@ export const LobbyStatus: React.FC<LobbyStatusProps> = ({
             onClick={onLeave}
           >
             {pendingAction === "leave" ? "Leaving…" : "Leave lobby"}
+          </button>
+        )}
+        {onHome && (
+          <button
+            type="button"
+            className="button button--secondary"
+            data-testid="lobby-back-to-start"
+            onClick={onHome}
+          >
+            Back to start
           </button>
         )}
         <BuildFooter />

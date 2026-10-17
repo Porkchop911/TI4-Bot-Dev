@@ -1127,6 +1127,92 @@ pub struct ActiveInvasion {
     pub last_step: Option<InvasionStep>,
 }
 
+/// Where a starting-technology pick draws its options from.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "from", content = "technologies", rename_all = "snake_case")]
+pub enum StartingTechSource {
+    /// One of these technologies (the faction sheet names them, or "any technology with no
+    /// prerequisites" was resolved to the cards in play when the game was made).
+    Listed(Vec<TechnologyId>),
+    /// A non-faction technology that another player owns (the Council Keleres).
+    OwnedByOthers,
+    /// A technology the seat could research now, prerequisites met, price waived ("research
+    /// technology twice" during setup: the Deepwrought Scholarate).
+    Researchable,
+}
+
+/// One starting technology a seat still has to pick: `remaining` of them from `source`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StartingTechPick {
+    pub player: PlayerId,
+    /// How many are to be picked in all (the Argent Flight: 2), for the prompt.
+    pub of: u8,
+    /// How many are still to pick.
+    pub remaining: u8,
+    pub source: StartingTechSource,
+}
+
+/// The rules version of a new game. Raise it when an engine decision changes in a way that an
+/// older game log would not replay under (and gate the change on
+/// [`GameState::rules_version`]); see `docs/RULES_VERSION.md`.
+pub const RULES_VERSION: u32 = 11;
+
+/// The first rules version with the Infiltrate fix: offered only to the gaining player and only
+/// when a rival PDS or space dock can be replaced; the previous holder's structures are
+/// destroyed after the control-gain window closes; the card replaces the rival's structures.
+pub const RULES_INFILTRATE_FIX: u32 = 1;
+
+/// The first rules version where Saar's Captain Mendosa boost follows the ship (its type, damage
+/// and the count of that kind at the origin) rather than its position in the system's ship list,
+/// and where equal ships are offered once.
+pub const RULES_MENDOSA_SHIP: u32 = 2;
+
+/// The first rules version with Sabotage timing: the players in a reaction window first declare
+/// every card they play, and only then are the declared plays announced one by one, each opening
+/// its Sabotage window. Before, a play was announced (and Sabotage offered) the moment it was
+/// declared, before the other players had declared theirs.
+pub const RULES_SABOTAGE_TIMING: u32 = 3;
+
+/// The first rules version where Letnev's command-token redistribution may leave fewer than two
+/// tokens in the fleet pool (down to none; Armada lifts the per-system ship limit by 2 over the
+/// pool). Older games keep the floor of two in every redistribution they offer.
+pub const RULES_LETNEV_FLEET_POOL: u32 = 4;
+
+/// The first rules version where the Enigmatic Device (relic and both exploration cards) follows
+/// the normal research rules: it offers only technologies the player could research (not held,
+/// own faction's, prerequisites met) and the pick is researched, not merely inserted. Versions 2,
+/// 3 and 4 belong to other gated changes; 5 is this one.
+pub const RULES_ENIGMATIC_DEVICE: u32 = 5;
+
+/// The first rules version where the Technology strategy card's paid research (the secondary, and
+/// the primary's second technology) asks the researcher which planets and trade goods pay, as every
+/// other resource cost does (`pay_resources`). Before it the cheapest plan was spent automatically.
+pub const RULES_TECH_PAYMENT_CHOICE: u32 = 6;
+
+/// The first rules version where the "after votes cast" window (Bribery, Distinguished Councilor)
+/// opens once per voter, when they have named their outcome, instead of after every single answer
+/// of the vote (the outcome, then each planet exhausted).
+pub const RULES_BRIBERY_PER_PLAYER: u32 = 7;
+
+/// The first rules version with Munitions Reserves decided after the dice: the Letnev player sees
+/// the fleet's roll, then chooses whether to spend 2 trade goods and which missed dice to
+/// re-roll. Before it, the 2 trade goods were paid blind at the start of the round and every
+/// missed die was re-rolled automatically.
+pub const RULES_MUNITIONS_AFTER_ROLL: u32 = 8;
+
+/// The first rules version where a correct Technology Rider researches (a free technology, asked
+/// through the technology dialog) and where the Construction, Diplomacy and Warfare Riders ask
+/// for their planet or system when several qualify. Before, the research was only recorded and
+/// those three paid out only when exactly one choice existed.
+pub const RULES_TECH_RIDER: u32 = 9;
+/// The first rules version where a component-action card with no legal target (Reactor
+/// Meltdown without a space dock outside a home system, and the like) is not offered.
+pub const RULES_ACTION_CARD_TARGETS: u32 = 10;
+
+/// The first rules version where a retreat obeys the movement rules for entering the destination:
+/// no asteroid field without Antimass Deflectors, no supernova.
+pub const RULES_RETREAT_HAZARDS: u32 = 11;
+
 /// The whole game, as a value.
 ///
 /// `initiative_order` is derived from held strategy cards rather than stored, so it cannot
@@ -1217,6 +1303,13 @@ pub struct GameState {
     /// reproduces the recorded offers. Never set for a new game. Not compared.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub legacy_device_ids: bool,
+    /// Starting-technology picks still to make at the start of the game (the Winnu, the Argent
+    /// Flight, the Council Keleres, Thunder's Edge factions), first in line first. Empty for every
+    /// game that does not offer the choice -- all games made before it existed, whose seats were
+    /// dealt their fixed technologies at setup -- and not written then, so an `init.json` saved
+    /// earlier keeps its checksum. Compared.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub starting_tech_picks: Vec<StartingTechPick>,
     /// Every agenda vote that finished, in order, and how it came out. History for viewers (the
     /// corner notification "Agenda: ... For wins"); no rule reads it, so it is not compared.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1358,8 +1451,19 @@ pub struct GameState {
     /// The turn of the action phase (LRR 3): 1 for the first player's turn, 2 for the next
     /// player's, and so on, counting every player's turn through the phase. Zero before the
     /// first turn. Unlike [`GameState::turn_seq`] it restarts with each action phase.
-    #[serde(default)]
+    ///
+    /// Not written while zero: a state saved before this field existed (an `init.json`, whose
+    /// checksum covers its bytes) must serialize back to the bytes it was checksummed over.
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
     pub action_turn: u32,
+    /// The rules version this game is played with ([`RULES_VERSION`] for a new game). A game saved
+    /// before the field existed has none and is version 0: it keeps the rules it was recorded
+    /// with, so its log replays. See `docs/RULES_VERSION.md`.
+    ///
+    /// Not written while zero, so a legacy `init.json` serializes back to the bytes it was
+    /// checksummed over.
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub rules_version: u32,
     /// Allocator for typed secret-objective trigger occurrences.
     ///
     /// This sequence affects replay-visible event identity and is included in structural equality.
@@ -1449,6 +1553,11 @@ pub struct GameState {
     /// Aliases here are public only after the card is played; unopened hands are not recorded.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub action_card_plays: Vec<(PlayerId, ActionCardId)>,
+    /// Cards declared (already spent) in the reaction window being collected, in declaration
+    /// order, not yet announced (rules version 3, `RULES_SABOTAGE_TIMING`). Empty outside a
+    /// window and not written while empty, so a state's bytes and checksum are unchanged.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub declared_card_plays: Vec<(PlayerId, ActionCardId)>,
     /// Set by the combat driver while a space battle (including its victory window) is open.
     /// Cleared before the hand-off to invasion. Unlike ship ownership this is an explicit boundary.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1655,6 +1764,8 @@ impl PartialEq for GameState {
             && self.activation_seq == other.activation_seq
             && self.turn_seq == other.turn_seq
             && self.action_turn == other.action_turn
+            && self.rules_version == other.rules_version
+            && self.starting_tech_picks == other.starting_tech_picks
             && self.feat_occurrence_seq == other.feat_occurrence_seq
             && self.scored_feat_occurrences == other.scored_feat_occurrences
             && self.combat_draw_round == other.combat_draw_round
@@ -1766,6 +1877,7 @@ impl GameState {
             planet_attachments: BTreeMap::new(),
             exploration_log: Vec::new(),
             legacy_device_ids: false,
+            starting_tech_picks: Vec::new(),
             agenda_log: Vec::new(),
             relic_deck: Vec::new(),
             agenda_deck: Vec::new(),
@@ -1800,6 +1912,7 @@ impl GameState {
             negotiations_this_round: BTreeMap::new(),
             turn_seq: 0,
             action_turn: 0,
+            rules_version: RULES_VERSION,
             feat_occurrence_seq: 0,
             scored_feat_occurrences: BTreeSet::new(),
             vp_ledger: Vec::new(),
@@ -1813,6 +1926,7 @@ impl GameState {
             last_control_gained: None,
             last_combat_sides: None,
             action_card_plays: Vec::new(),
+            declared_card_plays: Vec::new(),
             active_space_combat: None,
             active_invasion: None,
             combat_round_hits: BTreeMap::new(),

@@ -2,6 +2,7 @@
 import type { DecisionSource } from "./DecisionSource.ts";
 import type { DecisionTarget } from "./DecisionTarget.ts";
 import type { DecisionTrigger } from "./DecisionTrigger.ts";
+import type { EffectPreview } from "./EffectPreview.ts";
 import type { HitDetail } from "./HitDetail.ts";
 import type { OutstandingConstraint } from "./OutstandingConstraint.ts";
 import type { Phase } from "./Phase.ts";
@@ -53,4 +54,13 @@ trigger?: DecisionTrigger,
  * or the replay fingerprint, stripped from recorded decisions, additive and optional: it
  * restates rules the engine already enforces, so a client need not guess them from labels.
  */
-hit?: HitDetail, };
+hit?: HitDetail, 
+/**
+ * What playing each card of a reaction window would do right now, for display only.
+ *
+ * Like [`DecisionContext::trigger`], deliberately not part of [`DecisionContext::canonical`]
+ * or the replay fingerprint, stripped from recorded decisions, additive and optional: it is
+ * recomputed from the state and the event, adds no information a replay needs, and is only
+ * ever sent to the seat that is asked (the pending choice reaches no one else).
+ */
+previews?: Array<EffectPreview>, };

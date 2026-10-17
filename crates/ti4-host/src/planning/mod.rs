@@ -135,6 +135,7 @@ impl RecordedDecision {
                 "credit_used",
                 "owed",
                 "production_spent",
+                "fleet_ships",
                 "capacity_used",
                 "fleet_headroom_after",
                 "capacity_free_after",

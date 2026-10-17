@@ -1,4 +1,5 @@
-import { BoardView, PlayerView } from "../protocol/types.ts";
+import { BoardView, PlayerView, PlanetValueBoost } from "../protocol/types.ts";
+import { applyBoosts, wireBoosts, type PlanetBoost } from "./planetValues.ts";
 import { getUnitBaseType } from "../components/UnitIcon.tsx";
 import {
   findPlanetMeta,
@@ -40,6 +41,7 @@ export function getPlanetEffectiveValues(
   planetId: string,
   attachments?: string[],
   mapTiles?: BoardView["map_tiles"],
+  boosts?: readonly PlanetBoost[],
 ): { resources: number; influence: number } {
   let baseResources = 0;
   let baseInfluence = 0;
@@ -84,9 +86,13 @@ export function getPlanetEffectiveValues(
     }
   }
 
-  // 3. Add attachment modifiers from generated catalog
+  // 3. What the engine says raises the planet (attachments, laws, docks); only when the view
+  // carries none, fall back to the attachment modifiers of the generated catalog.
   let res = baseResources;
   let inf = baseInfluence;
+  if (boosts && boosts.length > 0) {
+    return applyBoosts(baseResources, baseInfluence, boosts);
+  }
   if (attachments && attachments.length > 0) {
     for (const att of attachments) {
       const normAtt = att.toLowerCase().replace(/[-_\s]/g, "");
@@ -169,11 +175,12 @@ export function computePlayerStats(
     }) ?? false;
 
   const planetCache = new Map<string, { resources: number; influence: number }>();
-  const getPlanetValues = (planetId: string, attachments?: string[]) => {
-    const key = `${planetId}:${(attachments || []).join(",")}`;
+  const getPlanetValues = (planetId: string, attachments?: string[], view?: { value_boosts?: PlanetValueBoost[] }) => {
+    const boosts = wireBoosts(view);
+    const key = `${planetId}:${(attachments || []).join(",")}:${boosts.map((b) => `${b.resources}/${b.influence}`).join(",")}`;
     let cached = planetCache.get(key);
     if (!cached) {
-      cached = getPlanetEffectiveValues(planetId, attachments, mapTiles);
+      cached = getPlanetEffectiveValues(planetId, attachments, mapTiles, boosts);
       planetCache.set(key, cached);
     }
     return cached;
@@ -187,7 +194,7 @@ export function computePlayerStats(
     for (const p of planets) {
       if (p.controlled_by === playerId) {
         controlledPlanets++;
-        const vals = getPlanetValues(p.planet_id, p.attachments);
+        const vals = getPlanetValues(p.planet_id, p.attachments, p);
         totalResources += vals.resources;
         totalInfluence += vals.influence;
         if (!p.exhausted) {
@@ -245,9 +252,9 @@ export function computePlayerStats(
           let planetRes = 0;
           if (u.planet) {
             const planetView = system.planets?.[u.planet];
-            planetRes = getPlanetValues(u.planet, planetView?.attachments).resources;
+            planetRes = getPlanetValues(u.planet, planetView?.attachments, planetView).resources;
           } else if (planets.length === 1 && planets[0].controlled_by === playerId) {
-            planetRes = getPlanetValues(planets[0].planet_id, planets[0].attachments).resources;
+            planetRes = getPlanetValues(planets[0].planet_id, planets[0].attachments, planets[0]).resources;
           }
           systemProductionCapacity += planetRes + bonus;
         }

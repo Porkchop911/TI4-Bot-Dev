@@ -1,0 +1,58 @@
+/* The notification log of a single-player game: an icon button beside Technologies / Objectives, and its list. */
+.notification-log-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+.notification-log-button__badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--color-accent, #3b82f6);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.notification-log-panel {
+  position: fixed;
+  z-index: var(--layer-dialog, 50);
+  max-height: min(55vh, 420px);
+  display: flex;
+  flex-direction: column;
+  background: rgba(10, 12, 18, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  color: #f5f5f5;
+  font-size: 13px;
+  line-height: 1.35;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+
+.notification-log-panel__list {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.notification-log-panel__empty {
+  margin: 0;
+  padding: 12px;
+  color: #cbd5e1;
+}

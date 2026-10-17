@@ -47,6 +47,8 @@ import {
 import type { BasketPlan } from "../protocol/client.ts";
 import { HitAssignmentPanel } from "./HitAssignmentPanel.tsx";
 import { salvageEffect } from "../presentation/reactionModel.ts";
+import { describePreview } from "../presentation/effectText.ts";
+import { decodeEffectPreviews } from "../protocol/decode.ts";
 import { systemNamedLabel, systemTag } from "../presentation/systemFacts.ts";
 
 export interface SpaceCombatOverlayProps {
@@ -1435,21 +1437,38 @@ export const SpaceCombatOverlay: React.FC<SpaceCombatOverlayProps> = ({
                                       {card.description}
                                     </p>
                                   )}
-                                  {alias === "salvage" && (
-                                    <p
-                                      className="combat-card-offer__description"
-                                      data-testid="combat-salvage-effect"
-                                    >
-                                      <strong>
-                                        {salvageEffect(
-                                          choice.context?.trigger?.actor ?? viewerSeat ?? null,
-                                          board ?? undefined,
-                                          (seat) => playersMap[seat]?.commodities ?? null,
-                                          (seat) => display(seat).label,
-                                        )}
-                                      </strong>
-                                    </p>
-                                  )}
+                                  {(() => {
+                                    const preview = decodeEffectPreviews(
+                                      choice.context?.previews,
+                                    ).find((candidate) => candidate.option === opt.id);
+                                    const text =
+                                      (preview &&
+                                        describePreview(preview, {
+                                          seat: (seat) =>
+                                            seat === viewerSeat ? "You" : display(seat).label,
+                                          viewerSeat,
+                                        })) ||
+                                      (alias === "salvage"
+                                        ? salvageEffect(
+                                            choice.context?.trigger?.actor ?? viewerSeat ?? null,
+                                            board ?? undefined,
+                                            (seat) => playersMap[seat]?.commodities ?? null,
+                                            (seat) => display(seat).label,
+                                          )
+                                        : null);
+                                    return text ? (
+                                      <p
+                                        className="combat-card-offer__description"
+                                        data-testid={
+                                          alias === "salvage"
+                                            ? "combat-salvage-effect"
+                                            : "combat-reaction-effect"
+                                        }
+                                      >
+                                        <strong>{text}</strong>
+                                      </p>
+                                    ) : null;
+                                  })()}
                                 </div>
                                 <button
                                   type="button"

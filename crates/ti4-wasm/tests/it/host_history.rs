@@ -214,6 +214,60 @@ fn a_save_names_its_game_and_every_decision_and_plays_again_with_no_seat_decidin
     assert_eq!(again["decisions_hash"], save["decisions_hash"]);
 }
 
+/// A new game records the rules version it plays; a format 2 save made before the field existed
+/// has none and resumes as version 0 (the legacy rules), and saves again without it.
+#[test]
+fn a_save_without_a_rules_version_resumes_as_a_legacy_game() {
+    let _serial = crate::common::serial();
+    // Seed 12: the first 27 decisions of seed 11 use Saar's agent, whose boost mark is written
+    // differently from rules version 2 on, so a save of it is no longer a legacy game.
+    let seed = 12;
+    let first = page(vec![
+        Act::Answer(8),
+        Act::Cmd(json!({ "type": "save_state" })),
+        Act::Leave,
+    ]);
+    install(&first, seed, "a");
+    start(&setup(seed, 4), None);
+    let mut save = {
+        let first = first.lock().unwrap();
+        first
+            .replies
+            .iter()
+            .find(|reply| reply["save"].is_object())
+            .map(|reply| reply["save"].clone())
+            .expect("a save")
+    };
+    assert_eq!(save["rules_version"], ti4_model::state::RULES_VERSION);
+
+    // A save of the current game resumes as the current game.
+    let current = page(vec![Act::Leave]);
+    install(&current, seed, "a");
+    let end = crate::common::resume(&save);
+    assert_eq!(end["end"]["left"], true, "{end}");
+    let again = send(&json!({ "type": "save_state" }))["save"].clone();
+    assert_eq!(again["rules_version"], ti4_model::state::RULES_VERSION);
+    assert_eq!(
+        current.lock().unwrap().messages[0]["state"]["rules_version"],
+        ti4_model::state::RULES_VERSION
+    );
+
+    // The same save as an older build wrote it: no field.
+    save.as_object_mut().unwrap().remove("rules_version");
+    let legacy = page(vec![Act::Leave]);
+    install(&legacy, seed, "a");
+    let end = crate::common::resume(&save);
+    assert_eq!(end["end"]["left"], true, "{end}");
+    let again = send(&json!({ "type": "save_state" }))["save"].clone();
+    assert!(again.get("rules_version").is_none(), "{again}");
+    let legacy = legacy.lock().unwrap();
+    assert!(
+        legacy.messages[0]["state"].get("rules_version").is_none(),
+        "a legacy game's state is written without the field"
+    );
+    assert_eq!(legacy.asks[0]["resume_check"]["ok"], true, "{}", legacy.asks[0]["resume_check"]);
+}
+
 #[test]
 fn a_save_of_another_format_is_not_read() {
     let _serial = crate::common::serial();
@@ -291,6 +345,63 @@ fn slow_a_rewind_and_a_redo_play_the_game_again_to_the_same_end() {
     let end = start(&setup(seed, 3), Some(&resume));
     assert_eq!(end["end"]["finished"], true);
     assert_eq!(decisions_hash(), want);
+}
+
+#[test]
+fn slow_an_undo_of_the_last_turn_goes_back_to_its_start_and_the_game_goes_on_the_same() {
+    let _serial = crate::common::serial();
+    let seed = 8;
+    let reference = page(vec![]);
+    install(&reference, seed, "a");
+    start(&setup(seed, 3), None);
+    let want = decisions_hash();
+
+    // Far enough in for the person to have taken turns: ask to go back over the last one.
+    let undoing = page(vec![
+        Act::Answer(90),
+        Act::Probe(Box::new(|page| {
+            page.script.push_front(Act::Cmd(json!({
+                "type": "history", "action": { "undo_turn": { "turns": 1 } },
+            })));
+        })),
+    ]);
+    install(&undoing, seed, "a");
+    let end = start(&setup(seed, 3), None);
+    assert_eq!(end["end"]["left"], true, "a turn undo ends the run and asks for a new one");
+    let restart = undoing.lock().unwrap().replies.last().unwrap()["restart"].clone();
+    assert_eq!(restart["generation"], 1);
+    let answers = restart["answers"].as_array().unwrap().len();
+    let redo = restart["redo"].as_array().unwrap().len();
+    assert!(answers > 0 && answers < 90, "{answers}");
+    assert!(redo > 0, "what went back is kept for a redo");
+
+    // The new run waits at the start of the turn, and plays on to the same end.
+    let again = page(vec![Act::Probe(Box::new(|page| {
+        let (_, _, choice, _) = pending(&page.messages).unwrap();
+        assert_eq!(choice.prompt, "action phase", "the turn is asked again from its start");
+    }))]);
+    install(&again, seed, "a");
+    let resume = restart.clone();
+    let end = start(&setup(seed, 3), Some(&resume));
+    assert_eq!(end["end"]["finished"], true);
+    assert_eq!(decisions_hash(), want, "the same answers give the same game");
+}
+
+#[test]
+fn a_turn_undo_without_a_turn_is_refused() {
+    let _serial = crate::common::serial();
+    let page = page(vec![
+        Act::Probe(Box::new(|page| {
+            page.script.push_front(Act::Cmd(json!({
+                "type": "history", "action": { "undo_turn": { "turns": 1 } },
+            })));
+        })),
+        Act::Answer(1),
+    ]);
+    install(&page, 8, "a");
+    let _ = start(&setup(8, 3), None);
+    let page = page.lock().unwrap();
+    assert!(page.replies.iter().all(|r| r["restart"].is_null()));
 }
 
 #[test]

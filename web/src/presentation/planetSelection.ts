@@ -3,6 +3,7 @@ import {
   findPlanetMeta,
   humanizeId,
 } from "../protocol/contentCatalog.ts";
+import { applyBoosts, wireBoosts, type PlanetBoost } from "./planetValues.ts";
 import { isDeclineOption, isPlanetSelectionChoice, optionPlanetId } from "./choiceModel.ts";
 import { formatDecisionSource } from "./decisionSource.ts";
 
@@ -12,6 +13,8 @@ export interface PlanetDetails {
   systemId: string | null;
   resources: number | null;
   influence: number | null;
+  /** What raises the values above the printed ones (resources / influence here are the raised values). */
+  boosts: PlanetBoost[];
   traits: string[];
   techSpecialties: string[];
   legendary: boolean;
@@ -44,12 +47,17 @@ export function getPlanetDetails(planetId: string, board?: BoardView | null): Pl
   const meta = tile?.planets?.find((p) => p.id === planetId);
   const catalog = findPlanetMeta(planetId);
   const dynamic = systemId ? board?.systems?.[systemId]?.planets?.[planetId] : undefined;
+  const boosts = wireBoosts(dynamic);
+  const printedR = meta?.resources ?? catalog?.resources ?? null;
+  const printedI = meta?.influence ?? catalog?.influence ?? null;
+  const raised = printedR !== null && printedI !== null ? applyBoosts(printedR, printedI, boosts) : null;
   return {
     id: planetId,
     name: meta?.label || catalog?.name || humanizeId(planetId),
     systemId,
-    resources: meta?.resources ?? catalog?.resources ?? null,
-    influence: meta?.influence ?? catalog?.influence ?? null,
+    resources: raised ? raised.resources : printedR,
+    influence: raised ? raised.influence : printedI,
+    boosts,
     traits: meta?.traits ?? [],
     techSpecialties: [...(meta?.tech_specialties ?? catalog?.techSpecialties ?? [])],
     legendary: Boolean(meta?.legendary),

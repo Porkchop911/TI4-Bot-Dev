@@ -1083,6 +1083,37 @@ pub(crate) fn prerequisites_met(
     crate::synergy::satisfies(&prerequisites(content, alias), &holdings, &joined, waivable)
 }
 
+/// What the Enigmatic Device may research: everything [`researchable`] whose prerequisites are met
+/// (rules version `RULES_ENIGMATIC_DEVICE`). Waiver-only technologies (Inheritance Systems, faction
+/// waivers) are left out: those charge a second price, and the card's six resources are the price.
+#[must_use]
+pub fn researchable_by_prerequisites(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+) -> Vec<TechnologyId> {
+    researchable(state, content, sources, player)
+        .into_iter()
+        .filter(|alias| prerequisites_met(state, content, sources, player, alias))
+        .collect()
+}
+
+/// Research a technology the Enigmatic Device chose, the six resources already paid: the normal
+/// research (specialties exhausted, unit upgrades applied, research consequences), falling back
+/// to a plain gain if the payment itself spent what the prerequisites needed.
+pub fn research_chosen(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    alias: &TechnologyId,
+) {
+    if !research(state, content, sources, player, alias) {
+        gain(state, content, sources, player, alias);
+    }
+}
+
 /// Everything this player could research now, in a stable order.
 ///
 /// The order is canonical (sorted by technology id), not the file layout of

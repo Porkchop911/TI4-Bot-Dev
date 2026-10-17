@@ -177,6 +177,9 @@ const STEER_WEIGHTS: [RegExp, number][] = [
   // Munitions Reserves (Letnev) spends 2 trade goods per reroll, which a raider needs for the
   // custodians.
   [/reroll this round's misses/i, 0.1],
+  // After the roll (rules version 2): the same price, the question now names the dice.
+  [/reroll all \d+ missed dice/i, 0.1],
+  [/choose which dice/i, 0.05],
   [/(^|\| )leave it\b/i, 0.05],
   // Carry ground forces along: a carrier that moves empty can never invade, and the batch
   // declines an unplanned cargo hold, so the infantry stays behind (27.2a then forbids the
@@ -210,6 +213,14 @@ export function isUnstage(desc: string): boolean {
 // reaction dialog's card-text, compact and map controls are all `reaction-inspect-*`.
 // The info buttons (unit and faction cards, hover popovers) only show text; "prepare" and the
 // secondary-prep chip/banner record a local plan instead of answering the real question.
+/**
+ * The test ids of the overlays a player closes to get back to the question (the sweep driver clicks
+ * them when nothing else is clickable): the system inspector, a turn bar menu and Insider
+ * Information's agenda preview, a corner card that stays until it is closed and covers the turn bar
+ * on a phone. None of them is ever chosen by random play (see EXCLUDED_CONTROLS: "close").
+ */
+export const OVERLAY_CLOSE_IDS = ["close-inspector-button", "turn-bar-menu-close", "agenda-peek-close"] as const;
+
 export const EXCLUDED_CONTROLS =
   /minimi[sz]e|close|cancel|undo|redo|history|search-input|trade-tab|pin-reaction|inspect|paused-plan-dismiss|ask[- ]each[- ](payment|build)|^(unit|faction)-info|: (unit|faction) details|^planet-effect-info|^(secondary-prep|prepare-|prep-|detail-panel-fold)|^top-menu|^ready-bar-(collapse|clear)|^agenda-strip/i;
 
@@ -230,7 +241,7 @@ export function reactionTextProblem(text: string): string | null {
 
 // Controls that submit something to the server.
 const COMMIT =
-  /submit|confirm|commit|done|finish|pass|paused-plan-continue|decline|abstain|propose|play-reaction|answer-opt|tiebreak-opt|sustain-opt|casualty-opt|retreat-opt|follow-up|vote-outcome|end turn/i;
+  /submit|confirm|commit|done|finish|pass|paused-plan-continue|decline|abstain|propose|play-reaction|answer-opt|tiebreak-opt|sustain-opt|casualty-opt|retreat-opt|follow-up|vote-outcome|end turn|mover-move/i;
 
 /**
  * Whether a control takes back staging and whether it submits. A turn bar button submits in one
@@ -377,7 +388,7 @@ export const CHAOS_FREE_OFFERS = 3;
 const OPTION = /^choice-option\b/;
 // Transit Diodes has its own panel: a planet target, unit rows and a "Finish redeployment" button.
 const DECLINE_OPTION =
-  /^(choice-option\b.*\b(decline|finish redeployment)\b|decline-planet-btn\b)/i;
+  /^(choice-option\b.*\b(decline|finish redeployment)\b|decline-planet-btn\b|transit-decline\b)/i;
 
 export function preferTechWindowUse<T extends PolicyCandidate>(
   subtype: string,
@@ -393,7 +404,7 @@ export function preferTechWindowUse<T extends PolicyCandidate>(
     case "transit_diodes_redeploy":
       return /\(4 left\)/.test(prompt)
         ? withoutDecline
-        : candidates.filter((c) => DECLINE_OPTION.test(c.desc) || /^submit-choice-button\b/.test(c.desc));
+        : candidates.filter((c) => DECLINE_OPTION.test(c.desc) || /^(submit-choice-button|transit-confirm)\b/.test(c.desc));
     case "psychoarchaeology_exhaust_specialty":
     case "bio_stims_ready":
       return withoutDecline.some((c) => OPTION.test(c.desc)) ? withoutDecline : candidates;
@@ -414,4 +425,35 @@ export function serverProgressed(
   before: number,
 ): boolean {
   return latest.game_version > before || latest.turn_status.kind === "game_over";
+}
+
+/**
+ * The status banner's text once the game is over. The engine's end arrives before the page has
+ * drawn it, so one immediate read can still see the last "YOUR TURN" (offline runs o3-39-2142,
+ * o2-186-0210: the screenshot taken right after showed "Game Over!"). Reads until it says Game
+ * Over or the time is up; returns the last text read.
+ */
+export async function settledGameOverBanner(
+  read: () => Promise<string | null>,
+  timeoutMs = 10_000,
+  stepMs = 250,
+): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  let text = "";
+  for (;;) {
+    text = (await read().catch(() => null)) ?? "";
+    if (/Game Over/i.test(text) || Date.now() >= deadline) return text;
+    await new Promise((resolve) => setTimeout(resolve, stepMs));
+  }
+}
+
+/**
+ * A production payment drawer that can never be confirmed: the plan's total is more than every
+ * offered planet and trade good together ("Not enough: all offered planets and trade goods cover
+ * only 9 of 10 resources"). A player then presses "Ask for each build" and pays the build the
+ * engine asks for; the harness otherwise excludes that button (offline run o3-210-0240 clicked
+ * Auto-pay 109 times).
+ */
+export function isPaymentDeadEnd(problem: string | null | undefined): boolean {
+  return /Not enough: all offered .* cover only/i.test(problem ?? "");
 }

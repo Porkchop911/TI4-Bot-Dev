@@ -804,6 +804,12 @@ const PRODUCERS: &[Producer] = &[
     },
     Producer {
         module: "action_cards.rs",
+        function: "pick_rider_target",
+        count: 1,
+        delivery: Delivery::ObservedHere,
+    },
+    Producer {
+        module: "action_cards.rs",
         function: "predicted_outcome",
         count: 1,
         delivery: Delivery::ObservedHere,
@@ -962,6 +968,13 @@ const PRODUCERS: &[Producer] = &[
         // `space_combat_round_started` opens.
         module: "faction_abilities.rs",
         function: "munitions_offer",
+        count: 1,
+        delivery: Delivery::ObservedHere,
+    },
+    Producer {
+        // Munitions Reserves after the roll (rules version 2), asked with the dice in view.
+        module: "faction_abilities.rs",
+        function: "munitions_roll_offer",
         count: 1,
         delivery: Delivery::ObservedHere,
     },
@@ -1281,6 +1294,14 @@ const PRODUCERS: &[Producer] = &[
         function: "enforce_hand_limit",
         count: 1,
         delivery: Delivery::ObservedHere,
+    },
+    Producer {
+        // Starting technology (Winnu, Argent Flight, Keleres, Thunder's Edge picks): the front
+        // pick of `GameState::starting_tech_picks`, asked by the driver before the first draft.
+        module: "starting_tech.rs",
+        function: "choice",
+        count: 1,
+        delivery: Delivery::ObservedVia("game.rs::step"),
     },
     Producer {
         module: "strategy.rs",
@@ -1606,6 +1627,7 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("action_cards.rs", "pick_detailed", 1),
     // BF-00b: placement from reinforcements by a faction effect; asks its own choice.
     ("action_cards.rs", "place_units_choosing", 1),
+    ("action_cards.rs", "pick_rider_target", 1),
     ("action_cards.rs", "predicted_outcome", 1),
     ("action_cards.rs", "public_disgrace", 1),
     ("action_cards.rs", "reparations", 2),
@@ -1624,6 +1646,7 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("exploration.rs", "ask_decorated", 1),
     ("exploration.rs", "ask_device_technology", 1),
     ("faction_abilities.rs", "munitions_offer", 1),
+    ("faction_abilities.rs", "munitions_roll_offer", 1),
     ("faction_abilities.rs", "perform_component", 2),
     ("faction_abilities.rs", "production_biomes", 1),
     ("faction_abilities.rs", "strategy_resolved", 1),

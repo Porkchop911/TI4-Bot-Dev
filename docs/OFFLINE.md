@@ -27,10 +27,21 @@ COOP/COEP, no SharedArrayBuffer).
 
 ## Using it
 
-1. Start page, "Play offline". Choose the player count, your seat and faction (or random) and a
-   nickname. The first start downloads the engine (6.5 MB unpacked, 1.6 MB with gzip, 1.1 MB with
+1. Start page, "Play offline". Choose the player count, your seat and faction (or random), the
+   map and a nickname. The first start downloads the engine (6.5 MB unpacked, 1.6 MB with gzip, 1.1 MB with
    brotli) and compiles it; a progress bar shows this. Later starts use the browser cache (the
    file name contains a hash and is served `immutable`).
+   **Map**: the row says "Recommended layout" until you touch it (the game then gets the layout
+   the engine recommends for the table size, as every offline game did before the picker). "Choose
+   map" opens the same sheet as the online lobby (`OfflineMapPicker`, the lobby's `MapCard` and
+   `MapPreviewBoard`): a strip of the layouts that build for this table size, Random, and a large
+   picture with a badge per seat. The first use loads the engine (so the download can happen there instead of at Start) and asks it (`describe` for the
+   layouts, `map_preview` for the pictures; `web/src/offline/local/mapSource.ts`, one short-lived
+   worker that ends 20 s after the last question). The picture is an example of the choice, not the
+   exact board: seats, factions and the filler tiles are drawn from the game's seed at Start.
+   "Another example" redraws it. A layout made for another table size is dropped when you change
+   the player count. If the engine cannot answer the sheet shows the error with Retry and the form
+   still starts with the recommended layout.
 2. Play as in an online game. The position at every question is written to the browser
    (IndexedDB) before your answer goes to the engine, so closing the tab loses at most the
    answer you were giving. The page also asks the browser to keep its data
@@ -44,11 +55,30 @@ COOP/COEP, no SharedArrayBuffer).
 
 ## Saves, export and import
 
-* A save is the host's `save_state` object (seed, setup, the human's answers, redo list, the
-  decisions hash, engine build and content digest), not a board snapshot, plus the sha-256 of the
-  wasm file that played it. Size is small (about 60 KiB at 5000 answers). Limits: 8 MiB per game,
-  100 games, 128 MiB in all.
-* **Export** writes a JSON file (`kind: "ti4-offline-game"`, `version: 1`) with that save. Keep it
+* A save is the host's `HostSave` (`SAVE_FORMAT = 2`, shared with `web2/` through
+  `web-shared/src/storage`): the game as the engine was given it (`game`: one of `setup`, `table`,
+  `local`, with every open choice filled in), the seed, the number of players, the option id of
+  **every decision of every seat** (`decisions`, so a replay asks no bot again), the person's
+  answers, the seat switches, the redo list, per-seat staged plans, the decisions hash, the rule
+  bot version (`bot_version`, also for `table`/`local` games, which have no `setup` to hold it),
+  engine build and content digest, plus the sha-256 of the wasm file that played it. Size is small
+  (about 60 KiB at 5000 answers, more with the decisions of all seats). Limits: 8 MiB per game,
+  100 games, 128 MiB in all. One IndexedDB (`ti4-offline`, version 2) serves both apps.
+* **Starting technology** (Winnu, Argent Flight, Council Keleres): a new game asks for it before the
+  first strategy card. The save records it as `game.setup.starting_tech: true` (or
+  `game.table.setup.starting_tech`); a game of bot version 2 or less (every save made before the
+  choice) has no such key, is made without the choice and replays as it was played. See
+  `docs/STARTING_TECH_CHOICES.md`.
+* **Format 2 replaces format 1.** Saves of format 1 (the old `web/` store, and web2's formats 1 to 3)
+  are not read and not migrated: the page lists them as "older version" and offers to delete them.
+  Exported files changed too (an export of the old format is refused on import). Testers lose their
+  offline games once; see `docs/OFFLINE_SAVE_RESET_NOTE.md` for the notice.
+* The chosen map is `game.setup.map` of the save (a template alias, or `"random"`). The engine
+  fills it in when the person left it open, so a game always stores its layout, and the same
+  board replays because the alias is part of what the seed and the answers are applied to. The
+  picker asks the shared Worker (`query`: `describe`, `map_preview`) for layouts and pictures.
+  Export, import and feedback carry it with the save.
+* **Export** writes a JSON file (`kind: "ti4-offline-game"`, `version: 2`) with that save. Keep it
   as a backup or move a game to another browser.
 * **Import** ("Import a game" next to "My offline games") checks the file (shape, version, size)
   and adds it under a new id. If its engine differs from the one in this page, it asks what to
@@ -83,12 +113,34 @@ delivery, "... sent". Operators read these like any other report (`tools/public/
 ## What is disabled offline
 
 Everything that needs a server or other people: lobby, invitations, other seats, spectators,
-presence, takeovers, the access password. Also hidden in v1: the map splice preview and turn redo
-(undo, rewind to an earlier decision and redo of undone decisions stay). The combat odds come from
-the engine of the page. The replay download of an offline game is its save file, not the server's replay
+presence, takeovers, the access password. The map picker is available (see "Using it"). Also hidden
+in v1: the map splice preview and turn redo (undo, rewind to an earlier decision and redo of undone
+decisions stay). The combat odds come from the engine of the page. The replay download of an
+offline game is its save file, not the server's replay
 format. The UI hides these through the transport capabilities rather than showing broken buttons.
 Known engine gaps apply (7 and 8 players are not offered; Creuss and Antimass limits as in the
 engine).
+
+## Notifications, event log and undo (single player)
+
+* The notification log is an icon-only button (`toast-history-toggle`, bell, small unread count) in
+  the row of the Technologies / Objectives buttons (phone: the Players / Objectives / Events
+  buttons, `toast-history-mobile-toggle`). Its list is newest first. Games with other people keep
+  the "Recent notifications" pill under the corner toasts.
+* Corner toasts can be swiped away (touch or mouse drag, sideways), or dismissed with a click or
+  Escape/Delete; a dismissed toast stays in the log. In a single-player game the toast column sits
+  below the turn bar, its menus and dialogs, so it never covers a control.
+* The event log lists the newest entry first (new entries appear at the top) and has an
+  **Undo last decision** button: the engine's live undo (`history` action `undo`), i.e. exactly the
+  human's last answer; the bots' decisions after it are replayed from the seed. It is enabled while
+  `history.can_undo` is set (the last 32 checkpoints), announced through a polite live region, and
+  the autosave follows (the save holds seed + the remaining human answers).
+* The browser/system **Back** button does the same thing (`hooks/useBackUndo.ts`): one sentinel
+  history entry sits on top of the game's entry; Back with something to undo undoes one decision
+  and re-pushes the sentinel (the player stays on the game screen, a short note says so). Back
+  with nothing to undo goes back once more, i.e. leaves the game for the previous page (no trap;
+  the game is autosaved). A reload keeps the sentinel of its entry, so none is pushed twice.
+  Forward onto a sentinel is ignored; nothing is redone.
 
 ## Size and performance
 
@@ -137,6 +189,10 @@ changed engine can answer the same question differently and make an old answer l
   `prebuild` hook of `npm run build`) with `TI4_REQUIRE_WASM=1`: a missing wasm32 target or a
   failed cargo build stops the deploy instead of shipping a release without "Play offline", and so
   does a `web/dist` without a `.wasm`.
+* The nightly smoke sweep can play offline games instead of (or beside) the proctored server games:
+  `NIGHTLY_MODE=offline|both`, see `tools/nightly-smoke/README.md`, "Offline mode". It plays full games with the
+  production bundle and no server, reports findings in the usual night report, and keeps each game's save blob
+  (`trace/save.json`) so `tools/nightly-smoke/offline_replay.sh` can replay it natively.
 * Check headers after any proxy change: `deploy/public/check-headers.sh` starts the server and a
   throwaway Caddy with the repo Caddyfile on loopback and asserts content type, cache, br/gzip,
   CSP and the absence of COOP/COEP.

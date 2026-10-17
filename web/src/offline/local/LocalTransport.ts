@@ -1,5 +1,6 @@
 import {
   canContinueBatch,
+  checkChoiceNonce,
   PLAN_SUBTYPES,
   PreviewUnsupportedError,
   ReachUnsupportedError,
@@ -26,7 +27,7 @@ import type { HostCommand, LinkEvent } from "@ti4/shared/link/link.ts";
 /** What a local game offers in `GameTransport` terms. The shell's `Capabilities` say the same. */
 export const LOCAL_TRANSPORT_CAPABILITIES: TransportCapabilities = {
   splicePreview: false,
-  turnRedo: false,
+  turnRedo: true,
   multiplayer: false,
   feedback: true,
 };
@@ -343,9 +344,10 @@ export class LocalTransport implements GameTransport {
     throw new Error(message);
   }
 
-  async submitChoice(optionId: string): Promise<void> {
+  async submitChoice(optionId: string, nonce?: string): Promise<void> {
     if (this.readOnly) return this.setError(VIEW_ONLY);
     const { pendingChoice, gameVersion } = this.store.get();
+    checkChoiceNonce(pendingChoice, nonce);
     if (!pendingChoice) return this.setError("No decision currently pending");
     if (this.inflight) {
       if (this.inflight.nonce === pendingChoice.nonce) {
@@ -488,6 +490,10 @@ export class LocalTransport implements GameTransport {
         : "cursor" in action
           ? { restore_cursor: { cursor: action.cursor } }
           : { restore: { event_id: action.eventId } };
+    await this.sendHistory(wire);
+  }
+
+  private async sendHistory(wire: unknown): Promise<void> {
     await this.stored();
     const next = this.nextQuestion();
     try {
@@ -565,8 +571,16 @@ export class LocalTransport implements GameTransport {
     return null;
   }
 
-  async turnRedoCommand(_command: TurnRedoCommand): Promise<void> {
-    throw new Error("Turn redo is not available in an offline game");
+  /**
+   * "Undo my last turn": the engine takes the game back to the start of the person's last turn(s)
+   * (a restart from the answers before it, like any history change). There is no auto-play of
+   * recorded decisions and no saved original: the bots just decide again from the same game, and
+   * the undone answers can be redone with the history's redo. `autoplay`, `restore` and `keep`
+   * have nothing to do (a redo is never "in flight" offline).
+   */
+  async turnRedoCommand(command: TurnRedoCommand): Promise<void> {
+    if (command.action !== "request") return;
+    await this.sendHistory({ undo_turn: { turns: command.turns === 2 ? 2 : 1 } });
   }
 
   private seat(): string | null {
