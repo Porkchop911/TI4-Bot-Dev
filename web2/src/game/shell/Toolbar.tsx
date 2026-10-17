@@ -27,6 +27,7 @@ export function Toolbar({
   other,
   settings = false,
   table = false,
+  history = null,
 }: {
   view: ToolbarView;
   drawer: string | null;
@@ -38,6 +39,12 @@ export function Toolbar({
   settings?: boolean;
   /** The game has a table: the sheet "Table" is the last reference sheet. */
   table?: boolean;
+  /**
+   * The history mode: which point of the game the screen shows ("Round 1 · Turn 5 · Mahact"). The
+   * status of the game and the workspace give way to it and to "Back to now"; no control of the
+   * live game or of the draft is shown. Null: the screen shows now.
+   */
+  history?: string | null;
 }) {
   const dispatch = useDispatch();
   const references: (readonly [string, string])[] = table
@@ -61,24 +68,41 @@ export function Toolbar({
   ];
   return (
     <header className="flex min-h-12 items-center gap-3.5 border-b border-line bg-surface px-4 py-1.5 phone:flex-wrap phone:gap-x-2 phone:gap-y-1.5 phone:px-3 phone:pt-[max(6px,env(safe-area-inset-top))]">
-      {/* A status can name a player: on a phone it has the room that is left, whatever its length. */}
-      <div className="flex min-w-0 flex-col text-xs leading-[1.3] text-muted phone:w-0 phone:flex-1">
-        <span>
-          Round {view.round} · {view.phase}
-          {view.turn > 0 && ` · Turn ${view.turn}`}
-        </span>
-        <strong className="truncate text-sm font-semibold text-text">
-          <i className="mr-1.5 mb-0.5 inline-block size-1.5 rounded-full bg-accent" />
-          {view.status}
-        </strong>
-      </div>
-      <nav
-        aria-label="Workspace"
-        className="flex gap-0.5 rounded-lg border border-line bg-well p-[3px]"
-      >
-        {tab("live", "Live")}
-        {tab("draft", "Draft", !!view.draftLocked, view.draftLocked ?? undefined)}
-      </nav>
+      {history ? (
+        <>
+          <div className="flex min-w-0 flex-col text-xs leading-[1.3] text-muted phone:w-0 phone:flex-1">
+            <span>History</span>
+            <strong className="truncate text-sm font-semibold text-text" title={history}>
+              <i className="mr-1.5 mb-0.5 inline-block size-1.5 rounded-full bg-accent" />
+              {history}
+            </strong>
+          </div>
+          <Button tone="quiet" size="sm" onClick={() => dispatch({ type: "closeTurn" })}>
+            Back to now
+          </Button>
+        </>
+      ) : (
+        <>
+          {/* A status can name a player: on a phone it has the room that is left, whatever its length. */}
+          <div className="flex min-w-0 flex-col text-xs leading-[1.3] text-muted phone:w-0 phone:flex-1">
+            <span>
+              Round {view.round} · {view.phase}
+              {view.turn > 0 && ` · Turn ${view.turn}`}
+            </span>
+            <strong className="truncate text-sm font-semibold text-text">
+              <i className="mr-1.5 mb-0.5 inline-block size-1.5 rounded-full bg-accent" />
+              {view.status}
+            </strong>
+          </div>
+          <nav
+            aria-label="Workspace"
+            className="flex gap-0.5 rounded-lg border border-line bg-well p-[3px]"
+          >
+            {tab("live", "Live")}
+            {tab("draft", "Draft", !!view.draftLocked, view.draftLocked ?? undefined)}
+          </nav>
+        </>
+      )}
       {phone ? null : (
         <nav aria-label="Reference" className="ml-auto flex gap-1">
           {references.map(([id, label]) => (
@@ -111,7 +135,7 @@ export function Toolbar({
           Dev
         </Button>
       )}
-      {view.draft && (
+      {view.draft && !history && (
         <div className="flex items-center gap-1.5 phone:order-last phone:w-full phone:[&>:last-child]:flex-1">
           <Button
             tone="quiet"
@@ -148,7 +172,7 @@ export function Toolbar({
           label="Reference and more"
           items={[
             ...references.map(([id, label]) => ({ label, onSelect: () => onDrawer(id) })),
-            ...(view.draft ? draftItems : []),
+            ...(view.draft && !history ? draftItems : []),
             ...(other ? [{ label: other.label, onSelect: () => location.assign(other.href) }] : []),
             ...(settings ? [{ label: "Dev", onSelect: () => onDrawer("settings") }] : []),
           ]}

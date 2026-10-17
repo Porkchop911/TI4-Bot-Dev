@@ -271,7 +271,7 @@ test("phone: the step sheet minimizes to its heading line, the main button under
   expect(errors).toEqual([]);
 });
 
-test("phone: a tactical turn of the Log opens on Map over the board, read-only, and the decision is its line", async ({
+test("phone: a tactical turn of the Log opens on Map over the board, read-only, in the history mode with the decision as a bar that waits", async ({
   page,
 }) => {
   test.setTimeout(10_000);
@@ -315,15 +315,38 @@ test("phone: a tactical turn of the Log opens on Map over the board, read-only, 
   await expect(tabs).toHaveText([/Activation/, /Movement/, /Space combat/]);
   await expect(turn.getByRole("img", { name: /^Rolled \d+: (hit|miss)$/ }).first()).toBeVisible();
   await expect(turn.locator("input, select, textarea")).toHaveCount(0);
-  // The decision is its line, and its main button is under the pane.
-  await expect(turn.getByRole("button", { name: "Restore" })).toBeVisible();
-  await expect(send).toBeVisible();
+  // The history mode: the toolbar says which point of the game the screen shows, with the way
+  // back, and the stamp on the board which step.
+  const header = page.locator("header");
+  await expect(header).toContainText("History");
+  await expect(header).toContainText(/Round 1 · Turn \d+ · /);
+  await expect(header.getByRole("navigation", { name: "Workspace" })).toHaveCount(0);
+  await expect(header.getByRole("button", { name: "Back to now" })).toBeVisible();
+  const stamp = page
+    .getByRole("region", { name: "Galaxy board" })
+    .getByRole("status", { name: "Board shows" });
+  await expect(stamp).toHaveText(/after Space combat$/);
+  await expect(stamp).toBeInViewport();
+  await expect(turn.getByRole("navigation", { name: "Turns of the Log" })).toBeVisible();
+  // No control of the live game: the decision is a bar in the place of the footer.
+  await expect(send).toHaveCount(0);
+  await expect(page.getByText("This commits to the live game")).toHaveCount(0);
+  const waiting = page.getByRole("region", { name: "Your decision" });
+  await expect(waiting).toContainText("Your decision is waiting: ");
+  await expect(waiting).toBeInViewport();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
   expect(await turn.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
   await page.screenshot({ path: `${SHOTS}/turn.png`, animations: "disabled" });
 
-  // "×" closes it, and the step sheet is back.
+  // "×" closes it, and the step sheet is back; so does "Back" of the bar.
   await turn.getByRole("button", { name: "Close" }).click();
+  await expect(turn).toHaveCount(0);
+  await expect(sheet).toBeVisible();
+  await expect(send).toBeVisible();
+  await pane("Log").click();
+  await row.click();
+  await expect(turn).toBeVisible();
+  await waiting.getByRole("button", { name: "Back" }).click();
   await expect(turn).toHaveCount(0);
   await expect(sheet).toBeVisible();
   expect(errors).toEqual([]);

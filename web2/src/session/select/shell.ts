@@ -1,5 +1,12 @@
 // The whole screen from one update of the game and what the player staged in this page.
-import type { ActionView, FooterView, ShellView } from "../../model";
+import type {
+  ActionView,
+  FooterView,
+  InspectView,
+  LogView,
+  PillView,
+  ShellView,
+} from "../../model";
 import type { Catalog, SessionUpdate } from "../wire";
 import {
   type LocalState,
@@ -189,6 +196,7 @@ export function selectShell(
       selectPastFlow(update, local.events ?? NO_EVENTS, local.inspect.turn, printed) ??
       selectPastPhase(update, local.events ?? NO_EVENTS, local.inspect.turn, printed))
     : null;
+  const log = selectLog(update, local.events ?? NO_EVENTS, printed);
   return {
     seats: selectSeats(update, printed),
     accent:
@@ -267,10 +275,73 @@ export function selectShell(
       exploration: selectExploration(update, catalog, printed),
       log: [],
     },
-    log: selectLog(update, local.events ?? NO_EVENTS, printed),
-    inspect: past && local.inspect ? { turn: local.inspect.turn, action: past.action } : null,
+    log,
+    inspect:
+      past && local.inspect
+        ? inspectOf(log, local.inspect.turn, past.action, update, printed)
+        : null,
     apply: local.draft?.apply ?? null,
     toast: null,
     asked: !!update.pending_choice || !!local.draft,
+  };
+}
+
+/** The rows of the Log that open: a tactical, strategic or component turn, a phase that is no action phase. */
+const opens = (log: LogView) =>
+  log.entries.filter((entry) =>
+    entry.kind === "turn"
+      ? entry.action === "tactical" || entry.action === "strategic" || entry.action === "component"
+      : entry.phase !== "action",
+  );
+
+/**
+ * A row of the Log that is open, in the history mode: which point of the game the screen shows
+ * (the toolbar, the heading row of the sheet, the stamp on the board) and the rows around it. The
+ * pill "Resolved" is gone: the mode says it. "Played now" stays on the row that is played now.
+ */
+function inspectOf(
+  log: LogView,
+  id: string,
+  action: ActionView,
+  update: SessionUpdate,
+  printed: Catalog | null,
+): InspectView {
+  const rows = opens(log);
+  const at = rows.findIndex((entry) => entry.id === id);
+  const entry = at >= 0 ? rows[at] : null;
+  const resolved = (pill: PillView | null) => (pill?.label === "Resolved" ? null : pill);
+  const shown: ActionView =
+    action.kind === "tactical"
+      ? { ...action, task: { ...action.task, pill: resolved(action.task.pill) } }
+      : // A phase has its round in the heading row once: beside "‹" and "›".
+        {
+          ...action,
+          pill: resolved(action.pill),
+          context: entry?.kind === "phase" ? null : action.context,
+        };
+  let title = "";
+  let name = "";
+  let stamp = "";
+  if (entry?.kind === "turn") {
+    const seat = seatLabel(update, entry.seat, printed);
+    title = `Round ${entry.round} · Turn ${entry.turn} · ${seat}`;
+    name = `${seat} · Turn ${entry.turn}`;
+    const step = action.kind === "tactical" ? action.tabs[action.selected]?.name : null;
+    stamp = `Round ${entry.round} · Turn ${entry.turn} · ${step ? `after ${step}` : "end of the turn"}`;
+  } else if (entry) {
+    const phase = entry.label.split(" · ")[0];
+    title = `Round ${entry.round} · ${phase}`;
+    // The heading of the sheet is the phase already.
+    name = `Round ${entry.round}`;
+    stamp = `Round ${entry.round} · end of the ${phase}`;
+  }
+  return {
+    turn: id,
+    action: shown,
+    title,
+    name,
+    stamp,
+    previous: at > 0 ? rows[at - 1].id : null,
+    next: at >= 0 && at < rows.length - 1 ? rows[at + 1].id : null,
   };
 }

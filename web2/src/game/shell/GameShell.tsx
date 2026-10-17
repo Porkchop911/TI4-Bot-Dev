@@ -7,7 +7,7 @@ import { Board } from "../board/Board";
 import { GameProvider } from "../context";
 import { LinkProvider } from "../link";
 import { LogPanel } from "../log/LogPanel";
-import { TurnSheet } from "../log/TurnSheet";
+import { decisionHeading, TurnSheet, useFreshQuestion, WaitingBar } from "../log/TurnSheet";
 import { PlayerTable } from "../players/PlayerTable";
 import { ReferenceDrawer } from "./Reference";
 import { ShellFrame } from "./ShellFrame";
@@ -18,6 +18,7 @@ const ACCENT = {
   draft: "var(--color-gold)",
   live: "var(--color-cyan)",
   done: "var(--color-green)",
+  history: "var(--color-violet)",
 };
 
 type Pane = "map" | "players" | "log";
@@ -109,6 +110,8 @@ export function GameShell({
   // so does the next step of a tactical action in a draft, as it would in Live.
   const question = `${view.question ?? 0}:${view.action.kind === "tactical" ? view.action.current : ""}`;
   const [minimizedAt, setMinimizedAt] = useState<string | null>(null);
+  // The history mode stays when a question of the viewer comes: the bar of the decision marks it.
+  const fresh = useFreshQuestion(!!view.inspect, view.asked, question);
   // The pane where the open choice is made: a seat is picked in the player table, every other
   // choice is made on the map, where the open step is a sheet over the board.
   const asked: Pane | null = view.players.pick
@@ -196,6 +199,10 @@ export function GameShell({
         event.preventDefault();
         return now.dispatch({ type: "closeTurn" });
       }
+      // The history mode shows no control of the live game: its keys do nothing there.
+      if (now.turn) {
+        return;
+      }
       if (!keyIsFree(event, focusByKeyboard)) {
         return;
       }
@@ -255,10 +262,11 @@ export function GameShell({
   // of a production have its room; their check mark gives it back.
   const boardSheet = view.board.origin || view.board.landing || view.board.production;
   const step = view.inspect ? (
-    // A turn of the Log that is open has the place of the step sheet; the decision is its line.
+    // A turn of the Log that is open has the place of the step sheet, in the history mode.
     <TurnSheet
       view={view.inspect}
       decision={view.asked ? view.action : null}
+      fresh={fresh}
       status={view.toolbar.status}
     />
   ) : (
@@ -277,7 +285,7 @@ export function GameShell({
     <GameProvider seats={view.seats} dispatch={dispatch}>
       <LinkProvider>
         <ShellFrame
-          accent={ACCENT[view.accent]}
+          accent={ACCENT[view.inspect ? "history" : view.accent]}
           header={
             <Toolbar
               view={view.toolbar}
@@ -287,6 +295,7 @@ export function GameShell({
               other={other}
               settings={!!dev}
               table={!!table}
+              history={view.inspect?.title ?? null}
             />
           }
           board={
@@ -313,7 +322,16 @@ export function GameShell({
           footer={
             // An open fleet has the room of the footer, and so have the open landings and the
             // open build of a production. The check mark of the sheet gives the footer back.
-            !(pane === "map" && boardSheet) && <ActionFooter view={footerOf(view.action)} />
+            // In the history mode the decision is not shown: its bar says that it waits.
+            view.inspect
+              ? view.asked && (
+                  <WaitingBar
+                    heading={decisionHeading(view.action)}
+                    fresh={fresh}
+                    onBack={() => dispatch({ type: "closeTurn" })}
+                  />
+                )
+              : !(pane === "map" && boardSheet) && <ActionFooter view={footerOf(view.action)} />
           }
         >
           <Dialog

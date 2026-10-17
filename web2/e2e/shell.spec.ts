@@ -350,7 +350,7 @@ test("desktop: the Log has a large row for each turn of the other seats, with it
   expect(errors).toEqual([]);
 });
 
-test("desktop: a tactical turn of the Log opens in the place of the step sheet, read-only, with its steps, the dice of its combat and its system marked", async ({
+test("desktop: a tactical turn of the Log opens in the place of the step sheet, read-only, in the history mode, with its steps, the dice of its combat and its system marked", async ({
   page,
 }) => {
   test.setTimeout(10_000);
@@ -403,16 +403,42 @@ test("desktop: a tactical turn of the Log opens in the place of the step sheet, 
   await expect(
     board.locator('[aria-label*="the open window or turn is about this system"]'),
   ).toHaveAttribute("aria-label", /system 29/);
-  // The decision of the viewer is one line, with its footer.
-  await expect(sheet.getByRole("button", { name: "Restore" })).toBeVisible();
-  await expect(send).toBeVisible();
-  await expect(sheet.locator("#step-panel")).toHaveCount(0);
+  // The screen is in the history mode: the frame has its colour, the toolbar says which point of
+  // the game the screen shows, and the stamp on the board which step.
+  const main = page.locator("main");
+  expect(await main.evaluate((element) => element.style.getPropertyValue("--accent"))).toBe(
+    "var(--color-violet)",
+  );
+  const header = page.locator("header");
+  await expect(header).toContainText("History");
+  await expect(header).toContainText(/Round 1 · Turn \d+ · /);
+  await expect(header.getByRole("navigation", { name: "Workspace" })).toHaveCount(0);
+  await expect(header.getByRole("button", { name: "Back to now" })).toBeVisible();
+  await expect(board.getByRole("status", { name: "Board shows" })).toHaveText(
+    /^Round 1 · Turn \d+ · after Space combat$/,
+  );
+  // The heading row names the turn, with the rows of the Log around it; the live row is the last.
+  const turns = turn.getByRole("navigation", { name: "Turns of the Log" });
+  await expect(turns).toContainText(/· Turn \d+/);
+  await expect(turns.getByRole("button", { name: "Next turn" })).toBeDisabled();
+  // No control of the live game: the decision is a bar that says that it waits, with no footer.
+  await expect(sheet).toHaveCount(0);
+  await expect(page.locator('footer button[aria-keyshortcuts="Enter"]')).toHaveCount(0);
+  await expect(page.getByText("This commits to the live game")).toHaveCount(0);
+  const waiting = page.getByRole("region", { name: "Your decision" });
+  await expect(waiting).toContainText("Your decision is waiting: ");
+  // It was open when the mode began: it is not new.
+  await expect(waiting.locator("[data-mark]")).toHaveCount(0);
+  // The keys of the live action do nothing.
+  await page.keyboard.press("Enter");
+  await expect(turn).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1920);
   await page.screenshot({ path: `${SHOTS}/turn.png`, animations: "disabled" });
 
   // The movement: what left each system, and the fleet in #29 now → after.
   await tabs.nth(1).click();
   await expect(turn.getByRole("heading", { name: "Movement" })).toBeVisible();
+  await expect(board.getByRole("status", { name: "Board shows" })).toHaveText(/after Movement$/);
   await expect(turn).toContainText("4 ships · 3 cargo");
   await expect(turn).toContainText("0 → 2");
   await expect(turn).not.toContainText("Choose a system on the map");
@@ -423,10 +449,18 @@ test("desktop: a tactical turn of the Log opens in the place of the step sheet, 
   await expect(turn).toHaveCount(0);
   await expect(row).toHaveAttribute("aria-pressed", "false");
   await expect(sheet.locator("#step-panel")).toBeVisible();
-  // So does a tap on the line of the decision.
+  expect(await main.evaluate((element) => element.style.getPropertyValue("--accent"))).not.toBe(
+    "var(--color-violet)",
+  );
+  await expect(header.getByRole("navigation", { name: "Workspace" })).toBeVisible();
+  // So does "Back" of the bar of the decision, and "Back to now" of the toolbar.
   await row.click();
   await expect(turn).toBeVisible();
-  await sheet.getByRole("button", { name: "Restore" }).click();
+  await waiting.getByRole("button", { name: "Back" }).click();
+  await expect(turn).toHaveCount(0);
+  await expect(sheet.locator("#step-panel")).toBeVisible();
+  await row.click();
+  await header.getByRole("button", { name: "Back to now" }).click();
   await expect(turn).toHaveCount(0);
   await expect(sheet.locator("#step-panel")).toBeVisible();
   expect(errors).toEqual([]);
@@ -526,13 +560,29 @@ test("desktop: a phase of the Log opens what the seats did in it, and the live r
   const turn = page.getByRole("region", { name: "Turn" });
   expect((await turn.boundingBox())!.width).toBe(412);
   await expect(turn.getByRole("heading", { name: "Strategy phase" })).toBeVisible();
-  await expect(turn).toContainText("Resolved");
+  // The history mode says that it is the past: no pill "Resolved" in the sheet.
+  await expect(page.locator("header")).toContainText("Round 1 · Strategy phase");
+  await expect(
+    page.getByRole("region", { name: "Galaxy board" }).getByRole("status", { name: "Board shows" }),
+  ).toHaveText("Round 1 · end of the Strategy phase");
+  await expect(turn.locator("#step-panel > div").first()).not.toContainText("Resolved");
   const picks = turn.locator("ul[aria-label=Picks] > li");
   await expect(picks).toHaveCount(8);
   await expect(picks.filter({ hasText: "You" })).toContainText("Imperial");
   await expect(turn.locator("input, select, textarea, footer button")).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1920);
   await page.screenshot({ path: `${SHOTS}/phase.png`, animations: "disabled" });
+  // "‹" and "›" go to the rows of the Log around it: the phase is the first row.
+  const turns = turn.getByRole("navigation", { name: "Turns of the Log" });
+  await expect(turns.locator("span")).toHaveText("Round 1");
+  await expect(turns.getByRole("button", { name: "Previous turn" })).toBeDisabled();
+  await turns.getByRole("button", { name: "Next turn" }).click();
+  await expect(phase).toHaveAttribute("aria-pressed", "false");
+  await expect(log.getByRole("button", { pressed: true })).toHaveCount(1);
+  await expect(turns.locator("span")).toHaveText(/· Turn 1$/);
+  await expect(page.locator("header")).toContainText(/Round 1 · Turn 1 · /);
+  await turns.getByRole("button", { name: "Previous turn" }).click();
+  await expect(phase).toHaveAttribute("aria-pressed", "true");
   await turn.getByRole("button", { name: "Close" }).click();
   await expect(turn).toHaveCount(0);
 
@@ -556,11 +606,11 @@ test("desktop: a phase of the Log opens what the seats did in it, and the live r
   await expect(turn).toContainText("Played now");
   const you = turn.locator("ul[aria-label=Seats] > li").filter({ hasText: "You" });
   await expect(you).toContainText("▶ Deciding");
-  // The viewer's decision is its line under the turn; a tap on it gives the decision back.
-  const decision = page.getByRole("region", { name: "Open step" });
+  // The viewer's decision is a bar under the turn; its "Back" gives the decision back.
+  const decision = page.getByRole("region", { name: "Your decision" });
   await expect(decision).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/live-turn.png`, animations: "disabled" });
-  await decision.getByRole("button", { name: /Restore/ }).click();
+  await decision.getByRole("button", { name: "Back" }).click();
   await expect(turn).toHaveCount(0);
   await expect(sheet.getByRole("button", { name: "Add bought token" })).toBeVisible();
   expect(errors).toEqual([]);

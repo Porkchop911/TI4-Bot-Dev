@@ -310,11 +310,24 @@ export interface ApplyView {
   note: string;
 }
 
-/** A turn of the Log, opened: what its action showed, read-only. */
+/**
+ * A turn or a phase of the Log, opened: what its action showed, read-only. The screen is in the
+ * history mode while it is open: the toolbar says which point of the game it shows, and nothing on
+ * the screen is a control of the live game.
+ */
 export interface InspectView {
-  /** The id of the turn (`LogTurnView.id`). */
+  /** The id of the turn (`LogTurnView.id`) or of the phase (`LogPhaseView.id`). */
   turn: string;
   action: ActionView;
+  /** Which point the screen shows, in the toolbar: "Round 1 · Turn 5 · Mahact", "Round 1 · Status phase". */
+  title: string;
+  /** The turn in the heading row of the sheet: "Mahact · Turn 5"; a phase, whose heading names it: "Round 1". */
+  name: string;
+  /** What the board shows: "Round 1 · Turn 5 · after Movement", "Round 1 · end of the Status phase". */
+  stamp: string;
+  /** The rows of the Log before and after it that open. Null: none. */
+  previous: string | null;
+  next: string | null;
 }
 
 export interface ShellView {

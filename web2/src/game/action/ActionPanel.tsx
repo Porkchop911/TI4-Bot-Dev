@@ -169,6 +169,8 @@ interface TaskPanelProps {
   onMinimize?: () => void;
   /** Closes the panel: "×" at the end of the heading row. Absent: it has none. */
   onClose?: () => void;
+  /** Before "×": the way to the rows around a turn of the Log that is open. */
+  nav?: ReactNode;
   children: ReactNode;
 }
 
@@ -187,6 +189,7 @@ function TaskPanel({
   labelledBy,
   onMinimize,
   onClose,
+  nav,
   children,
 }: TaskPanelProps) {
   const dispatch = useDispatch();
@@ -240,13 +243,17 @@ function TaskPanel({
               </Hint>
             </span>
           )}
+          {nav && <span className="ml-auto flex min-w-0 shrink items-center">{nav}</span>}
           {onClose && (
             <button
               type="button"
               aria-label="Close"
               title="Close"
               onClick={onClose}
-              className="-mr-1 ml-auto shrink-0 rounded px-1 text-lg leading-6 text-muted hover:text-text touch:min-h-9 touch:min-w-9"
+              className={cx(
+                "-mr-1 shrink-0 rounded px-1 text-lg leading-6 text-muted hover:text-text touch:min-h-9 touch:min-w-9",
+                !nav && "ml-auto",
+              )}
             >
               <span aria-hidden="true">×</span>
             </button>
@@ -291,6 +298,7 @@ export function ActionPanel({
   footer = true,
   onMinimize,
   onClose,
+  nav,
 }: {
   view: ActionView;
   /** The status in the toolbar. The pill of the heading does not say it again. */
@@ -301,6 +309,8 @@ export function ActionPanel({
   onMinimize?: () => void;
   /** Closes the panel: "×" in the heading row (a turn of the Log that is open). */
   onClose?: () => void;
+  /** Before "×": the way to the rows around a turn of the Log that is open. */
+  nav?: ReactNode;
 }) {
   const dispatch = useDispatch();
   const away = view.kind === "tactical" && view.current !== null && view.selected !== view.current;
@@ -342,6 +352,7 @@ export function ActionPanel({
           labelledBy={`step-tab-${view.selected}`}
           onMinimize={onMinimize}
           onClose={onClose}
+          nav={nav}
         >
           {view.task.review && <Review view={view.task.review} />}
           {/* A step that only informs (a combat that the viewer watches) is of the Log. */}
@@ -361,6 +372,7 @@ export function ActionPanel({
           contentKey={view.contentKey}
           onMinimize={onMinimize}
           onClose={onClose}
+          nav={nav}
         >
           {/* The blocks that only inform (the other seats, what happened) are of the Log. */}
           <Blocks blocks={view.blocks.filter((block) => !informs(block))} />
