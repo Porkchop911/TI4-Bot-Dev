@@ -19,6 +19,12 @@ test("phone: the panes are Map, Players and Log, and the open step is a sheet ov
   test.setTimeout(10_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  // The check of the changes of the board (`checkBoard`, in development) says a gap here.
+  page.on("console", (message) => {
+    if (message.type() === "error" && message.text().startsWith("[board history]")) {
+      errors.push(message.text());
+    }
+  });
   await page.goto("/?local=3&players=8&humans=1");
   const panes = page.getByRole("navigation", { name: "Panes" });
   const pane = (name: string) => panes.getByRole("button", { name });
@@ -84,6 +90,12 @@ test("phone: the panes are Map, Players and Log, and the open step is a sheet ov
 test("phone: with no decision of the viewer open there is no step sheet", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  // The check of the changes of the board (`checkBoard`, in development) says a gap here.
+  page.on("console", (message) => {
+    if (message.type() === "error" && message.text().startsWith("[board history]")) {
+      errors.push(message.text());
+    }
+  });
   // The other seats wait for a step, so that the page shows the game while another seat decides.
   await page.addInitScript(() => localStorage.setItem("ti4.local.stepping", "1"));
   await page.goto("/?local=3&players=8&humans=1");
@@ -107,6 +119,12 @@ test("phone: the Log pane has the strategic action that the other seats follow a
   test.setTimeout(10_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  // The check of the changes of the board (`checkBoard`, in development) says a gap here.
+  page.on("console", (message) => {
+    if (message.type() === "error" && message.text().startsWith("[board history]")) {
+      errors.push(message.text());
+    }
+  });
   // The other seats wait for a step: their secondaries wait, and the strategic action stays.
   await page.addInitScript(() => localStorage.setItem("ti4.local.stepping", "1"));
   await page.goto("/?local=3&players=8&humans=1");
@@ -157,6 +175,12 @@ test("phone: while the viewer decides a secondary, the sheet on the map has its 
   test.setTimeout(10_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  // The check of the changes of the board (`checkBoard`, in development) says a gap here.
+  page.on("console", (message) => {
+    if (message.type() === "error" && message.text().startsWith("[board history]")) {
+      errors.push(message.text());
+    }
+  });
   // Sol and Hacan are played here: Sol plays Leadership, then Hacan is asked its secondary.
   await page.goto("/?scenario=strategy_leadership&humans=3");
   const sheet = page.getByRole("region", { name: "Open step" });
@@ -200,6 +224,12 @@ test("phone: the step sheet minimizes to its heading line, the main button under
   test.setTimeout(10_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  // The check of the changes of the board (`checkBoard`, in development) says a gap here.
+  page.on("console", (message) => {
+    if (message.type() === "error" && message.text().startsWith("[board history]")) {
+      errors.push(message.text());
+    }
+  });
   await page.goto("/?local=3&players=8&humans=1");
   const board = page.getByRole("region", { name: "Galaxy board" });
   const sheet = page.getByRole("region", { name: "Open step" });

@@ -20,6 +20,12 @@ test("desktop: the right column is the players and the log, and the open step is
   test.setTimeout(10_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  // The check of the changes of the board (`checkBoard`, in development) says a gap here.
+  page.on("console", (message) => {
+    if (message.type() === "error" && message.text().startsWith("[board history]")) {
+      errors.push(message.text());
+    }
+  });
   await page.goto("/?local=3&players=8&humans=1");
   const board = page.getByRole("region", { name: "Galaxy board" });
   const sheet = page.getByRole("region", { name: "Open step" });
@@ -102,6 +108,12 @@ test("desktop: with no decision of the viewer open there is no step sheet, the f
 }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  // The check of the changes of the board (`checkBoard`, in development) says a gap here.
+  page.on("console", (message) => {
+    if (message.type() === "error" && message.text().startsWith("[board history]")) {
+      errors.push(message.text());
+    }
+  });
   // The other seats wait for a step, so that the page shows the game while another seat decides.
   await page.addInitScript(() => localStorage.setItem("ti4.local.stepping", "1"));
   await page.goto("/?local=3&players=8&humans=1");
@@ -134,6 +146,12 @@ test("desktop: while the other seats follow a strategy card of the viewer, the L
   test.setTimeout(10_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  // The check of the changes of the board (`checkBoard`, in development) says a gap here.
+  page.on("console", (message) => {
+    if (message.type() === "error" && message.text().startsWith("[board history]")) {
+      errors.push(message.text());
+    }
+  });
   // The other seats wait for a step: their secondaries wait, and the strategic action stays.
   await page.addInitScript(() => localStorage.setItem("ti4.local.stepping", "1"));
   await page.goto("/?local=3&players=8&humans=1");
@@ -178,6 +196,12 @@ test("desktop: while the viewer decides a secondary, the sheet has its row and i
   test.setTimeout(10_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  // The check of the changes of the board (`checkBoard`, in development) says a gap here.
+  page.on("console", (message) => {
+    if (message.type() === "error" && message.text().startsWith("[board history]")) {
+      errors.push(message.text());
+    }
+  });
   // Sol and Hacan are played here: Sol plays Leadership, then Hacan is asked its secondary.
   await page.goto("/?scenario=strategy_leadership&humans=3");
   const sheet = page.getByRole("region", { name: "Open step" });
@@ -218,6 +242,12 @@ test("desktop: the step sheet minimizes to its heading line, its main button sti
   test.setTimeout(10_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  // The check of the changes of the board (`checkBoard`, in development) says a gap here.
+  page.on("console", (message) => {
+    if (message.type() === "error" && message.text().startsWith("[board history]")) {
+      errors.push(message.text());
+    }
+  });
   await page.goto("/?local=3&players=8&humans=1");
   const board = page.getByRole("region", { name: "Galaxy board" });
   const sheet = page.getByRole("region", { name: "Open step" });
@@ -268,6 +298,12 @@ test("desktop: the Log has a large row for each turn of the other seats, with it
   test.setTimeout(10_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  // The check of the changes of the board (`checkBoard`, in development) says a gap here.
+  page.on("console", (message) => {
+    if (message.type() === "error" && message.text().startsWith("[board history]")) {
+      errors.push(message.text());
+    }
+  });
   await page.goto("/?local=3&players=8&humans=1");
   const sheet = page.getByRole("region", { name: "Open step" });
   const row = (name: RegExp) => sheet.locator("#step-panel").getByRole("button", { name });

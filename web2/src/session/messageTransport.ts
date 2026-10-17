@@ -5,6 +5,7 @@
 import type { GameLink, HostCommand } from "@ti4/shared/link/link.ts";
 import { type EventLog, NO_EVENTS, eventsOf, withEvent as withPublicEvent } from "./events";
 import type { PlanStep } from "./movementPlan";
+import { checkBoard, type BoardCheck } from "./history";
 import { NO_ROLLS, type RollLog, actionRolls, logOf, withEvent } from "./rolls";
 import { type LegacyStaged, seatSync } from "./seatStore";
 import { modesOf, passedOf, planStoppedOf, rejection, updateOf } from "./serverMessages";
@@ -135,6 +136,8 @@ export function messageTransport(link: GameLink, play: MessagePlay): MessageCore
   let rolls: RollLog = NO_ROLLS;
   /** The public events of the game, for the Log. */
   let events: EventLog = NO_EVENTS;
+  /** In development: the board of the last update at the end of a step, to check the next. */
+  let board: BoardCheck = null;
   /** The last `replaying` that was told, and when. */
   let shown = 0;
   const replies = typeof link.request === "function";
@@ -224,6 +227,7 @@ export function messageTransport(link: GameLink, play: MessagePlay): MessageCore
       // A snapshot has every event of the game: an undo took the later ones back.
       rolls = logOf(message.events);
       events = eventsOf(message.events);
+      board = null;
     }
     settle();
     const told = modesOf(message.reaction_modes ?? {});
@@ -241,6 +245,9 @@ export function messageTransport(link: GameLink, play: MessagePlay): MessageCore
       }
     }
     const update = updateOf(message);
+    if (import.meta.env.DEV) {
+      board = checkBoard(board, update.view, events);
+    }
     // The game tells the game again when only a card setting changed. The page then keeps what
     // is staged: nothing of the game is new.
     const same =
