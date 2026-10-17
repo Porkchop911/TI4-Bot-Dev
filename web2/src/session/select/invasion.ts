@@ -1,5 +1,6 @@
 // The landings of an invasion from the facts of the engine and what is staged: the ground
 // forces that can land, each planet of the active system, and the marks of this on the board.
+import { planetValuesNow } from "@ti4/shared/planets/values.ts";
 import type {
   BattleRowView,
   BattleSideView,
@@ -233,8 +234,7 @@ export function selectLanding(
     return {
       id: planet,
       name: info?.label ?? planet,
-      resources: system?.planets[planet]?.resources ?? info?.resources ?? 0,
-      influence: system?.planets[planet]?.influence ?? info?.influence ?? 0,
+      ...planetValuesNow(info ?? { resources: 0, influence: 0 }, system?.planets[planet]),
       owner: system?.planets[planet]?.controlled_by ?? null,
       traits: info ? traits(info) : NO_TRAITS,
       there: [...new Set(units.map((unit) => unit.owner))].map((seat) => ({

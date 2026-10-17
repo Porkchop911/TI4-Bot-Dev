@@ -1,6 +1,7 @@
 // The action panel of a decision: the turn menu (`turn.ts`), a reaction window (`reaction.ts`), an
 // editor of several questions (`editors.ts`), a research (`research.ts`), a choice on the map or
 // in the player table, and the list of the game for every question that has none of these.
+import { planetValuesNow } from "@ti4/shared/planets/values.ts";
 import type { EventLog } from "../events";
 import type {
   ActionButtonView,
@@ -25,6 +26,7 @@ import type {
   Choice,
   ChoiceOption,
   ExplorationCatalog,
+  PlanetMetaView,
   PoliticsHints,
   PublicRoll,
   ReactionModes,
@@ -326,8 +328,8 @@ export function boardTask(update: SessionUpdate, local: LocalState): BoardTaskVi
           (planet) =>
             [
               planet.id,
-              update.view.board.systems[tile.system_id]?.planets[planet.id]?.resources ??
-                planet.resources,
+              planetValuesNow(planet, update.view.board.systems[tile.system_id]?.planets[planet.id])
+                .resources,
             ] as const,
         ),
       ),
@@ -510,9 +512,9 @@ export function selectAction(
     choice.options.every((option) => option.kind === "speaker" || option.kind === "decline");
   // The choice of a thing on the board, or of a player: the panel has the choice, not the
   // candidates, which are on the board or in the player table.
-  /** A planet as it is now: its values with the attachments, when they differ from the printed ones. */
-  const now = (system: string, planet: string) =>
-    update.view.board.systems[system]?.planets[planet];
+  /** A planet's values now: with the attachments and the laws on it. */
+  const now = (system: string, planet: PlanetMetaView) =>
+    planetValuesNow(planet, update.view.board.systems[system]?.planets[planet.id]);
   const chosenBlock = (): BlockView | null => {
     if (onBoard?.target === "planet") {
       const found = staged && onBoard.of[staged.id] ? planetOf(onBoard.of[staged.id]) : null;
@@ -525,7 +527,7 @@ export function selectAction(
               {
                 icon: "planet",
                 title: [`${found.planet.label} · #${found.tile.system_id}`],
-                subtitle: `${now(found.tile.system_id, found.planet.id)?.resources ?? found.planet.resources} / ${now(found.tile.system_id, found.planet.id)?.influence ?? found.planet.influence}`,
+                subtitle: `${now(found.tile.system_id, found.planet).resources} / ${now(found.tile.system_id, found.planet).influence}`,
                 link: [`pl:${found.planet.id}`, `sys:${found.tile.system_id}`],
                 control: selected,
               },

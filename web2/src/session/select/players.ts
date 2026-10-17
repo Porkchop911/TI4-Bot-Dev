@@ -1,4 +1,5 @@
 // The seats and the player table.
+import { planetValuesNow } from "@ti4/shared/planets/values.ts";
 import type { PlayerRowView, PlayerTableView, SeatId, SeatView } from "../../model";
 import { MLP_PREFIX } from "../models";
 import type { Catalog, GameView, PlayerView, ReactionModes, SessionUpdate } from "../wire";
@@ -83,13 +84,12 @@ export function selectPlayers(
         }
         planets++;
         // The values now, with the attachments and the laws on the planet, when they differ.
-        const res = planet.resources ?? value.resources;
-        const inf = planet.influence ?? value.influence;
-        resources[1] += res;
-        influence[1] += inf;
+        const now = planetValuesNow(value, planet);
+        resources[1] += now.resources;
+        influence[1] += now.influence;
         if (!planet.exhausted) {
-          resources[0] += res;
-          influence[0] += inf;
+          resources[0] += now.resources;
+          influence[0] += now.influence;
         }
       }
     }

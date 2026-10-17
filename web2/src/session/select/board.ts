@@ -1,4 +1,5 @@
 // The board: one tile for each system on the map, and the inspector of one system.
+import { planetValuesNow, techSpecialtiesNow } from "@ti4/shared/planets/values.ts";
 import type {
   Anomaly,
   BoardTaskView,
@@ -91,19 +92,16 @@ function tileView(
     planets: (tile.planets ?? []).slice(0, 3).map((planet) => {
       const units = onPlanet(system, planet.id);
       const types = units.map((unit) => unitType(unit.unit_type));
+      const now = system?.planets[planet.id];
       return {
         id: planet.id,
         name: planet.label,
-        resources: system?.planets[planet.id]?.resources ?? planet.resources,
-        influence: system?.planets[planet.id]?.influence ?? planet.influence,
-        owner: system?.planets[planet.id]?.controlled_by ?? null,
+        ...planetValuesNow(planet, now),
+        owner: now?.controlled_by ?? null,
         // The specialty now: an attachment can give a planet one.
         tech:
-          TECH_COLORS[
-            (system?.planets[planet.id]?.tech_specialties ??
-              planet.tech_specialties ??
-              [])[0]?.toUpperCase() ?? ""
-          ] ?? null,
+          TECH_COLORS[techSpecialtiesNow(planet.tech_specialties, now)[0]?.toUpperCase() ?? ""] ??
+          null,
         groundForces: types.filter((type) => type && isGroundForce(type)).length,
         planetaryShield: types.includes("pds"),
         traits: traits(planet),
@@ -137,8 +135,7 @@ function inspector(
     return {
       planet: {
         name: planet.label,
-        resources: system?.planets[planet.id]?.resources ?? planet.resources,
-        influence: system?.planets[planet.id]?.influence ?? planet.influence,
+        ...planetValuesNow(planet, system?.planets[planet.id]),
         owner: system?.planets[planet.id]?.controlled_by ?? null,
         traits: traits(planet),
       },

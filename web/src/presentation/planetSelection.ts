@@ -3,7 +3,7 @@ import {
   findPlanetMeta,
   humanizeId,
 } from "../protocol/contentCatalog.ts";
-import { applyBoosts, wireBoosts, type PlanetBoost } from "./planetValues.ts";
+import { applyBoosts, wireBoosts, type PlanetBoost } from "@ti4/shared/planets/values.ts";
 import { isDeclineOption, isPlanetSelectionChoice, optionPlanetId } from "./choiceModel.ts";
 import { formatDecisionSource } from "./decisionSource.ts";
 
