@@ -1,6 +1,6 @@
 import type { GroundOddsView, LandingPlanetView, LandingView } from "../../../model";
 import { GROUND_ODDS_COUNT, forceText, plural } from "../../../model";
-import { Button, Hint, Icon, Press, cx } from "../../../ui";
+import { Button, Hint, Icon, Press, cx, useReadOnly } from "../../../ui";
 import { PlanetTraits } from "../../board/PlanetTraits";
 import { BattleTable } from "../../combat/BattleTable";
 import { CombatOdds } from "../../combat/SpaceOdds";
@@ -203,11 +203,15 @@ export function LandingSummary({ view }: { view: LandingView }) {
   const row =
     "row flex min-h-8 w-full flex-wrap items-baseline gap-x-2.5 px-3.5 py-1 text-left hover:bg-raised [.row+&]:border-t [.row+&]:border-line/50 phone:px-2.5";
   const open = () => dispatch({ type: "inspectSystem", system: view.system });
+  // Read-only, the landings are made: what landed on each planet, nothing to choose.
+  const readOnly = useReadOnly();
   return (
     <div className="rounded-lg border border-line">
-      <div className="border-b border-line px-3.5 py-1.5 text-xs text-muted phone:px-2.5">
-        Choose a planet on the map to land ground forces.
-      </div>
+      {!readOnly && (
+        <div className="border-b border-line px-3.5 py-1.5 text-xs text-muted phone:px-2.5">
+          Choose a planet on the map to land ground forces.
+        </div>
+      )}
       {view.planets.map((planet) => (
         <Press key={planet.id} className={row} onClick={open}>
           <strong className="font-mid">{planet.name}</strong>
@@ -215,7 +219,7 @@ export function LandingSummary({ view }: { view: LandingView }) {
             {planet.lands ? (
               <strong className="font-mid text-text">{planet.lands}</strong>
             ) : (
-              (planet.reason ?? "Nothing lands")
+              (planet.reason ?? (readOnly ? "Nothing landed" : "Nothing lands"))
             )}
           </span>
           {planet.odds && !planet.odds.preview && (
@@ -225,12 +229,14 @@ export function LandingSummary({ view }: { view: LandingView }) {
           )}
         </Press>
       ))}
-      <Press className={row} onClick={open}>
-        <strong className="font-mid">Space area</strong>
-        <span className="text-xs text-muted">
-          {view.stays ? `${view.stays} · not landed` : "Every ground force lands"}
-        </span>
-      </Press>
+      {!readOnly && (
+        <Press className={row} onClick={open}>
+          <strong className="font-mid">Space area</strong>
+          <span className="text-xs text-muted">
+            {view.stays ? `${view.stays} · not landed` : "Every ground force lands"}
+          </span>
+        </Press>
+      )}
     </div>
   );
 }

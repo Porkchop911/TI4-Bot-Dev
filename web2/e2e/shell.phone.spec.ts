@@ -8,9 +8,12 @@ test.skip(!existsSync(WASM), "the engine is not built: run web2/scripts/build-wa
 
 const SHOTS = process.env.WEB2_SHOTS ?? "shots/phone/shell";
 
-/** Nothing in the Log is a control. */
+/** Nothing in the Log is a control but the rows of the tactical turns, which open them. */
 const readOnly = async (log: Locator) => {
-  await expect(log.locator("input, select, textarea, button")).toHaveCount(0);
+  await expect(log.locator("input, select, textarea, button:not([aria-pressed])")).toHaveCount(0);
+  for (const row of await log.locator("button[aria-pressed]").all()) {
+    await expect(row).toHaveAttribute("aria-label", /· Tactical/);
+  }
 };
 
 test("phone: the panes are Map, Players and Log, and the open step is a sheet over the board", async ({
@@ -64,7 +67,7 @@ test("phone: the panes are Map, Players and Log, and the open step is a sheet ov
   // The Log has a row for each turn of the other seats, before the first turn of the viewer.
   await pane("Log").click();
   const log = page.getByRole("region", { name: "Log" });
-  const rows = log.getByRole("list", { name: "Turns" }).getByRole("article");
+  const rows = log.getByRole("list", { name: "Turns" }).locator("li > article, li > button");
   await expect(rows).toHaveCount(7);
   // The staged action of the picker is the viewer's decision: the Log has no copy of it, and no
   // second "?".
@@ -258,5 +261,63 @@ test("phone: the step sheet minimizes to its heading line, the main button under
   await send.click();
   await expect(row(/^Activate a system$/)).toBeVisible();
   await expect(minimize).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("phone: a tactical turn of the Log opens on Map over the board, read-only, and the decision is its line", async ({
+  page,
+}) => {
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error" && message.text().startsWith("[board history]")) {
+      errors.push(message.text());
+    }
+  });
+  // Sol's space combat at #29 is under way, and Sol is the viewer.
+  await page.goto("/?scenario=ongoing_combat&humans=1");
+  const panes = page.getByRole("navigation", { name: "Panes" });
+  const pane = (name: string) => panes.getByRole("button", { name });
+  const send = page.locator('footer button[aria-keyshortcuts="Enter"]');
+  const sheet = page.getByRole("region", { name: "Open step" });
+  const log = page.getByRole("region", { name: "Log" });
+  const row = log.getByRole("button", { name: /· Tactical/ });
+  const width = page.viewportSize()!.width;
+  // The viewer answers until the first round of the combat is rolled.
+  for (let answer = 0; answer < 12; answer += 1) {
+    await pane("Log").click();
+    if (/destroyed 3/.test(await row.innerText())) {
+      break;
+    }
+    await pane("Map").click();
+    if (await send.isEnabled()) {
+      await send.click();
+    } else {
+      await sheet.locator("#step-panel button:not([aria-label=Minimize])").first().click();
+    }
+  }
+  await expect(row).toContainText("destroyed 3");
+
+  // A tap on the row goes to Map, with the turn over the board.
+  await row.click();
+  await expect(pane("Map")).toHaveAttribute("aria-pressed", "true");
+  const turn = page.getByRole("region", { name: "Turn" });
+  await expect(turn).toBeVisible();
+  const tabs = turn.getByRole("tablist", { name: "Tactical action steps" }).getByRole("tab");
+  await expect(tabs).toHaveText([/Activation/, /Movement/, /Space combat/]);
+  await expect(turn.getByRole("img", { name: /^Rolled \d+: (hit|miss)$/ }).first()).toBeVisible();
+  await expect(turn.locator("input, select, textarea")).toHaveCount(0);
+  // The decision is its line, and its main button is under the pane.
+  await expect(turn.getByRole("button", { name: "Restore" })).toBeVisible();
+  await expect(send).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+  expect(await turn.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
+  await page.screenshot({ path: `${SHOTS}/turn.png`, animations: "disabled" });
+
+  // "×" closes it, and the step sheet is back.
+  await turn.getByRole("button", { name: "Close" }).click();
+  await expect(turn).toHaveCount(0);
+  await expect(sheet).toBeVisible();
   expect(errors).toEqual([]);
 });

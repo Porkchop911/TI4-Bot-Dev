@@ -1100,6 +1100,20 @@ function entriesOf(events: EventLog): { raw: Raw[]; finished: boolean } {
 }
 
 /**
+ * The events of a turn of the Log (`LogTurnView.id`) by their places in `events`, in order: also
+ * the parts before its action (an agent at the turn menu). Null when the events have no such turn
+ * (an undo took it back).
+ */
+export function turnEvents(events: EventLog, id: string): { seat: string; at: number[] } | null {
+  const turn = entriesOf(events).raw.find((item) => item.kind === "turn" && item.id === id);
+  if (turn?.kind !== "turn") {
+    return null;
+  }
+  const places = new Map(events.map((entry, at) => [entry, at]));
+  return { seat: turn.seat, at: turn.events.map((entry) => places.get(entry)!) };
+}
+
+/**
  * What a seat did at its turn menu before it chose its action (a transaction, a component action
  * that does not end the turn, such as an agent) is a part of that turn: the game counts it as an
  * action of its own. A part that the seat ended (a fact of the end of the turn) is a turn.

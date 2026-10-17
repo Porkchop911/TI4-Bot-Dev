@@ -7,6 +7,7 @@ import { Board } from "../board/Board";
 import { GameProvider } from "../context";
 import { LinkProvider } from "../link";
 import { LogPanel } from "../log/LogPanel";
+import { TurnSheet } from "../log/TurnSheet";
 import { PlayerTable } from "../players/PlayerTable";
 import { ReferenceDrawer } from "./Reference";
 import { ShellFrame } from "./ShellFrame";
@@ -102,6 +103,8 @@ export function GameShell({
     setDrawer((now) => (now === id ? null : id));
   };
   const phone = usePhoneScreen();
+  const phoneRef = useRef(phone);
+  phoneRef.current = phone;
   // The step sheet is minimized at a question of the viewer; a new question opens it again, and
   // so does the next step of a tactical action in a draft, as it would in Live.
   const question = `${view.question ?? 0}:${view.action.kind === "tactical" ? view.action.current : ""}`;
@@ -154,6 +157,10 @@ export function GameShell({
       if (intent.type === "inspectLogEntry") {
         setDrawer(null);
       }
+      // A turn of the Log opens over the board: a phone goes to the map, where it is.
+      if (intent.type === "inspectTurn" && phoneRef.current) {
+        setPane("map");
+      }
       // An undo takes the viewer back also while the viewer waits for the game.
       if ((lastChoice.current || intent.type === "undo") && asksTheGame(intent)) {
         acted.current = true;
@@ -169,8 +176,8 @@ export function GameShell({
   }, [view.apply]);
 
   // Shortcut keys of the open action. Esc closes an open reference sheet first.
-  const keys = useRef({ view: view.action, drawer, dispatch });
-  keys.current = { view: view.action, drawer, dispatch };
+  const keys = useRef({ view: view.action, drawer, dispatch, turn: !!view.inspect });
+  keys.current = { view: view.action, drawer, dispatch, turn: !!view.inspect };
   useEffect(() => {
     // Focus that Tab moved belongs to the keyboard; focus that a click left behind does not.
     let focusByKeyboard = false;
@@ -183,6 +190,11 @@ export function GameShell({
       // Esc closes one thing: an open dialog, menu or rule text goes first.
       if (event.key === "Escape" && now.drawer && !document.querySelector(OVERLAY)) {
         return setDrawer(null);
+      }
+      // Then an open turn of the Log.
+      if (event.key === "Escape" && now.turn && !document.querySelector(OVERLAY)) {
+        event.preventDefault();
+        return now.dispatch({ type: "closeTurn" });
       }
       if (!keyIsFree(event, focusByKeyboard)) {
         return;
@@ -238,18 +250,27 @@ export function GameShell({
     />
   );
   // The turns since the viewer's last turn, the turn that is played now last.
-  const log = <LogPanel log={view.log} />;
+  const log = <LogPanel log={view.log} open={view.inspect?.turn ?? null} />;
   // The open step is a sheet over the board. An open fleet, the open landings and the open build
   // of a production have its room; their check mark gives it back.
   const boardSheet = view.board.origin || view.board.landing || view.board.production;
-  const step = !boardSheet && (
-    <StepSheet
-      view={view.action}
+  const step = view.inspect ? (
+    // A turn of the Log that is open has the place of the step sheet; the decision is its line.
+    <TurnSheet
+      view={view.inspect}
+      decision={view.asked ? view.action : null}
       status={view.toolbar.status}
-      asked={view.asked}
-      minimized={minimizedAt === question}
-      onMinimized={(minimized) => setMinimizedAt(minimized ? question : null)}
     />
+  ) : (
+    !boardSheet && (
+      <StepSheet
+        view={view.action}
+        status={view.toolbar.status}
+        asked={view.asked}
+        minimized={minimizedAt === question}
+        onMinimized={(minimized) => setMinimizedAt(minimized ? question : null)}
+      />
+    )
   );
 
   return (

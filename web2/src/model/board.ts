@@ -165,8 +165,9 @@ export interface BoardView {
   routes: RouteView[];
   activeSystem: SystemId | null;
   /**
-   * The system that the open window is about: the system of its trigger, else the active system.
-   * The board marks it while the window is open. Absent: no window is open.
+   * The system that the open window is about: the system of its trigger, else the active system;
+   * or the active system of the turn of the Log that is open. The board marks it while the window
+   * or the turn is open. Absent: neither is open.
    */
   marked?: SystemId | null;
   inspected: SystemId | null;

@@ -29,12 +29,19 @@ export function SpaceCombatStep({ view }: { view: CombatView }) {
   );
 }
 
-/** Step 4: what lands on each planet, and the first round of each ground combat. */
+/**
+ * Step 4: what lands on each planet, and the first round of each ground combat; once resolved
+ * (a turn of the Log), a table for each roll of the invasion.
+ */
 export function InvasionStep({ view }: { view: InvasionView }) {
+  const [selected, select] = useRecordTab(String(view.records?.length ?? 0));
   return (
     <>
       <LandingSummary view={view.landing} />
       <GroundPreviews view={view.landing} />
+      {view.records && (
+        <BattleRecords label="Rolls" records={view.records} selected={selected} onSelect={select} />
+      )}
     </>
   );
 }

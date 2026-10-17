@@ -196,6 +196,11 @@ export interface LocalState {
   rolls?: PublicRoll[];
   /** The public events of the game, in its order, for the Log. A draft has those of the game. */
   events?: EventLog;
+  /**
+   * The turn of the Log that the viewer opened (`LogTurnView.id`), and the step of its action in
+   * view. Null: none. A new question of the viewer leaves it open.
+   */
+  inspect?: { turn: string; step: number | null } | null;
 }
 
 /** The choice that the viewer can answer now. */

@@ -1,6 +1,6 @@
 import type { BuildCountView, BuildGroupView, BuildSheetView, BuildUnitView } from "../../../model";
 import { plural } from "../../../model";
-import { Button, Gauge, Icon, Peek, Press, cx } from "../../../ui";
+import { Button, Gauge, Icon, Peek, Press, cx, useReadOnly } from "../../../ui";
 import { SystemDetails } from "../../board/SystemDetails";
 import { useDispatch } from "../../context";
 
@@ -281,12 +281,17 @@ export function ProductionSheet({ view }: { view: BuildSheetView }) {
 /** In the panel: what is produced in each place, and the limits. The controls are on the board. */
 export function ProductionSummary({ view }: { view: BuildSheetView }) {
   const dispatch = useDispatch();
+  // Read-only, the production is made: what was produced in each place.
+  const readOnly = useReadOnly();
   const row =
     "row flex min-h-8 w-full flex-wrap items-baseline gap-x-2.5 px-3.5 py-1 text-left hover:bg-raised [.row+&]:border-t [.row+&]:border-line/50 phone:px-2.5";
   return (
     <div className="flex flex-col gap-3">
       <div className="rounded-lg border border-line">
-        <div className="border-b border-line px-3.5 py-1.5 text-xs text-muted phone:px-2.5">
+        <div
+          hidden={readOnly}
+          className="border-b border-line px-3.5 py-1.5 text-xs text-muted phone:px-2.5"
+        >
           {view.stage === "build" ? (
             "Choose the units on the map, at the system that produces."
           ) : (

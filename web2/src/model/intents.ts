@@ -94,5 +94,9 @@ export type Intent =
   /** Opens the exploration decks at one deck. */
   | { type: "openReference"; sheet: "exploration"; deck: ExplorationDeck }
   | { type: "inspectLogEntry"; id: string }
+  /** Opens a turn of the Log (`LogTurnView.id`) read-only, at a step of its action. */
+  | { type: "inspectTurn"; turn: string; step?: number }
+  /** Closes the turn of the Log that is open. */
+  | { type: "closeTurn" }
   /** Lets the seat that the game waits for decide ("Step" of "Other seats"). */
   | { type: "simulate" };

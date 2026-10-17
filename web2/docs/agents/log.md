@@ -6,7 +6,7 @@ Part of `web2/AGENTS.md`: the Patterns and the rules of Screen size and Text the
 
 - The Log answers one question: what are the others doing, and what did they do, so that I can decide. The decision of the viewer is the step sheet on the map (or a seat in the player table); the Log only reads (owner, 2026-10-16).
 - Desktop has it in the right column under the player table, where it fills the column and scrolls inside itself. A phone has it as the pane Log. Both show the same Log (`src/game/log/LogPanel.tsx`).
-- The Log is not an event log (owner, 2026-10-17): it is at most about eight large rows, the turns since the viewer's last turn and the phases in between, the turn that is played now last. A row says who did what and how it ended. What happened in a turn is the sheet of its action, read-only, through the same UI as the live game (a tactical action with its steps and the battle table, a strategic card with its seats, a card with its decision); a row opens it from L4 of the plan on. Until then a row is no control.
+- The Log is not an event log (owner, 2026-10-17): it is at most about eight large rows, the turns since the viewer's last turn and the phases in between, the turn that is played now last. A row says who did what and how it ended. What happened in a turn is the sheet of its action, read-only, through the same UI as the live game (a tactical action with its steps and the battle table, a strategic card with its seats, a card with its decision); a tactical turn opens it (the section "A turn, opened"); the other rows do not open yet.
 
 ## The rows
 
@@ -14,8 +14,21 @@ Part of `web2/AGENTS.md`: the Patterns and the rules of Screen size and Text the
 - A strategy, status or agenda phase is a row of its own: its name and its summary ("7 strategy cards picked", "2 objectives scored · revealed Corner the Market", "Mutiny: For"). The start of an action phase has no row: the turns say their round.
 - The turn or the phase that is played now is the last row, with "▶" and the frame and tint of the accent (the sign carries the state, pattern 4).
 - The Log scrolls inside itself, on desktop in the column under the player table and on a phone as the pane Log. The newest is at the end: the Log opens at its end, and follows what is new while it is there (within 24px of the end); scrolled up, it stays where the viewer is.
-- Nothing in the Log is a control (patterns 10 and 11). There is no filter of the seats: a row says its seat, and the Log is short.
+- A row of a tactical turn is the one control of the Log: it opens the turn ("A turn, opened"), and while the turn is open its row has "Open" and the frame of the accent; a tap on it closes the turn. Nothing else in the Log is a control (patterns 10 and 11). There is no filter of the seats: a row says its seat, and the Log is short.
 - The current action is not in the Log: while the viewer decides it is the step sheet; what another seat does now is its live row.
+
+## A turn, opened
+
+- A tap on the row of a tactical turn opens what Live showed of its action, read-only, through the same UI (pattern 10): the sheet of the action with the step tabs of the steps that the action came to (Activation, Movement, Space combat, Invasion, Production; a step that did not happen has no tab), the last of them open. The heading row has the step, "Tactical action · ‹system› · ‹faction›", "Resolved" (or "Played now" on the step of the turn that is played now) and "×", which closes it; so do Esc and a tap on the row again. `selectPastTurn` (`src/session/select/pastTurn.ts`) makes it, `TurnSheet` (`src/game/log/TurnSheet.tsx`) shows it, and the session keeps which turn and step are open (`LocalState.inspect`, the intents `inspectTurn` and `closeTurn`); a new question of the viewer leaves it open.
+- It has the place of the step sheet: on desktop at the bottom right of the board, 412px in the phone layout; on a phone over the bottom of the board on Map, and a tap on a row goes to Map. The viewer's open decision is its minimized line under it (on desktop with the footer of the action, on a phone the footer is under the pane as always): its main button is in reach, and a tap on the line closes the turn and gives the decision back.
+- The board is the board as the open step left it, taken back by the changes of the events (`boardAt`, the section "The board of a point of the events"): after the activation, after the last ship moved, after the combat ended, after the invasion, after the production. The active system of the turn is marked (`BoardView.marked`, the ring of a window). Nothing of the viewer's decision is on that board, and nothing on it is a control; a click on a system opens the inspector of that board.
+- The steps, from the facts and the board, in the view models of Live (`ActivationView`, `MovementView`, `CombatView`, `InvasionView`, `ProductionView`), read-only (`ReadOnlyScope`: a row shows what was done and is no control; the text that asks for a choice on the map is not there):
+  - Activation: the active system and "Tactic pool 3 → 2".
+  - Movement: what left each system ("4 ships · 3 cargo" and the ships), the fleet of the seat in the active system "now → after", the gravity rift rolls and the space cannon offense with their dice.
+  - Space combat: a table for each roll (the anti-fighter barrage, each round), from the rounds of the turn (`BoardView.space_rounds`): the ships at the start of the round, what each hit on, the dice on the rows and the hits of each side; the last table says how it ended ("Won by Sol"). The round under way of the turn that is played now is its last table.
+  - Invasion: what landed on each planet, and a table for each roll of the invasion (`BoardView.ground_steps`: the bombardment, the space cannon defense, each ground round), the invader and the seat that it fights, the last one on a planet with how its ground combat ended.
+  - Production: what was produced in each place; the footer says what paid ("Paid with Jord, Lodor · 1 trade good").
+- What only explains the options of a step is not there: the range and capacity of the ships, the limits and the gauges of a production, the odds. The choice is made.
 
 ## Decide and inform
 

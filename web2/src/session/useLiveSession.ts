@@ -1294,6 +1294,15 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             : setLocal((now) => ({ ...now, inspected: intent.system }));
         case "closeInspector":
           return setLocal((now) => ({ ...now, inspected: null }));
+        case "inspectTurn":
+          // A turn of the Log opens read-only; its board is in view, the inspector closes.
+          return setLocal((now) => ({
+            ...now,
+            inspected: now.inspect?.turn === intent.turn ? now.inspected : null,
+            inspect: { turn: intent.turn, step: intent.step ?? null },
+          }));
+        case "closeTurn":
+          return setLocal((now) => ({ ...now, inspect: null, inspected: null }));
         case "pickAction": {
           if (intent.action !== "tactical") {
             return intent.card ? stage(intent.card) : undefined;

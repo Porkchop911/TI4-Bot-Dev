@@ -411,6 +411,11 @@ export interface InvasionView {
   kind: "invasion";
   /** The landings, staged at the active system. */
   landing: LandingView;
+  /**
+   * The rolls of the invasion as they resolved (bombardment, space cannon defense, each ground
+   * round): a turn of the Log that is opened. Absent while the landings are staged.
+   */
+  records?: BattleRecordView[];
 }
 
 /** The total of a payment. The player chooses the planets on the board, not in the panel. */

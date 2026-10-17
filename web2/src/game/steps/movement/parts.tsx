@@ -1,12 +1,13 @@
 import type { MovementView, OriginView } from "../../../model";
 import { plural, unitName } from "../../../model";
-import { Card, CardHeading, Gauge, Gauges, Icon, cx } from "../../../ui";
+import { Card, CardHeading, Gauge, Gauges, Icon, cx, useReadOnly } from "../../../ui";
 import { SpaceOdds } from "../../combat/SpaceOdds";
 import { useLink } from "../../link";
 
 /** The fleet in the active system, before and after the staged movement, with its two limits. */
 export function Arrival({ view }: { view: MovementView }) {
   const { linked, props } = useLink([`sys:${view.target.system}`]);
+  const readOnly = useReadOnly();
   return (
     <Card className={cx(linked && "bg-cyan/[.06]")} {...props}>
       <CardHeading title={`Arrives in ${view.target.label}`}>
@@ -33,7 +34,9 @@ export function Arrival({ view }: { view: MovementView }) {
             ))
           ) : (
             <span className="text-muted">
-              Nothing moves. You may activate a system without moving.
+              {readOnly
+                ? "Nothing moved."
+                : "Nothing moves. You may activate a system without moving."}
             </span>
           )}
         </div>

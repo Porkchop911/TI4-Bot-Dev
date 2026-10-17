@@ -310,6 +310,13 @@ export interface ApplyView {
   note: string;
 }
 
+/** A turn of the Log, opened: what its action showed, read-only. */
+export interface InspectView {
+  /** The id of the turn (`LogTurnView.id`). */
+  turn: string;
+  action: ActionView;
+}
+
 export interface ShellView {
   seats: Record<SeatId, SeatView>;
   /** Colours the frame: a private draft, the live game, or a complete action. */
@@ -321,6 +328,11 @@ export interface ShellView {
   reference: ReferenceView;
   /** What the seats did since the last turn of the viewer, from the public events of the game. */
   log: LogView;
+  /**
+   * A turn of the Log that the viewer opened: its action read-only, in the place of the step
+   * sheet, and the board as it was at its open step (`board` is that board then). Null: none.
+   */
+  inspect?: InspectView | null;
   /** What "Apply to Live" will commit. Null when there is nothing to apply. */
   apply: ApplyView | null;
   toast: { id: number; text: string } | null;

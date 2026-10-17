@@ -165,7 +165,7 @@ it("keeps the question of the viewer as its list, and the footer sends it", () =
   expect(content.records[0].table.sides[0].isViewer).toBe(true);
 });
 
-it("after the roll has what the dice needed, with the printed value on hover, and the hits", () => {
+it("after the roll has what the dice needed, with the printed value on hover, the hits, and the dice dealt to the rows of their roll", () => {
   const rolled: CombatView = {
     ...COMBAT,
     phase: "resolving_hits",
@@ -189,7 +189,16 @@ it("after the roll has what the dice needed, with the printed value on hover, an
     true,
     "Printed 5+",
   ]);
-  expect(table.sides[0].rows.map((row) => row.dice)).toEqual([[], [], []]);
+  // The engine rolls the carrier and the fighter together: their die is dealt in the order of the rows.
+  expect(table.sides[0].rows.map((row) => row.dice)).toEqual([
+    [
+      { roll: 4, hit: true },
+      { roll: 2, hit: false },
+    ],
+    [{ roll: 3, hit: false }],
+    [],
+  ]);
+  expect(table.sides[0].rows.map((row) => row.scored)).toEqual([true, false, false]);
 });
 
 it("is not shown in a draft", () => {

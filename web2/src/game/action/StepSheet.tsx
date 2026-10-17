@@ -6,7 +6,7 @@ import { ActionFooter, ActionPanel, footerOf } from "./ActionPanel";
  * The minimized step sheet: one line with the heading and its context, cut with "…". The whole
  * line restores the sheet ("▴").
  */
-function MinimizedLine({ view, onRestore }: { view: ActionView; onRestore: () => void }) {
+export function MinimizedLine({ view, onRestore }: { view: ActionView; onRestore: () => void }) {
   const heading = view.kind === "tactical" ? view.task.title : view.heading;
   return (
     <button

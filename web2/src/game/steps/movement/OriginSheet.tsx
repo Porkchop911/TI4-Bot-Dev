@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { OriginView } from "../../../model";
 import { plural } from "../../../model";
-import { Button, Icon, Press, cx } from "../../../ui";
+import { Button, Icon, Press, cx, useReadOnly } from "../../../ui";
 import { SystemDetails } from "../../board/SystemDetails";
 import { useDispatch } from "../../context";
 import { Stays } from "./parts";
@@ -76,11 +76,15 @@ export function OriginSheet({ view }: { view: OriginView }) {
 /** In the panel: what leaves each system. The controls are on the board. */
 export function MovementSummary({ origins }: { origins: OriginView[] }) {
   const dispatch = useDispatch();
+  // Read-only, the movement is made: nothing is chosen on the map.
+  const readOnly = useReadOnly();
   return (
     <div className="rounded-lg border border-line">
-      <div className="border-b border-line px-3.5 py-1.5 text-xs text-muted phone:px-2.5">
-        Choose a system on the map to move its ships.
-      </div>
+      {!readOnly && (
+        <div className="border-b border-line px-3.5 py-1.5 text-xs text-muted phone:px-2.5">
+          Choose a system on the map to move its ships.
+        </div>
+      )}
       {origins.map((origin) => (
         <Press
           key={origin.system}

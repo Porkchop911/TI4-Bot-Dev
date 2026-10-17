@@ -210,7 +210,7 @@ function Planet({
 interface TileProps {
   tile: TileView;
   active: boolean;
-  /** The open window is about this system. */
+  /** The open window, or the turn of the Log that is open, is about this system. */
   marked: boolean;
   inspected: boolean;
   targeting: boolean;
@@ -231,7 +231,7 @@ function Tile({ tile, active, marked, inspected, targeting, view, task }: TilePr
   const { linked, props } = useLink([`sys:${tile.id}`]);
   const { x, y } = hexCenter(tile);
   const strength = view === "space";
-  const label = `${tile.name}, system ${tile.id}${tile.home ? `, ${seats[tile.home].faction} home system` : ""}${tile.anomaly ? ", " + ANOMALY_LABEL[tile.anomaly] : ""}${tile.wormhole ? `, ${tile.wormhole} wormhole` : ""}${tile.commandToken ? ", your command token is here" : ""}${tile.handled ? ", handled" : ""}${marked ? ", the open window is about this system" : ""}${tile.fleets.map((fleet) => `, ${plural(fleet.ships, seats[fleet.seat].faction + " ship")}`).join("")}`;
+  const label = `${tile.name}, system ${tile.id}${tile.home ? `, ${seats[tile.home].faction} home system` : ""}${tile.anomaly ? ", " + ANOMALY_LABEL[tile.anomaly] : ""}${tile.wormhole ? `, ${tile.wormhole} wormhole` : ""}${tile.commandToken ? ", your command token is here" : ""}${tile.handled ? ", handled" : ""}${marked ? ", the open window or turn is about this system" : ""}${tile.fleets.map((fleet) => `, ${plural(fleet.ships, seats[fleet.seat].faction + " ship")}`).join("")}`;
   // Planets and the wormhole are in one row. A system has at most three planets.
   const slots = tile.planets.length + (tile.wormhole ? 1 : 0);
   const gap = slots > 3 ? 19 : 25;
@@ -280,7 +280,7 @@ function Tile({ tile, active, marked, inspected, targeting, view, task }: TilePr
       </title>
       <polygon className="hex" points={hexPoints({ x, y }, HEX_R - 2)} />
       {marked && (
-        // The system of the open window: a wide ring, which no other state of a tile has.
+        // The system of the open window or turn: a wide ring, which no other state of a tile has.
         <polygon className="mark" points={hexPoints({ x, y }, HEX_R - 2)} />
       )}
       {tile.control && (

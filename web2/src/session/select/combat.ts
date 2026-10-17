@@ -12,7 +12,13 @@ import type {
   FooterView,
   PillView,
 } from "../../model";
-import type { Catalog, CombatView as CombatState, PlacedUnitView, SessionUpdate } from "../wire";
+import type {
+  Catalog,
+  CombatDieRoll,
+  CombatView as CombatState,
+  PlacedUnitView,
+  SessionUpdate,
+} from "../wire";
 import { systemLabel, tilesOf } from "./movement";
 import { expected } from "./movementRolls";
 import { byUnitOrder, unitKey, unitLabel, unitRecord, unitType } from "./names";
@@ -52,12 +58,13 @@ const row = (change: Partial<BattleRowView>): BattleRowView => ({
  * each hits on. Before the roll the value is the printed one, with the dice that the ships roll
  * and the hits that they score on average. Once the round rolled, the value is what the dice of
  * the engine needed (after the modifiers of the round), with the printed value on hover when it
- * differs. The engine rolls the ships of one value together (`CombatDieRoll.unit` names them
- * all: "carrier+destroyer"), so the dice are not of one row: the hits are in the header.
+ * differs, and a row has its dice. The engine rolls the ships of one value together
+ * (`CombatDieRoll.unit` names them all: "carrier+destroyer"), so the dice of such a roll are
+ * dealt to its rows in their order, as many as each row rolls, the rest to its last row.
  */
-function sideRows(
+export function sideRows(
   ships: PlacedUnitView[],
-  combat: CombatState,
+  combat: Pick<CombatState, "dice_rolls">,
   seat: string,
   printed: Catalog | null,
 ): BattleRowView[] {
@@ -70,31 +77,46 @@ function sideRows(
     groups.set(key, group);
   }
   const rolls = (combat.dice_rolls ?? []).filter((die) => die.player === seat);
-  return [...groups.values()]
-    .sort((a, b) => byUnitOrder(a.id, b.id))
-    .map(({ id, count, damaged }) => {
-      const record = unitRecord(id, printed);
-      const card = record?.combat_hits_on ?? null;
-      const key = unitKey(id, printed);
-      const rolled = rolls.find((die) =>
-        die.unit.split("+").some((unit) => unitKey(unit, printed) === key),
-      );
-      const target = rolled?.target ?? card;
-      const modified = card !== null && target !== null && target !== card;
-      const dice = count * (record?.combat_die_count ?? 1);
-      const before = !rolls.length && target !== null;
-      return row({
-        unit: unitType(id),
-        label: unitLabel(id, printed, count),
-        count,
-        target,
-        targetTitle: target === null ? "" : modified ? `Printed ${card}+` : `Hits on ${target}+`,
-        modified,
-        dice: before ? dice : [],
-        hits: before ? expected(dice, target) : "",
-        pills: damaged ? [{ tone: "damage", label: `${damaged} damaged` }] : [],
-      });
+  const sorted = [...groups.values()].sort((a, b) => byUnitOrder(a.id, b.id));
+  // The roll of each row, and the dice that each row has of it.
+  const rollOf = (id: string) =>
+    rolls.find((die) =>
+      die.unit.split("+").some((unit) => unitKey(unit, printed) === unitKey(id, printed)),
+    )?.unit ?? null;
+  const dealt = new Map<string, CombatDieRoll[]>();
+  for (const roll of new Set(rolls.map((die) => die.unit))) {
+    const dice = rolls.filter((die) => die.unit === roll);
+    const members = sorted.filter((group) => rollOf(group.id) === roll);
+    members.forEach((group, index) => {
+      const count = group.count * (unitRecord(group.id, printed)?.combat_die_count ?? 1);
+      dealt.set(group.id, index === members.length - 1 ? dice : dice.splice(0, count));
     });
+  }
+  return sorted.map(({ id, count, damaged }) => {
+    const record = unitRecord(id, printed);
+    const card = record?.combat_hits_on ?? null;
+    const key = unitKey(id, printed);
+    const rolled = rolls.find((die) =>
+      die.unit.split("+").some((unit) => unitKey(unit, printed) === key),
+    );
+    const target = rolled?.target ?? card;
+    const modified = card !== null && target !== null && target !== card;
+    const dice = count * (record?.combat_die_count ?? 1);
+    const before = !rolls.length && target !== null;
+    const faces = dealt.get(id) ?? [];
+    return row({
+      unit: unitType(id),
+      label: unitLabel(id, printed, count),
+      count,
+      target,
+      targetTitle: target === null ? "" : modified ? `Printed ${card}+` : `Hits on ${target}+`,
+      modified,
+      dice: before ? dice : faces.map((die) => ({ roll: die.roll, hit: die.hit })),
+      hits: before ? expected(dice, target) : "",
+      scored: faces.some((die) => die.hit),
+      pills: damaged ? [{ tone: "damage", label: `${damaged} damaged` }] : [],
+    });
+  });
 }
 
 /** The battle table of the open round: the attacker, then the defender. */

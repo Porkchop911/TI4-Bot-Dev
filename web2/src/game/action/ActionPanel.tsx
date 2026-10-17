@@ -167,6 +167,8 @@ interface TaskPanelProps {
   labelledBy?: string;
   /** Minimizes the step sheet to its heading line. Absent where the panel is not a sheet. */
   onMinimize?: () => void;
+  /** Closes the panel: "×" at the end of the heading row. Absent: it has none. */
+  onClose?: () => void;
   children: ReactNode;
 }
 
@@ -184,6 +186,7 @@ function TaskPanel({
   contentKey,
   labelledBy,
   onMinimize,
+  onClose,
   children,
 }: TaskPanelProps) {
   const dispatch = useDispatch();
@@ -197,7 +200,12 @@ function TaskPanel({
     >
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 border-b border-line px-5 py-[9px] phone:px-3">
         {/* One line: the context gives way with "…" before the pill, "Not sent" or "?" wrap. */}
-        <span className="flex min-w-0 max-w-full items-center gap-x-2.5 gap-y-1.5 phone:flex-wrap">
+        <span
+          className={cx(
+            "flex min-w-0 max-w-full items-center gap-x-2.5 gap-y-1.5 phone:flex-wrap",
+            onClose && "flex-1",
+          )}
+        >
           {onMinimize && <SheetToggle open onToggle={onMinimize} />}
           <h2
             className="min-w-0 truncate text-lg font-semibold tracking-[-.2px] phone:whitespace-normal"
@@ -231,6 +239,17 @@ function TaskPanel({
                 ))}
               </Hint>
             </span>
+          )}
+          {onClose && (
+            <button
+              type="button"
+              aria-label="Close"
+              title="Close"
+              onClick={onClose}
+              className="-mr-1 ml-auto shrink-0 rounded px-1 text-lg leading-6 text-muted hover:text-text touch:min-h-9 touch:min-w-9"
+            >
+              <span aria-hidden="true">×</span>
+            </button>
           )}
         </span>
         <Trail items={trail} />
@@ -271,6 +290,7 @@ export function ActionPanel({
   status,
   footer = true,
   onMinimize,
+  onClose,
 }: {
   view: ActionView;
   /** The status in the toolbar. The pill of the heading does not say it again. */
@@ -279,6 +299,8 @@ export function ActionPanel({
   footer?: boolean;
   /** Minimizes the step sheet to its heading line: "▾" before the heading. */
   onMinimize?: () => void;
+  /** Closes the panel: "×" in the heading row (a turn of the Log that is open). */
+  onClose?: () => void;
 }) {
   const dispatch = useDispatch();
   const away = view.kind === "tactical" && view.current !== null && view.selected !== view.current;
@@ -319,6 +341,7 @@ export function ActionPanel({
           contentKey={view.contentKey}
           labelledBy={`step-tab-${view.selected}`}
           onMinimize={onMinimize}
+          onClose={onClose}
         >
           {view.task.review && <Review view={view.task.review} />}
           {/* A step that only informs (a combat that the viewer watches) is of the Log. */}
@@ -337,6 +360,7 @@ export function ActionPanel({
           footer={footer ? view.footer : null}
           contentKey={view.contentKey}
           onMinimize={onMinimize}
+          onClose={onClose}
         >
           {/* The blocks that only inform (the other seats, what happened) are of the Log. */}
           <Blocks blocks={view.blocks.filter((block) => !informs(block))} />

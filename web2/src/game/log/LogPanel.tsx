@@ -11,9 +11,16 @@ const AT_END = 24;
  * played now last. Desktop has it under the player table, where it fills the column and scrolls
  * inside itself; a phone has it as the pane Log, which scrolls the same way. The newest is at the
  * end: the Log starts there, and follows what is new while it is at its end; else it stays where
- * the viewer scrolled.
+ * the viewer scrolled. A tactical turn opens its action over the board, read-only.
  */
-export function LogPanel({ log }: { log: LogView }) {
+export function LogPanel({
+  log,
+  open = null,
+}: {
+  log: LogView;
+  /** The turn that is open over the board. */
+  open?: string | null;
+}) {
   const scroller = useRef<HTMLElement>(null);
   const atEnd = useRef(true);
   // biome-ignore lint/correctness/useExhaustiveDependencies: what is new is the trigger
@@ -33,7 +40,7 @@ export function LogPanel({ log }: { log: LogView }) {
         atEnd.current = element.scrollHeight - element.scrollTop - element.clientHeight <= AT_END;
       }}
     >
-      <LogHistory view={log} />
+      <LogHistory view={log} open={open} />
     </section>
   );
 }

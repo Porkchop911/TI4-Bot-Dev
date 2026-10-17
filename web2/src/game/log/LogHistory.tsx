@@ -1,13 +1,14 @@
 import type { LogPhaseView, LogTurnView, LogView } from "../../model";
 import { cx } from "../../ui";
-import { SeatSymbol, useSeats } from "../context";
+import { SeatSymbol, useDispatch, useSeats } from "../context";
 
 /**
  * The turns since the viewer's last turn, oldest first: one large row for each turn and each
  * phase that is no action phase, the turn that is played now last. A row says who did what and
- * how it ended; what happened in it is the sheet of its action, read-only.
+ * how it ended; what happened in it is the sheet of its action, read-only: a tactical turn opens
+ * it over the board.
  */
-export function LogHistory({ view }: { view: LogView }) {
+export function LogHistory({ view, open = null }: { view: LogView; open?: string | null }) {
   // The start of an action phase has nothing to say: the turns that follow say their round.
   const entries = view.entries.filter((entry) => entry.kind === "turn" || entry.phase !== "action");
   if (entries.length === 0) {
@@ -21,7 +22,11 @@ export function LogHistory({ view }: { view: LogView }) {
     <ol aria-label="Turns" className="space-y-1.5 px-2.5">
       {entries.map((entry) => (
         <li key={entry.id}>
-          {entry.kind === "turn" ? <TurnRow view={entry} /> : <PhaseRow view={entry} />}
+          {entry.kind === "turn" ? (
+            <TurnRow view={entry} open={entry.id === open} />
+          ) : (
+            <PhaseRow view={entry} />
+          )}
         </li>
       ))}
     </ol>
@@ -39,20 +44,31 @@ const Live = () => (
 
 /**
  * A turn: the seat (symbol, the name of the player and the faction, cut with "…"), "You" on a
- * turn of the viewer and the round and turn; then the action, then its outcomes.
+ * turn of the viewer and the round and turn; then the action, then its outcomes. A tactical turn
+ * is a control: it opens its action over the board, read-only ("Open" while it is open).
  */
-function TurnRow({ view }: { view: LogTurnView }) {
+function TurnRow({ view, open }: { view: LogTurnView; open: boolean }) {
+  const dispatch = useDispatch();
   const seat = useSeats()[view.seat];
   const name = seat ? seat.name || seat.faction : view.seat;
   // The player table says the name of the player and the faction; so does a row.
   const faction = seat?.name && seat.name !== seat.faction ? seat.faction : null;
   const full = faction ? `${name} · ${faction}` : name;
-  return (
-    <article
-      aria-label={`Turn ${view.turn} · ${name} · ${view.label}`}
-      className={cx(ROW, view.live ? "border-accent/60 bg-accent/[.06]" : "bg-surface/40")}
-    >
-      <div className="flex min-w-0 items-baseline gap-2">
+  const opens = view.action === "tactical";
+  const label = `Turn ${view.turn} · ${name} · ${view.label}`;
+  const className = cx(
+    ROW,
+    "block w-full text-left",
+    open
+      ? "border-accent bg-accent/[.1]"
+      : view.live
+        ? "border-accent/60 bg-accent/[.06]"
+        : "bg-surface/40",
+    opens && "hover:bg-raised",
+  );
+  const content = (
+    <>
+      <span className="flex min-w-0 items-baseline gap-2">
         {view.live && <Live />}
         <SeatSymbol seat={view.seat} />
         <span className="min-w-0 truncate font-strong" title={full}>
@@ -61,17 +77,35 @@ function TurnRow({ view }: { view: LogTurnView }) {
         </span>
         {view.mine && <span className="shrink-0 text-xs text-accent">You</span>}
         <span className="ml-auto shrink-0 text-xs text-muted tabular-nums">
+          {open && <span className="mr-2 font-strong text-accent">Open</span>}
           Round {view.round} · turn {view.turn}
         </span>
-      </div>
-      <div className="mt-0.5 truncate font-strong" title={view.label}>
+      </span>
+      <span className="mt-0.5 block truncate font-strong" title={view.label}>
         {view.label}
-      </div>
+      </span>
       {view.summary && (
-        <div className="mt-0.5 line-clamp-2 text-sm text-muted" title={view.summary}>
+        <span className="mt-0.5 line-clamp-2 block text-sm text-muted" title={view.summary}>
           {view.summary}
-        </div>
+        </span>
       )}
+    </>
+  );
+  return opens ? (
+    <button
+      type="button"
+      aria-label={label}
+      aria-pressed={open}
+      className={className}
+      onClick={() =>
+        dispatch(open ? { type: "closeTurn" } : { type: "inspectTurn", turn: view.id })
+      }
+    >
+      {content}
+    </button>
+  ) : (
+    <article aria-label={label} className={className}>
+      {content}
     </article>
   );
 }

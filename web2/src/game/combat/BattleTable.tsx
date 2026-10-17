@@ -79,13 +79,16 @@ function Side({
           >
             {row.hits}
           </span>
-          <span className="flex justify-end gap-1">
-            {row.pills.map((pill, index) => (
-              <Pill key={index} tone={pill.tone} title={pill.title}>
-                {pill.label}
-              </Pill>
-            ))}
-          </span>
+          {/* A phone has no room for them beside the dice: they are a line of their own. */}
+          {row.pills.length > 0 && (
+            <span className="flex justify-end gap-1 phone:col-span-full phone:justify-start">
+              {row.pills.map((pill, index) => (
+                <Pill key={index} tone={pill.tone} title={pill.title}>
+                  {pill.label}
+                </Pill>
+              ))}
+            </span>
+          )}
         </div>
       ))}
     </section>

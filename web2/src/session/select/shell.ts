@@ -12,6 +12,7 @@ import {
 import { selectBoard } from "./board";
 import { NO_EVENTS } from "../events";
 import { selectLog } from "./log";
+import { selectPastTurn } from "./pastTurn";
 import { selectTokens } from "./tokens";
 import { type CardSettings, NO_CARD_SETTINGS, selectActionCards } from "./cards";
 import { selectExploration } from "./exploration";
@@ -164,6 +165,11 @@ export function selectShell(
   const onMap = editing?.onMap ? editing.blocks : pools ? [pools.block] : null;
   // The system that an open window is about is marked on the board.
   const marked = action.interrupt ? windowSystem(update, openChoice(update, local)) : null;
+  // A turn of the Log that the viewer opened: the board is as its open step left it, with its
+  // system marked, and nothing on it is a control.
+  const past = local.inspect
+    ? selectPastTurn(update, local.events ?? NO_EVENTS, local.inspect, catalog, printed)
+    : null;
   return {
     seats: selectSeats(update, printed),
     accent:
@@ -189,23 +195,38 @@ export function selectShell(
       },
     },
     players: { ...selectPlayers(update, printed, cards.modes), pick: seatTask(update, local) },
-    board: {
-      ...selectBoard(
-        update,
-        local.inspected,
-        boardTask(update, local),
-        movement,
-        landing,
-        catalog,
-        production,
-        !local.draft &&
-          !!openChoice(update, local)?.options.some((option) => option.id === "tactical"),
-        printed,
-      ),
-      // A decision of the map, or of the pools: a phone has its blocks on the map too.
-      ...(onMap ? { blocks: onMap } : {}),
-      ...(marked ? { marked } : {}),
-    },
+    board: past
+      ? {
+          ...selectBoard(
+            past.update,
+            local.inspected,
+            null,
+            null,
+            null,
+            catalog,
+            null,
+            false,
+            printed,
+          ),
+          ...(past.system ? { marked: past.system } : {}),
+        }
+      : {
+          ...selectBoard(
+            update,
+            local.inspected,
+            boardTask(update, local),
+            movement,
+            landing,
+            catalog,
+            production,
+            !local.draft &&
+              !!openChoice(update, local)?.options.some((option) => option.id === "tactical"),
+            printed,
+          ),
+          // A decision of the map, or of the pools: a phone has its blocks on the map too.
+          ...(onMap ? { blocks: onMap } : {}),
+          ...(marked ? { marked } : {}),
+        },
     action: withBack(
       local.draft?.waiting || local.follow?.waiting ? waitingFor(action) : action,
       local,
@@ -221,6 +242,7 @@ export function selectShell(
       log: [],
     },
     log: selectLog(update, local.events ?? NO_EVENTS, printed),
+    inspect: past && local.inspect ? { turn: local.inspect.turn, action: past.action } : null,
     apply: local.draft?.apply ?? null,
     toast: null,
     asked: !!update.pending_choice || !!local.draft,

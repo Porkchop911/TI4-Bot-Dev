@@ -9,9 +9,12 @@ test.use({ viewport: { width: 1920, height: 1080 } });
 
 const SHOTS = process.env.WEB2_SHOTS ?? "shots/desktop/shell";
 
-/** Nothing in the Log is a control. */
+/** Nothing in the Log is a control but the rows of the tactical turns, which open them. */
 const readOnly = async (log: Locator) => {
-  await expect(log.locator("input, select, textarea, button")).toHaveCount(0);
+  await expect(log.locator("input, select, textarea, button:not([aria-pressed])")).toHaveCount(0);
+  for (const row of await log.locator("button[aria-pressed]").all()) {
+    await expect(row).toHaveAttribute("aria-label", /· Tactical/);
+  }
 };
 
 test("desktop: the right column is the players and the log, and the open step is a sheet over the board at the width of a phone", async ({
@@ -318,7 +321,7 @@ test("desktop: the Log has a large row for each turn of the other seats, with it
   await expect(turns).toContainText("Strategy phase · Round 1");
   await expect(turns).not.toContainText("Action phase");
   // One row for each turn: the seat, the action and its outcome, with no dice.
-  const rows = turns.getByRole("article");
+  const rows = turns.locator("li > article, li > button");
   await expect(rows).toHaveCount(7);
   for (const turn of await rows.all()) {
     await expect(turn).toHaveAttribute(
@@ -339,5 +342,87 @@ test("desktop: the Log has a large row for each turn of the other seats, with it
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1920);
   await readOnly(log);
   await page.screenshot({ path: `${SHOTS}/log.png`, animations: "disabled" });
+  expect(errors).toEqual([]);
+});
+
+test("desktop: a tactical turn of the Log opens in the place of the step sheet, read-only, with its steps, the dice of its combat and its system marked", async ({
+  page,
+}) => {
+  test.setTimeout(10_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error" && message.text().startsWith("[board history]")) {
+      errors.push(message.text());
+    }
+  });
+  // Sol's space combat at #29 is under way, and Sol is the viewer.
+  await page.goto("/?scenario=ongoing_combat&humans=1");
+  const sheet = page.getByRole("region", { name: "Open step" });
+  const send = sheet.locator('footer button[aria-keyshortcuts="Enter"]');
+  const log = page.getByRole("region", { name: "Log" });
+  const row = log.getByRole("button", { name: /· Tactical/ });
+  // The viewer answers until the first round of the combat is rolled and its hits are taken.
+  for (let answer = 0; answer < 12 && !/destroyed 3/.test(await row.innerText()); answer += 1) {
+    if (await send.isEnabled()) {
+      await send.click();
+    } else {
+      await sheet.locator("#step-panel button:not([aria-label=Minimize])").first().click();
+    }
+  }
+  await expect(row).toContainText("destroyed 3");
+
+  // The row opens the turn in the place of the step sheet; the decision is its line.
+  await row.click();
+  await expect(row).toHaveAttribute("aria-pressed", "true");
+  await expect(row).toContainText("Open");
+  const turn = page.getByRole("region", { name: "Turn" });
+  await expect(turn).toBeVisible();
+  expect((await turn.boundingBox())!.width).toBe(412);
+  const tabs = turn.getByRole("tablist", { name: "Tactical action steps" }).getByRole("tab");
+  await expect(tabs).toHaveText([/Activation/, /Movement/, /Space combat/]);
+  await expect(tabs.last()).toHaveAttribute("aria-selected", "true");
+  await expect(turn.getByRole("heading", { name: "Space combat" })).toBeVisible();
+  await expect(turn).toContainText("Tactical action · ");
+  await expect(turn).toContainText("Played now");
+  // Each roll of the combat is a table, with the dice on its rows.
+  const rolls = turn.getByRole("group", { name: "Rolls" });
+  await expect(rolls.getByRole("button")).toHaveText(["Anti-fighter barrage", "Round 1"]);
+  await expect(turn.getByRole("img", { name: /^Rolled \d+: (hit|miss)$/ }).first()).toBeVisible();
+  await rolls.getByRole("button", { name: "Anti-fighter barrage" }).click();
+  await expect(turn.getByRole("img", { name: /^Rolled \d+: (hit|miss)$/ })).toHaveCount(4);
+  // Nothing of the turn is sent: no field, and no button in its footer.
+  await expect(turn.locator("input, select, textarea, footer button")).toHaveCount(0);
+  // Its system is marked on the board.
+  const board = page.getByRole("region", { name: "Galaxy board" });
+  await expect(
+    board.locator('[aria-label*="the open window or turn is about this system"]'),
+  ).toHaveAttribute("aria-label", /system 29/);
+  // The decision of the viewer is one line, with its footer.
+  await expect(sheet.getByRole("button", { name: "Restore" })).toBeVisible();
+  await expect(send).toBeVisible();
+  await expect(sheet.locator("#step-panel")).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1920);
+  await page.screenshot({ path: `${SHOTS}/turn.png`, animations: "disabled" });
+
+  // The movement: what left each system, and the fleet in #29 now → after.
+  await tabs.nth(1).click();
+  await expect(turn.getByRole("heading", { name: "Movement" })).toBeVisible();
+  await expect(turn).toContainText("4 ships · 3 cargo");
+  await expect(turn).toContainText("0 → 2");
+  await expect(turn).not.toContainText("Choose a system on the map");
+  await page.screenshot({ path: `${SHOTS}/turn-movement.png`, animations: "disabled" });
+
+  // Esc closes the turn, and the decision is back.
+  await page.keyboard.press("Escape");
+  await expect(turn).toHaveCount(0);
+  await expect(row).toHaveAttribute("aria-pressed", "false");
+  await expect(sheet.locator("#step-panel")).toBeVisible();
+  // So does a tap on the line of the decision.
+  await row.click();
+  await expect(turn).toBeVisible();
+  await sheet.getByRole("button", { name: "Restore" }).click();
+  await expect(turn).toHaveCount(0);
+  await expect(sheet.locator("#step-panel")).toBeVisible();
   expect(errors).toEqual([]);
 });
