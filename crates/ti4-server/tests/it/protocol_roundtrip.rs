@@ -251,9 +251,11 @@ fn server_event_round_trips() {
             stage: None,
             detail: None,
             movement: None,
+            fact: None,
             seat_detail: None,
             private_detail: None,
             roll: None,
+            board: None,
         },
     });
     let json = serde_json::to_string(&msg).expect("serialize");
@@ -339,7 +341,9 @@ fn subscribe_accepts_only_the_v3_player_session_field() {
 #[test]
 fn the_script_messages_round_trip_in_the_form_that_a_local_game_takes() {
     use ti4_host::planning::draft::DraftStep;
+    use ti4_host::planning::draft::EntryRefusal;
     use ti4_host::planning::steps::PlanStep;
+    use ti4_host::planning::steps::RefusalCode;
     use ti4_host::protocol::client::MAX_SCRIPT_ENTRIES;
     use ti4_host::protocol::server::{DraftAppliedMsg, ScriptStopped};
 
@@ -393,6 +397,15 @@ fn the_script_messages_round_trip_in_the_form_that_a_local_game_takes() {
             remaining: script[1..].to_vec(),
             interrupted: true,
             reason: "The game asks for another decision first.".to_owned(),
+            refusal: None,
+        }),
+        // A refusal names the entry that the game refused, and why.
+        Some(ScriptStopped {
+            applied: 0,
+            remaining: script.clone(),
+            interrupted: false,
+            reason: "The game does not offer \"x\" here.".to_owned(),
+            refusal: Some(EntryRefusal::of(&script, 0, RefusalCode::NotOffered)),
         }),
     ] {
         let message = ServerMessage::DraftApplied(DraftAppliedMsg {

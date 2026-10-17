@@ -51,6 +51,15 @@
   stroke-width: 1.8;
 }
 
+/* The system of the open window: a wide ring in the colour of the window. */
+.galaxy .system .mark {
+  fill: none;
+  stroke: var(--color-cyan);
+  stroke-width: 4;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
 .galaxy .system.blocked .hex {
   stroke-dasharray: 2 3;
 }
@@ -185,9 +194,13 @@
   opacity: 0.3;
 }
 
-.galaxy .planet.exhausted circle {
-  fill-opacity: 0.35;
-  stroke-dasharray: 2 2;
+/* An exhausted planet: a dashed outline in every map view, also while the task can use it. */
+.galaxy .planet.exhausted > circle {
+  stroke-dasharray: 3 2;
+}
+
+.galaxy .planet.exhausted:not(.payable, .linked) > circle {
+  stroke-width: 1.5;
 }
 
 .galaxy .planet.chosen > circle {

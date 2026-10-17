@@ -5,6 +5,7 @@
 
 use std::collections::BTreeMap;
 
+use serde::{Deserialize, Serialize};
 use ti4_content::ContentStore;
 use ti4_content::units::{UnitType, catalogue};
 use ti4_model::content_types::SourceSet;
@@ -13,9 +14,13 @@ use ti4_model::state::GameState;
 use ti4_model::units::Unit;
 
 use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Table};
+use crate::decision_context::{DecisionContext, DecisionSource, DecisionTarget};
 
 /// The choice kind for removing a unit to get back within a limit.
 pub const REMOVE_KIND: &str = "remove";
+/// The subtype of the question which unit a seat removes over its fleet supply or its capacity in
+/// a system (the target). Each option's label is `remove <unit type>`.
+pub const REMOVE_EXCESS_SUBTYPE: &str = "remove_excess_unit";
 
 /// 37.1: non-fighter ships only. 37.1a excludes anything being carried.
 #[must_use]
@@ -70,7 +75,12 @@ pub struct Arrival<'a> {
 /// cannot hold onto the fleet pool, so a ground force placed in a space area can push fighters out
 /// of capacity and consume fleet supply without a single ship being produced. Answering either
 /// question on its own gets that case wrong.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// On the wire it is the answer of the `fleet_standing` query of the engine of the page, named
+/// `FleetStanding` there.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "FleetStanding"))]
 pub struct Standing {
     /// Non-fighter ships this seat may keep here (37.1).
     pub fleet_limit: i64,
@@ -185,6 +195,124 @@ fn never_half(_: &str) -> bool {
     false
 }
 
+/// The numbers that fleet supply and capacity are read from, for one seat in one system.
+///
+/// [`FleetCounts::standing`] is the one arithmetic of this module: every question about the two
+/// limits is answered by building these counts and reading them there. A client that stages units
+/// before it sends them (a production) adds what it stages to the counts of the engine and asks
+/// the engine for the standing, so it never repeats the rule.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct FleetCounts {
+    /// Non-fighter ships this seat may keep here (37.1).
+    pub fleet_limit: i64,
+    /// Ships that count against that limit (37.1, 37.1a).
+    pub ships: i64,
+    /// Capacity the ships in the space area provide (16.1).
+    pub transport: i64,
+    /// Capacity that ground forces in the space area use.
+    pub carried: i64,
+    /// Capacity that fighters in the space area use.
+    pub fighters: i64,
+    /// Fighters that the seat's structures in the system hold without capacity (Space Dock).
+    #[serde(default)]
+    pub fighter_support: i64,
+    /// Fighters that the capacity cannot hold count against the fleet pool (Fighter II).
+    #[serde(default)]
+    pub fighters_to_fleet_pool: bool,
+    /// Such a fighter counts as half a ship (Naalu Hybrid Crystal Fighter II).
+    #[serde(default)]
+    pub half_fighters: bool,
+}
+
+impl FleetCounts {
+    /// Fleet supply and capacity of these counts.
+    #[must_use]
+    pub fn standing(&self) -> Standing {
+        // 16.3 counts fighters *and* ground forces against one combined total, and 16.3a lets the
+        // owner choose which of the excess to remove -- which only means anything if a ground
+        // force can be the excess.
+        //
+        // This used to subtract the ground forces from the transport first and then test the
+        // fighters against what was left, so six infantry on a four-capacity carrier reported *no*
+        // excess: the subtraction went negative, `max(0)` swallowed it, and there were no fighters
+        // to catch it. Ground forces stranded in a space area were therefore never removed.
+        //
+        // A space dock's fighter support is still fighter-only (16.3, Space Dock II), which is why
+        // it cannot simply be added to the transport: it excuses fighters and nothing else.
+        let excused = self.fighters.min(self.fighter_support);
+        let consumed = self.carried + self.fighters - excused;
+        let overflow = (consumed - self.transport).max(0);
+        let fighters_charged = fighters_charged_to_fleet_pool(
+            self.fighters_to_fleet_pool,
+            self.fighters,
+            excused,
+            overflow,
+        );
+        // Naalu Hybrid Crystal Fighter II: each excess fighter counts as 1/2 of a ship. The pool
+        // is compared in whole ships, and `present + k/2 > limit` holds exactly when
+        // `present + ceil(k/2) > limit` (both integers), so the charge rounds an odd half up.
+        let pool_charge = if self.half_fighters {
+            (fighters_charged + 1) / 2
+        } else {
+            fighters_charged
+        };
+        Standing {
+            fleet_limit: self.fleet_limit,
+            // Fighter II from the other side: fighters the capacity cannot hold are ships as far
+            // as the fleet pool is concerned, so they are counted here rather than removed there.
+            fleet_charged: self.ships + pool_charge,
+            transport: self.transport,
+            consumed,
+            fighters_charged,
+            capacity_excess: (overflow - fighters_charged).max(0),
+        }
+    }
+}
+
+/// The counts of a seat in a system now, with no unit arriving.
+#[must_use]
+pub fn counts(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    system: &SystemId,
+) -> FleetCounts {
+    let types = catalogue(content, sources);
+    let fleet_limit = if is_unlimited(state, player) {
+        UNLIMITED_FLEET_BILL
+    } else {
+        i64::from(limit(state, content, player)).max(0)
+    };
+    counts_with(
+        &types,
+        state.board.get(system),
+        player,
+        fleet_limit,
+        None,
+        &fighter_halves(state, content, player),
+    )
+}
+
+/// Whether a fighter of this kind makes the seat's fighters over capacity count against the fleet
+/// pool (Fighter II), and whether as half a ship: what [`FleetCounts`] reads for a fighter that
+/// arrives.
+#[must_use]
+pub fn fighter_rules(
+    state: &GameState,
+    content: &ContentStore,
+    player: &PlayerId,
+    kind: &UnitType<'_>,
+) -> (bool, bool) {
+    let upgraded = kind.is_fighter() && kind.required_technology().is_some();
+    (
+        upgraded,
+        upgraded && fighter_halves(state, content, player)(kind.id()),
+    )
+}
+
 /// [`standing`] with the catalogue built, the board borrowed and the fleet limit already known.
 ///
 /// Borrowed, not cloned: `GameState::system_state` returns a CLONE of the whole system, units and
@@ -201,6 +329,18 @@ fn standing_with(
     arriving: Option<Arrival<'_>>,
     half_weight: &dyn Fn(&str) -> bool,
 ) -> Standing {
+    counts_with(types, board, player, fleet_limit, arriving, half_weight).standing()
+}
+
+/// The counts that [`standing_with`] reads.
+fn counts_with(
+    types: &BTreeMap<&str, UnitType<'_>>,
+    board: Option<&ti4_model::state::SystemState>,
+    player: &PlayerId,
+    fleet_limit: i64,
+    arriving: Option<Arrival<'_>>,
+    half_weight: &dyn Fn(&str) -> bool,
+) -> FleetCounts {
     let space: Vec<UnitType<'_>> = board
         .map(|board| {
             board
@@ -229,7 +369,7 @@ fn standing_with(
         }
     }
 
-    let present = i64::try_from(
+    let ships = i64::try_from(
         space
             .iter()
             .filter(|kind| counts_against_supply(kind))
@@ -250,7 +390,7 @@ fn standing_with(
         .map(UnitType::capacity_cost)
         .sum::<i64>()
         + new_fighters;
-    let support: i64 = board
+    let fighter_support: i64 = board
         .map(|board| {
             board
                 .planet_units
@@ -263,46 +403,21 @@ fn standing_with(
         })
         .map_or(0, |support: i64| support)
         + landing.map_or(0, |arrival| arrival.kind.fighter_support() * arrival.count);
-
-    // 16.3 counts fighters *and* ground forces against one combined total, and 16.3a lets the
-    // owner choose which of the excess to remove -- which only means anything if a ground force
-    // can be the excess.
-    //
-    // This used to subtract the ground forces from the transport first and then test the fighters
-    // against what was left, so six infantry on a four-capacity carrier reported *no* excess: the
-    // subtraction went negative, `max(0)` swallowed it, and there were no fighters to catch it.
-    // Ground forces stranded in a space area were therefore never removed.
-    //
-    // A space dock's fighter support is still fighter-only (16.3, Space Dock II), which is why it
-    // cannot simply be added to the transport: it excuses fighters and nothing else.
-    let excused = fighters.min(support);
-    let consumed = carried + fighters - excused;
-    let overflow = (consumed - transport).max(0);
     let upgraded_fighters = || {
         space
             .iter()
             .chain(arrival.as_ref().map(|arrival| &arrival.kind))
             .filter(|kind| kind.is_fighter() && kind.required_technology().is_some())
     };
-    let upgraded = upgraded_fighters().next().is_some();
-    let fighters_charged = fighters_charged_to_fleet_pool(upgraded, fighters, excused, overflow);
-    // Naalu Hybrid Crystal Fighter II: each excess fighter counts as 1/2 of a ship. The pool is
-    // compared in whole ships, and `present + k/2 > limit` holds exactly when
-    // `present + ceil(k/2) > limit` (both integers), so the charge rounds an odd half up.
-    let pool_charge = if upgraded_fighters().any(|kind| half_weight(kind.id())) {
-        (fighters_charged + 1) / 2
-    } else {
-        fighters_charged
-    };
-    Standing {
+    FleetCounts {
         fleet_limit,
-        // Fighter II from the other side: fighters the capacity cannot hold are ships as far as the
-        // fleet pool is concerned, so they are counted here rather than removed there.
-        fleet_charged: present + pool_charge,
+        ships,
         transport,
-        consumed,
-        fighters_charged,
-        capacity_excess: (overflow - fighters_charged).max(0),
+        carried,
+        fighters,
+        fighter_support,
+        fighters_to_fleet_pool: upgraded_fighters().next().is_some(),
+        half_fighters: upgraded_fighters().any(|kind| half_weight(kind.id())),
     }
 }
 
@@ -584,7 +699,18 @@ fn remove_one(
     .detailed("fleet_charged", standing.fleet_charged)
     .detailed("fleet_limit", standing.fleet_limit)
     .detailed("capacity_consumed", standing.consumed)
-    .detailed("capacity_transport", standing.transport);
+    .detailed("capacity_transport", standing.transport)
+    .contextualized(
+        DecisionContext::new(
+            player.clone(),
+            // Fleet pool (37) or capacity (16).
+            DecisionSource::Rule(if reason == "capacity" { "16" } else { "37" }.to_owned()),
+            REMOVE_EXCESS_SUBTYPE,
+            state.phase,
+            state.round,
+        )
+        .about(DecisionTarget::System(system.clone())),
+    );
     let answer = table.ask_seeing(&choice, &Observed::new(state, content, sources, galaxy))?;
     let index = answer
         .id
@@ -732,6 +858,42 @@ mod tests {
     /// "Fighters in excess of your ships' capacity count against your fleet pool" is the half that
     /// needed writing: such a fighter is not removed by capacity, it is charged to the pool, and it
     /// is removed only if the pool cannot hold it either.
+    /// The counts are the one arithmetic: a space dock holds fighters without capacity, and with
+    /// Fighter II the fighters that nothing holds count against the fleet pool, half with Naalu.
+    #[test]
+    fn fleet_counts_read_the_dock_and_fighter_ii() {
+        let counts = FleetCounts {
+            fleet_limit: 3,
+            ships: 2,
+            transport: 2,
+            carried: 1,
+            fighters: 6,
+            fighter_support: 3,
+            fighters_to_fleet_pool: false,
+            half_fighters: false,
+        };
+        let plain = counts.standing();
+        assert_eq!(
+            plain.consumed, 4,
+            "three of six fighters are held by the dock"
+        );
+        assert_eq!((plain.fleet_charged, plain.capacity_excess), (2, 2));
+        let upgraded = FleetCounts {
+            fighters_to_fleet_pool: true,
+            ..counts
+        }
+        .standing();
+        assert_eq!(upgraded.fighters_charged, 2);
+        assert_eq!((upgraded.fleet_charged, upgraded.capacity_excess), (4, 0));
+        let half = FleetCounts {
+            fighters_to_fleet_pool: true,
+            half_fighters: true,
+            ..counts
+        }
+        .standing();
+        assert_eq!(half.fleet_charged, 3);
+    }
+
     #[test]
     fn fighter_two_moves_alone_and_spills_onto_the_fleet_pool() {
         let content = ContentStore::embedded();
@@ -1011,6 +1173,18 @@ mod tests {
                 .and_then(|v| v.as_i64())
                 .unwrap()
                 >= 3
+        );
+        // Typed: which system, and the unit in each option's label, for a public log.
+        let context = first.context.as_ref().expect("a typed question");
+        assert_eq!(context.subtype, REMOVE_EXCESS_SUBTYPE);
+        assert_eq!(context.target, Some(DecisionTarget::System(system.clone())));
+        assert_eq!(context.source, DecisionSource::Rule("37".to_owned()));
+        assert!(
+            first
+                .options
+                .iter()
+                .all(|option| ["remove cruiser", "remove destroyer"]
+                    .contains(&option.label.as_str()))
         );
     }
 

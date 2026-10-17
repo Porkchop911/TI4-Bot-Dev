@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Button, Dialog, Kbd, usePhone } from "../../ui";
+import { Button, Dialog, Kbd, usePhoneScreen } from "../../ui";
 import { keyIsFree } from "../shell/shortcuts";
 import { NICKNAME_MAX, type ValidName } from "./LobbyScreen";
 
@@ -54,7 +54,7 @@ export function StartScreen({
   /** A name that the server refuses is marked: a table is made with the default name. */
   validName: ValidName;
 }) {
-  const phone = usePhone();
+  const phone = usePhoneScreen();
   const [deleting, setDeleting] = useState<Deleting | null>(null);
   const confirm = () => {
     if (deleting && "row" in deleting) {

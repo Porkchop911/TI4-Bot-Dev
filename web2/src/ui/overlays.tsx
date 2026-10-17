@@ -336,11 +336,3 @@ export function Toast({ message }: { message: { id: number; text: string } | nul
     </div>
   );
 }
-
-export function LiveRegion({ text }: { text: string }) {
-  return (
-    <div className="sr-only" role="status" aria-live="polite">
-      {text}
-    </div>
-  );
-}

@@ -1,6 +1,5 @@
 import { expect, it } from "vitest";
 import { slotOf } from "../session/savedGame";
-import { LOCAL_GAME } from "./defaultGame";
 import { DEFAULT_GAME, localGame } from "./LocalApp";
 import { singleStart } from "./SingleApp";
 
@@ -8,25 +7,19 @@ it("the bare address is no game: it is the start screen", () => {
   expect(localGame(new URLSearchParams(""))).toBeNull();
 });
 
-it("the local game of the demo is seed 42, eight seats, and the first seat is played here", () => {
-  expect(localGame(new URLSearchParams(LOCAL_GAME.slice(2)))).toEqual(DEFAULT_GAME);
+it("the default game is seed 42, eight seats, and the first seat is played here", () => {
+  expect(localGame(new URLSearchParams("local=42&players=8&humans=1"))).toEqual(DEFAULT_GAME);
   expect(DEFAULT_GAME).toEqual({ seed: 42, players: 8, humans: 1 });
   expect(slotOf(DEFAULT_GAME)).toBe("local.42.8.1");
 });
 
-it("the demo and the gallery keep their own addresses", () => {
-  expect(localGame(new URLSearchParams("example=live-picker"))).toBeNull();
+it("the gallery keeps its own address", () => {
   expect(localGame(new URLSearchParams("gallery"))).toBeNull();
 });
 
 it("an explicit game is read as before", () => {
   expect(localGame(new URLSearchParams("local=3&players=8&humans=1"))).toEqual({
     seed: 3,
-    players: 8,
-    humans: 1,
-  });
-  expect(localGame(new URLSearchParams("example=live-picker&local=5"))).toEqual({
-    seed: 5,
     players: 8,
     humans: 1,
   });

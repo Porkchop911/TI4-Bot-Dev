@@ -205,8 +205,24 @@ fn record(recording: &Recording) -> Result<Value, String> {
         let options = pending["choice"]["options"]
             .as_array()
             .map_or(&[][..], Vec::as_slice);
+        let redistribution = pending["choice"]["prompt"]
+            .as_str()
+            .is_some_and(|prompt| prompt.ends_with("redistribute your command tokens"));
         let id = match answers.next() {
             Some(id) => (*id).to_owned(),
+            // A redistribution keeps the most tactic tokens, so that the seat can still take a
+            // tactical action in the next round.
+            None if redistribution => options
+                .iter()
+                .filter_map(|option| option["id"].as_str())
+                .max_by_key(|id| {
+                    id.split('|')
+                        .next()
+                        .and_then(|tactic| tactic.parse::<u32>().ok())
+                        .unwrap_or(0)
+                })
+                .unwrap_or_default()
+                .to_owned(),
             // Not always the first option, so that the game moves on.
             None => options
                 .get(asked * 7 % options.len().max(1))

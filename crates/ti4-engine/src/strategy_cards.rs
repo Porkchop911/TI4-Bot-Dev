@@ -5,7 +5,7 @@
 //! receives for tactical choices.  Thunder's Edge Construction and Warfare are dispatched by
 //! card id because they share printed names with materially different cards.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use ti4_content::ContentStore;
 use ti4_content::galaxy::Galaxy;
@@ -18,12 +18,60 @@ use crate::choice::{Choice, ChoiceOption, IllegalChoice, Observed, Table};
 use crate::decision_context::{DecisionContext, DecisionSource};
 use crate::preview::{Delta, Preview, Quantity};
 use crate::production::Spend;
+use crate::tokens::{FLEET_POOL, POOL_KIND, STRATEGIC_POOL, TACTIC_POOL};
 
 pub const LEADERSHIP_TOKENS: u32 = 3;
 pub const INFLUENCE_PER_TOKEN: i64 = 3;
+/// The option id of "spend 3 influence for a command token": buy one.
+pub const BUY_TOKEN: &str = "yes";
+/// The option id of "spend 3 influence for a command token": buy no more.
+pub const STOP_BUYING: &str = "no";
 pub const TECHNOLOGY_PRIMARY_SECOND_COST: i64 = 6;
 pub const TECHNOLOGY_SECONDARY_COST: i64 = 4;
+/// How many action cards Politics' primary and secondary draw.
+pub const POLITICS_DRAWS: usize = 2;
+/// How many agenda cards Politics' primary looks at.
+pub const POLITICS_LOOKS: usize = 2;
+/// How many exhausted planets Diplomacy's primary and secondary ready.
+pub const DIPLOMACY_READIES: usize = 2;
 pub const RESEARCH_KIND: &str = "research";
+
+/// One placement of a structure ability: which placement of a card's sequence it is (`step` of
+/// `of`, display only) and whether it places only a PDS.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct StructureStep {
+    pub(crate) step: Option<(u32, u32)>,
+    pub(crate) only_pds: bool,
+}
+
+/// A lone placement of any structure: Construction's secondary, a law or a relic.
+pub(crate) const ONE_STRUCTURE: [StructureStep; 1] = [StructureStep {
+    step: None,
+    only_pds: false,
+}];
+/// Construction's primary (Prophecy of Kings and the base game): a PDS or a space dock, then a
+/// PDS.
+const CONSTRUCTION_STEPS: [StructureStep; 2] = [
+    StructureStep {
+        step: Some((1, 2)),
+        only_pds: false,
+    },
+    StructureStep {
+        step: Some((2, 2)),
+        only_pds: true,
+    },
+];
+/// Thunder's Edge Construction's primary: a structure (or a production), then a structure.
+const TE_CONSTRUCTION_STEPS: [StructureStep; 2] = [
+    StructureStep {
+        step: Some((1, 2)),
+        only_pds: false,
+    },
+    StructureStep {
+        step: Some((2, 2)),
+        only_pds: false,
+    },
+];
 
 /// Result of a primary.  TE Warfare hands its free activation back to the stepped game driver.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -108,21 +156,21 @@ fn gain_tokens_offering(
             player.clone(),
             "gain a command token into which pool",
             vec![
-                ChoiceOption::labelled("tactic_tokens", "pool", "tactic pool").previewed(
+                ChoiceOption::labelled(TACTIC_POOL, POOL_KIND, "tactic pool").previewed(
                     Preview::certain(vec![Delta::new(
                         Quantity::TacticTokens,
                         i64::from(tactic),
                         i64::from(tactic + 1),
                     )]),
                 ),
-                ChoiceOption::labelled("fleet_tokens", "pool", "fleet pool").previewed(
+                ChoiceOption::labelled(FLEET_POOL, POOL_KIND, "fleet pool").previewed(
                     Preview::certain(vec![Delta::new(
                         Quantity::FleetTokens,
                         i64::from(fleet),
                         i64::from(fleet + 1),
                     )]),
                 ),
-                ChoiceOption::labelled("strategic_tokens", "pool", "strategy pool").previewed(
+                ChoiceOption::labelled(STRATEGIC_POOL, POOL_KIND, "strategy pool").previewed(
                     Preview::certain(vec![Delta::new(
                         Quantity::StrategicTokens,
                         i64::from(strategic),
@@ -144,15 +192,14 @@ fn gain_tokens_offering(
             "gain",
             Some(usize::try_from(count - placed).unwrap_or(0)),
         );
-        if announce_purchase
-            && let Some(purchase) = purchase_details(state, content, sources, player)
+        if announce_purchase && let Some(purchase) = purchase_hints(state, content, sources, player)
         {
-            choice = choice.detailed("purchase", purchase);
+            choice = choice.hinted("purchase", &purchase);
         }
         let answer = ask(state, content, sources, galaxy, table, &choice)?;
         let pool = match answer.id.as_str() {
-            "tactic_tokens" => TokenPool::Tactic,
-            "fleet_tokens" => TokenPool::Fleet,
+            TACTIC_POOL => TokenPool::Tactic,
+            FLEET_POOL => TokenPool::Fleet,
             _ => TokenPool::Strategic,
         };
         state.gain_token(player, pool, 1);
@@ -160,46 +207,31 @@ fn gain_tokens_offering(
     Ok(())
 }
 
-/// What a client needs to plan Leadership's influence purchases as one screen (display only).
-///
-/// `max` is how many tokens the seat's influence can pay for in total (`floor(available / 3)`;
-/// the loop asks again exactly while `available >= 3 * (bought + 1)`). `planets` are the ready
-/// planets that pay in influence themselves, with their face worth, and `trade_goods` can be
-/// spent one at a time at `trade_good_worth` each; Archon's Gift faces and The Triad are not
-/// listed. The engine's payment loop asks which of them to spend; it has no automatic rule, so
-/// the plan a client sends names each exhaust or trade good explicitly. `None` when the seat
-/// cannot afford even one token.
-pub(crate) fn purchase_details(
+/// What a client needs to plan Leadership's influence purchases as one screen (display only);
+/// see [`PurchaseHints`]. Archon's Gift faces are not listed. `None` when the seat cannot afford
+/// even one token.
+pub(crate) fn purchase_hints(
     state: &GameState,
     content: &ContentStore,
     sources: SourceSet,
     player: &PlayerId,
-) -> Option<serde_json::Value> {
+) -> Option<PurchaseHints> {
     let available = crate::production::available(state, content, sources, player, Spend::Influence);
     if available < INFLUENCE_PER_TOKEN {
         return None;
     }
-    let planets: Vec<serde_json::Value> = crate::production::native_payment_planets(
-        state,
-        content,
-        sources,
-        player,
-        Spend::Influence,
-    )
-    .into_iter()
-    .map(|(planet, worth)| serde_json::json!({ "id": planet.to_string(), "worth": worth }))
-    .collect();
-    let goods = state
-        .player(player)
-        .map_or(0, |seat| i64::from(seat.trade_goods));
-    Some(serde_json::json!({
-        "cost": INFLUENCE_PER_TOKEN,
-        "influence_available": available,
-        "max": available / INFLUENCE_PER_TOKEN,
-        "trade_goods": goods,
-        "trade_good_worth": crate::production::trade_good_worth(state, player),
-        "planets": planets,
-    }))
+    Some(PurchaseHints {
+        payment: payment_hints(
+            state,
+            content,
+            sources,
+            player,
+            Spend::Influence,
+            INFLUENCE_PER_TOKEN,
+        ),
+        influence_available: available,
+        max: available / INFLUENCE_PER_TOKEN,
+    })
 }
 
 /// Whether a follower may buy command tokens with influence in the Leadership window.
@@ -286,7 +318,7 @@ fn buy_tokens_loop(
             table,
             &influence_purchase_choice(state, content, sources, player, credit),
         )?;
-        if answer.id != "yes" {
+        if answer.id != BUY_TOKEN {
             return Ok(());
         }
         if !pay_influence_and_gain_one(state, content, sources, galaxy, table, player, &mut credit)?
@@ -338,7 +370,7 @@ fn buy_tokens_first_yes_loop(
             table,
             &influence_purchase_choice(state, content, sources, player, credit),
         )?;
-        if answer.id != "yes" {
+        if answer.id != BUY_TOKEN {
             return Ok(());
         }
         if !pay_influence_and_gain_one(state, content, sources, galaxy, table, player, &mut credit)?
@@ -384,11 +416,11 @@ fn influence_purchase_choice(
         prompt,
         vec![
             ChoiceOption::labelled(
-                "no",
+                STOP_BUYING,
                 crate::strategy::STRATEGY_KIND,
                 "spend nothing further",
             ),
-            ChoiceOption::labelled("yes", crate::strategy::STRATEGY_KIND, yes),
+            ChoiceOption::labelled(BUY_TOKEN, crate::strategy::STRATEGY_KIND, yes),
         ],
     )
     .contextualized(DecisionContext::new(
@@ -399,9 +431,9 @@ fn influence_purchase_choice(
         state.round,
     ));
     // Only a fresh purchase (no carried credit) can be planned as a whole.
-    match purchase_details(state, content, sources, player).filter(|_| credit == 0) {
+    match purchase_hints(state, content, sources, player).filter(|_| credit == 0) {
         Some(purchase) => crate::tokens::with_pool_details(choice, state, "buy", Some(0))
-            .detailed("purchase", purchase),
+            .hinted("purchase", &purchase),
         None => choice,
     }
 }
@@ -1372,10 +1404,16 @@ fn paid_research(
         // That technology is not offered again (see `offer_research_inner`), so the loop ends.
         let mut declined_waivers: BTreeSet<TechnologyId> = BTreeSet::new();
         loop {
+            // A technology is offered when its price can be paid with the specialty planets
+            // that its prerequisites exhaust left ready (from rules version 17).
             let open: Vec<TechnologyId> =
                 crate::technology::researchable(state, content, sources, player)
                     .into_iter()
                     .filter(|id| !declined_waivers.contains(id))
+                    .filter(|id| {
+                        state.rules_version < ti4_model::state::RULES_TECH_PAYMENT_KEEPS_SPECIALTIES
+                            || research_payable(state, content, sources, player, id, cost)
+                    })
                     .collect();
             if open.is_empty() {
                 return Ok(false);
@@ -1386,15 +1424,21 @@ fn paid_research(
                     .map_or(0, |seat| seat.technologies.len()),
             )
             .unwrap_or(i64::MAX);
-            let choice = Choice::new(
+            let mut choice = Choice::new(
                 player.clone(),
                 "research a technology",
                 open.iter()
                     .map(|id| research_option(content, id, cost, 0, techs_owned))
                     .chain(std::iter::once(ChoiceOption::decline()))
                     .collect(),
-            )
-            .contextualized(DecisionContext::new(
+            );
+            if cost > 0 {
+                choice = choice.hinted(
+                    "payment",
+                    &research_payment_hints(state, content, sources, player, cost, &open),
+                );
+            }
+            let choice = choice.contextualized(DecisionContext::new(
                 player.clone(),
                 DecisionSource::StrategyCard {
                     card: "Technology".to_owned(),
@@ -1417,7 +1461,38 @@ fn paid_research(
                 &technology,
             );
             let before = state.clone();
-            if state.rules_version >= ti4_model::state::RULES_TECH_PAYMENT_CHOICE {
+            if state.rules_version >= ti4_model::state::RULES_TECH_PAYMENT_KEEPS_SPECIALTIES {
+                // The player chooses how to pay, one planet or trade good at a time, inside the
+                // research's payment window. The specialty planets that the prerequisites
+                // exhaust are not offered: they stay ready for them.
+                let kept = crate::technology::specialties_spent_by_research(
+                    state,
+                    content,
+                    sources,
+                    player,
+                    &technology,
+                );
+                for planet in &kept {
+                    state.exhaust_planet(planet.clone());
+                }
+                let paid = crate::production::pay_in_window(
+                    state,
+                    content,
+                    sources,
+                    galaxy,
+                    table,
+                    player,
+                    cost,
+                    Spend::Resources,
+                );
+                for planet in &kept {
+                    state.ready_planet(planet);
+                }
+                if !paid? {
+                    *state = before;
+                    return Ok(false);
+                }
+            } else if state.rules_version >= ti4_model::state::RULES_TECH_PAYMENT_CHOICE {
                 // The researcher chooses which planets and trade goods pay (`pay_resources`).
                 if cost > 0
                     && !crate::production::pay_seeing(
@@ -1499,10 +1574,203 @@ fn paid_research(
     }
 }
 
-/// Display only: what a seat weighing Diplomacy's "ready planets" needs in front of it. The
-/// exhausted planets it could ready (with their values), and, for the other strategy cards that
-/// spend resources or influence (Leadership, Technology, Warfare), whether each has been played
-/// this round, is still held unplayed by some seat, or is not in this game's round at all. Only
+/// Whether a research of `technology` at `cost` can be paid with the specialty planets that its
+/// prerequisites exhaust left ready.
+fn research_payable(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    technology: &TechnologyId,
+    cost: i64,
+) -> bool {
+    let kept = crate::technology::specialties_spent_by_research(
+        state, content, sources, player, technology,
+    );
+    if kept.is_empty() {
+        return crate::payment::affordable(state, content, sources, player, cost, Spend::Resources);
+    }
+    let mut trial = state.clone();
+    for planet in kept {
+        trial.exhaust_planet(planet);
+    }
+    crate::payment::affordable(&trial, content, sources, player, cost, Spend::Resources)
+}
+
+/// A planet that pays a bill, as the look-ahead of a payment lists it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct PaymentPlanet {
+    pub id: PlanetId,
+    /// What the planet pays with its best face.
+    pub worth: i64,
+    /// The kind of value that the best face spends, when it is not the kind of the bill:
+    /// "influence" for resources (Archon's Gift). The payment option of the planet is then
+    /// `exhaust|<planet>|<face>`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub face: Option<String>,
+}
+
+/// What can pay a bill that a question opens before the engine asks for the payment (display
+/// only): a paid research ([`ResearchPaymentHints`]) and a purchase of command tokens
+/// ([`PurchaseHints`]). The payment questions that follow ask which of them to spend, one planet
+/// or trade good at a time; the engine has no automatic rule, so a client that stages the
+/// payment names each of them. The same fields as the payment of a production's facts.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct PaymentHints {
+    /// The price of one thing that is bought: the research, or one command token.
+    pub cost: i64,
+    /// The ready planets that pay, each with the worth of its best face. The Triad is not
+    /// listed.
+    pub planets: Vec<PaymentPlanet>,
+    /// Trade goods, spent one at a time at `trade_good_worth` each.
+    pub trade_goods: i64,
+    pub trade_good_worth: i64,
+    /// Commodities that the seat may spend as trade goods (the Keleres agent).
+    pub commodities: i64,
+}
+
+/// The look-ahead of a paid research (`details.payment` of the research question).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ResearchPaymentHints {
+    #[serde(flatten)]
+    pub payment: PaymentHints,
+    /// For each offered technology whose prerequisites exhaust specialty planets, those
+    /// planets: the payment of that research does not offer them.
+    pub kept: BTreeMap<TechnologyId, Vec<PlanetId>>,
+}
+
+/// The look-ahead of Leadership's purchase of command tokens for influence (`details.purchase`).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct PurchaseHints {
+    /// `cost` is the influence of one token.
+    #[serde(flatten)]
+    pub payment: PaymentHints,
+    /// All the influence that the seat can spend, its trade goods included.
+    pub influence_available: i64,
+    /// How many tokens that influence pays for in total (`floor(available / cost)`; the loop
+    /// asks again exactly while `available >= cost * (bought + 1)`).
+    pub max: i64,
+}
+
+/// What can pay a bill of `cost` in `kind` (display only); see [`PaymentHints`].
+fn payment_hints(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    kind: Spend,
+    cost: i64,
+) -> PaymentHints {
+    let planets = crate::production::best_payment_faces(state, content, sources, player, kind)
+        .into_iter()
+        .map(|(planet, worth, face)| PaymentPlanet {
+            id: planet,
+            worth,
+            face: (face != kind).then(|| crate::production::spend_name(face).to_owned()),
+        })
+        .collect();
+    PaymentHints {
+        cost,
+        planets,
+        trade_goods: state
+            .player(player)
+            .map_or(0, |seat| i64::from(seat.trade_goods)),
+        trade_good_worth: crate::production::trade_good_worth(state, player),
+        commodities: crate::factions::keleres::spendable_commodities(state, player),
+    }
+}
+
+/// What a client needs to stage the payment of a paid research with its choice (display only).
+fn research_payment_hints(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    cost: i64,
+    open: &[TechnologyId],
+) -> ResearchPaymentHints {
+    // Before rules version 17 the payment of a research offers every ready planet.
+    let keeps = state.rules_version >= ti4_model::state::RULES_TECH_PAYMENT_KEEPS_SPECIALTIES;
+    let kept = open
+        .iter()
+        .filter(|_| keeps)
+        .filter_map(|technology| {
+            let planets = crate::technology::specialties_spent_by_research(
+                state, content, sources, player, technology,
+            );
+            (!planets.is_empty()).then(|| (technology.clone(), planets))
+        })
+        .collect();
+    ResearchPaymentHints {
+        payment: payment_hints(state, content, sources, player, Spend::Resources, cost),
+        kept,
+    }
+}
+
+/// The look-ahead of a readying of exhausted planets (Diplomacy's system question, the window of
+/// its secondary, and each planet to ready): its fields are top-level keys of the details,
+/// `details.ready_hints` and `details.ready_count`, written with [`Choice::hinted_fields`], so
+/// that a client can stage the whole readying at once (display only).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ReadyHints {
+    pub ready_hints: ReadyDetails,
+    /// How many planets the game readies at most, with this question and the ones after it.
+    pub ready_count: usize,
+}
+
+/// What a seat weighing "ready planets" needs in front of it (`details.ready_hints`).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ReadyDetails {
+    /// The exhausted planets that the seat controls, which it could ready.
+    pub planets: Vec<ReadyPlanet>,
+    /// The other strategy cards that spend resources or influence (Leadership, Technology,
+    /// Warfare), in that order.
+    pub spenders: Vec<ReadySpender>,
+}
+
+/// An exhausted planet that can be readied, with its values. The values are null when the
+/// content has no record of the planet.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ReadyPlanet {
+    pub id: PlanetId,
+    pub name: String,
+    pub resources: Option<i64>,
+    pub influence: Option<i64>,
+}
+
+/// A strategy card that spends what a ready planet gives, and where it is in this round.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ReadySpender {
+    /// The printed name of the card.
+    pub card: String,
+    /// What it spends: "resources" or "influence".
+    pub spends: String,
+    pub status: SpenderStatus,
+}
+
+/// Where a strategy card is in this round: exhausted by a seat that played it, still held
+/// unplayed by some seat, or held by no seat.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub enum SpenderStatus {
+    Played,
+    ToCome,
+    NotInPlay,
+}
+
+/// Display only: the look-ahead of a readying of at most `count` planets ([`ReadyHints`]): the
+/// exhausted planets the seat could ready (with their values), and, for the other strategy
+/// cards that spend resources or influence, whether each has been played this round. Only
 /// public facts: strategy-card holdings and their exhausted state are on the table for everyone.
 /// Never read by the engine.
 #[must_use]
@@ -1511,29 +1779,49 @@ pub fn ready_hints(
     content: &ContentStore,
     sources: SourceSet,
     player: &PlayerId,
-) -> serde_json::Value {
-    let planets: Vec<serde_json::Value> = state
+    count: usize,
+) -> ReadyHints {
+    let planets = state
         .controlled_planets(player)
         .into_iter()
         .map(|(_, planet)| planet)
         .filter(|planet| state.exhausted_planets.contains(*planet))
         .map(|planet| {
             let record = ti4_content::galaxy::planet(content, planet.as_str(), sources);
-            serde_json::json!({
-                "id": planet.as_str(),
-                "name": record.as_ref().and_then(|r| r.name()).unwrap_or(planet.as_str()),
-                // As the planet pays now (attachments and laws included), like the payment screens.
-                "resources": record.as_ref().map(|_| crate::production::planet_value_now(
-                    state, content, sources, planet, crate::production::Spend::Resources)),
-                "influence": record.as_ref().map(|_| crate::production::planet_value_now(
-                    state, content, sources, planet, crate::production::Spend::Influence)),
-            })
+            ReadyPlanet {
+                id: planet.clone(),
+                name: record
+                    .as_ref()
+                    .and_then(|r| r.name())
+                    .unwrap_or(planet.as_str())
+                    .to_owned(),
+                // As the planet pays now (attachments and laws included), like the payment
+                // screens.
+                resources: record.as_ref().map(|_| {
+                    crate::production::planet_value_now(
+                        state,
+                        content,
+                        sources,
+                        planet,
+                        Spend::Resources,
+                    )
+                }),
+                influence: record.as_ref().map(|_| {
+                    crate::production::planet_value_now(
+                        state,
+                        content,
+                        sources,
+                        planet,
+                        Spend::Influence,
+                    )
+                }),
+            }
         })
         .collect();
-    let spenders: Vec<serde_json::Value> = [
-        ("Leadership", "influence"),
-        ("Technology", "resources"),
-        ("Warfare", "resources"),
+    let spenders = [
+        ("Leadership", Spend::Influence),
+        ("Technology", Spend::Resources),
+        ("Warfare", Spend::Resources),
     ]
     .iter()
     .map(|(name, spends)| {
@@ -1548,16 +1836,23 @@ pub fn ready_hints(
             }
         }
         let status = if !held {
-            "not_in_play"
+            SpenderStatus::NotInPlay
         } else if played {
-            "played"
+            SpenderStatus::Played
         } else {
-            "to_come"
+            SpenderStatus::ToCome
         };
-        serde_json::json!({ "card": name, "spends": spends, "status": status })
+        ReadySpender {
+            card: (*name).to_owned(),
+            spends: crate::production::spend_name(*spends).to_owned(),
+            status,
+        }
     })
     .collect();
-    serde_json::json!({ "planets": planets, "spenders": spenders })
+    ReadyHints {
+        ready_hints: ReadyDetails { planets, spenders },
+        ready_count: count,
+    }
 }
 
 fn ready_planets(
@@ -1569,7 +1864,7 @@ fn ready_planets(
     player: &PlayerId,
     maximum: usize,
 ) -> Result<(), IllegalChoice> {
-    for _ in 0..maximum {
+    for readied in 0..maximum {
         let controlled: Vec<PlanetId> = state
             .controlled_planets(player)
             .into_iter()
@@ -1600,7 +1895,13 @@ fn ready_planets(
             state.phase,
             state.round,
         ))
-        .detailed("ready_hints", ready_hints(state, content, sources, player));
+        .hinted_fields(&ready_hints(
+            state,
+            content,
+            sources,
+            player,
+            maximum - readied,
+        ));
         let answer = ask(state, content, sources, galaxy, table, &choice)?;
         state.ready_planet(&PlanetId::new(answer.id));
     }
@@ -1643,6 +1944,15 @@ fn diplomacy_primary(
             "diplomacy_choose_system",
             state.phase,
             state.round,
+        ))
+        // Display only: the planets that are readied after the system, so that a client can
+        // stage the whole primary at once.
+        .hinted_fields(&ready_hints(
+            state,
+            content,
+            sources,
+            player,
+            DIPLOMACY_READIES,
         ));
         let chosen = SystemId::new(ask(state, content, sources, galaxy, table, &choice)?.id);
         for other in state.seating_order.clone() {
@@ -1662,7 +1972,39 @@ fn diplomacy_primary(
             }
         }
     }
-    ready_planets(state, content, sources, galaxy, table, player, 2)
+    ready_planets(
+        state,
+        content,
+        sources,
+        galaxy,
+        table,
+        player,
+        DIPLOMACY_READIES,
+    )
+}
+
+/// The look-ahead of Politics' speaker question, what the primary does after the speaker: its
+/// fields are top-level keys of the details, `details.draws` and `details.looks`, written with
+/// [`Choice::hinted_fields`], so that a client can say it (display only).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct PoliticsHints {
+    /// How many action cards the primary draws ([`POLITICS_DRAWS`]).
+    pub draws: usize,
+    /// How many agenda cards the primary looks at: [`POLITICS_LOOKS`], or fewer when the deck
+    /// has fewer.
+    pub looks: usize,
+}
+
+/// The look-ahead of each agenda placement of Politics' primary: its field is a top-level key
+/// of the details, `details.agendas`, written with [`Choice::hinted_fields`], so that a client
+/// can stage the whole placement at once (display only).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct AgendaPlacementHints {
+    /// The agenda of this question and the ones placed after it, in the order that they are
+    /// asked.
+    pub agendas: Vec<String>,
 }
 
 fn politics_primary(
@@ -1691,21 +2033,21 @@ fn politics_primary(
                 )
             })
             .collect();
+        let worded = seat_phrases(&named, "{seat} becomes speaker");
         let choice = Choice::new(
             player.clone(),
             "who becomes speaker",
-            named
+            worded
                 .iter()
-                .map(|(name, _)| {
-                    ChoiceOption::labelled(
-                        name.clone(),
-                        "speaker",
-                        format!("{name} becomes speaker"),
-                    )
-                })
+                .map(|(name, worded)| ChoiceOption::labelled(name, "speaker", worded.label()))
                 .collect(),
         )
         .detailed("seats", seat_map(&named))
+        .phrased_options(&worded)
+        .hinted_fields(&PoliticsHints {
+            draws: POLITICS_DRAWS,
+            looks: state.agenda_deck.len().min(POLITICS_LOOKS),
+        })
         .contextualized(DecisionContext::new(
             player.clone(),
             DecisionSource::StrategyCard {
@@ -1727,8 +2069,8 @@ fn politics_primary(
                 chosen,
             })?;
     }
-    crate::action_cards::draw(state, content, table, player, 2)?;
-    let looked: Vec<String> = (0..state.agenda_deck.len().min(2))
+    crate::action_cards::draw(state, content, table, player, POLITICS_DRAWS)?;
+    let looked: Vec<String> = (0..state.agenda_deck.len().min(POLITICS_LOOKS))
         .map_while(|_| {
             ti4_model::deck_reserve::take_top(
                 &mut state.deck_reserve,
@@ -1738,7 +2080,7 @@ fn politics_primary(
             )
         })
         .collect();
-    for agenda in looked {
+    for (placed, agenda) in looked.iter().cloned().enumerate() {
         let choice = Choice::new(
             player.clone(),
             format!("place {agenda} where"),
@@ -1748,6 +2090,9 @@ fn politics_primary(
             ],
         )
         .detailed("agenda", agenda_details(content, &agenda))
+        .hinted_fields(&AgendaPlacementHints {
+            agendas: looked[placed..].to_vec(),
+        })
         .contextualized(DecisionContext::new(
             player.clone(),
             DecisionSource::StrategyCard {
@@ -1768,6 +2113,27 @@ fn politics_primary(
 }
 
 /// Display only: which seat each named option stands for, so a client can show its standing.
+/// An option for each named seat, by its id (the faction name), whose label is `template` with
+/// `{seat}` the faction name and whose phrase names the seat.
+fn seat_phrases(
+    named: &[(String, PlayerId)],
+    template: &str,
+) -> Vec<(String, crate::phrases::Worded)> {
+    named
+        .iter()
+        .map(|(name, seat)| {
+            (
+                name.clone(),
+                crate::phrases::Phrase::of(template).with(
+                    "seat",
+                    name,
+                    crate::phrases::Subject::seat(seat),
+                ),
+            )
+        })
+        .collect()
+}
+
 fn seat_map(named: &[(String, PlayerId)]) -> serde_json::Value {
     serde_json::Value::Object(
         named
@@ -1777,41 +2143,61 @@ fn seat_map(named: &[(String, PlayerId)]) -> serde_json::Value {
     )
 }
 
-/// Display only: each named seat's commodities now and at its printed limit.
+/// Each named seat's commodities now and at its printed limit, by the id of its option
+/// (`details.commodities` of Trade's question of the other seats).
 fn commodity_map(
     state: &GameState,
     content: &ContentStore,
     named: &[(String, PlayerId)],
-) -> serde_json::Value {
-    serde_json::Value::Object(
-        named
-            .iter()
-            .map(|(name, seat)| {
-                let have = state.player(seat).map_or(0, |p| p.commodities);
-                (
-                    name.clone(),
-                    serde_json::json!({ "have": have, "max": commodity_limit(state, content, seat) }),
-                )
-            })
-            .collect(),
-    )
+) -> BTreeMap<String, CommodityLimit> {
+    named
+        .iter()
+        .map(|(name, seat)| {
+            let have = state.player(seat).map_or(0, |p| p.commodities);
+            (
+                name.clone(),
+                CommodityLimit {
+                    have,
+                    max: commodity_limit(state, content, seat),
+                },
+            )
+        })
+        .collect()
 }
 
-/// Display only: one seat's own commodities now, its printed limit and its trade goods, for a
-/// question that offers to gain, replenish, spend or convert commodities (`details.commodities`).
+/// A seat's commodities now and at its printed limit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct CommodityLimit {
+    pub have: i32,
+    pub max: i32,
+}
+
+/// One seat's own commodities now, its printed limit and its trade goods, for a question that
+/// offers to gain, replenish, spend or convert commodities (`details.commodities`, written with
+/// [`Choice::hinted`]; display only): the window of Trade's secondary, and the gains of
+/// commodities of an exploration, a leader and a Mahact unit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct CommodityStanding {
+    pub have: i32,
+    pub max: i32,
+    pub trade_goods: i32,
+}
+
 pub(crate) fn commodity_standing(
     state: &GameState,
     content: &ContentStore,
     player: &PlayerId,
-) -> serde_json::Value {
-    let (have, goods) = state
+) -> CommodityStanding {
+    let (have, trade_goods) = state
         .player(player)
         .map_or((0, 0), |seat| (seat.commodities, seat.trade_goods));
-    serde_json::json!({
-        "have": have,
-        "max": commodity_limit(state, content, player),
-        "trade_goods": goods,
-    })
+    CommodityStanding {
+        have,
+        max: commodity_limit(state, content, player),
+        trade_goods,
+    }
 }
 
 /// Display only: the agenda card being placed, as printed.
@@ -1844,36 +2230,84 @@ pub(crate) fn structure_options(
     player: &PlayerId,
     only_pds: bool,
 ) -> Vec<ChoiceOption> {
-    state
-        .controlled_planets(player)
-        // Space stations rule 5: no structures on a space station either.
-        .into_iter()
-        .filter(|(_, planet)| {
-            !ti4_content::galaxy::is_space_station(content, planet.as_str(), sources)
-        })
-        .flat_map(|(system, planet)| {
-            ["pds", "spacedock"]
-                .into_iter()
-                .filter(move |kind| !only_pds || *kind == "pds")
-                .filter(move |kind| {
-                    // The unit this player actually places: faction unit or upgrade, as an action
-                    // card placement resolves it (Titans Hel-Titan, PDS II).
-                    let unit = construction_unit(state, content, sources, player, kind);
-                    crate::production::structure_allowed(
-                        state, content, sources, player, planet, kind,
-                    ) && crate::supply::allowed(state, content, sources, player, &unit, 1) == 1
-                })
-                .map(move |kind| {
+    structure_offers(state, content, sources, player, only_pds).0
+}
+
+/// The kinds of structure, in the order of the options of a placement.
+const STRUCTURE_KINDS: [&str; 2] = ["pds", "spacedock"];
+
+/// Whether a placement offers a structure of `kind` on `planet`, or the first check that
+/// excludes it, in the order of the rules (see [`StructureWithheld`]).
+fn structure_screen(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    planet: &PlanetId,
+    kind: &str,
+    only_pds: bool,
+) -> Result<(), StructureWithheld> {
+    // Space stations rule 5: no structures on a space station either.
+    if ti4_content::galaxy::is_space_station(content, planet.as_str(), sources) {
+        return Err(StructureWithheld::SpaceStation);
+    }
+    if only_pds && kind != "pds" {
+        return Err(StructureWithheld::PdsOnly);
+    }
+    if let Some(reason) =
+        crate::production::structure_refused(state, content, sources, player, planet, kind)
+    {
+        return Err(reason);
+    }
+    // The unit this player actually places: faction unit or upgrade, as an action card
+    // placement resolves it (Titans Hel-Titan, PDS II). 31.4 through `supply::allowed`: an
+    // ability that bars the placement first, then the box.
+    let unit = construction_unit(state, content, sources, player, kind);
+    if crate::factions::hooks_economy::effect_placement_forbidden(
+        state, content, sources, player, &unit,
+    ) {
+        return Err(StructureWithheld::Banned);
+    }
+    if crate::supply::allowed(state, content, sources, player, &unit, 1) != 1 {
+        return Err(StructureWithheld::Supply);
+    }
+    Ok(())
+}
+
+/// The options of a placement, and every structure of every planet that `player` controls that
+/// it does not offer, with why: one pass of [`structure_screen`], so a kind on a planet is
+/// offered or withheld, never both and never neither.
+pub(crate) fn structure_offers(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    only_pds: bool,
+) -> (Vec<ChoiceOption>, Vec<WithheldStructure>) {
+    let mut options = Vec::new();
+    let mut withheld = Vec::new();
+    for (system, planet) in state.controlled_planets(player) {
+        for kind in STRUCTURE_KINDS {
+            match structure_screen(state, content, sources, player, planet, kind, only_pds) {
+                Ok(()) => options.push(
                     ChoiceOption::labelled(
                         format!("{kind}|{system}|{planet}"),
                         "build",
                         format!("place {kind} on {planet}"),
                     )
                     .with_planet(planet.as_str(), Some(system.as_str()))
-                    .with("unit", kind)
-                })
-        })
-        .collect()
+                    .with("unit", kind),
+                ),
+                Err(reason) => withheld.push(WithheldStructure {
+                    unit: kind.to_owned(),
+                    planet: planet.clone(),
+                    system: system.clone(),
+                    reason,
+                }),
+            }
+        }
+    }
+    (options, withheld)
 }
 
 /// The unit Construction places for `kind` (`pds` / `spacedock`): the faction unit or upgrade, as
@@ -1911,16 +2345,22 @@ pub(crate) fn place_structure(
     only_pds: bool,
 ) -> Result<Option<SystemId>, IllegalChoice> {
     place_structure_step(
-        state, content, sources, galaxy, table, player, only_pds, None,
+        state,
+        content,
+        sources,
+        galaxy,
+        table,
+        player,
+        &[StructureStep {
+            step: None,
+            only_pds,
+        }],
     )
 }
 
-/// [`place_structure`] that tells the client which placement of a card's sequence this is
-/// (`step` of `of`), e.g. Construction's two structures. Display only.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "the shared structure ability plus its display step"
-)]
+/// [`place_structure`] of the first of `steps`, the placements of a card from this one on (e.g.
+/// Construction's two structures). The question tells the client which placement this is
+/// (`step` of `of`) and, in `structures`, every placement of `steps` (display only).
 pub(crate) fn place_structure_step(
     state: &mut GameState,
     content: &ContentStore,
@@ -1928,9 +2368,11 @@ pub(crate) fn place_structure_step(
     galaxy: Option<&Galaxy>,
     table: &mut Table,
     player: &PlayerId,
-    only_pds: bool,
-    step: Option<(u32, u32)>,
+    steps: &[StructureStep],
 ) -> Result<Option<SystemId>, IllegalChoice> {
+    let Some(&StructureStep { step, only_pds }) = steps.first() else {
+        return Ok(None);
+    };
     let mut options = structure_options(state, content, sources, player, only_pds);
     if options.is_empty() {
         return Ok(None);
@@ -1954,6 +2396,10 @@ pub(crate) fn place_structure_step(
     if only_pds {
         choice = choice.detailed("only_pds", true);
     }
+    choice = choice.hinted(
+        "structures",
+        &structure_hints(state, content, sources, player, steps),
+    );
     let answer = ask(state, content, sources, galaxy, table, &choice)?;
     if answer.is_decline() {
         return Ok(None);
@@ -2025,24 +2471,7 @@ pub(crate) fn place_structure_step(
             }
         }
     }
-    let placed = construction_unit(state, content, sources, player, kind);
-    // Floating Factory: "This unit is placed in the space area instead of on a planet."
-    let space_only = ti4_content::units::catalogue(content, sources)
-        .get(placed.as_str())
-        .is_some_and(|record| record.is_space_only_structure());
-    if space_only {
-        state
-            .system_mut(&system)
-            .units
-            .push(Unit::new(placed, player.clone()));
-    } else {
-        state
-            .system_mut(&system)
-            .planet_units
-            .entry(planet)
-            .or_default()
-            .push(Unit::new(placed, player.clone()));
-    }
+    put_structure(state, content, sources, player, kind, &system, planet);
 
     // Minister of Industry: "When the owner of this card places a space dock in a system, their
     // units in that system may use their PRODUCTION abilities." A space dock specifically, so a
@@ -2051,6 +2480,221 @@ pub(crate) fn place_structure_step(
         produce_all(state, content, sources, galaxy, table, player, &system)?;
     }
     Ok(Some(system))
+}
+
+/// Puts the structure of `kind` that this player places on `planet`: on the planet, or in the
+/// system's space area for a space-only form (Saar's Floating Factory; [`construction_unit`]
+/// returns one only from `RULES_FLOATING_FACTORY_SPACE` on).
+fn put_structure(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    kind: &str,
+    system: &SystemId,
+    planet: PlanetId,
+) {
+    let placed = construction_unit(state, content, sources, player, kind);
+    // Floating Factory: "This unit is placed in the space area instead of on a planet."
+    let space_only = ti4_content::units::catalogue(content, sources)
+        .get(placed.as_str())
+        .is_some_and(|record| record.is_space_only_structure());
+    if space_only {
+        state
+            .system_mut(system)
+            .units
+            .push(Unit::new(placed, player.clone()));
+    } else {
+        state
+            .system_mut(system)
+            .planet_units
+            .entry(planet)
+            .or_default()
+            .push(Unit::new(placed, player.clone()));
+    }
+}
+
+/// The look-ahead of a placement of structures (`details.structures`): every placement of the
+/// card from this question on as the game will offer it, so that a client can stage them all at
+/// once (display only).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct StructureHints {
+    pub placements: Vec<StructurePlacement>,
+    /// The player's structures on each planet of an option or of a withheld structure, by kind
+    /// (`pds`, `spacedock`).
+    pub planets: BTreeMap<PlanetId, BTreeMap<String, usize>>,
+    /// The PDS and the space docks on the board, against the box, by kind.
+    pub supply: BTreeMap<String, StructureSupply>,
+}
+
+/// One placement of [`StructureHints`], as its question will offer it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct StructurePlacement {
+    /// Which placement of the card's sequence it is (`step` of `of`); none for a lone one.
+    pub step: Option<u32>,
+    pub of: Option<u32>,
+    pub only_pds: bool,
+    pub options: Vec<StructureSpot>,
+    /// Every structure of every planet that the player controls that this placement does not
+    /// offer now, with why. A kind on a planet is in `options` or here, never both.
+    pub withheld: Vec<WithheldStructure>,
+    /// For each option of the placement before, the options of this one that choosing it takes
+    /// away (a second PDS where the planet then has two, the last one of the box). An option
+    /// that takes nothing away is not listed.
+    pub without: BTreeMap<String, Vec<String>>,
+}
+
+/// An option of a [`StructurePlacement`]: its id, the kind it places, and where.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct StructureSpot {
+    pub id: String,
+    /// `pds` or `spacedock`.
+    pub unit: String,
+    pub planet: PlanetId,
+    pub system: SystemId,
+}
+
+/// Why a placement of structures does not offer a kind on a planet that the player controls:
+/// the first of its checks that excluded it ([`StructurePlacement::withheld`]).
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(rename_all = "snake_case")]
+pub enum StructureWithheld {
+    /// The planet is a space station (space stations rule 5).
+    SpaceStation,
+    /// This placement places a PDS only (Construction's second structure).
+    PdsOnly,
+    /// Demilitarized Zone is elected for the planet.
+    Demilitarized,
+    /// The planet has the most of the kind that it may have: a space dock, or 2 PDS (79.2).
+    Limit,
+    /// An ability of the player bars the placement of the unit.
+    Banned,
+    /// None is left in the reinforcements (31.4).
+    Supply,
+}
+
+/// A structure of [`StructurePlacement::withheld`]: the kind, where, and why.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct WithheldStructure {
+    /// `pds` or `spacedock`.
+    pub unit: String,
+    pub planet: PlanetId,
+    pub system: SystemId,
+    pub reason: StructureWithheld,
+}
+
+/// The structures of one kind on the board, and the box.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct StructureSupply {
+    pub placed: i64,
+    pub limit: i64,
+}
+
+/// Display only: every placement of `steps` as the game will offer it; see [`StructureHints`].
+pub(crate) fn structure_hints(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    steps: &[StructureStep],
+) -> StructureHints {
+    let text = |option: &ChoiceOption, key: &str| {
+        option
+            .payload
+            .get(key)
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let spot = |option: &ChoiceOption| StructureSpot {
+        id: option.id.clone(),
+        unit: text(option, "unit"),
+        planet: PlanetId::new(text(option, "planet")),
+        system: SystemId::new(text(option, "system")),
+    };
+    let mut placements = Vec::new();
+    let mut before: Option<Vec<StructureSpot>> = None;
+    for step in steps {
+        let (offered, withheld) = structure_offers(state, content, sources, player, step.only_pds);
+        let options: Vec<StructureSpot> = offered.iter().map(spot).collect();
+        let mut without = BTreeMap::new();
+        for earlier in before.iter().flatten() {
+            let mut after = state.clone();
+            put_structure(
+                &mut after,
+                content,
+                sources,
+                player,
+                &earlier.unit,
+                &earlier.system,
+                earlier.planet.clone(),
+            );
+            let left: BTreeSet<String> =
+                structure_options(&after, content, sources, player, step.only_pds)
+                    .into_iter()
+                    .map(|option| option.id)
+                    .collect();
+            let gone: Vec<String> = options
+                .iter()
+                .filter(|option| !left.contains(&option.id))
+                .map(|option| option.id.clone())
+                .collect();
+            if !gone.is_empty() {
+                without.insert(earlier.id.clone(), gone);
+            }
+        }
+        placements.push(StructurePlacement {
+            step: step.step.map(|(step, _)| step),
+            of: step.step.map(|(_, of)| of),
+            only_pds: step.only_pds,
+            options: options.clone(),
+            withheld,
+            without,
+        });
+        before = Some(options);
+    }
+    let mut planets = BTreeMap::new();
+    let listed = placements.iter().flat_map(|placement| {
+        placement
+            .options
+            .iter()
+            .map(|option| &option.planet)
+            .chain(placement.withheld.iter().map(|withheld| &withheld.planet))
+    });
+    for planet in listed {
+        planets.entry(planet.clone()).or_insert_with(|| {
+            STRUCTURE_KINDS
+                .into_iter()
+                .map(|kind| {
+                    let on = crate::production::structures_on(
+                        state, content, sources, player, planet, kind,
+                    );
+                    (kind.to_owned(), on)
+                })
+                .collect()
+        });
+    }
+    let supply = ["pds", "spacedock"]
+        .into_iter()
+        .filter_map(|kind| {
+            let limit = crate::supply::plastic(kind)?;
+            let placed = crate::supply::held(state, content, sources, player, kind);
+            Some((kind.to_owned(), StructureSupply { placed, limit }))
+        })
+        .collect();
+    StructureHints {
+        placements,
+        planets,
+        supply,
+    }
 }
 
 /// Use every PRODUCTION ability in a system, until the player stops buying.
@@ -2153,6 +2797,36 @@ pub(crate) fn replenish(state: &mut GameState, content: &ContentStore, player: &
     crate::promissory::trade_agreement_on_replenish(state, player);
 }
 
+/// The look-ahead of Trade's question of the other seats: its fields are top-level keys of the
+/// details, `details.commodities` and `details.own`, written with [`Choice::hinted_fields`], so
+/// that a client can stage the whole primary at once (display only). Every later question says
+/// it again, for the seats that are left.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct TradeReplenishHints {
+    /// The commodities of each seat that the question offers, by the id of its option (the
+    /// faction name of `details.seats`), now and at the limit that its replenish fills to.
+    pub commodities: BTreeMap<String, CommodityLimit>,
+    /// What the primary already gave its own seat, before it chooses the others.
+    pub own: TradeOwnGain,
+}
+
+/// What Trade's primary gave its own seat: 3 trade goods, and its commodities replenished.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct TradeOwnGain {
+    pub trade_goods: CountChange,
+    pub commodities: CountChange,
+}
+
+/// An amount of a seat before a change and after it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct CountChange {
+    pub before: i32,
+    pub after: i32,
+}
+
 fn trade_primary(
     state: &mut GameState,
     content: &ContentStore,
@@ -2161,9 +2835,25 @@ fn trade_primary(
     table: &mut Table,
     player: &PlayerId,
 ) -> Result<(), IllegalChoice> {
+    let before = state
+        .player(player)
+        .map_or((0, 0), |seat| (seat.trade_goods, seat.commodities));
     // No timing handle here: the gain is staged and announced by `supply::flush_staged_events`.
     crate::supply::gain_trade_goods_staged(state, player, 3, "trade_primary");
     replenish(state, content, player);
+    let after = state
+        .player(player)
+        .map_or((0, 0), |seat| (seat.trade_goods, seat.commodities));
+    let own = TradeOwnGain {
+        trade_goods: CountChange {
+            before: before.0,
+            after: after.0,
+        },
+        commodities: CountChange {
+            before: before.1,
+            after: after.1,
+        },
+    };
     let mut remaining: Vec<PlayerId> = state
         .seating_order
         .iter()
@@ -2189,18 +2879,13 @@ fn trade_primary(
             .iter()
             .map(|other| (crate::promissory::faction_name(state, other), other.clone()))
             .collect();
+        let worded = seat_phrases(&named, "{seat} replenishes commodities");
         let choice = Choice::new(
             player.clone(),
             "let another player replenish commodities",
-            named
+            worded
                 .iter()
-                .map(|(name, _)| {
-                    ChoiceOption::labelled(
-                        name.clone(),
-                        "replenish",
-                        format!("{name} replenishes commodities"),
-                    )
-                })
+                .map(|(name, worded)| ChoiceOption::labelled(name, "replenish", worded.label()))
                 .chain(std::iter::once(ChoiceOption::labelled(
                     "done",
                     crate::choice::DECLINE_KIND,
@@ -2209,7 +2894,11 @@ fn trade_primary(
                 .collect(),
         )
         .detailed("seats", seat_map(&named))
-        .detailed("commodities", commodity_map(state, content, &named))
+        .phrased_options(&worded)
+        .hinted_fields(&TradeReplenishHints {
+            commodities: commodity_map(state, content, &named),
+            own,
+        })
         .contextualized(DecisionContext::new(
             player.clone(),
             DecisionSource::StrategyCard {
@@ -2292,6 +2981,12 @@ fn warfare_primary(
             .iter()
             .map(|system| ChoiceOption::labelled(system.to_string(), "recall", system.to_string()))
             .collect(),
+    )
+    // Display only: the gain of the recalled token and the redistribution after it, so that a
+    // client can stage the whole primary on one screen.
+    .hinted(
+        "redistribution",
+        &crate::tokens::redistribution_after_gain(state, player, 1),
     )
     .contextualized(DecisionContext::new(
         player.clone(),
@@ -2408,6 +3103,37 @@ pub(crate) fn redistribute_tokens(
     Ok(Ability::Resolved)
 }
 
+/// How many secret objectives `player` may hold, scored ones included (45.4, and the relic that
+/// raises it).
+pub(crate) fn secret_limit(state: &GameState, player: &PlayerId) -> usize {
+    crate::secrets::HAND_LIMIT + crate::relics::secret_objective_bonus(state, player)
+}
+
+/// The look-ahead of Imperial's questions, the question of the primary's public objective and
+/// the window of its secondary: its fields are top-level keys of the details,
+/// `details.secrets_held` and `details.secrets_max`, written with [`Choice::hinted_fields`], so
+/// that a client can say what drawing a secret objective after it does (display only).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ImperialHints {
+    /// The secret objectives that the seat holds now, scored ones included.
+    pub secrets_held: usize,
+    /// How many it may hold ([`secret_limit`]).
+    pub secrets_max: usize,
+}
+
+/// The secret objectives that `player` holds now against its limit.
+pub(crate) fn imperial_hints(
+    state: &GameState,
+    content: &ContentStore,
+    player: &PlayerId,
+) -> ImperialHints {
+    ImperialHints {
+        secrets_held: crate::secrets::held_count(state, content, player),
+        secrets_max: secret_limit(state, player),
+    }
+}
+
 fn imperial_primary(
     state: &mut GameState,
     content: &ContentStore,
@@ -2439,14 +3165,7 @@ fn imperial_primary(
         )
         .detailed("kind", "imperial")
         .detailed("controls_mecatol", controls_mecatol)
-        .detailed(
-            "secrets_held",
-            crate::secrets::held_count(state, content, player),
-        )
-        .detailed(
-            "secrets_max",
-            crate::secrets::HAND_LIMIT + crate::relics::secret_objective_bonus(state, player),
-        )
+        .hinted_fields(&imperial_hints(state, content, player))
         .contextualized(DecisionContext::new(
             player.clone(),
             DecisionSource::StrategyCard {
@@ -2580,6 +3299,12 @@ pub fn primary(
             "Construction: a structure or a production",
             options,
         )
+        // Display only: the two structures that "structure" places, so that a client can stage
+        // the ability with them.
+        .hinted(
+            "structures",
+            &structure_hints(state, content, sources, player, &TE_CONSTRUCTION_STEPS),
+        )
         .contextualized(DecisionContext::new(
             player.clone(),
             DecisionSource::Content("te4construction".to_owned()),
@@ -2606,8 +3331,7 @@ pub fn primary(
                 galaxy,
                 table,
                 player,
-                false,
-                Some((1, 2)),
+                &TE_CONSTRUCTION_STEPS,
             )?;
         }
         place_structure_step(
@@ -2617,8 +3341,7 @@ pub fn primary(
             galaxy,
             table,
             player,
-            false,
-            Some((2, 2)),
+            &TE_CONSTRUCTION_STEPS[1..],
         )?;
         return Ok(Ability::Resolved);
     }
@@ -2650,8 +3373,7 @@ pub fn primary(
                 galaxy,
                 table,
                 player,
-                false,
-                Some((1, 2)),
+                &CONSTRUCTION_STEPS,
             )?;
             place_structure_step(
                 state,
@@ -2660,8 +3382,7 @@ pub fn primary(
                 galaxy,
                 table,
                 player,
-                true,
-                Some((2, 2)),
+                &CONSTRUCTION_STEPS[1..],
             )?;
         }
         "Trade" => trade_primary(state, content, sources, galaxy, table, player)?,
@@ -2738,7 +3459,15 @@ pub fn secondary(
         "Leadership" => {
             buy_tokens_first_yes_assumed(state, content, sources, galaxy, table, player)?;
         }
-        "Diplomacy" => ready_planets(state, content, sources, galaxy, table, player, 2)?,
+        "Diplomacy" => ready_planets(
+            state,
+            content,
+            sources,
+            galaxy,
+            table,
+            player,
+            DIPLOMACY_READIES,
+        )?,
         "Politics" => {
             crate::action_cards::draw(state, content, table, player, 2)?;
         }
@@ -3390,6 +4119,59 @@ mod tests {
         assert!(placement.details["agenda"]["name"].is_string());
     }
 
+    /// The speaker question says what comes after it, and the first agenda question has both
+    /// agendas to place, in the order that they are asked. Two agendas placed on top end with the
+    /// second one asked on top.
+    #[test]
+    fn politics_tells_every_agenda_to_place_with_the_first() {
+        let content = ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let mut state = game(&["a", "b"]);
+        state.speaker = player.clone();
+        state.agenda_deck = ["first", "second", "third"].map(str::to_owned).to_vec();
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut table = Table::with_default(Box::new(FirstOptionCapturing { seen: seen.clone() }));
+
+        politics_primary(&mut state, content, POK, None, &mut table, &player).unwrap();
+
+        let asked = seen.borrow();
+        let [speaker, first, second] = &asked[..] else {
+            panic!("a speaker and two agendas: {asked:?}");
+        };
+        let told: PoliticsHints = speaker.hint_fields().unwrap();
+        assert_eq!(
+            told,
+            PoliticsHints {
+                draws: POLITICS_DRAWS,
+                looks: POLITICS_LOOKS,
+            }
+        );
+        let placing: AgendaPlacementHints = first.hint_fields().unwrap();
+        assert_eq!(placing.agendas, ["first", "second"]);
+        // The first question names the agendas that the later ones ask, in their order.
+        let later: Vec<String> = asked[1..]
+            .iter()
+            .map(|choice| {
+                choice.prompt["place ".len()..]
+                    .trim_end_matches(" where")
+                    .to_owned()
+            })
+            .collect();
+        assert_eq!(placing.agendas, later);
+        let placing: AgendaPlacementHints = second.hint_fields().unwrap();
+        assert_eq!(placing.agendas, ["second"]);
+        // The JSON keys that the clients read.
+        assert_eq!(speaker.details["draws"], 2);
+        assert_eq!(speaker.details["looks"], 2);
+        assert_eq!(
+            first.details["agendas"],
+            serde_json::json!(["first", "second"])
+        );
+        assert_eq!(second.details["agendas"], serde_json::json!(["second"]));
+        // "top" is the first option of both.
+        assert_eq!(state.agenda_deck, ["second", "first", "third"]);
+    }
+
     fn card(name: &str) -> String {
         ContentStore::embedded()
             .records(ContentType::StrategyCards)
@@ -3466,6 +4248,81 @@ mod tests {
         );
     }
 
+    /// The question of the other seats says what the primary already gave its own seat, and each
+    /// later question says it again.
+    #[test]
+    fn trade_tells_its_own_gain_with_the_choice_of_the_others() {
+        let content = ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let mut state = seated_game(&[("a", "sol"), ("b", "hacan"), ("c", "letnev")], POK);
+        let seat = state.player_mut(&player).unwrap();
+        seat.trade_goods = 2;
+        seat.commodities = 1;
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut table = Table::with_default(Box::new(FirstOptionCapturing { seen: seen.clone() }));
+
+        trade_primary(&mut state, content, POK, None, &mut table, &player).unwrap();
+
+        let limit = commodity_limit(&state, content, &player);
+        let asked = seen.borrow();
+        assert_eq!(asked.len(), 2, "b, then c: {asked:?}");
+        let own = TradeOwnGain {
+            trade_goods: CountChange {
+                before: 2,
+                after: 5,
+            },
+            commodities: CountChange {
+                before: 1,
+                after: limit,
+            },
+        };
+        let [first, second] = &asked[..] else {
+            unreachable!("two questions")
+        };
+        let told: TradeReplenishHints = first.hint_fields().unwrap();
+        assert_eq!(told.own, own);
+        // The first question offers b and c, with their commodities now and at their limits;
+        // the second, only c.
+        let offered = |choice: &Choice| -> BTreeSet<String> {
+            choice
+                .options
+                .iter()
+                .filter(|option| !option.is_decline())
+                .map(|option| option.id.clone())
+                .collect()
+        };
+        assert_eq!(
+            told.commodities.keys().cloned().collect::<BTreeSet<_>>(),
+            offered(first)
+        );
+        for (name, standing) in &told.commodities {
+            let seat = PlayerId::new(first.details["seats"][name].as_str().unwrap());
+            assert_eq!(
+                *standing,
+                CommodityLimit {
+                    have: 0,
+                    max: commodity_limit(&state, content, &seat),
+                }
+            );
+        }
+        let later: TradeReplenishHints = second.hint_fields().unwrap();
+        assert_eq!(later.own, own);
+        assert_eq!(
+            later.commodities.keys().cloned().collect::<BTreeSet<_>>(),
+            offered(second)
+        );
+        // The JSON keys that the clients read.
+        for question in asked.iter() {
+            assert_eq!(
+                question.details["own"],
+                serde_json::json!({
+                    "trade_goods": { "before": 2, "after": 5 },
+                    "commodities": { "before": 1, "after": limit },
+                })
+            );
+        }
+    }
+
     #[test]
     fn warfare_recalls_a_board_token_and_gains_one() {
         let mut state = game(&["a"]);
@@ -3489,6 +4346,59 @@ mod tests {
         .unwrap();
         assert!(!state.system_state(&system).command_tokens.contains(&player));
         assert_eq!(state.player(&player).unwrap().total_tokens(), before + 1);
+    }
+
+    /// The recall says what comes after it: the option of the gain into each pool, and every
+    /// arrangement that the redistribution then offers, so a client stages all three at once.
+    #[test]
+    fn warfare_recall_tells_the_gain_and_the_redistribution_after_it() {
+        let mut state = game(&["a"]);
+        let player = PlayerId::new("a");
+        state
+            .system_mut(&SystemId::new("18"))
+            .command_tokens
+            .insert(player.clone());
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut table = Table::with_default(Box::new(FirstOptionCapturing { seen: seen.clone() }));
+        primary(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            None,
+            &mut table,
+            &player,
+            &card("Warfare"),
+        )
+        .unwrap();
+        let asked = seen.borrow();
+        let [recall, gain, redistribute] = &asked[..] else {
+            panic!("the recall, the gain and the redistribution: {asked:?}");
+        };
+        let told = recall
+            .hint::<crate::tokens::RedistributionHints>("redistribution")
+            .expect("the look-ahead of the redistribution");
+        let ids = |choice: &Choice| -> Vec<String> {
+            choice
+                .options
+                .iter()
+                .map(|option| option.id.clone())
+                .collect()
+        };
+        assert_eq!(
+            Some(told.pools),
+            gain.hint::<crate::tokens::CommandPools>("pools")
+        );
+        assert_eq!(told.gained, 1);
+        assert_eq!(told.total, redistribute.details["total"]);
+        assert_eq!(told.arrangements, ids(redistribute));
+        for pool in [&told.gain.tactic, &told.gain.fleet, &told.gain.strategic] {
+            assert!(ids(gain).contains(pool), "{pool}");
+        }
+        // Written as JSON with the keys that the clients read.
+        let json = &recall.details["redistribution"];
+        assert_eq!(json["pools"], gain.details["pools"]);
+        assert_eq!(json["gain"]["fleet"], crate::tokens::FLEET_POOL);
+        assert_eq!(json["arrangements"][0], ids(redistribute)[0].as_str());
     }
 
     #[test]
@@ -3516,6 +4426,59 @@ mod tests {
 
         assert!(state.system_state(&system).command_tokens.contains(&other));
         assert!(!state.exhausted_planets.contains(&planet));
+    }
+
+    /// The system question already has the planets that are readied after it, and each question
+    /// says how many planets it and the ones after it ready at most.
+    #[test]
+    fn diplomacy_tells_the_planets_to_ready_with_the_system() {
+        let mut state = game(&["a", "b"]);
+        let player = PlayerId::new("a");
+        let (system, planet) = a_placed_planet();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player.clone());
+        state.exhaust_planet(planet.clone());
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut table = Table::with_default(Box::new(FirstOptionCapturing { seen: seen.clone() }));
+        primary(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            None,
+            &mut table,
+            &player,
+            &card("Diplomacy"),
+        )
+        .unwrap();
+        let seen = seen.borrow();
+        let [system_question, ready] = &seen[..] else {
+            panic!("a system and one planet to ready: {seen:?}");
+        };
+        let told: ReadyHints = system_question.hint_fields().unwrap();
+        assert_eq!(told.ready_count, DIPLOMACY_READIES);
+        assert_eq!(told.ready_hints.planets[0].id, planet);
+        // The readying that follows offers the planets of the hints, and readies as many.
+        let readying: ReadyHints = ready.hint_fields().unwrap();
+        assert_eq!(readying.ready_count, 2);
+        assert_eq!(
+            ready
+                .options
+                .iter()
+                .map(|option| option.id.as_str())
+                .collect::<Vec<_>>(),
+            told.ready_hints
+                .planets
+                .iter()
+                .map(|planet| planet.id.as_str())
+                .collect::<Vec<_>>()
+        );
+        // The keys that the clients read.
+        assert_eq!(system_question.details["ready_count"], 2);
+        assert_eq!(
+            system_question.details["ready_hints"]["planets"][0]["id"],
+            planet.as_str()
+        );
     }
 
     #[test]
@@ -3639,6 +4602,52 @@ mod tests {
         );
         // The chosen name maps back to the seat that plays it.
         assert_eq!(state.speaker, other);
+    }
+
+    /// The speaker's and the replenish's options name their seat (`details.phrases`), where the
+    /// label says the faction.
+    #[test]
+    fn the_speaker_and_the_replenish_options_name_their_seat() {
+        let content = ContentStore::embedded();
+        let mut state = game(&["a", "b"]);
+        let player = PlayerId::new("a");
+        let other = PlayerId::new("b");
+        state.player_mut(&player).unwrap().faction = ti4_model::id::FactionId::new("sol");
+        state.player_mut(&other).unwrap().faction = ti4_model::id::FactionId::new("hacan");
+        state.player_mut(&other).unwrap().commodities = 0;
+        let seat = crate::phrases::Subject::seat(&other);
+
+        let (mut table, seen) = crate::phrases::capturing(&["hacan", "top", "bottom"]);
+        primary(
+            &mut state,
+            content,
+            POK,
+            None,
+            &mut table,
+            &player,
+            &card("Politics"),
+        )
+        .unwrap();
+        let (mut trade, traded) = crate::phrases::capturing(&["hacan"]);
+        trade_primary(&mut state, content, POK, None, &mut trade, &player).unwrap();
+
+        for (asked, prompt, text) in [
+            (&seen, "who becomes speaker", "{seat} becomes speaker"),
+            (
+                &traded,
+                "let another player replenish commodities",
+                "{seat} replenishes commodities",
+            ),
+        ] {
+            let asked = asked.borrow();
+            let choice = asked
+                .iter()
+                .find(|choice| choice.prompt == prompt)
+                .unwrap_or_else(|| panic!("{prompt} asked"));
+            let hints = crate::phrases::phrased(choice);
+            assert_eq!(hints.options["hacan"].text, text);
+            assert_eq!(hints.options["hacan"].refs["seat"], seat);
+        }
     }
 
     #[test]
@@ -4805,6 +5814,316 @@ mod tests {
         );
     }
 
+    /// A seat controls `planet`, wherever it is on the corpus map.
+    fn hold(state: &mut GameState, content: &ContentStore, planet: &PlanetId, player: &PlayerId) {
+        let system = ti4_content::galaxy::planet(content, planet.as_str(), POK)
+            .and_then(|record| record.system_id().map(SystemId::new))
+            .expect("the planet sits on a tile");
+        state
+            .board
+            .entry(system)
+            .or_default()
+            .set_control(planet.clone(), player.clone());
+    }
+
+    /// The seat's own planets are exhausted, so that only what a test gives it can pay.
+    fn exhaust_everything(state: &mut GameState, player: &PlayerId) {
+        let held: Vec<PlanetId> = state
+            .controlled_planets(player)
+            .into_iter()
+            .map(|(_, planet)| planet.clone())
+            .collect();
+        state.exhausted_planets.extend(held);
+    }
+
+    /// Answers the research with `technology` and each payment with its first option, and keeps
+    /// every question.
+    struct Researching {
+        technology: Option<String>,
+        seen: std::rc::Rc<std::cell::RefCell<Vec<Choice>>>,
+    }
+
+    impl crate::choice::Decider for Researching {
+        fn choose(&mut self, choice: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+            self.seen.borrow_mut().push(choice.clone());
+            let wanted = self
+                .technology
+                .as_ref()
+                .and_then(|id| choice.option(id).cloned());
+            wanted
+                .or_else(|| choice.options.first().cloned())
+                .ok_or_else(|| IllegalChoice::NoOptions {
+                    player: choice.player.clone(),
+                    prompt: choice.prompt.clone(),
+                })
+        }
+    }
+
+    fn subtype(choice: &Choice) -> &str {
+        choice
+            .context
+            .as_ref()
+            .map_or("", |context| context.subtype.as_str())
+    }
+
+    #[test]
+    fn a_paid_research_asks_how_it_is_paid() {
+        let content = ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let mut state = game(&["a"]);
+        exhaust_everything(&mut state, &player);
+        // Two ready planets and trade goods: several ways to pay four resources.
+        let planets: Vec<PlanetId> = ti4_content::galaxy::all_planets(content, POK)
+            .iter()
+            .filter(|(_, record)| record.resources() >= 2 && record.system_id().is_some())
+            .map(|(id, _)| PlanetId::new(*id))
+            .take(2)
+            .collect();
+        for planet in &planets {
+            hold(&mut state, content, planet, &player);
+        }
+        state.player_mut(&player).unwrap().trade_goods = 4;
+        let before = state.player(&player).unwrap().technologies.len();
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut table = Table::with_default(Box::new(Researching {
+            technology: None,
+            seen: seen.clone(),
+        }));
+        paid_research(
+            &mut state,
+            content,
+            POK,
+            None,
+            &mut table,
+            &player,
+            TECHNOLOGY_SECONDARY_COST,
+        )
+        .unwrap();
+
+        let seen = seen.borrow();
+        let research = &seen[0];
+        assert_eq!(subtype(research), "research_technology");
+        let hints: ResearchPaymentHints = research.hint("payment").expect("typed payment");
+        assert_eq!(hints.payment.cost, TECHNOLOGY_SECONDARY_COST);
+        assert_eq!(hints.payment.trade_goods, 4);
+        assert_eq!(hints.payment.trade_good_worth, 1);
+        assert_eq!(hints.payment.commodities, 0);
+        for planet in &planets {
+            assert!(
+                hints.payment.planets.iter().any(|item| item.id == *planet),
+                "{planet} pays"
+            );
+        }
+        let paying: Vec<&Choice> = seen[1..]
+            .iter()
+            .filter(|choice| subtype(choice) == "pay_resources")
+            .collect();
+        assert!(!paying.is_empty(), "the payment is asked");
+        assert!(
+            paying[0]
+                .options
+                .iter()
+                .any(|option| option.id == "trade_good")
+                && paying[0]
+                    .options
+                    .iter()
+                    .any(|option| option.id == format!("exhaust|{}", planets[0])),
+            "every way to pay is offered"
+        );
+        // The first option is a planet: it is what was exhausted.
+        assert!(state.exhausted_planets.contains(&planets[0]));
+        assert_eq!(
+            state.player(&player).unwrap().technologies.len(),
+            before + 1
+        );
+    }
+
+    #[test]
+    fn a_lone_way_to_pay_is_taken_without_asking() {
+        let content = ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let mut state = game(&["a"]);
+        exhaust_everything(&mut state, &player);
+        state.player_mut(&player).unwrap().trade_goods = 4;
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut table = Table::with_default(Box::new(Researching {
+            technology: None,
+            seen: seen.clone(),
+        }));
+        paid_research(
+            &mut state,
+            content,
+            POK,
+            None,
+            &mut table,
+            &player,
+            TECHNOLOGY_SECONDARY_COST,
+        )
+        .unwrap();
+        assert!(
+            seen.borrow()
+                .iter()
+                .all(|choice| subtype(choice) != "pay_resources"),
+            "four trade goods are the only way"
+        );
+        assert_eq!(state.player(&player).unwrap().trade_goods, 0);
+    }
+
+    /// A seat of `rules_version` with no technology and every planet exhausted but one specialty
+    /// planet worth 1 to 3 resources, and a technology whose one prerequisite is that specialty.
+    fn specialty_research(rules_version: u32) -> (GameState, PlanetId, TechnologyId) {
+        let content = ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let mut state = game(&["a"]);
+        state.rules_version = rules_version;
+        exhaust_everything(&mut state, &player);
+        state.player_mut(&player).unwrap().technologies.clear();
+        let (planet, technology) = ti4_content::galaxy::all_planets(content, POK)
+            .iter()
+            .filter(|(_, record)| {
+                (1..TECHNOLOGY_SECONDARY_COST).contains(&record.resources())
+                    && record.system_id().is_some()
+            })
+            .find_map(|(id, record)| {
+                let upper = record.tech_specialties().first()?.to_ascii_uppercase();
+                let colour = *crate::technology::COLOURS.iter().find(|c| ***c == *upper)?;
+                let planet = PlanetId::new(*id);
+                let mut trial = state.clone();
+                hold(&mut trial, content, &planet, &player);
+                let technology = crate::technology::researchable(&trial, content, POK, &player)
+                    .into_iter()
+                    .find(|tech| {
+                        let needs = crate::technology::prerequisites(content, tech);
+                        needs.len() == 1 && needs.get(colour) == Some(&1)
+                    })?;
+                Some((planet, technology))
+            })
+            .expect("a specialty and a technology of its colour");
+        hold(&mut state, content, &planet, &player);
+        (state, planet, technology)
+    }
+
+    /// The questions of a Technology secondary of `state`, answered with `technology` when it is
+    /// offered and the first option otherwise.
+    fn research_questions(state: &mut GameState, technology: &TechnologyId) -> Vec<Choice> {
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut table = Table::with_default(Box::new(Researching {
+            technology: Some(technology.to_string()),
+            seen: seen.clone(),
+        }));
+        paid_research(
+            state,
+            ContentStore::embedded(),
+            POK,
+            None,
+            &mut table,
+            &PlayerId::new("a"),
+            TECHNOLOGY_SECONDARY_COST,
+        )
+        .unwrap();
+        seen.take()
+    }
+
+    /// Before `RULES_TECH_PAYMENT_KEEPS_SPECIALTIES` the payment offers the specialty planet that
+    /// the research needs, and the look-ahead keeps nothing.
+    #[test]
+    fn a_research_of_an_older_game_offers_its_specialty_to_pay_for_it() {
+        let (mut state, planet, technology) =
+            specialty_research(ti4_model::state::RULES_TECH_PAYMENT_KEEPS_SPECIALTIES - 1);
+        state.player_mut(&PlayerId::new("a")).unwrap().trade_goods = 6;
+        let seen = research_questions(&mut state, &technology);
+        let hints: ResearchPaymentHints = seen[0].hint("payment").expect("typed payment");
+        assert!(hints.kept.is_empty(), "{:?}", hints.kept);
+        let first_payment = seen
+            .iter()
+            .find(|choice| subtype(choice) == "pay_resources")
+            .expect("the payment is asked");
+        assert!(
+            first_payment
+                .options
+                .iter()
+                .any(|option| option.id == format!("exhaust|{planet}")),
+            "the specialty pays"
+        );
+    }
+
+    /// From `RULES_TECH_PAYMENT_KEEPS_SPECIALTIES` a technology that only its own specialty
+    /// planet could pay for is not offered; before it, it is.
+    #[test]
+    fn a_research_payable_only_with_its_specialty_is_offered_before_the_version() {
+        let offered = |rules_version: u32| {
+            let (mut state, planet, technology) = specialty_research(rules_version);
+            let worth = ti4_content::galaxy::planet(ContentStore::embedded(), planet.as_str(), POK)
+                .expect("a planet")
+                .resources();
+            // The planet and the trade goods pay exactly the price.
+            state.player_mut(&PlayerId::new("a")).unwrap().trade_goods =
+                i32::try_from(TECHNOLOGY_SECONDARY_COST - i64::from(worth)).unwrap();
+            let seen = research_questions(&mut state, &technology);
+            assert_eq!(subtype(&seen[0]), "research_technology");
+            seen[0].option(technology.as_str()).is_some()
+        };
+        assert!(!offered(
+            ti4_model::state::RULES_TECH_PAYMENT_KEEPS_SPECIALTIES
+        ));
+        assert!(offered(
+            ti4_model::state::RULES_TECH_PAYMENT_KEEPS_SPECIALTIES - 1
+        ));
+    }
+
+    #[test]
+    fn a_specialty_that_a_research_needs_is_not_offered_to_pay_for_it() {
+        let content = ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let (mut state, planet, technology) =
+            specialty_research(ti4_model::state::RULES_TECH_PAYMENT_KEEPS_SPECIALTIES);
+        assert_eq!(state.rules_version, ti4_model::state::RULES_VERSION);
+        state.player_mut(&player).unwrap().trade_goods = 6;
+        let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut table = Table::with_default(Box::new(Researching {
+            technology: Some(technology.to_string()),
+            seen: seen.clone(),
+        }));
+        paid_research(
+            &mut state,
+            content,
+            POK,
+            None,
+            &mut table,
+            &player,
+            TECHNOLOGY_SECONDARY_COST,
+        )
+        .unwrap();
+
+        let seen = seen.borrow();
+        assert_eq!(
+            seen[0].details["payment"]["kept"][technology.as_str()],
+            serde_json::json!([planet.as_str()]),
+            "the research says which specialty it keeps"
+        );
+        let hints: ResearchPaymentHints = seen[0].hint("payment").expect("typed payment");
+        assert_eq!(hints.kept.get(&technology), Some(&vec![planet.clone()]));
+        assert!(
+            seen.iter()
+                .filter(|choice| subtype(choice) == "pay_resources")
+                .all(|choice| choice
+                    .options
+                    .iter()
+                    .all(|option| option.id != format!("exhaust|{planet}"))),
+            "the specialty does not pay"
+        );
+        let seat = state.player(&player).unwrap();
+        assert!(
+            seat.technologies.contains(&technology),
+            "the research lands"
+        );
+        assert_eq!(seat.trade_goods, 2, "the trade goods paid");
+        assert!(
+            state.exhausted_planets.contains(&planet),
+            "the specialty is exhausted for the prerequisite"
+        );
+    }
+
     #[test]
     fn imperial_draws_a_secret_without_mecatol() {
         let mut state = game(&["a"]);
@@ -4863,6 +6182,69 @@ mod tests {
         assert_eq!(placements[1].details["step"], 2);
         assert_eq!(placements[1].details["of"], 2);
         assert_eq!(placements[1].details["only_pds"], true);
+        // The first placement tells both, as the engine's look-ahead reads them back.
+        let hints = placements[0]
+            .hint::<StructureHints>("structures")
+            .expect("the look-ahead of the placements");
+        assert_eq!(hints.placements.len(), 2);
+        assert!(hints.placements[1].only_pds);
+    }
+
+    /// The first placement tells both: its own options and the PDS of the second, with the
+    /// second PDS on a planet that a first PDS would fill taken away.
+    #[test]
+    fn construction_tells_both_placements_with_the_first() {
+        let content = ContentStore::embedded();
+        let mut state = game(&["a"]);
+        let player = PlayerId::new("a");
+        let (system, planet) = a_placed_planet();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player.clone());
+        state
+            .system_mut(&system)
+            .planet_units
+            .entry(planet.clone())
+            .or_default()
+            .push(Unit::new(UnitTypeId::new("pds"), player.clone()));
+        let hints = structure_hints(&state, content, POK, &player, &CONSTRUCTION_STEPS);
+        let [first, second] = hints.placements.as_slice() else {
+            panic!("two placements: {hints:?}");
+        };
+        assert_eq!((first.step, first.of), (Some(1), Some(2)));
+        assert!(second.only_pds);
+        let pds = format!("pds|{system}|{planet}");
+        let dock = format!("spacedock|{system}|{planet}");
+        let ids = |placement: &StructurePlacement| -> Vec<String> {
+            placement
+                .options
+                .iter()
+                .map(|option| option.id.clone())
+                .collect()
+        };
+        assert!(ids(first).contains(&pds) && ids(first).contains(&dock));
+        assert_eq!(ids(second), std::slice::from_ref(&pds));
+        assert_eq!(second.without.get(&pds), Some(&vec![pds.clone()]));
+        assert!(!second.without.contains_key(&dock));
+        assert_eq!(hints.planets[&planet]["pds"], 1);
+        assert_eq!(
+            hints.supply["pds"],
+            StructureSupply {
+                placed: 1,
+                limit: 6
+            }
+        );
+        // Written as JSON with the keys that the clients read.
+        let json = serde_json::to_value(&hints).unwrap();
+        assert_eq!(
+            json["placements"][1]["without"][&pds],
+            serde_json::json!([pds])
+        );
+        assert_eq!(
+            json["placements"][0]["options"][0]["system"],
+            system.as_str()
+        );
+        assert_eq!(json["supply"]["spacedock"]["limit"], 3);
     }
 
     #[test]
@@ -4935,18 +6317,26 @@ mod tests {
                 .iter()
                 .find(|choice| choice.prompt == "score a public objective with Imperial")
                 .expect("the objective question")
-                .details
                 .clone()
         };
 
         let without = imperial(false);
-        assert_eq!(without["kind"], "imperial");
-        assert_eq!(without["controls_mecatol"], false);
-        assert_eq!(without["secrets_max"], 3);
-        assert!(without["secrets_held"].is_u64());
+        // The setup deals the seat one secret objective.
+        assert_eq!(
+            without.hint_fields::<ImperialHints>(),
+            Some(ImperialHints {
+                secrets_held: 1,
+                secrets_max: 3,
+            })
+        );
+        assert_eq!(without.details["kind"], "imperial");
+        assert_eq!(without.details["controls_mecatol"], false);
+        // The JSON keys that the clients read.
+        assert_eq!(without.details["secrets_max"], 3);
+        assert_eq!(without.details["secrets_held"], 1);
 
         let with = imperial(true);
-        assert_eq!(with["controls_mecatol"], true);
+        assert_eq!(with.details["controls_mecatol"], true);
     }
 
     /// Game 8261fb3f (round 5): the Xxcha played Imperial with Push Boundaries and Unify the
@@ -5312,14 +6702,20 @@ mod tests {
             Some("Leadership")
         );
         state.players[1].strategy_cards = vec![leadership.clone()];
-        let hints = ready_hints(&state, store, POK, &player);
-        assert_eq!(hints["spenders"][0]["card"], "Leadership");
-        assert_eq!(hints["spenders"][0]["status"], "to_come");
-        assert_eq!(hints["spenders"][1]["status"], "not_in_play");
+        let hints = ready_hints(&state, store, POK, &player, DIPLOMACY_READIES).ready_hints;
+        assert_eq!(hints.spenders[0].card, "Leadership");
+        assert_eq!(hints.spenders[0].spends, "influence");
+        assert_eq!(hints.spenders[0].status, SpenderStatus::ToCome);
+        assert_eq!(hints.spenders[1].status, SpenderStatus::NotInPlay);
         state.players[1].exhausted_strategy_cards.insert(leadership);
-        let hints = ready_hints(&state, store, POK, &player);
-        assert_eq!(hints["spenders"][0]["status"], "played");
-        assert!(hints["planets"].as_array().unwrap().is_empty());
+        let hints = ready_hints(&state, store, POK, &player, DIPLOMACY_READIES);
+        assert_eq!(hints.ready_hints.spenders[0].status, SpenderStatus::Played);
+        assert!(hints.ready_hints.planets.is_empty());
+        let json = serde_json::to_value(&hints).unwrap();
+        assert_eq!(json["ready_hints"]["spenders"][0]["status"], "played");
+        assert_eq!(json["ready_hints"]["spenders"][0]["spends"], "influence");
+        assert_eq!(json["ready_hints"]["spenders"][1]["status"], "not_in_play");
+        assert_eq!(json["ready_count"], DIPLOMACY_READIES);
     }
 
     /// The PoK card is unchanged: it still recalls a token and redistributes once, and never asks
@@ -5641,6 +7037,15 @@ mod tests {
                 purchase["planets"],
                 serde_json::json!([{ "id": "arcturus", "worth": 4 }])
             );
+            let hints: PurchaseHints =
+                serde_json::from_value(purchase.clone()).expect("typed purchase");
+            assert_eq!(
+                (hints.payment.cost, hints.max, hints.influence_available),
+                (3, 3, 11),
+                "{prompt}"
+            );
+            assert_eq!(hints.payment.planets[0].id, PlanetId::new("arcturus"));
+            assert_eq!(hints.payment.commodities, 0);
             assert_eq!(details["kind"], "command_tokens");
             if index < 3 {
                 assert_eq!(details["mode"], "gain");
@@ -5659,9 +7064,9 @@ mod tests {
         let mut state = game(&["a", "b"]);
         let actor = PlayerId::new("a");
         state.player_mut(&actor).unwrap().trade_goods = 2;
-        assert!(purchase_details(&state, content, POK, &actor).is_none());
+        assert!(purchase_hints(&state, content, POK, &actor).is_none());
         state.player_mut(&actor).unwrap().trade_goods = 6;
-        assert!(purchase_details(&state, content, POK, &actor).is_some());
+        assert!(purchase_hints(&state, content, POK, &actor).is_some());
         let fresh = influence_purchase_choice(&state, content, POK, &actor, 0);
         assert!(fresh.details.contains_key("purchase"));
         let carried = influence_purchase_choice(&state, content, POK, &actor, 1);
@@ -5833,5 +7238,241 @@ mod bf_f3_tests {
             .and_then(|record| record.text("id"))
             .map(ToOwned::to_owned)
             .expect("a Trade card")
+    }
+}
+
+#[cfg(test)]
+mod structure_withheld_tests {
+    use super::*;
+    use crate::factions::hooks_economy::{EconomyHooks, with_test_hooks};
+    use crate::fixtures::{a_placed_planet, game, put, put_on_planet};
+    use ti4_model::content_types::{FULL, POK};
+
+    fn seat() -> PlayerId {
+        PlayerId::new("a")
+    }
+
+    /// Seat A controls a planet with nothing on it.
+    fn planet_game() -> (GameState, SystemId, PlanetId) {
+        let mut state = game(&["a", "b"]);
+        let (system, planet) = a_placed_planet();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), seat());
+        (state, system, planet)
+    }
+
+    fn reason(
+        withheld: &[WithheldStructure],
+        planet: &PlanetId,
+        unit: &str,
+    ) -> Option<StructureWithheld> {
+        withheld
+            .iter()
+            .find(|known| &known.planet == planet && known.unit == unit)
+            .map(|known| known.reason)
+    }
+
+    /// Every controlled planet and kind is offered or withheld, never both and never neither,
+    /// and the hints of the placements carry the same.
+    fn consistent(
+        state: &GameState,
+        sources: SourceSet,
+        steps: &[StructureStep],
+    ) -> Vec<Vec<WithheldStructure>> {
+        let content = ContentStore::embedded();
+        let hints = structure_hints(state, content, sources, &seat(), steps);
+        steps
+            .iter()
+            .zip(&hints.placements)
+            .map(|(step, placement)| {
+                let (options, withheld) =
+                    structure_offers(state, content, sources, &seat(), step.only_pds);
+                for (system, planet) in state.controlled_planets(&seat()) {
+                    for kind in STRUCTURE_KINDS {
+                        let offered = options
+                            .iter()
+                            .filter(|option| option.id == format!("{kind}|{system}|{planet}"))
+                            .count();
+                        let held = withheld
+                            .iter()
+                            .filter(|known| {
+                                &known.planet == planet
+                                    && &known.system == system
+                                    && known.unit == kind
+                            })
+                            .count();
+                        assert_eq!(offered + held, 1, "{kind} on {planet}: {withheld:?}");
+                    }
+                }
+                assert_eq!(placement.withheld, withheld);
+                assert_eq!(
+                    placement.options.len(),
+                    options.len(),
+                    "the hints offer what the question offers"
+                );
+                for known in &withheld {
+                    assert!(hints.planets.contains_key(&known.planet));
+                }
+                withheld
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_full_planet_reaches_its_limit_and_the_second_construction_placement_is_a_pds() {
+        let (mut state, system, planet) = planet_game();
+        let all = consistent(&state, POK, &CONSTRUCTION_STEPS);
+        assert_eq!(reason(&all[0], &planet, "pds"), None);
+        assert_eq!(reason(&all[0], &planet, "spacedock"), None);
+        assert_eq!(
+            reason(&all[1], &planet, "spacedock"),
+            Some(StructureWithheld::PdsOnly)
+        );
+
+        put_on_planet(&mut state, &system, &planet, "spacedock", &seat(), 1);
+        put_on_planet(&mut state, &system, &planet, "pds", &seat(), 2);
+        let all = consistent(&state, POK, &CONSTRUCTION_STEPS);
+        assert_eq!(
+            reason(&all[0], &planet, "spacedock"),
+            Some(StructureWithheld::Limit)
+        );
+        assert_eq!(
+            reason(&all[0], &planet, "pds"),
+            Some(StructureWithheld::Limit)
+        );
+        // PDS only comes before the limit.
+        assert_eq!(
+            reason(&all[1], &planet, "spacedock"),
+            Some(StructureWithheld::PdsOnly)
+        );
+        // The JSON that a client reads.
+        let json = serde_json::to_value(structure_hints(
+            &state,
+            ContentStore::embedded(),
+            POK,
+            &seat(),
+            &CONSTRUCTION_STEPS,
+        ))
+        .unwrap();
+        assert!(
+            json["placements"][0]["withheld"]
+                .as_array()
+                .is_some_and(|all| all.iter().any(|known| known["reason"] == "limit"
+                    && known["planet"] == planet.as_str()
+                    && known["system"] == system.as_str()))
+        );
+    }
+
+    #[test]
+    fn demilitarized_zone_comes_before_the_limit_and_homeland_defense_lifts_the_pds_limit() {
+        let (mut state, system, planet) = planet_game();
+        put_on_planet(&mut state, &system, &planet, "spacedock", &seat(), 1);
+        state
+            .laws
+            .insert("demilitarized_zone".to_owned(), planet.to_string());
+        let all = consistent(&state, POK, &ONE_STRUCTURE);
+        assert_eq!(
+            reason(&all[0], &planet, "spacedock"),
+            Some(StructureWithheld::Demilitarized)
+        );
+        assert_eq!(
+            reason(&all[0], &planet, "pds"),
+            Some(StructureWithheld::Demilitarized)
+        );
+
+        let (mut state, system, planet) = planet_game();
+        put_on_planet(&mut state, &system, &planet, "pds", &seat(), 2);
+        state.laws.insert("defense_act".to_owned(), String::new());
+        let all = consistent(&state, POK, &ONE_STRUCTURE);
+        assert_eq!(reason(&all[0], &planet, "pds"), None);
+    }
+
+    #[test]
+    fn an_empty_box_is_the_supply_and_an_ability_ban_comes_before_it() {
+        let (mut state, system, planet) = planet_game();
+        put(&mut state, &system, "pds", &seat(), 6);
+        let all = consistent(&state, POK, &ONE_STRUCTURE);
+        assert_eq!(
+            reason(&all[0], &planet, "pds"),
+            Some(StructureWithheld::Supply)
+        );
+        assert_eq!(reason(&all[0], &planet, "spacedock"), None);
+
+        fn no_pds(
+            _: &GameState,
+            _: &ContentStore,
+            _: SourceSet,
+            _: &PlayerId,
+            unit: &UnitTypeId,
+        ) -> bool {
+            unit.as_str() == "pds"
+        }
+        let hooks = EconomyHooks {
+            effect_placement_forbidden: Some(no_pds),
+            ..EconomyHooks::NONE
+        };
+        with_test_hooks(hooks, || {
+            let all = consistent(&state, POK, &ONE_STRUCTURE);
+            assert_eq!(
+                reason(&all[0], &planet, "pds"),
+                Some(StructureWithheld::Banned)
+            );
+            assert_eq!(reason(&all[0], &planet, "spacedock"), None);
+        });
+    }
+
+    #[test]
+    fn a_space_station_comes_first() {
+        let mut state = game(&["a", "b"]);
+        let system = SystemId::new("117");
+        let station = PlanetId::new("thewatchtower");
+        assert!(ti4_content::galaxy::is_space_station(
+            ContentStore::embedded(),
+            station.as_str(),
+            FULL
+        ));
+        state
+            .system_mut(&system)
+            .set_control(station.clone(), seat());
+        let all = consistent(&state, FULL, &CONSTRUCTION_STEPS);
+        for placement in &all {
+            for kind in STRUCTURE_KINDS {
+                assert_eq!(
+                    reason(placement, &station, kind),
+                    Some(StructureWithheld::SpaceStation)
+                );
+            }
+        }
+    }
+
+    /// The question of a placement carries the reasons.
+    #[test]
+    fn the_question_carries_the_withheld_structures() {
+        let (mut state, system, planet) = planet_game();
+        put_on_planet(&mut state, &system, &planet, "spacedock", &seat(), 1);
+        let (capturing, seen) =
+            crate::choice::Capturing::new(Box::new(crate::choice::AlwaysDecline));
+        let mut table = Table::with_default(Box::new(capturing));
+        place_structure(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            None,
+            &mut table,
+            &seat(),
+            false,
+        )
+        .unwrap();
+        let seen = seen.borrow();
+        let ask = seen
+            .iter()
+            .find(|choice| choice.prompt == "place a structure")
+            .expect("the placement");
+        let hints = ask.hint::<StructureHints>("structures").expect("hints");
+        assert_eq!(
+            reason(&hints.placements[0].withheld, &planet, "spacedock"),
+            Some(StructureWithheld::Limit)
+        );
     }
 }

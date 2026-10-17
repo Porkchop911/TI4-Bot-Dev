@@ -58,6 +58,16 @@ pub enum PlanStep {
         source: String,
     },
     DoneProducing,
+    /// The next command token that is gained goes into this pool (`tactic_tokens`,
+    /// `fleet_tokens`, `strategic_tokens`).
+    Pool {
+        pool: String,
+    },
+    /// The answer to "spend 3 influence for a command token": buy one more, or stop. The
+    /// payment of a purchase is its `pay` steps, wherever they are in the plan.
+    Purchase {
+        buy: bool,
+    },
 }
 
 impl PlanStep {
@@ -71,6 +81,8 @@ impl PlanStep {
             Self::Produce { .. } | Self::DoneProducing => "produce_unit",
             Self::Place { .. } => "place_unit",
             Self::Pay { .. } => "pay_resources",
+            Self::Pool { .. } => "gain_command_token",
+            Self::Purchase { .. } => "buy_token_with_influence",
         }
     }
 
@@ -78,7 +90,10 @@ impl PlanStep {
     const fn follows(&self) -> bool {
         matches!(
             self,
-            Self::Pay { .. } | Self::Place { .. } | Self::DoneProducing
+            Self::Pay { .. }
+                | Self::Place { .. }
+                | Self::DoneProducing
+                | Self::Purchase { buy: false }
         )
     }
 
@@ -154,6 +169,17 @@ impl PlanStep {
                 option.kind == ti4_engine::production::PAY_KIND && option.id == *source
             }
             Self::DoneProducing => option.id == "done_producing",
+            Self::Pool { pool } => {
+                option.kind == ti4_engine::tokens::POOL_KIND && option.id == *pool
+            }
+            Self::Purchase { buy } => {
+                option.id
+                    == if *buy {
+                        ti4_engine::strategy_cards::BUY_TOKEN
+                    } else {
+                        ti4_engine::strategy_cards::STOP_BUYING
+                    }
+            }
         }
     }
 
@@ -234,8 +260,28 @@ impl PlanStep {
             Self::Place { destination } => format!("place the units on {destination}"),
             Self::Pay { source } => format!("pay with {source}"),
             Self::DoneProducing => "finish the production".to_owned(),
+            Self::Pool { pool } => format!("gain a command token into {pool}"),
+            Self::Purchase { buy: true } => "buy a command token".to_owned(),
+            Self::Purchase { buy: false } => "buy no more command tokens".to_owned(),
         }
     }
+}
+
+/// Why the game does not take an entry of a plan or a script: what the page says of the entry
+/// that it marks. The text of the refusal stays for a person.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub enum RefusalCode {
+    /// The game offers nothing that the entry asks for: the unit is not there, cannot reach,
+    /// or cannot do it now.
+    NotOffered,
+    /// More than one offered option is what the entry asks for.
+    Ambiguous,
+    /// The staged payment does not cover the cost of the purchase before it.
+    Unpaid,
+    /// The action or the secondary is over before the entry.
+    Over,
 }
 
 /// What a plan answers to a question of the game.
@@ -253,7 +299,11 @@ pub enum PlanAnswer {
     /// The game asks something else first (a reaction window, another seat).
     Interrupted { reason: String },
     /// The game does not offer what step `step` asks for.
-    Mismatch { step: usize, reason: String },
+    Mismatch {
+        step: usize,
+        reason: String,
+        code: RefusalCode,
+    },
 }
 
 pub const INTERRUPTED: &str = "The game asks for another decision first.";
@@ -294,6 +344,11 @@ pub fn plan_answer(
             },
             (first, _) => PlanAnswer::Mismatch {
                 step: index,
+                code: if first.is_some() {
+                    RefusalCode::Ambiguous
+                } else {
+                    RefusalCode::NotOffered
+                },
                 reason: format!(
                     "The game does not offer to {}{}.",
                     step.describe(),
@@ -330,13 +385,20 @@ pub fn plan_answer(
         }
     }
     // The bill of a purchase of the plan: the step before is that purchase, or a part of its
-    // payment.
-    let bill = next > 0
-        && matches!(
+    // payment. A plan that starts with its payment pays the bill of the answer before it (a
+    // research, answered by the id of its option).
+    let bill = if next == 0 {
+        matches!(steps.first(), Some(PlanStep::Pay { .. }))
+    } else {
+        matches!(
             steps.get(next - 1),
-            Some(PlanStep::Produce { .. } | PlanStep::Pay { .. })
-        );
-    if own && subtype == "pay_resources" && bill {
+            Some(
+                PlanStep::Produce { .. } | PlanStep::Pay { .. } | PlanStep::Purchase { buy: true }
+            )
+        )
+    };
+    // A command token that is bought with influence is paid as a unit is.
+    if own && matches!(subtype, "pay_resources" | "pay_influence") && bill {
         let offered = |step: &PlanStep| {
             matches!(step, PlanStep::Pay { .. })
                 && choice
@@ -348,6 +410,7 @@ pub fn plan_answer(
             return PlanAnswer::Mismatch {
                 step: next,
                 reason: "The staged payment does not cover the cost.".to_owned(),
+                code: RefusalCode::Unpaid,
             };
         };
         return match pick(&steps[at], at, next + 1) {
@@ -373,10 +436,14 @@ pub fn plan_answer(
         while matches!(steps.get(next), Some(PlanStep::Pay { .. })) {
             next += 1;
         }
-    } else if !(own && matches!(subtype, "pay_resources" | "place_unit"))
+    } else if !(own
+        && matches!(
+            subtype,
+            "pay_resources" | "pay_influence" | "place_unit" | "buy_token_with_influence"
+        ))
         && steps[next.min(steps.len())..].iter().all(PlanStep::follows)
     {
-        // The game ended the production itself: the limit is used.
+        // The game ended the production or the purchases of command tokens itself.
         next = steps.len();
     }
     let Some(step) = steps.get(next) else {
@@ -560,6 +627,100 @@ mod tests {
             plan_answer(&steps, 1, &other, &seat()),
             PlanAnswer::Mismatch { step: 1, .. }
         ));
+    }
+
+    #[test]
+    fn a_purchase_of_command_tokens_is_paid_from_the_payments_of_the_plan() {
+        let pool = |id: &str| PlanStep::Pool {
+            pool: id.to_owned(),
+        };
+        let buy = |buy: bool| PlanStep::Purchase { buy };
+        // Leadership: a gained token, one purchase into the fleet pool, then no more.
+        let steps = [
+            pool("tactic_tokens"),
+            buy(true),
+            pool("fleet_tokens"),
+            buy(false),
+            pay("exhaust|jord"),
+            pay("trade_good"),
+        ];
+        let pools = |_: ()| {
+            asked(
+                "gain_command_token",
+                ["tactic_tokens", "fleet_tokens", "strategic_tokens"]
+                    .map(|id| ChoiceOption::new(id, "pool"))
+                    .to_vec(),
+            )
+        };
+        let purchase = asked(
+            "buy_token_with_influence",
+            vec![
+                ChoiceOption::new("no", "strategy"),
+                ChoiceOption::new("yes", "strategy"),
+            ],
+        );
+        assert_eq!(
+            answered(&plan_answer(&steps, 0, &pools(()), &seat())),
+            ("tactic_tokens", 1)
+        );
+        assert_eq!(
+            answered(&plan_answer(&steps, 1, &purchase, &seat())),
+            ("yes", 2)
+        );
+        let bill = asked(
+            "pay_influence",
+            vec![paying("exhaust|jord"), paying("trade_good")],
+        );
+        let PlanAnswer::Answer {
+            option,
+            next,
+            steps: Some(order),
+        } = plan_answer(&steps, 2, &bill, &seat())
+        else {
+            panic!("no answer");
+        };
+        assert_eq!((option.id.as_str(), next), ("exhaust|jord", 3));
+        let bill = asked("pay_influence", vec![paying("trade_good")]);
+        let PlanAnswer::Answer {
+            option,
+            next,
+            steps: Some(order),
+        } = plan_answer(&order, next, &bill, &seat())
+        else {
+            panic!("no answer");
+        };
+        assert_eq!((option.id.as_str(), next), ("trade_good", 4));
+        assert_eq!(
+            answered(&plan_answer(&order, 4, &pools(()), &seat())),
+            ("fleet_tokens", 5)
+        );
+        assert_eq!(
+            answered(&plan_answer(&order, 5, &purchase, &seat())),
+            ("no", 6)
+        );
+        // A seat that can afford no more is not asked: "no" is not needed.
+        let later = asked("end_turn", vec![ChoiceOption::new("end_turn", "end_turn")]);
+        assert_eq!(plan_answer(&order, 5, &later, &seat()), PlanAnswer::Done);
+    }
+
+    #[test]
+    fn a_plan_of_payments_alone_pays_in_any_order() {
+        // A research paid on the map: the payments follow its answer, in the order of the map.
+        let steps = [pay("exhaust|jord"), pay("trade_good"), pay("trade_good")];
+        let bill = asked("pay_resources", vec![paying("trade_good")]);
+        let PlanAnswer::Answer {
+            option,
+            next,
+            steps: Some(order),
+        } = plan_answer(&steps, 0, &bill, &seat())
+        else {
+            panic!("no answer");
+        };
+        assert_eq!((option.id.as_str(), next), ("trade_good", 1));
+        assert_eq!(order[0], pay("trade_good"));
+        // The game needs no more: what is left is not of the game.
+        let later = asked("end_turn", vec![ChoiceOption::new("end_turn", "end_turn")]);
+        assert_eq!(plan_answer(&order, 1, &later, &seat()), PlanAnswer::Done);
     }
 
     #[test]

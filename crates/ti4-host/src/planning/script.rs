@@ -17,9 +17,9 @@ use ti4_engine::choice::{
 use ti4_engine::game::Game;
 use ti4_model::id::PlayerId;
 
-use super::draft::{DraftStep, ScriptAnswer, needless, script_answer};
+use super::draft::{DraftStep, EntryRefusal, ScriptAnswer, needless, script_answer};
 use super::fork::TACTICAL_COMPLETE;
-use super::steps::INTERRUPTED;
+use super::steps::{INTERRUPTED, RefusalCode};
 use crate::protocol::server::ScriptStopped;
 use crate::view::reaction_modes::{Filtered, Modes, filter};
 
@@ -35,14 +35,35 @@ pub fn tactical_complete(events: &[String]) -> bool {
     events.iter().any(|event| event == TACTICAL_COMPLETE)
 }
 
+/// Why the game refuses a script: the text for a person, and the entry that it refused when
+/// it refused one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Refusal {
+    pub reason: String,
+    /// Boxed: a refusal is the `Err` of an answer.
+    pub entry: Option<Box<EntryRefusal>>,
+}
+
+impl Refusal {
+    /// A refusal that names no entry: the game asks something that the script does not answer.
+    #[must_use]
+    pub const fn plain(reason: String) -> Self {
+        Self {
+            reason,
+            entry: None,
+        }
+    }
+}
+
 /// A script that changes nothing: the game refuses it before its first answer.
 #[must_use]
-pub fn refused(script: &[DraftStep], reason: String) -> ScriptStopped {
+pub fn refused(script: &[DraftStep], refusal: Refusal) -> ScriptStopped {
     ScriptStopped {
         applied: 0,
         remaining: script.to_vec(),
         interrupted: false,
-        reason,
+        reason: refusal.reason,
+        refusal: refusal.entry.map(|entry| *entry),
     }
 }
 
@@ -62,7 +83,7 @@ pub fn first_answer(
     script: &[DraftStep],
     choice: &Choice,
     seat: &PlayerId,
-) -> Result<First, String> {
+) -> Result<First, Refusal> {
     match script_answer(script, 0, choice, seat) {
         ScriptAnswer::Answer {
             option,
@@ -73,8 +94,12 @@ pub fn first_answer(
             next,
             script: reordered.unwrap_or_else(|| script.to_vec()),
         }),
-        ScriptAnswer::Done => Err(NO_ANSWER.to_owned()),
-        ScriptAnswer::Interrupted { reason } | ScriptAnswer::Mismatch { reason, .. } => Err(reason),
+        ScriptAnswer::Done => Err(Refusal::plain(NO_ANSWER.to_owned())),
+        ScriptAnswer::Interrupted { reason } => Err(Refusal::plain(reason)),
+        ScriptAnswer::Mismatch { step, reason, code } => Err(Refusal {
+            reason,
+            entry: Some(Box::new(EntryRefusal::of(script, step, code))),
+        }),
     }
 }
 
@@ -104,7 +129,7 @@ struct ScriptRun {
 }
 
 impl ScriptRun {
-    fn stopped(&self, reason: &str) -> ScriptStopped {
+    fn stopped(&self, reason: &str, refusal: Option<EntryRefusal>) -> ScriptStopped {
         ScriptStopped {
             applied: self.next,
             remaining: self.script[self.next..].to_vec(),
@@ -115,6 +140,7 @@ impl ScriptRun {
                 reason
             }
             .to_owned(),
+            refusal,
         }
     }
 
@@ -217,7 +243,7 @@ impl ScriptRuns {
             .into_iter()
             .filter_map(|other| {
                 let run = self.runs.remove(&other)?;
-                let stopped = run.stopped(INTERRUPTED);
+                let stopped = run.stopped(INTERRUPTED, None);
                 Some(run.end(other, Some(stopped)))
             })
             .collect();
@@ -248,19 +274,26 @@ impl ScriptRuns {
             ScriptAnswer::Interrupted { reason } => {
                 // The entries before this one are in the game and stay there.
                 let run = self.runs.remove(seat).expect("the script runs");
-                let stopped = run.stopped(&reason);
+                let stopped = run.stopped(&reason, None);
                 ended.push(run.end(seat.clone(), Some(stopped)));
                 (None, ended)
             }
-            ScriptAnswer::Mismatch { reason, .. } => {
+            ScriptAnswer::Mismatch { step, reason, code } => {
                 let run = self.runs.remove(seat).expect("the script runs");
+                let entry = EntryRefusal::of(&run.script, step, code);
                 let end = match self.on_mismatch {
                     OnMismatch::Stop => {
-                        let stopped = run.stopped(&reason);
+                        let stopped = run.stopped(&reason, Some(entry));
                         run.end(seat.clone(), Some(stopped))
                     }
                     OnMismatch::TakeBack => {
-                        let stopped = refused(&run.sent, reason);
+                        let stopped = refused(
+                            &run.sent,
+                            Refusal {
+                                reason,
+                                entry: Some(Box::new(entry)),
+                            },
+                        );
                         Ended {
                             taken_back: true,
                             ..run.end(seat.clone(), Some(stopped))
@@ -286,8 +319,10 @@ impl ScriptRuns {
         over.into_iter()
             .filter_map(|seat| {
                 let run = self.runs.remove(&seat)?;
-                let stopped =
-                    (!needless(&run.script[run.next..])).then(|| run.stopped(ACTION_OVER));
+                let stopped = (!needless(&run.script[run.next..])).then(|| {
+                    let entry = EntryRefusal::of(&run.script, run.next, RefusalCode::Over);
+                    run.stopped(ACTION_OVER, Some(entry))
+                });
                 Some(run.end(seat, stopped))
             })
             .collect()
@@ -303,8 +338,8 @@ pub enum Check {
     /// The game takes the script as far as the copy can tell: to its end, to a question that
     /// is not of the script, or to a decision of another seat.
     Plays,
-    /// The game does not offer what entry `step` asks for.
-    Refused { step: usize, reason: String },
+    /// The game does not offer what an entry asks for: `refusal.entry` says which, and why.
+    Refused { refusal: Refusal },
     /// The copy did not come to the choice that the live game waits in.
     Unknown,
 }
@@ -379,8 +414,11 @@ impl Probe {
                 self.verdict = Some(Check::Plays);
                 None
             }
-            ScriptAnswer::Mismatch { step, reason } => {
-                self.verdict = Some(Check::Refused { step, reason });
+            ScriptAnswer::Mismatch { step, reason, code } => {
+                let entry = Some(Box::new(EntryRefusal::of(&self.script, step, code)));
+                self.verdict = Some(Check::Refused {
+                    refusal: Refusal { reason, entry },
+                });
                 None
             }
         }
@@ -456,8 +494,14 @@ pub fn check_script(
                 Check::Plays
             } else {
                 Check::Refused {
-                    step: probe.next,
-                    reason: ACTION_OVER.to_owned(),
+                    refusal: Refusal {
+                        reason: ACTION_OVER.to_owned(),
+                        entry: Some(Box::new(EntryRefusal::of(
+                            &probe.script,
+                            probe.next,
+                            RefusalCode::Over,
+                        ))),
+                    },
                 }
             });
             break;
@@ -603,10 +647,20 @@ mod tests {
     #[test]
     fn the_first_answer_refuses_a_script_that_has_none() {
         let choice = asked("a", "activate_system", &["19"]);
-        assert!(first_answer(&[DraftStep::choose("18")], &choice, &a()).is_err());
+        // A refused entry is named, with why.
+        let script = [DraftStep::choose("18")];
+        let refusal = first_answer(&script, &choice, &a()).map(|first| first.next);
+        assert_eq!(
+            refusal.map_err(|refusal| refusal.entry),
+            Err(Some(Box::new(EntryRefusal::of(
+                &script,
+                0,
+                RefusalCode::NotOffered
+            ))))
+        );
         assert_eq!(
             first_answer(&[], &choice, &a()).map(|first| first.next),
-            Err(NO_ANSWER.to_owned())
+            Err(Refusal::plain(NO_ANSWER.to_owned()))
         );
     }
 }

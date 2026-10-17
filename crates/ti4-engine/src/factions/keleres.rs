@@ -524,9 +524,10 @@ fn agent_clear(owner_name: &str, seat: &PlayerId) -> Ability {
 }
 
 /// Commodities `player` may spend as if they were trade goods right now: all of them inside a
-/// payment window the agent was used for ([`offer_agent`]), else none.
+/// payment window the agent was used for ([`offer_agent`]), else none (the Keleres agent, Xander
+/// Alexin Victori III).
 #[must_use]
-pub(crate) fn spendable_commodities(state: &GameState, player: &PlayerId) -> i64 {
+pub fn spendable_commodities(state: &GameState, player: &PlayerId) -> i64 {
     if state
         .faction_marks
         .get(&agent_key(player))

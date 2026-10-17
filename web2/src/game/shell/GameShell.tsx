@@ -1,10 +1,19 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { shortcuts, type ExplorationDeck, type GameSession, type Intent } from "../../model";
-import { Badge, Button, Dialog, Drawer, InlineNote, LiveRegion, Toast, usePhone } from "../../ui";
-import { ActionFooter, ActionPanel, footerOf } from "../action/ActionPanel";
-import { Board } from "../board/Board";
+import { Badge, Button, Dialog, Drawer, InlineNote, Toast, usePhoneScreen } from "../../ui";
+import { ActionFooter, footerOf } from "../action/ActionPanel";
+import { StepSheet } from "../action/StepSheet";
+import { Board, showsInspector } from "../board/Board";
 import { GameProvider } from "../context";
 import { LinkProvider } from "../link";
+import { LogPanel } from "../log/LogPanel";
+import {
+  decisionHeading,
+  LiveLine,
+  TurnSheet,
+  useFreshQuestion,
+  WaitingBar,
+} from "../log/TurnSheet";
 import { PlayerTable } from "../players/PlayerTable";
 import { ReferenceDrawer } from "./Reference";
 import { ShellFrame } from "./ShellFrame";
@@ -15,15 +24,43 @@ const ACCENT = {
   draft: "var(--color-gold)",
   live: "var(--color-cyan)",
   done: "var(--color-green)",
+  history: "var(--color-muted)",
 };
 
-type Pane = "map" | "players" | "action";
+type Pane = "map" | "players" | "log";
 
 /**
- * The game screen: one toolbar, then the board and the right column (player table, action panel).
- * The right column has one fixed width. The design target is 1920×1080 or larger; see AGENTS.md.
- * A portrait phone shows the same three parts one at a time, with the footer of the action under
- * each of them.
+ * The intents that ask the game what follows from a choice of the viewer: an answer is sent, a
+ * draft starts or changes, a step is taken back. What is only staged on the screen (a count, a
+ * toggle, an option before its button) does not ask the game.
+ */
+const asksTheGame = (intent: Intent): boolean => {
+  switch (intent.type) {
+    case "confirmApply":
+    case "commitEdit":
+    case "endTurn":
+    case "reaction":
+    case "undo":
+    case "redo":
+    case "startOver":
+    case "removeEntry":
+      return true;
+    case "flow":
+      return intent.action === "resolve" || intent.action === "play";
+    case "workspace":
+      return intent.mode === "draft";
+    case "pickAction":
+      return intent.action === "tactical";
+    default:
+      return false;
+  }
+};
+
+/**
+ * The game screen: one toolbar, then the board with the open step as a sheet over it, and the right
+ * column (player table, log). The right column has one fixed width. The design target is 1920×1080
+ * or larger; see AGENTS.md. A portrait phone shows the map, the players and the log one at a time,
+ * with the footer of the action under each of them.
  * It needs a `GameSession` and nothing else. State that only changes what is in view lives here.
  */
 export function GameShell({
@@ -48,7 +85,19 @@ export function GameShell({
   /** The Dev sheet was open before the shell was there: it stays open. */
   settingsOpen?: boolean;
 }) {
-  const { view } = session;
+  const { view: latest } = session;
+  /**
+   * The viewer sent a choice that the game answers (`asksTheGame`), and the game has not answered
+   * it yet: the next change of the pane of the decision follows from it.
+   */
+  const acted = useRef(false);
+  // While the game has not yet answered what follows from the viewer's choice, the screen stays
+  // as it was: the pane of the next step is not known, and no pane shows a step with nothing in it.
+  const settled = useRef(latest);
+  if (!latest.settling) {
+    settled.current = latest;
+  }
+  const view = latest.settling && acted.current ? settled.current : latest;
   // The Dev sheet has the tools for testing: it is there when the game has one of them.
   const dev = Object.values(session.capabilities).some(Boolean) ? settings : undefined;
   const [drawer, setDrawer] = useState<string | null>(settingsOpen && dev ? "settings" : null);
@@ -60,18 +109,55 @@ export function GameShell({
     setDeck(null);
     setDrawer((now) => (now === id ? null : id));
   };
-  const phone = usePhone();
-  // The pane where the open choice is made: the board, the player table, or the action.
-  const choiceOn: Pane | null = view.players.pick
+  const phone = usePhoneScreen();
+  const phoneRef = useRef(phone);
+  phoneRef.current = phone;
+  // The step sheet is minimized at a question of the viewer; a new question opens it again, and
+  // so does the next step of a tactical action in a draft, as it would in Live.
+  const question = `${view.question ?? 0}:${view.action.kind === "tactical" ? view.action.current : ""}`;
+  const [minimizedAt, setMinimizedAt] = useState<string | null>(null);
+  // A turn of the Log that is open is the history mode; the turn that is played now is Watch, in
+  // the present.
+  const history = view.inspect && !view.inspect.watch ? view.inspect : null;
+  const watch = view.inspect?.watch ? view.inspect : null;
+  // A turn of the Log stays open when a question of the viewer comes: the bar of the decision
+  // marks it.
+  const fresh = useFreshQuestion(!!view.inspect, view.asked, question);
+  // The pane where the open choice is made: a seat is picked in the player table, every other
+  // choice is made on the map, where the open step is a sheet over the board.
+  const asked: Pane | null = view.players.pick
     ? "players"
-    : view.board.task?.interactive || view.board.targeting
+    : view.board.task?.interactive || view.board.targeting || view.board.blocks || view.asked
       ? "map"
-      : view.asked
-        ? "action"
-        : null;
-  // The game opens on the pane of its choice. After that only a tap on a tab changes the pane;
-  // the tab of the choice is marked.
-  const [pane, setPane] = useState<Pane>(() => choiceOn ?? "action");
+      : null;
+  const lastChoice = useRef(asked);
+  // A sent answer is not a step: the pane of the choice is the one before, until the game answers.
+  const choiceOn = view.answered && acted.current ? lastChoice.current : asked;
+  // The game opens on the pane of its choice. After that the pane changes with a tap on a tab, and
+  // when a choice of the viewer opens the next step of the viewer in another pane. Anything else
+  // (another player, a bot, a window that opens) only marks the tab of the choice.
+  const [pane, setPane] = useState<Pane>(() => choiceOn ?? "map");
+  const lastReply = useRef(view.reply);
+  // Before the paint: the next step is never shown in the pane that the viewer leaves.
+  useLayoutEffect(() => {
+    const replied = view.reply !== lastReply.current;
+    lastReply.current = view.reply;
+    if (choiceOn !== lastChoice.current) {
+      lastChoice.current = choiceOn;
+      // The first change of the pane after the viewer's choice is its next step. With no
+      // decision open the viewer waits for the game, and what opens next does not follow from
+      // the choice.
+      if (choiceOn && acted.current) {
+        setPane(choiceOn);
+      }
+      acted.current = false;
+    }
+    // The game answered the choice: what changes later does not follow from it, also when the
+    // next step is in the same pane.
+    if (replied) {
+      acted.current = false;
+    }
+  }, [choiceOn, view.reply]);
 
   const dispatch = useCallback(
     (intent: Intent) => {
@@ -85,6 +171,14 @@ export function GameShell({
       if (intent.type === "inspectLogEntry") {
         setDrawer(null);
       }
+      // A turn of the Log opens over the board: a phone goes to the map, where it is.
+      if (intent.type === "inspectTurn" && phoneRef.current) {
+        setPane("map");
+      }
+      // An undo takes the viewer back also while the viewer waits for the game.
+      if ((lastChoice.current || intent.type === "undo") && asksTheGame(intent)) {
+        acted.current = true;
+      }
       session.dispatch(intent);
     },
     [session],
@@ -96,8 +190,13 @@ export function GameShell({
   }, [view.apply]);
 
   // Shortcut keys of the open action. Esc closes an open reference sheet first.
-  const keys = useRef({ view: view.action, drawer, dispatch });
-  keys.current = { view: view.action, drawer, dispatch };
+  const keys = useRef({
+    view: view.action,
+    drawer,
+    dispatch,
+    turn: !!view.inspect,
+  });
+  keys.current = { view: view.action, drawer, dispatch, turn: !!view.inspect };
   useEffect(() => {
     // Focus that Tab moved belongs to the keyboard; focus that a click left behind does not.
     let focusByKeyboard = false;
@@ -110,6 +209,16 @@ export function GameShell({
       // Esc closes one thing: an open dialog, menu or rule text goes first.
       if (event.key === "Escape" && now.drawer && !document.querySelector(OVERLAY)) {
         return setDrawer(null);
+      }
+      // Then an open turn of the Log, or Watch.
+      if (event.key === "Escape" && now.turn && !document.querySelector(OVERLAY)) {
+        event.preventDefault();
+        return now.dispatch({ type: "closeTurn" });
+      }
+      // An open turn of the Log, history or Watch, has the place of the decision: its keys do
+      // nothing there.
+      if (now.turn) {
+        return;
       }
       if (!keyIsFree(event, focusByKeyboard)) {
         return;
@@ -164,13 +273,52 @@ export function GameShell({
       onOpenSeat={(seat) => toggleDrawer(`player:${seat}`)}
     />
   );
-  const board = <Board view={view.board} />;
+  // The turns since the viewer's last turn, newest first, the turn that is played now on top.
+  const log = <LogPanel log={view.log} open={view.inspect?.turn ?? null} />;
+  // The open step is a sheet over the board. An open fleet, the open landings and the open build
+  // of a production have its room; their check mark gives it back.
+  const boardSheet = view.board.origin || view.board.landing || view.board.production;
+  // One sheet over the board at a time: on a phone the inspector of a system has the place of the
+  // step sheet and of an opened turn, and its "×" gives it back. Desktop has the inspector at the
+  // bottom left and the step sheet at the bottom right: they do not cover each other.
+  const inspecting = phone && showsInspector(view.board, phone);
+  const [turnMinimized, setTurnMinimized] = useState<string | null>(null);
+  // One sheet over the board at a time: the viewer's decision, or a turn of the Log that is open
+  // (the history mode, or Watch: the turn that is played now). An open turn has the place of the
+  // decision, whose bar says that it waits.
+  const opened = view.inspect;
+  const step = opened ? (
+    <TurnSheet
+      view={opened}
+      present={!!watch}
+      decision={view.asked ? view.action : null}
+      fresh={fresh}
+      mark={ACCENT[view.accent]}
+      status={view.toolbar.status}
+      minimized={turnMinimized === opened.turn}
+      onMinimized={(minimized) => setTurnMinimized(minimized ? opened.turn : null)}
+      covered={inspecting}
+    />
+  ) : (
+    !boardSheet &&
+    !inspecting && (
+      <StepSheet
+        view={view.action}
+        status={view.toolbar.status}
+        asked={view.asked}
+        minimized={minimizedAt === question}
+        onMinimized={(minimized) => setMinimizedAt(minimized ? question : null)}
+        // What another seat does now is a line over the sheet; a tap on it opens Watch.
+        lead={view.live && <LiveLine view={view.live} />}
+      />
+    )
+  );
 
   return (
     <GameProvider seats={view.seats} dispatch={dispatch}>
       <LinkProvider>
         <ShellFrame
-          accent={ACCENT[view.accent]}
+          accent={ACCENT[history ? "history" : view.accent]}
           header={
             <Toolbar
               view={view.toolbar}
@@ -180,23 +328,25 @@ export function GameShell({
               other={other}
               settings={!!dev}
               table={!!table}
+              history={history}
             />
           }
-          board={<Board view={view.board}>{sheet}</Board>}
+          board={
+            <Board view={view.board}>
+              {step}
+              {sheet}
+            </Board>
+          }
           column={
             <>
               {players}
-              <ActionPanel view={view.action} reveal={view.reveal} />
+              {log}
             </>
           }
           panes={[
-            { id: "map", label: "Map", content: board },
+            { id: "map", label: "Map", content: <Board view={view.board}>{step}</Board> },
             { id: "players", label: "Players", content: players, scrolls: true },
-            {
-              id: "action",
-              label: "Action",
-              content: <ActionPanel view={view.action} reveal={view.reveal} footer={false} />,
-            },
+            { id: "log", label: "Log", content: log },
           ]}
           pane={pane}
           onPane={(id) => setPane(id as Pane)}
@@ -205,10 +355,18 @@ export function GameShell({
           footer={
             // An open fleet has the room of the footer, and so have the open landings and the
             // open build of a production. The check mark of the sheet gives the footer back.
-            !(
-              pane === "map" &&
-              (view.board.origin || view.board.landing || view.board.production)
-            ) && <ActionFooter view={footerOf(view.action)} />
+            // While a turn of the Log is open the decision is not shown: its bar says that it
+            // waits.
+            opened
+              ? view.asked && (
+                  <WaitingBar
+                    heading={decisionHeading(view.action)}
+                    fresh={fresh}
+                    mark={ACCENT[view.accent]}
+                    onBack={() => dispatch({ type: "closeTurn" })}
+                  />
+                )
+              : !(pane === "map" && boardSheet) && <ActionFooter view={footerOf(view.action)} />
           }
         >
           <Dialog
@@ -245,7 +403,6 @@ export function GameShell({
             <InlineNote strong={view.apply?.cost}>{view.apply?.note}</InlineNote>
           </Dialog>
           <Toast message={view.toast} />
-          <LiveRegion text={view.announcement} />
         </ShellFrame>
       </LinkProvider>
     </GameProvider>

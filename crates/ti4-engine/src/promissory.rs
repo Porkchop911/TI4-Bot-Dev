@@ -85,6 +85,30 @@ pub fn alias_of(note: &str) -> &str {
     note.split_once(':').map_or(note, |(alias, _)| alias)
 }
 
+/// The id of a note's record in the catalogue (`ContentType::PromissoryNotes`): a faction's own
+/// note is its alias (`ra`), a note that every faction has is `<color>_<alias>` (`<color>_cf`),
+/// and Support for the Throne, `support:<owner>` here, is `<color>_sftt`. An alias that no record
+/// has is returned as it is.
+#[must_use]
+pub fn record_id(content: &ContentStore, note: &str) -> String {
+    if note.starts_with(SUPPORT_PREFIX) {
+        return format!("{GENERIC_PREFIX}sftt");
+    }
+    let alias = alias_of(note);
+    if content.get(ContentType::PromissoryNotes, alias).is_some() {
+        return alias.to_owned();
+    }
+    let generic = format!("{GENERIC_PREFIX}{alias}");
+    if content
+        .get(ContentType::PromissoryNotes, &generic)
+        .is_some()
+    {
+        generic
+    } else {
+        alias.to_owned()
+    }
+}
+
 /// The faction name a note belongs to, or `None` if it is not a note id at all.
 #[must_use]
 pub fn owner_of(note: &str) -> Option<String> {

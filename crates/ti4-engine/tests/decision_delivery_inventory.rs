@@ -441,7 +441,14 @@ const PRODUCERS: &[Producer] = &[
         module: "mentak.rs",
         function: "ask_among",
         count: 1,
-        delivery: Delivery::ObservedHere,
+        delivery: Delivery::ObservedVia("mentak.rs::ask_choice"),
+    },
+    Producer {
+        // The same, for a question whose labels name seats or notes by id (`details.phrases`).
+        module: "mentak.rs",
+        function: "ask_phrased",
+        count: 1,
+        delivery: Delivery::ObservedVia("mentak.rs::ask_choice"),
     },
     Producer {
         // Cabal: Vortex picks which reinforcement unit to capture (BF-cabal.md CB-06).
@@ -594,6 +601,13 @@ const PRODUCERS: &[Producer] = &[
         delivery: Delivery::ObservedHere,
     },
     Producer {
+        // `ask` for a question whose texts name seats or notes by id (`details.phrases`).
+        module: "deepwrought.rs",
+        function: "ask_phrased",
+        count: 1,
+        delivery: Delivery::ObservedHere,
+    },
+    Producer {
         // Crimson Rebellion: every question asked inside a timing window or component action
         // (BF-crimson.md). Ahk Ravin's transport questions are the shared cargo hold's own.
         module: "crimson.rs",
@@ -700,8 +714,10 @@ const PRODUCERS: &[Producer] = &[
         delivery: Delivery::ObservedHere,
     },
     Producer {
+        // Mathis Mathinus's follower question, built for `leader_strategy_follower_choices`
+        // (asked by `game.rs::step_leader_followers`) and for `use_leader`, which asks it.
         module: "winnu.rs",
-        function: "leader_strategy_follower_choices",
+        function: "mathis_follower_choice",
         count: 1,
         delivery: Delivery::ObservedVia("game.rs::step_leader_followers"),
     },
@@ -714,7 +730,7 @@ const PRODUCERS: &[Producer] = &[
     Producer {
         module: "winnu.rs",
         function: "use_leader",
-        count: 2,
+        count: 1,
         delivery: Delivery::ObservedHere,
     },
     Producer {
@@ -1568,7 +1584,7 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     // Deepgloom Executable runs the trade window itself, so its choices are asked here rather
     // than through `game.rs::step_trade`.
     ("yssaril.rs", "deepgloom_transaction", 1),
-    ("mentak.rs", "ask_among", 1),
+    ("mentak.rs", "ask_choice", 1),
     ("borrowed_commanders.rs", "ralnel_ask", 1),
     ("borrowed_commanders.rs", "crimson_ask", 1),
     ("titans.rs", "ask", 1),
@@ -1597,6 +1613,7 @@ const OBSERVED_ASKS: &[(&str, &str, usize)] = &[
     ("deepwrought_research.rs", "put", 1),
     ("deepwrought.rs", "ask", 1),
     ("deepwrought.rs", "ask_about", 1),
+    ("deepwrought.rs", "ask_phrased", 1),
     ("crimson.rs", "ask", 1),
     ("crimson.rs", "ask_about", 1),
     ("crimson_cards.rs", "fill_hold", 1),

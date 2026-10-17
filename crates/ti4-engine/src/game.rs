@@ -1819,6 +1819,7 @@ impl<'a> Game<'a> {
         self.state.combat_round_hits.clear();
         self.state.combat_round_dice.clear();
         self.state.combat_presentation = ti4_model::state::CombatPresentation::default();
+        self.state.fight_log = ti4_model::state::FightLog::default();
         self.state.reroll_staging.clear();
         self.state.last_reroll_player = None;
         self.state.pending_destructions.clear();
@@ -4485,6 +4486,20 @@ impl<'a> Game<'a> {
         let rolled_before = self.dice.count();
         let survives = survives_gravity_rifts(&mut self.dice, &mut self.rng, &rules, path);
         self.dice.attribute_since(rolled_before, &ship.owner);
+        // For the public roll feed: which ship rolled, from where, and what it carried.
+        self.dice.name_subject_since(
+            rolled_before,
+            &crate::dice::RollSubject {
+                unit: Some(ship.type_id.to_string()),
+                damaged: ship.sustained_damage,
+                origin: Some(origin.to_string()),
+                cargo: cargo
+                    .iter()
+                    .map(|carried| carried.unit.type_id.to_string())
+                    .collect(),
+                target: None,
+            },
+        );
         apply_move(&mut self.state, origin, &active, ship, cargo, survives)
     }
 
@@ -5611,7 +5626,8 @@ impl<'a> Game<'a> {
         // The redistribution that follows decides where every token ends up, so the pool of each
         // gained token is not asked on its own: one decision per player, in initiative order like
         // the rest of 81, chooses the whole sheet with the gained tokens in it. The gain is capped
-        // by the reinforcements (20.4a).
+        // by the reinforcements (20.4a). A failed answer is an error of the step, as every other
+        // failed answer is: the gain is not placed for the player (from rules version 17).
         for player in report.initiative_order.clone() {
             let owed = i32::try_from(gain.remaining_for(&player)).unwrap_or(i32::MAX);
             let gained = owed
@@ -5630,9 +5646,16 @@ impl<'a> Game<'a> {
                 "redistribute your command tokens",
                 gained,
             );
-            if answered.is_err() && gained > 0 {
-                // The decision failed: the gain is still the player's, in the tactic pool.
-                self.state.gain_token(&player, TokenPool::Tactic, gained);
+            if let Err(error) = answered {
+                if self.state.rules_version >= ti4_model::state::RULES_STATUS_REDISTRIBUTION_REFUSED
+                {
+                    return self.result(false, Some(error.into()));
+                }
+                if gained > 0 {
+                    // Version < 17: the refusal is passed over, and the gain is still the
+                    // player's, in the tactic pool.
+                    self.state.gain_token(&player, TokenPool::Tactic, gained);
+                }
             }
             for pool in gained_pools(before, self.pools_of(&player), gained) {
                 self.emit(&format!("COMMAND_TOKEN_GAINED:{pool:?}"));
@@ -7249,7 +7272,8 @@ fn wormhole_hops(
 /// The pools that `gained` tokens went to, one entry per token, from the sheet before and after a
 /// redistribution that also gained them: the pools that grew, in tactic, fleet, strategy order,
 /// and the tactic pool for any token the growth does not account for. Only the announcement uses
-/// it (`COMMAND_TOKEN_GAINED`); the sheet is already set.
+/// it (`COMMAND_TOKEN_GAINED`), and the announcement is for display only: the redistribution has
+/// already set the sheet, and nothing reads the pool of a gained token back from the event.
 fn gained_pools(before: [i32; 3], after: [i32; 3], gained: i32) -> Vec<TokenPool> {
     const POOLS: [TokenPool; 3] = [TokenPool::Tactic, TokenPool::Fleet, TokenPool::Strategic];
     let mut left = gained.max(0);
@@ -11607,6 +11631,91 @@ mod tests {
         }
         assert_eq!(again.events, game.events);
         assert!(again.state == game.state, "same state after the replay");
+    }
+
+    /// The status phase's redistribution of a one-seat game of `rules_version`, answered with an
+    /// arrangement that was not offered (more tokens than the seat holds).
+    fn status_redistribution_refused_at(rules_version: u32) -> Game<'static> {
+        /// Answers every redistribution with more tokens than the seat holds.
+        struct Hoarder;
+        impl Decider for Hoarder {
+            fn choose(&mut self, _: &Choice) -> Result<ChoiceOption, IllegalChoice> {
+                Ok(ChoiceOption::labelled("16|0|0", "pool", "sixteen tactic"))
+            }
+        }
+
+        let mut state = crate::fixtures::game(&["a"]);
+        state.phase = Phase::Status;
+        state.rules_version = rules_version;
+        let a = PlayerId::new("a");
+        {
+            let seat = state.player_mut(&a).expect("seated");
+            (seat.tactic_tokens, seat.fleet_tokens, seat.strategic_tokens) = (3, 3, 2);
+        }
+        let table = Table::with_default(Box::new(Hoarder));
+        let mut game = Game::with_table(state, ContentStore::embedded(), table);
+        let order = [a];
+        game.tokens = Some((
+            crate::tokens::TokenGain::for_status(&game.state, ContentStore::embedded(), &order),
+            Box::new(StatusPhaseReport {
+                initiative_order: order.to_vec(),
+                ..StatusPhaseReport::default()
+            }),
+        ));
+        game
+    }
+
+    /// 81.5: an arrangement that was not offered is an error of the step, as every other failed
+    /// answer is. The gain is not put into a pool of the engine's choosing, and nothing is
+    /// announced for the seat.
+    #[test]
+    fn status_phase_redistribution_refuses_an_arrangement_not_offered() {
+        let a = PlayerId::new("a");
+        let mut game =
+            status_redistribution_refused_at(ti4_model::state::RULES_STATUS_REDISTRIBUTION_REFUSED);
+        assert_eq!(game.state.rules_version, ti4_model::state::RULES_VERSION);
+
+        let error = game.step().error.expect("the arrangement is refused");
+        assert!(
+            error.to_string().contains("16|0|0"),
+            "the refusal names the answer: {error}"
+        );
+        assert_eq!(game.pools_of(&a), [3, 3, 2], "the sheet is unchanged");
+        assert!(
+            !game
+                .events
+                .iter()
+                .any(|event| event.starts_with("COMMAND_TOKEN_GAINED")
+                    || event == "STATUS_PHASE_RESOLVED"),
+            "nothing is announced: {:?}",
+            game.events
+        );
+    }
+
+    /// A game from before `RULES_STATUS_REDISTRIBUTION_REFUSED` passes a refused redistribution
+    /// over: the gain goes into the tactic pool and the status phase resolves.
+    #[test]
+    fn status_phase_redistribution_of_an_older_game_puts_a_refused_gain_in_tactic() {
+        let a = PlayerId::new("a");
+        let mut game = status_redistribution_refused_at(
+            ti4_model::state::RULES_STATUS_REDISTRIBUTION_REFUSED - 1,
+        );
+
+        assert_eq!(game.step().error, None, "the refusal is passed over");
+        assert_eq!(game.pools_of(&a), [5, 3, 2], "the gain is in tactic");
+        let gained = game
+            .events
+            .iter()
+            .filter(|event| event.as_str() == "COMMAND_TOKEN_GAINED:Tactic")
+            .count();
+        assert_eq!(gained, 2, "{:?}", game.events);
+        assert!(
+            game.events
+                .iter()
+                .any(|event| event == "STATUS_PHASE_RESOLVED"),
+            "{:?}",
+            game.events
+        );
     }
 
     /// OBS-003d: the movement-step choice `Game::tactical_choice` builds carries its typed

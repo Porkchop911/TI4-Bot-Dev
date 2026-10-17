@@ -631,6 +631,11 @@ pub fn apply_reroll_dice(
             by: None,
             system: None,
             outcome: None,
+            // The unit of the die, for the public feed; an attachment's dice name none.
+            subject: (!entry.unit_types.is_empty()).then(|| crate::dice::RollSubject {
+                unit: Some(entry.unit.clone()),
+                ..crate::dice::RollSubject::default()
+            }),
         };
         let again = dice.reroll(rng, &original, [*die], Some(reason));
         entry.faces = again.faces;
@@ -2165,16 +2170,34 @@ pub fn space_cannon_guns(
     }
 }
 
-pub fn space_cannon_offense(
-    state: &mut GameState,
+/// One gun's dice in the space cannon offense of a system.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CannonShot {
+    pub owner: PlayerId,
+    /// The unit that fires, or `None` for the SPACE CANNON of an attachment.
+    pub unit: Option<Unit>,
+    /// The planet of an attachment's SPACE CANNON.
+    pub planet: Option<ti4_model::id::PlanetId>,
+    pub dice: usize,
+    pub hits_on: u32,
+    /// The seat whose ships the dice fire at: the active player for every other gun, the
+    /// opponent with ships in the system for the active player's own.
+    pub target: Option<PlayerId>,
+}
+
+/// The dice of the space cannon offense of `system` when `active` activates it, in the order in
+/// which they roll: [`space_cannon_guns`] with what each one rolls (Plasma Scoring, a galvanized
+/// unit, Assail, Disable). It rolls nothing and changes nothing: [`space_cannon_offense`] rolls
+/// these, and a client asks it before the movement.
+#[must_use]
+pub fn space_cannon_shots(
+    state: &GameState,
     content: &ContentStore,
     sources: SourceSet,
-    dice: &mut Dice,
-    rng: &mut GameRng,
     system: &SystemId,
     active: &PlayerId,
     galaxy: Option<&ti4_content::galaxy::Galaxy>,
-) -> Vec<(PlayerId, usize, Vec<RerollEntry>)> {
+) -> Vec<CannonShot> {
     let CannonGuns {
         units: guns,
         attachments: attachment_guns,
@@ -2182,9 +2205,14 @@ pub fn space_cannon_offense(
     let types = catalogue(content, sources);
     // The player the active player's guns fire at (Assail reads it below).
     let opponent = opponent_with_ships(state, content, sources, active, system);
-
-    let mut by_player: std::collections::BTreeMap<PlayerId, (usize, Vec<RerollEntry>)> =
-        std::collections::BTreeMap::new();
+    let target_of = |owner: &PlayerId| {
+        if owner == active {
+            opponent.clone()
+        } else {
+            Some(active.clone())
+        }
+    };
+    let mut shots = Vec::new();
     // Plasma Scoring: one of a player's firing units rolls a die more. The player picks which; the
     // engine gives it to the unit that hits most easily, the pick nobody would refuse.
     let mut plasma = plasma_picks(
@@ -2225,49 +2253,93 @@ pub fn space_cannon_offense(
         let count = count + crate::factions::bastion::extra_die(&unit);
         // Assail: +1 to the gunner's unit ability rolls against a puppeted player (the active
         // player's guns fire at the opponent, every other gun at the active player).
-        let target = if unit.owner == *active {
-            opponent.clone()
-        } else {
-            Some(active.clone())
-        };
+        let target = target_of(&unit.owner);
         let value = (value
             - crate::factions::firmament_plots::assail_against(state, &unit.owner, target.iter()))
         .max(1);
-        let roll = dice.roll_by(
-            rng,
-            count,
-            "space cannon",
-            Some(u32::try_from(value).unwrap_or(u32::MAX)),
-            &unit.owner,
-        );
-        let entry = RerollEntry {
-            unit: unit.type_id.to_string(),
+        shots.push(CannonShot {
+            owner: unit.owner.clone(),
             planet: None,
-            hits_on: Some(u32::try_from(value).unwrap_or(u32::MAX)),
-            faces: roll.faces,
-            rerolled: std::collections::BTreeSet::new(),
-            deltas: std::collections::BTreeMap::new(),
-            unit_types: std::iter::once((unit.type_id.to_string(), 1)).collect(),
-        };
-        let slot = by_player
-            .entry(unit.owner.clone())
-            .or_insert_with(|| (0, Vec::new()));
-        slot.0 += entry.hits();
-        slot.1.push(entry);
+            dice: count,
+            hits_on: u32::try_from(value).unwrap_or(u32::MAX),
+            target,
+            unit: Some(unit),
+        });
     }
     for (owner, planet, value, count) in attachment_guns {
-        let roll = dice.roll_by(rng, count, "space cannon", Some(value), &owner);
+        shots.push(CannonShot {
+            target: target_of(&owner),
+            owner,
+            unit: None,
+            planet: Some(planet),
+            dice: count,
+            hits_on: value,
+        });
+    }
+    shots
+}
+
+pub fn space_cannon_offense(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    dice: &mut Dice,
+    rng: &mut GameRng,
+    system: &SystemId,
+    active: &PlayerId,
+    galaxy: Option<&ti4_content::galaxy::Galaxy>,
+) -> Vec<(PlayerId, usize, Vec<RerollEntry>)> {
+    let shots = space_cannon_shots(state, content, sources, system, active, galaxy);
+    let mut by_player: std::collections::BTreeMap<PlayerId, (usize, Vec<RerollEntry>)> =
+        std::collections::BTreeMap::new();
+    for shot in shots {
+        let start = dice.count();
+        let roll = dice.roll_by(
+            rng,
+            shot.dice,
+            "space cannon",
+            Some(shot.hits_on),
+            &shot.owner,
+        );
+        // For the public roll feed: which gun fired, and at whom.
+        dice.name_subject_since(
+            start,
+            &crate::dice::RollSubject {
+                unit: shot.unit.as_ref().map(|unit| unit.type_id.to_string()),
+                damaged: shot.unit.as_ref().is_some_and(|unit| unit.sustained_damage),
+                origin: None,
+                cargo: Vec::new(),
+                target: shot.target.clone(),
+            },
+        );
+        // A unit's dice can take a casualty; an attachment's own dice cannot.
+        let (unit, unit_types) = match (&shot.unit, &shot.planet) {
+            (Some(unit), _) => (
+                unit.type_id.to_string(),
+                std::iter::once((unit.type_id.to_string(), 1)).collect(),
+            ),
+            (None, planet) => (
+                format!(
+                    "planet cannon {}",
+                    planet
+                        .as_ref()
+                        .map_or_else(String::new, ToString::to_string)
+                ),
+                std::collections::BTreeMap::new(),
+            ),
+        };
         let entry = RerollEntry {
-            unit: format!("planet cannon {planet}"),
+            unit,
             planet: None,
-            hits_on: Some(value),
+            hits_on: Some(shot.hits_on),
             faces: roll.faces,
             rerolled: std::collections::BTreeSet::new(),
             deltas: std::collections::BTreeMap::new(),
-            // An attachment's own dice, not a unit's: nothing here can be a casualty.
-            unit_types: std::collections::BTreeMap::new(),
+            unit_types,
         };
-        let slot = by_player.entry(owner).or_insert_with(|| (0, Vec::new()));
+        let slot = by_player
+            .entry(shot.owner.clone())
+            .or_insert_with(|| (0, Vec::new()));
         slot.0 += entry.hits();
         slot.1.push(entry);
     }
@@ -5146,6 +5218,36 @@ impl CombatWindow {
             }
         }
         state.combat_round_dice = round_dice;
+        // The round for the record of the turn: a combat that ends in this step of the engine
+        // leaves no board that shows it.
+        let presentation = &state.combat_presentation;
+        let first = round == 1;
+        let record = ti4_model::state::SpaceRoundRecord {
+            system: self.system.clone(),
+            attacker: self.attacker.clone(),
+            defender: self.defender.clone(),
+            battle_seq: presentation.battle_seq,
+            round,
+            round_start: presentation.round_start.clone(),
+            barrage_start: if first {
+                presentation.barrage_start.clone()
+            } else {
+                Vec::new()
+            },
+            barrage_dice: if first {
+                presentation.barrage_dice.clone()
+            } else {
+                Vec::new()
+            },
+            barrage_hits: if first {
+                presentation.barrage_hits.clone()
+            } else {
+                std::collections::BTreeMap::new()
+            },
+            dice: state.combat_round_dice.clone(),
+            hits: state.combat_round_hits.clone(),
+        };
+        state.fight_log.space_round(record);
 
         // Forced hits first, so a free hit can still take a fighter the forced ones had to spare.
         let mut queue: Vec<Pending> = [
@@ -7759,6 +7861,7 @@ mod tests {
             by: None,
             system: None,
             outcome: None,
+            subject: None,
         };
         let rerolled = reroll_munitions_misses(&state, &mut dice, &mut rng, &attacker(), &original);
 
@@ -7812,6 +7915,55 @@ mod tests {
             fired.iter().all(|(owner, _, _)| owner == &defender()),
             "only the non-active player shoots"
         );
+        // The public feed names the gun and the seat it fires at.
+        let subject = dice.history()[0].subject.clone().expect("a named gun");
+        assert_eq!(subject.unit, Some(a_cannon_unit()));
+        assert_eq!(subject.target, Some(attacker()));
+    }
+
+    #[test]
+    fn the_shots_of_the_space_cannon_offense_are_what_it_rolls() {
+        let (mut state, system) = arena();
+        state
+            .system_mut(&system)
+            .planet_units
+            .entry(ti4_model::id::PlanetId::new("mecatol_rex"))
+            .or_default()
+            .push(Unit::new(UnitTypeId::new(a_cannon_unit()), defender()));
+        let shots = space_cannon_shots(
+            &state,
+            ContentStore::embedded(),
+            POK,
+            &system,
+            &attacker(),
+            None,
+        );
+        assert_eq!(
+            shots.len(),
+            1,
+            "no ship needs to be there: the guns are asked first"
+        );
+        let (_, mut dice, mut rng) = kit();
+        space_cannon_offense(
+            &mut state,
+            ContentStore::embedded(),
+            POK,
+            &mut dice,
+            &mut rng,
+            &system,
+            &attacker(),
+            None,
+        );
+        let rolled: Vec<(usize, Option<u32>)> = dice
+            .history()
+            .iter()
+            .map(|roll| (roll.faces.len(), roll.hits_on))
+            .collect();
+        let planned: Vec<(usize, Option<u32>)> = shots
+            .iter()
+            .map(|shot| (shot.dice, Some(shot.hits_on)))
+            .collect();
+        assert_eq!(rolled, planned);
     }
 
     #[test]

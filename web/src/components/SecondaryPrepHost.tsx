@@ -208,8 +208,9 @@ export const SecondaryPrepHost: React.FC<SecondaryPrepHostProps> = ({ prep, onCo
           )}
           {prep.dry?.exact && prep.dry.payment && (
             <p className="secondary-prep__note" data-testid="prepare-payment-preview" role="note">
-              Paying the {prep.dry.payment.cost} resources of a research: the game would use{" "}
-              <strong>{describePayment(prep.dry.payment) || "nothing"}</strong>.
+              Paying the {prep.dry.payment.cost} resources of a research: the cheapest payment is{" "}
+              <strong>{describePayment(prep.dry.payment) || "nothing"}</strong>. You choose how to pay when the game
+              asks.
             </p>
           )}
           {prep.dry?.exact && action.family === "leadership" && (

@@ -1401,12 +1401,45 @@ fn exhaust_specialties_for_research(
     player: &PlayerId,
     alias: &TechnologyId,
 ) {
+    for planet in specialty_planets(state, content, sources, player, alias) {
+        state.exhaust_planet(planet);
+    }
+}
+
+/// The ready planets whose technology specialties a research of `alias` exhausts for its
+/// prerequisites, as [`research`] takes them: none when the research goes through Inheritance
+/// Systems or a faction waiver. A payment for that research must leave them ready.
+#[must_use]
+pub fn specialties_spent_by_research(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    alias: &TechnologyId,
+) -> Vec<PlanetId> {
+    if !can_research(state, content, sources, player, alias)
+        || !prerequisites_met(state, content, sources, player, alias)
+        || faction_waiver_required(state, content, sources, player, alias)
+    {
+        return Vec::new();
+    }
+    specialty_planets(state, content, sources, player, alias)
+}
+
+/// The specialty planets that [`exhaust_specialties_for_research`] exhausts.
+fn specialty_planets(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    player: &PlayerId,
+    alias: &TechnologyId,
+) -> Vec<PlanetId> {
     if crate::laws::war_sun_prerequisites_waived(state, content, alias) {
-        return;
+        return Vec::new();
     }
     let reqs = prerequisites(content, alias);
     if reqs.is_empty() {
-        return;
+        return Vec::new();
     }
     let held = owned_colours(state, content, player);
     let mut waivable = crate::faction_abilities::waived_prerequisites(
@@ -1451,9 +1484,7 @@ fn exhaust_specialties_for_research(
             }
         }
     }
-    for planet in to_exhaust {
-        state.exhaust_planet(planet);
-    }
+    to_exhaust
 }
 
 /// Research `alias` by taking a selected module waiver and paying its selected legal cost.

@@ -17,8 +17,8 @@ use ti4_host::planning::script::{OnMismatch, ScriptRuns};
 use ti4_host::projection::project_turn_status;
 use ti4_host::protocol::PROTOCOL_VERSION;
 use ti4_host::protocol::server::{
-    EventVisibility, GameEvent, GameEventKind, GameOverMsg, MovementFact, PendingChoiceMsg,
-    ServerMessage, TurnStatusMsg,
+    EventVisibility, GameEvent, GameEventKind, GameOverMsg, PendingChoiceMsg, ServerMessage,
+    TurnStatusMsg,
 };
 use ti4_host::protocol::status::ViewerRole;
 use ti4_host::state_update::{self, StateUpdateInputs, state_update_for};
@@ -135,6 +135,16 @@ pub struct SessionShared {
     pub replay_complete: bool,
     /// How many of the game's rolls the worker has already shown (see `record_rolls`).
     pub rolls_seen: usize,
+    /// The public state that the facts of the state were last taken from, and the end of the
+    /// events that they saw (see `record_state_facts`).
+    pub tally: ti4_host::protocol::state_fact::PublicTally,
+    pub observed_to: usize,
+    /// The facts of the state that the history has after its last decision, at that count of
+    /// decisions: a restart that steps from there tells them once (see `record_state_facts`).
+    pub known_facts: (usize, Vec<ti4_host::protocol::server::PublicFact>),
+    /// The changes of the board that the history has at the count of decisions of
+    /// `known_facts`, told once as the facts are.
+    pub known_boards: Vec<ti4_host::protocol::board_delta::BoardDelta>,
     pub history_generation: u64,
     pub batches: Vec<ti4_host::batch::BatchRecord>,
     /// Forced random positions of a timeline made by a turn redo, by decision index.
@@ -407,6 +417,10 @@ impl SessionShared {
             history_active: false,
             replaying: false,
             rolls_seen: 0,
+            tally: ti4_host::protocol::state_fact::PublicTally::default(),
+            observed_to: 0,
+            known_facts: (0, Vec::new()),
+            known_boards: Vec::new(),
             redo_events: Vec::new(),
             replay_complete: false,
             history_generation: 0,
@@ -534,9 +548,7 @@ impl SessionShared {
         event: GameEventKind,
         version: Option<u64>,
         decision_count: usize,
-        detail: Option<String>,
-        movement: Option<MovementFact>,
-        seat_detail: Option<ti4_host::protocol::server::SeatDecisionDetail>,
+        facts: ti4_host::protocol::server::DecisionFacts,
     ) -> Result<(), String> {
         match journal::reconcile_with_redo(
             self.history_active,
@@ -564,9 +576,7 @@ impl SessionShared {
                 event,
                 version,
                 decision_count,
-                detail,
-                movement,
-                seat_detail,
+                facts,
             },
         );
         self.push_event(entry)
@@ -629,6 +639,7 @@ impl SessionShared {
                 &SystemClock,
                 &self.game_id,
                 self.event_counter,
+                &self.decision_log,
                 cursor,
                 self.latest_state.round,
                 self.latest_state.phase,
@@ -637,6 +648,71 @@ impl SessionShared {
             );
             self.push_event(entry)?;
         }
+        Ok(())
+    }
+
+    /// Publish the facts of the state that the last step changed and no event of it told
+    /// (`ti4_host::protocol::state_fact`). A replay (`live` false) only moves the tally on: the
+    /// players saw those moments.
+    pub fn record_state_facts(
+        &mut self,
+        state: &GameState,
+        version: Option<u64>,
+        live: bool,
+    ) -> Result<(), String> {
+        let start = self.observed_to.min(self.event_log.len());
+        let observation = ti4_host::protocol::state_fact::observe_step(
+            &mut self.tally,
+            state,
+            &self.event_log[start..],
+        );
+        let cursor = journal::roll_cursor(&self.event_log);
+        if live && self.known_facts.0 != cursor {
+            self.known_facts.1.clear();
+            self.known_boards.clear();
+        }
+        if live && !observation.facts.is_empty() {
+            for observed in observation.facts {
+                if let Some(known) = self.known_facts.1.iter().position(|f| *f == observed.fact) {
+                    self.known_facts.1.remove(known);
+                    continue;
+                }
+                self.event_counter += 1;
+                let entry = journal::build_state_event(
+                    &SystemClock,
+                    &self.game_id,
+                    self.event_counter,
+                    &self.decision_log,
+                    cursor,
+                    state.round,
+                    state.phase,
+                    version,
+                    observed,
+                );
+                self.push_event(entry)?;
+            }
+        }
+        // The board after the facts that told the step: the last event of the step.
+        if live && let Some(board) = observation.board {
+            if let Some(known) = self.known_boards.iter().position(|b| *b == board) {
+                self.known_boards.remove(known);
+            } else {
+                self.event_counter += 1;
+                let entry = journal::build_board_event(
+                    &SystemClock,
+                    &self.game_id,
+                    self.event_counter,
+                    &self.decision_log,
+                    cursor,
+                    state.round,
+                    state.phase,
+                    version,
+                    board,
+                );
+                self.push_event(entry)?;
+            }
+        }
+        self.observed_to = self.event_log.len();
         Ok(())
     }
 
@@ -809,9 +885,7 @@ impl SessionShared {
             },
             Some(self.game_version),
             cursor,
-            None,
-            None,
-            None,
+            ti4_host::protocol::server::DecisionFacts::default(),
         )?;
         if !self.history_active {
             self.broadcast_game_over(winner, final_scores);
@@ -1381,13 +1455,12 @@ pub fn spawn_session_worker(
                 );
                 lock.decision_log = records[..start + index + 1].to_vec();
                 let version = lock.game_version;
-                let (detail, movement, seat_detail) =
-                    ti4_host::protocol::server::verified_decision_facts(
-                        record,
-                        selected.as_ref(),
-                        state.active_system.as_ref().map(|id| id.as_str()),
-                        state,
-                    );
+                let facts = ti4_host::protocol::server::verified_event_facts(
+                    record,
+                    selected.as_ref(),
+                    state.active_system.as_ref().map(|id| id.as_str()),
+                    state,
+                );
                 if let Some(store) = &lock.store
                     && !lock.history_active
                 {
@@ -1401,9 +1474,7 @@ pub fn spawn_session_worker(
                     GameEventKind::DecisionResolved,
                     Some(version),
                     start + index + 1,
-                    detail,
-                    movement,
-                    seat_detail,
+                    facts,
                 ) {
                     lock.error = Some(error);
                     return;
@@ -1500,9 +1571,7 @@ pub fn spawn_session_worker(
                 },
                 Some(version),
                 0,
-                None,
-                None,
-                None,
+                ti4_host::protocol::server::DecisionFacts::default(),
             ) {
                 lock.error = Some(error);
                 return;
@@ -1542,6 +1611,31 @@ pub fn spawn_session_worker(
         // How much of the game's roll history is already public: whatever a replay or a resumed
         // copy rolled before this point happened before the players' current view of the game.
         let mut rolls_seen = game.rolls().len();
+        {
+            let mut lock = worker_shared.lock().expect("shared lock");
+            lock.tally = ti4_host::protocol::state_fact::PublicTally::of(&game.state);
+            lock.observed_to = lock.event_log.len();
+            let cursor = journal::roll_cursor(&lock.event_log);
+            let known = lock
+                .event_log
+                .iter()
+                .filter(|event| {
+                    matches!(event.event, GameEventKind::StateChanged)
+                        && event.decision_count == Some(cursor)
+                })
+                .filter_map(|event| event.fact.clone())
+                .collect();
+            lock.known_facts = (cursor, known);
+            lock.known_boards = lock
+                .event_log
+                .iter()
+                .filter(|event| {
+                    matches!(event.event, GameEventKind::BoardChanged)
+                        && event.decision_count == Some(cursor)
+                })
+                .filter_map(|event| event.board.clone())
+                .collect();
+        }
 
         'worker: loop {
             // Check stop signal
@@ -1676,25 +1770,22 @@ pub fn spawn_session_worker(
                             true,
                         );
                         let offered = selected.as_ref();
-                        let (detail, movement, seat_detail) =
-                            ti4_host::protocol::server::verified_decision_facts(
-                                record,
-                                offered,
-                                lock.latest_state
-                                    .active_system
-                                    .as_ref()
-                                    .map(|id| id.as_str()),
-                                &lock.latest_state,
-                            );
+                        let facts = ti4_host::protocol::server::verified_event_facts(
+                            record,
+                            offered,
+                            lock.latest_state
+                                .active_system
+                                .as_ref()
+                                .map(|id| id.as_str()),
+                            &lock.latest_state,
+                        );
                         let event_error = lock
                             .record_and_broadcast_event(
                                 EventVisibility::Public,
                                 GameEventKind::DecisionResolved,
                                 Some(version),
                                 prev_decision_count + offset + 1,
-                                detail,
-                                movement,
-                                seat_detail,
+                                facts,
                             )
                             .err();
                         if let Some(error) = event_error {
@@ -1776,6 +1867,14 @@ pub fn spawn_session_worker(
                     rolls_seen = rolled;
                     lock.rolls_seen = rolled;
                 }
+                {
+                    let live = prior_queue.lock().expect("prior queue lock").is_empty();
+                    let version = lock.game_version;
+                    if let Err(error) = lock.record_state_facts(&game.state, Some(version), live) {
+                        lock.error = Some(error);
+                        break 'worker;
+                    }
+                }
                 if !lock.history_active
                     && game.table.log.records.len() - lock.snapshot_decision_count >= 32
                 {
@@ -1812,9 +1911,7 @@ pub fn spawn_session_worker(
                         },
                         Some(version),
                         cursor,
-                        None,
-                        None,
-                        None,
+                        ti4_host::protocol::server::DecisionFacts::default(),
                     ) {
                         lock.error = Some(error);
                         break 'worker;

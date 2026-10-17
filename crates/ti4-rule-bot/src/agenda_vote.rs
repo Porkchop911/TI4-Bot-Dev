@@ -1990,7 +1990,7 @@ pub fn rider_pick(
             let picked = choice
                 .options
                 .iter()
-                .position(|o| rider_aliases(o).iter().any(|a| *a == card));
+                .position(|o| rider_aliases(o).contains(&card));
             if picked.is_some() {
                 mark_rider(me, context.round, &agenda);
                 return picked;

@@ -10,9 +10,9 @@ playable.
 
 `GameState::rules_version: u32` (crates/ti4-model/src/state.rs). Constants next to it:
 
-- `RULES_VERSION` (now 16): what a **new** game plays. `GameState::new` sets it, so every way of
+- `RULES_VERSION` (now 17): what a **new** game plays. `GameState::new` sets it, so every way of
   creating a game (server, lobby, wasm host, selfplay, tests) gets the latest.
-- `RULES_<CHANGE>` (now `RULES_INFILTRATE_FIX = 1`, `RULES_MENDOSA_SHIP = 2`, `RULES_SABOTAGE_TIMING = 3`, `RULES_LETNEV_FLEET_POOL = 4`, `RULES_ENIGMATIC_DEVICE = 5`, `RULES_TECH_PAYMENT_CHOICE = 6`, `RULES_BRIBERY_PER_PLAYER = 7`, `RULES_MUNITIONS_AFTER_ROLL = 8`, `RULES_TECH_RIDER = 9`, `RULES_ACTION_CARD_TARGETS = 10`, `RULES_RETREAT_HAZARDS = 11`, `RULES_STATUS_GAIN = 12`, `RULES_TIMING_DOUBLE_PASS = 13`, `RULES_EXPLORE_BEFORE_CONTROL = 14`, `RULES_FLOATING_FACTORY_SPACE = 15`, `RULES_TE_MECATOL_LANDING = 16`): the first version with one gated change.
+- `RULES_<CHANGE>` (now `RULES_INFILTRATE_FIX = 1`, `RULES_MENDOSA_SHIP = 2`, `RULES_SABOTAGE_TIMING = 3`, `RULES_LETNEV_FLEET_POOL = 4`, `RULES_ENIGMATIC_DEVICE = 5`, `RULES_TECH_PAYMENT_CHOICE = 6`, `RULES_BRIBERY_PER_PLAYER = 7`, `RULES_MUNITIONS_AFTER_ROLL = 8`, `RULES_TECH_RIDER = 9`, `RULES_ACTION_CARD_TARGETS = 10`, `RULES_RETREAT_HAZARDS = 11`, `RULES_STATUS_GAIN = 12`, `RULES_TIMING_DOUBLE_PASS = 13`, `RULES_EXPLORE_BEFORE_CONTROL = 14`, `RULES_FLOATING_FACTORY_SPACE = 15`, `RULES_TE_MECATOL_LANDING = 16`, `RULES_TECH_PAYMENT_KEEPS_SPECIALTIES = 17`, `RULES_STATUS_REDISTRIBUTION_REFUSED = 17`): the first version with one gated change.
 A state without the field is **version 0**, the legacy rules (what the alpha ran until 2026-10-16).
 
 ## How it is stored (the checksum rule)
@@ -166,6 +166,24 @@ Version 16 = the Thunder's Edge Mecatol (niko, `RULES_TE_MECATOL_LANDING`):
 
 1. `invasion::landable_planets`: `mrte` is not landable while the custodians token is on it, as
    `mr`. Version < 16: only `mr` is held back.
+
+Version 17 = the research payment window and the refused redistribution (`mock-removal`, two
+constants of one version):
+
+1. `RULES_TECH_PAYMENT_KEEPS_SPECIALTIES`, `strategy_cards::paid_research` (Technology secondary,
+   and the primary's second technology): the payment is asked inside the research's own payment
+   window (`production::pay_in_window`; the Keleres agent is offered once, before the research
+   question, not again by the payment). The planets whose specialties the chosen technology's
+   prerequisites exhaust (`technology::specialties_spent_by_research`) are kept out of the payment,
+   and a technology is offered only when it can be paid without them (`research_payable`). The
+   `kept` of `details.payment` (`ResearchPaymentHints`) lists those planets, and is empty for an
+   older game. Version 6..16: `production::pay_seeing` over every ready planet, every researchable
+   technology offered (version 0..5: the cheapest plan, automatically).
+2. `RULES_STATUS_REDISTRIBUTION_REFUSED`, `Game::finish_status_phase`: a status-phase
+   redistribution (81.5) whose answer the engine refuses is an error of the step, and nothing is
+   gained or announced for the seat. Version < 17: the refusal is passed over, and the gain goes
+   into the tactic pool. Both versions keep the gain of `RULES_STATUS_GAIN` (version < 12: token
+   by token).
 
 ## Adding the next gate
 

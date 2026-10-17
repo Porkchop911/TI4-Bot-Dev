@@ -30,10 +30,28 @@ pub const ONGOING_COMBAT_FOUR_VIEWS_ID: &str = "ongoing_combat_four_views";
 pub const INVASION_FOUR_VIEWS_ID: &str = "ongoing_invasion_four_views";
 pub const INVASION_COEXISTENCE_ID: &str = "ongoing_invasion_coexistence";
 pub const INVASION_PARLEY_ID: &str = "ongoing_invasion_parley";
+pub const INVASION_DRAFT_ID: &str = "invasion_draft";
 pub const ENDGAME_ID: &str = "endgame";
 pub const SCORE_STATUS_ID: &str = "score_objective_status";
 pub const SCORE_IMPERIAL_ID: &str = "score_objective_imperial";
 pub const FULL_GAME_ID: &str = "full_game";
+pub const STRATEGY_IMPERIAL_MECATOL_ID: &str = "strategy_imperial_mecatol";
+
+/// The scenarios of one strategy card each: the id of the scenario and the card that Sol plays.
+pub const STRATEGY_CARDS: &[(&str, &str)] = &[
+    (STRATEGY_LEADERSHIP.id, "pok1leadership"),
+    (STRATEGY_DIPLOMACY.id, "pok2diplomacy"),
+    (STRATEGY_DIPLOMACY_BASE.id, "base2"),
+    (STRATEGY_POLITICS.id, "pok3politics"),
+    (STRATEGY_CONSTRUCTION.id, "pok4construction"),
+    (STRATEGY_CONSTRUCTION_BASE.id, "base4"),
+    (STRATEGY_CONSTRUCTION_TE.id, "te4construction"),
+    (STRATEGY_TRADE.id, "pok5trade"),
+    (STRATEGY_WARFARE.id, "pok6warfare"),
+    (STRATEGY_WARFARE_TE.id, "te6warfare"),
+    (STRATEGY_TECHNOLOGY.id, "pok7technology"),
+    (STRATEGY_IMPERIAL.id, "pok8imperial"),
+];
 
 /// Sol is played by a person, Hacan and Letnev by the rule bot.
 const SOL: &[usize] = &[0];
@@ -151,6 +169,17 @@ pub const INVASION_PARLEY: Scenario = Scenario {
     ..INVASION_FOUR_VIEWS
 };
 
+pub const INVASION_DRAFT: Scenario = Scenario {
+    id: INVASION_DRAFT_ID,
+    title: "Invasion in a Draft",
+    description: "Sol has the turn, with carriers, infantry and a mech already in a system of two \
+        planets of Letnev, each with two infantry, and an infantry of Hacan on the first. No \
+        PDS fires, so a draft of the tactical action reaches the landings on defended planets.",
+    humans: SOL,
+    opening: None,
+    ..INVASION_FOUR_VIEWS
+};
+
 pub const ENDGAME: Scenario = Scenario {
     id: ENDGAME_ID,
     title: "Endgame to Victory",
@@ -180,6 +209,134 @@ pub const SCORE_IMPERIAL: Scenario = Scenario {
     category: "Strategy",
     opening: Some(imperial_opening),
     ..BASE
+};
+
+const STRATEGY_DESCRIPTION: &str = "Sol has the turn and holds the strategy card of the \
+    title. Sol has 4 trade goods, controls a planet next to its home with its command token on \
+    that system, and a second system next to its home whose planets are exhausted. Hacan has 3 \
+    trade goods. Hacan and Letnev hold other cards; with Sol and Hacan played here, Hacan \
+    resolves the secondary.";
+
+const STRATEGY: Scenario = Scenario {
+    category: "Strategy",
+    description: STRATEGY_DESCRIPTION,
+    ..BASE
+};
+
+pub const STRATEGY_LEADERSHIP: Scenario = Scenario {
+    id: "strategy_leadership",
+    title: "Strategy card: Leadership",
+    ..STRATEGY
+};
+
+pub const STRATEGY_DIPLOMACY: Scenario = Scenario {
+    id: "strategy_diplomacy",
+    title: "Strategy card: Diplomacy",
+    description: "Sol has the turn and holds Diplomacy. Sol controls Jord, a planet next to its \
+        home with its command token on that system, and a second system next to its home; Jord \
+        and the planets of the second system are exhausted. The planets of Hacan's home are \
+        exhausted; with Sol and Hacan played here, Hacan resolves the secondary.",
+    ..STRATEGY
+};
+
+pub const STRATEGY_DIPLOMACY_BASE: Scenario = Scenario {
+    id: "strategy_diplomacy_base",
+    title: "Strategy card: Diplomacy (base game)",
+    description: "The scenario \"Strategy card: Diplomacy\" with the Diplomacy of the base game \
+        (base2). The engine resolves it as the Codex I card: it readies up to 2 exhausted planets \
+        anywhere, not each exhausted planet in the chosen system.",
+    ..STRATEGY
+};
+
+pub const STRATEGY_POLITICS: Scenario = Scenario {
+    id: "strategy_politics",
+    title: "Strategy card: Politics",
+    ..STRATEGY
+};
+
+const CONSTRUCTION_DESCRIPTION: &str = "Sol has the turn and holds Construction. Sol \
+    controls its home with a space dock, a planet next to it with a PDS and Sol's command token \
+    on that system, and a second system next to its home. With Sol and Hacan played here, Hacan \
+    resolves the secondary.";
+
+pub const STRATEGY_CONSTRUCTION: Scenario = Scenario {
+    id: "strategy_construction",
+    title: "Strategy card: Construction",
+    description: CONSTRUCTION_DESCRIPTION,
+    ..STRATEGY
+};
+
+pub const STRATEGY_CONSTRUCTION_BASE: Scenario = Scenario {
+    id: "strategy_construction_base",
+    title: "Strategy card: Construction (base game)",
+    description: "The scenario \"Strategy card: Construction\" on a table of the base game with \
+        Codex I, whose Construction is base4.",
+    ..STRATEGY
+};
+
+pub const STRATEGY_CONSTRUCTION_TE: Scenario = Scenario {
+    id: "strategy_construction_te",
+    title: "Strategy card: Construction (Thunder's Edge)",
+    description: "The scenario \"Strategy card: Construction\" on a table of Thunder's Edge, \
+        whose Construction places a structure or uses the PRODUCTION of a space dock, then places \
+        a structure.",
+    ..STRATEGY
+};
+
+pub const STRATEGY_TRADE: Scenario = Scenario {
+    id: "strategy_trade",
+    title: "Strategy card: Trade",
+    description: "Sol has the turn and holds Trade. Sol has 4 trade goods and 1 commodity; Hacan \
+        and Letnev have no commodities, so both can be chosen to replenish. With Sol and Hacan \
+        played here, Hacan resolves the secondary.",
+    ..STRATEGY
+};
+
+pub const STRATEGY_WARFARE: Scenario = Scenario {
+    id: "strategy_warfare",
+    title: "Strategy card: Warfare",
+    description: "Sol has the turn and holds Warfare, with its command token on a system next to \
+        its home to recall. With Sol and Hacan played here, Hacan resolves the secondary: a \
+        production at the space dock of its home.",
+    ..STRATEGY
+};
+
+pub const STRATEGY_WARFARE_TE: Scenario = Scenario {
+    id: "strategy_warfare_te",
+    title: "Strategy card: Warfare (Thunder's Edge)",
+    description: "The scenario \"Strategy card: Warfare\" on a table of Thunder's Edge, whose \
+        Warfare is a tactical action in any system without a command token, also in the system \
+        next to Sol's home that has its token, with a redistribution before and after.",
+    ..STRATEGY
+};
+
+pub const STRATEGY_TECHNOLOGY: Scenario = Scenario {
+    id: "strategy_technology",
+    title: "Strategy card: Technology",
+    description: "Sol has the turn and holds Technology, with 4 trade goods and the ready planets \
+        of a system next to its home: the second research of the primary is paid on the map. With \
+        Sol and Hacan played here, Hacan resolves the secondary and pays its 4 resources with its \
+        home planets and 3 trade goods.",
+    ..STRATEGY
+};
+
+pub const STRATEGY_IMPERIAL: Scenario = Scenario {
+    id: "strategy_imperial",
+    title: "Strategy card: Imperial",
+    description: "Sol has the turn and holds Imperial. Lead From the Front, Negotiate Trade \
+        Routes and Corner the Market are revealed; Sol can score the first two. Sol does not \
+        control Mecatol Rex, so Imperial draws a secret objective. With Sol and Hacan played \
+        here, Hacan resolves the secondary.",
+    ..STRATEGY
+};
+
+pub const STRATEGY_IMPERIAL_MECATOL: Scenario = Scenario {
+    id: STRATEGY_IMPERIAL_MECATOL_ID,
+    title: "Strategy card: Imperial (Mecatol Rex)",
+    description: "The scenario \"Strategy card: Imperial\" where Sol controls Mecatol Rex, with \
+        its infantry there and the custodians token taken: Imperial gains a victory point in place \
+        of the secret objective.",
+    ..STRATEGY
 };
 
 pub const FULL_GAME: Scenario = Scenario {
@@ -218,24 +375,159 @@ pub(super) fn apply(
             four_view_battle(state, &sol, &letnev);
             Ok(())
         }
-        INVASION_FOUR_VIEWS_ID | INVASION_COEXISTENCE_ID | INVASION_PARLEY_ID => {
-            invasion(state, galaxy, content, [&sol, &hacan, &letnev], id)
-        }
-        ENDGAME_ID => {
-            endgame(state, [&sol, &hacan, &letnev]);
-            Ok(())
-        }
+        INVASION_FOUR_VIEWS_ID
+        | INVASION_COEXISTENCE_ID
+        | INVASION_PARLEY_ID
+        | INVASION_DRAFT_ID => invasion(state, galaxy, content, [&sol, &hacan, &letnev], id),
+        ENDGAME_ID => endgame(state, [&sol, &hacan, &letnev]),
         SCORE_STATUS_ID => {
             score_status(state, &sol);
             Ok(())
         }
-        SCORE_IMPERIAL_ID => {
-            score_imperial(state, &sol);
-            Ok(())
-        }
+        SCORE_IMPERIAL_ID => score_imperial(state, &sol),
         FULL_GAME_ID => Ok(()),
-        other => Err(format!("no scenario '{other}' of three seats")),
+        STRATEGY_IMPERIAL_MECATOL_ID => {
+            strategy_card(
+                state,
+                galaxy,
+                content,
+                [&sol, &hacan, &letnev],
+                "pok8imperial",
+            )?;
+            hold_mecatol(state, galaxy, content, &sol)
+        }
+        other => match STRATEGY_CARDS.iter().find(|(id, _)| *id == other) {
+            Some((_, card)) => strategy_card(state, galaxy, content, [&sol, &hacan, &letnev], card),
+            None => Err(format!("no scenario '{other}' of three seats")),
+        },
     }
+}
+
+/// Sol holds `card` and has the turn, with what each card of the strategy scenarios needs: trade
+/// goods and ready planets to buy command tokens, a command token on the board to recall, a
+/// controlled system for Diplomacy and exhausted planets to ready, planets for structures.
+fn strategy_card(
+    state: &mut GameState,
+    galaxy: &Galaxy,
+    content: &ContentStore,
+    [sol, hacan, letnev]: [&PlayerId; 3],
+    card: &str,
+) -> Result<(), String> {
+    let name = |id: &str| ti4_engine::strategy_cards::card_name(content, id);
+    let others: Vec<&str> = ["pok3politics", "pok8imperial", "pok1leadership"]
+        .into_iter()
+        .filter(|other| name(other) != name(card))
+        .take(2)
+        .collect();
+    // A card of another set is played on a table of that set: the cards of this set leave it.
+    let in_play = state
+        .unclaimed_strategy_cards
+        .iter()
+        .chain(state.players.iter().flat_map(|seat| &seat.strategy_cards))
+        .any(|held| held.as_str() == card);
+    if !in_play {
+        let set = ["te", "base_game_codex1", "base_game"]
+            .into_iter()
+            .filter_map(|set| ti4_engine::setup::strategy_card_setup_for_set(content, set).ok())
+            .map(|(cards, _)| cards)
+            .find(|cards| cards.iter().any(|held| held.as_str() == card))
+            .ok_or_else(|| format!("no set of strategy cards has {card}"))?;
+        for seat in &mut state.players {
+            seat.strategy_cards.clear();
+        }
+        state.unclaimed_strategy_cards = set;
+    }
+    deal(
+        state,
+        &[(sol, card), (hacan, others[0]), (letnev, others[1])],
+    )?;
+    state
+        .player_mut(sol)
+        .ok_or("Sol is not seated")?
+        .trade_goods = 4;
+    // Enough for Hacan to buy a command token in the secondary of Leadership.
+    state
+        .player_mut(hacan)
+        .ok_or("Hacan is not seated")?
+        .trade_goods = 3;
+
+    // Two systems next to Sol's home with planets: the first is Sol's with its command token,
+    // the planets of the second are Sol's and exhausted.
+    let with_planets: Vec<&str> = galaxy
+        .adjacent("01")
+        .into_iter()
+        .filter(|id| {
+            ti4_content::galaxy::system(content, id, POK)
+                .is_some_and(|tile| !tile.planets().is_empty())
+        })
+        .take(2)
+        .collect();
+    let [first, second] = with_planets[..] else {
+        return Err("the strategy scenarios need two systems with planets next to Sol".to_owned());
+    };
+    for (system, exhausted) in [(first, false), (second, true)] {
+        let planets = ti4_content::galaxy::system(content, system, POK)
+            .map(|tile| tile.planets())
+            .unwrap_or_default();
+        let board = state.system_mut(&SystemId::new(system));
+        board.units.clear();
+        board.command_tokens.clear();
+        for planet in &planets {
+            board.planet_units.remove(&PlanetId::new(*planet));
+            board.land(
+                &PlanetId::new(*planet),
+                &[Unit::new(UnitTypeId::new("infantry"), sol.clone())],
+            );
+            board.set_control(PlanetId::new(*planet), sol.clone());
+        }
+        if !exhausted {
+            board.command_tokens.insert(sol.clone());
+        }
+        if exhausted {
+            for planet in planets {
+                state.exhaust_planet(PlanetId::new(planet));
+            }
+        }
+    }
+    if name(card).as_deref() == Some("Construction") {
+        // A PDS on the first planet of the first system: a second PDS there fills it.
+        let planet = ti4_content::galaxy::system(content, first, POK)
+            .and_then(|tile| tile.planets().first().map(|planet| PlanetId::new(*planet)))
+            .ok_or("the first system has no planet")?;
+        state
+            .system_mut(&SystemId::new(first))
+            .planet_units
+            .entry(planet)
+            .or_default()
+            .push(Unit::new(UnitTypeId::new("pds"), sol.clone()));
+    }
+    if name(card).as_deref() == Some("Imperial") {
+        // Two public objectives that Sol fulfils, and one that it does not.
+        revealed_objectives(state, sol);
+    }
+    if name(card).as_deref() == Some("Trade") {
+        // Below its limit, so that the replenish of Sol shows a change.
+        state
+            .player_mut(sol)
+            .ok_or("Sol is not seated")?
+            .commodities = 1;
+    }
+    if name(card).as_deref() == Some("Diplomacy") {
+        // More exhausted planets than Diplomacy readies, for Sol and for Hacan's secondary.
+        for seat in [sol, hacan] {
+            let home = state
+                .player(seat)
+                .and_then(|player| player.home_system.clone())
+                .ok_or("a seat has no home")?;
+            let planets = ti4_content::galaxy::system(content, home.as_str(), POK)
+                .map(|tile| tile.planets())
+                .unwrap_or_default();
+            for planet in planets {
+                state.exhaust_planet(PlanetId::new(planet));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The system that the scenario `id` prepared on `galaxy` for its opening: the border system of a
@@ -254,6 +546,42 @@ pub(super) fn prepared_system(id: &str, galaxy: &Galaxy, content: &ContentStore)
     }
 }
 
+/// The cards that `seat` holds go back to the unclaimed cards, which stay in the order of their
+/// initiative.
+fn release(state: &mut GameState, seat: &PlayerId) -> Result<(), String> {
+    let held = std::mem::take(
+        &mut state
+            .player_mut(seat)
+            .ok_or("a seat is missing")?
+            .strategy_cards,
+    );
+    state.unclaimed_strategy_cards.extend(held);
+    let initiative = state.card_initiative.clone();
+    state
+        .unclaimed_strategy_cards
+        .sort_by_key(|card| initiative.get(card).copied().unwrap_or(i32::MAX));
+    Ok(())
+}
+
+/// Each seat of `held` holds its card alone: what it held before goes back to the unclaimed
+/// cards, and the card that it holds now leaves them.
+fn deal(state: &mut GameState, held: &[(&PlayerId, &str)]) -> Result<(), String> {
+    for (seat, _) in held {
+        release(state, seat)?;
+    }
+    for (seat, card) in held {
+        let card = StrategyCardId::new(*card);
+        state
+            .unclaimed_strategy_cards
+            .retain(|unclaimed| *unclaimed != card);
+        state
+            .player_mut(seat)
+            .ok_or("a seat is missing")?
+            .strategy_cards = vec![card];
+    }
+    Ok(())
+}
+
 /// The game of every scenario of three seats: Sol has Leadership, Hacan Trade and Letnev
 /// Warfare, and Sol has the first turn of the action phase.
 fn base(state: &mut GameState) -> Result<[PlayerId; 3], String> {
@@ -261,20 +589,14 @@ fn base(state: &mut GameState) -> Result<[PlayerId; 3], String> {
         [a, b, c] => [a.id.clone(), b.id.clone(), c.id.clone()],
         seats => return Err(format!("a game of three seats has {}", seats.len())),
     };
-    let cards = [
-        (&sol, StrategyCardId::new("leadership")),
-        (&hacan, StrategyCardId::new("trade")),
-        (&letnev, StrategyCardId::new("warfare")),
-    ];
-    for (seat, card) in &cards {
-        state
-            .player_mut(seat)
-            .ok_or("a seat is missing")?
-            .strategy_cards = vec![card.clone()];
-    }
-    state
-        .unclaimed_strategy_cards
-        .retain(|card| cards.iter().all(|(_, dealt)| dealt != card));
+    deal(
+        state,
+        &[
+            (&sol, "pok1leadership"),
+            (&hacan, "pok5trade"),
+            (&letnev, "pok6warfare"),
+        ],
+    )?;
     phase::advance_phase(state);
     phase::begin_action_turn(state, &sol);
     let seat = state.player_mut(&sol).ok_or("Sol is not seated")?;
@@ -305,20 +627,13 @@ fn research(
     content: &ContentStore,
     sol: &PlayerId,
 ) -> Result<(), String> {
-    let technology = StrategyCardId::new("pok7technology");
+    deal(state, &[(sol, "pok7technology")])?;
     if let Some(seat) = state.player_mut(sol) {
-        seat.strategy_cards = vec![technology.clone()];
         seat.trade_goods = 6;
         seat.technologies = [TechnologyId::new("amd"), TechnologyId::new("nm")]
             .into_iter()
             .collect();
     }
-    state
-        .unclaimed_strategy_cards
-        .retain(|card| *card != technology);
-    state
-        .unclaimed_strategy_cards
-        .push(StrategyCardId::new("leadership"));
 
     // One ready Biotic skip (Sol's Spec Ops II needs a second green prerequisite) and one
     // exhausted skip of any colour, whichever planets this map carries.
@@ -553,7 +868,10 @@ fn invasion(
     [invader, third, defender]: [&PlayerId; 3],
     id: &str,
 ) -> Result<(), String> {
-    let coexistence = id == INVASION_COEXISTENCE_ID;
+    // The draft has no PDS and no card at the start of the invasion: nothing stops a draft
+    // before the landings.
+    let draft = id == INVASION_DRAFT_ID;
+    let coexistence = id == INVASION_COEXISTENCE_ID || draft;
     let system = invasion_system(galaxy, content, coexistence)?;
     let planets: Vec<PlanetId> = ti4_content::galaxy::system(content, system, POK)
         .ok_or("the system of the invasion is not in the content")?
@@ -587,14 +905,14 @@ fn invasion(
         .push(Unit::new(UnitTypeId::new("mech"), invader.clone()));
     for planet in &planets {
         board.set_control(planet.clone(), defender.clone());
-        board.planet_units.insert(
-            planet.clone(),
-            vec![
-                Unit::new(UnitTypeId::new("infantry"), defender.clone()),
-                Unit::new(UnitTypeId::new("infantry"), defender.clone()),
-                Unit::new(UnitTypeId::new("pds"), defender.clone()),
-            ],
-        );
+        let mut units = vec![
+            Unit::new(UnitTypeId::new("infantry"), defender.clone()),
+            Unit::new(UnitTypeId::new("infantry"), defender.clone()),
+        ];
+        if !draft {
+            units.push(Unit::new(UnitTypeId::new("pds"), defender.clone()));
+        }
+        board.planet_units.insert(planet.clone(), units);
     }
     if coexistence {
         board
@@ -607,6 +925,9 @@ fn invasion(
             .entry(planets[0].clone())
             .or_default()
             .insert(third.clone());
+    }
+    if draft {
+        return Ok(());
     }
     // A card of the start of an invasion holds the game at the first public boundary.
     state
@@ -624,17 +945,18 @@ fn invasion(
     Ok(())
 }
 
-fn endgame(state: &mut GameState, seats: [&PlayerId; 3]) {
+fn endgame(state: &mut GameState, seats: [&PlayerId; 3]) -> Result<(), String> {
     for (seat, points) in seats.into_iter().zip([9, 9, 8]) {
+        release(state, seat)?;
         if let Some(player) = state.player_mut(seat) {
             player.victory_points = points;
             player.tactic_tokens = 0;
             player.strategic_tokens = 0;
-            player.strategy_cards.clear();
         }
     }
     state.objective_deck.clear();
     state.round = 5;
+    Ok(())
 }
 
 /// Lead From the Front, Negotiate Trade Routes and Corner the Market are revealed and nobody
@@ -655,25 +977,45 @@ fn revealed_objectives(state: &mut GameState, sol: &PlayerId) {
     }
 }
 
+/// Sol controls Mecatol Rex with an infantry, and took the custodians token for its point.
+fn hold_mecatol(
+    state: &mut GameState,
+    galaxy: &Galaxy,
+    content: &ContentStore,
+    sol: &PlayerId,
+) -> Result<(), String> {
+    let system = galaxy
+        .system_ids()
+        .into_iter()
+        .find(|id| ti4_engine::seating::is_mecatol(id))
+        .ok_or("the board has no Mecatol Rex")?
+        .to_owned();
+    let planet = ti4_content::galaxy::system(content, &system, POK)
+        .and_then(|tile| tile.planets().first().map(|planet| PlanetId::new(*planet)))
+        .ok_or("Mecatol Rex has no planet")?;
+    let board = state.system_mut(&SystemId::new(&system));
+    board.planet_units.remove(&planet);
+    board.land(
+        &planet,
+        &[Unit::new(UnitTypeId::new("infantry"), sol.clone())],
+    );
+    board.set_control(planet, sol.clone());
+    state.custodians_removed = true;
+    ti4_engine::objectives::adjust_victory_points(state, sol, 1, "custodians");
+    Ok(())
+}
+
 fn score_status(state: &mut GameState, sol: &PlayerId) {
     state.phase = Phase::Status;
     state.active = None;
     revealed_objectives(state, sol);
 }
 
-fn score_imperial(state: &mut GameState, sol: &PlayerId) {
-    let imperial = StrategyCardId::new("pok8imperial");
-    if let Some(seat) = state.player_mut(sol) {
-        seat.strategy_cards = vec![imperial.clone()];
-    }
-    state
-        .unclaimed_strategy_cards
-        .retain(|card| *card != imperial);
-    state
-        .unclaimed_strategy_cards
-        .push(StrategyCardId::new("leadership"));
+fn score_imperial(state: &mut GameState, sol: &PlayerId) -> Result<(), String> {
+    deal(state, &[(sol, "pok8imperial")])?;
     revealed_objectives(state, sol);
     state.active = Some(sol.clone());
+    Ok(())
 }
 
 // --- the openings ------------------------------------------------------------------------------

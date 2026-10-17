@@ -8,8 +8,10 @@
 //! The roots are what a page sends and reads: `ClientMessage` and `ServerMessage` of
 //! `ti4_host::protocol`, the catalogue, the setup of a table (its options and preview as the
 //! server and the engine give them, its draw, and the game request of a start), the odds of a
-//! space and of a ground combat, and the save of a game. Every type that they name is written
-//! with them.
+//! space and of a ground combat, the standing of a fleet, the save of a game, and the look-ahead
+//! details of the strategy-card questions, of a transaction and of the texts that name ids
+//! (`Choice.details` is untyped JSON, so each struct that the engine writes there with
+//! `Choice::hinted` is a root). Every type that they name is written with them.
 
 use std::any::TypeId;
 use std::collections::{BTreeMap, HashSet};
@@ -60,6 +62,21 @@ pub fn files() -> BTreeMap<String, String> {
     collect.visit::<ti4_calc::odds::BattleResponse>();
     collect.visit::<ti4_calc::odds::GroundOddsRequest>();
     collect.visit::<ti4_calc::odds::GroundOddsResponse>();
+    collect.visit::<ti4_engine::fleet::Standing>();
+    // ts-rs inlines a flattened struct, so the shared part is a root of its own.
+    collect.visit::<ti4_engine::strategy_cards::PaymentHints>();
+    collect.visit::<ti4_engine::strategy_cards::ResearchPaymentHints>();
+    collect.visit::<ti4_engine::strategy_cards::PurchaseHints>();
+    collect.visit::<ti4_engine::strategy_cards::StructureHints>();
+    collect.visit::<ti4_engine::tokens::RedistributionHints>();
+    collect.visit::<ti4_engine::strategy_cards::ReadyHints>();
+    collect.visit::<ti4_engine::strategy_cards::PoliticsHints>();
+    collect.visit::<ti4_engine::strategy_cards::AgendaPlacementHints>();
+    collect.visit::<ti4_engine::strategy_cards::TradeReplenishHints>();
+    collect.visit::<ti4_engine::strategy_cards::CommodityStanding>();
+    collect.visit::<ti4_engine::strategy_cards::ImperialHints>();
+    collect.visit::<ti4_engine::transactions::TransactionHints>();
+    collect.visit::<ti4_engine::phrases::PhraseHints>();
     collect.visit::<crate::host_session::HostSave>();
     let mut index = format!("{NOTE}\n");
     for name in collect.names.keys() {

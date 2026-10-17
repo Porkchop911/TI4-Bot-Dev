@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { NO_EVENTS } from "./events";
 import type { GameSession, Intent } from "../model";
 import {
   type Draft,
@@ -15,6 +16,9 @@ import {
   newDraft,
   parseDraft as parsePlan,
   problemOf,
+  reactivate,
+  removeEntry,
+  reviewOf,
   redo,
   scriptOf,
   setLandings,
@@ -37,10 +41,11 @@ import {
 } from "./landingDraft";
 import { type MovementDraft, fill, poolOfSource, resetOrigin, setCount } from "./movementDraft";
 import { type KeptOdds, type OddsRequest, oddsRequest } from "./movementOdds";
+import { type GroundOddsAsk, type KeptGroundOdds, groundAsks } from "./groundOdds";
 import { type MovementPlan, type PlanStep, draftOf, stageOf, stepsOf } from "./movementPlan";
 import {
-  GOODS,
   EMPTY as NO_PRODUCTION,
+  type KeptStanding,
   type ProductionDraft,
   autoPay,
   clearPayment,
@@ -50,6 +55,7 @@ import {
   stepsOf as productionSteps,
   setGoods,
   setCount as setProductionCount,
+  stagedCounts,
   togglePlanet,
   totals,
 } from "./productionDraft";
@@ -73,19 +79,43 @@ import {
   scopeOf,
   scriptOf as followScriptOf,
 } from "./secondaryDraft";
-import type { DraftInfo, FollowInfo, LocalState } from "./select/action";
+import {
+  type DraftInfo,
+  type FollowInfo,
+  type LocalState,
+  optionOfSeat,
+  optionOnBoard,
+} from "./select/action";
 import type { CardSettings } from "./select/cards";
-import { systemLabel } from "./select/movement";
+import { systemLabel, tilesOf } from "./select/movement";
 import { selectShell } from "./select/shell";
 import { tacticalFacts } from "./select/tactical";
+import type { EditorSlot } from "./select/editor";
+import { editorOf } from "./select/editors";
+import {
+  payResearch,
+  researchPlan,
+  selectResearch,
+  setResearchGoods,
+  toggleResearchPlanet,
+} from "./select/research";
 import { countPools, selectTokens } from "./select/tokens";
 import type { Transport } from "./transport";
-import type { DraftOutcome, DraftStep, PlanScope, ReactionModes, SessionUpdate } from "./wire";
+import type {
+  DraftOutcome,
+  DraftStep,
+  FleetCounts,
+  PlanScope,
+  ReactionModes,
+  SessionUpdate,
+} from "./wire";
 
 const NOTHING: LocalState = {
   inspected: null,
   staged: null,
   pools: null,
+  researchPay: null,
+  editor: null,
   sent: null,
   error: null,
   replaying: null,
@@ -103,6 +133,7 @@ const NOTHING: LocalState = {
   draftLocked: null,
   draft: null,
   odds: null,
+  menu: null,
 };
 
 /** The label of a system as the activation step lists it, for the search field. */
@@ -137,6 +168,8 @@ interface Plan {
   open: boolean;
   /** The step of the draft that the player chose to see. Null: where the draft is open. */
   stage: Stage | null;
+  /** The recorded activation is open to choose another system. */
+  editing?: boolean;
 }
 
 const readPlanOf = (store: SeatStore | undefined): Plan => ({
@@ -190,7 +223,7 @@ const menuNonce = (update: SessionUpdate, local: LocalState): string | null => {
 
 /** What "Apply to Live" sends, in words: the steps of the draft that the game played. */
 function applyItems(update: SessionUpdate, system: string, sent: PlanStep[], entry: DraftEntry) {
-  const tiles = new Map((update.view.board.map_tiles ?? []).map((tile) => [tile.system_id, tile]));
+  const tiles = tilesOf(update);
   const items = [`Activate ${systemLabel(tiles, system)}`];
   const has = (stage: Stage) => sent.some((step) => stageOf(step) === stage);
   if (!has("movement")) {
@@ -249,9 +282,13 @@ function draftView(
   chosen: Stage | null,
   /** The outcome is of an older script, or of the game before its last update. */
   waiting: boolean,
+  /** The recorded activation is open: the run is of the action only, at the choice of a system. */
+  editing = false,
 ): { update: SessionUpdate; local: LocalState; stage: Stage | null; sent: PlanStep[] } {
-  const entry = entryOf(draft);
-  const problem = problemOf(entry, outcome);
+  const recordedSystem = entryOf(draft).system;
+  const entry = editing ? { ...entryOf(draft), system: null } : entryOf(draft);
+  const problem = problemOf(entry, outcome, (id) => systemLabel(tilesOf(live), id));
+  const refused = editing ? null : reviewOf(entry, outcome);
   // The step in view: the one that the player chose, while the game still asks for it.
   const stage =
     entry.system === null ? null : chosen && outcome[chosen] ? chosen : frontier(outcome);
@@ -274,8 +311,9 @@ function draftView(
     canUndo: canUndo(draft),
     canRedo: canRedo(draft),
     canApply,
-    applyHint:
-      entry.system === null
+    applyHint: editing
+      ? "Activate a system to end the edit"
+      : entry.system === null
         ? "Choose a system first"
         : waiting
           ? "The game checks the draft"
@@ -295,13 +333,26 @@ function draftView(
     problem,
     waiting,
     stage,
-    reached: STAGES.filter((item) => outcome[item] !== undefined),
+    // While the activation is open the run is of the action only: the tabs keep the recorded steps.
+    reached: editing
+      ? STAGES.filter((item) => stepsOfStage(entryOf(draft), item) !== null)
+      : STAGES.filter((item) => outcome[item] !== undefined),
     recorded,
     next,
+    boundary: isBoundary(outcome) && stage !== null && stage === frontier(outcome),
     ends:
       recorded && !next && outcome.stop.kind === "complete"
         ? "The action ends here. Every step is drafted."
         : null,
+    fromMenu: atMenu,
+    editing: editing ? recordedSystem : null,
+    // The row of the refused entry is in its step, or where the game stopped before it.
+    review: refused && {
+      entry: refused,
+      at:
+        refused.stage === null ? null : outcome[refused.stage] ? refused.stage : frontier(outcome),
+      system: recordedSystem,
+    },
   };
   const steps = (of: Stage) => stepsOfStage(entry, of) ?? [];
   return {
@@ -312,6 +363,7 @@ function draftView(
       ...local,
       sent: null,
       canUndo: false,
+      rolls: [],
       movement: facts?.kind === "movement" ? draftOf(facts, steps("movement")) : {},
       landing: facts?.kind === "invasion" ? landingOf(facts, steps("invasion")) : {},
       production:
@@ -389,6 +441,10 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
   /** What the game made of the draft, as the transport told it last. */
   const [run, setRun] = useState<DraftRun | null>(null);
+  /** Counts the answers of the game to the viewer (`ShellView.reply`). */
+  const [reply, setReply] = useState(0);
+  /** Counts the new questions of the viewer (`ShellView.question`). */
+  const [question, setQuestion] = useState(0);
   /** The script that the transport was asked last, and the update of then. An answer for another script is late. */
   const asked = useRef<{ wanted: Wanted; base: SessionUpdate } | null>(null);
   /** The last update, for a change of another tab. */
@@ -417,8 +473,10 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
     let inspectedBefore: string | null = null;
     /** The question of the viewer at the last update. Undefined: the game asked the viewer nothing. */
     let choiceAt: string | undefined;
+    const replied = () => setReply((now) => now + 1);
     return transport?.subscribe((event) => {
       if (event.kind === "error") {
+        replied();
         setLocal((now) => ({ ...now, staged: null, replaying: null, error: event.message }));
         return;
       }
@@ -442,18 +500,16 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           same(event.scope ?? null, last.wanted.scope ?? null)
         ) {
           setRun({ ...last, outcome: event.outcome });
+          replied();
         }
         return;
       }
       if (event.kind === "modes") {
         return setModes(event.modes);
       }
+      // A window that was passed for a muted reaction is not shown: the viewer was not asked.
       if (event.kind === "passed") {
-        const { cards: passed } = event;
-        return setToast((now) => ({
-          id: (now?.id ?? 0) + 1,
-          text: `${passed.join(", ")}: not offered now. The window was passed.`,
-        }));
+        return;
       }
       if (event.kind === "status") {
         const { status } = event;
@@ -462,10 +518,12 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
       // An answer that was lost or refused is not sent: the next update has the same question,
       // and it can be answered again.
       if (event.kind === "offline") {
+        replied();
         return setLocal((now) => ({ ...now, offline: true, sent: null }));
       }
       if (event.kind === "rejected") {
         const { reason } = event;
+        replied();
         setLocal((now) => ({ ...now, sent: null }));
         return setToast((now) => ({ id: (now?.id ?? 0) + 1, text: reason }));
       }
@@ -489,6 +547,10 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
       const fresh =
         event.update.pending_choice?.nonce !== choiceAt || !!event.plan || !!event.undone;
       choiceAt = event.update.pending_choice?.nonce;
+      if (fresh) {
+        replied();
+        setQuestion((now) => now + 1);
+      }
       // A new choice starts with nothing staged. The inspector stays where the player left it.
       setLocal((now) => {
         if (opens) {
@@ -508,6 +570,8 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             replaying: null,
             canUndo: event.canUndo,
             stepping: event.stepping?.seat ?? null,
+            rolls: event.rolls ?? [],
+            events: event.events ?? NO_EVENTS,
           };
         }
         const facts = event.update.tactical;
@@ -577,6 +641,8 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           inspected,
           staged: null,
           pools: null,
+          researchPay: null,
+          editor: null,
           sent: null,
           error: null,
           offline: false,
@@ -592,7 +658,12 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           remaining,
           planNote,
           stepping: event.stepping?.seat ?? null,
+          rolls: event.rolls ?? [],
+          events: event.events ?? NO_EVENTS,
           odds: null,
+          groundOdds: {},
+          standing: null,
+          menu: null,
         };
       });
     });
@@ -750,7 +821,11 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
   // transport is asked, and answers later (`draft` of its events).
   const entry = plan.draft ? entryOf(plan.draft) : null;
   const locked = update ? draftLock(update, local) : "The game has not started";
-  const script = useMemo(() => (entry ? scriptOf(entry) : null), [entry]);
+  // While the recorded activation is open, the game is asked for the choice of a system.
+  const script = useMemo(
+    () => (entry ? scriptOf(plan.editing ? { ...entry, system: null } : entry) : null),
+    [entry, plan.editing],
+  );
   const wanted = useMemo(
     (): Wanted | null =>
       plan.open && !locked
@@ -794,6 +869,9 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
       ? run.outcome
       : ((run && !run.wanted.scope ? run.outcome : null) ?? unanswered);
   const waiting = tactical && !settled;
+  /** The draft is shorter than the one of the answer on the screen: a step of it was taken back. */
+  const shrunk =
+    tactical && !!run && !run.wanted.scope && wanted.script.length < run.wanted.script.length;
   /** What the game made of the draft of the secondary. Until the answer, of the draft before. */
   const followOutcome = wanted?.scope && run?.wanted.scope ? run.outcome : null;
   const followChecked = !!wanted?.scope && settled;
@@ -818,7 +896,13 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
     setLocal((now) => ({ ...now, inspected: system, productionStage: "build" }));
   }, [draftSheet]);
 
-  const built = useMemo((): { session: GameSession; odds: OddsRequest | null } | null => {
+  const built = useMemo((): {
+    session: GameSession;
+    odds: OddsRequest | null;
+    ground: GroundOddsAsk[];
+    /** The counts of the staged build of a production, for the fleet supply and the capacity. */
+    standing: FleetCounts | null;
+  } | null => {
     if (!update || !transport) {
       return null;
     }
@@ -841,10 +925,16 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             canSend: reached !== null && !drafted0.ready && over && drafted0.answers.length > 0,
           }
         : null;
-    const live: LocalState = { ...local, draftLocked: locked, draft: null, follow: followInfo };
+    const live: LocalState = {
+      ...local,
+      draftLocked: locked,
+      draft: null,
+      follow: followInfo,
+      drafted: plan.draft ? { system: entryOf(plan.draft).system } : null,
+    };
     const drafted =
       plan.draft && outcome
-        ? draftView(update, live, plan.draft, outcome, plan.stage, waiting)
+        ? draftView(update, live, plan.draft, outcome, plan.stage, waiting, !!plan.editing)
         : null;
     // The editor of the secondary asks the question of the draft, on the game as it is.
     const shown =
@@ -868,14 +958,21 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         ...now,
         staged: null,
         pools: null,
+        researchPay: null,
+        editor: null,
         inspected: null,
         handled: [],
         step: null,
       }));
     };
-    /** A change of the draft: one step of its undo. */
+    /** A change of the draft: one step of its undo. It ends an edit of the activation. */
     const redraft = (change: (now: Draft) => Draft) =>
-      setPlan((now) => (now.draft ? { ...now, draft: change(now.draft) } : now));
+      setPlan((now) => (now.draft ? { ...now, draft: change(now.draft), editing: false } : now));
+    /** Ends the edit of the recorded activation; `step` is the step in view after it. */
+    const endEdit = (step: 0 | null) => {
+      setPlan((now) => ({ ...now, editing: false }));
+      setLocal((now) => ({ ...now, staged: null, inspected: null, step }));
+    };
     /**
      * A change of the step in view: one step of undo. The step stays in view, also when the
      * game comes to a later step with it.
@@ -901,6 +998,30 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
     const moving = facts?.kind === "movement" ? facts : null;
     const landing = facts?.kind === "invasion" ? facts : null;
     const producing = facts?.kind === "production" ? facts : null;
+    /** A paid research of the live game: the technology and its payment on the map, sent at once. */
+    const researching =
+      pending &&
+      !drafted &&
+      !followInfo?.editing &&
+      pending.choice.details?.payment &&
+      selectResearch(shown, pending.choice, null, null, null)
+        ? pending
+        : null;
+    /**
+     * The editor of the open question of the live game (`select/editors.ts`): several questions
+     * on one screen, answered at once.
+     */
+    const editor =
+      pending && !drafted && !followInfo?.editing
+        ? editorOf(shown, pending.choice, local.editor)
+        : null;
+    /** A change of what is staged in the editor. False: the editor does not take it. */
+    const restaged = (slot: EditorSlot | null, more: Partial<LocalState> = {}) => {
+      if (slot) {
+        setLocal((now) => ({ ...now, ...more, editor: slot }));
+      }
+      return slot !== null;
+    };
     /** The game can be asked for a staged production: it is paid, and within its limits. */
     const paidFor = (staged: ProductionDraft) => {
       const { units, cost, paid } = producing
@@ -1011,7 +1132,11 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         // Nothing of a draft is sent. Its activation is recorded, and a step with nothing
         // staged is recorded as that ("Move nothing"), so that the draft goes on.
         const system = facts?.kind === "activation" ? state.staged : null;
-        if (system) {
+        if (system && plan.editing) {
+          // Another system replaces the activation; the game checks the later steps again.
+          redraft((now) => reactivate(now, system));
+          setLocal((now) => ({ ...now, staged: null, inspected: null, step: null }));
+        } else if (system) {
           redraft((now) => activate(now, system));
           setLocal((now) => ({ ...now, staged: null, inspected: null }));
         } else if (moving) {
@@ -1064,6 +1189,36 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             : { destination: landing!.active, steps: landingSteps(landing!, local.landing) },
         );
         return setLocal((now) => ({ ...now, sent: pending.nonce, planNote: null }));
+      }
+      // A paid research answers its technology, and its payment as the game asks for it.
+      if (researching && local.staged) {
+        const steps = researchPlan(researching.choice, local.staged, local.researchPay ?? null);
+        if (steps) {
+          transport.applyDraft(pending.nonce, {
+            choices: [local.staged],
+            plan: { destination: "", steps },
+          });
+          setLocal((now) => ({
+            ...now,
+            staged: null,
+            researchPay: null,
+            sent: pending.nonce,
+            planNote: null,
+          }));
+        }
+        return;
+      }
+      // An editor answers every question of its screen at once.
+      if (editor) {
+        const answers = editor.view.send;
+        if (answers) {
+          transport.applyDraft(pending.nonce, {
+            choices: answers.choices,
+            plan: answers.plan && { destination: "", steps: answers.plan },
+          });
+          setLocal((now) => ({ ...now, editor: null, sent: pending.nonce, planNote: null }));
+        }
+        return;
       }
       const chosen = pools ? pools.staged : (local.staged ?? pass);
       if (chosen) {
@@ -1139,7 +1294,87 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             : setLocal((now) => ({ ...now, inspected: intent.system }));
         case "closeInspector":
           return setLocal((now) => ({ ...now, inspected: null }));
+        case "inspectTurn":
+          // A turn of the Log opens read-only; its board is in view, the inspector closes.
+          return setLocal((now) => ({
+            ...now,
+            inspected: now.inspect?.turn === intent.turn ? now.inspected : null,
+            inspect: {
+              turn: intent.turn,
+              step: intent.step ?? null,
+              // A tab of the turn in view keeps it in Watch or in the history.
+              watch:
+                intent.watch ?? (now.inspect?.turn === intent.turn ? now.inspect.watch : false),
+            },
+          }));
+        case "closeTurn":
+          return setLocal((now) => ({ ...now, inspect: null, inspected: null }));
+        case "pickAction": {
+          if (intent.action !== "tactical") {
+            return intent.card ? stage(intent.card) : undefined;
+          }
+          // A tactical action opens as the private draft: the one that the seat prepared, or a
+          // new one. A system of the map is staged in it; a draft of another system starts over,
+          // which is one step of its undo.
+          if (locked || !pending?.choice.options.some((option) => option.id === "tactical")) {
+            return;
+          }
+          const kept = plan.draft ?? newDraft();
+          const system = intent.system ?? null;
+          const other = system !== null && entryOf(kept).system !== null;
+          const same = other && entryOf(kept).system === system;
+          workspace(true, other && !same ? startOver(kept) : kept);
+          if (system !== null && !same) {
+            setLocal((now) => ({ ...now, staged: system, inspected: system }));
+          }
+          return;
+        }
+        case "pickGroup":
+          return setLocal((now) => ({ ...now, menu: intent.group, staged: null }));
+        case "backToPicker":
+          // One level back: from the draft to the turn menu, from a staged action to its list,
+          // from a list to the picker.
+          if (plan.open) {
+            return workspace(false, plan.draft);
+          }
+          return setLocal((now) =>
+            now.staged ? { ...now, staged: null } : { ...now, menu: null },
+          );
+        case "pass":
+          return stage("pass");
+        case "endTurn": {
+          const end = pending?.choice.options.find(
+            (option) => option.kind === "end_turn" || option.id === "end_turn",
+          );
+          if (!pending || !end || drafted) {
+            return;
+          }
+          transport.submitChoice(pending.nonce, end.id);
+          return setLocal((now) => ({ ...now, staged: null, sent: pending.nonce }));
+        }
+        case "pickSeat": {
+          // A seat of an editor that chooses several: chosen, or given back.
+          if (editor) {
+            return void restaged(editor.seat(intent.seat));
+          }
+          const option = optionOfSeat(pending?.choice ?? null, intent.seat);
+          return option ? stage(option) : undefined;
+        }
         case "chooseOption": {
+          // A row of an editor: the place of an agenda card, the kind of a structure, the answer
+          // of a window, an objective.
+          if (restaged(editor?.option(intent.group, intent.option) ?? null)) {
+            return;
+          }
+          // A partner of a transaction is sent on the pick: opening a transaction is free (94.1a),
+          // and the game then asks the transaction itself. Nothing is staged.
+          const open = pending?.choice.options.find(
+            (option) => option.id === intent.option && option.kind === "open_transaction",
+          );
+          if (pending && open && !drafted) {
+            transport.submitChoice(pending.nonce, open.id);
+            return setLocal((now) => ({ ...now, staged: null, sent: pending.nonce }));
+          }
           // The kind of ground force that a tap lands is a choice of the hand.
           const force = intent.group === "landing" ? forceOfId(intent.option) : null;
           return landing && force !== null
@@ -1156,6 +1391,25 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
               produce((now) => togglePlanet(producing, now, planet))
             );
           }
+          if (researching) {
+            // A planet pays for the research.
+            const paying = toggleResearchPlanet(
+              researching.choice,
+              local.staged,
+              local.researchPay ?? null,
+              planet,
+            );
+            return paying && setLocal((now) => ({ ...now, researchPay: paying }));
+          }
+          if (editor) {
+            // A planet of an editor: it pays, is readied, or has a structure placed on it.
+            return void restaged(editor.planet(planet));
+          }
+          if (!landing) {
+            // A planet of a choice on the board: its option is staged.
+            const option = optionOnBoard(shown, pending?.choice ?? null, planet);
+            return option ? stage(option) : undefined;
+          }
           return (
             landing &&
             land((now) => {
@@ -1167,19 +1421,46 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           );
         }
         case "setPayment":
+          if (researching) {
+            const goods = setResearchGoods(
+              researching.choice,
+              local.staged,
+              local.researchPay ?? null,
+              intent.value,
+              intent.source,
+            );
+            return goods && setLocal((now) => ({ ...now, researchPay: goods }));
+          }
+          if (editor) {
+            return void restaged(editor.goods(intent.value, intent.source));
+          }
           return (
-            producing &&
-            intent.source === GOODS &&
-            produce((now) => setGoods(producing, now, intent.value))
+            producing && produce((now) => setGoods(producing, now, intent.value, intent.source))
           );
         case "payment":
+          if (researching) {
+            const paid = payResearch(
+              researching.choice,
+              local.staged,
+              local.researchPay ?? null,
+              intent.action,
+            );
+            return paid && setLocal((now) => ({ ...now, researchPay: paid }));
+          }
+          if (editor) {
+            return void restaged(editor.pay(intent.action));
+          }
           return (
             producing &&
             produce((now) =>
               intent.action === "auto" ? autoPay(producing, now) : clearPayment(now),
             )
           );
-        case "toggleSystem":
+        case "toggleSystem": {
+          // The system of an editor: it is chosen, and it shows what is in it.
+          if (restaged(editor?.system(intent.system) ?? null, { inspected: intent.system })) {
+            return;
+          }
           // In a movement the fleet of a system opens at the system, and closes there. So does
           // the build of a production.
           return moving || producing
@@ -1187,7 +1468,12 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
                 ...now,
                 inspected: now.inspected === intent.system ? null : intent.system,
               }))
-            : inspectAndStage(intent.system);
+            : inspectAndStage(
+                optionOnBoard(shown, pending?.choice ?? null, intent.system) ?? intent.system,
+              );
+        }
+        case "clearPart":
+          return void restaged(editor?.part(intent.part) ?? null);
         case "findSystem": {
           const found = pending?.choice.options.find((item) => sameSystem(intent.query, item.id));
           if (found && facts?.kind === "activation") {
@@ -1195,11 +1481,23 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           }
           return;
         }
-        case "clearChoice":
+        case "clearChoice": {
           // Esc in the payment of a production goes back to its build.
-          return producing && local.productionStage === "pay"
-            ? toBuild(producing.system)
-            : setLocal((now) => ({ ...now, staged: null, pools: null }));
+          if (producing && local.productionStage === "pay") {
+            return toBuild(producing.system);
+          }
+          // Esc in an editor clears its last choice, or the whole screen.
+          if (restaged(editor?.last() ?? null)) {
+            return;
+          }
+          return setLocal((now) => ({
+            ...now,
+            staged: null,
+            pools: null,
+            researchPay: null,
+            editor: null,
+          }));
+        }
         case "undo":
           if (drafted) {
             return redraft(undo);
@@ -1218,7 +1516,23 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
         // The steps of a tactical action.
         case "commitEdit":
           return facts ? send() : undefined;
+        case "removeEntry": {
+          const review = drafted?.local.draft?.review?.entry;
+          return review && restage((now) => removeEntry(now, review));
+        }
+        case "editStep":
+          // The recorded activation of a draft opens, with its system chosen.
+          if (drafted && intent.step === 0 && plan.draft && entryOf(plan.draft).system) {
+            const system = entryOf(plan.draft).system;
+            setPlan((now) => ({ ...now, editing: true }));
+            return setLocal((now) => ({ ...now, staged: system, inspected: null, step: 0 }));
+          }
+          return;
         case "selectStep": {
+          // Another step ends an edit of the activation; nothing of it was recorded.
+          if (plan.editing && intent.step !== 0) {
+            setPlan((now) => ({ ...now, editing: false }));
+          }
           // A step of a draft that the game came to is opened to change it.
           const stage = ([null, "movement", null, "invasion", "production"] as const)[intent.step];
           if (drafted && stage) {
@@ -1228,7 +1542,11 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             setPlan((now) => ({ ...now, stage: "movement" }));
             return setLocal((now) => ({ ...now, step: 0 }));
           }
-          return setLocal((now) => ({ ...now, step: moving && intent.step === 0 ? 0 : null }));
+          // A resolved step of the live game is not opened: its result is in the Log.
+          return setLocal((now) => ({
+            ...now,
+            step: drafted && moving && intent.step === 0 ? 0 : null,
+          }));
         }
         case "returnToCurrent":
           return setLocal((now) => ({ ...now, step: null }));
@@ -1275,6 +1593,9 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             }))
           );
         case "cancelEdit":
+          if (plan.editing) {
+            return endEdit(0);
+          }
           if (producing) {
             produce(() => NO_PRODUCTION);
             return setLocal((now) => ({ ...now, productionStage: "build" }));
@@ -1291,9 +1612,9 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
             id: (now?.id ?? 0) + 1,
             text:
               mode === "never"
-                ? `${name}: never offered. Its windows are passed and you are told.`
+                ? `${name}: never offered. Its windows are passed.`
                 : mode === "ownturn"
-                  ? `${name}: offered on your turns only. Its other windows are passed and you are told.`
+                  ? `${name}: offered on your turns only. Its other windows are passed.`
                   : `${name}: offered again.`,
           }));
         }
@@ -1312,6 +1633,10 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           return setLocal((now) => ({ ...now, staged: null, sent: pending.nonce }));
         }
         case "flowCount": {
+          // A counter of an editor: the bought tokens, a pool.
+          if (editor) {
+            return void restaged(editor.count(intent.key, intent.value));
+          }
           // A counter of a pool of command tokens: the arrangement is staged when it is offered.
           const counted =
             pending && countPools(pending.choice, state.pools ?? null, intent.key, intent.value);
@@ -1334,7 +1659,19 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
     const { stepping, switchSeat, scenarios, save } = transport.capabilities;
     return {
       session: {
-        view: { ...selectShell(shown, state, transport.catalog, cards), toast },
+        view: {
+          ...selectShell(shown, state, transport.catalog, cards),
+          toast,
+          // Until the game answers the draft, its screen has nothing to decide; and a draft that
+          // was taken back ("Start over", an undo) does not fit the answer before, which stays on
+          // the screen meanwhile.
+          settling:
+            (!!drafted && waiting && (outcome === unanswered || shrunk)) ||
+            (!!followInfo?.waiting && !followOutcome),
+          answered: !!shown.pending_choice && state.sent === shown.pending_choice.nonce,
+          reply,
+          question,
+        },
         dispatch,
         capabilities: {
           stepping: !!stepping,
@@ -1345,6 +1682,14 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
       },
       // The odds of the space combat that the movement in view starts, Live or in a draft.
       odds: moving && local.step === null ? oddsRequest(moving, state.movement) : null,
+      // The odds of the ground combats that the landings in view start, Live or in a draft.
+      ground: landing
+        ? groundAsks(shown, landing, state.landing).flatMap((item) =>
+            item.kind === "ask" ? [item.ask] : [],
+          )
+        : [],
+      // The fleet supply and the capacity after the build in view, Live or in a draft.
+      standing: producing ? stagedCounts(producing, state.production) : null,
     };
   }, [
     update,
@@ -1352,10 +1697,14 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
     transport,
     plan,
     outcome,
+    unanswered,
     waiting,
+    shrunk,
     locked,
     cards,
     toast,
+    reply,
+    question,
     drafting,
     mine,
     reached,
@@ -1378,6 +1727,51 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
       current = false;
     };
   }, [transport, oddsKey]);
+
+  // The same for the ground combat on each planet where units land: a question for each planet
+  // whose landings changed. The answer for landings that changed since is not kept.
+  const keptGround = useRef(local.groundOdds);
+  keptGround.current = local.groundOdds;
+  const groundKey = JSON.stringify(built?.ground.map(({ planet, key }) => [planet, key]) ?? []);
+  useEffect(() => {
+    const asks = JSON.parse(groundKey) as [string, string][];
+    if (!transport || !asks.length) {
+      return;
+    }
+    let current = true;
+    for (const [planet, key] of asks) {
+      // The answer for these landings is there already.
+      if (keptGround.current?.[planet]?.key === key) {
+        continue;
+      }
+      const keep = (response: KeptGroundOdds["response"]) =>
+        current &&
+        setLocal((now) => ({
+          ...now,
+          groundOdds: { ...now.groundOdds, [planet]: { key, response } },
+        }));
+      transport.groundOdds(JSON.parse(key)).then(keep, () => keep(null));
+    }
+    return () => {
+      current = false;
+    };
+  }, [transport, groundKey]);
+
+  // The engine of the page reads the fleet supply and the capacity of each new build. Until it
+  // answers, the gauges keep the last answer.
+  const standingKey = built?.standing ? JSON.stringify(built.standing) : null;
+  useEffect(() => {
+    if (!transport || standingKey === null) {
+      return;
+    }
+    let current = true;
+    const keep = (response: KeptStanding["response"]) =>
+      current && setLocal((now) => ({ ...now, standing: { key: standingKey, response } }));
+    transport.fleetStanding(JSON.parse(standingKey)).then(keep, () => keep(null));
+    return () => {
+      current = false;
+    };
+  }, [transport, standingKey]);
 
   return { session: built?.session ?? null, error: local.error, replaying: local.replaying };
 }

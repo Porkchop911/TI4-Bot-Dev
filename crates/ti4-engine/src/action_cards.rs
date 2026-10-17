@@ -6359,6 +6359,7 @@ fn lie_in_wait(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId
     };
     let traders = crate::transactions::neighbours_who_transacted(context.state, galaxy, player);
     for victim in traders.into_iter().take(2) {
+        let mut phrases = crate::phrases::PhraseHints::default();
         let hand: Vec<(String, String)> = context
             .state
             .player(&victim)
@@ -6366,8 +6367,11 @@ fn lie_in_wait(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId
             .unwrap_or_default()
             .into_iter()
             .map(|alias| {
-                let label = format!("take {alias} from {victim}");
-                (alias.to_string(), label)
+                let worded = crate::phrases::Phrase::of("take {card} from {victim}")
+                    .with("card", &alias, crate::phrases::Subject::action_card(&alias))
+                    .with("victim", &victim, crate::phrases::Subject::seat(&victim));
+                phrases.options.insert(alias.to_string(), worded.phrase());
+                (alias.to_string(), worded.label())
             })
             .collect();
         if hand.is_empty() {
@@ -6379,7 +6383,13 @@ fn lie_in_wait(context: &mut crate::timing::TimingContext<'_>, player: &PlayerId
             "Lie in Wait: take which action card",
             "action_card",
             &hand,
-            &[("from", serde_json::json!(victim.as_str()))],
+            &[
+                ("from", serde_json::json!(victim.as_str())),
+                (
+                    crate::phrases::PHRASES_KEY,
+                    serde_json::to_value(&phrases).unwrap_or_default(),
+                ),
+            ],
         ) else {
             continue;
         };
@@ -8147,7 +8157,7 @@ mod tests {
             "FOR",
         );
 
-        assert_eq!(paid, [player.clone()]);
+        assert_eq!(paid, std::slice::from_ref(&player));
         assert_eq!(
             state.player(&player).unwrap().technologies.len(),
             before + 1,
@@ -10182,6 +10192,37 @@ mod tests {
 
     /// Lie in Wait takes one card from each of two neighbours who traded, and counts a
     /// twice-trading neighbour once.
+    #[test]
+    fn lie_in_wait_names_the_card_and_the_seat_of_each_option() {
+        let hub = crate::fixtures::plain_hub();
+        let player = PlayerId::new("a");
+        let b = PlayerId::new("b");
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        state.player_mut(&b).unwrap().action_cards =
+            vec![ActionCardId::new("mb1"), ActionCardId::new("mb2")];
+        let centre = ti4_model::id::SystemId::new(hub.centre.clone());
+        for seat in [&player, &b] {
+            crate::fixtures::put(&mut state, &centre, "carrier", seat, 1);
+        }
+        state.transactions_this_round = vec![(b.clone(), player.clone())];
+        let seen = resolve_card_capturing_on(&mut state, &hub.galaxy, "lieinwait", &player, &[]);
+        let seen = seen.borrow();
+        let choice = seen
+            .iter()
+            .find(|choice| choice.prompt.starts_with("Lie in Wait"))
+            .expect("asked");
+        let hints = crate::phrases::phrased(choice);
+        for card in ["mb1", "mb2"] {
+            let phrase = &hints.options[card];
+            assert_eq!(phrase.text, "take {card} from {victim}");
+            assert_eq!(
+                phrase.refs["card"],
+                crate::phrases::Subject::action_card(&ActionCardId::new(card))
+            );
+            assert_eq!(phrase.refs["victim"], crate::phrases::Subject::seat(&b));
+        }
+    }
+
     #[test]
     fn lie_in_wait_takes_one_card_from_each_trading_neighbour() {
         let hub = crate::fixtures::plain_hub();

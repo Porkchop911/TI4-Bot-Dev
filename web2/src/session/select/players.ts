@@ -1,7 +1,7 @@
 // The seats and the player table.
 import type { PlayerRowView, PlayerTableView, SeatId, SeatView } from "../../model";
 import { MLP_PREFIX } from "../models";
-import type { Catalog, PlayerView, ReactionModes, SessionUpdate } from "../wire";
+import type { Catalog, GameView, PlayerView, ReactionModes, SessionUpdate } from "../wire";
 import { componentCards } from "./components";
 import { DECKS } from "./exploration";
 import { commodityValue, factionName, seatMark, strategyCard } from "./names";
@@ -82,11 +82,14 @@ export function selectPlayers(
           continue;
         }
         planets++;
-        resources[1] += value.resources;
-        influence[1] += value.influence;
+        // The values now, with the attachments and the laws on the planet, when they differ.
+        const res = planet.resources ?? value.resources;
+        const inf = planet.influence ?? value.influence;
+        resources[1] += res;
+        influence[1] += inf;
         if (!planet.exhausted) {
-          resources[0] += value.resources;
-          influence[0] += value.influence;
+          resources[0] += res;
+          influence[0] += inf;
         }
       }
     }
@@ -133,9 +136,18 @@ export function selectPlayers(
       }),
     };
   };
+  const rows = seated(update).map(row);
   return {
     pick: null,
-    rows: seated(update).map(row),
+    rows: ranked(view, rows),
+    sort: view.phase === "action" ? "initiative" : "vp",
+    initiative: view.initiative_order?.length
+      ? view.initiative_order
+      : rows
+          .filter((row) => row.strategyCards.length > 0)
+          .sort((a, b) => a.strategyCards[0]!.number - b.strategyCards[0]!.number)
+          .map((row) => row.seat),
+    turn: view.phase === "action" ? view.turn : 0,
     freeCards: view.table.unclaimed_strategy_cards
       .map((id) => ({
         ...strategyCard(id, catalog),
@@ -143,4 +155,21 @@ export function selectPlayers(
       }))
       .sort((a, b) => a.number - b.number),
   };
+}
+
+/**
+ * The rows of the table: in the action phase in the order of the turns that the engine sends (an
+ * initiative override such as the Naalu "0" token counted), a seat that is not in it last; in
+ * every other phase by victory points, the most first. A tie keeps the seat order.
+ */
+function ranked(view: GameView, rows: PlayerRowView[]): PlayerRowView[] {
+  const order = view.initiative_order ?? [];
+  const key =
+    view.phase === "action"
+      ? (row: PlayerRowView) => {
+          const index = order.indexOf(row.seat);
+          return index < 0 ? order.length : index;
+        }
+      : (row: PlayerRowView) => -row.victoryPoints;
+  return [...rows].sort((a, b) => key(a) - key(b));
 }

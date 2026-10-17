@@ -14,7 +14,7 @@ import { useLink } from "../link";
 import { TYPE_COLOR, TYPE_NAME } from "./PlanetTraits";
 import { HEX_R, hexCenter, hexPoints, routePath } from "./hex";
 
-export type MapViewId = "standard" | "economy" | "space" | "ground" | "tech" | "explore";
+export type MapViewId = "standard" | "owner" | "space" | "ground" | "tech" | "explore";
 
 const TYPE_LETTER = { cultural: "C", hazardous: "H", industrial: "I" } as const;
 
@@ -105,7 +105,8 @@ function Planet({
   );
   // A planet that the task can use shows resources and influence, so the player sees what the
   // payment gives up. The value that pays is large. A ring and a check mark show the choice.
-  const pays = task?.unit === "influence" ? "influence" : "resources";
+  const face = onPlanets?.faces?.[planet.id] ?? task?.unit;
+  const pays = face === "influence" ? "influence" : "resources";
   const value = (kind: "resources" | "influence") => (
     <tspan className={kind === pays ? "v-on" : "v-off"}>{planet[kind]}</tspan>
   );
@@ -118,7 +119,7 @@ function Planet({
         </>,
         r > 11 ? 12.5 : 11,
       )
-    : view === "economy"
+    : view === "standard"
       ? text(
           <>
             <tspan style={{ fill: "var(--color-gold)" }}>{planet.resources}</tspan>
@@ -161,7 +162,7 @@ function Planet({
           role: "button",
           tabIndex: 0,
           "aria-pressed": chosen,
-          "aria-label": `${onPlanets.verb} ${planet.name}, ${onPlanets.values[planet.id]} ${onPlanets.unit}, ${planet.resources} resources / ${planet.influence} influence`,
+          "aria-label": `${onPlanets.verb} ${planet.name}, ${onPlanets.values[planet.id]} ${face}, ${planet.resources} resources / ${planet.influence} influence${planet.exhausted ? ", exhausted" : ""}`,
           onKeyDown: pressOnKey,
           onClick: (event: React.MouseEvent) => {
             event.stopPropagation();
@@ -177,8 +178,9 @@ function Planet({
         "planet",
         !planet.owner && "free",
         payable && "payable",
-        chosen &&
-          (payable ? (onPlanets?.kind === "pay" ? "chosen" : "chosen picked") : "exhausted"),
+        chosen && payable && (onPlanets?.kind === "pay" ? "chosen" : "chosen picked"),
+        // A planet of a recorded payment is exhausted too.
+        (planet.exhausted || (chosen && !payable)) && "exhausted",
         linked && "linked",
       )}
       style={color ? ({ "--seat": color } as React.CSSProperties) : undefined}
@@ -188,6 +190,7 @@ function Planet({
       <title>
         {planet.name} · {planet.resources} resources / {planet.influence} influence
         {planet.owner ? " · " + seats[planet.owner].faction : ""}
+        {planet.exhausted ? " · exhausted" : ""}
         {planet.traits.types.map((type) => " · " + TYPE_NAME[type]).join("")}
         {planet.traits.unexplored ? " · unexplored" : ""}
         {planet.traits.attachments.map((item) => " · " + item.name).join("")}
@@ -207,6 +210,8 @@ function Planet({
 interface TileProps {
   tile: TileView;
   active: boolean;
+  /** The open window, or the turn of the Log that is open, is about this system. */
+  marked: boolean;
   inspected: boolean;
   targeting: boolean;
   view: MapViewId;
@@ -220,20 +225,23 @@ const BODY_Y = -5;
  * One system. It shows what matters for play: planets, wormhole, anomaly, command token and fleets.
  * The name is flavor: it is in the tooltip and in the inspector, not on the tile.
  */
-function Tile({ tile, active, inspected, targeting, view, task }: TileProps) {
+function Tile({ tile, active, marked, inspected, targeting, view, task }: TileProps) {
   const dispatch = useDispatch();
   const seats = useSeats();
   const { linked, props } = useLink([`sys:${tile.id}`]);
   const { x, y } = hexCenter(tile);
   const strength = view === "space";
-  const label = `${tile.name}, system ${tile.id}${tile.home ? `, ${seats[tile.home].faction} home system` : ""}${tile.anomaly ? ", " + ANOMALY_LABEL[tile.anomaly] : ""}${tile.wormhole ? `, ${tile.wormhole} wormhole` : ""}${tile.commandToken ? ", your command token is here" : ""}${tile.handled ? ", handled" : ""}${tile.fleets.map((fleet) => `, ${plural(fleet.ships, seats[fleet.seat].faction + " ship")}`).join("")}`;
+  const label = `${tile.name}, system ${tile.id}${tile.home ? `, ${seats[tile.home].faction} home system` : ""}${tile.anomaly ? ", " + ANOMALY_LABEL[tile.anomaly] : ""}${tile.wormhole ? `, ${tile.wormhole} wormhole` : ""}${tile.commandToken ? ", your command token is here" : ""}${tile.handled ? ", handled" : ""}${marked ? ", the open window or turn is about this system" : ""}${tile.fleets.map((fleet) => `, ${plural(fleet.ships, seats[fleet.seat].faction + " ship")}`).join("")}`;
   // Planets and the wormhole are in one row. A system has at most three planets.
   const slots = tile.planets.length + (tile.wormhole ? 1 : 0);
   const gap = slots > 3 ? 19 : 25;
   const slotX = (index: number) => x + (index - (slots - 1) / 2) * gap;
   const planetR = slots > 2 ? 10 : 11.5;
-  // A task that asks for a system: a click on a system that can be chosen chooses it.
-  const target = task?.target === "system" && task.interactive && tile.id in task.values;
+  // A task that asks for a system: a click on a system that can be chosen chooses it. So does a
+  // system of a task on planets that chooses systems too.
+  const target =
+    !!task?.interactive &&
+    (task.target === "system" ? tile.id in task.values : !!task.systems?.includes(tile.id));
   const chosen = target && !!task.chosen[tile.id];
   // It can be chosen, and the task has nothing to do there: it does not stand out.
   const plain = target && !!task.highlight && !task.highlight.includes(tile.id);
@@ -244,6 +252,7 @@ function Tile({ tile, active, inspected, targeting, view, task }: TileProps) {
         tile.home && "home",
         inspected && "inspected",
         active && "active",
+        marked && "marked",
         (tile.anomaly === "asteroid" || tile.anomaly === "supernova") && "blocked",
         linked && "linked",
         target && "target",
@@ -270,6 +279,10 @@ function Tile({ tile, active, inspected, targeting, view, task }: TileProps) {
         {tile.name} · #{tile.id}
       </title>
       <polygon className="hex" points={hexPoints({ x, y }, HEX_R - 2)} />
+      {marked && (
+        // The system of the open window or turn: a wide ring, which no other state of a tile has.
+        <polygon className="mark" points={hexPoints({ x, y }, HEX_R - 2)} />
+      )}
       {tile.control && (
         // Inner ring: the player with ships here. Red and dashed when two or more players have ships.
         <polygon
@@ -434,6 +447,7 @@ export function GalaxyMap({
           key={tile.id}
           tile={tile}
           active={tile.id === view.activeSystem}
+          marked={tile.id === view.marked}
           inspected={tile.id === view.inspected}
           targeting={view.targeting}
           view={mapView}

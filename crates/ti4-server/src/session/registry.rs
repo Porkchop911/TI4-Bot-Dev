@@ -1193,14 +1193,18 @@ impl GameRegistry {
                 .and_then(|id| id.strip_prefix("action_"))
                 .and_then(|n| n.parse::<usize>().ok())
                 .and_then(|n| n.checked_sub(1));
-            let (detail, movement, seat_detail) =
-                ti4_host::protocol::server::verified_decision_facts(
-                    decision,
-                    Some(offered),
-                    (request.plan.kind == ti4_host::batch::BatchKind::TacticalMovement)
-                        .then_some(request.plan.destination.as_str()),
-                    &boundary_state,
-                );
+            let ti4_host::protocol::server::DecisionFacts {
+                detail,
+                movement,
+                seat_detail,
+                fact,
+            } = ti4_host::protocol::server::verified_event_facts(
+                decision,
+                Some(offered),
+                (request.plan.kind == ti4_host::batch::BatchKind::TacticalMovement)
+                    .then_some(request.plan.destination.as_str()),
+                &boundary_state,
+            );
             let grouping = ti4_host::protocol::server::decision_grouping(
                 decision,
                 Some(offered),
@@ -1228,9 +1232,11 @@ impl GameRegistry {
                 stage: grouping.5,
                 movement,
                 detail,
+                fact,
                 seat_detail,
                 private_detail: None,
                 roll: None,
+                board: None,
             });
             for (_, phase, round) in simulation
                 .transitions
@@ -1261,9 +1267,11 @@ impl GameRegistry {
                     stage: None,
                     detail: None,
                     movement: None,
+                    fact: None,
                     seat_detail: None,
                     private_detail: None,
                     roll: None,
+                    board: None,
                 });
             }
             // Dice the batch rolled that the table has not been shown, after the decision that
@@ -1279,6 +1287,11 @@ impl GameRegistry {
                 else {
                     continue;
                 };
+                let action = ti4_host::journal::roll_action(
+                    &all_decisions,
+                    start_cursor + i + 1,
+                    boundary_state.phase,
+                );
                 counter += 1;
                 events.push(ti4_host::protocol::server::GameEvent {
                     id: format!("{game_id}-{counter}"),
@@ -1290,21 +1303,64 @@ impl GameRegistry {
                     batch_id: None,
                     batch_start_cursor: None,
                     batch_end_cursor: None,
-                    action_id: None,
-                    action_start_cursor: None,
+                    action_id: action.action_id,
+                    action_start_cursor: action.action_start_cursor,
                     actor: public.roller.clone(),
                     round: Some(boundary_state.round),
                     phase: Some(boundary_state.phase),
-                    action_type: None,
-                    action_actor: None,
+                    action_type: action.action_type,
+                    action_actor: action.action_actor,
                     stage: None,
                     detail: Some(public.describe()),
                     movement: None,
+                    fact: None,
                     seat_detail: None,
                     private_detail: None,
                     roll: Some(public),
+                    board: None,
                 });
             }
+        }
+        // What the state of the batch tells that no event of it did, after its last decision.
+        let (mut tally, observed_to) = session.state_tally();
+        let start = observed_to.min(events.len());
+        let observation = ti4_host::protocol::state_fact::observe_step(
+            &mut tally,
+            &boundary_state,
+            &events[start..],
+        );
+        for observed in observation.facts {
+            counter += 1;
+            let mut entry = ti4_host::journal::build_state_event(
+                &ti4_host::clock::SystemClock,
+                game_id,
+                counter,
+                &all_decisions,
+                end_cursor,
+                boundary_state.round,
+                boundary_state.phase,
+                Some(request.expected_version),
+                observed,
+            );
+            entry.timestamp.clone_from(&timestamp);
+            events.push(entry);
+        }
+        // The board after the batch: one change for all of its steps.
+        if let Some(board) = observation.board {
+            counter += 1;
+            let mut entry = ti4_host::journal::build_board_event(
+                &ti4_host::clock::SystemClock,
+                game_id,
+                counter,
+                &all_decisions,
+                end_cursor,
+                boundary_state.round,
+                boundary_state.phase,
+                Some(request.expected_version),
+                board,
+            );
+            entry.timestamp.clone_from(&timestamp);
+            events.push(entry);
         }
         if let Some(winner) = simulation.winner {
             counter += 1;
@@ -1328,9 +1384,11 @@ impl GameRegistry {
                 stage: None,
                 detail: None,
                 movement: None,
+                fact: None,
                 seat_detail: None,
                 private_detail: None,
                 roll: None,
+                board: None,
             });
         }
         let mut batches = session.batches();

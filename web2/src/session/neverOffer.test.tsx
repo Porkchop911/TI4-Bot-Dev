@@ -38,15 +38,13 @@ function transport() {
   return { made, transport: made as unknown as Transport, tell };
 }
 
-it("says that a window was passed for a card that is never offered", async () => {
+it("shows nothing for a window that was passed for a card that is never offered", async () => {
   const game = transport();
   const { result } = renderHook(() => useLiveSession(game.transport));
   await game.tell({ kind: "update", update: menu, canUndo: true });
   await game.tell({ kind: "passed", cards: ["Sabotage", "Scuttle"] });
-  expect(result.current.session?.view.toast?.text).toBe(
-    "Sabotage, Scuttle: not offered now. The window was passed.",
-  );
-  // The page answers nothing and takes nothing back: the transport did.
+  // The viewer was not asked: no toast. The page answers nothing and takes nothing back.
+  expect(result.current.session?.view.toast).toBeNull();
   expect(game.made.submitChoice).not.toHaveBeenCalled();
   expect(game.made.undo).not.toHaveBeenCalled();
 });
@@ -63,7 +61,7 @@ it("shows the cards that the transport never offers, and asks it for a change", 
   act(() => result.current.session?.dispatch({ type: "setOffer", key: name, name, mode: "never" }));
   expect(game.made.setReactionMode).toHaveBeenCalledWith(name, "never");
   expect(result.current.session?.view.toast?.text).toBe(
-    `${name}: never offered. Its windows are passed and you are told.`,
+    `${name}: never offered. Its windows are passed.`,
   );
   // The setting is a view of the transport: it is shown when the transport says so.
   expect(scuttle()?.offer?.mode).toBe("always");
@@ -74,7 +72,7 @@ it("shows the cards that the transport never offers, and asks it for a change", 
   );
   expect(game.made.setReactionMode).toHaveBeenLastCalledWith(name, "ownturn");
   expect(result.current.session?.view.toast?.text).toBe(
-    `${name}: offered on your turns only. Its other windows are passed and you are told.`,
+    `${name}: offered on your turns only. Its other windows are passed.`,
   );
   act(() =>
     result.current.session?.dispatch({ type: "setOffer", key: name, name, mode: "always" }),

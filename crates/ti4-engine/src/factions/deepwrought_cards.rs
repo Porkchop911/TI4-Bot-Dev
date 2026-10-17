@@ -29,9 +29,11 @@ use ti4_model::id::{LeaderId, PlayerId, TechnologyId};
 use ti4_model::state::GameState;
 
 use super::deepwrought::{
-    BREAKTHROUGH, HERO, SHARE_KNOWLEDGE, ask, deck, mark_technology_purged, technology_purged,
+    BREAKTHROUGH, HERO, SHARE_KNOWLEDGE, ask, ask_phrased, deck, mark_technology_purged,
+    technology_purged,
 };
 use crate::choice::ChoiceOption;
+use crate::phrases::{Phrase, Subject, Worded};
 use crate::timing::{Ability, Relation, TimingContext, TimingError};
 
 const SHARE_ACTION: &str = "faction|deepwrought|shareknowledge";
@@ -270,12 +272,13 @@ fn visionaria_round(context: &mut TimingContext<'_>, holder: &PlayerId) -> Resul
         {
             continue; // an earlier step of this very action changed what they hold
         }
-        let answer = ask(
+        let answer = ask_phrased(
             context,
             &other,
-            format!(
-                "Visionaria Select: spend {VISIONARIA_COST} trade goods and give {holder} a promissory note"
-            ),
+            &Phrase::of(&format!(
+                "Visionaria Select: spend {VISIONARIA_COST} trade goods and give {{holder}} a promissory note"
+            ))
+            .with("holder", holder, Subject::seat(holder)),
             BREAKTHROUGH,
             "visionaria_accept",
             vec![
@@ -286,20 +289,33 @@ fn visionaria_round(context: &mut TimingContext<'_>, holder: &PlayerId) -> Resul
                 ),
                 ChoiceOption::decline(),
             ],
+            &[],
         )?;
         if answer.is_decline() {
             continue;
         }
-        let given = ask(
+        let prompt = Phrase::of("Visionaria Select: which promissory note to give {holder}").with(
+            "holder",
+            holder,
+            Subject::seat(holder),
+        );
+        let worded: Vec<(String, Worded)> = notes
+            .iter()
+            .map(|note| {
+                (
+                    note.clone(),
+                    Phrase::of("{note}").with("note", note, Subject::note(context.content, note)),
+                )
+            })
+            .collect();
+        let given = ask_phrased(
             context,
             &other,
-            format!("Visionaria Select: which promissory note to give {holder}"),
+            &prompt,
             BREAKTHROUGH,
             "visionaria_note",
-            notes
-                .iter()
-                .map(|note| ChoiceOption::labelled(note.clone(), "promissory", note.clone()))
-                .collect(),
+            crate::phrases::options("promissory", &worded),
+            &worded,
         )?;
         let Some(note) = notes.into_iter().find(|note| *note == given.id) else {
             continue;
@@ -667,7 +683,15 @@ mod tests {
             .collect()
     }
     fn perform(state: &mut GameState, who: &PlayerId, id: &str, answers: &[&str]) -> bool {
-        let mut table = scripted(answers);
+        perform_on(state, who, id, &mut scripted(answers))
+    }
+
+    fn perform_on(
+        state: &mut GameState,
+        who: &PlayerId,
+        id: &str,
+        table: &mut crate::choice::Table,
+    ) -> bool {
         let option = crate::factions::component_actions(state, content(), who)
             .into_iter()
             .find(|option| option.id == id)
@@ -676,7 +700,7 @@ mod tests {
             state,
             ti4_model::content_types::DEFAULT,
             None,
-            &mut table,
+            table,
             |context| crate::factions::perform_component(context, who, &option),
         )
     }
@@ -1034,6 +1058,35 @@ mod tests {
             !state.faction_marks.contains_key(&bt_exhausted_key(&a())),
             "readied"
         );
+    }
+
+    /// The questions of the seller name the holder, and each note by its record.
+    #[test]
+    fn visionaria_select_names_the_holder_and_the_notes() {
+        let mut state = visionaria_setup();
+        let notes = giveable_notes(&state, content(), &b(), &a());
+        let (mut table, seen) = crate::phrases::capturing(&["accept", notes[0].as_str()]);
+        perform_on(&mut state, &a(), VISIONARIA_ACTION, &mut table);
+        let seen = seen.borrow();
+        let holder = crate::phrases::Subject::seat(&a());
+        let accept = seen
+            .iter()
+            .find(|choice| choice.prompt.contains("spend"))
+            .expect("asked to accept");
+        let prompt = accept.phrases().prompt.expect("named");
+        assert_eq!(prompt.refs["holder"], holder);
+        let which = seen
+            .iter()
+            .find(|choice| choice.prompt.contains("which promissory note"))
+            .expect("asked which note");
+        let hints = crate::phrases::phrased(which);
+        assert_eq!(hints.prompt.expect("named").refs["holder"], holder);
+        for note in &notes {
+            assert_eq!(
+                hints.options[note].refs["note"],
+                crate::phrases::Subject::note(content(), note)
+            );
+        }
     }
 
     #[test]

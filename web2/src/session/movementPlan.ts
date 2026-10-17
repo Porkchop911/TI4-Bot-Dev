@@ -35,9 +35,12 @@ export type ChooseStep = ChosenOption;
 /** A step of a plan or a draft: `DraftStep` of the wire. */
 export type PlanStep = DraftStep;
 
-/** The step of a tactical action that a step of a plan belongs to. Null for an answer by id. */
+/**
+ * The step of a tactical action that a step of a plan belongs to. Null for an answer by id and
+ * for a gain or a purchase of command tokens.
+ */
 export const stageOf = (step: PlanStep): "movement" | "invasion" | "production" | null =>
-  step.kind === "choose"
+  step.kind === "choose" || step.kind === "pool" || step.kind === "purchase"
     ? null
     : step.kind === "move" ||
         step.kind === "load" ||

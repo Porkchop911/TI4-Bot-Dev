@@ -760,7 +760,13 @@ export const ChoiceRendererDispatcher: React.FC<
   // payable planets with both values and the running total, not a list of "exhaust" buttons.
   const invasionPayment =
     workflow === "payment" && Boolean(choice) && choice?.actor === viewerSeat;
-  if (boardView?.invasion && !boardView.combat && !invasionPayment) {
+  // The host sends every viewer the invasion; one with no defenders is only the invader's.
+  const invasion = boardView?.invasion;
+  const invasionShown =
+    invasion &&
+    (invasion.invader === viewerSeat ||
+      Object.values(invasion.odds_context).some((context) => context?.opponent));
+  if (invasionShown && boardView && !boardView.combat && !invasionPayment) {
     // Participant ids in the prompt and option labels ("player_<hash>'s units" for a
     // bombardment target) are shown as the seat's name, as in every other decision.
     const shownChoice = choice
@@ -785,7 +791,7 @@ export const ChoiceRendererDispatcher: React.FC<
           ⚔️{" "}
           {isActor && choice
             ? `Resume: ${choice.prompt}`
-            : `View invasion · System ${boardView.invasion.system_id}`}
+            : `View invasion · System ${invasion.system_id}`}
         </button>
       </div>
     ) : (

@@ -16,6 +16,13 @@ use crate::choice::{Choice, ChoiceOption, IllegalChoice, validate};
 /// The choice kind for placing a gained command token.
 pub const POOL_KIND: &str = "pool";
 
+/// The option id of a gained command token that goes into the tactic pool.
+pub const TACTIC_POOL: &str = "tactic_tokens";
+/// The option id of a gained command token that goes into the fleet pool.
+pub const FLEET_POOL: &str = "fleet_tokens";
+/// The option id of a gained command token that goes into the strategy pool.
+pub const STRATEGIC_POOL: &str = "strategic_tokens";
+
 /// Tokens each player gains at status step 81.5, before any modifier.
 ///
 /// Sol's Versatile, Cybernetic Enhancements and the L1Z1X promissory note all change this in
@@ -174,17 +181,17 @@ pub fn with_pool_details(
     mode: &str,
     tokens_to_place: Option<usize>,
 ) -> Choice {
-    let (tactic, fleet, strategic) = state.player(&choice.player).map_or((0, 0, 0), |seat| {
-        (seat.tactic_tokens, seat.fleet_tokens, seat.strategic_tokens)
-    });
+    let pools = CommandPools::of(state, &choice.player);
+    let CommandPools {
+        tactic,
+        fleet,
+        strategic,
+    } = pools;
     let reinforcements = state.tokens_in_reinforcements(&choice.player);
     let choice = choice
         .detailed("kind", "command_tokens")
         .detailed("mode", mode)
-        .detailed(
-            "pools",
-            serde_json::json!({ "tactic": tactic, "fleet": fleet, "strategic": strategic }),
-        );
+        .hinted("pools", &pools);
     // Letnev's Armada (`faction_abilities::fleet_supply`): two more non-fighter ships per system
     // than the fleet pool allows. Display only; the panel shows it next to the fleet pool.
     let choice = if state
@@ -213,6 +220,99 @@ pub fn with_pool_details(
             .detailed("reinforcements", reinforcements)
             .detailed("total", tactic + fleet + strategic),
         _ => choice.detailed("reinforcements", reinforcements),
+    }
+}
+
+/// The three pools of a command sheet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct CommandPools {
+    pub tactic: i32,
+    pub fleet: i32,
+    pub strategic: i32,
+}
+
+impl CommandPools {
+    /// The pools of `player` as they stand now; all 0 for a player who is not seated.
+    #[must_use]
+    pub fn of(state: &GameState, player: &PlayerId) -> Self {
+        state.player(player).map_or(
+            Self {
+                tactic: 0,
+                fleet: 0,
+                strategic: 0,
+            },
+            |seat| Self {
+                tactic: seat.tactic_tokens,
+                fleet: seat.fleet_tokens,
+                strategic: seat.strategic_tokens,
+            },
+        )
+    }
+}
+
+/// The option id of a gained command token that goes into each pool ([`TACTIC_POOL`],
+/// [`FLEET_POOL`], [`STRATEGIC_POOL`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct PoolOptions {
+    pub tactic: String,
+    pub fleet: String,
+    pub strategic: String,
+}
+
+/// The look-ahead of a gain and the redistribution after it (`details.redistribution` of
+/// Warfare's recall): what a client needs to plan both as one screen (display only).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct RedistributionHints {
+    /// The pools as they stand now, before the gain.
+    pub pools: CommandPools,
+    pub gained: i32,
+    /// The tokens that the redistribution arranges: the pools of now and the gained ones.
+    pub total: i32,
+    /// The option of the gain into each pool.
+    pub gain: PoolOptions,
+    /// The id of every arrangement that the redistribution will offer (`tactic|fleet|strategic`).
+    pub arrangements: Vec<String>,
+}
+
+/// Display only: the gain of `gained` command tokens and the redistribution that follows it
+/// (Warfare's recall); see [`RedistributionHints`].
+#[must_use]
+pub fn redistribution_after_gain(
+    state: &GameState,
+    player: &PlayerId,
+    gained: i32,
+) -> RedistributionHints {
+    let pools = CommandPools::of(state, player);
+    let total = pools.tactic + pools.fleet + pools.strategic + gained;
+    RedistributionHints {
+        pools,
+        gained,
+        total,
+        gain: PoolOptions {
+            tactic: TACTIC_POOL.to_owned(),
+            fleet: FLEET_POOL.to_owned(),
+            strategic: STRATEGIC_POOL.to_owned(),
+        },
+        arrangements: distribution_options(total, fleet_floor(state, player))
+            .into_iter()
+            .map(|option| option.id)
+            .collect(),
+    }
+}
+
+/// The least fleet pool that a redistribution of `player` offers: see
+/// [`TokenRedistribution::fleet_floor`].
+fn fleet_floor(state: &GameState, player: &PlayerId) -> i32 {
+    let letnev = state
+        .player(player)
+        .is_some_and(|seat| seat.faction.as_str() == "letnev");
+    if letnev && state.rules_version >= ti4_model::state::RULES_LETNEV_FLEET_POOL {
+        0
+    } else {
+        2
     }
 }
 
@@ -339,14 +439,7 @@ impl TokenRedistribution {
     /// limit is the pool plus two), so the rules-allowed minimum of none is offered from
     /// `RULES_LETNEV_FLEET_POOL` on.
     fn fleet_floor(&self, state: &GameState) -> i32 {
-        let letnev = state
-            .player(&self.player)
-            .is_some_and(|seat| seat.faction.as_str() == "letnev");
-        if letnev && state.rules_version >= ti4_model::state::RULES_LETNEV_FLEET_POOL {
-            0
-        } else {
-            2
-        }
+        fleet_floor(state, &self.player)
     }
 
     /// The one choice this window ever asks, built fresh from `state`. `None` once resolved, or

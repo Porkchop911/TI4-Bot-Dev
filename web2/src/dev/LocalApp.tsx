@@ -10,7 +10,6 @@ import {
 import { SeatShape } from "../game/context";
 import { GameShell } from "../game/shell/GameShell";
 import { DEFAULT_GAME } from "./defaultGame";
-import { DemoApp } from "./DemoApp";
 import { GameTable } from "./GameTable";
 import { DEFAULT_NICKNAME, onlineAddress } from "./onlineStart";
 import {
@@ -98,7 +97,7 @@ export function LocalApp({
   game,
   id: savedId,
   onNewGame,
-  other = { label: "Demo", href: "/?example=live-picker" },
+  other = { label: "Start", href: "/" },
 }: {
   game: LocalGame;
   /** The saved game of this id (`?save=<id>`), in place of the game of the slot of `game`. */
@@ -589,13 +588,11 @@ export function LocalApp({
     </>
   );
 
-  // The engine did not load: the demo is shown with the reason, so the page is never empty.
-  if (start.kind === "failed") {
-    return <DemoApp notice={`Local game unavailable. ${start.message}`} />;
-  }
-
   let body: ReactNode;
-  if (start.kind === "missing") {
+  if (start.kind === "failed") {
+    // The engine did not load.
+    body = <Notice tone="error">Local game unavailable. {start.message}</Notice>;
+  } else if (start.kind === "missing") {
     body = (
       <Notice tone="error">
         This browser has no saved game of this address. The saved games are listed on the{" "}

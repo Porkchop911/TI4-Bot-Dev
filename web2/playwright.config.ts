@@ -1,15 +1,12 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// Three suites, each on the desktop and on a Pixel 9 in portrait. Every suite has one worker.
+// Two suites, each on the desktop and on a Pixel 9 in portrait. Every suite has one worker.
 // `npm run e2e` (the projects "desktop" and "phone") plays the real game: the engine in the page
 // and the server. It is the suite for a change. A test has 5 seconds; a test of a long flow sets
 // 10 for itself.
 // `npm run e2e:slow` (the projects "slow" and "slow-phone") has the tests of the real game with
 // "@slow" in the title: the ones that play a game through. A test has 30 seconds.
-// `npm run shots` (the projects "shots" and "shots-phone") opens only the demo (`?example=…`). It
-// writes a screenshot of every example to shots/ for review, and asserts that the open step needs
-// no vertical scroll at 1920×1080 and that nothing is cut at the side on the phone.
-// The slow tests and the shots are run by hand, not for each change.
+// The slow tests are run by hand, not for each change.
 const port = process.env.WEB2_PORT ?? "3190";
 // The server of the online game (e2e/online.spec.ts). The page reaches it through the proxy of
 // vite, which reads the port from the same variable.
@@ -54,8 +51,7 @@ const page = {
 };
 
 const SLOW = /@slow/;
-const DEMO_OR_PHONE = [/phone\.spec\.ts/, /shots\.spec\.ts/];
-const REAL_PHONE = /(local|lobby)\.phone\.spec\.ts/;
+const PHONE_SPEC = /phone\.spec\.ts/;
 
 export default defineConfig({
   testDir: "./e2e",
@@ -66,13 +62,10 @@ export default defineConfig({
   reporter: "line",
   use: { baseURL: `http://127.0.0.1:${port}`, ...devices["Desktop Chrome"], deviceScaleFactor: 1 },
   projects: [
-    { name: "desktop", testIgnore: DEMO_OR_PHONE, grepInvert: SLOW },
-    { name: "phone", testMatch: REAL_PHONE, grepInvert: SLOW, use: PHONE },
-    { name: "slow", testIgnore: DEMO_OR_PHONE, grep: SLOW, timeout: 30_000 },
-    { name: "slow-phone", testMatch: REAL_PHONE, grep: SLOW, timeout: 30_000, use: PHONE },
-    { name: "shots", testMatch: /shots\.spec\.ts/ },
-    { name: "shots-phone", testMatch: /(^|\/)phone\.spec\.ts/, use: PHONE },
+    { name: "desktop", testIgnore: PHONE_SPEC, grepInvert: SLOW },
+    { name: "phone", testMatch: PHONE_SPEC, grepInvert: SLOW, use: PHONE },
+    { name: "slow", testIgnore: PHONE_SPEC, grep: SLOW, timeout: 30_000 },
+    { name: "slow-phone", testMatch: PHONE_SPEC, grep: SLOW, timeout: 30_000, use: PHONE },
   ],
-  // The demo needs no server of the game: `npm run shots` sets WEB2_SHOTS and does not wait for it.
-  webServer: process.env.WEB2_SHOTS ? [page] : [server, page],
+  webServer: [server, page],
 });
