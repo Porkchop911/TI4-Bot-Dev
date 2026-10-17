@@ -100,30 +100,6 @@ describe("a phase of the Log, opened", () => {
     },
   );
 
-  it.skipIf(!built)(
-    "the status phase is the objectives scored by whom, the objectives revealed and the command tokens of each seat",
-    () => {
-      // The status phase of round 5. Whether a seat scored in it depends on how the engine
-      // plays the seed: the rows of "Scored" are the lines of its group of the Log, each one
-      // "Scored".
-      const [status] = phasesOf(5).filter((phase) => phase.phase === "status");
-      const lines = status.groups.find((group) => group.title === "Scored")?.lines ?? [];
-      const past = selectPastPhase(last.update, events, status.id)!;
-      expect(past.action.heading).toBe("Status phase");
-      const scored = seatsOf(past.action.blocks, "Scored");
-      expect(scored).toHaveLength(lines.length);
-      for (const [at, row] of scored.entries()) {
-        expect(row.status).toEqual(expect.objectContaining({ label: "Scored" }));
-        expect(row.text).toBe(lines[at].text);
-      }
-      // With no catalogue the revealed objective is its name.
-      expect(past.action.blocks).toContainEqual(
-        expect.objectContaining({ kind: "note", strong: "Revealed" }),
-      );
-      expect(seatsOf(past.action.blocks, "Command tokens")).toHaveLength(6);
-    },
-  );
-
   it.skipIf(!built)("the phase that is played now says who decides and who waits", async () => {
     // The strategy phase of a round, while the viewer picks.
     const picking = played.findLast(
@@ -143,6 +119,79 @@ describe("a phase of the Log, opened", () => {
     const [action] = phasesOf(2).filter((phase) => phase.phase === "action");
     expect(selectPastPhase(last.update, events, action.id)).toBeNull();
     expect(selectPastPhase(last.update, events, "status-99")).toBeNull();
+  });
+});
+
+// A status phase where two seats score: a phase of three seats, as the host tells it.
+describe("a status phase of the Log, opened", () => {
+  let counter = 0;
+  const event = (fact: PublicFact, seat?: string): GameEvent => ({
+    id: `s-${++counter}`,
+    timestamp: "",
+    visibility: { visibility: "public" },
+    event: { kind: seat ? "decision_resolved" : "state_changed" },
+    ...(seat ? { actor: seat } : {}),
+    round: 3,
+    phase: "status",
+    fact,
+  });
+  const update = {
+    viewer: { role: "player", seat: "a" },
+    seats: {},
+    view: {
+      round: 3,
+      phase: "agenda",
+      players: [
+        { id: "a", faction: "sol" },
+        { id: "b", faction: "hacan" },
+        { id: "c", faction: "jolnar" },
+      ],
+      board: { systems: {}, map_tiles: [] },
+    },
+  } as unknown as SessionUpdate;
+  const tokens = { kind: "tokens_redistributed", tactic: 3, fleet: 3, strategy: 2 } as const;
+  const events = eventsOf([
+    {
+      id: "t",
+      timestamp: "",
+      visibility: { visibility: "public" },
+      event: { kind: "phase_transition", phase: "status", round: 3 },
+    },
+    event({ kind: "objective_scored", objective: "corner", secret: false }, "b"),
+    event({ kind: "objective_scored", objective: "monument", secret: true }, "a"),
+    event({ kind: "objective_revealed", objective: "expand" }),
+    event(tokens, "a"),
+    event(tokens, "b"),
+    event(tokens, "c"),
+    {
+      id: "u",
+      timestamp: "",
+      visibility: { visibility: "public" },
+      event: { kind: "phase_transition", phase: "agenda", round: 3 },
+    },
+  ] as GameEvent[]);
+
+  it("is the objectives scored by whom, the objectives revealed and the command tokens of each seat", () => {
+    const [status] = selectLog(update, events).entries.flatMap((entry) =>
+      entry.kind === "phase" && entry.phase === "status" ? [entry] : [],
+    );
+    const lines = status.groups.find((group) => group.title === "Scored")!.lines;
+    expect(lines).toHaveLength(2);
+    const past = selectPastPhase(update, events, status.id)!;
+    expect(past.action.heading).toBe("Status phase");
+    // The rows of "Scored" are the lines of its group of the Log, each one "Scored".
+    const scored = seatsOf(past.action.blocks, "Scored");
+    expect(scored.map((row) => row.seat)).toEqual(["b", "a"]);
+    for (const [at, row] of scored.entries()) {
+      expect(row.status).toEqual(expect.objectContaining({ label: "Scored" }));
+      expect(row.text).toBe(lines[at].text);
+    }
+    expect(scored[1].text).toMatch(/secret objective$/);
+    // With no catalogue the revealed objective is its name.
+    expect(past.action.blocks).toContainEqual(
+      expect.objectContaining({ kind: "note", strong: "Revealed" }),
+    );
+    expect(seatsOf(past.action.blocks, "Command tokens")).toHaveLength(3);
   });
 });
 
