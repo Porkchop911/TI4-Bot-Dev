@@ -78,7 +78,9 @@ export function selectNow(
 
 /**
  * The line over the board while another seat acts: the seat, the action and where, the step and
- * whom it waits for. None while the viewer plays its own turn, or a phase asks the viewer.
+ * whom it waits for. None while the viewer plays its own turn, and none while the game waits for a
+ * decision of the viewer (a secondary of the card that is played, a window, a phase that asks the
+ * viewer): then that decision is what the action waits for, and its sheet is the one place.
  */
 export function selectLiveLine(
   update: SessionUpdate,
@@ -87,7 +89,7 @@ export function selectLiveLine(
   asked: boolean,
   printed: Catalog | null,
 ): LiveLineView | null {
-  if (!entry) {
+  if (!entry || asked) {
     return null;
   }
   const parts =
@@ -95,9 +97,7 @@ export function selectLiveLine(
       ? entry.mine
         ? null
         : [seatLabel(update, entry.seat, printed), entry.label, now.step, now.detail]
-      : asked
-        ? null
-        : [entry.label.split(" · ")[0], now.detail];
+      : [entry.label.split(" · ")[0], now.detail];
   if (!parts) {
     return null;
   }

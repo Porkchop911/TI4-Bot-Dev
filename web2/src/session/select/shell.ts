@@ -322,16 +322,16 @@ export function selectShell(
       past && inspect
         ? inspectOf(log, inspect.turn, past.action, update, printed, !!watched)
         : null,
-    live:
-      inspect && !watched
-        ? null
-        : selectLiveLine(
-            update,
-            playing,
-            now ?? { step: null, detail: null },
-            !!openChoice(update, local),
-            printed,
-          ),
+    // The line is not there while a turn of the Log is open: Watch is what it says.
+    live: inspect
+      ? null
+      : selectLiveLine(
+          update,
+          playing,
+          now ?? { step: null, detail: null },
+          !!openChoice(update, local),
+          printed,
+        ),
     apply: local.draft?.apply ?? null,
     toast: null,
     asked: !!update.pending_choice || !!local.draft,

@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { expect, test, type Locator } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 // The shell of a game on a Pixel 9 in portrait. Needs the engine: `scripts/build-wasm.sh`.
 const WASM = fileURLToPath(new URL("../src/session/ti4.wasm", import.meta.url));
@@ -18,6 +18,17 @@ const readOnly = async (log: Locator) => {
     );
   }
 };
+
+/** The board has one sheet over it: the decision, Watch or an opened turn, never two. */
+async function oneSheet(page: Page, name: "Open step" | "Watch" | "Turn") {
+  const board = page.getByRole("region", { name: "Galaxy board" });
+  for (const other of ["Open step", "Watch", "Turn"]) {
+    await expect(board.getByRole("region", { name: other, exact: true })).toHaveCount(
+      other === name ? 1 : 0,
+    );
+  }
+  await expect(board.getByRole("button", { name: "Restore" })).toHaveCount(0);
+}
 
 test("phone: the panes are Map, Players and Log, and the open step is a sheet over the board", async ({
   page,
@@ -118,6 +129,18 @@ test("phone: with no decision of the viewer open there is no step sheet", async 
   await expect(sheet).toHaveCount(0);
   await expect(page.locator("footer").getByRole("button", { name: "Undo" })).toBeInViewport();
   await page.screenshot({ path: `${SHOTS}/waiting.png`, animations: "disabled" });
+  // The game waits for no decision of the viewer: a line over the board says what is played now,
+  // and a tap on it opens Watch, the one sheet over the board, with no bar of a decision.
+  const board = page.getByRole("region", { name: "Galaxy board" });
+  const line = board.getByRole("button", { name: /^Played now: .*Waiting for Hacan/ });
+  await expect(line).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/live-line.png`, animations: "disabled" });
+  await line.click();
+  await oneSheet(page, "Watch");
+  await expect(line).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Your decision" })).toHaveCount(0);
+  await expect(page.locator("header")).not.toContainText("History");
+  await page.screenshot({ path: `${SHOTS}/watch-phase.png`, animations: "disabled" });
   expect(errors).toEqual([]);
 });
 
@@ -233,7 +256,7 @@ test("phone: while the viewer decides a secondary, the sheet on the map has its 
   await page.screenshot({ path: `${SHOTS}/secondary-log.png`, animations: "disabled" });
 
   // The live row of Sol opens Watch on Map: the turn that is played now, read-only, over the live
-  // board; the decision is its line, with the main button under the pane.
+  // board. It is the one sheet over the board: the decision is its bar in the place of the footer.
   await live.click();
   const panes = page.getByRole("navigation", { name: "Panes" });
   await expect(panes.getByRole("button", { name: "Map" })).toHaveAttribute("aria-pressed", "true");
@@ -243,33 +266,26 @@ test("phone: while the viewer decides a secondary, the sheet on the map has its 
     "▶ Deciding",
   );
   const board = page.getByRole("region", { name: "Galaxy board" });
-  const line = board.getByRole("button", { name: /^Played now: .* · Strategic · Leadership/ });
-  await expect(line).toHaveAttribute("aria-pressed", "true");
+  const line = board.getByRole("button", { name: /^Played now: / });
   await expect(board.locator("[data-past]")).toHaveCount(0);
   await expect(page.locator("header")).not.toContainText("History");
-  await expect(sheet.getByRole("button", { name: "Restore" })).toBeVisible();
-  await expect(send).toBeVisible();
+  await oneSheet(page, "Watch");
+  const waiting = page.getByRole("region", { name: "Your decision" });
+  await expect(waiting).toContainText("Your decision is waiting: ");
+  await expect(send).toHaveCount(0);
+  await expect(line).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
     page.viewportSize()!.width,
   );
   expect(await watch.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
   await page.screenshot({ path: `${SHOTS}/watch.png`, animations: "disabled" });
-  // A tap on the line closes Watch: the decision is back, and the line stays.
-  await line.click();
+  // "Back" closes Watch: the decision is back. The action waits for the viewer, so no line says it.
+  await waiting.getByRole("button", { name: "Back" }).click();
   await expect(watch).toHaveCount(0);
   await expect(sheet.getByRole("button", { name: "Add bought token" })).toBeVisible();
-  await expect(line).toHaveAttribute("aria-pressed", "false");
-  await page.screenshot({ path: `${SHOTS}/live-line.png`, animations: "disabled" });
-  // Watch closes when the turn of Sol ends.
-  await line.click();
-  await expect(watch).toBeVisible();
-  for (let answer = 0; answer < 8 && (await watch.count()) > 0; answer += 1) {
-    if (await send.isVisible()) {
-      await send.click();
-    }
-    await page.waitForTimeout(300);
-  }
-  await expect(watch).toHaveCount(0);
+  await oneSheet(page, "Open step");
+  await expect(line).toHaveCount(0);
+  await page.screenshot({ path: `${SHOTS}/waits-for-you.png`, animations: "disabled" });
   expect(errors).toEqual([]);
 });
 

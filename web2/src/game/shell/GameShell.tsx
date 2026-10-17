@@ -10,7 +10,6 @@ import { LogPanel } from "../log/LogPanel";
 import {
   decisionHeading,
   LiveLine,
-  ReadOnlyTurn,
   TurnSheet,
   useFreshQuestion,
   WaitingBar,
@@ -121,8 +120,9 @@ export function GameShell({
   // the present.
   const history = view.inspect && !view.inspect.watch ? view.inspect : null;
   const watch = view.inspect?.watch ? view.inspect : null;
-  // The history mode stays when a question of the viewer comes: the bar of the decision marks it.
-  const fresh = useFreshQuestion(!!history, view.asked, question);
+  // A turn of the Log stays open when a question of the viewer comes: the bar of the decision
+  // marks it.
+  const fresh = useFreshQuestion(!!view.inspect, view.asked, question);
   // The pane where the open choice is made: a seat is picked in the player table, every other
   // choice is made on the map, where the open step is a sheet over the board.
   const asked: Pane | null = view.players.pick
@@ -195,9 +195,8 @@ export function GameShell({
     drawer,
     dispatch,
     turn: !!view.inspect,
-    history: !!history,
   });
-  keys.current = { view: view.action, drawer, dispatch, turn: !!view.inspect, history: !!history };
+  keys.current = { view: view.action, drawer, dispatch, turn: !!view.inspect };
   useEffect(() => {
     // Focus that Tab moved belongs to the keyboard; focus that a click left behind does not.
     let focusByKeyboard = false;
@@ -216,9 +215,9 @@ export function GameShell({
         event.preventDefault();
         return now.dispatch({ type: "closeTurn" });
       }
-      // The history mode shows no control of the live game: its keys do nothing there. Watch is
-      // the present: the keys of the decision stay.
-      if (now.history) {
+      // An open turn of the Log, history or Watch, has the place of the decision: its keys do
+      // nothing there.
+      if (now.turn) {
         return;
       }
       if (!keyIsFree(event, focusByKeyboard)) {
@@ -284,16 +283,20 @@ export function GameShell({
   // bottom left and the step sheet at the bottom right: they do not cover each other.
   const inspecting = phone && showsInspector(view.board, phone);
   const [turnMinimized, setTurnMinimized] = useState<string | null>(null);
-  const step = history ? (
-    // A turn of the Log that is open has the place of the step sheet, in the history mode.
+  // One sheet over the board at a time: the viewer's decision, or a turn of the Log that is open
+  // (the history mode, or Watch: the turn that is played now). An open turn has the place of the
+  // decision, whose bar says that it waits.
+  const opened = view.inspect;
+  const step = opened ? (
     <TurnSheet
-      view={history}
+      view={opened}
+      present={!!watch}
       decision={view.asked ? view.action : null}
       fresh={fresh}
       mark={ACCENT[view.accent]}
       status={view.toolbar.status}
-      minimized={turnMinimized === history.turn}
-      onMinimized={(minimized) => setTurnMinimized(minimized ? history.turn : null)}
+      minimized={turnMinimized === opened.turn}
+      onMinimized={(minimized) => setTurnMinimized(minimized ? opened.turn : null)}
       covered={inspecting}
     />
   ) : (
@@ -306,18 +309,7 @@ export function GameShell({
         minimized={minimizedAt === question}
         onMinimized={(minimized) => setMinimizedAt(minimized ? question : null)}
         // What another seat does now is a line over the sheet; a tap on it opens Watch.
-        lead={view.live && <LiveLine view={view.live} watching={!!watch} />}
-        watch={
-          watch && (
-            <ReadOnlyTurn
-              view={watch}
-              status={view.toolbar.status}
-              minimized={turnMinimized === watch.turn}
-              onMinimized={(minimized) => setTurnMinimized(minimized ? watch.turn : null)}
-            />
-          )
-        }
-        onLeaveWatch={() => dispatch({ type: "closeTurn" })}
+        lead={view.live && <LiveLine view={view.live} />}
       />
     )
   );
@@ -363,8 +355,9 @@ export function GameShell({
           footer={
             // An open fleet has the room of the footer, and so have the open landings and the
             // open build of a production. The check mark of the sheet gives the footer back.
-            // In the history mode the decision is not shown: its bar says that it waits.
-            history
+            // While a turn of the Log is open the decision is not shown: its bar says that it
+            // waits.
+            opened
               ? view.asked && (
                   <WaitingBar
                     heading={decisionHeading(view.action)}

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { ActionView } from "../../model";
-import { cx, PhoneScope, usePhoneScreen } from "../../ui";
+import { PhoneScope, usePhoneScreen } from "../../ui";
 import { ActionFooter, ActionPanel, footerOf } from "./ActionPanel";
 
 /**
@@ -47,9 +47,9 @@ export function MinimizedLine({ view, onRestore }: { view: ActionView; onRestore
  * restores it. The main button stays in reach: under the line on desktop, under the pane on a
  * phone. The shell keeps the state until a new question of the viewer.
  *
- * Over it is the line of what another seat does now (`lead`), and Watch (`watch`): the turn that
- * is played now, read-only, above the decision, which is then its line (its footer stays); a tap
- * on that line leaves Watch.
+ * Over it is the line of what another seat does now (`lead`), while the game waits for no decision
+ * of the viewer. Watch, the turn that is played now, has the place of the sheet (`TurnSheet`): one
+ * sheet over the board at a time.
  */
 export function StepSheet({
   view,
@@ -58,8 +58,6 @@ export function StepSheet({
   minimized,
   onMinimized,
   lead = null,
-  watch = null,
-  onLeaveWatch,
 }: {
   view: ActionView;
   status: string;
@@ -69,37 +67,17 @@ export function StepSheet({
   onMinimized: (minimized: boolean) => void;
   /** The line over the sheet: what another seat does now. */
   lead?: ReactNode;
-  /** Watch: the turn that is played now, read-only, in the place of the sheet. */
-  watch?: ReactNode;
-  onLeaveWatch?: () => void;
 }) {
   const phone = usePhoneScreen();
   const minimize = () => onMinimized(true);
-  const restore = () => (watch ? onLeaveWatch?.() : onMinimized(false));
-  const line = asked && (minimized || !!watch);
-  const watching = watch && (
-    <div
-      role="region"
-      aria-label="Watch"
-      className={cx(
-        "pointer-events-auto flex min-h-0 flex-col overflow-auto bg-surface",
-        phone ? "flex-1 border-t border-line-strong" : "",
-      )}
-    >
-      {watch}
-    </div>
-  );
+  const restore = () => onMinimized(false);
+  const line = asked && minimized;
   if (phone) {
     const decision = asked && (
       <div
         role="region"
         aria-label="Open step"
-        className={cx(
-          "pointer-events-auto flex flex-col bg-surface",
-          watch
-            ? "flex-none border-t border-line"
-            : "min-h-0 flex-1 overflow-auto border-t border-line",
-        )}
+        className="pointer-events-auto flex min-h-0 flex-1 flex-col overflow-auto border-t border-line bg-surface"
       >
         {line ? (
           <MinimizedLine view={view} onRestore={restore} />
@@ -109,18 +87,13 @@ export function StepSheet({
       </div>
     );
     return (
-      (lead || watching || decision) && (
+      (lead || decision) && (
         <div
           data-covers-board=""
           className="pointer-events-none absolute inset-x-0 bottom-0 z-2 flex max-h-[60%] flex-col gap-1.5"
         >
           {lead && <div className="flex px-2.5">{lead}</div>}
-          {(watching || decision) && (
-            <div className="flex min-h-0 flex-1 flex-col">
-              {watching}
-              {decision}
-            </div>
-          )}
+          {decision}
         </div>
       )
     );
@@ -151,19 +124,9 @@ export function StepSheet({
     )
   );
   return (
-    (lead || watching || decision) && (
-      <div
-        className={cx(
-          "pointer-events-none absolute right-3 bottom-3 z-2 flex w-[412px] flex-col items-end gap-2",
-          watch ? "max-h-[80%]" : "max-h-[65%]",
-        )}
-      >
+    (lead || decision) && (
+      <div className="pointer-events-none absolute right-3 bottom-3 z-2 flex max-h-[65%] w-[412px] flex-col items-end gap-2">
         {lead && <div className="flex w-full">{lead}</div>}
-        {watching && (
-          <div className={`${frame} min-h-0 flex-1`}>
-            <PhoneScope className="flex min-h-0 flex-1 flex-col">{watching}</PhoneScope>
-          </div>
-        )}
         {decision}
       </div>
     )

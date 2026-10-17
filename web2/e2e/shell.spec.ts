@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { expect, test, type Locator } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 // The shell of a game on desktop. Needs the engine: `scripts/build-wasm.sh`.
 const WASM = fileURLToPath(new URL("../src/session/ti4.wasm", import.meta.url));
@@ -19,6 +19,17 @@ const readOnly = async (log: Locator) => {
     );
   }
 };
+
+/** The board has one sheet over it: the decision, Watch or an opened turn, never two. */
+async function oneSheet(page: Page, name: "Open step" | "Watch" | "Turn") {
+  const board = page.getByRole("region", { name: "Galaxy board" });
+  for (const other of ["Open step", "Watch", "Turn"]) {
+    await expect(board.getByRole("region", { name: other, exact: true })).toHaveCount(
+      other === name ? 1 : 0,
+    );
+  }
+  await expect(board.getByRole("button", { name: "Restore" })).toHaveCount(0);
+}
 
 test("desktop: the right column is the players and the log, and the open step is a sheet over the board at the width of a phone", async ({
   page,
@@ -157,6 +168,18 @@ test("desktop: with no decision of the viewer open there is no step sheet, the f
   await expect(live).toContainText("Strategy phase · Round 1");
   await readOnly(log);
   await page.screenshot({ path: `${SHOTS}/waiting.png`, animations: "disabled" });
+  // A line over the board says what is played now; it opens Watch, the one sheet over the board,
+  // with no bar of a decision and no footer.
+  const board = page.getByRole("region", { name: "Galaxy board" });
+  const line = board.getByRole("button", { name: /^Played now: .*Waiting for Hacan/ });
+  await expect(line).toBeVisible();
+  await line.click();
+  await oneSheet(page, "Watch");
+  await expect(line).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Your decision" })).toHaveCount(0);
+  await expect(page.locator("footer").getByRole("button", { name: "Undo" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(line).toBeVisible();
 
   expect(errors).toEqual([]);
 });
@@ -614,7 +637,7 @@ test("desktop: a strategic turn with a tactical action opens to its card, then t
   expect(errors).toEqual([]);
 });
 
-test("desktop: a phase of the Log opens what the seats did in it, and the turn of another seat that is played now is a line over the board that opens Watch", async ({
+test("desktop: a phase of the Log opens what the seats did in it, and the live row of another seat opens Watch in the place of the decision", async ({
   page,
 }) => {
   test.setTimeout(15_000);
@@ -680,12 +703,13 @@ test("desktop: a phase of the Log opens what the seats did in it, and the turn o
   }
   await sheet.locator('footer button[aria-keyshortcuts="Enter"]').click();
   await expect(sheet.getByRole("button", { name: "Add bought token" })).toBeVisible();
-  // While Sol plays, a line over the board says what is played now.
+  // The action waits for the viewer: its decision is the one place, no line says it.
   const board = page.getByRole("region", { name: "Galaxy board" });
-  const line = board.getByRole("button", { name: /^Played now: .* · Strategic · Leadership/ });
-  await expect(line).toBeVisible();
+  const line = board.getByRole("button", { name: /^Played now: / });
+  await expect(line).toHaveCount(0);
+  await oneSheet(page, "Open step");
   // The live row is the turn of Sol: it opens Watch, what is played now, who decides and who
-  // waits, in the present.
+  // waits, in the present, in the place of the decision.
   const live = log.getByRole("button", { name: /· Strategic · Leadership/ });
   await expect(live).toContainText("▶");
   await live.click();
@@ -694,38 +718,27 @@ test("desktop: a phase of the Log opens what the seats did in it, and the turn o
   expect((await watch.boundingBox())!.width).toBeLessThanOrEqual(412);
   const you = watch.locator("ul[aria-label=Seats] > li").filter({ hasText: "You" });
   await expect(you).toContainText("▶ Deciding");
-  await expect(line).toHaveAttribute("aria-pressed", "true");
+  await oneSheet(page, "Watch");
+  await expect(line).toHaveCount(0);
   // No history mode: the toolbar keeps the status and Live, the board is not hatched, no stamp.
   const header = page.locator("header");
   await expect(header).not.toContainText("History");
   await expect(header.getByRole("navigation", { name: "Workspace" })).toBeVisible();
   await expect(board.locator("[data-past]")).toHaveCount(0);
   await expect(board.getByRole("status", { name: "Board shows" })).toHaveCount(0);
-  await expect(turn).toHaveCount(0);
-  // The viewer's decision is its line, with its footer: its main button is in reach.
-  await expect(sheet.getByRole("button", { name: "Restore" })).toBeVisible();
-  await expect(sheet.locator('footer button[aria-keyshortcuts="Enter"]')).toBeVisible();
+  // The viewer's decision is its bar: no control of it, no footer, no key.
+  const waiting = page.getByRole("region", { name: "Your decision" });
+  await expect(waiting).toContainText("Your decision is waiting: ");
+  await expect(page.locator('footer button[aria-keyshortcuts="Enter"]')).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/live-turn.png`, animations: "disabled" });
-  // A tap on the line of the decision gives the decision back; the line over the board opens
-  // Watch again, and a second tap closes it.
-  await sheet.getByRole("button", { name: "Restore" }).click();
+  // "Back" gives the decision back; Esc closes Watch too.
+  await waiting.getByRole("button", { name: "Back" }).click();
   await expect(watch).toHaveCount(0);
   await expect(sheet.getByRole("button", { name: "Add bought token" })).toBeVisible();
-  await line.click();
+  await live.click();
   await expect(watch).toBeVisible();
-  await line.click();
+  await page.keyboard.press("Escape");
   await expect(watch).toHaveCount(0);
-  // Watch closes when the turn that it shows ends: Hacan answers, and Sol's turn goes on to its
-  // end while Watch is open.
-  await line.click();
-  await expect(watch).toBeVisible();
-  for (let answer = 0; answer < 8 && (await watch.count()) > 0; answer += 1) {
-    const send = sheet.locator('footer button[aria-keyshortcuts="Enter"]');
-    if (await send.isVisible()) {
-      await send.click();
-    }
-    await page.waitForTimeout(300);
-  }
-  await expect(watch).toHaveCount(0);
+  await oneSheet(page, "Open step");
   expect(errors).toEqual([]);
 });

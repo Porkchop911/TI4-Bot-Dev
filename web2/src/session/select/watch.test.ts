@@ -91,7 +91,15 @@ it.skipIf(!built)(
   () => {
     const at = updates.find((update) => liveOther(update));
     expect(at).toBeDefined();
-    const view = selectShell(at!.update, local(at!));
+    // While the game asks the viewer (a secondary, a window), the decision is the one place:
+    // no line.
+    expect(at!.update.pending_choice).toBeTruthy();
+    expect(selectShell(at!.update, local(at!)).live).toBeNull();
+    // Once the viewer answered, the game waits for no decision of the viewer: the line is there.
+    const view = selectShell(at!.update, {
+      ...local(at!),
+      sent: at!.update.pending_choice!.nonce,
+    });
     const row = liveOther(at!)!;
     expect(view.live?.turn).toBe(row.id);
     expect(view.live?.text).toContain(row.label);
@@ -123,8 +131,8 @@ it.skipIf(!built)(
     const plain = selectShell(now.update, local(now));
     expect(watching.board.tiles).toEqual(plain.board.tiles);
     expect(watching.toolbar.status).toBe(plain.toolbar.status);
-    // The line stays, so that a tap on it closes Watch.
-    expect(watching.live?.turn).toBe(turn);
+    // One sheet at a time: Watch is what the line says, so the line is not there.
+    expect(watching.live).toBeNull();
     // A later update where the turn is over: Watch is closed, the history of the same turn is not.
     const later = updates.slice(index).find((update) => liveOther(update)?.id !== turn)!;
     expect(

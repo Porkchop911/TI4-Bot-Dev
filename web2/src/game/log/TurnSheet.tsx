@@ -116,26 +116,19 @@ export function ReadOnlyTurn({
 
 /**
  * What another seat does now, on a line over the board in the place of the stamp of the history
- * mode: "▶" and the seat, the action, the step and whom it waits for. A tap on it opens Watch, the
- * turn that is played now, read-only; a tap while Watch is open closes it.
+ * mode: "▶" and the seat, the action, the step and whom it waits for. It is there only while the
+ * game waits for no decision of the viewer. A tap on it opens Watch, the turn that is played now,
+ * read-only, in the place of the sheet; the line is not shown while Watch is open.
  */
-export function LiveLine({ view, watching }: { view: LiveLineView; watching: boolean }) {
+export function LiveLine({ view }: { view: LiveLineView }) {
   const dispatch = useDispatch();
   return (
     <button
       type="button"
       aria-label={`Played now: ${view.text}`}
-      aria-pressed={watching}
       title={view.text}
-      onClick={() =>
-        dispatch(
-          watching ? { type: "closeTurn" } : { type: "inspectTurn", turn: view.turn, watch: true },
-        )
-      }
-      className={cx(
-        "pointer-events-auto flex max-w-full min-w-0 items-center gap-1.5 self-start rounded-md border bg-surface px-2 py-0.5 text-xs font-strong shadow-[0_4px_12px_#0006] hover:bg-raised touch:min-h-9",
-        watching ? "border-accent text-text" : "border-line-strong text-muted",
-      )}
+      onClick={() => dispatch({ type: "inspectTurn", turn: view.turn, watch: true })}
+      className="pointer-events-auto flex max-w-full min-w-0 items-center gap-1.5 self-start rounded-md border border-line-strong bg-surface px-2 py-0.5 text-xs font-strong text-muted shadow-[0_4px_12px_#0006] hover:bg-raised touch:min-h-9"
     >
       <span aria-hidden className="shrink-0 text-accent">
         ▶
@@ -147,12 +140,15 @@ export function LiveLine({ view, watching }: { view: LiveLineView; watching: boo
 
 /**
  * A turn or a phase of the Log, opened: its action as Live showed it, read-only, in the place of
- * the step sheet, over the board as it was then. The screen is in the history mode: the board is
- * hatched, a stamp over the sheet says which point it shows; the toolbar names the
- * turn with "‹" and "›" to the rows of the Log around it. Its step tabs are
- * a view of the turn; a row and a token show what was done and are no control, the inspector of a
- * system stays. "▾" minimizes it to one line, as the step sheet. The viewer's open decision is not shown: its bar says that it
- * waits, and "Back" closes the turn and gives it back.
+ * the step sheet. It is the one sheet over the board: the viewer's open decision is not shown, its
+ * bar says that it waits, and "Back" closes the turn and gives it back.
+ *
+ * A turn that was played is the history mode, over the board as it was then: the board is
+ * hatched, a stamp over the sheet says which point it shows; the toolbar names the turn with "‹"
+ * and "›" to the rows of the Log around it. The turn that is played now is Watch (`present`): the
+ * live board, with no hatch and no stamp, and the toolbar of the present. Its step tabs are a view
+ * of the turn; a row and a token show what was done and are no control, the inspector of a system
+ * stays. "▾" minimizes it to one line, as the step sheet.
  */
 export function TurnSheet({
   view,
@@ -163,8 +159,11 @@ export function TurnSheet({
   minimized,
   onMinimized,
   covered = false,
+  present = false,
 }: {
   view: InspectView;
+  /** Watch: the turn that is played now, over the live board. */
+  present?: boolean;
   /** The sheet of the turn is one line, so that the board is in view. */
   minimized: boolean;
   onMinimized: (minimized: boolean) => void;
@@ -189,14 +188,14 @@ export function TurnSheet({
   );
   // The board shows the past: it is hatched, with a dashed edge, and keeps its colours; a stamp
   // over the sheet says which point it shows, with the sign of the mode. No colour carries it.
-  const past = (
+  const past = !present && (
     <div
       aria-hidden
       data-past=""
       className="pointer-events-none absolute inset-0 z-1 border border-dashed border-line-strong bg-[repeating-linear-gradient(135deg,#ffffff0d_0_2px,transparent_2px_11px)]"
     />
   );
-  const stamp = (
+  const stamp = !present && (
     <p
       role="status"
       aria-label="Board shows"
@@ -227,10 +226,10 @@ export function TurnSheet({
               data-covers-board=""
               className="pointer-events-none absolute inset-x-0 bottom-0 z-2 flex max-h-[60%] flex-col gap-1.5"
             >
-              <div className="flex px-2.5">{stamp}</div>
+              {stamp && <div className="flex px-2.5">{stamp}</div>}
               <div
                 role="region"
-                aria-label="Turn"
+                aria-label={present ? "Watch" : "Turn"}
                 className="pointer-events-auto flex min-h-0 flex-1 flex-col overflow-auto border-t border-line-strong bg-surface"
               >
                 {panel}
@@ -248,7 +247,11 @@ export function TurnSheet({
       {past}
       <div className="absolute right-3 bottom-3 z-2 flex max-h-[80%] w-[412px] flex-col gap-2">
         {stamp}
-        <div role="region" aria-label="Turn" className={`${frame} min-h-0 flex-1`}>
+        <div
+          role="region"
+          aria-label={present ? "Watch" : "Turn"}
+          className={`${frame} min-h-0 flex-1`}
+        >
           <PhoneScope className="flex min-h-0 flex-1 flex-col">{panel}</PhoneScope>
         </div>
         {waiting && (
