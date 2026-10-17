@@ -233,6 +233,8 @@ pub fn players_sheet(ui: &mut egui::Ui, source: &Sheets<'_>, frame: &ReviewFrame
                     session.manifest.checkpoint_path,
                     if policy.format == "MLP inference bundle" {
                         "shared actor with faction rows"
+                    } else if policy.format == crate::SEPARATE_MODELS_FORMAT {
+                        "one model per faction"
                     } else {
                         session.manifest.profile_table.label()
                     },

@@ -81,6 +81,8 @@ pub const MAX_FRAMES: usize = 1_000_001;
 pub const MAX_COMMAND_STEPS: usize = 2_000_000;
 pub const MAX_RUN_COUNT: usize = 1_000_000;
 pub const FACTIONS: [&str; 6] = ["sol", "letnev", "xxcha", "hacan", "jolnar", "l1z1x"];
+/// [`PolicySummary::format`] of a table seated on one model per faction.
+pub const SEPARATE_MODELS_FORMAT: &str = "MLP inference bundles, one per faction";
 
 #[must_use]
 pub const fn default_sampling_temperature() -> f64 {
@@ -874,6 +876,8 @@ enum LoadedPolicy {
     Linear(BTreeMap<String, Profile>),
     Mlp {
         actor: Rc<Actor>,
+        /// A separate-models run: each faction's own actor. Empty when one actor plays every seat.
+        by_faction: BTreeMap<String, Rc<Actor>>,
         vocabulary: Vocabulary,
     },
 }
@@ -1054,9 +1058,20 @@ impl LiveReview {
                                 log: Rc::clone(&decision_sink),
                             })
                         }
-                        LoadedPolicy::Mlp { actor, vocabulary } => {
+                        LoadedPolicy::Mlp {
+                            actor,
+                            by_faction,
+                            vocabulary,
+                        } => {
                             let row = FactionRow::of(&faction)
                                 .map_err(|error| format!("MLP faction: {error}"))?;
+                            let actor = if by_faction.is_empty() {
+                                actor
+                            } else {
+                                by_faction.get(&faction).ok_or_else(|| {
+                                    format!("separate models: no model for {faction}")
+                                })?
+                            };
                             let bot = MlpBot::sharing(actor, vocabulary.clone(), row, stream)
                                 .at_temperature(temperature)
                                 .from_setup(baseline);
@@ -1953,6 +1968,9 @@ fn load_policy(
     if let Some(directory) = bundle_directory {
         ti4_tensor::configure_deterministic(20_260_821)
             .map_err(|error| ReviewError::Invalid(format!("MLP runtime: {error}")))?;
+        if let Some(bundles) = separate_model_bundles(&directory)? {
+            return load_separate_models(directory, &bundles);
+        }
         let loaded = ti4_mlp::bundle::read(&directory)
             .map_err(|error| ReviewError::Invalid(format!("MLP checkpoint bundle: {error}")))?;
         let manifest_path = directory.join("manifest.json");
@@ -1965,6 +1983,7 @@ fn load_policy(
             manifest_bytes,
             LoadedPolicy::Mlp {
                 actor: Rc::new(loaded.actor),
+                by_faction: BTreeMap::new(),
                 vocabulary: loaded.vocabulary,
             },
             summary,
@@ -1987,6 +2006,114 @@ fn load_policy(
         path.to_path_buf(),
         bytes,
         LoadedPolicy::Linear(profiles),
+        summary,
+    ))
+}
+
+/// The training updates a bundle's provenance names ("M10-034 PPO, 300 update(s) from ...").
+#[cfg(feature = "simulate")]
+fn trained_updates(bundle: &Path) -> Option<u64> {
+    let manifest: Value =
+        serde_json::from_slice(&std::fs::read(bundle.join("manifest.json")).ok()?).ok()?;
+    let source = manifest.get("source")?.as_str()?;
+    let before = &source[..source.find(" update(s)")?];
+    before.rsplit(' ').next()?.parse().ok()
+}
+
+/// A separate-models run (`ppo_update --separate-models`) writes `<out>/<faction>/checkpoint-N`,
+/// one directory per faction of the six. Given one faction's bundle there, every faction's bundle
+/// trained for the same number of updates, so a saved session reopens on exactly those six.
+/// `None` when the bundle is not in that layout.
+#[cfg(feature = "simulate")]
+fn separate_model_bundles(directory: &Path) -> Result<Option<BTreeMap<String, PathBuf>>> {
+    let Some(faction_directory) = directory.parent() else {
+        return Ok(None);
+    };
+    let is_faction = faction_directory
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| FACTIONS.contains(&name));
+    let Some(run) = faction_directory.parent().filter(|_| is_faction) else {
+        return Ok(None);
+    };
+    if !FACTIONS.iter().all(|faction| run.join(faction).is_dir()) {
+        return Ok(None);
+    }
+    let wanted = trained_updates(directory).ok_or_else(|| {
+        ReviewError::Invalid(format!(
+            "separate models: {} does not name its training updates",
+            directory.display()
+        ))
+    })?;
+    let mut bundles = BTreeMap::new();
+    for faction in FACTIONS {
+        let entries = std::fs::read_dir(run.join(faction))
+            .map_err(|error| ReviewError::Invalid(format!("separate models {faction}: {error}")))?;
+        let bundle = entries
+            .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+            .find(|path| path.join("manifest.json").is_file() && trained_updates(path) == Some(wanted))
+            .ok_or_else(|| {
+                ReviewError::Invalid(format!(
+                    "separate models: no {faction} checkpoint at {wanted} update(s)"
+                ))
+            })?;
+        bundles.insert(faction.to_owned(), bundle);
+    }
+    Ok(Some(bundles))
+}
+
+/// Every faction's own bundle; the session records the chosen bundle's directory and the digest of
+/// all six manifests.
+#[cfg(feature = "simulate")]
+fn load_separate_models(
+    directory: PathBuf,
+    bundles: &BTreeMap<String, PathBuf>,
+) -> Result<(PathBuf, Vec<u8>, LoadedPolicy, PolicySummary)> {
+    let mut by_faction = BTreeMap::new();
+    let mut manifests = Vec::new();
+    let mut first: Option<(Value, Vocabulary)> = None;
+    for (faction, bundle) in bundles {
+        let loaded = ti4_mlp::bundle::read(bundle).map_err(|error| {
+            ReviewError::Invalid(format!("MLP checkpoint bundle {}: {error}", bundle.display()))
+        })?;
+        let bytes = read_bounded(&bundle.join("manifest.json"))?;
+        let manifest: Value = serde_json::from_slice(&bytes)
+            .map_err(|error| ReviewError::Invalid(format!("MLP manifest JSON: {error}")))?;
+        match &first {
+            None => first = Some((manifest, loaded.vocabulary)),
+            Some((reference, _)) if reference.get("slots_sha256") != manifest.get("slots_sha256") => {
+                return Err(ReviewError::Invalid(format!(
+                    "separate models: {faction} was trained on different slots"
+                )));
+            }
+            Some(_) => {}
+        }
+        manifests.extend(bytes);
+        by_faction.insert(faction.clone(), Rc::new(loaded.actor));
+    }
+    let (manifest, vocabulary) =
+        first.ok_or_else(|| ReviewError::Invalid("separate models: no bundles".to_owned()))?;
+    let mut summary = mlp_policy_summary(&manifest, vocabulary.oov_registry_version());
+    summary.format = SEPARATE_MODELS_FORMAT.to_owned();
+    summary.update = None;
+    summary.profiles = bundles
+        .iter()
+        .map(|(faction, bundle)| {
+            format!(
+                "{faction} · own model, {}",
+                bundle.file_name().and_then(|name| name.to_str()).unwrap_or("?")
+            )
+        })
+        .collect();
+    let actor = Rc::clone(by_faction.values().next().expect("six bundles"));
+    Ok((
+        directory,
+        manifests,
+        LoadedPolicy::Mlp {
+            actor,
+            by_faction,
+            vocabulary,
+        },
         summary,
     ))
 }
