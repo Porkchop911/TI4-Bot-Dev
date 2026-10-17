@@ -456,6 +456,7 @@ fn event_history_is_projected_to_its_explicit_audience() {
             }),
             private_detail: None,
             roll: None,
+            board: None,
         },
         GameEvent {
             id: "test-2".to_owned(),
@@ -481,6 +482,7 @@ fn event_history_is_projected_to_its_explicit_audience() {
             seat_detail: None,
             private_detail: None,
             roll: None,
+            board: None,
         },
     ];
 

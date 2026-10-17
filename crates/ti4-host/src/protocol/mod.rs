@@ -2,6 +2,7 @@
 
 use ti4_engine::choice::Choice;
 
+pub mod board_delta;
 pub mod client;
 pub mod error;
 pub mod public_fact;

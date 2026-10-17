@@ -428,33 +428,88 @@ pub fn project_board_view_full(
             defender: active.defender.clone(),
             ground_round: active.ground_round,
             odds_context,
-            last_step: active.last_step.as_ref().map(|step| {
-                let placed = |unit: &ti4_model::units::Unit| PlacedUnitView {
-                    unit_type: unit.type_id.clone(),
-                    owner: unit.owner.clone(),
-                    planet: Some(step.planet.clone()),
-                    damaged: unit.sustained_damage,
-                    galvanized: unit.galvanized,
-                };
-                crate::protocol::view::InvasionStepView {
-                    planet: step.planet.clone(),
-                    kind: step.kind.clone(),
-                    round: step.round,
-                    before: step.before.iter().map(placed).collect(),
-                    after: step.after.iter().map(placed).collect(),
-                    dice: step.dice.clone(),
-                    hits: step.hits.clone(),
-                    harrow_hits: step.harrow_hits,
-                }
-            }),
+            last_step: active.last_step.as_ref().map(invasion_step_view),
         })
     });
+    let log = &state.fight_log;
     BoardView {
         systems,
         active_system: state.active_system.clone(),
         map_tiles: map_tiles.to_vec(),
         combat: project_combat_view_for(state, pending_choice, dice_rolls, viewer),
         invasion,
+        space_rounds: log.space.iter().map(space_round_view).collect(),
+        ground_steps: log
+            .ground
+            .iter()
+            .map(|record| crate::protocol::view::GroundStepView {
+                system_id: record.system.clone(),
+                invasion_seq: record.invasion_seq,
+                invader: record.invader.clone(),
+                step: invasion_step_view(&record.step),
+            })
+            .collect(),
+    }
+}
+
+/// A unit in the space area, as a die roll of a space combat round names it.
+fn space_unit(unit: &ti4_model::units::Unit) -> PlacedUnitView {
+    PlacedUnitView {
+        unit_type: unit.type_id.clone(),
+        owner: unit.owner.clone(),
+        planet: None,
+        damaged: unit.sustained_damage,
+        galvanized: unit.galvanized,
+    }
+}
+
+fn combat_die(roll: &ti4_model::state::CombatRollRecord) -> crate::protocol::view::CombatDieRoll {
+    crate::protocol::view::CombatDieRoll {
+        player: Some(roll.player.clone()),
+        unit: roll.unit.clone(),
+        roll: roll.roll,
+        target: roll.target,
+        hit: roll.hit,
+    }
+}
+
+fn space_round_view(
+    record: &ti4_model::state::SpaceRoundRecord,
+) -> crate::protocol::view::SpaceRoundView {
+    crate::protocol::view::SpaceRoundView {
+        system_id: record.system.clone(),
+        attacker: record.attacker.clone(),
+        defender: record.defender.clone(),
+        battle_seq: record.battle_seq,
+        round: record.round,
+        round_start: record.round_start.iter().map(space_unit).collect(),
+        barrage_start: record.barrage_start.iter().map(space_unit).collect(),
+        barrage_dice: record.barrage_dice.iter().map(combat_die).collect(),
+        barrage_hits: record.barrage_hits.clone(),
+        dice_rolls: record.dice.iter().map(combat_die).collect(),
+        hits: record.hits.clone(),
+    }
+}
+
+fn invasion_step_view(
+    step: &ti4_model::state::InvasionStep,
+) -> crate::protocol::view::InvasionStepView {
+    let placed = |unit: &ti4_model::units::Unit| PlacedUnitView {
+        unit_type: unit.type_id.clone(),
+        owner: unit.owner.clone(),
+        planet: Some(step.planet.clone()),
+        damaged: unit.sustained_damage,
+        galvanized: unit.galvanized,
+    };
+    crate::protocol::view::InvasionStepView {
+        planet: step.planet.clone(),
+        kind: step.kind.clone(),
+        round: step.round,
+        before: step.before.iter().map(placed).collect(),
+        after: step.after.iter().map(placed).collect(),
+        dice: step.dice.clone(),
+        hits: step.hits.clone(),
+        harrow_hits: step.harrow_hits,
     }
 }
 

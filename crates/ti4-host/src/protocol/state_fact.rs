@@ -19,6 +19,7 @@ use ti4_model::content_types::POK;
 use ti4_model::id::{ObjectiveId, PlanetId, PlayerId, SystemId};
 use ti4_model::state::GameState;
 
+use super::board_delta::{BoardDelta, PublicBoard};
 use super::public_fact::{CombatKind, PublicFact};
 use super::server::{GameEvent, GameEventKind};
 
@@ -49,6 +50,8 @@ pub struct PublicTally {
     explorations: usize,
     agendas: usize,
     objectives: Vec<ObjectiveId>,
+    /// The public board in the terms of the view ([`super::board_delta`]).
+    board: PublicBoard,
 }
 
 impl PublicTally {
@@ -95,6 +98,7 @@ impl PublicTally {
             explorations: state.exploration_log.len(),
             agendas: state.agenda_log.len(),
             objectives: state.revealed_objectives.clone(),
+            board: PublicBoard::of(state),
         }
     }
 
@@ -595,6 +599,30 @@ fn combats(
     facts
 }
 
+/// What a step changed: the facts that no event of it told, and the change of the public board.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Observation {
+    pub facts: Vec<Observed>,
+    /// `None` when the step changed nothing of the board.
+    pub board: Option<BoardDelta>,
+}
+
+/// [`observe`], and the change of the public board from `tally` to `state`
+/// ([`super::board_delta`]). `tally` becomes the tally of `state`.
+#[must_use]
+pub fn observe_step(
+    tally: &mut PublicTally,
+    state: &GameState,
+    batch: &[GameEvent],
+) -> Observation {
+    let before = std::mem::take(&mut tally.board);
+    let facts = observe(tally, state, batch);
+    Observation {
+        facts,
+        board: tally.board.delta_from(&before),
+    }
+}
+
 /// The facts of the change from `tally` to `state`, the events of the batch being `batch` (the
 /// events recorded since the last comparison). `tally` becomes the tally of `state`.
 #[must_use]
@@ -859,6 +887,7 @@ mod tests {
             seat_detail: None,
             private_detail: None,
             roll: None,
+            board: None,
         }
     }
 

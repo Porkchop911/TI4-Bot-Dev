@@ -1820,6 +1820,7 @@ mod tests {
             seat_detail: facts.seat_detail,
             private_detail: None,
             roll: None,
+            board: None,
         };
         // Selected, not scored: only the seat sees it, in its private line.
         let before = event(verified_event_facts(&decision, Some(&score), None, &state));

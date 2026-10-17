@@ -5121,6 +5121,36 @@ impl CombatWindow {
             }
         }
         state.combat_round_dice = round_dice;
+        // The round for the record of the turn: a combat that ends in this step of the engine
+        // leaves no board that shows it.
+        let presentation = &state.combat_presentation;
+        let first = round == 1;
+        let record = ti4_model::state::SpaceRoundRecord {
+            system: self.system.clone(),
+            attacker: self.attacker.clone(),
+            defender: self.defender.clone(),
+            battle_seq: presentation.battle_seq,
+            round,
+            round_start: presentation.round_start.clone(),
+            barrage_start: if first {
+                presentation.barrage_start.clone()
+            } else {
+                Vec::new()
+            },
+            barrage_dice: if first {
+                presentation.barrage_dice.clone()
+            } else {
+                Vec::new()
+            },
+            barrage_hits: if first {
+                presentation.barrage_hits.clone()
+            } else {
+                std::collections::BTreeMap::new()
+            },
+            dice: state.combat_round_dice.clone(),
+            hits: state.combat_round_hits.clone(),
+        };
+        state.fight_log.space_round(record);
 
         // Forced hits first, so a free hit can still take a fighter the forced ones had to spare.
         let mut queue: Vec<Pending> = [

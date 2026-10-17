@@ -2578,6 +2578,7 @@ impl InvasionWindow {
                 harrow_hits: 0,
             });
         }
+        record_ground_step(state);
         if taken == held
             && victims.len() == 1
             && state
@@ -3616,6 +3617,7 @@ impl InvasionWindow {
                 harrow_hits: harrow,
             });
         }
+        record_ground_step(state);
         // After the whole round, so a handler sees the board once every hit has landed.
         for (name, payload) in log {
             self.emit_ground_event(state, ctx, name, payload);
@@ -4857,6 +4859,7 @@ fn space_cannon_defense(
                 harrow_hits: 0,
             });
         }
+        record_ground_step(state);
     }
 }
 
@@ -4895,6 +4898,31 @@ pub fn resolve(
         window.settle(state, &mut ctx);
     }
     Ok(window.into_report())
+}
+
+/// The step of the invasion that was just resolved, for the record of the turn
+/// ([`ti4_model::state::FightLog`]): an invasion that ends in this step of the engine leaves no
+/// board that shows it.
+fn record_ground_step(state: &mut GameState) {
+    let Some(active) = state.active_invasion.as_ref() else {
+        return;
+    };
+    let Some(step) = active.last_step.clone() else {
+        return;
+    };
+    // A step that this call did not resolve is still the last one: it is recorded once.
+    if state.fight_log.ground.last().is_some_and(|last| {
+        last.invasion_seq == active.seq && last.system == active.system && last.step == step
+    }) {
+        return;
+    }
+    let record = ti4_model::state::GroundStepRecord {
+        system: active.system.clone(),
+        invasion_seq: active.seq,
+        invader: active.invader.clone(),
+        step,
+    };
+    state.fight_log.ground.push(record);
 }
 
 #[cfg(test)]

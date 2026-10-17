@@ -242,6 +242,38 @@ pub struct InvasionStepView {
     pub harrow_hits: usize,
 }
 
+/// One round of a space combat of the turn as it resolved ([`ti4_model::state::SpaceRoundRecord`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct SpaceRoundView {
+    pub system_id: SystemId,
+    pub attacker: PlayerId,
+    pub defender: PlayerId,
+    pub battle_seq: u32,
+    pub round: u32,
+    pub round_start: Vec<PlacedUnitView>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub barrage_start: Vec<PlacedUnitView>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub barrage_dice: Vec<CombatDieRoll>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub barrage_hits: BTreeMap<PlayerId, u32>,
+    pub dice_rolls: Vec<CombatDieRoll>,
+    pub hits: BTreeMap<PlayerId, u32>,
+}
+
+/// A step of an invasion of the turn as it resolved ([`ti4_model::state::GroundStepRecord`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct GroundStepView {
+    pub system_id: SystemId,
+    pub invasion_seq: u64,
+    pub invader: PlayerId,
+    pub step: InvasionStepView,
+}
+
 /// Redacted view of the galaxy board.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -256,6 +288,14 @@ pub struct BoardView {
     pub combat: Option<CombatView>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub invasion: Option<InvasionView>,
+    /// The rounds of the space combats of the turn, as they resolved: a combat that began and
+    /// ended between two updates is here too. Cleared when the turn ends.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub space_rounds: Vec<SpaceRoundView>,
+    /// The steps of the invasions of the turn (bombardment, space cannon, each ground round),
+    /// as they resolved. Cleared when the turn ends.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ground_steps: Vec<GroundStepView>,
 }
 
 /// Exact progress towards a public objective requirement.

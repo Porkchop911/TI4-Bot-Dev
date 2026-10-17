@@ -1808,6 +1808,7 @@ impl<'a> Game<'a> {
         self.state.combat_round_hits.clear();
         self.state.combat_round_dice.clear();
         self.state.combat_presentation = ti4_model::state::CombatPresentation::default();
+        self.state.fight_log = ti4_model::state::FightLog::default();
         self.state.reroll_staging.clear();
         self.state.last_reroll_player = None;
         self.state.pending_destructions.clear();

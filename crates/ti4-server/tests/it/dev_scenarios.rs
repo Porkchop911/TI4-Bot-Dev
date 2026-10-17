@@ -979,3 +979,65 @@ fn the_end_of_a_live_combat_is_a_public_fact_of_the_state() {
     let seen = session.get_snapshot(&ViewerRole::Spectator);
     assert_eq!(ended(&seen.events), 1, "a spectator sees it");
 }
+
+/// Each step of the server tells what it changed of the public board: from the board of now, the
+/// changes of the event log take it back to the first board of the game, and the spectator gets
+/// them too.
+#[test]
+fn the_changes_of_the_board_take_a_live_game_back_to_its_start() {
+    use ti4_host::protocol::board_delta::PublicBoard;
+    use ti4_host::protocol::server::{GameEventKind, PublicFact};
+    let registry = Arc::new(GameRegistry::new());
+    let launched = launch_scenario(&registry, "ongoing_combat", Some(42)).unwrap();
+    let seat = ti4_model::id::PlayerId::new(&launched.player_id);
+    let session = registry.get_game(&launched.game_id).unwrap();
+    let start = PublicBoard::of(&session.restart_config().state);
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    let ended = |events: &[ti4_host::protocol::server::GameEvent]| {
+        events
+            .iter()
+            .any(|event| matches!(event.fact, Some(PublicFact::CombatEnded { .. })))
+    };
+    while !ended(&session.event_log()) {
+        let snapshot = session.get_snapshot(&ViewerRole::Player(seat.clone()));
+        if let Some(pending) = snapshot.pending_choice.as_ref() {
+            let option = pending
+                .choice
+                .options
+                .iter()
+                .find(|o| o.id == "decline" || o.id == "stay" || o.id == "fight")
+                .unwrap_or(&pending.choice.options[0]);
+            let _ = session.submit_choice(&seat, &pending.nonce, snapshot.game_version, &option.id);
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the combat did not end"
+        );
+        thread::sleep(Duration::from_millis(5));
+    }
+    session.stop();
+    let events = session.event_log();
+    let changes: Vec<_> = events
+        .iter()
+        .filter(|event| matches!(event.event, GameEventKind::BoardChanged))
+        .map(|event| event.board.clone().expect("a change of the board"))
+        .collect();
+    assert!(
+        changes.iter().any(|change| change.space_rounds.is_some()),
+        "the rounds of the combat are told"
+    );
+    let mut board = PublicBoard::of(&session.current_state());
+    for change in changes.iter().rev() {
+        board.rewind(change);
+    }
+    assert_eq!(board, start, "back to the first board");
+    let seen = session.get_snapshot(&ViewerRole::Spectator);
+    assert_eq!(
+        seen.events
+            .iter()
+            .filter(|event| matches!(event.event, GameEventKind::BoardChanged))
+            .count(),
+        changes.len(),
+        "a spectator gets every change"
+    );
+}

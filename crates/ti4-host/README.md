@@ -135,13 +135,17 @@ calls host functions for the logic:
 4. New dice: `protocol::server::public_roll(index, roll, active)` for each unseen roll of
    `game.rolls()`, then `journal::roll_is_known`/`roll_cursor`/`build_roll_event` (with the
    decision log: a roll of the action phase carries the `action_id` of its action).
-   Then the facts of the state: `protocol::state_fact::observe(&mut tally, &state, &events_since)`
+   Then the facts of the state: `protocol::state_fact::observe_step(&mut tally, &state, &events_since)`
    compares the public state with the `PublicTally` of the last step and, with the events
    recorded since, gives what no event told (a unit the game destroyed, the end of a combat and
    its winner, a planet taken, a card played, an exploration, an agenda resolved, an objective
    revealed); `journal::build_state_event` makes each a `GameEventKind::StateChanged` event that
-   carries its `PublicFact`, grouped like a roll. A replay only moves the tally on; a restarted
-   session tells the facts after its last decision once.
+   carries its `PublicFact`, grouped like a roll. The same call gives the change of the public
+   board (`protocol::board_delta::BoardDelta`: units, planets, command tokens, pools, the combat
+   and the invasion under way, the rounds of the fights of the turn, each before and after);
+   `journal::build_board_event` makes it the last event of the step, `GameEventKind::BoardChanged`,
+   so that a page can take the board of now back to any point of the events. A replay only moves
+   the tally on; a restarted session tells the facts and the change after its last decision once.
 5. `game_version += 1`, then one `state_update::state_update_for(&inputs, &inputs.path(), &viewer)`
    per viewer (offline: one). `auto_resolved` notes queued with `state_update::queue_auto_resolved`
    are drained by that update.

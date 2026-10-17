@@ -9,6 +9,7 @@ use ti4_engine::choice::DecisionRecord;
 use ti4_model::state::Phase;
 
 use crate::clock::Clock;
+use crate::protocol::board_delta::BoardDelta;
 use crate::protocol::server::{
     DecisionFacts, EventVisibility, GameEvent, GameEventKind, PublicRoll, action_id_for,
     decision_grouping,
@@ -146,6 +147,7 @@ pub fn build_event(
         seat_detail,
         private_detail: None,
         roll: None,
+        board: None,
     }
 }
 
@@ -246,6 +248,7 @@ pub fn build_roll_event(
         seat_detail: None,
         private_detail: None,
         roll: Some(roll),
+        board: None,
     }
 }
 
@@ -288,6 +291,50 @@ pub fn build_state_event(
         seat_detail: None,
         private_detail: None,
         roll: None,
+        board: None,
+    }
+}
+
+/// The public event of the change of the board of one step ([`crate::protocol::board_delta`]),
+/// grouped as a roll after `cursor` decisions is.
+#[must_use]
+pub fn build_board_event(
+    clock: &dyn Clock,
+    game_id: &str,
+    counter: u64,
+    decision_log: &[DecisionRecord],
+    cursor: usize,
+    round: u32,
+    phase: Phase,
+    version: Option<u64>,
+    board: BoardDelta,
+) -> GameEvent {
+    let action = roll_action(decision_log, cursor, phase);
+    GameEvent {
+        id: format!("{game_id}-{counter}"),
+        timestamp: clock.utc_time_string(),
+        version,
+        visibility: EventVisibility::Public,
+        event: GameEventKind::BoardChanged,
+        decision_count: Some(cursor),
+        batch_id: None,
+        batch_start_cursor: None,
+        batch_end_cursor: None,
+        action_id: action.action_id,
+        action_start_cursor: action.action_start_cursor,
+        actor: None,
+        round: Some(round),
+        phase: Some(phase),
+        action_type: action.action_type,
+        action_actor: action.action_actor,
+        stage: None,
+        detail: None,
+        movement: None,
+        fact: None,
+        seat_detail: None,
+        private_detail: None,
+        roll: None,
+        board: Some(board),
     }
 }
 

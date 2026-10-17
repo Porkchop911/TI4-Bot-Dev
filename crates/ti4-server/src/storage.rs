@@ -617,10 +617,9 @@ impl FileGameStore {
                 let start = id
                     .strip_prefix("action_")
                     .and_then(|value| value.parse::<usize>().ok());
-                if !matches!(
-                    event.event,
-                    ti4_host::protocol::server::GameEventKind::DecisionResolved
-                ) || !start.is_some_and(|start| {
+                // A decision, a roll, a fact of the state or a change of the board of an action:
+                // the action began at a decision of the history that opened it.
+                if !start.is_some_and(|start| {
                     start > 0
                         && start <= event.decision_count.unwrap_or(0)
                         && history

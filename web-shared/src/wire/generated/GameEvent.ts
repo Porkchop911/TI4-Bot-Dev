@@ -1,4 +1,5 @@
 // Generated from the Rust types by `cargo wire-web` (ti4_wasm::wire_ts). Do not edit.
+import type { BoardDelta } from "./BoardDelta.ts";
 import type { EventVisibility } from "./EventVisibility.ts";
 import type { GameEventKind } from "./GameEventKind.ts";
 import type { MovementFact } from "./MovementFact.ts";
@@ -28,4 +29,8 @@ private_detail?: string,
 /**
  * The roll behind a [`GameEventKind::DiceRolled`] event. Public: dice are rolled in the open.
  */
-roll?: PublicRoll, };
+roll?: PublicRoll, 
+/**
+ * The change behind a [`GameEventKind::BoardChanged`] event. Public: the board is in view.
+ */
+board?: BoardDelta, };

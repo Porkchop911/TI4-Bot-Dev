@@ -142,6 +142,9 @@ pub struct SessionShared {
     /// The facts of the state that the history has after its last decision, at that count of
     /// decisions: a restart that steps from there tells them once (see `record_state_facts`).
     pub known_facts: (usize, Vec<ti4_host::protocol::server::PublicFact>),
+    /// The changes of the board that the history has at the count of decisions of
+    /// `known_facts`, told once as the facts are.
+    pub known_boards: Vec<ti4_host::protocol::board_delta::BoardDelta>,
     pub history_generation: u64,
     pub batches: Vec<ti4_host::batch::BatchRecord>,
     /// Forced random positions of a timeline made by a turn redo, by decision index.
@@ -417,6 +420,7 @@ impl SessionShared {
             tally: ti4_host::protocol::state_fact::PublicTally::default(),
             observed_to: 0,
             known_facts: (0, Vec::new()),
+            known_boards: Vec::new(),
             redo_events: Vec::new(),
             replay_complete: false,
             history_generation: 0,
@@ -657,17 +661,18 @@ impl SessionShared {
         live: bool,
     ) -> Result<(), String> {
         let start = self.observed_to.min(self.event_log.len());
-        let facts = ti4_host::protocol::state_fact::observe(
+        let observation = ti4_host::protocol::state_fact::observe_step(
             &mut self.tally,
             state,
             &self.event_log[start..],
         );
-        if live && !facts.is_empty() {
-            let cursor = journal::roll_cursor(&self.event_log);
-            if self.known_facts.0 != cursor {
-                self.known_facts.1.clear();
-            }
-            for observed in facts {
+        let cursor = journal::roll_cursor(&self.event_log);
+        if live && self.known_facts.0 != cursor {
+            self.known_facts.1.clear();
+            self.known_boards.clear();
+        }
+        if live && !observation.facts.is_empty() {
+            for observed in observation.facts {
                 if let Some(known) = self.known_facts.1.iter().position(|f| *f == observed.fact) {
                     self.known_facts.1.remove(known);
                     continue;
@@ -683,6 +688,26 @@ impl SessionShared {
                     state.phase,
                     version,
                     observed,
+                );
+                self.push_event(entry)?;
+            }
+        }
+        // The board after the facts that told the step: the last event of the step.
+        if live && let Some(board) = observation.board {
+            if let Some(known) = self.known_boards.iter().position(|b| *b == board) {
+                self.known_boards.remove(known);
+            } else {
+                self.event_counter += 1;
+                let entry = journal::build_board_event(
+                    &SystemClock,
+                    &self.game_id,
+                    self.event_counter,
+                    &self.decision_log,
+                    cursor,
+                    state.round,
+                    state.phase,
+                    version,
+                    board,
                 );
                 self.push_event(entry)?;
             }
@@ -1602,6 +1627,15 @@ pub fn spawn_session_worker(
                 .filter_map(|event| event.fact.clone())
                 .collect();
             lock.known_facts = (cursor, known);
+            lock.known_boards = lock
+                .event_log
+                .iter()
+                .filter(|event| {
+                    matches!(event.event, GameEventKind::BoardChanged)
+                        && event.decision_count == Some(cursor)
+                })
+                .filter_map(|event| event.board.clone())
+                .collect();
         }
 
         'worker: loop {

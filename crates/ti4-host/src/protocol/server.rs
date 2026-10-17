@@ -207,6 +207,9 @@ pub enum GameEventKind {
     /// end of a combat, a planet taken, a card drawn, an agenda resolved). Carries
     /// [`GameEvent::fact`] ([`super::state_fact`]).
     StateChanged,
+    /// What one step of the engine changed of the public board. Carries [`GameEvent::board`]
+    /// ([`super::board_delta`]).
+    BoardChanged,
     PhaseTransition {
         phase: Phase,
         round: u32,
@@ -268,6 +271,9 @@ pub struct GameEvent {
     /// The roll behind a [`GameEventKind::DiceRolled`] event. Public: dice are rolled in the open.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub roll: Option<PublicRoll>,
+    /// The change behind a [`GameEventKind::BoardChanged`] event. Public: the board is in view.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub board: Option<super::board_delta::BoardDelta>,
 }
 
 /// One public die roll: who rolled, what for, what showed, and what it did.
@@ -1242,6 +1248,7 @@ mod roll_tests {
             seat_detail: None,
             private_detail: None,
             roll: Some(public),
+            board: None,
         };
         let json = serde_json::to_value(&event).unwrap();
         assert_eq!(json["event"]["kind"], "dice_rolled");
@@ -1763,6 +1770,7 @@ mod fact_tests {
             seat_detail,
             private_detail: None,
             roll: None,
+            board: None,
         };
         let actor = event
             .for_viewer(&ViewerRole::Player(PlayerId::new("p1")))

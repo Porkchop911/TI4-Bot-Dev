@@ -255,6 +255,7 @@ fn server_event_round_trips() {
             seat_detail: None,
             private_detail: None,
             roll: None,
+            board: None,
         },
     });
     let json = serde_json::to_string(&msg).expect("serialize");

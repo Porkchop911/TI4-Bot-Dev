@@ -71,7 +71,7 @@ use ti4_host::protocol::server::{
     public_roll, verified_event_facts,
 };
 use ti4_host::protocol::staged::StagedSlot;
-use ti4_host::protocol::state_fact::{PublicTally, observe};
+use ti4_host::protocol::state_fact::{PublicTally, observe_step};
 use ti4_host::protocol::status::{RejectionReason, ViewerRole};
 use ti4_host::protocol::view::BoardTileView;
 use ti4_host::setup::TableSeats;
@@ -862,13 +862,14 @@ impl HostSession {
         self.tell_scripts(ended);
     }
 
-    /// The facts of the state that the step changed and no event of it told.
+    /// The facts of the state that the step changed and no event of it told, and the change of
+    /// the public board.
     fn observe_state(&mut self, state: &GameState) {
         let start = self.observed_to.min(self.events.len());
-        let facts = observe(&mut self.tally, state, &self.events[start..]);
-        if !facts.is_empty() {
-            let cursor = journal::roll_cursor(&self.events);
-            for observed in facts {
+        let observation = observe_step(&mut self.tally, state, &self.events[start..]);
+        let cursor = journal::roll_cursor(&self.events);
+        if !observation.facts.is_empty() {
+            for observed in observation.facts {
                 self.event_counter += 1;
                 let entry = journal::build_state_event(
                     self.clock.as_ref(),
@@ -883,6 +884,22 @@ impl HostSession {
                 );
                 self.emit_event(entry);
             }
+        }
+        // The board after the facts that told the step: the last event of the step.
+        if let Some(board) = observation.board {
+            self.event_counter += 1;
+            let entry = journal::build_board_event(
+                self.clock.as_ref(),
+                &self.identity.game_id,
+                self.event_counter,
+                &self.decision_log,
+                cursor,
+                state.round,
+                state.phase,
+                Some(self.version),
+                board,
+            );
+            self.emit_event(entry);
         }
         self.observed_to = self.events.len();
     }

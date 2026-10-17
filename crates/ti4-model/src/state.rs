@@ -1023,6 +1023,69 @@ pub struct CombatRollRecord {
     pub hit: bool,
 }
 
+/// One round of a space combat as it resolved: the ships at its start, the barrage of the first
+/// round, the dice of both sides and the hits they produced.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SpaceRoundRecord {
+    pub system: SystemId,
+    pub attacker: PlayerId,
+    pub defender: PlayerId,
+    pub battle_seq: u32,
+    pub round: u32,
+    pub round_start: Vec<Unit>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub barrage_start: Vec<Unit>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub barrage_dice: Vec<CombatRollRecord>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub barrage_hits: BTreeMap<PlayerId, u32>,
+    pub dice: Vec<CombatRollRecord>,
+    pub hits: BTreeMap<PlayerId, u32>,
+}
+
+/// A step of an invasion as it resolved (a bombardment, the space cannon of a planet, a round of
+/// ground combat), with the system and the invasion it was of.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GroundStepRecord {
+    pub system: SystemId,
+    pub invasion_seq: u64,
+    pub invader: PlayerId,
+    pub step: InvasionStep,
+}
+
+/// The fights of the turn as they resolved, round by round. A round can begin and end in one step
+/// of the engine, and a combat can end in it, so the board of a step does not show every round:
+/// this record does, until the turn ends. Public presentation; nothing decides from it.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FightLog {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub space: Vec<SpaceRoundRecord>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub ground: Vec<GroundStepRecord>,
+}
+
+impl FightLog {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.space.is_empty() && self.ground.is_empty()
+    }
+
+    /// Records a space combat round; a round rolled again (a return to its Roll Dice step)
+    /// replaces its first record.
+    pub fn space_round(&mut self, record: SpaceRoundRecord) {
+        if let Some(last) = self.space.last_mut()
+            && last.system == record.system
+            && last.battle_seq == record.battle_seq
+            && last.round == record.round
+        {
+            *last = record;
+        } else {
+            self.space.push(record);
+        }
+    }
+}
+
 /// Public, in-flight space combat evidence. `round_start` includes damage already present
 /// before this round; comparing it to the board reveals new damage and destroyed ships.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1465,6 +1528,10 @@ pub struct GameState {
     /// Public presentation facts for the current space battle; reset at each battle/round.
     #[serde(default, skip_serializing_if = "CombatPresentation::is_empty")]
     pub combat_presentation: CombatPresentation,
+    /// The fights of the turn, round by round ([`FightLog`]); cleared when the turn ends.
+    /// In-flight bookkeeping — not compared.
+    #[serde(default, skip_serializing_if = "FightLog::is_empty")]
+    pub fight_log: FightLog,
     /// The action card a `ACTION_CARD_DISCARDED` window is reacting to: the player who
     /// discarded it and the card's alias. The frame records it in the discard announcement
     /// itself, which is the one place that knows both, because the effect — Reverse Engineer
@@ -1818,6 +1885,7 @@ impl GameState {
             combat_round_hits: BTreeMap::new(),
             combat_round_dice: Vec::new(),
             combat_presentation: CombatPresentation::default(),
+            fight_log: FightLog::default(),
             last_action_discarded: None,
             pending_reflective_hits: None,
             last_strategy_choice: None,

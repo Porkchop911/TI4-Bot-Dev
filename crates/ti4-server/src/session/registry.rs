@@ -1236,6 +1236,7 @@ impl GameRegistry {
                 seat_detail,
                 private_detail: None,
                 roll: None,
+                board: None,
             });
             for (_, phase, round) in simulation
                 .transitions
@@ -1270,6 +1271,7 @@ impl GameRegistry {
                     seat_detail: None,
                     private_detail: None,
                     roll: None,
+                    board: None,
                 });
             }
             // Dice the batch rolled that the table has not been shown, after the decision that
@@ -1315,15 +1317,19 @@ impl GameRegistry {
                     seat_detail: None,
                     private_detail: None,
                     roll: Some(public),
+                    board: None,
                 });
             }
         }
         // What the state of the batch tells that no event of it did, after its last decision.
         let (mut tally, observed_to) = session.state_tally();
         let start = observed_to.min(events.len());
-        for observed in
-            ti4_host::protocol::state_fact::observe(&mut tally, &boundary_state, &events[start..])
-        {
+        let observation = ti4_host::protocol::state_fact::observe_step(
+            &mut tally,
+            &boundary_state,
+            &events[start..],
+        );
+        for observed in observation.facts {
             counter += 1;
             let mut entry = ti4_host::journal::build_state_event(
                 &ti4_host::clock::SystemClock,
@@ -1335,6 +1341,23 @@ impl GameRegistry {
                 boundary_state.phase,
                 Some(request.expected_version),
                 observed,
+            );
+            entry.timestamp.clone_from(&timestamp);
+            events.push(entry);
+        }
+        // The board after the batch: one change for all of its steps.
+        if let Some(board) = observation.board {
+            counter += 1;
+            let mut entry = ti4_host::journal::build_board_event(
+                &ti4_host::clock::SystemClock,
+                game_id,
+                counter,
+                &all_decisions,
+                end_cursor,
+                boundary_state.round,
+                boundary_state.phase,
+                Some(request.expected_version),
+                board,
             );
             entry.timestamp.clone_from(&timestamp);
             events.push(entry);
@@ -1365,6 +1388,7 @@ impl GameRegistry {
                 seat_detail: None,
                 private_detail: None,
                 roll: None,
+                board: None,
             });
         }
         let mut batches = session.batches();
