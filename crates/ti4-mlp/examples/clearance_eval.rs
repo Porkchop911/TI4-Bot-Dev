@@ -177,7 +177,29 @@ fn main() {
     let loaded = ti4_mlp::bundle::read(std::path::Path::new(&bundle_path))
         .unwrap_or_else(|error| refuse(&format!("reading {bundle_path}: {error}")));
     let vocabulary = loaded.vocabulary;
-    let actor = loaded.actor;
+    // One actor for every seat, or, given a bundle of a separate-models run, each faction's own
+    // (in FACTIONS order), all at the chosen bundle's update count.
+    let separate = ti4_mlp::bundle::separate_model_bundles(
+        std::path::Path::new(&bundle_path),
+        &FACTIONS,
+    )
+    .unwrap_or_else(|error| refuse(&error));
+    let actors: Vec<ti4_mlp::Actor> = match &separate {
+        None => vec![loaded.actor],
+        Some(bundles) => FACTIONS
+            .iter()
+            .map(|faction| {
+                let path = &bundles[*faction];
+                println!("  model       {faction}: {}", path.display());
+                ti4_mlp::bundle::read(path)
+                    .unwrap_or_else(|error| refuse(&format!("reading {}: {error}", path.display())))
+                    .actor
+            })
+            .collect(),
+    };
+    if separate.is_some() && roster != ti4_engine::seating::FactionRoster::InScope {
+        refuse("a separate-models bundle plays the six factions only (--roster six)");
+    }
 
     // The Validation pool, and the role guard is the point: passing the training pool here would
     // produce a number that looks like the others and answers a different question.
@@ -217,9 +239,16 @@ fn main() {
     let jobs_count = jobs.len();
     let workers = rayon::current_num_threads().max(1);
     let per_worker = jobs.len().div_ceil(workers);
-    let chunks: Vec<(ti4_mlp::Actor, Vec<(u64, usize)>)> = jobs
+    // Per worker: one inference copy per model, and its share of the games.
+    type Chunk = (Vec<ti4_mlp::Actor>, Vec<(u64, usize)>);
+    let chunks: Vec<Chunk> = jobs
         .chunks(per_worker)
-        .map(|chunk| (actor.inference_copy(), chunk.to_vec()))
+        .map(|chunk| {
+            (
+                actors.iter().map(ti4_mlp::Actor::inference_copy).collect(),
+                chunk.to_vec(),
+            )
+        })
         .collect();
 
     let started = std::time::Instant::now();
@@ -228,7 +257,8 @@ fn main() {
     let harvest: EvaluationHarvest = chunks
         .into_par_iter()
         .map(|(local, chunk)| {
-            let local = std::rc::Rc::new(local);
+            let local: Vec<std::rc::Rc<ti4_mlp::Actor>> =
+                local.into_iter().map(std::rc::Rc::new).collect();
             let mut seats = Vec::new();
             for (seed, rotation) in chunk {
                 let factions = ti4_training::rollout::game_factions(
@@ -278,8 +308,16 @@ fn main() {
                                 // No `recording_ppo`: an evaluation needs no importance-ratio data, and
                                 // recording it allocates the sparse features of every legal option at
                                 // every decision.
+                                let model = if local.len() == 1 {
+                                    0
+                                } else {
+                                    FACTIONS
+                                        .iter()
+                                        .position(|faction| *faction == seated[player].as_str())
+                                        .ok_or_else(|| format!("{player}: no model for its faction"))?
+                                };
                                 let (decider, _status) = ti4_mlp::bot::MlpBot::sharing(
-                                    &local,
+                                    &local[model],
                                     vocabulary.clone(),
                                     row,
                                     stream,
