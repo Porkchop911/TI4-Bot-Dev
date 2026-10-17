@@ -326,6 +326,21 @@ export interface InspectView {
   /** The rows of the Log before and after it that open. Null: none. */
   previous: string | null;
   next: string | null;
+  /**
+   * Watch: the turn that is played now, read-only, over the live board. The screen stays in the
+   * present: no history mode, and the viewer's decision keeps its controls.
+   */
+  watch: boolean;
+}
+
+/**
+ * What another seat does now, on a line over the board: "Hacan · Tactical · Vefut II · #20 ·
+ * Space combat, round 2". A tap on it opens Watch.
+ */
+export interface LiveLineView {
+  /** The turn or the phase that is played now (`LogTurnView.id`, `LogPhaseView.id`). */
+  turn: string;
+  text: string;
 }
 
 export interface ShellView {
@@ -344,6 +359,8 @@ export interface ShellView {
    * sheet, and the board as it was at its open step (`board` is that board then). Null: none.
    */
   inspect?: InspectView | null;
+  /** What another seat does now: the line over the board. Null: nobody else acts. */
+  live?: LiveLineView | null;
   /** What "Apply to Live" will commit. Null when there is nothing to apply. */
   apply: ApplyView | null;
   toast: { id: number; text: string } | null;

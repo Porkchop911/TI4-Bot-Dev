@@ -44,11 +44,19 @@ const Live = () => (
   </span>
 );
 
+/** The step that is played now and whom it waits for: "Space combat · round 2 · 3 vs 2 ships". */
+const Now = ({ text }: { text: string }) => (
+  <span className="mt-0.5 block truncate text-sm font-strong text-accent" title={text}>
+    {text}
+  </span>
+);
+
 /**
  * A turn: the seat (symbol, the name of the player and the faction, cut with "…"), "You" on a
  * turn of the viewer and the round and turn; then the action, then its outcomes. A tactical,
  * strategic or component turn is a control: it opens its action over the board, read-only
- * ("Open" while it is open). A pass opens nothing.
+ * ("Open" while it is open); the turn of another seat that is played now opens Watch, in the present,
+ * and says its step. A pass opens nothing.
  */
 function TurnRow({ view, open }: { view: LogTurnView; open: boolean }) {
   const dispatch = useDispatch();
@@ -88,6 +96,7 @@ function TurnRow({ view, open }: { view: LogTurnView; open: boolean }) {
       <span className="mt-0.5 block truncate font-strong" title={view.label}>
         {view.label}
       </span>
+      {view.now && <Now text={view.now} />}
       {view.summary && (
         <span className="mt-0.5 line-clamp-2 block text-sm text-muted" title={view.summary}>
           {view.summary}
@@ -102,7 +111,11 @@ function TurnRow({ view, open }: { view: LogTurnView; open: boolean }) {
       aria-pressed={open}
       className={className}
       onClick={() =>
-        dispatch(open ? { type: "closeTurn" } : { type: "inspectTurn", turn: view.id })
+        dispatch(
+          open
+            ? { type: "closeTurn" }
+            : { type: "inspectTurn", turn: view.id, watch: view.live && !view.mine },
+        )
       }
     >
       {content}
@@ -135,7 +148,9 @@ function PhaseRow({ view, open }: { view: LogPhaseView; open: boolean }) {
             : "bg-well/60",
       )}
       onClick={() =>
-        dispatch(open ? { type: "closeTurn" } : { type: "inspectTurn", turn: view.id })
+        dispatch(
+          open ? { type: "closeTurn" } : { type: "inspectTurn", turn: view.id, watch: view.live },
+        )
       }
     >
       <span className="flex min-w-0 items-baseline gap-2">
@@ -143,6 +158,7 @@ function PhaseRow({ view, open }: { view: LogPhaseView; open: boolean }) {
         <span className="shrink-0 font-strong">{view.label}</span>
         {open && <span className="ml-auto shrink-0 text-xs font-strong text-accent">Open</span>}
       </span>
+      {view.now && <Now text={view.now} />}
       {view.summary && (
         <span className="mt-0.5 line-clamp-2 block text-sm text-muted" title={view.summary}>
           {view.summary}

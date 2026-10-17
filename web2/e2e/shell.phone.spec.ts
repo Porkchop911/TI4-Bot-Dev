@@ -181,7 +181,7 @@ test("phone: the Log pane has the strategic action that the other seats follow a
   expect(errors).toEqual([]);
 });
 
-test("phone: while the viewer decides a secondary, the sheet on the map has its row and its choice, and the Log pane the turn of Sol", async ({
+test("phone: while the viewer decides a secondary, the sheet on the map has its row and its choice, the Log pane the turn of Sol, and its live row opens Watch", async ({
   page,
 }) => {
   test.setTimeout(10_000);
@@ -231,6 +231,45 @@ test("phone: while the viewer decides a secondary, the sheet on the map has its 
     page.viewportSize()!.width,
   );
   await page.screenshot({ path: `${SHOTS}/secondary-log.png`, animations: "disabled" });
+
+  // The live row of Sol opens Watch on Map: the turn that is played now, read-only, over the live
+  // board; the decision is its line, with the main button under the pane.
+  await live.click();
+  const panes = page.getByRole("navigation", { name: "Panes" });
+  await expect(panes.getByRole("button", { name: "Map" })).toHaveAttribute("aria-pressed", "true");
+  const watch = page.getByRole("region", { name: "Watch" });
+  await expect(watch).toContainText("Played now");
+  await expect(watch.locator("ul[aria-label=Seats] > li").filter({ hasText: "You" })).toContainText(
+    "▶ Deciding",
+  );
+  const board = page.getByRole("region", { name: "Galaxy board" });
+  const line = board.getByRole("button", { name: /^Played now: .* · Strategic · Leadership/ });
+  await expect(line).toHaveAttribute("aria-pressed", "true");
+  await expect(board.locator("[data-past]")).toHaveCount(0);
+  await expect(page.locator("header")).not.toContainText("History");
+  await expect(sheet.getByRole("button", { name: "Restore" })).toBeVisible();
+  await expect(send).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(
+    page.viewportSize()!.width,
+  );
+  expect(await watch.evaluate((element) => element.scrollWidth - element.clientWidth)).toBe(0);
+  await page.screenshot({ path: `${SHOTS}/watch.png`, animations: "disabled" });
+  // A tap on the line closes Watch: the decision is back, and the line stays.
+  await line.click();
+  await expect(watch).toHaveCount(0);
+  await expect(sheet.getByRole("button", { name: "Add bought token" })).toBeVisible();
+  await expect(line).toHaveAttribute("aria-pressed", "false");
+  await page.screenshot({ path: `${SHOTS}/live-line.png`, animations: "disabled" });
+  // Watch closes when the turn of Sol ends.
+  await line.click();
+  await expect(watch).toBeVisible();
+  for (let answer = 0; answer < 8 && (await watch.count()) > 0; answer += 1) {
+    if (await send.isVisible()) {
+      await send.click();
+    }
+    await page.waitForTimeout(300);
+  }
+  await expect(watch).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
@@ -486,7 +525,8 @@ test("phone: a strategic turn with a tactical action opens on Map to its card, t
     .getByRole("region", { name: "Log" })
     .getByRole("button", { name: /· Strategic · Warfare/ })
     .click();
-  const turn = page.getByRole("region", { name: "Turn" });
+  // Sol's turn is played now: its row opens Watch, on Map.
+  const turn = page.getByRole("region", { name: "Watch" });
   const tabs = turn.getByRole("tab");
   await expect(tabs.first()).toHaveText(/Warfare/);
   await expect(tabs.nth(1)).toHaveText(/Activation/);

@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import type { ActionView, InspectView, Intent } from "../../model";
+import type { ActionView, InspectView, Intent, LiveLineView } from "../../model";
 import { Button, cx, Icon, PhoneScope, ReadOnlyScope, usePhoneScreen } from "../../ui";
 import { ActionPanel } from "../action/ActionPanel";
 import { MinimizedLine } from "../action/StepSheet";
@@ -78,6 +78,74 @@ export function WaitingBar({
 }
 
 /**
+ * The action of a turn of the Log, read-only: its step tabs open its steps, what is on the board
+ * opens the inspector, and nothing else of it is sent to the game. "▾" minimizes it to one line,
+ * as the step sheet; a tap on the line restores it.
+ */
+export function ReadOnlyTurn({
+  view,
+  status,
+  minimized,
+  onMinimized,
+}: {
+  view: InspectView;
+  status: string;
+  minimized: boolean;
+  onMinimized: (minimized: boolean) => void;
+}) {
+  const dispatch = useDispatch();
+  const seats = useSeats();
+  const read = (intent: Intent) => {
+    if (intent.type === "selectStep") {
+      return dispatch({ type: "inspectTurn", turn: view.turn, step: intent.step });
+    }
+    if (intent.type === "inspectSystem" || intent.type === "openReference") {
+      return dispatch(intent);
+    }
+  };
+  return minimized ? (
+    <MinimizedLine view={view.action} onRestore={() => onMinimized(false)} />
+  ) : (
+    <ReadOnlyScope>
+      <GameProvider seats={seats} dispatch={read}>
+        <ActionPanel view={view.action} status={status} onMinimize={() => onMinimized(true)} />
+      </GameProvider>
+    </ReadOnlyScope>
+  );
+}
+
+/**
+ * What another seat does now, on a line over the board in the place of the stamp of the history
+ * mode: "▶" and the seat, the action, the step and whom it waits for. A tap on it opens Watch, the
+ * turn that is played now, read-only; a tap while Watch is open closes it.
+ */
+export function LiveLine({ view, watching }: { view: LiveLineView; watching: boolean }) {
+  const dispatch = useDispatch();
+  return (
+    <button
+      type="button"
+      aria-label={`Played now: ${view.text}`}
+      aria-pressed={watching}
+      title={view.text}
+      onClick={() =>
+        dispatch(
+          watching ? { type: "closeTurn" } : { type: "inspectTurn", turn: view.turn, watch: true },
+        )
+      }
+      className={cx(
+        "pointer-events-auto flex max-w-full min-w-0 items-center gap-1.5 self-start rounded-md border bg-surface px-2 py-0.5 text-xs font-strong shadow-[0_4px_12px_#0006] hover:bg-raised touch:min-h-9",
+        watching ? "border-accent text-text" : "border-line-strong text-muted",
+      )}
+    >
+      <span aria-hidden className="shrink-0 text-accent">
+        ▶
+      </span>
+      <span className="truncate">{view.text}</span>
+    </button>
+  );
+}
+
+/**
  * A turn or a phase of the Log, opened: its action as Live showed it, read-only, in the place of
  * the step sheet, over the board as it was then. The screen is in the history mode: the board is
  * hatched, a stamp over the sheet says which point it shows; the toolbar names the
@@ -115,27 +183,9 @@ export function TurnSheet({
 }) {
   const phone = usePhoneScreen();
   const dispatch = useDispatch();
-  const seats = useSeats();
   const close = () => dispatch({ type: "closeTurn" });
-  // The tabs open the steps of the turn; what is on the board opens the inspector. Nothing else
-  // of the turn is sent to the game.
-  const read = (intent: Intent) => {
-    if (intent.type === "selectStep") {
-      return dispatch({ type: "inspectTurn", turn: view.turn, step: intent.step });
-    }
-    if (intent.type === "inspectSystem" || intent.type === "openReference") {
-      return dispatch(intent);
-    }
-  };
-  // Minimized, the turn is one line, as the step sheet: a tap on it restores it.
-  const panel = minimized ? (
-    <MinimizedLine view={view.action} onRestore={() => onMinimized(false)} />
-  ) : (
-    <ReadOnlyScope>
-      <GameProvider seats={seats} dispatch={read}>
-        <ActionPanel view={view.action} status={status} onMinimize={() => onMinimized(true)} />
-      </GameProvider>
-    </ReadOnlyScope>
+  const panel = (
+    <ReadOnlyTurn view={view} status={status} minimized={minimized} onMinimized={onMinimized} />
   );
   // The board shows the past: it is hatched, with a dashed edge, and keeps its colours; a stamp
   // over the sheet says which point it shows, with the sign of the mode. No colour carries it.

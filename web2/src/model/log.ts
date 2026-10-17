@@ -41,6 +41,11 @@ export interface LogTurnView {
   groups: LogGroupView[];
   /** The turn is played now: it is the last entry. */
   live: boolean;
+  /**
+   * The turn that is played now: its step and whom it waits for, "Space combat · round 2 · 3 vs 2
+   * ships", "Movement · Waiting for Hacan: casualties". Empty: none.
+   */
+  now?: string;
 }
 
 /**
@@ -64,6 +69,8 @@ export interface LogPhaseView {
    * action that is played now is its content.
    */
   live: boolean;
+  /** The phase that is played now: whom it waits for. Empty: none. */
+  now?: string;
 }
 
 export type LogItemView = LogTurnView | LogPhaseView;

@@ -198,9 +198,10 @@ export interface LocalState {
   events?: EventLog;
   /**
    * The turn of the Log that the viewer opened (`LogTurnView.id`), and the step of its action in
-   * view. Null: none. A new question of the viewer leaves it open.
+   * view. Null: none. A new question of the viewer leaves it open. `watch`: the turn that is
+   * played now, in the present (Watch); it closes when that turn ends.
    */
-  inspect?: { turn: string; step: number | null } | null;
+  inspect?: { turn: string; step: number | null; watch?: boolean } | null;
 }
 
 /** The choice that the viewer can answer now. */

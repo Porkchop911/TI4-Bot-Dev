@@ -7,7 +7,14 @@ import { Board, showsInspector } from "../board/Board";
 import { GameProvider } from "../context";
 import { LinkProvider } from "../link";
 import { LogPanel } from "../log/LogPanel";
-import { decisionHeading, TurnSheet, useFreshQuestion, WaitingBar } from "../log/TurnSheet";
+import {
+  decisionHeading,
+  LiveLine,
+  ReadOnlyTurn,
+  TurnSheet,
+  useFreshQuestion,
+  WaitingBar,
+} from "../log/TurnSheet";
 import { PlayerTable } from "../players/PlayerTable";
 import { ReferenceDrawer } from "./Reference";
 import { ShellFrame } from "./ShellFrame";
@@ -110,8 +117,12 @@ export function GameShell({
   // so does the next step of a tactical action in a draft, as it would in Live.
   const question = `${view.question ?? 0}:${view.action.kind === "tactical" ? view.action.current : ""}`;
   const [minimizedAt, setMinimizedAt] = useState<string | null>(null);
+  // A turn of the Log that is open is the history mode; the turn that is played now is Watch, in
+  // the present.
+  const history = view.inspect && !view.inspect.watch ? view.inspect : null;
+  const watch = view.inspect?.watch ? view.inspect : null;
   // The history mode stays when a question of the viewer comes: the bar of the decision marks it.
-  const fresh = useFreshQuestion(!!view.inspect, view.asked, question);
+  const fresh = useFreshQuestion(!!history, view.asked, question);
   // The pane where the open choice is made: a seat is picked in the player table, every other
   // choice is made on the map, where the open step is a sheet over the board.
   const asked: Pane | null = view.players.pick
@@ -179,8 +190,14 @@ export function GameShell({
   }, [view.apply]);
 
   // Shortcut keys of the open action. Esc closes an open reference sheet first.
-  const keys = useRef({ view: view.action, drawer, dispatch, turn: !!view.inspect });
-  keys.current = { view: view.action, drawer, dispatch, turn: !!view.inspect };
+  const keys = useRef({
+    view: view.action,
+    drawer,
+    dispatch,
+    turn: !!view.inspect,
+    history: !!history,
+  });
+  keys.current = { view: view.action, drawer, dispatch, turn: !!view.inspect, history: !!history };
   useEffect(() => {
     // Focus that Tab moved belongs to the keyboard; focus that a click left behind does not.
     let focusByKeyboard = false;
@@ -194,13 +211,14 @@ export function GameShell({
       if (event.key === "Escape" && now.drawer && !document.querySelector(OVERLAY)) {
         return setDrawer(null);
       }
-      // Then an open turn of the Log.
+      // Then an open turn of the Log, or Watch.
       if (event.key === "Escape" && now.turn && !document.querySelector(OVERLAY)) {
         event.preventDefault();
         return now.dispatch({ type: "closeTurn" });
       }
-      // The history mode shows no control of the live game: its keys do nothing there.
-      if (now.turn) {
+      // The history mode shows no control of the live game: its keys do nothing there. Watch is
+      // the present: the keys of the decision stay.
+      if (now.history) {
         return;
       }
       if (!keyIsFree(event, focusByKeyboard)) {
@@ -266,16 +284,16 @@ export function GameShell({
   // bottom left and the step sheet at the bottom right: they do not cover each other.
   const inspecting = phone && showsInspector(view.board, phone);
   const [turnMinimized, setTurnMinimized] = useState<string | null>(null);
-  const step = view.inspect ? (
+  const step = history ? (
     // A turn of the Log that is open has the place of the step sheet, in the history mode.
     <TurnSheet
-      view={view.inspect}
+      view={history}
       decision={view.asked ? view.action : null}
       fresh={fresh}
       mark={ACCENT[view.accent]}
       status={view.toolbar.status}
-      minimized={turnMinimized === view.inspect.turn}
-      onMinimized={(minimized) => setTurnMinimized(minimized ? view.inspect!.turn : null)}
+      minimized={turnMinimized === history.turn}
+      onMinimized={(minimized) => setTurnMinimized(minimized ? history.turn : null)}
       covered={inspecting}
     />
   ) : (
@@ -287,6 +305,19 @@ export function GameShell({
         asked={view.asked}
         minimized={minimizedAt === question}
         onMinimized={(minimized) => setMinimizedAt(minimized ? question : null)}
+        // What another seat does now is a line over the sheet; a tap on it opens Watch.
+        lead={view.live && <LiveLine view={view.live} watching={!!watch} />}
+        watch={
+          watch && (
+            <ReadOnlyTurn
+              view={watch}
+              status={view.toolbar.status}
+              minimized={turnMinimized === watch.turn}
+              onMinimized={(minimized) => setTurnMinimized(minimized ? watch.turn : null)}
+            />
+          )
+        }
+        onLeaveWatch={() => dispatch({ type: "closeTurn" })}
       />
     )
   );
@@ -295,7 +326,7 @@ export function GameShell({
     <GameProvider seats={view.seats} dispatch={dispatch}>
       <LinkProvider>
         <ShellFrame
-          accent={ACCENT[view.inspect ? "history" : view.accent]}
+          accent={ACCENT[history ? "history" : view.accent]}
           header={
             <Toolbar
               view={view.toolbar}
@@ -305,7 +336,7 @@ export function GameShell({
               other={other}
               settings={!!dev}
               table={!!table}
-              history={view.inspect ?? null}
+              history={history}
             />
           }
           board={
@@ -333,7 +364,7 @@ export function GameShell({
             // An open fleet has the room of the footer, and so have the open landings and the
             // open build of a production. The check mark of the sheet gives the footer back.
             // In the history mode the decision is not shown: its bar says that it waits.
-            view.inspect
+            history
               ? view.asked && (
                   <WaitingBar
                     heading={decisionHeading(view.action)}

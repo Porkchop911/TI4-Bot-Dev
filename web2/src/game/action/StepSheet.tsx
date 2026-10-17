@@ -1,5 +1,6 @@
+import type { ReactNode } from "react";
 import type { ActionView } from "../../model";
-import { PhoneScope, usePhoneScreen } from "../../ui";
+import { cx, PhoneScope, usePhoneScreen } from "../../ui";
 import { ActionFooter, ActionPanel, footerOf } from "./ActionPanel";
 
 /**
@@ -45,6 +46,10 @@ export function MinimizedLine({ view, onRestore }: { view: ActionView; onRestore
  * "▾" before the heading minimizes the sheet to one line, so that the board is in view; the line
  * restores it. The main button stays in reach: under the line on desktop, under the pane on a
  * phone. The shell keeps the state until a new question of the viewer.
+ *
+ * Over it is the line of what another seat does now (`lead`), and Watch (`watch`): the turn that
+ * is played now, read-only, above the decision, which is then its line (its footer stays); a tap
+ * on that line leaves Watch.
  */
 export function StepSheet({
   view,
@@ -52,6 +57,9 @@ export function StepSheet({
   asked,
   minimized,
   onMinimized,
+  lead = null,
+  watch = null,
+  onLeaveWatch,
 }: {
   view: ActionView;
   status: string;
@@ -59,55 +67,105 @@ export function StepSheet({
   asked: boolean;
   minimized: boolean;
   onMinimized: (minimized: boolean) => void;
+  /** The line over the sheet: what another seat does now. */
+  lead?: ReactNode;
+  /** Watch: the turn that is played now, read-only, in the place of the sheet. */
+  watch?: ReactNode;
+  onLeaveWatch?: () => void;
 }) {
   const phone = usePhoneScreen();
   const minimize = () => onMinimized(true);
-  const restore = () => onMinimized(false);
+  const restore = () => (watch ? onLeaveWatch?.() : onMinimized(false));
+  const line = asked && (minimized || !!watch);
+  const watching = watch && (
+    <div
+      role="region"
+      aria-label="Watch"
+      className={cx(
+        "pointer-events-auto flex min-h-0 flex-col overflow-auto bg-surface",
+        phone ? "flex-1 border-t border-line-strong" : "",
+      )}
+    >
+      {watch}
+    </div>
+  );
   if (phone) {
+    const decision = asked && (
+      <div
+        role="region"
+        aria-label="Open step"
+        className={cx(
+          "pointer-events-auto flex flex-col bg-surface",
+          watch
+            ? "flex-none border-t border-line"
+            : "min-h-0 flex-1 overflow-auto border-t border-line",
+        )}
+      >
+        {line ? (
+          <MinimizedLine view={view} onRestore={restore} />
+        ) : (
+          <ActionPanel view={view} status={status} footer={false} onMinimize={minimize} />
+        )}
+      </div>
+    );
     return (
-      asked && (
+      (lead || watching || decision) && (
         <div
-          role="region"
-          aria-label="Open step"
           data-covers-board=""
-          className="absolute inset-x-0 bottom-0 z-2 flex max-h-[60%] flex-col overflow-auto border-t border-line bg-surface"
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-2 flex max-h-[60%] flex-col gap-1.5"
         >
-          {minimized ? (
-            <MinimizedLine view={view} onRestore={restore} />
-          ) : (
-            <ActionPanel view={view} status={status} footer={false} onMinimize={minimize} />
+          {lead && <div className="flex px-2.5">{lead}</div>}
+          {(watching || decision) && (
+            <div className="flex min-h-0 flex-1 flex-col">
+              {watching}
+              {decision}
+            </div>
           )}
         </div>
       )
     );
   }
   const frame =
-    "absolute right-3 bottom-3 z-2 flex w-[412px] flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-[0_12px_30px_#0008]";
-  if (!asked) {
-    const footer = footerOf(view);
-    return (
-      footer.actions.length > 0 && (
-        <PhoneScope className={`${frame} [&>footer]:border-t-0`}>
-          <ActionFooter view={footer} />
-        </PhoneScope>
-      )
-    );
-  }
-  if (minimized) {
-    return (
-      <div role="region" aria-label="Open step" className={frame}>
+    "pointer-events-auto flex w-[412px] flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-[0_12px_30px_#0008]";
+  const footer = footerOf(view);
+  const decision = asked ? (
+    line ? (
+      <div role="region" aria-label="Open step" className={`${frame} flex-none`}>
         <PhoneScope className="flex min-h-0 flex-1 flex-col">
           <MinimizedLine view={view} onRestore={restore} />
-          <ActionFooter view={footerOf(view)} />
+          <ActionFooter view={footer} />
         </PhoneScope>
       </div>
-    );
-  }
-  return (
-    <div role="region" aria-label="Open step" className={`${frame} max-h-[65%]`}>
-      <PhoneScope className="flex min-h-0 flex-1 flex-col">
-        <ActionPanel view={view} status={status} onMinimize={minimize} />
+    ) : (
+      <div role="region" aria-label="Open step" className={`${frame} min-h-0 flex-1`}>
+        <PhoneScope className="flex min-h-0 flex-1 flex-col">
+          <ActionPanel view={view} status={status} onMinimize={minimize} />
+        </PhoneScope>
+      </div>
+    )
+  ) : (
+    footer.actions.length > 0 && (
+      <PhoneScope className={`${frame} flex-none [&>footer]:border-t-0`}>
+        <ActionFooter view={footer} />
       </PhoneScope>
-    </div>
+    )
+  );
+  return (
+    (lead || watching || decision) && (
+      <div
+        className={cx(
+          "pointer-events-none absolute right-3 bottom-3 z-2 flex w-[412px] flex-col items-end gap-2",
+          watch ? "max-h-[80%]" : "max-h-[65%]",
+        )}
+      >
+        {lead && <div className="flex w-full">{lead}</div>}
+        {watching && (
+          <div className={`${frame} min-h-0 flex-1`}>
+            <PhoneScope className="flex min-h-0 flex-1 flex-col">{watching}</PhoneScope>
+          </div>
+        )}
+        {decision}
+      </div>
+    )
   );
 }

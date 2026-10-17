@@ -1299,7 +1299,13 @@ export function useLiveSession(transport: Transport | null, drafts?: SeatStore):
           return setLocal((now) => ({
             ...now,
             inspected: now.inspect?.turn === intent.turn ? now.inspected : null,
-            inspect: { turn: intent.turn, step: intent.step ?? null },
+            inspect: {
+              turn: intent.turn,
+              step: intent.step ?? null,
+              // A tab of the turn in view keeps it in Watch or in the history.
+              watch:
+                intent.watch ?? (now.inspect?.turn === intent.turn ? now.inspect.watch : false),
+            },
           }));
         case "closeTurn":
           return setLocal((now) => ({ ...now, inspect: null, inspected: null }));

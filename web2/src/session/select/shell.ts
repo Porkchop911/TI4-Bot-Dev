@@ -19,6 +19,7 @@ import {
 import { selectBoard } from "./board";
 import { NO_EVENTS } from "../events";
 import { selectLog } from "./log";
+import { liveEntry, selectLiveLine, selectNow } from "./liveLine";
 import { selectPastFlow } from "./pastFlow";
 import { selectPastPhase } from "./pastPhase";
 import { selectPastTurn } from "./pastTurn";
@@ -189,14 +190,42 @@ export function selectShell(
   const onMap = editing?.onMap ? editing.blocks : pools ? [pools.block] : null;
   // The system that an open window is about is marked on the board.
   const marked = action.interrupt ? windowSystem(update, openChoice(update, local)) : null;
+  const events = local.events ?? NO_EVENTS;
+  const opened = (inspect: { turn: string; step: number | null }) =>
+    selectPastTurn(update, events, inspect, catalog, printed) ??
+    selectPastFlow(update, events, inspect.turn, printed) ??
+    selectPastPhase(update, events, inspect.turn, printed);
+  const logged = selectLog(update, events, printed);
+  // The turn or the phase that is played now: its step, on its row of the Log and on the line over
+  // the board while another seat acts.
+  const playing = liveEntry(logged);
+  const watched = playing && local.inspect?.watch && local.inspect.turn === playing.id;
+  // Watch closes when the turn that it shows ends.
+  const inspect = local.inspect && (!local.inspect.watch || watched) ? local.inspect : null;
   // A turn of the Log that the viewer opened: the board is as its open step left it, with its
-  // system marked, and nothing on it is a control.
-  const past = local.inspect
-    ? (selectPastTurn(update, local.events ?? NO_EVENTS, local.inspect, catalog, printed) ??
-      selectPastFlow(update, local.events ?? NO_EVENTS, local.inspect.turn, printed) ??
-      selectPastPhase(update, local.events ?? NO_EVENTS, local.inspect.turn, printed))
+  // system marked, and nothing on it is a control. In Watch the board stays the live one.
+  const past = inspect ? opened(inspect) : null;
+  const playingNow = playing
+    ? watched && past
+      ? past
+      : playing.kind === "turn"
+        ? opened({ turn: playing.id, step: null })
+        : null
     : null;
-  const log = selectLog(update, local.events ?? NO_EVENTS, printed);
+  const lastStep =
+    playingNow?.action.kind === "tactical" ? (playingNow.action.tabs.at(-1)?.name ?? null) : null;
+  const now = playing ? selectNow(update, playing, lastStep, printed) : null;
+  const log: LogView = now
+    ? {
+        ...logged,
+        entries: logged.entries.map((entry) =>
+          entry === playing
+            ? { ...entry, now: [now.step, now.detail].filter(Boolean).join(" · ") }
+            : entry,
+        ),
+      }
+    : logged;
+  const history = past && !watched ? past : null;
   return {
     seats: selectSeats(update, printed),
     accent:
@@ -222,10 +251,10 @@ export function selectShell(
       },
     },
     players: { ...selectPlayers(update, printed, cards.modes), pick: seatTask(update, local) },
-    board: past
+    board: history
       ? {
           ...selectBoard(
-            past.update,
+            history.update,
             local.inspected,
             null,
             null,
@@ -235,12 +264,12 @@ export function selectShell(
             false,
             printed,
           ),
-          ...(past.system
+          ...(history.system
             ? {
-                marked: past.system,
+                marked: history.system,
                 // The board brings the system of the turn into view, with the systems around it.
-                taskSystems: around(past.update, past.system),
-                fitKey: `turn:${local.inspect?.turn}:${past.system}`,
+                taskSystems: around(history.update, history.system),
+                fitKey: `turn:${inspect?.turn}:${history.system}`,
               }
             : {}),
         }
@@ -260,6 +289,19 @@ export function selectShell(
           // A decision of the map, or of the pools: a phone has its blocks on the map too.
           ...(onMap ? { blocks: onMap } : {}),
           ...(marked ? { marked } : {}),
+          // Watch marks the system of the turn that it shows on the live board, and brings it into
+          // view when it opens, unless a choice of the viewer has the board.
+          ...(watched && past?.system && !marked
+            ? {
+                marked: past.system,
+                ...(boardTask(update, local)?.interactive
+                  ? {}
+                  : {
+                      taskSystems: around(update, past.system),
+                      fitKey: `watch:${inspect?.turn}:${past.system}`,
+                    }),
+              }
+            : {}),
         },
     action: withBack(
       local.draft?.waiting || local.follow?.waiting ? waitingFor(action) : action,
@@ -277,9 +319,19 @@ export function selectShell(
     },
     log,
     inspect:
-      past && local.inspect
-        ? inspectOf(log, local.inspect.turn, past.action, update, printed)
+      past && inspect
+        ? inspectOf(log, inspect.turn, past.action, update, printed, !!watched)
         : null,
+    live:
+      inspect && !watched
+        ? null
+        : selectLiveLine(
+            update,
+            playing,
+            now ?? { step: null, detail: null },
+            !!openChoice(update, local),
+            printed,
+          ),
     apply: local.draft?.apply ?? null,
     toast: null,
     asked: !!update.pending_choice || !!local.draft,
@@ -305,6 +357,7 @@ function inspectOf(
   action: ActionView,
   update: SessionUpdate,
   printed: Catalog | null,
+  watch: boolean,
 ): InspectView {
   const rows = opens(log);
   const at = rows.findIndex((entry) => entry.id === id);
@@ -338,5 +391,6 @@ function inspectOf(
     stamp,
     previous: at > 0 ? rows[at - 1].id : null,
     next: at >= 0 && at < rows.length - 1 ? rows[at + 1].id : null,
+    watch,
   };
 }

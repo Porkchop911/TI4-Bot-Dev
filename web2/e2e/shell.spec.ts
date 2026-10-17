@@ -588,8 +588,9 @@ test("desktop: a strategic turn with a tactical action opens to its card, then t
   await page.goto("/?scenario=strategy_warfare_te&humans=2");
   const log = page.getByRole("region", { name: "Log" });
   const row = log.getByRole("button", { name: /· Strategic · Warfare/ });
+  // Sol's turn is played now: its row opens Watch, in the present.
   await row.click();
-  const turn = page.getByRole("region", { name: "Turn" });
+  const turn = page.getByRole("region", { name: "Watch" });
   const tabs = turn.getByRole("tab");
   await expect(tabs.first()).toHaveText(/Warfare/);
   await expect(tabs.nth(1)).toHaveText(/Activation/);
@@ -602,18 +603,18 @@ test("desktop: a strategic turn with a tactical action opens to its card, then t
   await expect(primary).toContainText("P");
   await expect(primary).not.toContainText("Activated");
   await expect(primary).not.toContainText("Round");
-  // The activation is a step of its own, over the board of that step.
+  // The activation is a step of its own; Watch keeps the live board, with no stamp.
   await tabs.nth(1).click();
   await expect(tabs.nth(1)).toHaveAttribute("aria-selected", "true");
   await expect(
     page.getByRole("region", { name: "Galaxy board" }).getByRole("status", { name: "Board shows" }),
-  ).toContainText("after Activation");
+  ).toHaveCount(0);
   await expect(turn.locator("input, select, textarea, footer button")).toHaveCount(0);
   await page.screenshot({ path: `${SHOTS}/warfare-turn.png`, animations: "disabled" });
   expect(errors).toEqual([]);
 });
 
-test("desktop: a phase of the Log opens what the seats did in it, and the live row opens what is played now", async ({
+test("desktop: a phase of the Log opens what the seats did in it, and the turn of another seat that is played now is a line over the board that opens Watch", async ({
   page,
 }) => {
   test.setTimeout(15_000);
@@ -679,19 +680,52 @@ test("desktop: a phase of the Log opens what the seats did in it, and the live r
   }
   await sheet.locator('footer button[aria-keyshortcuts="Enter"]').click();
   await expect(sheet.getByRole("button", { name: "Add bought token" })).toBeVisible();
-  // The live row is the turn of Sol: it opens what is played now, who decides and who waits.
+  // While Sol plays, a line over the board says what is played now.
+  const board = page.getByRole("region", { name: "Galaxy board" });
+  const line = board.getByRole("button", { name: /^Played now: .* · Strategic · Leadership/ });
+  await expect(line).toBeVisible();
+  // The live row is the turn of Sol: it opens Watch, what is played now, who decides and who
+  // waits, in the present.
   const live = log.getByRole("button", { name: /· Strategic · Leadership/ });
   await expect(live).toContainText("▶");
   await live.click();
-  await expect(turn).toContainText("Played now");
-  const you = turn.locator("ul[aria-label=Seats] > li").filter({ hasText: "You" });
+  const watch = page.getByRole("region", { name: "Watch" });
+  await expect(watch).toContainText("Played now");
+  expect((await watch.boundingBox())!.width).toBeLessThanOrEqual(412);
+  const you = watch.locator("ul[aria-label=Seats] > li").filter({ hasText: "You" });
   await expect(you).toContainText("▶ Deciding");
-  // The viewer's decision is a bar under the turn; its "Back" gives the decision back.
-  const decision = page.getByRole("region", { name: "Your decision" });
-  await expect(decision).toBeVisible();
-  await page.screenshot({ path: `${SHOTS}/live-turn.png`, animations: "disabled" });
-  await decision.getByRole("button", { name: "Back" }).click();
+  await expect(line).toHaveAttribute("aria-pressed", "true");
+  // No history mode: the toolbar keeps the status and Live, the board is not hatched, no stamp.
+  const header = page.locator("header");
+  await expect(header).not.toContainText("History");
+  await expect(header.getByRole("navigation", { name: "Workspace" })).toBeVisible();
+  await expect(board.locator("[data-past]")).toHaveCount(0);
+  await expect(board.getByRole("status", { name: "Board shows" })).toHaveCount(0);
   await expect(turn).toHaveCount(0);
+  // The viewer's decision is its line, with its footer: its main button is in reach.
+  await expect(sheet.getByRole("button", { name: "Restore" })).toBeVisible();
+  await expect(sheet.locator('footer button[aria-keyshortcuts="Enter"]')).toBeVisible();
+  await page.screenshot({ path: `${SHOTS}/live-turn.png`, animations: "disabled" });
+  // A tap on the line of the decision gives the decision back; the line over the board opens
+  // Watch again, and a second tap closes it.
+  await sheet.getByRole("button", { name: "Restore" }).click();
+  await expect(watch).toHaveCount(0);
   await expect(sheet.getByRole("button", { name: "Add bought token" })).toBeVisible();
+  await line.click();
+  await expect(watch).toBeVisible();
+  await line.click();
+  await expect(watch).toHaveCount(0);
+  // Watch closes when the turn that it shows ends: Hacan answers, and Sol's turn goes on to its
+  // end while Watch is open.
+  await line.click();
+  await expect(watch).toBeVisible();
+  for (let answer = 0; answer < 8 && (await watch.count()) > 0; answer += 1) {
+    const send = sheet.locator('footer button[aria-keyshortcuts="Enter"]');
+    if (await send.isVisible()) {
+      await send.click();
+    }
+    await page.waitForTimeout(300);
+  }
+  await expect(watch).toHaveCount(0);
   expect(errors).toEqual([]);
 });
