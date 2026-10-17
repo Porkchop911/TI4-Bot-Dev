@@ -303,7 +303,24 @@ impl Batch {
                         || option.values.iter().any(|value| !value.is_finite())
                 })
             {
-                return Err(format!("PPO step {index} is malformed or non-finite"));
+                // Name the failing field: "malformed or non-finite" alone cannot be acted on.
+                let bad_option = step.options.iter().position(|option| {
+                    option.columns.is_empty()
+                        || option.columns.len() != option.values.len()
+                        || option.columns.iter().any(|column| *column < 0)
+                        || option.values.iter().any(|value| !value.is_finite())
+                });
+                return Err(format!(
+                    "PPO step {index} is malformed or non-finite: head {} options {} chosen {}                      behaviour_log_prob {:e} return_to_go {:e} temperature {} value {:?} bad option {:?}",
+                    step.head,
+                    step.options.len(),
+                    step.chosen,
+                    step.behaviour_log_prob,
+                    step.return_to_go,
+                    step.temperature,
+                    step.behaviour_value,
+                    bad_option.map(|i| (i, &step.options[i].columns, &step.options[i].values)),
+                ));
             }
             match mode {
                 CriticMode::Shared | CriticMode::Separate => {

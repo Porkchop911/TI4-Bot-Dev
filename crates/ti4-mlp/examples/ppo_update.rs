@@ -922,6 +922,16 @@ fn play_one(
         // whole purpose is to say what PPO does to waste when nothing objects to it.
         if let Some(notes) = watched.get(&seat.player) {
             let notes = notes.borrow();
+            // Diagnostic (TI4_DIPLOMACY_CENSUS=1): this seat's diplomacy choices by option kind,
+            // digits stripped, one stderr line per seat-game.
+            if std::env::var_os("TI4_DIPLOMACY_CENSUS").is_some() {
+                let mut kinds: BTreeMap<String, usize> = BTreeMap::new();
+                for note in notes.iter().filter(|note| note.head == "diplomacy") {
+                    let kind: String = note.chosen.chars().filter(|c| !c.is_ascii_digit()).collect();
+                    *kinds.entry(kind).or_default() += 1;
+                }
+                eprintln!("DIPLOMACY_CENSUS {}", serde_json::json!(kinds));
+            }
             if notes.len() != recorded.len() {
                 // The two logs must describe the same decisions. If they do not, the indices mean
                 // nothing and charging by them would penalise arbitrary decisions.
