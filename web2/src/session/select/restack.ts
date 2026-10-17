@@ -6,10 +6,10 @@
 import type { BlockView } from "../../model";
 import type { Choice } from "../wire";
 import { type Editor, answered } from "./editor";
-import { type PoolQuestion, type Pools, countIn, poolsOf, poolsView } from "./tokens";
+import { type PoolQuestion, type PoolKey, type Pools, countIn, poolsOf, poolsView } from "./tokens";
 
 /** The pools of the sheet, with the name of each in the ids of the moves. */
-const POOLS: [keyof Pools, string][] = [
+const POOLS: [PoolKey, string][] = [
   ["tactic", "tactic"],
   ["fleet", "fleet"],
   ["strategic", "strategy"],

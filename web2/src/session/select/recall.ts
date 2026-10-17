@@ -7,7 +7,14 @@
 import type { BlockView, BoardTaskView } from "../../model";
 import type { Choice, PoolOptions, RedistributionHints, SessionUpdate } from "../wire";
 import { systemLabel, tilesOf } from "./movement";
-import { type PoolQuestion, type Pools, countIn, poolQuestion, poolsView } from "./tokens";
+import {
+  type PoolQuestion,
+  type PoolKey,
+  type Pools,
+  countIn,
+  poolQuestion,
+  poolsView,
+} from "./tokens";
 import { type Editor, answered, changeControl, hintOf } from "./editor";
 
 /** What the player staged: the system, and the pools after the gain and the redistribution. */
@@ -55,7 +62,7 @@ export interface RecallView {
   answers: string[] | null;
 }
 
-const KEYS: (keyof Pools)[] = ["tactic", "fleet", "strategic"];
+const KEYS: PoolKey[] = ["tactic", "fleet", "strategic"];
 
 /** The recall of a command token, with the gain and the redistribution after it. Null for any other question. */
 export function selectRecall(

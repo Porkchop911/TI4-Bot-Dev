@@ -122,6 +122,56 @@ impl Standing {
     }
 }
 
+/// The key of [`FleetSupplyHints`] in the details of a movement or production choice.
+pub const FLEET_SUPPLY_KEY: &str = "fleet_supply";
+
+/// The fleet supply of the seat in the system of a movement or production choice (display only,
+/// `details.fleet_supply`): the ships charged against it and its limit (37), so a client can
+/// show the room left.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct FleetSupplyHints {
+    /// Ships charged against the limit ([`Standing::fleet_charged`]).
+    pub used: i64,
+    /// The enforced limit ([`Standing::fleet_limit`]), the bonus included.
+    pub limit: i64,
+    /// The limit does not apply (Darktalon Treilla, [`is_unlimited`]). Left out when false.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts", ts(optional, as = "Option<bool>"))]
+    pub unlimited: bool,
+    /// The part of `limit` beyond the fleet pool
+    /// ([`crate::faction_abilities::armada_bonus`]: Letnev's Armada, 2). Left out when 0.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    #[cfg_attr(feature = "ts", ts(optional, as = "Option<i64>"))]
+    pub fleet_supply_bonus: i64,
+}
+
+impl FleetSupplyHints {
+    /// The fleet supply of `player` in a system where `standing` holds. `unlimited` is only
+    /// stated when `with_unlimited` (production states it, movement does not).
+    #[must_use]
+    pub fn of(
+        state: &GameState,
+        content: &ContentStore,
+        player: &PlayerId,
+        standing: &Standing,
+        with_unlimited: bool,
+    ) -> Self {
+        Self {
+            used: standing.fleet_charged,
+            limit: standing.fleet_limit,
+            unlimited: with_unlimited && is_unlimited(state, player),
+            fleet_supply_bonus: i64::from(crate::faction_abilities::armada_bonus(
+                state, content, player,
+            )),
+        }
+    }
+}
+
+const fn is_zero(count: &i64) -> bool {
+    *count == 0
+}
+
 /// Fleet supply and transport for one seat in one system, optionally with a unit not yet placed.
 ///
 /// The one arithmetic behind every answer in this module. [`over_supply`], [`over_capacity`] and

@@ -39,7 +39,7 @@ const players = [{ ...galleryPlayers[0], faction: "letnev", fleet_tokens: 3 }, .
 const movement = {
   prompt: "Move ships into Mecatol Rex",
   context: { subtype: "movement_step", target: { System: "18" } },
-  details: { fleet_supply: { used: 3, limit: 5, armada: 2 } },
+  details: { fleet_supply: { used: 3, limit: 5, fleet_supply_bonus: 2 } },
   options: [
     { id: "move|20|0", label: "Cruiser", kind: "move", payload: { origin: "20", unit: "cruiser", capacity: 0 } },
     { id: "done_moving", label: "Finish Movement", kind: "decline" },
@@ -49,7 +49,7 @@ const movement = {
 const production = {
   prompt: "Produce units in system 18",
   context: { subtype: "produce_unit", target: { System: "18" }, outstanding: [{ kind: "production_capacity", amount: 4, paid: 0 }] },
-  details: { fleet_supply: { used: 3, limit: 5, armada: 2 } },
+  details: { fleet_supply: { used: 3, limit: 5, fleet_supply_bonus: 2 } },
   options: [
     {
       id: "build|cruiser|1",

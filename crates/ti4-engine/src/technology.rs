@@ -416,6 +416,7 @@ pub fn end_turn(
                     options,
                 ),
                 state,
+                content,
                 "restack",
                 None,
             )

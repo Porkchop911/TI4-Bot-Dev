@@ -117,7 +117,7 @@ fn secondary_choice(
         if let Some(purchase) =
             crate::strategy_cards::purchase_hints(state, content, sources, player)
         {
-            question = crate::tokens::with_pool_details(question, state, "buy", Some(0))
+            question = crate::tokens::with_pool_details(question, state, content, "buy", Some(0))
                 .hinted("purchase", &purchase);
         }
     } else {

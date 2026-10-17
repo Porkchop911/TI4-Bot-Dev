@@ -8,6 +8,7 @@
 //! from before `RULES_STATUS_GAIN` asks the status phase's gain token by token too
 //! ([`TokenGain::pending_choice`]), and its redistribution comes after over what is placed.
 
+use ti4_content::ContentStore;
 use ti4_model::id::{PlayerId, SystemId};
 use ti4_model::state::{GameState, TokenPool};
 
@@ -80,11 +81,7 @@ impl TokenGain {
     /// Panics if a faction's printed status-phase token gain does not fit in an `i32`, which no
     /// corpus value can do.
     #[must_use]
-    pub fn for_status(
-        state: &GameState,
-        content: &ti4_content::ContentStore,
-        players: &[PlayerId],
-    ) -> Self {
+    pub fn for_status(state: &GameState, content: &ContentStore, players: &[PlayerId]) -> Self {
         let mut pending = Vec::new();
         for player in players {
             let count = crate::faction_abilities::status_tokens(
@@ -178,30 +175,22 @@ impl TokenGain {
 pub fn with_pool_details(
     choice: Choice,
     state: &GameState,
+    content: &ContentStore,
     mode: &str,
     tokens_to_place: Option<usize>,
 ) -> Choice {
-    let pools = CommandPools::of(state, &choice.player);
+    let pools = CommandPools::of(state, content, &choice.player);
     let CommandPools {
         tactic,
         fleet,
         strategic,
+        ..
     } = pools;
     let reinforcements = state.tokens_in_reinforcements(&choice.player);
     let choice = choice
         .detailed("kind", "command_tokens")
         .detailed("mode", mode)
         .hinted("pools", &pools);
-    // Letnev's Armada (`faction_abilities::fleet_supply`): two more non-fighter ships per system
-    // than the fleet pool allows. Display only; the panel shows it next to the fleet pool.
-    let choice = if state
-        .player(&choice.player)
-        .is_some_and(|seat| seat.faction.as_str() == "letnev")
-    {
-        choice.detailed("fleet_supply_bonus", 2)
-    } else {
-        choice
-    };
     match (mode, tokens_to_place) {
         ("gain" | "buy", Some(count)) => choice
             .detailed("reinforcements", reinforcements)
@@ -230,22 +219,33 @@ pub struct CommandPools {
     pub tactic: i32,
     pub fleet: i32,
     pub strategic: i32,
+    /// The non-fighter ships per system that the seat may keep beyond its fleet pool
+    /// ([`crate::faction_abilities::armada_bonus`]: Letnev's Armada, 2). Left out when 0.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    #[cfg_attr(feature = "ts", ts(optional, as = "Option<i32>"))]
+    pub fleet_supply_bonus: i32,
+}
+
+const fn is_zero(count: &i32) -> bool {
+    *count == 0
 }
 
 impl CommandPools {
     /// The pools of `player` as they stand now; all 0 for a player who is not seated.
     #[must_use]
-    pub fn of(state: &GameState, player: &PlayerId) -> Self {
+    pub fn of(state: &GameState, content: &ContentStore, player: &PlayerId) -> Self {
         state.player(player).map_or(
             Self {
                 tactic: 0,
                 fleet: 0,
                 strategic: 0,
+                fleet_supply_bonus: 0,
             },
             |seat| Self {
                 tactic: seat.tactic_tokens,
                 fleet: seat.fleet_tokens,
                 strategic: seat.strategic_tokens,
+                fleet_supply_bonus: crate::faction_abilities::armada_bonus(state, content, player),
             },
         )
     }
@@ -282,10 +282,11 @@ pub struct RedistributionHints {
 #[must_use]
 pub fn redistribution_after_gain(
     state: &GameState,
+    content: &ContentStore,
     player: &PlayerId,
     gained: i32,
 ) -> RedistributionHints {
-    let pools = CommandPools::of(state, player);
+    let pools = CommandPools::of(state, content, player);
     let total = pools.tactic + pools.fleet + pools.strategic + gained;
     RedistributionHints {
         pools,
@@ -627,7 +628,7 @@ pub fn remove_creuss_token(state: &mut GameState, kind: &str) -> Option<SystemId
 #[must_use]
 pub fn wormhole_generator_destinations(
     state: &GameState,
-    content: &ti4_content::ContentStore,
+    content: &ContentStore,
     sources: ti4_model::content_types::SourceSet,
     galaxy: &ti4_content::galaxy::Galaxy,
     player: &PlayerId,
@@ -663,9 +664,7 @@ pub fn wormhole_generator_destinations(
 
 #[cfg(test)]
 mod tests {
-    use ti4_content::ContentStore;
     use ti4_model::content_types::POK;
-    use ti4_model::state::TokenPool;
 
     use super::*;
     use crate::setup::start_game;
@@ -690,7 +689,7 @@ mod tests {
             "gain a command token into which pool",
             vec![ChoiceOption::new("tactic_tokens", POOL_KIND)],
         );
-        let choice = with_pool_details(ask, &state, "gain", Some(2));
+        let choice = with_pool_details(ask, &state, ContentStore::embedded(), "gain", Some(2));
         assert_eq!(choice.details["kind"], "command_tokens");
         assert_eq!(choice.details["mode"], "gain");
         assert_eq!(choice.details["tokens_to_place"], 2);
@@ -717,6 +716,7 @@ mod tests {
         let choice = with_pool_details(
             window.pending_choice(&state).unwrap(),
             &state,
+            ContentStore::embedded(),
             "redistribute",
             None,
         );
@@ -858,28 +858,33 @@ mod tests {
     }
 
     #[test]
-    fn only_letnev_reports_the_armada_fleet_supply_bonus() {
+    fn only_letnev_reports_the_armada_fleet_supply_bonus_in_the_pools() {
         let (mut state, players) = game();
         state.player_mut(&players[0]).unwrap().faction = ti4_model::id::FactionId::new("letnev");
+        state.player_mut(&players[1]).unwrap().faction = ti4_model::id::FactionId::new("sol");
         let choice = |player: &PlayerId| {
             let window = TokenRedistribution::new(player.clone());
             with_pool_details(
                 window.pending_choice(&state).unwrap(),
                 &state,
+                ContentStore::embedded(),
                 "redistribute",
                 None,
             )
         };
+        let letnev = choice(&players[0]);
+        let pools = letnev.hint::<CommandPools>("pools").expect("the pools");
+        assert_eq!(pools.fleet_supply_bonus, 2);
+        assert_eq!(letnev.details["pools"]["fleet_supply_bonus"], 2);
+        assert!(letnev.details.get("fleet_supply_bonus").is_none());
+        let other = choice(&players[1]);
         assert_eq!(
-            choice(&players[0]).details.get("fleet_supply_bonus"),
-            Some(&serde_json::json!(2))
+            other
+                .hint::<CommandPools>("pools")
+                .map(|pools| pools.fleet_supply_bonus),
+            Some(0)
         );
-        assert!(
-            choice(&players[1])
-                .details
-                .get("fleet_supply_bonus")
-                .is_none()
-        );
+        assert!(other.details["pools"].get("fleet_supply_bonus").is_none());
     }
 
     #[test]

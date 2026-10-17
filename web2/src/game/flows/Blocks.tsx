@@ -62,7 +62,8 @@ function Triangle({ up, state }: { up?: boolean; state: TokenState }) {
 
 /**
  * A pool of command tokens as one line: the name, the count ("3 → 5") in a fixed width, then a
- * triangle for each token. Only the tokens wrap, in their own column.
+ * triangle for each token. Only the tokens wrap, in their own column. A subtitle (the fleet
+ * supply bonus of the fleet pool) is a second line under the name, with its rule on hover.
  *
  * With a counter the tokens are the control, as the tokens of a production are: a tap on an
  * added token (highlighted) takes it back, the dashed slot with "+" adds one, and a removed token
@@ -123,9 +124,17 @@ function PoolRow({ row }: { row: RowView }) {
     >
       <span className="flex min-w-0 items-center gap-1.5">
         <Icon name={up ? "token" : "tokenDown"} className="size-3.5 flex-none text-icon" />
-        <strong className="truncate text-sm font-mid">
-          <RichText value={row.title} />
-        </strong>
+        <span className="flex min-w-0 flex-col">
+          <strong className="truncate text-sm font-mid">
+            <RichText value={row.title} />
+          </strong>
+          {row.subtitle && (
+            <span className="inline-flex items-center gap-1 text-xs text-muted">
+              {row.subtitle}
+              {row.hint && <Hint label="Rules">{row.hint}</Hint>}
+            </span>
+          )}
+        </span>
       </span>
       <span className="text-sm whitespace-nowrap text-muted tabular-nums">
         {now}

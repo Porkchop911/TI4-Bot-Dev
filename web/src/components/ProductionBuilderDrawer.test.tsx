@@ -669,7 +669,7 @@ describe("ProductionBuilderDrawer Armada fleet supply", () => {
   };
 
   it("marks the Armada part of the limit", () => {
-    open({ used: 2, limit: 6, armada: 2 });
+    open({ used: 2, limit: 6, fleet_supply_bonus: 2 });
     expect(screen.getByTestId("fleet-supply-counter")).toHaveTextContent("2 / 6");
     expect(screen.getByTestId("production-armada")).toHaveTextContent("incl. +2 Armada");
   });
@@ -744,7 +744,7 @@ describe("ProductionBuilderDrawer staged fleet supply", () => {
   });
 
   it("Letnev with Armada stays normal within its limit of 5", () => {
-    open({ used: 2, limit: 5, armada: 2 });
+    open({ used: 2, limit: 5, fleet_supply_bonus: 2 });
     add("build|cruiser|1");
     add("build|cruiser|1");
     add("build|cruiser|1");

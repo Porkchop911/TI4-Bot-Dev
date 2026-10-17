@@ -189,6 +189,7 @@ fn gain_tokens_offering(
         let mut choice = crate::tokens::with_pool_details(
             choice,
             state,
+            content,
             "gain",
             Some(usize::try_from(count - placed).unwrap_or(0)),
         );
@@ -432,7 +433,7 @@ fn influence_purchase_choice(
     ));
     // Only a fresh purchase (no carried credit) can be planned as a whole.
     match purchase_hints(state, content, sources, player).filter(|_| credit == 0) {
-        Some(purchase) => crate::tokens::with_pool_details(choice, state, "buy", Some(0))
+        Some(purchase) => crate::tokens::with_pool_details(choice, state, content, "buy", Some(0))
             .hinted("purchase", &purchase),
         None => choice,
     }
@@ -2986,7 +2987,7 @@ fn warfare_primary(
     // client can stage the whole primary on one screen.
     .hinted(
         "redistribution",
-        &crate::tokens::redistribution_after_gain(state, player, 1),
+        &crate::tokens::redistribution_after_gain(state, content, player, 1),
     )
     .contextualized(DecisionContext::new(
         player.clone(),
@@ -3088,6 +3089,7 @@ pub(crate) fn redistribute_tokens(
     let choice = crate::tokens::with_pool_details(
         choice,
         state,
+        content,
         "redistribute",
         usize::try_from(gained).ok().filter(|count| *count > 0),
     );

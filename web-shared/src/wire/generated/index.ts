@@ -79,6 +79,7 @@ export type { FactionSheet } from "./FactionSheet.ts";
 export type { FleetCounts } from "./FleetCounts.ts";
 export type { FleetStanding } from "./FleetStanding.ts";
 export type { FleetSupplyFact } from "./FleetSupplyFact.ts";
+export type { FleetSupplyHints } from "./FleetSupplyHints.ts";
 export type { FollowerFact } from "./FollowerFact.ts";
 export type { FollowerState } from "./FollowerState.ts";
 export type { GalaxyLayout } from "./GalaxyLayout.ts";

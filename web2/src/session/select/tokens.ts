@@ -9,10 +9,13 @@ import type { Choice, CommandPools } from "../wire";
 /** The three pools of a command sheet (the engine's `CommandPools`). */
 export type Pools = CommandPools;
 
+/** The name of one of the three pools. */
+export type PoolKey = "tactic" | "fleet" | "strategic";
+
 /** The kind of an option that sets the three pools (`REDISTRIBUTE_KIND` of the engine). */
 const REDISTRIBUTE = "redistribute";
 
-const POOLS: [keyof Pools, "t" | "f" | "s", string, string][] = [
+const POOLS: [PoolKey, "t" | "f" | "s", string, string][] = [
   ["tactic", "t", "Tactic pool", "Tactic"],
   ["fleet", "f", "Fleet pool", "Fleet"],
   ["strategic", "s", "Strategy pool", "Strategy"],
@@ -39,15 +42,24 @@ const parse = (id: string): Pools | null => {
     : null;
 };
 
-/** The pools that a question states, from its details. */
+/** The pools that a question states, from its details, with the seat's fleet supply bonus. */
 export const poolsOf = (value: unknown): Pools | null => {
   const pools = value as Partial<Record<keyof Pools, unknown>> | null;
-  return pools &&
-    typeof pools.tactic === "number" &&
-    typeof pools.fleet === "number" &&
-    typeof pools.strategic === "number"
-    ? { tactic: pools.tactic, fleet: pools.fleet, strategic: pools.strategic }
-    : null;
+  if (
+    !pools ||
+    typeof pools.tactic !== "number" ||
+    typeof pools.fleet !== "number" ||
+    typeof pools.strategic !== "number"
+  ) {
+    return null;
+  }
+  const bonus = pools.fleet_supply_bonus;
+  return {
+    tactic: pools.tactic,
+    fleet: pools.fleet,
+    strategic: pools.strategic,
+    ...(typeof bonus === "number" && bonus > 0 ? { fleet_supply_bonus: bonus } : {}),
+  };
 };
 
 /** The pools of a redistribution: the sheet of now, the tokens to arrange, and what is offered. */
@@ -73,7 +85,7 @@ export function poolQuestion(now: unknown, total: unknown, ids: unknown[]): Pool
     return null;
   }
   const all = arrangements as Pools[];
-  const least = (key: keyof Pools) => Math.min(...all.map((pools) => pools[key]));
+  const least = (key: PoolKey) => Math.min(...all.map((pools) => pools[key]));
   return {
     now: sheet,
     total,
@@ -142,11 +154,17 @@ export function selectTokens(choice: Choice, staging: Pools | null): TokensView 
 
 /**
  * The rows of the three pools: the tokens of now and after, and a counter from `min` up to the
- * tokens that are `left` to place.
+ * tokens that are `left` to place. The fleet pool says the seat's fleet supply bonus of `now`.
  */
 export const poolRows = (now: Pools, after: Pools, min: Pools, left: number): RowView[] =>
   POOLS.map(([key, short, name]) => ({
     title: [name],
+    ...(key === "fleet" && now.fleet_supply_bonus
+      ? {
+          subtitle: `+${now.fleet_supply_bonus} supply`,
+          hint: `Your fleet supply is the fleet pool and ${plural(now.fleet_supply_bonus, "more non-fighter ship")} in each system.`,
+        }
+      : {}),
     tokens: { now: now[key], after: after[key], up: key === "fleet" },
     control: {
       kind: "counter",

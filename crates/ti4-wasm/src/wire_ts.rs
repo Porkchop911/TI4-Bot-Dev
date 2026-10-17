@@ -63,6 +63,7 @@ pub fn files() -> BTreeMap<String, String> {
     collect.visit::<ti4_calc::odds::GroundOddsRequest>();
     collect.visit::<ti4_calc::odds::GroundOddsResponse>();
     collect.visit::<ti4_engine::fleet::Standing>();
+    collect.visit::<ti4_engine::fleet::FleetSupplyHints>();
     // ts-rs inlines a flattened struct, so the shared part is a root of its own.
     collect.visit::<ti4_engine::strategy_cards::PaymentHints>();
     collect.visit::<ti4_engine::strategy_cards::ResearchPaymentHints>();

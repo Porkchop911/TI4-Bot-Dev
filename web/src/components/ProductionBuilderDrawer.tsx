@@ -324,14 +324,14 @@ export const ProductionBuilderDrawer: React.FC<ProductionBuilderDrawerProps> = (
                             "Data unavailable"
                           )}
                         </span>
-                        {(readFleetSupply(fleetSupply)?.armada ?? 0) > 0 && (
+                        {(readFleetSupply(fleetSupply)?.fleetSupplyBonus ?? 0) > 0 && (
                           <span
                             className="token-panel__armada"
                             data-testid="production-armada"
                             title={ARMADA_TEXT}
                             aria-label={ARMADA_TEXT}
                           >
-                            incl. +{readFleetSupply(fleetSupply)?.armada} Armada
+                            incl. +{readFleetSupply(fleetSupply)?.fleetSupplyBonus} Armada
                           </span>
                         )}
                         </span>

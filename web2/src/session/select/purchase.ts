@@ -17,7 +17,7 @@ import {
   paymentOf,
   togglePaying,
 } from "./payment";
-import { type Pools, placeProblem, poolChange, poolRows, poolsOf } from "./tokens";
+import { type PoolKey, type Pools, placeProblem, poolChange, poolRows, poolsOf } from "./tokens";
 import { type Editor, hintOf, num } from "./editor";
 
 /** What the player staged: tokens bought, and what pays for them. */
@@ -54,7 +54,7 @@ interface Question {
 }
 
 /** The pools, with the options of a gain into each. */
-const POOLS: [keyof Pools, string][] = [
+const POOLS: [PoolKey, string][] = [
   ["tactic", "tactic_tokens"],
   ["fleet", "fleet_tokens"],
   ["strategic", "strategic_tokens"],

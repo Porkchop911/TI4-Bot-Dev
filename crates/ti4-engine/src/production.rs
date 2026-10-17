@@ -3175,18 +3175,13 @@ impl Window for ProductionWindow {
                     &self.system,
                     None,
                 );
-                let mut fleet_supply = serde_json::json!({
-                    "used": standing.fleet_charged,
-                    "limit": standing.fleet_limit,
-                });
-                if crate::fleet::is_unlimited(state, &self.player) {
-                    fleet_supply["unlimited"] = serde_json::Value::Bool(true);
-                }
-                // Letnev's Armada: already inside `limit`; named so a client can mark it.
-                let armada = crate::faction_abilities::armada_bonus(state, content, &self.player);
-                if armada > 0 {
-                    fleet_supply["armada"] = serde_json::json!(armada);
-                }
+                let fleet_supply = crate::fleet::FleetSupplyHints::of(
+                    state,
+                    content,
+                    &self.player,
+                    &standing,
+                    true,
+                );
                 // Display only: every kind that is not offered, with why, so a client can keep
                 // its row and say so.
                 Some(
@@ -3196,7 +3191,7 @@ impl Window for ProductionWindow {
                         options,
                     )
                     .contextualized(self.context(state))
-                    .detailed("fleet_supply", fleet_supply)
+                    .hinted(crate::fleet::FLEET_SUPPLY_KEY, &fleet_supply)
                     .hinted(WITHHELD_KEY, &withheld),
                 )
             }
@@ -5839,6 +5834,61 @@ mod tests {
             Some(i64::from(crate::fleet::limit(&state, content, &player())))
         );
         assert!(supply.get("unlimited").is_none());
+    }
+
+    /// Letnev's Armada is one typed fact: the same `fleet_supply_bonus` in the pools of a
+    /// command-token decision and in the fleet supply of a production; absent for another seat.
+    #[test]
+    fn only_letnev_carries_the_armada_bonus_in_the_pools_and_the_production() {
+        let content = ContentStore::embedded();
+        let told = |faction: &str| {
+            let (mut state, system, planet) = seated();
+            state.player_mut(&player()).unwrap().faction = ti4_model::id::FactionId::new(faction);
+            state
+                .system_mut(&system)
+                .set_control(planet.clone(), player());
+            put_on_planet(&mut state, &system, &planet, "spacedock", &player(), 1);
+            let window = ProductionWindow::new(&state, content, POK, &player(), &system);
+            let production = window
+                .pending_choice(&state, content, POK)
+                .expect("production choice");
+            let tokens = crate::tokens::with_pool_details(
+                crate::tokens::TokenRedistribution::new(player())
+                    .pending_choice(&state)
+                    .expect("redistribution"),
+                &state,
+                content,
+                "redistribute",
+                None,
+            );
+            (
+                tokens
+                    .hint::<crate::tokens::CommandPools>("pools")
+                    .expect("the pools"),
+                production
+                    .hint::<crate::fleet::FleetSupplyHints>(crate::fleet::FLEET_SUPPLY_KEY)
+                    .expect("the fleet supply"),
+                tokens,
+                production,
+            )
+        };
+        let (pools, supply, tokens, production) = told("letnev");
+        assert_eq!(pools.fleet_supply_bonus, 2);
+        assert_eq!(supply.fleet_supply_bonus, 2);
+        assert_eq!(supply.limit, i64::from(pools.fleet) + 2);
+        assert_eq!(tokens.details["pools"]["fleet_supply_bonus"], 2);
+        assert_eq!(production.details["fleet_supply"]["fleet_supply_bonus"], 2);
+        assert!(tokens.details.get("fleet_supply_bonus").is_none());
+        assert!(production.details["fleet_supply"].get("armada").is_none());
+        let (pools, supply, tokens, production) = told("sol");
+        assert_eq!(pools.fleet_supply_bonus, 0);
+        assert_eq!(supply.fleet_supply_bonus, 0);
+        assert!(tokens.details["pools"].get("fleet_supply_bonus").is_none());
+        assert!(
+            production.details["fleet_supply"]
+                .get("fleet_supply_bonus")
+                .is_none()
+        );
     }
 
     #[test]

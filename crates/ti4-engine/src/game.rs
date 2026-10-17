@@ -2002,6 +2002,7 @@ impl<'a> Game<'a> {
                 crate::tokens::with_pool_details(
                     choice,
                     &self.state,
+                    self.content,
                     "gain",
                     Some(window.remaining_for_next_player()),
                 )
