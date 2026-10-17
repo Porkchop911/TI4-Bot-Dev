@@ -120,8 +120,14 @@ fn half_width(tally: Tally) -> f64 {
     reason = "one measurement: the rollout and the table it prints belong together"
 )]
 fn main() {
-    let bundle_path = argument("--bundle")
-        .unwrap_or_else(|| refuse("--bundle is required: this measures a policy"));
+    // --rule-bot: every seat is the hand-written rule bot (its shipped version), no bundle.
+    let rule_bot = std::env::args().any(|a| a == "--rule-bot");
+    let bundle_path = if rule_bot {
+        format!("rule bot version {}", ti4_rule_bot::tuning::BOT_VERSION)
+    } else {
+        argument("--bundle")
+            .unwrap_or_else(|| refuse("--bundle is required: this measures a policy"))
+    };
     let temperature: f64 = argument("--temperature").map_or(0.25, |value| {
         value
             .parse::<f64>()
@@ -174,18 +180,21 @@ fn main() {
         .unwrap_or_else(|error| refuse(&format!("configuring the backend: {error}")));
     let content = ContentStore::embedded();
 
-    let loaded = ti4_mlp::bundle::read(std::path::Path::new(&bundle_path))
-        .unwrap_or_else(|error| refuse(&format!("reading {bundle_path}: {error}")));
-    let vocabulary = loaded.vocabulary;
+    let loaded = (!rule_bot).then(|| {
+        ti4_mlp::bundle::read(std::path::Path::new(&bundle_path))
+            .unwrap_or_else(|error| refuse(&format!("reading {bundle_path}: {error}")))
+    });
+    let (vocabulary, actor) = loaded.map(|loaded| (loaded.vocabulary, loaded.actor)).unzip();
     // One actor for every seat, or, given a bundle of a separate-models run, each faction's own
-    // (in FACTIONS order), all at the chosen bundle's update count.
-    let separate = ti4_mlp::bundle::separate_model_bundles(
-        std::path::Path::new(&bundle_path),
-        &FACTIONS,
-    )
-    .unwrap_or_else(|error| refuse(&error));
+    // (in FACTIONS order), all at the chosen bundle's update count. None for the rule bot.
+    let separate = if rule_bot {
+        None
+    } else {
+        ti4_mlp::bundle::separate_model_bundles(std::path::Path::new(&bundle_path), &FACTIONS)
+            .unwrap_or_else(|error| refuse(&error))
+    };
     let actors: Vec<ti4_mlp::Actor> = match &separate {
-        None => vec![loaded.actor],
+        None => actor.into_iter().collect(),
         Some(bundles) => FACTIONS
             .iter()
             .map(|faction| {
@@ -296,6 +305,13 @@ fn main() {
                             let mut deciders: BTreeMap<PlayerId, Box<dyn Decider>> =
                                 BTreeMap::new();
                             for (index, player) in players.iter().enumerate() {
+                                if rule_bot {
+                                    deciders.insert(
+                                        player.clone(),
+                                        Box::new(ti4_rule_bot::RuleBotDecider::new(index, seed)),
+                                    );
+                                    continue;
+                                }
                                 let row = ti4_mlp::FactionRow::of(seated[player].as_str())
                                     .map_err(|error| format!("{player}: {error}"))?;
                                 let baseline = baselines
@@ -318,7 +334,7 @@ fn main() {
                                 };
                                 let (decider, _status) = ti4_mlp::bot::MlpBot::sharing(
                                     &local[model],
-                                    vocabulary.clone(),
+                                    vocabulary.clone().ok_or("no vocabulary")?,
                                     row,
                                     stream,
                                 )
