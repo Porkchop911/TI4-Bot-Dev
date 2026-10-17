@@ -17,13 +17,19 @@ import type {
   TradeItem,
   TransactionHints,
 } from "../wire";
+import { fillPhrase } from "@ti4/shared/wire/phrase.ts";
 import { plain } from "./components";
 import { hintOf } from "./editor";
-import { factionName, humanizeId, seatLabel, sentence } from "./names";
+import { systemLabel, tilesOf } from "./movement";
+import { factionName, humanizeId, seatLabel, sentence, strategyCard, unitWords } from "./names";
+
+/** The seat of the viewer, when the viewer has one. */
+const viewerSeat = (update: SessionUpdate) =>
+  update.viewer.role === "player" ? update.viewer.seat : null;
 
 /** The faction of the viewer, when the viewer has a seat. */
 function viewerFaction(update: SessionUpdate): string | null {
-  const seat = update.viewer.role === "player" ? update.viewer.seat : null;
+  const seat = viewerSeat(update);
   return update.view.players.find((player) => player.id === seat)?.faction ?? null;
 }
 
@@ -169,29 +175,56 @@ export function transactionPrompt(
 export const phrasesOf = (choice: Choice | null | undefined): PhraseHints | null =>
   choice ? hintOf<PhraseHints>(choice, "phrases") : null;
 
-/** A thing that a text names, as the page names it: a seat by `seatLabel`, a card as printed. */
-function subjectOf(subject: Subject, update: SessionUpdate, catalog: Catalog | null): Named {
+/** A planet by its name on the map, else as the catalogue prints it. */
+function planetName(id: string, update: SessionUpdate, catalog: Catalog | null): string {
+  const onMap = (update.view.board?.map_tiles ?? [])
+    .flatMap((tile) => tile.planets ?? [])
+    .find((planet) => planet.id === id)?.label;
+  return (
+    onMap ?? catalog?.records.planets.find((planet) => planet.id === id)?.name ?? humanizeId(id)
+  );
+}
+
+/**
+ * A thing that a text names, as the page names it: a seat by `seatLabel`, a system as the map
+ * labels it ("Lodor · #27"), a planet and a unit by their names, a card as printed with its text
+ * for "?".
+ */
+export function subjectOf(subject: Subject, update: SessionUpdate, catalog: Catalog | null): Named {
   switch (subject.kind) {
     case "seat":
       return { text: seatLabel(update, subject.player, catalog), help: null };
+    case "seat_possessive":
+      return {
+        text:
+          subject.player === viewerSeat(update)
+            ? "your"
+            : `${seatLabel(update, subject.player, catalog)}’s`,
+        help: null,
+      };
     case "note":
     case "action_card":
     case "secret_objective":
       return itemOf(subject, update, catalog);
-    // The subjects of the effect texts, which no question of this page names yet.
-    case "seat_possessive":
-      return { text: `${seatLabel(update, subject.player, catalog)}’s`, help: null };
     case "system":
-      return { text: subject.system, help: null };
+      return { text: systemLabel(tilesOf(update), subject.system), help: null };
     case "planet":
-      return { text: humanizeId(subject.planet), help: null };
+      return { text: planetName(subject.planet, update, catalog), help: null };
     case "unit":
-      return { text: humanizeId(subject.unit_type), help: null };
+      return { text: unitWords(subject.unit_type, catalog), help: null };
     case "units":
-      return { text: `${subject.count} ${humanizeId(subject.unit_type)}`, help: null };
-    case "agenda":
+      return {
+        text: `${subject.count} ${unitWords(subject.unit_type, catalog, subject.count)}`,
+        help: null,
+      };
+    case "agenda": {
+      const agenda = catalog?.components.agendas.find((item) => item.id === subject.card);
+      return agenda
+        ? { text: agenda.name, help: { title: agenda.name, text: plain(agenda.text) } }
+        : { text: humanizeId(subject.card), help: null };
+    }
     case "strategy_card":
-      return { text: humanizeId(subject.card), help: null };
+      return { text: strategyCard(subject.card, catalog).name, help: null };
   }
 }
 
@@ -205,11 +238,7 @@ export function phraseWords(
   catalog: Catalog | null,
 ): Worded {
   const help: HelpView[] = [];
-  const text = phrase.text.replace(/\{(\w+)\}/g, (token, key: string) => {
-    const subject = phrase.refs[key];
-    if (!subject) {
-      return token;
-    }
+  const text = fillPhrase(phrase, (subject) => {
     const named = subjectOf(subject, update, catalog);
     if (named.help?.text && !help.some((item) => item.title === named.help?.title)) {
       help.push(named.help);

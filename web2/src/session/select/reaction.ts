@@ -1,6 +1,7 @@
 // A reaction window: what opened it, in game values, and what the viewer can use now, as printed.
 // The engine says both (`reaction` of the update); this file words the trigger and the rows.
 // No rule is decided here, and no rule text is written here.
+import { previewOf, previewOfCard } from "./effects";
 import { optionWords } from "./notes";
 import type { BlockView, InterruptView, MenuRowView, OfferMode, OfferView } from "../../model";
 import type {
@@ -136,10 +137,19 @@ export function selectReaction(
     mode: modeOf(modes, item.key),
     ownTurn: facts.own_turn_applies,
   });
+  // What a row would do now, as the engine words it, with the printed text of the cards that it
+  // names behind "?".
+  const effect = (option: string, name?: string): Partial<MenuRowView> => {
+    const preview = previewOf(choice, option, update, catalog, name);
+    return preview
+      ? { effect: preview.text, ...(preview.help.length ? { help: preview.help } : {}) }
+      : {};
+  };
   const rows: Omit<MenuRowView, "key">[] = [
     ...facts.offers.map((item) => ({
       title: item.name,
       state: item.kind === "leader" && item.role ? humanizeId(item.role) : KIND[item.kind],
+      ...effect(item.option, item.name),
       text: [timing(item.window), plain(item.text)].filter(Boolean).join(" "),
       selected: item.option === staged,
       offer: offer(item),
@@ -151,6 +161,7 @@ export function selectReaction(
       .filter((option) => option.kind !== "decline" && !offered.has(option.id))
       .map((option) => ({
         title: optionWords(choice, option, update, catalog).text,
+        ...effect(option.id),
         selected: option.id === staged,
         disabled: false,
         intent: { type: "chooseOption" as const, option: option.id },
@@ -239,6 +250,7 @@ export function reactedAction(
   update: SessionUpdate,
   trigger: DecisionTrigger | undefined,
   catalog: Catalog | null,
+  choice?: Choice | null,
 ): ReactedAction {
   const viewer = update.viewer.role === "player" ? update.viewer.seat : null;
   const actor = trigger?.actor ?? null;
@@ -253,6 +265,8 @@ export function reactedAction(
       trigger.event_type === "ACTION_CARD_PLAYED" ||
       trigger.event_type === "ACTION_CARD_DISCARDED")
   ) {
+    // What the card will do, when the engine words it; else it is only not resolved yet.
+    const result = previewOfCard(choice, card, update, catalog)?.text ?? "Not resolved yet.";
     const printed = printedSource({ ActionCard: card }, catalog) ?? {
       name: humanizeId(card),
       type: "Action card",
@@ -265,7 +279,7 @@ export function reactedAction(
         { kind: "source", ...printed },
         // A window "when" a card is played is before the card does anything.
         ...(trigger.relation === "when"
-          ? [{ kind: "note" as const, tone: "quiet" as const, text: "Not resolved yet." }]
+          ? [{ kind: "note" as const, tone: "quiet" as const, text: result }]
           : []),
       ],
     };

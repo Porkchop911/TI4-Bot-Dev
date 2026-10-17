@@ -108,6 +108,16 @@ export function unitLabel(id: string, printed: Catalog | null, count = 1): strin
 }
 
 /**
+ * A unit that a text of the engine names: by its base type ("cruiser", "war_sun") it is the unit
+ * in general, in the plural for `count` other than 1 ("Cruisers"); by the id of a card
+ * ("cruiser2", "sol_carrier") it is the printed name (`unitLabel`).
+ */
+export function unitWords(id: string, printed: Catalog | null, count = 1): string {
+  const base = UNITS.find(([name]) => name === id.replaceAll("_", ""));
+  return base ? unitName(base[1], count) : unitLabel(id, printed, count);
+}
+
+/**
  * What units are grouped by where they are counted ("3 Infantry I"): the printed unit when the
  * catalogue has it, so that "Infantry II" stays apart from "Infantry I"; else the base unit.
  */

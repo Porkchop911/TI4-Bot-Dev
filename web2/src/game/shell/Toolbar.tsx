@@ -1,5 +1,5 @@
-import type { ToolbarView, Workspace } from "../../model";
-import { Button, Icon, Menu } from "../../ui";
+import type { EffectView, ToolbarView, Workspace } from "../../model";
+import { Button, Hint, Icon, Menu } from "../../ui";
 import { useDispatch } from "../context";
 
 export const REFERENCES = [
@@ -16,6 +16,48 @@ export const REFERENCES = [
 export interface OtherGame {
   label: string;
   href: string;
+}
+
+/**
+ * The lingering effects of played cards that are in force, beside the status: one chip each, the
+ * card, what it does and until when, cut with "…" and whole on hover; the printed text of the
+ * card is behind "?".
+ */
+function Effects({ effects }: { effects: EffectView[] }) {
+  return (
+    <ul
+      aria-label="Effects in force"
+      className="flex min-w-0 shrink items-center gap-1.5 overflow-hidden phone:order-last phone:w-full phone:flex-wrap"
+    >
+      {effects.map((effect, index) => {
+        const whole = `${effect.title}: ${effect.summary} · ${effect.expiry}`;
+        return (
+          <li
+            key={`${effect.title}-${index}`}
+            className="flex max-w-[420px] min-w-0 items-center gap-1.5 rounded-md border border-line bg-well px-2 py-0.5 text-xs"
+          >
+            <span className="flex min-w-0 gap-1.5" title={whole}>
+              <strong className="shrink-0 font-semibold text-text">{effect.title}</strong>
+              <span className="truncate text-muted">
+                {effect.summary}
+                {effect.expiry && ` · ${effect.expiry}`}
+              </span>
+            </span>
+            {effect.help.length > 0 && (
+              <Hint label={`Rules: ${effect.title}`}>
+                {effect.help.map((item) => (
+                  <p key={item.title}>
+                    <strong className="block">{item.title}</strong>
+                    {item.text}
+                  </p>
+                ))}
+              </Hint>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
 }
 
 /** One header row: status, workspace, reference sheets, and the controls of the draft. */
@@ -124,6 +166,7 @@ export function Toolbar({
             {tab("live", "Live")}
             {tab("draft", "Draft", !!view.draftLocked, view.draftLocked ?? undefined)}
           </nav>
+          {view.effects.length > 0 && <Effects effects={view.effects} />}
         </>
       )}
       {phone ? null : (

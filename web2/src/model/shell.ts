@@ -1,6 +1,6 @@
 import type { ActionView } from "./action";
 import type { BoardView, ExplorationDeck } from "./board";
-import type { OfferView, Rich, SeatId, SeatView } from "./core";
+import type { HelpView, OfferView, Rich, SeatId, SeatView } from "./core";
 import type { Intent } from "./intents";
 import type { LogView } from "./log";
 
@@ -18,6 +18,20 @@ export interface ToolbarView {
   draftLocked: string | null;
   /** Controls of the private draft. Null outside the draft. */
   draft: { canUndo: boolean; canRedo: boolean; canApply: boolean; applyHint: string } | null;
+  /** The lingering effects of played cards that are in force now. Empty: none. */
+  effects: EffectView[];
+}
+
+/** One lingering effect, as the engine words it: "Morale Boost · +1 to all combat rolls". */
+export interface EffectView {
+  /** What causes it: the card, or the words of a pool of cards. */
+  title: string;
+  /** What it does, in one short line. */
+  summary: string;
+  /** Until when: "until the end of this combat round". */
+  expiry: string;
+  /** The printed text of the cards that it names, shown on hover or click. */
+  help: HelpView[];
 }
 
 /** A card in the play area of a player, as printed, with its state. */

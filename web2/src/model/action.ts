@@ -600,6 +600,11 @@ export interface MenuRowView {
   help?: HelpView[];
   /** The printed text of a card, shown under the title. For a list that has the room for it. */
   text?: string;
+  /**
+   * What choosing the row would do now, in game values, as the engine words it ("Cancels 2 of
+   * the 5 hits …"). Shown under the title, before the printed text.
+   */
+  effect?: string;
   /** The staged choice of a list where the player chooses one row. */
   selected?: boolean;
   /** Of a row of a reaction window: when the viewer is offered this reaction. */
