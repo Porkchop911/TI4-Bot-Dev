@@ -126,7 +126,7 @@ function namesOf(update: SessionUpdate, printed: Catalog | null): Names {
 
 /** A line that is being made: plain, or a count of units or of items that grows. */
 type Line =
-  | { kind: "text"; seat: string | null; text: string; dice?: LogLineView["dice"] }
+  | { kind: "text"; seat: string | null; text: string }
   | { kind: "units"; seat: string | null; head: string; units: Map<string, number> }
   | { kind: "list"; seat: string | null; head: string; items: string[]; goods: number }
   | { kind: "tokens"; seat: string | null; pools: Map<TokenPool, number> }
@@ -207,8 +207,8 @@ class Groups {
     return made;
   }
 
-  text(group: string, seat: string | null, text: string, dice?: LogLineView["dice"]) {
-    this.line(group, null, () => ({ kind: "text", seat, text, ...(dice ? { dice } : {}) }));
+  text(group: string, seat: string | null, text: string) {
+    this.line(group, null, () => ({ kind: "text", seat, text }));
   }
 
   /**
@@ -272,7 +272,7 @@ class Groups {
   private lineView(line: Line): LogLineView {
     switch (line.kind) {
       case "text":
-        return { seat: line.seat, text: line.text, ...(line.dice ? { dice: line.dice } : {}) };
+        return { seat: line.seat, text: line.text };
       case "units": {
         const units = [...line.units]
           .sort(([a], [b]) => byUnitOrder(a, b))
@@ -568,11 +568,7 @@ function detailsOf(
       }
       fire = group;
       const unit = roll.subject?.unit;
-      groups.text(group, seat, unit ? `${text} · ${names.units(unit, 1)}` : text, {
-        faces: roll.faces,
-        hitsOn: roll.hits_on ?? null,
-        hits: roll.hits ?? 0,
-      });
+      groups.text(group, seat, unit ? `${text} · ${names.units(unit, 1)}` : text);
       continue;
     }
     // A decision, or a change of the state, between the rolls ends a round of space combat.

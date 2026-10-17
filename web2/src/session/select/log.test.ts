@@ -115,7 +115,7 @@ const plainEntry = (entry: LogItemView) => ({
   ...entry,
   groups: entry.groups.map((group) => ({
     title: group.title,
-    lines: group.lines.map(({ seat, text, dice }) => ({ seat, text, ...(dice ? { dice } : {}) })),
+    lines: group.lines.map(({ seat, text }) => ({ seat, text })),
   })),
 });
 
@@ -311,16 +311,15 @@ describe("the turns of the Log", () => {
     ]);
     // The rolls of one round are together; a seat that rolls again starts the next round.
     const combat = turn.groups[2].lines;
-    expect(combat.map((line) => [line.seat, line.text, line.dice?.hits])).toEqual([
-      ["b", "Round 1", 1],
-      ["b", "Round 1", 0],
-      ["c", "Round 1", 1],
-      ["b", "Lost: Carrier I", undefined],
-      ["b", "Round 2", 1],
-      ["c", "Round 2", 0],
-      ["c", "Lost: Cruiser I", undefined],
+    expect(combat.map((line) => [line.seat, line.text])).toEqual([
+      ["b", "Round 1"],
+      ["b", "Round 1"],
+      ["c", "Round 1"],
+      ["b", "Lost: Carrier I"],
+      ["b", "Round 2"],
+      ["c", "Round 2"],
+      ["c", "Lost: Cruiser I"],
     ]);
-    expect(combat[1].dice).toEqual({ faces: [2, 3], hitsOn: 9, hits: 0 });
     expect(turn.groups[3].lines).toEqual([
       { seat: "b", text: "Landed on Mecatol Rex: Infantry I" },
     ]);
@@ -852,9 +851,8 @@ describe("the invasion of a tactical action", () => {
       ).entries,
     );
     expect(turn.summary).toBe("landed on Mecatol Rex · removed the custodians");
-    const lines = (group: {
-      lines: { seat: string | null; text: string; dice?: { faces: number[] } }[];
-    }) => group.lines.map((line) => [line.seat, line.text, line.dice?.faces]);
+    const lines = (group: { lines: { seat: string | null; text: string }[] }) =>
+      group.lines.map((line) => [line.seat, line.text]);
     expect(turn.groups.map((group) => group.title)).toEqual([
       "Activation",
       "Invasion",
@@ -862,20 +860,20 @@ describe("the invasion of a tactical action", () => {
       "Ground combat · Mecatol Rex",
     ]);
     expect(lines(turn.groups[1])).toEqual([
-      ["b", "Removed the custodians from Mecatol Rex · #18", undefined],
-      ["b", "Bombarded Jol-Nar on Mecatol Rex", undefined],
-      ["b", "Landed on Mecatol Rex: Infantry I", undefined],
+      ["b", "Removed the custodians from Mecatol Rex · #18"],
+      ["b", "Bombarded Jol-Nar on Mecatol Rex"],
+      ["b", "Landed on Mecatol Rex: Infantry I"],
     ]);
     expect(lines(turn.groups[2])).toEqual([
-      ["b", "Round 1", [8, 2]],
-      ["b", "Round 1", [3]],
-      ["c", "Round 1", [9]],
-      ["c", "Did not sustain damage", undefined],
-      ["b", "Round 2", [1]],
-      ["c", "Round 2", [10]],
+      ["b", "Round 1"],
+      ["b", "Round 1"],
+      ["c", "Round 1"],
+      ["c", "Did not sustain damage"],
+      ["b", "Round 2"],
+      ["c", "Round 2"],
     ]);
     // A further ground combat on the planet is a combat of its own.
-    expect(lines(turn.groups[3])).toEqual([["c", "Started a further ground combat", undefined]]);
+    expect(lines(turn.groups[3])).toEqual([["c", "Started a further ground combat"]]);
   });
 });
 
@@ -1017,7 +1015,7 @@ describe("what the state tells of a turn", () => {
     decided(action, "c", "c", ENDED),
   ];
   const lines = (group: LogTurnView["groups"][number] | undefined) =>
-    group?.lines.map((line) => [line.seat, line.text, line.dice?.faces]);
+    group?.lines.map((line) => [line.seat, line.text]);
 
   it("has a block for each combat: its sides, its rounds and losses, and how it ended", () => {
     const [turn] = turns(
@@ -1033,30 +1031,26 @@ describe("what the state tells of a turn", () => {
       "Exploration",
     ]);
     expect(lines(turn.groups[2])).toEqual([
-      ["c", "Anti-fighter barrage", [9, 7]],
-      ["b", "Lost: Fighter I", undefined],
-      ["b", "Announced a retreat", undefined],
-      ["c", "Round 1", [10, 4]],
-      ["b", "Round 1", [5]],
-      ["b", "Lost: Carrier I", undefined],
-      ["c", "Won by Jol-Nar", undefined],
+      ["c", "Anti-fighter barrage"],
+      ["b", "Lost: Fighter I"],
+      ["b", "Announced a retreat"],
+      ["c", "Round 1"],
+      ["b", "Round 1"],
+      ["b", "Lost: Carrier I"],
+      ["c", "Won by Jol-Nar"],
     ]);
-    expect(lines(turn.groups[3])).toEqual([
-      ["c", "Landed on Mecatol Rex: 2 Infantry I", undefined],
-    ]);
+    expect(lines(turn.groups[3])).toEqual([["c", "Landed on Mecatol Rex: 2 Infantry I"]]);
     expect(lines(turn.groups[4])).toEqual([
-      ["c", "Round 1", [2, 7]],
-      ["b", "Round 1", [8]],
-      ["c", "Lost: Infantry I", undefined],
-      ["c", "Round 2", [8]],
-      ["b", "Round 2", [1]],
-      ["b", "Lost: Infantry I, PDS I", undefined],
-      ["c", "Won by Jol-Nar", undefined],
-      ["c", "Took Mecatol Rex from Hacan", undefined],
+      ["c", "Round 1"],
+      ["b", "Round 1"],
+      ["c", "Lost: Infantry I"],
+      ["c", "Round 2"],
+      ["b", "Round 2"],
+      ["b", "Lost: Infantry I, PDS I"],
+      ["c", "Won by Jol-Nar"],
+      ["c", "Took Mecatol Rex from Hacan"],
     ]);
-    expect(lines(turn.groups[5])).toEqual([
-      ["c", "Explored Mecatol Rex: Volatile Fuel Source", undefined],
-    ]);
+    expect(lines(turn.groups[5])).toEqual([["c", "Explored Mecatol Rex: Volatile Fuel Source"]]);
   });
 
   it("counts a loss that a seat chose and one that the game took in the same line", () => {
@@ -1089,9 +1083,9 @@ describe("what the state tells of a turn", () => {
     // The combat is under way: its title has the sides of the rolls.
     expect(turn.groups[1].title).toBe("Space combat · Mecatol Rex · #18 · Jol-Nar vs Hacan");
     expect(lines(turn.groups[1])).toEqual([
-      ["c", "Round 1", [10, 10]],
-      ["b", "Round 1", [1]],
-      ["b", "Lost: Cruiser I, 2 Fighter I", undefined],
+      ["c", "Round 1"],
+      ["b", "Round 1"],
+      ["b", "Lost: Cruiser I, 2 Fighter I"],
     ]);
     expect(turn.summary).toBe("combat (destroyed 3)");
   });
@@ -1114,12 +1108,12 @@ describe("what the state tells of a turn", () => {
       turns(selectLog(update({ viewer: null }), eventsOf(end(fact)), printed).entries)[0];
     const retreat = combatOf({ winner: "b", retreated: "c" });
     expect(lines(retreat.groups[1])?.slice(1)).toEqual([
-      ["c", "Retreated", undefined],
-      ["b", "Won by Hacan", undefined],
+      ["c", "Retreated"],
+      ["b", "Won by Hacan"],
     ]);
     expect(retreat.summary).toBe("retreated from the space combat");
     const none = combatOf({});
-    expect(lines(none.groups[1])?.slice(1)).toEqual([[null, "Both sides destroyed", undefined]]);
+    expect(lines(none.groups[1])?.slice(1)).toEqual([[null, "Both sides destroyed"]]);
     expect(none.summary).toBe("space combat: both sides destroyed");
     expect(combatOf({ winner: "b" }).summary).toBe("lost the space combat");
   });
@@ -1151,12 +1145,12 @@ describe("what the state tells of a turn", () => {
       ).entries,
     );
     expect(turn.groups.map((group) => [group.title, lines(group)])).toEqual([
-      ["Activation", [["c", "Activated Mecatol Rex · #18", undefined]]],
+      ["Activation", [["c", "Activated Mecatol Rex · #18"]]],
       [
         "Space cannon",
         [
-          ["b", "Space cannon", [9]],
-          ["c", "Lost: Fighter I", undefined],
+          ["b", "Space cannon"],
+          ["c", "Lost: Fighter I"],
         ],
       ],
     ]);
@@ -1180,7 +1174,7 @@ describe("what the state tells of a turn", () => {
       ).entries,
     );
     expect(turn.label).toBe("Component · Sabotage");
-    expect(lines(turn.groups[0])).toEqual([["c", "Played Sabotage", undefined]]);
+    expect(lines(turn.groups[0])).toEqual([["c", "Played Sabotage"]]);
   });
 });
 

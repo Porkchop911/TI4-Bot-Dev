@@ -1,21 +1,11 @@
 import type { SeatId } from "./core";
 
-/** The dice of one roll, as they showed. */
-export interface LogDiceView {
-  faces: number[];
-  /** The face that a die needs to hit. Null for a roll that is no hit roll. */
-  hitsOn: number | null;
-  hits: number;
-}
-
 /** One line of the details of an entry: what one seat did, in words. */
 export interface LogLineView {
   /** Whose line it is. Null for a line of no seat. */
   seat: SeatId | null;
   /** "Mecatol Rex · #18 → Abyz, Fria · #38: 2 Carrier I, Cruiser I". */
   text: string;
-  /** The dice of a roll. */
-  dice?: LogDiceView;
   /** A vote of the agenda phase: its outcome (null: abstained), its votes and the planets. */
   vote?: { outcome: string | null; votes: number; planets: string[] };
 }
