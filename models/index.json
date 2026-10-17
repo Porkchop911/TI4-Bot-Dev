@@ -10,6 +10,42 @@
       },
       "sha256": "647b1ca2ae892e576d98b7df0868ca418c945b8b8e9c87ceead17a8bc11b336a",
       "offered": true
+    },
+    {
+      "name": "armb-waste1-3888",
+      "label": "armB 3888 (newest)",
+      "temperature": 0.25,
+      "source": {
+        "bundle": "examples/Current_Bots/New folder/ppo-armB-waste1-tech01-fleet015-income20status-49232-20261002/checkpoints/checkpoint-3888",
+        "manifest_sha256": "2234fea2321656897749fa8284d1995be9affaaf8f065f8cfab180e88d8488c6"
+      },
+      "notes": "Trained 2026-10-02 (e18ec179), before rules versions 11+ (tech payment planets, Sabotage, Munitions, Bribery per voter).",
+      "sha256": "96c700a37914ad6c6ee664a1cf8e3fb8873f2c160894025921834a54b928a59f",
+      "offered": true
+    },
+    {
+      "name": "armb-waste1-1928",
+      "label": "armB 1928",
+      "temperature": 0.25,
+      "source": {
+        "bundle": "examples/Current_Bots/New folder/ppo-armB-waste1-tech01-fleet015-income20status-49232-20261002/checkpoints/checkpoint-1928",
+        "manifest_sha256": "78da954ed612a84623249adf6bcecbbae7f3bc930de4cff483e976e777048300"
+      },
+      "notes": "Trained 2026-10-02 (e18ec179), before rules versions 11+ (tech payment planets, Sabotage, Munitions, Bribery per voter).",
+      "sha256": "86d40b2f9d93d6cfa29fa094faff99c61304d1dec82c5ab551fe5af9e2cc1312",
+      "offered": true
+    },
+    {
+      "name": "armb-waste1-80",
+      "label": "armB 80",
+      "temperature": 0.25,
+      "source": {
+        "bundle": "examples/Current_Bots/New folder/ppo-armB-waste1-tech01-fleet015-income20status-49232-20261002/checkpoints/checkpoint-80",
+        "manifest_sha256": "e57728cf8dfee9f6ab8d51e67e6b3f9cdeea2155095f7ec2ad0d51d8bd26dee9"
+      },
+      "notes": "Trained 2026-10-02 (e18ec179), before rules versions 11+ (tech payment planets, Sabotage, Munitions, Bribery per voter). An early checkpoint: loaded, not offered (a server offers at most 3).",
+      "sha256": "fa7729b187738deeff314176b15de9b6d66b6f9a961a4168bb260dff494b8583",
+      "offered": false
     }
   ]
 }
