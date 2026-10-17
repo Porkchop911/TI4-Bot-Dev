@@ -347,9 +347,9 @@ impl Force {
             return pick.map(|o| o.id.clone());
         }
         if self.arm == Arm::RuleTable {
-            let mut rng = ti4_server::session::random_bot::decision_rng(self.seed, seen.bound_seat(), s.rule_asked);
+            let mut rng = ti4_rule_bot::random::decision_rng(self.seed, seat_place(seen), s.rule_asked);
             s.rule_asked += 1;
-            let pick = ti4_server::session::smart_bot::pick(c, seen, &mut rng).filter(|&i| i < c.options.len())?;
+            let pick = ti4_rule_bot::pick(c, seen, &mut rng).filter(|&i| i < c.options.len())?;
             s.rule_used += 1;
             return Some(c.options[pick].id.clone());
         }
@@ -371,9 +371,9 @@ impl Force {
             return no_early_pass(s, c, seen, proposed);
         }
         if self.arm == Arm::Dagger {
-            let mut rng = ti4_server::session::random_bot::decision_rng(self.seed, seen.bound_seat(), s.rule_asked);
+            let mut rng = ti4_rule_bot::random::decision_rng(self.seed, seat_place(seen), s.rule_asked);
             s.rule_asked += 1;
-            s.label = ti4_server::session::smart_bot::pick(c, seen, &mut rng)
+            s.label = ti4_rule_bot::pick(c, seen, &mut rng)
                 .filter(|&i| i < c.options.len())
                 .map(|i| c.options[i].id.clone());
             s.rule_used += usize::from(s.label.is_some());
@@ -384,9 +384,9 @@ impl Force {
             if !(scope.is_empty() || scope.contains(&sub) || (menu && scope.contains(&"turn_menu"))) {
                 return None;
             }
-            let mut rng = ti4_server::session::random_bot::decision_rng(self.seed, seen.bound_seat(), s.rule_asked);
+            let mut rng = ti4_rule_bot::random::decision_rng(self.seed, seat_place(seen), s.rule_asked);
             s.rule_asked += 1;
-            let pick = ti4_server::session::smart_bot::pick(c, seen, &mut rng).filter(|&i| i < c.options.len())?;
+            let pick = ti4_rule_bot::pick(c, seen, &mut rng).filter(|&i| i < c.options.len())?;
             s.rule_used += 1;
             return Some(c.options[pick].id.clone());
         }
@@ -1219,4 +1219,10 @@ mod tests {
         let arm: Arm = serde_json::from_value(json!("tech-gd")).unwrap();
         assert_eq!(arm, Arm::TechGd);
     }
+}
+
+/// The seat's place in the game's seat order, as `RuleBotDecider` seeds its stream.
+fn seat_place(seen: &SeatObservation<'_>) -> usize {
+    let me = seen.bound_seat();
+    seen.players().iter().position(|p| *p == me).unwrap_or(0)
 }
