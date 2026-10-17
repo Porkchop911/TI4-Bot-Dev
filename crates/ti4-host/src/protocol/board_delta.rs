@@ -713,6 +713,69 @@ mod tests {
         }
     }
 
+    /// The board that `viewer` is sent at `state`, with its pools, with no question open: the
+    /// fields of a combat that come from the question (`active_player`, `stage`,
+    /// `hits_to_assign`) are not a part of the board.
+    fn sent(state: &GameState, viewer: &ViewerRole) -> PublicBoard {
+        let facts = facts_context(None);
+        let mut view = crate::projection::project_game_view_full(
+            state,
+            facts.content,
+            facts.sources,
+            viewer,
+            &[],
+            None,
+            &[],
+        );
+        let pools = view
+            .players
+            .iter()
+            .map(|player| {
+                (
+                    player.id.clone(),
+                    SeatPools {
+                        trade_goods: player.trade_goods,
+                        commodities: player.commodities,
+                        tactic_tokens: player.tactic_tokens,
+                        fleet_tokens: player.fleet_tokens,
+                        strategic_tokens: player.strategic_tokens,
+                    },
+                )
+            })
+            .collect();
+        view.board.map_tiles.clear();
+        PublicBoard::from_view(view.board, pools)
+    }
+
+    #[test]
+    fn every_viewer_is_sent_the_board_of_the_changes() {
+        let mut undefended = false;
+        for (state, board) in boards(5, 450) {
+            undefended |= board.invasion.as_ref().is_some_and(|invasion| {
+                invasion
+                    .odds_context
+                    .values()
+                    .all(|ctx| ctx.opponent.is_none())
+            });
+            let viewers = state
+                .players
+                .iter()
+                .map(|player| ViewerRole::Player(player.id.clone()))
+                .chain([ViewerRole::Spectator]);
+            for viewer in viewers {
+                assert_eq!(
+                    sent(&state, &viewer),
+                    board,
+                    "the board sent to {viewer:?} at round {}",
+                    state.round
+                );
+            }
+        }
+        // The game had what the test is for: an invasion with no defenders, which every viewer
+        // is sent.
+        assert!(undefended, "an invasion with no defenders");
+    }
+
     #[test]
     fn a_change_is_only_what_changed() {
         let mut before = PublicBoard::default();

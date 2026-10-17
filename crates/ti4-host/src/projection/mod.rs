@@ -426,14 +426,9 @@ pub fn project_board_view_full(
             }
         }
 
-        // H2: Filter out boring invasions (no defenders) from spectator views
-        let has_defenders = odds_context.values().any(|ctx| ctx.opponent.is_some());
-        if !has_defenders && viewer.is_some() && !viewer.as_ref().unwrap().is_actor(&active.invader)
-        {
-            // Hide this invasion for non-invading players when no defenders are present
-            return None;
-        }
-
+        // Every viewer gets the same invasion, one with no defenders too: the board is the same
+        // for every viewer (`protocol::board_delta`), and whether an invasion with no defenders
+        // is worth showing to the other seats is a decision of the page.
         Some(crate::protocol::view::InvasionView {
             system_id: active.system.clone(),
             invasion_seq: active.seq,
