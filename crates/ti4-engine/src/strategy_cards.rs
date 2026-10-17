@@ -1878,7 +1878,8 @@ pub(crate) fn structure_options(
 
 /// The unit Construction places for `kind` (`pds` / `spacedock`): the faction unit or upgrade, as
 /// an action card placement resolves it. A space-only form (Saar's Floating Factory) is returned
-/// as is; [`place_structure`] puts it in the system's space area rather than on the planet.
+/// as is; [`place_structure`] puts it in the system's space area rather than on the planet. Before
+/// `RULES_FLOATING_FACTORY_SPACE` it falls back to the generic planet unit.
 pub(crate) fn construction_unit(
     state: &GameState,
     content: &ContentStore,
@@ -1886,8 +1887,18 @@ pub(crate) fn construction_unit(
     player: &PlayerId,
     kind: &str,
 ) -> UnitTypeId {
-    crate::action_cards::placed_unit_id(state, content, sources, player, kind)
-        .unwrap_or_else(|| UnitTypeId::new(kind))
+    let generic = || UnitTypeId::new(kind);
+    let Some(unit) = crate::action_cards::placed_unit_id(state, content, sources, player, kind)
+    else {
+        return generic();
+    };
+    if state.rules_version >= ti4_model::state::RULES_FLOATING_FACTORY_SPACE {
+        return unit;
+    }
+    let space_only = ti4_content::units::catalogue(content, sources)
+        .get(unit.as_str())
+        .is_some_and(|record| record.is_space_only_structure());
+    if space_only { generic() } else { unit }
 }
 
 pub(crate) fn place_structure(
@@ -3779,6 +3790,34 @@ mod tests {
         );
         // In the space area, not attached to a planet (it must be able to move).
         assert_eq!(in_space(&state), in_space_before + 1);
+    }
+
+    /// Before `RULES_FLOATING_FACTORY_SPACE` Construction places the generic space dock on the
+    /// planet for Saar.
+    #[test]
+    fn saar_construction_of_an_older_game_places_the_generic_dock_on_a_planet() {
+        let content = ContentStore::embedded();
+        let sources = ti4_model::content_types::DEFAULT;
+        let mut state = seated_game(&[("a", "saar")], sources);
+        state.rules_version = ti4_model::state::RULES_FLOATING_FACTORY_SPACE - 1;
+        let player = PlayerId::new("a");
+        for system in state.board.values_mut() {
+            for units in system.planet_units.values_mut() {
+                units.retain(|unit| !unit.type_id.as_str().contains("spacedock"));
+            }
+        }
+        let spot = structure_options(&state, content, sources, &player, false)
+            .into_iter()
+            .find(|option| option.id.starts_with("spacedock|"))
+            .expect("a Saar space dock spot is offered")
+            .id;
+        let mut table = Table::with_default(Box::new(crate::choice::Scripted::new([spot])));
+        place_structure(
+            &mut state, content, sources, None, &mut table, &player, false,
+        )
+        .unwrap();
+        assert_eq!(count_type(&state, &player, "spacedock"), 1);
+        assert_eq!(count_type(&state, &player, "saar_spacedock"), 0);
     }
 
     #[test]

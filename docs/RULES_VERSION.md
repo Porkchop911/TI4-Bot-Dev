@@ -10,9 +10,9 @@ playable.
 
 `GameState::rules_version: u32` (crates/ti4-model/src/state.rs). Constants next to it:
 
-- `RULES_VERSION` (now 12): what a **new** game plays. `GameState::new` sets it, so every way of
+- `RULES_VERSION` (now 16): what a **new** game plays. `GameState::new` sets it, so every way of
   creating a game (server, lobby, wasm host, selfplay, tests) gets the latest.
-- `RULES_<CHANGE>` (now `RULES_INFILTRATE_FIX = 1`, `RULES_MENDOSA_SHIP = 2`, `RULES_SABOTAGE_TIMING = 3`, `RULES_LETNEV_FLEET_POOL = 4`, `RULES_ENIGMATIC_DEVICE = 5`, `RULES_TECH_PAYMENT_CHOICE = 6`, `RULES_BRIBERY_PER_PLAYER = 7`, `RULES_MUNITIONS_AFTER_ROLL = 8`, `RULES_TECH_RIDER = 9`, `RULES_ACTION_CARD_TARGETS = 10`, `RULES_RETREAT_HAZARDS = 11`, `RULES_STATUS_GAIN = 12`): the first version with one gated change.
+- `RULES_<CHANGE>` (now `RULES_INFILTRATE_FIX = 1`, `RULES_MENDOSA_SHIP = 2`, `RULES_SABOTAGE_TIMING = 3`, `RULES_LETNEV_FLEET_POOL = 4`, `RULES_ENIGMATIC_DEVICE = 5`, `RULES_TECH_PAYMENT_CHOICE = 6`, `RULES_BRIBERY_PER_PLAYER = 7`, `RULES_MUNITIONS_AFTER_ROLL = 8`, `RULES_TECH_RIDER = 9`, `RULES_ACTION_CARD_TARGETS = 10`, `RULES_RETREAT_HAZARDS = 11`, `RULES_STATUS_GAIN = 12`, `RULES_TIMING_DOUBLE_PASS = 13`, `RULES_EXPLORE_BEFORE_CONTROL = 14`, `RULES_FLOATING_FACTORY_SPACE = 15`, `RULES_TE_MECATOL_LANDING = 16`): the first version with one gated change.
 A state without the field is **version 0**, the legacy rules (what the alpha ran until 2026-10-16).
 
 ## How it is stored (the checksum rule)
@@ -143,6 +143,29 @@ Version 12 = the status-phase gain in the redistribution (cf5af3e0, `RULES_STATU
    (`TokenRedistribution::with_gain`); `COMMAND_TOKEN_GAINED` is still emitted for each token.
    Version < 12: `Game::step_token_gain` asks the pool of each gained token
    (`gain_command_token`, `TokenGain::pending_choice`), then the redistribution gains nothing.
+
+Version 13 = the second pass closes a window (niko 98fe8b1d, `RULES_TIMING_DOUBLE_PASS`):
+
+1. `Resolver::run_window_with_context`: a seat that passes twice in a row closes the window, and a
+   reaction slot opened and backed out of with no card played (the hand is unchanged) is a pass.
+   Version < 13: every resolution clears the passes, and a backed-out slot is a resolution. The
+   window with no state (`Resolver::emit`, tests only) has the new rule at every version.
+
+Version 14 = exploration before control (niko, `RULES_EXPLORE_BEFORE_CONTROL`):
+
+1. `InvasionWindow::advance_control`: a planet nobody controls is explored before control is
+   established, and only while the invader still has a ground force there (35.1). Version < 14:
+   explored after control was gained (`finish_control_gain`).
+
+Version 15 = the Floating Factory in space (niko, `RULES_FLOATING_FACTORY_SPACE`):
+
+1. `strategy_cards::construction_unit`: Saar's Floating Factory is placed by Construction and the
+   Construction Rider in the space area. Version < 15: the generic space dock on the planet.
+
+Version 16 = the Thunder's Edge Mecatol (niko, `RULES_TE_MECATOL_LANDING`):
+
+1. `invasion::landable_planets`: `mrte` is not landable while the custodians token is on it, as
+   `mr`. Version < 16: only `mr` is held back.
 
 ## Adding the next gate
 

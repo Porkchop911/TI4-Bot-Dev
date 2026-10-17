@@ -954,6 +954,9 @@ impl Resolver {
         let previous = self.relation_being_resolved;
         self.relation_being_resolved = Some(relation);
         let mut resolved_here = BTreeSet::<String>::new();
+        // Before `RULES_TIMING_DOUBLE_PASS` a resolution clears every pass, also a reaction slot
+        // backed out of, and `passed_last` stays empty.
+        let double_pass = context.state.rules_version >= ti4_model::state::RULES_TIMING_DOUBLE_PASS;
         let result = (|| {
             let mut passed = BTreeSet::<PlayerId>::new();
             let mut passed_last = BTreeSet::<PlayerId>::new();
@@ -1005,9 +1008,7 @@ impl Resolver {
                     ));
                     let hand =
                         |state: &GameState| state.player(&player).map(|p| p.action_cards.clone());
-                    let hand_before = ability
-                        .id
-                        .starts_with("reaction:")
+                    let hand_before = (double_pass && ability.id.starts_with("reaction:"))
                         .then(|| hand(context.state));
                     if let Some(effect) = ability.stateful_effect {
                         effect(event, self, context)?;
@@ -1030,7 +1031,11 @@ impl Resolver {
                 if !resolved_this_pass {
                     return Ok(());
                 }
-                passed_last = std::mem::take(&mut passed);
+                if double_pass {
+                    passed_last = std::mem::take(&mut passed);
+                } else {
+                    passed.clear();
+                }
             }
         })();
         // Rules version 3 (`RULES_SABOTAGE_TIMING`): the cards the players declared in this
@@ -2121,6 +2126,56 @@ mod tests {
             .unwrap();
 
         assert_eq!(*order.lock().unwrap(), ["slot"]);
+    }
+
+    /// A game drives the window with its state: from `RULES_TIMING_DOUBLE_PASS` Sol's second pass in
+    /// a row closes it; before, the slot's resolution clears the pass and Sol is asked again, until
+    /// the slot cancels the event on its third resolution.
+    #[test]
+    fn a_second_consecutive_pass_closes_a_driven_window_from_its_rules_version() {
+        let run = |rules_version: u32| {
+            let slots = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let counted = slots.clone();
+            let mut timing = resolver(&["sol", "letnev"], "sol");
+            timing.register([
+                Ability::new(
+                    "sol",
+                    player("sol"),
+                    "E",
+                    Relation::When,
+                    Arc::new(|_, _| Ok(())),
+                )
+                .with_optional(true),
+                Ability::new(
+                    "slot",
+                    player("letnev"),
+                    "E",
+                    Relation::When,
+                    Arc::new(move |event, _| {
+                        if counted.fetch_add(1, Ordering::SeqCst) == 2 {
+                            event.cancel();
+                        }
+                        Ok(())
+                    }),
+                )
+                .with_frequency(Frequency::Unlimited)
+                .with_repeatable_in_window(true),
+            ]);
+            let mut state = crate::fixtures::game(&["sol", "letnev"]);
+            state.rules_version = rules_version;
+            let mut table = Table::with_default(Box::new(AlwaysDecline));
+            let mut dice = Dice::new();
+            let mut rng = GameRng::new(7);
+            let mut sequence = EventSequence::new();
+            let mut context =
+                stateful_context(&mut state, &mut table, &mut dice, &mut rng, &mut sequence);
+            timing
+                .emit_with_context(&mut context, Event::new(1, "E", BTreeMap::new()), |_, _| {})
+                .unwrap();
+            slots.load(Ordering::SeqCst)
+        };
+        assert_eq!(run(ti4_model::state::RULES_TIMING_DOUBLE_PASS), 1);
+        assert_eq!(run(ti4_model::state::RULES_TIMING_DOUBLE_PASS - 1), 3);
     }
 
     #[test]

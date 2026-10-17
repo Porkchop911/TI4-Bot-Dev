@@ -1155,7 +1155,7 @@ pub struct StartingTechPick {
 /// The rules version of a new game. Raise it when an engine decision changes in a way that an
 /// older game log would not replay under (and gate the change on
 /// [`GameState::rules_version`]); see `docs/RULES_VERSION.md`.
-pub const RULES_VERSION: u32 = 12;
+pub const RULES_VERSION: u32 = 16;
 
 /// The first rules version with the Infiltrate fix: offered only to the gaining player and only
 /// when a rival PDS or space dock can be replaced; the previous holder's structures are
@@ -1218,6 +1218,26 @@ pub const RULES_RETREAT_HAZARDS: u32 = 11;
 /// Before, each gained token asked its pool on its own (`gain_command_token`), and the
 /// redistribution came after over the tokens already placed.
 pub const RULES_STATUS_GAIN: u32 = 12;
+
+/// The first rules version where a seat that passes twice in a row closes a timing window (one
+/// that a game drives with its state), and a reaction slot opened and backed out of with no card
+/// played is a pass. Before, every resolution cleared the passes, so a slot that resolved nothing
+/// reopened the window for the seats that had passed.
+pub const RULES_TIMING_DOUBLE_PASS: u32 = 13;
+
+/// The first rules version where an invasion explores a planet nobody controls before control is
+/// established (35.1), and only while the invader still has a ground force there. Before, the
+/// planet was explored after control was gained.
+pub const RULES_EXPLORE_BEFORE_CONTROL: u32 = 14;
+
+/// The first rules version where Saar's Floating Factory, placed by Construction or a Rider, goes
+/// to the space area of the system. Before, Construction placed the generic space dock on the
+/// planet, and a Rider put the Floating Factory on the planet.
+pub const RULES_FLOATING_FACTORY_SPACE: u32 = 15;
+
+/// The first rules version where the Thunder's Edge Mecatol Rex (`mrte`) is not landable while the
+/// custodians token is on it, as the base Mecatol Rex (`mr`). Before, only `mr` was held back.
+pub const RULES_TE_MECATOL_LANDING: u32 = 16;
 
 /// The whole game, as a value.
 ///
