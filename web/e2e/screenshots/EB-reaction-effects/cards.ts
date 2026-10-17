@@ -1,6 +1,7 @@
 import type { EffectPreviewDto } from "../../../src/protocol/types";
 import { actor } from "../_shared/players";
 import { opponent } from "../_shared/players";
+import { type PreviewFacts, worded } from "./words";
 
 export const ME = actor;
 export const RIVAL = opponent.id;
@@ -42,7 +43,10 @@ const t = (kind: string, event: string, relation: "when" | "after", rest: Record
   ...rest,
 });
 
-export const SCENES: CardScene[] = [
+/** A scene as written here: the facts of its preview, which `worded` gives their phrase. */
+type SceneFacts = Omit<CardScene, "preview"> & { preview: PreviewFacts };
+
+const FACTS: SceneFacts[] = [
   // Cancel a card or hits
   {
     key: "sabotage", group: "Cancel a card or hits", alias: "sabo1", name: "Sabotage", event: "ACTION_CARD_PLAYED", relation: "when",
@@ -298,3 +302,5 @@ export const SCENES: CardScene[] = [
     note: "Says what the transaction may now include; the strip shows it while the negotiation is open.",
   },
 ];
+
+export const SCENES: CardScene[] = FACTS.map((scene) => ({ ...scene, preview: worded(scene.preview) }));
