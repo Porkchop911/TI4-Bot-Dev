@@ -82,6 +82,8 @@ src/wire/    index.ts     the wire types: import them from here
                           isStaleServerMessage, the display parts of an update (trigger, auto-resolved notes,
                           reaction modes), and the map answers of the server (decodeMapChoice, decodeMapList,
                           decodeMapPreview)
+             phrase.ts    sayPhrase/fillPhrase: a `Phrase` of the engine (`{key}` for `refs[key]`) with each
+                          subject said by the app (`SubjectNames`, one function for each kind); no words of its own
 src/content/ catalog.ts   loadCatalog (from the engine of the page, else `GET /api/catalog`), CatalogError
              names.ts     humanizeId, the faction ids of a table (base game, Prophecy of Kings)
 src/identity/ nickname.ts NICKNAME_KEY (`ti4.nickname`), validNickname (the names that the server takes)

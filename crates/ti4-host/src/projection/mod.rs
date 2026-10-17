@@ -1335,6 +1335,7 @@ mod tests {
             of: None,
             refs: vec!["fs1".to_owned()],
             fizzles: None,
+            phrase: ti4_engine::phrases::Phrase::default(),
         };
         choice.context = choice
             .context

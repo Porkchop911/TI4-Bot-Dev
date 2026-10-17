@@ -171,9 +171,28 @@ export const phrasesOf = (choice: Choice | null | undefined): PhraseHints | null
 
 /** A thing that a text names, as the page names it: a seat by `seatLabel`, a card as printed. */
 function subjectOf(subject: Subject, update: SessionUpdate, catalog: Catalog | null): Named {
-  return subject.kind === "seat"
-    ? { text: seatLabel(update, subject.player, catalog), help: null }
-    : itemOf(subject, update, catalog);
+  switch (subject.kind) {
+    case "seat":
+      return { text: seatLabel(update, subject.player, catalog), help: null };
+    case "note":
+    case "action_card":
+    case "secret_objective":
+      return itemOf(subject, update, catalog);
+    // The subjects of the effect texts, which no question of this page names yet.
+    case "seat_possessive":
+      return { text: `${seatLabel(update, subject.player, catalog)}’s`, help: null };
+    case "system":
+      return { text: subject.system, help: null };
+    case "planet":
+      return { text: humanizeId(subject.planet), help: null };
+    case "unit":
+      return { text: humanizeId(subject.unit_type), help: null };
+    case "units":
+      return { text: `${subject.count} ${humanizeId(subject.unit_type)}`, help: null };
+    case "agenda":
+    case "strategy_card":
+      return { text: humanizeId(subject.card), help: null };
+  }
 }
 
 /**

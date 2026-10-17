@@ -6,14 +6,31 @@
 //! with [`Choice::phrased_option`] and [`Choice::phrased_prompt`]): the same text as a template
 //! whose `{key}` stands for a [`Subject`], so a client says each one as it names it (a seat by
 //! its player, a card by its printed name and text) without reading ids out of the text.
+//!
+//! The same template carries what the engine words for display only: what a reaction card would
+//! do ([`crate::decision_context::EffectPreview::phrase`]) and the lingering effects in force (the
+//! `title` and `summary` of `ti4_host`'s `ActiveEffectView`). Those are written piece by piece with
+//! [`Phrase::say`] and [`Phrase::name`].
+//!
+//! How a client says a subject:
+//! - [`Subject::Seat`] is the player ("You" for the viewer, the player's name otherwise), and
+//!   [`Subject::SeatPossessive`] the possessive of it ("your" for the viewer, "Bob's" otherwise).
+//!   A phrase never appends "'s" to a seat itself.
+//! - [`Subject::Units`] is a count with the unit's name, in the plural when the count is not one
+//!   ("2 cruisers", "1 dreadnought"); [`Subject::Unit`] the name alone ("dreadnought"). A list of
+//!   unit counts is one subject per type, joined by the words of the phrase (", ").
+//! - [`Subject::System`], [`Subject::Planet`], [`Subject::Agenda`], [`Subject::StrategyCard`] and
+//!   the cards are the names the client gives them ("System 27", a printed name).
+//! - Numbers are words of the phrase ("2 hits"), not subjects.
 
 use std::collections::BTreeMap;
 use std::fmt::Display;
 
 use ti4_content::ContentStore;
-use ti4_model::id::{ActionCardId, FactionId, PlayerId, SecretObjectiveId};
+use ti4_model::id::{ActionCardId, FactionId, PlanetId, PlayerId, SecretObjectiveId, SystemId};
 
 use crate::choice::{Choice, ChoiceOption};
+use crate::decision_context::TriggerUnits;
 
 /// The key of [`PhraseHints`] in `Choice::details`.
 pub const PHRASES_KEY: &str = "phrases";
@@ -27,6 +44,33 @@ pub enum Subject {
     /// A seat of the table.
     Seat {
         player: PlayerId,
+    },
+    /// The possessive of a seat: "your" for the viewer, "<player>'s" otherwise.
+    SeatPossessive {
+        player: PlayerId,
+    },
+    System {
+        system: SystemId,
+    },
+    Planet {
+        planet: PlanetId,
+    },
+    /// A unit type by its id, its name alone ("dreadnought").
+    Unit {
+        unit_type: String,
+    },
+    /// A count of a unit type: "2 cruisers", "1 dreadnought".
+    Units {
+        unit_type: String,
+        count: u32,
+    },
+    /// An agenda card by its id.
+    Agenda {
+        card: String,
+    },
+    /// A strategy card by its id.
+    StrategyCard {
+        card: String,
     },
     /// A promissory note: `card` is its record ([`crate::promissory::record_id`]), `owner` the
     /// faction whose copy it is (the one that "<color>" means in its text).
@@ -56,6 +100,35 @@ impl Subject {
         Self::Note {
             card: crate::promissory::record_id(content, note),
             owner: FactionId::new(crate::promissory::owner_of(note).unwrap_or_default()),
+        }
+    }
+
+    #[must_use]
+    pub fn possessive(player: &PlayerId) -> Self {
+        Self::SeatPossessive {
+            player: player.clone(),
+        }
+    }
+
+    #[must_use]
+    pub fn system(system: &SystemId) -> Self {
+        Self::System {
+            system: system.clone(),
+        }
+    }
+
+    #[must_use]
+    pub fn planet(planet: &PlanetId) -> Self {
+        Self::Planet {
+            planet: planet.clone(),
+        }
+    }
+
+    #[must_use]
+    pub fn units(units: &TriggerUnits) -> Self {
+        Self::Units {
+            unit_type: units.unit_type.clone(),
+            count: units.count,
         }
     }
 
@@ -90,6 +163,73 @@ impl Phrase {
                 text: template.to_owned(),
                 refs: BTreeMap::new(),
             },
+        }
+    }
+}
+
+impl Phrase {
+    /// `words` appended to the text.
+    #[must_use]
+    pub fn say(mut self, words: &str) -> Self {
+        self.text.push_str(words);
+        self
+    }
+
+    /// `subject` appended to the text, under the next free key (`{0}`, `{1}`, ...).
+    #[must_use]
+    pub fn name(mut self, subject: Subject) -> Self {
+        let key = self.refs.len().to_string();
+        self.text.push_str(&format!("{{{key}}}"));
+        self.refs.insert(key, subject);
+        self
+    }
+
+    /// `seats` as a list ("Bob", "Bob and Cleo", "Ann, Bob and Cleo"); `none` when there is none.
+    #[must_use]
+    pub fn seats(self, seats: &[PlayerId], none: &str) -> Self {
+        if seats.is_empty() {
+            return self.say(none);
+        }
+        seats
+            .iter()
+            .enumerate()
+            .fold(self, |phrase, (index, seat)| {
+                let phrase = match index {
+                    0 => phrase,
+                    _ if index + 1 == seats.len() => phrase.say(" and "),
+                    _ => phrase.say(", "),
+                };
+                phrase.name(Subject::seat(seat))
+            })
+    }
+
+    /// The possessive of `seat` ("your", "Bob's"); `none` without a seat.
+    #[must_use]
+    pub fn possessive(self, seat: Option<&PlayerId>, none: &str) -> Self {
+        match seat {
+            Some(seat) => self.name(Subject::possessive(seat)),
+            None => self.say(none),
+        }
+    }
+
+    /// Unit counts as a list: "2 cruisers, 1 dreadnought".
+    #[must_use]
+    pub fn units(self, units: &[TriggerUnits]) -> Self {
+        units
+            .iter()
+            .enumerate()
+            .fold(self, |phrase, (index, entry)| {
+                let phrase = if index == 0 { phrase } else { phrase.say(", ") };
+                phrase.name(Subject::units(entry))
+            })
+    }
+
+    /// " in <system>" when there is a system.
+    #[must_use]
+    pub fn in_system(self, system: Option<&SystemId>) -> Self {
+        match system {
+            Some(system) => self.say(" in ").name(Subject::system(system)),
+            None => self,
         }
     }
 }
@@ -204,6 +344,31 @@ pub(crate) fn rendered(phrase: &Phrase, raw: &[(&str, &str)]) -> String {
     raw.iter().fold(phrase.text.clone(), |text, (key, value)| {
         text.replace(&format!("{{{key}}}"), value)
     })
+}
+
+/// `phrase` with each subject said as a test names it: a seat by its id ("you" for `viewer`), its
+/// possessive with "'s" ("your"), a unit count as "2 cruiser", a place or a card by its id.
+#[cfg(test)]
+pub(crate) fn said(phrase: &Phrase, viewer: &str) -> String {
+    let mut text = phrase.text.clone();
+    for (key, subject) in &phrase.refs {
+        let word = match subject {
+            Subject::Seat { player } if player.as_str() == viewer => "You".to_owned(),
+            Subject::Seat { player } => player.to_string(),
+            Subject::SeatPossessive { player } if player.as_str() == viewer => "your".to_owned(),
+            Subject::SeatPossessive { player } => format!("{player}'s"),
+            Subject::System { system } => format!("System {system}"),
+            Subject::Planet { planet } => planet.to_string(),
+            Subject::Unit { unit_type } => unit_type.clone(),
+            Subject::Units { unit_type, count } => format!("{count} {unit_type}"),
+            Subject::Agenda { card } | Subject::StrategyCard { card } => card.clone(),
+            Subject::Note { card, .. } => card.clone(),
+            Subject::ActionCard { card } => card.to_string(),
+            Subject::SecretObjective { card } => card.to_string(),
+        };
+        text = text.replace(&format!("{{{key}}}"), &word);
+    }
+    text
 }
 
 /// A table that answers from `answers` (then the first option) and keeps every question that

@@ -197,9 +197,10 @@ pub struct DecisionContext {
 
 /// What playing one reaction card would do in the window that offers it (display only).
 ///
-/// Structured facts, not prose: the client words them. Every field except `option`, `card` and
-/// `effect` is optional and omitted when empty, so a new effect kind never breaks a client (it
-/// ignores a kind it does not know).
+/// The engine words it in `phrase` (a [`crate::phrases::Phrase`]: the sentence, with the seats,
+/// places, units and cards it names as subjects), so a client keeps no rule for each kind. The
+/// facts stay beside it as data. Every fact except `option`, `card` and `effect` is optional and
+/// omitted when empty.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct EffectPreview {
@@ -232,6 +233,11 @@ pub struct EffectPreview {
     /// Why playing it would change nothing right now (`immune`, `nothing_there`, ...).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fizzles: Option<String>,
+    /// What playing it would do, as one or two sentences: "Cancels {0} {1}. The card stays spent
+    /// and its effect does not happen." When it would change nothing, the sentence says why and
+    /// ends with "Playing it now would change nothing."
+    #[serde(default)]
+    pub phrase: crate::phrases::Phrase,
 }
 
 /// What produced the hits a casualty decision assigns.
@@ -595,6 +601,7 @@ mod tests {
             of: None,
             refs: vec!["fs1".to_owned()],
             fizzles: None,
+            phrase: crate::phrases::Phrase::default(),
         };
         let shown = plain.clone().with_previews(vec![preview]);
         assert_eq!(shown.canonical(), plain.canonical());
