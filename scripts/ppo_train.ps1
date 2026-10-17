@@ -75,6 +75,10 @@ if ($diplomacy) {
 if ($settings.ContainsKey('FactionRowsOnly') -and [bool]$settings.FactionRowsOnly) {
     $arguments += '--faction-rows-only'
 }
+# One network per faction of the six.
+if ($settings.ContainsKey('SeparateModels') -and [bool]$settings.SeparateModels) {
+    $arguments += '--separate-models'
+}
 foreach ($name in ($flags.Keys | Sort-Object)) {
     $arguments += "--$name"
     $arguments += [string]$flags[$name]
