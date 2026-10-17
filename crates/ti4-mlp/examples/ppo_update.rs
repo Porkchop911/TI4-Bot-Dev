@@ -205,6 +205,7 @@ const VALUE_FLAGS: &[&str] = &[
     "--keep-terminal-projection",
     "--projection-rank-weight",
     "--negotiation-step-penalty",
+    "--r1-expansion-weight",
     "--zero-terminal-objectives",
     "--status-income-tg",
     "--fracture-entry-bonus",
@@ -1755,6 +1756,7 @@ fn main() {
     reward.secret_weight = weight("--secret-weight", reward.secret_weight);
     reward.r1_bonus = weight("--r1-bonus", reward.r1_bonus);
     reward.r1_shaping = weight("--r1-shaping", reward.r1_shaping);
+    reward.r1_expansion_weight = weight("--r1-expansion-weight", reward.r1_expansion_weight);
     reward.clearance_weight = weight("--clearance-weight", reward.clearance_weight);
     reward.high_vp_bonus = weight("--high-vp-bonus", reward.high_vp_bonus);
     // The three shapings the profile trainer already exposed. They live on the shared `Reward` and
@@ -1891,8 +1893,12 @@ fn main() {
     }
     if matches!(stage, ti4_training::reward::Stage::Two) {
         println!(
-            "  opening     r1 bonus {} | r1 shaping {} | clearance {} | high-VP {}",
-            reward.r1_bonus, reward.r1_shaping, reward.clearance_weight, reward.high_vp_bonus
+            "  opening     r1 bonus {} | r1 shaping {} | r1 expansion {} | clearance {} | high-VP {}",
+            reward.r1_bonus,
+            reward.r1_shaping,
+            reward.r1_expansion_weight,
+            reward.clearance_weight,
+            reward.high_vp_bonus
         );
         println!(
             "  points      vp {} | objective {} | secret {} | zero at horizon {} | home lost {}",

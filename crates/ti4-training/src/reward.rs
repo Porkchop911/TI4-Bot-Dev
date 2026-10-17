@@ -203,6 +203,10 @@ pub struct Reward {
     /// trainer, which sees each decision's head. Off by default.
     #[serde(default)]
     pub negotiation_step_penalty: f64,
+    /// Paid per resource and influence of the non-home planets held when round one ends, credited
+    /// at the seat's last round-one decision like `r1_bonus`. Off by default.
+    #[serde(default)]
+    pub r1_expansion_weight: f64,
     /// How much a decision is credited for what happens later (gamma).
     ///
     /// One (the default) is the undiscounted suffix sum this trainer has always used: every
@@ -267,6 +271,7 @@ impl Default for Reward {
             keep_terminal_projection: false,
             projection_rank_weight: 0.0,
             negotiation_step_penalty: 0.0,
+            r1_expansion_weight: 0.0,
         }
     }
 }
@@ -471,6 +476,13 @@ pub fn returns(episode: &Episode, reward: &Reward) -> Vec<f64> {
             {
                 *slot += reward.r1_bonus
                     * (f64::from(u8::from(episode.cleared)) - 0.1 * episode.shortfall);
+                // Holdings after the last round-one decision: the next snapshot, round two's first
+                // or the final one.
+                #[expect(clippy::cast_precision_loss, reason = "planet values are small")]
+                let expanded = snapshots
+                    .get(index + 1)
+                    .map_or(0.0, |after| after.non_home_planet_value as f64);
+                *slot += reward.r1_expansion_weight * expanded;
             }
             if let Some(last) = rewards.last_mut() {
                 *last += reward.trade_bonus * episode.traded_goods;
@@ -1087,6 +1099,29 @@ mod tests {
             opening_step < 2.0 * one_point,
             "a whole cleared opening is worth {opening_step} against {one_point} for a point"
         );
+    }
+
+    #[test]
+    fn round_one_expansion_pays_for_what_is_held_when_round_one_ends() {
+        let mut reward = Reward::for_stage(Stage::Two);
+        let round_two = Progress {
+            non_home_planet_value: 5,
+            ..at(2)
+        };
+        let episode = Episode {
+            steps: vec![at(1), at(1), round_two, at(3)],
+            final_progress: at(3),
+            cleared: true,
+            shortfall: 0.0,
+            traded_goods: 0.0,
+            strategy_card_plays: std::collections::BTreeMap::new(),
+        };
+        let without = returns(&episode, &reward);
+        reward.r1_expansion_weight = 0.5;
+        let with = returns(&episode, &reward);
+        assert!((with[0] - without[0] - 2.5).abs() < 1e-9, "round one carries 0.5 x 5");
+        assert!((with[1] - without[1] - 2.5).abs() < 1e-9);
+        assert!((with[2] - without[2]).abs() < 1e-9, "round two does not");
     }
 
     #[test]
