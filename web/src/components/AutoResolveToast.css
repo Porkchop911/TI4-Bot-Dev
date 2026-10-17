@@ -13,6 +13,17 @@
   width: min(280px, calc(100vw - 24px));
 }
 
+/* With a max-height (a control near the top, see CornerToastLayer) the oldest toasts are cut off at
+   the top; a toast never shrinks into its neighbour. */
+.auto-resolve-toast-container > * {
+  flex-shrink: 0;
+}
+
+/* Below the overlay layer (turn bar and its menus, dialogs): a toast never covers a control. */
+.auto-resolve-toast-container--under {
+  z-index: calc(var(--layer-modal) - 1);
+}
+
 .auto-resolve-toast {
   background: rgba(0, 0, 0, 0.85);
   color: white;
@@ -101,6 +112,52 @@
   animation: slideOutLeft 0.3s ease-in forwards;
 }
 
+/* Swipe to dismiss: horizontal drags belong to the toast, vertical ones still scroll the page. */
+.auto-resolve-toast {
+  touch-action: pan-y;
+}
+
+/* Once dragged, the entry animation (fill-mode forwards) would pin the transform: drop it, and
+   let the toast ease back when a drag is let go short of the dismiss distance. */
+.auto-resolve-toast.auto-resolve-toast--touched:not(.dismissing) {
+  animation: none;
+  transition: transform 0.18s ease-out, opacity 0.18s ease-out;
+}
+
+.auto-resolve-toast.auto-resolve-toast--dragging {
+  transition: none;
+  cursor: grabbing;
+}
+
+/* Swiped away: carry on from where the finger left it. */
+.auto-resolve-toast.dismissing--left {
+  animation: swipeOutLeft 0.22s ease-in forwards;
+}
+
+.auto-resolve-toast.dismissing--right {
+  animation: swipeOutRight 0.22s ease-in forwards;
+}
+
+@keyframes swipeOutLeft {
+  from {
+    transform: translateX(var(--swipe-x, 0));
+  }
+  to {
+    transform: translateX(-120%);
+    opacity: 0;
+  }
+}
+
+@keyframes swipeOutRight {
+  from {
+    transform: translateX(var(--swipe-x, 0));
+  }
+  to {
+    transform: translateX(120%);
+    opacity: 0;
+  }
+}
+
 /* Light theme adjustments */
 @media (prefers-color-scheme: light) {
   .auto-resolve-toast {
@@ -139,10 +196,25 @@
   }
 }
 
+/* A phone's open turn menu is a sheet over the whole board: toasts on top would cover its entries
+   and its Close button. They wait in the notification history meanwhile. */
+@media (max-width: 720px) {
+  :root:has(.turn-bar__menu) .auto-resolve-toast-container {
+    visibility: hidden;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .auto-resolve-toast,
-  .auto-resolve-toast.dismissing {
+  .auto-resolve-toast.dismissing,
+  .auto-resolve-toast.dismissing--left,
+  .auto-resolve-toast.dismissing--right {
     animation: none;
+    transition: none;
+  }
+  /* No slide: the toast just goes. */
+  .auto-resolve-toast.dismissing {
+    opacity: 0 !important;
   }
 }
 

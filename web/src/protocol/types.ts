@@ -99,3 +99,13 @@ export interface JoinResponse {
   player: { id: string };
   lobby: LobbyDto;
 }
+
+// Names web used before the types were generated (the Rust names, with the old Dto suffix).
+export type ChoiceOptionDto = ChoiceOption;
+export type MapChoiceDto = import("@ti4/shared/wire/index.ts").MapChoiceView;
+export type TriggerUnitsDto = import("@ti4/shared/wire/index.ts").TriggerUnits;
+export type EffectPreviewDto = import("@ti4/shared/wire/index.ts").EffectPreview;
+export type ActiveEffectDto = import("@ti4/shared/wire/index.ts").ActiveEffectView;
+export type EffectExpiryDto = import("@ti4/shared/wire/index.ts").EffectExpiry;
+export type AgendaPeekCardDto = import("@ti4/shared/wire/index.ts").AgendaPeekCard;
+export type MapPreviewDto = import("@ti4/shared/wire/index.ts").MapPreview;

@@ -68,3 +68,26 @@
   gap: 0.6em;
   white-space: nowrap;
 }
+/* Boosted by an attachment or law (Mining World, Core Mining ...): the number in the accent colour of
+   its kind, with a small +N badge. The tooltip names the sources. */
+.planet-value--boosted .planet-value__num {
+  color: var(--value-boost, #4ade80);
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+.planet-value__boost {
+  margin-left: 0.2em;
+  padding: 0 0.3em;
+  border-radius: 999px;
+  font-size: 0.72em;
+  font-weight: 700;
+  line-height: 1.35;
+  color: #052e16;
+  background: var(--value-boost, #4ade80);
+}
+:root[data-theme="light"] {
+  --value-boost: #15803d;
+}
+:root[data-theme="light"] .planet-value__boost {
+  color: #fff;
+}

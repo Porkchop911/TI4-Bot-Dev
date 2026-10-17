@@ -480,7 +480,7 @@ describe("boardPresentation Presentation Model", () => {
 });
 
 describe("neutral and unassigned greys", () => {
-  it("do not collide with the white/silver seat or any other seat colour", () => {
+  it("do not collide with the cyan seat or any other seat colour", () => {
     for (const grey of [NEUTRAL_COLOR, UNASSIGNED_COLOR]) {
       expect(PLAYER_PALETTE).not.toContain(grey);
       expect(grey).not.toBe(PLAYER_PALETTE[2]);

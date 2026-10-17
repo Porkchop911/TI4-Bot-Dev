@@ -223,3 +223,57 @@ fn the_rule_seats_of_an_older_save_are_smart() {
     let written = serde_json::to_value(&local).unwrap();
     assert!(written.get("rule_seats").is_none(), "{written}");
 }
+
+/// The first question of a game of `setup`: (the seat asked, its subtype, the option ids).
+fn first_question(setup: &Value) -> (String, String, Vec<String>) {
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let sink = seen.clone();
+    ti4_wasm::set_native_host(move |output| {
+        let envelope: Value = serde_json::from_str(output).expect("an envelope");
+        if envelope["kind"] != "ask" {
+            return host_api::CONTINUE;
+        }
+        let update = envelope["messages"]
+            .as_array()
+            .and_then(|m| m.last())
+            .expect("an update");
+        let choice = &update["pending_choice"]["choice"];
+        let ids = choice["options"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|o| o["id"].as_str().unwrap().to_owned())
+            .collect();
+        *sink.lock().unwrap() = Some((
+            choice["player"].as_str().unwrap_or_default().to_owned(),
+            choice["context"]["subtype"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned(),
+            ids,
+        ));
+        -1
+    });
+    let request = json!({ "setup": setup });
+    let len = host_api::put_input(&request.to_string());
+    let _ = ti4_wasm::ti4_host_start(u32::try_from(len).unwrap());
+    let found = seen.lock().unwrap().take();
+    found.expect("the game asks the person something")
+}
+
+#[test]
+fn a_new_game_asks_the_winnu_for_their_starting_technology_and_a_version_2_game_does_not() {
+    let _serial = crate::common::serial();
+    let base = json!({ "game_id": "stc", "seed": 5, "players": 4,
+                       "human_seat": 0, "human_faction": "winnu", "speaker": "seat" });
+    let (seat, subtype, ids) = first_question(&base);
+    assert_eq!(subtype, "starting_technology");
+    assert_eq!(seat, "a");
+    assert_eq!(ids, ["aida", "amd", "det", "nm", "pa", "ps", "sdn", "st"]);
+    // A game of bot version 2 (a save made before the choice) is played as it was: the first
+    // question is the strategy card draft.
+    let mut old = base.clone();
+    old["bot_version"] = json!(2);
+    let (_, subtype, _) = first_question(&old);
+    assert_eq!(subtype, "draft_strategy_card");
+}

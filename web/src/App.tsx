@@ -1,3 +1,5 @@
+import { AgendaPeekCard } from "./components/AgendaPeekCard.tsx";
+import { describeAgendaPeek } from "./presentation/agendaPeek.ts";
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ViewerRole } from "./protocol/types.ts";
 import { useGameSession } from "./hooks/useGameSession.ts";
@@ -54,7 +56,7 @@ import {
   paymentPlanetKey,
 } from "./presentation/paymentDraft.ts";
 import { UndoConfirmDialog } from "./components/UndoConfirmDialog.tsx";
-import { PlanetInfluenceContext, PlanetResourcesContext, planetInfluenceMap, planetResourceMap } from "./presentation/PlanetResourcesContext.tsx";
+import { PlanetBoostContext, PlanetInfluenceContext, PlanetResourcesContext, planetBoostMap, planetInfluenceMap, planetResourceMap } from "./presentation/PlanetResourcesContext.tsx";
 import { useSecondaryPrepare, useTokenPrefill, useReadyPrefill } from "./hooks/useSecondaryPrepare.ts";
 import { SecondaryPrepHost } from "./components/SecondaryPrepHost.tsx";
 import { BluffHoldBar, BluffProvider } from "./components/BluffSelector.tsx";
@@ -64,7 +66,9 @@ import { ConnectionProblem, ReconnectingChip, useAfterDelay } from "./components
 import { readBreakthroughs } from "./presentation/breakthroughs.ts";
 import { readExplorationLog } from "./presentation/explorationToasts.ts";
 import { readAgendaLog } from "./presentation/agendaToasts.ts";
+import { useBackUndo } from "./hooks/useBackUndo.ts";
 import { CornerToastLayer } from "./components/CornerToastLayer.tsx";
+import { NotificationLogButton, NotificationLogProvider } from "./components/NotificationLog.tsx";
 import { PaymentDraftProvider, usePaymentDraftState } from "./presentation/PaymentDraftContext.tsx";
 import {
   CommandTokenDraftProvider,
@@ -247,6 +251,7 @@ const AppRoutes: React.FC = () => {
         sessionStorage.removeItem(storageKey(gameId));
         navigate(null);
       }}
+      onHome={() => navigate(null)}
     />
   );
 };
@@ -257,7 +262,9 @@ const GameRoute: React.FC<{
   onCredential: (credential: string) => void;
   onCredentialInvalid: () => void;
   onForget: () => void;
-}> = ({ gameId, token, onCredential, onCredentialInvalid, onForget }) => {
+  /** Back to the start screen without leaving the seat (it stays in My games). */
+  onHome?: () => void;
+}> = ({ gameId, token, onCredential, onCredentialInvalid, onForget, onHome }) => {
   const {
     lobby,
     playerId,
@@ -299,6 +306,16 @@ const GameRoute: React.FC<{
         ) : !loading ? (
           <ConnectionProblem kind="unreachable" message={UNREACHABLE_MESSAGE} onRetry={retry} />
         ) : null}
+        {onHome && (gone || !loading) && (
+          <button
+            type="button"
+            className="button button--secondary"
+            data-testid="lobby-back-to-start"
+            onClick={onHome}
+          >
+            Back to start
+          </button>
+        )}
       </main>
     );
   const viewer: ViewerRole =
@@ -357,6 +374,7 @@ const GameRoute: React.FC<{
           onRemoveBot={(targetId) => removeBot(targetId)}
           onAddRandomBots={(options) => addRandomBots(options)}
           onSetSeatFaction={(targetId, faction) => setSeatFaction(targetId, faction)}
+          onHome={onHome}
         />
       )}
     </>
@@ -466,24 +484,38 @@ const GameViewContainer: React.FC<{
       setUndoRequest({ action, steps });
       return;
     }
-    runHistoryChange(action);
+    void runHistoryChange(action);
   };
-  const runHistoryChange = (action: import("./protocol/client.ts").HistoryChange) => {
+  /** Resolves true when the change went through (false: the error is on screen). */
+  const runHistoryChange = (action: import("./protocol/client.ts").HistoryChange): Promise<boolean> => {
     setHistoryBusy(true);
     setHistoryError(null);
-    void changeHistory(action)
+    return changeHistory(action)
       .then(() => {
         setSelectedOptionId(undefined);
         setSelectedPlanetId(null);
         setSelectedSystemId(null);
         setCardSubject(null);
+        return true;
       })
-      .catch((error: unknown) =>
-        setHistoryError(error instanceof Error ? error.message : String(error)),
-      )
+      .catch((error: unknown) => {
+        setHistoryError(error instanceof Error ? error.message : String(error));
+        return false;
+      })
       .finally(() => setHistoryBusy(false));
   };
+  // Single-player undo: take back the human's last answer (the engine's live undo; the bots'
+  // decisions after it are replayed, not undone one by one).
+  const undoLastDecision = (): Promise<boolean> =>
+    historyBusy ? Promise.resolve(false) : runHistoryChange("undo");
   const userSeat = viewer.role === "player" ? viewer.seat : undefined;
+  const singlePlayerUndo = !multiplayerOn && Boolean(createTransport) && userSeat === lobby.host_player_id;
+  const backNote = useBackUndo({
+    enabled: singlePlayerUndo,
+    canUndo: gameHistory.can_undo === true,
+    busy: historyBusy,
+    undo: undoLastDecision,
+  });
   const turnRedo = useTurnRedo({
     enabled: viewer.role === "player" && turnRedoOn,
     fetchStatus: fetchTurnRedoStatus,
@@ -532,6 +564,7 @@ const GameViewContainer: React.FC<{
   const agendaLog = useMemo(() => readAgendaLog(snapshot?.state), [snapshot?.state]);
   const planetResources = useMemo(() => planetResourceMap(snapshot?.view.board), [snapshot?.view.board]);
   const planetInfluence = useMemo(() => planetInfluenceMap(snapshot?.view.board), [snapshot?.view.board]);
+  const planetBoosts = useMemo(() => planetBoostMap(snapshot?.view.board), [snapshot?.view.board]);
   const tokenDraft = useCommandTokenDraft(pendingChoice, planetResources);
   // Diplomacy: the planets picked for its ready question (bar, list and map share them).
   const readyDraft = useReadyPlanetsDraft(
@@ -544,6 +577,7 @@ const GameViewContainer: React.FC<{
   const [cardSubject, setCardSubject] = useState<CardSubject | null>(null);
   const [isTechModalOpen, setIsTechModalOpen] = useState(false);
   const [isObjectivesModalOpen, setIsObjectivesModalOpen] = useState(false);
+  const closeObjectives = useCallback(() => setIsObjectivesModalOpen(false), []);
   // Phones: one slim top bar and a menu sheet; the board portals its controls into the sheet.
   const compactLayout = useCompactLayout();
   const [menuSlotElement, setMenuSlotElement] = useState<HTMLElement | null>(null);
@@ -658,6 +692,7 @@ const GameViewContainer: React.FC<{
     <SeatInfoProvider players={snapshot?.view.players} viewerSeat={userSeat}>
     <PublicStateProvider state={snapshot?.state}>
     <DecisionTableProvider table={snapshot?.view ?? null}>
+    <NotificationLogProvider inline>
     <BluffScope
       gameId={gameId}
       seat={multiplayerOn ? userSeat : undefined}
@@ -680,6 +715,7 @@ const GameViewContainer: React.FC<{
       <PaymentDraftProvider value={paymentDraft}>
       <PlanetResourcesContext.Provider value={planetResources}>
       <PlanetInfluenceContext.Provider value={planetInfluence}>
+      <PlanetBoostContext.Provider value={planetBoosts}>
       <CommandTokenDraftProvider value={tokenDraft}>
       <ReadyPlanetsDraftProvider value={readyDraft}>
       {undoRequest && (
@@ -689,7 +725,7 @@ const GameViewContainer: React.FC<{
           onConfirm={() => {
             const { action } = undoRequest;
             setUndoRequest(null);
-            runHistoryChange(action);
+            void runHistoryChange(action);
           }}
         />
       )}
@@ -707,8 +743,14 @@ const GameViewContainer: React.FC<{
         </div>
       )}
       <ReconnectingChip visible={reconnecting} />
+      <AgendaPeekCard peek={describeAgendaPeek(snapshot?.view.players ?? [], userSeat)} />
       {fatal && (
         <ConnectionProblem kind={fatal.kind} message={fatal.message} onRetry={retryConnection} />
+      )}
+      {backNote && (
+        <div role="status" aria-live="polite" className="back-undo-note" data-testid="back-undo-note">
+          {backNote}
+        </div>
       )}
       <CornerToastLayer
         events={events}
@@ -786,6 +828,7 @@ const GameViewContainer: React.FC<{
               >
                 Objectives
               </button>
+              <NotificationLogButton />
             </div>
             )}
           </div>
@@ -830,6 +873,7 @@ const GameViewContainer: React.FC<{
           )
         }
         boardView={snapshot?.view.board}
+        tacticalFacts={snapshot?.tactical}
         activeSystemId={
           typeof snapshot?.state.active_system === "string" ? snapshot.state.active_system : null
         }
@@ -852,6 +896,8 @@ const GameViewContainer: React.FC<{
           ) : null
         }
         onOpenObjectives={() => setIsObjectivesModalOpen(true)}
+        objectivesOpen={isObjectivesModalOpen}
+        onCloseObjectives={closeObjectives}
         detail={
           cardSubject &&
           cardIsVisible && (
@@ -863,6 +909,8 @@ const GameViewContainer: React.FC<{
         logHistoryKey={logHistoryKey.current}
         history={gameHistory}
         historyBusy={historyBusy}
+        onUndoLast={!multiplayerOn && userSeat === lobby.host_player_id ? undoLastDecision : undefined}
+        newestFirst={!multiplayerOn}
         onAutoSubmitNotice={(note) => setLocalNotes((prev) => [...prev, note])}
         onChangeHistory={userSeat === lobby.host_player_id ? onChangeHistory : undefined}
         onFetchReplay={userSeat ? fetchReplay : undefined}
@@ -877,8 +925,9 @@ const GameViewContainer: React.FC<{
                 onRestore: turnRedo.restore,
                 onKeep: turnRedo.keep,
                 viewerSeat: userSeat,
+                local: !multiplayerOn,
                 seats:
-                  userSeat === lobby.host_player_id && snapshot
+                  multiplayerOn && userSeat === lobby.host_player_id && snapshot
                     ? [userSeat, ...snapshot.view.seating_order.filter((id) => id !== userSeat)].map(
                         (id) => ({
                           id,
@@ -891,6 +940,7 @@ const GameViewContainer: React.FC<{
         }
         choice={pendingChoice}
         agenda={agendaStrip}
+        activeEffects={snapshot?.view.active_effects}
         agendaPill={agendaPill}
         viewerSeat={userSeat}
         players={snapshot?.view.players}
@@ -899,6 +949,7 @@ const GameViewContainer: React.FC<{
             ? {
                 phase: snapshot.view.phase,
                 activePlayer: snapshot.view.active_player ?? null,
+                over: turnStatus?.kind === "game_over" || snapshot.view.finished === true,
                 othersDeciding:
                   turnStatus?.kind === "waiting_for_reactions" ||
                   (turnStatus?.kind === "waiting_for_decision" && turnStatus.seat !== userSeat),
@@ -956,11 +1007,13 @@ const GameViewContainer: React.FC<{
       />
       </ReadyPlanetsDraftProvider>
       </CommandTokenDraftProvider>
+      </PlanetBoostContext.Provider>
       </PlanetInfluenceContext.Provider>
       </PlanetResourcesContext.Provider>
       </PaymentDraftProvider>
     </PreparedHintProvider>
     </BluffScope>
+    </NotificationLogProvider>
     </DecisionTableProvider>
     </PublicStateProvider>
     </SeatInfoProvider>

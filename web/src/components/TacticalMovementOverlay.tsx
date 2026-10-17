@@ -1,5 +1,6 @@
+import { ARMADA_TEXT, readFleetSupply } from "../presentation/commandTokens.ts";
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { PendingChoiceDto, PlayerView, BoardView } from "../protocol/types.ts";
+import { PendingChoiceDto, PlayerView, BoardView, MovementFacts } from "../protocol/types.ts";
 import {
   getMovementPayload,
   ChoiceRendererModel,
@@ -8,7 +9,7 @@ import { DecisionHeader } from "./DecisionHeader.tsx";
 import { UnitIcon, getUnitDisplayName, getUnitBaseType } from "./UnitIcon.tsx";
 import type { MovementStep } from "../protocol/client.ts";
 import {
-  enRoutePickupSystems,
+  routePickupSystems,
   originCargoBlockedByToken,
   ridesFree,
 } from "../presentation/enRoutePickup.ts";
@@ -18,6 +19,8 @@ export interface TacticalMovementOverlayProps {
   choice: PendingChoiceDto | null;
   model?: ChoiceRendererModel | null;
   board?: BoardView;
+  /** The engine's movement facts (routes and loads of the ships); the route is guessed without. */
+  facts?: MovementFacts | null;
   viewerSeat?: string | null;
   activeSystemId?: string | null;
   player?: PlayerView | null;
@@ -213,6 +216,8 @@ export interface ExecutionPlan {
   }[];
   remainingCargo: {
     origin: string;
+    /** Where the unit stands: the origin or a system the ship moves through (95.1). */
+    pickupSystem: string;
     unitType: string;
     source: string | null;
     damaged: boolean;
@@ -244,6 +249,7 @@ export const TacticalMovementOverlay: React.FC<
   choice,
   model,
   board,
+  facts,
   activeSystemId,
   player,
   onSubmit,
@@ -420,7 +426,8 @@ export const TacticalMovementOverlay: React.FC<
     // is only stageable when no other system holds the same kind.
     if (destinationSystemId && choice) {
       for (const origin of originsWithMovable) {
-        const route = enRoutePickupSystems(
+        const route = routePickupSystems(
+          facts,
           board,
           origin,
           destinationSystemId,
@@ -473,7 +480,7 @@ export const TacticalMovementOverlay: React.FC<
     }
 
     return Array.from(cargoMap.values());
-  }, [choice, board, shipGroups, isCargoStep, destinationSystemId]);
+  }, [choice, board, facts, shipGroups, isCargoStep, destinationSystemId]);
 
   // Reset staging on choice nonce change only when NOT actively executing
   useEffect(() => {
@@ -484,7 +491,11 @@ export const TacticalMovementOverlay: React.FC<
     }
   }, [choice?.nonce]);
 
-  const fleetTokens = player?.fleet_tokens;
+  // The engine's enforced limit for the active system (pool, laws and Letnev's Armada included);
+  // the seat's token count only stands in when a choice carries no such detail.
+  const engineSupply = readFleetSupply(choice?.details?.fleet_supply);
+  const fleetTokens = engineSupply?.limit ?? player?.fleet_tokens;
+  const armadaBonus = engineSupply?.armada ?? 0;
 
   // Existing non-fighter ships already in active destination system
   const existingNonFightersInDestination = useMemo(() => {
@@ -762,9 +773,13 @@ export const TacticalMovementOverlay: React.FC<
               pUnit.toLowerCase() === item.unitType.toLowerCase() ||
               getUnitBaseType(pUnit) === getUnitBaseType(item.unitType);
             const matchesSource = pSource === item.source;
+            const pPickup = o.payload?.pickup_system;
+            const matchesPickup =
+              typeof pPickup !== "string" || pPickup === item.pickupSystem;
             return (
               matchesUnit &&
               matchesSource &&
+              matchesPickup &&
               (o.payload?.damaged === true) === item.damaged
             );
           });
@@ -880,6 +895,7 @@ export const TacticalMovementOverlay: React.FC<
       for (let i = 0; i < count; i++) {
         cargo.push({
           origin: c.originSystemId,
+          pickupSystem: c.pickupSystemId,
           unitType: c.unitType,
           source: c.source,
           damaged: c.damaged,
@@ -893,6 +909,7 @@ export const TacticalMovementOverlay: React.FC<
       for (let i = 0; i < count; i++) {
         cargo.push({
           origin: g.originSystemId,
+          pickupSystem: g.originSystemId,
           unitType: g.unitType,
           source: null,
           damaged: g.damaged,
@@ -954,7 +971,8 @@ export const TacticalMovementOverlay: React.FC<
             }
           }
           // ...and own forces in the systems it moves through (95.1).
-          for (const pickup of enRoutePickupSystems(
+          for (const pickup of routePickupSystems(
+            facts,
             board,
             ship.origin,
             destinationSystemId,
@@ -1005,6 +1023,9 @@ export const TacticalMovementOverlay: React.FC<
             unit: item.unitType,
             source: item.source,
             damaged: item.damaged,
+            // Units of the same kind may wait in the origin and the active system alike; the
+            // engine offers one load per system (run s2-01-2031).
+            pickup_system: item.pickupSystem,
           });
           loaded++;
           if (ridesFree(item.unitType)) freeLoaded++;
@@ -1106,12 +1127,24 @@ export const TacticalMovementOverlay: React.FC<
           >
             <div className="workflow-card--row">
               <span className="text-muted">Fleet Supply:</span>
+              <span className="token-panel__armada-group">
               <span
                 className="fleet-rally-tray__status"
                 data-warning={isOverFleetSupply}
                 data-alert={false}
               >
                 {totalProjectedFleet} / {fleetTokens ?? "unknown"} Ships
+              </span>
+              {armadaBonus > 0 && (
+                <span
+                  className="token-panel__armada"
+                  data-testid="movement-armada"
+                  title={ARMADA_TEXT}
+                  aria-label={ARMADA_TEXT}
+                >
+                  incl. +{armadaBonus} Armada
+                </span>
+              )}
               </span>
             </div>
             {isOverFleetSupply && (

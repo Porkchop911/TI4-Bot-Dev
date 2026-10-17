@@ -432,11 +432,13 @@ pub struct GameHistory {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReactionModesRecord {
     /// The card names that a seat set to never offer, as a save of before the modes of
-    /// abilities has them. Read, and not written.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub never: BTreeMap<PlayerId, std::collections::BTreeSet<String>>,
-    /// The mode of each reaction that a seat set, by its key.
+    /// abilities has them. Read, and not written by a new save (it stays empty), but always
+    /// serialized: a record of an older release carries it, and its checksum was made over it.
     #[serde(default)]
+    pub never: BTreeMap<PlayerId, std::collections::BTreeSet<String>>,
+    /// The mode of each reaction that a seat set, by its key. Not written while empty: a record
+    /// of an older release has no such key, and its checksum was made over those bytes.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub modes: BTreeMap<PlayerId, BTreeMap<String, ti4_model::state::ReactionMode>>,
 }
 
@@ -1553,10 +1555,17 @@ fn envelope_checksum<T: Serialize>(
 /// still matches the replay of the same decisions. Nothing a rule reads is left out.
 fn state_checksum(state: &GameState) -> Result<String, StorageError> {
     let mut state = state.clone();
+    // The action-phase turn counter (added 2026-10-15) is absent from an older snapshot.
+    state.action_turn = 0;
     for record in &mut state.exploration_log {
         record.gains.clear();
         record.placed.clear();
     }
+    // What Insider Information shows its player is a private mark (added 2026-10-15). A snapshot
+    // written before then has none for a game that already played the card, the replay now does.
+    state
+        .faction_marks
+        .retain(|key, _| !ti4_engine::action_cards::is_insider_peek_key(key));
     Ok(format!("{:x}", Sha256::digest(serde_json::to_vec(&state)?)))
 }
 
@@ -1677,6 +1686,157 @@ mod player_record_tests {
         store.save_player_lobby(&lobby).unwrap();
         assert!(store.load_player_lobby(id).unwrap().is_some());
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// An `init.json` written before `GameState::action_turn` existed has no such key, and its
+    /// checksum was made over those bytes. A state at turn zero must serialize without the key
+    /// again, so an old record's checksum still verifies (the 2026-10-15 alpha recovery
+    /// regression: 14 of 22 games failed with a checksum mismatch on `init.json`). The fixture
+    /// is built here from the old shape, not copied from a save.
+    #[test]
+    fn init_written_before_action_turn_still_loads() {
+        let (store, dir) = store();
+        let id = "game_00000000000000000000000000000002";
+        let init = GameInitRecord {
+            game_id: id.into(),
+            seed: Some(7),
+            player_ids: vec![PlayerId::new("p1")],
+            initial_state: crate::fixtures::create_sample_game(),
+            seats: BTreeMap::new(),
+            seat_tokens: BTreeMap::new(),
+            map_tiles: Vec::new(),
+            map_template: None,
+        };
+        // The old shape: the envelope as the old release wrote it, with its checksum.
+        let old = persist(&init).unwrap();
+        let old_text = serde_json::to_string_pretty(&old).unwrap();
+        assert!(!old_text.contains("action_turn"));
+        let game = store.game_dir(id).unwrap();
+        fs::create_dir_all(&game).unwrap();
+        fs::write(game.join("init.json"), &old_text).unwrap();
+        let loaded = store.load_init(id).expect("old-shape init loads");
+        assert_eq!(loaded.initial_state.action_turn, 0);
+        // A later state with a turn counted keeps its key and its checksum too.
+        let mut later = init.clone();
+        later.initial_state.action_turn = 3;
+        store.save_init(&later).unwrap();
+        assert_eq!(store.load_init(id).unwrap().initial_state.action_turn, 3);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// `reaction_modes.json` of a release before the modes of abilities holds `never` alone, and
+    /// its checksum was made over exactly that. The record must read and re-serialize to those
+    /// bytes (the same 2026-10-15 alpha recovery regression). Built here from the old shape.
+    #[test]
+    fn reaction_modes_written_before_modes_still_load() {
+        #[derive(Serialize, Clone)]
+        struct OldReactionModes {
+            never: BTreeMap<PlayerId, std::collections::BTreeSet<String>>,
+        }
+        let (store, dir) = store();
+        let id = "game_00000000000000000000000000000003";
+        let game = store.game_dir(id).unwrap();
+        fs::create_dir_all(&game).unwrap();
+        for cards in [vec!["Sabotage".to_owned()], Vec::new()] {
+            let mut never = BTreeMap::new();
+            if !cards.is_empty() {
+                never.insert(PlayerId::new("p1"), cards.into_iter().collect());
+            }
+            let old = persist(&OldReactionModes { never }).unwrap();
+            fs::write(
+                game.join("reaction_modes.json"),
+                serde_json::to_string_pretty(&old).unwrap(),
+            )
+            .unwrap();
+            let loaded = store
+                .load_reaction_modes(id)
+                .expect("old-shape record loads");
+            assert!(loaded.modes.is_empty());
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// `GameState::rules_version` (2026-10-16) is not written while zero: an `init.json` of a game
+    /// made before rules versions keeps its bytes and its checksum, loads as version 0 (the legacy
+    /// rules) and its snapshots' state checksums are unchanged; a new game records the current
+    /// version, and recovery reads it back.
+    #[test]
+    fn rules_version_is_absent_for_legacy_games_and_recorded_for_new_ones() {
+        let (store, dir) = store();
+        let id = "game_00000000000000000000000000000003";
+        let mut init = GameInitRecord {
+            game_id: id.into(),
+            seed: Some(7),
+            player_ids: vec![PlayerId::new("p1")],
+            initial_state: crate::fixtures::create_sample_game(),
+            seats: BTreeMap::new(),
+            seat_tokens: BTreeMap::new(),
+            map_tiles: Vec::new(),
+            map_template: None,
+        };
+        assert_eq!(
+            init.initial_state.rules_version,
+            ti4_model::state::RULES_VERSION,
+            "a new game plays the current rules"
+        );
+        // The legacy shape: version 0 writes no key, and the checksum covers those bytes.
+        init.initial_state.rules_version = 0;
+        let old = persist(&init).unwrap();
+        let old_text = serde_json::to_string_pretty(&old).unwrap();
+        let key = |text: &str| {
+            let value: serde_json::Value = serde_json::from_str(text).unwrap();
+            value["payload"]["initial_state"]
+                .get("rules_version")
+                .cloned()
+        };
+        assert_eq!(key(&old_text), None);
+        let game = store.game_dir(id).unwrap();
+        fs::create_dir_all(&game).unwrap();
+        fs::write(game.join("init.json"), &old_text).unwrap();
+        let loaded = store.load_init(id).expect("legacy init loads");
+        assert_eq!(loaded.initial_state.rules_version, 0);
+        let legacy_checksum = state_checksum(&loaded.initial_state).unwrap();
+        // The same state with the current version records it and reads it back.
+        let mut fresh = init.clone();
+        fresh.initial_state.rules_version = ti4_model::state::RULES_VERSION;
+        store.save_init(&fresh).unwrap();
+        let text = fs::read_to_string(game.join("init.json")).unwrap();
+        assert_eq!(
+            key(&text),
+            Some(serde_json::json!(ti4_model::state::RULES_VERSION))
+        );
+        assert_eq!(
+            store.load_init(id).unwrap().initial_state.rules_version,
+            ti4_model::state::RULES_VERSION
+        );
+        let mut again = loaded.initial_state.clone();
+        again.rules_version = 0;
+        assert_eq!(state_checksum(&again).unwrap(), legacy_checksum);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// A snapshot written before Insider Information left a private mark must still match the replay
+    /// of the same decisions, which now carries it.
+    #[test]
+    fn state_checksum_ignores_the_insider_peek_mark() {
+        let state = GameState::new(&[PlayerId::new("a")], &[], BTreeMap::new(), None, 1);
+        let mut marked = state.clone();
+        let player = PlayerId::new("a");
+        marked.faction_marks.insert(
+            ti4_engine::action_cards::insider_peek_key(&player),
+            "one,two,three".to_owned(),
+        );
+        assert_eq!(
+            state_checksum(&state).unwrap(),
+            state_checksum(&marked).unwrap()
+        );
+        marked
+            .faction_marks
+            .insert("other:mark".to_owned(), "x".to_owned());
+        assert_ne!(
+            state_checksum(&state).unwrap(),
+            state_checksum(&marked).unwrap()
+        );
     }
 
     #[test]

@@ -47,7 +47,7 @@ function Chip({
       </span>
       <span className="ready-bar__name">{planet.name}</span>
       {planet.resources !== null && planet.influence !== null && (
-        <PlanetValuePair resources={planet.resources} influence={planet.influence} />
+        <PlanetValuePair resources={planet.resources} influence={planet.influence} planetId={planet.id} />
       )}
     </button>
   );

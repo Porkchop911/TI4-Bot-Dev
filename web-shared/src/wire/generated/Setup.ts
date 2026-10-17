@@ -39,4 +39,18 @@ scenario?: string,
 /**
  * Who plays the seats of the others. Left out: the rule bot.
  */
-bots?: Bots, };
+bots?: Bots, 
+/**
+ * The rule bot's behaviour ([`ti4_rule_bot::tuning::for_version`]). A resumed save
+ * recomputes the rule seats' answers, so it must play the bot it was saved with. Left out:
+ * a new game plays [`ti4_rule_bot::tuning::BOT_VERSION`]; a save made before this field
+ * existed played version 1 ([`Start::settle_bot_version`]).
+ */
+bot_version?: number, 
+/**
+ * Whether the seats that choose their starting technology are asked
+ * ([`ti4_host::setup::TableSetup::starting_tech`]). Left out: on for a game that plays a
+ * bot of version 3 or later ([`Start::settle_bot_version`]), so a save made before the choice
+ * (bot version 2 or less) resumes without it. Not written while off, like the table's.
+ */
+starting_tech?: boolean, };

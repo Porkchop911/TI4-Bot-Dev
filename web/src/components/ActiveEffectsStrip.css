@@ -1,0 +1,128 @@
+/* The active-effects strip: lingering action card effects under the top bar (ActiveEffectsStrip.tsx). */
+.effects-strip {
+  box-sizing: border-box;
+  width: 100%;
+  background: #1c2a2b;
+  border-bottom: 1px solid #2dd4bf;
+  color: #e6fffb;
+  font-size: 13px;
+}
+.effects-strip__line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 32px;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.effects-strip__icon,
+.effects-strip__chevron {
+  flex: none;
+  color: #5eead4;
+}
+.effects-strip__label {
+  flex: none;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.effects-strip__count {
+  display: inline-block;
+  min-width: 1.4em;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #0f766e;
+  color: #fff;
+  text-align: center;
+  font-size: 12px;
+}
+.effects-strip__chips {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+.effects-strip__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 1px 8px 1px 3px;
+  border-radius: 999px;
+  background: #134e4a;
+  border: 1px solid #14b8a6;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.effects-strip__chip[data-mine] {
+  background: #115e59;
+  border-color: #5eead4;
+}
+.effects-strip__chip-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.effects-strip__details {
+  list-style: none;
+  margin: 0;
+  padding: 2px 12px 8px;
+  max-height: min(46dvh, 320px);
+  overflow-y: auto;
+  display: grid;
+  gap: 6px;
+}
+.effects-strip__row {
+  display: grid;
+  gap: 1px;
+  line-height: 1.35;
+}
+.effects-strip__row-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.effects-strip__seat {
+  color: #99f6e4;
+  font-size: 12px;
+}
+.effects-strip__expiry {
+  color: #99f6e4;
+  font-size: 12px;
+}
+.effects-strip__text {
+  padding-left: 2px;
+}
+
+@media (max-width: 720px) {
+  /* One line on a phone: the chips scroll away behind the count rather than wrapping the bar. */
+  .effects-strip__line {
+    padding: 4px 8px;
+  }
+  .effects-strip__chips {
+    flex-wrap: nowrap;
+    overflow: hidden;
+  }
+  .effects-strip__chip {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  .effects-strip[data-open] .effects-strip__chips {
+    display: none;
+  }
+  /* The connection chip hangs under the phone's top bar; it moves under the strip. */
+  :root[data-effects-strip] .connection-indicator {
+    top: calc(46px + var(--effects-strip-height, 0px));
+  }
+  :root[data-effects-strip][data-agenda-strip] .connection-indicator {
+    top: calc(46px + var(--agenda-strip-height, 0px) + var(--effects-strip-height, 0px));
+  }
+}

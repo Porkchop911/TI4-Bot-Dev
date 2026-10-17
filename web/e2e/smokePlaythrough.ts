@@ -32,6 +32,7 @@ import {
   preferPayment,
   preferReadyConfirm,
   preferTechWindowUse,
+  isPaymentDeadEnd,
   preferTokenConfirm,
   preferTradeDesk,
   steerWeight as policySteerWeight,
@@ -131,11 +132,12 @@ export interface PlaythroughReport {
 }
 
 // Containers that render a decision for the acting seat.
-const DECISION_CONTAINERS = [
+export const DECISION_CONTAINERS = [
   "turn-action-bar",
   "pending-choice-dialog",
   "system-activation-bar",
   "planet-selection-bar",
+  "transit-panel",
   "ready-planets-bar",
   "tactical-movement-tray",
   "cargo-loading-tray",
@@ -157,7 +159,7 @@ const DECISION_CONTAINERS = [
 // New UI surfaces worth a look by the proctor: the first time one is on screen during a run (and
 // the first decision of each round), a screenshot of the acting seat's tab lands in
 // `<traceDir>/shots/`. A handful per run, so the disk and the proctor's reading stay small.
-const SHOT_TARGETS = [
+export const SHOT_TARGETS = [
   "trade-staging-desk",
   "trade-offer-columns",
   "production-builder-drawer",
@@ -174,7 +176,7 @@ const SHOT_TARGETS = [
 // (tour, redo) count inside the cap and only fit while there is room left.
 
 
-const ERROR_BANNERS = [
+export const ERROR_BANNERS = [
   "choice-error-banner",
   "movement-error-banner",
   "activation-error",
@@ -190,7 +192,7 @@ const ERROR_BANNERS = [
 const EXCLUDED = EXCLUDED_CONTROLS;
 // Controls that take back staged selections. Only used to escape a staging dead end, such as
 // cargo over transport capacity, where every submit button is disabled.
-interface Candidate {
+export interface Candidate {
   idx: number;
   desc: string;
   /** Untruncated description used for steering. */
@@ -201,7 +203,7 @@ interface Candidate {
   checked: boolean;
 }
 
-function mulberry32(seed: number) {
+export function mulberry32(seed: number) {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) >>> 0;
@@ -210,6 +212,25 @@ function mulberry32(seed: number) {
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
+}
+
+/**
+ * Escapes a payment drawer whose plan nobody can pay (see `isPaymentDeadEnd`) the way a player
+ * would: "Ask for each build". True when it clicked.
+ */
+export async function escapePaymentDeadEnd(page: Page): Promise<boolean> {
+  const problem = await page
+    .getByTestId("payment-problem")
+    .first()
+    .textContent({ timeout: 200 })
+    .catch(() => null);
+  if (!isPaymentDeadEnd(problem)) return false;
+  return page
+    .getByTestId("ask-each-payment-btn")
+    .first()
+    .click({ timeout: 1_000 })
+    .then(() => true)
+    .catch(() => false);
 }
 
 export async function collectCandidates(page: Page): Promise<Candidate[]> {
@@ -345,7 +366,7 @@ function shipMove(unitType: string): number {
  * holding another player's units. The UI does not show reachability, so this reads the actor's
  * board view.
  */
-function activationWeights(
+export function activationWeights(
   board: BoardView,
   actor: string,
   exploreMode = false,
@@ -433,7 +454,7 @@ function weightedPick(
   return pool[pool.length - 1];
 }
 
-function pick(
+export function pick(
   candidates: Candidate[],
   clicks: number,
   rng: () => number,
@@ -523,7 +544,7 @@ async function uiVersion(page: Page): Promise<number> {
   return Number(text.replace(/^v/, "")) || 0;
 }
 
-async function visibleErrors(page: Page): Promise<string[]> {
+export async function visibleErrors(page: Page): Promise<string[]> {
   const texts: string[] = [];
   for (const id of ERROR_BANNERS) {
     for (const el of await page.getByTestId(id).all()) {
@@ -1117,6 +1138,11 @@ export async function randomUiPlaythrough(
         if (clicks > 0 && (await uiVersion(page)) > before) {
           progressed = true;
           break;
+        }
+        if (clicks > 0 && clicks % 10 === 0 && (await escapePaymentDeadEnd(page))) {
+          log(`  escape: the payment plan cannot be paid; asked for each build`);
+          clicks++;
+          continue;
         }
         if (!reactionChecked) {
           const shown = await page

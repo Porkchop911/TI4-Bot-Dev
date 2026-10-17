@@ -465,8 +465,19 @@ pub fn prepare(len: usize) -> Result<Prepared, String> {
             crate::host_setup::SAVE_FORMAT
         ));
     }
-    let start: Start = serde_json::from_value(start).map_err(|error| format!("start: {error}"))?;
-    let built = start.build()?;
+    let mut start: Start =
+        serde_json::from_value(start).map_err(|error| format!("start: {error}"))?;
+    let bot_version = start.settle_bot_version()?;
+    let mut built = start.build()?;
+    // A new game plays the current rules; a resumed save (or a restart of this host) plays the
+    // rules it was made with, and one made before rules versions existed is version 0.
+    let rules_version = match &start.resume {
+        Some(resume) => resume.rules_version.unwrap_or(0),
+        None => ti4_model::state::RULES_VERSION,
+    };
+    built.game.state.rules_version = rules_version;
+    // The rule seats of this game play the bot version it was made with (one game per host).
+    ti4_rule_bot::tuning::set(ti4_rule_bot::tuning::for_version(bot_version));
     let mut resume: SavedGame = start.resume.unwrap_or_default();
     if !resume.log.is_empty() {
         // Every decision is given again: the answers are among them.
@@ -482,6 +493,8 @@ pub fn prepare(len: usize) -> Result<Prepared, String> {
         table: built.setup.clone(),
         scenario: built.scenario.clone(),
         seats: built.seats.clone(),
+        bot_version,
+        rules_version,
     };
     let tiles = built.galaxy.as_ref().map_or_else(Vec::new, |galaxy| {
         ti4_host::map::build_board_tiles(ti4_content::ContentStore::embedded(), galaxy)

@@ -1,0 +1,13 @@
+{
+  "title": "Bribery is asked once per voter",
+  "description": "Felix (feedback fb_1792226954_3af06d0a, round 5 agenda, Letnev holding Bribery) was asked 'after VOTES_CAST' after every planet each other seat exhausted, not once per player. The engine's votes-cast window now opens once per voter (rules version 2); the web client has no change of its own: it shows the same reaction offer and the same one-count question, just once per voter. Real app against a mocked game.",
+  "tag": "web/e2e/screenshots/FA-bribery-per-player",
+  "shots": [
+    { "file": "out/1-offer.png", "heading": "The offer, once per voter", "caption": "Bribery's window after a voter has voted. Under rules version 2 it opens once per voter, right after they name their outcome." },
+    { "file": "out/2-spend.png", "heading": "The question after playing it", "caption": "One question: how many trade goods to spend (one extra vote each)." }
+  ],
+  "notes": [
+    { "title": "Before and after in the stored game", "text": "Round 5, seats a and b voting: the replay showed a reaction pause to Felix after a's outcome, after each of a's six planets, after b's outcome and after each of b's planets. Now: one per voter. The client's planet-exhaust batch is no longer interrupted by it either." },
+    { "title": "Old games", "text": "Games with rules version 0 or 1 replay as before (a window after every answer of the vote)." }
+  ]
+}

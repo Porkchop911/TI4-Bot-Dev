@@ -10,6 +10,7 @@ import { GroundCombatOverlay } from "./GroundCombatOverlay.tsx";
 import { TechBenefitsOverlay } from "./TechBenefitsOverlay.tsx";
 import { StandardOverlay } from "./StandardOverlay.tsx";
 import { ExplorationMarkers } from "./ExplorationMarkers.tsx";
+import { AnomalyArt, AnomalyBadge } from "../anomaly/AnomalyArt.tsx";
 import { COMMAND_TOKEN_RADIUS, COMMAND_TOKEN_STEP, COMMAND_TOKEN_Y } from "./boardLayout.ts";
 
 import { PlayerView } from "../../protocol/types.ts";
@@ -114,6 +115,9 @@ export const BoardTile: React.FC<BoardTileProps> = ({
         strokeDasharray={hexStyle.strokeDasharray}
         filter={tile.isCandidateTarget ? "url(#target-glow)" : undefined}
       />
+
+      {/* Anomaly art: outer-ring texture behind everything else */}
+      <AnomalyArt anomalies={tile.anomalies} cx={tile.center.x} cy={tile.center.y} />
 
       {/* Candidate target soft glow fill */}
       {tile.isCandidateTarget && isActivationMode && (
@@ -247,20 +251,8 @@ export const BoardTile: React.FC<BoardTileProps> = ({
             : `#${sysId}`}
       </text>
 
-      {/* Anomaly badge text */}
-      {tile.anomalyLabel && (
-        <text
-          x={tile.center.x}
-          y={tile.center.y - 36}
-          textAnchor="middle"
-          fill="#fef08a"
-          fontSize="8"
-          fontWeight="bold"
-          pointerEvents="none"
-        >
-          {tile.anomalyLabel}
-        </text>
-      )}
+      {/* Anomaly badge: shape icon(s) plus the name */}
+      <AnomalyBadge anomalies={tile.anomalies} cx={tile.center.x} y={tile.center.y - 33} />
 
       {/* Printed Wormholes */}
       {tile.wormholes.map((wh, wIdx) => {

@@ -12,7 +12,7 @@ export const ONLINE_CAPABILITIES: Capabilities = {
 /** What a local game offers in v1. */
 export const OFFLINE_CAPABILITIES: Capabilities = {
   splicePreview: false,
-  turnRedo: false,
+  turnRedo: true,
   multiplayer: false,
   immediateFeedback: false,
 };

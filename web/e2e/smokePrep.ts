@@ -180,7 +180,12 @@ export class SecondaryPrepExercise {
       const chip = this.d.pages[seat].getByTestId("secondary-prep-chip").first();
       const text = ((await chip.textContent({ timeout: 300 }).catch(() => "")) ?? "").trim();
       if (!/^Prepared/.test(text)) {
-        p.lost = `plan no longer shown at decision #${decisions} (seat ${actor + 1} deciding "${prompt.slice(0, 50)}"; chip: "${text.slice(0, 40)}")`;
+        // The action is over when another seat is back at its action menu or ending its turn without
+        // this seat having been asked: the engine withheld a secondary that could do nothing (Diplomacy
+        // with nothing exhausted, Trade when the primary already replenished this seat), so the client
+        // rightly dropped the plan (nightly 2026-10-16 s1-13, s1-15). Not a bug.
+        const over = /^(action phase|end your turn)$/i.test(prompt.trim());
+        p.lost = `plan no longer shown at decision #${decisions} (seat ${actor + 1} deciding "${prompt.slice(0, 50)}"; chip: "${text.slice(0, 40)}")${over ? " - action already over, the engine skipped this seat's secondary (expected)" : ""}`;
         this.report.cases[p.line] += ` [${p.lost}]`;
       }
     }

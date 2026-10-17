@@ -19,12 +19,31 @@ h2 { margin: 0 0 12px; font-size: 1.1rem; padding-bottom: 8px; border-bottom: 1p
 p { margin: 0 0 10px; max-width: 70ch; }
 .lede { color: var(--muted); font-size: 1.05rem; max-width: 64ch; }
 .tag { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); }
+h2.group { margin-top: 12px; font-size: 1.3rem; color: var(--accent); }
+h3 { margin: 0 0 6px; font-size: 1rem; }
+.shot-caption { color: var(--muted); font-size: 0.9rem; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 12px; align-items: start; }
+.cell .label { font-family: var(--mono); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.intro table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+.intro th, .intro td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; vertical-align: top; }
+.intro th { background: var(--surface); }
+.intro .ok { color: #6ee7a8; } .intro .no { color: #fca5a5; }
 figure { margin: 0; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 figure img { display: block; max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 8px; background: #101a33; }
 figcaption { color: var(--muted); font-size: 0.9rem; max-width: 80ch; }
 .notes { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
 .notes li { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; min-width: 0; }
 .notes b { display: block; color: var(--accent); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 2px; }
+.cardgroup { display: flex; flex-direction: column; gap: 20px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.card h3 { margin: 0; font-size: 1.05rem; }
+.change { margin: 0; color: var(--fg); max-width: 80ch; }
+.pair { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.pair__label { margin: 0; color: var(--accent); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.pair__row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+.pair__row figcaption { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.pair__note { margin: 0; color: var(--muted); font-size: 0.85rem; }
+@media (max-width: 640px) { .pair__row { grid-template-columns: 1fr; } }
 code { font-family: var(--mono); font-size: 0.85em; background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; }
 </style>
 <main>

@@ -1151,8 +1151,11 @@ fn slow_auto_play_stops_only_at_the_redoing_seats_next_turn_and_replays_its_othe
                 next_asker(state, galaxy, &result.decisions, &result.marks).unwrap();
             assert_eq!((asked, prompt.as_str()), (s.seat.clone(), "action phase"));
         } else if let Some(j) = next {
+            // `kept == j`: the redone turns changed the game so that the recorded turn start
+            // never comes (e.g. the seat passed and the status phase asks another seat); the
+            // replay stops there with a conflict without having gone past `j`.
             assert!(
-                result.kept < j,
+                result.kept <= j,
                 "a stop before the seat's turn is a conflict, not a hand-off: {:?}",
                 result.stop
             );

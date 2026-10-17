@@ -18,6 +18,7 @@ members = [
     "crates/ti4-host",
     "crates/ti4-server",
     "crates/ti4-rule-bot",
+    "crates/ti4-selfplay",
     "crates/ti4-replayer",
     "crates/ti4-wasm",
     "crates/xtask",

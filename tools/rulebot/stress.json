@@ -1,0 +1,114 @@
+{
+  "limits": {
+    "max_rounds": 200,
+    "max_steps": 5000000,
+    "max_seconds": 300,
+    "loop_steps": 5000
+  },
+  "setups": [
+    {
+      "name": "3p",
+      "players": 3,
+      "maps": [
+        "3pInPersonHyperlanes",
+        "3pHyperlanesNucleus",
+        "3pHyperlanes",
+        "3pLearnToPlayPoK",
+        "3pThreesCompany",
+        "3pRichSnowflake",
+        "3pTheLink",
+        "3pHurtsDonut",
+        "3pBgaBalancedD",
+        "random"
+      ],
+      "map_policy": "random",
+      "seeds": "9000..9060"
+    },
+    {
+      "name": "4p",
+      "players": 4,
+      "maps": [
+        "4pHyperlanesNucleus",
+        "4pHyperlanes",
+        "4pLearnToPlayPoK",
+        "4pOuterRim",
+        "4pExpanse",
+        "4pPyrrhicVictory",
+        "4pBgaBalancedD",
+        "random"
+      ],
+      "map_policy": "random",
+      "seeds": "9000..9080"
+    },
+    {
+      "name": "5p",
+      "players": 5,
+      "maps": [
+        "5pAlternateLayout",
+        "5pHyperlanesNucleus",
+        "5pHyperlanes",
+        "5pLearnToPlayPoK",
+        "5pRaceForMecatol",
+        "5pScptKnockout2020",
+        "5pOuterRim",
+        "5pSmallAndRich",
+        "5pBgaBalancedD",
+        "random"
+      ],
+      "map_policy": "random",
+      "seeds": "9000..9060"
+    },
+    {
+      "name": "6p",
+      "players": 6,
+      "maps": [
+        "6pBeMyNeighbor",
+        "6pStandardNucleus",
+        "6pStandard",
+        "6pWekkerdraft",
+        "6pLearnToPlayPoK",
+        "6pWontYouBeMyNeighbor",
+        "6pScpt2019Final",
+        "6pScpt2020Final",
+        "6pScpt2021Prelim",
+        "6pScpt2021Semifinal",
+        "6pScpt2021Final",
+        "6pClearSkies",
+        "6pBalancedSpiral",
+        "6pEquidistantDiplomacy",
+        "6pGravity",
+        "6pOuterRim",
+        "6pSmallAndRich",
+        "6pBgaBalancedD",
+        "random"
+      ],
+      "map_policy": "random",
+      "seeds": "9000..9080"
+    },
+    {
+      "name": "7p",
+      "players": 7,
+      "maps": [
+        "7pAnaphase",
+        "7pHyperlanesNucleus",
+        "7pHyperlanes",
+        "random"
+      ],
+      "map_policy": "random",
+      "seeds": "9000..9030"
+    },
+    {
+      "name": "8p",
+      "players": 8,
+      "maps": [
+        "8pBeMyNeighborHyperlanes",
+        "8pHyperlanesNucleus",
+        "8pHyperlanes",
+        "8pSpoonMap",
+        "random"
+      ],
+      "map_policy": "random",
+      "seeds": "9000..9030"
+    }
+  ]
+}

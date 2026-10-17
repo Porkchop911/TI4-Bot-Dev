@@ -35,6 +35,16 @@ export function useParticipantParts() {
     );
 }
 
+/**
+ * Whether an option id names a seat at this table (an elect-a-player vote, Committee Formation).
+ * Presentation only: the option id still goes back to the engine unchanged.
+ */
+export function useIsSeat() {
+  const { lobby, seatingOrder } = useContext(PlayerContext);
+  return (id: string | null | undefined) =>
+    !!id && (seatingOrder.includes(id) || !!lobby?.slots.some((slot) => slot.occupant === id));
+}
+
 /** Badge glyph size in px: 40% over the old 20, and never under 18 so the seat shape stays readable. */
 export const SEAT_BADGE_SIZE = 28;
 

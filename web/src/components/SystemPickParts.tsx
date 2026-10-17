@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { BoardView, PendingChoiceDto } from "../protocol/types.ts";
-import { isSystemPickChoice, systemPickOptionSystem } from "../presentation/systemFacts.ts";
+import { isMapAnchoredPick, isSystemPickChoice, systemPickOptionSystem } from "../presentation/systemFacts.ts";
+import { describeUnitPickOption } from "../presentation/unitPick.ts";
 import { describeSystem } from "../presentation/systemFacts.ts";
 import { useParticipantText } from "../presentation/PlayerIdentity.tsx";
 import { SystemFactsView } from "./SystemFactsView.tsx";
@@ -24,7 +25,7 @@ export const SystemPickMapButton: React.FC<{
   board?: BoardView | null;
   onMinimize: () => void;
 }> = ({ choice, board, onMinimize }) =>
-  isSystemPickChoice(choice, board) ? (
+  isMapAnchoredPick(choice, board) ? (
     <button
       type="button"
       className="button button--secondary"
@@ -45,10 +46,12 @@ export const SystemPickConfirmBar: React.FC<{
   const present = useParticipantText();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  if (!isSystemPickChoice(choice, board)) return null;
+  if (!isMapAnchoredPick(choice, board)) return null;
   const option = choice.options.find((o) => o.id === selectedOptionId);
   const systemId = option ? systemPickOptionSystem(option) : null;
-  if (!option || !systemId) {
+  // A unit pick says which unit, not just which system.
+  const unit = option ? describeUnitPickOption(choice, option, board) : null;
+  if (!option || !systemId || (!unit && !isSystemPickChoice(choice, board))) {
     return (
       <span className="text-muted" data-testid="system-pick-hint">
         Click a highlighted system on the map
@@ -70,7 +73,8 @@ export const SystemPickConfirmBar: React.FC<{
   return (
     <div className="system-pick-bar" data-testid="system-pick-bar">
       <span data-testid="system-pick-selected">
-        {present(choice.prompt)}: <strong>{describeSystem(systemId, board).title}</strong>
+        {present(choice.prompt)}:{" "}
+        <strong>{unit ? `${unit.title}, ${unit.where.replace(/^(In the space of |On )/, "")}` : describeSystem(systemId, board).title}</strong>
       </span>
       <button
         type="button"

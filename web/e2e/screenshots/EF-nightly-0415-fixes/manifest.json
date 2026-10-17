@@ -1,0 +1,32 @@
+{
+  "title": "Nightly 2026-10-14 follow-up UI fixes",
+  "description": "Two layout fixes from the 2026-10-14 nightly sweep, shown with the real app against a mocked game. 1) The corner toast column stops below the \"Prepare your secondary\" chip instead of covering it (run s2-36-0118: three click timeouts on the chip). 2) Once the game is over, the read-only turn bar (\"Waiting for ...\", every button \"Not your turn\") is no longer shown under the Game Over banner (run o2-186-0210). npm run screenshots -- EF regenerates the shots and asserts: the chip's centre is not covered (elementFromPoint), the toast column starts below the chip, the chip opens the prepare banner, and no turn bar after game over.",
+  "tag": "web/e2e/screenshots/EF-nightly-0415-fixes",
+  "shots": [
+    {
+      "file": "out/after-toasts-chip-1280x720.png",
+      "heading": "Toasts and the prepare chip, 1280x720",
+      "caption": "Three dice toasts and three action toasts of the primary's Politics action. The column ends right below the chip: the oldest toast is cut off at the top (all of them stay in Recent notifications) and the chip can be clicked, which the capture does."
+    },
+    {
+      "file": "out/after-toasts-chip-1440x900.png",
+      "heading": "Toasts and the prepare chip, 1440x900",
+      "caption": "Same with more room: the six toasts fit below the chip without being cut."
+    },
+    {
+      "file": "out/after-game-over-action-phase.png",
+      "heading": "Game over during the action phase",
+      "caption": "The banner says Game Over and there is no turn bar any more; before, the read-only bar kept saying \"Waiting for ...\" with every button \"Not your turn\"."
+    }
+  ],
+  "notes": [
+    {
+      "title": "No before shots",
+      "text": "The before state is described by the nightly failure screenshots (s2-36-0118 prep-planning-threw-seat3-r2.png, o2-186-0210 no-game-over-banner.png); this folder regenerates only the fixed layout."
+    },
+    {
+      "title": "Not changed",
+      "text": "The single-player toast column still paints below the overlay layer (sp-notification-log); the new limit applies online and offline."
+    }
+  ]
+}

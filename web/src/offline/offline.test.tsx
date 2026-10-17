@@ -64,14 +64,15 @@ describe("capabilities", () => {
   it("lists what offline lacks and nothing online", () => {
     expect(unavailableFeatures(ONLINE_CAPABILITIES)).toEqual([]);
     expect(unavailableFeatures(OFFLINE_CAPABILITIES)).toEqual(
-      expect.arrayContaining(["Map splice preview", "Turn redo", "Multiplayer and invite links"]),
+      expect.arrayContaining(["Map splice preview", "Multiplayer and invite links"]),
     );
+    expect(unavailableFeatures(OFFLINE_CAPABILITIES)).not.toContain("Turn redo");
   });
   it("IfCapable hides children when off", () => {
     render(
       <CapabilityProvider value={OFFLINE_CAPABILITIES}>
-        <IfCapable name="turnRedo">redo-button</IfCapable>
-        <IfCapable name="turnRedo">second</IfCapable>
+        <IfCapable name="splicePreview">redo-button</IfCapable>
+        <IfCapable name="splicePreview">second</IfCapable>
       </CapabilityProvider>,
     );
     expect(screen.queryByText("redo-button")).toBeNull();
@@ -170,7 +171,7 @@ describe("banner and queued feedback", () => {
   it("names the hidden features and the queue state", async () => {
     const launcher = createMockLauncher({ feedback: [{ state: "queued" }, { state: "sending" }] });
     render(<OfflineBanner capabilities={launcher.capabilities} feedback={launcher.feedback} />);
-    expect(screen.getByTestId("offline-missing").textContent).toMatch(/Turn redo.*Multiplayer/);
+    expect(screen.getByTestId("offline-missing").textContent).toMatch(/Map splice preview.*Multiplayer/);
     expect(screen.getByTestId("offline-feedback-chip").textContent).toBe("2 feedback reports will be sent");
     await act(async () => {
       await launcher.feedback.enqueue({ category: "bug", text: "x", context: {} });

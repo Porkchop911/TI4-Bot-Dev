@@ -12,6 +12,7 @@ import {
 import { useBottomBarOffset } from "../hooks/useBottomBarOffset.ts";
 import { usePlayerIdentity } from "../presentation/PlayerIdentity.tsx";
 import "./TurnActionBar.css";
+import { StaleChoiceError } from "../protocol/client.ts";
 
 export interface TurnActionBarProps {
   model: TurnBarModel;
@@ -194,7 +195,8 @@ export const TurnActionBar: React.FC<TurnActionBarProps> = ({ model, onSubmit, l
       try {
         await onSubmit(optionId);
       } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : String(err));
+        // A click on a question that was already answered is dropped quietly.
+        if (!(err instanceof StaleChoiceError)) setError(err instanceof Error ? err.message : String(err));
       } finally {
         setBusy(false);
       }

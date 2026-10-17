@@ -3,3 +3,4 @@ dist/
 test-results/
 src/offline/local/engine/
 .e2e-dist-offline/
+.e2e-dist-csp/

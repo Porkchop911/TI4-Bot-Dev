@@ -1,3 +1,4 @@
+import { ARMADA_BONUS, ARMADA_TEXT, hasArmada } from "../presentation/commandTokens.ts";
 import React, { useState } from "react";
 import { PlanetValue } from "./PlanetValueIcons.tsx";
 import { BoardView, PlayerView, ReactionModes, ReactionModeSetting, TableView } from "../protocol/types.ts";
@@ -548,6 +549,19 @@ export const PlayerSheet: React.FC<PlayerSheetProps> = ({
                     {player.tactic_tokens} ◆ {player.fleet_tokens} ◆ {player.strategic_tokens}
                   </strong>
                 </Tooltip>
+                {hasArmada(player.faction) && (
+                  <Tooltip content={ARMADA_TEXT} as="span" position="bottom">
+                    <span
+                      className="token-panel__armada"
+                      data-testid="player-armada"
+                      aria-label={ARMADA_TEXT}
+                      tabIndex={0}
+                      style={{ cursor: "help", marginLeft: 6 }}
+                    >
+                      Fleet +{ARMADA_BONUS}
+                    </span>
+                  </Tooltip>
+                )}
               </div>
             </div>
 

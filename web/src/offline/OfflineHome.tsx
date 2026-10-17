@@ -118,7 +118,7 @@ export const OfflineHome: React.FC<{
             />
           ) : (
             <>
-              {support.ok && <OfflineSetupForm factions={launcher.factions} onStart={create} />}
+              {support.ok && <OfflineSetupForm factions={launcher.factions} maps={launcher.maps} onStart={create} />}
               <div className="offline-games-head">
                 <h2 className="offline-heading">My offline games</h2>
                 {launcher.storage && (

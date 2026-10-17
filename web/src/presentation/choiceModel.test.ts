@@ -320,6 +320,39 @@ describe("choiceModel", () => {
       expect(model?.isOptional).toBe(true);
     });
 
+    it("routes the Enigmatic Device question to the technology workflow, not Maw of Worlds", () => {
+      const options = [
+        { id: "gd", label: "gain gd", kind: "technology", payload: {} },
+        { id: "sr", label: "gain sr", kind: "technology", payload: {} },
+      ];
+      const enigmatic: PendingChoiceDto = {
+        ...baseChoice,
+        prompt: "gain which technology",
+        context: partialContext({
+          subtype: "enigmaticdevice_choose_technology",
+          source: { Content: "enigmaticdevice" },
+        }),
+        options,
+      };
+      expect(deriveChoiceRendererModel(enigmatic, "seat_1")?.workflow).toBe("technology_research");
+      const card: PendingChoiceDto = {
+        ...enigmatic,
+        context: partialContext({
+          subtype: "enigmatic_device_choose_technology",
+          source: { Content: "ed1" },
+        }),
+      };
+      expect(deriveChoiceRendererModel(card, "seat_1")?.workflow).toBe("technology_research");
+      const maw: PendingChoiceDto = {
+        ...enigmatic,
+        context: partialContext({
+          subtype: "mawofworlds_choose_technology",
+          source: { Content: "mawofworlds" },
+        }),
+      };
+      expect(deriveChoiceRendererModel(maw, "seat_1")?.workflow).not.toBe("technology_research");
+    });
+
     it("keeps an engine-built offer card out of the technology workflow", () => {
       const offer: PendingChoiceDto = {
         ...baseChoice,

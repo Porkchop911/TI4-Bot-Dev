@@ -90,8 +90,8 @@ characters, 200 KiB), 50 waiting reports.
 Tests: `storage/feedbackQueue.test.ts` (the queue, the sender, the engine check); the store's own
 tests run in web2 (`web-shared/AGENTS.md`, "Tests").
 
-Capabilities: `LocalTransport.capabilities` (`splicePreview`, `turnRedo`, `multiplayer` off,
-`feedback` on) and the shell's `useCapability` both gate the UI: turn redo (GameShell prop and hook), the
+Capabilities: `LocalTransport.capabilities` (`splicePreview`, `multiplayer` off,
+`turnRedo` and `feedback` on) and the shell's `useCapability` both gate the UI: the
 bluff selector (multiplayer). There is no splice preview or map picker in the game screen of this branch,
 so nothing else needed hiding.
 

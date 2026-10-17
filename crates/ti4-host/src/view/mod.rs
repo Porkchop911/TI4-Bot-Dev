@@ -5,6 +5,7 @@
 pub mod action_cards;
 pub mod agendas;
 pub mod components;
+pub mod effects;
 pub mod exploration;
 pub mod reaction;
 pub mod reaction_modes;

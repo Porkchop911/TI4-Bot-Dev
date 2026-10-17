@@ -469,6 +469,52 @@ fn reroll_munitions_misses(
 // opens the window, and then recomputes the hits from whatever faces remain when the
 // window closes.
 
+/// Display only: the whole staged roll, one entry per die in the order the dice are asked about,
+/// so a client can show every die and which one a question is about.
+#[must_use]
+pub fn staged_dice_view(set: &RerollSet) -> Vec<serde_json::Value> {
+    set.rolls
+        .iter()
+        .enumerate()
+        .flat_map(|(unit, entry)| {
+            entry.faces.iter().enumerate().map(move |(die, face)| {
+                let bonus = entry.deltas.get(&die).copied().unwrap_or(0);
+                serde_json::json!({
+                    "unit": entry.unit,
+                    "unit_index": unit,
+                    "die": die,
+                    "face": face,
+                    "bonus": bonus,
+                    "hits_on": entry.hits_on,
+                    "rerolled": entry.rerolled.contains(&die),
+                })
+            })
+        })
+        .collect()
+}
+
+/// The staged dice that currently miss, as `(roll entry, die)` positions.
+#[must_use]
+pub fn staged_misses(set: &RerollSet) -> Vec<(usize, usize)> {
+    set.rolls
+        .iter()
+        .enumerate()
+        .flat_map(|(unit, entry)| {
+            entry
+                .faces
+                .iter()
+                .enumerate()
+                .filter(move |(die, face)| {
+                    entry.hits_on.is_some_and(|on| {
+                        i64::from(**face) + entry.deltas.get(die).map_or(0, |d| i64::from(*d))
+                            < i64::from(on)
+                    })
+                })
+                .map(move |(die, _)| (unit, die))
+        })
+        .collect()
+}
+
 /// Ask the roller, one optional question per die, which dice to reroll.
 ///
 /// A die whose question fails (the decider answered with something not offered) is kept
@@ -490,6 +536,8 @@ pub fn choose_reroll_dice(
     };
     let observed = Observed::new(state, content, sources, galaxy);
     let mut picks = Vec::new();
+    let dice = staged_dice_view(set);
+    let mut asked = 0usize;
     for (unit, entry) in set.rolls.iter().enumerate() {
         for (die, face) in entry.faces.iter().enumerate() {
             // OBS-008b2: the die's own current hit status (its face plus whatever adjustment --
@@ -542,7 +590,10 @@ pub fn choose_reroll_dice(
                 format!("reroll die {} of {}", die + 1, entry.unit),
                 vec![reroll, decline],
             )
+            .detailed("dice", dice.clone())
+            .detailed("current", asked)
             .contextualized(context);
+            asked += 1;
             let Ok(answer) = table.ask_seeing(&choice, &observed) else {
                 continue;
             };
@@ -652,6 +703,18 @@ fn reroll_window(
         if !picks.is_empty() {
             let set = state.reroll_staging.get_mut(side).expect("checked above");
             apply_reroll_dice(ctx.dice, ctx.rng, set, &picks, "jolnar commander");
+        }
+    }
+    // Munitions Reserves, decided after the dice (rules version 2): the Letnev player has seen the
+    // fleet's roll and may now pay 2 trade goods to re-roll any of it.
+    if kind == "fleet"
+        && has_dice
+        && state.rules_version >= ti4_model::state::RULES_MUNITIONS_AFTER_ROLL
+    {
+        let picks = crate::faction_abilities::munitions_after_roll(state, ctx, side);
+        if !picks.is_empty() {
+            let set = state.reroll_staging.get_mut(side).expect("checked above");
+            apply_reroll_dice(ctx.dice, ctx.rng, set, &picks, &format!("munitions:{side}"));
         }
     }
     // The Crown of Thalnos (relic): "this card's owner may reroll any number of their dice,
@@ -3586,6 +3649,33 @@ pub(crate) fn choose_casualty_owing(
     Ok(units.get(index).unwrap_or(&units[0]).clone())
 }
 
+/// Whether a retreat may end in `destination` under the movement rules: no asteroid field
+/// without Antimass Deflectors (11.1), no supernova (86.1) except where a faction lifts it. A
+/// nebula is fine (a retreat is one step into the "active" system, 59.1). Older games
+/// (`rules_version` below `RULES_RETREAT_HAZARDS`) never checked, so they replay unchanged.
+fn retreat_may_enter(
+    state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: &ti4_content::galaxy::Galaxy,
+    player: &PlayerId,
+    destination: &SystemId,
+) -> bool {
+    if state.rules_version < ti4_model::state::RULES_RETREAT_HAZARDS {
+        return true;
+    }
+    let board = crate::movement::Board::for_player(state, content, sources, player);
+    crate::movement::MovementRules::with_laws(
+        galaxy,
+        content,
+        sources,
+        destination.as_str(),
+        board,
+        Some(state),
+    )
+    .can_enter(destination.as_str())
+}
+
 /// The choice kind for announcing a retreat.
 pub const RETREAT_KIND: &str = "retreat";
 /// The choice kind for picking where to retreat to.
@@ -3610,6 +3700,7 @@ pub fn eligible_retreats(
         .into_iter()
         .filter(|adjacent| !galaxy.is_hyperlane(adjacent)) // not a system: never a retreat
         .map(SystemId::new)
+        .filter(|adjacent| retreat_may_enter(state, content, sources, &galaxy, player, adjacent))
         .filter(|adjacent| {
             let board = state.system_state(adjacent);
             let enemy_ship = board.units.iter().any(|unit| {
@@ -3661,6 +3752,7 @@ pub fn skilled_retreat_destinations(
         .into_iter()
         .filter(|adjacent| !galaxy.is_hyperlane(adjacent)) // not a system: never a retreat
         .map(SystemId::new)
+        .filter(|adjacent| retreat_may_enter(state, content, sources, galaxy, player, adjacent))
         .filter(|adjacent| {
             !state.system_state(adjacent).units.iter().any(|unit| {
                 &unit.owner != player
@@ -3683,6 +3775,8 @@ pub fn skilled_retreat_destinations(
 #[must_use]
 pub fn det_retreat_destinations(
     state: &GameState,
+    content: &ContentStore,
+    sources: SourceSet,
     galaxy: &ti4_content::galaxy::Galaxy,
     player: &PlayerId,
     system: &SystemId,
@@ -3692,6 +3786,7 @@ pub fn det_retreat_destinations(
         .into_iter()
         .filter(|adjacent| !galaxy.is_hyperlane(adjacent)) // not a system: never a retreat
         .map(SystemId::new)
+        .filter(|adjacent| retreat_may_enter(state, content, sources, galaxy, player, adjacent))
         .filter(|adjacent| {
             let board = state.system_state(adjacent);
             !board.units.iter().any(|unit| &unit.owner != player)
@@ -4086,7 +4181,9 @@ impl CombatWindow {
             // in that system." The holder alone gets the union with the technology's looser
             // set; everyone else still retreats by 78.7c only.
             if crate::technology::owns_det(state, player) {
-                for spot in det_retreat_destinations(state, galaxy, player, &self.system) {
+                for spot in
+                    det_retreat_destinations(state, content, sources, galaxy, player, &self.system)
+                {
                     if !spots.contains(&spot) {
                         spots.push(spot);
                     }
@@ -7499,6 +7596,154 @@ mod tests {
         assert_eq!(plain.player(&attacker()).unwrap().trade_goods, 3);
     }
 
+    /// A Letnev attacker with three cruisers (hit on 7) rolling `[1, 1, 10]`, `answers` scripted,
+    /// run through the fleet roll and its windows. Returns the state, the hits, the dice and every
+    /// question the Letnev seat was asked.
+    fn munitions_fleet_roll(
+        rules_version: u32,
+        trade_goods: i32,
+        faces: &[u32],
+        answers: &[&str],
+    ) -> (GameState, usize, Dice, Vec<crate::choice::Choice>) {
+        let (mut state, system) = arena();
+        state.rules_version = rules_version;
+        state.player_mut(&attacker()).unwrap().faction = ti4_model::id::FactionId::new("letnev");
+        state.player_mut(&attacker()).unwrap().trade_goods = trade_goods;
+        put(&mut state, &system, "cruiser", &attacker(), faces.len());
+        let (decider, seen) =
+            crate::choice::Capturing::new(Box::new(crate::choice::Scripted::with_fallback(
+                answers.iter().map(|id| (*id).to_owned()),
+                Box::new(crate::choice::AlwaysDecline),
+            )));
+        let mut table = Table::with_default(Box::new(decider));
+        let mut dice = Dice::from_faces(faces.iter().copied());
+        let mut rng = GameRng::new(7);
+        let hits = {
+            let mut ctx = Resolving {
+                content: ContentStore::embedded(),
+                sources: POK,
+                dice: &mut dice,
+                rng: &mut rng,
+                table: &mut table,
+                timing: None,
+            };
+            roll_fleet_and_open(&mut state, &mut ctx, &attacker(), &system)
+        };
+        let asked = seen.borrow().clone();
+        (state, hits, dice, asked)
+    }
+
+    #[test]
+    fn munitions_after_roll_is_asked_with_the_dice_in_view_and_pays_then() {
+        let (state, _, dice, asked) = munitions_fleet_roll(
+            ti4_model::state::RULES_MUNITIONS_AFTER_ROLL,
+            4,
+            &[1, 1, 10],
+            &["munitions"],
+        );
+        let offer = asked
+            .iter()
+            .find(|choice| choice.option("munitions").is_some())
+            .expect("the re-roll is offered once the fleet has rolled");
+        // The three faces are already on the table when the question is asked.
+        let faces: Vec<i64> = offer.details["dice"]
+            .as_array()
+            .expect("the roll is shown")
+            .iter()
+            .map(|die| die["face"].as_i64().unwrap())
+            .collect();
+        assert_eq!(faces, vec![1, 1, 10]);
+        assert_eq!(
+            state.player(&attacker()).unwrap().trade_goods,
+            2,
+            "2 trade goods paid"
+        );
+        assert_eq!(
+            dice.history()
+                .iter()
+                .filter(|d| d.reason == "munitions:a")
+                .count(),
+            2,
+            "both misses were drawn again, the hit was kept"
+        );
+    }
+
+    #[test]
+    fn munitions_after_roll_can_be_declined_for_free() {
+        let (state, hits, dice, _) = munitions_fleet_roll(
+            ti4_model::state::RULES_MUNITIONS_AFTER_ROLL,
+            4,
+            &[1, 1, 10],
+            &["decline"],
+        );
+        assert_eq!(state.player(&attacker()).unwrap().trade_goods, 4);
+        assert_eq!(hits, 1);
+        assert!(dice.history().iter().all(|d| d.reason != "munitions:a"));
+    }
+
+    #[test]
+    fn munitions_after_roll_can_re_roll_chosen_dice_only() {
+        let (state, _, dice, asked) = munitions_fleet_roll(
+            ti4_model::state::RULES_MUNITIONS_AFTER_ROLL,
+            4,
+            &[1, 1, 10],
+            &["munitions_choose", "decline", "reroll|0:1"],
+        );
+        assert_eq!(state.player(&attacker()).unwrap().trade_goods, 2);
+        assert_eq!(
+            dice.history()
+                .iter()
+                .filter(|d| d.reason == "munitions:a")
+                .count(),
+            1
+        );
+        // Every die is asked about, in order, as with the Crown of Thalnos.
+        let per_die = asked
+            .iter()
+            .filter(|choice| choice.options.iter().any(|o| o.kind == "reroll_die"))
+            .count();
+        assert_eq!(per_die, 3);
+    }
+
+    #[test]
+    fn munitions_after_roll_is_not_asked_without_a_miss_or_the_goods() {
+        let (_, _, _, asked) = munitions_fleet_roll(
+            ti4_model::state::RULES_MUNITIONS_AFTER_ROLL,
+            4,
+            &[10, 9, 8],
+            &[],
+        );
+        assert!(
+            asked.iter().all(|c| c.option("munitions").is_none()),
+            "all hit"
+        );
+        let (_, _, _, asked) = munitions_fleet_roll(
+            ti4_model::state::RULES_MUNITIONS_AFTER_ROLL,
+            1,
+            &[1, 1],
+            &[],
+        );
+        assert!(
+            asked.iter().all(|c| c.option("munitions").is_none()),
+            "cannot pay"
+        );
+    }
+
+    #[test]
+    fn a_legacy_game_never_asks_after_the_roll() {
+        let (state, _, _, asked) = munitions_fleet_roll(
+            ti4_model::state::RULES_INFILTRATE_FIX,
+            4,
+            &[1, 1, 10],
+            &["munitions"],
+        );
+        assert!(
+            asked.is_empty(),
+            "legacy asks at the round start, not in the fleet window"
+        );
+        assert_eq!(state.player(&attacker()).unwrap().trade_goods, 4);
+    }
+
     #[test]
     fn munitions_rerolls_only_misses_and_lapses_after_its_round() {
         let (mut state, _) = arena();
@@ -7818,6 +8063,43 @@ mod tests {
             .collect();
         assert!(damage.contains(&("letnev_flagship".to_owned(), false)));
         assert!(damage.contains(&("dreadnought".to_owned(), true)));
+    }
+
+    #[test]
+    fn a_retreat_cannot_enter_an_asteroid_field_without_antimass_deflectors() {
+        let asteroid = crate::fixtures::a_system_where("asteroid field");
+        let hub = crate::fixtures::hub_with_outer(&asteroid);
+        let mut state = crate::fixtures::game(&["a", "b"]);
+        let centre = SystemId::new(hub.centre.clone());
+        let field = SystemId::new(asteroid.clone());
+        let me = attacker();
+        put(&mut state, &centre, "cruiser", &me, 1);
+        put(&mut state, &field, "carrier", &me, 1);
+        let options = |state: &GameState| {
+            eligible_retreats(
+                state,
+                ContentStore::embedded(),
+                POK,
+                &hub.galaxy,
+                &me,
+                &centre,
+            )
+        };
+        assert!(!options(&state).contains(&field), "no technology");
+
+        state.rules_version = ti4_model::state::RULES_RETREAT_HAZARDS - 1;
+        assert!(
+            options(&state).contains(&field),
+            "legacy games keep the old set"
+        );
+
+        state.rules_version = ti4_model::state::RULES_VERSION;
+        state
+            .player_mut(&me)
+            .expect("seat")
+            .technologies
+            .insert(ti4_model::TechnologyId::new("amd"));
+        assert!(options(&state).contains(&field), "with Antimass Deflectors");
     }
 
     #[test]
@@ -8514,6 +8796,54 @@ mod tests {
                 .and_then(serde_json::Value::as_str),
             Some("dreadnought")
         );
+    }
+
+    /// Every reroll question carries the whole roll (display only), so a client can show all the
+    /// dice and which one is being asked about; the options and their ids are as before.
+    #[test]
+    fn every_reroll_question_carries_all_the_dice_and_its_own_position() {
+        let (mut state, system) = arena();
+        let player = defender();
+        let entry = |unit: &str, hits_on, faces: Vec<u32>| RerollEntry {
+            unit: unit.to_owned(),
+            planet: None,
+            hits_on: Some(hits_on),
+            faces,
+            rerolled: std::collections::BTreeSet::new(),
+            deltas: std::collections::BTreeMap::new(),
+            unit_types: std::collections::BTreeMap::new(),
+        };
+        state.reroll_staging.insert(
+            player.clone(),
+            RerollSet {
+                kind: "ground".to_owned(),
+                system,
+                rolls: vec![entry("infantry", 8, vec![3, 9]), entry("mech", 6, vec![6])],
+            },
+        );
+        let (decider, seen) = crate::choice::Capturing::new(Box::new(FirstOption));
+        let mut table = Table::with_default(Box::new(decider));
+        let _ = choose_reroll_dice(
+            &state,
+            ContentStore::embedded(),
+            POK,
+            None,
+            &mut table,
+            &player,
+            &DecisionSource::Content("test".to_owned()),
+            "test_reroll",
+        );
+
+        let asked = seen.borrow();
+        assert_eq!(asked.len(), 3, "one question per die");
+        for (index, choice) in asked.iter().enumerate() {
+            assert_eq!(choice.details["current"], index);
+            let dice = choice.details["dice"].as_array().expect("the dice");
+            assert_eq!(dice.len(), 3);
+            assert_eq!(dice[1]["face"], 9);
+            assert_eq!(dice[1]["hits_on"], 8);
+            assert_eq!(dice[2]["unit"], "mech");
+        }
     }
 
     /// OBS-008b2: a reroll option names its unit, current face, and hit threshold, and previews

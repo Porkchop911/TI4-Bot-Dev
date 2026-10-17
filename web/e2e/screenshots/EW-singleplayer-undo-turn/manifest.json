@@ -1,0 +1,37 @@
+{
+  "title": "Undo my last turn is back in single player",
+  "description": "Single-player (offline) games, real engine games with a fixed seed. The event log has the turn undo again: Go back over (the last turn or the last two turns) and an Undo my last turn button. It takes the game back to the start of your last turn(s), the bots decide again from the same game, and the turn you took back can be redone with the log's Redo. There is no seat picker, no replay strip and no saved original (those belong to the multiplayer redo). npm run screenshots -- EW asserts: the button is shown with that label, one click saves fewer answers, the turn menu is asked again, a reload resumes at the undone position and the game plays on.",
+  "tag": "web/e2e/screenshots/EW-singleplayer-undo-turn",
+  "shots": [
+    {
+      "file": "out/after-button-desktop.png",
+      "heading": "The button, desktop",
+      "caption": "Go back over the last turn / the last two turns, and Undo my last turn."
+    },
+    {
+      "file": "out/after-log-desktop.png",
+      "heading": "Event log with the button, desktop",
+      "caption": "The button sits in the event log drawer next to the single-decision Undo."
+    },
+    {
+      "file": "out/after-undone-desktop.png",
+      "heading": "After the undo, desktop",
+      "caption": "The game is back at the start of the turn: the action phase menu is asked again."
+    },
+    {
+      "file": "out/after-button-phone.png",
+      "heading": "The button, phone",
+      "caption": "Same control on a 390x844 phone."
+    },
+    {
+      "file": "out/after-log-phone.png",
+      "heading": "Event log with the button, phone",
+      "caption": "The Events drawer on the phone."
+    },
+    {
+      "file": "out/after-undone-phone.png",
+      "heading": "After the undo, phone",
+      "caption": "Back at the start of the turn."
+    }
+  ]
+}

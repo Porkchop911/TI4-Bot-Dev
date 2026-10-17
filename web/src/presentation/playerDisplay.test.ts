@@ -45,11 +45,11 @@ const lobby: LobbyDto = {
 
 describe("physical seat identity", () => {
   it("pins the TI4-traditional palette in contrast-optimised seat order", () => {
-    // blue, green, white, red, pink, orange, yellow, purple: blue/green first, red and orange apart.
+    // blue, green, cyan, red, pink, orange, yellow, purple: blue/green first, red and orange apart.
     expect(SEAT_COLORS).toEqual([
       "#3B82F6",
       "#4ADE80",
-      "#F1F5F9",
+      "#22D3EE",
       "#EF4444",
       "#F472B6",
       "#F97316",
@@ -103,9 +103,9 @@ describe("physical seat identity", () => {
       // Documented rule: ink is whichever of dark/white reads better; it must clear 4.5:1.
       expect(contrastRatio(color, seatInk(color))).toBeGreaterThanOrEqual(4.5);
     }
-    // No seat needs white ink any more (the old black seat 8 is gone); white and yellow need dark.
+    // No seat needs white ink any more (the old black seat 8 is gone); cyan and yellow need dark.
     expect(SEAT_COLORS.map(seatInk)).not.toContain(SEAT_INK_LIGHT);
     expect(seatInk("#000000")).toBe(SEAT_INK_LIGHT);
-    expect(seatInk("#F1F5F9")).toBe("#0b1220");
+    expect(seatInk("#22D3EE")).toBe("#0b1220");
   });
 });

@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import type { Page, WebSocketRoute } from "@playwright/test";
 import {
   PROTOCOL_VERSION,
@@ -146,6 +147,14 @@ export async function openMockedGame(page: Page, options: MockGameOptions = {}):
       can_take_over: false,
     })),
   };
+  // The printed cards: the page asks the server (`GET /api/catalog`); the repository's fixture is
+  // the catalog of the embedded corpus (`cargo wire-web` keeps it current). Playwright runs from web/.
+  await page.route("**/api/catalog", (route) =>
+    route.fulfill({
+      path: join(process.cwd(), "..", "fixtures", "catalog", "catalog.json"),
+      contentType: "application/json",
+    }),
+  );
   await page.route(`**/api/games/${GAME_ID}/lobby/join`, (route) =>
     route.fulfill({ json: { player_session: SESSION, player: { id: seat }, lobby } }),
   );

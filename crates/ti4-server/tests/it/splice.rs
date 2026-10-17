@@ -79,6 +79,9 @@ fn setup(seed: u64) -> (GameState, Galaxy) {
             )
         })
         .collect();
+    // The decision indices were chosen before Letnev could redistribute below two fleet tokens
+    // (rules version 4): keep the option lists those games saw.
+    state.rules_version = ti4_model::state::RULES_LETNEV_FLEET_POOL - 1;
     (state, galaxy)
 }
 

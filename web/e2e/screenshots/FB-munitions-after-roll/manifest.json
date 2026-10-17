@@ -1,0 +1,11 @@
+{
+  "title": "Munitions Reserves after the roll",
+  "description": "Letnev's Munitions Reserves used to be paid blind at the start of each combat round (before any dice existed) and then re-rolled every miss automatically. From rules version 2 the Letnev player sees the fleet's roll first and then decides: spend 2 trade goods to re-roll all missed dice, choose which missed dice to re-roll one by one, or keep the roll for free. Older games keep the old flow. Mocked fixtures (a Letnev attacker with three cruisers hitting on 7).",
+  "tag": "web/e2e/screenshots/FB-munitions-after-roll",
+  "shots": [
+    { "file": "out/1-offer-after-roll.png", "heading": "The offer, with the dice in view", "caption": "Faces 3, 9 and 1 against 7: one hit and two misses are shown. The first button spends 2 trade goods (5 to 3) and re-rolls both misses; the second lets you pick which dice to re-roll; Don't use it keeps the roll and costs nothing." },
+    { "file": "out/2-offer-single-miss.png", "heading": "One miss: no choosing", "caption": "With a single missed die the choose-dice button is not offered; re-rolling it or declining are the only answers." },
+    { "file": "out/3-choose-first-miss.png", "heading": "Choosing dice: one question per die", "caption": "After choosing which dice, each die is asked about on the usual re-roll card with the whole roll shown (the rule bot only redraws misses). The 2 trade goods were already paid when this question is asked." }
+  ],
+  "notes": []
+}

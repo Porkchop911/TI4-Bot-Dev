@@ -238,6 +238,35 @@ describe("Accessible Primitives Suite", () => {
     });
   });
 
+  describe("Popover portal scrolled trigger", () => {
+    it("closes a portalled card when its trigger scrolls out of the viewport instead of pinning it to the screen edge", () => {
+      let triggerTop = 211;
+      const rect = (top: number, height: number, width: number) =>
+        ({ top, bottom: top + height, left: 100, right: 100 + width, width, height, x: 100, y: top, toJSON() {} }) as DOMRect;
+      const spy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+        return this.getAttribute("role") === "dialog" ? rect(0, 68, 340) : rect(triggerTop, 28, 28);
+      });
+      const innerHeight = window.innerHeight;
+      Object.defineProperty(window, "innerHeight", { configurable: true, value: 844 });
+      try {
+        render(
+          <Popover portal content={<p>Unit card</p>}>
+            <button type="button" data-testid="chip-trigger">Chip</button>
+          </Popover>,
+        );
+        fireEvent.click(screen.getByTestId("chip-trigger"));
+        expect(screen.getByTestId("accessible-popover")).toBeTruthy();
+        // The panel scrolls: the chip is now below the screen.
+        triggerTop = 900;
+        fireEvent.scroll(window);
+        expect(screen.queryByTestId("accessible-popover")).toBeNull();
+      } finally {
+        spy.mockRestore();
+        Object.defineProperty(window, "innerHeight", { configurable: true, value: innerHeight });
+      }
+    });
+  });
+
   describe("SvgButton Primitive", () => {
     it('provides accessible role="button", tabIndex, aria-label, and keyboard activation', () => {
       const onActivate = vi.fn();

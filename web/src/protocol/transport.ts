@@ -37,7 +37,11 @@ export interface GameTransport {
   /** Try to reconnect now (the Retry button). */
   retryNow(): void;
 
-  submitChoice(optionId: string): Promise<void>;
+  /**
+   * Answers the pending question. With `nonce` (the question the caller showed) a stale answer is
+   * refused with `StaleChoiceError` and nothing is sent.
+   */
+  submitChoice(optionId: string, nonce?: string): Promise<void>;
   submitBatch(plan: BatchPlan): Promise<void>;
   submitMovementBatch(destination: string, steps: MovementStep[]): Promise<void>;
   resumeBatch(): Promise<void>;

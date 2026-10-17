@@ -1,3 +1,4 @@
+import { AnomalyClipDefs } from "./anomaly/AnomalyArt.tsx";
 import React, { useEffect, useMemo, useState, useRef, useId } from "react";
 import { createPortal } from "react-dom";
 import { useCompactLayout } from "../hooks/useCompactLayout.ts";
@@ -21,6 +22,8 @@ import { MapOverlayMode } from "../presentation/mapOverlays.ts";
 import { MapOverlayToolbar } from "./MapOverlayToolbar.tsx";
 import { useBoardPrepSlot } from "../presentation/BoardPrepSlot.tsx";
 import { useBoardChromeOffset } from "../hooks/useBoardChromeOffset.ts";
+import { HyperlaneNetwork } from "./hyperlane/HyperlaneArt.tsx";
+import { getHyperlaneNetwork } from "./hyperlane/hyperlaneNetwork.ts";
 import { BoardTile } from "./board/BoardTile.tsx";
 import { BoardTooltip, HoveredTileInfo } from "./board/BoardTooltip.tsx";
 import { MovementVectorsOverlay } from "./board/MovementVectorsOverlay.tsx";
@@ -103,7 +106,8 @@ export const Board: React.FC<BoardProps> = ({
   const prepSlot = useBoardPrepSlot();
   // A phone with the menu sheet: the map keeps its whole height, the controls move to the sheet.
   const menuSlot = useMobileMenuSlot();
-  const compactChrome = useCompactLayout() && menuSlot !== null;
+  const compactLayout = useCompactLayout();
+  const compactChrome = compactLayout && menuSlot !== null;
   const helpId = useId();
 
   // Leadership's purchase: while tokens are bought the planets that can pay are the map's targets.
@@ -123,6 +127,41 @@ export const Board: React.FC<BoardProps> = ({
     selectedSystemId,
     tokenPaymentPlanets,
   );
+
+  // A hex tapped to answer a pick (an activation) opens the inspector too; once that decision is
+  // answered the inspector closes, or it would cover the map at the next pick on a phone.
+  const pickedRef = useRef<{ nonce: string; systemId: string } | null>(null);
+  const selectTile = (id: string | null) => {
+    const tile = id ? presentation.tiles.find((t) => t.systemId === id) : undefined;
+    pickedRef.current =
+      id && pendingChoice && tile?.isCandidateTarget ? { nonce: pendingChoice.nonce, systemId: id } : null;
+    setSelectedSystemId(id);
+  };
+  const pendingNonce = pendingChoice?.nonce;
+  useEffect(() => {
+    const picked = pickedRef.current;
+    if (!picked || picked.nonce === pendingNonce) return;
+    pickedRef.current = null;
+    if (selectedSystemId === picked.systemId) setSelectedSystemId(null);
+    // Only a new decision closes it; the selection is read as it is then.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingNonce]);
+
+  // A decision that is answered by tapping the map (activating a system) arrives while a system the
+  // player opened to look at is still inspected: on a phone the inspector covers the map, so it
+  // closes (offline runs o2-124, o3-147, o1-167, o2-270, o1-325, o3-340).
+  const needsMapTap = pendingChoice?.context?.subtype === "activate_system";
+  useEffect(() => {
+    if (compactLayout && needsMapTap) setSelectedSystemId(null);
+    // Only a new decision closes it; a system tapped afterwards to answer it may stay open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingNonce, needsMapTap]);
+
+  // Hyperlane network of the main map, computed once per layout (shared cache).
+  const hyperlaneTiles = presentation.tiles
+    .filter((t) => !t.specialArea)
+    .map((t) => ({ systemId: t.systemId, q: t.q, r: t.r, cx: t.center.x, cy: t.center.y }));
+  const hyperlaneModel = getHyperlaneNetwork(hyperlaneTiles);
 
   // "Who can go here": the inspector's second tab asks the engine and draws the answer as arrows.
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>("details");
@@ -377,6 +416,7 @@ export const Board: React.FC<BoardProps> = ({
             <feGaussianBlur stdDeviation="4" result="blur" />
             <feComposite in="SourceGraphic" in2="blur" operator="over" />
           </filter>
+          <AnomalyClipDefs />
           <filter id="target-glow" x="-30%" y="-30%" width="160%" height="160%">
             <feGaussianBlur stdDeviation="6" result="blur" />
             <feMerge>
@@ -427,7 +467,7 @@ export const Board: React.FC<BoardProps> = ({
               players={players}
               onSelectTarget={onSelectTarget}
               onSelectOptionId={onSelectOptionId}
-              onSelectSystem={setSelectedSystemId}
+              onSelectSystem={selectTile}
               onMouseEnter={() => {
                 setHoveredTile({
                   systemId: tile.systemId,
@@ -438,6 +478,7 @@ export const Board: React.FC<BoardProps> = ({
                     label: p.label,
                     resources: p.resources,
                     influence: p.influence,
+                    boosts: p.boosts,
                     owner: p.controlledBy,
                   })),
                   unitsCount: tile.totalUnits,
@@ -447,6 +488,15 @@ export const Board: React.FC<BoardProps> = ({
               onMouseLeave={() => setHoveredTile(null)}
             />
           ))}
+
+          {/* Hyperlane network: one continuous drawing over the tile fills */}
+          {hyperlaneTiles.length > 0 && (
+            <HyperlaneNetwork
+              tiles={hyperlaneTiles}
+              model={hyperlaneModel}
+              bed={presentation.tiles.find((t) => t.hyperlane)?.fillColor}
+            />
+          )}
 
           {/* Movement Vector Overlays */}
           <MovementVectorsOverlay vectors={presentation.targets.movementVectors} />

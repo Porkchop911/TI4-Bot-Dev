@@ -139,9 +139,50 @@ describe("GameSessionClient resume after idle", () => {
     client.stop();
   });
 
+  it("replaces an open socket that stopped answering pings and re-reads the state (run s2-01-2031)", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("WebSocket", FakeWebSocket);
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => ok(snapshot(4))));
+    const client = newClient();
+    client.start();
+    const silent = FakeWebSocket.latest;
+    silent.open();
+    await vi.advanceTimersByTimeAsync(0);
+    // The server moved on, but this socket never says so: it stays open and delivers nothing.
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => ok(snapshot(9, "n7"))));
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(silent.sent.filter((frame) => JSON.parse(frame).type === "ping")).toHaveLength(1);
+    expect(FakeWebSocket.latest).toBe(silent);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(FakeWebSocket.latest).not.toBe(silent);
+    expect(silent.readyState).toBe(3);
+    expect(client.getState().gameVersion).toBe(9);
+    expect(client.getState().pendingChoice?.nonce).toBe("n7");
+    client.stop();
+  });
+
+  it("keeps a quiet socket that answers its pings", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("WebSocket", FakeWebSocket);
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => ok(snapshot(4))));
+    const client = newClient();
+    client.start();
+    const socket = FakeWebSocket.latest;
+    socket.open();
+    for (let tick = 1; tick <= 6; tick++) {
+      await vi.advanceTimersByTimeAsync(10_000);
+      socket.deliver({ type: "pong", protocol_version: PROTOCOL_VERSION, sequence: tick });
+    }
+    expect(FakeWebSocket.latest).toBe(socket);
+    expect(client.getState().status).toBe("connected");
+    client.stop();
+  });
+
   it("retries the snapshot through transient failures without ever setting an error", async () => {
     vi.useFakeTimers();
     vi.stubGlobal("WebSocket", FakeWebSocket);
+    // Worst-case jitter: the three retry sleeps add up to 1 + 2 + 4 = 7 s.
+    vi.spyOn(Math, "random").mockReturnValue(1);
     const fetchMock = vi
       .fn()
       .mockRejectedValueOnce(new TypeError("Failed to fetch"))

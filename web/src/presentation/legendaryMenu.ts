@@ -1,6 +1,6 @@
 import type { BoardView, ChoiceOption, PendingChoiceDto } from "../protocol/types.ts";
 import { findPlanetMeta, humanizeId } from "../protocol/contentCatalog.ts";
-import { findPlanetSystem } from "./planetSelection.ts";
+import { findPlanetSystem, formatPlanetStats, getPlanetDetails } from "./planetSelection.ts";
 
 const WINDOWS: Record<string, string> = {
   legendary_end_of_turn: "at the end of your turn",
@@ -35,7 +35,7 @@ export function describeLegendaryOption(
   return {
     ability: meta?.legendaryAbilityName ?? option.label,
     planet: meta?.name ?? humanizeId(option.id),
-    stats: meta ? `${meta.resources}R/${meta.influence}I` : null,
+    stats: meta ? formatPlanetStats(getPlanetDetails(option.id, board)) ?? `${meta.resources}R/${meta.influence}I` : null,
     systemId: findPlanetSystem(option.id, board),
     text: meta?.legendaryAbilityText?.trim() || null,
   };

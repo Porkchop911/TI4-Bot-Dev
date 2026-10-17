@@ -1,0 +1,20 @@
+{
+  "title": "Seat 3 colour: white replaced by cyan",
+  "description": "Seat 3 was white (#F1F5F9), which looked like unexplored planets and face-down tiles. It is now cyan (#22D3EE). Display only: seat colours are derived client-side from the seat position and are not stored in saves. Before shots use TI4_SHOT_PREFIX=before on the base palette. Mocked fixtures.",
+  "tag": "web/e2e/screenshots/EN-seat-colour-cyan",
+  "shots": [
+    {"file": "out/palette.png", "heading": "Palette: before and after", "caption": "Seat 3 white (before) vs cyan (after), with the grey unassigned and neutral styles."},
+    {"file": "out/before-map-3p-desktop.png", "heading": "Before: map, 3 players, desktop", "caption": "Seat 3 (white) next to unexplored systems."},
+    {"file": "out/after-map-3p-desktop.png", "heading": "After: map, 3 players, desktop", "caption": "Seat 3 is cyan."},
+    {"file": "out/before-map-3p-phone.png", "heading": "Before: map, 3 players, phone", "caption": "Seat 3 white."},
+    {"file": "out/after-map-3p-phone.png", "heading": "After: map, 3 players, phone", "caption": "Seat 3 cyan."},
+    {"file": "out/before-sheets-3p-desktop.png", "heading": "Before: player sheets, desktop", "caption": "White chip and ring."},
+    {"file": "out/after-sheets-3p-desktop.png", "heading": "After: player sheets, desktop", "caption": "Cyan chip and ring."},
+    {"file": "out/before-sheets-3p-phone.png", "heading": "Before: player sheets, phone", "caption": "White chip and ring."},
+    {"file": "out/after-sheets-3p-phone.png", "heading": "After: player sheets, phone", "caption": "Cyan chip and ring."}
+  ],
+  "notes": [
+    {"title": "Why cyan", "text": "Saturated, so it cannot be mistaken for the desaturated slate greys of unexplored/neutral. Its hue sits between blue (seat 1) and green (seat 2) and it is lighter than both. Contrast on the dark board and with dark seat ink is above 4.5:1."},
+    {"title": "Replay safety", "text": "Nothing stored changes: the seat colour is a function of the seat position in the web client only."}
+  ]
+}

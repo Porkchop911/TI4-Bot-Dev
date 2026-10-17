@@ -70,6 +70,30 @@ export async function storedRecord(page: Page, gameId: string): Promise<StoredRe
   );
 }
 
+/** `save.game.setup` of a stored game (the table the engine was started with), or null. */
+export async function storedSetup(page: Page, gameId: string): Promise<Record<string, unknown> | null> {
+  return page.evaluate(
+    (id) =>
+      new Promise<Record<string, unknown> | null>((resolve) => {
+        const open = indexedDB.open("ti4-offline");
+        open.onerror = () => resolve(null);
+        open.onsuccess = () => {
+          const db = open.result;
+          const get = db.transaction("games").objectStore("games").get(id);
+          get.onsuccess = () => {
+            db.close();
+            resolve(get.result?.save?.game?.setup ?? null);
+          };
+          get.onerror = () => {
+            db.close();
+            resolve(null);
+          };
+        };
+      }),
+    gameId,
+  );
+}
+
 /** Number of the human's answers in the saved game. */
 export async function storedAnswers(page: Page, gameId: string): Promise<number> {
   return (await storedRecord(page, gameId))?.answers ?? 0;

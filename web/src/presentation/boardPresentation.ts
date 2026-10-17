@@ -5,6 +5,7 @@ import {
   PlayerView,
   PendingChoiceDto,
 } from "../protocol/types.ts";
+import { applyBoosts, wireBoosts, type PlanetBoost } from "./planetValues.ts";
 import { SEAT_COLORS } from "./playerDisplay.ts";
 import { isPlanetSelectionChoice } from "./choiceModel.ts";
 import { isPaymentChoice } from "./paymentDraft.ts";
@@ -37,11 +38,23 @@ export interface PlacedUnitPresentation {
   damaged: boolean;
 }
 
+/** Printed values plus what the engine says raises the planet now (see planetValues.ts). */
+function effective(
+  printed: { resources: number; influence: number },
+  dyn: { value_boosts?: { source: string; resources: number; influence: number }[] } | undefined,
+): { resources: number; influence: number; boosts: PlanetBoost[] } {
+  const boosts = wireBoosts(dyn);
+  return { ...applyBoosts(printed.resources, printed.influence, boosts), boosts };
+}
+
 export interface PlanetPresentation {
   id: string;
   label: string;
+  /** Current values: printed plus `boosts` (attachments, laws). */
   resources: number;
   influence: number;
+  /** What raises the planet above its printed values (Mining World, Core Mining ...). */
+  boosts?: PlanetBoost[];
   traits: string[];
   techSpecialties: TechSpecialty[];
   legendary: boolean;
@@ -474,8 +487,7 @@ export function deriveSelectedSystemDetails(
     planetsMap.set(sp.id, {
       id: sp.id,
       label: sp.label,
-      resources: sp.resources,
-      influence: sp.influence,
+      ...effective(sp, dyn),
       traits: sp.traits || [],
       techSpecialties: (sp.tech_specialties || []) as TechSpecialty[],
       legendary: Boolean(sp.legendary),
@@ -495,8 +507,7 @@ export function deriveSelectedSystemDetails(
       planetsMap.set(pId, {
         id: pId,
         label: pId,
-        resources: 0,
-        influence: 0,
+        ...effective({ resources: 0, influence: 0 }, dyn),
         traits: [],
         techSpecialties: [],
         legendary: false,
@@ -721,8 +732,7 @@ export function buildBoardPresentationModel(
       return {
         id: sp.id,
         label: sp.label,
-        resources: sp.resources,
-        influence: sp.influence,
+        ...effective(sp, dyn),
         traits: sp.traits || [],
         techSpecialties: (sp.tech_specialties || []) as TechSpecialty[],
         legendary: Boolean(sp.legendary),
@@ -743,8 +753,7 @@ export function buildBoardPresentationModel(
         planets.push({
           id: pId,
           label: pId,
-          resources: 0,
-          influence: 0,
+          ...effective({ resources: 0, influence: 0 }, dyn),
           traits: [],
           techSpecialties: [],
           legendary: false,

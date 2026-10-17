@@ -158,6 +158,14 @@ pub struct Restart {
     /// with the first snapshot of the new run.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub undone: Vec<PlanStep>,
+    /// The rule bot version the game is played with (`host_setup::Setup::bot_version`): the new
+    /// run plays the same bot even when its request repeats a setup that leaves it out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bot_version: Option<u32>,
+    /// The rules version the game is played with (`GameState::rules_version`); left out for
+    /// version 0, the legacy rules.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rules_version: Option<u32>,
     /// What each seat has staged: a history change keeps it.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub staged: BTreeMap<PlayerId, SeatStaged>,
@@ -212,8 +220,17 @@ pub enum HistoryAction {
     Redo,
     RedoBatch,
     RedoPipeline,
-    RestoreCursor { cursor: usize },
-    Restore { event_id: String },
+    RestoreCursor {
+        cursor: usize,
+    },
+    Restore {
+        event_id: String,
+    },
+    /// Go back to the start of the shown seat's last `turns` turns (1 or 2): the turn redo of
+    /// the server, without its auto-play (the bots simply play on from there).
+    UndoTurn {
+        turns: u8,
+    },
 }
 
 /// A batch (a staged movement, production or payment) that answers the person's choices.
@@ -292,6 +309,12 @@ pub struct Identity {
     /// Who sits in each seat, told with every update: the game of a table.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seats: Option<TableSeats>,
+    /// The rule bot version the game is played with. A `table` or `local` game has no `setup`
+    /// to record it in, so the session carries it ([`crate::host_setup::Start::settle_bot_version`]).
+    pub bot_version: u32,
+    /// The rules version of the game (`GameState::rules_version`); 0 for a game recorded before
+    /// rules versions existed. A resume gives it back, so the game replays under its own rules.
+    pub rules_version: u32,
 }
 
 /// The session of one game.
@@ -1003,7 +1026,18 @@ impl HostSession {
         self.viewer.clone_from(&choice.player);
         self.pending = Some((choice.clone(), nonce.to_owned()));
         self.waiting = None;
-        self.awaiting = None;
+        // An answer whose decision is still held back (a card declared in a reaction window of
+        // rules version 3 is announced later) was accepted all the same: say so before the
+        // next question, as the server answers a submit directly.
+        if let Some(option_id) = self.awaiting.take() {
+            self.out
+                .push(ServerMessage::ActionAccepted(ActionAcceptedMsg {
+                    protocol_version: PROTOCOL_VERSION,
+                    game_id: self.identity.game_id.clone(),
+                    game_version: self.version.saturating_sub(1),
+                    option_id,
+                }));
+        }
         // A ready draft of the secondary that the seat is asked is sent: the seat is not asked.
         if !self.replaying()
             && let Some(index) = self.send_ready(choice, nonce)
@@ -1457,6 +1491,8 @@ impl HostSession {
             log,
             switches: self.switches.clone(),
             undone: steps,
+            bot_version: self.bot_version(),
+            rules_version: self.rules_version(),
             staged: self.staged.clone(),
         });
         handled.resume = Some(Resume::Leave);
@@ -1533,6 +1569,8 @@ impl HostSession {
                             log: Vec::new(),
                             switches: self.switches.clone(),
                             undone: Vec::new(),
+                            bot_version: self.bot_version(),
+                            rules_version: self.rules_version(),
                             staged: self.staged.clone(),
                         });
                         handled.resume = Some(Resume::Leave);
@@ -1541,6 +1579,7 @@ impl HostSession {
                 HistoryAction::RestoreCursor { cursor } => {
                     self.restore(cursor, &mut handled);
                 }
+                HistoryAction::UndoTurn { turns } => self.undo_turn(turns, &mut handled),
                 HistoryAction::Restore { event_id } => {
                     let cursor = self
                         .events
@@ -1557,6 +1596,23 @@ impl HostSession {
             },
         }
         handled
+    }
+
+    /// Go back to the start of the last `turns` turns of the seat that the game is shown as. The
+    /// answers from there on are kept for a redo; the bots decide again from the same game, so
+    /// the replay is the one a save of the shorter game gives.
+    fn undo_turn(&mut self, turns: u8, handled: &mut Handled) {
+        let parked = self.pending.is_some() || self.waiting.is_some();
+        if !(parked || self.finished) {
+            self.reject(RejectionReason::NoPendingChoice);
+            return;
+        }
+        match ti4_host::history::turn_redo::redo_window(&self.decision_log, &self.viewer, turns) {
+            Ok(window) => self.restore(window.start, handled),
+            Err(error) => self.reject(RejectionReason::ValidationFailed {
+                message: error.to_string(),
+            }),
+        }
     }
 
     /// Go back to the position after `cursor` decisions: the person's answers among them are
@@ -1582,9 +1638,22 @@ impl HostSession {
             log: Vec::new(),
             switches: self.switches.clone(),
             undone: Vec::new(),
+            bot_version: self.bot_version(),
+            rules_version: self.rules_version(),
             staged: self.staged.clone(),
         });
         handled.resume = Some(Resume::Leave);
+    }
+
+    /// The rule bot version of this game, as its setup records it.
+    fn bot_version(&self) -> Option<u32> {
+        Some(self.identity.bot_version)
+    }
+
+    /// The rules version of this game as a save or restart records it (left out for 0, so a
+    /// legacy game is saved as it always was).
+    fn rules_version(&self) -> Option<u32> {
+        (self.identity.rules_version != 0).then_some(self.identity.rules_version)
     }
 
     /// A staged plan of the page (`BatchPlan` of `web/`) sent as one request: the person's
@@ -1870,6 +1939,8 @@ impl HostSession {
             game: self.identity.game.clone(),
             table: self.identity.table.clone(),
             scenario: self.identity.scenario.clone(),
+            bot_version: self.bot_version(),
+            rules_version: self.rules_version(),
             humans: self.identity.humans,
             decisions: self
                 .decision_log
@@ -1939,6 +2010,13 @@ pub struct HostSave {
     /// The scenario the game starts from.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scenario: Option<String>,
+    /// The rule bot version the game was played with (left out: version 1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bot_version: Option<u32>,
+    /// The rules version the game was played with (`GameState::rules_version`; left out:
+    /// version 0, the rules of a save made before the field existed).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rules_version: Option<u32>,
     /// The seats that the page plays at the start (bit 0 is seat `a`).
     pub humans: u32,
     /// The option id of every decision of every seat, in order.

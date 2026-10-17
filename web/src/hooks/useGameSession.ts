@@ -42,7 +42,7 @@ export interface UseGameSessionReturn {
   events: GameLogEntry[];
   history: import("../protocol/types.ts").HistoryStatus;
   batchResume?: import("../protocol/client.ts").BatchResume | null;
-  submitChoice: (optionId: string) => Promise<void>;
+  submitChoice: (optionId: string, nonce?: string) => Promise<void>;
   /** This seat's bluff settings as the server holds them (null until it has answered). */
   reactionIntent: import("../protocol/types.ts").ReactionIntentStateMsg | null;
   /** Declare the reaction windows this seat bluffs about (whole set; empty clears). */
@@ -96,7 +96,10 @@ export function useGameSession({
     };
   }, [client]);
 
-  const submitChoice = useCallback((optionId: string) => client.submitChoice(optionId), [client]);
+  const submitChoice = useCallback(
+    (optionId: string, nonce?: string) => client.submitChoice(optionId, nonce),
+    [client],
+  );
   const changeHistory = useCallback(
     (action: import("../protocol/client.ts").HistoryChange) => client.changeHistory(action),
     [client],

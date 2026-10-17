@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  hasArmada,
   addToken,
   arrangementId,
   canConfirmTokens,
@@ -155,7 +156,11 @@ describe("redistribution staging", () => {
   it("refuses an arrangement the engine does not offer, with a reason", () => {
     const bad = { tactic: 8, fleet: 1, strategic: 0 };
     expect(arrangementId(view, bad)).toBeNull();
-    expect(confirmBlocker(view, bad)).toContain("fleet pool");
+    // Only the fleet floor the engine's arrangements keep is named (here 4); with a 0 on offer
+    // (Letnev) the message is the generic one.
+    const floored = describeCommandTokens(redistribute(["3|4|2", "2|5|2"]), false)!;
+    expect(confirmBlocker(floored, bad)).toContain("at least 4 tokens in the fleet pool");
+    expect(confirmBlocker(view, bad)).toBe("That arrangement is not allowed.");
     expect(tokenOutcome(view, bad)).toBeNull();
   });
 
@@ -373,6 +378,7 @@ describe("payment override", () => {
     total: 0,
     gained: 0,
     arrangements: new Set(),
+    fleetSupplyBonus: 0,
     purchase: {
       cost: 3,
       influence: 14,
@@ -536,5 +542,21 @@ describe("gainTokensPrompt", () => {
         details: { kind: "command_tokens", mode: "redistribute", total: 9 },
       }),
     ).toBe(prompt);
+  });
+});
+
+describe("Armada fleet supply bonus", () => {
+  it("reads the engine's bonus, zero when absent", () => {
+    const base = redistribute();
+    expect(describeCommandTokens(base, false)!.fleetSupplyBonus).toBe(0);
+    const letnev = { ...base, details: { ...base.details, fleet_supply_bonus: 2 } };
+    expect(describeCommandTokens(letnev, false)!.fleetSupplyBonus).toBe(2);
+  });
+
+  it("recognises only Letnev", () => {
+    expect(hasArmada("letnev")).toBe(true);
+    expect(hasArmada("Letnev")).toBe(true);
+    expect(hasArmada("sol")).toBe(false);
+    expect(hasArmada(null)).toBe(false);
   });
 });

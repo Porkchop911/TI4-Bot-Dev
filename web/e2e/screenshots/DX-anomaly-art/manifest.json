@@ -1,0 +1,20 @@
+{
+  "title": "Anomaly art on the map",
+  "description": "Every anomaly has its own flat SVG silhouette: asteroid field = angular rocks, nebula = soft cloud lobes, supernova = ray star, gravity rift = swirl arcs, entropic scar = jagged crack. Art sits in the outer ring of the hex behind everything, plus a small icon + name badge under the system number (shape first, not colour only). Two anomalies split the hex into halves and show two icons. The app has no light theme yet; the art uses --anomaly-ink so one can be added. Planet name letters are spaced out and their outline thinned. Before shots are the same page with the new art removed and the old letter spacing restored.",
+  "tag": "web/e2e/screenshots/DX-anomaly-art",
+  "shots": [
+    { "file": "out/1-map-desktop.png", "heading": "Map, desktop", "caption": "Gravity rift (#41, #67 with Cormund), supernova (#42), nebula (#43, #26 with Lodor), asteroid field (#44), entropic scar (#45), rift + nebula (#64) and asteroid + supernova (#65). Ships, tokens and planets stay on top." },
+    { "file": "out/1-map-390x844.png", "heading": "Map, phone", "caption": "Same board at 390x844." },
+    { "file": "out/2-small-desktop.png", "heading": "Small hexes, desktop", "caption": "Zoomed out: the silhouettes still tell the anomalies apart." },
+    { "file": "out/2-small-390x844.png", "heading": "Small hexes, phone", "caption": "Zoomed out at 390x844." },
+    { "file": "out/3-before-desktop.png", "heading": "Before, small", "caption": "Plain colour fill + text badge; planet letters tight." },
+    { "file": "out/3-after-desktop.png", "heading": "After, small", "caption": "Same zoom with art, icon badges and spaced planet names." },
+    { "file": "out/3-before-390x844.png", "heading": "Before, phone", "caption": "Old look at 390x844." },
+    { "file": "out/3-after-390x844.png", "heading": "After, phone", "caption": "New look at 390x844." },
+    { "file": "out/4-large-desktop.png", "heading": "Zoomed in", "caption": "Large hexes: art and badges, clear of planets, units and the system number." },
+    { "file": "out/5-inspector-desktop.png", "heading": "System inspector", "caption": "Rift + nebula system: each anomaly chip carries its icon, followed by the rule text." }
+  ],
+  "notes": [
+    { "title": "Before shots", "text": "Produced by removing the art/badge nodes and resetting the planet label attributes in the live DOM, not from the old commit." }
+  ]
+}

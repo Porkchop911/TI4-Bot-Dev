@@ -3935,28 +3935,16 @@ impl InvasionWindow {
         self.stage = Stage::Done;
     }
 
-    fn finish_control_gain(
-        &mut self,
+    /// LRR 49: the rival structures left on a captured planet are destroyed as control changes
+    /// hands — whatever Assimilate did not convert. No rival ground force can stand here: the
+    /// invader holds the planet only because every one of them is dead.
+    fn destroy_rival_structures(
+        &self,
         state: &mut GameState,
-        ctx: &mut Resolving<'_>,
+        content: &ContentStore,
+        sources: SourceSet,
         planet: &PlanetId,
-        previous: Option<&PlayerId>,
     ) {
-        let (content, sources) = (ctx.content, ctx.sources);
-        // L1Z1X's Assimilate converts the structures on a planet as it changes hands, before
-        // anything else looks at what is standing on it.
-        crate::faction_abilities::control_gained(
-            state,
-            content,
-            sources,
-            &self.invader,
-            &self.system,
-            planet,
-        );
-
-        // LRR 49: the rival structures left on a captured planet are destroyed as control
-        // changes hands — whatever Assimilate did not convert above. No rival ground force can
-        // stand here: the invader holds the planet only because every one of them is dead.
         let types = catalogue(content, sources);
         let standing = state
             .system_state(&self.system)
@@ -3977,6 +3965,29 @@ impl InvasionWindow {
             state
                 .system_mut(&self.system)
                 .remove_from_planet(planet, &doomed);
+        }
+    }
+
+    fn finish_control_gain(
+        &mut self,
+        state: &mut GameState,
+        ctx: &mut Resolving<'_>,
+        planet: &PlanetId,
+        previous: Option<&PlayerId>,
+    ) {
+        let (content, sources) = (ctx.content, ctx.sources);
+        // L1Z1X's Assimilate converts the structures on a planet as it changes hands, before
+        // anything else looks at what is standing on it.
+        crate::faction_abilities::control_gained(
+            state,
+            content,
+            sources,
+            &self.invader,
+            &self.system,
+            planet,
+        );
+        if state.rules_version < ti4_model::state::RULES_INFILTRATE_FIX {
+            self.destroy_rival_structures(state, content, sources, planet);
         }
 
         // Two printed windows read "when you gain control of a planet", so a capture is
@@ -3999,6 +4010,13 @@ impl InvasionWindow {
             payload.insert("previous_owner".to_owned(), previous.to_string().into());
         }
         let _ = ctx.emit(state, "PLANET_CONTROL_GAINED", payload);
+
+        // This waits for the capture window to close, because Infiltrate ("when you gain
+        // control") replaces the rival structures and so they must still stand while it is
+        // offered (rules version 1; a version 0 game destroyed them before the window).
+        if state.rules_version >= ti4_model::state::RULES_INFILTRATE_FIX {
+            self.destroy_rival_structures(state, content, sources, planet);
+        }
 
         // Technology AFTER windows resolve before exploration. Integrated Economy is the first.
         let _ = crate::technology::control_gained(

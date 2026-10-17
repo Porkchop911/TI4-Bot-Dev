@@ -4,6 +4,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { AgendaBallotModal } from "./AgendaBallotModal.tsx";
 import { PendingChoiceDto } from "../protocol/types.ts";
 import { partialContext } from "../test/wire.ts";
+import { PlayerIdentityProvider } from "../presentation/PlayerIdentity.tsx";
 
 describe("AgendaBallotModal", () => {
   it("renders cast_vote stage with live tallies and handles outcome selection and abstain", async () => {
@@ -364,5 +365,35 @@ describe("AgendaBallotModal map selection", () => {
       />,
     );
     expect(screen.getByTestId("staged-votes-counter")).toHaveTextContent("+0 votes");
+  });
+  it("shows an elect-player vote as the players, not their seat ids, and still submits the id", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    const choice: PendingChoiceDto = {
+      actor: "a",
+      nonce: "31",
+      prompt: "vote for which outcome",
+      context: partialContext({ subtype: "cast_vote" }),
+      options: ["a", "b", "c", "d"]
+        .map((id) => ({ id, label: id, kind: "vote", payload: { current_votes: 0 } }))
+        .concat([{ id: "decline", label: "Abstain", kind: "decline", payload: { current_votes: 0 } }]),
+    };
+    const lobby = {
+      slots: ["a", "b", "c", "d"].map((id, i) => ({
+        occupant: id,
+        nickname: ["Ann", "Ben", "Cy", "Di"][i],
+        position: i + 1,
+      })),
+    } as never;
+    render(
+      <PlayerIdentityProvider lobby={lobby} seatingOrder={["a", "b", "c", "d"]}>
+        <AgendaBallotModal isOpen choice={choice} viewerSeat="a" onSubmit={onSubmit} onClose={vi.fn()} />
+      </PlayerIdentityProvider>,
+    );
+    expect(screen.getByTestId("vote-outcome-opt-b")).toHaveTextContent("Ben");
+    expect(screen.getByTestId("vote-outcome-opt-d")).toHaveTextContent("Di");
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("vote-outcome-opt-c"));
+    });
+    expect(onSubmit).toHaveBeenCalledWith("c");
   });
 });

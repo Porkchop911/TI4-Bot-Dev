@@ -101,7 +101,9 @@ needsReview, fallbacks, windowNeverOpened; `cases` has one line per planned case
 no review bar, "Needs review", plan dropped before its window) is a finding with evidence, and the
 decision is then played normally. Known suspicion: in real games a saved plan is often dropped
 before its window opens (the case line says `plan no longer shown at decision #N`); report new
-shapes of that, do not file each occurrence. A plan dropped because the engine skipped a secondary
+shapes of that, do not file each occurrence. When the case line ends with "action already over, the
+engine skipped this seat's secondary (expected)" it is explained (the engine never asked that seat, e.g.
+Diplomacy with nothing exhausted, Trade after the primary replenished the seat): ignore it. A plan dropped because the engine skipped a secondary
 that could do nothing (the window never opened, counted as `windowNeverOpened`) is not a finding.
 
 New UI elements to watch for. A crash is not the only bug: judge what you can see, and report UI

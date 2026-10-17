@@ -1,0 +1,20 @@
+{
+  "title": "Notification history in online games",
+  "description": "The bell with its unread badge and the list of recent notifications now work in multiplayer games (seat and spectator), not only offline. The 'Recent notifications' pill under the corner toasts is gone wherever the bell shows. On a portrait phone the bell is a 44 px button in the bottom dock (Players / Objectives / bell / Events / Feedback); on desktop it sits in the header row next to Objectives. The list opens above the Players, Objectives and Events sheets. Mocked game on a mocked public server; toasts pushed after load.",
+  "tag": "web/e2e/screenshots/EM-toast-history-multiplayer",
+  "shots": [
+    { "file": "out/dock-360x740.png", "heading": "Dock with the bell, 360x740", "caption": "Five 44 px buttons in one row; the bell shows the unread count." },
+    { "file": "out/dock-390x844.png", "heading": "Dock with the bell, 390x844", "caption": "Same row at 390 px." },
+    { "file": "out/dock-412x915.png", "heading": "Dock with the bell, 412x915", "caption": "Same row at 412 px." },
+    { "file": "out/header-desktop.png", "heading": "Desktop header", "caption": "The bell next to Technologies / Objectives with the unread badge; the pill under the toasts is gone." },
+    { "file": "out/panel-desktop.png", "heading": "Desktop list", "caption": "Newest first, with the acting player's name and colour; opening it clears the badge." },
+    { "file": "out/panel-390x844.png", "heading": "Phone list, 390x844", "caption": "The list opens above the dock button." },
+    { "file": "out/panel-360x740.png", "heading": "Phone list, 360x740", "caption": "Fits the narrowest window." },
+    { "file": "out/panel-412x915.png", "heading": "Phone list, 412x915", "caption": "Same at 412 px." },
+    { "file": "out/panel-over-objectives-390x844.png", "heading": "List over the Objectives sheet", "caption": "The list is above the sheet; the dock stays tappable." },
+    { "file": "out/panel-over-players-390x844.png", "heading": "List over the Players sheet", "caption": "Above the Players drawer." },
+    { "file": "out/panel-over-events-390x844.png", "heading": "List over the Events sheet", "caption": "Above the Events drawer." },
+    { "file": "out/panel-over-objectives-360x740.png", "heading": "List over the Objectives sheet, 360x740", "caption": "Narrow phone." },
+    { "file": "out/spectator-390x844.png", "heading": "Spectator", "caption": "A spectator has the bell and every seat's actions." }
+  ]
+}

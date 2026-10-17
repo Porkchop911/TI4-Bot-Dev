@@ -1,4 +1,4 @@
-import type { CombatView, DecisionContext, HistoryStatus } from "../protocol/types.ts";
+import type { CombatView, DecisionContext, HistoryStatus, PlayerView } from "../protocol/types.ts";
 
 /**
  * Part of a wire value: the fields that the code under test reads. The wire types are generated
@@ -21,3 +21,7 @@ export const partialCombat = (combat: Loose<CombatView>): CombatView => combat a
 /** A history status of test data, as servers sent it before it had a generation. */
 export const partialHistory = (history: Loose<HistoryStatus>): HistoryStatus =>
   history as HistoryStatus;
+
+/** The leader statuses of a seat of test data: usually just the leaders that matter. */
+export const partialLeaders = (leaders: Loose<PlayerView["leaders"]>): PlayerView["leaders"] =>
+  leaders as PlayerView["leaders"];

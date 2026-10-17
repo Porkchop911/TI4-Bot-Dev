@@ -8,6 +8,7 @@ import {
   PreviewUnsupportedError,
   ReachUnsupportedError,
   reduceServerMessage,
+  StaleChoiceError,
   serverEventLog,
 } from "./client.ts";
 import { decodeCreateGameResponse, decodeJoinResponse, decodeLobby } from "./decode.ts";
@@ -1801,6 +1802,80 @@ describe("GameSessionClient ingress lifecycle", () => {
     });
     await failed;
     expect(client.getState().lastError).toBe("Rejected: Stale decision nonce");
+    client.stop();
+  });
+
+  // Nightly 2026-10-14 #8 (o1-43-2146 and 10 other runs): a lone `strategic` from an earlier
+  // render went out with the next question's nonce ("Rejected: Unknown option 'strategic'").
+  it("drops an answer stamped with an earlier question's nonce instead of sending it with the new one", async () => {
+    const { client, socket, send } = await connectedPlayer();
+    send({
+      ...snapshot,
+      type: "state_update",
+      game_version: 5,
+      viewer: { role: "player", seat: "player_a" },
+      pending_choice: {
+        nonce: "nonce-5",
+        choice: { player: "player_a", prompt: "Next", options: [{ id: "opt-5", label: "Next" }] },
+      },
+    });
+    const before = socket.sent.length;
+    await expect(client.submitChoice("opt-4", "nonce-4")).rejects.toBeInstanceOf(StaleChoiceError);
+    expect(socket.sent.length).toBe(before);
+    expect(client.getState().lastError).toBeNull();
+    // The question that is shown still goes out.
+    const current = client.submitChoice("opt-5", "nonce-5");
+    expect(JSON.parse(socket.sent.at(-1)!)).toMatchObject({ nonce: "nonce-5", option_id: "opt-5" });
+    const stopped = expect(current).rejects.toThrow(/stopped/i);
+    client.stop();
+    await stopped;
+  });
+
+  // Nightly 2026-10-14 #9 (s2-39-0238): the late rejection of a superseded submission whose caller
+  // did not wait for it was an unhandled promise rejection, which killed the run.
+  it("a late rejection of a superseded answer is neither unhandled nor shown", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const { client, send } = await connectedPlayer();
+      void client.submitChoice("opt-4"); // fire and forget, like a click handler that moved on
+      send({
+        type: "pending_choice",
+        game_version: 5,
+        nonce: "nonce-5",
+        choice: { player: "player_a", prompt: "Next", options: [{ id: "opt-5", label: "Next" }] },
+        state: {},
+        galaxy_layout: snapshot.galaxy_layout,
+      });
+      const next = client.submitChoice("opt-5");
+      send({ type: "action_rejected", game_version: 4, reason: { reason: "no_pending_choice" } });
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(unhandled).toEqual([]);
+      expect(client.getState().lastError).toBeNull();
+      const stopped = expect(next).rejects.toThrow(/stopped/i);
+      client.stop();
+      await stopped;
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+
+  it("ignores a no-pending-choice rejection that arrives after a newer version", async () => {
+    const { client, send } = await connectedPlayer();
+    send({
+      type: "pending_choice",
+      game_version: 6,
+      nonce: "nonce-6",
+      choice: { player: "player_a", prompt: "Next", options: [{ id: "opt-6", label: "Next" }] },
+      state: {},
+      galaxy_layout: snapshot.galaxy_layout,
+    });
+    send({ type: "action_rejected", game_version: 4, reason: { reason: "no_pending_choice" } });
+    expect(client.getState().lastError).toBeNull();
+    // A real validation failure at the current version is still shown.
+    send({ type: "action_rejected", game_version: 6, reason: { reason: "validation_failed", message: "bad" } });
+    expect(client.getState().lastError).toBe("Rejected: bad");
     client.stop();
   });
 

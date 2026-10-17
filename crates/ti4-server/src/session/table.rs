@@ -33,6 +33,9 @@ pub fn setup_of(record: &PlayerLobbyRecord) -> TableSetup {
         speaker_order: ti4_host::setup::SpeakerOrder::from_stored(record.speaker_order.as_deref()),
         start_from: record.start_from.clone(),
         preset: record.start_preset.clone(),
+        // A lobby starts a new game, which asks for the starting technology; the game then lives
+        // on in its saved opening state, whatever this says.
+        starting_tech: true,
         seed: record.seed,
     }
 }

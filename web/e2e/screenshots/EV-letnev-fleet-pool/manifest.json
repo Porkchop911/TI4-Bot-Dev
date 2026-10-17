@@ -1,0 +1,17 @@
+{
+  "title": "Letnev can lower its fleet pool below two",
+  "description": "A command-token redistribution never offered an arrangement with fewer than two tokens in the fleet pool (a guard against policies that empty it), so Letnev, whose Armada allows two more ships per system than its fleet pool, could not go lower. From rules version 4 the engine also offers fleet 0 and 1 to Letnev (other factions keep the floor of two), and the panel names the floor it reads from the offered arrangements instead of a hard-coded 2. Before shots use the option set the engine offered before the fix; after shots the new one. Synthetic fixtures through a mocked server.",
+  "tag": "web/e2e/screenshots/EV-letnev-fleet-pool",
+  "shots": [
+    { "file": "out/before-desktop.png", "heading": "Before: fleet 1, desktop", "caption": "Fleet lowered to 1: 'Keep at least 2 tokens in the fleet pool' and Confirm is disabled." },
+    { "file": "out/after-desktop.png", "heading": "After: fleet 0, desktop", "caption": "Fleet lowered to 0 for Letnev: no blocker, Confirm is enabled." },
+    { "file": "out/before-390x844.png", "heading": "Before: fleet 1, phone (390 x 844)", "caption": "Same block on a phone." },
+    { "file": "out/letnev-desktop.png", "heading": "Letnev with the Armada indicator, desktop", "caption": "The fleet pool row carries a '+2 supply' chip (tooltip: Armada, pool + 2 non-fighter ships per system) and the player card shows 'Fleet +2' beside the command tokens. Fleet 1 is confirmable." },
+    { "file": "out/letnev-390x844.png", "heading": "Letnev with the Armada indicator, phone", "caption": "The chip sits under the pool's purpose text, one line, inside the 390 px width." },
+    { "file": "out/movement-desktop.png", "heading": "Letnev moving in, desktop", "caption": "Fleet Supply reads 4 / 5 Ships (pool 3 + Armada 2) with 'incl. +2 Armada'; the limit comes from the engine." },
+    { "file": "out/movement-390x844.png", "heading": "Letnev moving in, phone", "caption": "Same gauge and mark, wrapped inside 390 px." },
+    { "file": "out/production-desktop.png", "heading": "Letnev building, desktop", "caption": "Fleet Supply 3 / 5 with 'incl. +2 Armada' in the production drawer." },
+    { "file": "out/production-390x844.png", "heading": "Letnev building, phone", "caption": "Same counter and mark in the phone drawer." },
+    { "file": "out/after-390x844.png", "heading": "After: fleet 0, phone", "caption": "Fleet 0 can be confirmed on a phone." }
+  ]
+}

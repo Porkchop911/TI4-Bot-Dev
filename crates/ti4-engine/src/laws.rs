@@ -177,29 +177,37 @@ pub fn planet_value_bonus(
     planet: &ti4_model::id::PlanetId,
     kind: crate::production::Spend,
 ) -> i64 {
+    planet_value_bonus_sources(state, planet)
+        .into_iter()
+        .map(|(_, resources, influence)| match kind {
+            crate::production::Spend::Resources => resources,
+            crate::production::Spend::Influence => influence,
+        })
+        .sum()
+}
+
+/// The laws attached to `planet` that change its value, as `(law name, resources, influence)`.
+/// [`planet_value_bonus`] is the sum of these, so a display listing them cannot differ from what
+/// payment counts.
+#[must_use]
+pub fn planet_value_bonus_sources(
+    state: &GameState,
+    planet: &ti4_model::id::PlanetId,
+) -> Vec<(&'static str, i64, i64)> {
     let attached = |alias: &str| -> bool {
         elected(state, alias).is_some_and(|elected| elected == planet.as_str())
     };
-    let mut bonus = 0;
-    match kind {
-        crate::production::Spend::Resources => {
-            if attached("core_mining") {
-                bonus += 2;
-            }
-            if attached("terraforming_initiative") {
-                bonus += 1;
-            }
-        }
-        crate::production::Spend::Influence => {
-            if attached("senate_sanctuary") {
-                bonus += 2;
-            }
-            if attached("terraforming_initiative") {
-                bonus += 1;
-            }
-        }
+    let mut out = Vec::new();
+    if attached("core_mining") {
+        out.push(("Core Mining", 2, 0));
     }
-    bonus
+    if attached("senate_sanctuary") {
+        out.push(("Senate Sanctuary", 0, 2));
+    }
+    if attached("terraforming_initiative") {
+        out.push(("Terraforming Initiative", 1, 1));
+    }
+    out
 }
 
 /// Regulated Conscription: a fighter or infantry costs its price for one unit, not two.

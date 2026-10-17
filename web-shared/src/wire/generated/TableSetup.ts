@@ -31,6 +31,14 @@ start_from?: string,
  */
 preset?: string, 
 /**
+ * The seats that choose their starting technology (Winnu, Argent Flight, Council Keleres,
+ * Thunder's Edge factions) are asked at the start of the game instead of starting without
+ * ([`ti4_engine::starting_tech`]). Left out (a table made before the choice, and so every save
+ * and recorded game of one) it is off: those games replay as they were played. A new game of
+ * the page and the server is made with it on.
+ */
+starting_tech?: boolean, 
+/**
  * The seed of the table. It tells the factions that nobody chose, so a host
  * with several people keeps it to itself.
  */

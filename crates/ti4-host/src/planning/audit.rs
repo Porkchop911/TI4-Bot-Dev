@@ -197,6 +197,7 @@ pub fn audit_offer(choice: &Choice) -> Result<Vec<String>, StopReason> {
                     "credit_used",
                     "owed",
                     "production_spent",
+                    "fleet_ships",
                     "unit",
                     "system",
                     "destination",

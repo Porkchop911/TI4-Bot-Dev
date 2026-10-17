@@ -97,7 +97,10 @@ export async function measure(page: Page, ids: string[]): Promise<Metrics> {
     if (modal) {
       for (const el of modal.querySelectorAll("button, .tech-skip-pill, .technology-card[data-selectable='true']")) {
         const r = rect(el);
-        if (r.width && (r.height < 44 || r.width < 44))
+        // Skip pills are wide and 34 px high on purpose (EX-tech-picker-text-space); the More link is a text link.
+        if (el.classList.contains("technology-card__more")) continue;
+        const minH = el.classList.contains("tech-skip-pill") ? 34 : 44;
+        if (r.width && (r.height < minH || r.width < 44))
           small.push(`${el.getAttribute("data-testid") ?? el.className} ${Math.round(r.width)}x${Math.round(r.height)}`);
       }
       for (const el of modal.querySelectorAll("*")) {

@@ -7,6 +7,8 @@
 #   nightly.sh tick-decide       prints what tick would start, without starting it (tests)
 #   nightly.sh loop [night]      the sweep itself: one proctored run after another until END
 #                                (NIGHTLY_SLOTS=N: N such sequences side by side, see README.md)
+#                                (NIGHTLY_MODE=offline|both: offline games instead of / beside them, see
+#                                README.md, "Offline mode"; default server = the classic sweep)
 #   nightly.sh fix <round> [night]   an Opus fix round, working in its own git worktree
 #   nightly.sh summary [night]   the Opus morning summary (read-only)
 #
@@ -162,7 +164,7 @@ kill_proctor_session() {
 # never share a working tree, index or branch), builds into its own cargo target dir, names its
 # runs sK-NN-HHMM and files its entries into the one shared report.md.
 # ---------------------------------------------------------------------------------------------
-NSLOTS=1 WORKER_PIDS=() CLEANUP_DONE=0
+NSLOTS=1 WORKER_PIDS=() CLEANUP_DONE=0 OFFLINE_SUP=""
 SLOT=1 SLOT_TAG="" SDIR="" SREPO="" SBRANCH="" STARGET="" SUFFIX="" SACTIVE="" BASE_COMMIT="" MERGED_NOW=""
 
 # The number of slots the sweep of this night uses (written by the sweep; the fix rounds and the
@@ -305,6 +307,12 @@ sweep_cleanup() { # sweep_cleanup <reason>
   CLEANUP_DONE=1
   trap '' TERM INT HUP # a second signal must not interrupt the cleanup
   local pid k t0=$SECONDS
+  # The offline supervisor (NIGHTLY_MODE=offline|both) stops its own games and files their entries.
+  if [ -n "$OFFLINE_SUP" ]; then
+    kill -TERM "$OFFLINE_SUP" 2>/dev/null
+    while alive "$OFFLINE_SUP" && [ $((SECONDS - t0)) -lt 300 ]; do sleep 0.5; done
+    alive "$OFFLINE_SUP" && kill -KILL "$OFFLINE_SUP" 2>/dev/null
+  fi
   for pid in "${WORKER_PIDS[@]}"; do kill -TERM "$pid" 2>/dev/null; done
   for pid in "${WORKER_PIDS[@]}"; do
     while alive "$pid" && [ $((SECONDS - t0)) -lt 300 ]; do sleep 0.5; done
@@ -605,6 +613,49 @@ slot_main() { # slot_main <k>
   slot_loop
 }
 
+# ---------------------------------------------------------------------------------------------
+# Offline mode (NIGHTLY_MODE=offline|both): batches of offline games (offline-run.sh: N browser
+# workers, no server, no proctor) until END, with the same merge of ready fixer branches between
+# batches that the classic sweep does between games. Runs in a subshell; its offline-run.sh child
+# files the entries of a running game when the sweep is stopped.
+# ---------------------------------------------------------------------------------------------
+offline_loop() {
+  local child="" batch_end now status fails=0 batches=0 limit
+  limit=$(( END_EPOCH - 300 ))
+  trap '[ -z "$child" ] || { kill -TERM "$child" 2>/dev/null; wait "$child" 2>/dev/null; }; exit 143' TERM INT HUP
+  log "offline: $OFFLINE_WORKERS workers until $(TZ="$NIGHTLY_TZ" date -d "@$limit" '+%F %T %Z'), batches of ${OFFLINE_BATCH_SECONDS}s"
+  while now=$(now_epoch); [ $(( limit - now )) -gt 180 ]; do
+    if ! disk_ok; then
+      note_once offline-disk "offline: $(free_gb) GB free, runs need $MIN_FREE_GB GB; waiting"
+      nap "$DISK_WAIT_SECONDS"; continue
+    fi
+    # Only the offline-only sweep merges: with both modes the server loop owns the merges in $REPO.
+    if [ "$MODE" = offline ]; then MERGED_NOW=""; merge_pending 1; fi
+    batch_end=$(( now + OFFLINE_BATCH_SECONDS ))
+    [ "$batch_end" -le "$limit" ] || batch_end=$limit
+    local request=""
+    [ "$OFFLINE_REQUEST_FIX" != 1 ] || request="--request-fix"
+    "$NIGHTLY_DIR/offline-run.sh" --night-dir "$NIGHT_DIR" --until "$batch_end" --workers "$OFFLINE_WORKERS" --repo "$REPO" $request \
+      >> "$NIGHT_DIR/offline.log" 2>&1 9>&- 6>&- &
+    child=$!
+    wait "$child"; status=$?
+    child=""
+    batches=$((batches + 1))
+    if [ "$status" -ne 0 ]; then
+      fails=$((fails + 1))
+      log "offline: batch $batches failed (exit $status)"
+      if [ "$fails" -ge 2 ]; then
+        note_report "## Offline sweep stopped: two batches in a row could not start (build or server failure, see offline.log)"
+        break
+      fi
+      nap "${NIGHTLY_OFFLINE_FAILED_BATCH_SLEEP:-120}"
+    else
+      fails=0
+    fi
+  done
+  log "offline: finished after $batches batches"
+}
+
 cmd_loop() {
   set_night "${1:-$(default_night)}"
   case "$SLOTS" in ''|*[!0-9]*|0) SLOTS=1 ;; esac
@@ -627,6 +678,10 @@ cmd_loop() {
     echo
     echo "Window $START_HHMM–$END_HHMM $NIGHTLY_TZ, runs until round $STOP_ROUND, proctor $PROCTOR_MODEL, fixer rounds: ${FIXERS:-none} ($FIXER_MODEL)."
     echo
+    if [ "$MODE" != server ]; then
+      echo "Mode: $MODE. Offline games (runs named oK-NN-HHMM, K = worker; no server, wasm engine, rule bots, machine entries without a proctor): $OFFLINE_WORKERS workers."
+      echo
+    fi
     if [ "$NSLOTS" -gt 1 ]; then
       echo "Parallel slots: $NSLOTS. Runs are named sK-NN-HHMM (K = slot); each slot works in its own worktree on the branch $FIX_BRANCH-sK and is merged into $FIX_BRANCH after the sweep."
       echo
@@ -665,7 +720,13 @@ cmd_loop() {
     [ -e "$NIGHT_DIR/.active-s$k" ] && rm -f "$claim" || mv -f "$claim" "$NIGHT_DIR/.active-s$k"
   done
   for k in $(seq 1 "$NSLOTS"); do cleanup_slot "$k" "earlier sweep died"; done
-  if [ "$NSLOTS" -le 1 ]; then
+  if [ "$MODE" != server ]; then
+    ( offline_loop ) &
+    OFFLINE_SUP=$!
+  fi
+  if [ "$MODE" = offline ]; then
+    log "offline-only sweep: no proctored games"
+  elif [ "$NSLOTS" -le 1 ]; then
     slot_init 1
     slot_loop
   else
@@ -678,6 +739,11 @@ cmd_loop() {
     WORKER_PIDS=()
     integrate_slots
     log "sweep finished (all $NSLOTS slots)"
+  fi
+  if [ -n "$OFFLINE_SUP" ]; then
+    wait "$OFFLINE_SUP"
+    OFFLINE_SUP=""
+    log "offline sweep finished"
   fi
   touch "$NIGHT_DIR/sweep.done"
 }

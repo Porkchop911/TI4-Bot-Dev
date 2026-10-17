@@ -9,8 +9,16 @@ import type { SessionUpdate } from "../session/wire";
 // The Objectives sheet over an update of the real engine with eight seats, viewed by seat a
 // (Sol), with the points written here. The test is here because `dev` is the layer that may
 // import both the session and the components.
+const recorded = menuUpdate as unknown as SessionUpdate;
 const update: SessionUpdate = {
-  ...(menuUpdate as unknown as SessionUpdate),
+  ...recorded,
+  // Nobody has a point yet in the recorded game: L1z1x (f) and Yin (h) get one here.
+  view: {
+    ...recorded.view,
+    players: recorded.view.players.map((player) =>
+      player.id === "f" || player.id === "h" ? { ...player, victory_points: 1 } : player,
+    ),
+  },
   score: {
     target: 10,
     public: [

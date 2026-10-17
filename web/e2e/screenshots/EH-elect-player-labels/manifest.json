@@ -1,0 +1,13 @@
+{
+  "title": "Elect-a-Player Choices Show the Players",
+  "description": "Agendas that elect a player (Minister of Sciences and the other Ministers, Archived Secret, Political Censure ...) offered their choices as raw seat ids (a, b, c, d). The engine's option ids and labels are unchanged (ids are what is answered and checksummed); the client now shows each seat by name, colour and symbol in the ballot, the speaker's tie-break and the generic player-option list (Committee Formation).",
+  "tag": "web/e2e/screenshots/EH-elect-player-labels",
+  "shots": [
+    { "file": "out/1-cast-vote-elect-player.png", "heading": "Casting a vote on an election", "caption": "One button per player, by nickname with the seat colour and symbol; the running tally and Abstain are as before." },
+    { "file": "out/2-tiebreak-elect-player.png", "heading": "Speaker breaks an election tie", "caption": "Resolve in favor of: the tied players by name." },
+    { "file": "out/3-committee-formation.png", "heading": "Committee Formation", "caption": "The option label 'elect a' now reads 'elect Ada'." }
+  ],
+  "notes": [
+    { "title": "Display only", "text": "Option ids and engine labels are untouched; the click still submits the seat id. No save format, checksum or replay change." }
+  ]
+}

@@ -72,6 +72,7 @@ fn step_of(option: &ChoiceOption) -> Option<(BatchKind, MovementStep)> {
                 source: text("source"),
                 damaged,
                 galvanized: None,
+                pickup_system: text("pickup_system"),
             },
         ),
         (_, "done_loading") => (BatchKind::TacticalMovement, MovementStep::DoneLoading),

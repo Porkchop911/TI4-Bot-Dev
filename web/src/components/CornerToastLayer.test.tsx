@@ -81,4 +81,37 @@ describe("CornerToastLayer", () => {
     expect(screen.getByTestId("corner-toasts").style.bottom).toBe("132px");
     bar.remove();
   });
+
+  // Runs o4-02-2033, o4-05-2039: once the toasts had gone, the "Recent notifications" pill kept
+  // its old place and covered the turn bar's Tactical action that showed up afterwards.
+  it("keeps the notification history above a turn bar that appears after the toasts are gone", () => {
+    const { rerender } = render(layer([]));
+    rerender(layer([ev("1", "p2", "activated #22")]));
+    act(() => vi.advanceTimersByTime(TOAST_DURATION_MS.action + 10));
+    act(() => vi.advanceTimersByTime(400));
+    expect(screen.queryByTestId("corner-toast")).not.toBeInTheDocument();
+    expect(screen.getByTestId("toast-history-toggle")).toBeInTheDocument();
+    const bar = document.createElement("div");
+    bar.className = "turn-bar";
+    bar.getBoundingClientRect = () => ({ top: window.innerHeight - 120, left: 0, height: 120 }) as DOMRect;
+    document.body.appendChild(bar);
+    act(() => vi.advanceTimersByTime(600));
+    expect(screen.getByTestId("corner-toasts").style.bottom).toBe("132px");
+    bar.remove();
+  });
+
+  // Run s2-36-0118: a tall stack covered the "Prepare your secondary" chip near the top left and
+  // the click on it timed out. The column now stops below the chip.
+  it("stops the stack below the secondary-prep chip", () => {
+    const chip = document.createElement("button");
+    chip.className = "secondary-prep__chip";
+    chip.getBoundingClientRect = () => ({ top: 140, bottom: 174, left: 20, height: 34 }) as DOMRect;
+    document.body.appendChild(chip);
+    render(layer([]));
+    const column = screen.getByTestId("corner-toasts");
+    expect(column.style.bottom).toBe("12px");
+    expect(column.style.maxHeight).toBe(`${window.innerHeight - 12 - (174 + 12)}px`);
+    expect(column.style.overflow).toBe("hidden");
+    chip.remove();
+  });
 });

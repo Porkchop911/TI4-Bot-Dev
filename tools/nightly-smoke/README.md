@@ -189,6 +189,119 @@ but with several slots nobody plays in it: it is the base the slot worktrees and
   on `Slot K waiting for memory` lines in the report; raise `NIGHTLY_MEM_PER_PLAYER_MB` to be more
   careful, or set `NIGHTLY_PLAYER_COUNTS=3` to make the gate (and the games) smaller.
 
+## Offline mode (`NIGHTLY_MODE=offline|both`)
+
+An opt-in alternative to the proctored sweep for fast, broad coverage. Instead of a Sonnet proctor
+watching one random-click game on a real server for a quarter of an hour, a script plays full games of
+the **offline single-player build**: one headless Chromium per worker, the rules engine as wasm in the
+page, the other seats are rule bots, one human seat clicked through the real UI. There is no server, no
+proctor and no model in the loop. A game takes about two minutes (see "Measured"), so one night is
+hundreds of games across 3 to 6 players, random seats and factions, instead of about 30.
+
+`NIGHTLY_MODE` (read by `nightly.sh loop`; default `server`, which is the sweep described above and
+changes nothing):
+
+| Mode | What the night does |
+|---|---|
+| `server` | the classic proctored sweep |
+| `offline` | offline games only (`NIGHTLY_OFFLINE_WORKERS` browsers, default 3). No server build, no proctor, no slots. Fix rounds, the morning summary and the between-batches merge of ready fixer branches work as before |
+| `both` | the classic sweep (with `NIGHTLY_SLOTS`) plus offline workers (default 2) side by side. The server loop owns the merges of fixer branches in the live checkout; the offline batches rebuild from its HEAD at the start of every batch (with several slots the slots' repairs reach it only after the sweep, so offline games play the night's base plus the merged fixer rounds) |
+
+**To switch it on for a night:** add the variable to the cron line, for example
+`*/5 * * * * NIGHTLY_NOT_BEFORE=2026-10-13 NIGHTLY_SLOTS=2 NIGHTLY_MODE=both /root/TI4-Bot-Dev/tools/nightly-smoke/nightly.sh tick ...`
+(both) or `NIGHTLY_MODE=offline` instead of `NIGHTLY_SLOTS=2` (offline only). Remove it to go back.
+The engine file is built from the night branch with `cargo build -p ti4-wasm --target
+wasm32-unknown-unknown --profile wasm-release` on the first batch (cargo target dir
+`nightly-reports/target-offline`, kept between nights; `tools/nightly-smoke/offline_build.sh` does it and can be run
+before 20:30 to warm it); `TI4_WASM_FILE=<file>` in the environment of the sweep uses a prebuilt engine
+instead. The wasm32 target must be installed (`rustup target add wasm32-unknown-unknown`).
+
+**What runs** (`offline-run.sh`, called by `nightly.sh loop` in batches of `NIGHTLY_OFFLINE_BATCH_SECONDS`, 30 minutes):
+
+1. `offline_build.sh` builds the bundle (`vite build`) of the checkout, cached under
+   `nightly-reports/offline-cache/dist-<key>` by the git tree of `web/` and `crates/`: nothing is rebuilt
+   unless a fixer branch was merged.
+2. One `vite preview` serves it on a random free port to all workers (no `ti4-server`, no port 18080/13000).
+3. Each worker loops `offline_game.sh`: picks a seed, table size (`NIGHTLY_OFFLINE_PLAYER_COUNTS`, 3 to
+   6), policy (`steer` or `random`, as in the server runs) and viewport (desktop; `NIGHTLY_OFFLINE_PHONE_PERCENT`
+   of the runs 390x844), then runs `web/e2e/offline_sweep.spec.ts` (`cd web && npm run test:e2e:offline-sweep`).
+   The page's game seed is fixed through the page's random source (the production build has no seed field),
+   the human's seat and faction are chosen through the setup form by a seeded random pick, and the human
+   plays the whole game: the harness's candidate scan and weighted pick of the smoke runs
+   (`smokePlaythrough.ts`) answer every question, including reaction windows, production, combat, trade
+   offers and agenda votes.
+4. The engine worker's messages are observed from the page, so the harness reads the pending question
+   (subtype, options), the engine's save blob and its traps from the engine, not from the DOM.
+
+**Watchdogs.** A question that no control answers (80 clicks, or no clickable control for 45 s) is a
+`stuck` finding with the visible controls, what covers them and a screenshot; the harness then closes a system
+inspector that covers the map, makes covers click-through (a finding of its own, `overlap: ...`), presses Escape and
+reloads the page (the game resumes from its save) before it gives the game up as stuck. No message from the engine
+for `NIGHTLY_OFFLINE_STALL_SECONDS` (90) is the same. A game ends by itself at game over; a game still going
+after `NIGHTLY_OFFLINE_MAX_SECONDS` (25 min) or `NIGHTLY_OFFLINE_MAX_DECISIONS` is cut off and noted. Three runs in a row
+without a decision stop the worker (a broken environment, as in the server sweep).
+
+**Evidence per run** (`<night>/runs/oK-NN-HHMM/`, K = worker; the names do not collide with `NN-HHMM` and `sK-NN-HHMM`):
+`meta.json` (seed, click seed, table size, policy, viewport, commit, repro), `run.log`, `exit_code`,
+`resources.log`, `rss_kb.log`, `digest.md`, `entry.md`, and `trace/`: `game.json`, `trace.jsonl` (one line per question,
+the server trace's shape), `events.jsonl` (every game event), `report.json` (the harness report: outcome, decisions,
+clicks, rounds, per-subtype counts, findings, engine panics, console and page errors, failed requests, timing,
+final standing), `failure.txt`, `browser-errors.json`, **`save.json`** (the save blob: seed, setup, every answer,
+decisions hash; the final state of a finished game, else the last question) and `shots/` (a screenshot at every round
+start, at game over and for each finding). `report.json` has the keys `coverage.py` reads, so the agenda line and
+the coverage listing count offline runs too.
+
+**The report.** One entry per game, appended to the night's `report.md` in the proctors' shape (`## Run oK-NN-HHMM —
+verdict`, the facts, repro, `### Potential bugs`, `Interesting events`, `Repairs` (none), `UI observations`, `Fix
+requests`, `Proctor notes`) under the same `.report.lock`. The fix rounds and the summary read it and `runs/` unchanged
+(they were told nothing new: the entry carries the repro and replay commands). Severity: engine trap or stuck game =
+blocker, uncaught page error or console error = high, layout/overlap/error banner/game cut off = medium, a failed
+request = low. On the first blocker or high finding of a night the worker calls `request_fix.sh` like a proctor
+(`NIGHTLY_OFFLINE_REQUEST_FIX=0` to only report); the answer is in the entry's `Fix requests`.
+A sample can get a Sonnet review (`NIGHTLY_OFFLINE_PROCTOR_PERCENT`, default 0 = none, no model is ever started):
+`prompts/offline_proctor.md`, read-only tools; its entry replaces the machine entry.
+
+**Reproducing a finding.** Three levels:
+
+1. *The game, exactly:* `tools/nightly-smoke/offline_replay.sh <run-dir>` plays `trace/save.json` again natively with
+   the same host crate the browser runs (`cargo run -p ti4-wasm --example replay_save`), prints whether the decisions
+   came back the same (count and hash) and what the human was asked at the end; `--snapshot FILE` writes the board as
+   the human saw it. Use it for engine panics and rule problems.
+2. *The UI path:* the `repro` line of `meta.json` (also in the entry) sets the seed, click seed, table size, policy and
+   viewport of `npm run test:e2e:offline-sweep`; the game seed is exact, the human's clicks follow the seeded pick but
+   timing (animations, bot thinking time) can change them, so a UI finding may need a few runs.
+3. *In a browser:* import `trace/save.json` wrapped as an offline game file (`docs/OFFLINE.md`, "Saves, export and
+   import") to look at the position by hand.
+
+**Measured** (this box: 8 cores, 15 GB, 4 GB swap; four-player games, desktop viewport, the steer policy):
+
+| Workers | Games per hour | Mean game | Memory in use (above idle) | Peak load |
+|---|---|---|---|---|
+| 1 | 28 (4 games in 506 s) | 120 s | +1.0 GB | 1.9 |
+| 2 | 56 (8 games in 510 s) | 121 s | +1.7 GB | 2.6 |
+| 4 | 89 (16 games in 650 s) | 136 s | +3.5 GB | 5.1 |
+
+A game is 190 to 230 questions of the human seat (the bots decide about 550 more inside the engine; the save of a
+finished game holds about 750 engine decisions), round 5 to 8, about 400 clicks. One game's processes (Chromium
+renderer, GPU process, engine worker, node) peak at about 430 MB (PSS). Scaling is close to linear up to the
+physical cores (8 here): four workers need about 3.5 GB, a quarter of what one proctored four-player game used (about
+4 GB for the game, server and browsers). For comparison, the past server nights (255 runs in `nightly-reports/`, 162
+finished): median 17.7 minutes per finished game (3 players 13.7, 4 players 21.3, 6 players 32.7), about 1050 clicked decisions
+per game (every seat is clicked), so a finished game per slot every 18 minutes (3 an hour); two slots plus a proctor model
+each. One offline worker is therefore about 8 times one proctored slot, four workers about 25 times, per game; a game
+exercises one seat's UI instead of all of them. Where an offline game's time goes (`trace/report.json` `timing`): about
+60 % Playwright clicks (130 ms each: its actionability checks), 5 % scanning the page for controls, the rest waiting for
+the engine and bots (a late bot turn can take 1 to 3 s). The first cold build of the engine file is a `cargo build` of
+`ti4-wasm` for wasm32 (56 s cold on this box, target dir 270 MB; again only when `crates/` changes); the bundle itself builds in under a
+second.
+
+**Caveats.** One seat's UI per game, not all seats (the server sweep drives every seat's tab); no start presets (the
+offline setup has none: `combat`, `agenda`, `world` etc. exist only in the server sweep, so rare situations such as
+an agenda phase appear only when the bots get there; the agenda line says how many games voted); the bots play the
+other seats, so the same rule bots are exercised every night; reaction/trade UI of other humans, takeover, lobby and
+spectators are not offline features. Findings of a harness are marked as such; a finding on a phone-sized viewport may
+be a layout problem or a gesture the harness does not do (it clicks, never swipes).
+
 ## Commands
 
     nightly.sh tick                 start whatever is due (cron)
@@ -197,6 +310,9 @@ but with several slots nobody plays in it: it is the base the slot worktrees and
     nightly.sh fix <round> [night]  an Opus fix round
     nightly.sh summary [night]      the morning summary
     request_fix.sh <reason...>      (proctors) ask for a fix round now (round 1, then round 2)
+    offline-run.sh --games N [--workers W] [--night-dir DIR]   offline games by hand (a dry run, a reproduction)
+    offline_replay.sh <run-dir|save.json>   replay an offline run's game natively
+    offline_build.sh [checkout]     build (or find in the cache) the offline bundle
 
 ## Settings (environment variables, defaults in `config.sh`)
 
@@ -235,6 +351,18 @@ but with several slots nobody plays in it: it is the base the slot worktrees and
 | `NIGHTLY_SLOT_POLL_SECONDS` | `5` | how often a slot polls for its turn to start |
 | `NIGHTLY_MEM_AVAIL_CMD` | `awk ... /proc/meminfo` | prints the available memory in MB (test hook) |
 | `NIGHTLY_PORT_MIN`, `NIGHTLY_PORT_MAX` | `20000`, `49000` | backend port range of the games (frontend = port + 1); ports bound now or picked by a run in progress are skipped |
+| `NIGHTLY_MODE` | `server` | `server`, `offline` or `both` (see "Offline mode") |
+| `NIGHTLY_OFFLINE_WORKERS` | 3 (2 with `both`) | browsers playing offline games side by side |
+| `NIGHTLY_OFFLINE_PLAYER_COUNTS` | `3 4 5 6` | table sizes of the offline games, one picked per game |
+| `NIGHTLY_OFFLINE_POLICIES` | `steer steer random` | click policy per game |
+| `NIGHTLY_OFFLINE_PHONE_PERCENT` | `15` | percent of offline games on a 390x844 viewport |
+| `NIGHTLY_OFFLINE_MAX_SECONDS`, `NIGHTLY_OFFLINE_MAX_DECISIONS` | `1500`, `20000` | cut off a runaway game |
+| `NIGHTLY_OFFLINE_STALL_SECONDS` | `90` | no message from the engine for this long is a stuck game |
+| `NIGHTLY_OFFLINE_BATCH_SECONDS` | `1800` | `nightly.sh loop` runs offline games in batches (merge and rebuild in between) |
+| `NIGHTLY_OFFLINE_RESUME_PERCENT` | `25` | percent of offline games that reload the page once at a random question and check the game comes back with the same question (the resume path) |
+| `NIGHTLY_OFFLINE_REQUEST_FIX` | `1` | ask for a fix round on the first blocker or error (like a proctor) |
+| `NIGHTLY_OFFLINE_PROCTOR_PERCENT` | `0` | percent of games reviewed by a Sonnet pass (0 = never) |
+| `NIGHTLY_OFFLINE_CACHE`, `NIGHTLY_OFFLINE_TARGET` | `nightly-reports/offline-cache`, `nightly-reports/target-offline` | bundles and engine files; cargo target of the wasm build |
 | `NIGHTLY_NOW`, `NIGHTLY_NOW_FILE` | unset | fake clock for tests |
 
 To switch the Opus rounds off: `NIGHTLY_FIXERS=` in the cron line. Two long Opus sessions per night
@@ -310,3 +438,12 @@ restart continues each slot's own numbering; a stale active run of a killed swee
 early fix request carries the slot (env and working-directory routes); a fix round starts from the
 slots' repairs; `NIGHTLY_SLOTS=1` keeps the old names, paths, prompt and report. `KEEP_TMP=1` keeps the
 temp dir for inspection.
+
+    tools/nightly-smoke/test_offline.sh
+
+The offline mode, same method (stub game, stub build, fake clock, temp repo; no browser, vite, cargo or model): the entry
+generator for clean, stuck, engine-trap, error and terminated runs; `offline-run.sh` with several workers (unique
+`oK-NN-HHMM` names, one entry per run, numbering across batches, a failed build reported, SIGTERM mid-run files one entry
+per game and leaves no process); `nightly.sh loop` with `NIGHTLY_MODE=offline` (no server build and no proctor, header,
+entries, `sweep.done`), a blocker asking for a fix round, two failed batches ending the offline sweep, `both`, and
+the default mode unchanged. `test_schedule.sh` and `test_slots.sh` run unchanged.

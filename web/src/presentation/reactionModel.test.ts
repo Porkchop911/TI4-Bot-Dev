@@ -345,3 +345,59 @@ describe("Salvage effect", () => {
     expect(unknown.reactions[0].effect).toBeNull();
   });
 });
+
+describe("Engine effect previews", () => {
+  const sabotageOffer = (previews: unknown): PendingChoiceDto => ({
+    actor: "p1",
+    nonce: "1",
+    prompt: "when ACTION_CARD_PLAYED",
+    context: partialContext({
+      subtype: "reaction_when_ACTION_CARD_PLAYED",
+      optional: true,
+      trigger: {
+        kind: "action_card_played",
+        event_type: "ACTION_CARD_PLAYED",
+        event_id: 7,
+        relation: "when",
+        actor: "p2",
+        card: "fs1",
+      },
+      previews: previews as never,
+    }),
+    options: [
+      {
+        id: "reaction:Sol:ACTION_CARD_PLAYED:when",
+        kind: "ability",
+        label: "Play Sabotage",
+        payload: { card: "sabo1", card_name: "Sabotage" },
+      },
+      { id: "decline", kind: "decline", label: "Pass", payload: {} },
+    ],
+  });
+
+  it("words the preview of the option as the row's effect", () => {
+    const model = describeReaction({
+      choice: sabotageOffer([
+        {
+          option: "reaction:Sol:ACTION_CARD_PLAYED:when",
+          card: "sabo1",
+          effect: "cancel_card",
+          seats: ["p2"],
+          refs: ["fs1"],
+        },
+      ]),
+      ...labels,
+      viewerSeat: "p1",
+    });
+    expect(model.reactions[0].effect).toBe(
+      "Cancels Bob's Flank Speed. The card stays spent and its effect does not happen.",
+    );
+  });
+
+  it("leaves the effect empty for an older server, a damaged preview or an unknown kind", () => {
+    for (const previews of [undefined, "junk", [{ option: 3 }], [{ option: "reaction:Sol:ACTION_CARD_PLAYED:when", card: "x", effect: "later" }]]) {
+      const model = describeReaction({ choice: sabotageOffer(previews), ...labels, viewerSeat: "p1" });
+      expect(model.reactions[0].effect).toBeNull();
+    }
+  });
+});

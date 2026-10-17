@@ -160,6 +160,14 @@ pub struct TableSetup {
     /// cases on the opening state. A scenario wins over it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preset: Option<String>,
+    /// The seats that choose their starting technology (Winnu, Argent Flight, Council Keleres,
+    /// Thunder's Edge factions) are asked at the start of the game instead of starting without
+    /// ([`ti4_engine::starting_tech`]). Left out (a table made before the choice, and so every save
+    /// and recorded game of one) it is off: those games replay as they were played. A new game of
+    /// the page and the server is made with it on.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts", ts(optional = nullable, as = "Option<bool>"))]
+    pub starting_tech: bool,
     /// The seed of the table. It tells the factions that nobody chose, so a host
     /// with several people keeps it to itself.
     pub seed: u64,
@@ -181,8 +189,16 @@ impl TableSetup {
             speaker_order: SpeakerOrder::default(),
             start_from: None,
             preset: None,
+            starting_tech: false,
             seed,
         }
+    }
+
+    /// The table with the starting-technology choice on: what a new game is made with.
+    #[must_use]
+    pub const fn with_starting_tech(mut self) -> Self {
+        self.starting_tech = true;
+        self
     }
 
     /// The start preset that the table plays: none for a table that starts from a scenario.
@@ -517,6 +533,9 @@ pub fn create(
     }
     if let Some(name) = setup.start_preset() {
         preset::apply(content, &mut state, &galaxy, players, seed, name)?;
+    } else if setup.starting_tech {
+        // A preset (a test table) sets its own cases on the opening state and keeps the fixed start.
+        ti4_engine::starting_tech::open(&mut state, content, ti4_model::content_types::POK);
     }
     Ok((state, galaxy))
 }

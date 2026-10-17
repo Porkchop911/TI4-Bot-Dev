@@ -62,6 +62,28 @@ pub struct PlayerView {
     /// holds none, so older clients and saves are unaffected.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub held_foreign_tokens: Vec<PlayerId>,
+    /// The top agendas this seat was shown by Insider Information, top first, while they are
+    /// still the top of the deck. Private: present only in the view of the seat itself, never for
+    /// opponents or spectators, and absent when there is nothing to show, so older clients and
+    /// saves are unaffected.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub agenda_peek: Vec<AgendaPeekCard>,
+}
+
+/// One agenda card a seat was shown by Insider Information, as printed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct AgendaPeekCard {
+    pub id: String,
+    pub name: String,
+    /// "Law" or "Directive".
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// What the vote elects or decides ("For/Against", "Elect Player", ...).
+    pub target: String,
+    pub text1: String,
+    pub text2: String,
 }
 
 /// Redacted view of a planet on the board.
@@ -74,6 +96,22 @@ pub struct PlanetView {
     pub exhausted: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attachments: Vec<String>,
+    /// What raises this planet's resources or influence above its printed values (attachments,
+    /// laws such as Core Mining, Helios docks), from the engine's own planet value function.
+    /// Display only: the printed values are in the map tile metadata. Empty when nothing does.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub value_boosts: Vec<PlanetValueBoost>,
+}
+
+/// One source of extra resources or influence on a planet.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct PlanetValueBoost {
+    /// Card name, for example "Mining World".
+    pub source: String,
+    pub resources: i32,
+    pub influence: i32,
 }
 
 /// Redacted view of a unit placed on the board.
@@ -317,4 +355,9 @@ pub struct GameView {
     pub players: Vec<PlayerView>,
     pub board: BoardView,
     pub table: TableView,
+    /// Lingering effects of played action cards that are in force now
+    /// ([`crate::view::effects`]). Display only, public, and absent while there are none, so
+    /// older clients and saves never see the field.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub active_effects: Vec<crate::view::effects::ActiveEffectView>,
 }

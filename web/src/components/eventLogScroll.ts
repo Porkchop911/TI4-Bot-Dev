@@ -12,14 +12,19 @@ export interface ScrollMetrics {
 export const distanceToBottom = (m: ScrollMetrics): number =>
   m.scrollHeight - m.clientHeight - m.scrollTop;
 
-export const isPinned = (m: ScrollMetrics): boolean => distanceToBottom(m) <= PIN_THRESHOLD_PX;
+/**
+ * Whether the reader is at the newest entry: the bottom of the list, or its top when the newest
+ * entry comes first (single-player games).
+ */
+export const isPinned = (m: ScrollMetrics, newestFirst = false): boolean =>
+  newestFirst ? m.scrollTop <= PIN_THRESHOLD_PX : distanceToBottom(m) <= PIN_THRESHOLD_PX;
 
 /**
  * Where the list should be scrolled after its content changed: the bottom while the reader is
  * pinned, otherwise undefined (leave the reader exactly where they are).
  */
-export const followTarget = (pinned: boolean, m: ScrollMetrics): number | undefined =>
-  pinned ? Math.max(0, m.scrollHeight - m.clientHeight) : undefined;
+export const followTarget = (pinned: boolean, m: ScrollMetrics, newestFirst = false): number | undefined =>
+  pinned ? (newestFirst ? 0 : Math.max(0, m.scrollHeight - m.clientHeight)) : undefined;
 
 /** Count of events that arrived below the fold while the reader was scrolled up. */
 export const nextUnseen = (
@@ -46,7 +51,9 @@ export const restoreTarget = (
   wasPinned: boolean,
   savedScrollTop: number,
   m: ScrollMetrics,
+  newestFirst = false,
 ): number => {
   const max = Math.max(0, m.scrollHeight - m.clientHeight);
-  return wasPinned ? max : Math.min(savedScrollTop, max);
+  if (wasPinned) return newestFirst ? 0 : max;
+  return Math.min(savedScrollTop, max);
 };

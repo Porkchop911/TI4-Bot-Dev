@@ -29,13 +29,13 @@ for (const size of SIZES) {
           await expect(page.getByTestId("payment-total-line")).toHaveText("Total: 6 resources — 3 builds");
         } else await expect(page.getByTestId("payment-total-line")).toHaveCount(0);
         if (isPhone(size)) {
-          await assertOneColumn(page, '[data-testid^="planet-card-"]', 3);
-          const rows = await page.locator('[data-testid^="planet-card-"]').evaluateAll((els) =>
+          await assertOneColumn(page, 'label[data-testid^="planet-card-"]', 3);
+          const rows = await page.locator('label[data-testid^="planet-card-"]').evaluateAll((els) =>
             els.map((el) => Math.round(el.getBoundingClientRect().height)),
           );
           expect(Math.min(...rows), "planet rows are at least 44 px").toBeGreaterThanOrEqual(44);
           // The last row, scrolled into view, is not covered by the sticky footer.
-          const last = page.locator('[data-testid^="planet-card-"]').last();
+          const last = page.locator('label[data-testid^="planet-card-"]').last();
           await last.scrollIntoViewIfNeeded();
           const covered = await last.evaluate((el) => {
             const r = el.getBoundingClientRect();

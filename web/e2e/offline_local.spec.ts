@@ -2,7 +2,7 @@ import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { spawnTestServer, type TestServer } from "../../web-shared/test/server.ts";
-import { playUntil, startOfflineGame, storedAnswers, storedFeedback, storedRecord } from "./offlineDriver";
+import { NICKNAME, clickOnce, playUntil, startOfflineGame, storedAnswers, storedFeedback, storedRecord, storedSetup } from "./offlineDriver";
 
 // The offline game, end to end, with the production build only (see offline.config.ts): the
 // engine runs in a Web Worker (JSPI), and nothing but the built static files is ever fetched.
@@ -35,8 +35,6 @@ test("plays an offline game with the network blocked and resumes after a refresh
 
   const played = await playUntil(page, gameId, 20);
   expect(played).toBeGreaterThanOrEqual(20);
-  // Hidden offline: turn redo.
-  await expect(page.getByTestId("turn-redo-btn")).toHaveCount(0);
   const record = await storedRecord(page, gameId);
   expect(record?.wasmSha256).toMatch(/^[0-9a-f]{64}$/);
 
@@ -57,6 +55,92 @@ test("plays an offline game with the network blocked and resumes after a refresh
   expect(requests.some((r) => /\.wasm$/.test(r))).toBe(true);
   expect(errors).toEqual([]);
   expect(baseOrigin(page)).toBe(origin);
+});
+
+test("undoes the last turn offline, plays on, and a refresh resumes at the undone position", async ({ page, context, baseURL }) => {
+  await blockServer(context, new URL(baseURL!).origin);
+  const gameId = await startOfflineGame(page, 4);
+  await playUntil(page, gameId, 30);
+  // Play on to the person's own turn menu, so the log holds a turn to take back.
+  for (let i = 0; i < 400 && (await page.getByTestId("turn-action-bar").count()) === 0; i += 1) {
+    await clickOnce(page);
+    await page.waitForTimeout(150);
+  }
+  await expect(page.getByTestId("turn-action-bar")).toBeVisible();
+  const answers = await storedAnswers(page, gameId);
+
+  const minimize = page.getByTestId("minimize-choice-button");
+  if (await minimize.count()) await minimize.first().dispatchEvent("click");
+  await page.getByTestId("event-log-toggle").dispatchEvent("click");
+  const button = page.getByTestId("turn-redo-btn");
+  await expect(button).toHaveText("Undo my last turn");
+  await button.dispatchEvent("click");
+  await expect.poll(() => storedAnswers(page, gameId), { timeout: 60_000 }).toBeLessThan(answers);
+  const undone = await storedAnswers(page, gameId);
+  expect(undone).toBeGreaterThan(0);
+  await expect(page.getByTestId("turn-action-bar")).toBeVisible({ timeout: 60_000 });
+
+  // A refresh replays the shorter save to the same place, and the game goes on from there.
+  await page.reload();
+  await page.waitForSelector('[data-testid="offline-game"]', { timeout: 60_000 });
+  expect(await storedAnswers(page, gameId)).toBe(undone);
+  await playUntil(page, gameId, undone + 5);
+});
+
+test("the map picker: untouched keeps the recommended layout, a pick is stored in the save and survives a resume", async ({
+  page,
+  context,
+  baseURL,
+}) => {
+  await blockServer(context, new URL(baseURL!).origin);
+  // Untouched: the save has no map (old and new games alike take the engine's recommended layout).
+  const plain = await startOfflineGame(page, 4);
+  expect(await storedSetup(page, plain)).not.toHaveProperty("map");
+
+  const open = async (players: number) => {
+    await page.goto("/offline");
+    await page.getByLabel("Nickname").fill(NICKNAME);
+    await page.getByLabel("Players").selectOption(String(players));
+    await page.getByTestId("offline-map-button").click();
+    // The engine answers: real layouts for this size and a real picture.
+    await expect(page.locator('[data-testid^="map-card-"]:not([data-testid="map-card-random"])').first()).toBeVisible({ timeout: 60_000 });
+    await expect(page.getByTestId("map-preview-board")).toBeVisible({ timeout: 30_000 });
+  };
+  const start = async () => {
+    await page.getByTestId("map-picker-done").click();
+    await page.getByTestId("offline-start").click();
+    await page.waitForSelector('[data-testid="offline-game"]', { timeout: 60_000 });
+    return decodeURIComponent(/\/offline\/games\/([^/?#]+)/.exec(page.url())![1]);
+  };
+
+  // A listed layout that is not the recommended one.
+  await open(4);
+  const cards = page.locator('[data-testid^="map-card-"]:not([data-testid="map-card-random"])');
+  const ids = await cards.evaluateAll((els) =>
+    els.map((el) => ({ id: el.getAttribute("data-testid")!.replace("map-card-", ""), on: el.getAttribute("aria-pressed") === "true" })),
+  );
+  const other = ids.find((c) => !c.on);
+  test.skip(!other, "the engine lists only one layout for four players");
+  await page.getByTestId(`map-card-${other!.id}`).click();
+  await expect(page.getByTestId(`map-card-${other!.id}`)).toHaveAttribute("aria-pressed", "true");
+  const picked = await start();
+  expect((await storedSetup(page, picked))?.map).toBe(other!.id);
+  await playUntil(page, picked, 4);
+  await page.waitForTimeout(400);
+  const stored = (await storedRecord(page, picked))!;
+  // Resume replays the answers on the same board.
+  await page.reload();
+  await page.waitForSelector('[data-testid="offline-game"]', { timeout: 120_000 });
+  expect(await storedRecord(page, picked)).toMatchObject({ answers: stored.answers, decisionsHash: stored.decisionsHash });
+  expect((await storedSetup(page, picked))?.map).toBe(other!.id);
+
+  // Random.
+  await open(3);
+  await page.getByTestId("map-card-random").click();
+  await expect(page.getByTestId("map-card-random")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("map-preview-board")).toBeVisible();
+  const random = await start();
+  expect((await storedSetup(page, random))?.map).toBe("random");
 });
 
 test("closing the tab and opening the game later (same IndexedDB) resumes the same position", async ({
@@ -238,8 +322,9 @@ test("undo and history rewind work offline", async ({ page, context, baseURL }) 
   // (a decision dialog may cover the corners of the board: click through the DOM)
   await page.getByTestId("event-log-toggle").dispatchEvent("click");
   const undo = page.locator(".event-log__undo");
-  await expect(undo.first()).toBeVisible();
-  await undo.first().dispatchEvent("click");
+  // (newest first: the last button belongs to the oldest decision)
+  await expect(undo.last()).toBeVisible();
+  await undo.last().dispatchEvent("click");
   const confirm = page.getByTestId("undo-confirm-accept");
   if (await confirm.isVisible().catch(() => false)) await confirm.dispatchEvent("click");
   await expect.poll(() => storedAnswers(page, gameId), { timeout: 120_000 }).toBeLessThan(reached);
@@ -256,6 +341,98 @@ test("undo and history rewind work offline", async ({ page, context, baseURL }) 
   const now = await storedAnswers(page, gameId);
   await playUntil(page, gameId, now + 3);
   await expect(page.getByTestId("history-error")).toHaveCount(0);
+});
+
+test("single player: log toggle in the objectives row, swipe a toast, newest first, undo one decision, reload", async ({ page, context, baseURL }) => {
+  await blockServer(context, new URL(baseURL!).origin);
+  const gameId = await startOfflineGame(page, 3);
+  // Play until a toast is on screen.
+  let guard = 0;
+  // (a decision dialog's backdrop sits over the toasts: wait for the action phase's bar)
+  while (((await page.getByTestId("corner-toast").count()) === 0 || (await page.getByTestId("turn-action-bar").count()) === 0) && guard++ < 120) {
+    await clickOnce(page);
+    await page.waitForTimeout(200);
+  }
+  await expect(page.getByTestId("corner-toast").first()).toBeVisible();
+
+  // The notification log is an icon in the row of the objective buttons, and the old pill is gone.
+  const toggle = page.getByTestId("toast-history-toggle");
+  await expect(toggle).toHaveAttribute("aria-label", /Notifications/);
+  await expect(toggle).toHaveText(/^\d*\+?$/);
+  const objectives = (await page.getByTestId("objectives-modal-button").boundingBox())!;
+  const bell = (await toggle.boundingBox())!;
+  expect(Math.abs(bell.y - objectives.y)).toBeLessThan(6);
+  await expect(page.getByText(/Recent notifications \(/)).toHaveCount(0);
+
+  // Swipe (mouse drag) a toast away: gone from the screen, still in the log.
+  const toasts = page.getByTestId("corner-toast");
+  const count = await toasts.count();
+  const first = toasts.first();
+  const phrase = ((await first.locator(".toast-value").textContent()) ?? "").trim().slice(0, 24);
+  const box = (await first.boundingBox())!;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(box.x + box.width / 2, y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 - 140, y, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(() => toasts.count(), { timeout: 3000 }).toBeLessThan(count);
+  await toggle.click();
+  await expect(page.getByTestId("toast-history-item").filter({ hasText: phrase }).first()).toBeVisible();
+  await toggle.click();
+
+  // Play on, then the event log lists the newest entry first.
+  const reached = await playUntil(page, gameId, 8);
+  await page.waitForTimeout(500);
+  await page.getByTestId("event-log-toggle").dispatchEvent("click");
+  const numbers = await page.getByTestId("event-log-entry").evaluateAll((rows) =>
+    rows.map((r) => Number(/#(\d+)/.exec(r.querySelector(".event-log__index")?.textContent ?? "")?.[1])).filter((n) => !Number.isNaN(n)),
+  );
+  expect(numbers.length).toBeGreaterThan(3);
+  expect(numbers[0]).toBeGreaterThan(numbers[numbers.length - 1]);
+
+  // Undo takes back exactly one answer of the human; the save follows; a reload resumes there.
+  const answers = await storedAnswers(page, gameId);
+  expect(answers).toBeGreaterThanOrEqual(reached);
+  await expect(page.getByTestId("event-log-undo-last")).toBeEnabled();
+  await page.getByTestId("event-log-undo-last").dispatchEvent("click");
+  await expect.poll(() => storedAnswers(page, gameId), { timeout: 60_000 }).toBe(answers - 1);
+  await expect(page.getByTestId("event-log-undo-status")).toContainText("Undid your last decision");
+  await page.reload();
+  await page.waitForSelector('[data-testid="offline-game"]', { timeout: 60_000 });
+  expect(await storedAnswers(page, gameId)).toBe(answers - 1);
+  await expect(page.getByTestId("history-error")).toHaveCount(0);
+});
+
+test("single player: the browser Back button undoes the last decision; with nothing to undo it leaves the game", async ({ page, context, baseURL }) => {
+  await blockServer(context, new URL(baseURL!).origin);
+  const gameId = await startOfflineGame(page, 3);
+  const reached = await playUntil(page, gameId, 6);
+  await page.waitForTimeout(600);
+  const url = page.url();
+  await page.goBack();
+  await expect.poll(() => storedAnswers(page, gameId), { timeout: 60_000 }).toBe(reached - 1);
+  expect(page.url()).toBe(url); // stayed in the game
+  await expect(page.getByTestId("back-undo-note")).toContainText("Undid your last decision");
+  // A reload keeps one sentinel only: Back still undoes one decision, not two.
+  await page.reload();
+  await page.waitForSelector('[data-testid="offline-game"]', { timeout: 60_000 });
+  expect(await storedAnswers(page, gameId)).toBe(reached - 1);
+  await page.waitForTimeout(600);
+  await page.goBack();
+  await expect.poll(() => storedAnswers(page, gameId), { timeout: 60_000 }).toBe(reached - 2);
+  expect(page.url()).toBe(url);
+  // Forward does nothing harmful.
+  await page.goForward().catch(() => undefined);
+  expect(await storedAnswers(page, gameId)).toBe(reached - 2);
+});
+
+test("single player: Back at the start of a game, with nothing to undo, goes back to the offline start page", async ({ page, context, baseURL }) => {
+  await blockServer(context, new URL(baseURL!).origin);
+  const gameId = await startOfflineGame(page, 3);
+  await page.waitForTimeout(500);
+  await page.goBack();
+  await expect.poll(() => new URL(page.url()).pathname, { timeout: 10_000 }).toBe("/offline");
+  expect(await storedAnswers(page, gameId)).toBe(0);
 });
 
 /** Every report that the server stored (parsed JSON), the `.ids` markers of its idempotency check left out. */

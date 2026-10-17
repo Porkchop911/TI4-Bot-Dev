@@ -977,9 +977,8 @@ impl ReplayingDecider {
             self.shared.lock().expect("shared lock").replaying = false;
         }
         next_prior.map(|record| {
-            let replayed = if let Some(opt) = choice.options.iter().find(|o| o.id == record.chosen)
-            {
-                Ok(opt.clone())
+            let replayed = if let Some(opt) = choice.answer_for(&record.chosen) {
+                Ok(opt)
             } else {
                 Err(IllegalChoice::ScriptDiverged {
                     player: choice.player.clone(),

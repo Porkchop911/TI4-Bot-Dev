@@ -1,3 +1,4 @@
+import { boostLines, boostsFor, type PlanetBoost } from "../../presentation/planetValues.ts";
 import React from "react";
 import {
   CONTROL_SYMBOL_FONT_SIZE,
@@ -25,7 +26,16 @@ export interface StandardOverlayProps {
 
 
 const GLYPH = 10;
+/** Number colour of a planet value raised by an attachment or law (matches --value-boost). */
+const BOOSTED_FILL = "#4ade80";
 const CHAR_W = PLANET_VALUE_FONT_SIZE * 0.6;
+
+/** "3 resources, 1 influence" plus "Mining World: +2 resources" for each booster, for the pill's tooltip. */
+function planetPillLabel(p: { resources: number; influence: number; boosts?: readonly PlanetBoost[] }): string {
+  const lines = [...boostLines(p.boosts, "resources"), ...boostLines(p.boosts, "influence")];
+  const base = `${valueLabel("resources", p.resources)}, ${valueLabel("influence", p.influence)}`;
+  return lines.length ? `${base} (${lines.join("; ")})` : base;
+}
 
 /** Width of a value pill holding glyph + text per entry (null entries are skipped). */
 function valuePillWidth(texts: (string | null)[]): number {
@@ -37,7 +47,7 @@ function valuePillWidth(texts: (string | null)[]): number {
 const ValuePillContent: React.FC<{
   left: number;
   top: number;
-  entries: { kind: "resources" | "influence"; text: string; fill: string }[];
+  entries: { kind: "resources" | "influence"; text: string; fill: string; boosted?: boolean }[];
 }> = ({ left, top, entries }) => {
   let x = left + 4;
   return (
@@ -51,7 +61,7 @@ const ValuePillContent: React.FC<{
             <text
               x={gx + GLYPH + 2}
               y={top + PLANET_VALUE_PILL_HEIGHT / 2 + PLANET_VALUE_FONT_SIZE * 0.36}
-              fill={e.fill}
+              fill={e.boosted ? BOOSTED_FILL : e.fill}
               fontSize={PLANET_VALUE_FONT_SIZE}
               fontWeight="bold"
               aria-hidden="true"
@@ -230,8 +240,10 @@ export const StandardOverlay: React.FC<StandardOverlayProps> = ({
               textAnchor="middle"
               fill="#f8fafc"
               stroke="#0b1220"
-              strokeWidth="2.5"
+              strokeWidth="1.6"
+              strokeLinejoin="round"
               paintOrder="stroke"
+              letterSpacing="1"
               fontSize={planetRadius >= 21 ? "11.5" : "10"}
               fontWeight="bold"
               pointerEvents="none"
@@ -296,11 +308,16 @@ export const StandardOverlay: React.FC<StandardOverlayProps> = ({
                   <g
                     pointerEvents="none"
                     role="img"
-                    aria-label={`${valueLabel("resources", p.resources)}, ${valueLabel("influence", p.influence)}`}
+                    aria-label={planetPillLabel(p)}
+                    data-boosted={p.boosts?.length ? "true" : undefined}
                   >
-                    <title>{`${valueLabel("resources", p.resources)}, ${valueLabel("influence", p.influence)}`}</title>
+                    <title>{planetPillLabel(p)}</title>
                     {(() => {
-                      const width = valuePillWidth([String(p.resources), String(p.influence)]);
+                      const rBoost = boostsFor(p.boosts, "resources").length > 0;
+                      const iBoost = boostsFor(p.boosts, "influence").length > 0;
+                      const rText = `${p.resources}${rBoost ? "+" : ""}`;
+                      const iText = `${p.influence}${iBoost ? "+" : ""}`;
+                      const width = valuePillWidth([rText, iText]);
                       const left = clampLeft(pX - width / 2, width);
                       return (
                         <>
@@ -318,8 +335,8 @@ export const StandardOverlay: React.FC<StandardOverlayProps> = ({
                             left={left}
                             top={pillY}
                             entries={[
-                              { kind: "resources", text: String(p.resources), fill: "#fef08a" },
-                              { kind: "influence", text: String(p.influence), fill: "#bae6fd" },
+                              { kind: "resources", text: rText, fill: "#fef08a", boosted: rBoost },
+                              { kind: "influence", text: iText, fill: "#bae6fd", boosted: iBoost },
                             ]}
                           />
                         </>

@@ -11,6 +11,8 @@ import {
   isUnstage,
   classifyControl,
   serverProgressed,
+  settledGameOverBanner,
+  isPaymentDeadEnd,
   classifyCandidate,
   turnBarPool,
   isBarControl,
@@ -20,6 +22,7 @@ import {
   reactionTextProblem,
   preferTechWindowUse,
   CHAOS_FREE_OFFERS,
+  OVERLAY_CLOSE_IDS,
 } from "../../e2e/smokePolicy.ts";
 
 const c = (desc: string, checked = false) => ({ desc, checked });
@@ -309,6 +312,12 @@ describe("choice rows (smoke harness)", () => {
     expect(classifyControl("choice-option | Decline").commit).toBe(false);
     expect(classifyControl("choice-option | Pass").commit).toBe(false);
     expect(classifyControl("submit-choice | Confirm").commit).toBe(true);
+    // The action-card pickers: a Ghost Squad move answers at once, dice and stepper buttons only stage.
+    expect(classifyControl("mover-move | Move 1 Infantry from Jord to Lodor: Jord 1 to 0, Lodor 0 to 1").commit).toBe(true);
+    expect(classifyControl("reroll-die | Combat Value 8 die 1: shows 3, needs 8 or more, miss, kept | 3 Miss keep").commit).toBe(false);
+    expect(classifyControl("reroll-confirm | Reroll 1 die").commit).toBe(true);
+    expect(classifyControl("stepper-plus | One more | +").commit).toBe(false);
+    expect(classifyControl("stepper-confirm | Spend 2").commit).toBe(true);
   });
 });
 
@@ -597,5 +606,54 @@ describe("serverProgressed (smoke harness)", () => {
     expect(serverProgressed({ game_version: 5, turn_status: { kind: "active_turn" } }, 5)).toBe(false);
     expect(serverProgressed({ game_version: 6, turn_status: { kind: "active_turn" } }, 5)).toBe(true);
     expect(serverProgressed({ game_version: 5, turn_status: { kind: "game_over" } }, 5)).toBe(true);
+  });
+});
+
+describe("overlays the sweep driver closes (smoke harness)", () => {
+  it("knows the Insider Information preview card, and random play never clicks any of them", () => {
+    expect(OVERLAY_CLOSE_IDS).toContain("agenda-peek-close");
+    for (const id of OVERLAY_CLOSE_IDS) expect(EXCLUDED_CONTROLS.test(`${id} | Close the agenda preview | ×`), id).toBe(true);
+  });
+
+  it("lets the action-card picker panels make progress by their own controls", () => {
+    // Dice: ticking only stages; "Reroll"/"Keep all dice" answers. Stepper: +/- stage, "Spend" answers.
+    const dice = [
+      "reroll-die | Combat Value 8 die 1: shows 3, needs 8 or more, miss, kept | 3 Miss keep",
+      "reroll-confirm | Keep all dice",
+    ].map((d) => classifyControl(d));
+    expect(dice.map((x) => x.commit)).toEqual([false, true]);
+    expect(dice.some((x) => x.unstage)).toBe(false);
+    const stepper = ["stepper-minus | Fewer | −", "stepper-max | All (3)", "stepper-confirm | Spend nothing"].map((d) => classifyControl(d));
+    expect(stepper.map((x) => x.commit)).toEqual([false, false, true]);
+    expect(stepper.some((x) => x.unstage)).toBe(false);
+  });
+});
+
+describe("settledGameOverBanner", () => {
+  // Offline runs o3-39-2142 and o2-186-0210: one read right at the engine's end still saw the last
+  // "YOUR TURN" although the page showed "Game Over!" a moment later.
+  it("waits for the page to draw the end instead of reading once", async () => {
+    const texts = ["YOUR TURN: Awaiting your choice (Waiting for player)", "Game Over! Winner: Bot 2"];
+    let reads = 0;
+    const text = await settledGameOverBanner(async () => texts[Math.min(reads++, 1)], 1_000, 5);
+    expect(text).toBe("Game Over! Winner: Bot 2");
+  });
+
+  it("gives up with the last text when the banner never changes", async () => {
+    const text = await settledGameOverBanner(async () => "YOUR TURN", 30, 5);
+    expect(text).toBe("YOUR TURN");
+  });
+});
+
+describe("isPaymentDeadEnd", () => {
+  // Offline run o3-210-0240: a 3-build plan owed 10 while planets and trade goods covered 9; the
+  // only way on, "Ask for each build", is excluded from random clicks, so 80 clicks never paid.
+  it("recognises a plan that nothing offered can pay", () => {
+    expect(isPaymentDeadEnd("Not enough: all offered planets and trade goods cover only 9 of 10 resources.")).toBe(true);
+    expect(isPaymentDeadEnd("Not enough: all offered planets cover only 2 of 3 influence.")).toBe(true);
+  });
+  it("leaves a bill that can still be staged alone", () => {
+    expect(isPaymentDeadEnd("Stage 2 more to pay")).toBe(false);
+    expect(isPaymentDeadEnd(null)).toBe(false);
   });
 });

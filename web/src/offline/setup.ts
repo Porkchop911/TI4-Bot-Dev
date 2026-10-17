@@ -1,3 +1,4 @@
+import type { MapChoice } from "../protocol/types.ts";
 import { PLAYER_COUNTS, type OfflinePlayerCount, type OfflineSetup } from "./types.ts";
 
 export interface SetupDraft {
@@ -6,6 +7,8 @@ export interface SetupDraft {
   seat: string;
   faction: string | null;
   nickname: string;
+  /** The picked map; null = the layout recommended for the table size. */
+  map: MapChoice | null;
   /** Raw text of the dev-only seed field; ignored unless `allowSeed`. */
   seed: string;
 }
@@ -15,8 +18,22 @@ export const DEFAULT_DRAFT: SetupDraft = {
   seat: "random",
   faction: null,
   nickname: "",
+  map: null,
   seed: "",
 };
+
+/** Number of players a template alias is made for (`6pStandard` is 6), or null for other names. */
+export function aliasPlayers(alias: string): number | null {
+  const match = /^(\d+)p/.exec(alias);
+  return match ? Number(match[1]) : null;
+}
+
+/** A pick made for another table size does not fit a new one; the recommended layout takes over. */
+export function mapForPlayers(map: MapChoice | null, playerCount: number): MapChoice | null {
+  if (!map || map.kind === "random") return map;
+  const made = aliasPlayers(map.alias);
+  return made === null || made === playerCount ? map : null;
+}
 
 export type SetupResult = { ok: true; setup: OfflineSetup } | { ok: false; error: string };
 
@@ -36,6 +53,8 @@ export function buildSetup(draft: SetupDraft, allowSeed: boolean, pool: readonly
   }
   if (draft.faction !== null && !pool.includes(draft.faction))
     return { ok: false, error: "Unknown faction." };
+  const map = mapForPlayers(draft.map, draft.playerCount);
+  if (draft.map?.kind === "template" && !draft.map.alias.trim()) return { ok: false, error: "Unknown map." };
   let seed: number | undefined;
   if (allowSeed && draft.seed.trim() !== "") {
     seed = Number(draft.seed);
@@ -49,6 +68,7 @@ export function buildSetup(draft: SetupDraft, allowSeed: boolean, pool: readonly
       humanSeat,
       humanFaction: draft.faction,
       nickname,
+      ...(map ? { map } : {}),
       ...(seed !== undefined ? { seed } : {}),
     },
   };

@@ -26,9 +26,19 @@ export interface TransitDiodesPanelProps {
   lastError?: string | null;
 }
 
-function Values({ resources, influence }: { resources: number | null; influence: number | null }) {
+function Values({
+  resources,
+  influence,
+  planetId,
+}: {
+  resources: number | null;
+  influence: number | null;
+  planetId?: string;
+}) {
   if (resources === null || influence === null) return null;
-  return <PlanetValuePair resources={resources} influence={influence} className="transit-panel__values" />;
+  return (
+    <PlanetValuePair resources={resources} influence={influence} planetId={planetId} className="transit-panel__values" />
+  );
 }
 
 function sourceTroops(source: TransitSource, board: BoardView | undefined, actor: string): string | null {
@@ -197,7 +207,7 @@ export const TransitDiodesPanel: React.FC<TransitDiodesPanelProps> = ({
                     <div key={source.key} className="transit-panel__source" data-testid={`transit-source-${source.key}`}>
                       <div className="transit-panel__place">
                         <span className="transit-panel__name">{source.name}</span>
-                        <Values resources={source.resources} influence={source.influence} />
+                        <Values resources={source.resources} influence={source.influence} planetId={source.source === "space" ? undefined : source.source} />
                         {troops && <span className="transit-panel__here text-muted">You have: {troops}</span>}
                       </div>
                       <div className="transit-panel__forces">
@@ -239,7 +249,7 @@ export const TransitDiodesPanel: React.FC<TransitDiodesPanelProps> = ({
                     onClick={() => pickDestination(destination.optionId)}
                   >
                     <span className="transit-panel__name">{destination.name}</span>
-                    <Values resources={destination.resources} influence={destination.influence} />
+                    <Values resources={destination.resources} influence={destination.influence} planetId={destination.planetId} />
                     <span className="transit-panel__here text-muted">
                       {destination.here ? `Here now: ${destination.here}` : "No units here"}
                     </span>

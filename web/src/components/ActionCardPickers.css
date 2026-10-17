@@ -1,0 +1,385 @@
+/* Pickers for action-card decisions (audit priorities 0 to 8). Colours come from the shared tokens. */
+.seat-tag {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  font-weight: 600;
+  color: var(--color-text-strong, #e2e8f0);
+}
+.seat-tag__mark {
+  font-size: 0.9em;
+}
+.strategy-holder {
+  margin-top: 2px;
+  font-size: 0.8rem;
+  color: var(--color-text-muted, #94a3b8);
+}
+.strategy-holder__unchosen {
+  padding: 0 6px;
+  border: 1px solid var(--color-border-strong, #334155);
+  border-radius: 999px;
+}
+.law-note {
+  margin-top: 2px;
+}
+.law-note__tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.law-note__tag {
+  margin-left: 0;
+}
+.law-note__elected {
+  font-size: 0.8rem;
+  color: var(--color-text-muted, #94a3b8);
+}
+
+/* Reroll dice */
+.reroll {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.reroll__group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.reroll__dice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.reroll__die {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 68px;
+  min-height: 84px;
+  padding: 8px 6px;
+  border: 2px solid var(--color-border-strong, #334155);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-surface, #0f172a);
+  color: var(--color-text-strong, #e2e8f0);
+  cursor: pointer;
+  font: inherit;
+}
+.reroll__die[data-hit="true"] {
+  border-color: var(--color-success, #10b981);
+}
+.reroll__die[data-hit="false"] {
+  border-color: #7f1d1d;
+}
+.reroll__die[data-ticked="true"] {
+  background: var(--color-surface-raised, #1e293b);
+  outline: 3px solid var(--color-accent, #38bdf8);
+  outline-offset: 1px;
+}
+.reroll__die:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.reroll__die:focus-visible {
+  outline: 3px solid var(--color-warning, #f59e0b);
+  outline-offset: 2px;
+}
+.reroll__face {
+  font-size: 1.7rem;
+  font-weight: 800;
+  line-height: 1;
+}
+.reroll__bonus {
+  position: absolute;
+  top: 3px;
+  right: 5px;
+  font-size: 0.7rem;
+  color: var(--color-warning, #f59e0b);
+}
+.reroll__verdict {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.reroll__die[data-hit="true"] .reroll__verdict {
+  color: var(--color-success, #10b981);
+}
+.reroll__die[data-hit="false"] .reroll__verdict {
+  color: #fca5a5;
+}
+.reroll__action {
+  font-size: 0.7rem;
+  color: var(--color-text-muted, #94a3b8);
+}
+.reroll__summary {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #cbd5e1;
+}
+.reroll__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+@media (max-width: 640px) {
+  .reroll__die {
+    min-width: 60px;
+  }
+  .reroll__actions .button {
+    width: 100%;
+    min-height: 44px;
+  }
+}
+
+/* Ghost Squad's ground-force mover */
+.mover {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.mover__planets,
+.mover__moves {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mover__planets {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+.mover__planet {
+  display: flex;
+  flex-direction: column;
+  min-width: 140px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border-strong, #334155);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-surface, #0f172a);
+}
+.mover__move {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 14px;
+  border: 1px solid var(--color-border-strong, #334155);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-surface, #0f172a);
+  color: var(--color-text-strong, #e2e8f0);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.mover__move:hover:not(:disabled) {
+  border-color: var(--color-accent, #38bdf8);
+}
+.mover__move:focus-visible {
+  outline: 3px solid var(--color-warning, #f59e0b);
+  outline-offset: 2px;
+}
+.mover__move:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.mover__what {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.mover__route {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.mover__counts {
+  margin-left: 4px;
+  color: var(--color-text-muted, #94a3b8);
+  font-variant-numeric: tabular-nums;
+}
+.mover__arrow {
+  color: var(--color-accent, #38bdf8);
+}
+.mover__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Number stepper (Bribery) */
+.stepper {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.stepper__control {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.stepper__button {
+  min-width: 48px;
+  min-height: 48px;
+  font-size: 1.4rem;
+}
+.stepper .stepper__input {
+  flex: 0 0 80px;
+  width: 80px;
+  min-height: 48px;
+  text-align: center;
+  font-size: 1.2rem;
+  font-variant-numeric: tabular-nums;
+}
+.stepper__summary {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #cbd5e1;
+}
+.stepper__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+@media (max-width: 640px) {
+  .stepper__actions .button {
+    width: 100%;
+    min-height: 44px;
+  }
+}
+
+/* Insider Information's agenda preview */
+.peek {
+  position: fixed;
+  left: 16px;
+  /* Above the turn bar (the component measures it), never over its buttons. */
+  bottom: var(--peek-bottom, 16px);
+  z-index: var(--layer-popover, 40);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(380px, calc(100vw - 32px));
+  max-height: min(50dvh, 520px, calc(100dvh - var(--peek-bottom, 16px) - 56px));
+  overflow-y: auto;
+  padding: 12px 14px;
+  border: 1px solid var(--color-accent, #38bdf8);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-surface, #0f172a);
+  box-shadow: var(--shadow-panel);
+}
+.peek__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.peek__private {
+  font-size: 0.75rem;
+}
+.peek__list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.peek__entry {
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border-strong, #334155);
+}
+.peek__name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.peek__place {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--color-accent, #38bdf8);
+  color: #0b1220;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+.peek--chip {
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+  width: auto;
+  max-width: min(380px, calc(100vw - 32px));
+  padding: 4px 4px 4px 8px;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.peek__chip-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+}
+.peek__chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.peek__chip-close {
+  flex: none;
+  min-width: 44px;
+  min-height: 44px;
+}
+.peek__header-actions {
+  display: flex;
+  gap: 6px;
+}
+@media (max-width: 640px) {
+  .peek {
+    left: 8px;
+    right: 8px;
+    bottom: var(--peek-bottom, 8px);
+    width: auto;
+    max-height: min(50dvh, calc(100dvh - var(--peek-bottom, 8px) - 56px));
+  }
+  .peek--chip {
+    right: auto;
+    max-width: calc(100vw - 16px);
+  }
+}
+
+.strategy-performed {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--color-accent-strong, #0284c7);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.plague-note {
+  margin: 4px 0 0;
+  font-size: 0.85rem;
+}
+.law-note .politics-panel__tag {
+  margin-left: 0;
+}

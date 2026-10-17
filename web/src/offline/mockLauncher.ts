@@ -13,6 +13,7 @@ import type {
 } from "./types.ts";
 
 import { OFFLINE_FACTION_IDS } from "./factions.ts";
+import { fixturePreview, fixtureTemplates } from "../dev/mapPickerFixtures.ts";
 
 export const MOCK_FACTIONS = OFFLINE_FACTION_IDS;
 
@@ -30,6 +31,10 @@ export interface MockOptions {
   freezeAt?: number;
   /** Text of the storage warning banner (private window, quota). */
   storageWarning?: string;
+  /** No map picker data at all (a launcher that cannot ask the engine). */
+  noMaps?: boolean;
+  /** How the picker's data behaves: answers (default), never answers, fails, or has no layout. */
+  mapsState?: "ready" | "loading" | "error" | "empty";
   /** Saved games of an older version (not listed, only deleted). */
   unreadable?: number;
   /** A resume asks this question first (a saved game of another engine). */
@@ -82,9 +87,23 @@ export function createMockLauncher(options: MockOptions = {}): OfflineLauncher {
   return {
     capabilities: OFFLINE_CAPABILITIES,
     factions: MOCK_FACTIONS,
+    ...(options.noMaps
+      ? {}
+      : {
+          maps: {
+            catalog: async (count: number) => {
+              if (options.mapsState === "loading") return new Promise<never>(() => undefined);
+              if (options.mapsState === "error") throw new Error("engine unavailable");
+              return options.mapsState === "empty" ? [] : fixtureTemplates(count);
+            },
+            preview: async (choice: { kind: string; alias?: string }, count: number) =>
+              fixturePreview(count, choice.kind === "random" ? null : (choice.alias ?? null)),
+          },
+        }),
     supported: () => (options.unsupported ? { ok: false, reason: options.unsupported } : { ok: true }),
     list: async () => [...games],
     async create(setup: OfflineSetup, onProgress, signal): Promise<OfflineGameHandle> {
+      (window as unknown as { __TI4_LAST_SETUP__?: OfflineSetup }).__TI4_LAST_SETUP__ = setup;
       await play(onProgress, signal, false);
       const gameId = `off_${games.length + 1}`;
       games = [

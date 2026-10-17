@@ -491,6 +491,7 @@ fn offer_research(
     galaxy: Option<&Galaxy>,
     table: &mut Table,
     player: &PlayerId,
+    source: DecisionSource,
 ) -> Result<Option<TechnologyId>, IllegalChoice> {
     use crate::factions::deepwrought_research as carrina;
     let window = carrina::open(
@@ -498,7 +499,7 @@ fn offer_research(
         player,
         &carrina::any,
     )?;
-    let result = offer_research_inner(state, content, sources, galaxy, table, player);
+    let result = offer_research_inner(state, content, sources, galaxy, table, player, source);
     carrina::settle(
         &mut carrina::Host::new(&mut *state, content, sources, galaxy, &mut *table),
         player,
@@ -508,6 +509,29 @@ fn offer_research(
     result
 }
 
+/// The source of the Technology primary's research question.
+fn technology_primary() -> DecisionSource {
+    DecisionSource::StrategyCard {
+        card: "Technology".to_owned(),
+        secondary: false,
+    }
+}
+
+/// A free research of 1 technology granted by `source` (an action card's reward, e.g. Technology
+/// Rider): the Technology primary's first research, asked as a `research_technology` question so
+/// the client shows its technology dialog. Prerequisites apply; nothing is paid.
+pub(crate) fn offer_free_research(
+    state: &mut GameState,
+    content: &ContentStore,
+    sources: SourceSet,
+    galaxy: Option<&Galaxy>,
+    table: &mut Table,
+    player: &PlayerId,
+    source: DecisionSource,
+) -> Result<Option<TechnologyId>, IllegalChoice> {
+    offer_research(state, content, sources, galaxy, table, player, source)
+}
+
 fn offer_research_inner(
     state: &mut GameState,
     content: &ContentStore,
@@ -515,6 +539,7 @@ fn offer_research_inner(
     galaxy: Option<&Galaxy>,
     table: &mut Table,
     player: &PlayerId,
+    source: DecisionSource,
 ) -> Result<Option<TechnologyId>, IllegalChoice> {
     // A technology whose optional faction waiver was declined is not offered again in this
     // research. Re-offering it let a player select it and decline the waiver forever: an
@@ -549,10 +574,7 @@ fn offer_research_inner(
         )
         .contextualized(DecisionContext::new(
             player.clone(),
-            DecisionSource::StrategyCard {
-                card: "Technology".to_owned(),
-                secondary: false,
-            },
+            source.clone(),
             "research_technology",
             state.phase,
             state.round,
@@ -1394,16 +1416,35 @@ fn paid_research(
                 player,
                 &technology,
             );
-            let Some(plan) =
-                crate::payment::plans(state, content, sources, player, cost, Spend::Resources)
-                    .into_iter()
-                    .next()
-            else {
-                return Ok(false);
-            };
             let before = state.clone();
-            if !crate::payment::apply(state, player, &plan) {
-                return Ok(false);
+            if state.rules_version >= ti4_model::state::RULES_TECH_PAYMENT_CHOICE {
+                // The researcher chooses which planets and trade goods pay (`pay_resources`).
+                if cost > 0
+                    && !crate::production::pay_seeing(
+                        state,
+                        content,
+                        sources,
+                        galaxy,
+                        table,
+                        player,
+                        cost,
+                        Spend::Resources,
+                    )?
+                {
+                    *state = before;
+                    return Ok(false);
+                }
+            } else {
+                let Some(plan) =
+                    crate::payment::plans(state, content, sources, player, cost, Spend::Resources)
+                        .into_iter()
+                        .next()
+                else {
+                    return Ok(false);
+                };
+                if !crate::payment::apply(state, player, &plan) {
+                    return Ok(false);
+                }
             }
             if resolve_research(state, content, sources, galaxy, table, player, &technology)? {
                 return Ok(true);
@@ -1440,9 +1481,11 @@ fn paid_research(
             Ok(())
         }
         Ok(false) => {
-            if let Some((before, log)) = adjustment.rollback {
+            // No technology: the provisional modifier (a borrowed Sucaban's exhaust and traded
+            // infantry) is undone, but every question answered on the way stays in the log, or a
+            // replay would give those questions the next recorded answers.
+            if let Some((before, _log)) = adjustment.rollback {
                 *state = before;
-                table.log = log;
             }
             Ok(())
         }
@@ -1479,8 +1522,11 @@ pub fn ready_hints(
             serde_json::json!({
                 "id": planet.as_str(),
                 "name": record.as_ref().and_then(|r| r.name()).unwrap_or(planet.as_str()),
-                "resources": record.as_ref().map(|r| r.resources()),
-                "influence": record.as_ref().map(|r| r.influence()),
+                // As the planet pays now (attachments and laws included), like the payment screens.
+                "resources": record.as_ref().map(|_| crate::production::planet_value_now(
+                    state, content, sources, planet, crate::production::Spend::Resources)),
+                "influence": record.as_ref().map(|_| crate::production::planet_value_now(
+                    state, content, sources, planet, crate::production::Spend::Influence)),
             })
         })
         .collect();
@@ -1833,7 +1879,7 @@ pub(crate) fn structure_options(
 /// The unit Construction places for `kind` (`pds` / `spacedock`): the faction unit or upgrade, as
 /// an action card placement resolves it. Construction puts the structure on a planet, so a
 /// space-only form (Saar's Floating Factory) falls back to the generic planet unit.
-fn construction_unit(
+pub(crate) fn construction_unit(
     state: &GameState,
     content: &ContentStore,
     sources: SourceSet,
@@ -2606,7 +2652,15 @@ pub fn primary(
         "Trade" => trade_primary(state, content, sources, galaxy, table, player)?,
         "Warfare" => warfare_primary(state, content, sources, galaxy, table, player)?,
         "Technology" => {
-            offer_research(state, content, sources, galaxy, table, player)?;
+            offer_research(
+                state,
+                content,
+                sources,
+                galaxy,
+                table,
+                player,
+                technology_primary(),
+            )?;
             paid_research(
                 state,
                 content,
@@ -2919,7 +2973,15 @@ mod tests {
         // research; now the third offer lacks it and the script diverges there.
         assert!(
             matches!(
-                offer_research_inner(&mut again, content, POK, None, &mut repeat, &player),
+                offer_research_inner(
+                    &mut again,
+                    content,
+                    POK,
+                    None,
+                    &mut repeat,
+                    &player,
+                    technology_primary()
+                ),
                 Err(IllegalChoice::ScriptDiverged { .. })
             ),
             "the declined technology was offered again"
@@ -2931,8 +2993,16 @@ mod tests {
             alternative.to_string(),
         ])));
         assert_eq!(
-            offer_research_inner(&mut state, content, POK, None, &mut table, &player)
-                .expect("researches another"),
+            offer_research_inner(
+                &mut state,
+                content,
+                POK,
+                None,
+                &mut table,
+                &player,
+                technology_primary()
+            )
+            .expect("researches another"),
             Some(alternative)
         );
     }
@@ -3077,7 +3147,16 @@ mod tests {
         state.player_mut(&player).unwrap().trade_goods = 20;
         let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
         let mut table = Table::with_default(Box::new(FirstOptionCapturing { seen: seen.clone() }));
-        offer_research(&mut state, content, POK, None, &mut table, &player).unwrap();
+        offer_research(
+            &mut state,
+            content,
+            POK,
+            None,
+            &mut table,
+            &player,
+            technology_primary(),
+        )
+        .unwrap();
         let primary_context = seen.borrow()[0].context.clone().expect("typed context");
         assert_eq!(primary_context.subtype, "research_technology");
         assert_eq!(
@@ -3115,6 +3194,60 @@ mod tests {
             primary_context.source, secondary_context.source,
             "the same subtype, distinguished by which half of the card it is"
         );
+    }
+
+    /// The Technology secondary's price: from `RULES_TECH_PAYMENT_CHOICE` the researcher is asked
+    /// which planets and trade goods pay (`pay_resources`); legacy games spend the cheapest plan
+    /// automatically.
+    #[test]
+    fn the_technology_secondary_asks_what_pays_from_the_payment_choice_version() {
+        let content = ContentStore::embedded();
+        let player = PlayerId::new("a");
+        let run = |version: u32| {
+            let mut state = game(&["a"]);
+            state.rules_version = version;
+            let (system, planet) = ti4_content::galaxy::all_planets(content, POK)
+                .iter()
+                .find_map(|(id, p)| {
+                    (p.system_id().is_some() && !p.is_placed_during_play() && p.resources() >= 2)
+                        .then(|| {
+                            (
+                                SystemId::new(p.system_id().unwrap_or("18")),
+                                PlanetId::new(*id),
+                            )
+                        })
+                })
+                .expect("a planet worth resources");
+            state
+                .system_mut(&system)
+                .set_control(planet, player.clone());
+            state.player_mut(&player).unwrap().trade_goods = 20;
+            let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+            let mut table =
+                Table::with_default(Box::new(FirstOptionCapturing { seen: seen.clone() }));
+            paid_research(
+                &mut state,
+                content,
+                POK,
+                None,
+                &mut table,
+                &player,
+                TECHNOLOGY_SECONDARY_COST,
+            )
+            .unwrap();
+            let asked: Vec<String> = seen
+                .borrow()
+                .iter()
+                .filter_map(|c| c.context.as_ref().map(|x| x.subtype.clone()))
+                .collect();
+            (asked, state.player(&player).unwrap().technologies.len())
+        };
+        let (asked, owned) = run(ti4_model::state::RULES_TECH_PAYMENT_CHOICE);
+        assert!(asked.iter().any(|s| s == "pay_resources"), "{asked:?}");
+        assert_eq!(owned, 1);
+        let (asked, owned) = run(ti4_model::state::RULES_TECH_PAYMENT_CHOICE - 1);
+        assert!(!asked.iter().any(|s| s == "pay_resources"), "{asked:?}");
+        assert_eq!(owned, 1);
     }
 
     /// OBS-008d2: each command-token pool option previews the exact count it reaches, and a
@@ -3161,7 +3294,16 @@ mod tests {
             .insert(TechnologyId::new("gd"));
         let seen = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
         let mut table = Table::with_default(Box::new(FirstOptionCapturing { seen: seen.clone() }));
-        offer_research(&mut state, content, POK, None, &mut table, &player).unwrap();
+        offer_research(
+            &mut state,
+            content,
+            POK,
+            None,
+            &mut table,
+            &player,
+            technology_primary(),
+        )
+        .unwrap();
         let research_choice = &seen.borrow()[0];
         match &research_choice.options[0]
             .preview
@@ -4149,6 +4291,78 @@ mod tests {
                 .get(&ti4_model::id::LeaderId::new("jolnaragent")),
             Some(&ti4_model::state::LeaderStatus::Exhausted),
             "the copied agent was already exhausted and is left alone"
+        );
+    }
+
+    /// Same class as nightly 2026-10-14 #6/#7 (o1-232-0312, s1-47-0520): a copied agent's use
+    /// that is rolled back must not take answered decisions out of the log, or a replay of the
+    /// game gives those questions the next recorded answers. Here Ssruu copies Doctor Sucaban,
+    /// trades infantry, and then the research is declined: the copy is undone, the answers stay.
+    #[test]
+    fn a_declined_research_after_a_copied_sucaban_keeps_every_answer_in_the_log() {
+        struct CopyThenDecline(std::rc::Rc<std::cell::Cell<usize>>);
+        impl crate::choice::Decider for CopyThenDecline {
+            fn choose(
+                &mut self,
+                choice: &crate::choice::Choice,
+            ) -> Result<crate::choice::ChoiceOption, crate::choice::IllegalChoice> {
+                self.0.set(self.0.get() + 1);
+                let decline = choice.options.iter().find(|option| option.is_decline());
+                let researching = choice
+                    .context
+                    .as_ref()
+                    .is_some_and(|context| context.subtype.contains("research"));
+                Ok(match (researching, decline) {
+                    (true, Some(decline)) => decline.clone(),
+                    _ => choice.options.first().cloned().expect("an option"),
+                })
+            }
+        }
+        let content = ContentStore::embedded();
+        let sources = ti4_model::content_types::DEFAULT;
+        let (researcher, owner) = (PlayerId::new("a"), PlayerId::new("b"));
+        let mut state = game(&["a", "b"]);
+        let system = SystemId::new(crate::fixtures::plain_systems(1)[0].clone());
+        state.board.entry(system.clone()).or_default();
+        crate::fixtures::put(&mut state, &system, "infantry", &researcher, 4);
+        if let Some(seat) = state.player_mut(&researcher) {
+            seat.trade_goods = 0;
+            seat.leaders.insert(
+                ti4_model::id::LeaderId::new("yssarilagent"),
+                ti4_model::state::LeaderStatus::Readied,
+            );
+        }
+        if let Some(seat) = state.player_mut(&owner) {
+            seat.leaders.insert(
+                ti4_model::id::LeaderId::new("jolnaragent"),
+                ti4_model::state::LeaderStatus::Exhausted,
+            );
+        }
+        let asked = std::rc::Rc::new(std::cell::Cell::new(0));
+        let mut table = Table::with_default(Box::new(CopyThenDecline(asked.clone())));
+        let _ = secondary(
+            &mut state,
+            content,
+            sources,
+            None,
+            &mut table,
+            &researcher,
+            &card("Technology"),
+        );
+        let recorded: Vec<_> = table
+            .log
+            .records
+            .iter()
+            .map(|record| format!("{}: {}", record.prompt, record.chosen))
+            .collect();
+        assert!(
+            asked.get() > 1,
+            "the copy and the research were asked: {recorded:?}"
+        );
+        assert_eq!(
+            recorded.len(),
+            asked.get(),
+            "every answered question stays in the log: {recorded:?}"
         );
     }
 

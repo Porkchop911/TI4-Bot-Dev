@@ -133,6 +133,15 @@ fn placement_facts(option: ChoiceOption, before: &Standing, after: &Standing) ->
         .with("capacity_excess_after", after.capacity_excess)
 }
 
+/// Ships a build adds to the fleet pool: the non-fighter ships among the `placed` units (37.1).
+fn fleet_ships(kind: &UnitType<'_>, placed: usize) -> i64 {
+    if crate::fleet::counts_against_supply(kind) {
+        i64::try_from(placed).unwrap_or(0)
+    } else {
+        0
+    }
+}
+
 /// What may be produced at all. Structures arrive through Construction, not PRODUCTION.
 pub const BUILDABLE: [&str; 9] = [
     "fighter",
@@ -199,6 +208,37 @@ pub fn planet_value_now(
             Spend::Resources => crate::factions::bastion_units::resource_bonus(state, planet),
             Spend::Influence => 0,
         }
+}
+
+/// One thing that raises a planet's value, for display: `(source name, resources, influence)`.
+///
+/// Built from the same three terms [`planet_value_now`] adds to the printed value (laws, attachment
+/// records, the Helios docks), so the list always sums to `planet_value_now - planet_value`.
+#[must_use]
+pub fn planet_value_boosts(
+    state: &GameState,
+    content: &ContentStore,
+    planet: &PlanetId,
+) -> Vec<(String, i64, i64)> {
+    let mut out: Vec<(String, i64, i64)> = crate::laws::planet_value_bonus_sources(state, planet)
+        .into_iter()
+        .map(|(name, r, i)| (name.to_owned(), r, i))
+        .collect();
+    for id in state.planet_attachments.get(planet).into_iter().flatten() {
+        let Some(record) = content.get(ContentType::Attachments, id) else {
+            continue;
+        };
+        let r = record.int("resourcesModifier").unwrap_or(0);
+        let i = record.int("influenceModifier").unwrap_or(0);
+        if r != 0 || i != 0 {
+            out.push((record.text("name").unwrap_or(id).to_owned(), r, i));
+        }
+    }
+    let helios = crate::factions::bastion_units::resource_bonus(state, planet);
+    if helios != 0 {
+        out.push(("Helios dock".to_owned(), helios, 0));
+    }
+    out
 }
 
 /// The faction mark holding the [`GameState::production_seq`] a value swap was declared in.
@@ -2680,7 +2720,10 @@ impl ProductionWindow {
                 .with("owed", cost - credit_used)
                 .with("production_spent", production_spent)
                 .with("unit", id.clone())
-                .with("system", self.system.to_string());
+                .with("system", self.system.to_string())
+                // Display only: ships this option adds to the fleet pool (37.1), so a client
+                // can preview `used + staged` without re-deriving which units count.
+                .with("fleet_ships", fleet_ships(kind, placed));
                 // A ship has one destination and no placement question follows, so its fleet and
                 // transport aftermath is settled here. A unit with a choice of destinations does
                 // not have one yet, and says so rather than reporting a consequence it cannot know.
@@ -2735,6 +2778,7 @@ impl ProductionWindow {
                 .with("production_spent", self.remaining - limit_after)
                 .with("unit", id.clone())
                 .with("system", self.system.to_string())
+                .with("fleet_ships", fleet_ships(kind, 1))
                 .with("exchange", true);
                 let mut deltas = vec![
                     Delta::new(Quantity::ProductionRemaining, self.remaining, limit_after),
@@ -2899,6 +2943,11 @@ impl Window for ProductionWindow {
                 });
                 if crate::fleet::is_unlimited(state, &self.player) {
                     fleet_supply["unlimited"] = serde_json::Value::Bool(true);
+                }
+                // Letnev's Armada: already inside `limit`; named so a client can mark it.
+                let armada = crate::faction_abilities::armada_bonus(state, content, &self.player);
+                if armada > 0 {
+                    fleet_supply["armada"] = serde_json::json!(armada);
                 }
                 Some(
                     Choice::new(
@@ -5412,6 +5461,38 @@ mod tests {
             Some(i64::from(crate::fleet::limit(&state, content, &player())))
         );
         assert!(supply.get("unlimited").is_none());
+    }
+
+    #[test]
+    fn build_options_name_the_ships_they_add_to_the_fleet_pool() {
+        let content = ContentStore::embedded();
+        let (mut state, system, planet) = seated();
+        state
+            .system_mut(&system)
+            .set_control(planet.clone(), player());
+        put_on_planet(&mut state, &system, &planet, "spacedock", &player(), 1);
+        let window = ProductionWindow::new(&state, content, POK, &player(), &system);
+        let choice = window
+            .pending_choice(&state, content, POK)
+            .expect("production choice");
+        let ships = |unit: &str| {
+            choice
+                .options
+                .iter()
+                .find(|o| o.payload.get("unit").and_then(|u| u.as_str()) == Some(unit))
+                .and_then(|o| {
+                    o.payload
+                        .get("fleet_ships")
+                        .and_then(serde_json::Value::as_i64)
+                })
+        };
+        assert_eq!(ships("cruiser"), Some(1));
+        assert_eq!(ships("fighter"), Some(0), "fighters are not in the pool");
+        assert_eq!(
+            ships("infantry"),
+            Some(0),
+            "ground forces are not in the pool"
+        );
     }
 
     #[test]

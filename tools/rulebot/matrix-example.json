@@ -1,0 +1,60 @@
+{
+  "limits": {
+    "max_rounds": 50
+  },
+  "bot": {},
+  "setups": [
+    {
+      "name": "fixed-factions-rotated",
+      "players": 4,
+      "maps": [
+        "4pHyperlanes"
+      ],
+      "factions": [
+        "sol",
+        "hacan",
+        "xxcha",
+        "l1z1x"
+      ],
+      "rotate": "cyclic",
+      "seeds": "1..11",
+      "speaker": "seat"
+    },
+    {
+      "name": "pool-two-maps",
+      "players": 5,
+      "maps": [
+        "5pHyperlanes",
+        "5pOuterRim",
+        "random"
+      ],
+      "map_policy": "cross",
+      "faction_pool": [
+        "sol",
+        "hacan",
+        "xxcha",
+        "l1z1x",
+        "jolnar",
+        "naalu",
+        "yin"
+      ],
+      "seeds": "1..4"
+    },
+    {
+      "name": "half-fixed",
+      "players": 6,
+      "factions": [
+        "muaat",
+        "_",
+        "_",
+        "sardakk"
+      ],
+      "rotate": "none",
+      "seeds": [
+        3,
+        5,
+        8
+      ]
+    }
+  ]
+}

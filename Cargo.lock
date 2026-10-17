@@ -4387,6 +4387,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ti4-selfplay"
+version = "0.1.0"
+dependencies = [
+ "rand 0.9.5",
+ "rand_chacha 0.9.0",
+ "serde",
+ "serde_json",
+ "ti4-content",
+ "ti4-engine",
+ "ti4-host",
+ "ti4-model",
+ "ti4-rule-bot",
+ "ti4-wasm",
+]
+
+[[package]]
 name = "ti4-server"
 version = "0.1.0"
 dependencies = [

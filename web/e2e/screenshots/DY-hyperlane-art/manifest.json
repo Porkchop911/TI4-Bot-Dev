@@ -1,0 +1,22 @@
+{
+  "title": "Hyperlane tile art",
+  "description": "Hyperlane tiles now show their lanes: each lane is a flat double line (ink outline around a channel in the tile colour) between the midpoints of the hex edges it joins, straight through the centre for opposite edges and bent round it for edges two apart. A ring cap sits on every edge a lane reaches; it half-overlaps the neighbouring tile, so where two hyperlane tiles meet and both have a lane end the two halves close into one ring. The tile is muted indigo with a dotted inner frame, has no planets, and names itself (\"Hyperlane connecting edges 2-5\", edges counted from 1). Lane data is draw-only; no game logic changed. The same art is used in the map picker's board and thumbnails and in the system inspector.",
+  "tag": "web/e2e/screenshots/DY-hyperlane-art",
+  "shots": [
+    { "file": "out/1-faces-desktop.png", "heading": "All 18 tile faces", "caption": "83a to 91b at rotation 0, as they come out of the box (A face on the left of each pair). Edge pairs per tile: 83a 2-5, 84a 3-6, 85a/86a 2-6, 87a 1-3 3-5 3-6, 88a 1-5 2-5 3-5, 89a 1-3 1-5 3-5, 90a 2-6 3-5, 91a 1-4 1-5 2-4 and the B faces." },
+    { "file": "out/1-faces-390x844.png", "heading": "All faces, phone", "caption": "Same board at 390x844: the lanes are still readable at about 30 px per hex." },
+    { "file": "out/2-turned-desktop.png", "heading": "Turned copies", "caption": "83b, 88a and 90a at 0, 60, 120, 180, 240 and 300 degrees (ids 83b, 83b60 ... 83b300). Every turn moves each lane end one edge on." },
+    { "file": "out/3-map-desktop.png", "heading": "Full map, desktop", "caption": "The real Learn to Play (PoK) layout: hyperlanes (#83a to #88a) beside the gravity rift (#41), nebula (#68) and supernova (#80), with planets, ships and tokens on the other systems. Lane ends line up across neighbouring hyperlane tiles." },
+    { "file": "out/3-map-390x844.png", "heading": "Full map, phone", "caption": "Same board at 390x844." },
+    { "file": "out/4-small-desktop.png", "heading": "Small hexes, desktop", "caption": "Zoomed out: the double line and the end rings still tell a hyperlane from every system." },
+    { "file": "out/4-small-390x844.png", "heading": "Small hexes, phone", "caption": "Zoomed out at 390x844." },
+    { "file": "out/5-large-desktop.png", "heading": "Zoomed in", "caption": "Large hexes: lanes clear of the system number, units and anomaly art." },
+    { "file": "out/6-inspector-desktop.png", "heading": "System inspector", "caption": "Selecting #88a shows a diagram of its lanes with the text \"Hyperlane connecting edges 1-5, 2-5 and 3-5\"." },
+    { "file": "out/7-picker-desktop.png", "heading": "Map picker, desktop", "caption": "Race for Mecatol: the strip's thumbnail and the large preview both draw the lanes; the preview names each lane tile in its tooltip instead of printing its id over the lane." },
+    { "file": "out/7-picker-390x844.png", "heading": "Map picker, phone", "caption": "Learn to Play (PoK) at 390x844." }
+  ],
+  "notes": [
+    { "title": "Edge numbering", "text": "Edges are numbered 1-6 in the order of the engine's ring (south-west, south-east, east, north-east, north-west, west). A unit test checks this against every real community map: wherever two hyperlane tiles touch, a lane end on one side always meets a lane end on the other." },
+    { "title": "Not modelled", "text": "The engine still treats a hyperlane as an empty hex a ship may pass through; the lane data is only used to draw." }
+  ]
+}

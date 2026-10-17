@@ -891,6 +891,7 @@ fn agent_ships(
 ) -> Vec<(SystemId, usize, i64, String)> {
     let top = highest_move(state, content, sources);
     let types = catalogue(content, sources);
+    let modern = state.rules_version >= ti4_model::state::RULES_MENDOSA_SHIP;
     let mut found = Vec::new();
     for system in state.board.keys() {
         for (index, unit) in state.ships_of(activator, system).into_iter().enumerate() {
@@ -899,6 +900,23 @@ fn agent_ships(
             };
             let own = kind.move_value();
             if kind.is_ship() && own < top {
+                // Equal ships are one choice (the boost goes to the first of the kind).
+                if modern
+                    && found
+                        .iter()
+                        .any(|(sys, i, _, _): &(SystemId, usize, i64, String)| {
+                            sys == system
+                                && state
+                                    .ships_of(activator, system)
+                                    .get(*i)
+                                    .is_some_and(|other| {
+                                        other.type_id == unit.type_id
+                                            && other.sustained_damage == unit.sustained_damage
+                                    })
+                        })
+                {
+                    continue;
+                }
                 found.push((
                     system.clone(),
                     index,
@@ -962,11 +980,7 @@ fn agent(owner_name: &str, seat: &PlayerId) -> Ability {
             if !crate::leaders::exhaust(context.state, &owner, &LeaderId::new("saaragent")) {
                 return Ok(());
             }
-            let seq = context.state.activation_seq;
-            context.state.faction_marks.insert(
-                agent_key(&activator),
-                format!("{seq}|{origin}|{index}|{bonus}"),
-            );
+            store_boost(context.state, &activator, origin, *index, *bonus);
             Ok(())
         }),
     )
@@ -1045,11 +1059,7 @@ fn borrowed_agent(owner_name: &str, source: &PlayerId, borrower: &PlayerId) -> A
             ) {
                 return Ok(());
             }
-            let seq = context.state.activation_seq;
-            context.state.faction_marks.insert(
-                agent_key(&activator),
-                format!("{seq}|{origin}|{index}|{bonus}"),
-            );
+            store_boost(context.state, &activator, origin, *index, *bonus);
             super::hooks_cards::borrowed_agent_used(
                 context,
                 &effect_borrower,
@@ -1088,15 +1098,83 @@ fn has_borrowable_saar_agent(
         .any(|(owner, agent)| owner == source && agent.as_str() == "saaragent")
 }
 
+/// Remember the boost for this activation. From [`ti4_model::state::RULES_MENDOSA_SHIP`] it is
+/// `"<seq>|<origin>|<type>|<damaged>|<count of that kind at the origin>|<bonus>"`: the ship's
+/// kind, not its list position, which shifts when another ship leaves first. Before, it is
+/// `"<seq>|<origin>|<index>|<bonus>"`.
+fn store_boost(
+    state: &mut GameState,
+    activator: &PlayerId,
+    origin: &SystemId,
+    index: usize,
+    bonus: i64,
+) {
+    let seq = state.activation_seq;
+    let value = if state.rules_version >= ti4_model::state::RULES_MENDOSA_SHIP {
+        let ships = state.ships_of(activator, origin);
+        let Some(unit) = ships.get(index) else {
+            return;
+        };
+        let (kind, damaged) = (unit.type_id.to_string(), unit.sustained_damage);
+        let count = kind_count(state, activator, origin, &kind, damaged);
+        format!(
+            "{seq}|{origin}|{kind}|{}|{count}|{bonus}",
+            u8::from(damaged)
+        )
+    } else {
+        format!("{seq}|{origin}|{index}|{bonus}")
+    };
+    state.faction_marks.insert(agent_key(activator), value);
+}
+
+fn kind_count(
+    state: &GameState,
+    player: &PlayerId,
+    origin: &SystemId,
+    kind: &str,
+    damaged: bool,
+) -> usize {
+    state
+        .ships_of(player, origin)
+        .into_iter()
+        .filter(|ship| ship.type_id.as_str() == kind && ship.sustained_damage == damaged)
+        .count()
+}
+
 /// The boost the agent granted to one ship for this activation.
 fn agent_move_bonus(state: &GameState, site: &MoveSite<'_>) -> i32 {
     let Some(mark) = state.faction_marks.get(&agent_key(site.player)) else {
         return 0;
     };
-    let mut parts = mark.split('|');
-    let (Some(seq), Some(origin), Some(index), Some(bonus)) =
-        (parts.next(), parts.next(), parts.next(), parts.next())
-    else {
+    let parts: Vec<&str> = mark.split('|').collect();
+    if state.rules_version >= ti4_model::state::RULES_MENDOSA_SHIP {
+        // The boosted kind's first ship, until one of that kind has left the origin (the boosted
+        // one, or an equal one standing in for it).
+        let [seq, origin, kind, damaged, count, bonus] = parts[..] else {
+            return 0;
+        };
+        let damaged = damaged == "1";
+        let (Some(index), Ok(count)) = (site.index, count.parse::<usize>()) else {
+            return 0;
+        };
+        let first = state
+            .ships_of(site.player, site.origin)
+            .into_iter()
+            .enumerate()
+            .filter(|(_, ship)| ship.type_id.as_str() == kind && ship.sustained_damage == damaged)
+            .map(|(i, _)| i)
+            .collect::<Vec<_>>();
+        return if seq == state.activation_seq.to_string()
+            && origin == site.origin.as_str()
+            && first.len() == count
+            && first.first() == Some(&index)
+        {
+            bonus.parse().unwrap_or(0)
+        } else {
+            0
+        };
+    }
+    let [seq, origin, index, bonus] = parts[..] else {
         return 0;
     };
     if seq == state.activation_seq.to_string()
@@ -2154,6 +2232,82 @@ mod tests {
         );
         assert!(state.faction_marks.is_empty());
     }
+    /// Destroyer, carrier A and carrier B two hexes from the active system; Mendosa boosts the last
+    /// carrier, then the destroyer leaves. Returns the carriers `movable_into` offers afterwards.
+    fn carriers_offered_after_the_destroyer_leaves(rules_version: u32) -> Vec<usize> {
+        let mut state = game();
+        state.rules_version = rules_version;
+        let content = ContentStore::embedded();
+        let hub = crate::fixtures::plain_hub();
+        let origin = SystemId::new(hub.outer[0].clone());
+        let active = SystemId::new(hub.centre.clone());
+        let far = SystemId::new(hub.outer[3].clone());
+        crate::fixtures::put(&mut state, &origin, "destroyer", &b(), 1);
+        crate::fixtures::put(&mut state, &origin, "carrier", &b(), 2);
+        crate::fixtures::put(
+            &mut state,
+            &SystemId::new(hub.outer[1].clone()),
+            "cruiser",
+            &a(),
+            1,
+        );
+        state.activation_seq = 11;
+        let _ = active;
+        let ships = agent_ships(&state, content, DEFAULT, &b());
+        let boosted = ships
+            .iter()
+            .enumerate()
+            .filter(|(_, (system, ..))| system == &origin)
+            .filter(|(_, (_, i, ..))| {
+                state.ships_of(&b(), &origin)[*i].type_id.as_str() == "carrier"
+            })
+            .last()
+            .map(|(n, _)| n)
+            .expect("a carrier is slower");
+        emit(
+            &mut state,
+            &mut scripted(&[
+                "leader:saar:saaragent:SYSTEM_ACTIVATED:after",
+                &format!("ship|{boosted}"),
+            ]),
+            "SYSTEM_ACTIVATED",
+            &[("player", "b"), ("system", far.as_str())],
+        );
+        let offered = |state: &GameState| -> Vec<usize> {
+            crate::tactical::movable_into(state, content, DEFAULT, &hub.galaxy, &b(), &far)
+                .iter()
+                .filter(|m| m.origin == origin && m.unit.type_id.as_str() == "carrier")
+                .map(|m| m.index)
+                .collect()
+        };
+        assert_eq!(
+            offered(&state).len(),
+            1,
+            "one carrier is boosted into reach"
+        );
+        // The destroyer sails first.
+        let destroyer = state.ships_of(&b(), &origin)[0].clone();
+        state
+            .system_mut(&origin)
+            .remove(std::slice::from_ref(&destroyer));
+        offered(&state)
+    }
+
+    #[test]
+    fn mendosas_boost_stays_with_its_ship_when_an_earlier_ship_leaves() {
+        // Carriers are now at positions 0 and 1; the boosted one is still offered, once.
+        assert_eq!(
+            carriers_offered_after_the_destroyer_leaves(ti4_model::state::RULES_VERSION),
+            vec![0]
+        );
+    }
+
+    #[test]
+    fn a_legacy_game_keeps_the_position_based_boost() {
+        // Version 0: the boost was stored against position 2, which is empty now.
+        assert!(carriers_offered_after_the_destroyer_leaves(0).is_empty());
+    }
+
     #[test]
     fn ssruu_borrows_captain_mendosa_on_the_activation_and_boosts_only_the_selected_ship() {
         let mut state = game();

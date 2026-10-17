@@ -405,7 +405,7 @@ describe("the bar through the renderer", () => {
     expect(screen.getByTestId("turn-action-bar")).toBeInTheDocument();
     expect(screen.queryByTestId("decision-modal")).toBeNull();
     await click(screen.getByTestId("turn-bar-strategic-pok2diplomacy"));
-    expect(onSubmit).toHaveBeenCalledExactlyOnceWith("strategic|pok2diplomacy");
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith("strategic|pok2diplomacy", "n1");
   });
 
   it("keeps the old list for options the bar cannot place", () => {

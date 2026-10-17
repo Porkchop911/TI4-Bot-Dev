@@ -137,6 +137,51 @@ describe("command token panel (redistribute)", () => {
     expect(screen.getByTestId("token-blocker")).toBeInTheDocument();
   });
 
+  it("lets a faction whose engine offers a small fleet pool take it to zero, and names the floor otherwise", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    const letnev = redistributeChoice();
+    letnev.options = ["3|4|2", "5|0|4", "7|0|2", "3|0|6"].map((id) => ({
+      id,
+      kind: "redistribute",
+      label: id,
+      payload: {},
+    }));
+    render(<PendingChoiceModal choice={letnev} onSubmit={onSubmit} />);
+    for (let i = 0; i < 4; i++) await click("token-minus-fleet");
+    await click("token-plus-strategic");
+    await click("token-plus-strategic");
+    await click("token-plus-strategic");
+    await click("token-plus-strategic");
+    expect(screen.getByTestId("token-count-fleet")).toHaveTextContent("0");
+    expect(screen.queryByTestId("token-blocker")).not.toBeInTheDocument();
+    await click("token-confirm");
+    expect(onSubmit).toHaveBeenCalledWith("3|0|6");
+  });
+
+  it("shows the Armada fleet supply bonus next to the fleet pool only when the engine reports it", () => {
+    const plain = render(<PendingChoiceModal choice={redistributeChoice()} onSubmit={vi.fn()} />);
+    expect(screen.queryByTestId("token-armada")).not.toBeInTheDocument();
+    plain.unmount();
+    const letnev = redistributeChoice();
+    letnev.details = { ...letnev.details, fleet_supply_bonus: 2 };
+    render(<PendingChoiceModal choice={letnev} onSubmit={vi.fn()} />);
+    const chip = screen.getByTestId("token-armada");
+    expect(chip).toHaveTextContent("+2 supply");
+    expect(chip).toHaveAttribute("aria-label", expect.stringContaining("non-fighter ships per system"));
+    expect(within(screen.getByTestId("token-pool-fleet")).getByTestId("token-armada")).toBe(chip);
+  });
+
+  it("explains the floor of two when the engine offers no smaller fleet pool", async () => {
+    render(<PendingChoiceModal choice={redistributeChoice()} onSubmit={vi.fn()} />);
+    await click("token-minus-fleet");
+    await click("token-minus-fleet");
+    await click("token-minus-fleet");
+    await click("token-plus-tactic");
+    await click("token-plus-tactic");
+    await click("token-plus-strategic");
+    expect(screen.getByTestId("token-blocker")).toHaveTextContent("at least 4");
+  });
+
   it("has no gained split without a gain", () => {
     render(<PendingChoiceModal choice={redistributeChoice()} onSubmit={vi.fn()} />);
     expect(screen.queryByTestId("token-gained-split")).not.toBeInTheDocument();
